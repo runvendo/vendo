@@ -6,6 +6,7 @@ export const LOCAL_DIRECT_DEPENDENCIES = ["@vendoai/vendo"] as const;
 
 export const LOCAL_VENDO_PACKAGE_NAMES = [
   "@vendoai/core",
+  "@vendoai/mcp",
   "@vendoai/store",
   "@vendoai/agent",
   "@vendoai/actions",

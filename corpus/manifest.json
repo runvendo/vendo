@@ -397,35 +397,54 @@
     "pinnedSha": "105e0f945dd9e4181ba6f80e44056c176a9800aa",
     "appDir": "apps/nextjs-app",
     "license": "AGPL-3.0-only",
-    "tier": "broad",
+    "tier": "deep",
     "bootstrap": {
       "installCommand": "corepack pnpm install --frozen-lockfile --force --ignore-workspace",
       "envTemplate": {
-        "PUBLIC_ORIGIN": "http://127.0.0.1:3000",
+        "PUBLIC_ORIGIN": "http://127.0.0.1:43105",
         "SECRET_KEY": "corpus-teable-secret-key-32bytes",
         "BACKEND_STORAGE_PROVIDER": "local",
-        "BACKEND_STORAGE_PUBLIC_URL": "http://127.0.0.1:3000/uploads",
+        "BACKEND_STORAGE_PUBLIC_URL": "http://127.0.0.1:43105/api/attachments/read/public",
         "BACKEND_STORAGE_PUBLIC_BUCKET": "teable-public-corpus",
         "BACKEND_STORAGE_PRIVATE_BUCKET": "teable-private-corpus",
         "BACKEND_CACHE_PROVIDER": "sqlite",
-        "BACKEND_CACHE_SQLITE_URI": "sqlite:///tmp/teable-corpus-cache.sqlite",
-        "PRISMA_DATABASE_URL": "postgresql://corpus:corpus@127.0.0.1:5432/teable",
-        "PUBLIC_DATABASE_PROXY": "http://127.0.0.1:3000/api/db",
-        "NEXTJS_DIR": "apps/nextjs-app",
+        "BACKEND_CACHE_SQLITE_URI": "sqlite://.assets/teable-corpus-cache.sqlite",
+        "PRISMA_DATABASE_URL": "postgresql://corpus:corpus@127.0.0.1:55436/teable?schema=public&statement_cache_size=0",
+        "PUBLIC_DATABASE_PROXY": "127.0.0.1:55436",
+        "NEXTJS_DIR": "../nextjs-app",
         "LOG_LEVEL": "info",
-        "PORT": "3000",
-        "SOCKET_PORT": "3001",
-        "I18N_TYPES_OUTPUT_PATH": "packages/common-i18n/src/locales",
+        "PORT": "43105",
+        "SOCKET_PORT": "43106",
+        "I18N_TYPES_OUTPUT_PATH": "./src/types/i18n.generated.ts",
         "NEXT_BUILD_ENV_CSP": "false",
         "NEXT_BUILD_ENV_SENTRY_ENABLED": "false",
         "NEXT_BUILD_ENV_SENTRY_UPLOAD_DRY_RUN": "true",
         "API_DOC_DISENABLED": "true",
         "CALC_CHUNK_SIZE": "100"
       },
+      "seedCommand": "corepack pnpm --dir ../.. --filter @teable/db-main-prisma prisma-generate && corepack pnpm --dir ../.. --filter @teable/db-main-prisma prisma-migrate deploy --schema ./prisma/postgres/schema.prisma && corepack pnpm --dir ../.. --filter @teable/db-data-prisma prisma-generate && corepack pnpm --dir ../.. --filter @teable/db-data-prisma prisma-migrate deploy --schema ./prisma/schema.prisma && corepack pnpm --dir ../.. --filter @teable/db-main-prisma prisma-db-seed -- --e2e",
+      "database": {
+        "kind": "docker-postgres",
+        "containerName": "vendo-corpus-teable-postgres",
+        "image": "postgres:16-alpine",
+        "hostPort": 55436,
+        "database": "teable",
+        "username": "corpus",
+        "password": "corpus",
+        "readinessTimeoutMs": 30000,
+        "readinessIntervalMs": 500
+      },
       "typecheckCommand": "corepack pnpm --ignore-workspace --filter @teable/app typecheck",
-      "buildCommand": "corepack pnpm --ignore-workspace --filter @teable/app build"
+      "buildCommand": "corepack pnpm --ignore-workspace --filter @teable/app build",
+      "devServer": {
+        "command": "corepack pnpm --dir ../nestjs-backend exec dotenv-flow -p ../nextjs-app -- nest start --webpackPath ./webpack.swc.js -w",
+        "readinessUrl": "http://127.0.0.1:43105/auth/login",
+        "readinessBodyContains": "Teable",
+        "readinessTimeoutMs": 600000,
+        "readinessIntervalMs": 1000
+      }
     },
-    "notes": "Substitutes for Plane because makeplane/plane default branch preview now builds apps/web with React Router rather than Next.js. Default branch develop verified via GitHub API and git ls-remote; apps/nextjs-app/package.json declares next 16.1.6. GitHub license API returned NOASSERTION, so LICENSE and AGPL_LICENSE were inspected."
+    "notes": "Substitutes for Plane because makeplane/plane default branch preview now builds apps/web with React Router rather than Next.js. Default branch develop verified via GitHub API and git ls-remote; apps/nextjs-app/package.json declares next 16.1.6. GitHub license API returned NOASSERTION, so LICENSE and AGPL_LICENSE were inspected. Deep boot runs the Nest development server, which embeds the Next app, against dockerized Postgres; Teable's idempotent E2E seed creates the known test@e2e.com admin (password 12345678), test space, and test base."
   },
   {
     "name": "express-host",

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ManifestEntry } from "./manifest.js";
 import { prepareSkateshopE2eRepo } from "./e2e-prep/skateshop.js";
@@ -723,6 +723,9 @@ export async function prepareE2eRepo(
   if (repo.name === "skateshop") return prepareSkateshopE2eRepo(appRoot, logsDir);
   await mkdir(logsDir, { recursive: true });
   const logPath = path.join(logsDir, "e2e.prepare.log");
+  if (repo.name === "teable") {
+    return prepareTeableE2eRepo(appRoot, logPath);
+  }
   if (repo.name === "papermark") {
     return preparePapermarkE2eRepo(appRoot, logPath);
   }
@@ -791,6 +794,44 @@ export async function prepareE2eRepo(
   });
   actions.push("patched Vendo root to accept per-attempt thread ids and Umami auth headers");
 
+  await writeFile(logPath, `${actions.join("\n")}\n`);
+  return [logPath];
+}
+
+async function prepareTeableE2eRepo(appRoot: string, logPath: string): Promise<string[]> {
+  const rootApp = path.join(appRoot, "app");
+  const srcApp = path.join(appRoot, "src/app");
+  if (await pathExists(rootApp)) {
+    if (await pathExists(srcApp)) {
+      throw new Error("Teable e2e prep cannot align Vendo App Router because both app and src/app exist");
+    }
+    await mkdir(path.dirname(srcApp), { recursive: true });
+    await rename(rootApp, srcApp);
+  }
+  if (!await pathExists(srcApp)) {
+    throw new Error("Teable e2e prep expected Vendo init to create app or src/app");
+  }
+
+  await patchFile(path.join(srcApp, "layout.tsx"), (source) =>
+    source.replace('from "../.vendo/theme.json"', 'from "../../.vendo/theme.json"'));
+
+  const rootModel = path.join(appRoot, "lib/ai.ts");
+  const srcModel = path.join(appRoot, "src/lib/ai.ts");
+  if (await pathExists(rootModel)) {
+    if (await pathExists(srcModel)) {
+      throw new Error("Teable e2e prep cannot align Vendo model because both lib/ai.ts and src/lib/ai.ts exist");
+    }
+    await mkdir(path.dirname(srcModel), { recursive: true });
+    await rename(rootModel, srcModel);
+  }
+  if (!await pathExists(srcModel)) {
+    throw new Error("Teable e2e prep expected Vendo init to create lib/ai.ts or src/lib/ai.ts");
+  }
+
+  const actions = [
+    "aligned Teable Vendo App Router with src/pages",
+    "aligned Teable Vendo model module with the @/ alias",
+  ];
   await writeFile(logPath, `${actions.join("\n")}\n`);
   return [logPath];
 }
@@ -984,4 +1025,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function pathExists(filePath: string): Promise<boolean> {
+  return access(filePath).then(() => true, () => false);
 }

@@ -300,6 +300,37 @@ describe("prepareE2eRepo", () => {
     await expect(prepareE2eRepo({ name: "taxonomy" }, appRoot, logsDir)).resolves.toEqual([]);
   });
 
+  it("aligns Teable's generated App Router and model module with its src/pages tree", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-teable-prep-"));
+    const appRoot = path.join(root, "teable");
+    const logsDir = path.join(root, "logs");
+    await mkdir(path.join(appRoot, "app/api/vendo/[...vendo]"), { recursive: true });
+    await mkdir(path.join(appRoot, "lib"), { recursive: true });
+    await mkdir(path.join(appRoot, "src/pages/auth"), { recursive: true });
+    await writeFile(
+      path.join(appRoot, "app/api/vendo/[...vendo]/route.ts"),
+      'import { model } from "@/lib/ai";\n',
+    );
+    await writeFile(
+      path.join(appRoot, "app/layout.tsx"),
+      'import theme from "../.vendo/theme.json";\n',
+    );
+    await writeFile(path.join(appRoot, "lib/ai.ts"), "export const model = {};\n");
+    await writeFile(path.join(appRoot, "src/pages/auth/login.tsx"), "export default function Login() {}\n");
+
+    const firstLogs = await prepareE2eRepo({ name: "teable" }, appRoot, logsDir);
+    const secondLogs = await prepareE2eRepo({ name: "teable" }, appRoot, logsDir);
+
+    await expect(readFile(path.join(appRoot, "app/layout.tsx"), "utf8")).rejects.toThrow();
+    await expect(readFile(path.join(appRoot, "lib/ai.ts"), "utf8")).rejects.toThrow();
+    await expect(readFile(path.join(appRoot, "src/app/api/vendo/[...vendo]/route.ts"), "utf8")).resolves.toContain("@/lib/ai");
+    await expect(readFile(path.join(appRoot, "src/app/layout.tsx"), "utf8")).resolves.toContain('../../.vendo/theme.json');
+    await expect(readFile(path.join(appRoot, "src/lib/ai.ts"), "utf8")).resolves.toContain("export const model");
+    expect(firstLogs).toEqual([path.join(logsDir, "e2e.prepare.log")]);
+    expect(secondLogs).toEqual(firstLogs);
+    await expect(readFile(firstLogs[0]!, "utf8")).resolves.toContain("aligned Teable Vendo App Router with src/pages");
+  });
+
   it("adds Papermark fixtures, JWT login, curated tools, handler guidance, and per-attempt thread ids", async () => {
     const { appRoot, logsDir } = await createPapermarkFixture();
     const logs = await prepareE2eRepo({ name: "papermark" }, appRoot, logsDir);

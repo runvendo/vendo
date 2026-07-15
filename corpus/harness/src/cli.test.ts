@@ -753,6 +753,10 @@ describe("runCli boot", () => {
         events.push(`init:${entry.name}`);
         return makeInitResult(context.repoDir(entry.name), "init.log", "init.diff");
       },
+      prepareE2eRepo: async (entry, appRoot) => {
+        events.push(`prepare:${entry.name}:${appRoot}`);
+        return [];
+      },
       bootRepo: async (entry, options) => {
         events.push(`boot:${entry.name}`);
         bootOptions.push(options ?? {});
@@ -767,6 +771,7 @@ describe("runCli boot", () => {
       "bootstrap:repo-boot",
       "inject:repo-boot",
       "init:repo-boot",
+      `prepare:repo-boot:${context.repoDir(repo.name)}`,
       "boot:repo-boot",
       "wait",
       "boot:teardown",

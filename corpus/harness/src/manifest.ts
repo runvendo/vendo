@@ -21,6 +21,7 @@ const devServerSchema = z
   .object({
     command: z.string().min(1),
     readinessUrl: z.string().url(),
+    readinessBodyContains: z.string().min(1).optional(),
     readinessTimeoutMs: z.number().int().positive().optional(),
     readinessIntervalMs: z.number().int().positive().optional(),
   })
