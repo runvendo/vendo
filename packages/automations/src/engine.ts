@@ -3,8 +3,10 @@ import {
   approvalRequestSchema,
   appDocumentSchema,
   descriptorHash,
+  isOrgSubject,
   permissionGrantSchema,
   triggerSchema,
+  webhookSubject,
   type AppDocument,
   type ApprovalRequest,
   type AuditEvent,
@@ -464,7 +466,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   };
 
   const runContext = (run: InternalRunRecord, subject: string): RunContext => ({
-    principal: { kind: "user", subject },
+    // Org-owned automations run as the org principal (block-actions design §C):
+    // grants and approvals for the run live under the org subject, so admins
+    // approve and any member's session can never be impersonated by the run.
+    principal: isOrgSubject(subject) ? { kind: "org", subject } : { kind: "user", subject },
     venue: "automation",
     presence: "away",
     sessionId: `sess_${run.id}`,
@@ -1172,7 +1177,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       id: id("aud_"),
       at: iso(),
       kind: "run",
-      principal: { kind: "user", subject: `webhook:${source}` },
+      // Reserved namespace (block-actions design §C): runtime-minted webhook
+      // principals live under `vendo:` so they can never collide with a
+      // host-resolved subject.
+      principal: { kind: "user", subject: webhookSubject(source) },
       venue: "automation",
       presence: "away",
       detail: { status: "webhook-rejected", reason: text },

@@ -107,6 +107,36 @@ export interface VersionEntry {
   rung: 1 | 2 | 3 | 4;
 }
 
+/** block-actions §C — org membership roles: members run, admins approve and manage. */
+export type OrgRole = "owner" | "admin" | "member";
+
+/** block-actions §C — one org as `GET /orgs` returns it (with the caller's role). */
+export interface OrgSummary {
+  id: string;
+  name: string;
+  role: OrgRole;
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
+}
+
+/** block-actions §C — one membership row as `GET /orgs/:id` returns them. */
+export interface OrgMember {
+  orgId: string;
+  subject: string;
+  role: OrgRole;
+  addedAt: IsoDateTime;
+}
+
+/** block-actions §C — `GET /orgs/:id`. */
+export interface OrgDetail {
+  org: { id: string; name: string; createdAt: IsoDateTime; updatedAt: IsoDateTime };
+  role: OrgRole;
+  members: OrgMember[];
+}
+
+/** block-actions §C — orgs are key-gated: "cloud" when VENDO_API_KEY is set. */
+export type OrgsPosture = "cloud" | false;
+
 /** 04-actions §3 — one per-user connected account as `GET /connections` returns it. */
 export interface ConnectionAccount {
   id: string;

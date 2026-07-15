@@ -305,6 +305,8 @@ describe("09 §3 public wire", () => {
         mcp: false,
         // 04-actions §3 — no BYO connector and no VENDO_API_KEY → no broker.
         connections: false,
+        // block-actions §C — orgs are key-gated; no VENDO_API_KEY → off.
+        orgs: false,
       },
     });
   });
@@ -375,7 +377,10 @@ describe("09 §3 public wire", () => {
   it("adapts the same fetch handler to Next route exports", async () => {
     const { vendo } = await setup();
     const next = nextVendoHandler(vendo);
-    for (const method of ["GET", "POST", "DELETE"] as const) expect(next[method]).toBeTypeOf("function");
+    // PATCH joined with the org member role route (ENG-263) — Next.js returns
+    // 405 for any method the module does not export, so its absence would make
+    // role changes fail before reaching the wire.
+    for (const method of ["GET", "POST", "PATCH", "DELETE"] as const) expect(next[method]).toBeTypeOf("function");
     expect((await next.GET(request("GET", "/status"))).status).toBe(200);
   });
 });
@@ -1349,5 +1354,49 @@ describe("the machine proxy mount", () => {
     const { vendo } = await setup();
     const response = await vendo.handler(request("POST", "/proxy/tools/host_tool", { args: {} }));
     expect(response.status).toBe(401);
+  });
+});
+
+describe("01-core §2 — the wire rejects resolver-minted reserved/org principals (ENG-263)", () => {
+  it("rejects a resolver-produced vendo:* subject loudly", async () => {
+    const { vendo } = await setup(vi.fn(async () => ({ kind: "user" as const, subject: "vendo:webhook:stripe" })));
+    const response = await vendo.handler(request("GET", "/threads"));
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("validation");
+    expect(body.error.message).toContain("reserved subject");
+  });
+
+  it("rejects a resolver-produced org-kind principal (org context is membership-derived)", async () => {
+    const { vendo } = await setup(vi.fn(async () => ({ kind: "org" as const, subject: "acme" })));
+    const response = await vendo.handler(request("GET", "/threads"));
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("validation");
+    expect(body.error.message).toContain("kind:\"user\"");
+  });
+
+  it("still accepts ordinary user principals whose subject merely CONTAINS 'vendo'", async () => {
+    const { vendo } = await setup(vi.fn(async () => ({ kind: "user" as const, subject: "user_vendofan" })));
+    stubRouteBlocks(vendo);
+    const response = await vendo.handler(request("GET", "/threads"));
+    expect(response.status).toBe(200);
+  });
+});
+
+describe("block-actions §C — key-gated org wire (posture errors without a key)", () => {
+  it("returns cloud-required posture errors on every org mutation and an inert list", async () => {
+    const { vendo } = await setup();
+    const list = await vendo.handler(request("GET", "/orgs"));
+    expect(list.status).toBe(402);
+
+    const create = await vendo.handler(request("POST", "/orgs", { name: "Acme" }));
+    expect(create.status).toBe(402);
+    const body = await create.json() as { error: { code: string } };
+    expect(body.error.code).toBe("cloud-required");
+
+    // The org-scoped approvals/grants surfaces posture-error too.
+    expect((await vendo.handler(request("GET", "/approvals?org=org_x"))).status).toBe(402);
+    expect((await vendo.handler(request("GET", "/grants?org=org_x"))).status).toBe(402);
   });
 });

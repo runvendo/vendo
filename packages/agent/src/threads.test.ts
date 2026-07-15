@@ -168,7 +168,13 @@ describe("agent threads", () => {
     expect(await agent.threads.list(u2)).toEqual([]);
   });
 
-  it("keeps ephemeral principal threads in session memory even when a store is configured", async () => {
+  it("routes ephemeral principal threads through the store (ENG-263: the overlay owns ephemerality)", async () => {
+    // Pre-ENG-263 the agent kept ephemeral threads in a PRIVATE in-memory map,
+    // which the anonymous→signed-in merge could never drain — an anonymous
+    // visitor's conversations silently vanished on sign-in. Ephemeral threads
+    // now go through the store like everyone else's; keeping them off disk is
+    // the STORE's job (02-store §4 overlay, exercised by the composed-wire
+    // anonymous-isolation and anon-merge journeys).
     const store = memoryStore();
     const guard = testGuard({});
     const tools = boundRegistry({}, guard);
@@ -192,7 +198,7 @@ describe("agent threads", () => {
     await readSse(response);
 
     const persisted = await store.records("vendo_threads").list();
-    expect(persisted.records).toEqual([]);
+    expect(persisted.records.map((record) => record.id)).toEqual([threadId]);
     const thread = await agent.threads.get(threadId, ephemeralCtx);
     expect(thread).not.toBeNull();
     expect(thread).toMatchObject({ id: threadId, subject: "guest_1" });
@@ -200,6 +206,8 @@ describe("agent threads", () => {
     expect(await agent.threads.list(ephemeralCtx)).toEqual([
       expect.objectContaining({ id: threadId, title: "Temporary question" }),
     ]);
+    // Subject scoping still holds: another subject can see none of it.
+    expect(await agent.threads.get(threadId, ctx({ principal: { kind: "user", subject: "u2" } }))).toBeNull();
   });
 
   it("skips a malformed thread row instead of bricking the whole listing (M5)", async () => {

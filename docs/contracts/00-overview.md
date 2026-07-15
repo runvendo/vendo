@@ -125,3 +125,9 @@ Approved with the contracts (Yousef, 2026-07-11): the blocks are built as if fro
 - **Changed:** `04-actions.md` §1/§2/§4 — additive `trpc` binding kind (`procedure`/`type`/`mount`/`transformer?`), the extractor seam registration list (OpenAPI → tRPC → route-scan, with mount shadowing), tRPC static-extraction and fail-closed risk rules, the tRPC HTTP envelope execution semantics, and the binding-kind-aware tool-identity note (method+path for HTTP bindings, mount+procedure for tRPC).
 - **Why:** ENG-246 (extraction-survives-real-apps M1) ships the tRPC extractor; the binding kind is additive within `vendo/tools@1` per the discriminated-union evolution rule — existing consumers ignore unknown kinds.
 - **Approved by:** awaiting Yousef's personal sign-off (PR stays draft until then).
+
+### 2026-07-15 — Block-actions wave (ENG-260/261/262/263, parent ENG-264)
+
+- **Changed:** One coordinated amendment set across 01-core, 02-store, 04-actions, 05-guard, 08-ui, 09-vendo, and 10-mcp — actAs presets + trust model, per-user connected accounts (`connect-required`), loud grant invalidation, blast-radius sync completion, real org principals + org tables (key-gated), the `vendo:` reserved subject namespace, and anonymous→signed-in migration. Each doc's own Amendments section carries the detail.
+- **Why:** The block-actions project ("everything extraction isn't") implemented the actions vision beyond extraction; the spec supersedes the frozen text where they conflicted, and this set re-aligns the contracts. All changes are additive within the version train.
+- **Approved by:** design locked by Yousef 2026-07-14 (block-actions spec); ENG-263-derived entries land with that PR.

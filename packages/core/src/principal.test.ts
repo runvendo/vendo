@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { principalSchema } from "./principal.js";
+import {
+  isOrgSubject,
+  isReservedSubject,
+  orgIdFromSubject,
+  orgPrincipal,
+  orgSubject,
+  principalSchema,
+  webhookSubject,
+} from "./principal.js";
 
 /** 01-core §2 — the only identity shape Vendo speaks. */
 describe("principalSchema", () => {
@@ -10,13 +18,43 @@ describe("principalSchema", () => {
     ).toMatchObject({ display: "Ada", ephemeral: true });
   });
 
+  it("accepts an org principal (block-actions design §C: kind:'org' is real)", () => {
+    expect(principalSchema.safeParse({ kind: "org", subject: "vendo:org:org_1" }).success).toBe(true);
+    expect(principalSchema.parse({ kind: "org", subject: "vendo:org:org_1", display: "Acme" }))
+      .toMatchObject({ kind: "org", display: "Acme" });
+  });
+
   it("preserves unknown keys (forward-compatible passthrough)", () => {
     expect(principalSchema.parse({ kind: "user", subject: "s", org: "acme" })).toMatchObject({ org: "acme" });
   });
 
-  it("rejects a non-user kind, a missing subject, and a non-boolean ephemeral", () => {
+  it("rejects an unknown kind, a missing subject, and a non-boolean ephemeral", () => {
     expect(principalSchema.safeParse({ kind: "service", subject: "s" }).success).toBe(false);
     expect(principalSchema.safeParse({ kind: "user" }).success).toBe(false);
     expect(principalSchema.safeParse({ kind: "user", subject: "s", ephemeral: "yes" }).success).toBe(false);
+  });
+});
+
+/** Block-actions design §C — the reserved `vendo:` subject namespace. */
+describe("reserved subject namespace", () => {
+  it("recognizes reserved subjects by the vendo: prefix", () => {
+    expect(isReservedSubject("vendo:webhook:stripe")).toBe(true);
+    expect(isReservedSubject("vendo:org:org_1")).toBe(true);
+    expect(isReservedSubject("user_ada")).toBe(false);
+    expect(isReservedSubject("webhook:stripe")).toBe(false); // legacy bare form is NOT reserved
+  });
+
+  it("mints webhook subjects inside the namespace", () => {
+    expect(webhookSubject("stripe")).toBe("vendo:webhook:stripe");
+  });
+
+  it("round-trips org subjects", () => {
+    expect(orgSubject("org_1")).toBe("vendo:org:org_1");
+    expect(isOrgSubject("vendo:org:org_1")).toBe(true);
+    expect(isOrgSubject("vendo:webhook:stripe")).toBe(false);
+    expect(orgIdFromSubject("vendo:org:org_1")).toBe("org_1");
+    expect(orgIdFromSubject("vendo:org:")).toBe(null);
+    expect(orgIdFromSubject("user_ada")).toBe(null);
+    expect(orgPrincipal("org_1", "Acme")).toEqual({ kind: "org", subject: "vendo:org:org_1", display: "Acme" });
   });
 });

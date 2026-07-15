@@ -28,14 +28,16 @@ export type JsonSchema = Record<string, unknown>; // JSON Schema draft 2020-12
 
 ## 2. Principals
 
-Who the agent is acting as. Host-minted; the host resolves its own session to a principal (09 §2). `kind: "org"` is reserved for Cloud.
+Who the agent is acting as. Host-minted for users; the host resolves its own session to a principal (09 §2). `kind: "org"` principals are real (ENG-263, block-actions spec §C): the full org machinery ships OSS, activation is key-gated per the Cloud line (00 conventions) — without `VENDO_API_KEY` entitlement, org surfaces return `cloud-required`. Org principals are minted only by Vendo's own org machinery over the org tables (02 §2); host principal resolvers mint `kind: "user"` only.
+
+**Reserved subjects (normative, ENG-263):** the `vendo:` subject prefix belongs to Vendo-synthetic principals — webhook firings run as `vendo:webhook:<source>`, org principals as `vendo:org:<id>` — and a host principal resolver returning a `vendo:`-prefixed subject is a validation error, never honored. This closes the collision between synthetic subjects and real users.
 
 ```ts
 export interface Principal {
-  kind: "user";              // "org" reserved (Cloud)
+  kind: "user" | "org";      // "org": real since ENG-263 — key-gated activation, Vendo-minted only
   subject: string;           // host's stable user id — or a generated session id when anonymous
   display?: string;          // for approval UIs and audit
-  ephemeral?: boolean;       // anonymous mode: session-scoped, nothing persists past the session
+  ephemeral?: boolean;       // anonymous mode: session-scoped; on sign-in, threads/apps/state migrate to the real subject (02 §4) — grants/approvals never do
 }
 ```
 
@@ -46,6 +48,7 @@ Attached to every tool call, guard decision, and audit event. The two axes the p
 ```ts
 export interface RunContext {
   principal: Principal;
+  actor?: Principal;             // the human behind an org request (ENG-263): principal is the org (vendo:org:<id>), actor is the member who initiated it — audit records both
   venue: "chat" | "app" | "automation" | "mcp";   // "mcp" is live — the door (10-mcp.md)  <!-- amended 2026-07-14: MCP door landed (PR #139); original froze pre-door and read "mcp reserved for the deferred door". The value is now live in code (run-context.ts:21,32). -->
 
   presence: "present" | "away";
@@ -94,11 +97,15 @@ export interface ToolCall {
   args: Json;
 }
 
+/** A connector call needs a per-user connected account (04 §3.1). */
+export interface ConnectRequired { connector: string; toolkit: string; message: string }
+
 export type ToolOutcome =
   | { status: "ok"; output: Json }
   | { status: "error"; error: { code: string; message: string } }
   | { status: "pending-approval"; approvalId: ApprovalId }   // fail-soft: queued for the user
-  | { status: "blocked"; reason: string };
+  | { status: "blocked"; reason: string }
+  | { status: "connect-required"; connect: ConnectRequired };  // fail-soft: the UI renders an inline connect card, then retries (08 §4)
 
 /** The executable tool surface a block hands around. */
 export interface ToolRegistry {
@@ -144,6 +151,7 @@ export interface ApprovalRequest {
   call: ToolCall;
   descriptor: ToolDescriptor;   // frozen at ask time — what the user actually approved
   inputPreview: string;         // human-readable real inputs (the one-security-rule: ask with the real inputs)
+  invalidatedGrant?: { id: GrantId; grantedAt: IsoDateTime };  // set when descriptor drift lapsed a grant that would have covered this call — loud, never silent (05 §2)
   ctx: { principal: Principal; venue: RunContext["venue"]; presence: RunContext["presence"]; appId?: AppId; trigger?: TriggerRef };
   createdAt: IsoDateTime;
 }
@@ -185,7 +193,7 @@ Every tool call, approval, and policy decision — recorded with principal + app
 export interface AuditEvent {
   id: string;                    // "aud_..."
   at: IsoDateTime;
-  kind: "tool-call" | "approval" | "policy-decision" | "run" | "app-lifecycle" | "share" | "door-auth";  // "door-auth": an MCP-door OAuth/principal-mint event  <!-- amended 2026-07-14: "door-auth" added — MCP door landed (PR #139), code audit.ts:12,29. -->
+  kind: "tool-call" | "approval" | "policy-decision" | "run" | "app-lifecycle" | "share" | "door-auth" | "principal";  // "door-auth": MCP-door OAuth/principal-mint; "principal": principal-lifecycle event — anon→signed-in migration, org membership change (ENG-263)  <!-- amended 2026-07-14: "door-auth" added — MCP door landed (PR #139), code audit.ts:12,29. -->
 
   principal: Principal;
   venue: RunContext["venue"];
@@ -201,6 +209,8 @@ export interface AuditEvent {
 ```
 
 The additive `door-auth` event originates in 10-mcp §3 and records successful door authorization.
+
+**Enriched `detail` (block-actions wave, normative):** `detail` stays `Json`, but five enrichments are contracted for it — exactly what guard console and insights consume (block-actions spec, cross-cutting). Connector executions carry `detail.connectorAccount: ConnectorAccountIdentity` (04 §3) — the binding lifts it off the outcome and strips it before the outcome reaches the model or UI. Grant invalidation emits a `policy-decision` event with `detail.reason: "grant-invalidated"` plus `grantIds`, `staleHash`, `currentHash` (05 §2). Present execution that forwards no credentials despite inbound auth headers emits `detail.warning: { code: "present-credentials-not-forwarded", reason, action }` once per process (04 §4). Every actAs call records its disposition as `detail.actAs` (mint / declined / subject-mismatch); org-owned executions carry `detail.org: { subject, actor }` — the org principal plus the human member behind the request (`RunContext.actor`, §3) (ENG-263).
 
 ## 8. The instant-path UI payload (format-tagged; v0 format: the tree, `vendo-genui/v1`)
 
@@ -387,6 +397,12 @@ export type ActAs = (principal: Principal, grant: PermissionGrant) => Promise<Au
 
 export interface AuthMaterial { headers: Record<string, string>; }   // one channel — a bearer token is headers.Authorization; caching/expiry is the host's business
 
+// Impersonation guard (normative, block-actions wave): the actions runtime asserts
+// grant.subject === principal.subject BEFORE invoking actAs — a mismatch is the error
+// "act-as-subject-mismatch", never a mint (04 §4). Away re-verification rides this seam:
+// the host returning null declines the principal and the run fails closed — there is no
+// second verification seam (ENG-263). Shipped implementations: @vendoai/actions/presets (04 §2.1).
+
 /** Secret values by name. Default implementation reads env (02 §1). App code never sees values (06 §4.3). */
 export interface SecretsProvider { get(name: string): Promise<string | undefined>; }
 
@@ -461,7 +477,11 @@ Typed `data-*` parts riding the ai-SDK UI message stream (03 §4). Live here —
 
 ```ts
 export interface VendoViewPart { type: "data-vendo-view"; appId: AppId; payload: UIPayload }                    // a rendered app surface in-thread
-export interface VendoApprovalPart { type: "data-vendo-approval"; toolCallId: string; risk: RiskLabel; approvalId?: ApprovalId }  // receipt/approval metadata beside native tool parts
+export interface VendoApprovalPart {
+  type: "data-vendo-approval"; toolCallId: string; risk: RiskLabel; approvalId?: ApprovalId;
+  invalidatedGrant?: { id: GrantId; grantedAt: IsoDateTime };   // surfaces loud grant invalidation on the approval card (05 §2)
+}  // receipt/approval metadata beside native tool parts
+export interface VendoConnectPart { type: "data-vendo-connect"; toolCallId: string; connector: string; toolkit: string; message: string }  // rides beside the tool part when its outcome is connect-required; the UI renders the inline connect card (08 §4)
 ```
 
 ## 17. Capability-miss event (`vendo/capability-miss@1`)
@@ -540,3 +560,13 @@ Persistence and transport are normative:
 - **Changed:** Added optional `RecordStore.claim(expected, replacement?)` as the core seam for one-statement compare-and-replace or compare-and-delete adapters.
 - **Why:** Store consumers that require single-use state need an additive capability they can require without importing the concrete store block.
 - **Approved by:** Yousef, 2026-07-14.
+
+### 2026-07-15 — Block-actions wave (ENG-260/261/262/263, parent ENG-264)
+
+- **Changed:** `ToolOutcome` gains the additive `connect-required` variant with its `ConnectRequired` shape; `VendoConnectPart` (`data-vendo-connect`) joins the stream parts (ENG-262, landed).
+- **Changed:** `ApprovalRequest` and `VendoApprovalPart` gain optional `invalidatedGrant` — descriptor-drift grant lapse is loud, never a bare re-prompt (ENG-261, landed).
+- **Changed:** §7 contracts the enriched audit `detail` fields: `connectorAccount`, `reason: "grant-invalidated"`, and the `present-credentials-not-forwarded` warning (landed); org context follows with ENG-263.
+- **Changed:** §13 records the impersonation guard at the actAs seam (`act-as-subject-mismatch`) and away re-verification failing closed on a null mint (ENG-260 landed; re-verification semantics ENG-263).
+- **Changed:** §2 makes `kind: "org"` principals real (subjects `vendo:org:<id>`, key-gated activation, Vendo-minted only) and reserves the `vendo:` subject namespace against host resolvers; §3 adds optional `RunContext.actor` (the human member behind an org request); §7 adds `AuditEvent.kind: "principal"` (anon-migration + membership-change lifecycle events); the anonymous→signed-in migration note points at 02 §4. **Ships with ENG-263 (PR #277) — merge of this amendment waits for that PR.**
+- **Why:** The block-actions project implements execute-as-the-user beyond extraction: per-user connected accounts, loud invalidation, real principals. All additive within the version train (discriminated unions, optional fields — §15).
+- **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).

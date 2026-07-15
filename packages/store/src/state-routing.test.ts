@@ -334,9 +334,9 @@ for (const backend of backends()) {
       );
       await downgradeToV1();
 
-      // The v1 -> v2 upgrade performs the backfill.
+      // The v1 -> v3 upgrade performs the (v2) backfill on the way through.
       await made.store.ensureSchema();
-      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(2);
+      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(3);
 
       expect(await made.sql(
         "SELECT app_id, subject, data FROM vendo_state WHERE app_id = 'app_legacy'",

@@ -15,7 +15,10 @@ export const triggerRefSchema = z.object({
   kind: z.enum(["schedule", "host-event", "external"]),
 }).passthrough() satisfies z.ZodType<TriggerRef>;
 
-/** 01-core §3 */
+/** 01-core §3. `actor` (block-actions design §C) carries the human principal
+    behind an org-context request: when the wire re-contextualizes a member's
+    request onto an org-owned row, `principal` becomes the org and `actor`
+    stays the signed-in user — audit enrichment records who actually acted. */
 export interface RunContext {
   principal: Principal;
   venue: "chat" | "app" | "automation" | "mcp";
@@ -24,6 +27,7 @@ export interface RunContext {
   appId?: AppId;
   trigger?: TriggerRef;
   requestHeaders?: Record<string, string>;
+  actor?: Principal;
 }
 
 /** 01-core §3 */
@@ -35,4 +39,5 @@ export const runContextSchema = z.object({
   appId: appIdSchema.optional(),
   trigger: triggerRefSchema.optional(),
   requestHeaders: z.record(z.string()).optional(),
+  actor: principalSchema.optional(),
 }).passthrough() satisfies z.ZodType<RunContext>;

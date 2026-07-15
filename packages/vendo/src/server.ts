@@ -24,6 +24,8 @@ import {
   VendoError,
   approvalDecisionSchema,
   descriptorHash,
+  isReservedSubject,
+  orgPrincipal,
   principalSchema,
   vendoThemeSchema,
   type ActAs,
@@ -37,12 +39,13 @@ import {
   type SecretsProvider,
   type ToolDescriptor,
   type ToolOutcome,
+  type ToolRegistry,
   type VendoErrorCode,
   type VendoTheme,
 } from "@vendoai/core";
 import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
-import { createStore, envSecrets, registerEphemeralSubject, type VendoStore } from "@vendoai/store";
+import { adoptEphemeralSubject, createStore, envSecrets, registerEphemeralSubject, type VendoStore } from "@vendoai/store";
 // 02-store §5: the erase API ships on the umbrella's runtime surface so hosts
 // reach it without installing @vendoai/store directly.
 export { eraseStore, type EraseReport, type EraseTable } from "@vendoai/store";
@@ -54,6 +57,7 @@ import {
 } from "./capability-misses.js";
 import { mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
 import { createConnections, type ConnectionsService } from "./connections.js";
+import { createOrgs, type OrgsService } from "./orgs.js";
 import { createRuntimeCapture, type RuntimeCaptureHandler } from "./runtime-capture.js";
 import { computeImpact } from "./sync-impact.js";
 
@@ -101,6 +105,7 @@ export interface Vendo {
   automations: AutomationsEngine;
   actions: ActionsRegistry;
   connections: ConnectionsService;
+  orgs: OrgsService;
   store: VendoStore;
 }
 
@@ -472,6 +477,16 @@ async function buildAnonCookie(key: CryptoKey, id: string, secure: boolean): Pro
     : `${ANON_COOKIE}=${value}; Path=${BASE_PATH}; HttpOnly; SameSite=Lax`;
 }
 
+/** The Set-Cookie that CLEARS the anonymous session (block-actions design §C:
+    the first authenticated request carrying a valid anon cookie merges the
+    session's data and retires the cookie). Same attributes as buildAnonCookie
+    so the browser matches the stored cookie; Max-Age=0 expires it. */
+function clearedAnonCookie(secure: boolean): string {
+  return secure
+    ? `${ANON_COOKIE_SECURE}=; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=0`
+    : `${ANON_COOKIE}=; Path=${BASE_PATH}; HttpOnly; SameSite=Lax; Max-Age=0`;
+}
+
 /** Append the minted Set-Cookie to the response. Stream/SSE responses carry
     immutable headers, so re-wrap via `new Response(body, response)` (copies
     status/statusText/headers into a fresh mutable Headers) before appending. */
@@ -510,6 +525,7 @@ function createWireHandler(deps: {
   apps: AppsRuntime;
   automations: AutomationsEngine;
   connections: ConnectionsService;
+  orgs: OrgsService;
   sandbox: SandboxVenue;
   doctor: {
     present(ctx: RunContext): Promise<ToolOutcome>;
@@ -563,7 +579,51 @@ function createWireHandler(deps: {
         if (!parsed.success) {
           throw new VendoError("validation", "principal resolver returned an invalid principal");
         }
+        // Block-actions design §C: host resolvers mint USER principals only —
+        // org context is derived from membership, never resolved — and the
+        // `vendo:` namespace is reserved for runtime-minted subjects (webhook
+        // trigger principals, org subjects). Both rejections are LOUD: a
+        // resolver colliding with the reserved namespace could otherwise act
+        // as an org or a webhook principal.
+        if (parsed.data.kind !== "user") {
+          throw new VendoError("validation", "principal resolver must mint kind:\"user\" principals; org context is derived from org membership");
+        }
+        if (isReservedSubject(parsed.data.subject)) {
+          throw new VendoError("validation", "principal resolver produced a reserved subject (the vendo: namespace is runtime-minted only)");
+        }
         principal = parsed.data;
+        // Anonymous→signed-in auto-merge (block-actions design §C): the FIRST
+        // authenticated request still carrying a valid anonymous-session
+        // cookie adopts that session's threads/apps/state into the signed-in
+        // subject (grants, approvals, and connected accounts deliberately do
+        // NOT transfer — consent doesn't change identities), then retires the
+        // cookie. Idempotent: a replay finds nothing to merge and just clears
+        // the cookie again. A merge failure must never take down the request:
+        // the cookie stays, and the next authenticated request retries.
+        if (principal.ephemeral !== true) {
+          const key = await deps.anonKey;
+          const secure = secureRequest(new URL(req.url), deps.trustedBaseIsHttps);
+          const anonId = await verifyAnonCookie(key, req.headers.get("cookie"), secure);
+          if (anonId !== null) {
+            try {
+              const merged = await adoptEphemeralSubject(deps.store, `anonymous_${anonId}`, principal.subject);
+              anon.setCookie = clearedAnonCookie(secure);
+              if (merged !== null) {
+                await deps.guard.report({
+                  id: `aud_${globalThis.crypto.randomUUID()}`,
+                  at: new Date().toISOString(),
+                  kind: "principal",
+                  principal,
+                  venue,
+                  presence: "present",
+                  detail: { event: "anon-merge", from: `anonymous_${anonId}`, ...merged },
+                });
+              }
+            } catch (error) {
+              console.warn(`[vendo] anonymous-session merge failed; will retry next request: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          }
+        }
       }
       return {
         principal,
@@ -751,9 +811,13 @@ function createWireHandler(deps: {
         }
       }
 
+      // Block-actions design §C: `?org=<id>` / body.org switch the approvals
+      // surface to an org's queue — ADMIN-gated (members run; admins approve).
       if (request.method === "GET" && path === "/approvals") {
         const ctx = await context(request, "chat");
-        return json(await deps.guard.approvals.pending(ctx.principal));
+        const org = url.searchParams.get("org");
+        const scoped = org === null ? ctx : await deps.orgs.adminContext(ctx, org);
+        return json(await deps.guard.approvals.pending(scoped.principal));
       }
       if (request.method === "POST" && path === "/approvals/decide") {
         const body = await requestJson(request);
@@ -762,7 +826,8 @@ function createWireHandler(deps: {
         const decision = approvalDecisionSchema.safeParse(body["decision"]);
         if (!decision.success) throw new VendoError("validation", "decision is invalid");
         const ctx = await context(request, "chat");
-        await deps.guard.approvals.decide(ids, decision.data as ApprovalDecision, ctx.principal);
+        const scoped = body["org"] === undefined ? ctx : await deps.orgs.adminContext(ctx, string(body["org"], "org"));
+        await deps.guard.approvals.decide(ids, decision.data as ApprovalDecision, scoped.principal);
         return json({});
       }
 
@@ -797,19 +862,130 @@ function createWireHandler(deps: {
         }
       }
 
+      // Same admin-gated `?org=` scoping as approvals: admins manage the org's
+      // standing grants.
       if (request.method === "GET" && path === "/grants") {
         const ctx = await context(request, "chat");
-        return json(await deps.guard.grants.list(ctx.principal));
+        const org = url.searchParams.get("org");
+        const scoped = org === null ? ctx : await deps.orgs.adminContext(ctx, org);
+        return json(await deps.guard.grants.list(scoped.principal));
       }
       if (request.method === "DELETE" && head === "grants" && segments.length === 2) {
         const ctx = await context(request, "chat");
-        await deps.guard.grants.revoke(string(segments[1], "grant id"), ctx.principal);
+        const org = url.searchParams.get("org");
+        const scoped = org === null ? ctx : await deps.orgs.adminContext(ctx, org);
+        await deps.guard.grants.revoke(string(segments[1], "grant id"), scoped.principal);
         return json({});
+      }
+
+      // Block-actions design §C — org management (key-gated; every deps.orgs
+      // call posture-errors without an entitled VENDO_API_KEY).
+      if (path === "/orgs" && (request.method === "GET" || request.method === "POST")) {
+        const ctx = await context(request, "chat");
+        if (request.method === "GET") return json({ orgs: await deps.orgs.list(ctx.principal), posture: deps.orgs.posture });
+        const body = await requestJson(request);
+        const org = await deps.orgs.create(ctx.principal, string(body["name"], "org name"));
+        await deps.guard.report({
+          id: `aud_${globalThis.crypto.randomUUID()}`,
+          at: new Date().toISOString(),
+          kind: "principal",
+          principal: ctx.principal,
+          venue: ctx.venue,
+          presence: "present",
+          detail: { event: "org-created", org: org.id, name: org.name },
+        });
+        return json(org);
+      }
+      if (head === "orgs" && segments.length >= 2) {
+        const orgId = string(segments[1], "org id");
+        const ctx = await context(request, "chat");
+        if (request.method === "GET" && segments.length === 2) {
+          return json(await deps.orgs.get(ctx.principal, orgId));
+        }
+        if (request.method === "POST" && segments[2] === "members" && segments.length === 3) {
+          const body = await requestJson(request);
+          const member = await deps.orgs.addMember(
+            ctx.principal,
+            orgId,
+            string(body["subject"], "member subject"),
+            (body["role"] === undefined ? "member" : string(body["role"], "role")) as never,
+          );
+          await deps.guard.report({
+            id: `aud_${globalThis.crypto.randomUUID()}`,
+            at: new Date().toISOString(),
+            kind: "principal",
+            principal: ctx.principal,
+            venue: ctx.venue,
+            presence: "present",
+            detail: { event: "org-member-added", org: orgId, subject: member.subject, role: member.role },
+          });
+          return json(member);
+        }
+        if (segments[2] === "members" && segments.length === 4) {
+          const subject = string(segments[3], "member subject");
+          if (request.method === "PATCH") {
+            const body = await requestJson(request);
+            const member = await deps.orgs.setRole(ctx.principal, orgId, subject, string(body["role"], "role") as never);
+            await deps.guard.report({
+              id: `aud_${globalThis.crypto.randomUUID()}`,
+              at: new Date().toISOString(),
+              kind: "principal",
+              principal: ctx.principal,
+              venue: ctx.venue,
+              presence: "present",
+              detail: { event: "org-member-role", org: orgId, subject, role: member.role },
+            });
+            return json(member);
+          }
+          if (request.method === "DELETE") {
+            await deps.orgs.removeMember(ctx.principal, orgId, subject);
+            await deps.guard.report({
+              id: `aud_${globalThis.crypto.randomUUID()}`,
+              at: new Date().toISOString(),
+              kind: "principal",
+              principal: ctx.principal,
+              venue: ctx.venue,
+              presence: "present",
+              detail: { event: "org-member-removed", org: orgId, subject },
+            });
+            return json({});
+          }
+        }
+        if (request.method === "POST" && segments[2] === "apps" && segments.length === 3) {
+          const body = await requestJson(request);
+          const appId = string(body["appId"], "appId");
+          await deps.orgs.transferApp(ctx.principal, orgId, appId);
+          await deps.guard.report({
+            id: `aud_${globalThis.crypto.randomUUID()}`,
+            at: new Date().toISOString(),
+            kind: "principal",
+            principal: ctx.principal,
+            venue: ctx.venue,
+            presence: "present",
+            appId,
+            detail: { event: "org-app-transferred", org: orgId, appId },
+          });
+          return json({});
+        }
       }
 
       if (path === "/apps") {
         const ctx = await context(request, "app");
-        if (request.method === "GET") return json(await deps.apps.list(ctx));
+        if (request.method === "GET") {
+          // Org-owned apps the caller can run (block-actions design §C) join
+          // the personal listing; memberships() degrades to [] when orgs are
+          // unactivated (paid gate). Listings fan out in parallel.
+          const [own, memberships] = await Promise.all([
+            deps.apps.list(ctx),
+            deps.orgs.memberships(ctx.principal),
+          ]);
+          const orgApps = await Promise.all(memberships.map((membership) => deps.apps.list({
+            ...ctx,
+            principal: orgPrincipal(membership.id, membership.name),
+            actor: ctx.principal,
+          })));
+          return json([...own, ...orgApps.flat()]);
+        }
         if (request.method === "POST") {
           const body = await requestJson(request);
           return json(await deps.apps.create({ prompt: string(body["prompt"], "prompt") }, ctx));
@@ -828,7 +1004,17 @@ function createWireHandler(deps: {
       }
       if (head === "apps" && segments.length >= 2) {
         const appId = string(segments[1], "app id");
-        const ctx = await context(request, "app");
+        const baseCtx = await context(request, "app");
+        // Org-owned apps (block-actions design §C): re-contextualize a member's
+        // request onto the org principal (actor = the human, for audit). Reads
+        // and calls are member-level ("run"); every mutation needs an admin
+        // ("manage"). Non-org apps pass through unchanged.
+        const operationName = segments[2];
+        const need: "run" | "manage" = request.method === "GET"
+          || (request.method === "POST" && operationName === "call")
+          ? "run"
+          : "manage";
+        const ctx = await deps.orgs.appContext(baseCtx, appId, need);
         if (segments.length === 2) {
           if (request.method === "GET") {
             const app = await deps.apps.get(appId, ctx);
@@ -840,7 +1026,7 @@ function createWireHandler(deps: {
             return json({});
           }
         }
-        const operation = segments[2];
+        const operation = operationName;
         if (request.method === "GET" && operation === "open" && segments.length === 3) {
           return json(await deps.apps.open(appId, ctx));
         }
@@ -896,8 +1082,15 @@ function createWireHandler(deps: {
         return json(await deps.automations.list(await context(request, "automation")));
       }
       if (head === "automations" && segments.length === 3 && request.method === "POST") {
-        const ctx = await context(request, "automation");
         const appId = string(segments[1], "app id");
+        // Org-owned automations: enabling/disabling is managing (admin-gated
+        // through the same org re-contextualization as app mutations, §C);
+        // dry-run is a read-only preview of a run — member-level, like running.
+        const ctx = await deps.orgs.appContext(
+          await context(request, "automation"),
+          appId,
+          segments[2] === "dry-run" ? "run" : "manage",
+        );
         if (segments[2] === "enable") return json(await deps.automations.enable(appId, ctx));
         if (segments[2] === "disable") {
           await deps.automations.disable(appId, ctx);
@@ -968,6 +1161,10 @@ function createWireHandler(deps: {
             // 04-actions §3 — how per-user connected accounts are brokered:
             // "byo" (host's own Composio key), "cloud" (VENDO_API_KEY), or off.
             connections: deps.connections.posture,
+            // Block-actions design §C — org workspaces are key-gated: "cloud"
+            // when VENDO_API_KEY is set (activation still requires the plan's
+            // `orgs` capability), false otherwise.
+            orgs: deps.orgs.posture,
           },
         });
       }
@@ -1060,6 +1257,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     baseUrl?: string;
     baseUrlTrusted?: boolean;
     onPresentCredentialsNotForwarded: typeof warnPresentCredentialsNotForwarded;
+    invokeTool?: ToolRegistry["execute"];
   } = {
     dir: ".",
     ...(config.connectors === undefined ? {} : { connectors: config.connectors }),
@@ -1098,6 +1296,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     },
   };
   const boundTools = guard.bind(actions);
+  // 04 §6: compound steps route through the guard binding — grants, approvals,
+  // breakers, scanners, and audit see every real call; there is no second
+  // execution path. createActions reads invokeTool at execution time (same
+  // pattern as baseUrl above), so assigning after guard.bind is sound.
+  actionsConfig.invokeTool = (call, ctx) => boundTools.execute(call, ctx);
   const theme = dotVendoTheme();
   const designRules = dotVendoFile("design-rules.md");
   const pinBaselines = dotVendoPinBaselines();
@@ -1151,6 +1354,9 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // connections capability wins (connections must live where its tools
   // execute); with none, VENDO_API_KEY routes to the Vendo Cloud broker.
   const connections = createConnections({ connectors: config.connectors ?? [] });
+  // Block-actions design §C — org workspaces: machinery is OSS, activation is
+  // key-gated via the console's /keys/validate (the `orgs` capability).
+  const orgs = createOrgs({ store });
   // 10-mcp §1 — construct the door from the parts already assembled: the SAME
   // guard-bound registry chat/apps/automations use, the guard (its core seam is
   // what the door holds for auth audit), the store (a StoreAdapter for the door's
@@ -1243,6 +1449,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     apps,
     automations,
     connections,
+    orgs,
     sandbox: sandbox.venue,
     doctor,
     mcp: mcpOptions !== undefined,
@@ -1272,16 +1479,19 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     automations,
     actions,
     connections,
+    orgs,
     store,
   };
 }
 
-/** 09-vendo §2 — adapt the fetch handler to a Next.js catch-all route module. */
+/** 09-vendo §2 — adapt the fetch handler to a Next.js catch-all route module.
+    PATCH joined the wire with the org member role route (ENG-263). */
 export function nextVendoHandler(vendo: Vendo): {
   GET(request: Request): Promise<Response>;
   POST(request: Request): Promise<Response>;
+  PATCH(request: Request): Promise<Response>;
   DELETE(request: Request): Promise<Response>;
 } {
   const handle = (request: Request): Promise<Response> => vendo.handler(request);
-  return { GET: handle, POST: handle, DELETE: handle };
+  return { GET: handle, POST: handle, PATCH: handle, DELETE: handle };
 }
