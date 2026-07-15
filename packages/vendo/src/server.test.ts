@@ -1332,3 +1332,22 @@ describe("02-store §4 default-on encryption composition", () => {
       .rejects.toMatchObject({ code: "not-implemented" });
   });
 });
+
+// ENG-290 M4 — the umbrella mounts the apps machine proxy (06-apps §4.4–4.5) at
+// /proxy/*: the egress route the in-sandbox fetch shim targets exists on the
+// wire and enforces its run-token gate. Substitution mechanics are proven in
+// @vendoai/apps (proxy suites + live lanes); this pins the composition seam.
+describe("the machine proxy mount", () => {
+  it("routes /proxy/egress to the apps proxy, which refuses a request without a run token", async () => {
+    const { vendo } = await setup();
+    const response = await vendo.handler(request("POST", "/proxy/egress", { url: "https://api.stripe.com/v1/charges" }));
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ error: { code: "unauthorized" } });
+  });
+
+  it("routes /proxy/tools/<name> the same way", async () => {
+    const { vendo } = await setup();
+    const response = await vendo.handler(request("POST", "/proxy/tools/host_tool", { args: {} }));
+    expect(response.status).toBe(401);
+  });
+});
