@@ -174,14 +174,29 @@ well-known routes before that second mount.
 
 ## Set VENDO_BASE_URL
 
-Host tools that bind to routes need a base origin. The wire normally learns its
-own origin from the first in-product request, but door requests never teach it
-(only wire routes do). Set `VENDO_BASE_URL` explicitly so door-first traffic can
-still resolve host routes.
+Set `VENDO_BASE_URL` to your product's public origin in every real deployment.
+It does two jobs for the door:
+
+- **Discovery and audience binding.** Behind a reverse proxy (Railway, Fly, any
+  TLS terminator), the request reaching your process carries the proxy-internal
+  origin. The door derives its OAuth discovery documents (issuer, endpoint
+  URLs, the protected-resource `resource`) and its token audience binding from
+  `VENDO_BASE_URL` when set, so clients see your public origin instead of an
+  unreachable internal one. Forwarded headers such as `X-Forwarded-Host` are
+  never trusted. Without it, the door falls back to the request URL, which is
+  fine for local development and wrong behind a proxy.
+- **Route-binding base.** Host tools that bind to routes need a base origin.
+  The wire normally learns its own origin from the first in-product request,
+  but door requests never teach it (only wire routes do); `VENDO_BASE_URL`
+  gives door-first traffic a base to resolve host routes against.
 
 ```bash
 VENDO_BASE_URL=https://app.example.com
 ```
+
+If your composition serves the door on a different origin than the one host
+routes resolve against, pass the door's public base explicitly:
+`createVendo({ mcp: { baseUrl: "https://app.example.com" }, oauth })`.
 
 ## How door calls reach host tools
 

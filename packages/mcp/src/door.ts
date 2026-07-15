@@ -84,6 +84,18 @@ export interface McpDoorConfig {
    * authenticated request teaches it a mount. The umbrella passes its fixed
    * mount so a composed door's card is correct before any traffic arrives. */
   mount?: string;
+  /** 10-mcp §5 — the canonical PUBLIC base URL of the deployed host (e.g.
+   * `https://app.example.com`). Behind a reverse proxy (Railway, Fly, any TLS
+   * terminator) the request URL carries the proxy-INTERNAL origin, so deriving
+   * discovery metadata from it advertises unreachable endpoints and binds the
+   * RFC 8707 audience to the wrong resource. When set, the issuer, every
+   * advertised endpoint, the protected-resource `resource`, the 401 challenge's
+   * metadata URL, and token audience validation all use THIS origin; only the
+   * path still comes from the request (or `mount`). Only the URL's origin is
+   * used — a path on the base URL is ignored. Forwarded headers (X-Forwarded-*,
+   * Host) are attacker-controllable and are never consulted.
+   * The umbrella defaults this from `VENDO_BASE_URL`. */
+  baseUrl?: string;
   /** Trust access tokens from an external OAuth authorization server instead
    * of serving the door's local authorization-server endpoints. */
   remoteAs?: { issuer: string; jwksUri?: string; audience: string };
@@ -125,6 +137,9 @@ class Door {
    * URI, so a stray probe to an odd path can neither poison discovery nor
    * mint authority for the real mount. */
   #cardMount: string | undefined;
+  /** The canonical public origin every advertised URL and audience check uses
+   * when `baseUrl` is configured; undefined → derive from each request URL. */
+  readonly #publicOrigin: string | undefined;
   #identity: Promise<HostIdentity> | undefined;
 
   constructor(config: McpDoorConfig, state: McpDoorState) {
@@ -132,23 +147,32 @@ class Door {
     this.#state = state;
     this.#oauth = new OAuthServer(config);
     this.#remoteAs = config.remoteAs === undefined ? undefined : new RemoteAsVerifier(config.remoteAs);
+    this.#publicOrigin = config.baseUrl === undefined ? undefined : publicOriginOf(config.baseUrl);
+  }
+
+  /** The origin metadata, endpoints, resource URIs, and audience checks derive
+   * from: the configured public base when set, else the request's own URL —
+   * never a forwarded header. */
+  #origin(url: URL): string {
+    return this.#publicOrigin ?? url.origin;
   }
 
   async handler(req: Request): Promise<Response> {
     const url = new URL(req.url);
+    const origin = this.#origin(url);
     const path = url.pathname;
 
     if (path.startsWith(PRM_PREFIX)) {
       if (req.method !== "GET") return notFound();
       return json(protectedResourceMetadata(
-        url.origin,
+        origin,
         path.slice(PRM_PREFIX.length),
         this.#config.remoteAs?.issuer,
       ));
     }
     if (path.startsWith(AS_PREFIX)) {
       if (req.method !== "GET" || this.#config.remoteAs !== undefined) return notFound();
-      return json(authorizationServerMetadata(url.origin, path.slice(AS_PREFIX.length)));
+      return json(authorizationServerMetadata(origin, path.slice(AS_PREFIX.length)));
     }
     if (path === SERVER_CARD_PATH || path === SERVER_CARD_ALIAS_PATH) {
       if (req.method !== "GET") return notFound();
@@ -163,10 +187,10 @@ class Door {
         version: identity.version,
         description: identity.description,
         protocol_versions: ["2025-11-25"],
-        transports: [{ type: "streamable-http", url: resourceUri(url.origin, mount) }],
+        transports: [{ type: "streamable-http", url: resourceUri(origin, mount) }],
         authorization: {
           type: "oauth2",
-          resource_metadata: protectedResourceMetadataUrl(url.origin, mount),
+          resource_metadata: protectedResourceMetadataUrl(origin, mount),
         },
       });
     }
@@ -176,7 +200,7 @@ class Door {
     if (endpoint.kind === "authorize") {
       return this.#config.remoteAs === undefined
         && (req.method === "GET" || (req.method === "POST" && this.#oauth.hasPrebuiltConsent))
-        ? this.#oauth.authorize(req, resourceUri(url.origin, mount))
+        ? this.#oauth.authorize(req, resourceUri(origin, mount))
         : notFound();
     }
     if (endpoint.kind === "token") {
@@ -201,7 +225,7 @@ class Door {
       return req.method === "GET"
         && this.#config.federation !== undefined
         && this.#config.oauth.authorize !== undefined
-        ? handleFederation(req, resourceUri(url.origin, mount), this.#config.federation.secret, this.#config.oauth)
+        ? handleFederation(req, resourceUri(origin, mount), this.#config.federation.secret, this.#config.oauth)
         : notFound();
     }
     if (!["GET", "POST", "DELETE"].includes(req.method)) return notFound();
@@ -209,14 +233,14 @@ class Door {
   }
 
   async #handleMcp(req: Request, mount: string): Promise<Response> {
-    const url = new URL(req.url);
-    const resource = resourceUri(url.origin, mount);
+    const origin = this.#origin(new URL(req.url));
+    const resource = resourceUri(origin, mount);
     await this.#sweepIdleSessions();
     const auth = this.#remoteAs === undefined
       ? await this.#oauth.authenticate(req)
       : await this.#remoteAs.authenticate(req);
     if (!auth || (this.#remoteAs === undefined && !sameCanonicalUri(auth.grant.resource, resource))) {
-      return unauthorized(url.origin, mount, req.headers.has("authorization"));
+      return unauthorized(origin, mount, req.headers.has("authorization"));
     }
 
     const requestedSessionId = req.headers.get("mcp-session-id") ?? undefined;
@@ -238,13 +262,13 @@ class Door {
     if (principal === null) {
       await this.#killSubject(auth.grant.subject);
       await this.#oauth.auditRevoke(auth.grant.subject, auth.grant.clientId);
-      return unauthorized(url.origin, mount, true);
+      return unauthorized(origin, mount, true);
     }
     // 10-mcp §2: anonymous/ephemeral principals are never served a session —
     // the door persists grants and audit and must have a durable subject.
     if (principal.ephemeral === true) {
       await this.#killSubject(auth.grant.subject);
-      return unauthorized(url.origin, mount, true);
+      return unauthorized(origin, mount, true);
     }
     // Only authenticated traffic teaches the server card its mount — an
     // unauthenticated probe to an arbitrary path must not steer discovery. A
@@ -578,6 +602,25 @@ function endpointFor(path: string): {
 function normalizeMount(mount: string): string {
   if (!mount || mount === "/") return "";
   return `/${mount.replace(/^\/+|\/+$/g, "")}`;
+}
+
+/** Reduce the configured base URL to its canonical origin, failing LOUD at
+ * construction — a malformed base silently falling back to request-derived
+ * origins would ship wrong discovery documents to every client. */
+function publicOriginOf(baseUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    throw new TypeError(`baseUrl must be an absolute http(s) URL, got ${JSON.stringify(baseUrl)}`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new TypeError(`baseUrl must be an absolute http(s) URL, got ${JSON.stringify(baseUrl)}`);
+  }
+  if (url.username || url.password) {
+    throw new TypeError("baseUrl cannot contain credentials");
+  }
+  return url.origin;
 }
 
 function resourceUri(origin: string, mount: string): string {

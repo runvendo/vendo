@@ -742,7 +742,7 @@ describe("09 §2 apps composition", () => {
 });
 
 describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H)", () => {
-  async function mcpVendo(): Promise<Vendo> {
+  async function mcpVendo(mcp: boolean | { baseUrl?: string } = true): Promise<Vendo> {
     const dataDir = await mkdtemp(join(tmpdir(), "vendo-door-"));
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
@@ -750,7 +750,7 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
       model: {} as LanguageModel,
       principal: async () => null,
       store,
-      mcp: true,
+      mcp,
       oauth: {
         async authorize() { return { subject: "user_door" }; },
         async principal(subject) { return { kind: "user", subject }; },
@@ -769,6 +769,40 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
     const res = await vendo.handler(root("/.well-known/oauth-protected-resource/api/vendo/mcp"));
     expect(res.status).toBe(200);
     expect((await res.json() as { resource?: string }).resource).toBe("https://host.test/api/vendo/mcp");
+  });
+
+  it("derives door metadata from VENDO_BASE_URL, not the proxy-internal request origin (ENG-333)", async () => {
+    // Behind a reverse proxy (Railway, Fly) the request URL reaching the
+    // process carries the proxy-INTERNAL origin; the operator-set
+    // VENDO_BASE_URL — the same trusted origin channel actions already use —
+    // is what discovery must advertise and what tokens must bind to.
+    vi.stubEnv("VENDO_BASE_URL", "https://app.example.com");
+    const vendo = await mcpVendo();
+    const res = await vendo.handler(new Request(
+      "http://10.0.3.7:8080/.well-known/oauth-protected-resource/api/vendo/mcp",
+    ));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      resource: "https://app.example.com/api/vendo/mcp",
+      authorization_servers: ["https://app.example.com/api/vendo/mcp"],
+    });
+
+    const as = await vendo.handler(new Request(
+      "http://10.0.3.7:8080/.well-known/oauth-authorization-server/api/vendo/mcp",
+    ));
+    expect(await as.json()).toMatchObject({
+      issuer: "https://app.example.com/api/vendo/mcp",
+      token_endpoint: "https://app.example.com/api/vendo/mcp/token",
+    });
+  });
+
+  it("lets mcp.baseUrl override the VENDO_BASE_URL default for split-origin compositions", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "https://host-routes.example.com");
+    const vendo = await mcpVendo({ baseUrl: "https://door.example.com" });
+    const res = await vendo.handler(new Request(
+      "http://10.0.3.7:8080/.well-known/oauth-protected-resource/api/vendo/mcp",
+    ));
+    expect((await res.json() as { resource?: string }).resource).toBe("https://door.example.com/api/vendo/mcp");
   });
 
   it("does NOT route boundary-adjacent or foreign well-known paths to the door", async () => {

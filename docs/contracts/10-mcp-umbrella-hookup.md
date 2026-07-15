@@ -43,6 +43,14 @@ base when a door tool call resolves its route binding; such hosts should set
 `VENDO_BASE_URL` explicitly (it is also the trusted origin credentials forward
 to, so setting it is the right move regardless).
 
+`VENDO_BASE_URL` is also the door's canonical public base (ENG-333): the
+umbrella passes it to `createMcpDoor` as `baseUrl`, so behind a reverse proxy
+the discovery documents, issuer/endpoint URLs, `resource`, and RFC 8707
+audience binding advertise the PUBLIC origin instead of the proxy-internal
+request origin. The additive `mcp: { baseUrl }` form of the flag overrides the
+env default for compositions whose door origin differs from the route-binding
+origin (`mcp: true` is unchanged). Forwarded headers are never trusted.
+
 ## Next.js note
 
 The `/api/vendo/[...]` catch-all cannot see origin-root paths, so

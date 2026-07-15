@@ -105,12 +105,17 @@ async function createUmbrella(
         { match: { risk: "write" }, action: "run" },
       ],
     },
-    mcp: true,
     oauth,
     ...(options.withActAs === false ? {} : { actAs }),
   };
-  const vendo = createVendo(config);
-  const httpServer = createServer((req, res) => void bridge(req, res, vendo.handler));
+  // Listen BEFORE createVendo: the door's canonical public base defaults to
+  // VENDO_BASE_URL (ENG-333), but this fixture deliberately splits origins —
+  // VENDO_BASE_URL points at the fixture HOST APP (route bindings + actAs
+  // credential forwarding), while the door is served on this umbrella's own
+  // loopback origin. Pass that door origin explicitly via mcp.baseUrl so
+  // discovery advertises the URL the SDK client can actually reach.
+  let handler: Vendo["handler"] | undefined;
+  const httpServer = createServer((req, res) => void bridge(req, res, (request) => handler!(request)));
   await new Promise<void>((resolve, reject) => {
     httpServer.once("error", reject);
     httpServer.listen(0, "127.0.0.1", () => {
@@ -121,6 +126,8 @@ async function createUmbrella(
   const address = httpServer.address();
   if (!address || typeof address === "string") throw new Error("umbrella server did not bind a port");
   const origin = `http://127.0.0.1:${address.port}`;
+  const vendo = createVendo({ ...config, mcp: { baseUrl: origin } });
+  handler = vendo.handler;
   const umbrella: Umbrella = {
     vendo,
     origin,
