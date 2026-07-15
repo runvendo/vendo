@@ -5,7 +5,7 @@ import {
   type RiskLabel,
   type ToolDescriptor,
 } from "@vendoai/core";
-import { loadConfig, resolveConsent, type TelemetryConfig } from "@vendoai/telemetry";
+import { envOptOut, loadConfig, type TelemetryConfig } from "@vendoai/telemetry";
 import { cloudFetch } from "./cli/cloud/client.js";
 
 const DEFAULT_DATA_DIR = ".vendo/data";
@@ -199,8 +199,10 @@ export function createCapabilityMissCapture(options: CaptureOptions): Capability
   const apiKey = env.VENDO_API_KEY?.trim();
   let uploader: MissUploader | undefined;
   if (apiKey) {
-    const consent = resolveConsent({ env, optedOut: telemetryConfig.optedOut, runtime: true });
-    if (consent.allowed) {
+    // Contract (01-core §17): upload is gated by the key plus envOptOut only.
+    // The persisted telemetry opt-out and the NODE_ENV fail-close are
+    // product-telemetry-only; a non-empty VENDO_API_KEY is the host's opt-in.
+    if (!envOptOut(env)) {
       uploader = createMissUploader({
         apiKey,
         env,

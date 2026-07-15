@@ -89,7 +89,7 @@ describe("capability-miss Cloud upload", () => {
     expect(capture.hostId).toBe("telemetry-installation-id");
   });
 
-  it("keeps local capture but sends nothing without a key or after telemetry opt-out", async () => {
+  it("keeps local capture but sends nothing without a key", async () => {
     const append = vi.fn(async () => {});
     const fetchImpl = vi.fn<typeof fetch>();
     const noKey = createCapabilityMissCapture({
@@ -99,6 +99,18 @@ describe("capability-miss Cloud upload", () => {
       fetchImpl,
       telemetryConfig: { anonymousId: "host_no_key", optedOut: false },
     });
+
+    noKey.record(event("mis_no_key"));
+    await noKey.flush();
+
+    expect(append).toHaveBeenCalledOnce();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("uploads despite the persisted product-telemetry opt-out (contract: key + envOptOut only)", async () => {
+    const append = vi.fn(async () => {});
+    const fetchImpl = vi.fn(async () =>
+      Response.json({ accepted: 1, duplicates: 0 }, { status: 202 }));
     const optedOut = createCapabilityMissCapture({
       env: { VENDO_API_KEY: "vnd_test", NODE_ENV: "development" },
       surface: Promise.resolve(surface),
@@ -107,12 +119,11 @@ describe("capability-miss Cloud upload", () => {
       telemetryConfig: { anonymousId: "host_opted_out", optedOut: true },
     });
 
-    noKey.record(event("mis_no_key"));
     optedOut.record(event("mis_opted_out"));
-    await Promise.all([noKey.flush(), optedOut.flush()]);
+    await optedOut.flush();
 
-    expect(append).toHaveBeenCalledTimes(2);
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(append).toHaveBeenCalledOnce();
+    expect(fetchImpl).toHaveBeenCalledOnce();
   });
 
   it.each([
@@ -137,9 +148,10 @@ describe("capability-miss Cloud upload", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("fails closed outside development and test runtime environments", async () => {
+  it("uploads in production: NODE_ENV never gates miss upload (contract: key is the opt-in)", async () => {
     const append = vi.fn(async () => {});
-    const fetchImpl = vi.fn<typeof fetch>();
+    const fetchImpl = vi.fn(async () =>
+      Response.json({ accepted: 1, duplicates: 0 }, { status: 202 }));
     const capture = createCapabilityMissCapture({
       env: { VENDO_API_KEY: "vnd_test", NODE_ENV: "production" },
       telemetryConfig: { anonymousId: "host_production", optedOut: false },
@@ -152,7 +164,7 @@ describe("capability-miss Cloud upload", () => {
     await capture.flush();
 
     expect(append).toHaveBeenCalledOnce();
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledOnce();
   });
 
   it("batches events into the exact console request with the canonical enabled surface", async () => {
