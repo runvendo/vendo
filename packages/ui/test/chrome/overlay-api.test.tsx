@@ -23,6 +23,15 @@ describe("VendoOverlay supported entry API", () => {
 
   const dialogQuery = () => screen.queryByRole("dialog", { name: "Vendo assistant" });
 
+  /** Type into the visible composer and send; waits for the streamed reply
+   *  ("Turn complete" — `turns` counts completed replies across the session). */
+  const sendMessage = async (text: string, turns = 1) => {
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    fireEvent.change(composer, { target: { value: text } });
+    fireEvent.keyDown(composer, { key: "Enter" });
+    await waitFor(() => expect(screen.getAllByText("Turn complete")).toHaveLength(turns));
+  };
+
   it("opens uncontrolled via defaultOpen and positions the default launcher", () => {
     render(<VendoProvider client={client}><VendoOverlay defaultOpen /></VendoProvider>);
     expect(dialogQuery()).toBeTruthy();
@@ -147,6 +156,79 @@ describe("VendoOverlay supported entry API", () => {
     fireEvent.keyDown(screen.getByRole("dialog", { name: "Vendo assistant" }), { key: "Escape" });
     // Never dumped on <body>: focus returns to the element that opened it.
     await waitFor(() => expect(document.activeElement).toBe(invoker));
+  });
+
+  it("keeps the conversation across close/reopen instead of discarding it (ENG-221)", async () => {
+    render(<VendoProvider client={client}><VendoOverlay defaultOpen /></VendoProvider>);
+    await sendMessage("remember me");
+    expect(screen.getByText("remember me")).toBeTruthy();
+
+    // Scrim click hides the overlay — it must NOT destroy the thread state.
+    fireEvent.click(document.querySelector(".fl-overlay-scrim")!);
+    expect(dialogQuery()).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Vendo" }));
+    expect(dialogQuery()).toBeTruthy();
+    // The prior conversation is right where the user left it.
+    expect(screen.getByText("remember me")).toBeTruthy();
+    expect(screen.getByText("Turn complete")).toBeTruthy();
+
+    // And the next turn continues the SAME server thread (adopted thr_ id).
+    await sendMessage("still you?", 2);
+    const posts = wire.requests.filter(r => r.method === "POST" && r.path === "/threads");
+    expect(posts).toHaveLength(2);
+    expect((posts[1]!.body as { threadId?: string }).threadId).toBe("thr_minted");
+  });
+
+  it("preserves the conversation across an Escape close too", async () => {
+    render(<VendoProvider client={client}><VendoOverlay defaultOpen /></VendoProvider>);
+    await sendMessage("via escape");
+
+    fireEvent.keyDown(dialogQuery()!, { key: "Escape" });
+    expect(dialogQuery()).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Vendo" }));
+    expect(screen.getByText("via escape")).toBeTruthy();
+    expect(screen.getByText("Turn complete")).toBeTruthy();
+  });
+
+  it("starts a fresh thread via the new-conversation affordance", async () => {
+    render(<VendoProvider client={client}><VendoOverlay defaultOpen /></VendoProvider>);
+    await sendMessage("old thread");
+
+    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
+    // Back to the empty landing: prior messages are gone…
+    expect(screen.queryByText("old thread")).toBeNull();
+    expect(screen.getByText("What can I help you build?")).toBeTruthy();
+
+    // …and the next send does NOT carry the old threadId (server mints a new one).
+    await sendMessage("brand new");
+    const posts = wire.requests.filter(r => r.method === "POST" && r.path === "/threads");
+    expect(posts).toHaveLength(2);
+    expect((posts[1]!.body as { threadId?: string }).threadId).toBeUndefined();
+  });
+
+  it("exposes newConversation through the useVendoOverlay hook (headless parity)", async () => {
+    function Host() {
+      const overlay = useVendoOverlay({ defaultOpen: true });
+      return (
+        <>
+          <button type="button" onClick={overlay.newConversation}>host-new</button>
+          <VendoOverlay {...overlay.overlayProps} launcher="none" />
+        </>
+      );
+    }
+    render(<VendoProvider client={client}><Host /></VendoProvider>);
+    await sendMessage("hook thread");
+
+    fireEvent.click(screen.getByRole("button", { name: "host-new" }));
+    expect(screen.queryByText("hook thread")).toBeNull();
+    expect(screen.getByText("What can I help you build?")).toBeTruthy();
+
+    await sendMessage("hook fresh");
+    const posts = wire.requests.filter(r => r.method === "POST" && r.path === "/threads");
+    expect(posts).toHaveLength(2);
+    expect((posts[1]!.body as { threadId?: string }).threadId).toBeUndefined();
   });
 
   it("skips a display:none restore target instead of swallowing focus", async () => {
