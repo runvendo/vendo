@@ -1,0 +1,54 @@
+# Supabase local stack for the Cadence demo — real email/password auth with
+# zero hosted services. Only the services the demo needs are enabled (GoTrue +
+# Postgres + the API gateway); everything else is off so `supabase start`
+# stays fast in dev and CI. See the README for setup.
+project_id = "demo-accounting"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+
+[db.seed]
+# Seeds the two demo users (supabase/seed.sql) on `supabase start` / `db reset`.
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[realtime]
+enabled = false
+
+[studio]
+enabled = false
+
+[inbucket]
+enabled = false
+
+[storage]
+enabled = false
+
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+# Demo sessions live a day; the app keeps only the access token (no refresh
+# flow), so on expiry the proxy simply bounces back to /login.
+jwt_expiry = 86400
+# Seeded users only — no self-serve signup in the demo. (The email PROVIDER
+# below must stay enabled or password sign-in itself is refused.)
+enable_signup = false
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
