@@ -3,7 +3,7 @@ import { loadConfig, saveConfig } from "./config.js";
 import { maybeShowNotice } from "./notice.js";
 import { createTelemetry, DEFAULT_POSTHOG_KEY, type Telemetry } from "./client.js";
 
-export { resolveConsent } from "./consent.js";
+export { envOptOut, resolveConsent } from "./consent.js";
 export { loadConfig, saveConfig, configPath, type TelemetryConfig } from "./config.js";
 export { EVENT_ALLOWLIST, isAllowedProps, type EventName } from "./events.js";
 export { createTelemetry, DEFAULT_POSTHOG_KEY, type Telemetry } from "./client.js";

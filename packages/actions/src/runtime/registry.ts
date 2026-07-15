@@ -262,6 +262,14 @@ async function actAsAuth(
   grant: PermissionGrant,
   messages: { declined: string; failed: string },
 ): Promise<{ headers: Record<string, string> } | { error: ToolOutcome }> {
+  if (grant.subject !== principal.subject) {
+    return {
+      error: error(
+        "act-as-subject-mismatch",
+        "the captured grant does not belong to the current principal",
+      ),
+    };
+  }
   try {
     const auth = await actAs(principal, grant);
     if (!auth) return { error: error("not-implemented", messages.declined) };

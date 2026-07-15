@@ -25,12 +25,14 @@ import {
   parseModelJson,
   type IncrementalGeneratedTree,
 } from "./incremental-tree.js";
+import { pinComponentName, type PinBaseline } from "./pins.js";
 
 export interface GenerationDependencies {
   model: LanguageModel;
   catalog: ComponentCatalog;
   theme?: VendoTheme;
   designRules?: string;
+  pinBaselines?: readonly PinBaseline[];
   /** 06-apps §5 — additive, optional partial-tree streaming seam. */
   onPartial?: (partial: IncrementalGeneratedTree) => void | Promise<void>;
 }
@@ -86,8 +88,18 @@ const catalogPrompt = (catalog: ComponentCatalog): string => JSON.stringify(
   2,
 );
 
+const pinBaselinesPrompt = (baselines: readonly PinBaseline[] = []): string => JSON.stringify(
+  baselines.map((baseline) => ({
+    slot: baseline.slot,
+    componentName: pinComponentName(baseline.slot),
+    source: baseline.source,
+  })),
+  null,
+  2,
+);
+
 interface GenerationPromptSection {
-  id: "role" | "tree-contract" | "component-styling" | "catalog" | "theme" | "design-rules";
+  id: "role" | "tree-contract" | "component-styling" | "catalog" | "theme" | "design-rules" | "remixable-slots";
   content: string;
 }
 
@@ -130,6 +142,12 @@ const generationPromptSections = (deps: GenerationDependencies): GenerationPromp
 }, {
   id: "design-rules",
   content: `HOST DESIGN RULES:\n${deps.designRules?.trim() || "(none provided)"}`,
+}, {
+  id: "remixable-slots",
+  content: `REMIXABLE HOST SLOTS:
+${pinBaselinesPrompt(deps.pinBaselines)}
+- A remixable slot is captured host source. To start editing it, emit fork-pin with its exact slot, a new nodeId, and an optional parentId/index. The engine copies the trusted captured source into the named generated component, renders that component, and records the baseline pin.
+- After a slot is forked, edit its named generated component with add-component while preserving the pin. Never reproduce or alter a baseline hash yourself.`,
 }];
 
 const formatContract = (deps: GenerationDependencies): string =>
@@ -392,6 +410,7 @@ const reachesNode = (tree: Tree, startId: string, targetId: string): boolean => 
 const applyTreeOps = (
   source: AppDocument,
   ops: TreeOp[],
+  deps: GenerationDependencies,
 ): { app?: AppDocument; issues: string[] } => {
   const app = structuredClone(source);
   if (app.tree?.formatVersion !== "vendo-genui/v1") {
@@ -535,6 +554,44 @@ const applyTreeOps = (
         app.components = { ...(app.components ?? {}), [operation.name]: operation.source };
         break;
       }
+      case "fork-pin": {
+        if (typeof operation.slot !== "string" || operation.slot.length === 0
+          || typeof operation.nodeId !== "string" || operation.nodeId.length === 0) {
+          return issue(index, operation, "requires non-empty slot and nodeId strings");
+        }
+        const unsupported = unsupportedFields(index, operation, ["op", "slot", "nodeId", "parentId", "index", "props"]);
+        if (unsupported !== undefined) return unsupported;
+        if (!validOptionalIndex(operation.index)) return issue(index, operation, "index must be a non-negative integer when present");
+        const baseline = deps.pinBaselines?.find(({ slot }) => slot === operation.slot);
+        if (baseline === undefined) return issue(index, operation, `pin baseline "${operation.slot}" is unavailable`);
+        if (app.pins?.some(({ slot }) => slot === baseline.slot)) {
+          return issue(index, operation, `pin slot "${baseline.slot}" is already forked`);
+        }
+        const componentName = pinComponentName(baseline.slot);
+        if (app.components?.[componentName] !== undefined) {
+          return issue(index, operation, `generated component "${componentName}" already exists`);
+        }
+        if (tree.nodes.some(({ id }) => id === operation.nodeId)) {
+          return issue(index, operation, `node "${operation.nodeId}" already exists`);
+        }
+        const parentId = operation.parentId === undefined ? tree.root : operation.parentId;
+        if (typeof parentId !== "string") return issue(index, operation, "parentId must be a string when present");
+        const parent = tree.nodes.find(({ id }) => id === parentId);
+        if (parent === undefined) return issue(index, operation, `parent "${parentId}" does not exist`);
+        const node: TreeNode = {
+          id: operation.nodeId,
+          component: componentName,
+          source: "generated",
+          ...(isRecord(operation.props)
+            ? { props: structuredClone(operation.props) as TreeNode["props"] }
+            : {}),
+        };
+        tree.nodes.push(node);
+        insertChild(parent, node.id, operation.index);
+        app.components = { ...(app.components ?? {}), [componentName]: baseline.source };
+        app.pins = [...(app.pins ?? []), { slot: baseline.slot, base: baseline.hash }];
+        break;
+      }
       case "set-name": {
         if (typeof operation.name !== "string" || operation.name.trim() === "") {
           return issue(index, operation, "requires a non-empty name");
@@ -673,7 +730,7 @@ const editTree = async (
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const output = await generateJson(
       deps,
-      `${formatContract(deps)}\n\nTREE EDIT DIALECT: emit {"ops":[...]}. Patch the supplied app; do not regenerate it.\nExact op shapes:\n- {"op":"set-prop","nodeId":"...","prop":"...","value":...}\n- {"op":"add-node","node":{"id":"...","component":"...","source":"prewired|host|generated","props":{},"children":[]},"parentId":"...","index":0}\n- {"op":"remove-node","nodeId":"..."}\n- {"op":"move-node","nodeId":"...","parentId":"...","index":0}\n- {"op":"set-query","index":0,"query":{...}|null}\n- {"op":"add-component","name":"PascalCaseName","source":"complete ESM React source"}\n- {"op":"set-name","name":"..."}\n- {"op":"set-description","description":"..."}\nUse nodeId, never id, for existing nodes. Use index, never position or beforeId. Attach every added visible node with parentId, never add the existing root again, preserve all component sources not intentionally replaced, and never leave the rooted view empty.`,
+      `${formatContract(deps)}\n\nTREE EDIT DIALECT: emit {"ops":[...]}. Patch the supplied app; do not regenerate it.\nExact op shapes:\n- {"op":"set-prop","nodeId":"...","prop":"...","value":...}\n- {"op":"add-node","node":{"id":"...","component":"...","source":"prewired|host|generated","props":{},"children":[]},"parentId":"...","index":0}\n- {"op":"remove-node","nodeId":"..."}\n- {"op":"move-node","nodeId":"...","parentId":"...","index":0}\n- {"op":"set-query","index":0,"query":{...}|null}\n- {"op":"add-component","name":"PascalCaseName","source":"complete ESM React source"}\n- {"op":"fork-pin","slot":"exact remixable slot","nodeId":"newNodeId","parentId":"...","index":0,"props":{}}\n- {"op":"set-name","name":"..."}\n- {"op":"set-description","description":"..."}\nUse nodeId, never id, for existing nodes. Use index, never position or beforeId. Attach every added visible node with parentId, never add the existing root again, preserve all component sources not intentionally replaced, and never leave the rooted view empty.`,
       `TASK: EDIT_TREE\nINSTRUCTION: ${input.instruction}\nCURRENT_APP: ${JSON.stringify(input.app)}${repairPrompt(issues)}`,
     );
     issues = distinctIssues(issues, output.issues);
@@ -681,7 +738,7 @@ const editTree = async (
       const parsed = treeOpsFrom(output.value);
       issues = distinctIssues(issues, parsed.issues);
       if (parsed.ops !== undefined) {
-        const applied = applyTreeOps(input.app, parsed.ops);
+        const applied = applyTreeOps(input.app, parsed.ops, deps);
         issues = distinctIssues(issues, applied.issues);
         if (applied.app !== undefined) {
           const validationIssues = await validateEditedApp(applied.app, deps, input.app);

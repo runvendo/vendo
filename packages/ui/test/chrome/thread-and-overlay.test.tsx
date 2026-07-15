@@ -61,11 +61,11 @@ describe("VendoThread and VendoOverlay exports", () => {
     fireEvent.click(launcher);
     const dialog = screen.getByRole("dialog", { name: "Vendo assistant" });
     const close = await screen.findByRole("button", { name: "Close Vendo" });
-    await waitFor(() => expect(document.activeElement).toBe(close));
+    // ENG-220: initial focus lands in the composer, not on the close button.
+    const textarea = screen.getByRole("textbox", { name: "Message" });
+    await waitFor(() => expect(document.activeElement).toBe(textarea));
     expect(launcher.getAttribute("aria-expanded")).toBe("true");
 
-    const textarea = screen.getByRole("textbox", { name: "Message" });
-    textarea.focus();
     fireEvent.keyDown(dialog, { key: "Tab" });
     expect(document.activeElement).toBe(close);
     fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
