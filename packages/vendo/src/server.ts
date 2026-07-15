@@ -26,6 +26,7 @@ import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } fro
 import { createStore, envSecrets, registerEphemeralSubject, type VendoStore } from "@vendoai/store";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
+import { createRuntimeCapture, type RuntimeCaptureHandler } from "./runtime-capture.js";
 
 const VERSION = "0.3.0";
 const BASE_PATH = "/api/vendo";
@@ -64,6 +65,10 @@ export interface CreateVendoConfig {
   judge?: Judge;
   secrets?: SecretsProvider;
   telemetry?: boolean;
+  /** Development-only source capture. NODE_ENV=development enables this with
+      cwd/.vendo defaults; an explicit object supplies a host root for adapters
+      whose process cwd differs. `false` disables the environment default. */
+  development?: boolean | { root?: string; out?: string };
   /** 10-mcp §1 — the one flag: open the MCP door so outside agents (Claude,
       ChatGPT, Cursor) reach the host's tools through the SAME guard-bound path.
       Opening it is a host decision (10-mcp §2), so it is off by default. */
@@ -372,6 +377,7 @@ function createWireHandler(deps: {
   automations: AutomationsEngine;
   mcp: boolean;
   door?: McpDoor;
+  runtimeCapture?: RuntimeCaptureHandler;
   onRequestOrigin?: (origin: string) => void;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
@@ -451,6 +457,22 @@ function createWireHandler(deps: {
         throw new VendoError("validation", "content-type must be application/json");
       }
       await deps.ready;
+
+      // This dispatch exists only in a development composition. Production
+      // handlers receive no runtimeCapture dependency and fall through to the
+      // ordinary 404, so there is no guarded-but-mounted production endpoint.
+      if (deps.runtimeCapture !== undefined && request.method === "POST" && path === "/dev/remixable-source") {
+        const body = await requestJson(request);
+        await context(request, "app");
+        if (typeof body["exportable"] !== "boolean") {
+          throw new VendoError("validation", "exportable must be a boolean");
+        }
+        return json(await deps.runtimeCapture.capture({
+          slot: string(body["slot"], "slot"),
+          source: string(body["source"], "source"),
+          exportable: body["exportable"],
+        }));
+      }
 
       if (request.method === "POST" && path.startsWith("/webhooks/")) {
         return await deps.automations.webhook(request);
@@ -793,6 +815,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       return false;
     }
   })();
+  const explicitDevelopment = config.development !== undefined && config.development !== false;
+  const development = explicitDevelopment
+    || (config.development !== false && environment("NODE_ENV") === "development");
+  const developmentPaths = typeof config.development === "object" ? config.development : {};
+  const runtimeCapture = development ? createRuntimeCapture(developmentPaths) : null;
   const handler = createWireHandler({
     principal: config.principal,
     ready,
@@ -807,6 +834,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     automations,
     mcp: config.mcp === true,
     ...(door === undefined ? {} : { door }),
+    ...(runtimeCapture === null ? {} : { runtimeCapture }),
     onRequestOrigin: (origin) => {
       // Same-origin default for route-binding execution (04): no VENDO_BASE_URL
       // → the wire's own origin, learned from the first VALIDATED request and

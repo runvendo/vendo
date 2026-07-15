@@ -209,7 +209,7 @@ describe("vendo init", () => {
     const overrides = JSON.parse(await readFile(join(root, ".vendo", "overrides.json"), "utf8"));
     const tools = JSON.parse(await readFile(join(root, ".vendo", "tools.json"), "utf8"));
     const policy = JSON.parse(await readFile(join(root, ".vendo", "policy.json"), "utf8"));
-    expect(overrides).toEqual({ format: "vendo/overrides@1", tools: {} });
+    expect(overrides).toEqual({ format: "vendo/overrides@1", tools: {}, remix: { ignoreSlots: [] } });
     expect(tools).toMatchObject({ format: "vendo/tools@1", tools: [] });
     expect(policy).toMatchObject({ format: "vendo/policy@1" });
     expect(await readFile(join(root, ".vendo", "data", ".gitignore"), "utf8")).toBe("*\n!.gitignore\n");
@@ -311,7 +311,11 @@ describe("vendo init", () => {
     expect(await readFile(join(root, ".vendo", "brief.md"), "utf8"))
       .toBe("A billing product for finance teams.\n");
     expect(JSON.parse(await readFile(join(root, ".vendo", "overrides.json"), "utf8")))
-      .toEqual({ format: "vendo/overrides@1", tools: { host_invoices_send: { critical: true } } });
+      .toEqual({
+        format: "vendo/overrides@1",
+        tools: { host_invoices_send: { critical: true } },
+        remix: { ignoreSlots: [] },
+      });
   });
 
   it("guides an explicitly opened MCP door without generating registry-auth routes", async () => {

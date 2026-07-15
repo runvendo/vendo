@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { sha256Hex } from "@vendoai/core";
+import { init, parse } from "es-module-lexer";
 import type { ExtractedTool, HttpMethod } from "../formats.js";
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"] as const;
@@ -18,6 +19,11 @@ interface TsconfigPathAlias {
 export interface ResolvedSource {
   file: string;
   source: string;
+}
+
+export interface ImportReference {
+  specifier: string;
+  imported: string;
 }
 
 const aliasCache = new Map<string, Promise<TsconfigPathAlias[]>>();
@@ -160,34 +166,271 @@ function candidates(base: string): string[] {
   ];
 }
 
-export async function resolveImportSource(importer: string, specifier: string, root: string): Promise<ResolvedSource | null> {
+export function isInside(root: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+async function resolvedCandidate(base: string, realRoot: string): Promise<ResolvedSource | null> {
+  for (const candidate of candidates(base)) {
+    if (candidate.split(path.sep).includes("node_modules")) continue;
+    let realCandidate: string;
+    try {
+      realCandidate = await fs.realpath(candidate);
+    } catch {
+      continue;
+    }
+    if (!isInside(realRoot, realCandidate)) continue;
+    try {
+      return { file: realCandidate, source: await fs.readFile(realCandidate, "utf8") };
+    } catch {
+      // Try the next source-owned candidate.
+    }
+  }
+  return null;
+}
+
+function namedBindings(statement: string): Array<{ imported: string; exported: string }> {
+  const body = statement.match(/\{([\s\S]*?)\}/)?.[1];
+  if (body === undefined) return [];
+  return body.split(",").flatMap((raw) => {
+    const part = raw.trim().replace(/^type\s+/, "");
+    if (part === "") return [];
+    const pieces = part.split(/\s+as\s+/).map((value) => value.trim());
+    const imported = pieces[0];
+    const exported = pieces[1] ?? imported;
+    return imported && exported ? [{ imported, exported }] : [];
+  });
+}
+
+interface ModuleImport {
+  statement: string;
+  specifier: string;
+}
+
+function fallbackModuleStatements(source: string): string[] {
+  const statements: string[] = [];
+  let quote: "'" | "\"" | "`" | null = null;
+  let escaped = false;
+  let lineComment = false;
+  let blockComment = false;
+  let depth = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index]!;
+    const next = source[index + 1];
+    if (lineComment) {
+      if (character === "\n") lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (character === "*" && next === "/") {
+        blockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === "/" && next === "/") {
+      lineComment = true;
+      index += 1;
+      continue;
+    }
+    if (character === "/" && next === "*") {
+      blockComment = true;
+      index += 1;
+      continue;
+    }
+    if (character === "'" || character === "\"" || character === "`") {
+      quote = character;
+      continue;
+    }
+    if (character === "{" || character === "(" || character === "[") depth += 1;
+    else if (character === "}" || character === ")" || character === "]") depth = Math.max(0, depth - 1);
+    if (depth !== 0) continue;
+    const keyword = source.startsWith("import", index) ? "import"
+      : source.startsWith("export", index) ? "export"
+      : undefined;
+    if (!keyword || /[\w$]/.test(source[index - 1] ?? "") || /[\w$]/.test(source[index + keyword.length] ?? "")) continue;
+
+    let localDepth = 0;
+    let localQuote: "'" | "\"" | "`" | null = null;
+    let localEscaped = false;
+    let end = source.length;
+    for (let cursor = index; cursor < source.length; cursor += 1) {
+      const value = source[cursor]!;
+      if (localQuote) {
+        if (localEscaped) localEscaped = false;
+        else if (value === "\\") localEscaped = true;
+        else if (value === localQuote) localQuote = null;
+        continue;
+      }
+      if (value === "'" || value === "\"" || value === "`") {
+        localQuote = value;
+        continue;
+      }
+      if (value === "{" || value === "(" || value === "[") localDepth += 1;
+      else if (value === "}" || value === ")" || value === "]") localDepth = Math.max(0, localDepth - 1);
+      if (value === ";" && localDepth === 0) {
+        end = cursor;
+        break;
+      }
+      if (value === "\n" && localDepth === 0) {
+        const candidate = source.slice(index, cursor);
+        if (/\bfrom\s*["'][^"']+["']/.test(candidate)
+            || /^import\s*["'][^"']+["']/.test(candidate)
+            || /^export\s+(?:default\s+)?(?:async\s+)?(?:function|class|const|let|var)\b/.test(candidate)) {
+          end = cursor;
+          break;
+        }
+      }
+    }
+    statements.push(source.slice(index, end).trim());
+    index = end;
+  }
+  return statements;
+}
+
+async function lexModule(source: string): Promise<{ imports: ModuleImport[]; exports: Set<string> }> {
+  await init;
+  try {
+    const [imports, exports] = parse(source);
+    return {
+      imports: imports.flatMap((item) => item.d === -1 && item.n !== undefined
+        ? [{ statement: source.slice(item.ss, item.se).trim(), specifier: item.n }]
+        : []),
+      exports: new Set(exports.map((item) => item.n)),
+    };
+  } catch {
+    const statements = fallbackModuleStatements(source);
+    const imports = statements.flatMap((statement) => {
+      const specifier = statement.match(/\bfrom\s*["']([^"']+)["']/)?.[1]
+        ?? statement.match(/^import\s*["']([^"']+)["']/)?.[1];
+      return specifier ? [{ statement, specifier }] : [];
+    });
+    const exports = new Set<string>();
+    for (const statement of statements) {
+      const declaration = statement.match(/^export\s+(?:default\s+)?(?:async\s+)?(?:function|class|const|let|var)\s+([A-Za-z_$][\w$]*)/)?.[1];
+      if (declaration) exports.add(declaration);
+      if (/^export\s+default\b/.test(statement)) exports.add("default");
+      if (/^export\s*\{/.test(statement)) {
+        for (const binding of namedBindings(statement)) exports.add(binding.exported);
+      }
+    }
+    return { imports, exports };
+  }
+}
+
+async function reExportTarget(source: string, exportedName: string): Promise<{
+  direct: boolean;
+  named?: { specifier: string; imported: string };
+  stars: string[];
+}> {
+  const module = await lexModule(source);
+  const stars: string[] = [];
+  for (const imported of module.imports) {
+    const statement = imported.statement;
+    if (!statement.startsWith("export")) continue;
+    if (/^export\s*\*/.test(statement)) {
+      stars.push(imported.specifier);
+      continue;
+    }
+    const binding = namedBindings(statement).find((item) => item.exported === exportedName);
+    if (binding) return { direct: false, named: { specifier: imported.specifier, imported: binding.imported }, stars };
+  }
+  return {
+    direct: module.exports.has(exportedName),
+    stars,
+  };
+}
+
+async function importBases(importer: string, specifier: string, root: string): Promise<string[]> {
   const bases: string[] = [];
   if (specifier.startsWith("@/")) bases.push(path.join(root, specifier.slice(2)));
   else if (specifier.startsWith(".")) bases.push(path.resolve(path.dirname(importer), specifier));
   else {
     for (const alias of await aliasesFor(root)) bases.push(...aliasBases(specifier, alias));
   }
+  return bases;
+}
+
+async function resolveImportedSource(
+  importer: string,
+  specifier: string,
+  root: string,
+  importedName: string,
+  realRoot: string,
+  seen: Set<string>,
+): Promise<ResolvedSource | null> {
+  const key = `${path.resolve(importer)}\0${specifier}\0${importedName}`;
+  if (seen.has(key)) return null;
+  seen.add(key);
+
+  const bases = await importBases(importer, specifier, root);
   for (const base of bases) {
-    for (const candidate of candidates(base)) {
-      if (candidate.split(path.sep).includes("node_modules")) continue;
-      try {
-        return { file: candidate, source: await fs.readFile(candidate, "utf8") };
-      } catch {
-        // Try the next source-owned candidate.
-      }
+    const resolved = await resolvedCandidate(base, realRoot);
+    if (!resolved) continue;
+    const target = await reExportTarget(resolved.source, importedName);
+    if (target.named) {
+      const followed = await resolveImportedSource(
+        resolved.file,
+        target.named.specifier,
+        root,
+        target.named.imported,
+        realRoot,
+        seen,
+      );
+      if (followed) return followed;
     }
+    if (target.direct || importedName === "default") return resolved;
+    for (const star of target.stars) {
+      const followed = await resolveImportedSource(resolved.file, star, root, importedName, realRoot, seen);
+      if (followed) return followed;
+    }
+    return resolved;
   }
   return null;
 }
 
-export function importSpecifierFor(source: string, localName: string): string | undefined {
-  for (const match of source.matchAll(/import\s+([A-Za-z_$][\w$]*)\s+from\s+["']([^"']+)["']/g)) {
-    if (match[1] === localName) return match[2];
+export async function resolveImportSource(
+  importer: string,
+  specifier: string,
+  root: string,
+  importedName = "default",
+): Promise<ResolvedSource | null> {
+  let realRoot: string;
+  try {
+    realRoot = await fs.realpath(root);
+  } catch {
+    return null;
   }
-  for (const match of source.matchAll(/import\s*\{([^}]+)\}\s*from\s+["']([^"']+)["']/g)) {
-    for (const part of (match[1] ?? "").split(",")) {
-      const [imported, alias] = part.trim().split(/\s+as\s+/).map((value) => value.trim());
-      if ((alias || imported) === localName) return match[2];
+  return resolveImportedSource(importer, specifier, root, importedName, realRoot, new Set());
+}
+
+export async function importReferenceFor(source: string, localExpression: string): Promise<ImportReference | undefined> {
+  const module = await lexModule(source);
+  const [localName, namespaceMember] = localExpression.split(".", 2);
+  if (!localName) return undefined;
+  for (const imported of module.imports) {
+    const statement = imported.statement;
+    const clause = statement.match(/^import\s+(?:type\s+)?([\s\S]*?)\s+from\b/)?.[1]?.trim();
+    if (!clause) continue;
+    const namespace = clause.match(/(?:^|,)\s*\*\s+as\s+([A-Za-z_$][\w$]*)\s*$/)?.[1];
+    if (namespace === localName && namespaceMember) {
+      return { specifier: imported.specifier, imported: namespaceMember };
+    }
+    for (const binding of namedBindings(clause)) {
+      if (binding.exported === localName && namespaceMember === undefined) {
+        return { specifier: imported.specifier, imported: binding.imported };
+      }
+    }
+    const defaultBinding = clause.split(",", 1)[0]?.trim();
+    if (defaultBinding === localName && namespaceMember === undefined) {
+      return { specifier: imported.specifier, imported: "default" };
     }
   }
   return undefined;

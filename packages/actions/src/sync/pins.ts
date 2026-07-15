@@ -1,9 +1,15 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { sha256Hex } from "@vendoai/core";
-import { capturedPinBaselineSchema, type CapturedPinBaseline } from "../formats.js";
 import {
-  importSpecifierFor,
+  capturedPinBaselineSchema,
+  type CapturedPinBaseline,
+  type UnresolvedPin,
+  type UnresolvedPinReason,
+} from "../formats.js";
+import {
+  importReferenceFor,
+  isInside,
   resolveImportSource,
   splitTopLevel,
   topLevelObjectLiteral,
@@ -19,20 +25,23 @@ interface PinRegistration {
 export interface PinCaptureResult {
   captured: string[];
   drifted: string[];
+  unresolved: UnresolvedPin[];
   warnings: string[];
 }
 
-function registrationFromBody(body: string): PinRegistration | null {
+const RUNTIME_CAPTURE_HINT = "run the host in dev with Vendo mounted to runtime-capture it";
+
+function registrationFromBody(body: string, helperMarked: boolean): PinRegistration | null {
   let slot: string | undefined;
   let component: string | undefined;
-  let remixable = false;
+  let remixable = helperMarked;
   let exportable = false;
   for (const rawField of splitTopLevel(body)) {
     const field = rawField.trim();
     const nameMatch = field.match(/^(?:["']name["']|name)\s*:\s*["']([^"']+)["']\s*$/s);
     if (nameMatch?.[1]) slot = nameMatch[1];
-    const componentMatch = field.match(/^(?:["']component["']|component)\s*:\s*([A-Za-z_$][\w$]*)\s*$/s);
-    if (componentMatch?.[1]) component = componentMatch[1];
+    const componentMatch = field.match(/^(?:["']component["']|component)\s*:\s*(.+)$/s);
+    if (componentMatch?.[1]) component = componentMatch[1].trim();
     if (/^(?:["']remixable["']|remixable)\s*:\s*true\s*$/s.test(field)) remixable = true;
     if (/^(?:["']exportable["']|exportable)\s*:\s*true\s*$/s.test(field)) exportable = true;
   }
@@ -45,15 +54,11 @@ function registrations(source: string): PinRegistration[] {
     if (source[index] !== "{") continue;
     const body = topLevelObjectLiteral(source, index);
     if (!body) continue;
-    const registration = registrationFromBody(body);
+    const helperMarked = /\bremixable\s*\(\s*$/.test(source.slice(Math.max(0, index - 80), index));
+    const registration = registrationFromBody(body, helperMarked);
     if (registration) found.push(registration);
   }
   return found;
-}
-
-function isInside(root: string, candidate: string): boolean {
-  const relative = path.relative(path.resolve(root), path.resolve(candidate));
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 async function readExisting(file: string): Promise<{ exists: boolean; baseline: CapturedPinBaseline | null }> {
@@ -70,8 +75,25 @@ async function readExisting(file: string): Promise<{ exists: boolean; baseline: 
   }
 }
 
-export async function capturePins(root: string, out: string): Promise<PinCaptureResult> {
-  const result: PinCaptureResult = { captured: [], drifted: [], warnings: [] };
+async function hasCapturedBaseline(file: string, slot: string): Promise<boolean> {
+  const existing = await readExisting(file);
+  return existing.baseline?.slot === slot;
+}
+
+function unresolved(
+  registration: PinRegistration,
+  reason: UnresolvedPinReason,
+  hint: string,
+): UnresolvedPin {
+  return { slot: registration.slot, component: registration.component, reason, hint };
+}
+
+export async function capturePins(
+  root: string,
+  out: string,
+  ignoreSlots: ReadonlySet<string> = new Set(),
+): Promise<PinCaptureResult> {
+  const result: PinCaptureResult = { captured: [], drifted: [], unresolved: [], warnings: [] };
   const realRoot = await fs.realpath(root);
   const files = await walk(root, (relativePath) => /\.(?:ts|tsx)$/.test(relativePath) && !/\.d\.ts$/.test(relativePath));
   const seenSlots = new Set<string>();
@@ -85,30 +107,70 @@ export async function capturePins(root: string, out: string): Promise<PinCapture
         continue;
       }
       seenSlots.add(registration.slot);
-      const specifier = importSpecifierFor(source, registration.component);
-      if (!specifier) {
-        result.warnings.push(`remixable slot ${registration.slot} component ${registration.component} is not a resolvable import`);
+      if (ignoreSlots.has(registration.slot)) continue;
+      const baselineFile = path.resolve(remixableDir, `${registration.slot}.json`);
+      if (!isInside(remixableDir, baselineFile)) {
+        result.unresolved.push(unresolved(
+          registration,
+          "unsafe-slot",
+          "rename the slot so it is a safe filename before capturing it",
+        ));
         continue;
       }
-      const resolved = await resolveImportSource(file, specifier, root);
+      const fallbackPresent = async (): Promise<boolean> => hasCapturedBaseline(baselineFile, registration.slot);
+      if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?$/.test(registration.component)) {
+        if (!await fallbackPresent()) {
+          result.unresolved.push(unresolved(
+            registration,
+            "inline-component",
+            `use an imported component or ${RUNTIME_CAPTURE_HINT}`,
+          ));
+        }
+        continue;
+      }
+      const reference = await importReferenceFor(source, registration.component);
+      if (!reference) {
+        if (!await fallbackPresent()) {
+          result.unresolved.push(unresolved(
+            registration,
+            "component-not-imported",
+            `use a static import or ${RUNTIME_CAPTURE_HINT}`,
+          ));
+        }
+        continue;
+      }
+      const resolved = await resolveImportSource(file, reference.specifier, root, reference.imported);
       if (!resolved) {
-        result.warnings.push(`remixable slot ${registration.slot} component import ${specifier} could not be resolved`);
+        if (!await fallbackPresent()) {
+          result.unresolved.push(unresolved(
+            registration,
+            "import-not-found",
+            `fix the import path or ${RUNTIME_CAPTURE_HINT}`,
+          ));
+        }
         continue;
       }
       let realResolved: string;
       try {
         realResolved = await fs.realpath(resolved.file);
       } catch {
-        result.warnings.push(`remixable slot ${registration.slot} component source could not be resolved safely`);
+        if (!await fallbackPresent()) {
+          result.unresolved.push(unresolved(
+            registration,
+            "unsafe-source",
+            `keep the component source inside the host root or ${RUNTIME_CAPTURE_HINT}`,
+          ));
+        }
         continue;
       }
       if (!isInside(realRoot, realResolved)) {
-        result.warnings.push(`remixable slot ${registration.slot} resolves outside the host root and was not captured`);
-        continue;
-      }
-      const baselineFile = path.resolve(remixableDir, `${registration.slot}.json`);
-      if (!isInside(remixableDir, baselineFile)) {
-        result.warnings.push(`remixable slot ${registration.slot} is not a safe baseline filename and was not captured`);
+        if (!await fallbackPresent()) {
+          result.unresolved.push(unresolved(
+            registration,
+            "unsafe-source",
+            `keep the component source inside the host root or ${RUNTIME_CAPTURE_HINT}`,
+          ));
+        }
         continue;
       }
       const hash = `sha256:${sha256Hex(resolved.source)}`;
@@ -128,5 +190,6 @@ export async function capturePins(root: string, out: string): Promise<PinCapture
   }
   result.captured.sort();
   result.drifted.sort();
+  result.unresolved.sort((left, right) => left.slot.localeCompare(right.slot));
   return result;
 }

@@ -103,11 +103,15 @@ export const toolOverrideSchema = z.object({
 export interface OverridesFile {
   format: typeof VENDO_OVERRIDES_FORMAT;
   tools: Record<string, ToolOverride>;
+  remix?: { ignoreSlots: string[] };
 }
 
 export const overridesFileSchema = z.object({
   format: z.literal(VENDO_OVERRIDES_FORMAT),
   tools: z.record(toolOverrideSchema),
+  remix: z.object({
+    ignoreSlots: z.array(z.string().min(1)),
+  }).strict().optional(),
 }).strict() satisfies z.ZodType<OverridesFile>;
 
 /**
@@ -121,6 +125,21 @@ export interface CapturedPinBaseline {
   hash: string;                    // "sha256:..." of source
   exportable: boolean;
   capturedAt: string;              // IsoDateTime
+}
+
+/** Machine-readable reason a remixable registration needs runtime capture. */
+export type UnresolvedPinReason =
+  | "inline-component"
+  | "component-not-imported"
+  | "import-not-found"
+  | "unsafe-source"
+  | "unsafe-slot";
+
+export interface UnresolvedPin {
+  slot: string;
+  component: string;
+  reason: UnresolvedPinReason;
+  hint: string;
 }
 
 export const capturedPinBaselineSchema = z.object({

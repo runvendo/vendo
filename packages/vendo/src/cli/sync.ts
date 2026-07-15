@@ -22,6 +22,13 @@ export async function runSync(options: SyncOptions): Promise<number> {
     for (const warning of report.warnings) output.error(`warning: ${warning}`);
     output.log(`tools: +${report.tools.added.length} -${report.tools.removed.length} ~${report.tools.changed.length}`);
     output.log(`pins: ${report.pins.captured.length} captured, ${report.pins.drifted.length} drifted`);
+    if (report.unresolvedPins.length > 0) {
+      output.error("unresolved remixable slots:");
+      for (const pin of report.unresolvedPins) {
+        output.error(`  ${pin.slot} [${pin.reason}]: ${pin.hint}`);
+      }
+      return 2;
+    }
     if (options.strict === true && report.breaking.length > 0) {
       for (const breaking of report.breaking) output.error(`breaking: ${breaking.tool} ${breaking.change}`);
       return 2;

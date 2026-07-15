@@ -38,3 +38,4 @@ export type { VendoClient, VendoClientConfig } from "@vendoai/ui";
 // umbrella-internal — the Vendo interface exposes no `mcp` handle (09 §2) — so
 // only this host-facing seam belongs on the root.
 export type { HostOAuthAdapter } from "@vendoai/mcp";
+export { remixable, type RemixableRegistration, type RemixableReportOptions } from "./remixable.js";
