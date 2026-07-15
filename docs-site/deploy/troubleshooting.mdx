@@ -38,9 +38,11 @@ Every non-2xx response uses `{ "error": { "code", "message" } }`.
   auth. `vendo doctor` catches this before you ship — see below.
 - Away host API calls require `actAs` and an app-bound grant that was
   captured while the user was present. See
-  [actAs presets](/connect/act-as-presets) for provider wiring; grants that
-  don't match the current principal fail closed with
-  `act-as-subject-mismatch`.
+  [actAs presets](/connect/act-as-presets) for provider wiring. If `actAs`
+  returns `null` for a run, the step fails closed, the run terminates, and
+  nothing reaches the host API. Each attempt is audited with its disposition
+  (`minted`, `declined`, `mismatch`, or `error`); grants that don't match the
+  current principal fail closed with `act-as-subject-mismatch`.
 - Cookie-authenticated mutations require `Content-Type: application/json`.
 - `/tick` requires the configured bearer secret.
 - Webhook verification uses the raw body and delivery headers.
