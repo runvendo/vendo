@@ -149,6 +149,47 @@ describe("StoreAdapter conformance", () => {
     expect(listed.records.map((record) => record.id)).toEqual(["third", "second", "first"]);
     expect(listed.records.some((record) => "seq" in record)).toBe(false);
   });
+
+  it("memoryStoreAdapter atomic writes enforce absence and revision guards", async () => {
+    const records = memoryStoreAdapter().records("atomic");
+    const input = {
+      id: "atomic_1",
+      data: { status: "draft", nested: { count: 1 } },
+      refs: { owner: "user_1" },
+    };
+
+    const inserted = await records.atomic.insertIfAbsent(input);
+    expect(inserted).toMatchObject({
+      id: input.id,
+      data: input.data,
+      refs: input.refs,
+      revision: "1",
+    });
+    expect(await records.atomic.insertIfAbsent({ ...input, data: { status: "duplicate" } })).toBeNull();
+    expect(await records.atomic.compareAndSwap({ id: "missing", data: {} }, "1")).toBeNull();
+    expect(await records.atomic.compareAndSwap({ ...input, data: { status: "wrong revision" } }, "0")).toBeNull();
+
+    input.data.nested.count = 2;
+    input.refs.owner = "mutated";
+    expect(await records.get(input.id)).toMatchObject({
+      data: { status: "draft", nested: { count: 1 } },
+      refs: { owner: "user_1" },
+    });
+
+    const swapped = await records.atomic.compareAndSwap({
+      id: input.id,
+      data: { status: "published" },
+      refs: { owner: "user_2" },
+    }, "1");
+    expect(swapped).toMatchObject({
+      id: input.id,
+      data: { status: "published" },
+      refs: { owner: "user_2" },
+      revision: "2",
+      createdAt: inserted?.createdAt,
+    });
+    expect(await records.get(input.id)).toEqual(swapped);
+  });
 });
 
 describe("ToolRegistry conformance", () => {
@@ -254,6 +295,12 @@ describe("host seam conformance", () => {
 
   it("accepts a scripted AgentRunner that executes the supplied echo registry", async () => {
     const runner: AgentRunner = async (task, runContext) => {
+      expect(await task.tools.descriptors()).toEqual([{
+        name: "conformance_echo",
+        description: "Echo conformance input",
+        inputSchema: { type: "object" },
+        risk: "read",
+      }]);
       const call: ToolCall = { id: "call_echo", tool: "conformance_echo", args: { ping: true } };
       const outcome = await task.tools.execute(call, runContext);
       return {

@@ -90,6 +90,7 @@ export function createRunner(config: RunnerConfig): AgentRunner {
         tools,
         stopWhen: [stepCountIs(cap), toolCallCap],
         maxOutputTokens: config.context?.maxOutputTokens,
+        abortSignal: task.abortSignal,
       });
       const status = refusedCall || (result.finishReason === "tool-calls" && recorded.length >= cap)
         ? "stopped"
@@ -100,9 +101,10 @@ export function createRunner(config: RunnerConfig): AgentRunner {
         toolCalls: recorded,
       };
     } catch {
+      const stopped = task.abortSignal?.aborted === true;
       report = {
-        status: "error",
-        summary: fallbackSummary("error", recorded),
+        status: stopped ? "stopped" : "error",
+        summary: stopped ? "The run was stopped." : fallbackSummary("error", recorded),
         toolCalls: recorded,
       };
     }

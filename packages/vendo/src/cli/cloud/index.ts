@@ -27,7 +27,7 @@ User commands:
   billing --org <id>                   Show billing status
 
 Machine commands:
-  validate                              Validate a key and show entitlements
+  validate [--json]                     Validate a key and show plan, capabilities, and quota
   deploy [--app <id>] [--secret NAME=VALUE]
                                         Deploy local enabled automations to the hosted instance
   share <appfile.json>                  Create a ShareSnapshot

@@ -7,6 +7,7 @@ import type {
   ToolDescriptor,
   ToolOutcome,
   ToolRegistry,
+  VendoTheme,
 } from "@vendoai/core";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -68,12 +69,15 @@ export interface McpDoorConfig {
   tools: ToolRegistry;
   /** Audit reporting for auth events (§3); tool decisions happen inside the bound registry. */
   guard: Guard;
-  /** §3 — two functions; the host owns identity + consent, the door owns the protocol. */
+  /** §3 — the host owns session/principal lookup; the door can own consent too. */
   oauth: HostOAuthAdapter;
   /** Door-owned protocol state (clients, codes, refresh grants) — wired like every other block. */
   store: StoreAdapter;
   /** §4 — saved apps ride along as MCP Apps; absent → tools-only door. */
   apps?: AppsPort;
+  /** The same resolved theme the UI pipeline consumes. The prebuilt consent
+   * page emits it as `--vendo-*` custom properties. */
+  theme?: VendoTheme;
   /** 10-mcp §5 — the door's canonical mount path (e.g. `/api/vendo/mcp`). When
    * set, the cold server card advertises THIS transport URL and learned request
    * paths never override it; when unset the card falls back to `/mcp` until an
@@ -164,7 +168,8 @@ class Door {
     const endpoint = endpointFor(path);
     const mount = endpoint.mount;
     if (endpoint.kind === "authorize") {
-      return req.method === "GET" && this.#config.remoteAs === undefined
+      return this.#config.remoteAs === undefined
+        && (req.method === "GET" || (req.method === "POST" && this.#oauth.hasPrebuiltConsent))
         ? this.#oauth.authorize(req, resourceUri(url.origin, mount))
         : notFound();
     }
@@ -175,7 +180,9 @@ class Door {
       return req.method === "POST" && this.#config.remoteAs === undefined ? this.#oauth.register(req) : notFound();
     }
     if (endpoint.kind === "federate") {
-      return req.method === "GET" && this.#config.federation !== undefined
+      return req.method === "GET"
+        && this.#config.federation !== undefined
+        && this.#config.oauth.authorize !== undefined
         ? handleFederation(req, resourceUri(url.origin, mount), this.#config.federation.secret, this.#config.oauth)
         : notFound();
     }
@@ -360,7 +367,7 @@ class Door {
     // MCP Apps shim renders a bare format-tagged UIPayload (core §8), so unwrap
     // it exactly as the door's own apps path does before mapping the result.
     if (name === "vendo_apps_open" && this.#config.apps !== undefined && outcome.status === "ok") {
-      return mapOutcome({ status: "ok", output: unwrapAppsOpen(outcome.output) }, identity.name);
+      return mapOutcome({ status: "ok", output: mcpAppsOpenOutput(outcome.output) as Json }, identity.name);
     }
     return mapOutcome(outcome, identity.name);
   }
@@ -420,7 +427,7 @@ class Door {
       if (!appId) return { status: "error", error: { code: "validation", message: "appId is required" } };
       if (name === "vendo_apps_open") {
         const opened = await apps.open(appId, ctx);
-        return { status: "ok", output: opened.kind === "http" ? { url: opened.url } : opened.payload };
+        return { status: "ok", output: mcpAppsOpenOutput(opened) as Json };
       }
       const ref = typeof args.ref === "string" ? args.ref : undefined;
       if (!ref) return { status: "error", error: { code: "validation", message: "ref is required" } };
@@ -640,6 +647,21 @@ function unwrapAppsOpen(output: unknown): unknown {
   return output;
 }
 
+/** AppsRuntime.open has already resolved every v0 tree query into `tree.data`
+ * (06-apps §1). The query declarations remain on the in-product payload so a
+ * later open/refresh can resolve them again, but forwarding them to the MCP
+ * shim would execute every query a second time. Project the already-resolved
+ * payload immutably and keep the shim resolver only as a compatibility fallback
+ * for non-door hosts that send unresolved trees directly. */
+function mcpAppsOpenOutput(output: unknown): unknown {
+  const payload = unwrapAppsOpen(output);
+  if (!isRecord(payload) || payload.formatVersion !== "vendo-genui/v1" || !Object.hasOwn(payload, "queries")) {
+    return payload;
+  }
+  const projected = { ...payload };
+  delete projected.queries;
+  return projected;
+}
 function replayKey(tool: string, args: Record<string, unknown>): string {
   return `${tool} ${canonicalJson(args)}`;
 }
