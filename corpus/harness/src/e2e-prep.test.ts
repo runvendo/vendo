@@ -4,47 +4,52 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { prepareE2eRepo } from "./e2e-prep.js";
 
+/** The handler `vendo init` currently scaffolds under api/vendo/[...vendo]. */
+const initRouteSource = `import { model } from "@/lib/ai";
+import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
+
+const vendo = createVendo({
+  model,
+  principal: async () => null,
+});
+
+export const { GET, POST, DELETE } = nextVendoHandler(vendo);
+`;
+
+/** An App Router layout after init wired VendoRoot around {children}. */
+function initLayoutSource(themeImportPath: string, wrap: (inner: string) => string): string {
+  return `import { VendoRoot } from "@vendoai/vendo/react";
+import theme from "${themeImportPath}";
+import type { VendoTheme } from "@vendoai/vendo";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    ${wrap("<VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>")}
+  )
+}
+`;
+}
 
 async function createSkateshopFixture(): Promise<{ appRoot: string; logsDir: string }> {
   const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-prep-"));
   const appRoot = path.join(root, "skateshop");
   const logsDir = path.join(root, "logs");
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
-  await mkdir(path.join(appRoot, "src/app/api/vendo/[...path]"), { recursive: true });
-  await mkdir(path.join(appRoot, "src/app"), { recursive: true });
+  await mkdir(path.join(appRoot, "src/app/api/vendo/[...vendo]"), { recursive: true });
   await writeFile(path.join(appRoot, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
-  await writeFile(
-    path.join(appRoot, "src/app/api/vendo/[...path]/route.ts"),
-    `import { createVendoHandler } from "vendoai/server";
-export const { GET, POST } = createVendoHandler();
-`,
-  );
-  await writeFile(
-    path.join(appRoot, "src/app/vendo-root.tsx"),
-    `"use client";
-import { VendoRoot } from "vendoai/react";
-import type { ReactNode } from "react";
-import theme from "../../.vendo/theme.json";
-import tools from "../../.vendo/tools.json";
-
-export function AppVendoRoot({ children }: { children: ReactNode }) {
-  return (
-    <VendoRoot theme={theme} tools={tools} productName="Skateshop">
-      {children}
-    </VendoRoot>
-  );
-}
-`,
-  );
+  await writeFile(path.join(appRoot, "src/app/api/vendo/[...vendo]/route.ts"), initRouteSource);
   await writeFile(
     path.join(appRoot, "src/app/layout.tsx"),
     `import { ClerkProvider } from "@clerk/nextjs"
+import { VendoRoot } from "@vendoai/vendo/react";
+import theme from "../../.vendo/theme.json";
+import type { VendoTheme } from "@vendoai/vendo";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <ClerkProvider>
       <html lang="en">
-        <body>{children}</body>
+        <body><VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot></body>
       </html>
     </ClerkProvider>
   )
@@ -102,73 +107,71 @@ async function createUmamiFixture(): Promise<{ appRoot: string; logsDir: string 
   const appRoot = path.join(root, "umami");
   const logsDir = path.join(root, "logs");
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
-  await mkdir(path.join(appRoot, "src/app/api/vendo/[...path]"), { recursive: true });
-  await mkdir(path.join(appRoot, "src/app"), { recursive: true });
+  await mkdir(path.join(appRoot, "src/app/api/vendo/[...vendo]"), { recursive: true });
   await writeFile(path.join(appRoot, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
+  await writeFile(path.join(appRoot, "src/app/api/vendo/[...vendo]/route.ts"), initRouteSource);
   await writeFile(
-    path.join(appRoot, "src/app/api/vendo/[...path]/route.ts"),
-    `import { createVendoHandler } from "vendoai/server";
-export const { GET, POST } = createVendoHandler();
-`,
-  );
-  await writeFile(
-    path.join(appRoot, "src/app/vendo-root.tsx"),
-    `"use client";
-import { VendoRoot } from "vendoai/react";
-import type { ReactNode } from "react";
-import theme from "../../.vendo/theme.json";
-import tools from "../../.vendo/tools.json";
-
-export function AppVendoRoot({ children }: { children: ReactNode }) {
-  return (
-    <VendoRoot theme={theme} tools={tools} productName="Umami">
-      {children}
-    </VendoRoot>
-  );
-}
-`,
+    path.join(appRoot, "src/app/layout.tsx"),
+    initLayoutSource(
+      "../../.vendo/theme.json",
+      (inner) => `<html lang="en"><body><Providers>${inner}</Providers></body></html>`,
+    ),
   );
   return { appRoot, logsDir };
 }
 
-async function createPapermarkFixture(): Promise<{ appRoot: string; logsDir: string }> {
+// Mirrors real route-scan output: host_* names and its OWN param names
+// ({id} where the curated manifest says {documentId}/{linkId}), so the
+// endpoint matching must normalize params the way sync's dedupKey does.
+const papermarkExtractionTools = [
+  { name: "host_teams_list", method: "GET", path: "/api/teams" },
+  { name: "host_teams_documents_list", method: "GET", path: "/api/teams/{teamId}/documents" },
+  { name: "host_teams_documents_views_count_list", method: "GET", path: "/api/teams/{teamId}/documents/{id}/views-count" },
+  { name: "host_teams_viewers_list", method: "GET", path: "/api/teams/{teamId}/viewers" },
+  { name: "host_teams_documents_links_list", method: "GET", path: "/api/teams/{teamId}/documents/{id}/links" },
+  { name: "host_teams_datarooms_list", method: "GET", path: "/api/teams/{teamId}/datarooms" },
+  { name: "host_links_create", method: "POST", path: "/api/links" },
+  { name: "host_teams_documents_add_to_dataroom", method: "POST", path: "/api/teams/{teamId}/documents/{id}/add-to-dataroom" },
+  { name: "host_links_update", method: "PUT", path: "/api/links/{id}" },
+  // Extraction noise the curated surface must disable.
+  { name: "host_account_get", method: "GET", path: "/api/account" },
+] as const;
+
+function papermarkExtractionToolsJson(): string {
+  return `${JSON.stringify({
+    format: "vendo/tools@1",
+    tools: papermarkExtractionTools.map((tool) => ({
+      name: tool.name,
+      description: "",
+      inputSchema: { type: "object" },
+      risk: "write",
+      binding: { kind: "route", method: tool.method, path: tool.path, argsIn: tool.method === "GET" ? "query" : "body" },
+    })),
+  }, null, 2)}\n`;
+}
+
+async function createPapermarkFixture(options: {
+  routeSegment?: string | null;
+  toolsJson?: string;
+} = {}): Promise<{ appRoot: string; logsDir: string }> {
   const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-prep-"));
   const appRoot = path.join(root, "papermark");
   const logsDir = path.join(root, "logs");
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
-  await mkdir(path.join(appRoot, "app/api/vendo/[...path]"), { recursive: true });
   await mkdir(path.join(appRoot, "app"), { recursive: true });
   await mkdir(path.join(appRoot, "pages/api"), { recursive: true });
-  await writeFile(path.join(appRoot, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
-  await writeFile(
-    path.join(appRoot, "app/api/vendo/[...path]/route.ts"),
-    `import { createVendoHandler } from "vendoai/server";
-export const { GET, POST } = createVendoHandler();
-`,
-  );
-  await writeFile(
-    path.join(appRoot, "app/vendo-root.tsx"),
-    `"use client";
-import { VendoRoot } from "vendoai/react";
-import type { ReactNode } from "react";
-import theme from "../.vendo/theme.json";
-import tools from "../.vendo/tools.json";
-
-export function AppVendoRoot({ children }: { children: ReactNode }) {
-  return (
-    <VendoRoot theme={theme} tools={tools} productName="Papermark">
-      {children}
-    </VendoRoot>
-  );
-}
-`,
-  );
+  await writeFile(path.join(appRoot, ".vendo/tools.json"), options.toolsJson ?? papermarkExtractionToolsJson());
+  const routeSegment = options.routeSegment === undefined ? "[...vendo]" : options.routeSegment;
+  if (routeSegment !== null) {
+    await mkdir(path.join(appRoot, `app/api/vendo/${routeSegment}`), { recursive: true });
+    await writeFile(path.join(appRoot, `app/api/vendo/${routeSegment}/route.ts`), initRouteSource);
+  }
   await writeFile(
     path.join(appRoot, "app/layout.tsx"),
-    `export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return <html lang="en"><body>{children}</body></html>;
-}
-`,
+    initLayoutSource(
+      "../.vendo/theme.json",
+      (inner) => `<html lang="en"><body>${inner}</body></html>`,
+    ),
   );
   await writeFile(
     path.join(appRoot, "package.json"),
@@ -187,19 +190,20 @@ describe("prepareE2eRepo", () => {
     await expect(readFile(path.join(logsDir, "e2e.prepare.log"), "utf8")).rejects.toThrow();
   });
 
-  it("adds Skateshop corpus routes, reviewed tools, handler guidance, and per-attempt thread ids", async () => {
+  it("adds Skateshop corpus routes, curated tools, overlay chrome, and Clerk bypasses", async () => {
     const { appRoot, logsDir } = await createSkateshopFixture();
     const logs = await prepareE2eRepo({ name: "skateshop" }, appRoot, logsDir);
 
     const tools = JSON.parse(await readFile(path.join(appRoot, ".vendo/tools.json"), "utf8")) as {
       tools: Array<{
         name: string;
+        description: string;
         risk: "read" | "write" | "destructive";
         binding: { method: string; path: string };
       }>;
     };
-    const route = await readFile(path.join(appRoot, "src/app/api/vendo/[...path]/route.ts"), "utf8");
-    const root = await readFile(path.join(appRoot, "src/app/vendo-root.tsx"), "utf8");
+    const route = await readFile(path.join(appRoot, "src/app/api/vendo/[...vendo]/route.ts"), "utf8");
+    const overlay = await readFile(path.join(appRoot, "src/app/vendo-corpus-e2e.tsx"), "utf8");
     const layout = await readFile(path.join(appRoot, "src/app/layout.tsx"), "utf8");
     const corpusLib = await readFile(path.join(appRoot, "src/app/api/corpus/_lib.ts"), "utf8");
     const productsRoute = await readFile(path.join(appRoot, "src/app/api/corpus/products/route.ts"), "utf8");
@@ -231,12 +235,15 @@ describe("prepareE2eRepo", () => {
       ["POST", "/api/corpus/orders"],
       ["GET", "/api/corpus/checkout-defaults"],
     ]);
-    expect(route).toContain("storage: false");
-    expect(route).toContain("instructionsExtra");
-    expect(route).toContain("Youness gradient cuts impact 8.375 skateboard deck");
-    expect(route).toContain("render a Table view");
-    expect(root).toContain("threadId={threadId}");
-    expect(root).toContain("vendoThread");
+    // Fixture guidance now rides in the tool descriptions (the old handler
+    // instructionsExtra knob no longer exists in the composed umbrella).
+    expect(tools.tools[0]!.description).toContain("Youness gradient cuts impact 8.375 skateboard deck");
+    expect(tools.tools[0]!.description).toContain("Table view");
+    // The init-scaffolded handler is already correct; prep must not touch it.
+    expect(route).toContain("nextVendoHandler(vendo)");
+    expect(overlay).toContain('"use client"');
+    expect(overlay).toContain("VendoOverlay");
+    expect(layout).toContain("<VendoCorpusE2e />");
     expect(layout).not.toContain("ClerkProvider");
     expect(layout).toContain("<html");
     expect(corpusLib).toContain('from "@/assets/data/products.json"');
@@ -262,16 +269,19 @@ describe("prepareE2eRepo", () => {
     expect(log).toContain("Skateshop Clerk middleware corpus bypass");
     expect(log).toContain("Skateshop Clerk provider corpus bypass");
     expect(log).toContain("Skateshop cached user query corpus bypass");
+    expect(log).toContain("corpus Vendo overlay");
   });
-  it("adds Umami Layer 3 tools, handler guidance, auth fetch, and per-attempt thread ids", async () => {
+
+  it("adds Umami Layer 3 tools, overlay chrome with the auth shim, and a trusted base URL", async () => {
     const { appRoot, logsDir } = await createUmamiFixture();
     const logs = await prepareE2eRepo({ name: "umami" }, appRoot, logsDir);
 
     const tools = JSON.parse(await readFile(path.join(appRoot, ".vendo/tools.json"), "utf8")) as {
-      tools: Array<{ name: string }>;
+      tools: Array<{ name: string; description: string }>;
     };
-    const route = await readFile(path.join(appRoot, "src/app/api/vendo/[...path]/route.ts"), "utf8");
-    const root = await readFile(path.join(appRoot, "src/app/vendo-root.tsx"), "utf8");
+    const overlay = await readFile(path.join(appRoot, "src/app/vendo-corpus-e2e.tsx"), "utf8");
+    const layout = await readFile(path.join(appRoot, "src/app/layout.tsx"), "utf8");
+    const env = await readFile(path.join(appRoot, ".env"), "utf8");
     const log = await readFile(logs[0]!, "utf8");
 
     expect(tools.tools.map((tool) => tool.name)).toEqual([
@@ -281,17 +291,35 @@ describe("prepareE2eRepo", () => {
       "get_umami_revenue_report",
       "get_umami_funnel_report",
     ]);
-    expect(route).toContain("storage: false");
-    expect(route).toContain("instructionsExtra");
-    expect(route).toContain("visible answer must include labels and numeric values");
-    expect(route).toContain("If you render a view");
-    expect(root).toContain("threadId={threadId}");
-    expect(root).toContain("vendoThread");
-    expect(root).toContain("installUmamiAuthFetch");
-    expect(root).toContain("umami.auth");
-    expect(root).toContain('headers.set("authorization"');
+    // Seeded date windows moved from instructionsExtra into the descriptions.
+    expect(tools.tools[1]!.description).toContain("startAt=1782691200000");
+    expect(tools.tools[3]!.description).toContain("2026-07-01T00:00:00.000Z");
+    expect(overlay).toContain('"use client"');
+    expect(overlay).toContain("VendoOverlay");
+    expect(overlay).toContain("installUmamiAuthFetch");
+    expect(overlay).toContain("umami.auth");
+    expect(overlay).toContain('headers.set("authorization"');
+    // The Bearer shim must cover the Vendo wire so server-side route bindings
+    // receive the forwarded authorization header — the old shim excluded it.
+    expect(overlay).not.toContain('!url.pathname.startsWith("/api/vendo")');
+    expect(layout).toContain("<VendoCorpusE2e />");
+    expect(env).toContain("VENDO_BASE_URL=http://127.0.0.1:3000");
     expect(log).toContain("read-only tools manifest");
-    expect(log).toContain("Umami auth headers");
+    expect(log).toContain("Umami auth fetch shim");
+    expect(log).toContain("VENDO_BASE_URL");
+  });
+
+  it("fails loudly when init's layout no longer carries the VendoRoot wrapper", async () => {
+    const { appRoot, logsDir } = await createUmamiFixture();
+    await writeFile(
+      path.join(appRoot, "src/app/layout.tsx"),
+      `export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return <html lang="en"><body>{children}</body></html>;
+}
+`,
+    );
+
+    await expect(prepareE2eRepo({ name: "umami" }, appRoot, logsDir)).rejects.toThrow(/VendoRoot/);
   });
 
   it("does nothing for repos without a Layer 3 prep fixture", async () => {
@@ -352,15 +380,22 @@ describe("prepareE2eRepo", () => {
     await expect(prepareE2eRepo({ name: "teable" }, appRoot, logsDir)).rejects.toThrow(/next-i18next\.config\.js/);
   });
 
-  it("adds Papermark fixtures, JWT login, curated tools, handler guidance, and per-attempt thread ids", async () => {
+  it("adds Papermark fixtures, JWT login, curated overrides, and overlay chrome", async () => {
     const { appRoot, logsDir } = await createPapermarkFixture();
+    const toolsBefore = await readFile(path.join(appRoot, ".vendo/tools.json"), "utf8");
     const logs = await prepareE2eRepo({ name: "papermark" }, appRoot, logsDir);
 
-    const tools = JSON.parse(await readFile(path.join(appRoot, ".vendo/tools.json"), "utf8")) as {
-      tools: Array<{ name: string; risk: "read" | "write" | "destructive"; binding: { method: string; path: string } }>;
+    // The sync-managed extraction pin must stay byte-identical: papermark's
+    // npm build runs `vendo sync --strict`, and replacing the pin with a
+    // curated manifest reads as breaking tool renames (exit 2).
+    await expect(readFile(path.join(appRoot, ".vendo/tools.json"), "utf8")).resolves.toBe(toolsBefore);
+
+    const overrides = JSON.parse(await readFile(path.join(appRoot, ".vendo/overrides.json"), "utf8")) as {
+      format: string;
+      tools: Record<string, { risk?: string; description?: string; disabled?: boolean }>;
     };
-    const route = await readFile(path.join(appRoot, "app/api/vendo/[...path]/route.ts"), "utf8");
-    const root = await readFile(path.join(appRoot, "app/vendo-root.tsx"), "utf8");
+    const route = await readFile(path.join(appRoot, "app/api/vendo/[...vendo]/route.ts"), "utf8");
+    const overlay = await readFile(path.join(appRoot, "app/vendo-corpus-e2e.tsx"), "utf8");
     const layout = await readFile(path.join(appRoot, "app/layout.tsx"), "utf8");
     const corpusPage = await readFile(path.join(appRoot, "app/corpus-e2e/page.tsx"), "utf8");
     const loginRoute = await readFile(path.join(appRoot, "pages/api/corpus-login.ts"), "utf8");
@@ -374,40 +409,30 @@ describe("prepareE2eRepo", () => {
     };
     const log = await readFile(logs[0]!, "utf8");
 
-    expect(tools.tools.map((tool) => tool.name)).toEqual([
-      "getTeams",
-      "listTeamDocuments",
-      "getDocumentStats",
-      "getDocumentViews",
-      "listDocumentLinks",
-      "listDatarooms",
-      "createShareLink",
-      "addDocumentToDataroom",
-      "updateLinkSettings",
-    ]);
-    expect(tools.tools.filter((tool) => tool.risk === "write").map((tool) => tool.name)).toEqual([
-      "createShareLink",
-      "addDocumentToDataroom",
-      "updateLinkSettings",
-    ]);
-    expect(tools.tools.find((tool) => tool.name === "listTeamDocuments")?.binding).toEqual({
-      kind: "route",
-      method: "GET",
-      path: "/api/teams/{teamId}/documents",
-      argsIn: "query",
-    });
-    expect(route).toContain("storage: false");
-    expect(route).toContain("instructionsExtra");
-    expect(route).toContain("Corpus Q3 Board Packet.pdf");
-    expect(root).toContain("threadId={threadId}");
-    expect(root).toContain("vendoThread");
-    expect(layout).toContain("<AppVendoRoot>{children}</AppVendoRoot>");
+    expect(overrides.format).toBe("vendo/overrides@1");
+    // Curated endpoints keep their extraction names and gain descriptions +
+    // corrected risk; every other extracted tool is disabled.
+    expect(overrides.tools["host_teams_list"]).toMatchObject({ risk: "read" });
+    expect(overrides.tools["host_teams_list"]!.description).toContain("Corpus E2E Team");
+    expect(overrides.tools["host_teams_documents_list"]).toMatchObject({ risk: "read" });
+    expect(overrides.tools["host_teams_documents_list"]!.description).toContain("seeded document names");
+    expect(overrides.tools["host_teams_documents_views_count_list"]).toMatchObject({ risk: "read" });
+    expect(overrides.tools["host_links_create"]).toMatchObject({ risk: "write" });
+    expect(overrides.tools["host_links_update"]).toMatchObject({ risk: "write" });
+    expect(overrides.tools["host_teams_documents_add_to_dataroom"]).toMatchObject({ risk: "write" });
+    expect(overrides.tools["host_teams_list"]!.disabled).toBeUndefined();
+    expect(overrides.tools["host_account_get"]).toEqual({ disabled: true });
+    // The init-scaffolded handler is already correct; prep must not rewrite it.
+    expect(route).toContain("nextVendoHandler(vendo)");
+    expect(overlay).toContain("VendoOverlay");
+    expect(layout).toContain("<VendoCorpusE2e />");
     expect(corpusPage).toContain("Corpus Papermark E2E");
     expect(loginRoute).toContain("next-auth.session-token");
     expect(loginRoute).toContain("encode({");
     expect(loginRoute).toContain("e2e@corpus.test");
     expect(env).toContain("STRIPE_SECRET_KEY=sk_test_corpus_e2e");
     expect(env).toContain("STRIPE_SECRET_KEY_OLD=sk_test_corpus_e2e_old");
+    expect(env).toContain("VENDO_BASE_URL=http://127.0.0.1:3000");
     expect(premiumLimitShim).toContain("getPremiumTeamEligibility");
     expect(unlimitedLimitShim).toContain("canCreateUnlimitedTeam");
     expect(apiErrorShim).toContain("PapermarkApiError");
@@ -416,5 +441,36 @@ describe("prepareE2eRepo", () => {
     expect(packageJson.scripts["dev:prisma"]).toContain("node scripts/corpus-seed.mjs");
     expect(log).toContain("Papermark fixture seed");
     expect(log).toContain("Papermark e2e login route");
+    expect(log).toContain("overrides.json");
+  });
+
+  it("derives the Vendo route segment instead of hardcoding init's name", async () => {
+    // A repo whose route still uses another catch-all name must not gain a
+    // second, conflicting [...vendo] route (Next rejects sibling catch-alls
+    // with different slugs).
+    const { appRoot, logsDir } = await createPapermarkFixture({ routeSegment: "[...path]" });
+    await prepareE2eRepo({ name: "papermark" }, appRoot, logsDir);
+
+    await expect(readFile(path.join(appRoot, "app/api/vendo/[...path]/route.ts"), "utf8"))
+      .resolves.toContain("nextVendoHandler(vendo)");
+    await expect(readFile(path.join(appRoot, "app/api/vendo/[...vendo]/route.ts"), "utf8")).rejects.toThrow();
+  });
+
+  it("creates the current init handler when the fixture has none", async () => {
+    const { appRoot, logsDir } = await createPapermarkFixture({ routeSegment: null });
+    await prepareE2eRepo({ name: "papermark" }, appRoot, logsDir);
+
+    const route = await readFile(path.join(appRoot, "app/api/vendo/[...vendo]/route.ts"), "utf8");
+    expect(route).toContain("createVendo({");
+    expect(route).toContain("nextVendoHandler(vendo)");
+  });
+
+  it("fails Papermark prep loudly when extraction stops covering a curated endpoint", async () => {
+    const { appRoot, logsDir } = await createPapermarkFixture({
+      toolsJson: `${JSON.stringify({ format: "vendo/tools@1", tools: [] }, null, 2)}\n`,
+    });
+
+    await expect(prepareE2eRepo({ name: "papermark" }, appRoot, logsDir))
+      .rejects.toThrow(/no tool for curated endpoint GET \/api\/teams/);
   });
 });
