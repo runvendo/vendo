@@ -28,3 +28,9 @@ describe("core conformance — AgentRunner seam", () => {
     expect(report.ok).toBe(true);
   });
 });
+
+it.skip("03-agent §3 clause (4) — catalog + theme summary is assembled for tree venues (Wave 5)", () => {
+  // Intentionally visible and skipped until Wave 5 wires catalog/theme into
+  // createAgent. Removing the skip before then would contradict the approved
+  // staged contract implementation rather than close this Wave 2 test gap.
+});

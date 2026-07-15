@@ -29,6 +29,25 @@ import { createAutomations, type AutomationsEngine } from "@vendoai/automations"
 
 export const fixtureBaseUrl = (): string => inject("fixtureBaseUrl");
 
+/** Next's dev server can briefly reset an in-flight socket while compiling a
+ * fixture route. Retry transport failures only; HTTP responses stay visible to
+ * the calling test. */
+export async function fixtureFetch(
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1],
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      return await fetch(input, init);
+    } catch (error) {
+      lastError = error;
+      if (attempt < 5) await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+    }
+  }
+  throw lastError;
+}
+
 /** The fixture's host tool surface, declared inline (same set the wave-3
  * actions e2e used) — extraction itself is actions' covered ground; these
  * suites are about automations semantics. */
@@ -79,7 +98,7 @@ export const hostTools = [
 ] as const;
 
 export async function loginCookie(subject: string): Promise<string> {
-  const response = await fetch(`${fixtureBaseUrl()}/api/login`, {
+  const response = await fixtureFetch(`${fixtureBaseUrl()}/api/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ user: subject }),
@@ -91,7 +110,7 @@ export async function loginCookie(subject: string): Promise<string> {
 }
 
 export async function resetFixture(): Promise<void> {
-  const response = await fetch(`${fixtureBaseUrl()}/fixture/reset`, { method: "POST" });
+  const response = await fixtureFetch(`${fixtureBaseUrl()}/fixture/reset`, { method: "POST" });
   if (response.status !== 200) throw new Error(`Fixture reset failed (${response.status})`);
 }
 
@@ -135,6 +154,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     tools: hostTools as unknown as Parameters<typeof createActions>[0]["tools"],
     baseUrl: fixtureBaseUrl(),
     actAs: fixtureActAs,
+    fetch: fixtureFetch,
   });
   const bound = guard.bind(actions);
   const apps = createApps({

@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -482,6 +483,7 @@ async function buildPlan(options: InitOptions, mcpEnabled = false): Promise<{ pl
     ".vendo/brief.md",
     ".vendo/theme.json",
     ".vendo/data/.gitignore",
+    ".env",
   ];
   return {
     changes,
@@ -543,6 +545,23 @@ async function writeIfMissing(path: string, content: string, force: boolean): Pr
   await writeText(path, content);
 }
 
+/** 02-store §4 default-on encryption: init provisions VENDO_STORE_ENCRYPTION_KEY
+    (a fresh base64 32-byte AES-256-GCM key) into the host's .env; createVendo
+    picks it up from the environment when the host doesn't pass a store. Never
+    regenerated — not even with --force — because rotating the key would orphan
+    every already-encrypted vendo_secrets row (key rotation is out of v0 scope). */
+async function ensureEncryptionKey(root: string, output: Output): Promise<void> {
+  const path = join(root, ".env");
+  const existing = await readOptional(path);
+  if (existing !== null && /^VENDO_STORE_ENCRYPTION_KEY=/m.test(existing)) return;
+  const line = `VENDO_STORE_ENCRYPTION_KEY=${randomBytes(32).toString("base64")}\n`;
+  const prefix = existing === null || existing === "" || existing.endsWith("\n")
+    ? existing ?? ""
+    : `${existing}\n`;
+  await writeText(path, `${prefix}${line}`);
+  output.log("Generated VENDO_STORE_ENCRYPTION_KEY in .env — stored secrets are encrypted at rest.");
+}
+
 function telemetryFor(options: InitOptions, output: Output): Telemetry {
   return toolingTelemetry({ ...options.telemetry, log: (message) => output.log(message) });
 }
@@ -574,6 +593,7 @@ export async function runInit(options: InitOptions): Promise<number> {
 
   try {
     await mkdir(join(root, ".vendo"), { recursive: true });
+    await ensureEncryptionKey(root, output);
     await writeIfMissing(
       join(root, ".vendo", "overrides.json"),
       `${JSON.stringify({

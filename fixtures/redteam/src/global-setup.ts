@@ -35,7 +35,7 @@ async function waitForFixture(baseUrl: string): Promise<void> {
   while (Date.now() < deadline) {
     if (child?.exitCode !== null) throw new Error(`Fixture exited early (${child?.exitCode})\n${serverOutput}`);
     try {
-      const response = await fetch(baseUrl);
+      const response = await fetch(`${baseUrl}/fixture/reset`, { method: "POST" });
       if (response.ok) return;
     } catch {
       // Next is still compiling.

@@ -15,7 +15,6 @@ export const LOCAL_VENDO_PACKAGE_NAMES = [
   "@vendoai/automations",
   "@vendoai/ui",
   "@vendoai/telemetry",
-  "@vendoai/mcp",
   "@vendoai/vendo",
   "vendoai",
 ] as const;

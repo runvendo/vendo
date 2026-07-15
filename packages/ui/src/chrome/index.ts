@@ -3,7 +3,7 @@ export { ActivityPanel } from "./activity-panel.js";
 export { ApprovalCard, type ApprovalCardProps } from "./approval-card.js";
 export { AutomationsPanel } from "./automations-panel.js";
 export { NoPolicyNotice } from "./no-policy-notice.js";
-export { VendoOverlay } from "./vendo-overlay.js";
+export { VendoOverlay, type VendoOverlayProps } from "./vendo-overlay.js";
 export { VendoPage } from "./vendo-page.js";
 export { VendoPalette, type VendoCommand } from "./vendo-palette.js";
 export { VendoSlot } from "./vendo-slot.js";

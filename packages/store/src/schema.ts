@@ -57,7 +57,8 @@ export const DDL = [
   )`,
   "CREATE INDEX IF NOT EXISTS vendo_runs_app_started_idx ON vendo_runs (app_id, started_at)",
   `CREATE TABLE IF NOT EXISTS vendo_secrets (
-    name text PRIMARY KEY, ciphertext text NOT NULL, created_at timestamptz NOT NULL
+    name text PRIMARY KEY, ciphertext text NOT NULL, created_at timestamptz NOT NULL,
+    updated_at timestamptz
   )`,
   `CREATE TABLE IF NOT EXISTS vendo_mcp_clients (
     id text PRIMARY KEY, data jsonb NOT NULL, refs jsonb,
@@ -107,6 +108,10 @@ const ADDITIVE_DDL = [
   // Thread listing derives a title without loading the full messages array (routing.ts uses a
   // messages-less listSelect once a row has a stored title). NULLable; populated on next write.
   "ALTER TABLE vendo_threads ADD COLUMN IF NOT EXISTS title text",
+  // Secret rewrites (rotation) must count as activity for the erase-by-age axis
+  // (02 §5): set() stamps it; NULL on legacy rows means created_at IS the last
+  // write, so byAge reads COALESCE(updated_at, created_at).
+  "ALTER TABLE vendo_secrets ADD COLUMN IF NOT EXISTS updated_at timestamptz",
 ] as const;
 
 // v2 backfill (runs once, only when upgrading from a version < 2 — 02 §4 keys

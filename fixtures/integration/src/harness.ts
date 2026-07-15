@@ -32,6 +32,24 @@ import type { LanguageModel } from "ai";
 
 export const fixtureBaseUrl = (): string => inject("fixtureBaseUrl");
 
+/** Next's dev server may reset a socket while lazily compiling a fixture
+ * route. Retry transport failures only so HTTP failures remain assertions. */
+export async function fixtureFetch(
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1],
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      return await fetch(input, init);
+    } catch (error) {
+      lastError = error;
+      if (attempt < 5) await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+    }
+  }
+  throw lastError;
+}
+
 /** Seeded fixture principals — resolved from the `x-vendo-test-user` header. */
 export const ADA: Principal = { kind: "user", subject: "user_ada" };
 export const BOB: Principal = { kind: "user", subject: "user_bob" };
@@ -136,23 +154,13 @@ const cookieCache = new Map<string, string>();
 export async function loginCookie(subject: string): Promise<string> {
   const cached = cookieCache.get(subject);
   if (cached !== undefined) return cached;
-  let response: Response | undefined;
-  let lastError: unknown;
   // The shared Next dev fixture can reset its first login socket while sibling
-  // Turbo tasks finish compiling; retry only this idempotent session mint.
-  for (let attempt = 0; attempt < 3 && response === undefined; attempt += 1) {
-    try {
-      response = await fetch(`${fixtureBaseUrl()}/api/login`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ user: subject }),
-      });
-    } catch (error) {
-      lastError = error;
-      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
-    }
-  }
-  if (response === undefined) throw lastError;
+  // Turbo tasks finish compiling; fixtureFetch retries only transport failures.
+  const response = await fixtureFetch(`${fixtureBaseUrl()}/api/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ user: subject }),
+  });
   if (!response.ok) throw new Error(`Fixture login failed (${response.status})`);
   const cookie = response.headers.get("set-cookie")?.split(";")[0];
   if (!cookie) throw new Error("Fixture login did not return a cookie");
@@ -161,7 +169,7 @@ export async function loginCookie(subject: string): Promise<string> {
 }
 
 export async function resetFixture(): Promise<void> {
-  const response = await fetch(`${fixtureBaseUrl()}/fixture/reset`, { method: "POST" });
+  const response = await fixtureFetch(`${fixtureBaseUrl()}/fixture/reset`, { method: "POST" });
   if (!response.ok) throw new Error(`Fixture reset failed (${response.status})`);
 }
 
@@ -174,7 +182,7 @@ const fixtureActAs = async (principal: Principal): Promise<{ headers: Record<str
 
 /** A direct host-app fetch (bypasses the wire) for asserting real host state. */
 export async function hostFetch(path: string, subject: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(`${fixtureBaseUrl()}${path}`, {
+  return fixtureFetch(`${fixtureBaseUrl()}${path}`, {
     ...init,
     headers: { ...(init.headers ?? {}), cookie: await loginCookie(subject) },
   });
@@ -335,7 +343,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
         // against the host app (04 §4 trusted-origin forwarding).
         headers.cookie = await loginCookie(user.subject);
       }
-      return fetch(`${baseUrl}${WIRE_BASE}${path}`, { ...init, headers });
+      return fixtureFetch(`${baseUrl}${WIRE_BASE}${path}`, { ...init, headers });
     },
     async sql(query, params) {
       return (await raw.query(query, params)).rows as never;

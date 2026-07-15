@@ -11,7 +11,8 @@ import {
   type RunContext,
 } from "@vendoai/core";
 import type { SandboxAdapter } from "@vendoai/apps";
-import { createStore, type VendoStore } from "@vendoai/store";
+import { createStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
+import { randomBytes } from "node:crypto";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo, nextVendoHandler, type CreateVendoConfig, type Vendo } from "./server.js";
@@ -851,5 +852,40 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
       expect(body.resource, path).toBeUndefined();
       expect(body.issuer, path).toBeUndefined();
     }
+  });
+});
+
+describe("02-store §4 default-on encryption composition", () => {
+  it("createVendo reads VENDO_STORE_ENCRYPTION_KEY from the environment when no store is passed", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "vendo-default-store-"));
+    const prior = process.cwd();
+    vi.stubEnv("VENDO_STORE_ENCRYPTION_KEY", randomBytes(32).toString("base64"));
+    process.chdir(dir);
+    try {
+      // No `store` in the config: the composed default store must come up with
+      // encryption on, so stored secrets work with zero extra wiring.
+      const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal });
+      cleanups.push(async () => {
+        await vendo.store.close();
+        await rm(dir, { recursive: true, force: true });
+      });
+      await vendo.store.ensureSchema();
+      await secretStore(vendo.store).set("API_TOKEN", "secret-value");
+      expect(await storeSecrets(vendo.store).get("API_TOKEN")).toBe("secret-value");
+    } finally {
+      process.chdir(prior);
+    }
+  });
+
+  it("an explicitly configured store always wins over the environment key", async () => {
+    vi.stubEnv("VENDO_STORE_ENCRYPTION_KEY", randomBytes(32).toString("base64"));
+    // setup() passes an explicit store created WITHOUT encryption — createVendo
+    // must not silently rewrap it, so stored secrets stay unavailable.
+    const { vendo } = await setup();
+    // Let createVendo's eager schema init finish before teardown closes the
+    // store (closing PGlite mid-initialization wedges the driver).
+    await vendo.store.ensureSchema();
+    await expect(secretStore(vendo.store).set("API_TOKEN", "value"))
+      .rejects.toMatchObject({ code: "not-implemented" });
   });
 });

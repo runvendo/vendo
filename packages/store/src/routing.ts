@@ -67,6 +67,9 @@ interface RoutedConfig {
   /** Optional lighter projection for `list` (get/point-reads still use `select`).
    *  vendo_threads uses it to avoid transferring the full messages array per row. */
   listSelect?: string;
+  /** 02-store §2: vendo_audit is append-only through this door — `delete` is
+   *  refused outright; rows are erased only via the store erase API (02 §5). */
+  appendOnly?: true;
   cursorColumn: string;
   refs: Readonly<Record<string, string>>;
   fromDb(row: Record<string, unknown>): VendoRecord;
@@ -228,6 +231,12 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
     },
     async delete(id) {
       requireRecordId(id);
+      if (config.appendOnly === true) {
+        throw new VendoError(
+          "blocked",
+          `${config.table} is append-only; rows are erased only via the store erase API (02-store §5)`,
+        );
+      }
       if (config.deleteOverlay(id)) return;
       await db.query(`DELETE FROM ${config.table} WHERE id = $1`, [id]);
     },
@@ -290,8 +299,17 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         async put(record) {
           const grant = parsePermissionGrant(record.data);
           requireMatchingId(record.id, grant.id, "permission grant id");
-          if (isEphemeralSubject(store, grant.subject)) overlay.grants.set(grant.id, snapshot(grant));
-          else await putGrantRow(db, grant);
+          if (isEphemeralSubject(store, grant.subject)) {
+            // Mirror the SQL door's cross-subject refusal (02 §2): a prior
+            // overlay grant owned by another subject is never flipped.
+            const prior = overlay.grants.get(grant.id);
+            if (prior !== undefined && prior.subject !== grant.subject) {
+              throw new VendoError("conflict", `grant ${grant.id} belongs to another subject`);
+            }
+            overlay.grants.set(grant.id, snapshot(grant));
+          } else {
+            await putGrantRow(db, grant);
+          }
           return grantRecord(grant);
         },
         deleteOverlay: (id) => overlay.grants.delete(id),
@@ -330,6 +348,7 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
       return {
         table: collection,
         select: "SELECT * FROM vendo_audit",
+        appendOnly: true,
         cursorColumn: "at",
         refs: { subject: "subject", kind: "kind", app_id: "app_id", tool: "tool" },
         fromDb: (row) => auditRecord(row["event"] as AuditEvent),
@@ -339,13 +358,20 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
           requireMatchingId(record.id, event.id, "audit event id");
           if (event.principal.ephemeral === true) {
             registerEphemeralSubject(store, event.principal.subject);
+            // Mirror the SQL door's append-only refusal (02 §2): an existing
+            // overlay row is never replaced.
+            if (overlay.audit.has(event.id)) {
+              throw new VendoError("conflict", `audit event ${event.id} already exists (vendo_audit is append-only)`);
+            }
             overlay.audit.set(event.id, snapshot(event));
           } else {
-            await putAuditRow(db, event, true);
+            await putAuditRow(db, event);
           }
           return auditRecord(event);
         },
-        deleteOverlay: (id) => overlay.audit.delete(id),
+        // Unreachable through the routed door (appendOnly refuses first); the
+        // erase API clears overlay audit rows directly (02 §5).
+        deleteOverlay: () => false,
       };
     case "vendo_threads":
       return {
@@ -420,6 +446,11 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
           let row: AppRow;
           if (isEphemeralSubject(store, data.subject)) {
             const prior = overlay.apps.get(record.id);
+            // Mirror the SQL door's cross-subject refusal (02 §2): a prior
+            // overlay app owned by another subject is never flipped.
+            if (prior !== undefined && prior.subject !== data.subject) {
+              throw new VendoError("conflict", `app ${record.id} belongs to another subject`);
+            }
             row = {
               id: record.id,
               subject: data.subject,
