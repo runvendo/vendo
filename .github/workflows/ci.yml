@@ -117,11 +117,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm conformance
-      - name: MCP Apps shim is fresh
-        run: |
-          pnpm --filter @vendoai/ui build:jail
-          pnpm --filter @vendoai/ui build:mcp-shim
-          git diff --exit-code -- packages/mcp/src/shim/shim-html.gen.ts
+      # Vite's generated bundle differs byte-for-byte between macOS and Linux,
+      # so freshness cannot be enforced with a cross-platform source diff. The
+      # checked-in artifact is instead exercised through its real browser wire.
+      - run: pnpm --filter @vendoai/ui exec playwright install --with-deps chromium
+      - name: MCP Apps shim semantic contract
+        run: pnpm --filter @vendoai/ui test:mcp-shim
 
   # Supply-chain gate: fails on high/critical advisories in the PRODUCTION
   # dependency graph (what ships in the published tarballs). Scoped to --prod so
