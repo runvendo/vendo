@@ -10,6 +10,7 @@ export interface CloudCommandOptions {
   fetcher?: CloudFetcher;
   home?: string;
   env?: Record<string, string | undefined>;
+  now?: number | (() => number);
 }
 
 export interface CloudCommandContext {
@@ -17,6 +18,7 @@ export interface CloudCommandContext {
   fetcher: CloudFetcher;
   home?: string;
   env: Record<string, string | undefined>;
+  now?: number | (() => number);
 }
 
 export function commandContext(options: CloudCommandOptions): CloudCommandContext {
@@ -25,6 +27,7 @@ export function commandContext(options: CloudCommandOptions): CloudCommandContex
     fetcher: options.fetcher ?? ((path, fetchOptions) => cloudFetch(path, fetchOptions)),
     home: options.home,
     env: options.env ?? process.env,
+    now: options.now,
   };
 }
 

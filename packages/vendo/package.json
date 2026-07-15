@@ -2,7 +2,13 @@
   "name": "@vendoai/vendo",
   "version": "0.3.0",
   "description": "The Vendo umbrella: default composition, public wire routes, React provider, and the vendo CLI.",
-  "keywords": ["ai", "agent", "genui", "react", "vendo"],
+  "keywords": [
+    "ai",
+    "agent",
+    "genui",
+    "react",
+    "vendo"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -38,11 +44,15 @@
       "default": "./dist/react.js"
     }
   },
-  "files": ["dist", "bin"],
+  "files": [
+    "dist",
+    "bin"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@vendoai/actions": "workspace:*",
@@ -54,7 +64,9 @@
     "@vendoai/mcp": "workspace:*",
     "@vendoai/store": "workspace:*",
     "@vendoai/telemetry": "workspace:*",
-    "@vendoai/ui": "workspace:*"
+    "@vendoai/ui": "workspace:*",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1"
   },
   "peerDependencies": {
     "ai": ">=6.0.0 <7",

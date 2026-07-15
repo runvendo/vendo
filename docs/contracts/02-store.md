@@ -80,6 +80,7 @@ For non-reserved names, `records()` remains app data and collection names are ot
 
 - **PGlite default**: no `url` → embedded Postgres at `.vendo/data`; kill-the-server durability applies (fsync on write).
 - **Same schema everywhere**: one DDL, no dialect switches. `ensureSchema()` is the only migration entry point, keyed by `vendo_meta.schema_version`, forward-only within the version train.
+- **Atomic claims**: generic and door-owned record tables implement core's optional `RecordStore.claim` as one `UPDATE ... WHERE data/refs match RETURNING` or `DELETE ... RETURNING` statement. Consumers that require single-use state fail closed when an alternate adapter omits the capability.
 - **Encryption at rest**: `encryption.key` encrypts `vendo_secrets.ciphertext` only (AES-256-GCM). App data stays plaintext by design — encrypting it would defeat the page's host-can-query/join promise; at-rest encryption of the database is the host's disk/DB layer. Default-on composition is contracted here and ships in Wave 3: `vendo init` provisions `VENDO_STORE_ENCRYPTION_KEY` in `.env`, `createVendo` reads it from the environment, and AES-GCM binds ciphertext to the secret name as AAD with envelope versioning. Key rotation: out of v0 scope.
 - **No tenant axis**: `subject` is the one partition key — the host's stable user id. Multi-tenant hosts scope the same way they scope their own tables: by joining through `subject` and refs.
 - **Ephemeral principals** (`ephemeral: true`) never touch disk: their rows live in an adapter-level, per-process in-memory overlay that is dropped by `close()`. Multi-instance deployments therefore split anonymous-session state between processes. A real session lifecycle is Wave 4 scope and will amend this section again when designed.
@@ -99,4 +100,10 @@ A store-level erase API is contracted here and ships in Wave 3. It erases by sub
 - **Changed:** Contracted default-on encryption composition, secret-name AAD, and envelope versioning for Wave 3.
 - **Changed:** Corrected ephemeral-overlay lifetime to `close()` and recorded the per-process multi-instance constraint; full session lifecycle design remains Wave 4 work.
 - **Why:** The shipped routing and secret surfaces had overtaken the frozen typed-helper text, while retention, audit deletion, encryption defaults, and anonymous-session lifetime needed the approved foundations contracts before later implementation waves.
+- **Approved by:** Yousef, 2026-07-14.
+
+### 2026-07-14 — Atomic record claims
+
+- **Changed:** Added the optional `RecordStore.claim` capability and required the concrete Postgres store to implement compare-and-replace or compare-and-delete in one statement for generic and door-owned record tables.
+- **Why:** Authorization codes and refresh-token rotation need database-level single-use guarantees across non-sticky multi-instance MCP deployments.
 - **Approved by:** Yousef, 2026-07-14.

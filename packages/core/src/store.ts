@@ -44,6 +44,15 @@ export const recordQuerySchema = z.object({
 export interface RecordStore {
   get(id: string): Promise<VendoRecord | null>;
   put(record: Pick<VendoRecord, "id" | "data" | "refs">): Promise<VendoRecord>;
+  /**
+   * Atomically replace or delete a record only when its current data and refs
+   * still equal `expected`. Returns true for the single successful claimant.
+   * Omitted by adapters that cannot provide a database-level compare-and-claim.
+   */
+  claim?(
+    expected: Pick<VendoRecord, "id" | "data" | "refs">,
+    replacement?: Pick<VendoRecord, "data" | "refs">,
+  ): Promise<boolean>;
   delete(id: string): Promise<void>;
   list(query?: RecordQuery): Promise<{ records: VendoRecord[]; cursor?: string }>;
 }

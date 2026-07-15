@@ -86,7 +86,10 @@ export async function connectWithSdk(stack: Stack): Promise<ConnectedClient> {
   await expect(firstClient.connect(firstTransport)).rejects.toBeInstanceOf(UnauthorizedError);
   const authorizationUrl = provider.authorizationUrl;
   if (!authorizationUrl) throw new Error("SDK did not request an OAuth redirect");
-  const authorization = await fetch(authorizationUrl, { redirect: "manual" });
+  let authorization = await fetch(authorizationUrl, { redirect: "manual" });
+  if (authorization.status === 200 && authorization.headers.get("content-type")?.includes("text/html")) {
+    authorization = await submitPrebuiltConsent(authorization);
+  }
   expect(authorization.status).toBe(302);
   const location = authorization.headers.get("location");
   if (!location) throw new Error("Authorization did not return a redirect location");
@@ -110,6 +113,33 @@ export async function connectWithSdk(stack: Stack): Promise<ConnectedClient> {
       await client.close();
     },
   };
+}
+
+async function submitPrebuiltConsent(page: Response): Promise<Response> {
+  const html = await page.text();
+  const action = htmlAttribute(html, "form", "action").replaceAll("&amp;", "&");
+  return fetch(action, {
+    method: "POST",
+    redirect: "manual",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      transaction: inputValue(html, "transaction"),
+      csrf_token: inputValue(html, "csrf_token"),
+      decision: "approve",
+    }),
+  });
+}
+
+function inputValue(html: string, name: string): string {
+  const match = html.match(new RegExp(`<input[^>]+name="${name}"[^>]+value="([^"]+)"`, "i"));
+  if (!match?.[1]) throw new Error(`Consent page omitted ${name}`);
+  return match[1];
+}
+
+function htmlAttribute(html: string, element: string, attribute: string): string {
+  const match = html.match(new RegExp(`<${element}[^>]+${attribute}="([^"]+)"`, "i"));
+  if (!match?.[1]) throw new Error(`Consent page omitted ${element}[${attribute}]`);
+  return match[1];
 }
 
 export async function registerClient(stack: Stack, redirectUris = [REDIRECT_URI]) {

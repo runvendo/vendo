@@ -19,13 +19,36 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm test
+      # Runs every package's suite WITH v8 coverage and enforces each package's
+      # ratcheted line-coverage floor (coverage.thresholds.lines in its vitest
+      # config); a drop below the floor fails the build. This is the required
+      # coverage gate — it supersedes a bare `pnpm test`.
+      - run: pnpm test:coverage
       - run: pnpm typecheck
       - run: pnpm lint
 
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      # J9 (postgres-durability) runs the core journeys against real Postgres and
+      # skips cleanly when POSTGRES_URL is unset; provisioning it here makes that
+      # journey actually execute in CI.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vendo
+          POSTGRES_PASSWORD: vendo
+          POSTGRES_DB: vendo_integration
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vendo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      POSTGRES_URL: postgres://vendo:vendo@localhost:5432/vendo_integration
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -66,7 +89,16 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm audit --prod --audit-level high
+      # npm permanently retired the legacy audit endpoints on 2026-07-15 (HTTP
+      # 410); `pnpm audit` only queries the replacement bulk-advisory endpoint
+      # from pnpm 11 (pnpm/pnpm#11265). The repo pins pnpm 9 via packageManager
+      # and pnpm 11 auto-delegates to that pin, so strip the field in this
+      # throwaway checkout before auditing. 11.10.0 is the newest release that
+      # clears the .npmrc minimumReleaseAge window. Remove this workaround when
+      # the repo itself moves to pnpm 11 (tracked in Linear).
+      - run: |
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));delete p.packageManager;fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
+          npx -y pnpm@11.10.0 audit --prod --audit-level high
 
   # Reminder that a user-facing change should ship a changeset. NON-BLOCKING by
   # design (the fleet auto-merges): this job is not a required check and its one

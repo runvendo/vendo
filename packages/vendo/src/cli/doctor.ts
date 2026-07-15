@@ -2,7 +2,8 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { Telemetry } from "@vendoai/telemetry";
 import { detectFramework, detectVendoWiring } from "./framework.js";
-import { consoleOutput, exists, toolingTelemetry, type Output } from "./shared.js";
+import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
+import { consoleOutput, exists, readOptional, toolingTelemetry, type Output } from "./shared.js";
 
 export interface DoctorOptions {
   targetDir: string;
@@ -139,6 +140,45 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       (body) => typeof body.name === "string" && Array.isArray(body.transports),
       "MCP server card parses",
     );
+
+    // 10-mcp §5 — the official registry artifact is optional until a host is
+    // published, but once present it must describe this live door exactly.
+    const serverJson = await readOptional(join(root, "server.json"));
+    if (serverJson !== null) {
+      try {
+        const server = JSON.parse(serverJson) as unknown;
+        const errors = validateRegistryServer(server);
+        if (errors.length === 0) pass("server.json matches MCP registry discovery requirements");
+        else fail(`server.json is invalid: ${errors.join("; ")}`);
+
+        const liveDoorUrl = `${origin}${mountPath}`;
+        if (remoteUrls(server).some((remote) => sameUrl(remote, liveDoorUrl))) {
+          pass("server.json remote agrees with the live MCP door");
+        } else {
+          fail(`server.json remote does not match the live MCP door ${liveDoorUrl}`);
+        }
+      } catch {
+        fail("server.json is invalid JSON");
+      }
+    }
+
+    const localChallenge = await readOptional(join(root, "public", ".well-known", "mcp-registry-auth"));
+    if (localChallenge !== null) {
+      if (localChallenge.trim().startsWith("v=MCPv1")) pass("local MCP registry auth challenge parses");
+      else fail("local MCP registry auth challenge must start with v=MCPv1");
+    }
+    try {
+      const response = await fetchImpl(`${origin}/.well-known/mcp-registry-auth`, {
+        headers: { accept: "text/plain" },
+      });
+      if (response.ok) {
+        const challenge = await response.text();
+        if (challenge.trim().startsWith("v=MCPv1")) pass("MCP registry auth challenge parses");
+        else fail("MCP registry auth challenge must start with v=MCPv1");
+      }
+    } catch {
+      // The HTTP proof is optional; DNS verification may be in use instead.
+    }
   }
 
   output.log("Ladder: add sandbox to unlock server apps; actAs for away host actions; connectors for external tools.");

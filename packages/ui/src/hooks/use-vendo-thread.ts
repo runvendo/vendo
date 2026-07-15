@@ -9,10 +9,13 @@ import {
   type ToolUIPart,
   type UIMessage,
 } from "ai";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useVendoContext } from "../context.js";
 
 export type VendoThreadApproval = ToolUIPart | DynamicToolUIPart | VendoApprovalPart;
+
+const THREAD_ID_HEADER = "x-vendo-thread-id";
+const THREAD_ID_PATTERN = /^thr_.+$/;
 
 function vendoApproval(part: UIMessage["parts"][number]): VendoApprovalPart | undefined {
   if (part.type !== "data-vendo-approval") return undefined;
@@ -33,16 +36,36 @@ function vendoApproval(part: UIMessage["parts"][number]): VendoApprovalPart | un
 /** 08-ui §3 */
 export function useVendoThread(threadId?: string) {
   const { client } = useVendoContext();
+  const suppliedThreadIdRef = useRef(threadId);
+  const activeThreadIdRef = useRef(threadId);
+  const [effectiveThreadId, setEffectiveThreadId] = useState(threadId);
+  // Keep a server-minted default id across chat rerenders, but reset it when a
+  // caller explicitly switches the hook to a different thread prop.
+  if (suppliedThreadIdRef.current !== threadId) {
+    suppliedThreadIdRef.current = threadId;
+    activeThreadIdRef.current = threadId;
+    setEffectiveThreadId(threadId);
+  }
   const transport = useMemo(
     () =>
       new DefaultChatTransport<UIMessage>({
         api: `${client.baseUrl.replace(/\/$/, "")}/threads`,
         headers: client.headers,
+        fetch: async (input, init) => {
+          const response = await globalThis.fetch(input, init);
+          const returnedThreadId = response.headers.get(THREAD_ID_HEADER);
+          if (returnedThreadId !== null && THREAD_ID_PATTERN.test(returnedThreadId)) {
+            activeThreadIdRef.current = returnedThreadId;
+            setEffectiveThreadId(returnedThreadId);
+          }
+          return response;
+        },
         prepareSendMessagesRequest: ({ messages }) => {
           const message = messages.at(-1);
           if (!message) throw new Error("Cannot send an empty Vendo turn.");
+          const activeThreadId = activeThreadIdRef.current;
           return {
-            body: threadId === undefined ? { message } : { threadId, message },
+            body: activeThreadId === undefined ? { message } : { threadId: activeThreadId, message },
             // No Content-Type here: the transport already sets application/json,
             // and a second value would double the header ("application/json,
             // application/json"), which the wire's CSRF floor rejects (09 §3).
@@ -50,7 +73,7 @@ export function useVendoThread(threadId?: string) {
           };
         },
       }),
-    [client, threadId],
+    [client],
   );
   const chat = useChat<UIMessage>({
     ...(threadId === undefined ? {} : { id: threadId }),
@@ -66,9 +89,17 @@ export function useVendoThread(threadId?: string) {
     chat.setMessages([]);
     if (threadId !== undefined) {
       void client.threads
-        .get(threadId)
-        .then(thread => {
-          if (active) chat.setMessages(thread.messages);
+        .list()
+        .then(threads => {
+          if (!active) return;
+          if (!threads.some(thread => thread.id === threadId)) {
+            activeThreadIdRef.current = undefined;
+            setEffectiveThreadId(undefined);
+            return;
+          }
+          return client.threads.get(threadId).then(thread => {
+            if (active) chat.setMessages(thread.messages);
+          });
         })
         .catch(() => undefined);
     }
@@ -93,6 +124,7 @@ export function useVendoThread(threadId?: string) {
   );
 
   return {
+    threadId: effectiveThreadId,
     messages: chat.messages,
     sendMessage: chat.sendMessage,
     status: chat.status,

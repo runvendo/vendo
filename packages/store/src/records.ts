@@ -1,4 +1,4 @@
-import type { RecordQuery, RecordStore, VendoRecord } from "@vendoai/core";
+import { canonicalJson, type RecordQuery, type RecordStore, type VendoRecord } from "@vendoai/core";
 import type { Db } from "./db.js";
 import { isEphemeralApp, overlayFor, snapshot } from "./ephemeral.js";
 import { decodeCursor, encodeCursor, iso, jsonParam, pageLimit, text } from "./helpers/utils.js";
@@ -15,6 +15,14 @@ function recordFromRow(row: Record<string, unknown>): VendoRecord {
     createdAt: iso(row["created_at"]),
     updatedAt: iso(row["updated_at"]),
   };
+}
+
+function sameRecordValue(
+  current: VendoRecord,
+  expected: Pick<VendoRecord, "data" | "refs">,
+): boolean {
+  return canonicalJson(current.data) === canonicalJson(expected.data)
+    && canonicalJson(current.refs ?? null) === canonicalJson(expected.refs ?? null);
 }
 
 /** 01-core §12 */
@@ -88,6 +96,50 @@ export function createRecordStore(
           [record.id, jsonParam(record.data), record.refs === undefined ? null : jsonParam(record.refs), now],
         );
       return recordFromRow(result.rows[0] as Record<string, unknown>);
+    },
+    async claim(expected, replacement) {
+      if (await isEphemeral()) {
+        const records = ephemeralRecords();
+        const current = records.get(expected.id);
+        if (!current || !sameRecordValue(current, expected)) return false;
+        if (replacement === undefined) {
+          records.delete(expected.id);
+        } else {
+          records.set(expected.id, snapshot({
+            id: expected.id,
+            data: replacement.data,
+            ...(replacement.refs === undefined ? {} : { refs: replacement.refs }),
+            createdAt: current.createdAt,
+            updatedAt: new Date().toISOString(),
+          }));
+        }
+        return true;
+      }
+
+      const expectedRefs = expected.refs === undefined ? null : jsonParam(expected.refs);
+      const clauses = usesCollection
+        ? "collection = $1 AND id = $2 AND data = $3::jsonb AND refs IS NOT DISTINCT FROM $4::jsonb"
+        : "id = $1 AND data = $2::jsonb AND refs IS NOT DISTINCT FROM $3::jsonb";
+      const params: unknown[] = usesCollection
+        ? [collection, expected.id, jsonParam(expected.data), expectedRefs]
+        : [expected.id, jsonParam(expected.data), expectedRefs];
+
+      if (replacement === undefined) {
+        const result = await db.query(`DELETE FROM ${table} WHERE ${clauses} RETURNING id`, params);
+        return result.rows.length === 1;
+      }
+
+      const dataParam = params.push(jsonParam(replacement.data));
+      const refsParam = params.push(replacement.refs === undefined ? null : jsonParam(replacement.refs));
+      const updatedAtParam = params.push(new Date().toISOString());
+      const result = await db.query(
+        `UPDATE ${table}
+         SET data = $${dataParam}::jsonb, refs = $${refsParam}::jsonb, updated_at = $${updatedAtParam}
+         WHERE ${clauses}
+         RETURNING id`,
+        params,
+      );
+      return result.rows.length === 1;
     },
     async delete(id) {
       if (await isEphemeral()) {

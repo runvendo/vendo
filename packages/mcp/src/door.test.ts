@@ -1,24 +1,59 @@
-import type {
-  AppDocument,
-  AuditEvent,
-  BlobStore,
-  Guard,
-  Principal,
-  RecordQuery,
-  RecordStore,
-  StoreAdapter,
-  ToolOutcome,
-  ToolRegistry,
-  VendoRecord,
+import {
+  canonicalJson,
+  type AppDocument,
+  type AuditEvent,
+  type BlobStore,
+  type Guard,
+  type Principal,
+  type RecordQuery,
+  type RecordStore,
+  type StoreAdapter,
+  type ToolOutcome,
+  type ToolRegistry,
+  type VendoTheme,
+  type VendoRecord,
 } from "@vendoai/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { exportJWK, generateKeyPair, jwtVerify, SignJWT, type KeyLike } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMcpDoor, type AppsPort, type McpDoor } from "./index.js";
+import { createMcpDoorWithState } from "./door.js";
+import {
+  createMcpDoor,
+  type AppsPort,
+  type HostOAuthAdapter,
+  type McpDoor,
+} from "./index.js";
+import type {
+  McpDoorState,
+  McpStateSession,
+  ReplayStateOptions,
+  SessionStateRecord,
+} from "./state.js";
 
 const BASE = "https://product.example/api/vendo/mcp";
 const REDIRECT = "https://client.example/callback";
 const VERIFIER = "a-very-long-pkce-verifier-that-is-valid-for-the-test-suite-1234567890";
+const CONSENT_THEME: VendoTheme = {
+  colors: {
+    background: "#101820",
+    surface: "#18242f",
+    text: "#f4f7fa",
+    muted: "#aebbc7",
+    accent: "#ffb81c",
+    accentText: "#101820",
+    danger: "#f35b66",
+    border: "#405261",
+  },
+  typography: {
+    fontFamily: "Inter, sans-serif",
+    headingFamily: "Newsreader, serif",
+    baseSize: "16px",
+  },
+  radius: { small: "4px", medium: "8px", large: "14px" },
+  density: "compact",
+  motion: "reduced",
+};
 
 // The door resolves CIMD hostnames and rejects private answers (SSRF DNS-rebind
 // defense). `.example` is a reserved non-resolving TLD, so mock the resolver;
@@ -302,13 +337,13 @@ describe("createMcpDoor routing and OAuth", () => {
     expect(revoked.status).toBe(401);
   });
 
-  it("does not fork on concurrent refresh of the same token (in-process lock)", async () => {
+  it("does not fork on concurrent refresh of the same token (atomic claim)", async () => {
     const harness = makeHarness();
     const client = await register(harness.door);
     const first = await issue(harness.door, client.body.client_id);
 
-    // Two simultaneous rotations of the same refresh token: the lock serializes
-    // them, so exactly one succeeds and the other sees it already rotated.
+    // Two simultaneous rotations of the same refresh token: the store claim
+    // admits exactly one and the other sees reuse of the already-rotated grant.
     const [a, b] = await Promise.all([
       refresh(harness.door, first.refresh_token, client.body.client_id),
       refresh(harness.door, first.refresh_token, client.body.client_id),
@@ -390,6 +425,298 @@ describe("createMcpDoor routing and OAuth", () => {
     expect(response.status).toBe(302);
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(harness.authorizeContexts).toEqual([{ clientName: "Metadata client", scopes: ["read", "write"] }]);
+  });
+
+  it("bounces a missing host session to login with an exact return-to, then renders consent", async () => {
+    let subject: string | undefined;
+    const sessionCalls: Array<{ url: string; returnTo: string }> = [];
+    const harness = makeHarness({
+      oauth: {
+        async session(req, { returnTo }) {
+          sessionCalls.push({ url: req.url, returnTo });
+          if (!subject) {
+            const login = new URL("https://product.example/login");
+            login.searchParams.set("returnTo", returnTo);
+            return Response.redirect(login);
+          }
+          return { subject };
+        },
+        async principal(resolvedSubject) {
+          return { kind: "user", subject: resolvedSubject };
+        },
+      },
+    });
+    const registered = await register(harness.door);
+    const initial = await authorize(harness.door, registered.body.client_id, { state: "after-login" });
+
+    expect(initial.status).toBe(302);
+    const login = new URL(initial.headers.get("location")!);
+    expect(login.pathname).toBe("/login");
+    const returnTo = login.searchParams.get("returnTo");
+    expect(returnTo).toContain(`${BASE}/authorize?`);
+    expect(new URL(returnTo!).searchParams.get("state")).toBe("after-login");
+
+    subject = "user_1";
+    const resumed = await harness.door.handler(new Request(returnTo!));
+    expect(resumed.status).toBe(200);
+    expect(resumed.headers.get("content-type")).toContain("text/html");
+    expect(await resumed.text()).toContain("Allow Test client to access this product?");
+    expect(sessionCalls).toHaveLength(2);
+    expect(sessionCalls[0]?.returnTo).toBe(sessionCalls[1]?.returnTo);
+  });
+
+  it("renders a themeable consent page and escapes a hostile DCR client_name", async () => {
+    const hostileName = '<img src=x onerror="globalThis.pwned=1"><script>alert(1)</script>';
+    const harness = makeHarness({ oauth: prebuiltOAuth(), theme: CONSENT_THEME });
+    const registered = await register(harness.door, { client_name: hostileName });
+    const response = await authorize(harness.door, registered.body.client_id);
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("content-security-policy")).toContain("form-action 'self'");
+    expect(html).toContain("--vendo-color-accent");
+    expect(html).toContain("--vendo-radius-medium");
+    expect(html).toContain("--vendo-color-accent:#ffb81c");
+    expect(html).toContain("--vendo-heading-family:Newsreader, serif");
+    expect(html).toContain("--vendo-motion:reduced");
+    expect(html).not.toContain(hostileName);
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;img src=x onerror=&quot;globalThis.pwned=1&quot;&gt;");
+  });
+
+  it("denies through the standard OAuth redirect and rejects a missing CSRF token", async () => {
+    const harness = makeHarness({ oauth: prebuiltOAuth() });
+    const registered = await register(harness.door);
+    const page = await authorize(harness.door, registered.body.client_id, { state: "deny-state" });
+    const html = await page.text();
+
+    const csrfFailure = await submitConsent(harness.door, html, "deny", { csrfToken: "wrong" });
+    expect(csrfFailure.status).toBe(400);
+    expect(await csrfFailure.json()).toMatchObject({ error: "invalid_request" });
+
+    const denied = await submitConsent(harness.door, html, "deny");
+    expect(denied.status).toBe(302);
+    const location = new URL(denied.headers.get("location")!);
+    expect(location.origin + location.pathname).toBe(REDIRECT);
+    expect(location.searchParams.get("error")).toBe("access_denied");
+    expect(location.searchParams.get("state")).toBe("deny-state");
+    expect(harness.store.rows("vendo_mcp_grants").some((row) => row.data.kind === "code")).toBe(false);
+  });
+
+  it("consumes an approved consent interaction once and rejects a replay", async () => {
+    const harness = makeHarness({ oauth: prebuiltOAuth() });
+    const registered = await register(harness.door);
+    const page = await authorize(harness.door, registered.body.client_id, { state: "approve-state" });
+    const html = await page.text();
+
+    const approved = await submitConsent(harness.door, html, "approve");
+    expect(approved.status).toBe(302);
+    const location = new URL(approved.headers.get("location")!);
+    const code = location.searchParams.get("code");
+    expect(code).toMatch(/^vmcd_/);
+    expect(location.searchParams.get("state")).toBe("approve-state");
+
+    const replay = await submitConsent(harness.door, html, "approve");
+    expect(replay.status).toBe(400);
+    expect(await replay.json()).toMatchObject({ error: "invalid_request" });
+
+    const token = await exchange(harness.door, {
+      code: code!,
+      client_id: registered.body.client_id,
+      code_verifier: VERIFIER,
+      resource: BASE,
+    });
+    expect(token.status).toBe(200);
+  });
+
+  it("lets authorize replace the page while the door keeps the consent flow", async () => {
+    let customFlow: { action: string; transaction: string; csrfToken: string } | undefined;
+    const harness = makeHarness({
+      oauth: {
+        async session() { return { subject: "user_1" }; },
+        async authorize(_req, ctx) {
+          customFlow = ctx.consent;
+          return new Response("<!doctype html><p>Host-branded consent</p>", {
+            headers: { "content-type": "text/html; charset=utf-8" },
+          });
+        },
+        async principal(subject) { return { kind: "user", subject }; },
+      },
+    });
+    const registered = await register(harness.door);
+    const page = await authorize(harness.door, registered.body.client_id);
+
+    expect(await page.text()).toContain("Host-branded consent");
+    expect(customFlow).toMatchObject({
+      action: expect.stringContaining(`${BASE}/authorize?`),
+      transaction: expect.stringMatching(/^vmci_/),
+      csrfToken: expect.stringMatching(/^vmcsrf_/),
+    });
+    const approved = await submitConsentFields(harness.door, customFlow!, "approve");
+    expect(approved.status).toBe(302);
+    expect(new URL(approved.headers.get("location")!).searchParams.get("code")).toMatch(/^vmcd_/);
+  });
+});
+
+describe("createMcpDoor remote authorization server trust", () => {
+  it("discovers and caches ES256 JWKS, accepts a valid JWT, and keeps principal() as the host kill switch", async () => {
+    const as = await remoteAsFixture();
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({
+      remoteAs: { issuer: as.issuer, audience: BASE },
+      principal: (subject) => ({ kind: "user", subject }),
+    });
+
+    const token = await as.mint({ sub: "external_user" });
+    const connected = await connect(harness.door, token);
+    expect((await connected.client.listTools()).tools).toHaveLength(1);
+    expect(harness.principalSubjects.length).toBeGreaterThan(0);
+    expect(new Set(harness.principalSubjects)).toEqual(new Set(["external_user"]));
+    expect(as.fetch).toHaveBeenCalledTimes(2); // one RFC 8414 discovery + one JWKS fetch
+
+    await connected.client.listTools();
+    expect(as.fetch).toHaveBeenCalledTimes(2); // cached discovery and keys
+    await connected.client.close();
+  });
+
+  it.each([
+    ["issuer", { issuer: "https://attacker.example" }],
+    ["audience", { audience: "https://other.example/mcp" }],
+    ["expiry", { expiresAt: Math.floor(Date.now() / 1_000) - 1 }],
+  ])("rejects a JWT with a bad %s", async (_case, overrides) => {
+    const as = await remoteAsFixture();
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({ remoteAs: { issuer: as.issuer, audience: BASE } });
+    const token = await as.mint(overrides);
+
+    const response = await harness.door.handler(mcpRequest(token));
+    expect(response.status).toBe(401);
+    expect(harness.principalSubjects).toEqual([]);
+  });
+
+  it("rejects a JWT whose signature does not match the trusted key", async () => {
+    const as = await remoteAsFixture();
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({ remoteAs: { issuer: as.issuer, audience: BASE } });
+    const untrusted = await generateSigningKey("initial");
+    const token = await mintRemoteToken(untrusted.privateKey, untrusted.kid, {
+      issuer: as.issuer,
+      audience: BASE,
+      sub: "forged_user",
+    });
+
+    expect((await harness.door.handler(mcpRequest(token))).status).toBe(401);
+    expect(harness.principalSubjects).toEqual([]);
+  });
+
+  it("rejects an unknown kid and refreshes cached JWKS when a new kid appears", async () => {
+    const as = await remoteAsFixture();
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({
+      remoteAs: { issuer: as.issuer, jwksUri: as.jwksUri, audience: BASE },
+      principal: (subject) => ({ kind: "user", subject }),
+    });
+
+    expect((await harness.door.handler(mcpRequest(await as.mint({ sub: "before_rotation" })))).status).toBe(200);
+
+    const unknown = await generateSigningKey("unknown");
+    const unknownToken = await mintRemoteToken(unknown.privateKey, unknown.kid, {
+      issuer: as.issuer,
+      audience: BASE,
+      sub: "unknown_key",
+    });
+    expect((await harness.door.handler(mcpRequest(unknownToken))).status).toBe(401);
+    expect(harness.principalSubjects).not.toContain("unknown_key");
+
+    await as.rotate("rotated");
+    expect((await harness.door.handler(mcpRequest(await as.mint({ sub: "after_rotation" })))).status).toBe(200);
+    expect(harness.principalSubjects).toEqual(["before_rotation", "after_rotation"]);
+    expect(as.fetch).toHaveBeenCalledTimes(3); // initial, unknown-kid refresh, rotation refresh
+  });
+
+  it("disables the local AS surface and advertises only the configured remote issuer", async () => {
+    const as = await remoteAsFixture();
+    const harness = makeHarness({ remoteAs: { issuer: as.issuer, jwksUri: as.jwksUri, audience: BASE } });
+
+    const prm = await harness.door.handler(new Request(
+      "https://product.example/.well-known/oauth-protected-resource/api/vendo/mcp",
+    ));
+    expect(await prm.json()).toEqual({
+      resource: BASE,
+      authorization_servers: [as.issuer],
+      bearer_methods_supported: ["header"],
+    });
+
+    for (const request of [
+      new Request(`${BASE}/authorize`),
+      new Request(`${BASE}/authorize`, { method: "POST" }),
+      new Request(`${BASE}/token`, { method: "POST" }),
+      new Request(`${BASE}/register`, { method: "POST" }),
+      new Request("https://product.example/.well-known/oauth-authorization-server/api/vendo/mcp"),
+    ]) {
+      const response = await harness.door.handler(request);
+      expect(response.status).toBe(404);
+    }
+  });
+});
+
+describe("createMcpDoor login federation", () => {
+  const secret = "test-federation-secret-with-enough-entropy";
+  const issuer = "https://as.example/oauth";
+  const redirectUri = "https://as.example/login/callback?state=kept";
+
+  it("round-trips a signed login request through the host adapter and returns a one-minute assertion", async () => {
+    const harness = makeHarness({
+      federation: { secret },
+      authorizeSubject: () => "host_user_7",
+    });
+    const request = await mintFederationRequest(secret, { issuer, redirectUri });
+
+    const response = await harness.door.handler(new Request(`${BASE}/federate?request=${encodeURIComponent(request)}`));
+    expect(response.status).toBe(302);
+    const location = new URL(response.headers.get("location")!);
+    expect(location.origin + location.pathname).toBe("https://as.example/login/callback");
+    expect(location.searchParams.get("state")).toBe("kept");
+    expect(harness.authorizeContexts).toEqual([{ clientName: "Generic MCP client", scopes: ["tools", "apps"] }]);
+
+    const assertion = location.searchParams.get("assertion")!;
+    const verified = await jwtVerify(assertion, new TextEncoder().encode(secret), {
+      algorithms: ["HS256"],
+      issuer: BASE,
+      audience: issuer,
+    });
+    expect(verified.payload).toMatchObject({
+      iss: BASE,
+      aud: issuer,
+      sub: "host_user_7",
+      jti: "federation-request-1",
+    });
+    expect(verified.payload.exp! - verified.payload.iat!).toBe(60);
+  });
+
+  it("returns a host login bounce unchanged so the browser can retry the same signed request", async () => {
+    const bounce = new Response(null, { status: 302, headers: { location: "/login?return_to=federate" } });
+    const harness = makeHarness({ federation: { secret }, authorizeResponse: bounce });
+    const request = await mintFederationRequest(secret, { issuer, redirectUri });
+
+    const response = await harness.door.handler(new Request(`${BASE}/federate?request=${encodeURIComponent(request)}`));
+    expect(response).toBe(bounce);
+  });
+
+  it.each([
+    ["bad signature", "different-secret", {}],
+    ["expired request", secret, { expiresAt: Math.floor(Date.now() / 1_000) - 1 }],
+    ["wrong audience", secret, { audience: "https://other.example/mcp" }],
+    ["redirect origin mismatch", secret, { redirectUri: "https://evil.example/callback" }],
+  ])("rejects %s before calling the host adapter", async (_case, signingSecret, overrides) => {
+    const harness = makeHarness({ federation: { secret } });
+    const request = await mintFederationRequest(signingSecret, { issuer, redirectUri, ...overrides });
+
+    const response = await harness.door.handler(new Request(`${BASE}/federate?request=${encodeURIComponent(request)}`));
+    expect(response.status).toBe(400);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(harness.authorizeContexts).toEqual([]);
   });
 });
 
@@ -559,6 +886,35 @@ describe("createMcpDoor MCP protocol", () => {
     await connected.client.close();
   });
 
+  it("does not send already-resolved tree queries back to the MCP shim", async () => {
+    const payload = {
+      formatVersion: "vendo-genui/v1",
+      root: "root",
+      nodes: [],
+      data: { total: 42 },
+      queries: [{ path: "/total", tool: "host_total" }],
+    };
+    const apps: AppsPort = {
+      async list() { return []; },
+      async open() { return { kind: "tree", payload }; },
+      async call() { return null; },
+    };
+    const harness = makeHarness({ apps });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+
+    const opened = await connected.client.callTool({ name: "vendo_apps_open", arguments: { appId: "app_1" } });
+    expect(opened.structuredContent).toEqual({
+      formatVersion: "vendo-genui/v1",
+      root: "root",
+      nodes: [],
+      data: { total: 42 },
+    });
+    expect(payload.queries).toEqual([{ path: "/total", tool: "host_total" }]);
+    await connected.client.close();
+  });
+
   it("gives vendo_apps_* door tools full guard treatment with venue mcp", async () => {
     const apps: AppsPort = {
       async list() { return []; },
@@ -610,7 +966,13 @@ describe("createMcpDoor MCP protocol", () => {
   });
 
   it("keeps a registry-owned vendo_apps_* verbatim but attaches the shim _meta and renders its payload (FIX E)", async () => {
-    const treePayload = { formatVersion: "vendo-genui/v1", root: "root", nodes: [], data: { via: "registry" } };
+    const treePayload = {
+      formatVersion: "vendo-genui/v1",
+      root: "root",
+      nodes: [],
+      data: { via: "registry" },
+      queries: [{ path: "/via", tool: "host_source" }],
+    };
     const apps: AppsPort = {
       async list() { return []; },
       async open() { return { kind: "http", url: "https://app.example" }; },
@@ -652,10 +1014,18 @@ describe("createMcpDoor MCP protocol", () => {
 
     // Execution routes through the registry (one guard decision), not the
     // AppsPort — and the door unwraps its OpenSurface into a bare, shim-renderable
-    // format-tagged UIPayload (core §8), not the {kind,payload} envelope.
+    // format-tagged UIPayload (core §8), not the {kind,payload} envelope. The
+    // registry's AppsRuntime.open already resolved `queries` into `data`, so the
+    // MCP projection removes those declarations rather than calling them twice.
     const before = harness.executions.length;
     const result = await connected.client.callTool({ name: "vendo_apps_open", arguments: {} });
-    expect(result.structuredContent).toEqual(treePayload);
+    expect(result.structuredContent).toEqual({
+      formatVersion: "vendo-genui/v1",
+      root: "root",
+      nodes: [],
+      data: { via: "registry" },
+    });
+    expect(treePayload.queries).toEqual([{ path: "/via", tool: "host_source" }]);
     expect(harness.executions.length).toBe(before + 1);
     await connected.client.close();
   });
@@ -695,6 +1065,38 @@ describe("createMcpDoor MCP protocol", () => {
     await connected.client.close();
   });
 
+  it("routes session lifetime and approval replay through a pluggable state seam", async () => {
+    let outcome: ToolOutcome = { status: "pending-approval", approvalId: "apr_pluggable" };
+    const state = new TestMcpDoorState();
+    const harness = makeHarness({ state, getOutcome: () => outcome });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+
+    await connected.client.listTools();
+    const sessionId = connected.transport.sessionId!;
+    const args = { query: "through-the-seam" };
+    await connected.client.callTool({ name: "host_lookup", arguments: args });
+    await connected.client.callTool({ name: "host_lookup", arguments: args });
+    expect(harness.executions[1]!.id).toBe(harness.executions[0]!.id);
+    expect(state.operations).toEqual(expect.arrayContaining([
+      `session:set:${sessionId}`,
+      `session:get:${sessionId}`,
+      `session:touch:${sessionId}`,
+      `replay:get:${sessionId}`,
+      `replay:set:${sessionId}`,
+    ]));
+
+    outcome = { status: "ok", output: { answer: 1 } };
+    await connected.client.callTool({ name: "host_lookup", arguments: args });
+    expect(state.operations).toContain(`replay:delete:${sessionId}`);
+
+    await connected.transport.terminateSession();
+    expect(state.operations).toContain(`session:delete:${sessionId}`);
+    expect((await harness.door.handler(mcpRequest(tokens.access_token, sessionId))).status).toBe(404);
+    await connected.client.close();
+  });
+
   it("refuses subject B's bearer presented with subject A's session id (FIX G)", async () => {
     let subject = "user_a";
     const harness = makeHarness({ authorizeSubject: () => subject });
@@ -722,21 +1124,28 @@ describe("createMcpDoor MCP protocol", () => {
 
 interface HarnessOptions {
   store?: MemoryStore;
+  state?: McpDoorState;
   getOutcome?: () => ToolOutcome;
-  principal?: () => Principal | null;
+  principal?: (subject: string) => Principal | null;
   apps?: AppsPort;
   extraDescriptors?: Awaited<ReturnType<ToolRegistry["descriptors"]>>;
   check?: Guard["check"];
   mount?: string;
+  remoteAs?: { issuer: string; jwksUri?: string; audience: string };
+  federation?: { secret: string };
+  authorizeResponse?: Response;
+  theme?: VendoTheme;
   /** The subject the OAuth authorize step returns (defaults "user_1"); a fn lets
    * a test mint tokens for two different subjects against one door (FIX G). */
   authorizeSubject?: () => string;
+  oauth?: HostOAuthAdapter;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
   const store = options.store ?? new MemoryStore();
   const audits: AuditEvent[] = [];
   const authorizeContexts: Array<{ clientName: string; scopes: string[] }> = [];
+  const principalSubjects: string[] = [];
   const executions: Array<{ id: string; ctx: Parameters<ToolRegistry["execute"]>[1] }> = [];
   const guard: Guard = {
     check: options.check ?? (async () => ({ action: "run", decidedBy: "default" })),
@@ -758,30 +1167,38 @@ function makeHarness(options: HarnessOptions = {}) {
       return options.getOutcome?.() ?? { status: "ok", output: { answer: 42 } };
     },
   };
-  const door = createMcpDoor({
+  const config = {
     tools,
     guard,
     store,
     apps: options.apps,
     ...(options.mount === undefined ? {} : { mount: options.mount }),
-    oauth: {
+    ...(options.remoteAs === undefined ? {} : { remoteAs: options.remoteAs }),
+    ...(options.federation === undefined ? {} : { federation: options.federation }),
+    ...(options.theme === undefined ? {} : { theme: options.theme }),
+    oauth: options.oauth ?? {
       async authorize(_req, ctx) {
         authorizeContexts.push(ctx);
+        if (options.authorizeResponse) return options.authorizeResponse;
         return { subject: options.authorizeSubject ? options.authorizeSubject() : "user_1" };
       },
-      async principal() {
-        return options.principal ? options.principal() : { kind: "user", subject: "user_1" };
+      async principal(subject) {
+        principalSubjects.push(subject);
+        return options.principal ? options.principal(subject) : { kind: "user", subject: "user_1" };
       },
     },
-  });
-  return { door, store, audits, authorizeContexts, executions };
+  };
+  const door = options.state === undefined
+    ? createMcpDoor(config)
+    : createMcpDoorWithState(config, options.state);
+  return { door, store, audits, authorizeContexts, principalSubjects, executions };
 }
 
-async function register(door: McpDoor) {
+async function register(door: McpDoor, metadata: Record<string, unknown> = {}) {
   const response = await door.handler(new Request(`${BASE}/register`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ client_name: "Test client", redirect_uris: [REDIRECT], scope: "read write" }),
+    body: JSON.stringify({ client_name: "Test client", redirect_uris: [REDIRECT], scope: "read write", ...metadata }),
   }));
   return { response, body: await response.clone().json() as { client_id: string } & Record<string, unknown> };
 }
@@ -799,6 +1216,55 @@ async function authorize(door: McpDoor, clientId: string, overrides: Record<stri
     ...overrides,
   });
   return door.handler(new Request(`${BASE}/authorize?${params}`));
+}
+
+function prebuiltOAuth(): HostOAuthAdapter {
+  return {
+    async session() { return { subject: "user_1" }; },
+    async principal(subject) { return { kind: "user", subject }; },
+  };
+}
+
+async function submitConsent(
+  door: McpDoor,
+  html: string,
+  decision: "approve" | "deny",
+  overrides: { csrfToken?: string } = {},
+): Promise<Response> {
+  const action = htmlAttribute(html, "form", "action").replaceAll("&amp;", "&");
+  return submitConsentFields(door, {
+    action,
+    transaction: inputValue(html, "transaction"),
+    csrfToken: overrides.csrfToken ?? inputValue(html, "csrf_token"),
+  }, decision);
+}
+
+async function submitConsentFields(
+  door: McpDoor,
+  flow: { action: string; transaction: string; csrfToken: string },
+  decision: "approve" | "deny",
+): Promise<Response> {
+  return door.handler(new Request(flow.action, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      transaction: flow.transaction,
+      csrf_token: flow.csrfToken,
+      decision,
+    }),
+  }));
+}
+
+function inputValue(html: string, name: string): string {
+  const match = html.match(new RegExp(`<input[^>]+name="${name}"[^>]+value="([^"]+)"`, "i"));
+  if (!match?.[1]) throw new Error(`Consent page omitted ${name}`);
+  return match[1];
+}
+
+function htmlAttribute(html: string, element: string, attribute: string): string {
+  const match = html.match(new RegExp(`<${element}[^>]+${attribute}="([^"]+)"`, "i"));
+  if (!match?.[1]) throw new Error(`Consent page omitted ${element}[${attribute}]`);
+  return match[1];
 }
 
 async function exchange(door: McpDoor, values: Record<string, string>) {
@@ -853,6 +1319,7 @@ function mcpRequest(accessToken: string, sessionId?: string) {
     method: "POST",
     headers: {
       authorization: `Bearer ${accessToken}`,
+      accept: "application/json, text/event-stream",
       "content-type": "application/json",
       ...(sessionId === undefined ? {} : { "mcp-session-id": sessionId }),
       "mcp-protocol-version": "2025-11-25",
@@ -872,6 +1339,89 @@ async function pkceChallenge(verifier: string): Promise<string> {
   return Buffer.from(digest).toString("base64url");
 }
 
+interface RemoteTokenOverrides {
+  issuer?: string;
+  audience?: string;
+  sub?: string;
+  issuedAt?: number;
+  expiresAt?: number;
+}
+
+async function generateSigningKey(kid: string) {
+  const pair = await generateKeyPair("ES256");
+  return { ...pair, kid };
+}
+
+async function mintRemoteToken(
+  privateKey: KeyLike,
+  kid: string,
+  options: { issuer: string; audience: string } & RemoteTokenOverrides,
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1_000);
+  return new SignJWT({})
+    .setProtectedHeader({ alg: "ES256", kid })
+    .setIssuer(options.issuer)
+    .setAudience(options.audience)
+    .setSubject(options.sub ?? "external_user")
+    .setIssuedAt(options.issuedAt ?? now)
+    .setExpirationTime(options.expiresAt ?? now + 300)
+    .sign(privateKey);
+}
+
+async function remoteAsFixture() {
+  const issuer = "https://as.example";
+  const jwksUri = `${issuer}/jwks`;
+  let key = await generateSigningKey("initial");
+  let jwks = { keys: [{ ...(await exportJWK(key.publicKey)), alg: "ES256", use: "sig", kid: key.kid }] };
+  const fetch = vi.fn(async (input: string | URL | Request) => {
+    const url = input instanceof Request ? input.url : input.toString();
+    if (url === `${issuer}/.well-known/oauth-authorization-server`) {
+      return Response.json({ issuer, jwks_uri: jwksUri });
+    }
+    if (url === jwksUri) return Response.json(jwks);
+    return new Response(null, { status: 404 });
+  });
+  return {
+    issuer,
+    jwksUri,
+    fetch,
+    async mint(overrides: RemoteTokenOverrides = {}) {
+      return mintRemoteToken(key.privateKey, key.kid, {
+        issuer: overrides.issuer ?? issuer,
+        audience: overrides.audience ?? BASE,
+        ...overrides,
+      });
+    },
+    async rotate(kid: string) {
+      key = await generateSigningKey(kid);
+      jwks = { keys: [{ ...(await exportJWK(key.publicKey)), alg: "ES256", use: "sig", kid: key.kid }] };
+    },
+  };
+}
+
+async function mintFederationRequest(
+  secret: string,
+  options: {
+    issuer: string;
+    redirectUri: string;
+    audience?: string;
+    expiresAt?: number;
+  },
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1_000);
+  return new SignJWT({
+    redirect_uri: options.redirectUri,
+    scopes: ["tools", "apps"],
+    client_name: "Generic MCP client",
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuer(options.issuer)
+    .setAudience(options.audience ?? BASE)
+    .setJti("federation-request-1")
+    .setExpirationTime(options.expiresAt ?? now + 300)
+    .sign(new TextEncoder().encode(secret));
+}
+
 function textOf(result: unknown): string {
   return ((result as { content: unknown[] }).content[0] as { text: string }).text;
 }
@@ -882,6 +1432,109 @@ interface TokenResponse {
   expires_in: number;
   refresh_token: string;
   scope: string;
+}
+
+class TestMcpDoorState implements McpDoorState {
+  readonly operations: string[] = [];
+  readonly #sessions = new Map<string, SessionStateRecord>();
+  readonly #replay = new Map<
+    string,
+    Map<string, { callId: string; subject: string; expiresAt: number }>
+  >();
+
+  async getSession(sessionId: string): Promise<McpStateSession | null> {
+    this.operations.push(`session:get:${sessionId}`);
+    return this.#sessions.get(sessionId)?.session ?? null;
+  }
+
+  async setSession(record: SessionStateRecord): Promise<void> {
+    this.operations.push(`session:set:${record.sessionId}`);
+    this.#sessions.set(record.sessionId, record);
+  }
+
+  async touchSession(sessionId: string, expiresAt: number): Promise<void> {
+    this.operations.push(`session:touch:${sessionId}`);
+    const record = this.#sessions.get(sessionId);
+    if (record) record.expiresAt = expiresAt;
+    for (const replay of this.#replay.get(record?.session.replayScope ?? sessionId)?.values() ?? []) {
+      replay.expiresAt = expiresAt;
+    }
+  }
+
+  async deleteSession(sessionId: string): Promise<McpStateSession | null> {
+    this.operations.push(`session:delete:${sessionId}`);
+    const record = this.#sessions.get(sessionId);
+    this.#sessions.delete(sessionId);
+    if (record) this.#replay.delete(record.session.replayScope);
+    return record?.session ?? null;
+  }
+
+  async deleteSessionsBySubject(subject: string): Promise<McpStateSession[]> {
+    this.operations.push(`session:delete-subject:${subject}`);
+    const sessions: McpStateSession[] = [];
+    for (const [sessionId, record] of this.#sessions) {
+      if (record.subject !== subject) continue;
+      sessions.push(record.session);
+      this.#sessions.delete(sessionId);
+      this.#replay.delete(record.session.replayScope);
+    }
+    for (const [scope, entries] of this.#replay) {
+      for (const [key, replay] of entries) {
+        if (replay.subject === subject) entries.delete(key);
+      }
+      if (entries.size === 0) this.#replay.delete(scope);
+    }
+    return sessions;
+  }
+
+  async sweepExpiredSessions(now: number): Promise<McpStateSession[]> {
+    this.operations.push("session:sweep");
+    const sessions: McpStateSession[] = [];
+    for (const [sessionId, record] of this.#sessions) {
+      if (record.expiresAt > now) continue;
+      sessions.push(record.session);
+      this.#sessions.delete(sessionId);
+      this.#replay.delete(record.session.replayScope);
+    }
+    return sessions;
+  }
+
+  async getReplay(scope: string, key: string, now: number): Promise<string | null> {
+    this.operations.push(`replay:get:${scope}`);
+    const replay = this.#replay.get(scope)?.get(key);
+    if (replay === undefined) return null;
+    if (replay.expiresAt > now) return replay.callId;
+    this.#replay.get(scope)?.delete(key);
+    return null;
+  }
+
+  async setReplay(
+    scope: string,
+    key: string,
+    callId: string,
+    options: ReplayStateOptions,
+  ): Promise<void> {
+    this.operations.push(`replay:set:${scope}`);
+    const entries = this.#replay.get(scope) ?? new Map<
+      string,
+      { callId: string; subject: string; expiresAt: number }
+    >();
+    if (!entries.has(key) && entries.size >= options.capacity) {
+      const oldest = entries.keys().next().value;
+      if (oldest !== undefined) entries.delete(oldest);
+    }
+    entries.set(key, {
+      callId,
+      subject: options.subject,
+      expiresAt: options.expiresAt,
+    });
+    this.#replay.set(scope, entries);
+  }
+
+  async deleteReplay(scope: string, key: string): Promise<void> {
+    this.operations.push(`replay:delete:${scope}`);
+    this.#replay.get(scope)?.delete(key);
+  }
 }
 
 class MemoryStore implements StoreAdapter {
@@ -908,6 +1561,27 @@ class MemoryStore implements StoreAdapter {
         };
         rows.set(stored.id, stored);
         return stored;
+      },
+      async claim(expected, replacement) {
+        const current = rows.get(expected.id);
+        if (
+          !current
+          || canonicalJson(current.data) !== canonicalJson(expected.data)
+          || canonicalJson(current.refs ?? null) !== canonicalJson(expected.refs ?? null)
+        ) return false;
+        if (replacement === undefined) {
+          rows.delete(expected.id);
+        } else {
+          const now = new Date().toISOString();
+          rows.set(expected.id, {
+            id: expected.id,
+            data: structuredClone(replacement.data),
+            ...(replacement.refs === undefined ? {} : { refs: { ...replacement.refs } }),
+            createdAt: current.createdAt,
+            updatedAt: now,
+          });
+        }
+        return true;
       },
       async delete(id) { rows.delete(id); },
       async list(query?: RecordQuery) {
