@@ -340,7 +340,12 @@ function mcpConsentGrant(ctx: ActionsRunContext, call: ToolCall, tool: Extracted
 
 /** The tRPC HTTP envelope (04 §1): queries GET `{mount}/{procedure}?input=...`,
  * mutations POST the input as the JSON body. Hosts whose tRPC root applies the
- * superjson transformer expect the `{ json: ... }` wrapping. */
+ * superjson transformer expect the `{ json: ... }` wrapping — which is exactly
+ * `superjson.serialize(value)` for every value that can traverse the agent
+ * tool-call wire (plain JSON; no Date/Map/Set instances exist there, so no
+ * `meta` is ever needed). Known limitation: a host validator that demands a
+ * rich type (e.g. `z.date()`) rejects the ISO string visibly as a tRPC 400 —
+ * request-path date coercion via schema-informed `meta` is a follow-up. */
 function trpcRequest(binding: TrpcBinding, args: Record<string, unknown>, configuredBaseUrl?: string): {
   url: URL;
   method: HttpMethod;
@@ -369,7 +374,9 @@ function trpcRequest(binding: TrpcBinding, args: Record<string, unknown>, config
 }
 
 /** Unwrap the tRPC success envelope: `{ result: { data } }`, with superjson's
- * `{ json }` wrapping inside `data` when the host applies the transformer. */
+ * `{ json }` wrapping inside `data` when the host applies the transformer.
+ * `meta` is intentionally ignored: rich types come back as their JSON
+ * projections (ISO strings etc.), the format the agent layer consumes. */
 function trpcOutput(binding: TrpcBinding, parsed: unknown): unknown {
   const result = parsed !== null && typeof parsed === "object" && "result" in parsed
     ? (parsed as { result: unknown }).result
