@@ -65,6 +65,19 @@ describe("remixable helper", () => {
     expect(fetchMock).toHaveBeenCalledWith("/custom/vendo/dev/remixable-source", expect.anything());
   });
 
+  it("reports in a Vite-style dev browser with no NODE_ENV via import.meta.env", async () => {
+    vi.stubGlobal("window", {});
+    // No process-shim NODE_ENV: the helper falls back to import.meta.env,
+    // where vitest (like Vite dev) sets DEV=true.
+    vi.stubEnv("NODE_ENV", undefined);
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    remixable({ name: "Card", component: () => null }, "http://localhost:5173/src/card.tsx");
+    await flushMicrotasks();
+    expect(fetchMock).toHaveBeenCalledWith("/api/vendo/dev/remixable-source", expect.anything());
+  });
+
   it("stays inert outside development", async () => {
     vi.stubGlobal("window", {});
     vi.stubEnv("NODE_ENV", "production");

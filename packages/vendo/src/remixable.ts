@@ -11,9 +11,16 @@ export interface RemixableReportOptions {
 }
 
 function developmentBrowser(): boolean {
-  return typeof window !== "undefined"
-    && typeof process !== "undefined"
-    && process.env.NODE_ENV === "development";
+  if (typeof window === "undefined") return false;
+  // An explicit NODE_ENV (Next/webpack process shim) is authoritative. Vite
+  // browsers have no process global — only the process.env.NODE_ENV
+  // *expression* is statically replaced, and not in every configuration — so
+  // fall back to the bundler-native import.meta.env surface.
+  if (typeof process !== "undefined" && process.env?.NODE_ENV !== undefined) {
+    return process.env.NODE_ENV === "development";
+  }
+  const metaEnv = (import.meta as { env?: { DEV?: boolean; MODE?: string } }).env;
+  return metaEnv?.DEV === true || metaEnv?.MODE === "development";
 }
 
 /**
