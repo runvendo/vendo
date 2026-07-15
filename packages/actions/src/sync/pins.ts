@@ -6,9 +6,12 @@ import {
   type CapturedPinBaseline,
   type CapturedPinStyle,
   type CapturedPinSubSource,
+  type UnresolvedPin,
+  type UnresolvedPinReason,
 } from "../formats.js";
 import {
-  importSpecifierFor,
+  importReferenceFor,
+  isInside,
   resolveImportSource,
   splitTopLevel,
   stripComments,
@@ -38,8 +41,11 @@ interface PinRegistration {
 export interface PinCaptureResult {
   captured: string[];
   drifted: string[];
+  unresolved: UnresolvedPin[];
   warnings: string[];
 }
+
+const RUNTIME_CAPTURE_HINT = "run the host in dev with Vendo mounted to runtime-capture it";
 
 class StaticValueParser {
   private index = 0;
@@ -165,10 +171,10 @@ function staticSampleProps(source: string): Record<string, unknown> | null {
   }
 }
 
-function registrationFromBody(body: string): PinRegistration | null {
+function registrationFromBody(body: string, helperMarked: boolean): PinRegistration | null {
   let slot: string | undefined;
   let component: string | undefined;
-  let remixable = false;
+  let remixable = helperMarked;
   let exportable = false;
   let sampleProps: Record<string, unknown> | undefined;
   let invalidSampleProps = false;
@@ -176,8 +182,8 @@ function registrationFromBody(body: string): PinRegistration | null {
     const field = rawField.trim();
     const nameMatch = field.match(/^(?:["']name["']|name)\s*:\s*["']([^"']+)["']\s*$/su);
     if (nameMatch?.[1]) slot = nameMatch[1];
-    const componentMatch = field.match(/^(?:["']component["']|component)\s*:\s*([A-Za-z_$][\w$]*)\s*$/su);
-    if (componentMatch?.[1]) component = componentMatch[1];
+    const componentMatch = field.match(/^(?:["']component["']|component)\s*:\s*(.+)$/su);
+    if (componentMatch?.[1]) component = componentMatch[1].trim();
     if (/^(?:["']remixable["']|remixable)\s*:\s*true\s*$/su.test(field)) remixable = true;
     if (/^(?:["']exportable["']|exportable)\s*:\s*true\s*$/su.test(field)) exportable = true;
     const sampleMatch = field.match(/^(?:["']sampleProps["']|sampleProps)\s*:\s*([\s\S]+)$/u);
@@ -198,15 +204,11 @@ function registrations(source: string): PinRegistration[] {
     if (source[index] !== "{") continue;
     const body = topLevelObjectLiteral(source, index);
     if (!body) continue;
-    const registration = registrationFromBody(body);
+    const helperMarked = /\bremixable\s*\(\s*$/.test(source.slice(Math.max(0, index - 80), index));
+    const registration = registrationFromBody(body, helperMarked);
     if (registration) found.push(registration);
   }
   return found;
-}
-
-function isInside(root: string, candidate: string): boolean {
-  const relative = path.relative(path.resolve(root), path.resolve(candidate));
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function portablePath(root: string, file: string): string {
@@ -242,6 +244,19 @@ async function readExisting(file: string): Promise<{ exists: boolean; baseline: 
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return { exists: false, baseline: null };
     throw error;
   }
+}
+
+async function hasCapturedBaseline(file: string, slot: string): Promise<boolean> {
+  const existing = await readExisting(file);
+  return existing.baseline?.slot === slot;
+}
+
+function unresolved(
+  registration: PinRegistration,
+  reason: UnresolvedPinReason,
+  hint: string,
+): UnresolvedPin {
+  return { slot: registration.slot, component: registration.component, reason, hint };
 }
 
 async function captureRootStyles(
@@ -371,8 +386,12 @@ function sameCapturedPayload(left: CapturedPinBaseline | null, right: CapturedPi
   return JSON.stringify(payload(left)) === JSON.stringify(payload(right));
 }
 
-export async function capturePins(root: string, out: string): Promise<PinCaptureResult> {
-  const result: PinCaptureResult = { captured: [], drifted: [], warnings: [] };
+export async function capturePins(
+  root: string,
+  out: string,
+  ignoreSlots: ReadonlySet<string> = new Set(),
+): Promise<PinCaptureResult> {
+  const result: PinCaptureResult = { captured: [], drifted: [], unresolved: [], warnings: [] };
   const realRoot = await fs.realpath(root);
   const files = await walk(root, (relativePath) => /\.(?:[cm]?[jt]sx?)$/u.test(relativePath) && !/\.d\.ts$/u.test(relativePath));
   let stylesPromise: Promise<CapturedPinStyle[]> | undefined;
@@ -387,36 +406,76 @@ export async function capturePins(root: string, out: string): Promise<PinCapture
         continue;
       }
       seenSlots.add(registration.slot);
+      if (ignoreSlots.has(registration.slot)) continue;
       if (registration.invalidSampleProps) {
         result.warnings.push(`remixable slot ${registration.slot} sampleProps is not a static JSON-compatible object and was not captured`);
       }
-      const specifier = importSpecifierFor(source, registration.component);
-      if (!specifier) {
-        result.warnings.push(`remixable slot ${registration.slot} component ${registration.component} is not a resolvable import`);
+      const baselineFile = path.resolve(remixableDir, `${registration.slot}.json`);
+      if (!isInside(remixableDir, baselineFile)) {
+        result.unresolved.push(unresolved(
+          registration,
+          "unsafe-slot",
+          "rename the slot so it is a safe filename before capturing it",
+        ));
         continue;
       }
-      const resolved = await resolveImportSource(file, specifier, root);
+      const fallbackPresent = async (): Promise<boolean> => hasCapturedBaseline(baselineFile, registration.slot);
+      if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?$/.test(registration.component)) {
+        if (!await fallbackPresent()) {
+          result.unresolved.push(unresolved(
+            registration,
+            "inline-component",
+            `use an imported component or ${RUNTIME_CAPTURE_HINT}`,
+          ));
+        }
+        continue;
+      }
+      const reference = await importReferenceFor(source, registration.component);
+      if (!reference) {
+        if (!await fallbackPresent()) {
+          result.unresolved.push(unresolved(
+            registration,
+            "component-not-imported",
+            `use a static import or ${RUNTIME_CAPTURE_HINT}`,
+          ));
+        }
+        continue;
+      }
+      const resolved = await resolveImportSource(file, reference.specifier, root, reference.imported);
       if (!resolved) {
-        result.warnings.push(`remixable slot ${registration.slot} component import ${specifier} could not be resolved`);
+        if (!await fallbackPresent()) {
+          result.unresolved.push(unresolved(
+            registration,
+            "import-not-found",
+            `fix the import path or ${RUNTIME_CAPTURE_HINT}`,
+          ));
+        }
         continue;
       }
       let realResolved: string;
       try {
         realResolved = await fs.realpath(resolved.file);
       } catch {
-        result.warnings.push(`remixable slot ${registration.slot} component source could not be resolved safely`);
+        if (!await fallbackPresent()) {
+          result.unresolved.push(unresolved(
+            registration,
+            "unsafe-source",
+            `keep the component source inside the host root or ${RUNTIME_CAPTURE_HINT}`,
+          ));
+        }
         continue;
       }
       if (!isInside(realRoot, realResolved)) {
-        result.warnings.push(`remixable slot ${registration.slot} resolves outside the host root and was not captured`);
+        if (!await fallbackPresent()) {
+          result.unresolved.push(unresolved(
+            registration,
+            "unsafe-source",
+            `keep the component source inside the host root or ${RUNTIME_CAPTURE_HINT}`,
+          ));
+        }
         continue;
       }
       const styles = await (stylesPromise ??= captureRootStyles(root, realRoot, files, result.warnings));
-      const baselineFile = path.resolve(remixableDir, `${registration.slot}.json`);
-      if (!isInside(remixableDir, baselineFile)) {
-        result.warnings.push(`remixable slot ${registration.slot} is not a safe baseline filename and was not captured`);
-        continue;
-      }
       const { sourceImports, subSources } = await captureSubSources(
         root,
         realRoot,
@@ -446,5 +505,6 @@ export async function capturePins(root: string, out: string): Promise<PinCapture
   }
   result.captured.sort();
   result.drifted.sort();
+  result.unresolved.sort((left, right) => left.slot.localeCompare(right.slot));
   return result;
 }

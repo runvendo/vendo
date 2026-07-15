@@ -53,6 +53,33 @@ host's sub-components and styles — instead of bare React. The prewired
 primitives are reserved and do not appear in the catalog: `Stack`, `Row`,
 `Grid`, `Text`, `Skeleton`, `Surface`, and `Divider`.
 
+When a component cannot be followed through a static import, use the umbrella
+helper with the registration module URL:
+
+```ts
+import { remixable } from "@vendoai/vendo/react";
+
+const invoiceCard = remixable({
+  name: "InvoiceCard",
+  component: InvoiceCard,
+  exportable: true,
+}, import.meta.url);
+```
+
+In development the helper reports the module to the Vendo wire, which captures
+the source only when no valid static baseline exists. The capture route is not
+mounted in production. `vendo sync` exits non-zero for any unresolved slot; a
+slot that is intentionally never capturable can be acknowledged in the
+human-owned `.vendo/overrides.json`:
+
+```json
+{
+  "format": "vendo/overrides@1",
+  "tools": {},
+  "remix": { "ignoreSlots": ["ThirdPartyWidget"] }
+}
+```
+
 ## Headless hooks
 
 | Hook | Surface |

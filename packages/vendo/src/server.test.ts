@@ -1,6 +1,7 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { capturedPinBaselineSchema } from "@vendoai/actions";
 import {
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
@@ -46,7 +47,7 @@ const app = (id = "app_wire"): AppDocument => ({
 
 async function setup(
   resolver = vi.fn(async () => principal),
-  options: Pick<Partial<CreateVendoConfig>, "policy"> = {},
+  options: Pick<Partial<CreateVendoConfig>, "policy" | "development"> = {},
 ): Promise<{ vendo: Vendo; resolver: typeof resolver }> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-"));
   const store = createStore({ dataDir });
@@ -326,6 +327,106 @@ describe("09 §3 public wire", () => {
     const next = nextVendoHandler(vendo);
     for (const method of ["GET", "POST", "DELETE"] as const) expect(next[method]).toBeTypeOf("function");
     expect((await next.GET(request("GET", "/status"))).status).toBe(200);
+  });
+});
+
+describe("development runtime source capture", () => {
+  async function captureRoot(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "vendo-runtime-capture-"));
+    cleanups.push(async () => { await rm(root, { recursive: true, force: true }); });
+    return root;
+  }
+
+  it("writes a schema-valid baseline for a runtime-only registration", async () => {
+    const root = await captureRoot();
+    const sourceFile = join(root, "src", "runtime-card.tsx");
+    await mkdir(join(root, "src"), { recursive: true });
+    await writeFile(sourceFile, "export const RuntimeCard = () => <article>runtime</article>;\n", "utf8");
+    const { vendo } = await setup(vi.fn(async () => principal), { development: { root } });
+
+    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
+      slot: "RuntimeCard",
+      source: new URL(`file://${sourceFile}`).href,
+      exportable: true,
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ slot: "RuntimeCard", status: "captured" });
+    const baseline = JSON.parse(await readFile(join(root, ".vendo", "remixable", "RuntimeCard.json"), "utf8"));
+    expect(capturedPinBaselineSchema.safeParse(baseline).success).toBe(true);
+    expect(baseline).toMatchObject({ slot: "RuntimeCard", exportable: true });
+  });
+
+  it("rejects capture from an anonymous session without touching disk", async () => {
+    const root = await captureRoot();
+    const sourceFile = join(root, "src", "runtime-card.tsx");
+    await mkdir(join(root, "src"), { recursive: true });
+    await writeFile(sourceFile, "export const RuntimeCard = () => null;\n", "utf8");
+    const { vendo } = await setup(vi.fn(async () => null), { development: { root } });
+
+    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
+      slot: "RuntimeCard",
+      source: sourceFile,
+      exportable: false,
+    }));
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: { code: "blocked", message: "runtime capture requires a host-resolved principal" },
+    });
+    await expect(access(join(root, ".vendo", "remixable", "RuntimeCard.json"))).rejects.toThrow();
+  });
+
+  it("does not mount the route outside development", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const { vendo } = await setup();
+    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
+      slot: "Absent",
+      source: "/tmp/absent.tsx",
+      exportable: false,
+    }));
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: { code: "not-found", message: "unknown Vendo route" } });
+  });
+
+  it("refuses sources outside the host root", async () => {
+    const root = await captureRoot();
+    const outside = await mkdtemp(join(tmpdir(), "vendo-runtime-outside-"));
+    cleanups.push(async () => { await rm(outside, { recursive: true, force: true }); });
+    const outsideFile = join(outside, "outside.tsx");
+    await writeFile(outsideFile, "export const Outside = () => null;\n", "utf8");
+    const { vendo } = await setup(vi.fn(async () => principal), { development: { root } });
+
+    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
+      slot: "Outside",
+      source: outsideFile,
+      exportable: false,
+    }));
+    expect(response.status).toBe(400);
+    await expect(access(join(root, ".vendo", "remixable", "Outside.json"))).rejects.toThrow();
+  });
+
+  it("preserves an existing static baseline", async () => {
+    const root = await captureRoot();
+    const sourceFile = join(root, "runtime-card.tsx");
+    const baselineFile = join(root, ".vendo", "remixable", "RuntimeCard.json");
+    await writeFile(sourceFile, "export const RuntimeCard = () => null;\n", "utf8");
+    await mkdir(join(root, ".vendo", "remixable"), { recursive: true });
+    const existing = {
+      slot: "RuntimeCard",
+      source: "export const RuntimeCard = () => <strong>static</strong>;",
+      hash: `sha256:${"b".repeat(64)}`,
+      exportable: true,
+      capturedAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    await writeFile(baselineFile, `${JSON.stringify(existing, null, 2)}\n`, "utf8");
+    const { vendo } = await setup(vi.fn(async () => principal), { development: { root } });
+
+    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
+      slot: "RuntimeCard",
+      source: sourceFile,
+      exportable: false,
+    }));
+    expect(await response.json()).toMatchObject({ status: "preserved", hash: existing.hash });
+    expect(JSON.parse(await readFile(baselineFile, "utf8"))).toEqual(existing);
   });
 });
 

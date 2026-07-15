@@ -1,15 +1,23 @@
+import { encode } from "next-auth/jwt";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { authenticateMapleUser, createMapleSessionCookie } from "./auth";
 import { mapleOAuthAdapter } from "./oauth";
 
 afterEach(() => vi.unstubAllEnvs());
 
+async function sessionCookie(sub: string): Promise<string> {
+  const token = await encode({
+    token: { sub },
+    secret: "maple-local-development-auth-secret",
+    salt: "authjs.session-token",
+    maxAge: 300,
+  });
+  return `authjs.session-token=${token}`;
+}
+
 describe("Maple HostOAuthAdapter", () => {
   it("bounces a missing session through Maple login with the exact returnTo", async () => {
-    vi.stubEnv("MAPLE_DEMO_PASSWORD", "maple-test-password");
-    vi.stubEnv("MAPLE_SESSION_SECRET", "maple-test-session-secret");
-    vi.stubEnv("VENDO_BASE_URL", "https://maple.example.com");
-    const returnTo = "https://maple.example.com/api/vendo/mcp/authorize?state=exact";
+    vi.stubEnv("VENDO_BASE_URL", "http://maple.example.com");
+    const returnTo = "http://maple.example.com/api/vendo/mcp/authorize?state=exact";
 
     const result = await mapleOAuthAdapter.session!(
       new Request("http://0.0.0.0:3000/api/vendo/mcp/authorize"),
@@ -18,17 +26,13 @@ describe("Maple HostOAuthAdapter", () => {
 
     expect(result).toBeInstanceOf(Response);
     const location = new URL((result as Response).headers.get("location")!);
-    expect(location.origin).toBe("https://maple.example.com");
+    expect(location.origin).toBe("http://maple.example.com");
     expect(location.pathname).toBe("/login");
     expect(location.searchParams.get("returnTo")).toBe(returnTo);
   });
 
-  it("maps the signed host session to a subject and keeps principal as the revocation seam", async () => {
-    vi.stubEnv("MAPLE_DEMO_PASSWORD", "maple-test-password");
-    vi.stubEnv("MAPLE_SESSION_SECRET", "maple-test-session-secret");
-    const user = await authenticateMapleUser("yousef@maple.com", "maple-test-password");
-    const setCookie = await createMapleSessionCookie(new Request("http://localhost:3000/login"), user!);
-    const cookie = setCookie.split(";", 1)[0]!;
+  it("maps the real Auth.js session to a subject and keeps principal as the revocation seam", async () => {
+    const cookie = await sessionCookie("vendo-demo");
 
     await expect(mapleOAuthAdapter.session!(
       new Request("http://localhost:3000/api/vendo/mcp/authorize", { headers: { cookie } }),

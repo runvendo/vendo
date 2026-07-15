@@ -4,6 +4,7 @@ import type { ComponentCatalog } from "@vendoai/core";
 import { vendoAutoJudge } from "@vendoai/guard";
 import { createVendo } from "@vendoai/vendo/server";
 import { z } from "zod";
+import { actAsCadenceUser } from "./auth";
 import { resolveDemoPrincipal } from "./principal";
 
 const model = anthropic(process.env.VENDO_DEMO_MODEL ?? "claude-sonnet-4-6");
@@ -55,6 +56,7 @@ const catalog: ComponentCatalog = [
 export const vendo = createVendo({
   model,
   principal: resolveDemoPrincipal,
+  actAs: actAsCadenceUser,
   catalog,
   policy: { file: ".vendo/policy.json" },
   ...(judge ? { judge } : {}),

@@ -140,6 +140,54 @@ const pendingThread: Thread = {
   }],
 };
 
+/** ENG-212: a long conversation that overflows any bounded pane, ending in a
+ *  pending approval — the exact "chat bricks under real content" shape measured
+ *  live on Cadence /assistant. Reuses thr_1 so the wire list() adopts it. */
+const boundedThread: Thread = {
+  id: "thr_1",
+  subject: "browser-user",
+  createdAt: NOW,
+  updatedAt: NOW,
+  messages: [
+    ...Array.from({ length: 10 }, (_, index) => [
+      {
+        id: `msg_long_u${index}`,
+        role: "user" as const,
+        parts: [{ type: "text" as const, text: `Question ${index + 1}: what happened to my money this month?` }],
+      },
+      {
+        id: `msg_long_a${index}`,
+        role: "assistant" as const,
+        parts: [{
+          type: "text" as const,
+          text: `Answer ${index + 1}: Looking at your transactions, the largest categories were groceries, `
+            + "subscriptions and late-night delivery. The recurring charges add up to a meaningful share of the "
+            + "month, and there are a few one-off purchases worth reviewing together before we set up any rules.",
+        }],
+      },
+    ]).flat(),
+    {
+      id: "msg_long_pending",
+      role: "assistant",
+      parts: [
+        { type: "text", text: "I prepared the email and need your approval before sending." },
+        {
+          type: "dynamic-tool",
+          toolName: "host_email_send",
+          toolCallId: "call_pending",
+          state: "approval-requested",
+          input: { to: "finance@example.com", subject: "Invoice ready" },
+          approval: { id: "apr_pending" },
+        },
+        {
+          type: "data-vendo-approval",
+          data: { toolCallId: "call_pending", risk: "write", approvalId: "apr_pending" },
+        },
+      ],
+    },
+  ],
+};
+
 /** An in-thread app surface (VendoViewPart) whose payload carries a format no
  *  renderer is registered for — it must contain to a notice, never break the thread. */
 const unknownViewThread: Thread = {
@@ -732,9 +780,27 @@ function FormatDrillScenario({ registered }: { registered: boolean }) {
   );
 }
 
+/** ENG-212: the Cadence /assistant host shape — a bounded, overflow-hidden flex
+ *  pane owning the height. The root must forward that height so .fl-msglist is
+ *  the scroll container and the composer + approval actions stay reachable. */
+function BoundedThreadScenario() {
+  return (
+    <VendoProvider client={threadClient(baseClient, boundedThread)} components={components}>
+      <div
+        data-testid="bounded-pane"
+        style={{ height: 560, display: "flex", flexDirection: "column", overflow: "hidden",
+          border: "1px solid #cad3e0", borderRadius: 12 }}
+      >
+        <VendoThread threadId="thr_1" />
+      </div>
+    </VendoProvider>
+  );
+}
+
 function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme>; content: ReactNode; ownProvider?: boolean } {
   switch (pathname) {
     case "/thread": return { title: "Thread — dark theme", theme: darkTheme, content: <VendoThread threadId="thr_1" /> };
+    case "/thread-bounded": return { title: "Thread — bounded host pane", content: <BoundedThreadScenario />, ownProvider: true };
     case "/thread-landing": return { title: "Landing (Maple host)", content: <LandingScenario />, ownProvider: true };
     case "/overlay": return { title: "Overlay", content: <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'><VendoOverlay /></AutoOpen> };
     case "/page": return { title: "Workspace — Apps tab", content: <AutoOpen selector='[role="tab"][aria-controls="vendo-panel-apps"]'><VendoPage /></AutoOpen> };

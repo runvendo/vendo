@@ -1,8 +1,10 @@
+import { AuthError } from "next-auth";
+import { signIn } from "@/auth";
+import { mapleDemoEmail, mapleDemoUsers } from "@/server/users";
 import {
-  authenticateMapleUser,
-  createMapleSessionCookie,
-  mapleDemoEmail,
   maplePublicUrl,
+  publicOrigin,
+  resolveMapleSession,
   safeReturnTo,
 } from "@/vendo/auth";
 
@@ -21,7 +23,8 @@ function escapeHtml(value: string): string {
 
 function loginPage(request: Request, message?: string): Response {
   const url = new URL(request.url);
-  const returnTo = safeReturnTo(request, url.searchParams.get("returnTo"));
+  const returnTo = safeReturnTo(url.searchParams.get("returnTo"), publicOrigin(request));
+  const demoUsers = mapleDemoUsers().map((user) => escapeHtml(user.email)).join(" · ");
   const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -41,7 +44,7 @@ function loginPage(request: Request, message?: string): Response {
     input:focus { outline: 3px solid rgb(10 124 255 / 18%); border-color: #0a7cff; }
     button { width: 100%; min-height: 46px; margin-top: 22px; border: 0; border-radius: 10px; color: #fff; background: #0a7cff; font: 680 15px/1 inherit; cursor: pointer; }
     .error { margin: 0 0 14px; padding: 10px 12px; border-radius: 9px; color: #8c241b; background: #fbedeb; font-size: 13px; }
-    .fine { margin: 16px 0 0; font-size: 12px; text-align: center; }
+    .fine { margin: 16px 0 0; font-size: 12px; text-align: center; color: #77736d; }
   </style>
 </head>
 <body>
@@ -56,6 +59,7 @@ function loginPage(request: Request, message?: string): Response {
       <label>Password<input name="password" type="password" autocomplete="current-password" required autofocus></label>
       <button type="submit">Sign in</button>
     </form>
+    <p class="fine">Demo users: ${demoUsers}</p>
     <p class="fine">Maple is a deterministic demo. No real money moves.</p>
   </main>
 </body>
@@ -72,7 +76,16 @@ function loginPage(request: Request, message?: string): Response {
   });
 }
 
-export function GET(request: Request): Response {
+export async function GET(request: Request): Promise<Response> {
+  const user = await resolveMapleSession(request);
+  if (user) {
+    const url = new URL(request.url);
+    const returnTo = safeReturnTo(url.searchParams.get("returnTo"), publicOrigin(request));
+    return new Response(null, {
+      status: 303,
+      headers: { location: maplePublicUrl(request, returnTo).toString(), "cache-control": "no-store" },
+    });
+  }
   return loginPage(request);
 }
 
@@ -81,16 +94,27 @@ export async function POST(request: Request): Promise<Response> {
     return new Response("Expected form data", { status: 415 });
   }
   const form = new URLSearchParams(await request.text());
-  const returnTo = safeReturnTo(request, form.get("returnTo"));
-  const user = await authenticateMapleUser(form.get("email") ?? "", form.get("password") ?? "");
-  if (!user) return loginPage(new Request(maplePublicUrl(request, `/login?returnTo=${encodeURIComponent(returnTo)}`)), "Email or password is incorrect.");
-
+  const returnTo = safeReturnTo(form.get("returnTo"), publicOrigin(request));
+  try {
+    // Real Auth.js sign-in: sets the Auth.js session JWE via next/headers
+    // cookies() and throws Next's redirect to returnTo on success.
+    await signIn("credentials", {
+      email: form.get("email") ?? "",
+      password: form.get("password") ?? "",
+      redirectTo: returnTo,
+    });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return loginPage(
+        new Request(maplePublicUrl(request, `/login?returnTo=${encodeURIComponent(returnTo)}`)),
+        "Email or password is incorrect.",
+      );
+    }
+    throw error;
+  }
+  // signIn always redirects on success; this is a defensive fallback.
   return new Response(null, {
     status: 303,
-    headers: {
-      location: maplePublicUrl(request, returnTo).toString(),
-      "set-cookie": await createMapleSessionCookie(request, user),
-      "cache-control": "no-store",
-    },
+    headers: { location: maplePublicUrl(request, returnTo).toString(), "cache-control": "no-store" },
   });
 }

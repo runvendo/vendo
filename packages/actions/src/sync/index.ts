@@ -11,13 +11,17 @@ import {
   type SyncReport,
   type ToolOverride,
   type ToolsFile,
+  type UnresolvedPin,
 } from "../formats.js";
 import { clearAliasCache, dedupKey, routeToolFullName, withUniqueNames } from "./common.js";
 import { extractOpenApi } from "./openapi.js";
 import { capturePins } from "./pins.js";
 import { scanRoutes } from "./route-scan.js";
 
-export type SyncReportWithWarnings = SyncReport & { warnings: string[] };
+export type SyncReportWithWarnings = SyncReport & {
+  warnings: string[];
+  unresolvedPins: UnresolvedPin[];
+};
 
 export function hostToolName(method: HttpMethod, routePath: string): string {
   return withUniqueNames([{
@@ -237,11 +241,12 @@ export async function vendoSync(options: {
   const comparison = compareTools(mergedPrevious, mergedNext);
 
   await writeIfChanged(toolsPath, `${JSON.stringify(extracted, null, 2)}\n`);
-  const pins = await capturePins(root, out);
+  const pins = await capturePins(root, out, new Set(overrides?.remix?.ignoreSlots ?? []));
   warnings.push(...pins.warnings);
   const report: SyncReportWithWarnings = {
     ...comparison,
     pins: { captured: pins.captured, drifted: pins.drifted },
+    unresolvedPins: pins.unresolved,
     warnings,
   };
   if (options.strict && report.breaking.length > 0) {
