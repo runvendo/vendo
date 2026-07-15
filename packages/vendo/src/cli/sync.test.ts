@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { runSync } from "./sync.js";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 const report = (
   breaking: Array<{ tool: string; change: "removed" }> = [],
@@ -120,5 +124,77 @@ describe("vendo sync", () => {
       sync: async () => report(),
     })).resolves.toBe(0);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("pushes --report to the Cloud API with key auth", async () => {
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 })) as typeof fetch;
+
+    await expect(runSync({
+      targetDir: ".",
+      report: true,
+      apiKey: "vnd_test",
+      apiUrl: "https://cloud.test",
+      fetchImpl,
+      output: captureOutput().output,
+      sync: async () => report(),
+    })).resolves.toBe(0);
+
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(fetchImpl).toHaveBeenCalledWith("https://cloud.test/api/v1/sync/report", {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer vnd_test",
+        "content-type": "application/json",
+      },
+      body: expect.any(String),
+    });
+    const body = JSON.parse((fetchImpl.mock.calls[0]?.[1] as RequestInit).body as string) as Record<string, unknown>;
+    expect(body).toEqual({ report: report(), at: expect.any(String) });
+  });
+
+  it("warns for --report without a key and preserves the strict exit code", async () => {
+    vi.stubEnv("VENDO_API_KEY", "");
+    const messages = captureOutput();
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      impact: [{ tool: "host_x", apps: [], automations: [], grants: 0 }],
+    }), { status: 200 })) as typeof fetch;
+
+    const exit = await runSync({
+      targetDir: ".",
+      strict: true,
+      report: true,
+      output: messages.output,
+      fetchImpl,
+      sync: async () => report([{ tool: "host_x", change: "removed" }]),
+    });
+
+    expect(exit).toBe(2);
+    expect(messages.errors).toContain("--report requires VENDO_API_KEY or --key");
+  });
+
+  it("warns when report push rejects and preserves blast-radius exit three", async () => {
+    const messages = captureOutput();
+    const push = vi.fn(async () => { throw new Error("cloud offline"); });
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      impact: [{ tool: "host_x", apps: [{ id: "app_x", title: "X" }], automations: [], grants: 0 }],
+    }), { status: 200 })) as typeof fetch;
+
+    const exit = await runSync({
+      targetDir: ".",
+      strict: true,
+      report: true,
+      apiKey: "vnd_test",
+      output: messages.output,
+      fetchImpl,
+      push,
+      sync: async () => report([{ tool: "host_x", change: "removed" }]),
+    });
+
+    expect(exit).toBe(3);
+    expect(push).toHaveBeenCalledWith({ report: report([{ tool: "host_x", change: "removed" }]), impact: [
+      { tool: "host_x", apps: [{ id: "app_x", title: "X" }], automations: [], grants: 0 },
+    ], at: expect.any(String) });
+    expect(messages.errors).toContain("warning: failed to push sync report: cloud offline");
   });
 });

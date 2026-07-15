@@ -26,6 +26,9 @@ Options:
   --brief <text>             Init only: product brief used for non-interactive setup
   --url <url>                Doctor/server-json: mounted wire base or public MCP URL
   --strict                   Sync only: exit 2 on breaking changes, 3 when saved references are impacted
+  --report                   Sync only: push the report to Vendo Cloud
+  --key <key>                Sync/cloud: override VENDO_API_KEY
+  --api-url <url>            Sync/cloud: override VENDO_CLOUD_URL
   --version                  Print the version
 `;
 
@@ -37,7 +40,7 @@ function option(args: string[], name: string): string | undefined {
 
 function target(args: string[]): string {
   const optionValues = new Set<string>();
-  for (const name of ["--model-import", "--url", "--brief"]) {
+  for (const name of ["--model-import", "--url", "--brief", "--key", "--api-url"]) {
     const index = args.indexOf(name);
     if (index >= 0 && args[index + 1] !== undefined) optionValues.add(args[index + 1]!);
   }
@@ -74,6 +77,9 @@ export async function main(argv: string[]): Promise<number> {
       targetDir: target(args),
       strict: args.includes("--strict"),
       url: option(args, "--url"),
+      report: args.includes("--report"),
+      apiKey: option(args, "--key"),
+      apiUrl: option(args, "--api-url"),
     });
   }
   console.error(`Unknown command: ${command}\n\n${HELP}`);

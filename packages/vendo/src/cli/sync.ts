@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
 import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions";
 import type { ToolImpact } from "../sync-impact.js";
+import { pushSyncReport } from "./cloud/services.js";
 import { consoleOutput, type Output } from "./shared.js";
 
 export interface SyncReportPayload {
@@ -18,6 +19,8 @@ export interface SyncOptions {
   fetchImpl?: typeof fetch;
   report?: boolean;
   push?: (report: SyncReportPayload) => Promise<void>;
+  apiKey?: string;
+  apiUrl?: string;
 }
 
 function impactResponse(value: unknown): ToolImpact[] {
@@ -89,6 +92,29 @@ export async function runSync(options: SyncOptions): Promise<number> {
         printImpact(output, impact);
       } catch {
         output.log(`impact unknown — dev server not reachable at ${impactUrl}`);
+      }
+    }
+
+    if (options.report === true) {
+      const apiKey = options.apiKey ?? process.env.VENDO_API_KEY;
+      if (!apiKey) {
+        output.error("--report requires VENDO_API_KEY or --key");
+      } else {
+        const payload: SyncReportPayload = {
+          report,
+          ...(impact === undefined ? {} : { impact }),
+          at: new Date().toISOString(),
+        };
+        try {
+          if (options.push !== undefined) await options.push(payload);
+          else await pushSyncReport(payload, {
+            apiKey,
+            ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
+            ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+          });
+        } catch (error) {
+          output.error(`warning: failed to push sync report: ${error instanceof Error ? error.message : "unknown error"}`);
+        }
       }
     }
 
