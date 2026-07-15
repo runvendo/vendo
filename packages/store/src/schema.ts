@@ -108,6 +108,11 @@ const ADDITIVE_DDL = [
   // Thread listing derives a title without loading the full messages array (routing.ts uses a
   // messages-less listSelect once a row has a stored title). NULLable; populated on next write.
   "ALTER TABLE vendo_threads ADD COLUMN IF NOT EXISTS title text",
+  // ENG-310: revision counter backing the routed vendo_threads atomic capability
+  // (01 §12 — insertIfAbsent / compareAndSwap), so concurrent turns on one thread
+  // can do guarded read-merge-write instead of last-write-wins. DEFAULT backfills
+  // existing rows on ALTER; every write path bumps it.
+  "ALTER TABLE vendo_threads ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1",
   // Secret rewrites (rotation) must count as activity for the erase-by-age axis
   // (02 §5): set() stamps it; NULL on legacy rows means created_at IS the last
   // write, so byAge reads COALESCE(updated_at, created_at).

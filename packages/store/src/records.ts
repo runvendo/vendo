@@ -38,7 +38,7 @@ function sameRecordValue(
     && canonicalJson(current.refs ?? null) === canonicalJson(expected.refs ?? null);
 }
 
-function requireRevision(value: string): void {
+export function requireRevision(value: string): void {
   if (!/^[1-9]\d*$/.test(value)) throw new VendoError("validation", "malformed record revision");
 }
 
