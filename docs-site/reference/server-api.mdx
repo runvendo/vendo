@@ -19,7 +19,7 @@ export function createVendo(config: {
   model: LanguageModel;                       // the one required thing
   principal: (req: Request) => Promise<Principal | null>;   // host session → principal; null → ephemeral anonymous
   store?: VendoStore;                         // default: createStore() (PGlite, .vendo/data)
-  sandbox?: SandboxAdapter;                   // e.g. e2bSandbox({ apiKey }); absent → rung 1 only
+  sandbox?: SandboxAdapter;                   // e.g. vendoSandbox(), e2bSandbox({ apiKey }), modalSandbox({ ... }); absent → rung 1 only
   connectors?: Connector[];
   actAs?: ActAs;
   policy?: PolicyConfig;

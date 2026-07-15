@@ -109,4 +109,38 @@ Cloud calls surface the shared error taxonomy (see
 Handle `cloud-required` by setting `VENDO_API_KEY`, or for interactive tools by
 running `vendo cloud login` and creating a key with `vendo cloud keys create`.
 
+## Hosted sandboxes
+
+`vendoSandbox()` is the hosted sandbox adapter for app rungs 2 through 4. Reach
+for it when you want server-backed apps without provisioning E2B or Modal
+yourself. The adapter authenticates with `VENDO_API_KEY` and talks to the
+broker at `VENDO_CLOUD_URL` (default `https://console.vendo.run`), so the same
+key that unlocks sharing and publishing also unlocks hosted sandboxes.
+
+```ts
+import { createVendo } from "@vendoai/vendo/server";
+import { vendoSandbox } from "@vendoai/apps/vendo";
+
+const vendo = createVendo({
+  // model, principal, store, ...
+  sandbox: vendoSandbox(),
+});
+```
+
+`vendoSandbox(options)` accepts:
+
+- `apiKey` — Vendo Cloud API key. Defaults to `VENDO_API_KEY`.
+- `baseUrl` — broker base URL override for tests or self-hosted brokers.
+  Defaults to `VENDO_CLOUD_URL`.
+- `timeoutMs` — default control-plane and command timeout in milliseconds.
+  Defaults to five minutes.
+
+Snapshot references returned by hosted machines are prefixed `vendo:` and
+resume only against a broker that recognizes them. Errors map to the shared
+taxonomy: missing or invalid keys surface as `cloud-required`, exhausted plans
+surface as `cloud-required` with an upgrade message, and broker outages surface
+as `sandbox-unavailable`. See [Server API](/reference/server-api) for the
+`SandboxAdapter` seam and
+[Generated UI and apps](/concepts/generated-ui) for the rung ladder.
+
 For the full CLI surface, see [CLI](/reference/cli).
