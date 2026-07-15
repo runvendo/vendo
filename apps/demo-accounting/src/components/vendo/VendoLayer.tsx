@@ -21,7 +21,14 @@ export function VendoLayer({ children }: { children: ReactNode }) {
   // of DOM-poking the launcher; the launcher itself is the ui package's
   // default fixed bottom-right pill.
   const overlay = useVendoOverlay();
-  const { toggle } = overlay;
+  const { toggle, close } = overlay;
+
+  // The overlay unmounts on /assistant (the page surface takes over) — drop
+  // any open state with it so navigating back never re-shows the dialog
+  // without user intent.
+  useEffect(() => {
+    if (!floatingSurface) close();
+  }, [floatingSurface, close]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
