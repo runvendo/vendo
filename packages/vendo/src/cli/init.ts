@@ -17,22 +17,7 @@ import {
   writeText,
 } from "./shared.js";
 
-const DEFAULT_THEME = {
-  colors: {
-    background: "#ffffff",
-    surface: "#f8fafc",
-    text: "#0f172a",
-    muted: "#64748b",
-    accent: "#2563eb",
-    accentText: "#ffffff",
-    danger: "#dc2626",
-    border: "#e2e8f0",
-  },
-  typography: { fontFamily: "system-ui, sans-serif", baseSize: "16px" },
-  radius: { small: "4px", medium: "8px", large: "12px" },
-  density: "comfortable",
-  motion: "full",
-} as const;
+const DEFAULT_RADIUS = { small: "4px", large: "12px" } as const;
 
 async function extractTheme(root: string): Promise<VendoTheme> {
   const { slots } = await extractThemeSlots(root);
@@ -47,21 +32,22 @@ async function extractTheme(root: string): Promise<VendoTheme> {
       text: slots.text,
       muted: slots.mutedText,
       accent: slots.accent,
-      accentText: DEFAULT_THEME.colors.accentText,
-      danger: DEFAULT_THEME.colors.danger,
-      border: DEFAULT_THEME.colors.border,
+      accentText: slots.accentText,
+      danger: slots.danger,
+      border: slots.border,
     },
     typography: {
       fontFamily: slots.fontFamily,
+      headingFamily: slots.headingFamily,
       baseSize: slots.baseSize,
     },
     radius: {
-      small: deriveRadius(0.5, DEFAULT_THEME.radius.small),
+      small: deriveRadius(0.5, DEFAULT_RADIUS.small),
       medium: slots.radius,
-      large: deriveRadius(1.5, DEFAULT_THEME.radius.large),
+      large: deriveRadius(1.5, DEFAULT_RADIUS.large),
     },
-    density: DEFAULT_THEME.density,
-    motion: DEFAULT_THEME.motion,
+    density: slots.density,
+    motion: slots.motion,
   };
 }
 

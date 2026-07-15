@@ -336,16 +336,24 @@ describe("vendo init", () => {
     // resolve to concrete hex/px (the jail knows no host custom properties).
     await writeFile(join(root, "app", "globals.css"),
       ":root { --background: #fafafa; --brand-hue: 262 83% 58%; --primary: hsl(var(--brand-hue)); " +
-      "--foreground: oklch(0.205 0 0); --card: 0 0% 100%; --radius: 0.625rem; }\n");
+      "--primary-foreground: #ffffff; --foreground: oklch(0.205 0 0); --card: 0 0% 100%; " +
+      "--border: #dedede; --destructive: #b91c1c; --font-heading: Newsreader, serif; " +
+      "--density: compact; --motion: reduced; --radius: 0.625rem; }\n");
     await runInit({ targetDir: root, yes: true, output: output().output });
     expect(JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"))).toMatchObject({
       colors: {
         background: "#fafafa",
         accent: "#7c3bed",
+        accentText: "#ffffff",
+        border: "#dedede",
+        danger: "#b91c1c",
         text: "#171717",
         surface: "#ffffff",
       },
+      typography: { headingFamily: "Newsreader, serif" },
       radius: { medium: "10px" },
+      density: "compact",
+      motion: "reduced",
     });
   });
 

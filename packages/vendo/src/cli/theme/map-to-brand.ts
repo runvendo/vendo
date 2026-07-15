@@ -2,13 +2,19 @@ import type { CssVarDecl } from "./css-vars.js";
 
 export interface ThemeSlotValues {
   accent: string;
+  accentText: string;
   background: string;
+  border: string;
+  danger: string;
   surface: string;
   text: string;
   mutedText: string;
   radius: string;
   fontFamily: string;
+  headingFamily: string;
   baseSize: string;
+  density: "compact" | "comfortable";
+  motion: "full" | "reduced";
 }
 
 export interface BrandMappingResult {
@@ -25,13 +31,19 @@ export interface BrandMappingResult {
 
 const DEFAULT_THEME_SLOTS: ThemeSlotValues = {
   accent: "#2563eb",
+  accentText: "#ffffff",
   background: "#ffffff",
+  border: "#e2e8f0",
+  danger: "#dc2626",
   surface: "#f8fafc",
   text: "#0f172a",
   mutedText: "#64748b",
   radius: "8px",
   fontFamily: "system-ui, sans-serif",
+  headingFamily: "system-ui, sans-serif",
   baseSize: "16px",
+  density: "comfortable",
+  motion: "full",
 };
 
 const HEX = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
@@ -48,7 +60,7 @@ const COLOR_SLOTS: Array<{ slot: ColorSlot; fragments: string[] }> = [
   { slot: "accent", fragments: ["brand", "primary", "content-emphasis", "bg-inverted", "cta", "accent"] },
   { slot: "background", fragments: ["background", "bg-default", "surface-raised", "-bg", "bg"] },
   { slot: "surface", fragments: ["surface-base", "surface", "card", "popover", "cal-bg", "color-default", "bg-muted", "color-secondary", "panel", "secondary", "bg-default"] },
-  { slot: "mutedText", fragments: ["muted-foreground", "content-muted", "text-color-muted", "fg-muted", "text-muted", "muted-text", "secondary-text", "muted"] },
+  { slot: "mutedText", fragments: ["muted-foreground", "content-muted", "text-color-muted", "fg-muted", "text-muted", "muted-text", "secondary-text", "muted", "-ink-soft", "-ink-faint"] },
   { slot: "text", fragments: ["content-default", "text-color-default", "text-primary", "foreground", "-ink", "text-default", "primary", "-fg", "text"] },
 ];
 
@@ -57,6 +69,7 @@ const SCALE_STEPS = new Set([50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 95
 /** Scale families that are never the brand accent. */
 const NON_ACCENT_FAMILY = /(gray|grey|neutral|slate|stone|zinc|status|success|warning|error|danger|info)/;
 const STATUS_TOKEN = /--(?:color-)?(?:destructive|danger|error|info|success|warning)(?:-|$)/;
+const ACCENT_TEXT_TOKEN = /(?:foreground|contrast|accent-text|on-(?:accent|brand|primary)|text-on-)/;
 
 /** Spread between the widest RGB channels — near zero for neutral ramps whose
  * family name isn't on the keyword list (sand, ash, ivory, ...). */
@@ -68,8 +81,9 @@ function hexChroma(hex: string): number {
 
 /**
  * Accent fallback for scale-named token sets (e.g. --color-evergreen-50..950):
- * when exactly one non-neutral, non-status hex scale exists, its mid step is
- * the brand accent. Zero or several candidate families, or a mid step too
+ * when exactly one non-neutral, non-status hex scale exists, its conventional
+ * interactive step (600, then nearest) is the brand accent. Zero or several
+ * candidate families, or a selected step too
  * gray to be a brand color, is genuinely ambiguous — return nothing and let
  * the slot default (fail-closed).
  */
@@ -89,7 +103,7 @@ function pickScaleAccent(vars: CssVarDecl[]): CssVarDecl | undefined {
   );
   if (candidates.length !== 1) return undefined;
   const steps = candidates[0]![1];
-  const mid = [...steps.keys()].sort((a, b) => Math.abs(a - 500) - Math.abs(b - 500) || a - b)[0]!;
+  const mid = [...steps.keys()].sort((a, b) => Math.abs(a - 600) - Math.abs(b - 600) || a - b)[0]!;
   const hit = steps.get(mid);
   const color = hit ? normalizeColor(hit.value) : null;
   return hit && color && hexChroma(color) >= 32 ? hit : undefined;
@@ -223,9 +237,27 @@ function normalizeColor(value: string): string | null {
   return normalizeHex(value) ?? parseRgbTriplet(value) ?? parseHsl(value) ?? parseOklch(value);
 }
 
-function normalizeColorVar(value: string, all: CssVarDecl[]): string | null {
+export function normalizeColorVar(value: string, all: CssVarDecl[]): string | null {
   const resolved = resolveCssVarRefs(value, all, 6);
   return resolved ? normalizeColor(resolved) : null;
+}
+
+function relativeLuminance(hex: string): number {
+  const normalized = normalizeHex(hex);
+  if (!normalized) return 0;
+  const channels = [1, 3, 5].map((index) => parseInt(normalized.slice(index, index + 2), 16) / 255);
+  const [r, g, b] = channels.map((channel) => channel <= 0.04045
+    ? channel / 12.92
+    : ((channel + 0.055) / 1.055) ** 2.4) as [number, number, number];
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** Pick black or white by the larger WCAG contrast ratio against the accent. */
+function contrastingText(accent: string): "#000000" | "#ffffff" {
+  const luminance = relativeLuminance(accent);
+  const blackContrast = (luminance + 0.05) / 0.05;
+  const whiteContrast = 1.05 / (luminance + 0.05);
+  return blackContrast >= whiteContrast ? "#000000" : "#ffffff";
 }
 
 function normalizeRadius(value: string, all: CssVarDecl[]): string | null {
@@ -236,6 +268,15 @@ function normalizeRadius(value: string, all: CssVarDecl[]): string | null {
   const rem = resolved.match(/^((?:\d+|\d*\.\d+))rem$/);
   if (rem) return `${Number(rem[1]) * 16}px`;
   return null;
+}
+
+function normalizeTime(value: string, all: CssVarDecl[]): number | null {
+  const resolved = resolveCssVarRefs(value, all, 6)?.trim();
+  if (!resolved) return null;
+  const match = resolved.match(/^((?:\d+|\d*\.\d+))(ms|s)$/);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  return match[2] === "s" ? amount * 1_000 : amount;
 }
 
 function normalizeFontStack(value: string): string {
@@ -315,7 +356,7 @@ function isSafeFontStack(value: string): boolean {
 
 export function mapVarsToBrand(
   all: CssVarDecl[],
-  fallbacks?: Partial<Record<ColorSlot, InferredSlotValue>>,
+  fallbacks?: Partial<Record<keyof ThemeSlotValues, InferredSlotValue>>,
 ): BrandMappingResult {
   // Synthetic decls (next/font recovery) resolve var() chains only — slots
   // pick from CSS-declared vars.
@@ -336,9 +377,36 @@ export function mapVarsToBrand(
     return names.has(base) || names.has(`${base}-fg`);
   };
 
+  const mapDeclaredColor = (slot: "accentText" | "border" | "danger", fragments: string[]): CssVarDecl | undefined => {
+    const candidates = light.filter((v) => !used.has(v)
+      && !isCompanionTint(v)
+      && (slot !== "danger" || !/(?:foreground|text|contrast|-bg|-background|-subtle)/.test(v.name)));
+    const hit = pick(candidates, fragments, (value) => normalizeColorVar(value, all) !== null);
+    if (!hit) return undefined;
+    used.add(hit);
+    matched[slot] = hit.name;
+    draft[slot] = normalizeColorVar(hit.value, all)!;
+    return hit;
+  };
+
+  // Reserve semantic foreground/status/border tokens before the looser core
+  // color pass. In particular, --primary-foreground must never become the
+  // accent merely because it contains "primary".
+  const accentText = mapDeclaredColor("accentText", [
+    "primary-foreground", "accent-foreground", "brand-foreground",
+    "on-primary", "on-accent", "on-brand", "accent-text", "text-on-primary",
+  ]);
+  const border = mapDeclaredColor("border", ["border-default", "divider", "separator", "-line", "border"]);
+  const danger = mapDeclaredColor("danger", [
+    "danger", "destructive", "error", "negative", "-neg", "status-overdue", "critical",
+  ]);
+
   const hits: Partial<Record<ColorSlot, CssVarDecl>> = {};
   for (const { slot, fragments } of COLOR_SLOTS) {
-    const candidates = light.filter((v) => !used.has(v) && !isCompanionTint(v) && (slot === "accent" || !STATUS_TOKEN.test(v.name)));
+    const candidates = light.filter((v) => !used.has(v)
+      && !isCompanionTint(v)
+      && !STATUS_TOKEN.test(v.name)
+      && (slot !== "accent" || !ACCENT_TEXT_TOKEN.test(v.name)));
     let hit = pick(candidates, fragments, (value) => normalizeColorVar(value, all) !== null);
     if (!hit && slot === "accent") hit = pickScaleAccent(candidates);
     if (!hit && slot === "background") {
@@ -356,6 +424,13 @@ export function mapVarsToBrand(
       draft[slot] = fallbacks[slot]!.value;
     }
     else { defaulted.push(slot); draft[slot] = DEFAULT_THEME_SLOTS[slot]; }
+  }
+
+  if (!border) { defaulted.push("border"); draft.border = DEFAULT_THEME_SLOTS.border; }
+  if (!danger) { defaulted.push("danger"); draft.danger = DEFAULT_THEME_SLOTS.danger; }
+  if (!accentText) {
+    draft.accentText = contrastingText(draft.accent!);
+    matched.accentText = `(contrast) accent`;
   }
 
   // The two rules below apply ONLY when the source slot was inferred from a
@@ -390,11 +465,24 @@ export function mapVarsToBrand(
   }
 
   const radius = pick(light, ["radius-cal", "radius-default", "radius-card", "radius"], (val) => normalizeRadius(val, all) !== null);
-  if (radius) { used.add(radius); matched["radius"] = radius.name; draft["radius"] = normalizeRadius(radius.value, all)!; }
-  else { defaulted.push("radius"); draft["radius"] = DEFAULT_THEME_SLOTS.radius; }
+  // A component-specific card/popover token is weaker evidence for the global
+  // radius than a strongly dominant generic utility scale measured in source.
+  const inferredRadius = fallbacks?.radius;
+  const specializedRadius = radius && /(?:card|popover|modal|dialog)/.test(radius.name);
+  if (inferredRadius && (!radius || specializedRadius)) {
+    matched.radius = `(inferred) ${inferredRadius.source}`;
+    draft.radius = inferredRadius.value;
+  } else if (radius) {
+    used.add(radius);
+    matched.radius = radius.name;
+    draft.radius = normalizeRadius(radius.value, all)!;
+  } else {
+    defaulted.push("radius");
+    draft.radius = DEFAULT_THEME_SLOTS.radius;
+  }
 
   const font = pick(
-    light,
+    light.filter((v) => !/(?:heading|display|mono|code)/.test(v.name)),
     ["font-default", "font-sans", "font-family", "font"],
     (val) => resolveCssVarRefs(val, all) !== null && isSafeFontStack(resolveCssVarRefs(val, all)!),
   );
@@ -407,8 +495,65 @@ export function mapVarsToBrand(
     draft["fontFamily"] = DEFAULT_THEME_SLOTS.fontFamily;
   }
 
+  const heading = pick(
+    light.filter((v) => v !== font && !/(?:mono|code)/.test(v.name)),
+    ["font-heading", "heading-font", "font-display", "display-font"],
+    (val) => resolveCssVarRefs(val, all) !== null && isSafeFontStack(resolveCssVarRefs(val, all)!),
+  );
+  if (heading) {
+    used.add(heading);
+    matched.headingFamily = heading.name;
+    draft.headingFamily = ensureFontFallback(normalizeFontStack(resolveCssVarRefs(heading.value, all)!));
+  } else {
+    draft.headingFamily = draft.fontFamily;
+    if (font) matched.headingFamily = "(inherit) fontFamily";
+    else defaulted.push("headingFamily");
+  }
+
   const baseSize = pick(light, ["font-size", "text-base"], (val) => normalizeRadius(val, all) !== null);
-  draft["baseSize"] = baseSize ? normalizeRadius(baseSize.value, all)! : DEFAULT_THEME_SLOTS.baseSize;
+  if (baseSize) {
+    used.add(baseSize);
+    matched.baseSize = baseSize.name;
+    draft.baseSize = normalizeRadius(baseSize.value, all)!;
+  } else {
+    defaulted.push("baseSize");
+    draft.baseSize = DEFAULT_THEME_SLOTS.baseSize;
+  }
+
+  const density = pick(light, ["density"], (value) => /^(?:compact|comfortable)$/.test(value.trim()));
+  if (density) {
+    used.add(density);
+    matched.density = density.name;
+    draft.density = density.value.trim() as ThemeSlotValues["density"];
+  } else if (fallbacks?.density) {
+    matched.density = `(inferred) ${fallbacks.density.source}`;
+    draft.density = fallbacks.density.value as ThemeSlotValues["density"];
+  } else if (Number.parseFloat(draft.baseSize) <= 14) {
+    matched.density = `(inferred) baseSize ${draft.baseSize}`;
+    draft.density = "compact";
+  } else {
+    defaulted.push("density");
+    draft.density = DEFAULT_THEME_SLOTS.density;
+  }
+
+  const motion = pick(light, ["motion", "animation-mode"], (value) => /^(?:full|reduced)$/.test(value.trim()));
+  const duration = light.find((v) => /(?:transition|animation|motion).*(?:duration|speed)|(?:duration|speed).*(?:transition|animation|motion)/.test(v.name)
+    && normalizeTime(v.value, all) !== null);
+  if (motion) {
+    used.add(motion);
+    matched.motion = motion.name;
+    draft.motion = motion.value.trim() as ThemeSlotValues["motion"];
+  } else if (duration) {
+    used.add(duration);
+    matched.motion = duration.name;
+    draft.motion = normalizeTime(duration.value, all)! === 0 ? "reduced" : "full";
+  } else if (fallbacks?.motion) {
+    matched.motion = `(inferred) ${fallbacks.motion.source}`;
+    draft.motion = fallbacks.motion.value as ThemeSlotValues["motion"];
+  } else {
+    defaulted.push("motion");
+    draft.motion = DEFAULT_THEME_SLOTS.motion;
+  }
 
   return {
     slots: draft as ThemeSlotValues,
