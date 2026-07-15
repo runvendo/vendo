@@ -96,6 +96,42 @@ describe("actions never self-authorizes away execution", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("refuses a synthetic webhook-style principal redeeming a real user's grant", async () => {
+    // Webhook triggers run as synthetic subjects (reserved-namespace hardening is
+    // child C scope); the actAs seam must still refuse them a human's grant.
+    const actAs = vi.fn(async () => ({ headers: { authorization: "Bearer host-issued" } }));
+    const fetchSpy = vi.fn();
+    const actions = createActions({
+      tools: [routeTool("host_probe")],
+      baseUrl: "http://host.test",
+      actAs,
+      fetch: fetchSpy as unknown as typeof fetch,
+    });
+    const synthetic: ActionsRunContext = {
+      ...away,
+      principal: { kind: "user", subject: "webhook:invoice-sync" },
+      grant: {
+        id: "grt_real_user",
+        subject: "user_1",
+        tool: "host_probe",
+        descriptorHash: "hash",
+        scope: { kind: "tool" },
+        duration: "standing",
+        source: "automation",
+        grantedAt: "2026-07-14T00:00:00.000Z",
+      },
+    };
+
+    const outcome = await actions.execute({ id: "1", tool: "host_probe", args: {} }, synthetic);
+
+    expect(outcome).toMatchObject({
+      status: "error",
+      error: { code: "act-as-subject-mismatch" },
+    });
+    expect(actAs).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("uses host-issued credentials (not the caller's headers) for a properly-granted away call", async () => {
     const actAs = vi.fn(async () => ({ headers: { authorization: "Bearer host-issued" } }));
     const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
