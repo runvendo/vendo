@@ -7,6 +7,8 @@ import {
   TREE_MAX_TOTAL_COMPONENT_CHARS,
   VENDO_APP_FORMAT,
   VendoError,
+  isPathBinding,
+  isStateBinding,
   validateAppDocument,
   validateTree,
   type AppDocument,
@@ -84,7 +86,12 @@ const parseModelJson = (text: string): { value?: unknown; issues: string[] } => 
 };
 
 const catalogPrompt = (catalog: ComponentCatalog): string => JSON.stringify(
-  catalog.map(({ name, description }) => ({ name, description })),
+  catalog.map(({ name, description, propsJsonSchema, examples }) => ({
+    name,
+    whenToUse: description,
+    propsJsonSchema: propsJsonSchema ?? null,
+    examples: examples ?? [],
+  })),
   null,
   2,
 );
@@ -110,8 +117,9 @@ GENERATED COMPONENT STYLING:
 - The component renders in a sandbox that sits directly on the host page's background (THEME TOKENS colors.background when provided; otherwise assume a light background). Never design for an imaginary dark backdrop; give the component's own containers explicit backgrounds.
 - The host's brand tokens are available as CSS custom properties: --vendo-color-background, --vendo-color-surface, --vendo-color-text, --vendo-color-muted, --vendo-color-accent, --vendo-color-accent-text, --vendo-color-danger, --vendo-color-border, --vendo-font-family, --vendo-heading-family, --vendo-font-size, --vendo-radius-small/medium/large. Prefer them (e.g. color: "var(--vendo-color-text)") so the view matches the host brand.
 
-HOST CATALOG (names and descriptions):
+HOST CATALOG (names, when-to-use guidance, props JSON schemas, and usage examples):
 ${catalogPrompt(deps.catalog)}
+When a host catalog entry fits any part of the request, you MUST use a source:"host" node with its exact name and props schema; do not generate an equivalent component. Compose host, prewired, and generated nodes when needed.
 
 THEME TOKENS:
 ${JSON.stringify(deps.theme ?? null, null, 2)}
@@ -145,17 +153,77 @@ const withoutId = (app: AppDocument): GeneratedAppDocument => {
   return document;
 };
 
-const catalogIssues = (
+const isActionBinding = (value: unknown): boolean =>
+  isRecord(value) && typeof value.action === "string";
+
+const isRuntimeBound = (value: unknown): boolean =>
+  isPathBinding(value) || isStateBinding(value) || isActionBinding(value);
+
+const standardIssuePath = (issue: unknown): Array<string | number> => {
+  if (!isRecord(issue) || !Array.isArray(issue.path)) return [];
+  return issue.path.flatMap((segment) => {
+    const key = isRecord(segment) && "key" in segment ? segment.key : segment;
+    return typeof key === "string" || typeof key === "number" ? [key] : [];
+  });
+};
+
+const pathTargetsRuntimeBinding = (value: unknown, path: Array<string | number>): boolean => {
+  let current = value;
+  if (isRuntimeBound(current)) return true;
+  for (const segment of path) {
+    if (Array.isArray(current) && typeof segment === "number") {
+      current = current[segment];
+    } else if (isRecord(current)) {
+      current = current[String(segment)];
+    } else {
+      return false;
+    }
+    if (isRuntimeBound(current)) return true;
+  }
+  return false;
+};
+
+const issueMessage = (issue: unknown): string => {
+  if (isRecord(issue) && typeof issue.message === "string") return issue.message;
+  return "props did not match the registered schema";
+};
+
+const hostPropsIssues = async (
+  node: TreeNode,
+  component: ComponentCatalog[number],
+): Promise<string[]> => {
+  const props = node.props ?? {};
+  try {
+    const result = await component.propsSchema["~standard"].validate(props);
+    if (!isRecord(result) || !Array.isArray(result.issues)) return [];
+    return result.issues.flatMap((issue) => {
+      const path = standardIssuePath(issue);
+      if (pathTargetsRuntimeBinding(props, path)) return [];
+      const location = path.length === 0 ? "" : ` at props.${path.join(".")}`;
+      return [`node "${node.id}" props invalid for host component "${component.name}"${location}: ${issueMessage(issue)}`];
+    });
+  } catch (error) {
+    return [`node "${node.id}" props validation failed for host component "${component.name}": ${error instanceof Error ? error.message : "unknown schema error"}`];
+  }
+};
+
+const catalogIssues = async (
   tree: Tree,
   components: Record<string, string> | undefined,
   catalog: ComponentCatalog,
-): string[] => {
-  const hostNames = new Set(catalog.map(({ name }) => name));
+): Promise<string[]> => {
+  const hostCatalog = new Map(catalog.map((component) => [component.name, component]));
+  const hostNames = new Set(hostCatalog.keys());
   const generatedNames = new Set(Object.keys(components ?? {}));
   const issues: string[] = [];
   for (const node of tree.nodes) {
-    if (node.source === "host" && !hostNames.has(node.component)) {
-      issues.push(`node "${node.id}" references host component "${node.component}" absent from the catalog`);
+    if (node.source === "host") {
+      const component = hostCatalog.get(node.component);
+      if (component === undefined) {
+        issues.push(`node "${node.id}" references host component "${node.component}" absent from the catalog`);
+      } else {
+        issues.push(...await hostPropsIssues(node, component));
+      }
     } else if (node.source === "prewired" && !reserved.has(node.component)) {
       issues.push(`node "${node.id}" references unknown prewired component "${node.component}"`);
     } else if (node.source === "generated" && !generatedNames.has(node.component)) {
@@ -177,10 +245,10 @@ interface GeneratedShape {
   components?: Record<string, string>;
 }
 
-const validateGenerated = (
+const validateGenerated = async (
   value: unknown,
   deps: GenerationDependencies,
-): { shape?: GeneratedShape; issues: string[] } => {
+): Promise<{ shape?: GeneratedShape; issues: string[] }> => {
   if (!isRecord(value)) return { issues: ["model output must be an object"] };
   const issues: string[] = [];
   if (typeof value.name !== "string" || value.name.trim().length === 0) {
@@ -204,7 +272,7 @@ const validateGenerated = (
   if (!validation.ok) {
     issues.push(validation.error.message);
   } else {
-    issues.push(...catalogIssues(validation.tree, components, deps.catalog));
+    issues.push(...await catalogIssues(validation.tree, components, deps.catalog));
   }
   if (issues.length > 0 || !validation.ok || typeof value.name !== "string") return { issues };
   const tree = structuredClone(validation.tree);
@@ -370,10 +438,10 @@ const applyTreeOps = (
   return { app, issues: [] };
 };
 
-const validateEditedApp = (
+const validateEditedApp = async (
   app: AppDocument,
   deps: GenerationDependencies,
-): string[] => {
+): Promise<string[]> => {
   const validation = validateAppDocument(app);
   if (!validation.ok) return [validation.error.message];
   if (app.tree?.formatVersion !== "vendo-genui/v1") return ["tree edit produced an unsupported format"];
@@ -457,7 +525,7 @@ const editTree = async (
         const applied = applyTreeOps(input.app, parsed.ops);
         issues = applied.issues;
         if (applied.app !== undefined) {
-          issues = validateEditedApp(applied.app, deps);
+          issues = await validateEditedApp(applied.app, deps);
           if (issues.length === 0) {
             return { kind: "document", document: withoutId(applied.app), rung: 1 };
           }
@@ -503,7 +571,7 @@ export const modelEngine: GenerationEngine = {
       );
       issues = output.issues;
       if (output.value !== undefined) {
-        const validated = validateGenerated(output.value, deps);
+        const validated = await validateGenerated(output.value, deps);
         issues = validated.issues;
         if (validated.shape !== undefined) return createDocument(validated.shape);
       }

@@ -6,6 +6,7 @@ import {
   VENDO_TREE_FORMAT,
   VendoError,
   type AppDocument,
+  type ComponentCatalog,
   type Principal,
   type RunContext,
 } from "@vendoai/core";
@@ -561,6 +562,55 @@ describe("09 §3 conversational turn against the real composed store", () => {
     const rows = await store.records("vendo_threads").list({ refs: { subject: principal.subject } });
     expect(rows.records).toHaveLength(1);
     expect(rows.records[0]?.id).toBe("thr_round_trip");
+  });
+});
+
+describe("09 §2 apps composition", () => {
+  it("passes host-component catalog registrations to createApps", { timeout: 120_000 }, async () => {
+    const { MockLanguageModelV3 } = await import("ai/test");
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-catalog-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    const generated = JSON.stringify({
+      name: "Catalog app",
+      tree: {
+        formatVersion: VENDO_TREE_FORMAT,
+        root: "metric",
+        nodes: [{
+          id: "metric",
+          component: "MetricCard",
+          source: "host",
+          props: { label: "Revenue" },
+        }],
+      },
+    });
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: "text", text: generated }],
+        finishReason: { unified: "stop", raw: undefined },
+        usage: {
+          inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 0, text: 0, reasoning: 0 },
+        },
+        warnings: [],
+      }),
+    });
+    const catalog: ComponentCatalog = [{
+      name: "MetricCard",
+      description: "Use for a single headline metric.",
+      propsSchema: { "~standard": { validate: (value: unknown) => ({ value }) } },
+    }];
+    const vendo = createVendo({
+      model,
+      principal: async () => principal,
+      store,
+      catalog,
+    });
+    await store.ensureSchema();
+
+    await expect(vendo.apps.create({ prompt: "Show revenue" }, ctx)).resolves.toMatchObject({
+      tree: { nodes: [{ component: "MetricCard", source: "host" }] },
+    });
   });
 });
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { JsonSchema } from "./ids.js";
 
 /** 01-core §14 */
 export interface StandardSchema {
@@ -10,6 +11,8 @@ export interface RegisteredComponent {
   name: string;
   description: string;
   propsSchema: StandardSchema;
+  propsJsonSchema?: JsonSchema;
+  examples?: string[];
   remixable?: boolean;
 }
 

@@ -418,6 +418,8 @@ export interface RegisteredComponent {
   name: string;                    // PascalCase, unique
   description: string;             // what the generator reads
   propsSchema: StandardSchema;     // type-only (not zod-serializable)
+  propsJsonSchema?: JsonSchema;    // prompt-safe JSON Schema 2020-12; maps to catalog@1 propsSchema
+  examples?: string[];             // usage snippets shown to the generator; maps to catalog@1 examples
   remixable?: boolean;             // opt-in: source captured at sync, eligible for pins
 }
 // the catalog holds host registrations; prewired primitives are the fixed reserved-name set (§8), not entries
