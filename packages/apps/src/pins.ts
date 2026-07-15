@@ -22,7 +22,7 @@ export interface PinBaseline {
 export const pinBaselineSchema = z.object({
   slot: z.string(),
   source: z.string(),
-  hash: z.string(),
+  hash: z.string().startsWith("sha256:"),
   exportable: z.boolean(),
   capturedAt: isoDateTimeSchema,
 }).passthrough() satisfies z.ZodType<PinBaseline>;

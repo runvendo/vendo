@@ -169,6 +169,7 @@ const touchedPinSlots = (previous: AppDocument, next: AppDocument): string[] => 
     if (prior?.base !== pin.base) return [pin.slot];
     const componentName = pinComponentName(pin.slot);
     if (previous.components?.[componentName] !== next.components?.[componentName]) return [pin.slot];
+    // Subtree serialization intentionally over-reports reordered nodes as touched.
     return JSON.stringify(pinnedSubtree(previous, componentName)) === JSON.stringify(pinnedSubtree(next, componentName))
       ? []
       : [pin.slot];

@@ -189,7 +189,7 @@ function dotVendoPinBaselines(): PinBaseline[] {
     try {
       const parsed = pinBaselineSchema.parse(JSON.parse(fs.readFileSync(file, "utf8")));
       if (slots.has(parsed.slot)) {
-        console.warn(`[vendo] invalid pin baseline ${file}; duplicate slot ${parsed.slot} was skipped`);
+        console.warn(`[vendo] duplicate pin baseline slot ${parsed.slot} in ${file}; file was skipped`);
         continue;
       }
       slots.add(parsed.slot);

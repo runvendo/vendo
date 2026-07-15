@@ -133,4 +133,59 @@ export const hostCatalog = [{
     });
     expect(warning).toHaveBeenCalledWith(expect.stringContaining("invalid.json"));
   }, 120_000);
+
+  it("exports a fork with an exportable baseline and preserves its pin", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-maple-exportable-pin-"));
+    cleanups.push(async () => rm(root, { recursive: true, force: true }));
+    await mkdir(join(root, "src"), { recursive: true });
+    const componentSource = `export default function MapleNetWorthCard() {
+  return <article><span>Net worth</span><strong>$1.2M</strong></article>;
+}\n`;
+    await writeFile(join(root, "src", "MapleNetWorthCard.tsx"), componentSource);
+    await writeFile(join(root, "src", "host-catalog.tsx"), `
+import MapleNetWorthCard from "./MapleNetWorthCard";
+export const hostCatalog = [{
+  name: "net-worth-card",
+  component: MapleNetWorthCard,
+  remixable: true,
+  exportable: true,
+}];
+`);
+
+    const synced = await vendoSync({ root, out: join(root, ".vendo") });
+    expect(synced.pins).toEqual({ captured: ["net-worth-card"], drifted: [] });
+    const model = scriptedModel(() => JSON.stringify({
+      ops: [{ op: "fork-pin", slot: "net-worth-card", nodeId: "maple-net-worth", parentId: "root" }],
+    }));
+    const store = createStore({ dataDir: join(root, ".data") });
+    cleanups.push(async () => store.close());
+    await store.ensureSchema();
+    process.chdir(root);
+    const vendo = createVendo({
+      model,
+      principal: async () => ctx.principal,
+      store,
+    });
+    const imported = await vendo.apps.importApp({
+      format: VENDO_APP_FORMAT,
+      id: "app_exportable_fixture_identity_is_replaced",
+      name: "Maple overview",
+      ui: "tree",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
+      },
+    }, ctx);
+
+    const edited = await vendo.apps.edit(imported.id, "Remix the net worth card", ctx);
+    const archive = await vendo.apps.exportApp(edited.app.id, ctx);
+    const exported = await vendo.apps.importApp(archive, ctx);
+
+    expect(edited.app.pins).toEqual([{
+      slot: "net-worth-card",
+      base: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+    }]);
+    expect(exported.pins).toEqual(edited.app.pins);
+  }, 120_000);
 });
