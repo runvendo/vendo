@@ -494,7 +494,7 @@ Trigger semantics are closed for `@1`:
 Persistence and transport are normative:
 
 - OSS always appends each event as one JSON object plus a newline to `.vendo/data/misses.jsonl`. This local append is not consent-gated, happens independently of upload, and remains the source of truth if upload fails.
-- Cloud upload is allowed only when `VENDO_API_KEY` is non-empty **and** `resolveConsent({ env, optedOut: loadConfig().optedOut, runtime: true }).allowed` under `packages/vendo-telemetry/src/consent.ts`: `VENDO_TELEMETRY_DISABLED` and `DO_NOT_TRACK` are neither `"1"` nor `"true"`; `CI` is absent, empty, `"0"`, or `"false"`; the loaded config has `optedOut: false`; and `NODE_ENV` is `"development"` or `"test"`. Otherwise no miss data leaves the machine.
+- Cloud upload is allowed when and only when `VENDO_API_KEY` is non-empty **and** `envOptOut(env) === false`, using the exported helper in `packages/vendo-telemetry/src/consent.ts`. `envOptOut` blocks upload when `VENDO_TELEMETRY_DISABLED` or `DO_NOT_TRACK` is `"1"` or `"true"`, or when `CI` is set to any value other than `""`, `"0"`, or `"false"`. The `NODE_ENV` development/test fail-close and the persisted telemetry config's `optedOut` flag do not gate miss upload; they remain product-telemetry-only, and production upload is allowed because non-empty `VENDO_API_KEY` is the host's explicit opt-in. Otherwise no miss data leaves the machine.
 - `intent` is user-authored content and may contain confidential or personal data. Emitters must remove credentials and secrets and minimize unrelated personal data while preserving the ask's intent; failure messages receive the same treatment. Events must never include raw tool arguments or outputs. Hosts must treat both the plaintext local JSONL and any Cloud copy as confidential user data.
 
 ## Amendments
@@ -504,7 +504,7 @@ Persistence and transport are normative:
 - **Changed:** Added the additive `vendo/capability-miss@1` persisted/wire shape, with the three locked emission triggers, exact extracted-surface identity, host/session context, and tool-attempt detail.
 - **Changed:** Contracted unconditional local JSONL persistence, API-key-plus-opt-out-gated Cloud upload, privacy handling, and reuse of the same event by the gap dashboard and refine feed.
 - **Why:** Miss capture needs one stable handoff between the embedded agent, OSS history, Cloud gap analysis, and `vendo refine` before ENG-253 implementation begins.
-- **Approved by:** Pending — merge is GATED on Yousef sign-off (ENG-253).
+- **Approved by:** Yousef, 2026-07-14 (consent semantics ruled: key + envOptOut kill switches; production allowed).
 
 ### 2026-07-14 — MCP additions, RunContext promotion, and shipped export surface
 
