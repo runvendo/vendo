@@ -7,6 +7,7 @@ import {
 } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import { createApps } from "./index.js";
+import { pinComponentName } from "./pins.js";
 import type { SandboxAdapter } from "./sandbox.js";
 import {
   bindTools,
@@ -49,6 +50,56 @@ const emptyTools: ToolRegistry = {
 };
 
 describe("apps execution", () => {
+  it("carries a pinned baseline's furnishing in the additive tree payload", async () => {
+    const store = memoryStore();
+    const baseline = {
+      slot: "invoice-card",
+      source: "export default function Card() { return null; }",
+      hash: "sha256:furnished",
+      exportable: false,
+      capturedAt: "2026-07-14T12:00:00.000Z" as const,
+      sourceImports: { "./Badge": "src/Badge.tsx" },
+      subSources: {
+        "src/Badge.tsx": { source: "export function Badge() { return null; }", imports: {} },
+      },
+      sampleProps: { title: "Preview" },
+      styles: [{ path: "src/app/globals.css", css: ".card { color: navy; }" }],
+    };
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: emptyTools,
+      catalog: [],
+      model,
+      pinBaselines: [baseline],
+    });
+    const created = await runtime.create({ prompt: "Furnished pin" }, ctx());
+    const componentName = pinComponentName(baseline.slot);
+    await putApp(store, {
+      ...created,
+      pins: [{ slot: baseline.slot, base: baseline.hash }],
+      components: { [componentName]: baseline.source },
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{ id: "root", component: componentName, source: "generated" }],
+      },
+    });
+
+    const surface = await runtime.open(created.id, ctx());
+    if (surface.kind !== "tree") throw new Error("Expected tree surface");
+    expect(surface.payload).toMatchObject({
+      furnishings: {
+        [componentName]: {
+          sourceImports: baseline.sourceImports,
+          subSources: baseline.subSources,
+          sampleProps: baseline.sampleProps,
+          styles: baseline.styles,
+        },
+      },
+    });
+  });
+
   it("never lets a query path reach Object.prototype", async () => {
     const rawTools: ToolRegistry = {
       async descriptors() {

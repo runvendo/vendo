@@ -43,9 +43,15 @@ export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
 
 Names are PascalCase and unique. `propsSchema` uses the Standard Schema
 interface. Set `remixable` only when sync may capture the component's real
-source as a pin baseline. The prewired primitives are reserved and do not
-appear in the catalog: `Stack`, `Row`, `Grid`, `Text`, `Skeleton`, `Surface`,
-and `Divider`.
+source as a pin baseline. A remixable registration may also declare a static,
+JSON-compatible `sampleProps` object: sync captures it into the baseline and
+the jail uses it as stubbed data when a fork renders without live props. Sync
+also follows the component's local imports for two hops and snapshots direct
+`.css` imports from canonical app roots (`app/layout.*`, `app/root.*`,
+`pages/_app.*`, and `src/` variants) so forks render furnished — with the
+host's sub-components and styles — instead of bare React. The prewired
+primitives are reserved and do not appear in the catalog: `Stack`, `Row`,
+`Grid`, `Text`, `Skeleton`, `Surface`, and `Divider`.
 
 ## Headless hooks
 
@@ -103,7 +109,10 @@ export function TreeView(props: {
 `TreeView` renders `vendo-genui/v1`. `$path` resolves against app data and
 `$state` against the per-user, per-app state singleton. Host components render
 by registered name. Generated components always run inside the iframe jail
-with `connect-src 'none'`.
+with `connect-src 'none'`. Pin forks carry their captured furnishing —
+sub-component sources, app-root stylesheets, and `sampleProps` stubs — into
+the jail as inert data; captured CSS is applied only inside the jailed
+document, never in the host page.
 
 Actions leave the renderer through `onAction`, then cross the wire and guard.
 Tool names and `fn:` references are opaque to the renderer. Erroring nodes are

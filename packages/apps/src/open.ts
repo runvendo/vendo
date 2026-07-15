@@ -12,6 +12,7 @@ import {
 } from "@vendoai/core";
 import type { AppCaller } from "./call.js";
 import type { MachineSessions } from "./machine.js";
+import { pinComponentName, type PinBaseline } from "./pins.js";
 import type { OpenSurface } from "./runtime.js";
 
 const isObject = (value: unknown): value is Record<string, Json> =>
@@ -183,6 +184,7 @@ export const createAppOpener = (
   machines: MachineSessions,
   caller: AppCaller,
   store: StoreAdapter,
+  pinBaselines: readonly PinBaseline[] = [],
 ): ((app: AppDocument, ctx: RunContext) => Promise<OpenSurface>) => async (app, ctx) => {
   const authorization = await machines.mintRun(app, ctx);
   if (app.ui === "http") {
@@ -222,6 +224,21 @@ export const createAppOpener = (
   // generated components from payload.components. The OpenSurface sibling stays
   // for 06 §1 shape fidelity.
   const tree: Tree = structuredClone(validation.tree);
+  const furnishings = Object.fromEntries((app.pins ?? []).flatMap((pin) => {
+    const baseline = pinBaselines.find((candidate) => candidate.slot === pin.slot && candidate.hash === pin.base);
+    if (baseline === undefined) return [];
+    return [[pinComponentName(pin.slot), {
+      ...(baseline.sourceImports === undefined ? {} : { sourceImports: structuredClone(baseline.sourceImports) }),
+      ...(baseline.subSources === undefined ? {} : { subSources: structuredClone(baseline.subSources) }),
+      ...(baseline.sampleProps === undefined ? {} : { sampleProps: structuredClone(baseline.sampleProps) }),
+      ...(baseline.styles === undefined ? {} : { styles: structuredClone(baseline.styles) }),
+    }]];
+  }));
+  // UIPayload is explicitly forward-compatible. Furnishing rides inside the
+  // tagged tree payload so the frozen OpenSurface sibling shape stays intact.
+  if (Object.keys(furnishings).length > 0) {
+    (tree as Tree & { furnishings: typeof furnishings }).furnishings = furnishings;
+  }
   const queries = createProgressiveQueryResolver(machines, caller, app, ctx, undefined, authorization);
   queries.update(tree);
   tree.data = await queries.complete();

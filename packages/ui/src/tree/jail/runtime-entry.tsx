@@ -30,7 +30,7 @@ mount.style.display = "flow-root";
 document.body.appendChild(mount);
 
 let root: Root | undefined;
-let loadedSource: string | undefined;
+let loadedKey: string | undefined;
 let loadedComponent: React.ComponentType<Record<string, unknown>> | undefined;
 let requestSequence = 0;
 const pendingActions = new Map<string, {
@@ -57,37 +57,95 @@ const JAIL_MODULES: Record<string, unknown> = {
 };
 
 function jailRequire(specifier: string): unknown {
-  const module = JAIL_MODULES[specifier];
-  if (module === undefined) {
+  if (!Object.prototype.hasOwnProperty.call(JAIL_MODULES, specifier)) {
     throw new Error(`module "${specifier}" is not available in the Vendo jail`);
   }
-  return module;
+  return JAIL_MODULES[specifier];
 }
 
-async function load(source: string): Promise<React.ComponentType<Record<string, unknown>>> {
-  if (source === loadedSource && loadedComponent) return loadedComponent;
-  const compiled = transform(source, {
+interface VirtualSource {
+  source: string;
+  imports: Record<string, string>;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+function stringRecord(value: unknown): Record<string, string> {
+  const record = Object.create(null) as Record<string, string>;
+  if (!isRecord(value)) return record;
+  for (const [key, child] of Object.entries(value)) {
+    if (typeof child === "string") record[key] = child;
+  }
+  return record;
+}
+
+function virtualSources(value: unknown): Record<string, VirtualSource> {
+  const modules = Object.create(null) as Record<string, VirtualSource>;
+  if (!isRecord(value)) return modules;
+  for (const [id, candidate] of Object.entries(value)) {
+    if (!isRecord(candidate) || typeof candidate.source !== "string") continue;
+    modules[id] = { source: candidate.source, imports: stringRecord(candidate.imports) };
+  }
+  return modules;
+}
+
+function compile(source: string): string {
+  return transform(source, {
     transforms: ["typescript", "jsx", "imports"],
     production: true,
     jsxRuntime: "classic",
     jsxPragma: "globalThis.__VENDO_JAIL_REACT__.createElement",
     jsxFragmentPragma: "globalThis.__VENDO_JAIL_REACT__.Fragment",
   }).code;
-  const moduleExports: { default?: unknown } = {};
-  const moduleRecord = { exports: moduleExports };
-  // 'unsafe-eval' is deliberately allowed in the jail CSP: evaluation is the
-  // jail's whole job; NETWORK is what the jail forbids.
-  const evaluate = new Function("require", "module", "exports", compiled) as (
-    require: typeof jailRequire,
-    module: typeof moduleRecord,
-    exports: typeof moduleExports,
-  ) => void;
-  evaluate(jailRequire, moduleRecord, moduleExports);
-  const loaded = moduleRecord.exports as { default?: unknown };
+}
+
+async function load(
+  source: string,
+  rawSourceImports: unknown,
+  rawSubSources: unknown,
+): Promise<React.ComponentType<Record<string, unknown>>> {
+  const sourceImports = stringRecord(rawSourceImports);
+  const subSources = virtualSources(rawSubSources);
+  const key = JSON.stringify({ source, sourceImports, subSources });
+  if (key === loadedKey && loadedComponent) return loadedComponent;
+  const entryId = "\u0000vendo-entry";
+  const modules = Object.assign(Object.create(null) as Record<string, VirtualSource>, subSources);
+  modules[entryId] = { source, imports: sourceImports };
+  // Sucrase compiles the fork and every captured source in this single load
+  // cycle; evaluation stays behind a per-module require bound to the captured
+  // import table. No specifier outside that table can reach a host loader.
+  const compiled = Object.create(null) as Record<string, string>;
+  for (const [id, module] of Object.entries(modules)) compiled[id] = compile(module.source);
+  const cache = new Map<string, { exports: Record<string, unknown> }>();
+  const evaluateModule = (id: string): Record<string, unknown> => {
+    const cached = cache.get(id);
+    if (cached !== undefined) return cached.exports;
+    const descriptor = modules[id];
+    if (descriptor === undefined) throw new Error(`captured module "${id}" is unavailable in the Vendo jail`);
+    const moduleRecord = { exports: {} as Record<string, unknown> };
+    cache.set(id, moduleRecord);
+    const localRequire = (specifier: string): unknown => {
+      if (Object.prototype.hasOwnProperty.call(JAIL_MODULES, specifier)) return jailRequire(specifier);
+      const target = descriptor.imports[specifier];
+      if (target === undefined || !Object.prototype.hasOwnProperty.call(modules, target)) return jailRequire(specifier);
+      return evaluateModule(target);
+    };
+    // 'unsafe-eval' is deliberately allowed in the jail CSP: evaluation is the
+    // jail's whole job; NETWORK is what the jail forbids.
+    const evaluate = new Function("require", "module", "exports", compiled[id]!) as (
+      require: typeof localRequire,
+      module: typeof moduleRecord,
+      exports: Record<string, unknown>,
+    ) => void;
+    evaluate(localRequire, moduleRecord, moduleRecord.exports);
+    return moduleRecord.exports;
+  };
+  const loaded = evaluateModule(entryId) as { default?: unknown };
   if (typeof loaded.default !== "function" && typeof loaded.default !== "object") {
     throw new Error("generated component must have a React default export");
   }
-  loadedSource = source;
+  loadedKey = key;
   loadedComponent = loaded.default as React.ComponentType<Record<string, unknown>>;
   return loadedComponent;
 }
@@ -130,8 +188,10 @@ class RuntimeBoundary extends React.Component<React.PropsWithChildren, { error?:
 async function renderComponent(
   source: string,
   rawProps: Record<string, unknown>,
+  sourceImports?: unknown,
+  subSources?: unknown,
 ): Promise<"ready" | "empty" | "error"> {
-  const Component = await load(source);
+  const Component = await load(source, sourceImports, subSources);
   const props = hydrate(rawProps) as Record<string, unknown>;
   props.vendo = {
     action: requestAction,
@@ -170,6 +230,20 @@ function applyThemeVars(vars: unknown): void {
   document.body.style.fontSize = "var(--vendo-font-size, 15px)";
 }
 
+function applyHostStyles(styles: unknown): void {
+  document.querySelectorAll("style[data-vendo-host-style]").forEach((element) => element.remove());
+  if (!Array.isArray(styles)) return;
+  for (const candidate of styles) {
+    if (!isRecord(candidate) || typeof candidate.css !== "string") continue;
+    const style = document.createElement("style");
+    style.dataset.vendoHostStyle = typeof candidate.path === "string" ? candidate.path : "captured";
+    // textContent keeps captured CSS as inert data at the postMessage boundary;
+    // the unchanged CSP still refuses every non-data network source it names.
+    style.textContent = candidate.css;
+    document.head.appendChild(style);
+  }
+}
+
 window.addEventListener("message", (event) => {
   if (event.source !== parent) return;
   const message = event.data as Record<string, unknown> | undefined;
@@ -177,7 +251,13 @@ window.addEventListener("message", (event) => {
 
   if (message.kind === "render" && typeof message.source === "string") {
     applyThemeVars(message.themeVars);
-    void renderComponent(message.source, (message.props ?? {}) as Record<string, unknown>)
+    applyHostStyles(message.styles);
+    void renderComponent(
+      message.source,
+      (message.props ?? {}) as Record<string, unknown>,
+      message.sourceImports,
+      message.subSources,
+    )
       .then((result) => {
         if (result === "ready") post({ kind: "ready" });
         else if (result === "empty") post({ kind: "empty" });
