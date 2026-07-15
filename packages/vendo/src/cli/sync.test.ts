@@ -216,6 +216,20 @@ describe("vendo sync", () => {
     expect(errors.join("\n")).toContain("run the host in dev with Vendo mounted to runtime-capture it");
   });
 
+  it("names drifted slots and says forks stay on the old capture until rebased", async () => {
+    const messages = captureOutput();
+    const drifted = {
+      ...report(),
+      pins: { captured: ["invoice-card"], drifted: ["net-worth-card"] },
+    };
+    expect(await runSync({ targetDir: ".", output: messages.output, sync: async () => drifted })).toBe(0);
+    const log = messages.logs.join("\n");
+    expect(log).toContain("pins: 1 captured, 1 drifted");
+    expect(log).toContain("drifted: net-worth-card");
+    expect(log).toContain("rebase");
+    // Drift alone never fails the sync and never mutates any fork.
+  });
+
   it("still pushes --report and keeps blast-radius exit three when slots are also unresolved", async () => {
     const messages = captureOutput();
     const push = vi.fn(async () => {});

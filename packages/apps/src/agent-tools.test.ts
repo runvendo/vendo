@@ -50,6 +50,7 @@ describe("apps agent tools", () => {
     expect(descriptors.map((descriptor) => descriptor.name)).toEqual([
       "vendo_apps_create",
       "vendo_apps_edit",
+      "vendo_apps_rebase_pin",
       "vendo_apps_open",
       "vendo_apps_data_list",
       "vendo_apps_data_put",
@@ -68,7 +69,7 @@ describe("apps agent tools", () => {
     // Creating a document is a rung-1-only, jailed UI operation: it cannot
     // reach host tools, a server machine, or the network.
     expect(descriptors.map((descriptor) => descriptor.risk)).toEqual([
-      "read", "write", "read", "read", "write", "write",
+      "read", "write", "write", "read", "read", "write", "write",
     ]);
     expect(descriptors.find(({ name }) => name === "vendo_apps_edit")?.description).toMatch(/retry.*same app/i);
   });
@@ -272,6 +273,24 @@ describe("apps agent tools", () => {
       id: "call_bad_input",
       tool: "vendo_apps_create",
       args: { prompt: "ok", extra: true },
+    }, ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "validation" },
+    });
+    // The rebase tool routes through runtime.pins.rebase with the same
+    // ownership scoping and contained VendoError codes as every other tool.
+    await expect(registry.execute({
+      id: "call_rebase_missing",
+      tool: "vendo_apps_rebase_pin",
+      args: { appId: "app_missing", slot: "net-worth-card" },
+    }, ctx)).resolves.toEqual({
+      status: "error",
+      error: { code: "not-found", message: "app not found: app_missing" },
+    });
+    await expect(registry.execute({
+      id: "call_rebase_bad_input",
+      tool: "vendo_apps_rebase_pin",
+      args: { appId: "app_missing" },
     }, ctx)).resolves.toMatchObject({
       status: "error",
       error: { code: "validation" },

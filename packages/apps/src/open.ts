@@ -13,7 +13,7 @@ import {
 import type { AppCaller } from "./call.js";
 import type { InClientVenueState } from "./inclient.js";
 import type { MachineSessions } from "./machine.js";
-import { pinComponentName, type PinBaseline } from "./pins.js";
+import { detectPinDrift, pinComponentName, type PinBaseline, type PinDrift } from "./pins.js";
 import type { OpenSurface } from "./runtime.js";
 
 const isObject = (value: unknown): value is Record<string, Json> =>
@@ -181,13 +181,15 @@ export const createProgressiveQueryResolver = (
 };
 
 /**
- * 06-apps §9 — the in-client venue field is SERVER-AUTHORITATIVE. The stored
- * tree is model-written or imported from an untrusted `.vendoapp`, so a forged
- * `inClient` riding the document must never reach the client: strip it before
- * the verified verdict (when any) is attached.
+ * 06-apps §§8–9 — the in-client venue field and the pin-drift report are
+ * SERVER-AUTHORITATIVE. The stored tree is model-written or imported from an
+ * untrusted `.vendoapp`, so a forged `inClient` or `pinDrift` riding the
+ * document must never reach the client: strip both before the verified
+ * verdict and the computed drift (when any) are attached.
  */
-const stripForgedInClient = <T extends object>(payload: T): T => {
+const stripForgedServerFields = <T extends object>(payload: T): T => {
   delete (payload as { inClient?: unknown }).inClient;
+  delete (payload as { pinDrift?: unknown }).pinDrift;
   return payload;
 };
 
@@ -226,7 +228,7 @@ export const createAppOpener = (
   // 01-core §8 — an unregistered format tag is a contained failure: the payload passes
   // through untouched (no query resolution) and the renderer shows the notice.
   if (app.tree.formatVersion !== VENDO_TREE_FORMAT) {
-    const payload = stripForgedInClient(structuredClone(app.tree));
+    const payload = stripForgedServerFields(structuredClone(app.tree));
     return app.components === undefined
       ? { kind: "tree", payload }
       : { kind: "tree", payload, components: structuredClone(app.components) };
@@ -237,11 +239,18 @@ export const createAppOpener = (
   // field (01 §8, "lifted to the app document at rest") and the renderer compiles
   // generated components from payload.components. The OpenSurface sibling stays
   // for 06 §1 shape fidelity.
-  const tree: Tree = stripForgedInClient(structuredClone(validation.tree));
+  const tree: Tree = stripForgedServerFields(structuredClone(validation.tree));
   // Attach the venue verdict ONLY from the runtime's own hash-pin verification.
   const inClient = await inClientVenue?.(app);
   if (inClient !== undefined) {
     (tree as Tree & { inClient: InClientVenueState }).inClient = inClient;
+  }
+  // 06-apps §8 — "a host update to the component marks the pin drifted": the
+  // drift report rides every open() of a stale fork so the surface can say so
+  // loudly, not only sync output and the ship-diff. Server-computed only.
+  const pinDrift = detectPinDrift(app, pinBaselines);
+  if (pinDrift.length > 0) {
+    (tree as Tree & { pinDrift: PinDrift[] }).pinDrift = pinDrift;
   }
   const furnishings = Object.fromEntries((app.pins ?? []).flatMap((pin) => {
     const baseline = pinBaselines.find((candidate) => candidate.slot === pin.slot && candidate.hash === pin.base);

@@ -4,9 +4,11 @@
  * flagged additions (AppsConfig.proxyUrl/pinBaselines/egressTransport,
  * AppsRuntime.proxy, SandboxMachine.url?, create-spec egress?,
  * substituteSecretHandles/hostAllowed), the ENG-259 SSRF egress guard
- * (checkEgressUrl, isBlockedAddress) exposed for reuse, and the ENG-288 M4
+ * (checkEgressUrl, isBlockedAddress) exposed for reuse, the ENG-288 M4
  * in-client trust-axis surface (06 §9): AppsRuntime.inClient, ship-diff
- * computation, appVersionHash, and the approval-record store access.
+ * computation, appVersionHash, and the approval-record store access, and the
+ * ENG-288 M5 drift→rebase surface (06 §8): AppsRuntime.pins and
+ * detectPinDrift.
  * Everything else — machine sessions, run tokens, the generation engine,
  * interchange plumbing — is internal and reachable only through AppsRuntime.
  */
@@ -18,6 +20,7 @@ export {
   type EditFailure,
   type EditResult,
   type OpenSurface,
+  type PinRebaseResult,
   type VersionEntry,
 } from "./runtime.js";
 export type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
@@ -28,6 +31,7 @@ export {
   type ShareSnapshot,
 } from "./cloud.js";
 export {
+  detectPinDrift,
   inClientApprovalSchema,
   pinApprovalSchema,
   pinBaselineSchema,
@@ -36,6 +40,7 @@ export {
   type InClientApproval,
   type PinApproval,
   type PinBaseline,
+  type PinDrift,
   type PinShipRequest,
 } from "./pins.js";
 export { appVersionHash } from "./version-hash.js";

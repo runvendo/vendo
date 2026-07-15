@@ -3,6 +3,7 @@ import {
   appIdSchema,
   isoDateTimeSchema,
   sha256Hex,
+  type AppDocument,
   type AppId,
   type IsoDateTime,
   type Json,
@@ -117,6 +118,43 @@ export const inClientApprovalSchema = z.object({
   approvedBy: z.string(),
   at: isoDateTimeSchema,
 }).passthrough() satisfies z.ZodType<InClientApproval>;
+
+/**
+ * 06-apps §8 — one drifted pin: the host component changed (or its baseline
+ * disappeared) under a fork, so the fork's `base` no longer names the source
+ * the host is running. SERVER-AUTHORITATIVE when it rides an open() payload:
+ * only `detectPinDrift` over the composition's loaded baselines writes it.
+ */
+export interface PinDrift {
+  slot: string;
+  /** The generated-component name the fork ships under (`pinComponentName`). */
+  component: string;
+  /** The baseline hash the pin was forked from (`Pin.base`). */
+  baseHash: string;
+  /** The hash of the currently captured host baseline, when one exists. */
+  baselineHash?: string;
+  reason: "baseline-changed" | "baseline-missing";
+}
+
+/**
+ * 06-apps §8 — "a host update to the component marks the pin drifted". Pure
+ * over the app document and the composition's loaded baselines so the opener,
+ * the edit path, and the rebase surface all report the same verdict.
+ */
+export const detectPinDrift = (
+  doc: AppDocument,
+  baselines: readonly PinBaseline[],
+): PinDrift[] => (doc.pins ?? []).flatMap((pin): PinDrift[] => {
+  const baseline = baselines.find((candidate) => candidate.slot === pin.slot);
+  if (baseline?.hash === pin.base) return [];
+  return [{
+    slot: pin.slot,
+    component: pinComponentName(pin.slot),
+    baseHash: pin.base,
+    ...(baseline === undefined ? {} : { baselineHash: baseline.hash }),
+    reason: baseline === undefined ? "baseline-missing" : "baseline-changed",
+  }];
+});
 
 /**
  * 06-apps §7–§8 — require explicit host permission for every exported pin.
