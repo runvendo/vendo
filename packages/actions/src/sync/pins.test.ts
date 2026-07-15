@@ -36,7 +36,7 @@ describe("furnished pin capture", () => {
         name: "Card",
         component: Card,
         remixable: true,
-        sampleProps: { title: "Captured", count: 2, flags: [true, null] },
+        sampleProps: { title: "Captured", count: 2, flags: [true, null], href: "a\\/b" },
       }];
     `);
     await write(root, "src/components/Card.tsx", `
@@ -74,7 +74,7 @@ describe("furnished pin capture", () => {
       "./Deep": "src/components/Deep.tsx",
     });
     expect(baseline.subSources?.["src/components/Deep.tsx"]?.imports).toEqual({});
-    expect(baseline.sampleProps).toEqual({ title: "Captured", count: 2, flags: [true, null] });
+    expect(baseline.sampleProps).toEqual({ title: "Captured", count: 2, flags: [true, null], href: "a/b" });
     expect(baseline.styles).toEqual([{
       path: "src/app/globals.css",
       css: ".captured { color: rgb(12, 34, 56); }\n",

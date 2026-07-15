@@ -91,7 +91,7 @@ class StaticValueParser {
       }
       const escaped = this.source[this.index++];
       const simple: Record<string, string> = {
-        "\"": "\"", "'": "'", "\\": "\\", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t",
+        "\"": "\"", "'": "'", "\\": "\\", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t",
       };
       if (escaped !== undefined && simple[escaped] !== undefined) {
         value += simple[escaped];
