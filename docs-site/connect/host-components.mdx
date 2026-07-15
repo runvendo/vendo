@@ -76,6 +76,41 @@ const vendo = createVendo({ model, principal, catalog });
 - `examples` are JSON strings the model can copy from. One or two concrete
   shapes usually beat a long prose description.
 
+## Auto-extract with sync
+
+`vendo sync` scans exported JSX components referenced by your `<VendoRoot>`
+`components` map and writes a strict `.vendo/catalog.json` with each entry's
+export path, JSON Schema props, description, and example props. Rescans are
+deterministic and byte-stable, so the file is safe to commit. Both `vendo
+init` and `vendo sync` print one status line:
+
+```
+catalog.json: 2 discovered, 2 registered
+```
+
+`createVendo` loads `.vendo/catalog.json` at boot alongside `.vendo/theme.json`
+and uses each entry's JSON Schema for prompt guidance. Explicit
+`createVendo({ catalog })` registrations win by `name`, so keep code as the
+source of truth for anything you want strictly validated at render time —
+disk entries use a pass-through validator because JSON Schema on disk is
+prompt guidance, not an executable validator.
+
+If sync cannot infer a prop type it falls back to a permissive schema and
+attaches a note; correct the entry by registering the component in code
+rather than hand-editing the file. A malformed `.vendo/catalog.json` fails
+sync loudly, and `createVendo` logs one actionable error naming the file and
+telling you to rerun `vendo sync`.
+
+### Review AI-authored copy
+
+Sync can optionally draft descriptions and examples for scanned entries. Any
+proposed copy is written to `.vendo/catalog.proposals.json` as a before/after
+diff — nothing enters `.vendo/catalog.json` until you accept it through the
+explicit acceptance API. The runtime never reads the proposals file. Accepted
+copy is pinned to the deterministic basis (export path, prop schema, note)
+so a later rescan that changes the underlying component invalidates the
+accepted copy instead of applying it silently.
+
 The prewired primitives are `Stack`, `Row`, `Grid`, `Text`, `Skeleton`,
 `Surface`, `Divider`, `Card`, `Button`, `Input`, `Select`, `Table`, `Badge`,
 `Stat`, and `Tabs`. Catalog entries and generated components cannot shadow
