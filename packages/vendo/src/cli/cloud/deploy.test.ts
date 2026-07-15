@@ -152,6 +152,49 @@ describe("cloud deploy", () => {
     expect(messages.logs).toEqual([JSON.stringify(response, null, 2)]);
   });
 
+  it("warns once per app for fn: steps without blocking the deploy", async () => {
+    const app = automation("app_fn_steps");
+    app.trigger = {
+      ...trigger,
+      run: {
+        kind: "steps",
+        steps: [
+          { id: "first", tool: "fn:first" },
+          { id: "second", tool: "fn:second" },
+        ],
+      },
+    };
+    const secondApp = automation("app_second_fn");
+    secondApp.trigger = {
+      ...trigger,
+      run: { kind: "steps", steps: [{ id: "only", tool: "fn:only" }] },
+    };
+    const messages = output();
+    const fetcher = vi.fn().mockResolvedValue({
+      org: { id: "org_1", slug: "acme" },
+      instance: { status: "active" },
+      applied: { apps: 2, grants: 0, secrets: 0 },
+      webhooks: [],
+    });
+    const localProjectReader = vi.fn().mockResolvedValue({
+      subject: "user_a",
+      apps: [{ doc: app, enabled: true }, { doc: secondApp, enabled: true }],
+      grants: [],
+    });
+
+    expect(await runDeploy(["--key", "vnd_test"], {
+      output: messages.sink,
+      fetcher,
+      env: {},
+      localProjectReader,
+    })).toBe(0);
+    expect(messages.errors).toEqual([
+      "WARNING: Automation app_fn_steps has fn: steps that target the app's machine, which is unreachable from hosted sandboxes in v1; those steps will fail/park when fired hosted.",
+      "WARNING: Automation app_second_fn has fn: steps that target the app's machine, which is unreachable from hosted sandboxes in v1; those steps will fail/park when fired hosted.",
+    ]);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
   it("rejects an explicit --app that is not an automation", async () => {
     const messages = output();
     const fetcher = vi.fn();

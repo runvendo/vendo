@@ -149,6 +149,17 @@ function selectedApps(project: LocalDeployProject, args: string[]): LocalDeployA
   return project.apps.filter((app) => requestedIds.has(app.doc.id));
 }
 
+function warnUnsupportedFnSteps(context: CloudCommandContext, apps: LocalDeployApp[]): void {
+  for (const app of apps) {
+    const run = app.doc.trigger?.run;
+    if (run?.kind === "steps" && run.steps.some((step) => step.tool.startsWith("fn:"))) {
+      context.output.error(
+        `WARNING: Automation ${app.doc.id} has fn: steps that target the app's machine, which is unreachable from hosted sandboxes in v1; those steps will fail/park when fired hosted.`,
+      );
+    }
+  }
+}
+
 function deployResponse(value: unknown): HostedDeployResponse {
   if (typeof value !== "object" || value === null) throw new Error("Vendo Cloud returned an invalid deploy response");
   const result = value as Partial<HostedDeployResponse>;
@@ -200,6 +211,7 @@ export async function runDeploy(args: string[], options: CloudDeployOptions = {}
       cwd: options.cwd ?? process.cwd(),
     });
     const apps = selectedApps(project, args);
+    warnUnsupportedFnSteps(context, apps);
     const appIds = new Set(apps.map((app) => app.doc.id));
     const grants = project.grants.filter((grant) => grant.subject === project.subject
       && grant.source === "automation"

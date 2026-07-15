@@ -36,6 +36,9 @@ not discoverable through the CLI contract. The v1 deploy vehicle is therefore
 the repeatable `--secret NAME=VALUE` flag; values cross only the authenticated
 TLS request and are never printed. A referenced name without a matching flag
 produces a warning and does not fail the app/grant deploy.
+Automations with `steps[].tool` beginning `fn:` also warn per app: those steps
+target the app's machine, which hosted sandboxes cannot reach in v1, so they
+will fail/park when fired hosted without blocking the deploy itself.
 
 ## User authentication
 - `vendo cloud login EMAIL` → sends a 6-digit email OTP, prompts for the code,
