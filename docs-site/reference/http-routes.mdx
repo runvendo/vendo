@@ -44,6 +44,7 @@ Bodies follow the MCP transport spec, not the wire's JSON envelope.
 | `/api/vendo/mcp` | POST · GET · DELETE | MCP Streamable HTTP transport |
 | `/api/vendo/mcp/authorize` | GET | OAuth authorization endpoint |
 | `/api/vendo/mcp/token` | POST | OAuth token endpoint (form-encoded) |
+| `/api/vendo/mcp/revoke` | POST | RFC 7009 token revocation (form-encoded); always empty `200` |
 | `/api/vendo/mcp/register` | POST | OAuth dynamic client registration (JSON body) |
 | `/.well-known/oauth-protected-resource/api/vendo/mcp` | GET | RFC 9728 protected-resource metadata |
 | `/.well-known/oauth-authorization-server/api/vendo/mcp` | GET | RFC 8414 authorization-server metadata |
