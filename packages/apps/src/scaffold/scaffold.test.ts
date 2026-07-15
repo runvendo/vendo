@@ -36,6 +36,7 @@ describe("servedAppScaffold", () => {
       "/app/tree-renderer.js",
       "/app/index.html",
       "/app/.vendo/scaffold-server.cjs",
+      "/app/.vendo/fetch-shim.cjs",
       "/app/start.sh",
     ]);
     expect(byPath.get("/app/tree.json")).toBe(JSON.stringify(app().tree));
@@ -44,6 +45,11 @@ describe("servedAppScaffold", () => {
     expect(byPath.get("/app/index.html")).toContain('id="vendo-served-tree"');
     expect(byPath.get("/app/index.html")).toContain('src="/tree-renderer.js"');
     expect(byPath.get("/app/start.sh")).toContain("exec node /app/.vendo/scaffold-server.cjs");
+    // ENG-290 M4 — the egress fetch shim ships in the bundle and start.sh
+    // requires it into every node process the entry spawns.
+    expect(byPath.get("/app/.vendo/fetch-shim.cjs")).toContain("VENDO_PROXY_URL");
+    expect(byPath.get("/app/start.sh"))
+      .toContain('export NODE_OPTIONS="--require /app/.vendo/fetch-shim.cjs');
   });
 
   it("carries the app's generated components into components.json", () => {
@@ -143,5 +149,6 @@ describe("scaffold-server.cjs (real node process)", () => {
     // start.sh and the server source itself sit next to the assets but are not routes.
     expect((await fetch(`${base}/start.sh`)).status).toBe(404);
     expect((await fetch(`${base}/.vendo/scaffold-server.cjs`)).status).toBe(404);
+    expect((await fetch(`${base}/.vendo/fetch-shim.cjs`)).status).toBe(404);
   });
 });

@@ -34,9 +34,14 @@ These values are injected by the apps runtime:
 | Variable | Contents |
 | --- | --- |
 | `PORT` | port on which the app server must listen |
-| `VENDO_PROXY_URL` | guarded host-tool proxy for the run |
+| `VENDO_PROXY_URL` | guarded host-tool and secret-egress proxy for the run |
 | `VENDO_RUN_TOKEN` | short-lived bearer token scoped to app, principal, run, and presence |
 | declared secret names | opaque `vendo-secret:<name>:<nonce>` handles, never values |
+
+When `VENDO_PROXY_URL` and `VENDO_RUN_TOKEN` are both present, the runtime's
+in-machine fetch shim routes outbound `fetch()` calls to external hosts through
+the proxy's egress route, where secret handles are substituted for allowlisted
+hosts only. See [Secrets and outbound requests](/concepts/generated-ui#secrets-and-outbound-requests).
 
 ## Peer configuration
 

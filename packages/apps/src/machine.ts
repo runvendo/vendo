@@ -2,6 +2,7 @@ import { VendoError, type AppDocument, type RunContext } from "@vendoai/core";
 import { mintRunToken, type RunTokenSecret } from "./run-token.js";
 import type { RunTokenGate } from "./run-token-gate.js";
 import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
+import { FETCH_SHIM_PATH, FETCH_SHIM_SOURCE } from "./scaffold/fetch-shim.js";
 
 const RUN_TTL_MS = 15 * 60 * 1_000;
 const PORT = "8080";
@@ -120,7 +121,9 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     const promise = app.server === undefined
       ? adapter.create({
         env: environment(app, auth.runToken),
-        files: {},
+        // ENG-290 M4 — every fresh machine carries the egress fetch shim; the
+        // boot convention (runtime.ts) requires it into the app's node processes.
+        files: { [FETCH_SHIM_PATH]: FETCH_SHIM_SOURCE },
         egress: app.egress,
       })
       : adapter.resume(app.server);
@@ -167,7 +170,11 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     const adapter = requireAdapter();
     const run = await newRun(app, ctx);
     const machine = app.server === undefined
-      ? await adapter.create({ env: environment(app, run.runToken), files: {}, egress: app.egress })
+      ? await adapter.create({
+        env: environment(app, run.runToken),
+        files: { [FETCH_SHIM_PATH]: FETCH_SHIM_SOURCE },
+        egress: app.egress,
+      })
       : await adapter.resume(app.server);
     return fn({ machine, ...run });
   };

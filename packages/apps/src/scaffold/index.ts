@@ -1,4 +1,5 @@
 import { VendoError, type AppDocument } from "@vendoai/core";
+import { FETCH_SHIM_BOOT_PRELUDE, FETCH_SHIM_PATH, FETCH_SHIM_SOURCE } from "./fetch-shim.js";
 import { TREE_RENDERER_SOURCE } from "./tree-renderer.gen.js";
 
 export interface ServedAppScaffoldFile {
@@ -66,6 +67,12 @@ export const servedAppScaffold = (app: AppDocument): ServedAppScaffoldFile[] => 
     { path: "/app/tree-renderer.js", content: TREE_RENDERER_SOURCE },
     { path: "/app/index.html", content: INDEX_HTML },
     { path: "/app/.vendo/scaffold-server.cjs", content: SERVER_SOURCE },
-    { path: "/app/start.sh", content: "#!/bin/sh\nexec node /app/.vendo/scaffold-server.cjs\n" },
+    // ENG-290 M4 — the egress fetch shim rides in the scaffold so a rung-4
+    // app's server code fetches external hosts through the §4.5 proxy route.
+    { path: FETCH_SHIM_PATH, content: FETCH_SHIM_SOURCE },
+    {
+      path: "/app/start.sh",
+      content: `#!/bin/sh\n${FETCH_SHIM_BOOT_PRELUDE}\nexec node /app/.vendo/scaffold-server.cjs\n`,
+    },
   ];
 };
