@@ -403,6 +403,37 @@ export const sub = t.router({
     expect(result.warnings.some((warning) => warning.includes("mergeRouters"))).toBe(true);
   });
 
+  it("scopes the superjson transformer to each mount's own router graph", async () => {
+    const root = await temporaryHost();
+    await writeTrpcHost(root); // superjson mount at /api/trpc
+    await writeFile(root, "src/app/api/plain/[trpc]/route.ts", `
+import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+import { plainRouter } from "@/plain/router";
+
+const handler = (req: Request) =>
+  fetchRequestHandler({ endpoint: "/api/plain", req, router: plainRouter, createContext: () => ({}) });
+
+export { handler as GET, handler as POST };
+`);
+    await writeFile(root, "src/plain/router.ts", `
+import { initTRPC } from "@trpc/server";
+
+const t = initTRPC.create();
+export const plainRouter = t.router({
+  status: t.procedure.query(() => "ok"),
+});
+`);
+    const { tools } = await extractTrpc(root);
+    const byMount = new Map<string, Set<string | undefined>>();
+    for (const tool of tools) {
+      const binding = tool.binding as TrpcBinding;
+      if (!byMount.has(binding.mount)) byMount.set(binding.mount, new Set());
+      byMount.get(binding.mount)!.add(binding.transformer);
+    }
+    expect(byMount.get("/api/trpc")).toEqual(new Set(["superjson"]));
+    expect(byMount.get("/api/plain")).toEqual(new Set([undefined]));
+  });
+
   it("resolves routers imported through a default export", async () => {
     const root = await temporaryHost();
     await writeFile(root, "package.json", JSON.stringify({

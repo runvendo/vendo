@@ -94,7 +94,11 @@ interface Extraction {
   root: string;
   modules: Map<string, FileModule>;
   warnings: string[];
-  routerFactorySources: Set<string>; // files the router factory was imported from
+  routerFactorySources: Set<string>; // "importerFile\tspecifier" pairs the router factory was imported through
+  /** Files contributing to the CURRENT mount's router graph — superjson
+   * detection is scoped here so one mount's transformer never leaks onto
+   * another mount's tools. */
+  graphFiles: Set<string>;
 }
 
 function parseModule(extraction: Extraction, file: string, source: string): FileModule {
@@ -269,6 +273,7 @@ async function evaluateRouterExpression(
 ): Promise<RouterDef | ProcedureDef | null> {
   if (depth > MAX_RESOLVE_DEPTH) return null;
   const { ts } = extraction;
+  extraction.graphFiles.add(module.file);
 
   if (ts.isIdentifier(expr)) {
     const resolved = await resolveIdentifier(extraction, module, expr.text, depth + 1);
@@ -671,14 +676,17 @@ async function findMounts(extraction: Extraction): Promise<TrpcMount[]> {
 
 async function detectSuperjson(extraction: Extraction): Promise<boolean> {
   const transformerPattern = /transformer\s*:\s*(superjson|SuperJSON)/;
-  for (const module of extraction.modules.values()) {
-    if (transformerPattern.test(module.source)) return true;
+  // Scoped to the CURRENT mount's router graph — a plain-JSON mount must not
+  // inherit another mount's superjson transformer.
+  for (const file of extraction.graphFiles) {
+    const module = extraction.modules.get(file);
+    if (module && transformerPattern.test(module.source)) return true;
   }
   // The initTRPC module is usually NOT part of the router graph — resolve it
-  // from wherever the router factory was imported.
+  // from wherever THIS graph's files imported the router factory.
   for (const entry of extraction.routerFactorySources) {
     const [importer, specifier] = entry.split("\t");
-    if (!importer || !specifier) continue;
+    if (!importer || !specifier || !extraction.graphFiles.has(importer)) continue;
     const resolved = await resolveImportSource(importer, specifier, extraction.root);
     if (resolved && transformerPattern.test(resolved.source)) return true;
   }
@@ -706,7 +714,14 @@ export async function extractTrpc(root: string): Promise<TrpcExtractResult> {
       warnings: ["trpc extraction skipped: the TypeScript compiler could not be resolved from the host package"],
     };
   }
-  const extraction: Extraction = { ts, root, modules: new Map(), warnings, routerFactorySources: new Set() };
+  const extraction: Extraction = {
+    ts,
+    root,
+    modules: new Map(),
+    warnings,
+    routerFactorySources: new Set(),
+    graphFiles: new Set(),
+  };
 
   const mounts = await findMounts(extraction);
   if (mounts.length === 0) {
@@ -722,6 +737,7 @@ export async function extractTrpc(root: string): Promise<TrpcExtractResult> {
       warnings.push(`trpc mount ${mount.mount} does not reference a statically-resolvable router`);
       continue;
     }
+    extraction.graphFiles = new Set([mount.file]);
     const resolved = await resolveIdentifier(extraction, mount.module, mount.routerName, 0);
     if (!resolved) {
       warnings.push(`trpc router "${mount.routerName}" for mount ${mount.mount} could not be statically resolved`);
