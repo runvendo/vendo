@@ -190,6 +190,27 @@ describe("mobile takeover (ENG-228)", () => {
     late.remove();
   });
 
+  it("keeps a palette opened above the overlay interactive (modal portals are never inerted)", async () => {
+    installMatchMedia(true);
+    render(
+      <VendoProvider client={client}>
+        <VendoOverlay defaultOpen />
+        <VendoPalette />
+      </VendoProvider>,
+    );
+    expect(panel()).toBeTruthy();
+    fireEvent.keyDown(globalThis, { key: "k", ctrlKey: true });
+    const dialog = await screen.findByRole("dialog", { name: "Vendo command palette" });
+    // Prove the observer has processed the mutation batch: a plain late child
+    // IS inerted...
+    const late = document.createElement("div");
+    document.body.appendChild(late);
+    await waitFor(() => expect(late.hasAttribute("inert")).toBe(true));
+    // ...while the palette's modal portal must stay interactive.
+    expect(dialog.closest("[inert]")).toBeNull();
+    late.remove();
+  });
+
   it("does not track the keyboard on desktop", () => {
     installMatchMedia(false);
     Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: 844 });

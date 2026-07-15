@@ -102,6 +102,10 @@ export function VendoOverlay({
     const inerted: Element[] = [];
     const inert = (child: Element) => {
       if (child === wrapper || child.tagName === "SCRIPT" || child.tagName === "STYLE" || child.hasAttribute("inert")) return;
+      // Never inert another modal surface: the palette's takeover portal can
+      // mount above this overlay (Cmd/Ctrl+K while open) and must stay
+      // interactive — an inert ancestor would freeze the whole dialog.
+      if (child.matches('[aria-modal="true"]') || child.querySelector('[aria-modal="true"]')) return;
       child.setAttribute("inert", "");
       inerted.push(child);
     };
