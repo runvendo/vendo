@@ -87,6 +87,43 @@ describe("PinMount", () => {
 });
 
 describe("generated component jail structure", () => {
+  it("relays captured modules, styles, and sample props as data without putting CSS in the outer frame", () => {
+    const generatedTree = {
+      formatVersion: VENDO_TREE_FORMAT,
+      root: "root",
+      nodes: [{ id: "root", component: "Furnished", source: "generated" }],
+      components: {
+        Furnished: 'import { Badge } from "./Badge"; export default function Furnished({ title }) { return <Badge>{title}</Badge>; }',
+      },
+      furnishings: {
+        Furnished: {
+          sourceImports: { "./Badge": "src/Badge.tsx" },
+          subSources: {
+            "src/Badge.tsx": { source: "export function Badge({ children }) { return <strong>{children}</strong>; }", imports: {} },
+          },
+          sampleProps: { title: "Stubbed preview" },
+          styles: [{ path: "src/app/globals.css", css: ".furnished-secret { color: rebeccapurple; }" }],
+        },
+      },
+    } as Tree & { furnishings: Record<string, unknown> };
+
+    render(<TreeView tree={generatedTree} components={{}} onAction={ok} />);
+    const iframe = screen.getByTitle("Generated component: Furnished") as HTMLIFrameElement;
+    expect(iframe.srcdoc).not.toContain(".furnished-secret");
+    const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage");
+    window.dispatchEvent(new MessageEvent("message", {
+      source: iframe.contentWindow,
+      data: { kind: "booted" },
+    }));
+
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "render",
+      props: { title: "Stubbed preview" },
+      sourceImports: { "./Badge": "src/Badge.tsx" },
+      styles: [{ path: "src/app/globals.css", css: ".furnished-secret { color: rebeccapurple; }" }],
+    }), "*");
+  });
+
   it("uses an opaque-origin iframe with CSP and never evaluates source in the host", () => {
     const evalSpy = vi.spyOn(globalThis, "eval");
     const source = [

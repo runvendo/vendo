@@ -38,6 +38,22 @@ test("generated components stay in the opaque-origin CSP jail and actions cross 
   expect(pageErrors, "jail failures must be reported in-surface, not as uncaught page errors").toEqual([]);
 });
 
+test("a pin fork renders with captured sub-components, root CSS, and sample props", async ({ page }) => {
+  await openScenario(page, "tree-jail");
+  const jail = jailFrame(page, "FurnishedPin");
+
+  await expect(jail.getByRole("heading", { name: "Furnished fork for Ada" })).toBeVisible();
+  await expect(jail.getByText("Stubbed invoice total: $4,200")).toBeVisible();
+  await expect(jail.getByText("captured styles")).toBeVisible();
+  await expect(jail.locator(".furnished-pin-card")).toHaveCSS("background-color", "rgb(239, 246, 255)");
+  await expect(jail.locator('style[data-vendo-host-style="src/app/globals.css"]')).toHaveCount(1);
+  await expect(page.locator("style[data-vendo-host-style]")).toHaveCount(0);
+  await expect(page
+    .frameLocator('iframe[title="Generated component: FurnishedPin"]')
+    .locator("style[data-vendo-host-style]"))
+    .toHaveCount(0);
+});
+
 test("generated component iframe height follows content growth and shrinkage without feedback", async ({ page }) => {
   await openScenario(page, "tree-jail");
   const iframe = page.locator('iframe[title="Generated component: SecurityProbe"]');
