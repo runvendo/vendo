@@ -52,6 +52,10 @@ call parks a fresh approval that names the invalidated grant and audits one
 `grant-invalidated` policy decision. See [Tools and
 safety](/concepts/tools-and-safety) for the surfaced notice and event shape.
 
+Overrides also apply to compound tools declared in
+[`.vendo/capabilities.json`](/capabilities/compound-tools). A compound entry
+inside `tools.json` is rejected — compounds live in the capabilities file.
+
 Present route calls forward the inbound request's cookie and authorization
 headers on a same-origin fetch. Away calls require both an app-bound grant and
 the host's `actAs` seam. See [actAs presets](/connect/act-as-presets) for
