@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { vendoSync, type ExtractedTool, type OverridesFile } from "@vendoai/actions";
+import { mergeOverrides, vendoSync, type ExtractedTool, type OverridesFile } from "@vendoai/actions";
 import type { VendoTheme } from "@vendoai/core";
 import type { Telemetry } from "@vendoai/telemetry";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
@@ -427,13 +427,7 @@ async function extractForPlan(root: string): Promise<{ tools: ExtractedTool[]; w
     } catch {
       // vendoSync already validated the copy; an unreadable original merges as absent.
     }
-    const tools = (file.tools ?? []).map((tool) => {
-      const override = overrides?.tools[tool.name];
-      return override === undefined
-        ? tool
-        : { ...tool, ...Object.fromEntries(Object.entries(override).filter(([, value]) => value !== undefined)) };
-    });
-    return { tools, warnings: report.warnings };
+    return { tools: mergeOverrides(file.tools ?? [], overrides), warnings: report.warnings };
   } catch (error) {
     // The plan must always emit — extraction failures degrade to a warning.
     return { tools: [], warnings: [`extraction failed: ${error instanceof Error ? error.message : "unknown error"}`] };
@@ -551,7 +545,8 @@ async function buildPlan(options: InitOptions, mcpEnabled = false): Promise<{ pl
   }
   // Agent surface: a host that already uses skills (.claude/ exists) is offered
   // the packaged vendo-setup skill through the same diff-consent flow. Offered
-  // only while missing — a host that edited or removed its copy is respected.
+  // only while missing — an edited copy is respected (never overwritten); a
+  // deleted copy is offered again on the next init, like any missing scaffold.
   if (await exists(join(root, ".claude"))) {
     const skillAbsolute = join(root, ".claude", "skills", "vendo-setup", "SKILL.md");
     if (!(await exists(skillAbsolute))) {

@@ -48,8 +48,9 @@ Options:
 When the host repo has a `.claude/` directory and no
 `.claude/skills/vendo-setup/SKILL.md`, init also offers (through the same
 diff consent as every code change) to install the `vendo-setup` agent skill
-shipped inside the npm package. A host that edits or deletes its copy is
-never re-prompted.
+shipped inside the npm package. An edited copy is never overwritten or
+re-prompted; deleting the copy makes init offer it again on the next run,
+like any missing scaffold.
 
 ## `vendo doctor [dir]`
 

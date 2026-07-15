@@ -645,6 +645,13 @@ describe("vendo init", () => {
     expect(await runInit({ targetDir: root, confirm, output: output().output })).toBe(0);
     expect(confirm.mock.calls.map(([change]) => (change as { path: string }).path)).not.toContain(skillPath);
     expect(await readFile(skillAbsolute, "utf8")).toBe("# my edited copy\n");
+
+    // A deleted copy is offered again, like any missing scaffold.
+    await rm(skillAbsolute);
+    const reoffered = output();
+    expect(await runInit({ targetDir: root, agent: true, output: reoffered.output })).toBe(0);
+    expect((JSON.parse(reoffered.logs.join("\n")) as { codeChanges: Array<{ path: string }> })
+      .codeChanges.some((change) => change.path === skillPath)).toBe(true);
   });
 
   it("emits only init telemetry and respects env opt-out", async () => {
