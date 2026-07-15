@@ -28,6 +28,7 @@ const contract: ContractV2 = {
     insights: false,
     mcp_broker: false,
     sso_saml: false,
+    orgs: false,
   },
   limits: {
     sandbox_minutes: { included: 5000, used: 1234, remaining: 3766, exhausted: false },

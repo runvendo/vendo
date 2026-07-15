@@ -30,6 +30,7 @@ const contract: ContractV2 = {
     insights: false,
     mcp_broker: false,
     sso_saml: false,
+    orgs: false,
   },
   limits: {
     sandbox_minutes: { included: 100, used: 10, remaining: 90, exhausted: false },
