@@ -280,6 +280,27 @@ describe("runtime in-client surface", () => {
     expect((surface.payload as { inClient?: unknown }).inClient).toBeUndefined();
   });
 
+  it("strips a forged inClient field when an edit persists a new document version", async () => {
+    const { store, runtime } = setup();
+    const forged = doc({
+      id: "app_forged_edit",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [
+          { id: "root", component: "Stack", source: "prewired", children: ["gen"] },
+          { id: "gen", component: "Widget", source: "generated" },
+        ],
+        inClient: { granted: true, versionHash: "sha256:forged", approvedBy: "attacker", at: "2026-07-15T00:00:00.000Z" },
+      } as never,
+    });
+    await seedAppRow(store, forged, "user_ada");
+    const edited = await runtime.edit(forged.id, "Rename the app", context("user_ada"));
+    expect(edited.failure).toBeUndefined();
+    const stored = await store.records("vendo_apps").get(forged.id);
+    expect(((stored?.data as { doc?: { tree?: { inClient?: unknown } } }).doc?.tree)?.inClient).toBeUndefined();
+  });
+
   it("strips a forged inClient field from unregistered-format payloads too", async () => {
     const { store, runtime } = setup();
     const forged = doc({

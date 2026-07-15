@@ -19,6 +19,7 @@ import {
 } from "react";
 import { useVendoThemeOrDefault } from "../context.js";
 import { themeCssVariables } from "../theme.js";
+import type { InClientVenue } from "../wire-types.js";
 import { resolvePointer } from "./bindings.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { InClientMount } from "./host-mount.js";
@@ -140,11 +141,11 @@ function outcomeNotice(outcome: ToolOutcome | undefined): ReactNode {
  * SERVER-AUTHORITATIVE: the apps runtime strips any document-carried value and
  * attaches this only from its own hash-pin verification, so `granted: true`
  * here is exactly "a stored approval matches the CURRENT version's content
- * hash". A missing field is the universal default: jailed.
+ * hash". A missing field is the universal default: jailed. One declaration —
+ * the wire type — re-exported here so tree consumers see the same shape the
+ * client and the parity test cover.
  */
-export type InClientVenue =
-  | { granted: true; versionHash: string; approvedBy: string; at: string }
-  | { granted: false; versionHash: string; reason: "version-changed" };
+export type { InClientVenue } from "../wire-types.js";
 
 interface NodeRendererProps {
   nodeId: string;

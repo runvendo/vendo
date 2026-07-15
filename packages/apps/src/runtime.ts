@@ -557,6 +557,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
         if (generated.kind === "document") {
           const app: AppDocument = { ...generated.document, id: appId };
+          // Same strip-before-persist rule as create(): open() strips at serve
+          // time, but a model-forged venue field must not be persisted either.
+          if (app.tree !== undefined) delete (app.tree as { inClient?: unknown }).inClient;
           const version: VersionEntry = {
             at: new Date().toISOString(),
             intent: instruction,
