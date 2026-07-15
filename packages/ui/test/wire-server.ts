@@ -207,7 +207,15 @@ export async function createWireServer() {
             writer.write({ type: "tool-approval-request", toolCallId: "call_stream", approvalId: "apr_stream" });
             writer.write({
               type: "data-vendo-approval",
-              data: { toolCallId: "call_stream", risk: "write", approvalId: "apr_stream" },
+              data: {
+                toolCallId: "call_stream",
+                risk: "write",
+                approvalId: "apr_stream",
+                invalidatedGrant: {
+                  id: "grt_stale",
+                  grantedAt: "2026-07-01T12:00:00.000Z",
+                },
+              },
             } as UIMessageChunk);
             await state.threadReplyGate;
             writer.write({ type: "text-start", id: "text_1" });

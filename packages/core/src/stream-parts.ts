@@ -1,5 +1,14 @@
 import { z } from "zod";
-import { appIdSchema, approvalIdSchema, type AppId, type ApprovalId } from "./ids.js";
+import {
+  appIdSchema,
+  approvalIdSchema,
+  grantIdSchema,
+  isoDateTimeSchema,
+  type AppId,
+  type ApprovalId,
+  type GrantId,
+  type IsoDateTime,
+} from "./ids.js";
 import { riskLabelSchema, type RiskLabel } from "./tools.js";
 import { uiPayloadSchema, type UIPayload } from "./tree.js";
 
@@ -23,6 +32,10 @@ export interface VendoApprovalPart {
   toolCallId: string;
   risk: RiskLabel;
   approvalId?: ApprovalId;
+  invalidatedGrant?: {
+    id: GrantId;
+    grantedAt: IsoDateTime;
+  };
 }
 
 /** 01-core §16 */
@@ -31,4 +44,8 @@ export const vendoApprovalPartSchema = z.object({
   toolCallId: z.string(),
   risk: riskLabelSchema,
   approvalId: approvalIdSchema.optional(),
+  invalidatedGrant: z.object({
+    id: grantIdSchema,
+    grantedAt: isoDateTimeSchema,
+  }).passthrough().optional(),
 }).passthrough() satisfies z.ZodType<VendoApprovalPart>;

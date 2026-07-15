@@ -29,12 +29,21 @@ const input = { value: "hello" };
 const threadId = "thr_approval";
 const toolCallId = "call_approval";
 
-function setup() {
+function setup(invalidatedGrant?: ApprovalRequest["invalidatedGrant"]) {
   const model = scriptedModel([
     toolCallTurn(descriptor.name, input, toolCallId),
     textTurn("Approval handled.", "text_after_approval"),
   ]);
   const guard = testGuard({ [descriptor.name]: "ask" });
+  if (invalidatedGrant !== undefined) {
+    const check = guard.check.bind(guard);
+    guard.check = async (...args) => {
+      const decision = await check(...args);
+      return decision.action === "ask"
+        ? { ...decision, approval: { ...decision.approval, invalidatedGrant } }
+        : decision;
+    };
+  }
   const tools = boundRegistry({
     [descriptor.name]: {
       descriptor,
@@ -174,6 +183,20 @@ describe("agent approval round trip", () => {
     expect(tools.invocations.send_echo).toBe(0);
     expect(parts.some((part) => String(part.type).startsWith("tool-output-"))).toBe(false);
     expect(parts.at(-1)).toEqual({ type: "finish", finishReason: "tool-calls" });
+  });
+
+  it("carries invalidated-grant provenance on the Vendo approval part", async () => {
+    const invalidatedGrant = {
+      id: "grt_stale",
+      grantedAt: "2026-07-01T12:00:00.000Z",
+    } as const;
+    const { agent } = setup(invalidatedGrant);
+    const { parts } = await pause(agent);
+
+    expect(parts.find((part) => part.type === "data-vendo-approval")).toEqual({
+      type: "data-vendo-approval",
+      data: { toolCallId, risk: "write", approvalId: `apr_${toolCallId}`, invalidatedGrant },
+    });
   });
 
   it("resumes the same assistant message after approval and executes exactly once", async () => {

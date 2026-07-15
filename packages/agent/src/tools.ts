@@ -136,6 +136,9 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
               toolCallId,
               risk: descriptor.risk,
               approvalId: decision.approval.id,
+              ...(decision.approval.invalidatedGrant === undefined
+                ? {}
+                : { invalidatedGrant: decision.approval.invalidatedGrant }),
             });
             return true;
           } catch {
