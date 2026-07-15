@@ -1,0 +1,72 @@
+[
+  {
+    "beat": "discovery",
+    "at": "2026-07-15T13:26:18.812Z",
+    "resource": "https://127.0.0.1:8443/api/vendo/mcp",
+    "authorization_server": "https://maple.mcp.vendo.run"
+  },
+  {
+    "beat": "dcr",
+    "at": "2026-07-15T13:26:18.821Z",
+    "client_id": "mcpc_GlMnCMlIm1Cyn7UOu9gmuyFH"
+  },
+  {
+    "beat": "login-bounce",
+    "at": "2026-07-15T13:26:19.807Z",
+    "url": "https://127.0.0.1:8443/login"
+  },
+  {
+    "beat": "broker-consent",
+    "at": "2026-07-15T13:26:20.855Z",
+    "url": "https://maple.mcp.vendo.run/consent",
+    "federated_login": true
+  },
+  {
+    "beat": "authorization-code",
+    "at": "2026-07-15T13:26:21.409Z",
+    "state_roundtrip": true
+  },
+  {
+    "beat": "tokens",
+    "at": "2026-07-15T13:26:21.421Z",
+    "token_type": "Bearer",
+    "has_refresh": true
+  },
+  {
+    "beat": "tools-list",
+    "at": "2026-07-15T13:26:21.480Z",
+    "count": 28
+  },
+  {
+    "beat": "read-tool",
+    "at": "2026-07-15T13:26:21.501Z",
+    "tool": "host_listAccounts",
+    "maple_data": true
+  },
+  {
+    "beat": "destructive-parks",
+    "at": "2026-07-15T13:26:21.515Z",
+    "approvalId": "apr_f12f8e4f-3e6e-4fed-9054-8aed999dab07",
+    "message": "This action needs approval. Approval apr_f12f8e4f-3e6e-4fed-9054-8aed999dab07 is waiting in demo-bank's Vendo approvals "
+  },
+  {
+    "beat": "approval-visible-in-maple",
+    "at": "2026-07-15T13:26:22.378Z",
+    "surface": "/vendo approvals inbox"
+  },
+  {
+    "beat": "approved-in-product",
+    "at": "2026-07-15T13:26:22.505Z",
+    "approvalId": "apr_f12f8e4f-3e6e-4fed-9054-8aed999dab07"
+  },
+  {
+    "beat": "retry-succeeds",
+    "at": "2026-07-15T13:26:22.955Z",
+    "side_effect": true
+  },
+  {
+    "beat": "revoked",
+    "at": "2026-07-15T13:26:22.974Z",
+    "post_revoke_status": 401
+  }
+]
