@@ -52,11 +52,18 @@ docker exec eng286-broker-pg psql -U postgres -d broker \
   -c "insert into public.orgs values ('00000000-0000-4000-8000-0000000000aa','Local Test Org','local-test-org');"
 # apply services/broker/supabase/migrations/*.sql via psql -f (single transaction each)
 
-# 2. Broker keys + env (services/broker in runvendo/vendo-web)
+# 2. Throwaway TLS pair + broker keys + env
+mkdir -p /tmp/eng-286/local && cd /tmp/eng-286/local && \
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+  -keyout tls.key -out tls.crt -days 7 -nodes -subj "/CN=local-eng286" \
+  -addext "subjectAltName=DNS:*.mcp.vendo.run,DNS:mcp.vendo.run,DNS:localhost,IP:127.0.0.1"
+# (tls.key/tls.crt live in LOCAL_TLS_DIR=/tmp/eng-286/local — never committed)
+
+# services/broker in runvendo/vendo-web:
 pnpm generate-keys   # BROKER_SIGNING_KEY + MASTER_KEY (kept local)
 # env: DATABASE_URL=postgresql://postgres:…@127.0.0.1:5544/broker
 #      CONSOLE_URL=http://127.0.0.1:4390  PORT=4310
-#      NODE_EXTRA_CA_CERTS=<local tls.crt>   # broker → Maple upstream is https
+#      NODE_EXTRA_CA_CERTS=/tmp/eng-286/local/tls.crt   # broker → Maple upstream is https
 node console-stub.mjs & node tls-front.mjs & node connect-proxy.mjs & pnpm dev
 
 # 3. Provision the tenant against the LOCAL broker
@@ -66,7 +73,7 @@ curl -X POST http://127.0.0.1:4310/admin/tenants \
 # → returns the federation_secret (once)
 
 # 4. Maple, broker-fronted (runvendo/vendo, PR #245 seams)
-NODE_EXTRA_CA_CERTS=<local tls.crt> \
+NODE_EXTRA_CA_CERTS=/tmp/eng-286/local/tls.crt \
 VENDO_BASE_URL=https://127.0.0.1:8443 \
 VENDO_MCP_REMOTE_AS_ISSUER=https://maple.mcp.vendo.run \
 VENDO_MCP_REMOTE_AS_AUDIENCE=https://maple.mcp.vendo.run/mcp \
@@ -74,8 +81,8 @@ VENDO_MCP_REMOTE_AS_JWKS_URI=http://127.0.0.1:4310/.well-known/jwks.json \
 VENDO_MCP_FEDERATION_SECRET=<from step 3> \
 pnpm --filter demo-bank dev
 
-# 5. The proof
-node broker-e2e.mjs   # 13 beats, screenshots, transcript.json
+# 5. The proof (VENDO_REPO = a built runvendo/vendo checkout — pnpm install && pnpm build)
+VENDO_REPO=/path/to/runvendo/vendo node broker-e2e.mjs   # 13 beats, screenshots, transcript.json
 ```
 
 ## Depends on (code, separate PR)

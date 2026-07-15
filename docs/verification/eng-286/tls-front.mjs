@@ -11,9 +11,13 @@ import { readFileSync } from "node:fs";
 import http from "node:http";
 import https from "node:https";
 
+// tls.key/tls.crt are NOT committed: generate the throwaway pair with the
+// README's openssl step (SANs *.mcp.vendo.run + 127.0.0.1) into LOCAL_TLS_DIR
+// (default /tmp/eng-286/local) before starting the fronts.
+const TLS_DIR = process.env.LOCAL_TLS_DIR ?? "/tmp/eng-286/local";
 const tls = {
-  key: readFileSync(new URL("./tls.key", import.meta.url)),
-  cert: readFileSync(new URL("./tls.crt", import.meta.url)),
+  key: readFileSync(`${TLS_DIR}/tls.key`),
+  cert: readFileSync(`${TLS_DIR}/tls.crt`),
 };
 
 function front(listenPort, upstreamPort, label) {

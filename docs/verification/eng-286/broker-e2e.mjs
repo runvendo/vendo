@@ -14,8 +14,15 @@ import http from "node:http";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
-const REPO = process.env.VENDO_REPO ?? "/Users/yousefh/Desktop/Cool Code/flowlet/.claude/worktrees/agent-af2cb6c2ce5d162ec";
+// Path to a built checkout of runvendo/vendo (`pnpm install && pnpm build`);
+// the driver resolves Playwright, undici, and the MCP SDK from its store.
+const REPO = process.env.VENDO_REPO;
+if (!REPO) {
+  console.error("Set VENDO_REPO to a built runvendo/vendo checkout (see README).");
+  process.exit(1);
+}
 const SHOTS = process.env.SHOTS_DIR ?? "/tmp/eng-286/shots";
+const TLS_CRT = process.env.LOCAL_TLS_CRT ?? "/tmp/eng-286/local/tls.crt"; // the throwaway cert from the README openssl step
 const ISSUER = "https://maple.mcp.vendo.run";
 const RESOURCE = `${ISSUER}/mcp`;
 const MAPLE = "https://127.0.0.1:8443";
@@ -34,7 +41,7 @@ const { StreamableHTTPClientTransport } = await import(pathToFileURL(`${sdkRoot}
 // --- Node-side fetch that reaches the loopback TLS fronts by real name ---
 // The throwaway local cert is trusted as a CA (it carries SANs for
 // *.mcp.vendo.run and 127.0.0.1), so TLS verification stays ON.
-const baseConnect = undici.buildConnector({ ca: readFileSync("/tmp/eng-286/local/tls.crt") });
+const baseConnect = undici.buildConnector({ ca: readFileSync(TLS_CRT) });
 const connector = (options, callback) => {
   if (options.hostname.endsWith(".mcp.vendo.run")) {
     baseConnect({ ...options, hostname: "127.0.0.1", port: 8444, servername: options.hostname }, callback);
