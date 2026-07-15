@@ -78,8 +78,12 @@ test("descriptor drift explains the replacement approval and Activity event", as
       headers: { "x-vendo-test-user": "user_bob" },
     });
     expect(listed.ok()).toBeTruthy();
-    const summaries = await listed.json() as { id: string; title: string }[];
-    committedThreadId = summaries.find((summary) => summary.title.includes(FIRST))?.id;
+    const summaries = await listed.json() as { id: string; title: string; updatedAt: string }[];
+    // Newest first: repeat runs against a shared store each mint a fresh thread
+    // with this same title, and only the latest one belongs to this run.
+    committedThreadId = summaries
+      .filter((summary) => summary.title.includes(FIRST))
+      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))[0]?.id;
     expect(committedThreadId).toBeTruthy();
   }).toPass({ timeout: 10_000 });
   await page.goto(`/?thread=${committedThreadId}&user=user_bob`);
