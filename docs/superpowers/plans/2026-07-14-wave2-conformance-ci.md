@@ -89,9 +89,9 @@
 **Files:**
 - Create: parity test in `packages/vendo/` (owns cross-package sight; ui's layering forbids importing the originals)
 
-- [ ] **Step 0 (orchestrator gate):** Confirm with the orchestrator that the block-ui session has been consulted. Do not proceed without it.
-- [ ] **Step 1:** tsc-backed structural parity check (pattern: `packages/vendo/src/type-surface.test.ts`) asserting `packages/ui/src/wire-types.ts` shapes are assignable both ways against the originals in apps/automations/agent.
-- [ ] **Step 2:** Commit.
+- [x] **Step 0 (orchestrator gate):** Confirm with the orchestrator that the block-ui session has been consulted. Do not proceed without it.
+- [x] **Step 1:** tsc-backed structural parity check (pattern: `packages/vendo/src/type-surface.test.ts`) asserting `packages/ui/src/wire-types.ts` shapes are assignable both ways against the originals in apps/automations/agent.
+- [x] **Step 2:** Commit.
 
 ### Task 8: Verify and hand back
 
