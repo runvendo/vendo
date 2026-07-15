@@ -18,10 +18,10 @@ description: "Every createVendo configuration option and fetch-handler setting, 
 | `judge` | no | contextual guard judge |
 | `secrets` | no | defaults to environment-backed secret lookup |
 | `telemetry` | no | wires build and development telemetry |
-| `mcp` | no | opens the [MCP door](/capabilities/mcp) so outside agents reach host tools through the guarded path; off by default |
-| `oauth` | conditional | `HostOAuthAdapter` used by the door for session lookup and principal resolution; required when `mcp` is `true`. The door renders consent when the adapter uses `session`, or hands off the whole page when it supplies `authorize` instead — see [MCP door](/capabilities/mcp) |
-| `remoteAs` | no | delegates MCP bearer authentication to an external ES256-signing authorization server (`{ issuer, audience, jwksUri? }`); disables the door's local OAuth endpoints — see [MCP door](/capabilities/mcp) |
-| `federation` | no | enables the `/api/vendo/mcp/federate` handshake so an external authorization server can borrow the host's login flow; takes a shared `{ secret }` — see [MCP door](/capabilities/mcp) |
+| `mcp` | no | opens the [MCP door](/capabilities/mcp) so outside agents reach host tools through the guarded path; `true` for defaults, or an object carrying `{ baseUrl?, remoteAs?, federation? }` when door-specific settings need to flow through the umbrella (see [Configure the door through the umbrella](/capabilities/mcp#configure-the-door-through-the-umbrella)); off by default |
+| `oauth` | conditional | `HostOAuthAdapter` used by the door for session lookup and principal resolution; required when `mcp` is enabled. The door renders consent when the adapter uses `session`, or hands off the whole page when it supplies `authorize` instead — see [MCP door](/capabilities/mcp) |
+| `remoteAs` | no | delegates MCP bearer authentication to an external ES256-signing authorization server (`{ issuer, audience, jwksUri? }`); disables the door's local OAuth endpoints. Also accepted under `mcp: { remoteAs }` — see [MCP door](/capabilities/mcp) |
+| `federation` | no | enables the `/api/vendo/mcp/federate` handshake so an external authorization server can borrow the host's login flow; takes a shared `{ secret }`. Also accepted under `mcp: { federation }` — see [MCP door](/capabilities/mcp) |
 | `agent` | no | chat context controls: `toolOutputCap`, `maxOutputTokens`, `historyWindow` (see [Agent context](#agent-context)) |
 
 ## Agent context
