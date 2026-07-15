@@ -12,12 +12,9 @@
  * stack is required: GoTrue only verifies passwords at login — minting and
  * verifying access tokens both need just the secret.
  */
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { readFile, mkdtemp, rm } from "node:fs/promises"
-import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import type { AppDocument, Principal, ToolRegistry } from "@vendoai/core"
 import { createActions } from "@vendoai/actions"
@@ -27,61 +24,13 @@ import { createAutomations, type AutomationsEngine } from "@vendoai/automations"
 import { createGuard, type VendoGuard } from "@vendoai/guard"
 import { createStore, type VendoStore } from "@vendoai/store"
 import { cadenceDemoUsers } from "../server/users"
+import { appDir, appFetch, bootCadence, BOOT_MS, type CadenceApp } from "./e2e-harness"
 
-const appDir = fileURLToPath(new URL("../..", import.meta.url))
 const JWT_SECRET = "cadence-away-drill-project-jwt-secret"
-const BOOT_MS = 240_000
 const SEEDED = new Set(cadenceDemoUsers().map((user) => user.subject))
 const GRANTING_USER = cadenceDemoUsers()[0]!
 
-let child: ChildProcessWithoutNullStreams | undefined
-let serverOutput = ""
-let baseUrl = ""
-
-async function freePort(): Promise<number> {
-  const server = createServer()
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject)
-    server.listen(0, "127.0.0.1", () => {
-      server.off("error", reject)
-      resolve()
-    })
-  })
-  const address = server.address()
-  if (!address || typeof address === "string") throw new Error("Could not allocate a port")
-  const port = address.port
-  await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
-  return port
-}
-
-/** Next's dev server can reset an in-flight socket while compiling a route. */
-async function appFetch(input: string, init?: RequestInit): Promise<Response> {
-  let lastError: unknown
-  for (let attempt = 1; attempt <= 5; attempt += 1) {
-    try {
-      return await fetch(input, init)
-    } catch (error) {
-      lastError = error
-      if (attempt < 5) await new Promise((resolve) => setTimeout(resolve, attempt * 250))
-    }
-  }
-  throw lastError
-}
-
-async function waitForApp(): Promise<void> {
-  const deadline = Date.now() + BOOT_MS
-  while (Date.now() < deadline) {
-    if (child?.exitCode != null) throw new Error(`Cadence exited early (${child.exitCode})\n${serverOutput}`)
-    try {
-      const response = await fetch(`${baseUrl}/login`)
-      if (response.ok) return
-    } catch {
-      // still compiling
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250))
-  }
-  throw new Error(`Cadence did not become ready\n${serverOutput}`)
-}
+let app: CadenceApp | undefined
 
 interface Stack {
   store: VendoStore
@@ -106,7 +55,7 @@ async function createStack(): Promise<Stack> {
   const guard = createGuard({ store })
   const actions = createActions({
     tools: await cadenceTools(),
-    baseUrl,
+    baseUrl: app!.baseUrl,
     // The drill's point: away identity is a REAL Supabase user JWT minted
     // with the project's own secret. Unknown subjects are declined via
     // claims → null.
@@ -187,49 +136,23 @@ async function enableAndApprove(stack: Stack, subject: string, appId: string): P
 }
 
 beforeAll(async () => {
-  const port = await freePort()
-  baseUrl = `http://127.0.0.1:${port}`
-  const env = {
-    ...process.env,
-    SUPABASE_JWT_SECRET: JWT_SECRET,
-    VENDO_BASE_URL: baseUrl,
-    NEXT_TELEMETRY_DISABLED: "1",
-    CADENCE_DIST_DIR: ".next/away-drill",
-  }
-  delete (env as Record<string, string | undefined>).NODE_ENV // vitest's "test" would leak into next dev
-  const spawned = spawn(join(appDir, "node_modules", ".bin", "next"), ["dev", "-p", String(port)], {
-    cwd: appDir,
-    env,
-    stdio: ["pipe", "pipe", "pipe"],
-  })
-  child = spawned
-  spawned.stdout.on("data", (chunk) => {
-    serverOutput = `${serverOutput}${String(chunk)}`.slice(-20_000)
-  })
-  spawned.stderr.on("data", (chunk) => {
-    serverOutput = `${serverOutput}${String(chunk)}`.slice(-20_000)
-  })
-  await waitForApp()
+  app = await bootCadence(".next/away-drill", { SUPABASE_JWT_SECRET: JWT_SECRET })
 }, BOOT_MS)
 
 afterAll(async () => {
-  if (!child || child.exitCode !== null) return
-  child.kill("SIGTERM")
-  const exited = new Promise<void>((resolve) => child?.once("exit", () => resolve()))
-  await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5_000))])
-  if (child.exitCode === null) child.kill("SIGKILL")
+  await app?.stop()
 })
 
 describe("Cadence away drill (ENG-260)", () => {
   it("walls the firm API off behind the real login", { timeout: 120_000 }, async () => {
-    const anonymous = await appFetch(`${baseUrl}/api/clients/cl_rivera/messages`, {
+    const anonymous = await appFetch(`${app!.baseUrl}/api/clients/cl_rivera/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ body: "Nope" }),
     })
     expect(anonymous.status).toBe(401)
 
-    const page = await appFetch(`${baseUrl}/`, { redirect: "manual" })
+    const page = await appFetch(`${app!.baseUrl}/`, { redirect: "manual" })
     expect([302, 303, 307, 308]).toContain(page.status)
     expect(page.headers.get("location")).toContain("/login")
   })
@@ -273,7 +196,7 @@ describe("Cadence away drill (ENG-260)", () => {
           grantedAt: new Date().toISOString(),
         },
       )
-      const thread = await appFetch(`${baseUrl}/api/clients/cl_rivera/messages`, {
+      const thread = await appFetch(`${app!.baseUrl}/api/clients/cl_rivera/messages`, {
         headers: material!.headers,
       })
       expect(thread.status).toBe(200)

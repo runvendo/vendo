@@ -86,12 +86,8 @@ export async function resolveCadenceSession(request: Request): Promise<CadenceSe
     const { payload } = verified
     if (payload.role !== "authenticated") return null
     if (typeof payload.sub !== "string" || payload.sub.length === 0) return null
-    const metadata = payload.user_metadata
-    const name =
-      metadata && typeof metadata === "object" && "name" in metadata &&
-      typeof (metadata as { name?: unknown }).name === "string"
-        ? (metadata as { name: string }).name
-        : undefined
+    const metadata = payload.user_metadata as { name?: unknown } | null | undefined
+    const name = typeof metadata?.name === "string" ? metadata.name : undefined
     const email = typeof payload.email === "string" ? payload.email : undefined
     return { subject: payload.sub, display: name ?? email ?? payload.sub, email }
   } catch {

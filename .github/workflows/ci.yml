@@ -124,12 +124,14 @@ jobs:
       - name: MCP Apps shim semantic contract
         run: pnpm --filter @vendoai/ui test:mcp-shim
 
-  # Cadence's real Supabase Auth login (ENG-260): boots `supabase start`
-  # (Docker) and drives the /login password grant end to end against the
-  # seeded users. Only this job needs the Supabase stack — the suite probes
-  # GoTrue and skips itself cleanly everywhere else (including the main ci
-  # job's coverage run), so Supabase local never becomes a hard dependency
-  # for unrelated tests.
+  # Cadence's Supabase Auth suite (ENG-260): boots `supabase start` (Docker)
+  # and runs demo-accounting's full test suite — the /login password grant
+  # end to end against the seeded users, the away drill (which needs no
+  # Supabase), and the auth/session unit tests. This is the only job that
+  # runs demo-accounting's tests per PR (demo apps define no test:coverage
+  # script, so the main ci job's turbo run skips them). The login e2e probes
+  # GoTrue and skips itself cleanly when the stack is absent, so Supabase
+  # local never becomes a hard dependency for unrelated tests.
   cadence-supabase-auth:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -150,9 +152,7 @@ jobs:
       - run: pnpm turbo run build --filter=demo-accounting^...
       - run: supabase start
         working-directory: apps/demo-accounting
-      # The login e2e drives GoTrue's real password grant; the away drill
-      # (which needs no Supabase at all) rides along since the deps are built.
-      - run: pnpm --filter demo-accounting exec vitest run src/vendo/login-e2e.test.ts src/vendo/away-drill.test.ts
+      - run: pnpm --filter demo-accounting test
 
   # Supply-chain gate: fails on high/critical advisories in the PRODUCTION
   # dependency graph (what ships in the published tarballs). Scoped to --prod so

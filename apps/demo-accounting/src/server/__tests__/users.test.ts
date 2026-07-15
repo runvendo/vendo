@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   cadenceDemoEmail,
@@ -36,6 +37,18 @@ describe("seeded Cadence identities", () => {
   it("prefills the primary demo login", () => {
     expect(cadenceDemoEmail()).toBe(cadenceDemoUsers()[0]!.email)
     expect(cadenceDemoPassword().length).toBeGreaterThan(0)
+  })
+
+  it("stays in lockstep with supabase/seed.sql (the other source of the pinned ids)", () => {
+    // A uuid or email edited in one file but not the other would not break
+    // login, but away execution would silently decline as "host declined" —
+    // fail loudly here instead.
+    const seed = readFileSync(new URL("../../../supabase/seed.sql", import.meta.url), "utf8")
+    for (const user of cadenceDemoUsers()) {
+      expect(seed).toContain(`'${user.subject}'`)
+      expect(seed).toContain(`'${user.email}'`)
+    }
+    expect(seed).toContain(`'${cadenceDemoPassword()}'`)
   })
 })
 
