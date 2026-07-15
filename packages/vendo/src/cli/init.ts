@@ -372,6 +372,33 @@ function diff(path: string, before: string | null, after: string): string {
   ].join("\n");
 }
 
+function packageWithSyncHooks(raw: string): string | null {
+  const manifest = JSON.parse(raw) as Record<string, unknown>;
+  const priorScripts = manifest["scripts"];
+  const scripts = typeof priorScripts === "object" && priorScripts !== null && !Array.isArray(priorScripts)
+    ? priorScripts as Record<string, unknown>
+    : {};
+  let changed = false;
+  const hook = (name: "predev" | "prebuild", command: string): void => {
+    const prior = scripts[name];
+    if (typeof prior !== "string") {
+      scripts[name] = command;
+      changed = true;
+    } else if (!prior.includes(command)) {
+      scripts[name] = `${command} && ${prior}`;
+      changed = true;
+    }
+  };
+  hook("predev", "vendo sync");
+  hook("prebuild", "vendo sync --strict");
+  if (!changed) return null;
+  manifest["scripts"] = scripts;
+
+  const detectedIndent = raw.match(/^[\t ]+(?=")/m)?.[0] ?? "  ";
+  const trailingNewline = raw.endsWith("\r\n") ? "\r\n" : raw.endsWith("\n") ? "\n" : "";
+  return `${JSON.stringify(manifest, null, detectedIndent)}${trailingNewline}`;
+}
+
 async function buildPlan(options: InitOptions, mcpEnabled = false): Promise<{ plan: InitPlan; changes: Array<{ absolute: string; path: string; before: string | null; after: string; diff: string }> }> {
   const root = resolve(options.targetDir);
   const framework = await detectFramework(root);
@@ -431,6 +458,21 @@ async function buildPlan(options: InitOptions, mcpEnabled = false): Promise<{ pl
     if (layoutAfter !== null && layoutAfter !== layoutBefore) {
       const path = relative(root, layout);
       changes.push({ absolute: layout, path, before: layoutBefore, after: layoutAfter, diff: diff(path, layoutBefore, layoutAfter) });
+    }
+  }
+  const packageJson = join(root, "package.json");
+  const packageBefore = await readOptional(packageJson);
+  if (packageBefore !== null) {
+    const packageAfter = packageWithSyncHooks(packageBefore);
+    if (packageAfter !== null) {
+      const path = relative(root, packageJson);
+      changes.push({
+        absolute: packageJson,
+        path,
+        before: packageBefore,
+        after: packageAfter,
+        diff: diff(path, packageBefore, packageAfter),
+      });
     }
   }
   const writes = [
