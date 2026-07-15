@@ -150,7 +150,9 @@ jobs:
       - run: pnpm turbo run build --filter=demo-accounting^...
       - run: supabase start
         working-directory: apps/demo-accounting
-      - run: pnpm --filter demo-accounting exec vitest run src/vendo/login-e2e.test.ts
+      # The login e2e drives GoTrue's real password grant; the away drill
+      # (which needs no Supabase at all) rides along since the deps are built.
+      - run: pnpm --filter demo-accounting exec vitest run src/vendo/login-e2e.test.ts src/vendo/away-drill.test.ts
 
   # Supply-chain gate: fails on high/critical advisories in the PRODUCTION
   # dependency graph (what ships in the published tarballs). Scoped to --prod so
