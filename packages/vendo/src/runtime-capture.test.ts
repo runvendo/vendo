@@ -53,6 +53,16 @@ describe("createRuntimeCapture bundler id resolution", () => {
     expect(result.status).toBe("captured");
   });
 
+  it("captures a dev-browser http module URL (import.meta.url under the Vite origin)", async () => {
+    const root = await hostRoot();
+    const result = await handlerFor(root)!.capture({
+      slot: "Card",
+      source: "http://localhost:5173/src/card.tsx?t=1234",
+      exportable: false,
+    });
+    expect(result.status).toBe("captured");
+  });
+
   it("captures a Vite project-root /src/ module id with a query suffix", async () => {
     const root = await hostRoot();
     const result = await handlerFor(root)!.capture({

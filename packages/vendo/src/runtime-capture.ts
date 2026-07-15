@@ -53,7 +53,17 @@ function sourceCandidates(
       return [];
     }
   }
-  const clean = source.split(/[?#]/, 1)[0] ?? source;
+  let clean = source.split(/[?#]/, 1)[0] ?? source;
+  // A dev browser's import.meta.url is an http(s) module URL (Vite serves
+  // /src/... under the dev origin). Only its pathname matters: the realpath
+  // root-confinement below decides what is actually readable.
+  if (/^https?:\/\//iu.test(clean)) {
+    try {
+      clean = decodeURIComponent(new URL(clean).pathname);
+    } catch {
+      return [];
+    }
+  }
   if (clean.startsWith("/@fs/")) return [path.resolve(clean.slice(4))];
   if (path.isAbsolute(clean)) {
     const candidates = [path.resolve(clean)];
