@@ -2,6 +2,7 @@ import { VendoError, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../backends.test-util.js";
 import { eraseStore } from "../erase.js";
+import { auditStore } from "../index.js";
 import { auditFixture } from "../fixtures.test-util.js";
 
 // 02-store §2: "append-only audit log (core §7): routing rejects `put` for an
@@ -54,6 +55,20 @@ for (const backend of backends()) {
       await expect(audit.delete(event.id))
         .rejects.toMatchObject<VendoError>({ code: "blocked" });
       expect((await audit.get(event.id))?.data).toEqual(event);
+    });
+
+    it("enforces the same append-only refusal through the auditStore helper door", async () => {
+      const helper = auditStore(made.store);
+      const durable = auditFixture("aud_append_helper");
+      await helper.append(durable);
+      await expect(helper.append(auditFixture("aud_append_helper", { detail: { count: 999 } })))
+        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+
+      const overlayEvent = auditFixture("aud_append_helper_anon", { principal: anon });
+      await helper.append(overlayEvent);
+      await expect(helper.append(auditFixture("aud_append_helper_anon", { principal: anon, detail: { count: 999 } })))
+        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+      expect((await made.store.records("vendo_audit").get(overlayEvent.id))?.data).toEqual(overlayEvent);
     });
 
     it("erases audit rows only through the store erase API (02 §5)", async () => {

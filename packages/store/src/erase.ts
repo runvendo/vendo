@@ -141,6 +141,10 @@ export function eraseStore(store: VendoStore): {
         eraseOverlayAppData(report, appId);
       }
 
+      // Ordering matters for accurate counts: the app cascade above already
+      // removed the subject's own state/run rows, so the subject-level deletes
+      // and overlay sweeps below only count rows the cascade did not reach
+      // (e.g. this subject's state under ANOTHER owner's app).
       await del(report, "vendo_apps", "subject = $1", [subject]);
       await del(report, "vendo_state", "subject = $1", [subject]);
       await del(report, "vendo_threads", "subject = $1", [subject]);
