@@ -169,16 +169,17 @@ Requirements and behavior:
   configured `audience`, and `exp` must be in the future.
 - The door caches the JWKS in memory and refetches it when a bearer arrives
   with an unfamiliar `kid`, which covers ordinary key rotation.
-- The JWT `sub` is passed to `oauth.principal(subject)` on every request, so
-  returning `null` still kills a live session — this remains your revocation
-  point.
+- The door calls `oauth.principal(subject)` with the JWT `sub` on every
+  request, so returning `null` still kills a live session — this remains your
+  revocation point.
 - The local `/api/vendo/mcp/authorize`, `/token`, and `/register` endpoints
   return `404` in this mode, and so does RFC 8414 authorization-server
   metadata. RFC 9728 protected-resource metadata instead advertises
   `authorization_servers: [remoteAs.issuer]`, so compliant clients discover
   and use the external server directly.
-- `oauth` is still required — `oauth.authorize` is not called (the external
-  server owns the interactive step), but `oauth.principal` is.
+- `oauth` is still required — the door skips `oauth.authorize` because the
+  external server owns the interactive step, but it still calls
+  `oauth.principal`.
 
 Use `remoteAs` when the external server is authoritative for user identity for
 your product. Skip it if you want the door to run its own OAuth surface.
@@ -220,14 +221,14 @@ The request JWT must carry:
 - `client_name` — the display name shown in your consent UI.
 
 The door verifies the request, then calls
-`oauth.authorize(request, { clientName, scopes })` — the same authorize step
-your local flow uses, so no separate consent UI is needed. If your adapter
-returns a `Response` (a login redirect or rendered page), the door forwards it
-so the browser can complete host login and retry. On a `{ subject }` result,
-the door redirects to `redirect_uri` with an HS256-signed `assertion`
-parameter that the external authorization server verifies with the same
-`secret`. The assertion carries `sub` (your host subject), `iss` (the door's
-canonical URL), `aud` (the request's `iss`), a matching `jti`, and a
+`oauth.authorize(request, { clientName, scopes })`. This is the same authorize
+step your local flow uses, so you do not need a separate consent UI. If your
+adapter returns a `Response` (a login redirect or rendered page), the door
+forwards it so the browser can complete host login and retry. On a
+`{ subject }` result, the door redirects to `redirect_uri` with an HS256-signed
+`assertion` parameter that the external authorization server verifies with the
+same `secret`. The assertion carries `sub` (your host subject), `iss` (the
+door's canonical URL), `aud` (the request's `iss`), a matching `jti`, and a
 sixty-second `exp`.
 
 The endpoint renders no HTML of its own — it either returns your `authorize`
