@@ -41,10 +41,36 @@ export function resolveTheme(base: VendoTheme, override?: Partial<VendoTheme>): 
   };
 }
 
+/**
+ * Which `color-scheme` a background color implies (ENG-226). WCAG relative
+ * luminance of `colors.background`, flipped at L = 0.179 — the point where
+ * white text contrasts a background better than black text does. No new
+ * contract token: the scheme is DERIVED, and it drives the existing
+ * `light-dark()` branches in the chrome sheet via `--vendo-color-scheme`.
+ * Unparseable colors (non-hex) fall back to light.
+ */
+export function colorSchemeForBackground(background: string): "light" | "dark" {
+  const luminance = relativeLuminance(background);
+  return luminance !== null && luminance < 0.179 ? "dark" : "light";
+}
+
+/** WCAG 2.x relative luminance of a #rgb/#rgba/#rrggbb/#rrggbbaa color; null if unparseable. */
+function relativeLuminance(color: string): number | null {
+  const hex = /^#([0-9a-f]{3,8})$/i.exec(color.trim())?.[1];
+  if (!hex || hex.length === 5 || hex.length === 7) return null;
+  const wide = hex.length <= 4 ? [...hex].map((ch) => ch + ch).join("") : hex;
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const srgb = parseInt(wide.slice(i, i + 2), 16) / 255;
+    return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+}
+
 /** Flatten a theme into `--vendo-*` CSS custom properties. */
 export function themeCssVariables(theme: VendoTheme): Record<string, string> {
   const vars: Record<string, string> = {};
   for (const [key, value] of Object.entries(theme.colors)) vars[`--vendo-color-${kebab(key)}`] = value;
+  vars["--vendo-color-scheme"] = colorSchemeForBackground(theme.colors.background);
   vars["--vendo-font-family"] = theme.typography.fontFamily;
   if (theme.typography.headingFamily) vars["--vendo-heading-family"] = theme.typography.headingFamily;
   vars["--vendo-font-size"] = theme.typography.baseSize;
