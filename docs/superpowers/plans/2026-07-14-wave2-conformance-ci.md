@@ -95,7 +95,7 @@
 
 ### Task 8: Verify and hand back
 
-- [ ] **Step 1:** `pnpm build && pnpm test && pnpm typecheck && pnpm lint` green locally (with and without `POSTGRES_URL` set).
+- [x] **Step 1:** `pnpm build && pnpm test && pnpm typecheck && pnpm lint` green locally (with and without `POSTGRES_URL` set).
 - [ ] **Step 2:** Push branch, confirm the new CI jobs actually ran and passed on the PR (not just locally) — read the Actions run.
 - [ ] **Step 3:** Report: clause→test mapping added, CI jobs added, which shim-gate path was taken, any code touched and why. Do NOT merge; do NOT flip branch protection (the orchestrator makes `conformance` a required check via repo settings after merge).
 
