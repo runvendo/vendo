@@ -11,6 +11,8 @@ describe("InMemoryMcpDoorState", () => {
     state.setSession({
       sessionId: "mcps_1",
       subject: "user_1",
+      clientId: "mcpc_1",
+      grantFamilyId: "mcgf_1",
       session,
       expiresAt: 10,
     });
@@ -40,6 +42,41 @@ describe("InMemoryMcpDoorState", () => {
     expect(state.getReplay("durable_1", "fingerprint", 10)).toBeNull();
   });
 
+  it("selectively removes live sessions by client or grant family", () => {
+    const state = new InMemoryMcpDoorState();
+    const familyA = testSession("mcps_a", "replay_a", "user_1", "mcpc_a");
+    const familyB = testSession("mcps_b", "replay_b", "user_1", "mcpc_a");
+    const otherClient = testSession("mcps_c", "replay_c", "user_1", "mcpc_b");
+    state.setSession({
+      sessionId: "mcps_a",
+      subject: "user_1",
+      clientId: "mcpc_a",
+      grantFamilyId: "mcgf_a",
+      session: familyA,
+      expiresAt: 20,
+    });
+    state.setSession({
+      sessionId: "mcps_b",
+      subject: "user_1",
+      clientId: "mcpc_a",
+      grantFamilyId: "mcgf_b",
+      session: familyB,
+      expiresAt: 20,
+    });
+    state.setSession({
+      sessionId: "mcps_c",
+      subject: "user_1",
+      clientId: "mcpc_b",
+      grantFamilyId: "mcgf_c",
+      session: otherClient,
+      expiresAt: 20,
+    });
+
+    expect(state.deleteSessionsByGrantFamily("mcgf_a")).toEqual([familyA]);
+    expect(state.deleteSessionsBySubjectClient("user_1", "mcpc_a")).toEqual([familyB]);
+    expect(state.getSession("mcps_c")).toBe(otherClient);
+  });
+
   it("expires replay records and enforces the per-scope capacity", () => {
     const state = new InMemoryMcpDoorState();
     const options = { subject: "user_1", expiresAt: 20, capacity: 2 };
@@ -57,6 +94,7 @@ function testSession(
   sessionId: string,
   replayScope: string,
   subject: string,
+  clientId = "mcpc_1",
 ): McpStateSession {
   return {
     subject,
@@ -66,7 +104,7 @@ function testSession(
       venue: "mcp",
       presence: "present",
       sessionId,
-      mcpConsent: { clientId: "mcpc_1", scopes: ["read", "write"] },
+      mcpConsent: { clientId, scopes: ["read", "write"] },
     },
     async handleRequest() {
       return new Response();

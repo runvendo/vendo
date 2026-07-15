@@ -37,6 +37,29 @@ the immediate account-level kill switch. The door's local `/authorize`,
 `/token`, and `/register` endpoints and RFC 8414 metadata return `404`; RFC 9728
 protected-resource metadata advertises the configured external issuer.
 
+## Token revocation
+
+Local authorization-server metadata advertises `{mount}/revoke` and the
+supported `read` / `write` scopes. The RFC 7009 endpoint accepts an
+`application/x-www-form-urlencoded` POST containing `token`, the public
+`client_id`, and an optional `token_type_hint`. Unknown tokens and unknown or
+incorrect hints receive the RFC-required empty `200` response.
+
+Access-token revocation invalidates that opaque token. Refresh-token revocation
+atomically revokes its authorization-grant family, including access tokens and
+rotated successors, without disconnecting a separate authorization for the
+same client. Hosts can disconnect all existing authorizations for one
+subject/client pair and close their live MCP sessions through the returned door:
+
+```ts
+const door = createMcpDoor({ /* ... */ });
+await door.revokeClient(subject, clientId);
+```
+
+Grant-family and token revocation use the store's guarded atomic claim rather
+than a read-then-write update. In `remoteAs` mode, the external authorization
+server owns revocation and the door's local `/revoke` path returns `404`.
+
 ## Login federation
 
 `federation: { secret }` enables `GET {mount}/federate?request=<compact JWS>` as
@@ -65,7 +88,8 @@ The current adapter owns three related lifetimes:
 
 - a TTL-indexed session record keyed by `Mcp-Session-Id`, containing the
   authenticated subject and opaque SDK runtime;
-- the subject-to-session index used to close every live runtime on revocation;
+- the authenticated subject/client/grant-family binding used to close every
+  matching live runtime on account, per-client, or refresh-family revocation;
 - a bounded approval-replay map keyed by an opaque replay scope plus the
   canonical tool/arguments fingerprint. A pending approval retains its exact
   `ToolCall.id`; any resolved outcome deletes it. Session deletion, revocation,

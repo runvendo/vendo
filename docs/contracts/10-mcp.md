@@ -160,3 +160,22 @@ Hosted broker (Cloud), registry submission automation, MCP Apps write-back beyon
 ## 8. Review round (recorded)
 
 Dual review applied before any build: **standards** (verified against MCP 2025-11-25, MCP Apps 2026-01-26, RFC 8707/9728/8414/7591, CIMD draft) — all 6 findings applied, the big two being resource/audience binding and the MCP Apps shim delivery model. **Simplification** — 5 of 7 applied (`HostOAuthAdapter` shrunk to two functions, door owns its own state via `StoreAdapter`, `isRevoked`/`ttl`/`serverInfo` deleted, `AppsPort` = structural subset of `AppsRuntime`); 2 declined with rationale: the server card stays (the page mandates discovery — "agent-reachability becomes distribution" — path corrected + marked provisional instead), and `guard` stays in config (the page mandates "same audit"; auth events belong in the SIEM export, not only in SQL).
+
+## 9. Additive amendments
+
+### 2026-07-14 — RFC 7009 token revocation
+
+- **Changed:** Added local `{mount}/revoke` handling for access and refresh
+  tokens, advertised `revocation_endpoint` and `scopes_supported` in RFC 8414
+  metadata, and added `McpDoor.revokeClient(subject, clientId)` as the
+  host-authorized per-client disconnect surface.
+- **Semantics:** Access-token revocation invalidates that token. Refresh-token
+  revocation atomically kills the token's authorization-grant family, including
+  its access tokens and rotated successors. The host API revokes every existing
+  family for the subject/client and closes matching live MCP sessions. Unknown
+  tokens return an empty `200` as required by RFC 7009.
+- **Compatibility:** Grant-family fields and the `McpDoor` method are additive.
+  Pre-family grants remain readable during rolling deployment and are revoked
+  through guarded token updates. External authorization-server mode continues
+  to delegate the complete OAuth surface, including revocation, to `remoteAs`.
+- **Approved by:** Yousef, 2026-07-14 (ENG-269).
