@@ -49,6 +49,21 @@ const descriptors: ToolDescriptor[] = [
     risk: "write",
   },
   {
+    name: "vendo_apps_rebase_pin",
+    description: "Rebase one drifted remixed pin of a Vendo app onto the host's updated component: re-fork the new captured baseline and replay the recorded edit intents in order. Use when an edit result or open() payload reports drifted pins and the user asks to update the remix. If the result has status \"failed\", nothing was changed; it lists which intents replayed and which failed.",
+    inputSchema: {
+      $schema: DRAFT_2020_12,
+      type: "object",
+      properties: {
+        appId: { type: "string", minLength: 1 },
+        slot: { type: "string", minLength: 1 },
+      },
+      required: ["appId", "slot"],
+      additionalProperties: false,
+    },
+    risk: "write",
+  },
+  {
     name: "vendo_apps_open",
     description: "Open the latest serving surface for a Vendo app.",
     inputSchema: {
@@ -199,8 +214,17 @@ export const createAgentTools = (
             app: result.app,
             ...(result.issues === undefined ? {} : { issues: result.issues }),
             ...(result.failure === undefined ? {} : { failure: result.failure }),
+            ...(result.driftedPins === undefined ? {} : { driftedPins: result.driftedPins }),
           } as unknown as Json,
         };
+      }
+      if (call.tool === "vendo_apps_rebase_pin") {
+        const args = input(call.args, ["appId", "slot"]);
+        const result = await runtime.pins.rebase({
+          appId: args.appId as string,
+          slot: args.slot as string,
+        }, ctx);
+        return { status: "ok", output: result as unknown as Json };
       }
       if (call.tool === "vendo_apps_open") {
         const args = input(call.args, ["appId"]);

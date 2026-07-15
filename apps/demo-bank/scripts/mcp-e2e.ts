@@ -120,9 +120,16 @@ async function main() {
       returnTo: loginUrl.searchParams.get("returnTo")!,
     }),
   });
-  assert(login.status === 303, `Maple login failed (${login.status}).`);
-  const cookie = login.headers.get("set-cookie")?.split(";", 1)[0];
-  assert(cookie, "Maple login did not set its HttpOnly session cookie.");
+  assert(
+    login.status >= 302 && login.status <= 308,
+    `Maple login failed (${login.status}).`,
+  );
+  // Auth.js sets its session JWE (and bookkeeping cookies) on the redirect.
+  const cookie = login.headers
+    .getSetCookie()
+    .map((header) => header.split(";", 1)[0]!)
+    .find((pair) => pair.includes("authjs.session-token="));
+  assert(cookie, "Maple login did not set its Auth.js session cookie.");
 
   const consentResponse = await fetch(login.headers.get("location")!, {
     redirect: "manual",

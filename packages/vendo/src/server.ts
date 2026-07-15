@@ -7,6 +7,8 @@ import {
   type PinBaseline,
   type SandboxAdapter,
 } from "@vendoai/apps";
+import { e2bInstalled, e2bSandbox } from "@vendoai/apps/e2b";
+import { modalInstalled, modalSandbox } from "@vendoai/apps/modal";
 import {
   createAutomations,
   type AutomationsEngine,
@@ -40,6 +42,7 @@ import {
   capabilitySurfaceSnapshot,
   createCapabilityMissCapture,
 } from "./capability-misses.js";
+import { createRuntimeCapture, type RuntimeCaptureHandler } from "./runtime-capture.js";
 import { computeImpact } from "./sync-impact.js";
 
 const VERSION = "0.3.0";
@@ -81,6 +84,10 @@ export interface CreateVendoConfig {
   judge?: Judge;
   secrets?: SecretsProvider;
   telemetry?: boolean;
+  /** Development-only source capture. NODE_ENV=development enables this with
+      cwd/.vendo defaults; an explicit object supplies a host root for adapters
+      whose process cwd differs. `false` disables the environment default. */
+  development?: boolean | { root?: string; out?: string };
   /** 10-mcp §1 — the one flag: open the MCP door so outside agents (Claude,
       ChatGPT, Cursor) reach the host's tools through the SAME guard-bound path.
       Opening it is a host decision (10-mcp §2), so it is off by default.
@@ -109,6 +116,34 @@ export interface CreateVendoConfig {
     Generous enough for normal host responses, small enough that a runaway payload is
     truncated to a preview instead of blowing the context window. Override via config.agent. */
 const DEFAULT_TOOL_OUTPUT_CAP = 32_000;
+
+type SandboxVenue = "e2b" | "modal" | "custom" | false;
+
+function selectSandbox(configured: SandboxAdapter | undefined): {
+  adapter: SandboxAdapter | undefined;
+  venue: SandboxVenue;
+} {
+  if (configured !== undefined) return { adapter: configured, venue: "custom" };
+
+  // An env key only lights a venue when its optional SDK is actually
+  // installed; otherwise /status would report a venue whose first
+  // create() dies on a missing module.
+  const e2bApiKey = environment("E2B_API_KEY");
+  if (e2bApiKey !== undefined && e2bInstalled()) {
+    return { adapter: e2bSandbox({ apiKey: e2bApiKey }), venue: "e2b" };
+  }
+
+  const modalTokenId = environment("MODAL_TOKEN_ID");
+  const modalTokenSecret = environment("MODAL_TOKEN_SECRET");
+  if (modalTokenId !== undefined && modalTokenSecret !== undefined && modalInstalled()) {
+    return {
+      adapter: modalSandbox({ tokenId: modalTokenId, tokenSecret: modalTokenSecret }),
+      venue: "modal",
+    };
+  }
+
+  return { adapter: undefined, venue: false };
+}
 
 function json(body: unknown, status = 200): Response {
   return Response.json(body, { status });
@@ -429,8 +464,12 @@ function createWireHandler(deps: {
   guard: VendoGuard;
   apps: AppsRuntime;
   automations: AutomationsEngine;
+  sandbox: SandboxVenue;
   mcp: boolean;
   door?: McpDoor;
+  /** True only in a development composition — gates the local injection seams. */
+  development: boolean;
+  runtimeCapture?: RuntimeCaptureHandler;
   onRequestOrigin?: (origin: string) => void;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
@@ -510,6 +549,50 @@ function createWireHandler(deps: {
         throw new VendoError("validation", "content-type must be application/json");
       }
       await deps.ready;
+
+      // This dispatch exists only in a development composition. Production
+      // handlers receive no runtimeCapture dependency and fall through to the
+      // ordinary 404, so there is no guarded-but-mounted production endpoint.
+      if (deps.runtimeCapture !== undefined && request.method === "POST" && path === "/dev/remixable-source") {
+        const body = await requestJson(request);
+        // Capture writes .vendo/remixable baselines on the developer's disk, so
+        // it requires a HOST-resolved principal — an anonymous visitor's minted
+        // ephemeral session is not enough, even in a development composition.
+        const captureContext = await context(request, "app");
+        if (captureContext.principal.ephemeral === true) {
+          return json({ error: { code: "blocked", message: "runtime capture requires a host-resolved principal" } }, 401);
+        }
+        if (typeof body["exportable"] !== "boolean") {
+          throw new VendoError("validation", "exportable must be a boolean");
+        }
+        return json(await deps.runtimeCapture.capture({
+          slot: string(body["slot"], "slot"),
+          source: string(body["source"], "source"),
+          exportable: body["exportable"],
+        }));
+      }
+
+      // 06-apps §9 — the documented LOCAL injection seam for in-client approval
+      // records (demos and dev; Cloud's review console mints these in
+      // production). Development compositions only: production handlers fall
+      // through to the ordinary 404, exactly like /dev/remixable-source, so no
+      // production surface can self-approve an app into the host page.
+      if (deps.development && request.method === "POST" && path === "/dev/inclient-approval") {
+        const body = await requestJson(request);
+        // Approving a host-page mount is a HOST trust decision — an anonymous
+        // visitor's minted ephemeral session is not enough, even in dev.
+        const approvalContext = await context(request, "app");
+        if (approvalContext.principal.ephemeral === true) {
+          return json({ error: { code: "blocked", message: "in-client approval injection requires a host-resolved principal" } }, 401);
+        }
+        const approvedBy = body["approvedBy"] === undefined
+          ? "local-dev"
+          : string(body["approvedBy"], "approvedBy");
+        return json(await deps.apps.inClient.approve({
+          appId: string(body["appId"], "appId"),
+          approvedBy,
+        }, approvalContext));
+      }
 
       if (request.method === "POST" && path.startsWith("/webhooks/")) {
         return await deps.automations.webhook(request);
@@ -647,6 +730,23 @@ function createWireHandler(deps: {
             return json(await deps.apps.history(appId).undo());
           }
         }
+        // 06-apps §8–§9 — additive: the reviewable diff of what this app ships
+        // relative to the captured host baselines, hash-pinned to the version
+        // an in-client approval would cover. Owner-scoped like every app route.
+        if (request.method === "GET" && operation === "ship-diff" && segments.length === 3) {
+          return json(await deps.apps.inClient.shipDiff(appId, ctx));
+        }
+        // 06-apps §8 — additive drift→rebase surface, owner-scoped like every
+        // app route. A rebase rewrites content, so it is only ever invoked
+        // explicitly here or via the vendo_apps_rebase_pin agent tool — drift
+        // detection never auto-rebases.
+        if (request.method === "GET" && operation === "pin-drift" && segments.length === 3) {
+          return json(await deps.apps.pins.drift(appId, ctx));
+        }
+        if (request.method === "POST" && operation === "rebase-pin" && segments.length === 3) {
+          const body = await requestJson(request);
+          return json(await deps.apps.pins.rebase({ appId, slot: string(body["slot"], "slot") }, ctx));
+        }
         if (request.method === "GET" && operation === "export" && segments.length === 3) {
           const bytes = await deps.apps.exportApp(appId, ctx);
           return new Response(bytes as BodyInit, {
@@ -730,6 +830,7 @@ function createWireHandler(deps: {
             guard: true,
             apps: true,
             automations: true,
+            sandbox: deps.sandbox,
             // 10-mcp §1 — the door is off by default; true only when
             // createVendo({ mcp: true }) opened it.
             mcp: deps.mcp,
@@ -758,6 +859,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const encryptionKey = environment("VENDO_STORE_ENCRYPTION_KEY");
   const store = config.store
     ?? createStore(encryptionKey === undefined ? {} : { encryption: { key: encryptionKey } });
+  const sandbox = selectSandbox(config.sandbox);
   const ready = store.ensureSchema();
   // Keep eager schema readiness for hosts that reach into composed blocks,
   // while preventing an unhandled rejection before the first handler/emit awaits it.
@@ -805,7 +907,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
     secrets: config.secrets ?? envSecrets(),
-    ...(config.sandbox === undefined ? {} : { sandbox: config.sandbox }),
+    ...(sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter }),
     ...(environment("VENDO_PROXY_URL") === undefined ? {} : { proxyUrl: environment("VENDO_PROXY_URL") }),
   });
   resolveAppToolRisk = apps.agentToolRisk;
@@ -907,6 +1009,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       return false;
     }
   })();
+  const explicitDevelopment = config.development !== undefined && config.development !== false;
+  const development = explicitDevelopment
+    || (config.development !== false && environment("NODE_ENV") === "development");
+  const developmentPaths = typeof config.development === "object" ? config.development : {};
+  const runtimeCapture = development ? createRuntimeCapture(developmentPaths) : null;
   const handler = createWireHandler({
     principal: config.principal,
     ready,
@@ -919,8 +1026,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     guard,
     apps,
     automations,
+    sandbox: sandbox.venue,
     mcp: mcpOptions !== undefined,
+    development,
     ...(door === undefined ? {} : { door }),
+    ...(runtimeCapture === null ? {} : { runtimeCapture }),
     onRequestOrigin: (origin) => {
       // Same-origin default for route-binding execution (04): no VENDO_BASE_URL
       // → the wire's own origin, learned from the first VALIDATED request and

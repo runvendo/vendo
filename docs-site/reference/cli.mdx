@@ -81,7 +81,10 @@ baselines for `dir`, which defaults to the current directory. The default is
 fail-soft and warns on breaking changes. When tools changed or broke, sync
 asks the running dev server which saved apps, automations, and grants they
 impact and prints one `impact:` line per tool (or `impact unknown` when no
-server is reachable).
+server is reachable). Drifted pins get an advisory `drifted:` line — drift
+never auto-rebases; each fork's owner decides. Unresolved remixable slots
+are listed and fail the run with exit 2 regardless of `--strict` (silent
+remix skips are eliminated).
 
 Options:
 
@@ -89,17 +92,18 @@ Options:
   breaking tool impacts saved references.
 - `--json` — print exactly one machine-readable object on stdout:
   `{ ok, exitCode, report, impact, notes }`, where `report` carries
-  `tools`/`breaking`/`pins`/`warnings`, `impact` is the per-tool blast
-  radius (`[]` when nothing changed, `null` when unknown), and `notes`
-  collects CLI-level events. An `error` field appears when extraction
-  itself failed soft.
+  `tools`/`breaking`/`pins`/`unresolvedPins`/`warnings`, `impact` is the
+  per-tool blast radius (`[]` when nothing changed, `null` when unknown),
+  and `notes` collects CLI-level events. An `error` field appears when
+  extraction itself failed soft.
 - `--report` — push the report to Vendo Cloud (requires `VENDO_API_KEY` or
   `--key`; `--api-url` overrides `VENDO_CLOUD_URL`).
 
 Exit codes:
 
 - `0`: success, including fail-soft warnings
-- `2`: breaking changes when `--strict` is set
+- `2`: unresolved remixable slots (any mode), or breaking changes when
+  `--strict` is set
 - `3`: breaking changes that impact saved apps, automations, or grants when
   `--strict` is set
 

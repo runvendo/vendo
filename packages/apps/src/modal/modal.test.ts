@@ -75,6 +75,7 @@ describe("modalSandbox", () => {
         workdir: "/app",
         timeoutMs: 40_000,
         idleTimeoutMs: 5_000,
+        outboundCidrAllowlist: [],
         outboundDomainAllowlist: ["api.example.com"],
       }),
     );
@@ -94,6 +95,39 @@ describe("modalSandbox", () => {
       expect.anything(),
       expect.objectContaining({ outboundCidrAllowlist: [], outboundDomainAllowlist: [] }),
     );
+  });
+
+  it("pins the CIDR allowlist to [] alongside a non-empty domain allowlist (ENG-322 fail-closed)", async () => {
+    // Modal's allowlists are additive and "if not set, all CIDRs are allowed":
+    // a domain allowlist without outboundCidrAllowlist would leave raw-IP
+    // egress unrestricted. Both create and fresh-process resume must pin it.
+    const adapter = modalSandbox();
+    const machine = await adapter.create({ env: { PORT: "9090" }, egress: ["api.example.com"] });
+    expect(sdk.client.sandboxes.create).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        outboundCidrAllowlist: [],
+        outboundDomainAllowlist: ["api.example.com"],
+      }),
+    );
+
+    const snapshotRef = await machine.snapshot();
+    await modalSandbox().resume(snapshotRef);
+    expect(sdk.client.sandboxes.create).toHaveBeenLastCalledWith(
+      expect.anything(),
+      { imageId: "image_789" },
+      expect.objectContaining({
+        outboundCidrAllowlist: [],
+        outboundDomainAllowlist: ["api.example.com"],
+      }),
+    );
+
+    // No egress means unrestricted: neither allowlist may be sent.
+    await modalSandbox().create({ env: {} });
+    const [, , params] = sdk.client.sandboxes.create.mock.calls.at(-1)!;
+    expect(params).not.toHaveProperty("outboundCidrAllowlist");
+    expect(params).not.toHaveProperty("outboundDomainAllowlist");
   });
 
   it("maps exec, filesystem argument order, tunnels, requests, snapshots, and terminate", async () => {

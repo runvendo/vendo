@@ -69,6 +69,8 @@ const HOST_FACING_TYPES = [
   "AppsRuntime",
   "EditResult",
   "OpenSurface",
+  "PinDrift",
+  "PinRebaseResult",
   "SandboxAdapter",
   "SandboxMachine",
   "VersionEntry",

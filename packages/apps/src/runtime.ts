@@ -1,5 +1,6 @@
 import {
   VendoError,
+  validateAppDocument,
   type AppDocument,
   type AppId,
   type ComponentCatalog,
@@ -37,15 +38,19 @@ import {
   type GenerationEngine,
 } from "./engine.js";
 import { createAppHistory } from "./history.js";
+import { createInClientApprovals, type InClientVerdict } from "./inclient.js";
 import { createAppInterchange } from "./interchange.js";
 import { createMachineSessions } from "./machine.js";
 import { createAppOpener, createProgressiveQueryResolver } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
-import { pinComponentName, type PinBaseline } from "./pins.js";
+import { detectPinDrift, pinComponentName, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
 import { createRunTokenGate } from "./run-token-gate.js";
+import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
+import { appVersionHash } from "./version-hash.js";
 import type { SandboxAdapter } from "./sandbox.js";
 import type { SandboxMachine } from "./sandbox.js";
+import { servedAppScaffold } from "./scaffold/index.js";
 import type { IpResolver } from "./ssrf.js";
 
 /** 06-apps §1 plus block-plan decisions 3–4. */
@@ -76,6 +81,10 @@ export interface EditResult {
   issues?: string[];
   /** Additive failure detail: when present, no edit was persisted. */
   failure?: EditFailure;
+  /** Additive 06 §8 drift report: pins whose host baseline changed under the
+   * fork. Present on every edit result over a drifted app so drift is loud at
+   * edit time, not only in sync output or the ship-diff. */
+  driftedPins?: PinDrift[];
 }
 
 export interface EditFailure {
@@ -102,6 +111,33 @@ export interface AppsProxy {
   handler(request: Request): Promise<Response>;
 }
 
+/**
+ * 06-apps §8 — the outcome of one pin rebase. `failed` persists NOTHING: the
+ * pre-rebase version stays live, and the report says which recorded intents
+ * replayed cleanly, which one failed, and which were never attempted.
+ * Fail-closed by construction — a rebase is all-or-nothing, never a silent
+ * half-rebase.
+ */
+export type PinRebaseResult =
+  | {
+    status: "rebased";
+    app: AppDocument;
+    version: VersionEntry;
+    slot: string;
+    /** The NEW baseline hash the pin now records as its `base`. */
+    baseHash: string;
+    /** The pin intents replayed onto the new baseline, in recorded order. */
+    replayed: string[];
+  }
+  | {
+    status: "failed";
+    slot: string;
+    baseHash: string;
+    replayed: string[];
+    failed: { intent: string; issues: string[] };
+    remaining: string[];
+  };
+
 /** 06-apps §1 */
 export interface AppsRuntime {
   create(input: {
@@ -126,6 +162,35 @@ export interface AppsRuntime {
    * the static descriptor remains authoritative. */
   agentToolRisk(call: ToolCall, ctx: RunContext): Promise<RiskLabel | undefined>;
   proxy: AppsProxy;
+  /**
+   * 06-apps §9 — additive trust-axis surface (like `proxy`/`agentToolRisk`,
+   * not part of the frozen §1 method table). OSS carries the enforcement
+   * machinery: the ship-diff a reviewer reads, the stored approval records,
+   * and the hash-pin verdict `open()` rides to the client. Cloud's review
+   * console MINTS approvals in production; `approve` is the documented local
+   * injection seam (demos, dev, host-built review flows).
+   */
+  inClient: {
+    shipDiff(appId: AppId, ctx: RunContext): Promise<ShipDiff>;
+    approvals(appId: AppId, ctx: RunContext): Promise<InClientApproval[]>;
+    verdict(appId: AppId, ctx: RunContext): Promise<InClientVerdict>;
+    approve(input: { appId: AppId; approvedBy: string }, ctx: RunContext): Promise<InClientApproval>;
+  };
+  /**
+   * 06-apps §8 — additive drift→rebase surface (same additive precedent as
+   * `inClient`, not part of the frozen §1 method table). `drift` reports the
+   * pins whose captured host baseline changed under a fork; `rebase` re-forks
+   * ONE drifted pin from the NEW baseline and replays its recorded pin-intent
+   * trail (history.pinIntents) through the real model edit path, producing a
+   * new version whose pin `base` is the new baseline hash. A rebase is a
+   * content change, so it is NEVER invoked automatically: the agent tool
+   * `vendo_apps_rebase_pin` and the wire route are the invocation surfaces,
+   * and the new version drops in-client approval by construction (§9).
+   */
+  pins: {
+    drift(appId: AppId, ctx: RunContext): Promise<PinDrift[]>;
+    rebase(input: { appId: AppId; slot: string }, ctx: RunContext): Promise<PinRebaseResult>;
+  };
 }
 
 const allRecords = async (
@@ -143,6 +208,50 @@ const allRecords = async (
   } while (cursor !== undefined);
   return records;
 };
+
+/** True (exit 0) when something answers HTTP on $PORT. fetch resolves on any
+    HTTP response, so a 404 still proves a listener. */
+const PROBE_SNIPPET =
+  "node -e 'fetch(\"http://127.0.0.1:\"+(process.env.PORT||\"8080\")+\"/\").then(()=>process.exit(0),()=>process.exit(1))'";
+
+/** Stop the server THIS runtime started in an earlier edit (recorded in
+    /tmp/vendo-app.pid), then wait for $PORT to free. Provider-started
+    processes (Modal's create command) carry no pid file and are left alone. */
+const STOP_OWNED_SERVER_SNIPPET = [
+  "if [ -f /tmp/vendo-app.pid ]; then",
+  "  kill -- \"-$(cat /tmp/vendo-app.pid)\" 2>/dev/null || true",
+  "  kill \"$(cat /tmp/vendo-app.pid)\" 2>/dev/null || true",
+  "  rm -f /tmp/vendo-app.pid",
+  `  i=0; while [ $i -lt 20 ] && ${PROBE_SNIPPET}; do i=$((i+1)); sleep 0.1; done`,
+  "fi",
+].join("\n");
+
+/**
+ * 06-apps §4.1 — the machine IS the server: a rung ≥2 snapshot must capture a
+ * machine that answers on $PORT, because `fn:` calls resume that snapshot and
+ * POST to it. E2B resumes a MEMORY image, so only a process serving at
+ * snapshot time serves after resume; Modal instead re-runs its create command
+ * (which waits for /app/start.sh or /app/server.js) on every disk-image
+ * resume. This snippet makes both true from the provider-neutral seam:
+ * restart the runtime-owned server so the just-written files take effect,
+ * leave a provider-started listener alone, and boot the conventional entry
+ * (/app/start.sh, else /app/server.js) when nothing serves. `setsid` puts the
+ * server in its own process group so a later edit can stop it cleanly.
+ */
+const ENSURE_SERVING_COMMAND = [
+  STOP_OWNED_SERVER_SNIPPET,
+  `if ${PROBE_SNIPPET}; then exit 0; fi`,
+  "if [ -f /app/start.sh ]; then",
+  "  nohup setsid sh /app/start.sh >/tmp/vendo-app.log 2>&1 & echo $! >/tmp/vendo-app.pid",
+  "elif [ -f /app/server.js ]; then",
+  "  nohup setsid node /app/server.js >/tmp/vendo-app.log 2>&1 & echo $! >/tmp/vendo-app.pid",
+  "else",
+  "  echo 'no /app/start.sh or /app/server.js to serve $PORT' >&2; exit 1",
+  "fi",
+  `i=0; while [ $i -lt 50 ]; do ${PROBE_SNIPPET} && exit 0; i=$((i+1)); sleep 0.1; done`,
+  "cat /tmp/vendo-app.log >&2",
+  "exit 1",
+].join("\n");
 
 const rungFor = (
   app: AppDocument,
@@ -165,6 +274,14 @@ const generationDependencies = (
   pinBaselines: config.pinBaselines,
   ...(onPartial === undefined ? {} : { onPartial }),
 });
+
+/** 06-apps §§8–9 — payload fields only the server may write (the venue verdict
+ * and the drift report). A model-written or artifact-imported tree must never
+ * smuggle either one in, streamed or at rest. */
+const stripServerAuthoritativeFields = (payload: object): void => {
+  delete (payload as { inClient?: unknown }).inClient;
+  delete (payload as { pinDrift?: unknown }).pinDrift;
+};
 
 const pinnedSubtree = (app: AppDocument, componentName: string): unknown[] => {
   if (app.tree?.formatVersion !== "vendo-genui/v1") return [];
@@ -233,8 +350,15 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     requireOwned,
   });
 
+  const inClientApprovals = createInClientApprovals(config.store);
   const caller = createAppCaller(machines, config.tools);
-  const opener = createAppOpener(machines, caller, config.store);
+  const opener = createAppOpener(
+    machines,
+    caller,
+    config.store,
+    config.pinBaselines,
+    (doc) => inClientApprovals.venueStateFor(doc),
+  );
   const proxy = createAppsProxy({
     tokenSecret,
     tools: config.tools,
@@ -247,12 +371,19 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     consumedRunTokens,
   });
 
+  // 06-apps §8 — every edit result over a drifted app carries the drift report,
+  // so an agent or host editing a stale fork hears about it at edit time.
+  const withPinDrift = (result: EditResult): EditResult => {
+    const driftedPins = detectPinDrift(result.app, config.pinBaselines ?? []);
+    return driftedPins.length === 0 ? result : { ...result, driftedPins };
+  };
+
   const failedEdit = (
     app: AppDocument,
     instruction: string,
     issues: string[],
     retryable = true,
-  ): EditResult => ({
+  ): EditResult => withPinDrift({
     app: structuredClone(app),
     version: {
       at: new Date().toISOString(),
@@ -287,14 +418,32 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const applyCodeFiles = async (
     app: AppDocument,
     files: CodeFileEdit[],
+    rung: VersionEntry["rung"],
     ctx: RunContext,
-  ): Promise<{ server?: string; issues: string[] }> => {
+  ): Promise<{ server?: string; cover?: Uint8Array; issues: string[] }> => {
+    const graduatesToHttp = rung === 4 && app.ui !== "http";
     try {
       return await machines.withFork(
         app,
         ctx,
         async ({ machine }) => {
           try {
+            if (rung === 4 && machine.url === undefined) {
+              return { issues: ["sandbox-unavailable: adapter cannot serve http apps"] };
+            }
+            if (graduatesToHttp) {
+              const scaffold = servedAppScaffold(app);
+              const scaffoldPaths = new Set(scaffold.map((file) => file.path));
+              const collision = files.find((file) => scaffoldPaths.has(file.path));
+              if (collision !== undefined) {
+                return {
+                  issues: [`initial rung-4 graduation cannot replace scaffold file "${collision.path}"; edit it after graduation`],
+                };
+              }
+              for (const file of scaffold) {
+                await machine.files.write(file.path, file.content);
+              }
+            }
             for (const file of files) await machine.files.write(file.path, file.content);
             const issues: string[] = [];
             for (const file of files) {
@@ -304,14 +453,52 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             if (issues.length > 0) {
               return { issues };
             }
-            const server = await machine.snapshot();
-            if (app.ui === "http" && machine.screenshot !== undefined) {
-              const cover = await machine.screenshot();
-              await config.store.blobs(`app:${app.id}`).put("cover.png", cover, {
-                contentType: "image/png",
-              });
+            if (graduatesToHttp) {
+              // A graduation fork resumed from a serving rung-2/3 snapshot still
+              // carries that old server (E2B memory resume); stop it first or the
+              // scaffold loses the $PORT race and the "ready" probe would bless
+              // the OLD process into the rung-4 snapshot.
+              const started = await machine.exec(
+                `${STOP_OWNED_SERVER_SNIPPET}\n`
+                + "nohup setsid sh /app/start.sh >/tmp/vendo-app.log 2>&1 & echo $! >/tmp/vendo-app.pid",
+                // The stop-owned prelude probes $PORT with short node spawns
+                // (~0.5s each on a cold machine); 10s aborted mid-loop live.
+                { cwd: "/app", timeoutMs: 30_000 },
+              );
+              if (started.code !== 0) {
+                const detail = started.stderr.trim() || started.stdout.trim() || `start command exited ${started.code}`;
+                return { issues: [`served-app scaffold failed to start: ${detail}`] };
+              }
+              // The backgrounded start always exits 0; only a served response
+              // proves the scaffold is actually listening (Devin, PR #243) —
+              // otherwise the snapshot and cover would capture a dead machine.
+              const ready = await machine.exec(
+                "i=0; while [ $i -lt 50 ]; do"
+                + " node -e \"fetch('http://127.0.0.1:'+(process.env.PORT||'8080')+'/').then(()=>process.exit(0),()=>process.exit(1))\""
+                + " && exit 0; i=$((i+1)); sleep 0.1; done; cat /tmp/vendo-app.log >&2; exit 1",
+                // 50 probes are ~30s of real node spawns on a live machine, so
+                // the exec budget must outlive the loop, not race it.
+                { cwd: "/app", timeoutMs: 45_000 },
+              );
+              if (ready.code !== 0) {
+                const detail = ready.stderr.trim() || ready.stdout.trim() || "no response on $PORT";
+                return { issues: [`served-app scaffold did not become ready: ${detail}`] };
+              }
+            } else {
+              // Rungs 2–3 (and re-edits of an already-served app): the snapshot
+              // must capture a machine that serves $PORT, or every later fn:
+              // call resumes a dead machine. See ENSURE_SERVING_COMMAND.
+              const serving = await machine.exec(ENSURE_SERVING_COMMAND, { cwd: "/app", timeoutMs: 60_000 });
+              if (serving.code !== 0) {
+                const detail = serving.stderr.trim() || serving.stdout.trim() || "no listener on $PORT";
+                return { issues: [`app server is not serving on $PORT after this edit: ${detail}`] };
+              }
             }
-            return { server, issues: [] };
+            const cover = rung === 4 && machine.screenshot !== undefined
+              ? await machine.screenshot()
+              : undefined;
+            const server = await machine.snapshot();
+            return cover === undefined ? { server, issues: [] } : { server, cover, issues: [] };
           } catch (error) {
             return { issues: [error instanceof Error ? error.message : "machine edit failed"] };
           } finally {
@@ -331,6 +518,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     app: AppDocument,
     version: VersionEntry,
     subject: string,
+    pinSlots?: readonly string[],
   ): Promise<AppDocument> => {
     // Best-effort optimistic concurrency. The core StoreAdapter seam (01-core §12) has
     // no compare-and-swap or transactions, so a narrow TOCTOU window between the final
@@ -347,7 +535,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return row.enabled;
     };
     await assertCurrent();
-    await history.append(app.id, previous, version, touchedPinSlots(previous, app));
+    await history.append(app.id, previous, version, pinSlots ?? touchedPinSlots(previous, app));
     const wasEnabled = await assertCurrent();
     // A changed trigger must be re-armed — enable() re-captures and re-mints trigger state.
     const enabled = enabledAfterDocumentEdit(previous, app, wasEnabled);
@@ -357,7 +545,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   };
 
   const reportLifecycle = async (
-    operation: "create" | "delete" | "fork",
+    operation: "create" | "delete" | "fork" | "in-client-approve" | "pin-rebase",
     appId: AppId,
     ctx: RunContext,
     extra: Record<string, Json> = {},
@@ -383,11 +571,18 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       }
       // Mint before generation so every partial already carries its permanent id.
       const appId = `app_${globalThis.crypto.randomUUID()}`;
-      const emit = (payload: Tree): void => input.onView?.({
-        type: "data-vendo-view",
-        appId,
-        payload: payload as unknown as UIPayload,
-      });
+      const emit = (payload: Tree): void => {
+        // 06-apps §§8–9 — the venue verdict and drift report are
+        // server-authoritative and a model-written tree must never smuggle
+        // either into the live stream: a freshly generated app has no approval
+        // and no drifted pins by definition.
+        stripServerAuthoritativeFields(payload);
+        input.onView?.({
+          type: "data-vendo-view",
+          appId,
+          payload: payload as unknown as UIPayload,
+        });
+      };
       let latestTree: Tree | undefined;
       const queryApp: AppDocument = {
         format: "vendo/app@1",
@@ -413,6 +608,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         ...generated,
         id: appId,
       };
+      // Same rule at rest: open() strips before serving, but a model-forged
+      // venue or drift field has no business being persisted in the first place.
+      if (app.tree !== undefined) stripServerAuthoritativeFields(app.tree);
       let finalTree: Tree | undefined;
       if (input.onView !== undefined && app.tree?.formatVersion === "vendo-genui/v1") {
         finalTree = {
@@ -452,6 +650,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       await machines.stop(appId);
       await data.clear(app, ctx.principal.subject, await history.documents(appId));
       await history.clear(appId);
+      await inClientApprovals.clear(appId);
       await apps.delete(appId);
       await reportLifecycle("delete", appId, ctx);
     },
@@ -523,15 +722,19 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
         if (generated.kind === "document") {
           const app: AppDocument = { ...generated.document, id: appId };
+          // Same strip-before-persist rule as create(): open() strips at serve
+          // time, but a model-forged venue or drift field must not be
+          // persisted either.
+          if (app.tree !== undefined) stripServerAuthoritativeFields(app.tree);
           const version: VersionEntry = {
             at: new Date().toISOString(),
             intent: instruction,
             rung: rungFor(app, generated.rung),
           };
-          return {
+          return withPinDrift({
             app: await persistEdit(previous, app, version, ctx.principal.subject),
             version: { ...version },
-          };
+          });
         }
 
         // The contextual guard decision ran before generation. If the engine
@@ -543,21 +746,34 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           ]);
         }
 
-        const applied = await applyCodeFiles(previous, generated.files, ctx);
+        const applied = await applyCodeFiles(previous, generated.files, generated.rung, ctx);
         if (applied.server === undefined) {
           collectedIssues = appendIssues(collectedIssues, applied.issues);
           repairIssues = collectedIssues;
           continue;
         }
-        const app: AppDocument = { ...structuredClone(previous), server: applied.server };
+        const app: AppDocument = {
+          ...structuredClone(previous),
+          server: applied.server,
+          ...(generated.rung === 4 ? { ui: "http" } : {}),
+        };
+        const validation = validateAppDocument(app);
+        if (!validation.ok) {
+          return failedEdit(previous, instruction, [validation.error.message]);
+        }
         const version: VersionEntry = {
           at: new Date().toISOString(),
           intent: instruction,
           rung: rungFor(app, generated.rung),
         };
         const persisted = await persistEdit(previous, app, version, ctx.principal.subject);
+        if (applied.cover !== undefined) {
+          await config.store.blobs(`app:${app.id}`).put("cover.png", applied.cover, {
+            contentType: "image/png",
+          });
+        }
         await machines.evict(appId);
-        return { app: persisted, version: { ...version } };
+        return withPinDrift({ app: persisted, version: { ...version } });
       }
       return failedEdit(
         previous,
@@ -620,6 +836,143 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     agentTools() {
       return createAgentTools(runtime, { data, requireOwned });
+    },
+
+    inClient: {
+      async shipDiff(appId, ctx) {
+        const app = await requireOwned(appId, ctx.principal.subject);
+        return computeShipDiff(app, config.pinBaselines ?? []);
+      },
+      async approvals(appId, ctx) {
+        await requireOwned(appId, ctx.principal.subject);
+        return inClientApprovals.list(appId);
+      },
+      async verdict(appId, ctx) {
+        const app = await requireOwned(appId, ctx.principal.subject);
+        return inClientApprovals.verdictFor(app);
+      },
+      async approve(input, ctx) {
+        const app = await requireOwned(input.appId, ctx.principal.subject);
+        const approval = await inClientApprovals.record({
+          appId: app.id,
+          versionHash: appVersionHash(app),
+          approvedBy: input.approvedBy,
+          at: new Date().toISOString(),
+        });
+        await reportLifecycle("in-client-approve", app.id, ctx, {
+          versionHash: approval.versionHash,
+          approvedBy: approval.approvedBy,
+        });
+        return approval;
+      },
+    },
+
+    pins: {
+      async drift(appId, ctx) {
+        const app = await requireOwned(appId, ctx.principal.subject);
+        return detectPinDrift(app, config.pinBaselines ?? []);
+      },
+
+      async rebase(input, ctx) {
+        if (config.model === undefined) {
+          throw new VendoError("not-implemented", "generation requires a model");
+        }
+        const app = await requireOwned(input.appId, ctx.principal.subject);
+        const pin = (app.pins ?? []).find(({ slot }) => slot === input.slot);
+        if (pin === undefined) {
+          throw new VendoError("not-found", `pin not found: ${input.slot}`);
+        }
+        const baseline = (config.pinBaselines ?? []).find(({ slot }) => slot === input.slot);
+        if (baseline === undefined) {
+          throw new VendoError("conflict", `pin ${input.slot} has no captured baseline to rebase onto; re-run vendo sync`);
+        }
+        if (baseline.hash === pin.base) {
+          throw new VendoError("conflict", `pin ${input.slot} is not drifted`);
+        }
+        // Replay rides the tree edit dialect; a graduated http app routes every
+        // instruction to the code path, so its trail can no longer replay.
+        if (app.ui === "http") {
+          throw new VendoError("conflict", `pin ${input.slot} cannot rebase on a served (http) app`);
+        }
+        const intents = (await history.pinIntents(app.id, input.slot)).map(({ intent }) => intent);
+        // No recorded fork intent means the trail cannot vouch for the fork's
+        // content (e.g. the pin arrived via an app fork or import, which start
+        // an empty history). A mechanical re-fork would silently discard the
+        // user's remix, so fail closed instead.
+        if (intents.length === 0) {
+          throw new VendoError("conflict", `pin ${input.slot} has no recorded edit trail to replay; remix the updated component manually`);
+        }
+        // intents[0] is the forking edit by construction: the first edit that
+        // can touch a slot is the fork-pin that creates it, and undo removes a
+        // reverted fork's intent. Re-forking is mechanical (the captured
+        // baseline source is copied verbatim), so replay starts after it.
+        const replayIntents = intents.slice(1);
+        const componentName = pinComponentName(input.slot);
+        let working: AppDocument = structuredClone(app);
+        working.components = { ...(working.components ?? {}), [componentName]: baseline.source };
+        working.pins = (working.pins ?? []).map((candidate) => candidate.slot === input.slot
+          ? { ...candidate, base: baseline.hash }
+          : candidate);
+        const replayed: string[] = [];
+        const failedRebase = (intent: string, issues: string[], remaining: string[]): PinRebaseResult => ({
+          status: "failed",
+          slot: input.slot,
+          baseHash: baseline.hash,
+          replayed: [...replayed],
+          failed: { intent, issues },
+          remaining,
+        });
+        for (const [index, intent] of replayIntents.entries()) {
+          const generated = await engine.edit(
+            { app: structuredClone(working), instruction: intent },
+            generationDependencies(config, config.model),
+          );
+          const remaining = replayIntents.slice(index + 1);
+          if (generated.kind !== "document") {
+            return failedRebase(intent, generated.kind === "failure"
+              ? [...generated.issues]
+              : ["replayed intent produced a server code edit; pin intents replay through the tree edit path only"], remaining);
+          }
+          const next: AppDocument = { ...structuredClone(generated.document), id: app.id };
+          if (next.tree !== undefined) stripServerAuthoritativeFields(next.tree);
+          const survived = (next.pins ?? []).some((candidate) =>
+            candidate.slot === input.slot && candidate.base === baseline.hash)
+            && next.components?.[componentName] !== undefined;
+          if (!survived) {
+            return failedRebase(intent, ["replayed intent removed the rebased pin or its component source"], remaining);
+          }
+          working = next;
+          replayed.push(intent);
+        }
+        const validation = validateAppDocument(working);
+        if (!validation.ok) {
+          throw new VendoError("validation", validation.error.message);
+        }
+        const version: VersionEntry = {
+          at: new Date().toISOString(),
+          intent: `Rebase remixed ${input.slot} onto the updated host component`,
+          rung: rungFor(working),
+        };
+        // The rebase version appends NO pin intent of its own: its content is
+        // exactly the replayed trail on the new baseline, and replaying a
+        // "rebase" instruction through the model on a future rebase would be
+        // meaningless. Undo of this version therefore removes no intents.
+        const persisted = await persistEdit(app, working, version, ctx.principal.subject, []);
+        await reportLifecycle("pin-rebase", app.id, ctx, {
+          slot: input.slot,
+          fromBaseHash: pin.base,
+          toBaseHash: baseline.hash,
+          replayedIntents: replayed.length,
+        });
+        return {
+          status: "rebased",
+          app: persisted,
+          version: { ...version },
+          slot: input.slot,
+          baseHash: baseline.hash,
+          replayed,
+        };
+      },
     },
 
     proxy,

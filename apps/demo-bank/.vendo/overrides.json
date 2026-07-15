@@ -1,4 +1,13 @@
 {
   "format": "vendo/overrides@1",
-  "tools": {}
+  "tools": {
+    "host_auth_create": {
+      "disabled": true,
+      "description": "Auth.js endpoint - never agent-callable"
+    },
+    "host_auth_get": {
+      "disabled": true,
+      "description": "Auth.js endpoint - never agent-callable"
+    }
+  }
 }

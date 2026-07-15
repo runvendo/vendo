@@ -140,6 +140,54 @@ const pendingThread: Thread = {
   }],
 };
 
+/** ENG-212: a long conversation that overflows any bounded pane, ending in a
+ *  pending approval — the exact "chat bricks under real content" shape measured
+ *  live on Cadence /assistant. Reuses thr_1 so the wire list() adopts it. */
+const boundedThread: Thread = {
+  id: "thr_1",
+  subject: "browser-user",
+  createdAt: NOW,
+  updatedAt: NOW,
+  messages: [
+    ...Array.from({ length: 10 }, (_, index) => [
+      {
+        id: `msg_long_u${index}`,
+        role: "user" as const,
+        parts: [{ type: "text" as const, text: `Question ${index + 1}: what happened to my money this month?` }],
+      },
+      {
+        id: `msg_long_a${index}`,
+        role: "assistant" as const,
+        parts: [{
+          type: "text" as const,
+          text: `Answer ${index + 1}: Looking at your transactions, the largest categories were groceries, `
+            + "subscriptions and late-night delivery. The recurring charges add up to a meaningful share of the "
+            + "month, and there are a few one-off purchases worth reviewing together before we set up any rules.",
+        }],
+      },
+    ]).flat(),
+    {
+      id: "msg_long_pending",
+      role: "assistant",
+      parts: [
+        { type: "text", text: "I prepared the email and need your approval before sending." },
+        {
+          type: "dynamic-tool",
+          toolName: "host_email_send",
+          toolCallId: "call_pending",
+          state: "approval-requested",
+          input: { to: "finance@example.com", subject: "Invoice ready" },
+          approval: { id: "apr_pending" },
+        },
+        {
+          type: "data-vendo-approval",
+          data: { toolCallId: "call_pending", risk: "write", approvalId: "apr_pending" },
+        },
+      ],
+    },
+  ],
+};
+
 /** An in-thread app surface (VendoViewPart) whose payload carries a format no
  *  renderer is registered for — it must contain to a notice, never break the thread. */
 const unknownViewThread: Thread = {
@@ -348,12 +396,39 @@ export default function EmptyGeneratedComponent() {
 }
 `;
 
-const jailTree: Tree = {
+const furnishedPinSource = String.raw`
+import { FurnishedCardBody } from "./FurnishedCardBody";
+
+export default function FurnishedPin(props) {
+  return <FurnishedCardBody {...props} />;
+}
+`;
+
+const furnishedCardBodySource = String.raw`
+import { FurnishedBadge } from "./FurnishedBadge";
+
+export function FurnishedCardBody({ customer, total }) {
+  return <article className="furnished-pin-card">
+    <FurnishedBadge />
+    <h2>Furnished fork for {customer}</h2>
+    <p>Stubbed invoice total: {total}</p>
+  </article>;
+}
+`;
+
+const furnishedBadgeSource = String.raw`
+export function FurnishedBadge() {
+  return <span className="furnished-pin-badge">captured styles</span>;
+}
+`;
+
+const jailTree: Tree & { furnishings: Record<string, unknown> } = {
   formatVersion: "vendo-genui/v1",
   root: "root",
   nodes: [
-    { id: "root", component: "Stack", children: ["before", "probe", "thrower", "empty", "after"] },
+    { id: "root", component: "Stack", children: ["before", "furnished", "probe", "thrower", "empty", "after"] },
     { id: "before", component: "Text", props: { text: "Jail siblings before" } },
+    { id: "furnished", component: "FurnishedPin", source: "generated" },
     {
       id: "probe",
       component: "SecurityProbe",
@@ -368,11 +443,193 @@ const jailTree: Tree = {
     { id: "after", component: "Text", props: { text: "Jail sibling survived" } },
   ],
   components: {
+    FurnishedPin: furnishedPinSource,
     SecurityProbe: securitySource,
     ThrowingGeneratedComponent: throwingSource,
     EmptyGeneratedComponent: emptySource,
   },
+  furnishings: {
+    FurnishedPin: {
+      sourceImports: { "./FurnishedCardBody": "src/components/FurnishedCardBody.tsx" },
+      subSources: {
+        "src/components/FurnishedCardBody.tsx": {
+          source: furnishedCardBodySource,
+          imports: { "./FurnishedBadge": "src/components/FurnishedBadge.tsx" },
+        },
+        "src/components/FurnishedBadge.tsx": {
+          source: furnishedBadgeSource,
+          imports: {},
+        },
+      },
+      sampleProps: { customer: "Ada", total: "$4,200" },
+      styles: [{
+        path: "src/app/globals.css",
+        css: String.raw`
+          .furnished-pin-card {
+            background: rgb(239, 246, 255);
+            border: 2px solid rgb(37, 99, 235);
+            border-radius: 14px;
+            padding: 16px;
+          }
+          .furnished-pin-badge {
+            background: rgb(30, 64, 175);
+            border-radius: 999px;
+            color: white;
+            display: inline-block;
+            font-weight: 700;
+            padding: 4px 10px;
+          }
+        `,
+      }],
+    },
+  },
 };
+
+/** 06-apps §9 — the in-client venue scenario: the SAME generated source, once
+ *  with a server-granted hash-pinned approval (host-page mount, host-page
+ *  authority) and once with a stale approval (loud drop-back to the jail). */
+const inClientSource = String.raw`
+import React, { useState } from "react";
+
+export default function PromotedCard({ customer, onRun }) {
+  const [fetchStatus, setFetchStatus] = useState("not run");
+  const [actionStatus, setActionStatus] = useState("not run");
+
+  // In the host page this SUCCEEDS (host authority); the jail's CSP forbids it.
+  async function probeFetch() {
+    try {
+      const response = await fetch("/frame-target.html");
+      setFetchStatus(response.ok ? "SUCCESS (host authority)" : "HTTP " + response.status);
+    } catch {
+      setFetchStatus("FAILURE (CSP)");
+    }
+  }
+
+  async function dispatch() {
+    await onRun();
+    setActionStatus("delivered");
+  }
+
+  return <section aria-label="Promoted in-client card" className="promoted-card">
+    <h2>Promoted card for {customer}</h2>
+    <button type="button" onClick={probeFetch}>Probe host fetch</button>
+    <output id="inclient-fetch-status">fetch: {fetchStatus}</output>
+    <button type="button" onClick={dispatch}>Dispatch promoted action</button>
+    <output id="inclient-action-status">action: {actionStatus}</output>
+  </section>;
+}
+`;
+
+function inClientTree(inClient: Record<string, unknown>): Tree {
+  return {
+    formatVersion: "vendo-genui/v1",
+    root: "root",
+    nodes: [
+      { id: "root", component: "Stack", children: ["promoted", "sibling"] },
+      {
+        id: "promoted",
+        component: "PromotedCard",
+        source: "generated",
+        props: {
+          customer: "Ada",
+          onRun: { $action: "fn:promoted-submit", payload: { invoiceId: "inv_42" } },
+        },
+      },
+      { id: "sibling", component: "Text", props: { text: "Host sibling survived" } },
+    ],
+    components: { PromotedCard: inClientSource },
+    ...( { inClient } as object),
+  } as Tree;
+}
+
+function InClientScenario() {
+  const [action, setAction] = useState<{ nodeId: string; action: string; payload?: Json }>();
+  const onAction = async (request: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome> => {
+    setAction(request);
+    return { status: "ok", output: { recorded: true } };
+  };
+  return (
+    <TreeThemeBoundary>
+      <div className="inclient-grid">
+        <section aria-label="Approved in-client venue">
+          <h2>Approved — host-page mount</h2>
+          <TreeView
+            tree={inClientTree({
+              granted: true,
+              versionHash: "sha256:approved",
+              approvedBy: "host-console",
+              at: NOW,
+            })}
+            components={components}
+            onAction={onAction}
+          />
+        </section>
+        <section aria-label="Stale in-client approval">
+          <h2>Version changed — dropped back to the sandbox</h2>
+          <TreeView
+            tree={inClientTree({
+              granted: false,
+              versionHash: "sha256:new-version",
+              reason: "version-changed",
+            })}
+            components={components}
+            onAction={onAction}
+          />
+        </section>
+      </div>
+      <output className="recorder" data-testid="inclient-action-recorder">{action ? JSON.stringify(action) : "No action recorded"}</output>
+    </TreeThemeBoundary>
+  );
+}
+
+/** 06-apps §8 — the drift notice scenario: the host updated the component a
+ *  pin was remixed from, so the payload carries a server-written `pinDrift`
+ *  report. The surface says so loudly ABOVE the tree while the remixed fork
+ *  keeps rendering in its jail — nothing changes without the user. */
+const driftedPinSource = String.raw`
+import React from "react";
+
+export default function RemixedNetWorthCard() {
+  return <section aria-label="Remixed net worth card" className="promoted-card">
+    <h2>Net worth — remixed</h2>
+    <strong>$1.2M in green</strong>
+  </section>;
+}
+`;
+
+function PinDriftScenario() {
+  const tree: Tree = {
+    formatVersion: "vendo-genui/v1",
+    root: "root",
+    nodes: [
+      { id: "root", component: "Stack", children: ["worth", "sibling"] },
+      { id: "worth", component: "RemixedNetWorthCard", source: "generated" },
+      { id: "sibling", component: "Text", props: { text: "Host sibling survived" } },
+    ],
+    components: { RemixedNetWorthCard: driftedPinSource },
+    ...({
+      pinDrift: [{
+        slot: "net-worth-card",
+        component: "RemixedNetWorthCard",
+        baseHash: "sha256:maple-old",
+        baselineHash: "sha256:maple-new",
+        reason: "baseline-changed",
+      }],
+    } as object),
+  } as Tree;
+  return (
+    <TreeThemeBoundary>
+      <section aria-label="Drifted remixed pin">
+        <h2>Host component updated under the remix</h2>
+        <TreeView
+          tree={tree}
+          components={components}
+          onAction={async () => ({ status: "ok", output: null })}
+        />
+      </section>
+    </TreeThemeBoundary>
+  );
+}
 
 class ScriptedBrowserVoiceDriver implements VoiceDriver {
   start(handlers: VoiceDriverHandlers): VoiceSessionHandle {
@@ -669,9 +926,27 @@ function FormatDrillScenario({ registered }: { registered: boolean }) {
   );
 }
 
+/** ENG-212: the Cadence /assistant host shape — a bounded, overflow-hidden flex
+ *  pane owning the height. The root must forward that height so .fl-msglist is
+ *  the scroll container and the composer + approval actions stay reachable. */
+function BoundedThreadScenario() {
+  return (
+    <VendoProvider client={threadClient(baseClient, boundedThread)} components={components}>
+      <div
+        data-testid="bounded-pane"
+        style={{ height: 560, display: "flex", flexDirection: "column", overflow: "hidden",
+          border: "1px solid #cad3e0", borderRadius: 12 }}
+      >
+        <VendoThread threadId="thr_1" />
+      </div>
+    </VendoProvider>
+  );
+}
+
 function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme>; content: ReactNode; ownProvider?: boolean } {
   switch (pathname) {
     case "/thread": return { title: "Thread — dark theme", theme: darkTheme, content: <VendoThread threadId="thr_1" /> };
+    case "/thread-bounded": return { title: "Thread — bounded host pane", content: <BoundedThreadScenario />, ownProvider: true };
     case "/thread-landing": return { title: "Landing (Maple host)", content: <LandingScenario />, ownProvider: true };
     case "/overlay": return { title: "Overlay", content: <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'><VendoOverlay /></AutoOpen> };
     case "/page": return { title: "Workspace — Apps tab", content: <AutoOpen selector='[role="tab"][aria-controls="vendo-panel-apps"]'><VendoPage /></AutoOpen> };
@@ -684,6 +959,8 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/stage-live": return { title: "Voice stage (live)", content: <LiveStageScenario />, ownProvider: true };
     case "/tree": return { title: "Tree containment", content: <TreeScenario /> };
     case "/tree-jail": return { title: "Generated component jail", content: <TreeScenario jail /> };
+    case "/tree-inclient": return { title: "In-client venue (hash-pinned approval)", content: <InClientScenario /> };
+    case "/tree-drift": return { title: "Pin drift (host component updated)", content: <PinDriftScenario /> };
     case "/tree-themed": return { title: "Tree — loud host theme", theme: loudTheme, content: <TreeScenario /> };
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };

@@ -277,7 +277,7 @@ describe("vendo init", () => {
     const overrides = JSON.parse(await readFile(join(root, ".vendo", "overrides.json"), "utf8"));
     const tools = JSON.parse(await readFile(join(root, ".vendo", "tools.json"), "utf8"));
     const policy = JSON.parse(await readFile(join(root, ".vendo", "policy.json"), "utf8"));
-    expect(overrides).toEqual({ format: "vendo/overrides@1", tools: {} });
+    expect(overrides).toEqual({ format: "vendo/overrides@1", tools: {}, remix: { ignoreSlots: [] } });
     expect(tools).toMatchObject({ format: "vendo/tools@1", tools: [] });
     expect(policy).toMatchObject({ format: "vendo/policy@1" });
     expect(await readFile(join(root, ".vendo", "data", ".gitignore"), "utf8")).toBe("*\n!.gitignore\n");
@@ -293,6 +293,18 @@ describe("vendo init", () => {
     const first = await tree(root);
     expect(await runInit({ targetDir: root, yes: true, output: sink.output })).toBe(0);
     expect(await tree(root)).toEqual(first);
+  });
+
+  it("surfaces unresolved remixable slots loudly at init without aborting", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "app", "vendo-components.ts"),
+      "export const components = [{ name: \"InlineCard\", component: () => null, remixable: true }];\n");
+    const sink = output();
+    expect(await runInit({ targetDir: root, yes: true, output: sink.output })).toBe(0);
+    const errors = sink.errors.join("\n");
+    expect(errors).toContain("UNRESOLVED REMIXABLE SLOTS (init continues)");
+    expect(errors).toContain("InlineCard [inline-component]");
+    expect(errors).toContain("sync exits non-zero while they remain unresolved");
   });
 
   it("provisions VENDO_STORE_ENCRYPTION_KEY into .env and never regenerates it (02-store §4)", async () => {
@@ -404,7 +416,11 @@ describe("vendo init", () => {
     expect(await readFile(join(root, ".vendo", "brief.md"), "utf8"))
       .toBe("A billing product for finance teams.\n");
     expect(JSON.parse(await readFile(join(root, ".vendo", "overrides.json"), "utf8")))
-      .toEqual({ format: "vendo/overrides@1", tools: { host_invoices_send: { critical: true } } });
+      .toEqual({
+        format: "vendo/overrides@1",
+        tools: { host_invoices_send: { critical: true } },
+        remix: { ignoreSlots: [] },
+      });
   });
 
   it("guides an explicitly opened MCP door without generating registry-auth routes", async () => {
