@@ -122,9 +122,13 @@ The machine IS the server part. No declared entry point; by convention the app l
 | `VENDO_RUN_TOKEN` | bearer token scoping this run: `{ appId, principal, runId, presence }` — minted per run, short-lived |
 | declared secret names | **handles**, not values (§4.3) |
 
-### 4.3 Secrets ⚑ — handles, substituted at egress
+### 4.3 Secrets ⚑ — handles, substituted at the egress proxy
 
-Per the page, secret values are never readable by app code. Each declared secret name is injected as an opaque handle (`vendo-secret:<name>:<nonce>`). The machine's egress proxy (which also enforces the `egress` allowlist) substitutes the real value when a handle transits toward an allowlisted domain (headers or body). App code uses `process.env.STRIPE_KEY` normally and never learns the value; a handle leaving toward a non-allowlisted domain never resolves. Values come from the composition's `SecretsProvider`.
+Per the page, secret values are never readable by app code. Each declared secret name is injected as an opaque handle (`vendo-secret:<name>:<nonce>`). App code uses `process.env.STRIPE_KEY` normally and never learns the value. Real values come from the composition's `SecretsProvider` and resolve **only inside the proxy process, only for egress the app is permitted** — never in the sandbox env, never at boot.
+
+The functional path (ENG-259): the sandbox reaches an external host by sending the outbound request through the runtime proxy's **egress route** (§4.5). The proxy (a) matches the target host against the app's declared `egress` allowlist — the same list that drives the sandbox provider's outbound network allow rule (§3), reused, not a second allowlist; (b) applies a Vendo-side SSRF guard that refuses loopback, link-local (incl. `169.254.169.254`), RFC1918, IPv6 ULA/link-local, and `0.0.0.0`, validating the **resolved IP** (rebind-resistant) on the initial hop and every redirect; (c) only then resolves the request's declared-secret handles to real values via `SecretsProvider.get()` and substitutes them into headers or body (`substituteSecretHandles`); (d) forwards, without ever sending the run token to the target; (e) strips any reflected secret from the response before it returns to app code. A handle leaving toward a non-allowlisted or SSRF-blocked host never resolves and never forwards. An app that declares no `egress` allowlist gets no substitution and no egress through the proxy (fail closed), even though the sandbox provider treats undefined `egress` as unrestricted raw network.
+
+> **Amendment (2026-07-14, ENG-259):** this section previously implied the substitution was a latent helper "safe by construction because nothing calls it." It is now WIRED and functional: an OSS app declaring `secrets` can authenticate to its allowlisted hosts. Substitution and the SSRF guard are the enforced boundary — secrets resolve at the proxy for allowlisted egress and nowhere else. The in-sandbox `fetch` shim that routes app outbound calls into §4.5 ships in the served-app scaffold; the security boundary is the proxy route described here.
 
 ### 4.4 Host tools from inside the machine (the capability axis)
 
@@ -137,6 +141,20 @@ body: { "args": {...} }        →  ToolOutcome (core §4)
 ```
 
 The proxy resolves the token to its `RunContext` and calls the guard-bound registry — identical treatment to a chat tool call. Away + ungranted → `{ "status": "pending-approval" }`; the app must tolerate it (fail soft).
+
+### 4.5 Allowlisted secret egress (the external-service axis) ⚑ — ENG-259
+
+App code never holds real secret values and never opens raw sockets to the outside world with them; it sends an outbound request through the proxy, which is the one point where a declared-secret handle becomes a real value.
+
+```
+POST {VENDO_PROXY_URL}/egress
+Authorization: Bearer {VENDO_RUN_TOKEN}
+body: { "url": "...", "method"?: "...", "headers"?: {...}, "body"?: "..." }
+  → 200 { "status": <int>, "headers": {...}, "body": "..." }   (secrets redacted from the response)
+  → 403 { "error": { "code": "egress-blocked", ... } }         (host not allowlisted, or SSRF-refused)
+```
+
+The envelope describes the request the app wants forwarded; the run token authenticates the app→proxy hop and is never forwarded to the target (which is why the target's own `authorization` travels inside the envelope, not the outer header). The proxy performs, in order: declared-`egress` allowlist match → SSRF/private-address guard on the resolved IP (re-checked on every redirect) → declared-secret handle substitution → forward → response secret-stripping. Non-allowlisted or SSRF-blocked hosts are refused before any secret is read. Request and response bodies are size-capped (fail-safe); the URL is never rewritten, so a handle placed in a query string is never substituted. The SSRF guard is a reusable primitive (`checkEgressUrl`, `isBlockedAddress`); actions' `resolveUrl` (04) is a follow-up adopter once the primitive relocates to core (actions may import core only).
 
 ## 5. Generation engine
 

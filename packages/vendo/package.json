@@ -54,7 +54,9 @@
     "@vendoai/mcp": "workspace:*",
     "@vendoai/store": "workspace:*",
     "@vendoai/telemetry": "workspace:*",
-    "@vendoai/ui": "workspace:*"
+    "@vendoai/ui": "workspace:*",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1"
   },
   "peerDependencies": {
     "ai": ">=6.0.0 <7",

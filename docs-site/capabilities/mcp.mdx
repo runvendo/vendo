@@ -9,8 +9,9 @@ registry, policy, approvals, and audit path as chat, so outside agents get no
 weaker perimeter than your own conversation surface.
 
 Opening the door is a host decision. It is off by default, and `vendo init`
-asks whether you want it, then points you at the wiring rather than turning it
-on itself.
+asks whether you want it. On yes, init generates the Next.js discovery route
+and points you at the host-owned OAuth wiring; it never invents an auth adapter
+or turns the flag on by itself.
 
 ## When to use it
 
@@ -76,11 +77,13 @@ door cannot mint principals otherwise. Import the `HostOAuthAdapter` type from
 
 The door's transport and OAuth endpoints mount under the wire at
 `/api/vendo/mcp`, so your existing catch-all handler already serves them. The
-OAuth discovery documents live at the origin root, outside `/api/vendo`, so on
-Next.js you forward them to the same handler:
+OAuth discovery documents live at the origin root, outside `/api/vendo`. When
+you opt into MCP during `vendo init`, a Next.js host gets
+`app/.well-known/[...vendo]/route.ts` (under `src/app` when present), forwarding
+to the same handler. If you wire Vendo without init, add the equivalent route:
 
 ```ts
-// app/.well-known/[...path]/route.ts
+// app/.well-known/[...vendo]/route.ts
 import { vendo } from "@/lib/vendo";
 
 export const GET = (request: Request) => vendo.handler(request);

@@ -64,6 +64,9 @@ export type ReservedCollection = typeof RESERVED_COLLECTIONS[number];
 interface RoutedConfig {
   table: ReservedCollection;
   select: string;
+  /** Optional lighter projection for `list` (get/point-reads still use `select`).
+   *  vendo_threads uses it to avoid transferring the full messages array per row. */
+  listSelect?: string;
   cursorColumn: string;
   refs: Readonly<Record<string, string>>;
   fromDb(row: Record<string, unknown>): VendoRecord;
@@ -121,7 +124,11 @@ function auditRecord(event: AuditEvent): VendoRecord {
 }
 
 function threadRecord(row: ThreadRow): VendoRecord {
-  const data: ThreadData = { subject: row.subject, messages: row.messages };
+  const data: ThreadData = {
+    subject: row.subject,
+    messages: row.messages,
+    ...(row.title === undefined || row.title === null ? {} : { title: row.title }),
+  };
   return {
     id: row.id,
     data,
@@ -147,7 +154,9 @@ function appRecord(row: AppRow): VendoRecord {
   return {
     id: row.id,
     data,
-    refs: { subject: row.subject },
+    // trigger_kind mirrors the persisted generated column (schema.ts) so the DB and the
+    // in-memory overlay agree on the same filterable ref (the automations tick / emit query it).
+    refs: refs({ subject: row.subject, trigger_kind: row.doc.trigger?.on.kind }),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -246,7 +255,7 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
       }
       params.push(limit + 1);
       const result = await db.query(
-        `${config.select}${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""}
+        `${config.listSelect ?? config.select}${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""}
          ORDER BY ${config.cursorColumn} DESC, id DESC LIMIT $${params.length}`,
         params,
       );
@@ -342,6 +351,12 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
       return {
         table: collection,
         select: "SELECT * FROM vendo_threads",
+        // Listing derives only a title + timestamps; skip the (potentially large) messages
+        // column once a row carries a stored title. Legacy rows (title still NULL, written
+        // before the column existed) keep returning messages so the title stays derivable.
+        listSelect: `SELECT id, subject, title,
+           CASE WHEN title IS NULL THEN messages ELSE '[]'::jsonb END AS messages,
+           created_at, updated_at FROM vendo_threads`,
         cursorColumn: "created_at",
         refs: { subject: "subject" },
         fromDb: (row) => threadRecord(threadFromRow(row)),
@@ -362,6 +377,7 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
               id: record.id,
               subject: data.subject,
               messages: data.messages,
+              ...(data.title === undefined ? {} : { title: data.title }),
               createdAt: prior?.createdAt ?? now,
               updatedAt: now,
             };
@@ -395,7 +411,7 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         table: collection,
         select: "SELECT * FROM vendo_apps",
         cursorColumn: "created_at",
-        refs: { subject: "subject" },
+        refs: { subject: "subject", trigger_kind: "trigger_kind" },
         fromDb: (row) => appRecord(appFromRow(row)),
         overlayRecords: () => [...overlay.apps.values()].map((row) => appRecord(snapshot(row))),
         async put(record) {

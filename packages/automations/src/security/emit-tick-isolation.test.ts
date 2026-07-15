@@ -32,7 +32,7 @@ const app = (id: string, trigger: NonNullable<AppDocument["trigger"]>): AppDocum
   ({ format: VENDO_APP_FORMAT, id, name: id, trigger });
 
 const seedApp = async (store: StoreAdapter, doc: AppDocument, subject: string, enabled = true): Promise<void> => {
-  await store.records("vendo_apps").put({ id: doc.id, data: { subject, enabled, doc }, refs: { subject } });
+  await store.records("vendo_apps").put({ id: doc.id, data: { subject, enabled, doc }, refs: { subject, ...(doc.trigger === undefined ? {} : { trigger_kind: doc.trigger.on.kind }) } });
 };
 
 class GuardDouble implements Guard {

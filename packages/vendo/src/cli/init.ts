@@ -117,6 +117,22 @@ function routeSource(modelImport: string): string {
     `export const { GET, POST, DELETE } = nextVendoHandler(vendo);\n`;
 }
 
+function wellKnownRouteSource(): string {
+  return `import { GET as handleVendo } from "../../api/vendo/[...vendo]/route";\n\n` +
+    `const DOOR_PATHS = new Set([\n` +
+    `  "/.well-known/oauth-protected-resource/api/vendo/mcp",\n` +
+    `  "/.well-known/oauth-authorization-server/api/vendo/mcp",\n` +
+    `  "/.well-known/mcp/server-card.json",\n` +
+    `  "/.well-known/mcp-server-card",\n` +
+    `]);\n\n` +
+    `const forward = (request: Request) =>\n` +
+    `  DOOR_PATHS.has(new URL(request.url).pathname)\n` +
+    `    ? handleVendo(request)\n` +
+    `    : new Response(null, { status: 404 });\n\n` +
+    `export const GET = forward;\n` +
+    `export const POST = forward;\n`;
+}
+
 function expressServerSource(modelImport: string, typescript: boolean): string {
   const imports = typescript
     ? `import { once } from "node:events";\n` +
@@ -370,7 +386,7 @@ function diff(path: string, before: string | null, after: string): string {
   ].join("\n");
 }
 
-async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; changes: Array<{ absolute: string; path: string; before: string | null; after: string; diff: string }> }> {
+async function buildPlan(options: InitOptions, mcpEnabled = false): Promise<{ plan: InitPlan; changes: Array<{ absolute: string; path: string; before: string | null; after: string; diff: string }> }> {
   const root = resolve(options.targetDir);
   const framework = await detectFramework(root);
   const modelImport = options.modelImport ?? (framework === "express" ? "./ai" : "@/lib/ai");
@@ -399,8 +415,10 @@ async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; change
   } else {
     const app = await appDirectory(root);
     const route = join(app, "api", "vendo", "[...vendo]", "route.ts");
+    const wellKnownRoute = join(app, ".well-known", "[...vendo]", "route.ts");
     const layout = join(app, "layout.tsx");
     const routeBefore = await readOptional(route);
+    const wellKnownRouteBefore = await readOptional(wellKnownRoute);
     const layoutBefore = await readOptional(layout);
     const routeAfter = routeBefore ?? routeSource(modelImport);
     const themeSpecifier = await themeImportSpecifier(root, app);
@@ -418,6 +436,11 @@ async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; change
         const modelAfter = defaultModelSource();
         changes.push({ absolute: modelModule, path: modelPath, before: null, after: modelAfter, diff: diff(modelPath, null, modelAfter) });
       }
+    }
+    if (mcpEnabled && wellKnownRouteBefore === null) {
+      const path = relative(root, wellKnownRoute);
+      const after = wellKnownRouteSource();
+      changes.push({ absolute: wellKnownRoute, path, before: null, after, diff: diff(path, null, after) });
     }
     if (layoutAfter !== null && layoutAfter !== layoutBefore) {
       const path = relative(root, layout);
@@ -516,7 +539,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     modelImport: answers.modelImport ?? options.modelImport,
     brief: answers.brief ?? options.brief,
   };
-  const { plan, changes } = await buildPlan(effective);
+  const { plan, changes } = await buildPlan(effective, answers.openDoor === true);
 
   const telemetry = telemetryFor(options, output);
   await telemetry.track("init_started", { framework: plan.framework });
@@ -594,7 +617,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     // (identity + consent) plus `mcp: true` on createVendo. init cannot scaffold the
     // adapter (it is host auth), so it guides rather than writes broken wiring.
     if (answers.openDoor === true) {
-      output.log("MCP door: implement a HostOAuthAdapter (identity + consent) and pass `createVendo({ mcp: true, oauth })`. See docs/contracts/10-mcp; `vendo doctor` verifies the discovery documents once it is live.");
+      output.log("MCP door: implement a HostOAuthAdapter (identity + consent) and pass `createVendo({ mcp: true, oauth })`. Then run `vendo mcp server-json`, `vendo mcp verify-domain`, and `vendo doctor` for registry discovery. See docs/contracts/10-mcp.");
     }
     const finalWiring = plan.framework === "express" ? await detectVendoWiring(root) : null;
     if (finalWiring !== null && (!finalWiring.server || !finalWiring.client)) {

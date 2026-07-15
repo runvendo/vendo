@@ -24,7 +24,7 @@ import type {
   Trigger,
 } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
-import { createGuard, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
+import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createActions } from "@vendoai/actions";
 import { createApps, type AppsRuntime, type SandboxAdapter } from "@vendoai/apps";
 import { createAutomations, type AutomationsEngine } from "@vendoai/automations";
@@ -136,13 +136,24 @@ export interface StackOptions {
   now?: () => Date;
   policy?: PolicyConfig;
   sandbox?: SandboxAdapter;
+  /** Guard LLM judge — passed straight to createGuard so judge-posture suites
+   *  can exercise the composed system's ask/block decisions (ENG-251). */
+  judge?: Judge;
+  /** Guard circuit breakers (rate / write caps) — passed to createGuard so
+   *  breaker-abuse suites can drive the composed system (ENG-251). */
+  breakers?: { maxCallsPerMinute?: number; maxWritesPerRun?: number };
 }
 
 export async function createStack(options: StackOptions = {}): Promise<Stack> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-redteam-e2e-"));
   const store = createStore({ dataDir });
   await store.ensureSchema();
-  const guard = createGuard({ store, ...(options.policy === undefined ? {} : { policy: options.policy }) });
+  const guard = createGuard({
+    store,
+    ...(options.policy === undefined ? {} : { policy: options.policy }),
+    ...(options.judge === undefined ? {} : { judge: options.judge }),
+    ...(options.breakers === undefined ? {} : { breakers: options.breakers }),
+  });
   const actions = createActions({
     tools: hostTools as unknown as Parameters<typeof createActions>[0]["tools"],
     baseUrl: fixtureBaseUrl(),

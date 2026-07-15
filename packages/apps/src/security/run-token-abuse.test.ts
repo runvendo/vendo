@@ -39,6 +39,7 @@ const payload = (overrides: Partial<RunTokenPayload> = {}): RunTokenPayload => (
   runId: "run_x",
   presence: "present",
   expiresAt: future(),
+  jti: "jti_A",
   ...overrides,
 });
 
@@ -77,6 +78,14 @@ describe("run token abuse", () => {
     const token = await mintRunToken(SECRET, payload({ subject: "sub_A" }));
     const forged = tamperPayload(token, (claims) => { claims.subject = "sub_victim"; });
     await expect(verifyRunToken(SECRET, forged)).resolves.toBeNull();
+  });
+
+  it("rejects a token minted without a jti anti-replay nonce (fail-closed, ENG-251)", async () => {
+    const { jti, ...withoutJti } = payload();
+    void jti;
+    const token = await mintRunToken(SECRET, withoutJti as RunTokenPayload);
+    // A token with no jti can never be revoked, so it is not a valid token.
+    await expect(verifyRunToken(SECRET, token)).resolves.toBeNull();
   });
 
   it("rejects malformed tokens without throwing", async () => {

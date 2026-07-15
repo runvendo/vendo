@@ -65,7 +65,9 @@ const seedApp = async (
   await store.records("vendo_apps").put({
     id: doc.id,
     data: { subject, enabled, doc },
-    refs: { subject },
+    // Mirror the reserved store's derived trigger_kind ref so the memory double the tests use
+    // matches how the tick/emit filter apps in production.
+    refs: { subject, ...(doc.trigger === undefined ? {} : { trigger_kind: doc.trigger.on.kind }) },
   });
 };
 

@@ -17,7 +17,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@vendoai/agent": "workspace:*",
     "@vendoai/apps": "workspace:*",
+    "@vendoai/automations": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",
     "@vendoai/store": "workspace:*",

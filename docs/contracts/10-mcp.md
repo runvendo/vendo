@@ -1,6 +1,6 @@
 # @vendoai/mcp — the door: serve your product's tools to outside agents
 
-Status: DRAFT (wave 6 — added after the v0 freeze on Yousef's directive; this document is ADDITIVE and changes nothing frozen). Umbrella hookup + `venue: "mcp"` host-call auth LANDED 2026-07-13 (this wave): §2.1 is the auth model, and the former handoff note `10-mcp-umbrella-hookup.md` is now the landed record. One job: make the host product installable in Claude, ChatGPT, Cursor, and any MCP client — OAuth, tool serving, and MCP Apps rendering handled behind one flag. Same guard, same audit: door calls get identical treatment to chat — no second, weaker perimeter. Depends on core only; the umbrella wires everything else in through seams.
+Status: LANDED 2026-07-13 (wave 6 — added after the v0 freeze on Yousef's directive; this document is ADDITIVE and changes nothing frozen). <!-- amended 2026-07-14: Status was DRAFT while the body already read "LANDED 2026-07-13"; reconciled to LANDED. The package ships published `@vendoai/mcp` v0.3.0 (door + OAuth + MCP Apps shim + tests), an umbrella dependency (PR #139). --> Umbrella hookup + `venue: "mcp"` host-call auth LANDED 2026-07-13 (this wave): §2.1 is the auth model, and the former handoff note `10-mcp-umbrella-hookup.md` is now the landed record. One job: make the host product installable in Claude, ChatGPT, Cursor, and any MCP client — OAuth, tool serving, and MCP Apps rendering handled behind one flag. Same guard, same audit: door calls get identical treatment to chat — no second, weaker perimeter. Depends on core only; the umbrella wires everything else in through seams.
 
 Derived from the page's `@vendoai/mcp` block against the frozen contract set, then corrected against the live specs (MCP 2025-11-25 revision; MCP Apps 2026-01-26; dual review round applied — see §8). The hooks were already reserved: `venue: "mcp"` in core §3, provider-safe tool names (decision 15, MCP-compatible by construction), `guard.bind` as the one execution path (decision 6).
 
@@ -15,6 +15,12 @@ export function createMcpDoor(config: {
   oauth: HostOAuthAdapter;              // §3 — two functions; the host owns identity + consent, the door owns the protocol
   store: StoreAdapter;                  // door-owned protocol state (clients, codes, refresh grants) — wired like every other block
   apps?: AppsPort;                      // §4 — saved apps ride along as MCP Apps; absent → tools-only door
+  remoteAs?: {                          // §3.1 — trust an external authorization server instead of serving the local AS
+    issuer: string;
+    jwksUri?: string;                   // absent → discover jwks_uri from the issuer's RFC 8414 metadata
+    audience: string;
+  };
+  federation?: { secret: string };      // §3.2 — generic signed login handshake for an external AS
 }): McpDoor;
 
 export interface McpDoor {
@@ -70,9 +76,44 @@ Normative:
 - **Audience binding (RFC 8707)**: the `resource` parameter is accepted and enforced on both authorization and token requests; access tokens are bound to `(subject, clientId, scopes, resource)` and rejected when the resource is not the door's canonical URI — token-passthrough is structurally impossible.
 - **Challenge**: every `401` carries `WWW-Authenticate` naming the protected-resource metadata URL (RFC 9728 §5.1) — this is the discovery entry point compliant clients start from.
 - **Clients**: HTTPS-URL client ids (Client ID Metadata Documents) are accepted and advertised; RFC 7591 dynamic registration stays as the fallback (registered clients live in door state).
-- **Tokens**: opaque (never host-verifiable JWTs), checked on every request, refresh rotates, PKCE required, redirect URIs exact-match. Lifetimes: access 1h, refresh 30d (per-request `principal()` resolution is the real kill switch).
+- **Tokens**: opaque (never host-verifiable JWTs), checked on every request, refresh rotates, PKCE required, redirect URIs exact-match. Authorization-code consumption and refresh rotation use the store's database-level atomic claim; an adapter without that additive capability fails closed at the token endpoint. Lifetimes: access 1h, refresh 30d (per-request `principal()` resolution is the real kill switch).
 - **Audit**: token issuance and revocation are `AuditEvent`s (`kind: "door-auth"`, additive variant per 01 §15) — the SIEM export (05 §1) sees the door's auth lifecycle, same as everything else.
 - Door state lands in `vendo_mcp_clients` / `vendo_mcp_grants` (additive to the 02 §2 table map; typed helpers are block-internal, same status as guard's).
+
+### 3.1 External authorization-server trust mode
+
+`remoteAs` switches bearer authentication from the door's local grant store to
+external JWT validation. The door accepts ES256 only, resolves keys from the
+configured `jwksUri` or the issuer's
+`{issuer}/.well-known/oauth-authorization-server` `jwks_uri`, caches keys, and
+refreshes the JWKS when a new `kid` appears. A bearer is valid only when its
+signature and `iss`, `aud`, `exp`, and `iat` claims validate against the
+configured issuer and audience. The JWT `sub` is then resolved through
+`HostOAuthAdapter.principal` on every door request exactly like a local grant;
+the host kill switch, session ownership, replay, guard, and audit behavior do
+not change.
+
+In this mode the local `/authorize`, `/token`, and `/register` endpoints return
+`404`, the door returns `404` for its RFC 8414 authorization-server metadata,
+and RFC 9728 protected-resource metadata advertises
+`authorization_servers: [remoteAs.issuer]`. The external server owns its OAuth
+protocol surface.
+
+### 3.2 Login federation
+
+`federation: { secret }` adds `GET {mount}/federate?request=<compact JWS>` as a
+generic handshake for an external authorization server. The request is HS256
+verified with `secret` and must contain `{ iss, aud, exp, jti, redirect_uri,
+scopes, client_name }`, where `aud` is the canonical door resource, `exp` is in
+the future but no more than five minutes away, `scopes` is a string array, and
+the redirect URI origin equals the `iss` origin.
+
+After validation the door calls `HostOAuthAdapter.authorize(req, { clientName:
+claims.client_name, scopes: claims.scopes })`. An adapter `Response` is returned
+unchanged so host login can bounce and the browser can retry the same request.
+For `{ subject }`, the door redirects to `redirect_uri` with an HS256
+`assertion` carrying `{ iss: resource, aud: request.iss, sub: subject, jti:
+request.jti, iat, exp: iat + 60s }`. The endpoint renders no HTML.
 
 ## 4. Apps ride along — MCP Apps
 
@@ -96,12 +137,20 @@ export interface AppsPort {
 ## 5. Discovery — agents find the host's server
 
 - Protected-resource metadata at the **path-inserted** well-known URL (RFC 9728 §3): a door mounted at `/api/vendo/mcp` serves `/.well-known/oauth-protected-resource/api/vendo/mcp`. Authorization-server metadata (RFC 8414) likewise.
+- With `remoteAs`, protected-resource metadata names the external issuer and the door does not serve RFC 8414 authorization-server metadata; the external server owns it (§3.1).
 - Server card at `/.well-known/mcp-server-card` — ⚑ **provisional**, tracking SEP-2127 (Draft); the path moves with the SEP if it changes before ratification. Registry listings are a publishing step, not code. The door accepts an optional `mount` (e.g. `/api/vendo/mcp`): when set it is authoritative for the card's advertised transport URL, so a **cold** composed umbrella advertises the right mount before any request arrives, and learned request paths never override it (the umbrella passes its fixed `MCP_MOUNT`). Unset, the card falls back to `/mcp` until an authenticated request teaches it a mount.
 - `vendo doctor` validates both metadata documents resolve and the card parses.
 
 ## 6. Testing doctrine (binding, e2e-first)
 
 The harness is a REAL MCP client: e2e drives the door with an actual MCP SDK client — `401` → `WWW-Authenticate` → metadata discovery at the path-inserted URL → OAuth round-trip against the fixture host app's auth (with `resource` sent and a wrong-resource token request rejected) → initialize → `tools/list` → `tools/call` — asserting: descriptors match the bound registry verbatim; a `destructive` call parks and the client sees the in-band `isError` result naming the approval; audit rows land with `venue='mcp'` and `kind='door-auth'` (SQL asserts); `principal() → null` kills an existing session. Apps-ride-along e2e: `vendo_apps_open` returns the fixture app's payload with `_meta.ui.resourceUri` set, and the shim resource serves with the MCP Apps mimeType. Live leg (env-gated): connect Claude Code itself via `claude mcp add` against a local door and run one tool call.
+
+External-AS coverage uses an in-test authorization server with a jose-generated
+ES256 keypair: valid JWTs cross the real MCP transport, claim/signature failures
+are rejected, unknown keys fail closed, and a rotated `kid` refreshes cached
+JWKS. Federation coverage signs requests and verifies returned assertions
+against a fake `HostOAuthAdapter`, including signature, expiry, audience, and
+redirect-origin failures.
 
 ## 7. Deferred
 

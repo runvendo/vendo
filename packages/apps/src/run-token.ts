@@ -7,6 +7,11 @@ export interface RunTokenPayload {
   runId: string;
   presence: RunContext["presence"];
   expiresAt: number;
+  /** Anti-replay nonce (ENG-251). A random per-mint id so a captured token can be
+      REVOKED before its TTL elapses: the proxy rejects a token whose jti a consumed
+      set holds (burned when its run's machine is torn down). Bounds the replay
+      window to the live run instead of the full 15-min TTL. */
+  jti: string;
 }
 
 /** Block-plan decision 5 — in-memory HMAC key material. */
@@ -53,7 +58,11 @@ const validPayload = (value: unknown): value is RunTokenPayload => {
     && payload.runId.startsWith("run_")
     && (payload.presence === "present" || payload.presence === "away")
     && typeof payload.expiresAt === "number"
-    && Number.isFinite(payload.expiresAt);
+    && Number.isFinite(payload.expiresAt)
+    // Fail-closed: a token minted without a jti (e.g. a pre-ENG-251 forgery) can
+    // never be revoked, so it is not a valid token.
+    && typeof payload.jti === "string"
+    && payload.jti.length > 0;
 };
 
 /** Block-plan decision 5 — compact base64url JSON plus WebCrypto HMAC-SHA256. */

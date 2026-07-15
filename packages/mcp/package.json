@@ -44,6 +44,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@vendoai/core": "workspace:*",
+    "jose": "^6.2.3",
     "zod": "^3.24.0"
   },
   "devDependencies": {
