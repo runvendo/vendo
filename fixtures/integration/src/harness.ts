@@ -136,11 +136,23 @@ const cookieCache = new Map<string, string>();
 export async function loginCookie(subject: string): Promise<string> {
   const cached = cookieCache.get(subject);
   if (cached !== undefined) return cached;
-  const response = await fetch(`${fixtureBaseUrl()}/api/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ user: subject }),
-  });
+  let response: Response | undefined;
+  let lastError: unknown;
+  // The shared Next dev fixture can reset its first login socket while sibling
+  // Turbo tasks finish compiling; retry only this idempotent session mint.
+  for (let attempt = 0; attempt < 3 && response === undefined; attempt += 1) {
+    try {
+      response = await fetch(`${fixtureBaseUrl()}/api/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ user: subject }),
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
+  if (response === undefined) throw lastError;
   if (!response.ok) throw new Error(`Fixture login failed (${response.status})`);
   const cookie = response.headers.get("set-cookie")?.split(";")[0];
   if (!cookie) throw new Error("Fixture login did not return a cookie");

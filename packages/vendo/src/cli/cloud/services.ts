@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { option, positionals } from "./args.js";
-import { CloudError, resolveCloudBaseUrl, type CloudFetchOptions } from "./client.js";
+import { CloudError, cloudFetch, resolveCloudBaseUrl, type CloudFetchOptions } from "./client.js";
 import {
   commandContext,
   type CloudCommandContext,
@@ -13,6 +13,18 @@ import {
   type EntitlementResolution,
 } from "./entitlements-cache.js";
 import { isVendoKey, parseContractV2, type ContractV2 } from "./entitlements.js";
+
+export function pushSyncReport(
+  payload: unknown,
+  options: Pick<CloudFetchOptions, "apiKey" | "apiUrl" | "env" | "fetchImpl"> = {},
+): Promise<unknown> {
+  return cloudFetch("/api/v1/sync/report", {
+    ...options,
+    auth: "key",
+    method: "POST",
+    body: payload,
+  });
+}
 
 function machineOptions(args: string[], context: CloudCommandContext): CloudFetchOptions {
   const apiKey = option(args, "--key") ?? context.env.VENDO_API_KEY;

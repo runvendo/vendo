@@ -225,6 +225,37 @@ describe("09 §3 public wire", () => {
     });
   });
 
+  it("serves sync impact on dev servers and blocks it in production", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const { vendo } = await setup();
+
+    const response = await vendo.handler(request("POST", "/sync/impact", { tools: ["host_get_widgets"] }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      impact: [{ tool: "host_get_widgets", apps: [], automations: [], grants: 0 }],
+    });
+
+    vi.stubEnv("NODE_ENV", "production");
+    const blocked = await vendo.handler(request("POST", "/sync/impact", { tools: ["host_get_widgets"] }));
+    expect(blocked.status).toBe(403);
+    expect(await blocked.json()).toEqual({
+      error: { code: "blocked", message: "sync impact is only available on a dev server" },
+    });
+  });
+
+  it("validates sync impact tool arrays", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const { vendo } = await setup();
+
+    const nonStrings = await vendo.handler(request("POST", "/sync/impact", { tools: ["host_ok", 7] }));
+    expect(nonStrings.status).toBe(400);
+
+    const tooMany = await vendo.handler(request("POST", "/sync/impact", {
+      tools: Array.from({ length: 201 }, (_, index) => `host_${index}`),
+    }));
+    expect(tooMany.status).toBe(400);
+  });
+
   it("adapts the same fetch handler to Next route exports", async () => {
     const { vendo } = await setup();
     const next = nextVendoHandler(vendo);
