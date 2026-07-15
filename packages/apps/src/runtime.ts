@@ -333,6 +333,19 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
                 const detail = started.stderr.trim() || started.stdout.trim() || `start command exited ${started.code}`;
                 return { issues: [`served-app scaffold failed to start: ${detail}`] };
               }
+              // The backgrounded start always exits 0; only a served response
+              // proves the scaffold is actually listening (Devin, PR #243) —
+              // otherwise the snapshot and cover would capture a dead machine.
+              const ready = await machine.exec(
+                "i=0; while [ $i -lt 50 ]; do"
+                + " node -e \"fetch('http://127.0.0.1:'+(process.env.PORT||'8080')+'/').then(()=>process.exit(0),()=>process.exit(1))\""
+                + " && exit 0; i=$((i+1)); sleep 0.1; done; cat /tmp/vendo-app.log >&2; exit 1",
+                { cwd: "/app", timeoutMs: 15_000 },
+              );
+              if (ready.code !== 0) {
+                const detail = ready.stderr.trim() || ready.stdout.trim() || "no response on $PORT";
+                return { issues: [`served-app scaffold did not become ready: ${detail}`] };
+              }
             }
             const cover = rung === 4 && machine.screenshot !== undefined
               ? await machine.screenshot()

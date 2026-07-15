@@ -829,6 +829,32 @@ describe("generation engine through createApps", () => {
     expect(await runtime.get(original.id, ctx)).toEqual(result.app);
   });
 
+  it("routes every rung-4 phrase to the code dialect, so a custom-client ask graduates", async () => {
+    // "custom client" is a FULL_WEB_APP phrase with no SERVER_INSTRUCTION word in
+    // it; before the routing fix it took the tree dialect and could never graduate.
+    const sandbox = fakeSandbox();
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog,
+      model: scriptedLanguageModel(
+        validCreate(),
+        JSON.stringify({ rung: 4, files: [{ path: "/app/custom.js", content: "export const ready = true;" }] }),
+      ),
+    });
+    const original = await runtime.create({ prompt: "Dashboard" }, ctx);
+
+    const result = await runtime.edit(original.id, "Make this a custom client over the data", ctx);
+
+    expect(result.issues).toBeUndefined();
+    expect(result.version.rung).toBe(4);
+    expect(result.app.ui).toBe("http");
+    expect(result.app.tree).toEqual(original.tree);
+  });
+
   it("keeps the first graduated version on the scaffold and repairs reserved-file edits", async () => {
     const sandbox = fakeSandbox();
     const store = memoryStore();

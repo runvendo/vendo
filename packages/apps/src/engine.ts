@@ -792,15 +792,22 @@ export const modelEngine: GenerationEngine = {
     throw new VendoError("validation", "model could not produce a valid app", issues);
   },
   async edit(input, deps) {
-    return SERVER_INSTRUCTION.test(input.instruction) || input.app.ui === "http"
+    return instructionRequiresServer(input.app, input.instruction)
       ? editCode(input, deps)
       : editTree(input, deps);
   },
 };
 
-/** 06-apps §2 — whether an instruction needs the machine/code edit dialect. */
+/**
+ * 06-apps §2 — whether an instruction needs the machine/code edit dialect.
+ * Every rung-4 phrase `codePlanFrom` recognizes must route here too, or a
+ * graduation request (e.g. "custom client") would take the tree dialect and
+ * never reach the scaffold (Greptile, PR #243).
+ */
 export const instructionRequiresServer = (app: AppDocument, instruction: string): boolean =>
-  SERVER_INSTRUCTION.test(instruction) || app.ui === "http";
+  SERVER_INSTRUCTION.test(instruction)
+  || FULL_WEB_APP_INSTRUCTION.test(instruction)
+  || app.ui === "http";
 
 /** 01-core §8 — generated component naming check exported for focused engine tests. */
 export const isGeneratedComponentName = (name: string): boolean =>

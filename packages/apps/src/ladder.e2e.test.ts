@@ -265,6 +265,41 @@ describe("ladder rung transitions (e2e)", () => {
     await expect(runtime.open(app.id, ada)).resolves.not.toMatchObject({ kind: "resuming" });
   });
 
+  it("keeps the document when the scaffold starts but never becomes ready", async () => {
+    // A backgrounded start.sh always exits 0; only the readiness probe can see a
+    // server that crashed after launch. Program: syntax check ok, start ok, probe fails.
+    const base = fakeSandbox();
+    const deadServer: SandboxAdapter = {
+      async create(spec) {
+        const machine = await base.create(spec);
+        machine.programExec(
+          { code: 0, stdout: "", stderr: "" },
+          { code: 0, stdout: "", stderr: "" },
+          { code: 1, stdout: "", stderr: "Error: listen EADDRINUSE" },
+        );
+        return machine;
+      },
+      resume: (ref) => base.resume(ref),
+    };
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      sandbox: deadServer,
+      catalog: [],
+      model: ladderModel(),
+    });
+    const ada = ctx();
+    const app = await runtime.create({ prompt: "A tree app" }, ada);
+
+    const failed = await runtime.edit(app.id, "Turn this into a full web app", ada);
+
+    expect(failed.issues?.some((issue) => issue.includes("did not become ready"))).toBe(true);
+    expect(failed.issues?.some((issue) => issue.includes("EADDRINUSE"))).toBe(true);
+    expect(await runtime.get(app.id, ada)).toEqual(app); // document untouched
+  });
+
   it("graduates a tree app to rung 4 with an exact kept-tree scaffold and http last-state opening", async () => {
     const store = memoryStore();
     const base = fakeSandbox();
