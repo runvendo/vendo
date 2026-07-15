@@ -265,6 +265,86 @@ describe("ladder rung transitions (e2e)", () => {
     await expect(runtime.open(app.id, ada)).resolves.not.toMatchObject({ kind: "resuming" });
   });
 
+  it("ensures the machine is serving $PORT before every rung-2/3 snapshot", async () => {
+    // E2B resumes MEMORY images: a snapshot of a machine where nothing was
+    // ever started can never answer a later fn: call. The runtime must run its
+    // ensure-serving boot (start.sh, else server.js) before it snapshots.
+    const base = fakeSandbox();
+    const events: string[] = [];
+    const observe = async (machine: Awaited<ReturnType<typeof base.create>>) => {
+      const exec = machine.exec.bind(machine);
+      machine.exec = async (cmd, opts) => {
+        if (cmd.includes("/tmp/vendo-app.pid")) events.push("ensure-serving");
+        return exec(cmd, opts);
+      };
+      const snapshot = machine.snapshot.bind(machine);
+      machine.snapshot = async () => {
+        events.push("snapshot");
+        return snapshot();
+      };
+      return machine;
+    };
+    const sandbox: SandboxAdapter = {
+      async create(spec) { return observe(await base.create(spec)); },
+      async resume(ref) { return observe(await base.resume(ref)); },
+    };
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog: [],
+      model: ladderModel(),
+    });
+    const ada = ctx();
+    const app = await runtime.create({ prompt: "Show a greeting" }, ada);
+
+    const rung2 = await runtime.edit(app.id, "Add a server backend to persist data", ada);
+    expect(rung2.issues).toBeUndefined();
+    expect(events).toEqual(["ensure-serving", "snapshot"]);
+
+    events.length = 0;
+    const rung3 = await runtime.edit(app.id, "Return a server-computed dashboard tree", ada);
+    expect(rung3.issues).toBeUndefined();
+    expect(events).toEqual(["ensure-serving", "snapshot"]);
+  });
+
+  it("rejects a rung-2 edit whose server never serves $PORT and keeps the document", async () => {
+    const base = fakeSandbox();
+    const neverServes: SandboxAdapter = {
+      async create(spec) {
+        const machine = await base.create(spec);
+        // node --check passes; the ensure-serving boot fails on both attempts.
+        machine.programExec(
+          { code: 0, stdout: "", stderr: "" },
+          { code: 1, stdout: "", stderr: "Error: Cannot find module 'left-pad'" },
+          { code: 0, stdout: "", stderr: "" },
+          { code: 1, stdout: "", stderr: "Error: Cannot find module 'left-pad'" },
+        );
+        return machine;
+      },
+      resume: (ref) => base.resume(ref),
+    };
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      sandbox: neverServes,
+      catalog: [],
+      model: ladderModel(),
+    });
+    const ada = ctx();
+    const app = await runtime.create({ prompt: "Show a greeting" }, ada);
+
+    const failed = await runtime.edit(app.id, "Add a server backend to persist data", ada);
+
+    expect(failed.issues?.some((issue) => issue.includes("not serving on $PORT"))).toBe(true);
+    expect(failed.issues?.some((issue) => issue.includes("left-pad"))).toBe(true);
+    expect(await runtime.get(app.id, ada)).toEqual(app); // document untouched
+    expect(await storedServer(store, app.id)).toBeUndefined();
+  });
+
   it("keeps the document when the scaffold starts but never becomes ready", async () => {
     // A backgrounded start.sh always exits 0; only the readiness probe can see a
     // server that crashed after launch. Program: syntax check ok, start ok, probe fails.

@@ -94,14 +94,20 @@ const parsePort = (env: Record<string, string>): number => {
 const responseHeaders = (headers: Headers): Record<string, string> =>
   Object.fromEntries(headers.entries());
 
+/**
+ * ENG-322 — Modal's allowlists are ADDITIVE and independent: traffic passes when
+ * it matches either list, and the SDK documents `outboundCidrAllowlist` as
+ * "If not set, all CIDRs are allowed". A domain allowlist alone therefore
+ * leaves raw-IP egress (e.g. `fetch("https://93.184.216.34/")`) wide open —
+ * fail-open. Every present egress policy pins the CIDR allowlist to `[]` so
+ * only the declared domains pass; `undefined` egress stays unrestricted.
+ */
 const networkOptions = (egress: string[] | undefined): {
   outboundCidrAllowlist?: string[];
   outboundDomainAllowlist?: string[];
 } => egress === undefined
   ? {}
-  : egress.length === 0
-    ? { outboundCidrAllowlist: [], outboundDomainAllowlist: [] }
-    : { outboundDomainAllowlist: [...egress] };
+  : { outboundCidrAllowlist: [], outboundDomainAllowlist: [...egress] };
 
 /**
  * 06-apps §3–4 — adapt a Modal sandbox to Vendo's provider-neutral seam.
@@ -115,9 +121,10 @@ const networkOptions = (egress: string[] | undefined): {
  * cannot be added later. Vendo therefore reads `$PORT` (default 8080) up front.
  * The start command waits for runtime-owned `/app/start.sh` or `/app/server.js`,
  * because Modal accepts initial files only through its post-create filesystem
- * API. Per-app egress uses Modal's provider-native domain allowlist; an empty
- * list uses empty outbound-only CIDR/domain allowlists so serving tunnels stay
- * reachable. The adapter encodes the image id, env (including opaque secret
+ * API. Per-app egress uses Modal's provider-native domain allowlist with the
+ * CIDR allowlist pinned to `[]` (fail-closed — see networkOptions); an empty
+ * list therefore denies all egress while serving tunnels stay reachable
+ * (tunnels are inbound). The adapter encodes the image id, env (including opaque secret
  * handles), egress, and port in a versioned opaque snapshot ref, so runtime
  * state survives adapter/process restarts without trusting app-writable files.
  * The optional SDK is imported lazily.
