@@ -135,6 +135,31 @@ export async function startBackends(): Promise<Backends> {
   await store.ensureSchema();
   const scripted = createControllableModel();
 
+  // Listen BEFORE createVendo: the door's canonical public base defaults to
+  // VENDO_BASE_URL (ENG-333), which this harness deliberately points at the
+  // HOST APP (credential forwarding for route bindings). The door itself is
+  // served on this loopback wire, so its origin is passed explicitly via
+  // mcp.baseUrl below — discovery must advertise the URL the real SDK client
+  // can reach. Requests cannot arrive before `vendo` exists: nothing learns
+  // the port until this function returns.
+  const httpServer = createHttpServer((req, res) => {
+    void handle(req, res).catch((error) => {
+      res.statusCode = 500;
+      res.setHeader("content-type", "text/plain");
+      res.end(error instanceof Error ? error.message : "wire bridge failed");
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    httpServer.once("error", reject);
+    httpServer.listen(0, "127.0.0.1", () => {
+      httpServer.off("error", reject);
+      resolve();
+    });
+  });
+  const address = httpServer.address();
+  if (!address || typeof address === "string") throw new Error("wire server did not bind a TCP port");
+  const wireUrl = `http://127.0.0.1:${address.port}`;
+
   const vendo = createVendo({
     model: scripted.model,
     principal: async (req) => {
@@ -144,7 +169,7 @@ export async function startBackends(): Promise<Backends> {
     store,
     actAs: async (principal: Principal) => ({ headers: { cookie: await loginCookie(principal.subject) } }),
     policy: { file: ".vendo/policy.json" },
-    mcp: true,
+    mcp: { baseUrl: wireUrl },
     oauth: {
       async authorize() {
         return { subject: MCP_APPS_SUBJECT };
@@ -164,13 +189,11 @@ export async function startBackends(): Promise<Backends> {
   );
 
   // --- 3. the loopback wire + control server ------------------------------
-  let wireUrl: string | undefined;
   let connectedMcp: ConnectedClient | undefined;
   let connectingMcp: Promise<ConnectedClient> | undefined;
 
   async function mcpConnection(): Promise<ConnectedClient> {
     if (connectedMcp !== undefined) return connectedMcp;
-    if (wireUrl === undefined) throw new Error("wire server is not listening yet");
     connectingMcp ??= connectWithSdk({ endpoint: `${wireUrl}${WIRE_BASE}/mcp` });
     try {
       connectedMcp = await connectingMcp;
@@ -179,14 +202,6 @@ export async function startBackends(): Promise<Backends> {
       connectingMcp = undefined;
     }
   }
-
-  const httpServer = createHttpServer((req, res) => {
-    void handle(req, res).catch((error) => {
-      res.statusCode = 500;
-      res.setHeader("content-type", "text/plain");
-      res.end(error instanceof Error ? error.message : "wire bridge failed");
-    });
-  });
 
   async function readBody(req: IncomingMessage): Promise<Buffer> {
     const chunks: Buffer[] = [];
@@ -314,17 +329,6 @@ export async function startBackends(): Promise<Backends> {
     response.headers.forEach((value, name) => res.setHeader(name, value));
     res.end(Buffer.from(await response.arrayBuffer()));
   }
-
-  await new Promise<void>((resolve, reject) => {
-    httpServer.once("error", reject);
-    httpServer.listen(0, "127.0.0.1", () => {
-      httpServer.off("error", reject);
-      resolve();
-    });
-  });
-  const address = httpServer.address();
-  if (!address || typeof address === "string") throw new Error("wire server did not bind a TCP port");
-  wireUrl = `http://127.0.0.1:${address.port}`;
 
   let closed = false;
   const close = async (): Promise<void> => {
