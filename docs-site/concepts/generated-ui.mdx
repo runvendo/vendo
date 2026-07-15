@@ -24,8 +24,11 @@ UI surface. Edits that add server behavior stay approval-gated. See
 
 The instant payload dispatches by `formatVersion`. V0 registers only
 `vendo-genui/v1`. Unknown formats render a contained notice. Generated
-components run inside an iframe with `connect-src 'none'`; the host page never
-evaluates them.
+components run inside an iframe with `connect-src 'none'` by default. An
+approved version of an app can also render in the host page — see
+[In-client venue and approvals](/concepts/in-client-venue) for how approvals
+are recorded, how the version hash is pinned, and how new versions drop back
+to the jail.
 
 Rung 4 uses the sandbox provider URL directly. While a snapshot resumes, the
 UI shows a dimmed, non-interactive cover. Machine code reaches host tools only

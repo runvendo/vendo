@@ -17,6 +17,7 @@ stream over SSE.
 | `/apps` | GET · POST | list · `{ prompt }` → `AppDocument` |
 | `/apps/:id` | GET · DELETE | app · delete |
 | `/apps/:id/open` | GET | `OpenSurface` |
+| `/apps/:id/ship-diff` | GET | `ShipDiff` — the reviewable code diff against the last approved baseline, hash-pinned to the current version. Owner-scoped. See [In-client venue](/concepts/in-client-venue). |
 | `/apps/:id/call` | POST | `{ ref: "fn:<name>" \| "<tool>", args }` → `ToolOutcome` (tree actions + fn: calls) |
 | `/apps/:id/edit` | POST | `{ instruction }` → `EditResult` |
 | `/apps/:id/history` | GET · POST | versions · `{ op: "undo" }` |
@@ -33,6 +34,16 @@ stream over SSE.
 | `/activity` | GET | `AuditEvent[]`, self-scoped with `guard.audit.query({ principal })` |
 | `/status` | GET | `{ posture, version, blocks: {...} }`, includes `blocks.mcp: true` when the door is open and `blocks.sandbox` reporting the execution venue (`"e2b"`, `"modal"`, `"custom"`, or `false` when none is wired) |
 | `/sync/impact` | POST | dev-only. `{ tools: string[] }` → per-tool reference counts across enabled apps, enabled automations, and active standing grants. Accepts up to 200 tool names per call and returns `404` in production |
+
+## Development routes
+
+These routes are only mounted in development compositions. Production
+deployments return `404` for each of them. They require a host-resolved
+principal — anonymous callers receive `401`.
+
+| Route | Method | Body → Response |
+| --- | --- | --- |
+| `/dev/inclient-approval` | POST | `{ appId }` → `{}`. Pins the app's *current* `versionHash` as an in-client approval for the resolved principal. The Cloud console mints approvals in production; this route is the documented stand-in for local demos. See [In-client venue and approvals](/concepts/in-client-venue). |
 
 ## MCP door
 
