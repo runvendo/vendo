@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { useVendoTheme } from "../context.js";
+import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { themeCssVariables } from "../theme.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { VendoThread } from "./vendo-thread.js";
@@ -43,6 +44,7 @@ export function VendoOverlay({
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
   const open = controlled ? openProp : uncontrolledOpen;
   const theme = useVendoTheme();
+  const takeover = useMobileTakeover();
   const launcherRef = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
   const portalRoot = useRef<HTMLDivElement>(null);
@@ -148,7 +150,19 @@ export function VendoOverlay({
           press-release is consumed by the scrim — closing on mousedown lets the
           mouseup land on the revealed page and steal the restored focus. */}
       <div className="fl-overlay-scrim" onClick={close} />
-      <div ref={dialog} id="vendo-overlay-dialog" className="fl-overlay-panel" role="dialog" aria-modal="true" aria-label="Vendo assistant" onKeyDown={onKeyDown}>
+      {/* ENG-228: below the breakpoint the panel goes full-bleed (`.fl-takeover`,
+          the designed Intercom-style mode) and carries the virtual-keyboard
+          inset var so the composer stays above the on-screen keyboard. */}
+      <div
+        ref={dialog}
+        id="vendo-overlay-dialog"
+        className={`fl-overlay-panel${takeover.active ? " fl-takeover" : ""}`}
+        style={takeover.style}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Vendo assistant"
+        onKeyDown={onKeyDown}
+      >
         <strong className="fl-sr-only">Vendo</strong>
         <button className="fl-overlay-close" type="button" aria-label="Close Vendo" onClick={close}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">

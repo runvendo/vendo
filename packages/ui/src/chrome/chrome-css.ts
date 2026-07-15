@@ -47,7 +47,12 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .vendo-root[data-vendo-motion="reduced"] * { animation: none !important; transition: none !important; }
 
 /* ---------- thread shell ---------- */
-.fl-thread { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+/* min-width floor (ENG-228): squeezed host columns (Cadence at 375px) were
+   collapsing the thread to one character per line — hold a readable floor and
+   let the host column scroll instead. Capped at 100vw so viewports narrower
+   than the floor never get horizontal overflow from us. */
+.fl-thread { display: flex; flex-direction: column; height: 100%; min-height: 0;
+  min-width: min(280px, 100vw); }
 /* Positioned wrapper so the "jump to latest" button stays fixed to the viewport
    of the list instead of scrolling away with the content. */
 .fl-msglist-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column;
@@ -748,6 +753,9 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   border: 0; border-radius: 0; isolation: isolate;
   padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
     env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  /* --fl-kb-inset is stamped by useMobileTakeover from visualViewport: the
+     bottom edge (the composer) lifts above the virtual keyboard. */
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--fl-kb-inset, 0px));
   /* The centered "squeeze" keyframes carry translate(-50%,-50%) — full bleed
      fades in instead of flying in from mid-screen. */
   animation: fl-takeover-fade .18s ease both; }
@@ -758,7 +766,28 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-page.fl-takeover { position: fixed; inset: 0; z-index: 2147483001; isolation: isolate;
   background: var(--vendo-bg);
   padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
-    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--fl-kb-inset, 0px)); }
+/* The palette is a modal over EVERY takeover surface: its scrim (2147483000)
+   would otherwise sit under a takeover page/overlay panel (2147483001). */
+.fl-overlay-scrim.fl-takeover { z-index: 2147483002; }
+
+/* ---------- mobile input + touch ergonomics (ENG-228) ---------- */
+/* iOS Safari auto-zooms any focused text input under 16px, and 44px is the
+   HIG touch-target floor. Keyed to small viewports OR coarse pointers so
+   tablets in wide orientations still get honest targets; desktop keeps the
+   quieter 15px/34px design. */
+@media (max-width: 767px), (pointer: coarse) {
+  .fl-composer textarea { font-size: 16px; }
+  .fl-picker-search { font-size: 16px; }
+  .fl-icon-btn { width: 44px; height: 44px; }
+  .fl-jump { width: 44px; height: 44px; }
+  .fl-overlay-close { width: 44px; height: 44px; }
+  /* The grown close button keeps its visual position under the notch. */
+  .fl-overlay-panel.fl-takeover .fl-overlay-close {
+    top: calc(4px + env(safe-area-inset-top, 0px));
+    right: calc(4px + env(safe-area-inset-right, 0px)); }
+}
 
 .fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--vendo-border);
   border-radius: 999px; padding: 10px 15px; font-size: 13px; font-weight: 600; color: var(--vendo-fg);
