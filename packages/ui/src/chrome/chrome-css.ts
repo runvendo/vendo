@@ -764,6 +764,14 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   border-radius: 999px; padding: 10px 15px; font-size: 13px; font-weight: 600; color: var(--vendo-fg);
   background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
   box-shadow: var(--vendo-shadow); cursor: pointer; }
+/* ENG-220: the supported overlay entry — VendoOverlay's default launcher is a
+   fixed brand pill pinned to a viewport corner (safe-area aware). z-index sits
+   one below the scrim so the open overlay covers it. Placement variants keyed
+   off data-vendo-launcher so bare .fl-launcher keeps its in-flow behavior. */
+.fl-launcher[data-vendo-launcher="bottom-right"], .fl-launcher[data-vendo-launcher="bottom-left"] {
+  position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 2147482999; }
+.fl-launcher[data-vendo-launcher="bottom-right"] { right: calc(20px + env(safe-area-inset-right, 0px)); }
+.fl-launcher[data-vendo-launcher="bottom-left"] { left: calc(20px + env(safe-area-inset-left, 0px)); }
 
 /* ---------- page + tabs + slot ---------- */
 /* The Page surface is ingrained: the chat IS the page (no card-in-card). Tabs are
