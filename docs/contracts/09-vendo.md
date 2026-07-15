@@ -81,8 +81,8 @@ Mounted under one base (default `/api/vendo`). Auth: every request passes throug
 | `/webhooks/:source` | POST | trigger ingress (Composio, host, plain) — verified, see below |
 | `/activity` | GET | `AuditEvent[]` — `guard.audit.query({ principal })` self-scoped at this route |
 | `/status` | GET | `{ posture, version, blocks: {...} }` (doctor's live probe); `blocks.connections: "byo" \| "cloud" \| false` (04 §3.1) and `blocks.orgs: "cloud" \| false` (ENG-263) report per-block posture |
-| `/orgs` · `/orgs/:id` | GET · POST · GET | list caller's orgs (+ posture) · create · one org with role + members |
-| `/orgs/:id/members` · `/orgs/:id/members/:subject` | POST · PATCH · DELETE | add member · set role · remove — admin-gated; owners control owners (ENG-263) |
+| `/orgs` · `/orgs/:id` | GET/POST · GET | list caller's orgs (+ posture) / create · one org with role + members |
+| `/orgs/:id/members` · `/orgs/:id/members/:subject` | POST · PATCH/DELETE | add member · set role / remove — admin-gated; owners control owners (ENG-263) |
 | `/orgs/:id/apps` | POST | transfer a durable app/automation to the org subject (admin-gated) |
 | `/connections` | GET | the resolved principal's `ConnectorAccount[]` (04 §3) — subject is never caller-supplied |
 | `/connections/initiate` | POST | `{ toolkit, connector?, callbackUrl? }` → `{ id, redirectUrl }` (the broker's OAuth URL); ephemeral and synthetic (`webhook:`/`vendo:`) subjects refused |
