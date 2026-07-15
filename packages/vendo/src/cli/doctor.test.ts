@@ -65,11 +65,13 @@ function output(): { logs: string[]; errors: string[]; sink: { log(message: stri
   };
 }
 
-function successfulProbeFetch(): ReturnType<typeof vi.fn> {
+function successfulProbeFetch(
+  blocks: Record<string, unknown> = { store: true, sandbox: "e2b" },
+): ReturnType<typeof vi.fn> {
   return vi.fn(async (input: string | URL | Request) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url.endsWith("/status")) {
-      return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { store: true, sandbox: "e2b" } });
+      return Response.json({ posture: "unconfigured", version: "0.3.0", blocks });
     }
     if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
     if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
@@ -201,11 +203,7 @@ describe("vendo doctor", () => {
     const messages = output();
     expect(await runDoctor({
       targetDir: await healthy(),
-      fetchImpl: vi.fn().mockResolvedValue(Response.json({
-        posture: "unconfigured",
-        version: "0.3.0",
-        blocks: { store: true, sandbox },
-      })),
+      fetchImpl: successfulProbeFetch({ store: true, sandbox }),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -216,11 +214,7 @@ describe("vendo doctor", () => {
     const messages = output();
     expect(await runDoctor({
       targetDir: await healthy(),
-      fetchImpl: vi.fn().mockResolvedValue(Response.json({
-        posture: "unconfigured",
-        version: "0.3.0",
-        blocks: { store: true, sandbox: false },
-      })),
+      fetchImpl: successfulProbeFetch({ store: true, sandbox: false }),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -236,11 +230,7 @@ describe("vendo doctor", () => {
     const messages = output();
     expect(await runDoctor({
       targetDir: await healthy(),
-      fetchImpl: vi.fn().mockResolvedValue(Response.json({
-        posture: "unconfigured",
-        version: "0.3.0",
-        blocks: { store: true },
-      })),
+      fetchImpl: successfulProbeFetch({ store: true }),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -253,11 +243,7 @@ describe("vendo doctor", () => {
     const messages = output();
     expect(await runDoctor({
       targetDir: await healthy(),
-      fetchImpl: vi.fn().mockResolvedValue(Response.json({
-        posture: "unconfigured",
-        version: "0.3.0",
-        blocks: { store: true, sandbox: "mainframe" },
-      })),
+      fetchImpl: successfulProbeFetch({ store: true, sandbox: "mainframe" }),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(1);
