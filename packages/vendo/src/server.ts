@@ -42,6 +42,7 @@ import {
   capabilitySurfaceSnapshot,
   createCapabilityMissCapture,
 } from "./capability-misses.js";
+import { mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
 import { createConnections, type ConnectionsService } from "./connections.js";
 import { createRuntimeCapture, type RuntimeCaptureHandler } from "./runtime-capture.js";
 import { computeImpact } from "./sync-impact.js";
@@ -934,12 +935,16 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const theme = dotVendoTheme();
   const designRules = dotVendoFile("design-rules.md");
   const pinBaselines = dotVendoPinBaselines();
+  const catalog = mergeRuntimeCatalog(
+    runtimeCatalogFromJson(dotVendoFile("catalog.json")),
+    config.catalog,
+  );
   const apps = createApps({
     store,
     guard,
     tools: boundTools,
     model: config.model,
-    catalog: config.catalog ?? [],
+    catalog,
     pinBaselines,
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),

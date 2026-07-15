@@ -13,6 +13,7 @@ const report = (
   breaking,
   pins: { captured: [], drifted: [] },
   unresolvedPins: [],
+  catalog: { discovered: 2, registered: 1 },
   warnings: [],
 });
 
@@ -262,5 +263,11 @@ describe("vendo sync", () => {
     expect(exit).toBe(3);
     expect(push).toHaveBeenCalledWith(expect.objectContaining({ report: unresolved }));
     expect(messages.errors.join("\n")).toContain("InlineCard [inline-component]");
+  });
+
+  it("prints the init-style catalog summary", async () => {
+    const logs: string[] = [];
+    expect(await runSync({ targetDir: ".", output: { log: (line) => logs.push(line), error() {} }, sync: async () => report() })).toBe(0);
+    expect(logs).toContain("catalog.json: 2 discovered, 1 registered");
   });
 });
