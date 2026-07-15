@@ -59,16 +59,22 @@ function hostList(host: BrowserCaptureArgs["host"]): ConcreteDemoHost[] {
 
 /** Both demo hosts sit behind a real login wall (ENG-260): unauthenticated
  * visits land on a plain, scriptable /login form with the primary demo user's
- * email prefilled and a single password field. Signs in when the wall is
- * present and waits to land back on the capture route; no-op when a session
- * cookie already exists. */
+ * email prefilled and a single password field. Both post the form to /login
+ * server-side (Maple via Auth.js, Cadence via a Supabase password grant) and
+ * 303 back to the capture route. Signs in when the wall is present and waits
+ * to land back off /login; no-op when a session cookie already exists. */
 async function signInIfNeeded(page: Page, host: DemoHostDefinition, timeoutMs: number): Promise<void> {
   const loginForm = page.locator('form[action="/login"]');
   if (await loginForm.count() === 0) return;
   const password = process.env[host.demoPasswordEnv] ?? host.demoPasswordFallback;
   await loginForm.locator('input[name="password"]').fill(password);
   await loginForm.locator('button[type="submit"]').click();
-  await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: timeoutMs });
+  // Resolve as soon as the post-login navigation commits off /login. The
+  // default waitUntil "load" blocks on every subresource of the destination
+  // route, which on a cold Turbopack first-compile (Cadence /assistant) can
+  // outlast the timeout even though auth already succeeded; the caller reloads
+  // the route explicitly right after, so a committed URL change is enough.
+  await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: timeoutMs, waitUntil: "commit" });
   await page.waitForLoadState("domcontentloaded");
 }
 
@@ -105,30 +111,52 @@ async function sendPrompt(page: Page, prompt: string): Promise<{ assistantTurns:
   return { assistantTurns };
 }
 
+/** True while a generated turn is still working: the composer textarea is
+ * disabled, the message list is marked busy, or a thinking/pulse indicator is
+ * on screen. Used to observe a full generate→settle cycle. */
+async function isGenerating(page: Page): Promise<boolean> {
+  const textarea = page.locator('form[aria-label="Message composer"]')
+    .getByRole("textbox", { name: "Message" });
+  const idle = await textarea.isEnabled().catch(() => false);
+  if (!idle) return true;
+  return await page.locator('.fl-msglist[aria-busy="true"], .fl-thinking, .fl-act-pulse').count() > 0;
+}
+
 async function waitForTurn(options: {
   page: Page;
   previousAssistantTurns: number;
   timeoutMs: number;
   requireView: boolean;
+  /** A Vendo remix revises the existing generated view IN PLACE and adds no
+   * new assistant article, so a new-turn check never fires. In this mode the
+   * turn is complete once a full generate→settle cycle is observed (the
+   * composer goes busy and returns idle) with a generated view still on
+   * screen. */
+  inPlaceRevision?: boolean;
 }): Promise<void> {
   const deadline = Date.now() + options.timeoutMs;
+  let sawGenerating = false;
   while (Date.now() < deadline) {
     await approveIfPresent(options.page);
     const alert = options.page.locator(".fl-error:visible, .fl-att-error:visible").first();
     if (await alert.count() > 0 && await alert.isVisible().catch(() => false)) {
       throw new Error(`Vendo capture surfaced an error: ${(await alert.textContent())?.trim() ?? "unknown error"}`);
     }
-    const turns = await options.page.locator('article[data-role="assistant"]').count();
-    const textarea = options.page.locator('form[aria-label="Message composer"]')
-      .getByRole("textbox", { name: "Message" });
-    const idle = await textarea.isEnabled().catch(() => false);
-    let hasView = true;
-    if (options.requireView) {
-      const lastAssistant = options.page.locator('article[data-role="assistant"]').last();
-      hasView = turns > options.previousAssistantTurns
-        && await lastAssistant.locator("[data-vendo-node-id]").count() > 0;
+    const generating = await isGenerating(options.page);
+    if (generating) sawGenerating = true;
+    if (options.inPlaceRevision) {
+      const hasView = await options.page.locator("[data-vendo-node-id]").count() > 0;
+      if (sawGenerating && !generating && hasView) return;
+    } else {
+      const turns = await options.page.locator('article[data-role="assistant"]').count();
+      let hasView = true;
+      if (options.requireView) {
+        const lastAssistant = options.page.locator('article[data-role="assistant"]').last();
+        hasView = turns > options.previousAssistantTurns
+          && await lastAssistant.locator("[data-vendo-node-id]").count() > 0;
+      }
+      if (turns > options.previousAssistantTurns && !generating && hasView) return;
     }
-    if (turns > options.previousAssistantTurns && idle && hasView) return;
     await options.page.waitForTimeout(300);
   }
   throw new Error(`Timed out after ${options.timeoutMs}ms waiting for the generated Vendo turn`);
@@ -192,11 +220,14 @@ async function captureHost(options: {
         window.__vendoDemoCapture?.watchContinuity();
       });
       const edit = await sendPrompt(page, options.args.editPrompt ?? editPrompts[options.host.id]);
+      // A remix revises the existing view in place (no new assistant article),
+      // so detect completion by the generate→settle cycle, not a new turn.
       await waitForTurn({
         page,
         previousAssistantTurns: edit.assistantTurns,
         timeoutMs: options.args.timeoutMs,
         requireView: true,
+        inPlaceRevision: true,
       });
     }
 
