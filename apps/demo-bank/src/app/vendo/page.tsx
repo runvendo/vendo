@@ -2,6 +2,7 @@
 
 import { VendoThread } from "@vendoai/ui/chrome";
 import { VendoStage } from "@vendoai/ui/voice";
+import { MapleApprovals } from "@/components/vendo/MapleApprovals";
 import { VendoRoot } from "@/components/vendo/VendoRoot";
 
 export default function VendoTabPage() {
@@ -16,6 +17,7 @@ export default function VendoTabPage() {
       }}
     >
       <VendoRoot>
+        <MapleApprovals />
         <VendoThread />
         <VendoStage />
       </VendoRoot>

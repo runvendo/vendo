@@ -5,6 +5,7 @@ import { createStore } from "@vendoai/store";
 import { createVendo } from "@vendoai/vendo/server";
 import { z } from "zod";
 import { actAsMapleUser } from "./auth";
+import { mapleMcpConfig } from "./mcp-config";
 import { mapleOAuthAdapter } from "./oauth";
 import { resolveDemoPrincipal } from "./principal";
 
@@ -88,7 +89,7 @@ export const vendo = createVendo({
   actAs: actAsMapleUser,
   catalog,
   policy: { file: ".vendo/policy.json" },
-  mcp: true,
+  mcp: mapleMcpConfig(),
   oauth: mapleOAuthAdapter,
   connectors: composioApiKey
     ? [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "slack"] })]

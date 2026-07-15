@@ -186,3 +186,19 @@ Dual review applied before any build: **standards** (verified against MCP 2025-1
   through guarded token updates. External authorization-server mode continues
   to delegate the complete OAuth surface, including revocation, to `remoteAs`.
 - **Approved by:** Yousef, 2026-07-14 (ENG-269).
+
+### 2026-07-15 — broker-frontable umbrella seams (ENG-286)
+
+- **Changed:** §3.2's login-federation handshake accepts a prebuilt-flow
+  adapter: when `HostOAuthAdapter.authorize` is absent, the door authenticates
+  through `session(req, { returnTo: <the federate request URL> })` — federation
+  delegates consent to the external authorization server, so the host only has
+  to answer identity. A returned login `Response` still passes through
+  unchanged. Adapters that implement `authorize` keep their original semantics.
+- **Changed:** the umbrella's additive object form `createVendo({ mcp: {…} })`
+  now carries `remoteAs` and `federation` through to the door, so a composed
+  host can be fronted by an external authorization server (e.g. the hosted
+  broker at `{tenant}.mcp.vendo.run`) without dropping to `createMcpDoor`.
+- **Compatibility:** both changes are additive; `mcp: true`, `mcp: { baseUrl }`,
+  and `authorize`-bearing adapters behave exactly as before.
+- **Approved by:** pending Yousef review (ENG-286 — flagged in the PR).

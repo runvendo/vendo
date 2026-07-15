@@ -75,3 +75,21 @@ in-product approval before succeeding on retry:
 ```bash
 pnpm --filter demo-bank mcp:e2e -- http://localhost:3000
 ```
+
+## Broker-fronted MCP (remote authorization server)
+
+By default the door serves its own OAuth surface. To front Maple with the
+Vendo hosted broker (`{tenant}.mcp.vendo.run`), provision a tenant against the
+broker with `upstream_origin`/`upstream_mount` pointing at this app's public
+origin and `/api/vendo/mcp`, then set:
+
+- `VENDO_MCP_REMOTE_AS_ISSUER` — the tenant issuer, e.g. `https://maple.mcp.vendo.run`
+- `VENDO_MCP_REMOTE_AS_AUDIENCE` — expected token audience (defaults to `{issuer}/mcp`)
+- `VENDO_MCP_REMOTE_AS_JWKS_URI` — optional JWKS override (defaults to RFC 8414 discovery)
+- `VENDO_MCP_FEDERATION_SECRET` — the federation secret returned once at provisioning
+
+With these set, Maple stops serving `/authorize`, `/token`, and `/register`
+(the broker owns them), validates broker-issued ES256 bearers, and answers the
+broker's signed login handshake at `/api/vendo/mcp/federate` with Maple's own
+session. Pending agent actions — including door calls parked for consent —
+surface in-product on the Vendo tab's approvals inbox.

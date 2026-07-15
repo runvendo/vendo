@@ -232,7 +232,7 @@ class Door {
     if (endpoint.kind === "federate") {
       return req.method === "GET"
         && this.#config.federation !== undefined
-        && this.#config.oauth.authorize !== undefined
+        && (this.#config.oauth.authorize !== undefined || this.#config.oauth.session !== undefined)
         ? handleFederation(req, resourceUri(origin, mount), this.#config.federation.secret, this.#config.oauth)
         : notFound();
     }

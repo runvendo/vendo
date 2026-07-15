@@ -1023,6 +1023,54 @@ describe("createMcpDoor login federation", () => {
     expect(response).toBe(bounce);
   });
 
+  it("federates through a session-only (prebuilt-flow) adapter — authentication without host consent", async () => {
+    // Federation delegates the consent decision to the external authorization
+    // server, so a host that wired only the prebuilt `session` flow must still
+    // be able to answer the login handshake (ENG-286).
+    const sessionContexts: Array<{ returnTo: string }> = [];
+    const harness = makeHarness({
+      federation: { secret },
+      oauth: {
+        async session(_req, ctx) {
+          sessionContexts.push(ctx);
+          return { subject: "session_user_3" };
+        },
+        async principal(subject) { return { kind: "user", subject }; },
+      },
+    });
+    const request = await mintFederationRequest(secret, { issuer, redirectUri });
+    const federateUrl = `${BASE}/federate?request=${encodeURIComponent(request)}`;
+
+    const response = await harness.door.handler(new Request(federateUrl));
+    expect(response.status).toBe(302);
+    const location = new URL(response.headers.get("location")!);
+    const assertion = location.searchParams.get("assertion")!;
+    const verified = await jwtVerify(assertion, new TextEncoder().encode(secret), {
+      algorithms: ["HS256"],
+      issuer: BASE,
+      audience: issuer,
+    });
+    expect(verified.payload).toMatchObject({ sub: "session_user_3", jti: "federation-request-1" });
+    // The session flow's returnTo is the federate request itself, so a host
+    // login bounce can send the browser back to retry the same handshake.
+    expect(sessionContexts).toEqual([{ returnTo: federateUrl }]);
+  });
+
+  it("returns a session-only adapter's login bounce unchanged so the browser can retry after host login", async () => {
+    const bounce = new Response(null, { status: 302, headers: { location: "/login?returnTo=federate" } });
+    const harness = makeHarness({
+      federation: { secret },
+      oauth: {
+        async session() { return bounce; },
+        async principal(subject) { return { kind: "user", subject }; },
+      },
+    });
+    const request = await mintFederationRequest(secret, { issuer, redirectUri });
+
+    const response = await harness.door.handler(new Request(`${BASE}/federate?request=${encodeURIComponent(request)}`));
+    expect(response).toBe(bounce);
+  });
+
   it.each([
     ["bad signature", "different-secret", {}],
     ["expired request", secret, { expiresAt: Math.floor(Date.now() / 1_000) - 1 }],

@@ -89,8 +89,15 @@ export interface CreateVendoConfig {
       identifiers, and RFC 8707 audience binding derive from — set it (or
       `VENDO_BASE_URL`, the default) behind a reverse proxy, where the request
       URL carries the proxy-internal origin. Forwarded headers are never
-      trusted. */
-  mcp?: boolean | { baseUrl?: string };
+      trusted. `remoteAs` (10-mcp §3.1) trusts an external authorization server
+      — e.g. the hosted broker at `{tenant}.mcp.vendo.run` — instead of serving
+      the door's local OAuth surface, and `federation` (10-mcp §3.2) answers
+      that server's signed login handshake at `{mount}/federate`. */
+  mcp?: boolean | {
+    baseUrl?: string;
+    remoteAs?: { issuer: string; jwksUri?: string; audience: string };
+    federation?: { secret: string };
+  };
   /** 10-mcp §3 plus its additive prebuilt flow — the host's session + identity seam. Threaded top-level like
       `actAs`/`principal` (the door is agnostic; the umbrella owns the shape).
       REQUIRED when `mcp` is true: the door cannot mint principals without it. */
@@ -890,6 +897,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       apps: appsPort,
       mount: MCP_MOUNT,
       ...(doorBaseUrl === undefined ? {} : { baseUrl: doorBaseUrl }),
+      // 10-mcp §3.1/§3.2 — broker-fronted compositions: trust the external
+      // authorization server's tokens and answer its login federation.
+      ...(mcpOptions.remoteAs === undefined ? {} : { remoteAs: mcpOptions.remoteAs }),
+      ...(mcpOptions.federation === undefined ? {} : { federation: mcpOptions.federation }),
       ...(theme === undefined ? {} : { theme }),
     });
   }
