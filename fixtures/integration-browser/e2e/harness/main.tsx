@@ -7,7 +7,7 @@
  *  cookie so present host-tool calls execute for real (04 §4).
  */
 import { createVendoClient, useApps, VendoRoot } from "@vendoai/vendo/react";
-import { ActivityPanel, VendoThread } from "@vendoai/ui/chrome";
+import { ActivityPanel, ConnectedAccountsPanel, VendoThread } from "@vendoai/ui/chrome";
 import { createRoot } from "react-dom/client";
 import { McpAppsHost } from "./mcp-host.tsx";
 
@@ -52,6 +52,9 @@ function Page() {
           <VendoThread threadId={threadId} greeting="What can I help you build?" />
         </section>
         <ActivityPanel />
+        <section aria-label="Settings" data-testid="settings-surface">
+          <ConnectedAccountsPanel />
+        </section>
         <AppsProbe />
       </main>
     </VendoRoot>

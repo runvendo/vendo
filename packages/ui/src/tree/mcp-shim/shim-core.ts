@@ -219,7 +219,9 @@ export async function resolveQueries(
         ? outcome.error.message
         : outcome.status === "blocked"
           ? outcome.reason
-          : `waiting for approval ${outcome.approvalId}`;
+          : outcome.status === "connect-required"
+            ? outcome.connect.message
+            : `waiting for approval ${outcome.approvalId}`;
       errors.push(`Query "${query.tool}" failed: ${detail}`);
       continue;
     }

@@ -107,6 +107,22 @@ export interface VersionEntry {
   rung: 1 | 2 | 3 | 4;
 }
 
+/** 04-actions §3 — one per-user connected account as `GET /connections` returns it. */
+export interface ConnectionAccount {
+  id: string;
+  connector: string;
+  toolkit: string;
+  status: "initiated" | "active" | "expired" | "failed";
+  createdAt?: IsoDateTime;
+}
+
+/** 04-actions §3 — what `POST /connections/initiate` returns. */
+export interface InitiatedConnection {
+  id: string;
+  connector: string;
+  redirectUrl: string;
+}
+
 /** 07-automations §5 */
 export type RunStatus = "running" | "ok" | "error" | "stopped" | "pending-approval";
 

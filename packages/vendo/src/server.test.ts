@@ -302,6 +302,8 @@ describe("09 §3 public wire", () => {
         automations: true,
         sandbox: false,
         mcp: false,
+        // 04-actions §3 — no BYO connector and no VENDO_API_KEY → no broker.
+        connections: false,
       },
     });
   });

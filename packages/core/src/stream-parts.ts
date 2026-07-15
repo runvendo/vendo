@@ -42,6 +42,26 @@ export type VendoViewStreamingToolCall = ToolCall & {
 /** Stable ai-SDK data-part id so partial and final views reconcile in place. */
 export const vendoViewStreamId = (appId: AppId): string => `vendo-view:${appId}`;
 
+/** 01-core §16 — the inline connect-card part: emitted beside the native tool
+ * part when a connector call ends `connect-required` (04-actions §3), keyed by
+ * `toolCallId` exactly like the approval part. */
+export interface VendoConnectPart {
+  type: "data-vendo-connect";
+  toolCallId: string;
+  connector: string;
+  toolkit: string;
+  message: string;
+}
+
+/** 01-core §16 */
+export const vendoConnectPartSchema = z.object({
+  type: z.literal("data-vendo-connect"),
+  toolCallId: z.string(),
+  connector: z.string().min(1),
+  toolkit: z.string().min(1),
+  message: z.string(),
+}).passthrough() satisfies z.ZodType<VendoConnectPart>;
+
 /** 01-core §16 */
 export interface VendoApprovalPart {
   type: "data-vendo-approval";

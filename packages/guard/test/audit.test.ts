@@ -80,6 +80,55 @@ describe("audit persistence, query, and export", () => {
     );
   });
 
+  it("lifts the connector account identity off the outcome into the audit detail", async () => {
+    const sqlStore = await store();
+    const tools = new FixtureTools();
+    // A connector attaches its account identity as the outcome passthrough
+    // `connectorAccount` (04-actions §3 / cross-cutting audit enrichment).
+    tools.setOutcome("host_read", {
+      status: "ok",
+      output: { sent: true },
+      connectorAccount: { connector: "composio", toolkit: "gmail", entityId: alice.subject },
+    } as never);
+    const guard = createGuard({ store: sqlStore });
+    const bound = guard.bind(tools);
+
+    const outcome = await bound.execute(call("host_read", {}, "audit_connector"), context());
+    // The identity is audit enrichment, not model/UI payload: stripped here.
+    expect(outcome).toEqual({ status: "ok", output: { sent: true } });
+
+    const rows = await sqlStore.query<{ detail: string | null }>(
+      `SELECT event->>'detail' AS detail FROM vendo_audit WHERE tool = 'host_read'`,
+    );
+    const detail = JSON.parse(rows.rows[0]!.detail!) as Record<string, unknown>;
+    expect(detail.connectorAccount).toEqual({ connector: "composio", toolkit: "gmail", entityId: alice.subject });
+  });
+
+  it("audits connect-required connector outcomes with their identity", async () => {
+    const sqlStore = await store();
+    const tools = new FixtureTools();
+    tools.setOutcome("host_read", {
+      status: "connect-required",
+      connect: { connector: "composio", toolkit: "gmail", message: "Connect gmail" },
+      connectorAccount: { connector: "composio", toolkit: "gmail", entityId: alice.subject },
+    } as never);
+    const guard = createGuard({ store: sqlStore });
+    const bound = guard.bind(tools);
+
+    const outcome = await bound.execute(call("host_read", {}, "audit_connect"), context());
+    expect(outcome).toEqual({
+      status: "connect-required",
+      connect: { connector: "composio", toolkit: "gmail", message: "Connect gmail" },
+    });
+
+    const rows = await sqlStore.query<{ outcome: string | null; detail: string | null }>(
+      `SELECT event->>'outcome' AS outcome, event->>'detail' AS detail FROM vendo_audit WHERE tool = 'host_read'`,
+    );
+    expect(rows.rows[0]?.outcome).toBe("connect-required");
+    const detail = JSON.parse(rows.rows[0]!.detail!) as Record<string, unknown>;
+    expect(detail.connectorAccount).toMatchObject({ connector: "composio", toolkit: "gmail" });
+  });
+
   it("filters inclusively and pages with the underlying opaque cursor", async () => {
     const sqlStore = await store();
     const guard = createGuard({ store: sqlStore });
