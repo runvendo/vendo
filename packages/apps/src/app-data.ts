@@ -7,6 +7,13 @@ import type {
   StorageDecl,
   StoreAdapter,
 } from "@vendoai/core";
+import { VendoError } from "@vendoai/core";
+
+export const APP_RECORD_MAX_BYTES = 256 * 1024;
+/** ENG-289 M1 — app-declared file collections accept blobs up to 5 MB each. */
+export const APP_BLOB_MAX_BYTES = 5 * 1024 * 1024;
+
+const encoder = new TextEncoder();
 
 export type AppStorage =
   | { kind: "records"; records: RecordStore }
@@ -44,8 +51,56 @@ const clearBlobs = async (blobs: BlobStore): Promise<void> => {
 export interface AppDataAccess {
   getState(appId: AppId, subject: string): Promise<Json | null>;
   setState(appId: AppId, subject: string, data: Json): Promise<void>;
+  records(app: AppDocument, name: string): RecordStore;
+  blobs(app: AppDocument, name: string): BlobStore;
   clear(app: AppDocument, subject: string, historical?: readonly AppDocument[]): Promise<void>;
 }
+
+const declaredStorage = (
+  app: AppDocument,
+  name: string,
+  kind: "records" | "files",
+): StorageDecl => {
+  if (name === "state") throw new VendoError("validation", 'storage collection "state" is reserved');
+  const declaration = app.storage !== undefined
+    && Object.prototype.hasOwnProperty.call(app.storage, name)
+    ? app.storage[name]
+    : undefined;
+  const actualKind = declaration?.kind ?? "records";
+  if (declaration === undefined || actualKind !== kind) {
+    throw new VendoError("not-found", `${kind} collection not found: ${name}`);
+  }
+  return declaration;
+};
+
+const validateRecordRefs = (
+  declaration: StorageDecl,
+  refs: Record<string, string> | undefined,
+): void => {
+  if (refs === undefined) return;
+  if (typeof refs !== "object" || refs === null || Array.isArray(refs)) {
+    throw new VendoError("validation", "record refs must be an object");
+  }
+  const declared = declaration.refs ?? {};
+  for (const [key, value] of Object.entries(refs)) {
+    if (!Object.prototype.hasOwnProperty.call(declared, key)) {
+      throw new VendoError("validation", `undeclared record ref: ${key}`);
+    }
+    if (typeof value !== "string" || value.trim() === "") {
+      throw new VendoError("validation", `record ref ${key} must be a non-empty string`);
+    }
+  }
+};
+
+const recordByteLength = (record: Parameters<RecordStore["put"]>[0]): number => {
+  try {
+    const serialized = JSON.stringify(record);
+    if (serialized === undefined) throw new Error("record is not JSON serializable");
+    return encoder.encode(serialized).byteLength;
+  } catch {
+    throw new VendoError("validation", "record must be valid JSON");
+  }
+};
 
 /** 06-apps §6 — private app-data API consumed by lifecycle and later execution lanes. */
 export const createAppData = (store: StoreAdapter): AppDataAccess => ({
@@ -59,6 +114,43 @@ export const createAppData = (store: StoreAdapter): AppDataAccess => ({
       data: structuredClone(data),
       refs: { subject, app_id: appId },
     });
+  },
+  records(app, name) {
+    const declaration = declaredStorage(app, name, "records");
+    const storage = resolveAppStorage(store, app.id, name, declaration);
+    if (storage.kind !== "records") {
+      throw new VendoError("not-found", `records collection not found: ${name}`);
+    }
+    return {
+      get: (id) => storage.records.get(id),
+      async put(record) {
+        validateRecordRefs(declaration, record.refs);
+        if (recordByteLength(record) > APP_RECORD_MAX_BYTES) {
+          throw new VendoError("validation", "record exceeds 256 KB size limit");
+        }
+        return storage.records.put(record);
+      },
+      delete: (id) => storage.records.delete(id),
+      list: (query) => storage.records.list(query),
+    };
+  },
+  blobs(app, name) {
+    const declaration = declaredStorage(app, name, "files");
+    const storage = resolveAppStorage(store, app.id, name, declaration);
+    if (storage.kind !== "files") {
+      throw new VendoError("not-found", `files collection not found: ${name}`);
+    }
+    return {
+      async put(key, bytes, meta) {
+        if (bytes.byteLength > APP_BLOB_MAX_BYTES) {
+          throw new VendoError("validation", "blob exceeds 5 MB size limit");
+        }
+        await storage.blobs.put(key, bytes, meta);
+      },
+      get: (key) => storage.blobs.get(key),
+      delete: (key) => storage.blobs.delete(key),
+      list: (prefix) => storage.blobs.list(prefix),
+    };
   },
   async clear(app, subject, historical = []) {
     const declarations = new Map<string, StorageDecl>();
