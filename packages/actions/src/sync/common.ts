@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { sha256Hex } from "@vendoai/core";
 import { init, parse } from "es-module-lexer";
-import type { ExtractedTool, HttpMethod, ToolBinding } from "../formats.js";
+import type { ExtractedTool, HttpMethod, PrimitiveToolBinding } from "../formats.js";
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"] as const;
 // Hidden directories are never route sources; alternate Next dist dirs
@@ -566,12 +566,12 @@ export function dedupKey(method: HttpMethod, urlPath: string): string {
 /** The binding-kind-aware identity a tool is deduplicated and diffed by:
  * method+path for HTTP-shaped bindings, mount+procedure for tRPC (a host can
  * expose the same procedure name under two mounts — both tools must survive). */
-export function bindingIdentity(binding: ToolBinding): string {
+export function bindingIdentity(binding: PrimitiveToolBinding): string {
   if (binding.kind === "trpc") return `TRPC ${binding.mount.replace(/\/+$/g, "")} ${binding.procedure}`;
   return dedupKey(binding.method, binding.path);
 }
 
-function uniqueNameFallback(binding: ToolBinding): string {
+function uniqueNameFallback(binding: PrimitiveToolBinding): string {
   return binding.kind === "trpc" ? binding.type : binding.method;
 }
 

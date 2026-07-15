@@ -599,7 +599,6 @@ describe("host HTTP execution — venue=mcp (10-mcp §3 / 04 §4 ActAs auth)", (
   });
 });
 
-<<<<<<< HEAD
 describe("host HTTP execution — away (ENG-263 away re-verification rides actAs)", () => {
   async function hostServer(): Promise<{ url: string; seen: Array<Record<string, string | string[] | undefined>> }> {
     const seen: Array<Record<string, string | string[] | undefined>> = [];
