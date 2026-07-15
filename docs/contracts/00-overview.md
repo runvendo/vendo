@@ -119,3 +119,9 @@ Approved with the contracts (Yousef, 2026-07-11): the blocks are built as if fro
 - **Changed:** Removed the door from the entirely-deferred list.
 - **Why:** MCP was built and contracted in wave 6 of v0. `02-store.md` was updated at the time, but this overview and `01-core.md` / `03-agent.md` were not.
 - **Approved by:** Yousef, 2026-07-14.
+
+### 2026-07-15 — tRPC binding kind added to vendo/tools@1
+
+- **Changed:** `04-actions.md` §1/§2/§4 — additive `trpc` binding kind (`procedure`/`type`/`mount`/`transformer?`), the extractor seam registration list (OpenAPI → tRPC → route-scan, with mount shadowing), tRPC static-extraction and fail-closed risk rules, the tRPC HTTP envelope execution semantics, and the binding-kind-aware tool-identity note (method+path for HTTP bindings, mount+procedure for tRPC).
+- **Why:** ENG-246 (extraction-survives-real-apps M1) ships the tRPC extractor; the binding kind is additive within `vendo/tools@1` per the discriminated-union evolution rule — existing consumers ignore unknown kinds.
+- **Approved by:** awaiting Yousef's personal sign-off (PR stays draft until then).

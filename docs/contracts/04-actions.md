@@ -29,7 +29,11 @@ export interface BreakingChange {
 // Blast radius ("which saved apps reference this tool") is a runtime query over vendo_apps, not a build-step concern.
 ```
 
-Launch extraction tier: **OpenAPI + route-scan** (corpus-proven). tRPC/GraphQL/server actions next — new extractors change no format below. Extraction is fail-closed: a route the scanner can't classify is emitted `disabled: true` with a note, never silently auto-allowed.
+Extraction tier: **OpenAPI + route-scan + tRPC** (corpus-proven; tRPC added additively within `vendo/tools@1`, 2026-07-15). GraphQL/server actions next — new extractors change no format below. Extractors sit behind one seam: a registration list of `{ detect, extract }` pairs inside `vendoSync`, run in order (OpenAPI, tRPC, route-scan); route tools under a tRPC mount are shadowed by the extracted procedures (the catch-all HTTP route is not a real API surface). Extraction is fail-closed: a route the scanner can't classify is emitted `disabled: true` with a note, never silently auto-allowed.
+
+tRPC extraction is static — routers are parsed with the TypeScript compiler API, no host code runs. Zod input schemas are statically interpreted into JSON Schema for common patterns; unrecognized validators fail closed to a permissive schema plus a `note`. Risk labeling extends the fail-closed rules: a query earns `read` only with a read-shaped name, mutations default to `write`, the destructive word list applies unchanged, and unclassifiable procedures (subscriptions, dynamic composition) are emitted `disabled: true` with a note.
+
+Tool identity is binding-kind-aware: HTTP-shaped bindings (route, openapi) are identified by method + path; tRPC bindings by mount + procedure dot-path (the same procedure name under two mounts is two tools). `SyncReport` breaking-change detection and corpus expectations key on this identity, never on the renamed tool slug (01-core §4).
 
 ### `.vendo/tools.json` (generated, host-committed)
 
@@ -46,6 +50,7 @@ Launch extraction tier: **OpenAPI + route-scan** (corpus-proven). tRPC/GraphQL/s
       // plus the execution binding:
       "binding": { "kind": "route", "method": "GET", "path": "/api/invoices", "argsIn": "query" }
       // | { "kind": "openapi", "operationId": "listInvoices", "baseUrl": "..." }
+      // | { "kind": "trpc", "procedure": "polls.list", "type": "query", "mount": "/api/trpc", "transformer": "superjson"? }
     }
   ]
 }
@@ -162,7 +167,7 @@ import type { ToolRegistry, ToolCall, ToolDescriptor, RunContext, ActAs, ToolOut
 
 export function createActions(config: {
   dir?: string;                          // read .vendo/{tools,overrides,capabilities}.json; or:
-  tools?: ExtractedTool[];               // inject directly (tests, non-file hosts); ExtractedTool = ToolDescriptor & { binding: RouteBinding | OpenApiBinding }
+  tools?: ExtractedTool[];               // inject directly (tests, non-file hosts); ExtractedTool = ToolDescriptor & { binding: RouteBinding | OpenApiBinding | TrpcBinding }
   capabilities?: CapabilitiesFile;       // inject directly (tests, non-file hosts)
   connectors?: Connector[];
   actAs?: ActAs;                         // host seam; absent → away execution cleanly unavailable
@@ -193,6 +198,7 @@ Normalization rules: connector tool names are underscore-prefixed inside the pro
 ## 4. Execution semantics (normative)
 
 - **Present** (`presence: "present"`): the call rides the user's real session. Server-side route execution forwards the inbound request's auth material (`ctx.requestHeaders` — cookies/authorization captured by the umbrella handler) on a same-origin fetch to `binding.path`. Zero config.
+- **tRPC bindings** execute over the tRPC HTTP envelope against the host mount: queries `GET {mount}/{procedure}?input=<json>`, mutations `POST {mount}/{procedure}` with the input as the JSON body; `{ result: { data } }` is unwrapped on success. Calls are always single-procedure — HTTP batching (`/p1,p2?batch=1`) is a client optimization the runtime never uses. When `transformer: "superjson"` is present (detected per mount) the input/output ride superjson's `{ json: ... }` wrapping. Auth semantics (present-forward, away/actAs, venue=mcp) are identical to route bindings.
 - **Away** (`presence: "away"`): requires a captured grant (the only authority) and the host's `actAs(principal, grant)` → `AuthMaterial` attached to the request. `actAs` not implemented → `ToolOutcome{status:"error", code:"not-implemented"}` with agent-readable messaging ("away execution isn't set up for this product") — features degrade cleanly, no stack detection, no adapter framework.
 - Connector calls use the connector's own auth (Composio entity, MCP session) but identical guard treatment.
 - actions itself never checks policy: it executes what a guard binding lets through (05 §2). It stamps nothing on the audit trail directly; the binding does.
