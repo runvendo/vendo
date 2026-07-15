@@ -5,7 +5,7 @@ import {
   type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApps } from "./index.js";
 import type { SandboxAdapter } from "./sandbox.js";
 import {
@@ -15,6 +15,7 @@ import {
   seedAppRow,
   scriptedLanguageModel,
 } from "./testing/index.js";
+import { modelEngine } from "./engine.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_engine" },
@@ -66,6 +67,50 @@ const putApp = async (
 };
 
 describe("generation engine through createApps", () => {
+  it("fails closed when a tree-classified edit unexpectedly yields server code", async () => {
+    const store = memoryStore();
+    const original: AppDocument = {
+      format: "vendo/app@1",
+      id: "app_unexpected_code",
+      name: "Safe tree",
+      ui: "tree",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{ id: "root", component: "Text", props: { text: "Safe" } }],
+      },
+    };
+    await putApp(store, original);
+    vi.spyOn(modelEngine, "edit").mockResolvedValueOnce({
+      kind: "code",
+      rung: 2,
+      files: [{ path: "/app/server.js", content: "export const changed = true;" }],
+    });
+    const sandbox = fakeSandbox();
+    const createMachine = vi.spyOn(sandbox, "create");
+    const resumeMachine = vi.spyOn(sandbox, "resume");
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog,
+      model: scriptedLanguageModel("unused"),
+    });
+
+    const result = await runtime.edit(original.id, "Make the heading blue", ctx);
+
+    expect(result.issues).toEqual([
+      "approval-required: a tree-classified edit unexpectedly produced server code",
+    ]);
+    expect(result.app).toEqual(original);
+    expect(await runtime.get(original.id, ctx)).toEqual(original);
+    expect(await runtime.history(original.id).list()).toEqual([]);
+    expect(sandbox.machines.size).toBe(0);
+    expect(createMachine).not.toHaveBeenCalled();
+    expect(resumeMachine).not.toHaveBeenCalled();
+  });
+
   it("creates a validated rung-1 document with a catalog host component", async () => {
     const store = memoryStore();
     const runtime = createApps({

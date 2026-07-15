@@ -100,6 +100,55 @@ async function storedAssistant(agent: ReturnType<typeof createAgent>): Promise<U
 }
 
 describe("agent approval round trip", () => {
+  it("executes a read-class Vendo create immediately without approval parts", async () => {
+    const createDescriptor: ToolDescriptor = {
+      name: "vendo_apps_create",
+      description: "Create a jailed rung-1 UI document.",
+      inputSchema: {
+        type: "object",
+        properties: { prompt: { type: "string" } },
+        required: ["prompt"],
+        additionalProperties: false,
+      },
+      risk: "read",
+    };
+    const createInput = { prompt: "Build a spending dashboard" };
+    const guard = testGuard({});
+    const tools = boundRegistry({
+      [createDescriptor.name]: {
+        descriptor: createDescriptor,
+        execute: async () => ({ id: "app_created", name: "Spending dashboard" }),
+      },
+    }, guard);
+    const agent = createAgent({
+      model: scriptedModel([
+        toolCallTurn(createDescriptor.name, createInput, "call_create"),
+        textTurn("Created.", "text_created"),
+      ]),
+      tools,
+      guard,
+    });
+
+    const response = await agent.stream({
+      threadId: "thr_create",
+      message: {
+        id: "user_create",
+        role: "user",
+        parts: [{ type: "text", text: createInput.prompt }],
+      },
+      ctx: ctx(),
+    });
+    const { parts } = await readSse(response);
+
+    expect(tools.invocations.vendo_apps_create).toBe(1);
+    expect(parts.some((part) => part.type === "data-vendo-approval")).toBe(false);
+    expect(parts.some((part) => part.type === "tool-approval-request")).toBe(false);
+    expect(parts.find((part) => part.type === "tool-output-available")).toMatchObject({
+      toolCallId: "call_create",
+      output: { status: "ok", output: { id: "app_created" } },
+    });
+  });
+
   it("pauses on ask with native and Vendo approval parts without executing the tool", async () => {
     const { agent, guard, tools } = setup();
     const { parts } = await pause(agent);
