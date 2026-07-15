@@ -11,7 +11,9 @@ import {
   type UIPayload,
 } from "@vendoai/core";
 import type { AppCaller } from "./call.js";
+import type { InClientVenueState } from "./inclient.js";
 import type { MachineSessions } from "./machine.js";
+import { detectPinDrift, pinComponentName, type PinBaseline, type PinDrift } from "./pins.js";
 import type { OpenSurface } from "./runtime.js";
 
 const isObject = (value: unknown): value is Record<string, Json> =>
@@ -178,11 +180,26 @@ export const createProgressiveQueryResolver = (
   };
 };
 
+/**
+ * 06-apps §§8–9 — the in-client venue field and the pin-drift report are
+ * SERVER-AUTHORITATIVE. The stored tree is model-written or imported from an
+ * untrusted `.vendoapp`, so a forged `inClient` or `pinDrift` riding the
+ * document must never reach the client: strip both before the verified
+ * verdict and the computed drift (when any) are attached.
+ */
+const stripForgedServerFields = <T extends object>(payload: T): T => {
+  delete (payload as { inClient?: unknown }).inClient;
+  delete (payload as { pinDrift?: unknown }).pinDrift;
+  return payload;
+};
+
 /** 06-apps §§1–2 — construct the invisible-graduation open surface. */
 export const createAppOpener = (
   machines: MachineSessions,
   caller: AppCaller,
   store: StoreAdapter,
+  pinBaselines: readonly PinBaseline[] = [],
+  inClientVenue?: (app: AppDocument) => Promise<InClientVenueState | undefined>,
 ): ((app: AppDocument, ctx: RunContext) => Promise<OpenSurface>) => async (app, ctx) => {
   const authorization = await machines.mintRun(app, ctx);
   if (app.ui === "http") {
@@ -211,9 +228,10 @@ export const createAppOpener = (
   // 01-core §8 — an unregistered format tag is a contained failure: the payload passes
   // through untouched (no query resolution) and the renderer shows the notice.
   if (app.tree.formatVersion !== VENDO_TREE_FORMAT) {
+    const payload = stripForgedServerFields(structuredClone(app.tree));
     return app.components === undefined
-      ? { kind: "tree", payload: structuredClone(app.tree) }
-      : { kind: "tree", payload: structuredClone(app.tree), components: structuredClone(app.components) };
+      ? { kind: "tree", payload }
+      : { kind: "tree", payload, components: structuredClone(app.components) };
   }
   const validation = validateTree({ ...app.tree, components: app.components });
   if (!validation.ok) throw new VendoError("validation", validation.error.message);
@@ -221,7 +239,34 @@ export const createAppOpener = (
   // field (01 §8, "lifted to the app document at rest") and the renderer compiles
   // generated components from payload.components. The OpenSurface sibling stays
   // for 06 §1 shape fidelity.
-  const tree: Tree = structuredClone(validation.tree);
+  const tree: Tree = stripForgedServerFields(structuredClone(validation.tree));
+  // Attach the venue verdict ONLY from the runtime's own hash-pin verification.
+  const inClient = await inClientVenue?.(app);
+  if (inClient !== undefined) {
+    (tree as Tree & { inClient: InClientVenueState }).inClient = inClient;
+  }
+  // 06-apps §8 — "a host update to the component marks the pin drifted": the
+  // drift report rides every open() of a stale fork so the surface can say so
+  // loudly, not only sync output and the ship-diff. Server-computed only.
+  const pinDrift = detectPinDrift(app, pinBaselines);
+  if (pinDrift.length > 0) {
+    (tree as Tree & { pinDrift: PinDrift[] }).pinDrift = pinDrift;
+  }
+  const furnishings = Object.fromEntries((app.pins ?? []).flatMap((pin) => {
+    const baseline = pinBaselines.find((candidate) => candidate.slot === pin.slot && candidate.hash === pin.base);
+    if (baseline === undefined) return [];
+    return [[pinComponentName(pin.slot), {
+      ...(baseline.sourceImports === undefined ? {} : { sourceImports: structuredClone(baseline.sourceImports) }),
+      ...(baseline.subSources === undefined ? {} : { subSources: structuredClone(baseline.subSources) }),
+      ...(baseline.sampleProps === undefined ? {} : { sampleProps: structuredClone(baseline.sampleProps) }),
+      ...(baseline.styles === undefined ? {} : { styles: structuredClone(baseline.styles) }),
+    }]];
+  }));
+  // UIPayload is explicitly forward-compatible. Furnishing rides inside the
+  // tagged tree payload so the frozen OpenSurface sibling shape stays intact.
+  if (Object.keys(furnishings).length > 0) {
+    (tree as Tree & { furnishings: typeof furnishings }).furnishings = furnishings;
+  }
   const queries = createProgressiveQueryResolver(machines, caller, app, ctx, undefined, authorization);
   queries.update(tree);
   tree.data = await queries.complete();

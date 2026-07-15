@@ -5,9 +5,12 @@ export type { Thread, ThreadSummary, VendoAgent } from "@vendoai/agent";
 export type {
   ActionsRegistry,
   Connector,
+  ConnectorAccount,
+  ConnectorConnections,
   ExtractedTool,
   SyncReport,
 } from "@vendoai/actions";
+export type { ConnectionsService, InitiatedConnection, InitiateOptions } from "./connections.js";
 export type {
   Judge,
   PolicyConfig,
@@ -20,9 +23,14 @@ export type {
 export type {
   AppsRuntime,
   EditResult,
+  InClientApproval,
+  InClientVerdict,
   OpenSurface,
+  PinDrift,
+  PinRebaseResult,
   SandboxAdapter,
   SandboxMachine,
+  ShipDiff,
   VersionEntry,
 } from "@vendoai/apps";
 export type {
@@ -38,3 +46,4 @@ export type { VendoClient, VendoClientConfig } from "@vendoai/ui";
 // umbrella-internal — the Vendo interface exposes no `mcp` handle (09 §2) — so
 // only this host-facing seam belongs on the root.
 export type { HostOAuthAdapter } from "@vendoai/mcp";
+export { remixable, type RemixableRegistration, type RemixableReportOptions } from "./remixable.js";

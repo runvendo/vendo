@@ -451,6 +451,15 @@ class GuardImplementation implements VendoGuard {
         if (decision.action === "run" && decision.grantId !== undefined) {
           detail.grantId = decision.grantId;
         }
+        // Cross-cutting audit enrichment (block-actions design): a connector
+        // attaches its account identity to the outcome as the passthrough
+        // `connectorAccount`; it belongs to the audit trail, not to the model
+        // or the UI, so lift it into detail and strip it from the outcome.
+        const { connectorAccount, ...cleaned } = outcome as ToolOutcome & { connectorAccount?: unknown };
+        if (connectorAccount !== undefined) {
+          detail.connectorAccount = connectorAccount;
+          outcome = cleaned as ToolOutcome;
+        }
 
         await this.report(
           eventFromContext(ctx, {

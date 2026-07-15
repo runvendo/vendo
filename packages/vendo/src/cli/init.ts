@@ -599,6 +599,7 @@ export async function runInit(options: InitOptions): Promise<number> {
       `${JSON.stringify({
         format: "vendo/overrides@1",
         tools: Object.fromEntries((answers.criticalTools ?? []).map((name) => [name, { critical: true }])),
+        remix: { ignoreSlots: [] },
       }, null, 2)}\n`,
       options.force === true,
     );
@@ -624,6 +625,14 @@ export async function runInit(options: InitOptions): Promise<number> {
 
     const report = await vendoSync({ root, out: join(root, ".vendo") });
     for (const warning of report.warnings) output.error(`warning: ${warning}`);
+    output.log(`catalog.json: ${report.catalog.discovered} discovered, ${report.catalog.registered} registered`);
+    if (report.unresolvedPins.length > 0) {
+      output.error("\nUNRESOLVED REMIXABLE SLOTS (init continues):");
+      for (const pin of report.unresolvedPins) {
+        output.error(`  ${pin.slot} [${pin.reason}]: ${pin.hint}`);
+      }
+      output.error("Run `vendo sync` after resolving or explicitly ignoring these slots; sync exits non-zero while they remain unresolved.\n");
+    }
 
     for (const change of changes) {
       output.log(`\nProposed code change:\n${change.diff}\n`);

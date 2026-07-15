@@ -14,13 +14,26 @@ cp .env.example .env.local
 pnpm dev
 ```
 
-Open http://localhost:3000. Run `pnpm test` for the host API suite.
+Open http://localhost:3000. Run `pnpm test` for the host API suite (it
+includes the ENG-260 away drill, which boots a real Maple instance).
 
-Maple now has a cookie-backed demo login at `/login`. Local development seeds
-`yousef@maple.com` with password `maple-demo`; production requires
-`MAPLE_SESSION_SECRET` and `MAPLE_DEMO_PASSWORD` in the environment. The login
-cookie is the host session the MCP OAuth adapter resolves; the password and
-session secret must never be committed.
+## Authentication
+
+Maple uses real Auth.js (NextAuth) authentication with the credentials
+provider — no external services. Two demo users are seeded so per-user
+isolation is demonstrable: `yousef@maple.com` and `mia@maple.com`, both with
+password `maple-demo` outside production (`MAPLE_DEMO_PASSWORD` overrides;
+required in production, as is `AUTH_SECRET`). Sign in at `/login`; sign out at
+`/api/auth/signout`. Pages redirect to `/login` and the bank API answers 401
+without a session (`src/proxy.ts`).
+
+The Auth.js session is the identity for everything: the Vendo principal is the
+session's user id (`src/vendo/principal.ts`), the MCP OAuth adapter resolves
+the same session, and away execution mints REAL session tokens for the
+granting user through the `@vendoai/actions/presets` Auth.js preset with the
+host's own `AUTH_SECRET` (`actAsMapleUser` in `src/vendo/auth.ts`). Present
+execution forwards the signed-in user's cookie to `VENDO_BASE_URL`. Secrets
+must never be committed.
 
 ## Architecture
 
@@ -49,7 +62,7 @@ Cmd/Ctrl+K opens Vendo. Cmd/Ctrl+Shift+. restores Maple's deterministic seed.
 
 Railway builds `apps/demo-bank/Dockerfile` from the monorepo root. Configure the
 service with `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `VENDO_BASE_URL`,
-`MAPLE_SESSION_SECRET`, `MAPLE_DEMO_EMAIL`, and `MAPLE_DEMO_PASSWORD`. The
+`AUTH_SECRET`, `MAPLE_DEMO_EMAIL`, and `MAPLE_DEMO_PASSWORD`. The
 Postgres URL keeps Vendo's OAuth, approval, audit, and app state across
 redeploys. `VENDO_BASE_URL` is the one public-origin switch: set it to the
 default Railway origin first, then change it to `https://maple.vendo.run` after

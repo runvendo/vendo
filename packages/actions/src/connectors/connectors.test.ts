@@ -103,7 +103,8 @@ describe("composioConnector", () => {
     const descriptors = await connector.descriptors();
     expect(descriptors).toEqual([
       expect.objectContaining({ name: "gmail_SEND_EMAIL", risk: "write", description: "Send email" }),
-      expect.objectContaining({ name: "gmail_LIST_THREADS", risk: "write" }),
+      // The curated risk map (04-actions §3) reads the slug verb: LIST_* is read.
+      expect.objectContaining({ name: "gmail_LIST_THREADS", risk: "read" }),
     ]);
     expect(seen[0]?.query.get("toolkit_slug")).toBe("gmail");
     expect(seen[1]?.query.get("cursor")).toBe("page_2");
@@ -112,7 +113,9 @@ describe("composioConnector", () => {
       { id: "call_1", tool: "gmail_SEND_EMAIL", args: { to: "a@example.test" } },
       ctx,
     );
-    expect(toolOutcomeSchema.parse(outcome)).toEqual({ status: "ok", output: { messageId: "msg_1" } });
+    // Execution outcomes carry the audit identity passthrough (connectorAccount).
+    expect(toolOutcomeSchema.parse(outcome)).toMatchObject({ status: "ok", output: { messageId: "msg_1" } });
+    expect(outcome).toMatchObject({ connectorAccount: { connector: "composio", toolkit: "gmail", entityId: "entity_1" } });
     expect(seen[2]?.body).toEqual({ user_id: "entity_1", arguments: { to: "a@example.test" } });
 
     const rejected = await connector.execute(
@@ -221,7 +224,8 @@ describe("mcpConnector", () => {
       connector.execute({ id: "call_1", tool: "mcp_warehouse_lookup", args: { id: 1 } }, ctx),
       new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("persistent SSE call hung")), 1_000)),
     ]);
-    expect(toolOutcomeSchema.parse(ok)).toEqual({ status: "ok", output: { found: true } });
+    expect(toolOutcomeSchema.parse(ok)).toMatchObject({ status: "ok", output: { found: true } });
+    expect(ok).toMatchObject({ connectorAccount: { connector: "warehouse", credential: "shared" } });
     const failed = await connector.execute({ id: "call_2", tool: "mcp_warehouse_explode", args: {} }, ctx);
     expect(toolOutcomeSchema.parse(failed)).toMatchObject({
       status: "error",

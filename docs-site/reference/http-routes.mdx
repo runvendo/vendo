@@ -31,7 +31,7 @@ stream over SSE.
 | `/tick` | POST | scheduler tick (serverless cron target; requires `Authorization: Bearer <secret>`) |
 | `/webhooks/:source` | POST | trigger ingress (Composio, host, plain), verified as described below |
 | `/activity` | GET | `AuditEvent[]`, self-scoped with `guard.audit.query({ principal })` |
-| `/status` | GET | `{ posture, version, blocks: {...} }`, includes `blocks.mcp: true` when the door is open |
+| `/status` | GET | `{ posture, version, blocks: {...} }`, includes `blocks.mcp: true` when the door is open and `blocks.sandbox` reporting the execution venue (`"e2b"`, `"modal"`, `"custom"`, or `false` when none is wired) |
 
 ## MCP door
 

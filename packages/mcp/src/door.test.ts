@@ -56,6 +56,23 @@ const CONSENT_THEME: VendoTheme = {
   motion: "reduced",
 };
 
+const MAPLE_THEME: VendoTheme = {
+  colors: {
+    background: "#FBFBFA",
+    surface: "#FFFFFF",
+    text: "#111111",
+    muted: "#908C85",
+    accent: "#0A7CFF",
+    accentText: "#FFFFFF",
+    danger: "#B42318",
+    border: "#E2E1DE",
+  },
+  typography: { fontFamily: "Maple Sans, system-ui, sans-serif", baseSize: "15px" },
+  radius: { small: "6px", medium: "14px", large: "14px" },
+  density: "comfortable",
+  motion: "full",
+};
+
 // The door resolves CIMD hostnames and rejects private answers (SSRF DNS-rebind
 // defense). `.example` is a reserved non-resolving TLD, so mock the resolver;
 // individual tests point it at a private address to exercise the guard.
@@ -1211,7 +1228,16 @@ describe("createMcpDoor MCP protocol", () => {
       async open() { return { kind: "tree", payload: app.tree! }; },
       async call(_appId, _ref, args) { return { received: args }; },
     };
-    const harness = makeHarness({ apps });
+    const harness = makeHarness({
+      apps,
+      theme: {
+        ...MAPLE_THEME,
+        typography: {
+          ...MAPLE_THEME.typography,
+          headingFamily: "Maple Display</style><script>alert(1)</script>",
+        },
+      },
+    });
     const registration = await register(harness.door);
     const tokens = await issue(harness.door, registration.body.client_id);
     const connected = await connect(harness.door, tokens.access_token);
@@ -1250,6 +1276,13 @@ describe("createMcpDoor MCP protocol", () => {
       mimeType: "text/html;profile=mcp-app",
       text: expect.stringContaining("<!doctype html>"),
     });
+    const html = "text" in resource.contents[0]! ? resource.contents[0].text : "";
+    expect(html).toContain("--vendo-color-background:#FBFBFA");
+    expect(html).toContain("--vendo-color-accent:#0A7CFF");
+    expect(html).toContain("--vendo-font-family:Maple Sans, system-ui, sans-serif");
+    expect(html).not.toContain("</style><script>alert(1)</script>");
+    expect(html).toContain("--vendo-heading-family:Maple Display\\3c /style\\3e ");
+    expect(html.slice(0, html.indexOf("<script>"))).not.toContain("--color-text-primary");
     await connected.client.close();
   });
 

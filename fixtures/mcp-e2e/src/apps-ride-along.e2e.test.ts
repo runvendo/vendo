@@ -38,6 +38,9 @@ describe("saved apps ride along as MCP Apps", () => {
         expect(html.length).toBeGreaterThan(500);
         expect(html).toContain("<!doctype html>");
         expect(stack.resourceReads).toContain(SHIM_URI);
+        expect(html).toContain("--vendo-color-background:#FBFBFA");
+        expect(html).toContain("--vendo-color-accent:#0A7CFF");
+        expect(html.slice(0, html.indexOf("<script>"))).not.toContain("--color-text-primary");
 
         const called = await connected.client.callTool({
           name: "vendo_apps_call",

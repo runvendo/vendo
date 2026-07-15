@@ -23,6 +23,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inject } from "vitest";
 import { zipSync } from "fflate";
+import type { Connector } from "@vendoai/actions";
 import type { AppDocument, Principal, ToolRegistry } from "@vendoai/core";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import { createStore, type VendoStore } from "@vendoai/store";
@@ -206,6 +207,9 @@ export interface StackOptions {
   /** Back the composed store with real Postgres (createStore({ url })) instead of
    * the default per-test PGlite temp dir. Used by the J9 durability journey. */
   storeUrl?: string;
+  /** External connectors composed into the umbrella (04-actions §3) — the
+   * connected-accounts journeys pass a composioConnector aimed at a stub. */
+  connectors?: Connector[];
 }
 
 /** The door mounted alongside the wire when `createStack({ mcp: true })`. */
@@ -263,6 +267,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     actAs: fixtureActAs,
     policy: { file: ".vendo/policy.json" },
     ...(options.telemetry === true ? { telemetry: true } : {}),
+    ...(options.connectors === undefined ? {} : { connectors: options.connectors }),
   });
 
   // J6 — the MCP door, composed from the umbrella's OWN parts (the hookup note's

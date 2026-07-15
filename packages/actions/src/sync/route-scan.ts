@@ -4,7 +4,7 @@ import type { ExtractedTool, HttpMethod } from "../formats.js";
 import {
   allocateToolName,
   extractedRisk,
-  importSpecifierFor,
+  importReferenceFor,
   resolveImportSource,
   routeToolFullName,
   splitTopLevel,
@@ -195,7 +195,7 @@ function routeMapVerbs(source: string, route: RouteSource): Set<HttpMethod> | nu
   return methods;
 }
 
-function reExportTargets(source: string): ReExportTarget[] {
+async function reExportTargets(source: string): Promise<ReExportTarget[]> {
   const targets: ReExportTarget[] = [];
   for (const match of source.matchAll(/export\s+\*\s+from\s+["']([^"']+)["']/g)) {
     if (match[1]) targets.push({ specifier: match[1], assumeDefaultExport: false });
@@ -214,8 +214,8 @@ function reExportTargets(source: string): ReExportTarget[] {
   const importedDefault = source.match(/import\s+([A-Za-z_$][\w$]*)\s+from\s+["']([^"']+)["'][\s\S]*?export\s+default\s+\1\b/);
   if (importedDefault?.[2]) targets.push({ specifier: importedDefault[2], assumeDefaultExport: true });
   const delegate = source.match(/return\s+(?:await\s+)?([A-Za-z_$][\w$]*)\s*\(\s*req\s*,\s*res\b/);
-  const delegateSpecifier = delegate?.[1] ? importSpecifierFor(source, delegate[1]) : undefined;
-  if (delegateSpecifier) targets.push({ specifier: delegateSpecifier, assumeDefaultExport: true });
+  const delegateReference = delegate?.[1] ? await importReferenceFor(source, delegate[1]) : undefined;
+  if (delegateReference) targets.push({ specifier: delegateReference.specifier, assumeDefaultExport: true });
   return targets;
 }
 
@@ -260,7 +260,7 @@ async function verbsFromSource(
   if (objectMethods) return objectMethods;
   if (depth < MAX_REEXPORT_DEPTH) {
     const resolvedMethods = new Set<HttpMethod>();
-    for (const target of reExportTargets(evidenceSource)) {
+    for (const target of await reExportTargets(evidenceSource)) {
       const resolved = await resolveImportSource(file, target.specifier, root);
       if (!resolved) continue;
       const nested = await verbsFromSource(

@@ -1,14 +1,6 @@
 import type { Principal } from "@vendoai/vendo";
 import { resolveMaplePrincipal } from "./auth";
 
-export const DEMO_USER_ID = "vendo-demo";
-
-export const DEMO_PRINCIPAL: Principal = {
-  kind: "user",
-  subject: DEMO_USER_ID,
-  display: "Yousef Helal",
-};
-
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
 
 export function demoRequestAllowed(req: Request): boolean {
@@ -26,6 +18,9 @@ export function demoRequestAllowed(req: Request): boolean {
   return LOCAL_HOSTS.has(hostname.toLowerCase());
 }
 
+/** Session-backed resolver: the Auth.js user id is the Vendo subject. Requests
+ * without a session resolve to null and ride the umbrella's per-client
+ * anonymous principal — there is no fixed demo principal anymore. */
 export async function resolveDemoPrincipal(req: Request): Promise<Principal | null> {
-  return await resolveMaplePrincipal(req) ?? (demoRequestAllowed(req) ? DEMO_PRINCIPAL : null);
+  return resolveMaplePrincipal(req);
 }

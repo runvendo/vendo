@@ -44,7 +44,7 @@ export function createVendo(config: {
 export interface Vendo {
   handler: (req: Request) => Promise<Response>;
   emit(event: string, payload: Json, principal: Principal): Promise<RunId[]>;
-  agent: VendoAgent; guard: VendoGuard; apps: AppsRuntime; automations: AutomationsEngine; actions: ActionsRegistry; store: VendoStore;
+  agent: VendoAgent; guard: VendoGuard; apps: AppsRuntime; automations: AutomationsEngine; actions: ActionsRegistry; connections: ConnectionsService; store: VendoStore;
 }
 ```
 

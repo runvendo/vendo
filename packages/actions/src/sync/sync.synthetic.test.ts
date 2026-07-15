@@ -93,6 +93,43 @@ describe("validation and route classification", () => {
     await expect(vendoSync({ root, out })).rejects.toMatchObject({ name: "VendoError", code: "validation" });
   });
 
+  it("fails loudly when an existing catalog.json violates the strict schema", async () => {
+    const { root, out } = await temporaryHost();
+    await writeFile(out, "catalog.json", JSON.stringify({
+      format: "vendo/catalog@1",
+      entries: [],
+      typo: true,
+    }));
+
+    await expect(vendoSync({ root, out })).rejects.toMatchObject({
+      name: "VendoError",
+      code: "validation",
+      message: expect.stringContaining(`malformed catalog file: ${path.join(out, "catalog.json")}`),
+    });
+  });
+
+  // Two full TS-compiler scans back to back run long under CI coverage instrumentation.
+  it("writes byte-identical catalog.json content on consecutive syncs", { timeout: 120_000 }, async () => {
+    const { root, out } = await temporaryHost();
+    await writeFile(root, "tsconfig.json", JSON.stringify({
+      compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler", jsx: "react-jsx", strict: true },
+      include: ["src"],
+    }));
+    await writeFile(root, "src/components.tsx", `
+      type ComponentType = (props: unknown) => unknown;
+      function StableCard({ label }: { label: string }) { return <article>{label}</article>; }
+      export const hostComponents: Record<string, ComponentType> = { StableCard: StableCard as ComponentType };
+      export function Root() { return <VendoRoot components={hostComponents} />; }
+    `);
+
+    const first = await vendoSync({ root, out });
+    const firstBytes = await fs.readFile(path.join(out, "catalog.json"), "utf8");
+    const second = await vendoSync({ root, out });
+    expect(first.catalog).toEqual({ discovered: 1, registered: 0 });
+    expect(second.catalog).toEqual(first.catalog);
+    expect(await fs.readFile(path.join(out, "catalog.json"), "utf8")).toBe(firstBytes);
+  });
+
   it("emits unclassified app routes disabled and handles catch-all names and deterministic collisions", async () => {
     const { root, out } = await temporaryHost();
     await writeFile(root, "src/app/api/opaque/route.ts", "export const handler = () => null;\n");
@@ -133,6 +170,56 @@ describe("validation and route classification", () => {
     const report = await vendoSync({ root, out });
     expect(report.warnings).toContain("host override host_missing did not match any extracted tool");
     expect(report.warnings.some((warning) => warning.includes("connector_missing"))).toBe(false);
+  });
+
+  it("returns machine-readable unresolved pins and honors the per-slot ignore list", async () => {
+    const unresolvedHost = await temporaryHost();
+    await writeFile(
+      unresolvedHost.root,
+      "src/vendo/components.tsx",
+      // A local re-export stands in for the umbrella helper: the dependency
+      // guard reads literal specifiers, and pins.ts keys on the remixable( call.
+      `import { remixable } from "./vendo-remix-helper";\n` +
+      `export const components = [remixable({ name: "InlineCard", component: () => null }, import.meta.url)];\n`,
+    );
+    const unresolved = await vendoSync(unresolvedHost);
+    expect(unresolved.unresolvedPins).toEqual([expect.objectContaining({
+      slot: "InlineCard",
+      reason: "inline-component",
+    })]);
+    expect(unresolved.unresolvedPins[0]?.hint).toContain("run the host in dev with Vendo mounted");
+
+    const ignoredHost = await temporaryHost();
+    await writeFile(
+      ignoredHost.root,
+      "src/vendo/components.tsx",
+      `import { remixable } from "./vendo-remix-helper";\n` +
+      `export const components = [remixable({ name: "InlineCard", component: () => null }, import.meta.url)];\n`,
+    );
+    await writeFile(ignoredHost.out, "overrides.json", JSON.stringify({
+      format: "vendo/overrides@1",
+      tools: {},
+      remix: { ignoreSlots: ["InlineCard"] },
+    }));
+    expect((await vendoSync(ignoredHost)).unresolvedPins).toEqual([]);
+  });
+
+  it("accepts a schema-valid runtime baseline for a statically unresolved slot", async () => {
+    const host = await temporaryHost();
+    await writeFile(
+      host.root,
+      "src/vendo/components.tsx",
+      `import { remixable } from "./vendo-remix-helper";\n` +
+      `export const components = [remixable({ name: "RuntimeCard", component: () => null }, import.meta.url)];\n`,
+    );
+    await writeFile(host.out, "remixable/RuntimeCard.json", JSON.stringify({
+      slot: "RuntimeCard",
+      source: "export function RuntimeCard() { return null; }",
+      hash: `sha256:${"a".repeat(64)}`,
+      exportable: false,
+      capturedAt: new Date().toISOString(),
+    }));
+    expect((await vendoSync(host)).unresolvedPins).toEqual([]);
   });
 
   it("allocates colliding sanitized names independently of OpenAPI declaration order", async () => {
