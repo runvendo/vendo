@@ -1,4 +1,5 @@
 import type { ComponentType, CSSProperties, PropsWithChildren } from "react";
+import { BRANDED_COMPONENTS } from "./branded.js";
 
 type GapProps = PropsWithChildren<{ gap?: string | number }>;
 
@@ -158,4 +159,5 @@ export const PREWIRED_COMPONENTS: Readonly<Record<string, ComponentType<Record<s
   Skeleton: Skeleton as ComponentType<Record<string, unknown>>,
   Surface: Surface as ComponentType<Record<string, unknown>>,
   Divider: Divider as ComponentType<Record<string, unknown>>,
+  ...BRANDED_COMPONENTS as unknown as Record<string, ComponentType<Record<string, unknown>>>,
 };
