@@ -140,7 +140,9 @@ describe("validation and route classification", () => {
     await writeFile(
       unresolvedHost.root,
       "src/vendo/components.tsx",
-      `import { remixable } from "@vendoai/vendo/react";\n` +
+      // A local re-export stands in for the umbrella helper: the dependency
+      // guard reads literal specifiers, and pins.ts keys on the remixable( call.
+      `import { remixable } from "./vendo-remix-helper";\n` +
       `export const components = [remixable({ name: "InlineCard", component: () => null }, import.meta.url)];\n`,
     );
     const unresolved = await vendoSync(unresolvedHost);
@@ -154,7 +156,7 @@ describe("validation and route classification", () => {
     await writeFile(
       ignoredHost.root,
       "src/vendo/components.tsx",
-      `import { remixable } from "@vendoai/vendo/react";\n` +
+      `import { remixable } from "./vendo-remix-helper";\n` +
       `export const components = [remixable({ name: "InlineCard", component: () => null }, import.meta.url)];\n`,
     );
     await writeFile(ignoredHost.out, "overrides.json", JSON.stringify({
@@ -170,7 +172,7 @@ describe("validation and route classification", () => {
     await writeFile(
       host.root,
       "src/vendo/components.tsx",
-      `import { remixable } from "@vendoai/vendo/react";\n` +
+      `import { remixable } from "./vendo-remix-helper";\n` +
       `export const components = [remixable({ name: "RuntimeCard", component: () => null }, import.meta.url)];\n`,
     );
     await writeFile(host.out, "remixable/RuntimeCard.json", JSON.stringify({
