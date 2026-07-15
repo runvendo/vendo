@@ -76,3 +76,27 @@ with the current theme:
   transition: background-color var(--vendo-motion-duration) var(--vendo-motion-easing);
 }
 ```
+
+## Mobile takeover
+
+Shipped overlay, page, and palette chrome switch to a full-viewport takeover
+at viewports 767px wide and narrower. The takeover surface covers the host
+layout instead of docking inside a squeezed column, portals to `document.body`
+so transformed host ancestors cannot confine it, and honors iOS safe-area
+insets on all four edges. On coarse-pointer devices the composer and palette
+search render at 16px to prevent iOS auto-zoom, and icon buttons and the
+overlay close control expand to a 44px touch target. Desktop chrome is
+unchanged.
+
+The takeover surface stamps a stable `--fl-kb-inset` CSS variable derived
+from `visualViewport` so the composer lifts above the on-screen keyboard.
+Read it from your own styles if you render a custom surface inside a
+takeover:
+
+```css
+.my-mobile-footer {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--fl-kb-inset, 0px));
+}
+```
+
+`--fl-kb-inset` is `0px` when no keyboard is open and outside of takeover mode.
