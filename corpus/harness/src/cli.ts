@@ -730,7 +730,12 @@ async function runGalleryCommand(options: GalleryCommandOptions, deps: ResolvedD
         throw new Error(`vendo init failed for ${repo.name}; see ${init.artifacts.log}`);
       }
       await deps.prepareE2eRepo(repo, appRoot, context.logsDir(repo.name));
-      if (repo.bootstrap.buildCommand) {
+      // Build only when the dev server serves prebuilt output (manifest
+      // devServer.requiresBuild). Self-compiling dev servers boot without a
+      // production build — same seam `corpus boot` and Layer 3 have always
+      // used — and papermark's upstream baseline build is broken at the pin
+      // (layers 1-2 record it as skipped-baseline-broken).
+      if (repo.bootstrap.buildCommand && repo.bootstrap.devServer?.requiresBuild === true) {
         const build = createLoggedCommandRunner(
           context.logsDir(repo.name),
           "gallery.build",

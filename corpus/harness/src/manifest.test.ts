@@ -84,6 +84,26 @@ describe("parseManifest", () => {
     expect(() => parseManifest([entry, { ...entry }])).toThrow(/duplicate.*umami/i);
   });
 
+  it("accepts a dev server that requires a build and rejects non-boolean flags", () => {
+    const withFlag = {
+      ...entry,
+      bootstrap: {
+        ...entry.bootstrap,
+        devServer: { ...entry.bootstrap.devServer, requiresBuild: true },
+      },
+    };
+    expect(parseManifest([withFlag])[0]?.bootstrap.devServer?.requiresBuild).toBe(true);
+
+    const invalid = {
+      ...entry,
+      bootstrap: {
+        ...entry.bootstrap,
+        devServer: { ...entry.bootstrap.devServer, requiresBuild: "yes" },
+      },
+    };
+    expect(() => parseManifest([invalid])).toThrow(/requiresBuild/i);
+  });
+
   it("rejects invalid deep-tier docker database provisioning", () => {
     const invalid = {
       ...entry,
@@ -111,7 +131,13 @@ describe("parseManifest", () => {
       localPath: "corpus/hosts/express-host",
       framework: "express",
       tier: "deep",
+      // Its dev server is `node dist/...`, the only recipe serving prebuilt
+      // output — boot-oriented commands must run buildCommand first.
+      bootstrap: { devServer: { requiresBuild: true } },
     });
+    for (const repo of manifest.filter((entry) => ["umami", "skateshop", "papermark", "teable"].includes(entry.name))) {
+      expect(repo.bootstrap.devServer?.requiresBuild).toBeUndefined();
+    }
     for (const repo of manifest.filter((entry) => ["umami", "skateshop", "papermark"].includes(entry.name))) {
       expect(repo.bootstrap.database?.kind).toBe("docker-postgres");
       expect(repo.bootstrap.devServer?.readinessTimeoutMs).toBeGreaterThan(0);

@@ -462,6 +462,7 @@
       "buildCommand": "pnpm --ignore-workspace build",
       "devServer": {
         "command": "pnpm --ignore-workspace start",
+        "requiresBuild": true,
         "readinessUrl": "http://127.0.0.1:3210",
         "readinessTimeoutMs": 120000
       }
