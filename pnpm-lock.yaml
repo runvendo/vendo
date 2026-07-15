@@ -672,6 +672,9 @@ importers:
       es-module-lexer:
         specifier: ^1.7.0
         version: 1.7.0
+      jsonata:
+        specifier: ^2.0.5
+        version: 2.2.1
       yaml:
         specifier: ^2.6.0
         version: 2.9.0

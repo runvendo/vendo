@@ -15,18 +15,26 @@ import {
 } from "@vendoai/core";
 import type { Connector } from "../connectors/connector.js";
 import {
+  capabilitiesFileSchema,
   extractedToolSchema,
   overridesFileSchema,
   toolsFileSchema,
+  type CapabilitiesFile,
+  type CapabilityBrief,
+  type CompoundTool,
   type ExtractedTool,
   type OpenApiBinding,
   type OverridesFile,
   type RouteBinding,
   type ToolOverride,
 } from "../formats.js";
+import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
+import { error, isArgsObject } from "./outcome.js";
 
 export interface ActionsRegistry extends ToolRegistry {
   add(tools: ToolRegistry): void;
+  /** Capability briefs carried by `.vendo/capabilities.json` (04 §1). Validated and exposed; consumed by later milestones. */
+  briefs(): Promise<CapabilityBrief[]>;
 }
 
 /** Away calls carry the exact grant captured by the guard binding; venue="mcp"
@@ -65,12 +73,22 @@ interface RegistryConfig {
     reason: "untrusted-host-origin" | "cross-origin-binding";
   }) => void | Promise<void>;
   fetch?: typeof fetch;
+  /** Inject `.vendo/capabilities.json` directly (tests, non-file hosts); takes precedence over `dir` (04 §1/§6). */
+  capabilities?: CapabilitiesFile;
+  /**
+   * 04 §6: the guard-bound execution seam every compound step routes through.
+   * The umbrella assigns it AFTER `guard.bind(actions)` — read at execution
+   * time, exactly like `baseUrl`. Absent → compounds return `not-implemented`
+   * and perform no work; there is no second execution path.
+   */
+  invokeTool?: ToolRegistry["execute"];
 }
 
 type Dispatch =
   | { kind: "host"; descriptor: ToolDescriptor; tool: ExtractedTool }
   | { kind: "connector"; descriptor: ToolDescriptor; connector: Connector }
-  | { kind: "registry"; descriptor: ToolDescriptor; registry: ToolRegistry };
+  | { kind: "registry"; descriptor: ToolDescriptor; registry: ToolRegistry }
+  | { kind: "compound"; descriptor: ToolDescriptor; tool: CompoundTool };
 
 interface LoadedRegistry {
   descriptors: ToolDescriptor[];
@@ -86,11 +104,7 @@ const STRIPPED_HEADERS = new Set([
   "upgrade",
 ]);
 
-function error(code: string, message: string): ToolOutcome {
-  return { status: "error", error: { code, message } };
-}
-
-function descriptorOf(tool: ExtractedTool): ToolDescriptor {
+function descriptorOf(tool: ToolDescriptor): ToolDescriptor {
   return {
     name: tool.name,
     description: tool.description,
@@ -138,10 +152,6 @@ async function readOptionalJson<T>(path: string, parse: (value: unknown) => T): 
       cause: cause instanceof Error ? cause.message : String(cause),
     });
   }
-}
-
-function isArgsObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function appendQuery(url: URL, key: string, value: unknown): void {
@@ -431,26 +441,57 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
   }
 }
 
+interface LoadedHost {
+  tools: ExtractedTool[];
+  overrides: OverridesFile;
+  capabilities?: CapabilitiesFile;
+}
+
 export function createActions(config: RegistryConfig): ActionsRegistry {
   const connectors = config.connectors ?? [];
   const added: ToolRegistry[] = [];
-  let hostPromise: Promise<{ tools: ExtractedTool[]; overrides: OverridesFile }> | undefined;
+  let hostPromise: Promise<LoadedHost> | undefined;
   const connectorPromises = new Map<Connector, Promise<ToolDescriptor[]>>();
   const registryPromises = new Map<ToolRegistry, Promise<ToolDescriptor[]>>();
   let loadedPromise: Promise<LoadedRegistry> | undefined;
 
-  function loadHost(): Promise<{ tools: ExtractedTool[]; overrides: OverridesFile }> {
+  function parseCapabilities(value: unknown, source: string): CapabilitiesFile {
+    try {
+      return capabilitiesFileSchema.parse(value);
+    } catch (cause) {
+      throw new VendoError("validation", `Invalid Vendo actions file ${source}`, {
+        cause: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  }
+
+  function loadHost(): Promise<LoadedHost> {
     if (!hostPromise) hostPromise = (async () => {
       const emptyOverrides: OverridesFile = { format: "vendo/overrides@1", tools: {} };
       const configuredTools = config.tools?.map((tool, index) => parseExtractedTool(tool, `config.tools[${index}]`));
-      if (!config.dir) return { tools: configuredTools ?? [], overrides: emptyOverrides };
+      const configuredCapabilities = config.capabilities === undefined
+        ? undefined
+        : parseCapabilities(config.capabilities, "config.capabilities");
+      if (!config.dir) {
+        return {
+          tools: configuredTools ?? [],
+          overrides: emptyOverrides,
+          ...(configuredCapabilities === undefined ? {} : { capabilities: configuredCapabilities }),
+        };
+      }
       // `dir` may be the host root (we look inside its .vendo/) or the .vendo directory itself.
       const vendoDir = basename(resolve(config.dir)) === ".vendo" ? config.dir : join(config.dir, ".vendo");
-      const [toolsFile, overrides] = await Promise.all([
+      const [toolsFile, overrides, capabilitiesFile] = await Promise.all([
         readOptionalJson(join(vendoDir, "tools.json"), (value) => toolsFileSchema.parse(value)),
         readOptionalJson(join(vendoDir, "overrides.json"), (value) => overridesFileSchema.parse(value)),
+        readOptionalJson(join(vendoDir, "capabilities.json"), (value) => capabilitiesFileSchema.parse(value)),
       ]);
-      return { tools: configuredTools ?? toolsFile?.tools ?? [], overrides: overrides ?? emptyOverrides };
+      const capabilities = configuredCapabilities ?? capabilitiesFile;
+      return {
+        tools: configuredTools ?? toolsFile?.tools ?? [],
+        overrides: overrides ?? emptyOverrides,
+        ...(capabilities === undefined ? {} : { capabilities }),
+      };
     })();
     return hostPromise;
   }
@@ -480,6 +521,9 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       const registryLists = await Promise.all(added.map((registry) => addedDescriptors(registry)));
       const dispatch = new Map<string, Dispatch>();
       const descriptors: ToolDescriptor[] = [];
+      // The primitive table compound steps validate against: post-override host +
+      // connector tools ONLY — never compounds, never `add()`-registry tools.
+      const primitives = new Map<string, PrimitiveStepTarget>();
 
       function register(name: string, source: string, entry?: Dispatch): void {
         if (dispatch.has(name)) throw new VendoError("conflict", `Duplicate tool name ${name} from ${source}`);
@@ -497,6 +541,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
         const descriptor = descriptorOf(merged);
         const disabled = merged.disabled === true;
         register(merged.name, "host tools", disabled ? undefined : { kind: "host", descriptor, tool: merged });
+        primitives.set(merged.name, { risk: merged.risk, disabled });
       }
       for (let index = 0; index < connectors.length; index += 1) {
         const connector = connectors[index]!;
@@ -512,6 +557,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
             `connector ${connector.name}`,
             merged.disabled === true ? undefined : { kind: "connector", descriptor, connector },
           );
+          primitives.set(descriptor.name, { risk: merged.risk, disabled: merged.disabled === true });
         }
       }
       for (let index = 0; index < added.length; index += 1) {
@@ -525,12 +571,47 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
         }
       }
 
+      // 04 §6: compounds are additional tools merged at load like overrides.
+      // Name collisions (any direction) throw `conflict` via register(); a
+      // semantic-validation failure QUARANTINES the entry — name reserved,
+      // absent from descriptors and dispatch, boot never degrades.
+      const compounds = (host.capabilities?.tools ?? []).map(
+        (tool) => mergeOverride({ ...tool }, host.overrides.tools[tool.name]),
+      );
+      const issuesByTool = new Map<string, string[]>();
+      for (const issue of validateCapabilities({ tools: compounds }, primitives)) {
+        issuesByTool.set(issue.tool, [...(issuesByTool.get(issue.tool) ?? []), issue.message]);
+      }
+      for (const compound of compounds) {
+        const compoundIssues = issuesByTool.get(compound.name) ?? [];
+        if (compound.disabled === true || compoundIssues.length > 0) {
+          // Disabled and quarantined compounds both reserve the name (collision
+          // detection) without dispatching; only quarantine warns.
+          register(compound.name, "capabilities", undefined);
+          if (compound.disabled !== true) {
+            console.warn(
+              `[vendo] quarantined compound tool ${compound.name} from .vendo/capabilities.json: ${compoundIssues.join("; ")}`,
+            );
+          }
+          continue;
+        }
+        register(compound.name, "capabilities", { kind: "compound", descriptor: descriptorOf(compound), tool: compound });
+      }
+
       // Strip disabled reservations from runtime dispatch after all collision checks.
       for (const [name, entry] of dispatch) if (!entry) dispatch.delete(name);
       return { descriptors, dispatch };
     })();
     return loadedPromise;
   }
+
+  const compoundExecutor = createCompoundExecutor({
+    config,
+    async isPrimitive(name: string): Promise<boolean> {
+      const entry = (await load()).dispatch.get(name);
+      return entry !== undefined && (entry.kind === "host" || entry.kind === "connector");
+    },
+  });
 
   return {
     add(tools: ToolRegistry): void {
@@ -542,10 +623,15 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       return (await load()).descriptors;
     },
 
+    async briefs(): Promise<CapabilityBrief[]> {
+      return (await loadHost()).capabilities?.briefs ?? [];
+    },
+
     async execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {
       const entry = (await load()).dispatch.get(call.tool);
       if (!entry) return error("not-found", `Unknown tool: ${call.tool}`);
       if (entry.kind === "host") return executeHost(config, entry.tool, call, ctx);
+      if (entry.kind === "compound") return compoundExecutor.execute(entry.tool, call, ctx);
       if (entry.kind === "registry") return entry.registry.execute(call, ctx);
       try {
         return await entry.connector.execute(call, ctx);

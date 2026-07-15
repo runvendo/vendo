@@ -20,6 +20,7 @@ import {
   VENDO_TREE_FORMAT,
   VENDO_TOOLS_FORMAT,
   VENDO_OVERRIDES_FORMAT,
+  VENDO_CAPABILITIES_FORMAT,
   VENDO_POLICY_FORMAT,
   TOOL_NAME_PATTERN,
   VendoError,
@@ -82,6 +83,7 @@ describe("§1 — format constants are pinned to their exact wire strings", () =
     expect(VENDO_TREE_FORMAT).toBe("vendo-genui/v1");
     expect(VENDO_TOOLS_FORMAT).toBe("vendo/tools@1");
     expect(VENDO_OVERRIDES_FORMAT).toBe("vendo/overrides@1");
+    expect(VENDO_CAPABILITIES_FORMAT).toBe("vendo/capabilities@1");
     expect(VENDO_POLICY_FORMAT).toBe("vendo/policy@1");
   });
 });
