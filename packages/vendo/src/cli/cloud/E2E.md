@@ -55,3 +55,30 @@ All shapes match the frozen flowlet wave-2 contracts; the 402 `cloud-required`
 envelope is surfaced as a friendly message. The auth/share/publish flows were
 verified live on 2026-07-13; hosted deploy has deterministic local-store and
 mocked-wire coverage pending the console-side production endpoint.
+
+## Entitlement contract v2 (ENG-305/306/307)
+
+`vendo cloud validate` on a `contract_version: 2` response renders plan
+(informational only — never gated on), the nine capabilities, and per-meter
+quota bars; `--json` prints the raw contract. Entitlements are cached in
+`~/.vendo/entitlements.json` (0600, keyed by sha256(apiUrl+key)):
+
+- fresh within `cache.ttl_seconds` (600) for programmatic consumers;
+  `validate` itself always revalidates live
+- 503/network failure → cached contract served with a
+  `stale since <ISO> (console unreachable)` banner (exit 0) within
+  `stale_if_error_seconds` (24h)
+- past 24h unreachable → degrades to free entitlements, renders
+  `Vendo Cloud key: unverified (offline)` (exit 1, fail-closed meters)
+- 401 → cache entry dropped immediately; envelope-less 401 surfaces as
+  `Invalid or revoked API key (401)`
+- free-tier `storage_gb` arrives `exhausted: true` from day one — rendered
+  as no-headroom, not an error (exit stays 0)
+- malformed keys (`^vnd_[0-9a-f]{40}$` mismatch) fail before any request;
+  every cloud request sends `User-Agent: vendo-cli/<version>`
+
+Verified 2026-07-14 live against the console contract-v2 spine
+(vendo-web@5cb58dc run locally: supabase local + `next dev`): signup → OTP
+login (Mailpit) → `keys create` → validate free + pro, `--json`, stale,
+degrade-to-free, and 401 eviction, all through the real HTTP seam. Production
+console re-verification pending the ENG-318 migration deploy.

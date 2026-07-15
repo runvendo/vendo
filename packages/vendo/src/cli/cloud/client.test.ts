@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { CloudError, cloudFetch, resolveCloudBaseUrl } from "./client.js";
+import { CLI_VERSION } from "../shared.js";
 
 describe("cloud client", () => {
   it("resolves the explicit URL before the environment and default", () => {
@@ -26,6 +27,9 @@ describe("cloud client", () => {
       message: "Upgrade required",
       status: 402,
     });
+    expect(fetchImpl).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      headers: expect.objectContaining({ "user-agent": `vendo-cli/${CLI_VERSION}` }),
+    }));
   });
 
   it("refreshes a user session once after a 401 and retries the request", async () => {
@@ -44,6 +48,9 @@ describe("cloud client", () => {
       },
     })).resolves.toEqual([{ id: "org_1" }]);
     expect(fetchImpl).toHaveBeenCalledTimes(3);
+    for (const call of fetchImpl.mock.calls) {
+      expect(call[1]).toMatchObject({ headers: expect.objectContaining({ "user-agent": `vendo-cli/${CLI_VERSION}` }) });
+    }
     expect(fetchImpl.mock.calls[2]?.[1]).toMatchObject({ headers: expect.objectContaining({ authorization: "Bearer fresh" }) });
     expect(writeSession).toHaveBeenCalledWith({ access_token: "fresh", refresh_token: "next", expires_at: 2_000_000_000 });
   });
