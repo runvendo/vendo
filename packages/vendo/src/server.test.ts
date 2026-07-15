@@ -818,6 +818,9 @@ describe("02-store §4 default-on encryption composition", () => {
     // setup() passes an explicit store created WITHOUT encryption — createVendo
     // must not silently rewrap it, so stored secrets stay unavailable.
     const { vendo } = await setup();
+    // Let createVendo's eager schema init finish before teardown closes the
+    // store (closing PGlite mid-initialization wedges the driver).
+    await vendo.store.ensureSchema();
     await expect(secretStore(vendo.store).set("API_TOKEN", "value"))
       .rejects.toMatchObject({ code: "not-implemented" });
   });
