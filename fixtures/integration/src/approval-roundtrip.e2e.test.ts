@@ -106,12 +106,13 @@ describe("J2: destructive approval round-trip through the composed wire", () => 
     }, ADA);
     expect(decide.status).toBe(200);
 
-    const grants = await stack.sql<{ subject: string; tool: string; source: string; duration: string }>(
-      "SELECT subject, tool, source, duration FROM vendo_grants",
+    const grants = await stack.sql<{ id: string; subject: string; tool: string; source: string; duration: string }>(
+      "SELECT id, subject, tool, source, duration FROM vendo_grants",
     );
     expect(grants).toEqual([
-      { subject: ADA.subject, tool: TOOL, source: "chat", duration: "standing" },
+      expect.objectContaining({ subject: ADA.subject, tool: TOOL, source: "chat", duration: "standing" }),
     ]);
+    const grantId = grants[0]!.id;
 
     // --- Resume the paused turn: the real DELETE runs against the host -----
     const resumed = await readSse(await resumeApproval(stack, "thr_j2", "call_1", true, ADA));
@@ -147,5 +148,19 @@ describe("J2: destructive approval round-trip through the composed wire", () => 
     expect(await invoiceExists(SECOND)).toBe(false);
     // No new approval row: the grant answered the second call.
     expect(await stack.sql("SELECT id FROM vendo_approvals")).toHaveLength(1);
+
+    // Audit enrichment (ENG-264): the grant-decided call carries the deciding
+    // grant's id in the persisted event detail. Assert on the fresh turn-2
+    // call — the resumed call_1 is a single-use approval REPLAY, which is
+    // decidedBy "grant" with no grantId by design.
+    const enriched = await stack.sql<{
+      event: { inputPreview?: string; decidedBy?: string; detail?: { grantId?: string } };
+    }>(
+      "SELECT event FROM vendo_audit WHERE kind = 'tool-call' AND tool = $1 AND subject = $2",
+      [TOOL, ADA.subject],
+    );
+    const grantRun = enriched.find((row) => row.event.inputPreview?.includes(SECOND));
+    expect(grantRun?.event.decidedBy).toBe("grant");
+    expect(grantRun?.event.detail?.grantId).toBe(grantId);
   });
 });
