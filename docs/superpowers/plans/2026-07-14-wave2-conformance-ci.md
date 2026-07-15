@@ -70,9 +70,9 @@
 **Files:**
 - Modify: `.github/workflows/ci.yml` (or the conformance job), `corpus/harness/src/local-pack.ts` + its tests
 
-- [ ] **Step 1:** Shim freshness: first check regeneration determinism (`pnpm --filter @vendoai/ui build:mcp-shim` twice, diff). If deterministic → CI step regenerates and `git diff --exit-code` on the generated file. If not → CI runs `test:mcp-shim` (playwright) in the conformance job instead. Record which path was taken and why in the PR body.
-- [ ] **Step 2:** Corpus: add `@vendoai/mcp` to `LOCAL_VENDO_PACKAGE_NAMES`; add a closure test asserting every `@vendoai/*` workspace dependency reachable from the umbrella manifest appears in the pack list (so the next added package can't repeat XCUT-4).
-- [ ] **Step 3:** Commit.
+- [x] **Step 1:** Shim freshness: first check regeneration determinism (`pnpm --filter @vendoai/ui build:mcp-shim` twice, diff). If deterministic → CI step regenerates and `git diff --exit-code` on the generated file. If not → CI runs `test:mcp-shim` (playwright) in the conformance job instead. Record which path was taken and why in the PR body.
+- [x] **Step 2:** Corpus: add `@vendoai/mcp` to `LOCAL_VENDO_PACKAGE_NAMES`; add a closure test asserting every `@vendoai/*` workspace dependency reachable from the umbrella manifest appears in the pack list (so the next added package can't repeat XCUT-4).
+- [x] **Step 3:** Commit.
 
 ### Task 6: Test memory-store consolidation
 

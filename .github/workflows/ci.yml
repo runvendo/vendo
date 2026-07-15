@@ -117,6 +117,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm conformance
+      - name: MCP Apps shim is fresh
+        run: |
+          pnpm --filter @vendoai/ui build:jail
+          pnpm --filter @vendoai/ui build:mcp-shim
+          git diff --exit-code -- packages/mcp/src/shim/shim-html.gen.ts
 
   # Supply-chain gate: fails on high/critical advisories in the PRODUCTION
   # dependency graph (what ships in the published tarballs). Scoped to --prod so
