@@ -3,6 +3,26 @@ title: "Vendo product changelog"
 description: "Weekly release notes covering new Vendo features, product updates, MCP door capabilities, and bug fixes shipped to the SDK and runtime."
 ---
 
+<Update label="July 15, 2026" description="Week of July 14 – July 20">
+
+## New features
+
+**Stop a running automation.** `POST /api/vendo/runs/:id/stop` cancels an
+in-flight run cooperatively — the current step finishes, outstanding tool
+calls drain, and the run reaches a cancelled terminal state. Parked
+approvals attached to the run are dropped. Repeated stops are idempotent.
+See [Scheduler and webhooks](/deploy/scheduler-and-webhooks) and the
+[HTTP routes reference](/reference/http-routes).
+
+**Atomic claims on the store contract.** `store.claim({ key, owner, ttlMs })`
+and `store.release(claim)` let concurrent workers coordinate on a shared
+key without external locks, with TTL-based expiry so a crashed owner never
+holds a key forever. The same compare-and-set machinery backs
+run-lifecycle transitions, so cancellations and scheduler ticks cannot
+race a run into a resurrected state. See [Persistence](/deploy/persistence).
+
+</Update>
+
 <Update label="July 14, 2026" description="Week of July 14 – July 20">
 
 ## New features
