@@ -122,6 +122,20 @@ const networkOptions = (egress: string[] | undefined): {
  * state survives adapter/process restarts without trusting app-writable files.
  * The optional SDK is imported lazily.
  */
+/** True when the optional `modal` SDK resolves from this package, so callers
+    can avoid wiring an adapter whose first create() would die on a missing
+    module. Runtimes without `import.meta.resolve` (bundlers inline the
+    dependency) are treated as available. */
+export const modalInstalled = (): boolean => {
+  if (typeof import.meta.resolve !== "function") return true;
+  try {
+    import.meta.resolve("modal");
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export const modalSandbox = (options: ModalSandboxOptions = {}): SandboxAdapter => {
   const clientOptions = (): Pick<ModalSandboxOptions, "tokenId" | "tokenSecret"> => ({
     ...(options.tokenId === undefined ? {} : { tokenId: options.tokenId }),

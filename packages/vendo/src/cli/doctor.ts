@@ -88,6 +88,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     ?? "http://localhost:3000/api/vendo";
   const fetchImpl = options.fetchImpl ?? fetch;
   let mcpEnabled = false;
+  let sandboxVenue: unknown;
   try {
     const response = await fetchImpl(`${statusUrl}/status`, {
       headers: { accept: "application/json" },
@@ -95,7 +96,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     const body = await response.json() as {
       posture?: unknown;
       version?: unknown;
-      blocks?: { mcp?: unknown } | null;
+      blocks?: { mcp?: unknown; sandbox?: unknown } | null;
     };
     if (!response.ok || typeof body.posture !== "string" || typeof body.version !== "string"
       || typeof body.blocks !== "object" || body.blocks === null) {
@@ -104,6 +105,17 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       pass(`/status live round-trip (${body.version}, ${body.posture})`);
       // 10-mcp §1 — the door flag lives under blocks.mcp.
       mcpEnabled = body.blocks.mcp === true;
+      sandboxVenue = body.blocks.sandbox;
+      if (sandboxVenue === "e2b" || sandboxVenue === "modal" || sandboxVenue === "custom") {
+        pass(`execution venue: ${sandboxVenue}`);
+      } else if (sandboxVenue === false) {
+        warn("install the e2b package and set E2B_API_KEY, or install modal and set MODAL_TOKEN_ID+MODAL_TOKEN_SECRET, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable");
+      } else if (sandboxVenue === undefined) {
+        // Older hosts predate blocks.sandbox — version skew, not a broken install.
+        warn("host /status does not report an execution venue; upgrade @vendoai/vendo to enable the venue check");
+      } else {
+        fail("/status returned an invalid execution venue");
+      }
     }
   } catch {
     fail(`/status is unreachable at ${statusUrl}/status`);
@@ -181,7 +193,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     }
   }
 
-  output.log("Ladder: add sandbox to unlock server apps; actAs for away host actions; connectors for external tools.");
+  output.log("Ladder: execution venue is checked above; actAs for away host actions; connectors for external tools.");
   const wired = failures === 0;
   await telemetry.track("doctor_run", { failures, warnings, wired });
   return wired ? 0 : 1;

@@ -81,6 +81,20 @@ const networkOptions = (egress: string[] | undefined, allTraffic: string) => egr
  * enforced with E2B's provider-native allowlist plus an all-traffic deny rule.
  * The optional SDK is imported only when create/resume is called.
  */
+/** True when the optional `e2b` SDK resolves from this package, so callers can
+    avoid wiring an adapter whose first create() would die on a missing module.
+    Runtimes without `import.meta.resolve` (bundlers inline the dependency) are
+    treated as available. */
+export const e2bInstalled = (): boolean => {
+  if (typeof import.meta.resolve !== "function") return true;
+  try {
+    import.meta.resolve("e2b");
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 

@@ -5,6 +5,7 @@ import {
   sha256Hex,
   type AppId,
   type IsoDateTime,
+  type Json,
   type Pin,
 } from "@vendoai/core";
 import { z } from "zod";
@@ -16,7 +17,33 @@ export interface PinBaseline {
   hash: string;
   exportable: boolean;
   capturedAt: IsoDateTime;
+  sourceImports?: Record<string, string>;
+  subSources?: Record<string, PinSubSource>;
+  sampleProps?: Record<string, Json>;
+  styles?: PinStyle[];
 }
+
+/** Captured source-owned virtual module plus its own resolved import table. */
+export interface PinSubSource {
+  source: string;
+  imports: Record<string, string>;
+}
+
+/** One inert host stylesheet snapshot captured from a canonical app root. */
+export interface PinStyle {
+  path: string;
+  css: string;
+}
+
+const pinSubSourceSchema = z.object({
+  source: z.string(),
+  imports: z.record(z.string()),
+}).passthrough() satisfies z.ZodType<PinSubSource>;
+
+const pinStyleSchema = z.object({
+  path: z.string(),
+  css: z.string(),
+}).passthrough() satisfies z.ZodType<PinStyle>;
 
 /** 06-apps §8 — validated persisted representation of a captured host baseline. */
 export const pinBaselineSchema = z.object({
@@ -25,6 +52,10 @@ export const pinBaselineSchema = z.object({
   hash: z.string().startsWith("sha256:"),
   exportable: z.boolean(),
   capturedAt: isoDateTimeSchema,
+  sourceImports: z.record(z.string()).optional(),
+  subSources: z.record(pinSubSourceSchema).optional(),
+  sampleProps: z.record(z.unknown()).optional(),
+  styles: z.array(pinStyleSchema).optional(),
 }).passthrough() satisfies z.ZodType<PinBaseline>;
 
 /** Internal stable generated-component name for one captured host slot. */
