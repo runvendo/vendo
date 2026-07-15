@@ -1,6 +1,6 @@
 ---
-title: "Telemetry: what Vendo collects and how to opt out"
-description: "What Vendo's build and development telemetry collects, what it never sends, and every environment and config control you can use to opt out."
+title: "Telemetry and capability misses"
+description: "What Vendo's build telemetry and capability-miss events collect, what they never send, and every environment variable and config flag that opts you out."
 ---
 
 Vendo collects two separate streams: build and development telemetry, and
@@ -40,12 +40,13 @@ request with the tools you exposed. Each event follows the
 - the same tool failed at least twice in order and the agent stopped retrying
 - the agent explicitly gave up
 
-Every event carries a stable event and time identity, host and app context, the
+Each event carries a stable event and time identity, host and app context, the
 session and thread, a privacy-scrubbed intent string, the exact tool surface
-identity that was in scope, and the considered or attempted tools with scrubbed
-failure detail. Raw tool arguments and outputs never appear in the event, and
-credentials, secrets, and unrelated personal data are redacted or minimized
-before write.
+identity that was in scope, and the considered or attempted tools with
+scrubbed failure detail.
+
+Raw tool arguments and outputs never appear in the event. Credentials and
+secrets are redacted, and unrelated personal data is minimized before write.
 
 ### Local persistence
 
@@ -80,7 +81,8 @@ inspect misses locally.
 
 ### Downstream use
 
-Uploaded misses feed the Vendo Cloud gap dashboard, which clusters them by
-intent and diffs each cluster against the extracted tool surface named in the
-event. The same shape flows into the refine feed consumed by `vendo refine`,
-so the coverage gaps you see in Cloud match what refine offers to fix.
+Uploaded misses feed the Vendo Cloud gap dashboard. The dashboard clusters
+them by intent and diffs each cluster against the extracted tool surface named
+in the event. The same shape flows into the refine feed consumed by
+`vendo refine`, so the coverage gaps you see in Cloud match what refine
+offers to fix.
