@@ -57,6 +57,41 @@ its comfortable counterpart.
 | `--vendo-density-tab-height` | `26px` | `30px` |
 | `--vendo-density-tab-padding` | `4px 8px` | `6px 10px` |
 
+### Color scheme
+
+`VendoRoot` derives `color-scheme` from the WCAG relative luminance of
+`colors.background` and exposes it as `--vendo-color-scheme`. Backgrounds
+below the flip point (L < 0.179) resolve to `dark`; everything else, including
+unparseable values, resolves to `light`.
+
+| Variable | Light background | Dark background |
+| --- | --- | --- |
+| `--vendo-color-scheme` | `light` | `dark` |
+
+Chrome uses this variable to activate `light-dark()` branches, so a dark-brand
+host automatically gets the dark chrome treatment without any extra
+configuration. Set `colors.background` in `.vendo/theme.json` (or through a
+`VendoProvider.theme` override) and the scheme follows.
+
+```json .vendo/theme.json
+{
+  "colors": {
+    "background": "#14151a",
+    "surface": "#1b1c22",
+    "text": "#f5f5f7"
+  }
+}
+```
+
+Reference `--vendo-color-scheme` from your own styles if you want custom
+surfaces to track the same flip:
+
+```css
+.my-card {
+  color-scheme: var(--vendo-color-scheme);
+}
+```
+
 ### Motion
 
 `motion: "reduced"` collapses `--vendo-motion-duration` to `0ms` so chrome
