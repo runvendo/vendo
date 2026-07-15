@@ -109,6 +109,9 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
         pass(`execution venue: ${sandboxVenue}`);
       } else if (sandboxVenue === false) {
         warn("set E2B_API_KEY or MODAL_TOKEN_ID+MODAL_TOKEN_SECRET, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable");
+      } else if (sandboxVenue === undefined) {
+        // Older hosts predate blocks.sandbox — version skew, not a broken install.
+        warn("host /status does not report an execution venue; upgrade @vendoai/vendo to enable the venue check");
       } else {
         fail("/status returned an invalid execution venue");
       }

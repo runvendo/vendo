@@ -144,6 +144,23 @@ describe("vendo doctor", () => {
     );
   });
 
+  it("warns instead of failing when an older host omits the execution venue", async () => {
+    const messages = output();
+    expect(await runDoctor({
+      targetDir: await healthy(),
+      fetchImpl: vi.fn().mockResolvedValue(Response.json({
+        posture: "unconfigured",
+        version: "0.3.0",
+        blocks: { store: true },
+      })),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.errors).toContain(
+      "warning: host /status does not report an execution venue; upgrade @vendoai/vendo to enable the venue check",
+    );
+  });
+
   it("returns one for broken wiring or an unreachable live handler", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-doctor-broken-"));
     cleanup.push(root);
