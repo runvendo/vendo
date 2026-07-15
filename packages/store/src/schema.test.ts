@@ -20,6 +20,8 @@ const CONTRACT_COLUMNS: Record<string, string[]> = {
   vendo_secrets: ["name", "ciphertext", "created_at"],
   vendo_mcp_clients: ["id", "data", "refs", "created_at", "updated_at"],
   vendo_mcp_grants: ["id", "data", "refs", "created_at", "updated_at"],
+  vendo_orgs: ["id", "name", "created_at", "updated_at"],
+  vendo_org_members: ["org_id", "subject", "role", "added_at"],
 };
 
 for (const backend of backends()) {
@@ -40,17 +42,17 @@ for (const backend of backends()) {
     it("stores schema_version and a boot_id in vendo_meta", async () => {
       const rows = await made.sql("SELECT key, value FROM vendo_meta ORDER BY key");
       expect(rows).toEqual(expect.arrayContaining([
-        expect.objectContaining({ key: "schema_version", value: 2 }),
+        expect.objectContaining({ key: "schema_version", value: 3 }),
         expect.objectContaining({ key: "boot_id" }),
       ]));
       expect(rows.find((row) => row.key === "boot_id")?.value).toEqual(expect.any(String));
     });
 
-    it("lands a fresh database directly on schema version 2", async () => {
+    it("lands a fresh database directly on schema version 3", async () => {
       // A brand-new DB never runs the v2 backfill's DELETE against real data; it
       // just records the current version. (beforeAll already ran ensureSchema.)
       const version = (await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value;
-      expect(version).toBe(2);
+      expect(version).toBe(3);
     });
 
     it("keeps boot_id stable across a close and reopen", async () => {
@@ -70,7 +72,7 @@ for (const backend of backends()) {
 
       await made.store.ensureSchema();
 
-      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(2);
+      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(3);
       const rows = await made.sql(
         `SELECT table_name FROM information_schema.tables
          WHERE table_schema = 'public' AND table_name IN ('vendo_mcp_clients', 'vendo_mcp_grants')
@@ -82,7 +84,34 @@ for (const backend of backends()) {
       ]);
     });
 
-    it("creates all 13 contract tables with every contracted key column", async () => {
+    it("migrates a version 2 database to the v3 org tables without re-running the v2 backfill", async () => {
+      // A v2 database may hold a LIVE vendo_records row that happens to match the
+      // v2 backfill predicate; the 2→3 upgrade must not relocate/DELETE it again.
+      await made.sql("DROP TABLE vendo_orgs, vendo_org_members");
+      await made.sql("UPDATE vendo_meta SET value = '2'::jsonb WHERE key = 'schema_version'");
+      await made.sql(
+        `INSERT INTO vendo_records (collection, id, data, created_at, updated_at)
+         VALUES ('vendo_state', 'app_live:subject_live', '{"live":true}'::jsonb, now(), now())
+         ON CONFLICT DO NOTHING`,
+      );
+
+      await made.store.ensureSchema();
+
+      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(3);
+      const tables = await made.sql(
+        `SELECT table_name FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name IN ('vendo_orgs', 'vendo_org_members')
+         ORDER BY table_name`,
+      );
+      expect(tables).toEqual([{ table_name: "vendo_org_members" }, { table_name: "vendo_orgs" }]);
+      const survivor = await made.sql(
+        "SELECT id FROM vendo_records WHERE collection = 'vendo_state' AND id = 'app_live:subject_live'",
+      );
+      expect(survivor).toEqual([{ id: "app_live:subject_live" }]);
+      await made.sql("DELETE FROM vendo_records WHERE collection = 'vendo_state' AND id = 'app_live:subject_live'");
+    });
+
+    it("creates all 15 contract tables with every contracted key column", async () => {
       const rows = await made.sql(
         "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name LIKE 'vendo_%'",
       );
@@ -93,7 +122,7 @@ for (const backend of backends()) {
         columns.add(String(row.column_name));
         actual.set(table, columns);
       }
-      expect(actual.size).toBe(13);
+      expect(actual.size).toBe(15);
       for (const [table, columns] of Object.entries(CONTRACT_COLUMNS)) {
         expect(actual.has(table), table).toBe(true);
         for (const column of columns) expect(actual.get(table)?.has(column), `${table}.${column}`).toBe(true);
