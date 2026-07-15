@@ -39,6 +39,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "conformance": "vitest run src/conformance.test.ts src/wire.test.ts src/stream-client.test.ts src/provider-wire.conformance.test.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:coverage": "vitest run --coverage"
@@ -51,6 +52,8 @@
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "3.0.12",
+    "@ai-sdk/openai": "3.0.9",
+    "@ai-sdk/openai-compatible": "2.0.9",
     "@types/node": "^22.0.0",
     "ai": "6.0.28",
     "typescript": "^5.6.0",
