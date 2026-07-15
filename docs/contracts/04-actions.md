@@ -33,7 +33,7 @@ Extraction tier: **OpenAPI + route-scan + tRPC** (corpus-proven; tRPC added addi
 
 tRPC extraction is static — routers are parsed with the TypeScript compiler API, no host code runs. Zod input schemas are statically interpreted into JSON Schema for common patterns; unrecognized validators fail closed to a permissive schema plus a `note`. Risk labeling extends the fail-closed rules: a query earns `read` only with a read-shaped name, mutations default to `write`, the destructive word list applies unchanged, and unclassifiable procedures (subscriptions, dynamic composition) are emitted `disabled: true` with a note.
 
-Tool identity is binding-kind-aware: HTTP-shaped bindings (route, openapi) are identified by method + path; tRPC bindings by their procedure dot-path. `SyncReport` breaking-change detection and corpus expectations key on this identity, never on the renamed tool slug (01-core §15).
+Tool identity is binding-kind-aware: HTTP-shaped bindings (route, openapi) are identified by method + path; tRPC bindings by mount + procedure dot-path (the same procedure name under two mounts is two tools). `SyncReport` breaking-change detection and corpus expectations key on this identity, never on the renamed tool slug (01-core §15).
 
 ### `.vendo/tools.json` (generated, host-committed)
 
