@@ -30,7 +30,7 @@ import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Principal } from "@vendoai/core";
+import { descriptorHash, type Principal } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import { createVendo } from "@vendoai/vendo/server";
 import { createControllableModel, expandTurn, type TurnSpec } from "./model.ts";
@@ -127,6 +127,9 @@ export async function startBackends(): Promise<Backends> {
     actAs: async (principal: Principal) => ({ headers: { cookie: await loginCookie(principal.subject) } }),
     policy: { file: ".vendo/policy.json" },
   });
+  const originalDescriptions = new Map(
+    (await vendo.actions.descriptors()).map((descriptor) => [descriptor.name, descriptor.description]),
+  );
 
   // --- 3. the loopback wire + control server ------------------------------
   const httpServer = createHttpServer((req, res) => {
@@ -164,6 +167,10 @@ export async function startBackends(): Promise<Backends> {
     if (req.method === "POST" && sub === "/reset") {
       scripted.reset();
       await fetch(`${hostBaseUrl}/fixture/reset`, { method: "POST" });
+      for (const descriptor of await vendo.actions.descriptors()) {
+        const original = originalDescriptions.get(descriptor.name);
+        if (original !== undefined) descriptor.description = original;
+      }
       return respond({ ok: true });
     }
     if (req.method === "POST" && sub === "/script") {
@@ -171,6 +178,16 @@ export async function startBackends(): Promise<Backends> {
       const turns = Array.isArray(body.turns) ? body.turns : [];
       scripted.enqueue(turns.map(expandTurn));
       return respond({ ok: true, enqueued: turns.length });
+    }
+    if (req.method === "POST" && sub === "/descriptor-drift") {
+      const body = JSON.parse((await readBody(req)).toString("utf8") || "{}") as { tool?: unknown };
+      const descriptor = (await vendo.actions.descriptors()).find(
+        (candidate) => candidate.name === body.tool,
+      );
+      if (descriptor === undefined) return respond({ error: "unknown tool" }, 404);
+      const staleHash = descriptorHash(descriptor);
+      descriptor.description = `${originalDescriptions.get(descriptor.name) ?? descriptor.description} (descriptor v2)`;
+      return respond({ ok: true, staleHash, currentHash: descriptorHash(descriptor) });
     }
     const invoice = /^\/host\/invoice\/(.+)$/.exec(sub);
     if (req.method === "GET" && invoice) {
