@@ -302,11 +302,17 @@ describe("prepareE2eRepo", () => {
 
   it("aligns Teable's generated App Router and model module with its src/pages tree", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "vendo-teable-prep-"));
-    const appRoot = path.join(root, "teable");
+    const appRoot = path.join(root, "apps/nextjs-app");
+    const backendRoot = path.join(root, "apps/nestjs-backend");
     const logsDir = path.join(root, "logs");
+    await mkdir(backendRoot, { recursive: true });
     await mkdir(path.join(appRoot, "app/api/vendo/[...vendo]"), { recursive: true });
     await mkdir(path.join(appRoot, "lib"), { recursive: true });
     await mkdir(path.join(appRoot, "src/pages/auth"), { recursive: true });
+    await writeFile(
+      path.join(appRoot, "next-i18next.config.js"),
+      "module.exports = { i18n: { defaultLocale: 'en' } };\n",
+    );
     await writeFile(
       path.join(appRoot, "app/api/vendo/[...vendo]/route.ts"),
       'import { model } from "@/lib/ai";\n',
@@ -326,9 +332,24 @@ describe("prepareE2eRepo", () => {
     await expect(readFile(path.join(appRoot, "src/app/api/vendo/[...vendo]/route.ts"), "utf8")).resolves.toContain("@/lib/ai");
     await expect(readFile(path.join(appRoot, "src/app/layout.tsx"), "utf8")).resolves.toContain('../../.vendo/theme.json');
     await expect(readFile(path.join(appRoot, "src/lib/ai.ts"), "utf8")).resolves.toContain("export const model");
+    await expect(readFile(path.join(backendRoot, "next-i18next.config.js"), "utf8")).resolves.toContain("defaultLocale");
     expect(firstLogs).toEqual([path.join(logsDir, "e2e.prepare.log")]);
     expect(secondLogs).toEqual(firstLogs);
-    await expect(readFile(firstLogs[0]!, "utf8")).resolves.toContain("aligned Teable Vendo App Router with src/pages");
+    const prepLog = await readFile(firstLogs[0]!, "utf8");
+    expect(prepLog).toContain("aligned Teable Vendo App Router with src/pages");
+    expect(prepLog).toContain("copied next-i18next.config.js beside the Nest backend");
+  });
+
+  it("fails Teable prep loudly when the next-i18next config is missing", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-teable-prep-"));
+    const appRoot = path.join(root, "apps/nextjs-app");
+    const logsDir = path.join(root, "logs");
+    await mkdir(path.join(appRoot, "src/app"), { recursive: true });
+    await mkdir(path.join(appRoot, "src/lib"), { recursive: true });
+    await writeFile(path.join(appRoot, "src/app/layout.tsx"), 'import theme from "../../.vendo/theme.json";\n');
+    await writeFile(path.join(appRoot, "src/lib/ai.ts"), "export const model = {};\n");
+
+    await expect(prepareE2eRepo({ name: "teable" }, appRoot, logsDir)).rejects.toThrow(/next-i18next\.config\.js/);
   });
 
   it("adds Papermark fixtures, JWT login, curated tools, handler guidance, and per-attempt thread ids", async () => {

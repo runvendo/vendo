@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ManifestEntry } from "./manifest.js";
 import { prepareSkateshopE2eRepo } from "./e2e-prep/skateshop.js";
@@ -828,9 +828,23 @@ async function prepareTeableE2eRepo(appRoot: string, logPath: string): Promise<s
     throw new Error("Teable e2e prep expected Vendo init to create lib/ai.ts or src/lib/ai.ts");
   }
 
+  // Teable's Nest backend embeds the Next app with the backend directory as
+  // process.cwd(); next-i18next resolves its user config from cwd, so every
+  // page render (including /auth/login readiness) 500s unless the config sits
+  // beside the backend. The config resolves its own locale paths relative to
+  // cwd and works unchanged from apps/nestjs-backend.
+  const i18nConfig = path.join(appRoot, "next-i18next.config.js");
+  const backendRoot = path.join(path.dirname(appRoot), "nestjs-backend");
+  if (!await pathExists(i18nConfig)) {
+    throw new Error("Teable e2e prep expected apps/nextjs-app/next-i18next.config.js to exist");
+  }
+  await mkdir(backendRoot, { recursive: true });
+  await copyFile(i18nConfig, path.join(backendRoot, "next-i18next.config.js"));
+
   const actions = [
     "aligned Teable Vendo App Router with src/pages",
     "aligned Teable Vendo model module with the @/ alias",
+    "copied next-i18next.config.js beside the Nest backend",
   ];
   await writeFile(logPath, `${actions.join("\n")}\n`);
   return [logPath];
