@@ -24,6 +24,18 @@ approvals attached to the run are dropped. Repeated stops are idempotent.
 See [Scheduler and webhooks](/deploy/scheduler-and-webhooks) and the
 [HTTP routes reference](/reference/http-routes).
 
+**actAs presets for common providers.** `@vendoai/actions/presets` ships
+one-line `actAs` wiring for Auth.js, Supabase, Clerk, Auth0, and any HS256
+JWT provider. Auth.js and Supabase mint provider-native sessions offline;
+Clerk and Auth0 sign a short-lived host-owned `VendoAway` token and ship a
+Next.js and Express verify middleware that swaps it for injected identity
+headers on your host API. All presets cache tokens until expiry with a
+safety margin, key cache entries by a secret fingerprint so rotation
+invalidates immediately, and route through the new impersonation guard —
+`grant.subject` mismatches with the current principal fail closed with an
+`act-as-subject-mismatch` outcome before any outbound call. See
+[actAs presets](/connect/act-as-presets).
+
 **Atomic claims on the store contract.** `store.claim({ key, owner, ttlMs })`
 and `store.release(claim)` let concurrent workers coordinate on a shared
 key without external locks, with TTL-based expiry so a crashed owner never

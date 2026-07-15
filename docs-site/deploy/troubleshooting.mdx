@@ -30,7 +30,7 @@ Every non-2xx response uses `{ "error": { "code", "message" } }`.
 ## Common checks
 
 - A rung 2 through 4 app requires a configured sandbox adapter.
-- Away host API calls require `actAs` and a matching app-bound grant.
+- Away host API calls require `actAs` and a matching app-bound grant. See [actAs presets](/connect/act-as-presets) for provider wiring; grants that don't match the current principal fail closed with `act-as-subject-mismatch`.
 - Cookie-authenticated mutations require `Content-Type: application/json`.
 - `/tick` requires the configured bearer secret.
 - Webhook verification uses the raw body and delivery headers.
