@@ -98,8 +98,12 @@ export class ThreadRepository {
     if (!THREAD_ID_PATTERN.test(id)) {
       throw new VendoError("validation", "threadId is malformed");
     }
-    // Memory paths (no store / ephemeral) use per-subject maps, so ids are private
+    // The memory path (no store at all) uses per-subject maps, so ids are private
     // and no takeover is possible — resolve straight from this subject's map.
+    // Ephemeral subjects go THROUGH the store: its overlay routing (02-store §4)
+    // keeps them off disk with the same cross-subject guards, and it is what the
+    // anonymous→signed-in merge (ENG-263) drains — a private map here would
+    // silently lose an anonymous visitor's threads on sign-in.
     if (this.usesMemory(ctx)) {
       return this.subjectMemory(ctx.principal.subject).get(id) ?? this.create(ctx, id);
     }
@@ -210,8 +214,8 @@ export class ThreadRepository {
     return thread;
   }
 
-  private usesMemory(ctx: RunContext): boolean {
-    return this.store === undefined || ctx.principal.ephemeral === true;
+  private usesMemory(_ctx: RunContext): boolean {
+    return this.store === undefined;
   }
 
   private subjectMemory(subject: string): Map<ThreadId, Thread> {
