@@ -72,6 +72,27 @@ for (const backend of backends()) {
       await expect(orgs.setRole(org.id, "user_ghost", "admin")).rejects.toMatchObject({ code: "not-found" });
     });
 
+    it("keeps at least one owner under concurrent self-demotions (last-owner race)", async () => {
+      const orgs = orgStore(made.store);
+      const org = await orgs.create("Race Inc", "user_ada");
+      await orgs.addMember(org.id, "user_bob", "owner");
+
+      // Both owners try to demote themselves at the same time. The per-org
+      // membership lock serializes the count-then-write, so exactly one
+      // succeeds and the org keeps an owner (never zero).
+      const results = await Promise.allSettled([
+        orgs.setRole(org.id, "user_ada", "member"),
+        orgs.setRole(org.id, "user_bob", "member"),
+      ]);
+      const fulfilled = results.filter((result) => result.status === "fulfilled");
+      const rejected = results.filter((result) => result.status === "rejected");
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({ code: "conflict" });
+      const owners = (await orgs.members(org.id)).filter((member) => member.role === "owner");
+      expect(owners).toHaveLength(1);
+    });
+
     it("surfaces role integrity as VendoError, not raw db failures", async () => {
       const orgs = orgStore(made.store);
       const org = await orgs.create("Errors Org", "user_ada");

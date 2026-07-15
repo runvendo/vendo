@@ -1,5 +1,6 @@
 import { isReservedSubject, VendoError, type IsoDateTime } from "@vendoai/core";
 import { randomUUID } from "node:crypto";
+import { withOrgMembershipLock } from "../db.js";
 import { dbFor, type VendoStore } from "../store.js";
 import { iso, text } from "./utils.js";
 
@@ -159,17 +160,18 @@ export function orgStore(store: VendoStore): {
     async setRole(orgId, subject, role) {
       parseRole(role);
       await requireOrg(orgId);
-      // Demoting the LAST owner would orphan the org — the guard is in the
-      // UPDATE's WHERE so a concurrent demotion cannot slip past it (the
-      // subquery and the update see the same snapshot).
-      const result = await db.query(
+      // Demoting the LAST owner would orphan the org. The count-then-write
+      // guard races under READ COMMITTED (two owners each see the other and
+      // both commit → zero owners), so serialize owner-set writes per org.
+      // The guard also lives in the UPDATE's WHERE as a second line of defense.
+      const result = await withOrgMembershipLock(db, orgId, (query) => query(
         `UPDATE vendo_org_members SET role = $3
          WHERE org_id = $1 AND subject = $2
            AND (role <> 'owner' OR $3 = 'owner'
              OR (SELECT count(*) FROM vendo_org_members WHERE org_id = $1 AND role = 'owner') > 1)
          RETURNING org_id, subject, role, added_at`,
         [orgId, subject, role],
-      );
+      ));
       if (result.rows[0] === undefined) {
         const current = await roleOf(orgId, subject);
         if (current === null) throw new VendoError("not-found", `${subject} is not a member of ${orgId}`);
@@ -180,14 +182,14 @@ export function orgStore(store: VendoStore): {
 
     async removeMember(orgId, subject) {
       await requireOrg(orgId);
-      const result = await db.query(
+      const result = await withOrgMembershipLock(db, orgId, (query) => query(
         `DELETE FROM vendo_org_members
          WHERE org_id = $1 AND subject = $2
            AND (role <> 'owner'
              OR (SELECT count(*) FROM vendo_org_members WHERE org_id = $1 AND role = 'owner') > 1)
          RETURNING subject`,
         [orgId, subject],
-      );
+      ));
       if (result.rows[0] === undefined) {
         const current = await roleOf(orgId, subject);
         if (current === null) throw new VendoError("not-found", `${subject} is not a member of ${orgId}`);
