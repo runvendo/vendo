@@ -236,7 +236,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   });
 
   const caller = createAppCaller(machines, config.tools);
-  const opener = createAppOpener(machines, caller, config.store);
+  const opener = createAppOpener(machines, caller, config.store, config.pinBaselines);
   const proxy = createAppsProxy({
     tokenSecret,
     tools: config.tools,

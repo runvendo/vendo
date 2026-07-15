@@ -348,12 +348,39 @@ export default function EmptyGeneratedComponent() {
 }
 `;
 
-const jailTree: Tree = {
+const furnishedPinSource = String.raw`
+import { FurnishedCardBody } from "./FurnishedCardBody";
+
+export default function FurnishedPin(props) {
+  return <FurnishedCardBody {...props} />;
+}
+`;
+
+const furnishedCardBodySource = String.raw`
+import { FurnishedBadge } from "./FurnishedBadge";
+
+export function FurnishedCardBody({ customer, total }) {
+  return <article className="furnished-pin-card">
+    <FurnishedBadge />
+    <h2>Furnished fork for {customer}</h2>
+    <p>Stubbed invoice total: {total}</p>
+  </article>;
+}
+`;
+
+const furnishedBadgeSource = String.raw`
+export function FurnishedBadge() {
+  return <span className="furnished-pin-badge">captured styles</span>;
+}
+`;
+
+const jailTree: Tree & { furnishings: Record<string, unknown> } = {
   formatVersion: "vendo-genui/v1",
   root: "root",
   nodes: [
-    { id: "root", component: "Stack", children: ["before", "probe", "thrower", "empty", "after"] },
+    { id: "root", component: "Stack", children: ["before", "furnished", "probe", "thrower", "empty", "after"] },
     { id: "before", component: "Text", props: { text: "Jail siblings before" } },
+    { id: "furnished", component: "FurnishedPin", source: "generated" },
     {
       id: "probe",
       component: "SecurityProbe",
@@ -368,9 +395,45 @@ const jailTree: Tree = {
     { id: "after", component: "Text", props: { text: "Jail sibling survived" } },
   ],
   components: {
+    FurnishedPin: furnishedPinSource,
     SecurityProbe: securitySource,
     ThrowingGeneratedComponent: throwingSource,
     EmptyGeneratedComponent: emptySource,
+  },
+  furnishings: {
+    FurnishedPin: {
+      sourceImports: { "./FurnishedCardBody": "src/components/FurnishedCardBody.tsx" },
+      subSources: {
+        "src/components/FurnishedCardBody.tsx": {
+          source: furnishedCardBodySource,
+          imports: { "./FurnishedBadge": "src/components/FurnishedBadge.tsx" },
+        },
+        "src/components/FurnishedBadge.tsx": {
+          source: furnishedBadgeSource,
+          imports: {},
+        },
+      },
+      sampleProps: { customer: "Ada", total: "$4,200" },
+      styles: [{
+        path: "src/app/globals.css",
+        css: String.raw`
+          .furnished-pin-card {
+            background: rgb(239, 246, 255);
+            border: 2px solid rgb(37, 99, 235);
+            border-radius: 14px;
+            padding: 16px;
+          }
+          .furnished-pin-badge {
+            background: rgb(30, 64, 175);
+            border-radius: 999px;
+            color: white;
+            display: inline-block;
+            font-weight: 700;
+            padding: 4px 10px;
+          }
+        `,
+      }],
+    },
   },
 };
 

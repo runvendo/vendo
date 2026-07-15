@@ -21,7 +21,7 @@ import { useVendoThemeOrDefault } from "../context.js";
 import { themeCssVariables } from "../theme.js";
 import { resolvePointer } from "./bindings.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
-import { JailedComponent } from "./jail/JailedComponent.js";
+import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
 import { PREWIRED_COMPONENTS, Skeleton } from "./primitives.js";
 
@@ -139,6 +139,7 @@ interface NodeRendererProps {
   ancestry: ReadonlySet<string>;
   nodes: ReadonlyMap<string, TreeNode>;
   generated: Record<string, string>;
+  furnishings: Record<string, JailFurnishing>;
   themeVars: Record<string, string>;
   components: Record<string, ComponentType>;
   data: Record<string, Json>;
@@ -210,13 +211,16 @@ function NodeRenderer(props: NodeRendererProps) {
         </ContainedNotice>
       );
     } else {
-      const bound = bindValue(node.props ?? {}, "jail", props.data, props.state, invoke) as Record<string, unknown>;
+      const bound = node.props === undefined
+        ? undefined
+        : bindValue(node.props, "jail", props.data, props.state, invoke) as Record<string, unknown>;
       content = (
         <>
           <JailedComponent
             name={node.component}
             source={source}
             props={bound}
+            furnishing={props.furnishings[node.component]}
             themeVars={props.themeVars}
             onAction={invoke}
             onStateSet={props.setViewState}
@@ -267,6 +271,7 @@ function StatefulTreeView({
   const theme = useVendoThemeOrDefault();
   const themeVars = useMemo(() => themeCssVariables(theme), [theme]);
   const streaming = (tree as Tree & { streaming?: unknown }).streaming === true;
+  const furnishings = (tree as Tree & { furnishings?: Record<string, JailFurnishing> }).furnishings ?? {};
   // A partial stream may close a generated node before its top-level source
   // string closes. Supply validator-only placeholders, then keep the real map
   // empty so NodeRenderer paints a skeleton until the source arrives.
@@ -335,6 +340,7 @@ function StatefulTreeView({
         ancestry={new Set()}
         nodes={nodes}
         generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
+        furnishings={furnishings}
         themeVars={themeVars}
         components={components}
         data={data ?? validation.tree.data ?? {}}
