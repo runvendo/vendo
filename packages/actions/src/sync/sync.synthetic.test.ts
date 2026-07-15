@@ -108,7 +108,8 @@ describe("validation and route classification", () => {
     });
   });
 
-  it("writes byte-identical catalog.json content on consecutive syncs", async () => {
+  // Two full TS-compiler scans back to back run long under CI coverage instrumentation.
+  it("writes byte-identical catalog.json content on consecutive syncs", { timeout: 120_000 }, async () => {
     const { root, out } = await temporaryHost();
     await writeFile(root, "tsconfig.json", JSON.stringify({
       compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler", jsx: "react-jsx", strict: true },
