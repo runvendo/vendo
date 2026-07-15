@@ -50,7 +50,7 @@ const catalog: ComponentCatalog = [{
     required: ["label", "value"],
     additionalProperties: false,
   },
-  examples: ['<MetricCard label="Revenue" value="$42k" trend={12} />'],
+  examples: ['{"label":"Revenue","value":"$42k","trend":12}'],
 }];
 
 const validCreate = (name = "Revenue dashboard") => JSON.stringify({
@@ -152,7 +152,7 @@ describe("generation engine through createApps", () => {
     expect(capturedPrompt).toContain('"propsJsonSchema": {');
     expect(capturedPrompt).toContain('"required": [');
     expect(capturedPrompt).toContain('"examples": [');
-    expect(capturedPrompt).toContain('<MetricCard label=\\"Revenue\\" value=\\"$42k\\" trend={12} />');
+    expect(capturedPrompt).toContain('{\\"label\\":\\"Revenue\\",\\"value\\":\\"$42k\\",\\"trend\\":12}');
     expect(capturedPrompt).toContain('you MUST use a source:"host" node with its exact name and props schema');
   });
 

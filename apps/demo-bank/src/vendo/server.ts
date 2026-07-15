@@ -43,7 +43,7 @@ const catalog: ComponentCatalog = [
       required: ["data"],
       additionalProperties: false,
     },
-    examples: ["<MapleSparkline data={[1280, 1315, 1298, 1360, 1412]} height={32} />"],
+    examples: ['{"data":[1280,1315,1298,1360,1412],"height":32}'],
   },
   {
     name: "MapleSpendingDonut",
@@ -76,7 +76,7 @@ const catalog: ComponentCatalog = [
       additionalProperties: false,
     },
     examples: [
-      '<MapleSpendingDonut slices={[{ category: "dining", amount: 342.18 }, { category: "groceries", amount: 286.42 }]} size={200} />',
+      '{"slices":[{"category":"dining","amount":342.18},{"category":"groceries","amount":286.42}],"size":200}',
     ],
   },
 ];

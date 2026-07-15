@@ -30,7 +30,7 @@ const catalog: ComponentCatalog = [
       required: ["text"],
       additionalProperties: false,
     },
-    examples: ['<CadenceStatusBadge text="Needs review" variant="review" dot />'],
+    examples: ['{"text":"Needs review","variant":"review","dot":true}'],
   },
   {
     name: "CadenceDocProgress",
@@ -48,7 +48,7 @@ const catalog: ComponentCatalog = [
       required: ["value", "max"],
       additionalProperties: false,
     },
-    examples: ["<CadenceDocProgress value={7} max={10} />"],
+    examples: ['{"value":7,"max":10}'],
   },
 ];
 
