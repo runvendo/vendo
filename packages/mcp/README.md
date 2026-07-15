@@ -12,6 +12,48 @@ pnpm --filter @vendoai/ui build:mcp-shim
 
 The server-card response tracks the provisional SEP-2127 draft and may move with that specification before ratification.
 
+## External authorization servers
+
+By default the door owns the OAuth authorization-server flow. A host that runs
+its authorization server separately can instead configure:
+
+```ts
+createMcpDoor({
+  // tools, guard, oauth, store, ...
+  remoteAs: {
+    issuer: "https://auth.example.com",
+    audience: "https://product.example.com/api/mcp",
+    // Optional. Otherwise the door discovers jwks_uri from RFC 8414 metadata.
+    jwksUri: "https://auth.example.com/.well-known/jwks.json",
+  },
+});
+```
+
+In this mode the door accepts only ES256 bearer JWTs whose signature, `iss`,
+`aud`, `exp`, and `iat` validate against the external server's JWKS. Keys are
+cached and a new `kid` triggers a refresh for key rotation. The host's
+`oauth.principal(sub)` still runs on every request, so returning `null` remains
+the immediate account-level kill switch. The door's local `/authorize`,
+`/token`, and `/register` endpoints and RFC 8414 metadata return `404`; RFC 9728
+protected-resource metadata advertises the configured external issuer.
+
+## Login federation
+
+`federation: { secret }` enables `GET {mount}/federate?request=<compact JWS>` as
+a generic login handshake for an external authorization server. Requests are
+HS256-signed with the shared secret and carry `iss`, the door resource as `aud`,
+an expiration no more than five minutes away, `jti`, `redirect_uri`, `scopes`,
+and `client_name`. The redirect URI must have the same origin as `iss`.
+
+The door passes the client name and scopes to `HostOAuthAdapter.authorize`. A
+`Response` from the adapter is returned unchanged for the host's login bounce;
+after authentication the browser can retry the same signed request. A resolved
+host subject is returned to the external server as `assertion=<compact JWS>` on
+the redirect URI. That HS256 assertion is audience-bound to the request issuer,
+issuer-bound to the canonical door resource, echoes the request `jti`, and
+expires after 60 seconds. The endpoint emits redirects or JSON errors only; it
+does not render request values into HTML.
+
 ## Transport state seam
 
 The door's protocol-lifetime state is isolated behind the package-internal
