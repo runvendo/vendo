@@ -3,6 +3,7 @@ import path from "node:path";
 import type { ExtractedTool } from "../formats.js";
 import { extractOpenApi } from "./openapi.js";
 import { scanRoutes } from "./route-scan.js";
+import { detectTrpc, extractTrpc, trpcMounts } from "./trpc.js";
 
 export interface ExtractorResult {
   tools: ExtractedTool[];
@@ -47,6 +48,12 @@ const openApiExtractor: Extractor = {
   },
 };
 
+const trpcExtractor: Extractor = {
+  name: "trpc",
+  detect: detectTrpc,
+  extract: extractTrpc,
+};
+
 const routeScanExtractor: Extractor = {
   name: "route-scan",
   async detect() {
@@ -57,8 +64,23 @@ const routeScanExtractor: Extractor = {
 
 export const extractorRegistrations: readonly Extractor[] = [
   openApiExtractor,
+  trpcExtractor,
   routeScanExtractor,
 ];
+
+/** Route-scan sees a tRPC mount as an opaque catch-all HTTP route; when the
+ * trpc extractor produced real procedure tools for that mount, the shadowing
+ * route tools are dropped. No trpc tools → no filtering (unchanged behavior
+ * for every non-tRPC host). */
+function withoutShadowedRoutes(tools: ExtractedTool[]): ExtractedTool[] {
+  const mounts = trpcMounts(tools);
+  if (mounts.length === 0) return tools;
+  return tools.filter((tool) => {
+    if (tool.binding.kind !== "route") return true;
+    const { path: routePath } = tool.binding;
+    return !mounts.some((mount) => routePath === mount || routePath.startsWith(`${mount}/`));
+  });
+}
 
 export async function runExtractors(
   root: string,
@@ -72,5 +94,5 @@ export async function runExtractors(
     tools.push(...result.tools);
     warnings.push(...result.warnings);
   }
-  return { tools, warnings };
+  return { tools: withoutShadowedRoutes(tools), warnings };
 }

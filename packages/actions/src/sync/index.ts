@@ -13,7 +13,7 @@ import {
   type ToolsFile,
   type UnresolvedPin,
 } from "../formats.js";
-import { clearAliasCache, dedupKey, routeToolFullName, withUniqueNames } from "./common.js";
+import { bindingIdentity, clearAliasCache, routeToolFullName, withUniqueNames } from "./common.js";
 import { proposeCatalogCopy, type CatalogCopyGenerator } from "./catalog-ai.js";
 import { scanComponentCatalog } from "./catalog-scan.js";
 import { writeCatalog } from "./catalog.js";
@@ -83,7 +83,7 @@ async function readOverrides(file: string): Promise<OverridesFile | null> {
 }
 
 function bindingKey(tool: ExtractedTool): string {
-  return dedupKey(tool.binding.method, tool.binding.path);
+  return bindingIdentity(tool.binding);
 }
 
 function unionExtracted(extracted: ExtractedTool[]): ExtractedTool[] {

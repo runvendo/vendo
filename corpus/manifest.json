@@ -392,6 +392,26 @@
     "notes": "Default branch main verified via GitHub API and git ls-remote; package.json declares next 15.6.0-canary.60."
   },
   {
+    "name": "rallly",
+    "gitUrl": "https://github.com/lukevella/rallly.git",
+    "pinnedSha": "317ceaacc2e4e5753c109cbed370a78a0871cb35",
+    "appDir": "apps/web",
+    "license": "AGPL-3.0",
+    "tier": "broad",
+    "bootstrap": {
+      "installCommand": "corepack pnpm install --frozen-lockfile",
+      "envTemplate": {
+        "DATABASE_URL": "postgresql://corpus:corpus@127.0.0.1:55435/rallly",
+        "SECRET_PASSWORD": "corpus-layer1-secret-password-0123456789",
+        "SUPPORT_EMAIL": "support@corpus.test",
+        "NEXT_PUBLIC_BASE_URL": "http://127.0.0.1:3000"
+      },
+      "typecheckCommand": "corepack pnpm -w db:generate && corepack pnpm exec tsc --pretty --noEmit",
+      "buildCommand": "corepack pnpm -w db:generate && corepack pnpm exec turbo run build --filter=@rallly/web"
+    },
+    "notes": "First tRPC corpus fixture (ENG-246): Next 16 app router + tRPC 11 (superjson) + Prisma/Postgres pnpm monorepo. Default branch main verified via git ls-remote; apps/web/package.json declares next 16.2.6. prisma generate must precede typecheck/build (no postinstall hook). LICENSE contains the GNU Affero GPL v3 text."
+  },
+  {
     "name": "teable",
     "gitUrl": "https://github.com/teableio/teable.git",
     "pinnedSha": "105e0f945dd9e4181ba6f80e44056c176a9800aa",

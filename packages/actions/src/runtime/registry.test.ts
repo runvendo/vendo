@@ -599,6 +599,7 @@ describe("host HTTP execution — venue=mcp (10-mcp §3 / 04 §4 ActAs auth)", (
   });
 });
 
+<<<<<<< HEAD
 describe("host HTTP execution — away (ENG-263 away re-verification rides actAs)", () => {
   async function hostServer(): Promise<{ url: string; seen: Array<Record<string, string | string[] | undefined>> }> {
     const seen: Array<Record<string, string | string[] | undefined>> = [];
@@ -695,5 +696,83 @@ describe("host HTTP execution — away (ENG-263 away re-verification rides actAs
     expect((mismatch as { actAs?: string }).actAs).toBe("mismatch");
     expect(actAs).not.toHaveBeenCalled();
     expect(host.seen).toHaveLength(0);
+  });
+});
+
+describe("host HTTP execution — trpc bindings (04 §1 tRPC HTTP envelope)", () => {
+  const trpcTool = (extras: Partial<ExtractedTool["binding"] & Record<string, unknown>> = {}): ExtractedTool => ({
+    name: "host_polls_list",
+    description: "tRPC query polls.list",
+    inputSchema: { type: "object", properties: {} },
+    risk: "read",
+    binding: { kind: "trpc", procedure: "polls.list", type: "query", mount: "/api/trpc", ...extras },
+  });
+
+  function capturingFetch(status: number, payload: unknown): { fetch: typeof fetch; seen: Array<{ url: string; method?: string; body?: unknown }> } {
+    const seen: Array<{ url: string; method?: string; body?: unknown }> = [];
+    const impl = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      seen.push({
+        url: String(input),
+        method: init?.method,
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    return { fetch: impl, seen };
+  }
+
+  it("executes a query as GET {mount}/{procedure} with a plain-JSON input param", async () => {
+    const { fetch, seen } = capturingFetch(200, { result: { data: [{ id: "p1" }] } });
+    const actions = createActions({ tools: [trpcTool()], baseUrl: "http://host.test", fetch });
+
+    const outcome = await actions.execute({ id: "1", tool: "host_polls_list", args: { status: "open" } }, ctx);
+    expect(outcome).toEqual({ status: "ok", output: [{ id: "p1" }] });
+    const url = new URL(seen[0]!.url);
+    expect(url.pathname).toBe("/api/trpc/polls.list");
+    expect(seen[0]!.method).toBe("GET");
+    expect(JSON.parse(url.searchParams.get("input")!)).toEqual({ status: "open" });
+  });
+
+  it("omits the input param when a query has no args", async () => {
+    const { fetch, seen } = capturingFetch(200, { result: { data: "ok" } });
+    const actions = createActions({ tools: [trpcTool()], baseUrl: "http://host.test", fetch });
+
+    await actions.execute({ id: "1", tool: "host_polls_list", args: {} }, ctx);
+    expect(new URL(seen[0]!.url).searchParams.get("input")).toBeNull();
+  });
+
+  it("wraps input and unwraps output through the superjson envelope", async () => {
+    const { fetch, seen } = capturingFetch(200, { result: { data: { json: { created: true } } } });
+    const tool: ExtractedTool = {
+      name: "host_polls_create",
+      description: "tRPC mutation polls.create",
+      inputSchema: { type: "object" },
+      risk: "write",
+      binding: { kind: "trpc", procedure: "polls.create", type: "mutation", mount: "/api/trpc", transformer: "superjson" },
+    };
+    const actions = createActions({ tools: [tool], baseUrl: "http://host.test", fetch });
+
+    const outcome = await actions.execute({ id: "1", tool: "host_polls_create", args: { title: "Standup" } }, ctx);
+    expect(outcome).toEqual({ status: "ok", output: { created: true } });
+    expect(seen[0]!.method).toBe("POST");
+    expect(new URL(seen[0]!.url).pathname).toBe("/api/trpc/polls.create");
+    expect(seen[0]!.body).toEqual({ json: { title: "Standup" } });
+  });
+
+  it("returns a validation outcome when no baseUrl is configured", async () => {
+    const actions = createActions({ tools: [trpcTool()] });
+    await expect(actions.execute({ id: "1", tool: "host_polls_list", args: {} }, ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "validation", message: expect.stringContaining("baseUrl") },
+    });
+  });
+
+  it("maps trpc error statuses to http-error outcomes", async () => {
+    const { fetch } = capturingFetch(400, { error: { message: "BAD_REQUEST" } });
+    const actions = createActions({ tools: [trpcTool()], baseUrl: "http://host.test", fetch });
+    await expect(actions.execute({ id: "1", tool: "host_polls_list", args: {} }, ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "http-error", message: expect.stringContaining("400") },
+    });
   });
 });

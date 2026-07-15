@@ -207,6 +207,78 @@ describe("runScoredLayer", () => {
     expect(improvement.baselineUpdate?.source).toContain('"generatedAt": "2026-07-06T12:00:00.000Z"');
   });
 
+  it("keys tRPC tools by procedure identity and applies mutation write-safety", async () => {
+    const { repoDir, expectationsRoot } = await makeFixture();
+    const trpcExpectations: RepoExpectations = {
+      ...baseExpectations,
+      tools: [
+        { name: "pollsList", kind: "trpc", procedure: "polls.list", readOrWrite: "read" },
+        { name: "pollsCreate", kind: "trpc", procedure: "polls.create", readOrWrite: "write" },
+      ],
+      annotations: [
+        { name: "pollsList", mutating: false, dangerous: false },
+        { name: "pollsCreate", mutating: true, dangerous: false },
+      ],
+    };
+    await writeExpected(expectationsRoot, "repo-one", trpcExpectations);
+    await mkdir(path.join(repoDir, ".vendo"), { recursive: true });
+    await writeInitOutput(repoDir); // writes theme.json + route tools.json; overwrite tools below
+    await writeFile(
+      path.join(repoDir, ".vendo/tools.json"),
+      JSON.stringify({
+        format: "vendo/tools@1",
+        tools: [
+          {
+            name: "host_polls_list",
+            description: "tRPC query polls.list",
+            inputSchema: { type: "object", properties: {} },
+            risk: "read",
+            binding: { kind: "trpc", procedure: "polls.list", type: "query", mount: "/api/trpc" },
+          },
+          {
+            name: "host_polls_create",
+            description: "tRPC mutation polls.create",
+            inputSchema: { type: "object", properties: {} },
+            risk: "write",
+            binding: { kind: "trpc", procedure: "polls.create", type: "mutation", mount: "/api/trpc" },
+          },
+        ],
+      }, null, 2) + "\n",
+    );
+
+    const result = await runScoredLayer({
+      repoName: "repo-one",
+      repoDir,
+      expectationsRoot,
+      now: () => new Date("2026-07-06T12:00:00.000Z"),
+    });
+    const checks = checkById(result.layer);
+    expect(checks["tools.precision"]).toMatchObject({ pass: true });
+    expect(checks["tools.recall"]).toMatchObject({ pass: true });
+    expect(checks["annotations.match"]).toMatchObject({ pass: true });
+    expect(checks["annotations.write-safety"]).toMatchObject({ pass: true });
+
+    // A read-labeled mutation is unsafe exactly like a read-labeled POST.
+    await writeFile(
+      path.join(repoDir, ".vendo/tools.json"),
+      JSON.stringify({
+        format: "vendo/tools@1",
+        tools: [
+          {
+            name: "host_polls_create",
+            description: "tRPC mutation polls.create",
+            inputSchema: { type: "object", properties: {} },
+            risk: "read",
+            binding: { kind: "trpc", procedure: "polls.create", type: "mutation", mount: "/api/trpc" },
+          },
+        ],
+      }, null, 2) + "\n",
+    );
+    const unsafe = await runScoredLayer({ repoName: "repo-one", repoDir, expectationsRoot });
+    expect(checkById(unsafe.layer)["annotations.write-safety"]).toMatchObject({ pass: false });
+    expect(unsafe.layer.hardFailure).toBe(true);
+  });
+
   it("skips repos that have not been labeled yet", async () => {
     const { repoDir, expectationsRoot } = await makeFixture();
     await writeInitOutput(repoDir);

@@ -13,9 +13,10 @@ function routeTool(name: string, path: string): ExtractedTool {
 }
 
 describe("extractor registrations", () => {
-  it("keeps OpenAPI ahead of route-scan", () => {
-    expect(extractorRegistrations.slice(0, 2).map((extractor) => extractor.name)).toEqual([
+  it("keeps OpenAPI ahead of trpc ahead of route-scan", () => {
+    expect(extractorRegistrations.map((extractor) => extractor.name)).toEqual([
       "openapi",
+      "trpc",
       "route-scan",
     ]);
   });
@@ -54,5 +55,30 @@ describe("extractor registrations", () => {
     ]);
     expect(result.tools.map((tool) => tool.name)).toEqual(["host_openapi", "host_route"]);
     expect(result.warnings).toEqual(["openapi warning", "route warning"]);
+  });
+
+  it("drops route tools shadowed by a trpc mount, and only those", async () => {
+    const trpcTool: ExtractedTool = {
+      name: "host_polls_list",
+      description: "tRPC query polls.list",
+      inputSchema: { type: "object", properties: {} },
+      risk: "read",
+      binding: { kind: "trpc", procedure: "polls.list", type: "query", mount: "/api/trpc" },
+    };
+    const fake = (name: string, tools: ExtractedTool[]): Extractor => ({
+      name,
+      detect: async () => true,
+      extract: async () => ({ tools, warnings: [] }),
+    });
+    const result = await runExtractors("/host", [
+      fake("trpc", [trpcTool]),
+      fake("route-scan", [
+        routeTool("host_trpc_catchall", "/api/trpc/{trpc}"),
+        routeTool("host_trpc_root", "/api/trpc"),
+        routeTool("host_trpcish", "/api/trpcish"),
+        routeTool("host_health", "/api/health"),
+      ]),
+    ]);
+    expect(result.tools.map((tool) => tool.name)).toEqual(["host_polls_list", "host_trpcish", "host_health"]);
   });
 });
