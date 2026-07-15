@@ -26,7 +26,7 @@ export function remixable<T extends RemixableRegistration>(
   moduleSource: string,
   options: RemixableReportOptions = {},
 ): T & { remixable: true } {
-  const marked = { ...registration, remixable: true };
+  const marked = { ...registration, remixable: true as const };
   if (developmentBrowser()) {
     const baseUrl = (options.baseUrl ?? "/api/vendo").replace(/\/$/, "");
     queueMicrotask(() => {

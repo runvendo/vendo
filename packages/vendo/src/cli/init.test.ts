@@ -295,6 +295,18 @@ describe("vendo init", () => {
     expect(await tree(root)).toEqual(first);
   });
 
+  it("surfaces unresolved remixable slots loudly at init without aborting", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "app", "vendo-components.ts"),
+      "export const components = [{ name: \"InlineCard\", component: () => null, remixable: true }];\n");
+    const sink = output();
+    expect(await runInit({ targetDir: root, yes: true, output: sink.output })).toBe(0);
+    const errors = sink.errors.join("\n");
+    expect(errors).toContain("UNRESOLVED REMIXABLE SLOTS (init continues)");
+    expect(errors).toContain("InlineCard [inline-component]");
+    expect(errors).toContain("sync exits non-zero while they remain unresolved");
+  });
+
   it("provisions VENDO_STORE_ENCRYPTION_KEY into .env and never regenerates it (02-store §4)", async () => {
     const root = await fixture();
     expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);

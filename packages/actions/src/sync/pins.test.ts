@@ -108,8 +108,11 @@ describe("furnished pin capture", () => {
 
     expect(baseline.sourceImports).toBeUndefined();
     expect(baseline.subSources).toBeUndefined();
+    // Root confinement happens inside resolveImportSource (it realpaths every
+    // candidate before reading it), so the escaping symlink is reported as an
+    // unresolvable import rather than being read and then rejected.
     expect(result.warnings).toEqual(expect.arrayContaining([
-      expect.stringMatching(/\.\/Escape.*outside the host root/u),
+      expect.stringMatching(/\.\/Escape.*could not be resolved/u),
     ]));
   });
 });
