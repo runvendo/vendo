@@ -21,6 +21,18 @@ holds a key forever. The same compare-and-set machinery backs
 run-lifecycle transitions, so cancellations and scheduler ticks cannot
 race a run into a resurrected state. See [Persistence](/deploy/persistence).
 
+## Updates
+
+**Rung 1 UI creates and tree-only edits skip approval.** Guard now resolves
+the effective risk for `vendo_apps_create` and `vendo_apps_edit` at call
+time. Create is always read-class because it produces a jailed rung 1
+document. Edit is downgraded to read-class only when the app is
+owner-scoped, is a tree app, and the instruction does not require server
+code. Server-flavored edits, host writes, destructive actions, and egress
+keep their approval cards, and a tree-classified edit that unexpectedly
+emits server code fails closed before persistence. Chat, SSE, and the MCP
+door share the same decision. See [Tools and safety](/concepts/tools-and-safety#effective-risk-resolution).
+
 </Update>
 
 <Update label="July 14, 2026" description="Week of July 14 – July 20">
