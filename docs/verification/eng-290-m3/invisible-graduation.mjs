@@ -322,6 +322,9 @@ try {
   await promisify(execFile)("ffmpeg", [
     "-y",
     "-framerate", "0.7",
+    // Frames are rung-1..4; pin start_number rather than relying on image2's
+    // default 0..4 probe window (which does find rung-1, but implicitly).
+    "-start_number", "1",
     "-i", join(evidenceDir, "rung-%d.png"),
     "-vf", "scale=780:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse",
     join(evidenceDir, "invisible-graduation.gif"),
