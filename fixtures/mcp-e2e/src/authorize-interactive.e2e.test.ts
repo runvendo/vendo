@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createStack, resetFixture } from "./harness.js";
 import {
   authorizeCode,
+  connectWithSdk,
   exchangeCode,
   issueTokens,
   refreshToken,
@@ -20,6 +21,21 @@ describe("OAuth consent delegation and protocol sad paths", () => {
       expect(response.status).toBe(302);
       expect(response.headers.get("location")).toBe("https://fixture.example/consent");
       expect(await response.text()).toBe("");
+    } finally {
+      await stack.close();
+    }
+  });
+
+  it("completes the prebuilt consent page through the real MCP SDK OAuth dance", async () => {
+    const stack = await createStack({ oauthMode: "prebuilt" });
+    try {
+      const connected = await connectWithSdk(stack);
+      try {
+        expect(connected.provider.savedTokens?.access_token).toMatch(/^vmat_/);
+        expect((await connected.client.listTools()).tools.length).toBeGreaterThan(0);
+      } finally {
+        await connected.close();
+      }
     } finally {
       await stack.close();
     }

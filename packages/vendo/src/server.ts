@@ -1,6 +1,14 @@
 import { createActions, type ActionsRegistry, type Connector } from "@vendoai/actions";
 import { createAgent, type VendoAgent } from "@vendoai/agent";
-import { createApps, type AppsRuntime, type SandboxAdapter } from "@vendoai/apps";
+import {
+  createApps,
+  pinBaselineSchema,
+  type AppsRuntime,
+  type PinBaseline,
+  type SandboxAdapter,
+} from "@vendoai/apps";
+import { e2bInstalled, e2bSandbox } from "@vendoai/apps/e2b";
+import { modalInstalled, modalSandbox } from "@vendoai/apps/modal";
 import {
   createAutomations,
   type AutomationsEngine,
@@ -13,6 +21,7 @@ import {
   vendoThemeSchema,
   type ActAs,
   type ApprovalDecision,
+  type ComponentCatalog,
   type Json,
   type Principal,
   type RunContext,
@@ -24,9 +33,17 @@ import {
 import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import { createStore, envSecrets, registerEphemeralSubject, type VendoStore } from "@vendoai/store";
+// 02-store §5: the erase API ships on the umbrella's runtime surface so hosts
+// reach it without installing @vendoai/store directly.
+export { eraseStore, type EraseReport, type EraseTable } from "@vendoai/store";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
+import {
+  capabilitySurfaceSnapshot,
+  createCapabilityMissCapture,
+} from "./capability-misses.js";
 import { createRuntimeCapture, type RuntimeCaptureHandler } from "./runtime-capture.js";
+import { computeImpact } from "./sync-impact.js";
 
 const VERSION = "0.3.0";
 const BASE_PATH = "/api/vendo";
@@ -57,6 +74,8 @@ export interface Vendo {
 export interface CreateVendoConfig {
   model: LanguageModel;
   principal: (req: Request) => Promise<Principal | null>;
+  /** Host components available to generated apps; entry names must mirror the client-side components map 1:1. */
+  catalog?: ComponentCatalog;
   store?: VendoStore;
   sandbox?: SandboxAdapter;
   connectors?: Connector[];
@@ -71,9 +90,15 @@ export interface CreateVendoConfig {
   development?: boolean | { root?: string; out?: string };
   /** 10-mcp §1 — the one flag: open the MCP door so outside agents (Claude,
       ChatGPT, Cursor) reach the host's tools through the SAME guard-bound path.
-      Opening it is a host decision (10-mcp §2), so it is off by default. */
-  mcp?: boolean;
-  /** 10-mcp §3 — the host's identity + consent seam. Threaded top-level like
+      Opening it is a host decision (10-mcp §2), so it is off by default.
+      The additive object form opens the door with options: `baseUrl` is the
+      canonical PUBLIC base URL the door's discovery metadata, issuer, resource
+      identifiers, and RFC 8707 audience binding derive from — set it (or
+      `VENDO_BASE_URL`, the default) behind a reverse proxy, where the request
+      URL carries the proxy-internal origin. Forwarded headers are never
+      trusted. */
+  mcp?: boolean | { baseUrl?: string };
+  /** 10-mcp §3 plus its additive prebuilt flow — the host's session + identity seam. Threaded top-level like
       `actAs`/`principal` (the door is agnostic; the umbrella owns the shape).
       REQUIRED when `mcp` is true: the door cannot mint principals without it. */
   oauth?: HostOAuthAdapter;
@@ -91,6 +116,34 @@ export interface CreateVendoConfig {
     Generous enough for normal host responses, small enough that a runaway payload is
     truncated to a preview instead of blowing the context window. Override via config.agent. */
 const DEFAULT_TOOL_OUTPUT_CAP = 32_000;
+
+type SandboxVenue = "e2b" | "modal" | "custom" | false;
+
+function selectSandbox(configured: SandboxAdapter | undefined): {
+  adapter: SandboxAdapter | undefined;
+  venue: SandboxVenue;
+} {
+  if (configured !== undefined) return { adapter: configured, venue: "custom" };
+
+  // An env key only lights a venue when its optional SDK is actually
+  // installed; otherwise /status would report a venue whose first
+  // create() dies on a missing module.
+  const e2bApiKey = environment("E2B_API_KEY");
+  if (e2bApiKey !== undefined && e2bInstalled()) {
+    return { adapter: e2bSandbox({ apiKey: e2bApiKey }), venue: "e2b" };
+  }
+
+  const modalTokenId = environment("MODAL_TOKEN_ID");
+  const modalTokenSecret = environment("MODAL_TOKEN_SECRET");
+  if (modalTokenId !== undefined && modalTokenSecret !== undefined && modalInstalled()) {
+    return {
+      adapter: modalSandbox({ tokenId: modalTokenId, tokenSecret: modalTokenSecret }),
+      venue: "modal",
+    };
+  }
+
+  return { adapter: undefined, venue: false };
+}
 
 function json(body: unknown, status = 200): Response {
   return Response.json(body, { status });
@@ -162,6 +215,42 @@ function dotVendoTheme(): VendoTheme | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** 06-apps §8 — load sync-captured host source into the composition. Invalid
+    files are warned and skipped so one bad slot cannot crash the host; an
+    absent directory is the normal zero-remixable-components case. */
+function dotVendoPinBaselines(): PinBaseline[] {
+  const proc = (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown } }).process;
+  const fs = proc?.getBuiltinModule?.("node:fs") as typeof import("node:fs") | undefined;
+  if (fs === undefined) return [];
+  const directory = ".vendo/remixable";
+  let names: string[];
+  try {
+    names = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort();
+  } catch (error) {
+    if ((error as { code?: unknown }).code === "ENOENT") return [];
+    console.warn(`[vendo] could not read ${directory}; pin baselines were skipped`);
+    return [];
+  }
+
+  const baselines: PinBaseline[] = [];
+  const slots = new Set<string>();
+  for (const name of names) {
+    const file = `${directory}/${name}`;
+    try {
+      const parsed = pinBaselineSchema.parse(JSON.parse(fs.readFileSync(file, "utf8")));
+      if (slots.has(parsed.slot)) {
+        console.warn(`[vendo] duplicate pin baseline slot ${parsed.slot} in ${file}; file was skipped`);
+        continue;
+      }
+      slots.add(parsed.slot);
+      baselines.push(parsed);
+    } catch {
+      console.warn(`[vendo] invalid pin baseline ${file}; file was skipped`);
+    }
+  }
+  return baselines;
 }
 
 function relativePath(url: URL): string | null {
@@ -375,6 +464,7 @@ function createWireHandler(deps: {
   guard: VendoGuard;
   apps: AppsRuntime;
   automations: AutomationsEngine;
+  sandbox: SandboxVenue;
   mcp: boolean;
   door?: McpDoor;
   runtimeCapture?: RuntimeCaptureHandler;
@@ -482,6 +572,17 @@ function createWireHandler(deps: {
           return json({ error: { code: "blocked", message: "invalid tick credential" } }, 401);
         }
         return json({ runIds: await deps.automations.tick() });
+      }
+      if (request.method === "POST" && path === "/sync/impact") {
+        if (process.env.NODE_ENV === "production") {
+          throw new VendoError("blocked", "sync impact is only available on a dev server");
+        }
+        const body = await requestJson(request);
+        const tools = body["tools"];
+        if (!Array.isArray(tools) || tools.length > 200 || tools.some((tool) => typeof tool !== "string")) {
+          throw new VendoError("validation", "tools must be an array of at most 200 strings");
+        }
+        return json({ impact: await computeImpact(deps.store, tools) });
       }
       if (path.startsWith("/proxy/")) {
         const proxyPath = path.slice("/proxy".length);
@@ -682,6 +783,7 @@ function createWireHandler(deps: {
             guard: true,
             apps: true,
             automations: true,
+            sandbox: deps.sandbox,
             // 10-mcp §1 — the door is off by default; true only when
             // createVendo({ mcp: true }) opened it.
             mcp: deps.mcp,
@@ -703,13 +805,24 @@ function createWireHandler(deps: {
 
 /** 09-vendo §2 — compose every live block around the guard choke point. */
 export function createVendo(config: CreateVendoConfig): Vendo {
-  const store = config.store ?? createStore();
+  // 02-store §4 default-on encryption: when the host doesn't hand us a store,
+  // the composed default picks up VENDO_STORE_ENCRYPTION_KEY (provisioned into
+  // .env by `vendo init`) so stored secrets are encrypted with zero extra
+  // wiring. An explicitly configured store always wins as-is.
+  const encryptionKey = environment("VENDO_STORE_ENCRYPTION_KEY");
+  const store = config.store
+    ?? createStore(encryptionKey === undefined ? {} : { encryption: { key: encryptionKey } });
+  const sandbox = selectSandbox(config.sandbox);
   const ready = store.ensureSchema();
   // Keep eager schema readiness for hosts that reach into composed blocks,
   // while preventing an unhandled rejection before the first handler/emit awaits it.
   void ready.catch(() => undefined);
+  let resolveAppToolRisk: AppsRuntime["agentToolRisk"] | undefined;
   const guard = createGuard({
     store,
+    // The resolver is installed immediately after createApps below. Keeping the
+    // hook in guard means chat/SSE and the MCP door reach the same decision.
+    resolveRisk: (call, _descriptor, ctx) => resolveAppToolRisk?.(call, ctx),
     ...(config.policy === undefined ? {} : { policy: config.policy }),
     ...(config.judge === undefined ? {} : { judge: config.judge }),
   });
@@ -736,19 +849,26 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const boundTools = guard.bind(actions);
   const theme = dotVendoTheme();
   const designRules = dotVendoFile("design-rules.md");
+  const pinBaselines = dotVendoPinBaselines();
   const apps = createApps({
     store,
     guard,
     tools: boundTools,
     model: config.model,
-    catalog: [],
+    catalog: config.catalog ?? [],
+    pinBaselines,
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
     secrets: config.secrets ?? envSecrets(),
-    ...(config.sandbox === undefined ? {} : { sandbox: config.sandbox }),
+    ...(sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter }),
     ...(environment("VENDO_PROXY_URL") === undefined ? {} : { proxyUrl: environment("VENDO_PROXY_URL") }),
   });
+  resolveAppToolRisk = apps.agentToolRisk;
   actions.add(apps.agentTools());
+  const missSurface = actions.descriptors()
+    .then(capabilitySurfaceSnapshot)
+    .catch(() => capabilitySurfaceSnapshot([]));
+  const missCapture = createCapabilityMissCapture({ surface: missSurface });
   const agent = createAgent({
     model: config.model,
     tools: boundTools,
@@ -758,6 +878,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       toolOutputCap: config.agent?.toolOutputCap ?? DEFAULT_TOOL_OUTPUT_CAP,
       ...(config.agent?.maxOutputTokens === undefined ? {} : { maxOutputTokens: config.agent.maxOutputTokens }),
       ...(config.agent?.historyWindow === undefined ? {} : { historyWindow: config.agent.historyWindow }),
+    },
+    capabilityMiss: {
+      hostId: missCapture.hostId,
+      surface: missSurface.then(({ hash }) => ({ format: "vendo/tools@1" as const, hash })),
+      emit: (event) => missCapture.record(event),
     },
   });
   const automations = createAutomations({
@@ -771,8 +896,15 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // guard-bound registry chat/apps/automations use, the guard (its core seam is
   // what the door holds for auth audit), the store (a StoreAdapter for the door's
   // own protocol state), the host's oauth seam, and an AppsPort view of `apps`.
+  // `mcp: true` and `mcp: {…}` both open the door; the object form carries
+  // door options (an explicit `baseUrl` overrides the VENDO_BASE_URL default).
+  const mcpOptions = typeof config.mcp === "object" && config.mcp !== null
+    ? config.mcp
+    : config.mcp === true
+      ? {}
+      : undefined;
   let door: McpDoor | undefined;
-  if (config.mcp === true) {
+  if (mcpOptions !== undefined) {
     if (config.oauth === undefined) {
       throw new VendoError(
         "validation",
@@ -798,8 +930,23 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     };
     // 10-mcp §5 — pin the door's canonical mount so a cold umbrella's server
     // card advertises the right transport URL (BASE_PATH/mcp) before any request
-    // teaches it, and learned paths never override it.
-    door = createMcpDoor({ tools: boundTools, guard, store, oauth: config.oauth, apps: appsPort, mount: MCP_MOUNT });
+    // teaches it, and learned paths never override it. The door's canonical
+    // public base (discovery origins + RFC 8707 audience) is the operator-set
+    // VENDO_BASE_URL — behind a reverse proxy the request URL carries the
+    // proxy-INTERNAL origin and must not shape what discovery advertises
+    // (ENG-333). An explicit `mcp.baseUrl` overrides the env default for
+    // compositions whose door origin differs from the route-binding origin.
+    const doorBaseUrl = mcpOptions.baseUrl ?? configuredBaseUrl;
+    door = createMcpDoor({
+      tools: boundTools,
+      guard,
+      store,
+      oauth: config.oauth,
+      apps: appsPort,
+      mount: MCP_MOUNT,
+      ...(doorBaseUrl === undefined ? {} : { baseUrl: doorBaseUrl }),
+      ...(theme === undefined ? {} : { theme }),
+    });
   }
   const sessionId = `session_${globalThis.crypto.randomUUID()}`;
   // Per-process signing key for anonymous-session cookies (WebCrypto only; see
@@ -832,7 +979,8 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     guard,
     apps,
     automations,
-    mcp: config.mcp === true,
+    sandbox: sandbox.venue,
+    mcp: mcpOptions !== undefined,
     ...(door === undefined ? {} : { door }),
     ...(runtimeCapture === null ? {} : { runtimeCapture }),
     onRequestOrigin: (origin) => {

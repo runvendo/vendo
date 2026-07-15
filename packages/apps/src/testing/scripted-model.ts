@@ -7,16 +7,18 @@ export interface ScriptedModelCall {
   }>;
 }
 
-export type ScriptedModelResponse = string | ((
+type ScriptedText = string | string[];
+
+export type ScriptedModelResponse = ScriptedText | ((
   call: ScriptedModelCall,
   index: number,
-) => string | Promise<string>);
+) => ScriptedText | Promise<ScriptedText>);
 
 const responseText = (
   response: ScriptedModelResponse,
   call: ScriptedModelCall,
   index: number,
-): string | Promise<string> => typeof response === "function" ? response(call, index) : response;
+): ScriptedText | Promise<ScriptedText> => typeof response === "function" ? response(call, index) : response;
 
 /** Deterministic LanguageModelV2 equivalent for AI SDK generateText e2e tests. */
 export const scriptedLanguageModel = (...responses: ScriptedModelResponse[]): LanguageModel => {
@@ -29,7 +31,8 @@ export const scriptedLanguageModel = (...responses: ScriptedModelResponse[]): La
     async doGenerate(call: ScriptedModelCall) {
       const response = responses[Math.min(calls, responses.length - 1)];
       if (response === undefined) throw new Error("Scripted language model has no response");
-      const text = await responseText(response, call, calls);
+      const value = await responseText(response, call, calls);
+      const text = Array.isArray(value) ? value.join("") : value;
       calls += 1;
       return {
         content: [{ type: "text" as const, text }],
@@ -37,8 +40,28 @@ export const scriptedLanguageModel = (...responses: ScriptedModelResponse[]): La
         usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
       };
     },
-    async doStream() {
-      throw new Error("Scripted language model does not stream");
+    async doStream(call: ScriptedModelCall) {
+      const response = responses[Math.min(calls, responses.length - 1)];
+      if (response === undefined) throw new Error("Scripted language model has no response");
+      const value = await responseText(response, call, calls);
+      const chunks = Array.isArray(value) ? value : [value];
+      calls += 1;
+      return {
+        stream: new ReadableStream({
+          start(controller) {
+            controller.enqueue({ type: "stream-start", warnings: [] });
+            controller.enqueue({ type: "text-start", id: "text_1" });
+            for (const delta of chunks) controller.enqueue({ type: "text-delta", id: "text_1", delta });
+            controller.enqueue({ type: "text-end", id: "text_1" });
+            controller.enqueue({
+              type: "finish",
+              finishReason: "stop",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            });
+            controller.close();
+          },
+        }),
+      };
     },
   };
   return model as unknown as LanguageModel;

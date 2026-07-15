@@ -107,6 +107,10 @@ A sandbox adapter unlocks server-backed app rungs. `actAs` unlocks host API
 calls while the user is away. Connectors add external tools. `VENDO_API_KEY`
 activates cloud-gated sharing, publishing, org overlays, and pinning.
 
+Use the [actAs preset recipes](./act-as-presets.md) to wire Auth.js, Supabase
+Auth, Clerk, Auth0, or a host-owned generic JWT without changing the
+`AuthMaterial` contract.
+
 ## Serve your product to MCP clients (the door)
 
 The door makes your host tools installable in Claude, ChatGPT, Cursor, and any
@@ -122,23 +126,38 @@ const vendo = createVendo({
 });
 ```
 
-`oauth` is a two-function `HostOAuthAdapter`. The door owns all OAuth protocol
-mechanics. The host owns exactly two answers: who is this user, and did they
-consent.
+`oauth` uses the host's existing session and subject resolver. The door owns the
+OAuth protocol and the complete consent UI.
 
 ```ts
 import type { HostOAuthAdapter } from "@vendoai/mcp";
 
 const hostOAuth: HostOAuthAdapter = {
-  // Authenticate with your existing session machinery and confirm scope consent.
-  authorize: async (req, { clientName, scopes }) => {
-    const subject = await confirmConsentWithHostLogin(req, clientName, scopes);
-    return { subject };
+  // Use the exact returnTo: after login the door resumes the OAuth request once,
+  // sees the new session, and shows consent instead of bouncing back to login.
+  session: async (req, { returnTo }) => {
+    const subject = await currentSubject(req);
+    if (subject) return { subject };
+    const login = new URL("/login", req.url);
+    login.searchParams.set("returnTo", returnTo);
+    return Response.redirect(login);
   },
   // Resolve a subject to the principal the door executes as. null revokes.
   principal: async (subject) => resolveUser(subject),
 };
 ```
+
+The prebuilt page uses the same `--vendo-*` CSS token namespace as the UI
+pipeline; `createVendo` automatically passes the resolved `.vendo/theme.json`
+theme into it. The page CSRF-protects approve/deny, rejects decision replay,
+escapes the attacker-controlled DCR `client_name`, and returns the standard
+OAuth code or `access_denied` redirect.
+
+Need a fully custom page? Add `authorize(req, ctx)` alongside `session`. Render
+your page from `ctx.clientName`/`ctx.scopes` (escape both), then submit hidden
+`transaction` and `csrf_token` values from `ctx.consent` plus
+`decision=approve|deny` to `ctx.consent.action`. The door keeps ownership of the
+flow and validation.
 
 MCP clients have no host browser session, so door tool calls cannot forward
 cookies. They authenticate over the **same `actAs` seam** away automations use.
@@ -187,3 +206,6 @@ npx vendo sync
 `doctor` checks wiring and makes one live `/status` probe. `sync` extracts the
 host API and remix baselines. In strict mode, breaking extraction changes exit
 with code 2.
+
+To make the deployed door discoverable through the official registry, follow
+[Publish to the MCP registry](publish-mcp-registry.md).

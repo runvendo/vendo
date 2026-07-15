@@ -31,7 +31,7 @@ describe("VendoThread and VendoOverlay exports", () => {
     const composer = screen.getByRole("textbox", { name: "Message" });
     fireEvent.change(composer, { target: { value: "Send the email" } });
     fireEvent.keyDown(composer, { key: "Enter", shiftKey: true });
-    expect(wire.requests.filter(request => request.path === "/threads")).toHaveLength(0);
+    expect(wire.requests.filter(request => request.method === "POST" && request.path === "/threads")).toHaveLength(0);
     fireEvent.keyDown(composer, { key: "Enter" });
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy());
@@ -41,11 +41,14 @@ describe("VendoThread and VendoOverlay exports", () => {
     expect(receipt.parentElement?.getAttribute("data-vendo-approval")).toBe("write");
     const card = await screen.findByLabelText("Approval for host_email_send");
     expect(card.textContent).toContain("a@example.com");
+    expect(card.textContent).toContain(
+      "This tool changed since you approved it on Jul 1, 2026 — your previous permission no longer applies.",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
     expect(await screen.findByText("Turn complete")).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole("button", { name: "Stop" })).toBeNull());
-    expect(wire.requests.find(request => request.path === "/threads")?.body).toMatchObject({
+    expect(wire.requests.find(request => request.method === "POST" && request.path === "/threads")?.body).toMatchObject({
       threadId: "thr_1",
       message: { role: "user", parts: [{ type: "text", text: "Send the email" }] },
     });
@@ -58,11 +61,11 @@ describe("VendoThread and VendoOverlay exports", () => {
     fireEvent.click(launcher);
     const dialog = screen.getByRole("dialog", { name: "Vendo assistant" });
     const close = await screen.findByRole("button", { name: "Close Vendo" });
-    await waitFor(() => expect(document.activeElement).toBe(close));
+    // ENG-220: initial focus lands in the composer, not on the close button.
+    const textarea = screen.getByRole("textbox", { name: "Message" });
+    await waitFor(() => expect(document.activeElement).toBe(textarea));
     expect(launcher.getAttribute("aria-expanded")).toBe("true");
 
-    const textarea = screen.getByRole("textbox", { name: "Message" });
-    textarea.focus();
     fireEvent.keyDown(dialog, { key: "Tab" });
     expect(document.activeElement).toBe(close);
     fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });

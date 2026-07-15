@@ -2,7 +2,14 @@
   "name": "@vendoai/store",
   "version": "0.3.0",
   "description": "Persistence under everything: core's StoreAdapter on Postgres — PGlite zero-config default, real Postgres in prod, one schema.",
-  "keywords": ["ai", "agent", "persistence", "postgres", "pglite", "vendo"],
+  "keywords": [
+    "ai",
+    "agent",
+    "persistence",
+    "postgres",
+    "pglite",
+    "vendo"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -27,11 +34,16 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "conformance": "tsc -p tsconfig.json && vitest run src/conformance.test.ts src/contract-routing.conformance.test.ts src/security/audit-append-only.conformance.test.ts src/security/secrets-aad.conformance.test.ts src/flip-guards.conformance.test.ts src/erase.conformance.test.ts src/postgres-gate.test.ts",
     "test": "tsc -p tsconfig.json && vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:coverage": "tsc -p tsconfig.json && vitest run --coverage"
   },
   "dependencies": {
     "@vendoai/core": "workspace:*",

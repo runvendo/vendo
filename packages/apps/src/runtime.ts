@@ -7,11 +7,15 @@ import {
   type IsoDateTime,
   type Json,
   type RunContext,
+  type RiskLabel,
   type SecretsProvider,
   type StoreAdapter,
+  type ToolCall,
   type ToolOutcome,
   type ToolRegistry,
+  type Tree,
   type UIPayload,
+  type VendoViewPart,
   type VendoTheme,
   type VendoRecord,
 } from "@vendoai/core";
@@ -35,9 +39,9 @@ import {
 import { createAppHistory } from "./history.js";
 import { createAppInterchange } from "./interchange.js";
 import { createMachineSessions } from "./machine.js";
-import { createAppOpener } from "./open.js";
+import { createAppOpener, createProgressiveQueryResolver } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
-import type { PinBaseline } from "./pins.js";
+import { pinComponentName, type PinBaseline } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
 import { createRunTokenGate } from "./run-token-gate.js";
 import type { SandboxAdapter } from "./sandbox.js";
@@ -70,6 +74,14 @@ export interface EditResult {
   app: AppDocument;
   version: VersionEntry;
   issues?: string[];
+  /** Additive failure detail: when present, no edit was persisted. */
+  failure?: EditFailure;
+}
+
+export interface EditFailure {
+  code: "edit-rejected";
+  retryable: boolean;
+  message: string;
 }
 
 /** 06-apps §1 */
@@ -92,7 +104,11 @@ export interface AppsProxy {
 
 /** 06-apps §1 */
 export interface AppsRuntime {
-  create(input: { prompt: string }, ctx: RunContext): Promise<AppDocument>;
+  create(input: {
+    prompt: string;
+    /** Additive per-call stream hook used by the agent bridge. */
+    onView?: (part: VendoViewPart) => void;
+  }, ctx: RunContext): Promise<AppDocument>;
   get(appId: AppId, ctx: RunContext): Promise<AppDocument | null>;
   list(ctx: RunContext): Promise<AppDocument[]>;
   delete(appId: AppId, ctx: RunContext): Promise<void>;
@@ -106,6 +122,9 @@ export interface AppsRuntime {
   share(appId: AppId, ctx: RunContext): Promise<ShareSnapshot>;
   publish(appId: AppId, ctx: RunContext): Promise<PublishRecord>;
   agentTools(): ToolRegistry;
+  /** Contextual policy projection for Vendo-owned agent tools. Undefined means
+   * the static descriptor remains authoritative. */
+  agentToolRisk(call: ToolCall, ctx: RunContext): Promise<RiskLabel | undefined>;
   proxy: AppsProxy;
 }
 
@@ -137,12 +156,45 @@ const rungFor = (
 const generationDependencies = (
   config: AppsConfig,
   model: LanguageModel,
+  onPartial?: GenerationDependencies["onPartial"],
 ): GenerationDependencies => ({
   model,
   catalog: config.catalog,
   theme: config.theme,
   designRules: config.designRules,
+  pinBaselines: config.pinBaselines,
+  ...(onPartial === undefined ? {} : { onPartial }),
 });
+
+const pinnedSubtree = (app: AppDocument, componentName: string): unknown[] => {
+  if (app.tree?.formatVersion !== "vendo-genui/v1") return [];
+  const tree = app.tree as unknown as Tree;
+  const included = new Set(tree.nodes.filter((node) => node.component === componentName).map((node) => node.id));
+  const pending = [...included];
+  while (pending.length > 0) {
+    const node = tree.nodes.find(({ id }) => id === pending.pop());
+    for (const child of node?.children ?? []) {
+      if (included.has(child)) continue;
+      included.add(child);
+      pending.push(child);
+    }
+  }
+  return tree.nodes.filter(({ id }) => included.has(id));
+};
+
+const touchedPinSlots = (previous: AppDocument, next: AppDocument): string[] => {
+  const previousPins = new Map((previous.pins ?? []).map((pin) => [pin.slot, pin]));
+  return (next.pins ?? []).flatMap((pin) => {
+    const prior = previousPins.get(pin.slot);
+    if (prior?.base !== pin.base) return [pin.slot];
+    const componentName = pinComponentName(pin.slot);
+    if (previous.components?.[componentName] !== next.components?.[componentName]) return [pin.slot];
+    // Subtree serialization intentionally over-reports reordered nodes as touched.
+    return JSON.stringify(pinnedSubtree(previous, componentName)) === JSON.stringify(pinnedSubtree(next, componentName))
+      ? []
+      : [pin.slot];
+  });
+};
 
 /** 06-apps §1 — construct the app lifecycle, generation, execution, and interchange surface. */
 export const createApps = (config: AppsConfig): AppsRuntime => {
@@ -182,7 +234,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   });
 
   const caller = createAppCaller(machines, config.tools);
-  const opener = createAppOpener(machines, caller, config.store);
+  const opener = createAppOpener(machines, caller, config.store, config.pinBaselines);
   const proxy = createAppsProxy({
     tokenSecret,
     tools: config.tools,
@@ -199,6 +251,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     app: AppDocument,
     instruction: string,
     issues: string[],
+    retryable = true,
   ): EditResult => ({
     app: structuredClone(app),
     version: {
@@ -207,7 +260,18 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       rung: rungFor(app),
     },
     issues: [...issues],
+    failure: {
+      code: "edit-rejected",
+      retryable,
+      message: retryable
+        ? "Edit was not applied. Retry vendo_apps_edit on the same app with a narrower instruction; do not rebuild the app."
+        : "Edit was not applied and cannot be retried until the reported blocker is resolved.",
+    },
   });
+
+  const appendIssues = (current: string[], next: string[]): string[] => [
+    ...new Set([...current, ...next]),
+  ];
 
   const syntaxCheck = async (
     machine: SandboxMachine,
@@ -283,7 +347,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return row.enabled;
     };
     await assertCurrent();
-    await history.append(app.id, previous, version);
+    await history.append(app.id, previous, version, touchedPinSlots(previous, app));
     const wasEnabled = await assertCurrent();
     // A changed trigger must be re-armed — enable() re-captures and re-mints trigger state.
     const enabled = enabledAfterDocumentEdit(previous, app, wasEnabled);
@@ -317,13 +381,51 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       if (config.model === undefined) {
         throw new VendoError("not-implemented", "generation requires a model");
       }
-      const generated = await engine.create(input, generationDependencies(config, config.model));
+      // Mint before generation so every partial already carries its permanent id.
+      const appId = `app_${globalThis.crypto.randomUUID()}`;
+      const emit = (payload: Tree): void => input.onView?.({
+        type: "data-vendo-view",
+        appId,
+        payload: payload as unknown as UIPayload,
+      });
+      let latestTree: Tree | undefined;
+      const queryApp: AppDocument = {
+        format: "vendo/app@1",
+        id: appId,
+        name: "Generating app",
+        ui: "tree",
+      };
+      const queryResolver = input.onView === undefined
+        ? undefined
+        : createProgressiveQueryResolver(machines, caller, queryApp, ctx, (data) => {
+          if (latestTree === undefined) return;
+          emit({ ...structuredClone(latestTree), data, streaming: true } as Tree);
+        });
+      const generated = await engine.create(
+        { prompt: input.prompt },
+        generationDependencies(config, config.model, input.onView === undefined ? undefined : (partial) => {
+          latestTree = structuredClone(partial.tree);
+          emit(latestTree);
+          queryResolver?.update(latestTree);
+        }),
+      );
       const app: AppDocument = {
         ...generated,
-        id: `app_${globalThis.crypto.randomUUID()}`,
+        id: appId,
       };
+      let finalTree: Tree | undefined;
+      if (input.onView !== undefined && app.tree?.formatVersion === "vendo-genui/v1") {
+        finalTree = {
+          ...(structuredClone(app.tree) as unknown as Tree),
+          ...(app.components === undefined ? {} : { components: structuredClone(app.components) }),
+        };
+        latestTree = structuredClone(finalTree);
+        queryResolver?.update(finalTree);
+        finalTree.data = await queryResolver?.complete() ?? structuredClone(finalTree.data ?? {});
+      }
       await apps.put(appRecordInput(app, ctx.principal.subject));
       await reportLifecycle("create", app.id, ctx);
+      if (finalTree !== undefined) emit(finalTree);
       return structuredClone(app);
     },
 
@@ -376,18 +478,34 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return structuredClone(fork);
     },
 
+    async agentToolRisk(call, ctx) {
+      if (call.tool !== "vendo_apps_edit") return undefined;
+      if (typeof call.args !== "object" || call.args === null || Array.isArray(call.args)) {
+        return "write";
+      }
+      const args = call.args as Record<string, Json>;
+      if (typeof args.appId !== "string" || typeof args.instruction !== "string") {
+        return "write";
+      }
+      const app = await owned(args.appId, ctx.principal.subject);
+      if (app === null) return "write";
+      return instructionRequiresServer(app, args.instruction) ? "write" : "read";
+    },
+
     async edit(appId, instruction, ctx) {
       if (config.model === undefined) {
         throw new VendoError("not-implemented", "generation requires a model");
       }
       const previous = await requireOwned(appId, ctx.principal.subject);
-      if (instructionRequiresServer(previous, instruction) && !machines.available()) {
+      const requiresServer = instructionRequiresServer(previous, instruction);
+      if (requiresServer && !machines.available()) {
         return failedEdit(previous, instruction, [
           "sandbox-unavailable: this edit requires server execution",
-        ]);
+        ], false);
       }
 
       let repairIssues: string[] | undefined;
+      let collectedIssues: string[] = [];
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const generated = await engine.edit(
           {
@@ -397,7 +515,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           },
           generationDependencies(config, config.model),
         );
-        if (generated.kind === "failure") return failedEdit(previous, instruction, generated.issues);
+        if (generated.kind === "failure") {
+          collectedIssues = appendIssues(collectedIssues, generated.issues);
+          repairIssues = collectedIssues;
+          continue;
+        }
 
         if (generated.kind === "document") {
           const app: AppDocument = { ...generated.document, id: appId };
@@ -412,9 +534,19 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           };
         }
 
+        // The contextual guard decision ran before generation. If the engine
+        // ever violates the tree dialect and emits code for a call classified
+        // read-class, stop before touching a machine or persisting anything.
+        if (!requiresServer) {
+          return failedEdit(previous, instruction, [
+            "approval-required: a tree-classified edit unexpectedly produced server code",
+          ]);
+        }
+
         const applied = await applyCodeFiles(previous, generated.files, ctx);
         if (applied.server === undefined) {
-          repairIssues = applied.issues;
+          collectedIssues = appendIssues(collectedIssues, applied.issues);
+          repairIssues = collectedIssues;
           continue;
         }
         const app: AppDocument = { ...structuredClone(previous), server: applied.server };
@@ -427,7 +559,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         await machines.evict(appId);
         return { app: persisted, version: { ...version } };
       }
-      return failedEdit(previous, instruction, repairIssues ?? ["code edit failed validation"]);
+      return failedEdit(
+        previous,
+        instruction,
+        collectedIssues.length === 0 ? ["edit failed validation"] : collectedIssues,
+      );
     },
 
     /**
@@ -483,7 +619,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
 
     agentTools() {
-      return createAgentTools(runtime);
+      return createAgentTools(runtime, { data, requireOwned });
     },
 
     proxy,

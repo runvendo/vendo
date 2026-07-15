@@ -1,11 +1,20 @@
-import type { AppDocument, AppId, RunContext, SecretsProvider, ToolRegistry } from "@vendoai/core";
-import type { AppDataAccess } from "./app-data.js";
+import {
+  VendoError,
+  type AppDocument,
+  type AppId,
+  type RecordQuery,
+  type RunContext,
+  type SecretsProvider,
+  type ToolRegistry,
+  type VendoErrorCode,
+} from "@vendoai/core";
+import { APP_BLOB_MAX_BYTES, APP_RECORD_MAX_BYTES, type AppDataAccess } from "./app-data.js";
 import { hostAllowed, substituteSecretHandles } from "./egress.js";
 import type { RunTokenGate } from "./run-token-gate.js";
 import { verifyRunToken, type RunTokenSecret } from "./run-token.js";
 import { checkEgressUrl, type IpResolver } from "./ssrf.js";
 
-const STATE_BODY_MAX_BYTES = 256 * 1024;
+const STATE_BODY_MAX_BYTES = APP_RECORD_MAX_BYTES;
 const EGRESS_BODY_MAX_BYTES = 1 * 1024 * 1024; // 1 MiB request envelope ceiling
 const EGRESS_RESPONSE_MAX_BYTES = 4 * 1024 * 1024; // 4 MiB response ceiling
 const EGRESS_MAX_REDIRECTS = 5;
@@ -14,6 +23,16 @@ const decoder = new TextDecoder();
 const lenientDecoder = new TextDecoder("utf-8", { fatal: false });
 // vendo-secret:<NAME>:<nonce> — NAME is a declared secret name, nonce is per-boot hex.
 const HANDLE_PATTERN = /vendo-secret:([A-Za-z_][A-Za-z0-9_]*):[0-9a-fA-F]+/g;
+
+const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
+  validation: 400,
+  "not-found": 404,
+  blocked: 403,
+  conflict: 409,
+  "cloud-required": 402,
+  "sandbox-unavailable": 501,
+  "not-implemented": 501,
+};
 
 const jsonResponse = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), {
   status,
@@ -70,6 +89,122 @@ const redact = (text: string, values: readonly string[]): string => {
     output = output.split(value).join("[vendo-secret-redacted]");
   }
   return output;
+};
+
+type ProxyRoute =
+  | { kind: "tool"; name: string }
+  | { kind: "state-get" | "state-put" }
+  | { kind: "egress" }
+  | { kind: "data-list"; collection: string }
+  | { kind: "data-item"; collection: string; id: string }
+  | { kind: "file-list"; collection: string }
+  | { kind: "file-item"; collection: string; key: string };
+
+const decoded = (value: string): string | null => {
+  try {
+    const result = decodeURIComponent(value);
+    return result === "" ? null : result;
+  } catch {
+    return null;
+  }
+};
+
+const collectionRoute = (
+  pathname: string,
+  prefix: "data" | "files",
+): { collection: string; item?: string } | null => {
+  const match = new RegExp(`^/${prefix}/([^/]+)(?:/(.+))?$`).exec(pathname);
+  if (match?.[1] === undefined) return null;
+  const collection = decoded(match[1]);
+  const item = match[2] === undefined ? undefined : decoded(match[2]);
+  if (collection === null || item === null) return null;
+  return { collection, ...(item === undefined ? {} : { item }) };
+};
+
+const routeFor = (request: Request, pathname: string): ProxyRoute | null => {
+  const toolMatch = /^\/tools\/([a-zA-Z0-9_-]{1,64})$/.exec(pathname);
+  if (request.method === "POST" && toolMatch?.[1] !== undefined) {
+    return { kind: "tool", name: toolMatch[1] };
+  }
+  if (pathname === "/state" && request.method === "GET") return { kind: "state-get" };
+  if (pathname === "/state" && request.method === "PUT") return { kind: "state-put" };
+  if (pathname === "/egress" && request.method === "POST") return { kind: "egress" };
+
+  const data = collectionRoute(pathname, "data");
+  if (data !== null) {
+    if (data.item === undefined && request.method === "GET") {
+      return { kind: "data-list", collection: data.collection };
+    }
+    if (data.item !== undefined && ["GET", "PUT", "DELETE"].includes(request.method)) {
+      return { kind: "data-item", collection: data.collection, id: data.item };
+    }
+  }
+  const files = collectionRoute(pathname, "files");
+  if (files !== null) {
+    if (files.item === undefined && request.method === "GET") {
+      return { kind: "file-list", collection: files.collection };
+    }
+    if (files.item !== undefined && ["GET", "PUT", "DELETE"].includes(request.method)) {
+      return { kind: "file-item", collection: files.collection, key: files.item };
+    }
+  }
+  return null;
+};
+
+const readJson = async (request: Request, maxBytes?: number): Promise<unknown> => {
+  const bytes = new Uint8Array(await request.arrayBuffer());
+  if (maxBytes !== undefined && bytes.byteLength > maxBytes) {
+    throw new VendoError("validation", "request body exceeds size limit");
+  }
+  try {
+    return JSON.parse(decoder.decode(bytes)) as unknown;
+  } catch {
+    throw new VendoError("validation", "request body must be valid JSON");
+  }
+};
+
+const objectBody = (value: unknown, label: string): Record<string, unknown> => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new VendoError("validation", `${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
+};
+
+const recordQuery = (url: URL): RecordQuery => {
+  const refs: Record<string, string> = {};
+  let limit: number | undefined;
+  let cursor: string | undefined;
+  for (const [key, value] of url.searchParams) {
+    if (key.startsWith("refs.")) {
+      const ref = key.slice("refs.".length);
+      if (ref === "" || value === "") {
+        throw new VendoError("validation", "ref filters require non-empty keys and values");
+      }
+      refs[ref] = value;
+      continue;
+    }
+    if (key === "limit") {
+      if (!/^[1-9]\d*$/.test(value)) {
+        throw new VendoError("validation", "limit must be a positive integer");
+      }
+      limit = Number(value);
+      if (!Number.isSafeInteger(limit)) {
+        throw new VendoError("validation", "limit must be a positive integer");
+      }
+      continue;
+    }
+    if (key === "cursor") {
+      if (value === "") throw new VendoError("validation", "cursor must be a non-empty string");
+      cursor = value;
+      continue;
+    }
+    throw new VendoError("validation", `unknown list query parameter: ${key}`);
+  }
+  return {
+    ...(Object.keys(refs).length === 0 ? {} : { refs }),
+    ...(limit === undefined ? {} : { limit }),
+    ...(cursor === undefined ? {} : { cursor }),
+  };
 };
 
 /** 06-apps §1 plus ENG-259 egress additions — internal dependencies for the fetch-style proxy. */
@@ -221,16 +356,19 @@ export const createAppsProxy = (dependencies: AppsProxyDependencies): { handler(
   return {
     async handler(request) {
       const url = new URL(request.url);
-      const toolMatch = /^\/tools\/([a-zA-Z0-9_-]{1,64})$/.exec(url.pathname);
-      const isTool = request.method === "POST" && toolMatch?.[1] !== undefined;
-      const isStateGet = request.method === "GET" && url.pathname === "/state";
-      const isStatePut = request.method === "PUT" && url.pathname === "/state";
-      const isEgress = request.method === "POST" && url.pathname === "/egress";
-      if (!isTool && !isStateGet && !isStatePut && !isEgress) {
-        return errorResponse(404, "not-found", "unknown proxy route");
+      const route = routeFor(request, url.pathname);
+      if (route === null) return errorResponse(404, "not-found", "unknown proxy route");
+      if (["tool", "state-put", "egress"].includes(route.kind)
+        || (route.kind === "data-item" && request.method === "PUT")) {
+        if (!isJson(request)) {
+          return errorResponse(400, "validation", "content-type must be application/json");
+        }
       }
-      if ((isTool || isStatePut || isEgress) && !isJson(request)) {
-        return errorResponse(400, "validation", "content-type must be application/json");
+      if (route.kind === "file-item" && request.method === "PUT") {
+        const contentType = request.headers.get("content-type");
+        if (contentType === null || contentType.trim() === "") {
+          return errorResponse(400, "validation", "content-type is required");
+        }
       }
       const token = bearerToken(request);
       const payload = token === null ? null : await verifyRunToken(dependencies.tokenSecret, token);
@@ -254,55 +392,109 @@ export const createAppsProxy = (dependencies: AppsProxyDependencies): { handler(
         appId: payload.appId,
       };
 
-      if (isStateGet) {
-        return jsonResponse(await dependencies.data.getState(payload.appId, payload.subject));
-      }
-      if (isEgress) {
-        const bytes = new Uint8Array(await request.arrayBuffer());
-        if (bytes.byteLength > EGRESS_BODY_MAX_BYTES) {
-          return errorResponse(400, "validation", "egress request exceeds size limit");
-        }
-        let envelope: EgressEnvelope | null;
-        try {
-          envelope = parseEnvelope(JSON.parse(decoder.decode(bytes)) as unknown);
-        } catch {
-          return errorResponse(400, "validation", "egress request body must be valid JSON");
-        }
-        if (envelope === null) {
-          return errorResponse(400, "validation", "egress request must be { url, method?, headers?, body? }");
-        }
-        return handleEgress(payload, envelope);
-      }
-      let body: unknown;
       try {
-        if (isStatePut) {
-          const bytes = new Uint8Array(await request.arrayBuffer());
-          if (bytes.byteLength > STATE_BODY_MAX_BYTES) {
-            return errorResponse(400, "validation", "request body exceeds size limit");
-          }
-          body = JSON.parse(decoder.decode(bytes)) as unknown;
-        } else {
-          body = await request.json();
+        if (route.kind === "state-get") {
+          return jsonResponse(await dependencies.data.getState(payload.appId, payload.subject));
         }
-      } catch {
-        return errorResponse(400, "validation", "request body must be valid JSON");
+        if (route.kind === "egress") {
+          const bytes = new Uint8Array(await request.arrayBuffer());
+          if (bytes.byteLength > EGRESS_BODY_MAX_BYTES) {
+            return errorResponse(400, "validation", "egress request exceeds size limit");
+          }
+          let envelope: EgressEnvelope | null;
+          try {
+            envelope = parseEnvelope(JSON.parse(decoder.decode(bytes)) as unknown);
+          } catch {
+            return errorResponse(400, "validation", "egress request body must be valid JSON");
+          }
+          if (envelope === null) {
+            return errorResponse(400, "validation", "egress request must be { url, method?, headers?, body? }");
+          }
+          return handleEgress(payload, envelope);
+        }
+        if (route.kind === "state-put") {
+          await dependencies.data.setState(
+            payload.appId,
+            payload.subject,
+            await readJson(request, STATE_BODY_MAX_BYTES) as never,
+          );
+          return jsonResponse({ status: "ok" });
+        }
+
+        let app: AppDocument | undefined;
+        if (["data-list", "data-item", "file-list", "file-item"].includes(route.kind)) {
+          app = await dependencies.loadApp(payload.appId, payload.subject) ?? undefined;
+          if (app === undefined) throw new VendoError("not-found", "app not found");
+        }
+        if (route.kind === "data-list") {
+          return jsonResponse(await dependencies.data.records(app as AppDocument, route.collection).list(recordQuery(url)));
+        }
+        if (route.kind === "data-item") {
+          const records = dependencies.data.records(app as AppDocument, route.collection);
+          if (request.method === "GET") {
+            const record = await records.get(route.id);
+            if (record === null) throw new VendoError("not-found", `record not found: ${route.id}`);
+            return jsonResponse(record);
+          }
+          if (request.method === "DELETE") {
+            await records.delete(route.id);
+            return jsonResponse({ status: "ok" });
+          }
+          const body = objectBody(await readJson(request, APP_RECORD_MAX_BYTES), "record body");
+          const unexpected = Object.keys(body).find((key) => key !== "data" && key !== "refs");
+          if (unexpected !== undefined) {
+            throw new VendoError("validation", `unexpected record property: ${unexpected}`);
+          }
+          if (!Object.prototype.hasOwnProperty.call(body, "data")) {
+            throw new VendoError("validation", "record body must contain data");
+          }
+          return jsonResponse(await records.put({
+            id: route.id,
+            data: body.data as never,
+            ...(body.refs === undefined ? {} : { refs: body.refs as Record<string, string> }),
+          }));
+        }
+        if (route.kind === "file-list") {
+          return jsonResponse(await dependencies.data.blobs(app as AppDocument, route.collection).list());
+        }
+        if (route.kind === "file-item") {
+          const blobs = dependencies.data.blobs(app as AppDocument, route.collection);
+          if (request.method === "GET") {
+            const blob = await blobs.get(route.key);
+            if (blob === null) throw new VendoError("not-found", `file not found: ${route.key}`);
+            return new Response(blob.bytes, {
+              headers: { "content-type": blob.contentType ?? "application/octet-stream" },
+            });
+          }
+          if (request.method === "DELETE") {
+            await blobs.delete(route.key);
+            return jsonResponse({ status: "ok" });
+          }
+          const contentLength = request.headers.get("content-length");
+          if (contentLength !== null && Number(contentLength) > APP_BLOB_MAX_BYTES) {
+            throw new VendoError("validation", "request body exceeds size limit");
+          }
+          const bytes = new Uint8Array(await request.arrayBuffer());
+          await blobs.put(route.key, bytes, { contentType: request.headers.get("content-type") ?? undefined });
+          return jsonResponse({ status: "ok" });
+        }
+
+        if (route.kind !== "tool") return errorResponse(404, "not-found", "unknown proxy route");
+        const body = objectBody(await readJson(request), "tool body");
+        if (!Object.prototype.hasOwnProperty.call(body, "args")) {
+          throw new VendoError("validation", "tool body must be an object containing args");
+        }
+        return jsonResponse(await dependencies.tools.execute({
+          id: `call_${globalThis.crypto.randomUUID()}`,
+          tool: route.name,
+          args: body.args as never,
+        }, runCtx));
+      } catch (error) {
+        if (error instanceof VendoError) {
+          return errorResponse(STATUS_BY_CODE[error.code], error.code, error.message);
+        }
+        return errorResponse(500, "internal", error instanceof Error ? error.message : "unknown proxy error");
       }
-      if (isStatePut) {
-        await dependencies.data.setState(payload.appId, payload.subject, body);
-        return jsonResponse({ status: "ok" });
-      }
-      if (typeof body !== "object" || body === null || Array.isArray(body)
-        || !Object.prototype.hasOwnProperty.call(body, "args")) {
-        return errorResponse(400, "validation", "tool body must be an object containing args");
-      }
-      const tool = toolMatch?.[1];
-      if (tool === undefined) return errorResponse(404, "not-found", "unknown proxy route");
-      const outcome = await dependencies.tools.execute({
-        id: `call_${globalThis.crypto.randomUUID()}`,
-        tool,
-        args: (body as { args: unknown }).args,
-      }, runCtx);
-      return jsonResponse(outcome);
     },
   };
 };

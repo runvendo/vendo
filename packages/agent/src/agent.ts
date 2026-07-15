@@ -22,6 +22,13 @@ import { assembleSystemPrompt } from "./prompt.js";
 import { createRunner } from "./runner.js";
 import { ThreadRepository, type Thread, type ThreadSummary } from "./threads.js";
 import { buildAgentTools } from "./tools.js";
+import {
+  createCapabilityMissDetector,
+  latestUserIntent,
+  type CapabilityMissConfig,
+} from "./capability-miss.js";
+
+const THREAD_ID_HEADER = "x-vendo-thread-id";
 
 interface AgentConfig {
   model: LanguageModel;
@@ -40,6 +47,7 @@ interface AgentConfig {
      *  full thread (current behavior). Persistence and the streamed thread are unaffected. */
     historyWindow?: number;
   };
+  capabilityMiss?: CapabilityMissConfig;
 }
 
 // Anthropic prompt-caching breakpoint. providerOptions.anthropic is ignored by every
@@ -138,18 +146,33 @@ export function createAgent(config: AgentConfig): VendoAgent {
         abandonPendingApprovals(thread.messages);
       }
       upsertMessage(thread.messages, input.message);
-      const system = await assembleSystemPrompt(config.guard, input.ctx, config.system);
+      const system = await assembleSystemPrompt(
+        config.guard,
+        input.ctx,
+        config.system,
+        config.capabilityMiss !== undefined,
+      );
 
       const stream = createUIMessageStream<UIMessage>({
         originalMessages: thread.messages,
         execute: async ({ writer }) => {
+          const missDetector = config.capabilityMiss === undefined
+            ? undefined
+            : createCapabilityMissDetector({
+                config: config.capabilityMiss,
+                ctx: input.ctx,
+                threadId: thread.id,
+                intent: latestUserIntent(thread.messages),
+              });
           const tools = await buildAgentTools({
             registry: config.tools,
             guard: config.guard,
             ctx: input.ctx,
             writer,
             toolOutputCap: config.context?.toolOutputCap,
+            ...(missDetector === undefined ? {} : { onCall: missDetector.onCall }),
           });
+          missDetector?.attach(tools);
           // History windowing: bound what is re-sent per turn to the last N whole messages.
           // Slicing whole UIMessages keeps each turn's tool-call/result pairing intact.
           const window = config.context?.historyWindow;
@@ -188,7 +211,12 @@ export function createAgent(config: AgentConfig): VendoAgent {
         },
         onError: () => "An error occurred while generating the response.",
       });
-      return createUIMessageStreamResponse({ stream });
+      const response = createUIMessageStreamResponse({ stream });
+      // ENG-211: a caller may begin without an id, in which case resolve()
+      // mints one. Return the effective id on every turn so fetch clients can
+      // adopt it without changing the ai-SDK SSE part contract.
+      response.headers.set(THREAD_ID_HEADER, thread.id);
+      return response;
     },
     threads: {
       get: (id, ctx) => threads.get(id, ctx),

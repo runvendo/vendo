@@ -31,15 +31,21 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./presets": {
+      "types": "./dist/presets/index.d.ts",
+      "default": "./dist/presets/index.js"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@vendoai/core": "workspace:*",
@@ -47,8 +53,23 @@
     "yaml": "^2.6.0",
     "zod": "^3.24.0"
   },
+  "peerDependencies": {
+    "@auth/core": "^0.34.3",
+    "next": ">=14"
+  },
+  "peerDependenciesMeta": {
+    "@auth/core": {
+      "optional": true
+    },
+    "next": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@auth/core": "^0.34.3",
     "@types/node": "^22.0.0",
+    "jose": "^6.2.3",
+    "next": "16.2.9",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }

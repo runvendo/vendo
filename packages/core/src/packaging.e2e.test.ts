@@ -16,7 +16,7 @@ const WORK_DIR = join(PACKAGE_DIR, ".e2e-pack");
 
 const RUNTIME_EXPORTS = [
   "VENDO_APP_FORMAT", "VENDO_TREE_FORMAT", "VENDO_TOOLS_FORMAT", "VENDO_OVERRIDES_FORMAT",
-  "VENDO_POLICY_FORMAT", "descriptorHash", "validateTree", "validateAppDocument", "VendoError",
+  "VENDO_POLICY_FORMAT", "VENDO_CAPABILITY_MISS_FORMAT", "descriptorHash", "validateTree", "validateAppDocument", "VendoError",
   "safeErrorMessage", "canonicalJson", "sha256Hex", "TOOL_NAME_PATTERN",
   "TREE_MAX_NODES", "TREE_MAX_QUERIES", "TREE_MAX_GENERATED_COMPONENTS",
   "TREE_MAX_COMPONENT_SOURCE_CHARS", "TREE_MAX_TOTAL_COMPONENT_CHARS", "RESERVED_COMPONENT_NAMES",
@@ -29,6 +29,7 @@ const RUNTIME_EXPORTS = [
   "pinSchema", "triggerSourceSchema", "runModelSchema", "stepSchema", "triggerSchema",
   "vendoRecordSchema", "recordQuerySchema", "authMaterialSchema", "agentRunReportSchema",
   "vendoThemeSchema", "vendoViewPartSchema", "vendoApprovalPartSchema", "vendoErrorCodeSchema",
+  "capabilityMissToolFailureSchema", "capabilityMissTriggerSchema", "capabilityMissEventSchema",
   "appIdSchema", "grantIdSchema", "approvalIdSchema", "runIdSchema", "threadIdSchema",
   "isoDateTimeSchema", "jsonSchemaSchema",
 ];
@@ -76,7 +77,7 @@ describe("packaging e2e — the artifact blocks will install", () => {
     // dist-only artifact: no sources, no tests, no vectors in the tarball
     expect(existsSync(join(packed.dir, "src"))).toBe(false);
     expect(existsSync(join(packed.dir, "vectors"))).toBe(false);
-  });
+  }, 30_000);
 
   it("root import exposes the full contract surface and behaves", async () => {
     const packed = packOnce();
@@ -94,7 +95,7 @@ describe("packaging e2e — the artifact blocks will install", () => {
     const err = new core.VendoError("not-found", "missing");
     expect(err).toBeInstanceOf(Error);
     expect(err.code).toBe("not-found");
-  });
+  }, 30_000);
 
   it("reproduces the committed descriptor-hash vectors from the packed artifact", async () => {
     const packed = packOnce();

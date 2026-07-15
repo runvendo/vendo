@@ -11,6 +11,11 @@ import type { E2eLayerContext, E2eLayerRunResult } from "./layers/e2e.js";
 import type { ScoredLayerContext, ScoredLayerRunResult } from "./layers/scored.js";
 import type { StructuralLayerContext } from "./layers/structural.js";
 import type { BootHandle, BootRepoOptions } from "./boot.js";
+import type {
+  CaptureGalleryRepoOptions,
+  GalleryRepoResult,
+  WriteGalleryHtmlOptions,
+} from "./gallery.js";
 
 const tempRoots: string[] = [];
 const validSha = "0123456789abcdef0123456789abcdef01234567";
@@ -748,6 +753,10 @@ describe("runCli boot", () => {
         events.push(`init:${entry.name}`);
         return makeInitResult(context.repoDir(entry.name), "init.log", "init.diff");
       },
+      prepareE2eRepo: async (entry, appRoot) => {
+        events.push(`prepare:${entry.name}:${appRoot}`);
+        return [];
+      },
       bootRepo: async (entry, options) => {
         events.push(`boot:${entry.name}`);
         bootOptions.push(options ?? {});
@@ -762,11 +771,122 @@ describe("runCli boot", () => {
       "bootstrap:repo-boot",
       "inject:repo-boot",
       "init:repo-boot",
+      `prepare:repo-boot:${context.repoDir(repo.name)}`,
       "boot:repo-boot",
       "wait",
       "boot:teardown",
     ]);
     expect(bootOptions[0]).toMatchObject({ context, env: undefined });
     expect(stdout.join("\n")).toContain("Booted repo-boot at http://127.0.0.1:3000");
+  });
+});
+
+describe("runCli gallery", () => {
+  it("reuses clone, bootstrap, injection, init, e2e prep, and boot before capture and teardown", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repo = deepManifestEntry("repo-gallery");
+    const events: string[] = [];
+    const stdout: string[] = [];
+    const captureOptions: CaptureGalleryRepoOptions[] = [];
+    const reportOptions: WriteGalleryHtmlOptions[] = [];
+    const handle: BootHandle = {
+      repoDir: context.repoDir(repo.name),
+      readinessUrl: "http://127.0.0.1:3333",
+      logPaths: { server: path.join(context.logsDir(repo.name), "boot.server.log") },
+      teardown: async () => { events.push("teardown:repo-gallery"); },
+    };
+    const galleryResult: GalleryRepoResult = {
+      repoName: repo.name,
+      nativeScreens: [],
+      prompts: [],
+    };
+
+    const exitCode = await runCli(["gallery"], {
+      now: () => new Date("2026-07-14T12:00:00.000Z"),
+      stdout: (line) => { stdout.push(line); },
+      stderr: () => {},
+      loadManifest: async () => [repo],
+      discoverConfiguredGalleryRepoNames: async () => {
+        events.push("discover");
+        return [repo.name];
+      },
+      createContext: () => context,
+      ensureRepoCheckout: async (entry) => {
+        events.push(`clone:${entry.name}`);
+        await writeHostPackage(context.repoDir(entry.name));
+        return context.repoDir(entry.name);
+      },
+      bootstrapRepo: async (entry) => {
+        events.push(`bootstrap:${entry.name}`);
+        return {
+          repoDir: context.repoDir(entry.name),
+          envPath: path.join(context.repoDir(entry.name), ".env"),
+          logs: { stdout: "bootstrap.stdout.log", stderr: "bootstrap.stderr.log" },
+        };
+      },
+      createInjector: () => ({
+        async inject(entry) {
+          events.push(`inject:${entry.name}`);
+          return {
+            repoDir: context.repoDir(entry.name),
+            packageManager: "pnpm",
+            packages: [],
+            vendorDir: path.join(context.repoDir(entry.name), "vendor"),
+            installCommand: "pnpm install",
+          };
+        },
+      }),
+      runInit: async (entry, options) => {
+        events.push(`init:${entry.name}:${options?.artifactPrefix}`);
+        return makeInitResult(context.repoDir(entry.name), "gallery.init.log", "gallery.init.diff");
+      },
+      prepareE2eRepo: async (entry, appRoot, logsDir) => {
+        events.push(`prepare:${entry.name}`);
+        expect(appRoot).toBe(context.repoDir(entry.name));
+        expect(logsDir).toBe(context.logsDir(entry.name));
+        return [path.join(logsDir, "e2e.prepare.log")];
+      },
+      commandRunner: async (command, options) => {
+        events.push(`build:${command}:${options.cwd}`);
+        return { code: 0, stdout: "built", stderr: "" };
+      },
+      bootRepo: async (entry) => {
+        events.push(`boot:${entry.name}`);
+        return handle;
+      },
+      captureGalleryRepo: async (options) => {
+        events.push(`capture:${options.repoName}`);
+        captureOptions.push(options);
+        return galleryResult;
+      },
+      writeGalleryHtml: async (options) => {
+        events.push("report");
+        reportOptions.push(options);
+        return path.join(options.runRoot, "gallery.html");
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(events).toEqual([
+      "discover",
+      "clone:repo-gallery",
+      "bootstrap:repo-gallery",
+      "inject:repo-gallery",
+      "init:repo-gallery:gallery.init",
+      "prepare:repo-gallery",
+      `build:pnpm build:${context.repoDir("repo-gallery")}`,
+      "boot:repo-gallery",
+      "capture:repo-gallery",
+      "teardown:repo-gallery",
+      "report",
+    ]);
+    expect(captureOptions[0]).toMatchObject({
+      repoName: "repo-gallery",
+      readinessUrl: "http://127.0.0.1:3333",
+      expectationsRoot: path.join(corpusRoot, "expectations"),
+    });
+    expect(reportOptions[0]?.repos).toEqual([galleryResult]);
+    expect(stdout.join("\n")).toContain("gallery.html");
   });
 });

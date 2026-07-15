@@ -2,8 +2,10 @@ import {
   VendoError,
   appIdSchema,
   isoDateTimeSchema,
+  sha256Hex,
   type AppId,
   type IsoDateTime,
+  type Json,
   type Pin,
 } from "@vendoai/core";
 import { z } from "zod";
@@ -15,16 +17,56 @@ export interface PinBaseline {
   hash: string;
   exportable: boolean;
   capturedAt: IsoDateTime;
+  sourceImports?: Record<string, string>;
+  subSources?: Record<string, PinSubSource>;
+  sampleProps?: Record<string, Json>;
+  styles?: PinStyle[];
 }
+
+/** Captured source-owned virtual module plus its own resolved import table. */
+export interface PinSubSource {
+  source: string;
+  imports: Record<string, string>;
+}
+
+/** One inert host stylesheet snapshot captured from a canonical app root. */
+export interface PinStyle {
+  path: string;
+  css: string;
+}
+
+const pinSubSourceSchema = z.object({
+  source: z.string(),
+  imports: z.record(z.string()),
+}).passthrough() satisfies z.ZodType<PinSubSource>;
+
+const pinStyleSchema = z.object({
+  path: z.string(),
+  css: z.string(),
+}).passthrough() satisfies z.ZodType<PinStyle>;
 
 /** 06-apps §8 — validated persisted representation of a captured host baseline. */
 export const pinBaselineSchema = z.object({
   slot: z.string(),
   source: z.string(),
-  hash: z.string(),
+  hash: z.string().startsWith("sha256:"),
   exportable: z.boolean(),
   capturedAt: isoDateTimeSchema,
+  sourceImports: z.record(z.string()).optional(),
+  subSources: z.record(pinSubSourceSchema).optional(),
+  sampleProps: z.record(z.unknown()).optional(),
+  styles: z.array(pinStyleSchema).optional(),
 }).passthrough() satisfies z.ZodType<PinBaseline>;
+
+/** Internal stable generated-component name for one captured host slot. */
+export const pinComponentName = (slot: string): string => {
+  const stem = (slot.match(/[A-Za-z0-9]+/g) ?? [])
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join("") || "Slot";
+  // The hash suffix prevents punctuation-only normalization collisions while
+  // keeping the name a valid generated-component PascalCase identifier.
+  return `Pinned${stem}${sha256Hex(slot).slice(0, 8)}`;
+};
 
 /** 06-apps §8 — unified source diff proposed for host approval. */
 export interface PinShipRequest {

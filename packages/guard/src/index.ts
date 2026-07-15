@@ -8,6 +8,7 @@ export type {
   PolicyFile,
   PolicyFn,
   PolicyRule,
+  RiskResolver,
   Scanner,
   VendoGuard,
 } from "./types.js";

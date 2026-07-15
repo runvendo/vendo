@@ -13,6 +13,7 @@ export {
   type AppsConfig,
   type AppsProxy,
   type AppsRuntime,
+  type EditFailure,
   type EditResult,
   type OpenSurface,
   type VersionEntry,
@@ -34,6 +35,7 @@ export {
   type PinBaseline,
   type PinShipRequest,
 } from "./pins.js";
+export { appVersionHash } from "./version-hash.js";
 export {
   hostAllowed,
   substituteSecretHandles,

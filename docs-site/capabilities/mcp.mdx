@@ -28,7 +28,10 @@ what `mcpConnector` does, and it runs the other direction. See
 
 ## Enable the door
 
-Set `mcp: true` and pass a `HostOAuthAdapter`. Compose once in a shared module:
+Set `mcp: true` and pass a `HostOAuthAdapter`. The recommended shape has two
+methods: `session` looks up the current host user (or bounces the browser to
+your login), and `principal` resolves that subject to a live principal on every
+door request. The door renders the consent page itself.
 
 ```ts
 // lib/vendo.ts
@@ -36,12 +39,16 @@ import { createVendo } from "@vendoai/vendo/server";
 import type { HostOAuthAdapter } from "@vendoai/vendo";
 
 const oauth: HostOAuthAdapter = {
-  async authorize(request, { clientName, scopes }) {
-    // Authenticate the user with your existing session and confirm consent.
-    // Return { subject } on success, or a Response for redirects/renders.
+  async session(request, { returnTo }) {
+    // Return the current host subject, or redirect the browser to login.
+    // Send the user back through `returnTo` so the door resumes the exact
+    // authorization request without a login → authorize → login loop.
     const user = await resolveSession(request);
-    if (!user) return renderLogin(request);
-    return { subject: user.id };
+    if (user) return { subject: user.id };
+
+    const login = new URL("/login", request.url);
+    login.searchParams.set("returnTo", returnTo);
+    return Response.redirect(login);
   },
   async principal(subject) {
     // Re-resolved on every bearer-authenticated MCP request. Return null to revoke.
@@ -72,6 +79,59 @@ export const { GET, POST, DELETE } = nextVendoHandler(vendo);
 door cannot mint principals otherwise. Import the `HostOAuthAdapter` type from
 `@vendoai/vendo` — the umbrella re-exports it so you never have to depend on
 `@vendoai/mcp` directly.
+
+## Consent page
+
+The door renders the consent page for you when your adapter uses `session`. It
+owns the approve and deny buttons, CSRF-protects the POST, rejects a replayed
+approval, escapes the attacker-controllable `client_name` value from dynamic
+client registration, and issues the standard OAuth authorization-code redirect.
+You do not write any of that.
+
+### Theme it
+
+The consent page styles itself from the same `--vendo-*` CSS custom properties
+the rest of your product UI reads — `--vendo-color-*`, `--vendo-font-*`,
+`--vendo-radius-*`, and `--vendo-space-*`. When you configure Vendo through
+`createVendo`, the umbrella hands your resolved `.vendo/theme.json` to the door
+automatically. Edit `.vendo/theme.json` to restyle the page; no consent-specific
+configuration is needed.
+
+### Replace the page
+
+If you need a custom consent page — different copy, a compliance disclosure, a
+branded layout the tokens cannot express — add an `authorize` method alongside
+`session`. The door still owns CSRF, single-use replay protection, and the
+OAuth redirect; you only own the rendered HTML. Post `transaction`,
+`csrf_token`, and `decision=approve|deny` to the `action` URL the door supplies
+in `ctx.consent`.
+
+```ts
+const oauth: HostOAuthAdapter = {
+  async session(request, { returnTo }) {
+    /* as above */
+  },
+  async authorize(request, { clientName, scopes, consent }) {
+    // `consent` is present because `session` is defined. Render your own page
+    // and post the door's form values back to `consent.action`.
+    return new Response(renderConsent({ clientName, scopes, consent }), {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  },
+  async principal(subject) {
+    /* as above */
+  },
+};
+```
+
+Always HTML-escape `clientName` before rendering it. Clients register their own
+name through dynamic client registration or a Client ID Metadata Document, so
+that value is attacker-controllable and can carry phishing text or markup.
+
+If your adapter omits `session` and only implements the legacy `authorize`, the
+door hands you the request without a `consent` context. You then own the entire
+flow: CSRF, replay protection, and the OAuth redirect. Prefer `session` plus
+the prebuilt page unless you have a reason not to.
 
 ## Route the discovery paths
 
@@ -114,14 +174,29 @@ well-known routes before that second mount.
 
 ## Set VENDO_BASE_URL
 
-Host tools that bind to routes need a base origin. The wire normally learns its
-own origin from the first in-product request, but door requests never teach it
-(only wire routes do). Set `VENDO_BASE_URL` explicitly so door-first traffic can
-still resolve host routes.
+Set `VENDO_BASE_URL` to your product's public origin in every real deployment.
+It does two jobs for the door:
+
+- **Discovery and audience binding.** Behind a reverse proxy (Railway, Fly, any
+  TLS terminator), the request reaching your process carries the proxy-internal
+  origin. The door derives its OAuth discovery documents (issuer, endpoint
+  URLs, the protected-resource `resource`) and its token audience binding from
+  `VENDO_BASE_URL` when set, so clients see your public origin instead of an
+  unreachable internal one. Forwarded headers such as `X-Forwarded-Host` are
+  never trusted. Without it, the door falls back to the request URL, which is
+  fine for local development and wrong behind a proxy.
+- **Route-binding base.** Host tools that bind to routes need a base origin.
+  The wire normally learns its own origin from the first in-product request,
+  but door requests never teach it (only wire routes do); `VENDO_BASE_URL`
+  gives door-first traffic a base to resolve host routes against.
 
 ```bash
 VENDO_BASE_URL=https://app.example.com
 ```
+
+If your composition serves the door on a different origin than the one host
+routes resolve against, pass the door's public base explicitly:
+`createVendo({ mcp: { baseUrl: "https://app.example.com" }, oauth })`.
 
 ## How door calls reach host tools
 
@@ -139,6 +214,133 @@ forwarded to your host routes. Door tool calls reach host APIs through the same
 The OAuth-authenticated user is the authority. Risky tools still stop at your
 per-call guard decision, whatever the token's scopes.
 
+## Delegate to an external authorization server
+
+If your product already runs its own OAuth authorization server, or you use an
+identity provider that issues bearer tokens for your APIs, point the door at it
+with `remoteAs` instead of letting the door mint tokens itself. The door then
+authenticates every MCP request by verifying the inbound bearer as a JWT signed
+by that issuer.
+
+```ts
+export const vendo = createVendo({
+  model,
+  principal: resolvePrincipal,
+  mcp: true,
+  oauth,
+  remoteAs: {
+    issuer: "https://auth.example.com",
+    audience: "https://app.example.com/api/vendo/mcp",
+    // jwksUri is optional — the door discovers it from the issuer's
+    // RFC 8414 metadata when omitted.
+  },
+});
+```
+
+Requirements and behavior:
+
+- Tokens must be ES256-signed JWTs with `iss`, `sub`, `aud`, `iat`, and `exp`
+  claims. `iss` must equal the configured `issuer`, `aud` must equal the
+  configured `audience`, and `exp` must be in the future.
+- The door caches the JWKS in memory and refetches it when a bearer arrives
+  with an unfamiliar `kid`, which covers ordinary key rotation.
+- The door calls `oauth.principal(subject)` with the JWT `sub` on every
+  request, so returning `null` still kills a live session — this remains your
+  revocation point.
+- The local `/api/vendo/mcp/authorize`, `/token`, and `/register` endpoints
+  return `404` in this mode, and so does RFC 8414 authorization-server
+  metadata. RFC 9728 protected-resource metadata instead advertises
+  `authorization_servers: [remoteAs.issuer]`, so compliant clients discover
+  and use the external server directly.
+- `oauth` is still required — the door skips `oauth.authorize` because the
+  external server owns the interactive step, but it still calls
+  `oauth.principal`.
+
+Use `remoteAs` when the external server is authoritative for user identity for
+your product. Skip it if you want the door to run its own OAuth surface.
+
+## Federate login from an external authorization server
+
+`federation` adds a signed handshake so an external authorization server can
+have your host complete the interactive login-and-consent step, then hand the
+answer back. This is useful when the external server owns tokens (see
+`remoteAs` above) but does not know how to authenticate your users — your app
+does.
+
+```ts
+export const vendo = createVendo({
+  model,
+  principal: resolvePrincipal,
+  mcp: true,
+  oauth,
+  federation: { secret: process.env.VENDO_MCP_FEDERATION_SECRET! },
+});
+```
+
+Set `VENDO_MCP_FEDERATION_SECRET` to a high-entropy secret shared with the
+external authorization server. That server crafts an HS256-signed request JWT
+and redirects the user's browser to
+`GET /api/vendo/mcp/federate?request=<compact JWS>`.
+
+The request JWT must carry:
+
+- `iss` — the external authorization server's issuer URL.
+- `aud` — the door's canonical URL (for example
+  `https://app.example.com/api/vendo/mcp`).
+- `exp` — no more than five minutes in the future.
+- `jti` — a fresh nonce per handshake.
+- `redirect_uri` — where to send the browser after login. Its origin must
+  match `iss`.
+- `scopes` — the string array the external server wants your user to consent
+  to.
+- `client_name` — the display name shown in your consent UI.
+
+The door verifies the request, then calls
+`oauth.authorize(request, { clientName, scopes })`. This is the same authorize
+step your local flow uses, so you do not need a separate consent UI. If your
+adapter returns a `Response` (a login redirect or rendered page), the door
+forwards it so the browser can complete host login and retry. On a
+`{ subject }` result, the door redirects to `redirect_uri` with an HS256-signed
+`assertion` parameter that the external authorization server verifies with the
+same `secret`. The assertion carries `sub` (your host subject), `iss` (the
+door's canonical URL), `aud` (the request's `iss`), a matching `jti`, and a
+sixty-second `exp`.
+
+The endpoint renders no HTML of its own — it either returns your `authorize`
+response verbatim or issues a `302` back to the external server.
+
+## Revoke access
+
+Clients and hosts can both retire an authorization without waiting for a token
+to expire. The door implements the [RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009)
+revocation endpoint at `/api/vendo/mcp/revoke`, and the authorization-server
+metadata advertises it alongside the supported `read` and `write` scopes so
+clients discover it automatically.
+
+Clients revoke a single token by POSTing `application/x-www-form-urlencoded`:
+
+```bash
+curl -X POST https://app.example.com/api/vendo/mcp/revoke \
+  -d "token=<access_or_refresh_token>" \
+  -d "client_id=<client_id>" \
+  -d "token_type_hint=refresh_token"
+```
+
+Per the spec, the endpoint always returns an empty `200` — unknown tokens and
+unknown or incorrect hints look the same. Revoking an access token invalidates
+that opaque token; revoking a refresh token atomically retires the whole
+authorization-grant family, including its access tokens and any rotated
+successors, while leaving other authorizations for the same client intact.
+
+Returning `null` from your `oauth.principal(subject)` remains the account-level
+kill switch and takes effect on the next transport request. That's the fastest
+way to sever every client for a user from your product's settings UI — the
+door re-resolves the principal on each transport request and closes live MCP
+sessions the moment the lookup fails.
+
+In `remoteAs` mode the external authorization server owns revocation and the
+door's local `/revoke` path returns `404`.
+
 ## Saved apps ride along
 
 The door exposes your saved apps as MCP Apps. `tools/list` includes
@@ -153,11 +355,16 @@ and editing stay in-product.
 npx vendo doctor
 ```
 
-When the door is open, doctor verifies both OAuth metadata documents resolve and
-the server card parses. `GET /status` returns `blocks.mcp: true`. See
+When the door is open, doctor verifies both OAuth metadata documents resolve,
+the server card parses, and — if you have started registry paperwork — that
+your `server.json` and `mcp-registry-auth` challenge match the live door.
+`GET /status` returns `blocks.mcp: true`. See
 [HTTP routes](/reference/http-routes) for the door's route table and
 [Handler options](/reference/handler-options) for the `mcp` and `oauth` options.
 
 To connect a client, point it at `https://your-app.example.com/api/vendo/mcp`.
 The client discovers OAuth from the `WWW-Authenticate` challenge on its first
 `401`, walks the user through your `authorize` step, and starts calling tools.
+
+To make the deployed door discoverable through the official registry, follow
+[Publish to the MCP registry](/capabilities/mcp-registry).

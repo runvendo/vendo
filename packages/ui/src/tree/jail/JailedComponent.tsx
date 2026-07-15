@@ -89,11 +89,31 @@ function jailNonce(): string {
 export interface JailedComponentProps {
   name: string;
   source: string;
-  props: Record<string, unknown>;
+  /** Live tree props. Absent means the captured sampleProps rehearsal stub wins. */
+  props?: Record<string, unknown>;
+  furnishing?: JailFurnishing;
   /** Host brand tokens as `--vendo-*` custom properties, applied to the jail root. */
   themeVars?: Record<string, string>;
   onAction(action: string, payload?: Json): Promise<ToolOutcome>;
   onStateSet(key: string, value: Json): void;
+}
+
+export interface JailSubSource {
+  source: string;
+  imports: Record<string, string>;
+}
+
+export interface JailStyle {
+  path: string;
+  css: string;
+}
+
+/** Structural copy of the additive pin-baseline furnishing; ui depends on core only. */
+export interface JailFurnishing {
+  sourceImports?: Record<string, string>;
+  subSources?: Record<string, JailSubSource>;
+  sampleProps?: Record<string, unknown>;
+  styles?: JailStyle[];
 }
 
 /** 08-ui §5 — generated code runs only in this opaque-origin iframe. */
@@ -101,6 +121,7 @@ export function JailedComponent({
   name,
   source,
   props,
+  furnishing,
   themeVars,
   onAction,
   onStateSet,
@@ -111,13 +132,22 @@ export function JailedComponent({
 
   useEffect(() => {
     setError(undefined);
-  }, [name, source]);
+  }, [furnishing, name, source]);
 
   useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;
     const sendRender = () => {
-      iframe.contentWindow?.postMessage({ vendo: true, kind: "render", source, props, ...(themeVars === undefined ? {} : { themeVars }) }, "*");
+      iframe.contentWindow?.postMessage({
+        vendo: true,
+        kind: "render",
+        source,
+        props: props ?? furnishing?.sampleProps ?? {},
+        ...(furnishing?.sourceImports === undefined ? {} : { sourceImports: furnishing.sourceImports }),
+        ...(furnishing?.subSources === undefined ? {} : { subSources: furnishing.subSources }),
+        ...(furnishing?.styles === undefined ? {} : { styles: furnishing.styles }),
+        ...(themeVars === undefined ? {} : { themeVars }),
+      }, "*");
     };
     const handleMessage = (event: MessageEvent) => {
       if (event.source !== iframe.contentWindow) return;
@@ -163,7 +193,7 @@ export function JailedComponent({
       window.removeEventListener("message", handleMessage);
       iframe.removeEventListener("load", sendRender);
     };
-  }, [onAction, onStateSet, props, source, themeVars]);
+  }, [furnishing, onAction, onStateSet, props, source, themeVars]);
 
   if (error) {
     return <ContainedNotice label="Generated component error">{`${name}: ${error}`}</ContainedNotice>;

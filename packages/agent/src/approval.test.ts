@@ -29,12 +29,21 @@ const input = { value: "hello" };
 const threadId = "thr_approval";
 const toolCallId = "call_approval";
 
-function setup() {
+function setup(invalidatedGrant?: ApprovalRequest["invalidatedGrant"]) {
   const model = scriptedModel([
     toolCallTurn(descriptor.name, input, toolCallId),
     textTurn("Approval handled.", "text_after_approval"),
   ]);
   const guard = testGuard({ [descriptor.name]: "ask" });
+  if (invalidatedGrant !== undefined) {
+    const check = guard.check.bind(guard);
+    guard.check = async (...args) => {
+      const decision = await check(...args);
+      return decision.action === "ask"
+        ? { ...decision, approval: { ...decision.approval, invalidatedGrant } }
+        : decision;
+    };
+  }
   const tools = boundRegistry({
     [descriptor.name]: {
       descriptor,
@@ -100,6 +109,55 @@ async function storedAssistant(agent: ReturnType<typeof createAgent>): Promise<U
 }
 
 describe("agent approval round trip", () => {
+  it("executes a read-class Vendo create immediately without approval parts", async () => {
+    const createDescriptor: ToolDescriptor = {
+      name: "vendo_apps_create",
+      description: "Create a jailed rung-1 UI document.",
+      inputSchema: {
+        type: "object",
+        properties: { prompt: { type: "string" } },
+        required: ["prompt"],
+        additionalProperties: false,
+      },
+      risk: "read",
+    };
+    const createInput = { prompt: "Build a spending dashboard" };
+    const guard = testGuard({});
+    const tools = boundRegistry({
+      [createDescriptor.name]: {
+        descriptor: createDescriptor,
+        execute: async () => ({ id: "app_created", name: "Spending dashboard" }),
+      },
+    }, guard);
+    const agent = createAgent({
+      model: scriptedModel([
+        toolCallTurn(createDescriptor.name, createInput, "call_create"),
+        textTurn("Created.", "text_created"),
+      ]),
+      tools,
+      guard,
+    });
+
+    const response = await agent.stream({
+      threadId: "thr_create",
+      message: {
+        id: "user_create",
+        role: "user",
+        parts: [{ type: "text", text: createInput.prompt }],
+      },
+      ctx: ctx(),
+    });
+    const { parts } = await readSse(response);
+
+    expect(tools.invocations.vendo_apps_create).toBe(1);
+    expect(parts.some((part) => part.type === "data-vendo-approval")).toBe(false);
+    expect(parts.some((part) => part.type === "tool-approval-request")).toBe(false);
+    expect(parts.find((part) => part.type === "tool-output-available")).toMatchObject({
+      toolCallId: "call_create",
+      output: { status: "ok", output: { id: "app_created" } },
+    });
+  });
+
   it("pauses on ask with native and Vendo approval parts without executing the tool", async () => {
     const { agent, guard, tools } = setup();
     const { parts } = await pause(agent);
@@ -125,6 +183,20 @@ describe("agent approval round trip", () => {
     expect(tools.invocations.send_echo).toBe(0);
     expect(parts.some((part) => String(part.type).startsWith("tool-output-"))).toBe(false);
     expect(parts.at(-1)).toEqual({ type: "finish", finishReason: "tool-calls" });
+  });
+
+  it("carries invalidated-grant provenance on the Vendo approval part", async () => {
+    const invalidatedGrant = {
+      id: "grt_stale",
+      grantedAt: "2026-07-01T12:00:00.000Z",
+    } as const;
+    const { agent } = setup(invalidatedGrant);
+    const { parts } = await pause(agent);
+
+    expect(parts.find((part) => part.type === "data-vendo-approval")).toEqual({
+      type: "data-vendo-approval",
+      data: { toolCallId, risk: "write", approvalId: `apr_${toolCallId}`, invalidatedGrant },
+    });
   });
 
   it("resumes the same assistant message after approval and executes exactly once", async () => {

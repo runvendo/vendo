@@ -60,7 +60,7 @@ describe("vendo doctor", () => {
     const fetchImpl = vi.fn().mockResolvedValue(Response.json({
       posture: "unconfigured",
       version: "0.3.0",
-      blocks: { store: true },
+      blocks: { store: true, sandbox: "e2b" },
     }));
     const messages = output();
     expect(await runDoctor({
@@ -82,7 +82,7 @@ describe("vendo doctor", () => {
       fetchImpl: vi.fn().mockResolvedValue(Response.json({
         posture: "unconfigured",
         version: "0.3.0",
-        blocks: { store: true },
+        blocks: { store: true, sandbox: "e2b" },
       })),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
@@ -97,7 +97,7 @@ describe("vendo doctor", () => {
     const fetchImpl = vi.fn().mockResolvedValue(Response.json({
       posture: "unconfigured",
       version: "0.3.0",
-      blocks: { store: true },
+      blocks: { store: true, sandbox: "e2b" },
     }));
     expect(await runDoctor({
       targetDir: await healthy(),
@@ -107,6 +107,73 @@ describe("vendo doctor", () => {
     })).toBe(0);
     expect(fetchImpl).toHaveBeenCalledOnce();
     expect(fetchImpl.mock.calls[0]?.[0]).toBe("http://localhost:3000/api/vendo/status");
+  });
+
+  it.each(["e2b", "modal", "custom"] as const)("reports a lit %s execution venue", async (sandbox) => {
+    const messages = output();
+    expect(await runDoctor({
+      targetDir: await healthy(),
+      fetchImpl: vi.fn().mockResolvedValue(Response.json({
+        posture: "unconfigured",
+        version: "0.3.0",
+        blocks: { store: true, sandbox },
+      })),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.logs).toContain(`ok: execution venue: ${sandbox}`);
+  });
+
+  it("warns with actionable guidance when the execution venue is dark", async () => {
+    const messages = output();
+    expect(await runDoctor({
+      targetDir: await healthy(),
+      fetchImpl: vi.fn().mockResolvedValue(Response.json({
+        posture: "unconfigured",
+        version: "0.3.0",
+        blocks: { store: true, sandbox: false },
+      })),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.errors).toContain(
+      "warning: install the e2b package and set E2B_API_KEY, or install modal and set MODAL_TOKEN_ID+MODAL_TOKEN_SECRET, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable",
+    );
+    expect(messages.logs).toContain(
+      "Ladder: execution venue is checked above; actAs for away host actions; connectors for external tools.",
+    );
+  });
+
+  it("warns instead of failing when an older host omits the execution venue", async () => {
+    const messages = output();
+    expect(await runDoctor({
+      targetDir: await healthy(),
+      fetchImpl: vi.fn().mockResolvedValue(Response.json({
+        posture: "unconfigured",
+        version: "0.3.0",
+        blocks: { store: true },
+      })),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.errors).toContain(
+      "warning: host /status does not report an execution venue; upgrade @vendoai/vendo to enable the venue check",
+    );
+  });
+
+  it("fails when /status reports an unknown execution venue", async () => {
+    const messages = output();
+    expect(await runDoctor({
+      targetDir: await healthy(),
+      fetchImpl: vi.fn().mockResolvedValue(Response.json({
+        posture: "unconfigured",
+        version: "0.3.0",
+        blocks: { store: true, sandbox: "mainframe" },
+      })),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors).toContain("broken: /status returned an invalid execution venue");
   });
 
   it("returns one for broken wiring or an unreachable live handler", async () => {
@@ -179,7 +246,7 @@ function discoveryFetch(challenge?: string): typeof fetch {
   return vi.fn(async (input: string | URL | Request) => {
     const url = String(input);
     if (url.endsWith("/api/vendo/status")) {
-      return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { mcp: true } });
+      return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { mcp: true, sandbox: "e2b" } });
     }
     if (url.includes("/.well-known/oauth-protected-resource/")) return Response.json({ resource: "mcp" });
     if (url.includes("/.well-known/oauth-authorization-server/")) return Response.json({ issuer: "auth" });

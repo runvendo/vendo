@@ -58,9 +58,9 @@ async function createWorkspace(): Promise<string> {
     { dir: "automations", name: "@vendoai/automations" },
     { dir: "core", name: "@vendoai/core" },
     { dir: "guard", name: "@vendoai/guard" },
-    { dir: "mcp", name: "@vendoai/mcp" },
+    { dir: "mcp", name: "@vendoai/mcp", dependencies: { "@vendoai/core": "workspace:*" } },
     { dir: "store", name: "@vendoai/store" },
-    { dir: "vendo-telemetry", name: "@vendoai/telemetry", version: "0.2.0" },
+    { dir: "vendo-telemetry", name: "@vendoai/telemetry" },
     { dir: "ui", name: "@vendoai/ui" },
   ];
 
@@ -196,7 +196,7 @@ describe("createLocalVendoInjector", () => {
       "vendoai-guard-0.3.0.tgz",
       "vendoai-mcp-0.3.0.tgz",
       "vendoai-store-0.3.0.tgz",
-      "vendoai-telemetry-0.2.0.tgz",
+      "vendoai-telemetry-0.3.0.tgz",
       "vendoai-ui-0.3.0.tgz",
       "vendoai-vendo-0.3.0.tgz",
     ]));
@@ -210,7 +210,7 @@ describe("createLocalVendoInjector", () => {
       "vendoai-guard-0.3.0.tgz",
       "vendoai-mcp-0.3.0.tgz",
       "vendoai-store-0.3.0.tgz",
-      "vendoai-telemetry-0.2.0.tgz",
+      "vendoai-telemetry-0.3.0.tgz",
       "vendoai-ui-0.3.0.tgz",
       "vendoai-vendo-0.3.0.tgz",
     ]));

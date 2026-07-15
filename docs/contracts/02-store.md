@@ -41,8 +41,8 @@ The page makes this public: "everything lives in the host's own DB under a `vend
 | Table | Key columns (stable) | Holds |
 | --- | --- | --- |
 | `vendo_meta` | `key, value` | schema version, boot id |
-| `vendo_apps` | `id, subject, enabled, doc, created_at, updated_at` | each user's app: document (core §9) + ownership (core §10) — no installs table; the app row IS the user's copy |
-| `vendo_records` | `collection, id, data, refs, created_at, updated_at` | app data collections; `refs` GIN-indexed for host joins |
+| `vendo_apps` | `id, subject, enabled, doc, trigger_kind, created_at, updated_at` | each user's app: document (core §9) + ownership (core §10) — no installs table; the app row IS the user's copy |
+| `vendo_records` | `collection, id, data, refs, created_at, updated_at, revision` | app data collections; `refs` GIN-indexed for host joins; `revision` backs optional atomic writes |
 | `vendo_blobs` | `namespace, key, bytes, content_type, created_at` | `files` storage kind, exports, screenshots |
 | `vendo_state` | `app_id, subject, data, updated_at` | the built-in per-user-per-app `state` singleton |
 | `vendo_threads` | `id, subject, messages, created_at, updated_at` | conversation threads (03 §5) |
@@ -70,6 +70,8 @@ Reserved-collection routing is THE sanctioned cross-block persistence seam. Bloc
 
 The door-owned `vendo_mcp_clients` and `vendo_mcp_grants` collections likewise route to their dedicated tables, with door-internal JSON shapes. The old typed-helper architecture is retired; reserved routing is the block seam.
 
+The `vendo_apps` route synthesizes `subject` and the optional `trigger_kind` derived from `doc.trigger.on.kind` as filterable refs.
+
 Reserved routes are a trusted-backend boundary, not an authorization gate: the store validates routed shapes, then trusts the caller. App and sandbox code must never receive a `StoreAdapter`; the umbrella gives it only to trusted blocks, including the door, and guard remains the authorization boundary.
 
 For non-reserved names, `records()` remains app data and collection names are otherwise opaque. The app-data convention (contract, so hosts can query) is:
@@ -81,6 +83,7 @@ For non-reserved names, `records()` remains app data and collection names are ot
 - **PGlite default**: no `url` → embedded Postgres at `.vendo/data`; kill-the-server durability applies (fsync on write).
 - **Same schema everywhere**: one DDL, no dialect switches. `ensureSchema()` is the only migration entry point, keyed by `vendo_meta.schema_version`, forward-only within the version train.
 - **Atomic claims**: generic and door-owned record tables implement core's optional `RecordStore.claim` as one `UPDATE ... WHERE data/refs match RETURNING` or `DELETE ... RETURNING` statement. Consumers that require single-use state fail closed when an alternate adapter omits the capability.
+- **Atomic revisions**: ordinary `vendo_records` collections expose the optional `RecordStore.atomic` capability. `insertIfAbsent` uses one `INSERT ... ON CONFLICT DO NOTHING RETURNING` statement; `compareAndSwap` matches the opaque `revision`, increments it, and returns the replacement from one `UPDATE ... RETURNING` statement. PGlite, hosted Postgres, and the ephemeral overlay share those semantics. Reserved typed-table routes may omit this capability.
 - **Encryption at rest**: `encryption.key` encrypts `vendo_secrets.ciphertext` only (AES-256-GCM). App data stays plaintext by design — encrypting it would defeat the page's host-can-query/join promise; at-rest encryption of the database is the host's disk/DB layer. Default-on composition is contracted here and ships in Wave 3: `vendo init` provisions `VENDO_STORE_ENCRYPTION_KEY` in `.env`, `createVendo` reads it from the environment, and AES-GCM binds ciphertext to the secret name as AAD with envelope versioning. Key rotation: out of v0 scope.
 - **No tenant axis**: `subject` is the one partition key — the host's stable user id. Multi-tenant hosts scope the same way they scope their own tables: by joining through `subject` and refs.
 - **Ephemeral principals** (`ephemeral: true`) never touch disk: their rows live in an adapter-level, per-process in-memory overlay that is dropped by `close()`. Multi-instance deployments therefore split anonymous-session state between processes. A real session lifecycle is Wave 4 scope and will amend this section again when designed.
@@ -106,4 +109,15 @@ A store-level erase API is contracted here and ships in Wave 3. It erases by sub
 
 - **Changed:** Added the optional `RecordStore.claim` capability and required the concrete Postgres store to implement compare-and-replace or compare-and-delete in one statement for generic and door-owned record tables.
 - **Why:** Authorization codes and refresh-token rotation need database-level single-use guarantees across non-sticky multi-instance MCP deployments.
+- **Approved by:** Yousef, 2026-07-14.
+
+### 2026-07-14 — Atomic record revisions
+
+- **Changed:** Added opaque `VendoRecord.revision` tokens and optional `RecordStore.atomic.insertIfAbsent` / `compareAndSwap` operations for ordinary record collections.
+- **Why:** Multi-instance automation schedulers need database-level first-writer and cursor-advance exclusion while third-party adapters retain the prior single-instance fallback.
+- **Approved by:** Yousef, 2026-07-14.
+
+### 2026-07-14 — Additive app trigger ref
+
+- **Changed:** Added the optional derived `trigger_kind` ref to `vendo_apps`, matching the ENG-254 routed-store index used by automations tick and emit queries.
 - **Approved by:** Yousef, 2026-07-14.

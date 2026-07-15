@@ -125,6 +125,14 @@ export interface CapturedPinBaseline {
   hash: string;                    // "sha256:..." of source
   exportable: boolean;
   capturedAt: string;              // IsoDateTime
+  /** Import specifier -> captured module id for imports in the primary source. */
+  sourceImports?: Record<string, string>;
+  /** Source-owned modules reachable within two local-import hops. */
+  subSources?: Record<string, CapturedPinSubSource>;
+  /** Static JSON-compatible props declared by the remixable registration. */
+  sampleProps?: Record<string, unknown>;
+  /** Direct CSS imports from canonical app root files, in deterministic order. */
+  styles?: CapturedPinStyle[];
 }
 
 /** Machine-readable reason a remixable registration needs runtime capture. */
@@ -142,12 +150,36 @@ export interface UnresolvedPin {
   hint: string;
 }
 
+export interface CapturedPinSubSource {
+  source: string;
+  imports: Record<string, string>;
+}
+
+export interface CapturedPinStyle {
+  path: string;
+  css: string;
+}
+
+const capturedPinSubSourceSchema = z.object({
+  source: z.string(),
+  imports: z.record(z.string()),
+}).passthrough() satisfies z.ZodType<CapturedPinSubSource>;
+
+const capturedPinStyleSchema = z.object({
+  path: z.string(),
+  css: z.string(),
+}).passthrough() satisfies z.ZodType<CapturedPinStyle>;
+
 export const capturedPinBaselineSchema = z.object({
   slot: z.string().min(1),
   source: z.string(),
   hash: z.string().startsWith("sha256:"),
   exportable: z.boolean(),
   capturedAt: z.string(),
+  sourceImports: z.record(z.string()).optional(),
+  subSources: z.record(capturedPinSubSourceSchema).optional(),
+  sampleProps: z.record(z.unknown()).optional(),
+  styles: z.array(capturedPinStyleSchema).optional(),
 }).passthrough() satisfies z.ZodType<CapturedPinBaseline>;
 
 /** 04-actions §1 */

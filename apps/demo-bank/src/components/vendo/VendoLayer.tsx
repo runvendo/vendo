@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import { useVendoOverlay } from "@vendoai/ui";
 import { VendoOverlay } from "@vendoai/ui/chrome";
-import { VendoRoot } from "./VendoRoot";
 
 async function resetDemo(): Promise<void> {
   try {
@@ -13,7 +13,12 @@ async function resetDemo(): Promise<void> {
 }
 
 export function VendoLayer() {
-  const layer = useRef<HTMLDivElement>(null);
+  // ENG-220: Cmd/Ctrl+K drives the supported programmatic overlay API instead
+  // of DOM-poking the launcher. Maple keeps its dock as the visible Vendo
+  // surface, so the built-in launcher is suppressed the supported way
+  // (launcher="none") instead of the old display:none CSS hack.
+  const overlay = useVendoOverlay();
+  const { toggle } = overlay;
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -25,25 +30,20 @@ export function VendoLayer() {
       }
       if (!event.shiftKey && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        layer.current?.querySelector<HTMLButtonElement>(".vendo-launcher")?.click();
+        toggle();
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, []);
+  }, [toggle]);
 
   return (
-    <VendoRoot>
-      <div ref={layer} className="maple-vendo-layer">
-        <VendoOverlay />
-      </div>
-      <style jsx global>{`
-        .maple-vendo-layer > .vendo-root > .vendo-launcher { display: none; }
-      `}</style>
+    <>
+      <VendoOverlay {...overlay.overlayProps} launcher="none" />
       {/* VENDO-MIGRATION: 08-ui's frozen overlay does not expose custom
           greetings or suggestion chips; Cmd/Ctrl+K behavior remains intact. */}
       {/* VENDO-MIGRATION: connectors remain available to the server-side agent,
           but 08-ui has no integration/OAuth rail or ConnectCard surface. */}
-    </VendoRoot>
+    </>
   );
 }

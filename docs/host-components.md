@@ -43,9 +43,15 @@ export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
 
 Names are PascalCase and unique. `propsSchema` uses the Standard Schema
 interface. Set `remixable` only when sync may capture the component's real
-source as a pin baseline. The prewired primitives are reserved and do not
-appear in the catalog: `Stack`, `Row`, `Grid`, `Text`, `Skeleton`, `Surface`,
-and `Divider`.
+source as a pin baseline. A remixable registration may also declare a static,
+JSON-compatible `sampleProps` object: sync captures it into the baseline and
+the jail uses it as stubbed data when a fork renders without live props. Sync
+also follows the component's local imports for two hops and snapshots direct
+`.css` imports from canonical app roots (`app/layout.*`, `app/root.*`,
+`pages/_app.*`, and `src/` variants) so forks render furnished — with the
+host's sub-components and styles — instead of bare React. The prewired
+primitives are reserved and do not appear in the catalog: `Stack`, `Row`,
+`Grid`, `Text`, `Skeleton`, `Surface`, and `Divider`.
 
 When a component cannot be followed through a static import, use the umbrella
 helper with the registration module URL:
@@ -85,6 +91,7 @@ human-owned `.vendo/overrides.json`:
 | `useApp` | open, call, edit, history, undo, and refresh by re-opening |
 | `useAutomations` | enable, disable, runs, dry-run, and stop |
 | `useActivity` | self-scoped audit activity |
+| `useVendoOverlay` | programmatic open/close controller for `VendoOverlay` |
 | `useVendoStatus` | connection and guard posture |
 | `useVoice` | voice stage state, start, stop, and transcript |
 | `useVendoTheme` | resolved theme tokens |
@@ -100,6 +107,21 @@ All hooks are transport-only and SSR-safe.
 Chrome derives all styling from `VendoTheme` tokens. The required bar is WCAG
 2.1 AA, complete keyboard access, screen-reader testing, and mobile web.
 
+### Overlay entry
+
+`<VendoOverlay />` ships a fixed, brand-styled launcher pill in the
+bottom-right corner by default. `launcher="bottom-left"` moves it;
+`launcher="none"` removes it for hosts that trigger the overlay themselves.
+Open state is uncontrolled by default (`defaultOpen`), or controlled via
+`open` + `onOpenChange`. `useVendoOverlay()` returns
+`{ isOpen, open, close, toggle, overlayProps }` — spread `overlayProps` onto
+the component and call `toggle()` from your own shortcut or nav button.
+
+While open, the panel is portaled to `document.body` (so host `transform`/
+`filter`/`overflow` styles cannot trap it), body scroll is locked, and the
+page behind the scrim is `inert`. Focus lands in the composer on open and
+returns to the invoking element on close.
+
 ## Tree rendering
 
 ```ts
@@ -114,7 +136,10 @@ export function TreeView(props: {
 `TreeView` renders `vendo-genui/v1`. `$path` resolves against app data and
 `$state` against the per-user, per-app state singleton. Host components render
 by registered name. Generated components always run inside the iframe jail
-with `connect-src 'none'`.
+with `connect-src 'none'`. Pin forks carry their captured furnishing —
+sub-component sources, app-root stylesheets, and `sampleProps` stubs — into
+the jail as inert data; captured CSS is applied only inside the jailed
+document, never in the host page.
 
 Actions leave the renderer through `onAction`, then cross the wire and guard.
 Tool names and `fn:` references are opaque to the renderer. Erroring nodes are

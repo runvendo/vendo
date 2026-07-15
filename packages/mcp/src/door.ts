@@ -7,6 +7,7 @@ import type {
   ToolDescriptor,
   ToolOutcome,
   ToolRegistry,
+  VendoTheme,
 } from "@vendoai/core";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -39,6 +40,7 @@ const SERVER_CARD_PATH = "/.well-known/mcp/server-card.json";
 const SERVER_CARD_ALIAS_PATH = "/.well-known/mcp-server-card";
 const SHIM_URI = "ui://vendo/tree-shim.html";
 const SHIM_MIME_TYPE = "text/html;profile=mcp-app";
+const OPEN_IN_PRODUCT_KIND = "vendo/open-in-product@1";
 
 interface HostIdentity {
   name: string;
@@ -68,18 +70,34 @@ export interface McpDoorConfig {
   tools: ToolRegistry;
   /** Audit reporting for auth events (§3); tool decisions happen inside the bound registry. */
   guard: Guard;
-  /** §3 — two functions; the host owns identity + consent, the door owns the protocol. */
+  /** §3 — the host owns session/principal lookup; the door can own consent too. */
   oauth: HostOAuthAdapter;
   /** Door-owned protocol state (clients, codes, refresh grants) — wired like every other block. */
   store: StoreAdapter;
   /** §4 — saved apps ride along as MCP Apps; absent → tools-only door. */
   apps?: AppsPort;
+  /** The same resolved theme the UI pipeline consumes. The prebuilt consent
+   * page emits it as `--vendo-*` custom properties. */
+  theme?: VendoTheme;
   /** 10-mcp §5 — the door's canonical mount path (e.g. `/api/vendo/mcp`). When
    * set, the cold server card advertises THIS transport URL and learned request
    * paths never override it; when unset the card falls back to `/mcp` until an
    * authenticated request teaches it a mount. The umbrella passes its fixed
    * mount so a composed door's card is correct before any traffic arrives. */
   mount?: string;
+  /** 10-mcp §5 — the canonical PUBLIC base URL of the deployed host (e.g.
+   * `https://app.example.com`). Behind a reverse proxy (Railway, Fly, any TLS
+   * terminator) the request URL carries the proxy-INTERNAL origin, so deriving
+   * discovery metadata from it advertises unreachable endpoints and binds the
+   * RFC 8707 audience to the wrong resource. When set, the issuer, every
+   * advertised endpoint, the protected-resource `resource`, the 401 challenge's
+   * metadata URL, token audience validation, and the interactive consent URLs
+   * (form action, host-login returnTo) all use THIS origin; only the
+   * path still comes from the request (or `mount`). Only the URL's origin is
+   * used — a path on the base URL is ignored. Forwarded headers (X-Forwarded-*,
+   * Host) are attacker-controllable and are never consulted.
+   * The umbrella defaults this from `VENDO_BASE_URL`. */
+  baseUrl?: string;
   /** Trust access tokens from an external OAuth authorization server instead
    * of serving the door's local authorization-server endpoints. */
   remoteAs?: { issuer: string; jwksUri?: string; audience: string };
@@ -91,6 +109,9 @@ export interface McpDoor {
   /** One fetch-style handler serving: MCP Streamable HTTP transport, the OAuth
    * endpoints (§3), and the discovery documents (§5). The umbrella mounts it. */
   handler: (req: Request) => Promise<Response>;
+  /** Host-authorized disconnect for one subject/client pair. Revokes every
+   * existing local grant family and closes its live MCP sessions. */
+  revokeClient: (subject: string, clientId: string) => Promise<void>;
 }
 
 export function createMcpDoor(config: McpDoorConfig): McpDoor {
@@ -101,7 +122,10 @@ export function createMcpDoor(config: McpDoorConfig): McpDoor {
  * It is deliberately not re-exported from the package root. */
 export function createMcpDoorWithState(config: McpDoorConfig, state: McpDoorState): McpDoor {
   const door = new Door(config, state);
-  return { handler: (req) => door.handler(req) };
+  return {
+    handler: (req) => door.handler(req),
+    revokeClient: (subject, clientId) => door.revokeClient(subject, clientId),
+  };
 }
 
 class Door {
@@ -115,6 +139,9 @@ class Door {
    * URI, so a stray probe to an odd path can neither poison discovery nor
    * mint authority for the real mount. */
   #cardMount: string | undefined;
+  /** The canonical public origin every advertised URL and audience check uses
+   * when `baseUrl` is configured; undefined → derive from each request URL. */
+  readonly #publicOrigin: string | undefined;
   #identity: Promise<HostIdentity> | undefined;
 
   constructor(config: McpDoorConfig, state: McpDoorState) {
@@ -122,23 +149,38 @@ class Door {
     this.#state = state;
     this.#oauth = new OAuthServer(config);
     this.#remoteAs = config.remoteAs === undefined ? undefined : new RemoteAsVerifier(config.remoteAs);
+    this.#publicOrigin = config.baseUrl === undefined ? undefined : publicOriginOf(config.baseUrl);
   }
 
   async handler(req: Request): Promise<Response> {
+    // ENG-333: behind a reverse proxy the request URL carries the proxy-
+    // internal origin. Rebase the request onto the configured canonical base
+    // ONCE, up front, so everything derived from the request URL downstream —
+    // discovery metadata, issuer/endpoint URLs, resource identifiers and
+    // audience checks, consent form actions, host-login returnTo URLs — speaks
+    // the public origin. Only the origin moves; path, query, method, headers,
+    // and body are preserved. Unconfigured doors keep request-derived origins,
+    // and forwarded headers (X-Forwarded-*, Host) are never consulted either
+    // way: the operator-set base is the only trusted origin channel.
+    const incoming = new URL(req.url);
+    if (this.#publicOrigin !== undefined && incoming.origin !== this.#publicOrigin) {
+      req = rebaseRequest(req, this.#publicOrigin, incoming);
+    }
     const url = new URL(req.url);
+    const origin = url.origin;
     const path = url.pathname;
 
     if (path.startsWith(PRM_PREFIX)) {
       if (req.method !== "GET") return notFound();
       return json(protectedResourceMetadata(
-        url.origin,
+        origin,
         path.slice(PRM_PREFIX.length),
         this.#config.remoteAs?.issuer,
       ));
     }
     if (path.startsWith(AS_PREFIX)) {
       if (req.method !== "GET" || this.#config.remoteAs !== undefined) return notFound();
-      return json(authorizationServerMetadata(url.origin, path.slice(AS_PREFIX.length)));
+      return json(authorizationServerMetadata(origin, path.slice(AS_PREFIX.length)));
     }
     if (path === SERVER_CARD_PATH || path === SERVER_CARD_ALIAS_PATH) {
       if (req.method !== "GET") return notFound();
@@ -153,10 +195,10 @@ class Door {
         version: identity.version,
         description: identity.description,
         protocol_versions: ["2025-11-25"],
-        transports: [{ type: "streamable-http", url: resourceUri(url.origin, mount) }],
+        transports: [{ type: "streamable-http", url: resourceUri(origin, mount) }],
         authorization: {
           type: "oauth2",
-          resource_metadata: protectedResourceMetadataUrl(url.origin, mount),
+          resource_metadata: protectedResourceMetadataUrl(origin, mount),
         },
       });
     }
@@ -164,19 +206,34 @@ class Door {
     const endpoint = endpointFor(path);
     const mount = endpoint.mount;
     if (endpoint.kind === "authorize") {
-      return req.method === "GET" && this.#config.remoteAs === undefined
-        ? this.#oauth.authorize(req, resourceUri(url.origin, mount))
+      return this.#config.remoteAs === undefined
+        && (req.method === "GET" || (req.method === "POST" && this.#oauth.hasPrebuiltConsent))
+        ? this.#oauth.authorize(req, resourceUri(origin, mount))
         : notFound();
     }
     if (endpoint.kind === "token") {
       return req.method === "POST" && this.#config.remoteAs === undefined ? this.#oauth.token(req) : notFound();
     }
+    if (endpoint.kind === "revoke") {
+      if (req.method !== "POST" || this.#config.remoteAs !== undefined) return notFound();
+      const result = await this.#oauth.revoke(req);
+      if (result.grant?.tokenType === "refresh_token") {
+        if (result.grant.familyId === undefined) {
+          await this.#killSubjectClient(result.grant.subject, result.grant.clientId);
+        } else {
+          await this.#killGrantFamily(result.grant.familyId);
+        }
+      }
+      return result.response;
+    }
     if (endpoint.kind === "register") {
       return req.method === "POST" && this.#config.remoteAs === undefined ? this.#oauth.register(req) : notFound();
     }
     if (endpoint.kind === "federate") {
-      return req.method === "GET" && this.#config.federation !== undefined
-        ? handleFederation(req, resourceUri(url.origin, mount), this.#config.federation.secret, this.#config.oauth)
+      return req.method === "GET"
+        && this.#config.federation !== undefined
+        && this.#config.oauth.authorize !== undefined
+        ? handleFederation(req, resourceUri(origin, mount), this.#config.federation.secret, this.#config.oauth)
         : notFound();
     }
     if (!["GET", "POST", "DELETE"].includes(req.method)) return notFound();
@@ -184,21 +241,29 @@ class Door {
   }
 
   async #handleMcp(req: Request, mount: string): Promise<Response> {
-    const url = new URL(req.url);
-    const resource = resourceUri(url.origin, mount);
+    // handler() has already rebased req onto the canonical public base.
+    const origin = new URL(req.url).origin;
+    const resource = resourceUri(origin, mount);
     await this.#sweepIdleSessions();
     const auth = this.#remoteAs === undefined
       ? await this.#oauth.authenticate(req)
       : await this.#remoteAs.authenticate(req);
-    if (!auth || !sameCanonicalUri(auth.grant.resource, resource)) {
-      return unauthorized(url.origin, mount, req.headers.has("authorization"));
+    if (!auth || (this.#remoteAs === undefined && !sameCanonicalUri(auth.grant.resource, resource))) {
+      return unauthorized(origin, mount, req.headers.has("authorization"));
     }
 
     const requestedSessionId = req.headers.get("mcp-session-id") ?? undefined;
     const requestedState = requestedSessionId === undefined
       ? undefined
       : await this.#state.getSession(requestedSessionId) ?? undefined;
-    if (requestedSessionId !== undefined && (!requestedState || requestedState.subject !== auth.grant.subject)) {
+    if (
+      requestedSessionId !== undefined
+      && (
+        !requestedState
+        || requestedState.subject !== auth.grant.subject
+        || requestedState.context.mcpConsent.clientId !== auth.grant.clientId
+      )
+    ) {
       return unknownSession();
     }
 
@@ -206,13 +271,13 @@ class Door {
     if (principal === null) {
       await this.#killSubject(auth.grant.subject);
       await this.#oauth.auditRevoke(auth.grant.subject, auth.grant.clientId);
-      return unauthorized(url.origin, mount, true);
+      return unauthorized(origin, mount, true);
     }
     // 10-mcp §2: anonymous/ephemeral principals are never served a session —
     // the door persists grants and audit and must have a durable subject.
     if (principal.ephemeral === true) {
       await this.#killSubject(auth.grant.subject);
-      return unauthorized(url.origin, mount, true);
+      return unauthorized(origin, mount, true);
     }
     // Only authenticated traffic teaches the server card its mount — an
     // unauthenticated probe to an arbitrary path must not steer discovery. A
@@ -231,7 +296,8 @@ class Door {
       return requestedState!.handleRequest(req);
     }
 
-    const state = await this.#newSession(auth.grant.subject, principal, consent);
+    const familyId = "familyId" in auth.grant ? auth.grant.familyId : undefined;
+    const state = await this.#newSession(auth.grant.subject, principal, consent, familyId);
     const response = await state.handleRequest(req);
     if (state.sessionId === undefined) await state.close();
     return response;
@@ -241,6 +307,7 @@ class Door {
     subject: string,
     principal: Principal,
     consent: { clientId: string; scopes: string[] },
+    grantFamilyId?: string,
   ): Promise<SessionState> {
     const identity = await this.#hostIdentity();
     let state: SessionState;
@@ -254,6 +321,8 @@ class Door {
         await this.#state.setSession({
           sessionId,
           subject,
+          clientId: consent.clientId,
+          ...(grantFamilyId === undefined ? {} : { grantFamilyId }),
           session: state,
           expiresAt: Date.now() + SESSION_IDLE_MS,
         });
@@ -360,7 +429,8 @@ class Door {
     // MCP Apps shim renders a bare format-tagged UIPayload (core §8), so unwrap
     // it exactly as the door's own apps path does before mapping the result.
     if (name === "vendo_apps_open" && this.#config.apps !== undefined && outcome.status === "ok") {
-      return mapOutcome({ status: "ok", output: unwrapAppsOpen(outcome.output) }, identity.name);
+      const output = await this.#mcpAppsOpenOutput(outcome.output, args, state.context, identity);
+      return mapOutcome({ status: "ok", output: output as Json }, identity.name);
     }
     return mapOutcome(outcome, identity.name);
   }
@@ -393,7 +463,7 @@ class Door {
       ? { status: "blocked", reason: decision.reason }
       : decision.action === "ask"
         ? { status: "pending-approval", approvalId: decision.approval.id }
-        : await this.#executeAppsTool(name, args, ctx);
+        : await this.#executeAppsTool(name, args, ctx, identity);
     await this.#recordReplay(state, name, args, id, outcome.status);
     await this.#config.guard.report({
       id: `aud_${randomHex(12)}`,
@@ -410,7 +480,12 @@ class Door {
     return mapOutcome(outcome, identity.name);
   }
 
-  async #executeAppsTool(name: string, args: Record<string, unknown>, ctx: RunContext): Promise<ToolOutcome> {
+  async #executeAppsTool(
+    name: string,
+    args: Record<string, unknown>,
+    ctx: RunContext,
+    identity: HostIdentity,
+  ): Promise<ToolOutcome> {
     const apps = this.#config.apps!;
     try {
       if (name === "vendo_apps_list") {
@@ -420,7 +495,7 @@ class Door {
       if (!appId) return { status: "error", error: { code: "validation", message: "appId is required" } };
       if (name === "vendo_apps_open") {
         const opened = await apps.open(appId, ctx);
-        return { status: "ok", output: opened.kind === "http" ? { url: opened.url } : opened.payload };
+        return { status: "ok", output: await this.#mcpAppsOpenOutput(opened, args, ctx, identity) as Json };
       }
       const ref = typeof args.ref === "string" ? args.ref : undefined;
       if (!ref) return { status: "error", error: { code: "validation", message: "ref is required" } };
@@ -473,6 +548,24 @@ class Door {
     }
   }
 
+  async #mcpAppsOpenOutput(
+    output: unknown,
+    args: Record<string, unknown>,
+    ctx: RunContext,
+    identity: HostIdentity,
+  ): Promise<unknown> {
+    let appName: string | undefined;
+    if (isHttpOpenSurface(output) && typeof args.appId === "string") {
+      try {
+        appName = (await this.#config.apps!.list(ctx)).find((app) => app.id === args.appId)?.name;
+      } catch {
+        // The app already opened successfully. Naming the card is best-effort;
+        // a secondary list failure must not hide the safe link-out path.
+      }
+    }
+    return mcpAppsOpenOutput(output, { productName: identity.name, appName });
+  }
+
   async #sweepIdleSessions(): Promise<void> {
     for (const session of await this.#state.sweepExpiredSessions(Date.now())) {
       try {
@@ -493,16 +586,44 @@ class Door {
     }
   }
 
+  async revokeClient(subject: string, clientId: string): Promise<void> {
+    await this.#oauth.revokeClient(subject, clientId);
+    await this.#killSubjectClient(subject, clientId);
+    await this.#oauth.auditRevoke(subject, clientId);
+  }
+
+  async #killSubjectClient(subject: string, clientId: string): Promise<void> {
+    await this.#closeSessions(await this.#state.deleteSessionsBySubjectClient(subject, clientId));
+  }
+
+  async #killGrantFamily(familyId: string): Promise<void> {
+    await this.#closeSessions(await this.#state.deleteSessionsByGrantFamily(familyId));
+  }
+
+  async #closeSessions(sessions: McpStateSession[]): Promise<void> {
+    for (const session of sessions) {
+      try {
+        await session.close();
+      } catch {
+        // Revocation must remain fail-closed even if a transport is already closing.
+      }
+    }
+  }
+
   #hostIdentity(): Promise<HostIdentity> {
     this.#identity ??= readHostIdentity();
     return this.#identity;
   }
 }
 
-function endpointFor(path: string): { kind: "mcp" | "authorize" | "token" | "register" | "federate"; mount: string } {
+function endpointFor(path: string): {
+  kind: "mcp" | "authorize" | "token" | "revoke" | "register" | "federate";
+  mount: string;
+} {
   for (const [suffix, kind] of [
     ["/authorize", "authorize"],
     ["/token", "token"],
+    ["/revoke", "revoke"],
     ["/register", "register"],
     ["/federate", "federate"],
   ] as const) {
@@ -514,6 +635,39 @@ function endpointFor(path: string): { kind: "mcp" | "authorize" | "token" | "reg
 function normalizeMount(mount: string): string {
   if (!mount || mount === "/") return "";
   return `/${mount.replace(/^\/+|\/+$/g, "")}`;
+}
+
+/** Reduce the configured base URL to its canonical origin, failing LOUD at
+ * construction — a malformed base silently falling back to request-derived
+ * origins would ship wrong discovery documents to every client. */
+function publicOriginOf(baseUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    throw new TypeError(`baseUrl must be an absolute http(s) URL, got ${JSON.stringify(baseUrl)}`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new TypeError(`baseUrl must be an absolute http(s) URL, got ${JSON.stringify(baseUrl)}`);
+  }
+  if (url.username || url.password) {
+    throw new TypeError("baseUrl cannot contain credentials");
+  }
+  return url.origin;
+}
+
+/** Move a request onto the canonical public origin, preserving everything
+ * else. The shape production hosts proved as a workaround (runvendo/umami#1),
+ * now owned by the door itself. */
+function rebaseRequest(req: Request, origin: string, incoming: URL): Request {
+  const url = new URL(`${incoming.pathname}${incoming.search}`, origin);
+  const init: RequestInit & { duplex?: "half" } = {
+    method: req.method,
+    headers: req.headers,
+    signal: req.signal,
+    ...(req.method === "GET" || req.method === "HEAD" ? {} : { body: req.body, duplex: "half" }),
+  };
+  return new Request(url, init);
 }
 
 function resourceUri(origin: string, mount: string): string {
@@ -539,7 +693,9 @@ function authorizationServerMetadata(origin: string, mount: string) {
     issuer,
     authorization_endpoint: `${issuer}/authorize`,
     token_endpoint: `${issuer}/token`,
+    revocation_endpoint: `${issuer}/revoke`,
     registration_endpoint: `${issuer}/register`,
+    scopes_supported: ["read", "write"],
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "refresh_token"],
     token_endpoint_auth_methods_supported: ["none"],
@@ -628,18 +784,56 @@ function appTools(): Tool[] {
 
 /** FIX E — the registry's vendo_apps_open returns an OpenSurface envelope
  * (`{ kind: "tree", payload } | { kind: "http", url } | { kind: "resuming" }`);
- * the door's own apps path hands the shim a bare payload / `{ url }`. Unwrap the
- * envelope so a registry-executed open renders identically over MCP Apps. A
+ * the door's own apps path projects that same envelope. Unwrap tree surfaces so
+ * a registry-executed open renders identically over MCP Apps. HTTP surfaces are
+ * retained for the explicitly-tagged link-out projection below. A
  * `resuming` (or any other shape) passes through untouched — the shim's core-§8
  * dispatch contains an unrenderable payload gracefully. */
 function unwrapAppsOpen(output: unknown): unknown {
   if (isRecord(output) && typeof output.kind === "string") {
-    if (output.kind === "http") return { url: output.url };
     if (output.kind === "tree") return output.payload;
   }
   return output;
 }
 
+function isHttpOpenSurface(output: unknown): output is { kind: "http"; url: string } {
+  return isRecord(output) && output.kind === "http" && typeof output.url === "string";
+}
+
+interface OpenInProductPayload {
+  kind: typeof OPEN_IN_PRODUCT_KIND;
+  url: string;
+  productName: string;
+  appName?: string;
+}
+
+/** AppsRuntime.open has already resolved every v0 tree query into `tree.data`
+ * (06-apps §1). The query declarations remain on the in-product payload so a
+ * later open/refresh can resolve them again, but forwarding them to the MCP
+ * shim would execute every query a second time. Project the already-resolved
+ * payload immutably and keep the shim resolver only as a compatibility fallback
+ * for non-door hosts that send unresolved trees directly. */
+function mcpAppsOpenOutput(
+  output: unknown,
+  details: { productName: string; appName?: string },
+): unknown {
+  if (isHttpOpenSurface(output)) {
+    const projected: OpenInProductPayload = {
+      kind: OPEN_IN_PRODUCT_KIND,
+      url: output.url,
+      productName: details.productName,
+      ...(details.appName === undefined ? {} : { appName: details.appName }),
+    };
+    return projected;
+  }
+  const payload = unwrapAppsOpen(output);
+  if (!isRecord(payload) || payload.formatVersion !== "vendo-genui/v1" || !Object.hasOwn(payload, "queries")) {
+    return payload;
+  }
+  const projected = { ...payload };
+  delete projected.queries;
+  return projected;
+}
 function replayKey(tool: string, args: Record<string, unknown>): string {
   return `${tool} ${canonicalJson(args)}`;
 }
@@ -675,7 +869,10 @@ function mapOutcome(outcome: ToolOutcome, productName: string): CallToolResult {
 }
 
 function textResult(output: unknown): CallToolResult {
-  const result: CallToolResult = { content: [{ type: "text", text: stringify(output) }] };
+  const text = isOpenInProductPayload(output)
+    ? `Open ${output.appName ?? "this app"} in ${output.productName}: ${output.url}`
+    : stringify(output);
+  const result: CallToolResult = { content: [{ type: "text", text }] };
   if (isRecord(output)) result.structuredContent = output;
   return result;
 }
@@ -686,6 +883,14 @@ function inBandError(text: string): CallToolResult {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isOpenInProductPayload(value: unknown): value is OpenInProductPayload {
+  return isRecord(value)
+    && value.kind === OPEN_IN_PRODUCT_KIND
+    && typeof value.url === "string"
+    && typeof value.productName === "string"
+    && (value.appName === undefined || typeof value.appName === "string");
 }
 
 function stringify(value: unknown): string {
