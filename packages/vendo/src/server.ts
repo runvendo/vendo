@@ -1,4 +1,10 @@
-import { createActions, type ActionsRegistry, type Connector } from "@vendoai/actions";
+import {
+  createActions,
+  type ActionsRegistry,
+  type ActionsRunContext,
+  type Connector,
+  type ExtractedTool,
+} from "@vendoai/actions";
 import { createAgent, type VendoAgent } from "@vendoai/agent";
 import {
   createApps,
@@ -17,16 +23,20 @@ import {
 import {
   VendoError,
   approvalDecisionSchema,
+  descriptorHash,
   principalSchema,
   vendoThemeSchema,
   type ActAs,
   type ApprovalDecision,
   type ComponentCatalog,
   type Json,
+  type PermissionGrant,
   type Principal,
   type RunContext,
   type RunId,
   type SecretsProvider,
+  type ToolDescriptor,
+  type ToolOutcome,
   type VendoErrorCode,
   type VendoTheme,
 } from "@vendoai/core";
@@ -51,6 +61,26 @@ const VERSION = "0.3.0";
 const BASE_PATH = "/api/vendo";
 /** 10-mcp §5 — the door's canonical mount under the wire's own prefix. */
 const MCP_MOUNT = `${BASE_PATH}/mcp`;
+const DOCTOR_PRESENT_AUTHORIZATION = "Bearer vendo-doctor-present";
+const DOCTOR_PRESENT_COOKIE = "vendo_doctor_present=1";
+const DOCTOR_ACT_AS_PRINCIPAL: Principal = { kind: "user", subject: "vendo_doctor_act_as" };
+const DOCTOR_ACT_AS_APP_ID = "app_vendo_doctor" as const;
+
+const doctorPresentTool: ExtractedTool = {
+  name: "vendo_doctor_present",
+  description: "Vendo doctor present credential round-trip",
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  risk: "read",
+  binding: { kind: "route", method: "GET", path: `${BASE_PATH}/doctor/present/echo`, argsIn: "query" },
+};
+
+const doctorActAsTool: ExtractedTool = {
+  name: "vendo_doctor_act_as",
+  description: "Vendo doctor actAs mint and verification round-trip",
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  risk: "read",
+  binding: { kind: "route", method: "GET", path: `${BASE_PATH}/doctor/act-as/echo`, argsIn: "query" },
+};
 
 const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   validation: 400,
@@ -99,8 +129,15 @@ export interface CreateVendoConfig {
       identifiers, and RFC 8707 audience binding derive from — set it (or
       `VENDO_BASE_URL`, the default) behind a reverse proxy, where the request
       URL carries the proxy-internal origin. Forwarded headers are never
-      trusted. */
-  mcp?: boolean | { baseUrl?: string };
+      trusted. `remoteAs` (10-mcp §3.1) trusts an external authorization server
+      — e.g. the hosted broker at `{tenant}.mcp.vendo.run` — instead of serving
+      the door's local OAuth surface, and `federation` (10-mcp §3.2) answers
+      that server's signed login handshake at `{mount}/federate`. */
+  mcp?: boolean | {
+    baseUrl?: string;
+    remoteAs?: { issuer: string; jwksUri?: string; audience: string };
+    federation?: { secret: string };
+  };
   /** 10-mcp §3 plus its additive prebuilt flow — the host's session + identity seam. Threaded top-level like
       `actAs`/`principal` (the door is agnostic; the umbrella owns the shape).
       REQUIRED when `mcp` is true: the door cannot mint principals without it. */
@@ -454,6 +491,11 @@ function telemetryClient(enabled: boolean | undefined): Telemetry | undefined {
   }
 }
 
+function doctorProbeOk(outcome: ToolOutcome): boolean {
+  if (outcome.status !== "ok" || typeof outcome.output !== "object" || outcome.output === null) return false;
+  return "ok" in outcome.output && outcome.output.ok === true;
+}
+
 function createWireHandler(deps: {
   principal: CreateVendoConfig["principal"];
   ready: Promise<void>;
@@ -469,6 +511,10 @@ function createWireHandler(deps: {
   automations: AutomationsEngine;
   connections: ConnectionsService;
   sandbox: SandboxVenue;
+  doctor: {
+    present(ctx: RunContext): Promise<ToolOutcome>;
+    actAs(): Promise<ToolOutcome>;
+  };
   mcp: boolean;
   door?: McpDoor;
   /** True only in a development composition — gates the local injection seams. */
@@ -596,6 +642,56 @@ function createWireHandler(deps: {
           appId: string(body["appId"], "appId"),
           approvedBy,
         }, approvalContext));
+      }
+
+      // Doctor targets a running dev server. Keep its synthetic mint/echo routes
+      // out of production entirely; in development they expose no credential
+      // material (the echo halves return booleans only).
+      if (path.startsWith("/doctor/") && environment("NODE_ENV") === "production") {
+        throw new VendoError("not-found", "unknown Vendo route");
+      }
+      if (request.method === "GET" && path === "/doctor/present/echo") {
+        return json({
+          ok: request.headers.get("authorization") === DOCTOR_PRESENT_AUTHORIZATION
+            && request.headers.get("cookie") === DOCTOR_PRESENT_COOKIE,
+        });
+      }
+      if (request.method === "GET" && path === "/doctor/act-as/echo") {
+        const resolved = await deps.principal(request);
+        const parsed = principalSchema.safeParse(resolved);
+        const accepted = parsed.success && parsed.data.subject === DOCTOR_ACT_AS_PRINCIPAL.subject;
+        return json({ ok: accepted }, accepted ? 200 : 401);
+      }
+      if (request.method === "POST" && path === "/doctor/present") {
+        const outcome = await deps.doctor.present(await context(request, "chat"));
+        if (doctorProbeOk(outcome)) return json({ ok: true });
+        return json({
+          ok: false,
+          error: {
+            code: "present-credentials-not-forwarded",
+            message: "Present credentials did not reach the host API. Set VENDO_BASE_URL to the running host origin and restart the dev server.",
+          },
+        }, 409);
+      }
+      if (request.method === "POST" && path === "/doctor/act-as") {
+        const outcome = await deps.doctor.actAs();
+        if (doctorProbeOk(outcome)) return json({ ok: true });
+        if (outcome.status === "error" && outcome.error.code === "not-implemented") {
+          return json({
+            ok: false,
+            error: {
+              code: "act-as-not-configured",
+              message: "actAs is not configured; pass createVendo({ actAs }) before enabling away host actions.",
+            },
+          }, 501);
+        }
+        return json({
+          ok: false,
+          error: {
+            code: "act-as-verification-failed",
+            message: "actAs returned no usable AuthMaterial, or the host API did not accept it. Check the matching verifier middleware and principal resolver.",
+          },
+        }, 409);
       }
 
       if (request.method === "POST" && path.startsWith("/webhooks/")) {
@@ -911,6 +1007,42 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(config.policy === undefined ? {} : { policy: config.policy }),
     ...(config.judge === undefined ? {} : { judge: config.judge }),
   });
+  let presentCredentialsWarningEmitted = false;
+  const warnPresentCredentialsNotForwarded = async (event: {
+    ctx: RunContext;
+    tool: ToolDescriptor;
+    reason: "untrusted-host-origin" | "cross-origin-binding";
+  }): Promise<void> => {
+    if (presentCredentialsWarningEmitted) return;
+    presentCredentialsWarningEmitted = true;
+    const action = event.reason === "untrusted-host-origin"
+      ? "Set VENDO_BASE_URL to the host origin and restart the server."
+      : "Keep present host authentication same-origin, or use actAs/connector authentication.";
+    try {
+      await guard.report({
+        id: `aud_${globalThis.crypto.randomUUID()}`,
+        at: new Date().toISOString(),
+        kind: "tool-call",
+        principal: event.ctx.principal,
+        venue: event.ctx.venue,
+        presence: event.ctx.presence,
+        ...(event.ctx.appId === undefined ? {} : { appId: event.ctx.appId }),
+        ...(event.ctx.trigger === undefined ? {} : { trigger: event.ctx.trigger }),
+        tool: event.tool.name,
+        detail: {
+          warning: {
+            code: "present-credentials-not-forwarded",
+            reason: event.reason,
+            action,
+          },
+        },
+      });
+    } catch (error) {
+      // Let a later call retry the warning if the audit sink was temporarily down.
+      presentCredentialsWarningEmitted = false;
+      throw error;
+    }
+  };
   // createActions reads baseUrl from this object at execution time. An explicit
   // VENDO_BASE_URL is a trusted, operator-set origin (credentials forward to it).
   // When unset, the handler learns the wire's own origin from a validated
@@ -924,13 +1056,44 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     actAs?: ActAs;
     baseUrl?: string;
     baseUrlTrusted?: boolean;
+    onPresentCredentialsNotForwarded: typeof warnPresentCredentialsNotForwarded;
   } = {
     dir: ".",
     ...(config.connectors === undefined ? {} : { connectors: config.connectors }),
     ...(config.actAs === undefined ? {} : { actAs: config.actAs }),
     ...(configuredBaseUrl === undefined ? {} : { baseUrl: configuredBaseUrl, baseUrlTrusted: true }),
+    onPresentCredentialsNotForwarded: warnPresentCredentialsNotForwarded,
   };
   const actions = createActions(actionsConfig);
+  const doctor = {
+    present(ctx: RunContext): Promise<ToolOutcome> {
+      const probes = createActions({ ...actionsConfig, dir: undefined, tools: [doctorPresentTool] });
+      return probes.execute({ id: "call_vendo_doctor_present", tool: doctorPresentTool.name, args: {} }, ctx);
+    },
+    actAs(): Promise<ToolOutcome> {
+      const grant: PermissionGrant = {
+        id: "grt_vendo_doctor_act_as",
+        subject: DOCTOR_ACT_AS_PRINCIPAL.subject,
+        tool: doctorActAsTool.name,
+        descriptorHash: descriptorHash(doctorActAsTool),
+        scope: { kind: "tool" },
+        duration: "standing",
+        appId: DOCTOR_ACT_AS_APP_ID,
+        source: "automation",
+        grantedAt: new Date().toISOString(),
+      };
+      const ctx: ActionsRunContext = {
+        principal: DOCTOR_ACT_AS_PRINCIPAL,
+        venue: "automation",
+        presence: "away",
+        sessionId: "session_vendo_doctor_act_as",
+        appId: DOCTOR_ACT_AS_APP_ID,
+        grant,
+      };
+      const probes = createActions({ ...actionsConfig, dir: undefined, tools: [doctorActAsTool] });
+      return probes.execute({ id: "call_vendo_doctor_act_as", tool: doctorActAsTool.name, args: {} }, ctx);
+    },
+  };
   const boundTools = guard.bind(actions);
   const theme = dotVendoTheme();
   const designRules = dotVendoFile("design-rules.md");
@@ -1038,6 +1201,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       apps: appsPort,
       mount: MCP_MOUNT,
       ...(doorBaseUrl === undefined ? {} : { baseUrl: doorBaseUrl }),
+      // 10-mcp §3.1/§3.2 — broker-fronted compositions: trust the external
+      // authorization server's tokens and answer its login federation.
+      ...(mcpOptions.remoteAs === undefined ? {} : { remoteAs: mcpOptions.remoteAs }),
+      ...(mcpOptions.federation === undefined ? {} : { federation: mcpOptions.federation }),
       ...(theme === undefined ? {} : { theme }),
     });
   }
@@ -1074,6 +1241,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     automations,
     connections,
     sandbox: sandbox.venue,
+    doctor,
     mcp: mcpOptions !== undefined,
     development,
     ...(door === undefined ? {} : { door }),

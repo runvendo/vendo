@@ -1,0 +1,12 @@
+
+ RUN  v2.1.9 /Users/yousefh/Desktop/Cool Code/flowlet/.claude/worktrees/agent-a43f9e48364eb09ae/packages/agent
+
+ ✓ src/threads.test.ts (8 tests) 1303ms
+   ✓ agent threads > persist failure after a completed stream (ENG-309 / AGENT-8) > retries a transient store write failure so the completed turn is not silently lost 610ms
+   ✓ agent threads > persist failure after a completed stream (ENG-309 / AGENT-8) > surfaces a permanent store write failure loudly instead of swallowing it 607ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  12:07:26
+   Duration  1.87s (transform 108ms, setup 0ms, collect 225ms, tests 1.30s, environment 0ms, prepare 65ms)
+
