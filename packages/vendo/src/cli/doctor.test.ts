@@ -161,6 +161,21 @@ describe("vendo doctor", () => {
     );
   });
 
+  it("fails when /status reports an unknown execution venue", async () => {
+    const messages = output();
+    expect(await runDoctor({
+      targetDir: await healthy(),
+      fetchImpl: vi.fn().mockResolvedValue(Response.json({
+        posture: "unconfigured",
+        version: "0.3.0",
+        blocks: { store: true, sandbox: "mainframe" },
+      })),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors).toContain("broken: /status returned an invalid execution venue");
+  });
+
   it("returns one for broken wiring or an unreachable live handler", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-doctor-broken-"));
     cleanup.push(root);
