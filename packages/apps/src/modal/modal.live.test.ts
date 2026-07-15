@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sandboxAdapterConformance } from "../adapter-conformance.js";
 import type { SandboxMachine } from "../sandbox.js";
 import { modalSandbox } from "./index.js";
 
@@ -33,6 +34,12 @@ const requestEventually = async (machine: SandboxMachine): Promise<string> => {
 const hasModalCredentials = Boolean(process.env.MODAL_TOKEN_ID && process.env.MODAL_TOKEN_SECRET);
 
 describe.skipIf(!hasModalCredentials)("modalSandbox live", () => {
+  sandboxAdapterConformance("real Modal", () => modalSandbox({
+    tokenId: process.env.MODAL_TOKEN_ID,
+    tokenSecret: process.env.MODAL_TOKEN_SECRET,
+    timeoutMs: 90_000,
+  }));
+
   it("creates, serves, snapshots disk, restores a new machine, serves again, and terminates", async () => {
     const adapter = modalSandbox({
       tokenId: process.env.MODAL_TOKEN_ID,

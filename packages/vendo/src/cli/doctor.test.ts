@@ -167,4 +167,85 @@ describe("vendo doctor", () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error("offline"));
     expect(await runDoctor({ targetDir: root, fetchImpl, output: { log() {}, error() {} } })).toBe(1);
   });
+
+  it("validates server.json and its remote against the live MCP door", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "server.json"), JSON.stringify({
+      $schema: "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+      name: "com.example/maple",
+      description: "Maple banking tools",
+      version: "1.2.3",
+      remotes: [{ type: "streamable-http", url: "https://mcp.example.com/api/vendo/mcp" }],
+    }));
+    const messages = output();
+
+    expect(await runDoctor({
+      targetDir: root,
+      url: "https://mcp.example.com/api/vendo",
+      fetchImpl: discoveryFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.logs).toContain("ok: server.json matches MCP registry discovery requirements");
+    expect(messages.logs).toContain("ok: server.json remote agrees with the live MCP door");
+  });
+
+  it("reports invalid registry structure and a remote mounted at the wrong URL", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "server.json"), JSON.stringify({
+      $schema: "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+      name: "com.example/maple",
+      description: "x".repeat(101),
+      version: "1.2.3",
+      remotes: [{ type: "streamable-http", url: "https://mcp.example.com/wrong" }],
+    }));
+    const messages = output();
+
+    expect(await runDoctor({
+      targetDir: root,
+      url: "https://mcp.example.com/api/vendo",
+      fetchImpl: discoveryFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors.join("\n")).toContain("server.json is invalid");
+    expect(messages.errors).toContain("broken: server.json remote does not match the live MCP door https://mcp.example.com/api/vendo/mcp");
+  });
+
+  it("validates a registry auth challenge when the live host serves one", async () => {
+    const root = await healthy();
+    const messages = output();
+
+    expect(await runDoctor({
+      targetDir: root,
+      url: "https://mcp.example.com/api/vendo",
+      fetchImpl: discoveryFetch("not-an-mcp-challenge"),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors).toContain("broken: MCP registry auth challenge must start with v=MCPv1");
+  });
 });
+
+function discoveryFetch(challenge?: string): typeof fetch {
+  return vi.fn(async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.endsWith("/api/vendo/status")) {
+      return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { mcp: true } });
+    }
+    if (url.includes("/.well-known/oauth-protected-resource/")) return Response.json({ resource: "mcp" });
+    if (url.includes("/.well-known/oauth-authorization-server/")) return Response.json({ issuer: "auth" });
+    if (url.endsWith("/.well-known/mcp/server-card.json")) {
+      return Response.json({
+        name: "maple",
+        transports: [{ type: "streamable-http", url: "https://mcp.example.com/api/vendo/mcp" }],
+      });
+    }
+    if (url.endsWith("/.well-known/mcp-registry-auth")) {
+      return challenge === undefined
+        ? new Response("not found", { status: 404 })
+        : new Response(challenge, { status: 200 });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  }) as typeof fetch;
+}

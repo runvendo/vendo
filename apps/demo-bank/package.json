@@ -9,6 +9,7 @@
     "prebuild": "vendo sync .",
     "build": "next build",
     "start": "next start",
+    "mcp:e2e": "tsx scripts/mcp-e2e.ts",
     "lint": "eslint",
     "test": "vitest run"
   },
@@ -16,6 +17,7 @@
     "@ai-sdk/anthropic": "3.0.12",
     "@vendoai/actions": "workspace:*",
     "@vendoai/core": "workspace:*",
+    "@vendoai/store": "workspace:*",
     "@vendoai/ui": "workspace:*",
     "@vendoai/vendo": "workspace:*",
     "@radix-ui/react-dropdown-menu": "^2.1.18",
@@ -38,6 +40,7 @@
   "devDependencies": {
     "@ai-sdk/provider": "3.0.2",
     "@tailwindcss/postcss": "^4",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -46,6 +49,7 @@
     "eslint-config-next": "16.2.9",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4",
+    "tsx": "^4.19.0",
     "typescript": "^5",
     "vitest": "^3.2.4"
   }

@@ -38,6 +38,14 @@ export interface AutomationsConfig {
   runner?: AgentRunner;
   /** Testability. */
   now?: () => Date;
+  /** Max automations a single tick executes concurrently (default 4). A small pool keeps
+   *  one tenant's fired runs from serializing behind another's while bounding fan-out. */
+  tickConcurrency?: number;
+  /** Per-run wall-clock budget (ms) the tick waits before moving on. The run is NOT
+   *  cancelled (there is no abort seam) — it finishes and persists its terminal state in
+   *  the background; the tick just stops blocking on it so a hung run (sandbox wake, LLM
+   *  stall) cannot overrun the tick interval or starve other tenants. Absent → wait fully. */
+  runTimeoutMs?: number;
 }
 
 /** 07 §5 */

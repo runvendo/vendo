@@ -68,6 +68,7 @@ describe("agent UI message wire", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toMatch(/^text\/event-stream/);
+    expect(response.headers.get("x-vendo-thread-id")).toBe("thr_minimal");
     const { rawFrames } = await readSse(response);
     expect(normalizeMessageIds(rawFrames)).toEqual([
       'data: {"type":"start","messageId":"<message-id>"}\n\n',
@@ -175,7 +176,7 @@ describe("agent UI message wire", () => {
     const { parts } = await readSse(response);
     const part = parts.find((candidate) => candidate.type === "data-vendo-view");
 
-    expect(part).toEqual({ type: "data-vendo-view", data: view });
+    expect(part).toEqual({ type: "data-vendo-view", id: "vendo-view:app_1", data: view });
     const viewData = (part as { data: Record<string, unknown> }).data;
     expect(vendoViewPartSchema.safeParse({ type: "data-vendo-view", ...viewData }).success).toBe(true);
   });

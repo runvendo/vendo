@@ -217,6 +217,7 @@ export default function SecurityProbe({ label, onRun }) {
   const [navigateStatus, setNavigateStatus] = useState("not run");
   const [beaconStatus, setBeaconStatus] = useState("not run");
   const [imageStatus, setImageStatus] = useState("not run");
+  const [expanded, setExpanded] = useState(false);
 
   async function probeFetch() {
     try {
@@ -301,8 +302,18 @@ export default function SecurityProbe({ label, onRun }) {
     setActionStatus("delivered");
   }
 
-  return <section aria-label="Generated security probe">
+  return <section
+    aria-label="Generated security probe"
+    style={{ minHeight: "100vh", paddingBottom: 40 }}
+  >
     <h2>{label}</h2>
+    <button type="button" onClick={() => setExpanded(value => !value)}>
+      {expanded ? "Collapse content" : "Expand content"}
+    </button>
+    <div
+      aria-label="Resizable generated content"
+      style={{ height: expanded ? 520 : 80, background: "linear-gradient(#dbeafe, #eff6ff)" }}
+    />
     <button type="button" onClick={probeFetch}>Probe fetch</button>
     <output id="fetch-status">fetch: {fetchStatus}</output>
     <button type="button" onClick={probeXhr}>Probe xhr</button>
@@ -331,11 +342,17 @@ export default function ThrowingGeneratedComponent() {
 }
 `;
 
+const emptySource = String.raw`
+export default function EmptyGeneratedComponent() {
+  return null;
+}
+`;
+
 const jailTree: Tree = {
   formatVersion: "vendo-genui/v1",
   root: "root",
   nodes: [
-    { id: "root", component: "Stack", children: ["before", "probe", "thrower", "after"] },
+    { id: "root", component: "Stack", children: ["before", "probe", "thrower", "empty", "after"] },
     { id: "before", component: "Text", props: { text: "Jail siblings before" } },
     {
       id: "probe",
@@ -347,11 +364,13 @@ const jailTree: Tree = {
       },
     },
     { id: "thrower", component: "ThrowingGeneratedComponent", source: "generated" },
+    { id: "empty", component: "EmptyGeneratedComponent", source: "generated" },
     { id: "after", component: "Text", props: { text: "Jail sibling survived" } },
   ],
   components: {
     SecurityProbe: securitySource,
     ThrowingGeneratedComponent: throwingSource,
+    EmptyGeneratedComponent: emptySource,
   },
 };
 

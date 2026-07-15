@@ -1,6 +1,11 @@
 import type { AppDocument, RunContext, ToolRegistry } from "@vendoai/core";
 import { VENDO_APP_FORMAT, validateAppDocument } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
+import {
+  APP_BLOB_MAX_BYTES,
+  APP_RECORD_MAX_BYTES,
+  createAppData,
+} from "./app-data.js";
 import { createApps } from "./index.js";
 import { basicLanguageModel, guardFixture, memoryStore, seedAppRow } from "./testing/index.js";
 
@@ -23,6 +28,82 @@ const ctx: RunContext = {
 const model = basicLanguageModel();
 
 describe("app data persistence", () => {
+  it("gates record and file collections on declarations and reserves state", async () => {
+    const store = memoryStore();
+    const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [], model });
+    const created = await runtime.create({ prompt: "Declared storage" }, ctx);
+    const app: AppDocument = {
+      ...created,
+      storage: {
+        notes: { about: "Invoice notes" },
+        attachments: { about: "Invoice attachments", kind: "files" },
+      },
+    };
+    const data = createAppData(store);
+
+    expect(() => data.records(app, "missing")).toThrow(expect.objectContaining({ code: "not-found" }));
+    expect(() => data.blobs(app, "missing")).toThrow(expect.objectContaining({ code: "not-found" }));
+    expect(() => data.records(app, "attachments")).toThrow(expect.objectContaining({ code: "not-found" }));
+    expect(() => data.blobs(app, "notes")).toThrow(expect.objectContaining({ code: "not-found" }));
+    expect(() => data.records(app, "state")).toThrow(expect.objectContaining({ code: "validation" }));
+    expect(() => data.blobs(app, "state")).toThrow(expect.objectContaining({ code: "validation" }));
+  });
+
+  it("round-trips records with refs filters and validates declared refs", async () => {
+    const store = memoryStore();
+    const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [], model });
+    const created = await runtime.create({ prompt: "Referenced records" }, ctx);
+    const app: AppDocument = {
+      ...created,
+      storage: {
+        notes: { about: "Invoice notes", refs: { invoice_id: "host.invoice" } },
+      },
+    };
+    const records = createAppData(store).records(app, "notes");
+
+    await records.put({ id: "note_1", data: { body: "first" }, refs: { invoice_id: "inv_1" } });
+    await records.put({ id: "note_2", data: { body: "second" }, refs: { invoice_id: "inv_2" } });
+
+    await expect(records.list({ refs: { invoice_id: "inv_1" } })).resolves.toMatchObject({
+      records: [{ id: "note_1", data: { body: "first" }, refs: { invoice_id: "inv_1" } }],
+    });
+    await expect(records.put({
+      id: "bad_key",
+      data: {},
+      refs: { customer_id: "cus_1" },
+    })).rejects.toMatchObject({ code: "validation" });
+    await expect(records.put({
+      id: "bad_value",
+      data: {},
+      refs: { invoice_id: "" },
+    })).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("enforces the 256 KB record cap and documented 5 MB blob cap", async () => {
+    const store = memoryStore();
+    const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [], model });
+    const created = await runtime.create({ prompt: "Bounded storage" }, ctx);
+    const app: AppDocument = {
+      ...created,
+      storage: {
+        notes: { about: "Bounded notes" },
+        attachments: { about: "Bounded attachments", kind: "files" },
+      },
+    };
+    const data = createAppData(store);
+
+    await expect(data.records(app, "notes").put({
+      id: "oversized",
+      data: { body: "x".repeat(APP_RECORD_MAX_BYTES) },
+    })).rejects.toMatchObject({ code: "validation" });
+    await expect(data.blobs(app, "attachments").put(
+      "oversized.bin",
+      new Uint8Array(APP_BLOB_MAX_BYTES + 1),
+    )).rejects.toMatchObject({ code: "validation" });
+    await expect(store.records(`app:${app.id}:notes`).get("oversized")).resolves.toBeNull();
+    await expect(store.blobs(`app:${app.id}:attachments`).get("oversized.bin")).resolves.toBeNull();
+  });
+
   it("deletes declared records, state, file collections, and the app blob namespace", async () => {
     const store = memoryStore();
     const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [], model });

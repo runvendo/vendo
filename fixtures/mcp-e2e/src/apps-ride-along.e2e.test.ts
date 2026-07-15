@@ -37,6 +37,7 @@ describe("saved apps ride along as MCP Apps", () => {
         const html = "text" in resource.contents[0]! ? resource.contents[0].text : "";
         expect(html.length).toBeGreaterThan(500);
         expect(html).toContain("<!doctype html>");
+        expect(stack.resourceReads).toContain(SHIM_URI);
 
         const called = await connected.client.callTool({
           name: "vendo_apps_call",

@@ -22,8 +22,18 @@ context. Vendo prefers host components when the catalog covers the requested
 UI.
 
 The prewired primitives are `Stack`, `Row`, `Grid`, `Text`, `Skeleton`,
-`Surface`, and `Divider`. Catalog entries and generated components cannot
-shadow them.
+`Surface`, `Divider`, `Card`, `Button`, `Input`, `Select`, `Table`, `Badge`,
+`Stat`, and `Tabs`. Catalog entries and generated components cannot shadow
+them. All prewired primitives read the same [theme tokens](/connect/theming)
+so they pick up your brand's colors, radii, density, and motion without extra
+wiring.
+
+`Card`, `Button`, `Badge`, `Stat`, `Table`, and `Tabs` are display and
+action surfaces — interactive controls invoke bound zero-arg action
+callbacks. `Input` and `Select` accept typed input locally, but under the
+current zero-arg binding contract they cannot round-trip a typed value back
+through a bound action. Treat them as display plus local input, not as form
+fields wired to server state.
 
 Set `remixable` only on components whose real frontend source sync may capture.
 Sync writes a baseline to `.vendo/remixable/<slot>.json`. Shipping a pin always

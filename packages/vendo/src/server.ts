@@ -15,6 +15,7 @@ import {
   vendoThemeSchema,
   type ActAs,
   type ApprovalDecision,
+  type ComponentCatalog,
   type Json,
   type Principal,
   type RunContext,
@@ -28,6 +29,11 @@ import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } fro
 import { createStore, envSecrets, registerEphemeralSubject, type VendoStore } from "@vendoai/store";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
+import {
+  capabilitySurfaceSnapshot,
+  createCapabilityMissCapture,
+} from "./capability-misses.js";
+import { computeImpact } from "./sync-impact.js";
 
 const VERSION = "0.3.0";
 const BASE_PATH = "/api/vendo";
@@ -58,6 +64,8 @@ export interface Vendo {
 export interface CreateVendoConfig {
   model: LanguageModel;
   principal: (req: Request) => Promise<Principal | null>;
+  /** Host components available to generated apps; entry names must mirror the client-side components map 1:1. */
+  catalog?: ComponentCatalog;
   store?: VendoStore;
   sandbox?: SandboxAdapter;
   connectors?: Connector[];
@@ -70,11 +78,24 @@ export interface CreateVendoConfig {
       ChatGPT, Cursor) reach the host's tools through the SAME guard-bound path.
       Opening it is a host decision (10-mcp §2), so it is off by default. */
   mcp?: boolean;
-  /** 10-mcp §3 — the host's identity + consent seam. Threaded top-level like
+  /** 10-mcp §3 plus its additive prebuilt flow — the host's session + identity seam. Threaded top-level like
       `actAs`/`principal` (the door is agnostic; the umbrella owns the shape).
       REQUIRED when `mcp` is true: the door cannot mint principals without it. */
   oauth?: HostOAuthAdapter;
+  /** 03-agent — chat context controls. All optional. `toolOutputCap` defaults to
+      DEFAULT_TOOL_OUTPUT_CAP so one huge host-tool response can't blow the context;
+      pass 0 to disable. `historyWindow` bounds messages re-sent per turn (default: full). */
+  agent?: {
+    toolOutputCap?: number;
+    maxOutputTokens?: number;
+    historyWindow?: number;
+  };
 }
+
+/** Default char cap on a single tool result before it reaches the model (03-agent §2).
+    Generous enough for normal host responses, small enough that a runaway payload is
+    truncated to a preview instead of blowing the context window. Override via config.agent. */
+const DEFAULT_TOOL_OUTPUT_CAP = 32_000;
 
 type SandboxVenue = "e2b" | "modal" | "custom" | false;
 
@@ -219,10 +240,35 @@ function jsonMutationRequired(request: Request, path: string): boolean {
   return true;
 }
 
-function tickAuthorized(request: Request): boolean {
+/** Lazily-minted random per-process HMAC key for constant-time secret compares
+    (WebCrypto only — NO node:crypto — so the module keeps bundling for edge/
+    Worker targets; cf. newAnonKey). */
+let compareKeyPromise: Promise<CryptoKey> | undefined;
+function compareKey(): Promise<CryptoKey> {
+  compareKeyPromise ??= newAnonKey();
+  return compareKeyPromise;
+}
+
+/** Constant-time string equality via WebCrypto, matching the webhook HMAC path
+    (which leans on crypto.subtle.verify for the same guarantee). HMACs both
+    inputs under a random per-process key so the digests are equal-length 32-byte
+    values regardless of input length — equal digests iff equal inputs (SHA-256
+    collision resistance) — and the byte compare leaks neither length nor content
+    through timing. Replaces the `===` bearer compare, a classic timing oracle. */
+async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+  const key = await compareKey();
+  const encoder = new TextEncoder();
+  const [da, db] = await Promise.all([
+    globalThis.crypto.subtle.sign("HMAC", key, encoder.encode(a)),
+    globalThis.crypto.subtle.sign("HMAC", key, encoder.encode(b)),
+  ]);
+  return constantTimeEqual(hex(da), hex(db));
+}
+
+async function tickAuthorized(request: Request): Promise<boolean> {
   const secret = environment("VENDO_TICK_SECRET");
   if (secret === undefined) return false;
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  return timingSafeEqual(request.headers.get("authorization") ?? "", `Bearer ${secret}`);
 }
 
 function ephemeralPrincipal(subject: string): Principal {
@@ -446,10 +492,21 @@ function createWireHandler(deps: {
         return await deps.automations.webhook(request);
       }
       if (request.method === "POST" && path === "/tick") {
-        if (!tickAuthorized(request)) {
+        if (!await tickAuthorized(request)) {
           return json({ error: { code: "blocked", message: "invalid tick credential" } }, 401);
         }
         return json({ runIds: await deps.automations.tick() });
+      }
+      if (request.method === "POST" && path === "/sync/impact") {
+        if (process.env.NODE_ENV === "production") {
+          throw new VendoError("blocked", "sync impact is only available on a dev server");
+        }
+        const body = await requestJson(request);
+        const tools = body["tools"];
+        if (!Array.isArray(tools) || tools.length > 200 || tools.some((tool) => typeof tool !== "string")) {
+          throw new VendoError("validation", "tools must be an array of at most 200 strings");
+        }
+        return json({ impact: await computeImpact(deps.store, tools) });
       }
       if (path.startsWith("/proxy/")) {
         const proxyPath = path.slice("/proxy".length);
@@ -678,8 +735,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // Keep eager schema readiness for hosts that reach into composed blocks,
   // while preventing an unhandled rejection before the first handler/emit awaits it.
   void ready.catch(() => undefined);
+  let resolveAppToolRisk: AppsRuntime["agentToolRisk"] | undefined;
   const guard = createGuard({
     store,
+    // The resolver is installed immediately after createApps below. Keeping the
+    // hook in guard means chat/SSE and the MCP door reach the same decision.
+    resolveRisk: (call, _descriptor, ctx) => resolveAppToolRisk?.(call, ctx),
     ...(config.policy === undefined ? {} : { policy: config.policy }),
     ...(config.judge === undefined ? {} : { judge: config.judge }),
   });
@@ -711,15 +772,35 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     guard,
     tools: boundTools,
     model: config.model,
-    catalog: [],
+    catalog: config.catalog ?? [],
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
     secrets: config.secrets ?? envSecrets(),
     ...(sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter }),
     ...(environment("VENDO_PROXY_URL") === undefined ? {} : { proxyUrl: environment("VENDO_PROXY_URL") }),
   });
+  resolveAppToolRisk = apps.agentToolRisk;
   actions.add(apps.agentTools());
-  const agent = createAgent({ model: config.model, tools: boundTools, guard, store });
+  const missSurface = actions.descriptors()
+    .then(capabilitySurfaceSnapshot)
+    .catch(() => capabilitySurfaceSnapshot([]));
+  const missCapture = createCapabilityMissCapture({ surface: missSurface });
+  const agent = createAgent({
+    model: config.model,
+    tools: boundTools,
+    guard,
+    store,
+    context: {
+      toolOutputCap: config.agent?.toolOutputCap ?? DEFAULT_TOOL_OUTPUT_CAP,
+      ...(config.agent?.maxOutputTokens === undefined ? {} : { maxOutputTokens: config.agent.maxOutputTokens }),
+      ...(config.agent?.historyWindow === undefined ? {} : { historyWindow: config.agent.historyWindow }),
+    },
+    capabilityMiss: {
+      hostId: missCapture.hostId,
+      surface: missSurface.then(({ hash }) => ({ format: "vendo/tools@1" as const, hash })),
+      emit: (event) => missCapture.record(event),
+    },
+  });
   const automations = createAutomations({
     apps,
     tools: boundTools,
@@ -759,7 +840,15 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // 10-mcp §5 — pin the door's canonical mount so a cold umbrella's server
     // card advertises the right transport URL (BASE_PATH/mcp) before any request
     // teaches it, and learned paths never override it.
-    door = createMcpDoor({ tools: boundTools, guard, store, oauth: config.oauth, apps: appsPort, mount: MCP_MOUNT });
+    door = createMcpDoor({
+      tools: boundTools,
+      guard,
+      store,
+      oauth: config.oauth,
+      apps: appsPort,
+      mount: MCP_MOUNT,
+      ...(theme === undefined ? {} : { theme }),
+    });
   }
   const sessionId = `session_${globalThis.crypto.randomUUID()}`;
   // Per-process signing key for anonymous-session cookies (WebCrypto only; see

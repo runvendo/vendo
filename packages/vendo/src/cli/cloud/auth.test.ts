@@ -75,21 +75,44 @@ describe("cloud auth", () => {
     });
   });
 
-  it("rejects a non-six-digit email code before verification", async () => {
+  it("accepts an eight-digit email code", async () => {
     const messages = output();
-    const fetcher = vi.fn().mockResolvedValue({ sent: true });
-    const writeSession = vi.fn();
+    const session = { access_token: "jwt", refresh_token: "refresh", expires_at: 2_000_000_000 };
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce({ sent: true })
+      .mockResolvedValueOnce(session);
+    const writeSession = vi.fn().mockResolvedValue(undefined);
 
     expect(await runLogin(["person@example.com"], {
       output: messages.sink,
       fetcher,
       writeSession,
-      promptOtp: vi.fn().mockResolvedValue("12345"),
-    })).toBe(1);
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(writeSession).not.toHaveBeenCalled();
-    expect(messages.errors).toEqual(["Email OTP must be a 6-digit code"]);
+      promptOtp: vi.fn().mockResolvedValue("12345678"),
+    })).toBe(0);
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/auth/otp/verify", expect.objectContaining({
+      body: { email: "person@example.com", token: "12345678" },
+    }));
+    expect(writeSession).toHaveBeenCalledWith(session);
   });
+
+  it.each(["12345", "12345678901", "12 3456", "abcdef"])(
+    "rejects the out-of-range email code %j before verification",
+    async (code) => {
+      const messages = output();
+      const fetcher = vi.fn().mockResolvedValue({ sent: true });
+      const writeSession = vi.fn();
+
+      expect(await runLogin(["person@example.com"], {
+        output: messages.sink,
+        fetcher,
+        writeSession,
+        promptOtp: vi.fn().mockResolvedValue(code),
+      })).toBe(1);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(writeSession).not.toHaveBeenCalled();
+      expect(messages.errors).toEqual(["Email OTP must be a 6-10 digit code"]);
+    },
+  );
 
   it("uses an ephemeral token for whoami", async () => {
     const messages = output();

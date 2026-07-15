@@ -6,6 +6,7 @@ import {
   VENDO_TREE_FORMAT,
   VendoError,
   type AppDocument,
+  type ComponentCatalog,
   type Principal,
   type RunContext,
 } from "@vendoai/core";
@@ -13,7 +14,7 @@ import type { SandboxAdapter } from "@vendoai/apps";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createVendo, nextVendoHandler, type Vendo } from "./server.js";
+import { createVendo, nextVendoHandler, type CreateVendoConfig, type Vendo } from "./server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -42,7 +43,10 @@ const app = (id = "app_wire"): AppDocument => ({
   },
 });
 
-async function setup(resolver = vi.fn(async () => principal)): Promise<{ vendo: Vendo; resolver: typeof resolver }> {
+async function setup(
+  resolver = vi.fn(async () => principal),
+  options: Pick<Partial<CreateVendoConfig>, "policy"> = {},
+): Promise<{ vendo: Vendo; resolver: typeof resolver }> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-"));
   const store = createStore({ dataDir });
   cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
@@ -50,6 +54,7 @@ async function setup(resolver = vi.fn(async () => principal)): Promise<{ vendo: 
     model: {} as LanguageModel,
     principal: resolver,
     store,
+    ...options,
   });
   return { vendo, resolver };
 }
@@ -284,6 +289,37 @@ describe("09 §3 public wire", () => {
     expect(custom.resume).not.toHaveBeenCalled();
   });
 
+  it("serves sync impact on dev servers and blocks it in production", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const { vendo } = await setup();
+
+    const response = await vendo.handler(request("POST", "/sync/impact", { tools: ["host_get_widgets"] }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      impact: [{ tool: "host_get_widgets", apps: [], automations: [], grants: 0 }],
+    });
+
+    vi.stubEnv("NODE_ENV", "production");
+    const blocked = await vendo.handler(request("POST", "/sync/impact", { tools: ["host_get_widgets"] }));
+    expect(blocked.status).toBe(403);
+    expect(await blocked.json()).toEqual({
+      error: { code: "blocked", message: "sync impact is only available on a dev server" },
+    });
+  });
+
+  it("validates sync impact tool arrays", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const { vendo } = await setup();
+
+    const nonStrings = await vendo.handler(request("POST", "/sync/impact", { tools: ["host_ok", 7] }));
+    expect(nonStrings.status).toBe(400);
+
+    const tooMany = await vendo.handler(request("POST", "/sync/impact", {
+      tools: Array.from({ length: 201 }, (_, index) => `host_${index}`),
+    }));
+    expect(tooMany.status).toBe(400);
+  });
+
   it("adapts the same fetch handler to Next route exports", async () => {
     const { vendo } = await setup();
     const next = nextVendoHandler(vendo);
@@ -308,6 +344,62 @@ describe("09 §2 composition", () => {
     expect(outcome).toMatchObject({ status: "ok", output: { kind: "tree" } });
     const events = await vendo.guard.audit.query({ principal });
     expect(events.events.some((event) => event.kind === "tool-call" && event.tool === "vendo_apps_open")).toBe(true);
+  });
+
+  it("projects rung-1 app risk consistently across chat and MCP venues", async () => {
+    const { vendo } = await setup(vi.fn(async () => principal), {
+      policy: {
+        rules: [
+          { match: { risk: "write" }, action: "ask" },
+          { match: { risk: "read" }, action: "run" },
+        ],
+      },
+    });
+    expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
+    await vendo.store.records("vendo_apps").put({
+      id: "app_wire",
+      data: { subject: principal.subject, enabled: true, doc: app() },
+      refs: { subject: principal.subject },
+    });
+    await vendo.store.records("vendo_apps").put({
+      id: "app_http",
+      data: {
+        subject: principal.subject,
+        enabled: true,
+        doc: { ...app("app_http"), ui: "http", server: "fake:snap_http" },
+      },
+      refs: { subject: principal.subject },
+    });
+    const byName = new Map((await vendo.actions.descriptors()).map((descriptor) => [descriptor.name, descriptor]));
+    expect(byName.get("vendo_apps_create")?.risk).toBe("read");
+    expect(byName.get("vendo_apps_edit")?.risk).toBe("write");
+    const edit = byName.get("vendo_apps_edit")!;
+    const chat = { ...ctx, venue: "chat" as const };
+    const mcp = { ...ctx, venue: "mcp" as const };
+    const treeCall = {
+      id: "call_tree_chat",
+      tool: edit.name,
+      args: { appId: "app_wire", instruction: "Make the heading blue" },
+    };
+
+    await expect(vendo.guard.check(treeCall, edit, chat)).resolves.toMatchObject({ action: "run" });
+    await expect(vendo.guard.check({ ...treeCall, id: "call_tree_mcp" }, edit, mcp))
+      .resolves.toMatchObject({ action: "run" });
+    await expect(vendo.guard.check({
+      id: "call_server_chat",
+      tool: edit.name,
+      args: { appId: "app_wire", instruction: "Persist this to the database" },
+    }, edit, chat)).resolves.toMatchObject({ action: "ask" });
+    await expect(vendo.guard.check({
+      id: "call_server_mcp",
+      tool: edit.name,
+      args: { appId: "app_wire", instruction: "Persist this to the database" },
+    }, edit, mcp)).resolves.toMatchObject({ action: "ask" });
+    await expect(vendo.guard.check({
+      id: "call_http",
+      tool: edit.name,
+      args: { appId: "app_http", instruction: "Make the heading blue" },
+    }, edit, chat)).resolves.toMatchObject({ action: "ask" });
   });
 
   it("uses per-client session-scoped ephemeral principals when the resolver returns null", async () => {
@@ -565,6 +657,151 @@ describe("09 §3 conversational turn against the real composed store", () => {
     const rows = await store.records("vendo_threads").list({ refs: { subject: principal.subject } });
     expect(rows.records).toHaveLength(1);
     expect(rows.records[0]?.id).toBe("thr_round_trip");
+  });
+
+  it("carries reconciled partial create views through the real HTTP SSE handler before open completes", async () => {
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+    const usage = {
+      inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+      outputTokens: { total: 0, text: 0, reasoning: 0 },
+    } as const;
+    let agentCalls = 0;
+    const model = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        const serialized = JSON.stringify(prompt);
+        if (serialized.includes("TASK: CREATE_APP")) {
+          return {
+            stream: simulateReadableStream({ chunks: [
+              { type: "text-start", id: "generation" },
+              {
+                type: "text-delta",
+                id: "generation",
+                delta: '{"name":"SSE app","tree":{"formatVersion":"vendo-genui/v1","root":"root","nodes":[{"id":"root","component":"Stack","source":"prewired","children":["detail"]},',
+              },
+              {
+                type: "text-delta",
+                id: "generation",
+                delta: '{"id":"detail","component":"Text","source":"prewired","props":{"text":"Ready"}}]}}',
+              },
+              { type: "text-end", id: "generation" },
+              { type: "finish", usage, finishReason: { unified: "stop", raw: undefined } },
+            ] }),
+          };
+        }
+
+        agentCalls += 1;
+        if (agentCalls === 1) {
+          return {
+            stream: simulateReadableStream({ chunks: [
+              { type: "tool-call", toolCallId: "call_create_sse", toolName: "vendo_apps_create", input: JSON.stringify({ prompt: "Build an SSE app" }) },
+              { type: "finish", usage, finishReason: { unified: "tool-calls", raw: undefined } },
+            ] }),
+          };
+        }
+        if (agentCalls === 2) {
+          const appId = serialized.match(/app_[0-9a-f-]{36}/u)?.[0];
+          if (appId === undefined) throw new Error("created app id missing from tool result");
+          return {
+            stream: simulateReadableStream({ chunks: [
+              { type: "tool-call", toolCallId: "call_open_sse", toolName: "vendo_apps_open", input: JSON.stringify({ appId }) },
+              { type: "finish", usage, finishReason: { unified: "tool-calls", raw: undefined } },
+            ] }),
+          };
+        }
+        return {
+          stream: simulateReadableStream({ chunks: [
+            { type: "text-start", id: "done" },
+            { type: "text-delta", id: "done", delta: "Opened." },
+            { type: "text-end", id: "done" },
+            { type: "finish", usage, finishReason: { unified: "stop", raw: undefined } },
+          ] }),
+        };
+      },
+    });
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-stream-turn-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    const vendo = createVendo({
+      model: model as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+      policy: { rules: [{ match: { tool: "vendo_apps_*", presence: "present" }, action: "run" }] },
+    });
+
+    const response = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_stream_round_trip",
+      message: { id: "m_stream", role: "user", parts: [{ type: "text", text: "Build it" }] },
+    }));
+    const raw = await response.text();
+    const chunks = raw.split("\n")
+      .filter((line) => line.startsWith("data: {") && line !== "data: [DONE]")
+      .map((line) => JSON.parse(line.slice(6)) as Record<string, unknown>);
+    const views = chunks.filter((chunk) => chunk.type === "data-vendo-view") as Array<{
+      id: string;
+      data: { appId: string; payload: { nodes: unknown[]; streaming?: boolean } };
+    }>;
+
+    expect(response.status).toBe(200);
+    expect(views.length).toBeGreaterThanOrEqual(3);
+    expect(views[0]?.data.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }] });
+    expect(new Set(views.map((view) => view.id))).toEqual(new Set([`vendo-view:${views[0]?.data.appId}`]));
+    expect(views.at(-1)?.data.payload.nodes).toHaveLength(2);
+    expect(views.at(-1)?.data.payload.streaming).toBeUndefined();
+  });
+});
+
+describe("09 §2 apps composition", () => {
+  it("passes host-component catalog registrations to createApps", { timeout: 120_000 }, async () => {
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-catalog-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    const generated = JSON.stringify({
+      name: "Catalog app",
+      tree: {
+        formatVersion: VENDO_TREE_FORMAT,
+        root: "metric",
+        nodes: [{
+          id: "metric",
+          component: "MetricCard",
+          source: "host",
+          props: { label: "Revenue" },
+        }],
+      },
+    });
+    const model = new MockLanguageModelV3({
+      doStream: async () => ({
+        stream: simulateReadableStream({ chunks: [
+          { type: "text-start", id: "generation" },
+          { type: "text-delta", id: "generation", delta: generated },
+          { type: "text-end", id: "generation" },
+          {
+            type: "finish",
+            usage: {
+              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+              outputTokens: { total: 0, text: 0, reasoning: 0 },
+            },
+            finishReason: { unified: "stop", raw: undefined },
+          },
+        ] }),
+      }),
+    });
+    const catalog: ComponentCatalog = [{
+      name: "MetricCard",
+      description: "Use for a single headline metric.",
+      propsSchema: { "~standard": { validate: (value: unknown) => ({ value }) } },
+    }];
+    const vendo = createVendo({
+      model,
+      principal: async () => principal,
+      store,
+      catalog,
+    });
+    await store.ensureSchema();
+
+    await expect(vendo.apps.create({ prompt: "Show revenue" }, ctx)).resolves.toMatchObject({
+      tree: { nodes: [{ component: "MetricCard", source: "host" }] },
+    });
   });
 });
 

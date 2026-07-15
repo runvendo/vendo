@@ -2,6 +2,8 @@
 
 `@vendoai/store` implements the `@vendoai/core` persistence seams with one Postgres schema. It uses PGlite for a zero-config local database and the same schema on a hosted Postgres service.
 
+Read [Persistence](https://docs.vendo.run/deploy/persistence).
+
 ```ts
 import { createStore } from "@vendoai/store";
 
@@ -17,7 +19,7 @@ For production, pass a Postgres connection string explicitly, for example `creat
 | --- | --- | --- |
 | `vendo_meta` | `key, value` | schema version, boot id |
 | `vendo_apps` | `id, subject, enabled, doc, created_at, updated_at` | each user's app document and ownership |
-| `vendo_records` | `collection, id, data, refs, created_at, updated_at` | app data collections; `refs` is GIN-indexed for host joins |
+| `vendo_records` | `collection, id, data, refs, created_at, updated_at, revision` | app data collections; `refs` is GIN-indexed for host joins; `revision` backs atomic writes |
 | `vendo_blobs` | `namespace, key, bytes, content_type, created_at` | file storage, exports, screenshots |
 | `vendo_state` | `app_id, subject, data, updated_at` | built-in per-user-per-app state singleton |
 | `vendo_threads` | `id, subject, messages, created_at, updated_at` | conversation threads |
@@ -30,6 +32,13 @@ For production, pass a Postgres connection string explicitly, for example `creat
 | `vendo_mcp_grants` | `id, data, refs, created_at, updated_at` | door-owned MCP grant state |
 
 App storage uses `app:<appId>:<name>` by convention. When the owning app is ephemeral, generic record collections and blob namespaces following that convention stay entirely in the session's in-memory overlay. Except for the reserved names below, collection names remain opaque and use `vendo_records`; non-`app:`-prefixed collections and namespaces have no principal linkage and therefore keep their normal persistence behavior.
+
+Generic record collections and the two door-owned tables expose the optional
+`RecordStore.claim` capability: one database statement compares the current
+`data` and `refs`, then replaces or deletes the row. Exactly one concurrent
+claimant receives `true`.
+
+Ordinary record collections expose optional `records(collection).atomic` operations: `insertIfAbsent(record)` for one-winner claims and `compareAndSwap(record, expectedRevision)` for revision-guarded updates. Both PGlite and hosted Postgres use the same atomic SQL, and the ephemeral overlay mirrors it. The capability is optional at the core seam and reserved typed-table routes may omit it.
 
 ## Reserved collections (block seam)
 

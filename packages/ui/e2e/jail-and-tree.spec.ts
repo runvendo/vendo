@@ -31,9 +31,36 @@ test("generated components stay in the opaque-origin CSP jail and actions cross 
     payload: { invoiceId: "inv_42" },
   }));
 
-  await expect(page.getByRole("note", { name: "Generated component error" })).toContainText("generated render exploded inside its jail");
+  const generatedNotices = page.getByRole("note", { name: "Generated component error" });
+  await expect(generatedNotices.filter({ hasText: "generated render exploded inside its jail" })).toBeVisible();
+  await expect(generatedNotices.filter({ hasText: "EmptyGeneratedComponent: generated component rendered no content" })).toBeVisible();
   await expect(page.getByText("Jail sibling survived")).toBeVisible();
   expect(pageErrors, "jail failures must be reported in-surface, not as uncaught page errors").toEqual([]);
+});
+
+test("generated component iframe height follows content growth and shrinkage without feedback", async ({ page }) => {
+  await openScenario(page, "tree-jail");
+  const iframe = page.locator('iframe[title="Generated component: SecurityProbe"]');
+  const jail = jailFrame(page, "SecurityProbe");
+  const mount = jail.locator("#vendo-jail-root");
+  await expect(jail.getByRole("heading", { name: "Rendered generated props" })).toBeVisible();
+
+  const frameHeight = () => iframe.evaluate(element => element.getBoundingClientRect().height);
+  const contentHeight = () => mount.evaluate(element => element.getBoundingClientRect().height);
+  const heightDelta = async () => Math.abs(await frameHeight() - await contentHeight());
+
+  await expect.poll(heightDelta).toBeLessThanOrEqual(1);
+  const collapsedHeight = await frameHeight();
+
+  await jail.getByRole("button", { name: "Expand content" }).click();
+  await expect.poll(frameHeight).toBeGreaterThan(collapsedHeight + 400);
+  await expect.poll(heightDelta).toBeLessThanOrEqual(1);
+  const expandedHeight = await frameHeight();
+
+  await jail.getByRole("button", { name: "Collapse content" }).click();
+  await expect.poll(frameHeight).toBeLessThan(expandedHeight - 400);
+  await expect.poll(heightDelta).toBeLessThanOrEqual(1);
+  expect(await frameHeight()).toBeCloseTo(collapsedHeight, 0);
 });
 
 test("tree node failures and dangling children remain contained", async ({ page }) => {

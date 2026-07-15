@@ -37,10 +37,12 @@ export async function putAppRow(
 }
 
 export function threadFromRow(row: Record<string, unknown>): ThreadRow {
+  const title = row["title"];
   return {
     id: text(row["id"]),
     subject: text(row["subject"]),
     messages: row["messages"] as ThreadRow["messages"],
+    ...(typeof title === "string" ? { title } : {}),
     createdAt: iso(row["created_at"]),
     updatedAt: iso(row["updated_at"]),
   };
@@ -48,7 +50,7 @@ export function threadFromRow(row: Record<string, unknown>): ThreadRow {
 
 export async function putThreadRow(
   db: Db,
-  input: Pick<ThreadRow, "id" | "subject" | "messages">,
+  input: Pick<ThreadRow, "id" | "subject" | "messages" | "title">,
   now = new Date().toISOString(),
 ): Promise<ThreadRow> {
   // Threads never cross subjects (03 §5). vendo_threads is keyed by the bare id,
@@ -58,12 +60,13 @@ export async function putThreadRow(
   // This closes the TOCTOU window that a resolve()-time pre-check alone cannot
   // (a foreign row can appear during a long streaming turn, before persist runs).
   const result = await db.query(
-    `INSERT INTO vendo_threads (id, subject, messages, created_at, updated_at)
-     VALUES ($1, $2, $3::jsonb, $4, $4)
-     ON CONFLICT (id) DO UPDATE SET messages = EXCLUDED.messages, updated_at = EXCLUDED.updated_at
+    `INSERT INTO vendo_threads (id, subject, messages, title, created_at, updated_at)
+     VALUES ($1, $2, $3::jsonb, $4, $5, $5)
+     ON CONFLICT (id) DO UPDATE
+       SET messages = EXCLUDED.messages, title = EXCLUDED.title, updated_at = EXCLUDED.updated_at
        WHERE vendo_threads.subject = EXCLUDED.subject
-     RETURNING id, subject, messages, created_at, updated_at`,
-    [input.id, input.subject, JSON.stringify(input.messages), now],
+     RETURNING id, subject, messages, title, created_at, updated_at`,
+    [input.id, input.subject, JSON.stringify(input.messages), input.title ?? null, now],
   );
   const row = result.rows[0];
   if (row === undefined) {

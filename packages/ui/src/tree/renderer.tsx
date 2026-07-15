@@ -143,10 +143,36 @@ interface NodeRendererProps {
   components: Record<string, ComponentType>;
   data: Record<string, Json>;
   state: Record<string, Json>;
+  streaming: boolean;
   outcomes: Record<string, ToolOutcome | undefined>;
   runAction(nodeId: string, action: string, payload?: Json): Promise<ToolOutcome>;
   setViewState(key: string, value: Json): void;
 }
+
+const EMPTY_LAYOUT_COMPONENTS = new Set(["Stack", "Row", "Grid"]);
+
+const hasRenderableTreeContent = (tree: Tree): boolean => {
+  const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
+  const pending = [tree.root];
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const id = pending.pop();
+    if (id === undefined || visited.has(id)) continue;
+    visited.add(id);
+    const node = nodes.get(id);
+    // A missing child renders the streaming skeleton, which is intentionally visible.
+    if (node === undefined) return true;
+    if (node.source === "host" || node.source === "generated") return true;
+    if (node.component === "Text") {
+      const text = node.props?.text;
+      if (text !== undefined && text !== null && String(text).trim() !== "") return true;
+    } else if (!EMPTY_LAYOUT_COMPONENTS.has(node.component)) {
+      return true;
+    }
+    pending.push(...(node.children ?? []));
+  }
+  return false;
+};
 
 function NodeRenderer(props: NodeRendererProps) {
   const node = props.nodes.get(props.nodeId);
@@ -174,7 +200,11 @@ function NodeRenderer(props: NodeRendererProps) {
   if (node.source === "generated") {
     const source = props.generated[node.component];
     if (source === undefined) {
-      content = (
+      content = props.streaming ? (
+        <span data-streaming-component={node.component}>
+          <Skeleton />
+        </span>
+      ) : (
         <ContainedNotice label="Unknown generated component">
           {`Generated component "${node.component}" has no source.`}
         </ContainedNotice>
@@ -236,7 +266,19 @@ function StatefulTreeView({
 }: TreeViewProps) {
   const theme = useVendoThemeOrDefault();
   const themeVars = useMemo(() => themeCssVariables(theme), [theme]);
-  const validation = validateTree(tree);
+  const streaming = (tree as Tree & { streaming?: unknown }).streaming === true;
+  // A partial stream may close a generated node before its top-level source
+  // string closes. Supply validator-only placeholders, then keep the real map
+  // empty so NodeRenderer paints a skeleton until the source arrives.
+  const validation = validateTree(streaming ? {
+    ...tree,
+    components: Object.fromEntries([
+      ...Object.entries(tree.components ?? {}),
+      ...tree.nodes
+        .filter((node) => node.source === "generated")
+        .map((node) => [node.component, tree.components?.[node.component] ?? ""]),
+    ]),
+  } : tree);
   const [viewState, setViewState] = useState<Record<string, Json>>({});
   const stateRef = useRef(viewState);
   const [outcomes, setOutcomes] = useState<Record<string, ToolOutcome | undefined>>({});
@@ -278,17 +320,26 @@ function StatefulTreeView({
     );
   }
 
+  if (!hasRenderableTreeContent(validation.tree)) {
+    return (
+      <ContainedNotice label="Empty UI tree">
+        The app view has no renderable content.
+      </ContainedNotice>
+    );
+  }
+
   return (
     <NodeErrorBoundary nodeId={validation.tree.root}>
       <NodeRenderer
         nodeId={validation.tree.root}
         ancestry={new Set()}
         nodes={nodes}
-        generated={validation.tree.components ?? {}}
+        generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
         themeVars={themeVars}
         components={components}
         data={data ?? validation.tree.data ?? {}}
         state={viewState}
+        streaming={streaming}
         outcomes={outcomes}
         runAction={runAction}
         setViewState={updateState}

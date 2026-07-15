@@ -8,13 +8,15 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@vendoai/actions": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/mcp": "workspace:*",
     "@vendoai/store": "workspace:*",
+    "@vendoai/telemetry": "workspace:*",
     "@vendoai/vendo": "workspace:*"
   },
   "devDependencies": {
