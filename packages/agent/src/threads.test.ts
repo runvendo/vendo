@@ -396,11 +396,15 @@ describe("agent threads", () => {
       ]);
       await Promise.all([readSse(first), readSse(second)]);
 
-      const thread = await agent.threads.get(threadId, runCtx);
-      expect(thread).not.toBeNull();
-      expect(thread!.messages.some((message) => message.id === "user_race_1")).toBe(true);
-      expect(thread!.messages.some((message) => message.id === "user_race_2")).toBe(true);
-      const replies = assistantText(thread!.messages);
+      // waitFor: robust against a store whose writes settle after stream close.
+      const thread = await vi.waitFor(async () => {
+        const persisted = await agent.threads.get(threadId, runCtx);
+        expect(persisted).not.toBeNull();
+        expect(persisted!.messages.some((message) => message.id === "user_race_1")).toBe(true);
+        expect(persisted!.messages.some((message) => message.id === "user_race_2")).toBe(true);
+        return persisted!;
+      });
+      const replies = assistantText(thread.messages);
       expect(replies).toContain("Reply one.");
       expect(replies).toContain("Reply two.");
       // One thread row, not a fork.
@@ -436,12 +440,16 @@ describe("agent threads", () => {
       ]);
       await Promise.all([readSse(first), readSse(second)]);
 
-      const thread = await agent.threads.get(threadId, runCtx);
-      expect(thread).not.toBeNull();
-      for (const id of ["user_seed", "user_branch_a", "user_branch_b"]) {
-        expect(thread!.messages.some((message) => message.id === id)).toBe(true);
-      }
-      const replies = assistantText(thread!.messages);
+      // waitFor: robust against a store whose writes settle after stream close.
+      const thread = await vi.waitFor(async () => {
+        const persisted = await agent.threads.get(threadId, runCtx);
+        expect(persisted).not.toBeNull();
+        for (const id of ["user_seed", "user_branch_a", "user_branch_b"]) {
+          expect(persisted!.messages.some((message) => message.id === id)).toBe(true);
+        }
+        return persisted!;
+      });
+      const replies = assistantText(thread.messages);
       expect(replies).toContain("Seed reply.");
       expect(replies).toContain("Branch A.");
       expect(replies).toContain("Branch B.");
