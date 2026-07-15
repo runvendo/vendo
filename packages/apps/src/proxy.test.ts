@@ -160,6 +160,109 @@ describe("machine tool proxy", () => {
     expect(await store.records("vendo_state").get(`${app.id}:${ctx.principal.subject}`)).toBeNull();
   });
 
+  it("authenticates and round-trips declared record and file collections", async () => {
+    const sandbox = fakeSandbox();
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: { async descriptors() { return []; }, async execute() { return { status: "blocked", reason: "no" }; } },
+      sandbox,
+      proxyUrl: "https://proxy.test",
+      catalog: [],
+      model,
+    });
+    const created = await runtime.create({ prompt: "Custom fields" }, ctx);
+    const app = {
+      ...created,
+      ui: "http" as const,
+      storage: {
+        notes: { about: "Invoice notes", refs: { invoice_id: "host.invoice" } },
+        attachments: { about: "Invoice attachments", kind: "files" as const },
+      },
+    };
+    await seedAppRow(store, app, ctx.principal.subject);
+    await runtime.open(app.id, ctx);
+    await vi.waitFor(() => expect(sandbox.machines.size).toBe(1));
+    const token = [...sandbox.machines.values()].at(-1)?.env.VENDO_RUN_TOKEN;
+    const headers = { authorization: `Bearer ${token}` };
+
+    for (const [id, invoiceId] of [["note_1", "inv_1"], ["note_2", "inv_2"]]) {
+      const response = await runtime.proxy.handler(new Request(`https://proxy.test/data/notes/${id}`, {
+        method: "PUT",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ data: { body: id }, refs: { invoice_id: invoiceId } }),
+      }));
+      expect(response.status).toBe(200);
+    }
+    const listed = await runtime.proxy.handler(new Request(
+      "https://proxy.test/data/notes?refs.invoice_id=inv_1&limit=10",
+      { headers },
+    ));
+    expect(await json(listed)).toMatchObject({
+      records: [{ id: "note_1", data: { body: "note_1" }, refs: { invoice_id: "inv_1" } }],
+    });
+    const fetched = await runtime.proxy.handler(new Request("https://proxy.test/data/notes/note_1", { headers }));
+    expect(await json(fetched)).toMatchObject({ id: "note_1", data: { body: "note_1" } });
+
+    const filePut = await runtime.proxy.handler(new Request("https://proxy.test/files/attachments/report.txt", {
+      method: "PUT",
+      headers: { ...headers, "content-type": "text/plain" },
+      body: "hello file",
+    }));
+    expect(filePut.status).toBe(200);
+    const fileList = await runtime.proxy.handler(new Request("https://proxy.test/files/attachments", { headers }));
+    expect(await json(fileList)).toEqual(["report.txt"]);
+    const fileGet = await runtime.proxy.handler(new Request(
+      "https://proxy.test/files/attachments/report.txt",
+      { headers },
+    ));
+    expect(fileGet.headers.get("content-type")).toBe("text/plain");
+    expect(await fileGet.text()).toBe("hello file");
+
+    expect((await runtime.proxy.handler(new Request("https://proxy.test/data/notes/note_1", {
+      method: "DELETE",
+      headers,
+    }))).status).toBe(200);
+    expect((await runtime.proxy.handler(new Request("https://proxy.test/files/attachments/report.txt", {
+      method: "DELETE",
+      headers,
+    }))).status).toBe(200);
+    expect(await store.records(`app:${app.id}:notes`).get("note_1")).toBeNull();
+    expect(await store.blobs(`app:${app.id}:attachments`).get("report.txt")).toBeNull();
+  });
+
+  it("rejects unauthenticated and non-owned collection routes", async () => {
+    const sandbox = fakeSandbox();
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: { async descriptors() { return []; }, async execute() { return { status: "blocked", reason: "no" }; } },
+      sandbox,
+      proxyUrl: "https://proxy.test",
+      catalog: [],
+      model,
+    });
+    const created = await runtime.create({ prompt: "Private custom fields" }, ctx);
+    const app = { ...created, ui: "http" as const, storage: { notes: { about: "Notes" } } };
+    await seedAppRow(store, app, ctx.principal.subject);
+    await runtime.open(app.id, ctx);
+    await vi.waitFor(() => expect(sandbox.machines.size).toBe(1));
+    const token = [...sandbox.machines.values()].at(-1)?.env.VENDO_RUN_TOKEN;
+
+    const unauthenticated = await runtime.proxy.handler(new Request("https://proxy.test/data/notes"));
+    expect(unauthenticated.status).toBe(401);
+    expect(await json(unauthenticated)).toMatchObject({ error: { code: "unauthorized" } });
+
+    await seedAppRow(store, app, "user_intruder");
+    const nonOwned = await runtime.proxy.handler(new Request("https://proxy.test/files/missing", {
+      headers: { authorization: `Bearer ${token}` },
+    }));
+    expect(nonOwned.status).toBe(404);
+    expect(await json(nonOwned)).toEqual({ error: { code: "not-found", message: "app not found" } });
+  });
+
   it("injects opaque secret handles without ever reading or exposing values", async () => {
     const get = vi.fn(async () => "REAL_SECRET_SENTINEL");
     const sandbox = fakeSandbox();

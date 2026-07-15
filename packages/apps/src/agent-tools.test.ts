@@ -51,6 +51,9 @@ describe("apps agent tools", () => {
       "vendo_apps_create",
       "vendo_apps_edit",
       "vendo_apps_open",
+      "vendo_apps_data_list",
+      "vendo_apps_data_put",
+      "vendo_apps_data_delete",
     ]);
     for (const descriptor of descriptors) {
       expect(TOOL_NAME_PATTERN.test(descriptor.name)).toBe(true);
@@ -64,7 +67,9 @@ describe("apps agent tools", () => {
     }
     // Creating a document is a rung-1-only, jailed UI operation: it cannot
     // reach host tools, a server machine, or the network.
-    expect(descriptors.map((descriptor) => descriptor.risk)).toEqual(["read", "write", "read"]);
+    expect(descriptors.map((descriptor) => descriptor.risk)).toEqual([
+      "read", "write", "read", "read", "write", "write",
+    ]);
   });
 
   it("classifies only provable tree edits as read-class", async () => {
@@ -236,6 +241,60 @@ describe("apps agent tools", () => {
     }, ctx)).resolves.toMatchObject({
       status: "error",
       error: { code: "validation" },
+    });
+  });
+
+  it("ownership-checks and round-trips declared data collections", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+    });
+    const created = await runtime.create({ prompt: "Data tools" }, ctx);
+    await seedAppRow(store, {
+      ...created,
+      storage: { notes: { about: "Invoice notes", refs: { invoice_id: "host.invoice" } } },
+    }, ctx.principal.subject);
+    const registry = runtime.agentTools();
+
+    await expect(registry.execute({
+      id: "call_data_put",
+      tool: "vendo_apps_data_put",
+      args: {
+        appId: created.id,
+        collection: "notes",
+        id: "note_1",
+        data: { body: "hello" },
+        refs: { invoice_id: "inv_1" },
+      },
+    }, ctx)).resolves.toMatchObject({ status: "ok", output: { id: "note_1" } });
+    await expect(registry.execute({
+      id: "call_data_list",
+      tool: "vendo_apps_data_list",
+      args: { appId: created.id, collection: "notes", refs: { invoice_id: "inv_1" } },
+    }, ctx)).resolves.toMatchObject({
+      status: "ok",
+      output: { records: [{ id: "note_1", data: { body: "hello" } }] },
+    });
+    await expect(registry.execute({
+      id: "call_data_delete",
+      tool: "vendo_apps_data_delete",
+      args: { appId: created.id, collection: "notes", id: "note_1" },
+    }, ctx)).resolves.toEqual({ status: "ok", output: { status: "ok" } });
+
+    await expect(registry.execute({
+      id: "call_intruder_data_list",
+      tool: "vendo_apps_data_list",
+      args: { appId: created.id, collection: "notes" },
+    }, {
+      ...ctx,
+      principal: { kind: "user", subject: "user_intruder" },
+    })).resolves.toEqual({
+      status: "error",
+      error: { code: "not-found", message: `app not found: ${created.id}` },
     });
   });
 });

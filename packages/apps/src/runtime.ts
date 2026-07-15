@@ -512,7 +512,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
 
     agentTools() {
-      return createAgentTools(runtime);
+      return createAgentTools(runtime, { data, requireOwned });
     },
 
     proxy,
