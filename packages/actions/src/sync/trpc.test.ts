@@ -240,7 +240,7 @@ describe("extractTrpc", () => {
     }));
     await writeFile(root, "pages/api/rpc/[trpc].ts", `
 import { createNextApiHandler } from "@trpc/server/adapters/next";
-import { appRouter } from "../../../server/router";
+import { appRouter } from "@/server/router";
 
 export default createNextApiHandler({ router: appRouter });
 `);

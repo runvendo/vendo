@@ -1,0 +1,591 @@
+{
+  "version": 1,
+  "theme": {
+    "background": "#ffffff",
+    "surface": "#ffffff",
+    "accent": "#4f46e5",
+    "text": "#27272a",
+    "mutedText": "#52525b",
+    "radius": 10,
+    "fontFamily": "Inter, sans-serif"
+  },
+  "tools": [
+    {
+      "name": "authGetLoginMethod",
+      "kind": "trpc",
+      "procedure": "auth.getLoginMethod",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "authGetUserPermission",
+      "kind": "trpc",
+      "procedure": "auth.getUserPermission",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "billingGetSubscription",
+      "kind": "trpc",
+      "procedure": "billing.getSubscription",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "billingGetTier",
+      "kind": "trpc",
+      "procedure": "billing.getTier",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "billingUpdateSeats",
+      "kind": "trpc",
+      "procedure": "billing.updateSeats",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "calendarsDisconnect",
+      "kind": "trpc",
+      "procedure": "calendars.disconnect",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "calendarsGetDefault",
+      "kind": "trpc",
+      "procedure": "calendars.getDefault",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "calendarsList",
+      "kind": "trpc",
+      "procedure": "calendars.list",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "calendarsSetDefault",
+      "kind": "trpc",
+      "procedure": "calendars.setDefault",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "calendarsSetSelection",
+      "kind": "trpc",
+      "procedure": "calendars.setSelection",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "calendarsSync",
+      "kind": "trpc",
+      "procedure": "calendars.sync",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "dashboardStats",
+      "kind": "trpc",
+      "procedure": "dashboard.stats",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "eventtypesCreate",
+      "kind": "trpc",
+      "procedure": "eventTypes.create",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "eventtypesList",
+      "kind": "trpc",
+      "procedure": "eventTypes.list",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "eventtypesSoftDelete",
+      "kind": "trpc",
+      "procedure": "eventTypes.softDelete",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "eventtypesUpdate",
+      "kind": "trpc",
+      "procedure": "eventTypes.update",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "eventsCancel",
+      "kind": "trpc",
+      "procedure": "events.cancel",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "eventsInfiniteList",
+      "kind": "trpc",
+      "procedure": "events.infiniteList",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "pollsBook",
+      "kind": "trpc",
+      "procedure": "polls.book",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "pollsClose",
+      "kind": "trpc",
+      "procedure": "polls.close",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "pollsCommentsAdd",
+      "kind": "trpc",
+      "procedure": "polls.comments.add",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "pollsCommentsDelete",
+      "kind": "trpc",
+      "procedure": "polls.comments.delete",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "pollsCommentsList",
+      "kind": "trpc",
+      "procedure": "polls.comments.list",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "pollsDuplicate",
+      "kind": "trpc",
+      "procedure": "polls.duplicate",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "pollsGet",
+      "kind": "trpc",
+      "procedure": "polls.get",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "pollsGetCountByStatus",
+      "kind": "trpc",
+      "procedure": "polls.getCountByStatus",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "pollsInfiniteChronological",
+      "kind": "trpc",
+      "procedure": "polls.infiniteChronological",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "pollsMake",
+      "kind": "trpc",
+      "procedure": "polls.make",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "pollsMarkAsDeleted",
+      "kind": "trpc",
+      "procedure": "polls.markAsDeleted",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "pollsModify",
+      "kind": "trpc",
+      "procedure": "polls.modify",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "pollsParticipantsAdd",
+      "kind": "trpc",
+      "procedure": "polls.participants.add",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "pollsParticipantsDelete",
+      "kind": "trpc",
+      "procedure": "polls.participants.delete",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "pollsParticipantsList",
+      "kind": "trpc",
+      "procedure": "polls.participants.list",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "pollsParticipantsRename",
+      "kind": "trpc",
+      "procedure": "polls.participants.rename",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "pollsParticipantsUpdate",
+      "kind": "trpc",
+      "procedure": "polls.participants.update",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "pollsReopen",
+      "kind": "trpc",
+      "procedure": "polls.reopen",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "pollsToggleMuted",
+      "kind": "trpc",
+      "procedure": "polls.toggleMuted",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "spacesAcceptInvite",
+      "kind": "trpc",
+      "procedure": "spaces.acceptInvite",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "spacesCancelInvite",
+      "kind": "trpc",
+      "procedure": "spaces.cancelInvite",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "spacesChangeMemberRole",
+      "kind": "trpc",
+      "procedure": "spaces.changeMemberRole",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "spacesCreate",
+      "kind": "trpc",
+      "procedure": "spaces.create",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "spacesDelete",
+      "kind": "trpc",
+      "procedure": "spaces.delete",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "spacesGetCurrent",
+      "kind": "trpc",
+      "procedure": "spaces.getCurrent",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "spacesGetImageUploadUrl",
+      "kind": "trpc",
+      "procedure": "spaces.getImageUploadUrl",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "spacesGetSeats",
+      "kind": "trpc",
+      "procedure": "spaces.getSeats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "spacesInviteMember",
+      "kind": "trpc",
+      "procedure": "spaces.inviteMember",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "spacesLeave",
+      "kind": "trpc",
+      "procedure": "spaces.leave",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "spacesLeaveFromAccount",
+      "kind": "trpc",
+      "procedure": "spaces.leaveFromAccount",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "spacesList",
+      "kind": "trpc",
+      "procedure": "spaces.list",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "spacesListInvites",
+      "kind": "trpc",
+      "procedure": "spaces.listInvites",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "spacesListMembers",
+      "kind": "trpc",
+      "procedure": "spaces.listMembers",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "spacesRemoveImage",
+      "kind": "trpc",
+      "procedure": "spaces.removeImage",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "spacesRemoveMember",
+      "kind": "trpc",
+      "procedure": "spaces.removeMember",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "spacesUpdate",
+      "kind": "trpc",
+      "procedure": "spaces.update",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "spacesUpdateImage",
+      "kind": "trpc",
+      "procedure": "spaces.updateImage",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "spacesUpdateShowBranding",
+      "kind": "trpc",
+      "procedure": "spaces.updateShowBranding",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "systemGetUpdateStatus",
+      "kind": "trpc",
+      "procedure": "system.getUpdateStatus",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "userDeleteMe",
+      "kind": "trpc",
+      "procedure": "user.deleteMe",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "userGetAuthed",
+      "kind": "trpc",
+      "procedure": "user.getAuthed",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "userGetMe",
+      "kind": "trpc",
+      "procedure": "user.getMe",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "userGetNotificationPreferences",
+      "kind": "trpc",
+      "procedure": "user.getNotificationPreferences",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "userSubmitFeedback",
+      "kind": "trpc",
+      "procedure": "user.submitFeedback",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "userUpdateLocale",
+      "kind": "trpc",
+      "procedure": "user.updateLocale",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "userUpdateNotificationPreference",
+      "kind": "trpc",
+      "procedure": "user.updateNotificationPreference",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getBetterAuth",
+      "method": "GET",
+      "path": "/api/better-auth/{all}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postBetterAuth",
+      "method": "POST",
+      "path": "/api/better-auth/{all}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getEvent",
+      "method": "GET",
+      "path": "/api/event/{route}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getHouseKeeping",
+      "method": "GET",
+      "path": "/api/house-keeping/{method}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getIntegrations",
+      "method": "GET",
+      "path": "/api/integrations/{connection}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postIntegrations",
+      "method": "POST",
+      "path": "/api/integrations/{connection}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getLegacy",
+      "method": "GET",
+      "path": "/api/legacy/{route}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getLicensingV1",
+      "method": "GET",
+      "path": "/api/licensing/v1/{route}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postLicensingV1",
+      "method": "POST",
+      "path": "/api/licensing/v1/{route}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getOgImagePoll",
+      "method": "GET",
+      "path": "/api/og-image-poll",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deletePrivate",
+      "method": "DELETE",
+      "path": "/api/private/{route}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPrivate",
+      "method": "GET",
+      "path": "/api/private/{route}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postPrivate",
+      "method": "POST",
+      "path": "/api/private/{route}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getStatus",
+      "method": "GET",
+      "path": "/api/status",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getStorage",
+      "method": "GET",
+      "path": "/api/storage/{key}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putStorage",
+      "method": "PUT",
+      "path": "/api/storage/{key}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getStripeBuyLicense",
+      "method": "GET",
+      "path": "/api/stripe/buy-license",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getStripePortal",
+      "method": "GET",
+      "path": "/api/stripe/portal",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postStripeWebhook",
+      "method": "POST",
+      "path": "/api/stripe/webhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getUpdates",
+      "method": "GET",
+      "path": "/api/updates",
+      "readOrWrite": "write"
+    }
+  ],
+  "annotations": [
+    {
+      "name": "pollsGet",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "pollsCommentsList",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "spacesList",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "userGetMe",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "pollsMake",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "pollsCommentsAdd",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "spacesUpdate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "userDeleteMe",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "spacesDelete",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "pollsParticipantsDelete",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "pollsCommentsDelete",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "eventsCancel",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "deletePrivate",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "putStorage",
+      "mutating": true,
+      "dangerous": false
+    }
+  ],
+  "components": []
+}
