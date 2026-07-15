@@ -41,5 +41,14 @@ descriptor hash, scope, and duration. Away execution additionally requires a
 standing grant bound to the running app. A chat grant or another app's grant
 never transfers.
 
+When a tool's descriptor hash drifts from the hash a standing grant was bound
+to, guard invalidates the grant loudly. It parks a fresh approval request with
+an `invalidatedGrant` field carrying the prior grant's id and `grantedAt`
+timestamp, and emits one `policy-decision` audit event with
+`reason: "grant-invalidated"`, the prior `grantIds`, the `staleHash`, and the
+`currentHash`. The approval card renders a "Previous permission invalidated"
+notice so users see why they are being asked again, and the Activity panel
+lists the audit event.
+
 Vendo audits every tool call, approval, policy decision, run, and app lifecycle
 event with principal, venue, presence, and app context.
