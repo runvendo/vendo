@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { VendoError } from "@vendoai/core";
 import { z } from "zod";
 import {
@@ -8,6 +9,7 @@ import {
   catalogFileSchema,
   catalogProposalsFileSchema,
   type CatalogFile,
+  type CatalogCopyProposal,
   type CatalogProposalsFile,
 } from "../formats.js";
 import { readCatalogFile } from "./catalog.js";
@@ -61,6 +63,11 @@ export async function proposeCatalogCopy(
     seen.add(proposal.name);
     return {
       name: proposal.name,
+      basis: {
+        exportPath: entry.exportPath,
+        propsSchema: entry.propsSchema,
+        ...(entry.note === undefined ? {} : { note: entry.note }),
+      },
       before: {
         description: entry.description,
         ...(entry.examples === undefined ? {} : { examples: entry.examples }),
@@ -70,7 +77,7 @@ export async function proposeCatalogCopy(
         ...(proposal.examples === undefined ? {} : { examples: proposal.examples }),
       },
     };
-  }).sort((left, right) => left.name.localeCompare(right.name));
+  }).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
   const artifact = catalogProposalsFileSchema.parse({
     format: VENDO_CATALOG_PROPOSALS_FORMAT,
     catalogFormat: VENDO_CATALOG_FORMAT,
@@ -96,19 +103,44 @@ export async function acceptCatalogProposals(out: string, acceptedNames: readonl
     });
   }
   const accepted = new Set(acceptedNames);
-  const changes = new Map(proposals.proposals.filter((proposal) => accepted.has(proposal.name)).map((proposal) => [proposal.name, proposal.after]));
+  const changes = new Map<string, CatalogCopyProposal>(
+    proposals.proposals.filter((proposal) => accepted.has(proposal.name)).map((proposal) => [proposal.name, proposal]),
+  );
   if (accepted.size !== changes.size) {
-    const missing = [...accepted].filter((name) => !changes.has(name)).sort();
+    const missing = [...accepted]
+      .filter((name) => !changes.has(name))
+      .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
     throw new VendoError("validation", `accepted catalog proposals not found: ${missing.join(", ")}`);
+  }
+  const entries = new Map(catalog.entries.map((entry) => [entry.name, entry]));
+  for (const [name, proposal] of changes) {
+    const entry = entries.get(name);
+    const basis = entry === undefined ? undefined : {
+      exportPath: entry.exportPath,
+      propsSchema: entry.propsSchema,
+      ...(entry.note === undefined ? {} : { note: entry.note }),
+    };
+    const before = entry === undefined ? undefined : {
+      description: entry.description,
+      ...(entry.examples === undefined ? {} : { examples: entry.examples }),
+    };
+    if (entry?.source !== "scanned"
+      || !isDeepStrictEqual(basis, proposal.basis)
+      || !isDeepStrictEqual(before, proposal.before)) {
+      throw new VendoError(
+        "validation",
+        `stale catalog proposal for ${name}: catalog.json changed since proposal generation; regenerate proposals before accepting`,
+      );
+    }
   }
   const updated = catalogFileSchema.parse({
     ...catalog,
     entries: catalog.entries.map((entry) => {
-      const change = changes.get(entry.name);
-      return change === undefined ? entry : {
+      const proposal = changes.get(entry.name);
+      return proposal === undefined ? entry : {
         ...entry,
-        description: change.description,
-        ...(change.examples === undefined ? { examples: undefined } : { examples: change.examples }),
+        description: proposal.after.description,
+        ...(proposal.after.examples === undefined ? { examples: undefined } : { examples: proposal.after.examples }),
       };
     }),
   });

@@ -1,9 +1,9 @@
 import type { ComponentCatalog } from "@vendoai/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
 
 describe("catalog@1 runtime mapping", () => {
-  it("maps JSON props schemas onto RegisteredComponent and excludes disabled entries", async () => {
+  it("maps JSON schemas for prompting, keeps reserved disabled entries, and documents pass-through validation", async () => {
     const catalog = runtimeCatalogFromJson(JSON.stringify({
       format: "vendo/catalog@1",
       entries: [
@@ -26,7 +26,7 @@ describe("catalog@1 runtime mapping", () => {
       ],
     }));
 
-    expect(catalog).toHaveLength(1);
+    expect(catalog).toHaveLength(2);
     expect(catalog[0]).toMatchObject({
       name: "MetricCard",
       description: "Use for one headline metric.",
@@ -34,6 +34,9 @@ describe("catalog@1 runtime mapping", () => {
       examples: ["<MetricCard value={42} />"],
     });
     expect(await Promise.resolve(catalog[0]!.propsSchema["~standard"].validate({ value: 42 }))).toEqual({ value: { value: 42 } });
+    expect(await Promise.resolve(catalog[0]!.propsSchema["~standard"].validate({ value: "not a number", extra: true })))
+      .toEqual({ value: { value: "not a number", extra: true } });
+    expect(catalog[1]?.name).toBe("HiddenCard");
   });
 
   it("lets explicit registrations win and rejects unknown catalog fields", () => {
@@ -47,6 +50,17 @@ describe("catalog@1 runtime mapping", () => {
       propsSchema: { "~standard": { validate: (value: unknown) => ({ value }) } },
     }];
     expect(mergeRuntimeCatalog(disk, explicit)).toEqual(explicit);
-    expect(runtimeCatalogFromJson(JSON.stringify({ format: "vendo/catalog@1", entries: [], typo: true }))).toEqual([]);
+  });
+
+  it("warns loudly and actionably when strict catalog parsing fails", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(runtimeCatalogFromJson(
+      JSON.stringify({ format: "vendo/catalog@1", entries: [], typo: true }),
+      ".vendo/catalog.json",
+    )).toEqual([]);
+    expect(error).toHaveBeenCalledOnce();
+    expect(error.mock.calls[0]?.[0]).toContain(".vendo/catalog.json");
+    expect(error.mock.calls[0]?.[0]).toContain("Unrecognized key");
+    expect(error.mock.calls[0]?.[0]).toContain("vendo sync");
   });
 });

@@ -669,9 +669,6 @@ importers:
       es-module-lexer:
         specifier: ^1.7.0
         version: 1.7.0
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
       yaml:
         specifier: ^2.6.0
         version: 2.9.0
@@ -691,6 +688,9 @@ importers:
       next:
         specifier: 16.2.9
         version: 16.2.9(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)

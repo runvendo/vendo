@@ -93,6 +93,42 @@ describe("validation and route classification", () => {
     await expect(vendoSync({ root, out })).rejects.toMatchObject({ name: "VendoError", code: "validation" });
   });
 
+  it("fails loudly when an existing catalog.json violates the strict schema", async () => {
+    const { root, out } = await temporaryHost();
+    await writeFile(out, "catalog.json", JSON.stringify({
+      format: "vendo/catalog@1",
+      entries: [],
+      typo: true,
+    }));
+
+    await expect(vendoSync({ root, out })).rejects.toMatchObject({
+      name: "VendoError",
+      code: "validation",
+      message: expect.stringContaining(`malformed catalog file: ${path.join(out, "catalog.json")}`),
+    });
+  });
+
+  it("writes byte-identical catalog.json content on consecutive syncs", async () => {
+    const { root, out } = await temporaryHost();
+    await writeFile(root, "tsconfig.json", JSON.stringify({
+      compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler", jsx: "react-jsx", strict: true },
+      include: ["src"],
+    }));
+    await writeFile(root, "src/components.tsx", `
+      type ComponentType = (props: unknown) => unknown;
+      function StableCard({ label }: { label: string }) { return <article>{label}</article>; }
+      export const hostComponents: Record<string, ComponentType> = { StableCard: StableCard as ComponentType };
+      export function Root() { return <VendoRoot components={hostComponents} />; }
+    `);
+
+    const first = await vendoSync({ root, out });
+    const firstBytes = await fs.readFile(path.join(out, "catalog.json"), "utf8");
+    const second = await vendoSync({ root, out });
+    expect(first.catalog).toEqual({ discovered: 1, registered: 0 });
+    expect(second.catalog).toEqual(first.catalog);
+    expect(await fs.readFile(path.join(out, "catalog.json"), "utf8")).toBe(firstBytes);
+  });
+
   it("emits unclassified app routes disabled and handles catch-all names and deterministic collisions", async () => {
     const { root, out } = await temporaryHost();
     await writeFile(root, "src/app/api/opaque/route.ts", "export const handler = () => null;\n");

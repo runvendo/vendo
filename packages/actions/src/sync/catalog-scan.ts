@@ -1,9 +1,15 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { JsonSchema } from "@vendoai/core";
-import ts from "typescript";
+import type tsTypes from "typescript";
 import type { CatalogEntry } from "../formats.js";
 import { walk } from "./common.js";
+
+let ts: typeof tsTypes;
+
+async function loadTypeScript(): Promise<typeof tsTypes> {
+  return (await import("typescript")).default;
+}
 
 export interface CatalogScanResult {
   entries: CatalogEntry[];
@@ -14,7 +20,7 @@ export interface CatalogScanResult {
 
 interface ComponentCandidate {
   name: string;
-  declaration: ts.FunctionLikeDeclaration;
+  declaration: tsTypes.FunctionLikeDeclaration;
   exportPath: string;
 }
 
@@ -25,9 +31,33 @@ interface SchemaResult {
 
 const PASCAL_CASE = /^[A-Z][A-Za-z0-9_$]*$/;
 
-function hasJsxEvidence(node: ts.Node): boolean {
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function vendoRootNames(sourceFile: tsTypes.SourceFile): Set<string> {
+  const names = new Set(["VendoRoot"]);
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement)
+      || !ts.isStringLiteral(statement.moduleSpecifier)
+      || statement.moduleSpecifier.text !== "@vendoai/vendo/react"
+      || statement.importClause?.namedBindings === undefined
+      || !ts.isNamedImports(statement.importClause.namedBindings)) continue;
+    for (const element of statement.importClause.namedBindings.elements) {
+      if ((element.propertyName?.text ?? element.name.text) === "VendoRoot") names.add(element.name.text);
+    }
+  }
+  return names;
+}
+
+function isVendoRootTag(tagName: tsTypes.JsxTagNameExpression, names: ReadonlySet<string>): boolean {
+  const text = tagName.getText();
+  return names.has(text) || text.slice(text.lastIndexOf(".") + 1) === "VendoRoot";
+}
+
+function hasJsxEvidence(node: tsTypes.Node): boolean {
   let found = false;
-  const visit = (child: ts.Node): void => {
+  const visit = (child: tsTypes.Node): void => {
     if (found) return;
     if (ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child) || ts.isJsxFragment(child)) {
       found = true;
@@ -39,7 +69,7 @@ function hasJsxEvidence(node: ts.Node): boolean {
   return found;
 }
 
-function unwrapExpression(expression: ts.Expression): ts.Expression {
+function unwrapExpression(expression: tsTypes.Expression): tsTypes.Expression {
   let current = expression;
   while (
     ts.isAsExpression(current)
@@ -51,7 +81,7 @@ function unwrapExpression(expression: ts.Expression): ts.Expression {
   return current;
 }
 
-function functionFromDeclaration(declaration: ts.Declaration | undefined): ts.FunctionLikeDeclaration | undefined {
+function functionFromDeclaration(declaration: tsTypes.Declaration | undefined): tsTypes.FunctionLikeDeclaration | undefined {
   if (declaration === undefined) return undefined;
   if (ts.isFunctionDeclaration(declaration) || ts.isMethodDeclaration(declaration)) return declaration;
   if (ts.isVariableDeclaration(declaration) && declaration.initializer !== undefined) {
@@ -61,14 +91,14 @@ function functionFromDeclaration(declaration: ts.Declaration | undefined): ts.Fu
   return undefined;
 }
 
-function symbolDeclaration(checker: ts.TypeChecker, expression: ts.Expression): ts.Declaration | undefined {
+function symbolDeclaration(checker: tsTypes.TypeChecker, expression: tsTypes.Expression): tsTypes.Declaration | undefined {
   const unwrapped = unwrapExpression(expression);
   if (!ts.isIdentifier(unwrapped)) return undefined;
   const symbol = resolvedSymbol(checker, unwrapped);
   return symbol?.valueDeclaration ?? symbol?.declarations?.[0];
 }
 
-function resolvedSymbol(checker: ts.TypeChecker, node: ts.Node): ts.Symbol | undefined {
+function resolvedSymbol(checker: tsTypes.TypeChecker, node: tsTypes.Node): tsTypes.Symbol | undefined {
   let symbol = ts.isIdentifier(node) && ts.isShorthandPropertyAssignment(node.parent)
     ? checker.getShorthandAssignmentValueSymbol(node.parent)
     : checker.getSymbolAtLocation(node);
@@ -76,24 +106,38 @@ function resolvedSymbol(checker: ts.TypeChecker, node: ts.Node): ts.Symbol | und
   return symbol;
 }
 
-function registeredComponentMaps(program: ts.Program, checker: ts.TypeChecker, root: string): Set<ts.Symbol> {
-  const registered = new Set<ts.Symbol>();
+function registeredComponentMaps(
+  program: tsTypes.Program,
+  checker: tsTypes.TypeChecker,
+  root: string,
+  warnings: string[],
+): Set<tsTypes.Symbol> {
+  const registered = new Set<tsTypes.Symbol>();
   for (const sourceFile of program.getSourceFiles()) {
     const relative = path.relative(root, sourceFile.fileName);
     if (sourceFile.isDeclarationFile || relative.startsWith("..") || path.isAbsolute(relative)) continue;
-    const visit = (node: ts.Node): void => {
+    const rootNames = vendoRootNames(sourceFile);
+    const visit = (node: tsTypes.Node): void => {
       if (ts.isJsxAttribute(node)
         && ts.isIdentifier(node.name)
-        && node.name.text === "components"
-        && node.initializer !== undefined
-        && ts.isJsxExpression(node.initializer)
-        && node.initializer.expression !== undefined
-        && ts.isIdentifier(unwrapExpression(node.initializer.expression))) {
+        && node.name.text === "components") {
         const opening = node.parent.parent;
         if ((ts.isJsxOpeningElement(opening) || ts.isJsxSelfClosingElement(opening))
-          && opening.tagName.getText().endsWith("VendoRoot")) {
-          const symbol = resolvedSymbol(checker, unwrapExpression(node.initializer.expression));
-          if (symbol !== undefined) registered.add(symbol);
+          && isVendoRootTag(opening.tagName, rootNames)) {
+          const expression = node.initializer !== undefined
+            && ts.isJsxExpression(node.initializer)
+            && node.initializer.expression !== undefined
+            ? unwrapExpression(node.initializer.expression)
+            : undefined;
+          if (expression !== undefined && ts.isIdentifier(expression)) {
+            const symbol = resolvedSymbol(checker, expression);
+            if (symbol !== undefined) registered.add(symbol);
+          } else {
+            const line = sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+            warnings.push(
+              `component catalog ignored inline components map at ${relativeModulePath(root, sourceFile.fileName)}:${line}; export a named component map and pass that identifier to VendoRoot`,
+            );
+          }
         }
       }
       ts.forEachChild(node, visit);
@@ -103,13 +147,13 @@ function registeredComponentMaps(program: ts.Program, checker: ts.TypeChecker, r
   return registered;
 }
 
-function propertyName(name: ts.PropertyName): string | undefined {
+function propertyName(name: tsTypes.PropertyName): string | undefined {
   return ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)
     ? name.text
     : undefined;
 }
 
-function objectField(object: ts.ObjectLiteralExpression, name: string): ts.Expression | undefined {
+function objectField(object: tsTypes.ObjectLiteralExpression, name: string): tsTypes.Expression | undefined {
   for (const property of object.properties) {
     if (ts.isPropertyAssignment(property) && propertyName(property.name) === name) return property.initializer;
     if (ts.isShorthandPropertyAssignment(property) && property.name.text === name) return property.name;
@@ -117,8 +161,8 @@ function objectField(object: ts.ObjectLiteralExpression, name: string): ts.Expre
   return undefined;
 }
 
-function localConstants(sourceFile: ts.SourceFile): Map<string, ts.Expression> {
-  const constants = new Map<string, ts.Expression>();
+function localConstants(sourceFile: tsTypes.SourceFile): Map<string, tsTypes.Expression> {
+  const constants = new Map<string, tsTypes.Expression>();
   for (const statement of sourceFile.statements) {
     if (!ts.isVariableStatement(statement)) continue;
     for (const declaration of statement.declarationList.declarations) {
@@ -130,7 +174,7 @@ function localConstants(sourceFile: ts.SourceFile): Map<string, ts.Expression> {
   return constants;
 }
 
-function resolvedLocalExpression(constants: Map<string, ts.Expression>, expression: ts.Expression): ts.Expression {
+function resolvedLocalExpression(constants: Map<string, tsTypes.Expression>, expression: tsTypes.Expression): tsTypes.Expression {
   let current = unwrapExpression(expression);
   const seen = new Set<string>();
   while (ts.isIdentifier(current)) {
@@ -143,7 +187,7 @@ function resolvedLocalExpression(constants: Map<string, ts.Expression>, expressi
   return current;
 }
 
-function localConstantJson(constants: Map<string, ts.Expression>, expression: ts.Expression, depth = 0): unknown {
+function localConstantJson(constants: Map<string, tsTypes.Expression>, expression: tsTypes.Expression, depth = 0): unknown {
   if (depth > 20) return undefined;
   const value = resolvedLocalExpression(constants, expression);
   if (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value)) return value.text;
@@ -207,7 +251,7 @@ async function registeredCatalogEntries(
     const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind);
     const constants = localConstants(sourceFile);
     const modulePath = relativeModulePath(root, file);
-    const visit = (node: ts.Node): void => {
+    const visit = (node: tsTypes.Node): void => {
       if (!ts.isCallExpression(node)
         || !ts.isIdentifier(node.expression)
         || node.expression.text !== "createVendo"
@@ -259,12 +303,12 @@ async function registeredCatalogEntries(
     };
     visit(sourceFile);
   }
-  return entries.sort((left, right) => left.name.localeCompare(right.name));
+  return entries.sort((left, right) => compareText(left.name, right.name));
 }
 
 function exportedObjectCandidates(
-  checker: ts.TypeChecker,
-  declaration: ts.Declaration | undefined,
+  checker: tsTypes.TypeChecker,
+  declaration: tsTypes.Declaration | undefined,
   modulePath: string,
   exportName: string,
 ): ComponentCandidate[] {
@@ -275,7 +319,7 @@ function exportedObjectCandidates(
   const candidates: ComponentCandidate[] = [];
   for (const property of initializer.properties) {
     let name: string | undefined;
-    let value: ts.Expression | undefined;
+    let value: tsTypes.Expression | undefined;
     if (ts.isPropertyAssignment(property)) {
       name = propertyName(property.name);
       value = property.initializer;
@@ -292,24 +336,24 @@ function exportedObjectCandidates(
   return candidates;
 }
 
-function literalValue(type: ts.Type): string | number | boolean | undefined {
+function literalValue(type: tsTypes.Type): string | number | boolean | undefined {
   if (type.isStringLiteral()) return type.value;
   if (type.isNumberLiteral()) return type.value;
   if ((type.flags & ts.TypeFlags.BooleanLiteral) !== 0) {
-    return (type as ts.Type & { intrinsicName?: string }).intrinsicName === "true";
+    return (type as tsTypes.Type & { intrinsicName?: string }).intrinsicName === "true";
   }
   return undefined;
 }
 
-function withoutUndefined(type: ts.Type): ts.Type[] {
+function withoutUndefined(type: tsTypes.Type): tsTypes.Type[] {
   const members = type.isUnion() ? type.types : [type];
   return members.filter((member) => (member.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Void)) === 0);
 }
 
 function schemaForType(
-  checker: ts.TypeChecker,
-  type: ts.Type,
-  location: ts.Node,
+  checker: tsTypes.TypeChecker,
+  type: tsTypes.Type,
+  location: tsTypes.Node,
   seen: Set<number>,
   depth: number,
 ): SchemaResult {
@@ -359,7 +403,7 @@ function schemaForType(
   if ((type.flags & ts.TypeFlags.Null) !== 0) return { schema: { type: "null" } };
 
   if (checker.isTupleType(type)) {
-    const arguments_ = checker.getTypeArguments(type as ts.TypeReference);
+    const arguments_ = checker.getTypeArguments(type as tsTypes.TypeReference);
     const prefixItems: JsonSchema[] = [];
     for (const argument of arguments_) {
       const converted = schemaForType(checker, argument, location, new Set(seen), depth + 1);
@@ -382,7 +426,7 @@ function schemaForType(
     return { unsupported: `unsupported type ${checker.typeToString(type)}` };
   }
 
-  const id = (type as ts.Type & { id?: number }).id;
+  const id = (type as tsTypes.Type & { id?: number }).id;
   if (id !== undefined) {
     if (seen.has(id)) return { unsupported: `recursive type ${checker.typeToString(type)}` };
     seen.add(id);
@@ -390,7 +434,7 @@ function schemaForType(
 
   const properties: Record<string, JsonSchema> = {};
   const required: string[] = [];
-  for (const property of checker.getPropertiesOfType(type).sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const property of checker.getPropertiesOfType(type).sort((left, right) => compareText(left.name, right.name))) {
     const declaration = property.valueDeclaration ?? property.declarations?.[0] ?? location;
     const propertyType = checker.getTypeOfSymbolAtLocation(property, declaration);
     const converted = schemaForType(checker, propertyType, declaration, new Set(seen), depth + 1);
@@ -416,8 +460,8 @@ function schemaForType(
   return { schema };
 }
 
-function schemaForComponent(checker: ts.TypeChecker, declaration: ts.FunctionLikeDeclaration): SchemaResult {
-  const signature = checker.getSignatureFromDeclaration(declaration as ts.SignatureDeclaration);
+function schemaForComponent(checker: tsTypes.TypeChecker, declaration: tsTypes.FunctionLikeDeclaration): SchemaResult {
+  const signature = checker.getSignatureFromDeclaration(declaration as tsTypes.SignatureDeclaration);
   const parameter = signature?.parameters[0];
   if (parameter === undefined) {
     return { schema: { type: "object", properties: {}, additionalProperties: false } };
@@ -437,7 +481,7 @@ function relativeModulePath(root: string, fileName: string): string {
   return relative.startsWith(".") ? relative : `./${relative}`;
 }
 
-function programFor(root: string, rootNames: string[]): { program?: ts.Program; warnings: string[] } {
+function programFor(root: string, rootNames: string[]): { program?: tsTypes.Program; warnings: string[] } {
   const warnings: string[] = [];
   const configPath = ts.findConfigFile(root, ts.sys.fileExists, "tsconfig.json");
   if (configPath === undefined) return { warnings: ["component catalog scan skipped: no tsconfig.json found"] };
@@ -450,7 +494,7 @@ function programFor(root: string, rootNames: string[]): { program?: ts.Program; 
     warnings.push(`component catalog tsconfig: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}`);
   }
   if (rootNames.length === 0) return { warnings };
-  const options: ts.CompilerOptions = { ...parsed.options, types: [] };
+  const options: tsTypes.CompilerOptions = { ...parsed.options, types: [] };
   const host = ts.createCompilerHost(options);
   const cache = ts.createModuleResolutionCache(root, host.getCanonicalFileName, options);
   host.resolveModuleNameLiterals = (moduleLiterals, containingFile) => moduleLiterals.map((literal) => {
@@ -470,15 +514,16 @@ function programFor(root: string, rootNames: string[]): { program?: ts.Program; 
   return { program: ts.createProgram({ rootNames, options, host }), warnings };
 }
 
-function sourceCatalogEvidence(sourceFile: ts.SourceFile): { component: boolean; registration: boolean } {
+function sourceCatalogEvidence(sourceFile: tsTypes.SourceFile): { component: boolean; registration: boolean } {
   let component = false;
   let registration = false;
-  const visit = (node: ts.Node): void => {
+  const rootNames = vendoRootNames(sourceFile);
+  const visit = (node: tsTypes.Node): void => {
     if (ts.isJsxAttribute(node)
       && ts.isIdentifier(node.name)
       && node.name.text === "components"
       && (ts.isJsxOpeningElement(node.parent.parent) || ts.isJsxSelfClosingElement(node.parent.parent))
-      && node.parent.parent.tagName.getText().endsWith("VendoRoot")) {
+      && isVendoRootTag(node.parent.parent.tagName, rootNames)) {
       component = true;
     }
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "createVendo") {
@@ -490,8 +535,7 @@ function sourceCatalogEvidence(sourceFile: ts.SourceFile): { component: boolean;
   return { component, registration };
 }
 
-async function catalogEvidenceFiles(root: string): Promise<{ componentFiles: string[]; registrationFiles: string[] }> {
-  const files = await walk(root, (relative) => /\.(?:ts|tsx)$/.test(relative) && !/\.d\.ts$/.test(relative));
+async function catalogEvidenceFiles(files: string[]): Promise<{ componentFiles: string[]; registrationFiles: string[] }> {
   const componentFiles: string[] = [];
   const registrationFiles: string[] = [];
   for (const file of files) {
@@ -512,7 +556,19 @@ async function catalogEvidenceFiles(root: string): Promise<{ componentFiles: str
 /** Deterministic TypeScript-compiler scan. No model output can alter these fields. */
 export async function scanComponentCatalog(root: string): Promise<CatalogScanResult> {
   const resolvedRoot = path.resolve(root);
-  const evidenceFiles = await catalogEvidenceFiles(resolvedRoot);
+  const sourceFiles = await walk(resolvedRoot, (relative) => /\.(?:ts|tsx)$/.test(relative) && !/\.d\.ts$/.test(relative));
+  if (sourceFiles.length === 0) return { entries: [], warnings: [], discovered: 0, registered: 0 };
+  try {
+    ts = await loadTypeScript();
+  } catch (error) {
+    return {
+      entries: [],
+      warnings: [`component catalog scan skipped: TypeScript compiler unavailable; install typescript for sync-time extraction (${error instanceof Error ? error.message : String(error)})`],
+      discovered: 0,
+      registered: 0,
+    };
+  }
+  const evidenceFiles = await catalogEvidenceFiles(sourceFiles);
   if (evidenceFiles.componentFiles.length === 0 && evidenceFiles.registrationFiles.length === 0) {
     return { entries: [], warnings: [], discovered: 0, registered: 0 };
   }
@@ -521,7 +577,7 @@ export async function scanComponentCatalog(root: string): Promise<CatalogScanRes
   const warnings = [...configured.warnings];
   const checker = configured.program?.getTypeChecker();
   if (configured.program !== undefined && checker !== undefined) {
-    const componentMaps = registeredComponentMaps(configured.program, checker, resolvedRoot);
+    const componentMaps = registeredComponentMaps(configured.program, checker, resolvedRoot, warnings);
     for (const sourceFile of configured.program.getSourceFiles()) {
       const relative = path.relative(resolvedRoot, sourceFile.fileName);
       if (sourceFile.isDeclarationFile || relative.startsWith("..") || path.isAbsolute(relative)) continue;
@@ -540,26 +596,28 @@ export async function scanComponentCatalog(root: string): Promise<CatalogScanRes
     }
   }
 
-  candidates.sort((left, right) => left.name.localeCompare(right.name) || left.exportPath.localeCompare(right.exportPath));
+  candidates.sort((left, right) => compareText(left.name, right.name) || compareText(left.exportPath, right.exportPath));
   const scannedEntries: CatalogEntry[] = [];
   const seen = new Set<string>();
-  for (const candidate of candidates) {
-    if (seen.has(candidate.name)) {
-      warnings.push(`component ${candidate.name} was discovered more than once; kept ${scannedEntries.find((entry) => entry.name === candidate.name)?.exportPath}`);
-      continue;
+  if (checker !== undefined) {
+    for (const candidate of candidates) {
+      if (seen.has(candidate.name)) {
+        warnings.push(`component ${candidate.name} was discovered more than once; kept ${scannedEntries.find((entry) => entry.name === candidate.name)?.exportPath}`);
+        continue;
+      }
+      seen.add(candidate.name);
+      const converted = schemaForComponent(checker, candidate.declaration);
+      scannedEntries.push({
+        name: candidate.name,
+        exportPath: candidate.exportPath,
+        propsSchema: converted.schema ?? {},
+        description: "",
+        source: "scanned",
+        ...(converted.unsupported === undefined
+          ? {}
+          : { note: `Props schema is permissive because the TypeScript type could not be represented deterministically: ${converted.unsupported}.` }),
+      });
     }
-    seen.add(candidate.name);
-    const converted = schemaForComponent(checker!, candidate.declaration);
-    scannedEntries.push({
-      name: candidate.name,
-      exportPath: candidate.exportPath,
-      propsSchema: converted.schema ?? {},
-      description: "",
-      source: "scanned",
-      ...(converted.unsupported === undefined
-        ? {}
-        : { note: `Props schema is permissive because the TypeScript type could not be represented deterministically: ${converted.unsupported}.` }),
-    });
   }
   const scannedByName = new Map(scannedEntries.map((entry) => [entry.name, entry]));
   const registeredEntries = await registeredCatalogEntries(evidenceFiles.registrationFiles, resolvedRoot, scannedByName, warnings);
@@ -567,6 +625,6 @@ export async function scanComponentCatalog(root: string): Promise<CatalogScanRes
   const entries = [
     ...scannedEntries.filter((entry) => !registeredNames.has(entry.name)),
     ...registeredEntries,
-  ].sort((left, right) => left.name.localeCompare(right.name));
+  ].sort((left, right) => compareText(left.name, right.name));
   return { entries, warnings, discovered: scannedEntries.length, registered: registeredEntries.length };
 }

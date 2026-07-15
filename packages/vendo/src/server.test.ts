@@ -1094,6 +1094,33 @@ describe("09 §2 apps composition", () => {
       tree: { nodes: [{ component: "DiskMetric", source: "host", props: { value: 42 } }] },
     });
   });
+
+  it("warns loudly when createVendo finds a malformed .vendo/catalog.json", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-malformed-disk-catalog-"));
+    const dataDir = join(root, "data");
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "catalog.json"), JSON.stringify({
+      format: "vendo/catalog@1",
+      entries: [],
+      typo: true,
+    }));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const previousCwd = process.cwd();
+    try {
+      process.chdir(root);
+      createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    } finally {
+      process.chdir(previousCwd);
+    }
+    await store.ensureSchema();
+
+    expect(error).toHaveBeenCalledOnce();
+    expect(error.mock.calls[0]?.[0]).toContain(".vendo/catalog.json");
+    expect(error.mock.calls[0]?.[0]).toContain("Unrecognized key");
+    expect(error.mock.calls[0]?.[0]).toContain("vendo sync");
+  });
 });
 
 describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H)", () => {

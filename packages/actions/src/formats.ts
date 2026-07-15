@@ -74,12 +74,25 @@ const proposedCatalogCopyFieldsSchema = catalogCopyFieldsSchema.extend({
 
 export interface CatalogCopyProposal {
   name: string;
+  /** Deterministic scanner context the proposal was authored against. */
+  basis: {
+    exportPath: string;
+    propsSchema: JsonSchema;
+    note?: string;
+  };
   before: CatalogCopyFields;
   after: CatalogCopyFields;
 }
 
+const catalogCopyProposalBasisSchema = z.object({
+  exportPath: z.string().min(1),
+  propsSchema: jsonSchemaSchema,
+  note: z.string().min(1).optional(),
+}).strict();
+
 export const catalogCopyProposalSchema = z.object({
   name: z.string().regex(/^[A-Z][A-Za-z0-9_$]*$/),
+  basis: catalogCopyProposalBasisSchema,
   before: catalogCopyFieldsSchema,
   after: proposedCatalogCopyFieldsSchema,
 }).strict() satisfies z.ZodType<CatalogCopyProposal>;

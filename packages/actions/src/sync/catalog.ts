@@ -24,13 +24,7 @@ export async function readCatalogFile(file: string): Promise<CatalogFile | null>
     throw error;
   }
   try {
-    const parsed = catalogFileSchema.parse(JSON.parse(raw));
-    const names = new Set<string>();
-    for (const entry of parsed.entries) {
-      if (names.has(entry.name)) throw new Error(`duplicate component name ${entry.name}`);
-      names.add(entry.name);
-    }
-    return parsed;
+    return catalogFileSchema.parse(JSON.parse(raw));
   } catch (error) {
     throw validationError(file, error);
   }
@@ -53,7 +47,7 @@ export function mergeCatalogEntries(existing: CatalogEntry[], scanned: CatalogEn
     });
   }
 
-  return next.sort((left, right) => left.name.localeCompare(right.name));
+  return next.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
 }
 
 export async function writeCatalog(out: string, scanned: CatalogEntry[]): Promise<CatalogFile> {

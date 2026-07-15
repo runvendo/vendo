@@ -66,6 +66,10 @@ describe("catalog@1", () => {
 
     expect(artifact.proposals[0]).toEqual({
       name: "MetricCard",
+      basis: {
+        exportPath: "./src/MetricCard.tsx#MetricCard",
+        propsSchema: { type: "object" },
+      },
       before: { description: "" },
       after: { description: "Use for a single headline metric.", examples: ["<MetricCard />"] },
     });
@@ -75,6 +79,64 @@ describe("catalog@1", () => {
     expect((await readCatalogFile(path.join(out, "catalog.json")))?.entries[0]).toMatchObject({
       description: "Use for a single headline metric.",
       examples: ["<MetricCard />"],
+    });
+  });
+
+  it("rejects stale proposals when deterministic component context changed", async () => {
+    const out = await fs.mkdtemp(path.join(os.tmpdir(), "vendo-catalog-stale-"));
+    temporaryDirectories.push(out);
+    const catalog = await writeCatalog(out, [scanned("MetricCard")]);
+    await proposeCatalogCopy(out, catalog, async () => ({
+      proposals: [{ name: "MetricCard", description: "Use for a metric." }],
+    }));
+    await writeCatalog(out, [scanned("MetricCard", { type: "object", properties: { value: { type: "number" } } })]);
+
+    await expect(acceptCatalogProposals(out, ["MetricCard"])).rejects.toMatchObject({
+      code: "validation",
+      message: expect.stringContaining("stale catalog proposal for MetricCard"),
+    });
+    expect((await readCatalogFile(path.join(out, "catalog.json")))?.entries[0]?.description).toBe("");
+  });
+
+  it("rejects stale proposals when reviewed copy changed after proposal generation", async () => {
+    const out = await fs.mkdtemp(path.join(os.tmpdir(), "vendo-catalog-stale-copy-"));
+    temporaryDirectories.push(out);
+    const catalog = await writeCatalog(out, [scanned("MetricCard")]);
+    await proposeCatalogCopy(out, catalog, async () => ({
+      proposals: [{ name: "MetricCard", description: "Use for a metric." }],
+    }));
+    await fs.writeFile(path.join(out, "catalog.json"), `${JSON.stringify({
+      ...catalog,
+      entries: [{ ...catalog.entries[0]!, description: "Copy accepted elsewhere." }],
+    }, null, 2)}\n`, "utf8");
+
+    await expect(acceptCatalogProposals(out, ["MetricCard"])).rejects.toMatchObject({
+      code: "validation",
+      message: expect.stringContaining("stale catalog proposal for MetricCard"),
+    });
+  });
+
+  it("rejects missing catalogs, malformed artifacts, and unknown accepted names", async () => {
+    const out = await fs.mkdtemp(path.join(os.tmpdir(), "vendo-catalog-errors-"));
+    temporaryDirectories.push(out);
+    await expect(acceptCatalogProposals(out, ["MetricCard"])).rejects.toMatchObject({
+      code: "not-found",
+      message: expect.stringContaining("catalog file not found"),
+    });
+
+    const catalog = await writeCatalog(out, [scanned("MetricCard")]);
+    await proposeCatalogCopy(out, catalog, async () => ({
+      proposals: [{ name: "MetricCard", description: "Use for a metric." }],
+    }));
+    await expect(acceptCatalogProposals(out, ["MissingCard"])).rejects.toMatchObject({
+      code: "validation",
+      message: expect.stringContaining("accepted catalog proposals not found: MissingCard"),
+    });
+
+    await fs.writeFile(path.join(out, "catalog.proposals.json"), "{", "utf8");
+    await expect(acceptCatalogProposals(out, ["MetricCard"])).rejects.toMatchObject({
+      code: "validation",
+      message: expect.stringContaining("malformed catalog proposals file"),
     });
   });
 });

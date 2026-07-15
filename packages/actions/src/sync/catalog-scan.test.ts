@@ -112,4 +112,17 @@ describe("deterministic component catalog scan", () => {
       propsSchema: { type: "object", properties: { value: { type: "number" }, tone: { enum: ["up", "down"] } }, required: ["value"], additionalProperties: false },
     })]);
   });
+
+  it("does not mistake suffix lookalikes for VendoRoot and warns for unsupported inline maps", async () => {
+    const root = await host(`
+      function Card({ label }: { label: string }) { return <div>{label}</div>; }
+      export function Lookalike() { return <NotVendoRoot components={{ Card }} />; }
+      export function InlineRoot() { return <VendoRoot components={{ Card }} />; }
+    `);
+
+    const result = await scanComponentCatalog(root);
+    expect(result.entries).toEqual([]);
+    expect(result.warnings).toContainEqual(expect.stringContaining("inline components map"));
+    expect(result.warnings).not.toContainEqual(expect.stringContaining("NotVendoRoot"));
+  });
 });
