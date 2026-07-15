@@ -453,12 +453,25 @@ class GuardImplementation implements VendoGuard {
         }
         // Cross-cutting audit enrichment (block-actions design): a connector
         // attaches its account identity to the outcome as the passthrough
-        // `connectorAccount`; it belongs to the audit trail, not to the model
-        // or the UI, so lift it into detail and strip it from the outcome.
-        const { connectorAccount, ...cleaned } = outcome as ToolOutcome & { connectorAccount?: unknown };
-        if (connectorAccount !== undefined) {
-          detail.connectorAccount = connectorAccount;
+        // `connectorAccount`, and the actAs seam attaches its disposition as
+        // `actAs` (minted | declined | mismatch | error — "declined" is the
+        // away re-verification failing closed). Both belong to the audit
+        // trail, not to the model or the UI, so lift them into detail and
+        // strip them from the outcome.
+        const { connectorAccount, actAs, ...cleaned } =
+          outcome as ToolOutcome & { connectorAccount?: unknown; actAs?: unknown };
+        if (connectorAccount !== undefined) detail.connectorAccount = connectorAccount;
+        if (actAs !== undefined) detail.actAs = actAs;
+        if (connectorAccount !== undefined || actAs !== undefined) {
           outcome = cleaned as ToolOutcome;
+        }
+        // Org context (block-actions design §C): org-owned executions carry the
+        // org principal; `actor` is the human member the wire re-contextualized.
+        if (ctx.principal.kind === "org") {
+          detail.org = {
+            subject: ctx.principal.subject,
+            ...(ctx.actor === undefined ? {} : { actor: ctx.actor.subject }),
+          };
         }
 
         await this.report(

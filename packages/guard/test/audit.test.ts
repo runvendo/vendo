@@ -104,6 +104,54 @@ describe("audit persistence, query, and export", () => {
     expect(detail.connectorAccount).toEqual({ connector: "composio", toolkit: "gmail", entityId: alice.subject });
   });
 
+  it("lifts the actAs disposition off the outcome into the audit detail (ENG-263)", async () => {
+    const sqlStore = await store();
+    const tools = new FixtureTools();
+    // The actAs seam tags its disposition as the outcome passthrough `actAs`
+    // (block-actions design §C — "declined" is away re-verification failing closed).
+    tools.setOutcome("host_read", {
+      status: "error",
+      error: { code: "not-implemented", message: "the host declined away execution for this action" },
+      actAs: "declined",
+    } as never);
+    const guard = createGuard({ store: sqlStore });
+    const bound = guard.bind(tools);
+
+    const outcome = await bound.execute(call("host_read", {}, "audit_actas"), context());
+    // The disposition is audit enrichment, not model/UI payload: stripped here.
+    expect(outcome).toEqual({
+      status: "error",
+      error: { code: "not-implemented", message: "the host declined away execution for this action" },
+    });
+
+    const rows = await sqlStore.query<{ detail: string | null }>(
+      `SELECT event->>'detail' AS detail FROM vendo_audit WHERE tool = 'host_read'`,
+    );
+    const detail = JSON.parse(rows.rows[0]!.detail!) as Record<string, unknown>;
+    expect(detail.actAs).toBe("declined");
+  });
+
+  it("audits org context (org principal + actor) on org-owned executions (ENG-263)", async () => {
+    const sqlStore = await store();
+    const tools = new FixtureTools();
+    const guard = createGuard({ store: sqlStore });
+    const bound = guard.bind(tools);
+
+    const orgCtx = {
+      ...context(),
+      principal: { kind: "org" as const, subject: "vendo:org:org_1", display: "Acme" },
+      actor: alice,
+    };
+    await expect(bound.execute(call("host_read", {}, "audit_org"), orgCtx)).resolves.toMatchObject({ status: "ok" });
+
+    const rows = await sqlStore.query<{ subject: string; detail: string | null }>(
+      `SELECT subject, event->>'detail' AS detail FROM vendo_audit WHERE tool = 'host_read'`,
+    );
+    expect(rows.rows[0]?.subject).toBe("vendo:org:org_1");
+    const detail = JSON.parse(rows.rows[0]!.detail!) as Record<string, unknown>;
+    expect(detail.org).toEqual({ subject: "vendo:org:org_1", actor: alice.subject });
+  });
+
   it("audits connect-required connector outcomes with their identity", async () => {
     const sqlStore = await store();
     const tools = new FixtureTools();
