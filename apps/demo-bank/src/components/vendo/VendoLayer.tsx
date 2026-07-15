@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from "react";
 import { VendoOverlay } from "@vendoai/ui/chrome";
-import { VendoRoot } from "./VendoRoot";
 
 async function resetDemo(): Promise<void> {
   try {
@@ -33,7 +32,7 @@ export function VendoLayer() {
   }, []);
 
   return (
-    <VendoRoot>
+    <>
       <div ref={layer} className="maple-vendo-layer">
         <VendoOverlay />
       </div>
@@ -44,6 +43,6 @@ export function VendoLayer() {
           greetings or suggestion chips; Cmd/Ctrl+K behavior remains intact. */}
       {/* VENDO-MIGRATION: connectors remain available to the server-side agent,
           but 08-ui has no integration/OAuth rail or ConnectCard surface. */}
-    </VendoRoot>
+    </>
   );
 }
