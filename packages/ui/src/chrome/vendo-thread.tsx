@@ -222,7 +222,20 @@ export function VendoThread({
   const errorBanner = thread.error ? (
     <div className="fl-error">
       <span>Something went wrong and the response didn&rsquo;t finish.</span>
-      <button type="button" className="fl-error-retry" onClick={() => void thread.regenerate()}>
+      <button
+        type="button"
+        className="fl-error-retry"
+        onClick={() => {
+          // Nothing to re-issue (sends append the user turn before any request
+          // fires, so this is a defensive rail): degrade to dismissing the
+          // error instead of letting regenerate() throw on an empty thread.
+          if (thread.messages.length === 0) {
+            thread.clearError();
+            return;
+          }
+          void thread.regenerate();
+        }}
+      >
         Retry
       </button>
     </div>
