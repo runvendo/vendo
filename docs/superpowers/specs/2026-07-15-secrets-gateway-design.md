@@ -1,7 +1,7 @@
 # Secrets Egress Gateway — Design Options
 
 Date: 2026-07-15. Parent: apps-block design (2026-07-14), locked decision 5.
-Status: **DECISION PENDING — Yousef picks before implementation.** This
+Status: **DECIDED 2026-07-15: Option B (egress endpoint + fetch shim), picked by Yousef.** This
 document compares; it does not build.
 
 ## Problem
@@ -100,8 +100,15 @@ additionally exposes per-run proxy credentials + CA distribution to its own
 sandboxes; the OSS contract surface does not change. Cloud should not build
 gateway hosting until the pick lands.
 
-## DECISION PENDING
+## DECIDED: Option B — explicit egress endpoint + fetch shim
 
-**Yousef picks (a) or (b) before any implementation.** The venues child
-builds nothing gateway-shaped until then; this doc is the deliverable for
-locked decision 5's design half.
+**Picked by Yousef, 2026-07-15** (in-session, relayed by the coordinating
+agent). Rationale: the §4.5 egress path is already shipped and red-teamed
+(ENG-259); the fetch shim gives app code plain-`fetch` DX with plaintext
+never entering the venue; the bypass failure mode is "no auth," never
+"secret leaked"; and it hosts on the umbrella's existing proxy route on
+every venue with zero new OSS infra. Option A's CA/MITM surface and
+provider-hosting gaps are avoided. Cloud implements the §4.5 egress
+envelope + `SecretsProvider` seam, nothing gateway-shaped.
+
+The venues child may now build the M4 implementation against this pick.
