@@ -614,10 +614,10 @@ export async function runInit(options: InitOptions): Promise<number> {
     }
     // 10-mcp §2: the door never opens by default. When the host asks to open it,
     // point them at the one code change they make deliberately — a HostOAuthAdapter
-    // (identity + consent) plus `mcp: true` on createVendo. init cannot scaffold the
+    // (session + principal resolution) plus `mcp: true` on createVendo. init cannot scaffold the
     // adapter (it is host auth), so it guides rather than writes broken wiring.
     if (answers.openDoor === true) {
-      output.log("MCP door: implement a HostOAuthAdapter (identity + consent) and pass `createVendo({ mcp: true, oauth })`. Then run `vendo mcp server-json`, `vendo mcp verify-domain`, and `vendo doctor` for registry discovery. See docs/contracts/10-mcp.");
+      output.log("MCP door: implement a HostOAuthAdapter (session lookup + principal resolution) and pass `createVendo({ mcp: true, oauth })`; the door serves consent. Then run `vendo mcp server-json`, `vendo mcp verify-domain`, and `vendo doctor` for registry discovery. See docs/quickstart.md.");
     }
     const finalWiring = plan.framework === "express" ? await detectVendoWiring(root) : null;
     if (finalWiring !== null && (!finalWiring.server || !finalWiring.client)) {

@@ -10,6 +10,7 @@ import {
   type StoreAdapter,
   type ToolOutcome,
   type ToolRegistry,
+  type VendoTheme,
   type VendoRecord,
 } from "@vendoai/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -17,7 +18,12 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { exportJWK, generateKeyPair, jwtVerify, SignJWT, type KeyLike } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMcpDoorWithState } from "./door.js";
-import { createMcpDoor, type AppsPort, type McpDoor } from "./index.js";
+import {
+  createMcpDoor,
+  type AppsPort,
+  type HostOAuthAdapter,
+  type McpDoor,
+} from "./index.js";
 import type {
   McpDoorState,
   McpStateSession,
@@ -28,6 +34,26 @@ import type {
 const BASE = "https://product.example/api/vendo/mcp";
 const REDIRECT = "https://client.example/callback";
 const VERIFIER = "a-very-long-pkce-verifier-that-is-valid-for-the-test-suite-1234567890";
+const CONSENT_THEME: VendoTheme = {
+  colors: {
+    background: "#101820",
+    surface: "#18242f",
+    text: "#f4f7fa",
+    muted: "#aebbc7",
+    accent: "#ffb81c",
+    accentText: "#101820",
+    danger: "#f35b66",
+    border: "#405261",
+  },
+  typography: {
+    fontFamily: "Inter, sans-serif",
+    headingFamily: "Newsreader, serif",
+    baseSize: "16px",
+  },
+  radius: { small: "4px", medium: "8px", large: "14px" },
+  density: "compact",
+  motion: "reduced",
+};
 
 // The door resolves CIMD hostnames and rejects private answers (SSRF DNS-rebind
 // defense). `.example` is a reserved non-resolving TLD, so mock the resolver;
@@ -400,6 +426,137 @@ describe("createMcpDoor routing and OAuth", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(harness.authorizeContexts).toEqual([{ clientName: "Metadata client", scopes: ["read", "write"] }]);
   });
+
+  it("bounces a missing host session to login with an exact return-to, then renders consent", async () => {
+    let subject: string | undefined;
+    const sessionCalls: Array<{ url: string; returnTo: string }> = [];
+    const harness = makeHarness({
+      oauth: {
+        async session(req, { returnTo }) {
+          sessionCalls.push({ url: req.url, returnTo });
+          if (!subject) {
+            const login = new URL("https://product.example/login");
+            login.searchParams.set("returnTo", returnTo);
+            return Response.redirect(login);
+          }
+          return { subject };
+        },
+        async principal(resolvedSubject) {
+          return { kind: "user", subject: resolvedSubject };
+        },
+      },
+    });
+    const registered = await register(harness.door);
+    const initial = await authorize(harness.door, registered.body.client_id, { state: "after-login" });
+
+    expect(initial.status).toBe(302);
+    const login = new URL(initial.headers.get("location")!);
+    expect(login.pathname).toBe("/login");
+    const returnTo = login.searchParams.get("returnTo");
+    expect(returnTo).toContain(`${BASE}/authorize?`);
+    expect(new URL(returnTo!).searchParams.get("state")).toBe("after-login");
+
+    subject = "user_1";
+    const resumed = await harness.door.handler(new Request(returnTo!));
+    expect(resumed.status).toBe(200);
+    expect(resumed.headers.get("content-type")).toContain("text/html");
+    expect(await resumed.text()).toContain("Allow Test client to access this product?");
+    expect(sessionCalls).toHaveLength(2);
+    expect(sessionCalls[0]?.returnTo).toBe(sessionCalls[1]?.returnTo);
+  });
+
+  it("renders a themeable consent page and escapes a hostile DCR client_name", async () => {
+    const hostileName = '<img src=x onerror="globalThis.pwned=1"><script>alert(1)</script>';
+    const harness = makeHarness({ oauth: prebuiltOAuth(), theme: CONSENT_THEME });
+    const registered = await register(harness.door, { client_name: hostileName });
+    const response = await authorize(harness.door, registered.body.client_id);
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("content-security-policy")).toContain("form-action 'self'");
+    expect(html).toContain("--vendo-color-accent");
+    expect(html).toContain("--vendo-radius-medium");
+    expect(html).toContain("--vendo-color-accent:#ffb81c");
+    expect(html).toContain("--vendo-heading-family:Newsreader, serif");
+    expect(html).toContain("--vendo-motion:reduced");
+    expect(html).not.toContain(hostileName);
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;img src=x onerror=&quot;globalThis.pwned=1&quot;&gt;");
+  });
+
+  it("denies through the standard OAuth redirect and rejects a missing CSRF token", async () => {
+    const harness = makeHarness({ oauth: prebuiltOAuth() });
+    const registered = await register(harness.door);
+    const page = await authorize(harness.door, registered.body.client_id, { state: "deny-state" });
+    const html = await page.text();
+
+    const csrfFailure = await submitConsent(harness.door, html, "deny", { csrfToken: "wrong" });
+    expect(csrfFailure.status).toBe(400);
+    expect(await csrfFailure.json()).toMatchObject({ error: "invalid_request" });
+
+    const denied = await submitConsent(harness.door, html, "deny");
+    expect(denied.status).toBe(302);
+    const location = new URL(denied.headers.get("location")!);
+    expect(location.origin + location.pathname).toBe(REDIRECT);
+    expect(location.searchParams.get("error")).toBe("access_denied");
+    expect(location.searchParams.get("state")).toBe("deny-state");
+    expect(harness.store.rows("vendo_mcp_grants").some((row) => row.data.kind === "code")).toBe(false);
+  });
+
+  it("consumes an approved consent interaction once and rejects a replay", async () => {
+    const harness = makeHarness({ oauth: prebuiltOAuth() });
+    const registered = await register(harness.door);
+    const page = await authorize(harness.door, registered.body.client_id, { state: "approve-state" });
+    const html = await page.text();
+
+    const approved = await submitConsent(harness.door, html, "approve");
+    expect(approved.status).toBe(302);
+    const location = new URL(approved.headers.get("location")!);
+    const code = location.searchParams.get("code");
+    expect(code).toMatch(/^vmcd_/);
+    expect(location.searchParams.get("state")).toBe("approve-state");
+
+    const replay = await submitConsent(harness.door, html, "approve");
+    expect(replay.status).toBe(400);
+    expect(await replay.json()).toMatchObject({ error: "invalid_request" });
+
+    const token = await exchange(harness.door, {
+      code: code!,
+      client_id: registered.body.client_id,
+      code_verifier: VERIFIER,
+      resource: BASE,
+    });
+    expect(token.status).toBe(200);
+  });
+
+  it("lets authorize replace the page while the door keeps the consent flow", async () => {
+    let customFlow: { action: string; transaction: string; csrfToken: string } | undefined;
+    const harness = makeHarness({
+      oauth: {
+        async session() { return { subject: "user_1" }; },
+        async authorize(_req, ctx) {
+          customFlow = ctx.consent;
+          return new Response("<!doctype html><p>Host-branded consent</p>", {
+            headers: { "content-type": "text/html; charset=utf-8" },
+          });
+        },
+        async principal(subject) { return { kind: "user", subject }; },
+      },
+    });
+    const registered = await register(harness.door);
+    const page = await authorize(harness.door, registered.body.client_id);
+
+    expect(await page.text()).toContain("Host-branded consent");
+    expect(customFlow).toMatchObject({
+      action: expect.stringContaining(`${BASE}/authorize?`),
+      transaction: expect.stringMatching(/^vmci_/),
+      csrfToken: expect.stringMatching(/^vmcsrf_/),
+    });
+    const approved = await submitConsentFields(harness.door, customFlow!, "approve");
+    expect(approved.status).toBe(302);
+    expect(new URL(approved.headers.get("location")!).searchParams.get("code")).toMatch(/^vmcd_/);
+  });
 });
 
 describe("createMcpDoor remote authorization server trust", () => {
@@ -493,6 +650,7 @@ describe("createMcpDoor remote authorization server trust", () => {
 
     for (const request of [
       new Request(`${BASE}/authorize`),
+      new Request(`${BASE}/authorize`, { method: "POST" }),
       new Request(`${BASE}/token`, { method: "POST" }),
       new Request(`${BASE}/register`, { method: "POST" }),
       new Request("https://product.example/.well-known/oauth-authorization-server/api/vendo/mcp"),
@@ -933,9 +1091,11 @@ interface HarnessOptions {
   remoteAs?: { issuer: string; jwksUri?: string; audience: string };
   federation?: { secret: string };
   authorizeResponse?: Response;
+  theme?: VendoTheme;
   /** The subject the OAuth authorize step returns (defaults "user_1"); a fn lets
    * a test mint tokens for two different subjects against one door (FIX G). */
   authorizeSubject?: () => string;
+  oauth?: HostOAuthAdapter;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -972,7 +1132,8 @@ function makeHarness(options: HarnessOptions = {}) {
     ...(options.mount === undefined ? {} : { mount: options.mount }),
     ...(options.remoteAs === undefined ? {} : { remoteAs: options.remoteAs }),
     ...(options.federation === undefined ? {} : { federation: options.federation }),
-    oauth: {
+    ...(options.theme === undefined ? {} : { theme: options.theme }),
+    oauth: options.oauth ?? {
       async authorize(_req, ctx) {
         authorizeContexts.push(ctx);
         if (options.authorizeResponse) return options.authorizeResponse;
@@ -990,11 +1151,11 @@ function makeHarness(options: HarnessOptions = {}) {
   return { door, store, audits, authorizeContexts, principalSubjects, executions };
 }
 
-async function register(door: McpDoor) {
+async function register(door: McpDoor, metadata: Record<string, unknown> = {}) {
   const response = await door.handler(new Request(`${BASE}/register`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ client_name: "Test client", redirect_uris: [REDIRECT], scope: "read write" }),
+    body: JSON.stringify({ client_name: "Test client", redirect_uris: [REDIRECT], scope: "read write", ...metadata }),
   }));
   return { response, body: await response.clone().json() as { client_id: string } & Record<string, unknown> };
 }
@@ -1012,6 +1173,55 @@ async function authorize(door: McpDoor, clientId: string, overrides: Record<stri
     ...overrides,
   });
   return door.handler(new Request(`${BASE}/authorize?${params}`));
+}
+
+function prebuiltOAuth(): HostOAuthAdapter {
+  return {
+    async session() { return { subject: "user_1" }; },
+    async principal(subject) { return { kind: "user", subject }; },
+  };
+}
+
+async function submitConsent(
+  door: McpDoor,
+  html: string,
+  decision: "approve" | "deny",
+  overrides: { csrfToken?: string } = {},
+): Promise<Response> {
+  const action = htmlAttribute(html, "form", "action").replaceAll("&amp;", "&");
+  return submitConsentFields(door, {
+    action,
+    transaction: inputValue(html, "transaction"),
+    csrfToken: overrides.csrfToken ?? inputValue(html, "csrf_token"),
+  }, decision);
+}
+
+async function submitConsentFields(
+  door: McpDoor,
+  flow: { action: string; transaction: string; csrfToken: string },
+  decision: "approve" | "deny",
+): Promise<Response> {
+  return door.handler(new Request(flow.action, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      transaction: flow.transaction,
+      csrf_token: flow.csrfToken,
+      decision,
+    }),
+  }));
+}
+
+function inputValue(html: string, name: string): string {
+  const match = html.match(new RegExp(`<input[^>]+name="${name}"[^>]+value="([^"]+)"`, "i"));
+  if (!match?.[1]) throw new Error(`Consent page omitted ${name}`);
+  return match[1];
+}
+
+function htmlAttribute(html: string, element: string, attribute: string): string {
+  const match = html.match(new RegExp(`<${element}[^>]+${attribute}="([^"]+)"`, "i"));
+  if (!match?.[1]) throw new Error(`Consent page omitted ${element}[${attribute}]`);
+  return match[1];
 }
 
 async function exchange(door: McpDoor, values: Record<string, string>) {
