@@ -64,11 +64,15 @@ import type {
   EnableResult as UiEnableResult,
   Thread as UiThread,
   ThreadSummary as UiThreadSummary,
+  InClientVenue as UiInClientVenue,
+  ShipDiff as UiShipDiff,
 } from "@vendoai/ui";
 import type {
   OpenSurface as AppsOpenSurface,
   EditResult as AppsEditResult,
   VersionEntry as AppsVersionEntry,
+  InClientVenueState as AppsInClientVenueState,
+  ShipDiff as AppsShipDiff,
 } from "@vendoai/apps";
 import type {
   AutomationsEngine,
@@ -97,6 +101,10 @@ type Checks = [
   Assert<Assignable<AppsEditResult, UiEditResult>>,
   Assert<Assignable<UiVersionEntry, AppsVersionEntry>>,
   Assert<Assignable<AppsVersionEntry, UiVersionEntry>>,
+  Assert<Assignable<UiInClientVenue, AppsInClientVenueState>>,
+  Assert<Assignable<AppsInClientVenueState, UiInClientVenue>>,
+  Assert<Assignable<UiShipDiff, AppsShipDiff>>,
+  Assert<Assignable<AppsShipDiff, UiShipDiff>>,
   Assert<Assignable<UiRunStatus, AutomationsRunStatus>>,
   Assert<Assignable<AutomationsRunStatus, UiRunStatus>>,
   Assert<Assignable<UiRunRecord, AutomationsRunRecord>>,

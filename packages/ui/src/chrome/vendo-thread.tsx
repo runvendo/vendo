@@ -241,10 +241,13 @@ export function VendoThread({
     if (part.type === "data-vendo-view") {
       const data = partData(part) as Partial<VendoViewPart>;
       if (typeof data.appId !== "string" || !data.payload) return null;
+      // 06-apps §9 — in-thread surfaces are conversational previews, never the
+      // approved in-client venue: whatever the stream carried, render jailed.
+      const { inClient: _neverInThread, ...payload } = data.payload as typeof data.payload & { inClient?: unknown };
       return (
         <PayloadView
           key={`${key}-${data.appId}`}
-          payload={data.payload}
+          payload={payload}
           components={components}
           onAction={({ action, payload }) => client.apps.call(data.appId!, action, payload ?? {})}
         />

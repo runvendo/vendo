@@ -485,6 +485,103 @@ const jailTree: Tree & { furnishings: Record<string, unknown> } = {
   },
 };
 
+/** 06-apps §9 — the in-client venue scenario: the SAME generated source, once
+ *  with a server-granted hash-pinned approval (host-page mount, host-page
+ *  authority) and once with a stale approval (loud drop-back to the jail). */
+const inClientSource = String.raw`
+import React, { useState } from "react";
+
+export default function PromotedCard({ customer, onRun }) {
+  const [fetchStatus, setFetchStatus] = useState("not run");
+  const [actionStatus, setActionStatus] = useState("not run");
+
+  // In the host page this SUCCEEDS (host authority); the jail's CSP forbids it.
+  async function probeFetch() {
+    try {
+      const response = await fetch("/frame-target.html");
+      setFetchStatus(response.ok ? "SUCCESS (host authority)" : "HTTP " + response.status);
+    } catch {
+      setFetchStatus("FAILURE (CSP)");
+    }
+  }
+
+  async function dispatch() {
+    await onRun();
+    setActionStatus("delivered");
+  }
+
+  return <section aria-label="Promoted in-client card" className="promoted-card">
+    <h2>Promoted card for {customer}</h2>
+    <button type="button" onClick={probeFetch}>Probe host fetch</button>
+    <output id="inclient-fetch-status">fetch: {fetchStatus}</output>
+    <button type="button" onClick={dispatch}>Dispatch promoted action</button>
+    <output id="inclient-action-status">action: {actionStatus}</output>
+  </section>;
+}
+`;
+
+function inClientTree(inClient: Record<string, unknown>): Tree {
+  return {
+    formatVersion: "vendo-genui/v1",
+    root: "root",
+    nodes: [
+      { id: "root", component: "Stack", children: ["promoted", "sibling"] },
+      {
+        id: "promoted",
+        component: "PromotedCard",
+        source: "generated",
+        props: {
+          customer: "Ada",
+          onRun: { $action: "fn:promoted-submit", payload: { invoiceId: "inv_42" } },
+        },
+      },
+      { id: "sibling", component: "Text", props: { text: "Host sibling survived" } },
+    ],
+    components: { PromotedCard: inClientSource },
+    ...( { inClient } as object),
+  } as Tree;
+}
+
+function InClientScenario() {
+  const [action, setAction] = useState<{ nodeId: string; action: string; payload?: Json }>();
+  const onAction = async (request: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome> => {
+    setAction(request);
+    return { status: "ok", output: { recorded: true } };
+  };
+  return (
+    <TreeThemeBoundary>
+      <div className="inclient-grid">
+        <section aria-label="Approved in-client venue">
+          <h2>Approved — host-page mount</h2>
+          <TreeView
+            tree={inClientTree({
+              granted: true,
+              versionHash: "sha256:approved",
+              approvedBy: "host-console",
+              at: NOW,
+            })}
+            components={components}
+            onAction={onAction}
+          />
+        </section>
+        <section aria-label="Stale in-client approval">
+          <h2>Version changed — dropped back to the sandbox</h2>
+          <TreeView
+            tree={inClientTree({
+              granted: false,
+              versionHash: "sha256:new-version",
+              reason: "version-changed",
+            })}
+            components={components}
+            onAction={onAction}
+          />
+        </section>
+      </div>
+      <output className="recorder" data-testid="inclient-action-recorder">{action ? JSON.stringify(action) : "No action recorded"}</output>
+    </TreeThemeBoundary>
+  );
+}
+
 class ScriptedBrowserVoiceDriver implements VoiceDriver {
   start(handlers: VoiceDriverHandlers): VoiceSessionHandle {
     let active = true;
@@ -813,6 +910,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/stage-live": return { title: "Voice stage (live)", content: <LiveStageScenario />, ownProvider: true };
     case "/tree": return { title: "Tree containment", content: <TreeScenario /> };
     case "/tree-jail": return { title: "Generated component jail", content: <TreeScenario jail /> };
+    case "/tree-inclient": return { title: "In-client venue (hash-pinned approval)", content: <InClientScenario /> };
     case "/tree-themed": return { title: "Tree — loud host theme", theme: loudTheme, content: <TreeScenario /> };
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
