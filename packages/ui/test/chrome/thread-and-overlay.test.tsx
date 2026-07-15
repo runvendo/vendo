@@ -41,6 +41,9 @@ describe("VendoThread and VendoOverlay exports", () => {
     expect(receipt.parentElement?.getAttribute("data-vendo-approval")).toBe("write");
     const card = await screen.findByLabelText("Approval for host_email_send");
     expect(card.textContent).toContain("a@example.com");
+    expect(card.textContent).toContain(
+      "This tool changed since you approved it on Jul 1, 2026 — your previous permission no longer applies.",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
     expect(await screen.findByText("Turn complete")).toBeTruthy();
