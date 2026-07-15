@@ -467,6 +467,8 @@ function createWireHandler(deps: {
   sandbox: SandboxVenue;
   mcp: boolean;
   door?: McpDoor;
+  /** True only in a development composition — gates the local injection seams. */
+  development: boolean;
   runtimeCapture?: RuntimeCaptureHandler;
   onRequestOrigin?: (origin: string) => void;
 }): (request: Request) => Promise<Response> {
@@ -568,6 +570,28 @@ function createWireHandler(deps: {
           source: string(body["source"], "source"),
           exportable: body["exportable"],
         }));
+      }
+
+      // 06-apps §9 — the documented LOCAL injection seam for in-client approval
+      // records (demos and dev; Cloud's review console mints these in
+      // production). Development compositions only: production handlers fall
+      // through to the ordinary 404, exactly like /dev/remixable-source, so no
+      // production surface can self-approve an app into the host page.
+      if (deps.development && request.method === "POST" && path === "/dev/inclient-approval") {
+        const body = await requestJson(request);
+        // Approving a host-page mount is a HOST trust decision — an anonymous
+        // visitor's minted ephemeral session is not enough, even in dev.
+        const approvalContext = await context(request, "app");
+        if (approvalContext.principal.ephemeral === true) {
+          return json({ error: { code: "blocked", message: "in-client approval injection requires a host-resolved principal" } }, 401);
+        }
+        const approvedBy = body["approvedBy"] === undefined
+          ? "local-dev"
+          : string(body["approvedBy"], "approvedBy");
+        return json(await deps.apps.inClient.approve({
+          appId: string(body["appId"], "appId"),
+          approvedBy,
+        }, approvalContext));
       }
 
       if (request.method === "POST" && path.startsWith("/webhooks/")) {
@@ -705,6 +729,12 @@ function createWireHandler(deps: {
             if (body["op"] !== "undo") throw new VendoError("validation", "history op must be undo");
             return json(await deps.apps.history(appId).undo());
           }
+        }
+        // 06-apps §8–§9 — additive: the reviewable diff of what this app ships
+        // relative to the captured host baselines, hash-pinned to the version
+        // an in-client approval would cover. Owner-scoped like every app route.
+        if (request.method === "GET" && operation === "ship-diff" && segments.length === 3) {
+          return json(await deps.apps.inClient.shipDiff(appId, ctx));
         }
         if (request.method === "GET" && operation === "export" && segments.length === 3) {
           const bytes = await deps.apps.exportApp(appId, ctx);
@@ -987,6 +1017,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     automations,
     sandbox: sandbox.venue,
     mcp: mcpOptions !== undefined,
+    development,
     ...(door === undefined ? {} : { door }),
     ...(runtimeCapture === null ? {} : { runtimeCapture }),
     onRequestOrigin: (origin) => {

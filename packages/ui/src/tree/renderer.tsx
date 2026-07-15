@@ -19,8 +19,10 @@ import {
 } from "react";
 import { useVendoThemeOrDefault } from "../context.js";
 import { themeCssVariables } from "../theme.js";
+import type { InClientVenue } from "../wire-types.js";
 import { resolvePointer } from "./bindings.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
+import { InClientMount } from "./host-mount.js";
 import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
 import { PREWIRED_COMPONENTS, Skeleton } from "./primitives.js";
@@ -134,11 +136,24 @@ function outcomeNotice(outcome: ToolOutcome | undefined): ReactNode {
   return null;
 }
 
+/**
+ * 06-apps §9 — the additive in-client venue verdict a tree payload may carry.
+ * SERVER-AUTHORITATIVE: the apps runtime strips any document-carried value and
+ * attaches this only from its own hash-pin verification, so `granted: true`
+ * here is exactly "a stored approval matches the CURRENT version's content
+ * hash". A missing field is the universal default: jailed. One declaration —
+ * the wire type — re-exported here so tree consumers see the same shape the
+ * client and the parity test cover.
+ */
+export type { InClientVenue } from "../wire-types.js";
+
 interface NodeRendererProps {
   nodeId: string;
   ancestry: ReadonlySet<string>;
   nodes: ReadonlyMap<string, TreeNode>;
   generated: Record<string, string>;
+  /** True ONLY when the payload's server-written verdict granted the venue. */
+  inClientGranted: boolean;
   furnishings: Record<string, JailFurnishing>;
   themeVars: Record<string, string>;
   components: Record<string, ComponentType>;
@@ -210,6 +225,40 @@ function NodeRenderer(props: NodeRendererProps) {
           {`Generated component "${node.component}" has no source.`}
         </ContainedNotice>
       );
+    } else if (props.inClientGranted) {
+      // 06-apps §9 — the approved venue: this exact version's content hash
+      // matched a stored approval, so generated code mounts in the host page.
+      // The jail element stays wired as the drop-back for any mount failure.
+      const bound = node.props === undefined
+        ? undefined
+        : bindValue(node.props, "host", props.data, props.state, invoke) as Record<string, unknown>;
+      const jailFallback = (
+        <JailedComponent
+          name={node.component}
+          source={source}
+          props={node.props === undefined
+            ? undefined
+            : bindValue(node.props, "jail", props.data, props.state, invoke) as Record<string, unknown>}
+          furnishing={props.furnishings[node.component]}
+          themeVars={props.themeVars}
+          onAction={invoke}
+          onStateSet={props.setViewState}
+        />
+      );
+      content = (
+        <>
+          <InClientMount
+            name={node.component}
+            source={source}
+            props={bound}
+            furnishing={props.furnishings[node.component]}
+            fallback={jailFallback}
+            onAction={invoke}
+            onStateSet={props.setViewState}
+          />
+          {children}
+        </>
+      );
     } else {
       const bound = node.props === undefined
         ? undefined
@@ -272,6 +321,10 @@ function StatefulTreeView({
   const themeVars = useMemo(() => themeCssVariables(theme), [theme]);
   const streaming = (tree as Tree & { streaming?: unknown }).streaming === true;
   const furnishings = (tree as Tree & { furnishings?: Record<string, JailFurnishing> }).furnishings ?? {};
+  const inClient = (tree as Tree & { inClient?: InClientVenue }).inClient;
+  // The host-page mount unlocks on EXACTLY `granted === true` — the value only
+  // the server's hash-pin verification writes. Everything else stays jailed.
+  const inClientGranted = inClient?.granted === true;
   // A partial stream may close a generated node before its top-level source
   // string closes. Supply validator-only placeholders, then keep the real map
   // empty so NodeRenderer paints a skeleton until the source arrives.
@@ -333,13 +386,25 @@ function StatefulTreeView({
     );
   }
 
+  // 06-apps §9 — a version change under an existing approval must be LOUD: the
+  // surface drops back to the sandbox and says so, in-surface, above the tree.
+  const dropBackNotice = inClient !== undefined && inClient.granted === false
+    ? (
+      <ContainedNotice label="In-client approval invalidated" outcome="blocked">
+        This app changed since it was approved for the host page. It is running in the sandbox again until the new version is re-approved.
+      </ContainedNotice>
+    )
+    : null;
+
   return (
     <NodeErrorBoundary nodeId={validation.tree.root}>
+      {dropBackNotice}
       <NodeRenderer
         nodeId={validation.tree.root}
         ancestry={new Set()}
         nodes={nodes}
         generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
+        inClientGranted={inClientGranted}
         furnishings={furnishings}
         themeVars={themeVars}
         components={components}

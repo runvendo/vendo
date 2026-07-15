@@ -38,13 +38,16 @@ import {
   type GenerationEngine,
 } from "./engine.js";
 import { createAppHistory } from "./history.js";
+import { createInClientApprovals, type InClientVerdict } from "./inclient.js";
 import { createAppInterchange } from "./interchange.js";
 import { createMachineSessions } from "./machine.js";
 import { createAppOpener, createProgressiveQueryResolver } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
-import { pinComponentName, type PinBaseline } from "./pins.js";
+import { pinComponentName, type InClientApproval, type PinBaseline } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
 import { createRunTokenGate } from "./run-token-gate.js";
+import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
+import { appVersionHash } from "./version-hash.js";
 import type { SandboxAdapter } from "./sandbox.js";
 import type { SandboxMachine } from "./sandbox.js";
 import { servedAppScaffold } from "./scaffold/index.js";
@@ -128,6 +131,20 @@ export interface AppsRuntime {
    * the static descriptor remains authoritative. */
   agentToolRisk(call: ToolCall, ctx: RunContext): Promise<RiskLabel | undefined>;
   proxy: AppsProxy;
+  /**
+   * 06-apps §9 — additive trust-axis surface (like `proxy`/`agentToolRisk`,
+   * not part of the frozen §1 method table). OSS carries the enforcement
+   * machinery: the ship-diff a reviewer reads, the stored approval records,
+   * and the hash-pin verdict `open()` rides to the client. Cloud's review
+   * console MINTS approvals in production; `approve` is the documented local
+   * injection seam (demos, dev, host-built review flows).
+   */
+  inClient: {
+    shipDiff(appId: AppId, ctx: RunContext): Promise<ShipDiff>;
+    approvals(appId: AppId, ctx: RunContext): Promise<InClientApproval[]>;
+    verdict(appId: AppId, ctx: RunContext): Promise<InClientVerdict>;
+    approve(input: { appId: AppId; approvedBy: string }, ctx: RunContext): Promise<InClientApproval>;
+  };
 }
 
 const allRecords = async (
@@ -279,8 +296,15 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     requireOwned,
   });
 
+  const inClientApprovals = createInClientApprovals(config.store);
   const caller = createAppCaller(machines, config.tools);
-  const opener = createAppOpener(machines, caller, config.store, config.pinBaselines);
+  const opener = createAppOpener(
+    machines,
+    caller,
+    config.store,
+    config.pinBaselines,
+    (doc) => inClientApprovals.venueStateFor(doc),
+  );
   const proxy = createAppsProxy({
     tokenSecret,
     tools: config.tools,
@@ -459,7 +483,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   };
 
   const reportLifecycle = async (
-    operation: "create" | "delete" | "fork",
+    operation: "create" | "delete" | "fork" | "in-client-approve",
     appId: AppId,
     ctx: RunContext,
     extra: Record<string, Json> = {},
@@ -485,11 +509,17 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       }
       // Mint before generation so every partial already carries its permanent id.
       const appId = `app_${globalThis.crypto.randomUUID()}`;
-      const emit = (payload: Tree): void => input.onView?.({
-        type: "data-vendo-view",
-        appId,
-        payload: payload as unknown as UIPayload,
-      });
+      const emit = (payload: Tree): void => {
+        // 06-apps §9 — the in-client venue field is server-authoritative and a
+        // model-written tree must never smuggle one into the live stream: a
+        // freshly generated app has no approval by definition.
+        delete (payload as { inClient?: unknown }).inClient;
+        input.onView?.({
+          type: "data-vendo-view",
+          appId,
+          payload: payload as unknown as UIPayload,
+        });
+      };
       let latestTree: Tree | undefined;
       const queryApp: AppDocument = {
         format: "vendo/app@1",
@@ -515,6 +545,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         ...generated,
         id: appId,
       };
+      // Same rule at rest: open() strips before serving, but a model-forged
+      // venue field has no business being persisted in the first place.
+      if (app.tree !== undefined) delete (app.tree as { inClient?: unknown }).inClient;
       let finalTree: Tree | undefined;
       if (input.onView !== undefined && app.tree?.formatVersion === "vendo-genui/v1") {
         finalTree = {
@@ -554,6 +587,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       await machines.stop(appId);
       await data.clear(app, ctx.principal.subject, await history.documents(appId));
       await history.clear(appId);
+      await inClientApprovals.clear(appId);
       await apps.delete(appId);
       await reportLifecycle("delete", appId, ctx);
     },
@@ -625,6 +659,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
         if (generated.kind === "document") {
           const app: AppDocument = { ...generated.document, id: appId };
+          // Same strip-before-persist rule as create(): open() strips at serve
+          // time, but a model-forged venue field must not be persisted either.
+          if (app.tree !== undefined) delete (app.tree as { inClient?: unknown }).inClient;
           const version: VersionEntry = {
             at: new Date().toISOString(),
             intent: instruction,
@@ -735,6 +772,35 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     agentTools() {
       return createAgentTools(runtime, { data, requireOwned });
+    },
+
+    inClient: {
+      async shipDiff(appId, ctx) {
+        const app = await requireOwned(appId, ctx.principal.subject);
+        return computeShipDiff(app, config.pinBaselines ?? []);
+      },
+      async approvals(appId, ctx) {
+        await requireOwned(appId, ctx.principal.subject);
+        return inClientApprovals.list(appId);
+      },
+      async verdict(appId, ctx) {
+        const app = await requireOwned(appId, ctx.principal.subject);
+        return inClientApprovals.verdictFor(app);
+      },
+      async approve(input, ctx) {
+        const app = await requireOwned(input.appId, ctx.principal.subject);
+        const approval = await inClientApprovals.record({
+          appId: app.id,
+          versionHash: appVersionHash(app),
+          approvedBy: input.approvedBy,
+          at: new Date().toISOString(),
+        });
+        await reportLifecycle("in-client-approve", app.id, ctx, {
+          versionHash: approval.versionHash,
+          approvedBy: approval.approvedBy,
+        });
+        return approval;
+      },
     },
 
     proxy,
