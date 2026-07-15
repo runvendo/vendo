@@ -82,6 +82,9 @@ describe("modalSandbox", () => {
       [expect.any(Uint8Array), "/app/server.js"],
       [expect.any(Uint8Array), "/app/data.bin"],
     ]));
+    expect(sdk.filesystem.writeBytes.mock.calls.some(
+      ([, path]) => path === "/app/.vendo-modal-state.json",
+    )).toBe(false);
   });
 
   it("uses empty outbound-only allowlists so deny-all egress keeps tunnels reachable", async () => {
@@ -114,12 +117,12 @@ describe("modalSandbox", () => {
     });
     expect(fetch).toHaveBeenCalledWith("https://modal.example.test/health", expect.objectContaining({ method: "GET" }));
 
-    await expect(machine.snapshot()).resolves.toBe("modal:im_image_789");
+    await expect(machine.snapshot()).resolves.toMatch(/^modal:v1:/);
     await machine.stop();
     expect(sdk.sandbox.terminate).toHaveBeenCalledOnce();
   });
 
-  it("restores image refs with the original create policy and reconnects running refs", async () => {
+  it("restores opaque image refs with the original create policy and rejects legacy refs", async () => {
     const adapter = modalSandbox();
     const machine = await adapter.create({ env: { PORT: "9090", FEATURE: "yes" }, egress: ["api.example.com"] });
     const snapshotRef = await machine.snapshot();
@@ -135,9 +138,10 @@ describe("modalSandbox", () => {
       }),
     );
 
-    await adapter.resume("modal:sb_running_1");
-    expect(sdk.client.sandboxes.fromId).toHaveBeenCalledWith("running_1");
+    await expect(adapter.resume("modal:im_image_789")).rejects.toMatchObject({ code: "validation" });
+    await expect(adapter.resume("modal:sb_running_1")).rejects.toMatchObject({ code: "validation" });
     await expect(adapter.resume("e2b:wrong")).rejects.toMatchObject({ code: "validation" });
+    expect(sdk.client.sandboxes.fromId).not.toHaveBeenCalled();
   });
 
   it("restores env, egress, and port from a snapshot in a fresh adapter process", async () => {
@@ -163,6 +167,30 @@ describe("modalSandbox", () => {
         encryptedPorts: [9090],
         outboundDomainAllowlist: ["api.example.com"],
       }),
+    );
+  });
+
+  it("does not let app-writable snapshot contents weaken egress on fresh resume", async () => {
+    const firstProcess = modalSandbox();
+    const machine = await firstProcess.create({ env: { PORT: "9090" }, egress: [] });
+    // Model the root app winning its rewrite race after the adapter's last write
+    // but before Modal captures the filesystem image.
+    sdk.sandbox.snapshotFilesystem.mockImplementationOnce(async () => {
+      sdk.filesystem.contents.set("/app/.vendo-modal-state.json", new TextEncoder().encode(JSON.stringify({
+        version: 1,
+        env: { PORT: "9090" },
+        port: 9090,
+      })));
+      return { imageId: "image_789" };
+    });
+    const snapshotRef = await machine.snapshot();
+
+    await modalSandbox().resume(snapshotRef);
+
+    expect(sdk.client.sandboxes.create).toHaveBeenLastCalledWith(
+      expect.anything(),
+      { imageId: "image_789" },
+      expect.objectContaining({ outboundCidrAllowlist: [], outboundDomainAllowlist: [] }),
     );
   });
 });
