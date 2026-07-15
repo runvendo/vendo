@@ -1,5 +1,6 @@
 import {
   VendoError,
+  validateAppDocument,
   type AppDocument,
   type AppId,
   type ComponentCatalog,
@@ -41,6 +42,7 @@ import type { PinBaseline } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
 import type { SandboxAdapter } from "./sandbox.js";
 import type { SandboxMachine } from "./sandbox.js";
+import { servedAppScaffold } from "./scaffold/index.js";
 
 /** 06-apps §1 plus block-plan decisions 3–4. */
 export interface AppsConfig {
@@ -206,14 +208,32 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const applyCodeFiles = async (
     app: AppDocument,
     files: CodeFileEdit[],
+    rung: VersionEntry["rung"],
     ctx: RunContext,
-  ): Promise<{ server?: string; issues: string[] }> => {
+  ): Promise<{ server?: string; cover?: Uint8Array; issues: string[] }> => {
+    const graduatesToHttp = rung === 4 && app.ui !== "http";
     try {
       return await machines.withFork(
         app,
         ctx,
         async ({ machine }) => {
           try {
+            if (rung === 4 && machine.url === undefined) {
+              return { issues: ["sandbox-unavailable: adapter cannot serve http apps"] };
+            }
+            if (graduatesToHttp) {
+              const scaffold = servedAppScaffold(app);
+              const scaffoldPaths = new Set(scaffold.map((file) => file.path));
+              const collision = files.find((file) => scaffoldPaths.has(file.path));
+              if (collision !== undefined) {
+                return {
+                  issues: [`initial rung-4 graduation cannot replace scaffold file "${collision.path}"; edit it after graduation`],
+                };
+              }
+              for (const file of scaffold) {
+                await machine.files.write(file.path, file.content);
+              }
+            }
             for (const file of files) await machine.files.write(file.path, file.content);
             const issues: string[] = [];
             for (const file of files) {
@@ -223,14 +243,21 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             if (issues.length > 0) {
               return { issues };
             }
-            const server = await machine.snapshot();
-            if (app.ui === "http" && machine.screenshot !== undefined) {
-              const cover = await machine.screenshot();
-              await config.store.blobs(`app:${app.id}`).put("cover.png", cover, {
-                contentType: "image/png",
-              });
+            if (graduatesToHttp) {
+              const started = await machine.exec(
+                "nohup sh /app/start.sh >/tmp/vendo-app.log 2>&1 &",
+                { cwd: "/app", timeoutMs: 10_000 },
+              );
+              if (started.code !== 0) {
+                const detail = started.stderr.trim() || started.stdout.trim() || `start command exited ${started.code}`;
+                return { issues: [`served-app scaffold failed to start: ${detail}`] };
+              }
             }
-            return { server, issues: [] };
+            const cover = rung === 4 && machine.screenshot !== undefined
+              ? await machine.screenshot()
+              : undefined;
+            const server = await machine.snapshot();
+            return cover === undefined ? { server, issues: [] } : { server, cover, issues: [] };
           } catch (error) {
             return { issues: [error instanceof Error ? error.message : "machine edit failed"] };
           } finally {
@@ -395,18 +422,31 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           };
         }
 
-        const applied = await applyCodeFiles(previous, generated.files, ctx);
+        const applied = await applyCodeFiles(previous, generated.files, generated.rung, ctx);
         if (applied.server === undefined) {
           repairIssues = applied.issues;
           continue;
         }
-        const app: AppDocument = { ...structuredClone(previous), server: applied.server };
+        const app: AppDocument = {
+          ...structuredClone(previous),
+          server: applied.server,
+          ...(generated.rung === 4 ? { ui: "http" } : {}),
+        };
+        const validation = validateAppDocument(app);
+        if (!validation.ok) {
+          return failedEdit(previous, instruction, [validation.error.message]);
+        }
         const version: VersionEntry = {
           at: new Date().toISOString(),
           intent: instruction,
           rung: rungFor(app, generated.rung),
         };
         const persisted = await persistEdit(previous, app, version, ctx.principal.subject);
+        if (applied.cover !== undefined) {
+          await config.store.blobs(`app:${app.id}`).put("cover.png", applied.cover, {
+            contentType: "image/png",
+          });
+        }
         await machines.evict(appId);
         return { app: persisted, version: { ...version } };
       }

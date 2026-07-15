@@ -276,6 +276,67 @@ describe("generation engine through createApps", () => {
     expect(result.version.rung).toBe(3);
   });
 
+  it("accepts a model-declared rung 4 for a tree app and flips the document ui", async () => {
+    const sandbox = fakeSandbox();
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog,
+      model: scriptedLanguageModel(
+        validCreate(),
+        JSON.stringify({ rung: 4, files: [{ path: "/app/custom.js", content: "export const ready = true;" }] }),
+      ),
+    });
+    const original = await runtime.create({ prompt: "Dashboard" }, ctx);
+
+    const result = await runtime.edit(original.id, "Update the backend", ctx);
+
+    expect(result.issues).toBeUndefined();
+    expect(result.version.rung).toBe(4);
+    expect(result.app.ui).toBe("http");
+    expect(result.app.tree).toEqual(original.tree);
+    expect(result.app.server).toMatch(/^fake:snap_/);
+    expect(await runtime.get(original.id, ctx)).toEqual(result.app);
+  });
+
+  it("keeps the first graduated version on the scaffold and repairs reserved-file edits", async () => {
+    const sandbox = fakeSandbox();
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog,
+      model: scriptedLanguageModel(
+        validCreate(),
+        JSON.stringify({
+          rung: 4,
+          files: [{ path: "/app/start.sh", content: "exec node /app/custom.js" }],
+        }),
+        JSON.stringify({
+          rung: 4,
+          files: [{ path: "/app/custom.js", content: "export const ready = true;" }],
+        }),
+      ),
+    });
+    const original = await runtime.create({ prompt: "Dashboard" }, ctx);
+
+    const result = await runtime.edit(original.id, "Turn this into a full web app", ctx);
+
+    expect(result.issues).toBeUndefined();
+    const graduatedMachine = [...sandbox.machines.values()].at(-1);
+    expect(new TextDecoder().decode(await graduatedMachine?.files.read("/app/.vendo/scaffold-server.cjs")))
+      .toContain("process.env.PORT");
+    expect(new TextDecoder().decode(await graduatedMachine?.files.read("/app/start.sh")))
+      .toContain("/app/.vendo/scaffold-server.cjs");
+    expect(new TextDecoder().decode(await graduatedMachine?.files.read("/app/custom.js")))
+      .toBe("export const ready = true;");
+  });
+
   it("evicts a snapshotted code-edit machine before the next fn call", async () => {
     const base = fakeSandbox();
     const seed = await base.create({ env: {} });

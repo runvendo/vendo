@@ -416,8 +416,7 @@ const codePlanFrom = (
   }
   // Rung is the capability level actually reached, so either signal that indicates a
   // higher rung wins: the model's own declaration of what it built (previously validated
-  // then discarded — Devin) OR the instruction heuristic. The rung-4 graduation guard
-  // applies to the effective rung either way.
+  // then discarded — Devin) OR the instruction heuristic.
   const policyRung = app.ui === "http" || FULL_WEB_APP_INSTRUCTION.test(instruction)
     ? 4
     : SERVER_COMPUTED_INSTRUCTION.test(instruction) ? 3 : 2;
@@ -427,9 +426,6 @@ const codePlanFrom = (
     issues.push("code edit rung must be 2, 3, or 4");
   }
   const rung = (declared !== undefined && declared > policyRung ? declared : policyRung) as 2 | 3 | 4;
-  if (rung === 4 && app.ui !== "http") {
-    issues.push("v0 cannot graduate a tree app to rung 4; use rung 2 or 3");
-  }
   return issues.length > 0
     ? { issues }
     : { files, rung, issues: [] };
@@ -476,7 +472,7 @@ const editCode = async (
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const output = await generateJson(
       deps,
-      `${formatContract(deps)}\n\nCODE EDIT DIALECT: emit full small files as {"rung":2|3|4,"files":[{"path":"/app/...","content":"..."}]}. Keep every path under /app. Rung 2 is tree plus server, rung 3 is a server-computed tree, and rung 4 is only for an already-http app.`,
+      `${formatContract(deps)}\n\nCODE EDIT DIALECT: emit full small files as {"rung":2|3|4,"files":[{"path":"/app/...","content":"..."}]}. Keep every path under /app. Rung 2 is tree plus server, rung 3 is a server-computed tree, and rung 4 is a served web app. A tree app may graduate to rung 4 when the requested interface outgrows the tree format; the runtime supplies the invisible-graduation scaffold. On that first tree-to-http edit, do not emit /app/tree.json, /app/components.json, /app/tree-renderer.js, /app/index.html, /app/.vendo/scaffold-server.cjs, or /app/start.sh; a later edit to the graduated http app may replace those defaults.`,
       `TASK: EDIT_CODE\nINSTRUCTION: ${input.instruction}\nCURRENT_APP: ${JSON.stringify(input.app)}${repairPrompt(issues)}`,
     );
     issues = output.issues;

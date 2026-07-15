@@ -67,6 +67,9 @@ const ladderModel = () => scriptedLanguageModel((call) => {
   if (instructionOf(text).includes("computed")) {
     return JSON.stringify({ rung: 3, files: [{ path: "/app/view.js", content: "export const view = 1;" }] });
   }
+  if (instructionOf(text).includes("full web app")) {
+    return JSON.stringify({ rung: 4, files: [{ path: "/app/custom.js", content: "export const custom = 1;" }] });
+  }
   return JSON.stringify({ rung: 2, files: [{ path: "/app/server.js", content: "export const server = 1;" }] });
 });
 
@@ -152,7 +155,7 @@ describe("ladder rung transitions (e2e)", () => {
     });
   });
 
-  it("keeps the previous rung serving when the next rung fails to build", async () => {
+  it("keeps the previous rung serving when rung-4 graduation fails to build", async () => {
     const serveV1: MachineApp = (request) => request.path === "/fn/version"
       ? { status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify({ result: "v1" }) }
       : { status: 404, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: { code: "x", message: "no" } }) };
@@ -190,7 +193,7 @@ describe("ladder rung transitions (e2e)", () => {
       tools,
       sandbox: failingBuild,
       catalog: [],
-      model: scriptedLanguageModel(JSON.stringify({ rung: 2, files: [{ path: "/app/server.js", content: "broken(" }] })),
+      model: scriptedLanguageModel(JSON.stringify({ rung: 4, files: [{ path: "/app/custom.js", content: "broken(" }] })),
     });
     const ada = ctx();
 
@@ -198,26 +201,71 @@ describe("ladder rung transitions (e2e)", () => {
     await expect(runtime.call(app.id, "fn:version", {}, ada)).resolves.toEqual({ status: "ok", output: "v1" });
 
     // The escalation fails to build — edit surfaces issues and never mutates the document.
-    const failed = await runtime.edit(app.id, "Add a server that fails to compile", ada);
+    const failed = await runtime.edit(app.id, "Turn this into a full web app that fails to compile", ada);
     expect(failed.issues?.length).toBeGreaterThan(0);
-    expect(await storedServer(store, app.id)).toBe(server); // server ref unchanged
+    expect(await runtime.get(app.id, ada)).toEqual(app); // ui + server + kept tree unchanged
 
     // The old rung is STILL serving v1 (never swapped to a half-built machine).
     await expect(runtime.call(app.id, "fn:version", {}, ada)).resolves.toEqual({ status: "ok", output: "v1" });
     await expect(runtime.open(app.id, ada)).resolves.not.toMatchObject({ kind: "resuming" });
   });
 
-  it("refuses to graduate a tree app straight to rung 4 in v0 (documented boundary)", async () => {
+  it("graduates a tree app to rung 4 with an exact kept-tree scaffold and http last-state opening", async () => {
     const store = memoryStore();
-    const sandbox = fakeSandbox();
+    const base = fakeSandbox();
+    const writes: string[] = [];
+    const captures: string[] = [];
+    const observeWrites = async (machine: Awaited<ReturnType<typeof base.create>>) => {
+      const write = machine.files.write;
+      machine.files.write = async (path, bytes) => {
+        writes.push(path);
+        await write(path, bytes);
+      };
+      const screenshot = machine.screenshot.bind(machine);
+      machine.screenshot = async () => {
+        captures.push("screenshot");
+        return screenshot();
+      };
+      const snapshot = machine.snapshot.bind(machine);
+      machine.snapshot = async () => {
+        captures.push("snapshot");
+        return snapshot();
+      };
+      return machine;
+    };
+    const sandbox: SandboxAdapter = {
+      async create(spec) { return observeWrites(await base.create(spec)); },
+      async resume(ref) { return observeWrites(await base.resume(ref)); },
+    };
     const runtime = createApps({ store, guard: guardFixture(), tools, sandbox, catalog: [], model: ladderModel() });
     const ada = ctx();
     const app = await runtime.create({ prompt: "A tree app" }, ada);
 
     const result = await runtime.edit(app.id, "Turn this into a full web app", ada);
 
-    // ui:"http" is never a prerequisite (06-apps §2): the engine blocks the tree→http jump.
-    expect(result.issues?.some((issue) => issue.includes("cannot graduate a tree app to rung 4"))).toBe(true);
-    expect((await runtime.get(app.id, ada))?.ui).toBe("tree"); // document untouched
+    expect(result.issues).toBeUndefined();
+    expect(result.version.rung).toBe(4);
+    expect(result.app).toMatchObject({ ui: "http", tree: app.tree, server: expect.stringMatching(/^fake:snap_/) });
+    expect(await runtime.get(app.id, ada)).toEqual(result.app);
+
+    const built = [...base.machines.values()].at(-1)!;
+    expect(decoder.decode(await built.files.read("/app/tree.json"))).toBe(JSON.stringify(app.tree));
+    expect(decoder.decode(await built.files.read("/app/tree-renderer.js"))).toContain("VendoServedTreeRenderer");
+    expect(decoder.decode(await built.files.read("/app/.vendo/scaffold-server.cjs"))).toContain("process.env.PORT");
+    expect(decoder.decode(await built.files.read("/app/start.sh"))).toContain("node /app/.vendo/scaffold-server.cjs");
+    expect(writes.indexOf("/app/tree.json")).toBeLessThan(writes.indexOf("/app/custom.js"));
+    expect(writes.indexOf("/app/tree-renderer.js")).toBeLessThan(writes.indexOf("/app/custom.js"));
+    expect(writes.indexOf("/app/.vendo/scaffold-server.cjs")).toBeLessThan(writes.indexOf("/app/custom.js"));
+    expect(captures).toEqual(["screenshot", "snapshot"]);
+
+    await expect(runtime.open(app.id, ada)).resolves.toEqual({
+      kind: "resuming",
+      cover: expect.stringMatching(/^data:image\/png;base64,/),
+    });
+    await vi.waitFor(() => expect(base.machines.size).toBe(2));
+    await expect(runtime.open(app.id, ada)).resolves.toEqual({
+      kind: "http",
+      url: expect.stringContaining("fake-machine"),
+    });
   });
 });
