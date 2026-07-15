@@ -87,6 +87,8 @@ describe("generation engine through createApps", () => {
       files: [{ path: "/app/server.js", content: "export const changed = true;" }],
     });
     const sandbox = fakeSandbox();
+    const createMachine = vi.spyOn(sandbox, "create");
+    const resumeMachine = vi.spyOn(sandbox, "resume");
     const runtime = createApps({
       store,
       guard: guardFixture(),
@@ -105,6 +107,8 @@ describe("generation engine through createApps", () => {
     expect(await runtime.get(original.id, ctx)).toEqual(original);
     expect(await runtime.history(original.id).list()).toEqual([]);
     expect(sandbox.machines.size).toBe(0);
+    expect(createMachine).not.toHaveBeenCalled();
+    expect(resumeMachine).not.toHaveBeenCalled();
   });
 
   it("creates a validated rung-1 document with a catalog host component", async () => {

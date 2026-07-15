@@ -41,8 +41,10 @@ import { createAppOpener } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
 import type { PinBaseline } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
+import { createRunTokenGate } from "./run-token-gate.js";
 import type { SandboxAdapter } from "./sandbox.js";
 import type { SandboxMachine } from "./sandbox.js";
+import type { IpResolver } from "./ssrf.js";
 
 /** 06-apps §1 plus block-plan decisions 3–4. */
 export interface AppsConfig {
@@ -57,6 +59,12 @@ export interface AppsConfig {
   designRules?: string;
   proxyUrl?: string;
   pinBaselines?: PinBaseline[];
+  /**
+   * ENG-259 — advanced egress seam for the allowlisted secret-egress proxy (§4.3).
+   * Defaults are zero-config on Node: global fetch + node:dns. A non-Node host (edge)
+   * or a test injects its own transport/resolver here.
+   */
+  egressTransport?: { fetch?: typeof globalThis.fetch; resolveIp?: IpResolver };
 }
 
 /** 06-apps §1 */
@@ -148,10 +156,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const data = createAppData(config.store);
   const history = createAppHistory(config.store);
   const tokenSecret = globalThis.crypto.getRandomValues(new Uint8Array(32));
+  // ENG-251 — one anti-replay gate shared by the machine cache (which burns a
+  // run's jti on teardown) and the proxy (which rejects a burned jti).
+  const consumedRunTokens = createRunTokenGate();
   const machines = createMachineSessions({
     sandbox: config.sandbox,
     proxyUrl: config.proxyUrl,
     tokenSecret,
+    consumedRunTokens,
   });
 
   const owned = async (appId: AppId, subject: string): Promise<AppDocument | null> => {
@@ -181,6 +193,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     tools: config.tools,
     data,
     owns: async (appId, subject) => await owned(appId, subject) !== null,
+    loadApp: owned,
+    ...(config.secrets === undefined ? {} : { secrets: config.secrets }),
+    ...(config.egressTransport?.fetch === undefined ? {} : { fetch: config.egressTransport.fetch }),
+    ...(config.egressTransport?.resolveIp === undefined ? {} : { resolveIp: config.egressTransport.resolveIp }),
+    consumedRunTokens,
   });
 
   const failedEdit = (

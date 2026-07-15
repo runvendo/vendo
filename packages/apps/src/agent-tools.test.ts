@@ -117,6 +117,39 @@ describe("apps agent tools", () => {
     }, ctx)).resolves.toBeUndefined();
   });
 
+  it("keeps malformed and foreign edit calls write-class", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+    });
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+    await seedAppRow(store, {
+      ...created,
+      id: "app_foreign",
+    }, "user_other");
+
+    for (const [id, args] of [
+      ["call_null_edit", null],
+      ["call_array_edit", []],
+      ["call_primitive_edit", "invalid"],
+    ] as const) {
+      await expect(runtime.agentToolRisk({
+        id,
+        tool: "vendo_apps_edit",
+        args,
+      }, ctx)).resolves.toBe("write");
+    }
+    await expect(runtime.agentToolRisk({
+      id: "call_foreign_edit",
+      tool: "vendo_apps_edit",
+      args: { appId: "app_foreign", instruction: "Make the heading blue" },
+    }, ctx)).resolves.toBe("write");
+  });
+
   it("creates and opens an app through the guard-bound fixture", async () => {
     const store = memoryStore();
     const guard = guardFixture();

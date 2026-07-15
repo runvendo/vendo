@@ -245,6 +245,45 @@ describe("policy files, rules, directions, and code", () => {
     );
   });
 
+  it("uses contextual risk for write-breaker accounting", async () => {
+    const edit = descriptor("write", { name: "vendo_apps_edit" });
+    const resolveRisk = vi.fn(async (toolCall: ReturnType<typeof call>) => {
+      const args = toolCall.args as { instruction?: string };
+      return args.instruction === "Make the heading blue" ? "read" as const : "write" as const;
+    });
+    const guard = createGuard({
+      store: createMemoryStore(),
+      resolveRisk,
+      breakers: { maxWritesPerRun: 1, maxCallsPerMinute: 100 },
+      policy: { rules: [{ match: {}, action: "run" }] },
+    });
+    const run = context({ trigger: { runId: "run_contextual_risk", kind: "schedule" } });
+
+    await expect(guard.check(call(edit.name, {
+      appId: "app_tree",
+      instruction: "Make the heading blue",
+    }, "tree_1"), edit, run)).resolves.toMatchObject({ action: "run" });
+    await expect(guard.check(call(edit.name, {
+      appId: "app_tree",
+      instruction: "Persist this to the database",
+    }, "server_1"), edit, run)).resolves.toMatchObject({ action: "run" });
+    // A second read-class tree edit must not consume the one-write budget.
+    await expect(guard.check(call(edit.name, {
+      appId: "app_tree",
+      instruction: "Make the heading blue",
+    }, "tree_2"), edit, run)).resolves.toMatchObject({ action: "run" });
+    // The second server edit is still write-class and must trip the breaker.
+    await expect(guard.check(call(edit.name, {
+      appId: "app_tree",
+      instruction: "Persist this to the database",
+    }, "server_2"), edit, run)).resolves.toMatchObject({
+      action: "ask",
+      decidedBy: "breaker",
+      approval: { descriptor: { risk: "write" } },
+    });
+    expect(resolveRisk).toHaveBeenCalledTimes(4);
+  });
+
   it("keeps the descriptor's conservative risk when contextual resolution fails", async () => {
     const edit = descriptor("write", { name: "vendo_apps_edit" });
     const policy = { rules: [

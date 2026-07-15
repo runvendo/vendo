@@ -1,8 +1,10 @@
 /** @vendoai/apps — the app artifact and engine (docs/contracts/06-apps.md).
  *
  * The package root exports exactly the 06 §1 public API plus the block-plan's
- * flagged additions (AppsConfig.proxyUrl/pinBaselines, AppsRuntime.proxy,
- * SandboxMachine.url?, create-spec egress?, substituteSecretHandles).
+ * flagged additions (AppsConfig.proxyUrl/pinBaselines/egressTransport,
+ * AppsRuntime.proxy, SandboxMachine.url?, create-spec egress?,
+ * substituteSecretHandles/hostAllowed) and the ENG-259 SSRF egress guard
+ * (checkEgressUrl, isBlockedAddress) exposed for reuse.
  * Everything else — machine sessions, run tokens, the generation engine,
  * interchange plumbing — is internal and reachable only through AppsRuntime.
  */
@@ -33,7 +35,15 @@ export {
   type PinShipRequest,
 } from "./pins.js";
 export {
+  hostAllowed,
   substituteSecretHandles,
   type SandboxEgressRequest,
   type SecretHandleMap,
 } from "./egress.js";
+export {
+  checkEgressUrl,
+  isBlockedAddress,
+  nodeIpResolver,
+  type EgressUrlCheck,
+  type IpResolver,
+} from "./ssrf.js";

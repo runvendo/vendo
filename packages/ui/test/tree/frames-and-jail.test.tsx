@@ -137,4 +137,55 @@ describe("generated component jail structure", () => {
     await waitFor(() => expect(screen.getByTitle("Generated component: Editable")).toBeTruthy());
     expect(screen.queryByRole("note", { name: "Generated component error" })).toBeNull();
   });
+
+  it("applies reported content height for both growth and shrinkage", () => {
+    const generatedTree: Tree = {
+      formatVersion: VENDO_TREE_FORMAT,
+      root: "root",
+      nodes: [{ id: "root", component: "Resizable", source: "generated" }],
+      components: { Resizable: "export default function Resizable() { return <p>content</p> }" },
+    };
+
+    render(<TreeView tree={generatedTree} components={{}} onAction={ok} />);
+    const iframe = screen.getByTitle("Generated component: Resizable") as HTMLIFrameElement;
+
+    window.dispatchEvent(new MessageEvent("message", {
+      source: iframe.contentWindow,
+      data: { kind: "resize", height: 1_400 },
+    }));
+    expect(iframe.style.height).toBe("1400px");
+
+    window.dispatchEvent(new MessageEvent("message", {
+      source: iframe.contentWindow,
+      data: { kind: "resize", height: 280 },
+    }));
+    expect(iframe.style.height).toBe("280px");
+
+    window.dispatchEvent(new MessageEvent("message", {
+      source: iframe.contentWindow,
+      data: { kind: "resize", height: 10_000 },
+    }));
+    expect(iframe.style.height).toBe("8192px");
+  });
+
+  it("contains a generated component that renders no content", async () => {
+    const generatedTree: Tree = {
+      formatVersion: VENDO_TREE_FORMAT,
+      root: "root",
+      nodes: [{ id: "root", component: "Empty", source: "generated" }],
+      components: { Empty: "export default function Empty() { return null; }" },
+    };
+
+    render(<TreeView tree={generatedTree} components={{}} onAction={ok} />);
+    const iframe = screen.getByTitle("Generated component: Empty") as HTMLIFrameElement;
+
+    window.dispatchEvent(new MessageEvent("message", {
+      source: iframe.contentWindow,
+      data: { kind: "empty" },
+    }));
+
+    expect((await screen.findByRole("note", { name: "Generated component error" })).textContent)
+      .toBe("Empty: generated component rendered no content");
+    expect(screen.queryByTitle("Generated component: Empty")).toBeNull();
+  });
 });

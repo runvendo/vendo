@@ -5,13 +5,14 @@ import { runInvite, runMembers } from "./members.js";
 import { cloudConsoleOutput } from "./output.js";
 import { runBilling, runDeployments, runOrgs, runUsage } from "./read.js";
 import { runPinShip, runPublish, runShare, runValidate } from "./services.js";
+import { runDeploy, type CloudDeployOptions } from "./deploy.js";
 
 export const CLOUD_HELP = `vendo cloud — Vendo Cloud API client
 
 Usage: vendo cloud <command> [options]
 
 User commands:
-  login EMAIL                           Send a 6-digit email OTP and prompt for it
+  login EMAIL                           Send an email OTP (6-10 digits) and prompt for it
   login --token <jwt>                   Store an access-token fallback
   logout                               Delete the stored cloud session
   whoami [--token <jwt>]                List organizations for the current user
@@ -26,7 +27,9 @@ User commands:
   billing --org <id>                   Show billing status
 
 Machine commands:
-  validate                              Validate a key and show entitlements
+  validate [--json]                     Validate a key and show plan, capabilities, and quota
+  deploy [--app <id>] [--secret NAME=VALUE]
+                                        Deploy local enabled automations to the hosted instance
   share <appfile.json>                  Create a ShareSnapshot
   publish <appfile.json>                Create a PublishRecord
   pin-ship --app <id> --slot <slot> --base <hash> --diff <file>
@@ -34,10 +37,14 @@ Machine commands:
 Global options:
   --api-url <url>  Override VENDO_CLOUD_URL / https://console.vendo.run
   --key <vnd_...>  Override VENDO_API_KEY for machine commands
-  --json           JSON output (all command results are JSON)
+  --app <id>       Deploy only this automation (repeatable; includes disabled selections)
+  --subject <id>   Local subject (required when .vendo/data contains more than one)
+  --secret NAME=VALUE
+                   Deploy a referenced secret value (repeatable)
+  --json           JSON output (deploy defaults to a concise summary table)
 `;
 
-export type RunCloudOptions = CloudCommandOptions & CloudAuthOptions;
+export type RunCloudOptions = CloudCommandOptions & CloudAuthOptions & CloudDeployOptions;
 
 export async function runCloud(args: string[], options: RunCloudOptions = {}): Promise<number> {
   const [command, ...commandArgs] = args;
@@ -57,6 +64,7 @@ export async function runCloud(args: string[], options: RunCloudOptions = {}): P
   if (command === "invite") return runInvite(commandArgs, options);
   if (command === "billing") return runBilling(commandArgs, options);
   if (command === "validate") return runValidate(commandArgs, options);
+  if (command === "deploy") return runDeploy(commandArgs, options);
   if (command === "share") return runShare(commandArgs, options);
   if (command === "publish") return runPublish(commandArgs, options);
   if (command === "pin-ship") return runPinShip(commandArgs, options);

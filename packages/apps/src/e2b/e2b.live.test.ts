@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sandboxAdapterConformance } from "../adapter-conformance.js";
 import type { SandboxMachine } from "../sandbox.js";
 import { e2bSandbox } from "./index.js";
 
@@ -31,7 +32,12 @@ const requestEventually = async (machine: SandboxMachine): Promise<string> => {
 };
 
 describe.skipIf(!process.env.E2B_API_KEY)("e2bSandbox live", () => {
-  it("creates, serves, pauses, resumes, serves again, and kills", async () => {
+  sandboxAdapterConformance("real E2B", () => e2bSandbox({
+    apiKey: process.env.E2B_API_KEY,
+    timeoutMs: 90_000,
+  }));
+
+  it("creates, serves, snapshots, forks, serves again, and kills", async () => {
     const adapter = e2bSandbox({ apiKey: process.env.E2B_API_KEY, timeoutMs: 90_000 });
     const machine = await adapter.create({
       env: { PORT: "8080" },
@@ -48,7 +54,10 @@ describe.skipIf(!process.env.E2B_API_KEY)("e2bSandbox live", () => {
       resumed = await adapter.resume(snapshotRef);
       await expect(requestEventually(resumed)).resolves.toBe("e2b-live");
     } finally {
-      await (resumed ?? machine).stop().catch(() => undefined);
+      await Promise.all([
+        machine.stop().catch(() => undefined),
+        resumed?.stop().catch(() => undefined),
+      ]);
     }
   }, 90_000);
 });
