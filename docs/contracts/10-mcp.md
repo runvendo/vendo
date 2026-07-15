@@ -40,7 +40,7 @@ The umbrella exposes it as the page's one flag — literally `createVendo({ mcp:
 
 ## 2. Door semantics (normative)
 
-- **Same perimeter**: every door tool call becomes a `ToolCall` executed through the guard-bound registry with `RunContext{ venue: "mcp", presence: "present", principal }` — risk labels, grants, approvals, audit, breakers all apply identically. A `pending-approval` outcome returns as a **tool result with `isError: true`** whose content names the approval and says to resolve it in-product (MCP tool *execution* errors are in-band, never JSON-RPC protocol errors — the model must see the message); `blocked` likewise with the guard's reason. Nothing is auto-elevated for being "just MCP".
+- **Same perimeter**: every door tool call becomes a `ToolCall` executed through the guard-bound registry with `RunContext{ venue: "mcp", presence: "present", principal }` — risk labels, grants, approvals, audit, breakers all apply identically. A `pending-approval` outcome returns as a **tool result with `isError: true`** whose content names the approval and says to resolve it in-product (MCP tool *execution* errors are in-band, never JSON-RPC protocol errors — the model must see the message); `blocked` likewise with the guard's reason. A `connect-required` outcome (01 §4, ENG-262) maps the same way: the door has no browser surface to run an OAuth redirect through, so the in-band error tells the user to connect the named toolkit account in the product and retry. Nothing is auto-elevated for being "just MCP".
 - **Principal**: minted by the OAuth layer (§3) — the door never trusts client-supplied identity. Anonymous/ephemeral principals are not served: an unauthenticated request gets `401` with the challenge header (§3), never a session.
 - **Tool surface**: `tools/list` = the bound registry's descriptors verbatim (names are already MCP-safe, `inputSchema` is already the MCP field). No door-specific renames, no second catalog.
 - **Default policy posture**: unchanged from guard's — but the shipped policy example (05 §3) blocks `venue: "mcp"`; `vendo init` asks before opening the door. Opening it is a host decision, never a default.
@@ -171,6 +171,12 @@ Hosted broker (Cloud), registry submission automation, MCP Apps write-back beyon
 Dual review applied before any build: **standards** (verified against MCP 2025-11-25, MCP Apps 2026-01-26, RFC 8707/9728/8414/7591, CIMD draft) — all 6 findings applied, the big two being resource/audience binding and the MCP Apps shim delivery model. **Simplification** — 5 of 7 applied (`HostOAuthAdapter` shrunk to two functions, door owns its own state via `StoreAdapter`, `isRevoked`/`ttl`/`serverInfo` deleted, `AppsPort` = structural subset of `AppsRuntime`); 2 declined with rationale: the server card stays (the page mandates discovery — "agent-reachability becomes distribution" — path corrected + marked provisional instead), and `guard` stays in config (the page mandates "same audit"; auth events belong in the SIEM export, not only in SQL).
 
 ## 9. Additive amendments
+
+### 2026-07-15 — connect-required over the door (ENG-262, parent ENG-264)
+
+- **Changed:** §2 maps the additive `connect-required` tool outcome to the door's in-band `isError` result, directing the user to connect the account in-product — same doctrine as `pending-approval`.
+- **Why:** Per-user connected accounts (04 §3.1) landed; an MCP client cannot host the broker's OAuth redirect.
+- **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
 
 ### 2026-07-14 — RFC 7009 token revocation
 

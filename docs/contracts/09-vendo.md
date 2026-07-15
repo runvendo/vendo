@@ -80,7 +80,12 @@ Mounted under one base (default `/api/vendo`). Auth: every request passes throug
 | `/tick` | POST | scheduler tick (serverless cron target; requires `Authorization: Bearer <secret>` — what Vercel cron sends natively) |
 | `/webhooks/:source` | POST | trigger ingress (Composio, host, plain) — verified, see below |
 | `/activity` | GET | `AuditEvent[]` — `guard.audit.query({ principal })` self-scoped at this route |
-| `/status` | GET | `{ posture, version, blocks: {...} }` (doctor's live probe) |
+| `/status` | GET | `{ posture, version, blocks: {...} }` (doctor's live probe); `blocks.connections: "byo" \| "cloud" \| false` reports the connected-accounts posture (04 §3.1) |
+| `/connections` | GET | the resolved principal's `ConnectorAccount[]` (04 §3) — subject is never caller-supplied |
+| `/connections/initiate` | POST | `{ toolkit, connector?, callbackUrl? }` → `{ id, redirectUrl }` (the broker's OAuth URL); ephemeral and synthetic (`webhook:`/`vendo:`) subjects refused |
+| `/connections/:id` | GET · DELETE | `?connector=` — poll status (404 = not this subject's account, no oracle) · disconnect |
+| `/sync/impact` | POST | `{ tools: string[] }` (≤200) → `{ impact: ToolImpact[] }` — blast radius per tool (apps, automations, grants); **dev-only**: production → `blocked` (04 §1) |
+| `/doctor/present` · `/doctor/act-as` | POST | doctor's live probes (04 §4): present credentials actually reach the host API · actAs mint+verify round-trips (each with a `GET …/echo` loopback route) |
 | `/mcp` (+ subpaths) | ALL | MCP door mount (only when `createVendo({ mcp: true, oauth })`); the door owns these paths and authenticates every request through `oauth.principal` — NOT a wire route |
 
 <!-- amended 2026-07-14: MCP door landed (PR #139); original froze pre-door. The door mounts at `/api/vendo/mcp` (server.ts:33 `MCP_MOUNT`) and is handed its own paths BEFORE any wire machinery — ahead of the CSRF json-mutation gate — because it mints its own principals via `oauth.principal` and bypasses the wire's principal/CSRF machinery (server.ts:394-405). It also serves four origin-root discovery documents pre-auth (server.ts:158-169): `/.well-known/oauth-protected-resource/api/vendo/mcp`, `/.well-known/oauth-authorization-server/api/vendo/mcp` (RFC 9728/8414 path-inserted metadata for the mount), `/.well-known/mcp/server-card.json`, and `/.well-known/mcp-server-card` (SEP-2127 server card). Only these exact four are matched, not the whole `/.well-known/oauth-*` prefix, so a host serving its own OAuth/OIDC metadata at the same origin is not shadowed. -->
@@ -111,12 +116,21 @@ Rung-4 app UI is **not** proxied through the wire: `OpenSurface.kind === "http"`
 ## 5. The bin (DX, per the locked DX design)
 
 - **`vendo init`** — interactive wizard: scans the app (deterministic + AI riding the dev's existing Claude Code / Codex / API key), interviews with recommendations (risk labels, theme, remix candidates), writes the two wiring snippets (handler route + `<VendoRoot>`) — every code change permission-gated with the diff shown; answers land in `overrides.json`, respected forever. `--agent` mode: emits the plan, writes nothing, asks ≤3 plain-language questions (vibe-coder persona; `install.md` is the canonical staged playbook it follows).
-- **`vendo doctor`** — wiring checks + one live round-trip against `/status`; green = working agent; ends with ladder hints (the one config line that unlocks each remaining block).
-- **`vendo sync`** — the build-step extraction, callable manually (04 §1).
+- **`vendo doctor`** — wiring checks + one live round-trip against `/status`; green = working agent; ends with ladder hints (the one config line that unlocks each remaining block). Live probes (ENG-260): `POST /doctor/present` proves present credentials reach the host API (fail advises `VENDO_BASE_URL`); `POST /doctor/act-as` proves the actAs mint+verify round-trip (not configured → warn, not fail).
+- **`vendo sync`** — the build-step extraction, callable manually (04 §1). Queries `/sync/impact` when the dev server is reachable and prints per-tool blast radius; `--report` pushes the report to the Cloud console (requires `VENDO_API_KEY` or `--key`; push failure warns, never fails the build) (ENG-261).
 - **`vendo cloud <command>`** — talk to the public Vendo Cloud API (auth/session, keys, members, services, reads); the paid line's CLI surface (§6). <!-- amended 2026-07-14: `cloud` command landed post-freeze (cli.ts, cli/cloud/ tree); original froze with only init/doctor/sync. -->
 
-Exit codes: doctor `0` green / `1` broken wiring; sync `0` (fail-soft warns) / `2` with `--strict` on breaking changes.
+Exit codes: doctor `0` green / `1` broken wiring; sync `0` (fail-soft warns) / with `--strict`: `2` on breaking changes, `3` when a breaking tool also has nonzero blast radius (impact-unknown stays `2`). `vendo init` also writes `VENDO_BASE_URL` into `.env`/`.env.example` (04 §4) and scaffolds the `predev` (`vendo sync`) / `prebuild` (`vendo sync --strict`) hooks into the host package.json — permission-prompted, like route wiring (ENG-260/261).
 
 ## 6. Cloud enforcement
 
 `VENDO_API_KEY` present → cloud-gated surfaces (share/publish/org/pinning) verify entitlements against Cloud and light up; absent → those methods throw `VendoError("cloud-required")`. Paid code lives in the private cloud repo; this repo stays pure Apache-2.0.
+
+## Amendments
+
+### 2026-07-15 — Block-actions wave (ENG-260/261/262, parent ENG-264)
+
+- **Changed:** §3 adds the per-principal connection routes (`/connections`, `/connections/initiate`, `/connections/:id`), the dev-only `/sync/impact` blast-radius endpoint, the doctor probe routes, and the `blocks.connections` posture in `/status`.
+- **Changed:** §5 documents doctor's live probes, sync's impact query + `--report`, the 2/3 strict exit codes, and init writing `VENDO_BASE_URL` + predev/prebuild hooks.
+- **Why:** The silent-trap fixes (ENG-260), sync completion (ENG-261), and connected accounts (ENG-262) all landed umbrella surface; the frozen wire table predated them. All additive.
+- **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).

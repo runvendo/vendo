@@ -53,6 +53,10 @@ The page makes this public: "everything lives in the host's own DB under a `vend
 | `vendo_secrets` | `name, ciphertext, created_at` | optional encrypted secret values (`storeSecrets`) |
 | `vendo_mcp_clients` | `id, data, refs, created_at, updated_at` | MCP client state (wave 6, additive — door-owned, shapes block-internal to `@vendoai/mcp`) |
 | `vendo_mcp_grants` | `id, data, refs, created_at, updated_at` | MCP grant state (wave 6, additive — door-owned, shapes block-internal to `@vendoai/mcp`) |
+| `vendo_orgs` | `id, name, created_at` | organizations (ENG-263, additive — real `kind:"org"` principals, 01 §2; key-gated activation) |
+| `vendo_org_members` | `org_id, subject, role, created_at` | org membership, roles `owner`/`admin`/`member` — members run, admins approve and manage (ENG-263, additive) |
+
+The two org tables ship with ENG-263 (block-actions spec §C); key-column names above are confirmed against that implementation before this amendment merges.
 
 Host-entity refs are the join surface: `SELECT ... FROM invoices i JOIN vendo_records r ON r.refs @> jsonb_build_object('invoice_id', i.id)` (containment, so the GIN index is actually used).
 
@@ -87,12 +91,20 @@ For non-reserved names, `records()` remains app data and collection names are ot
 - **Encryption at rest**: `encryption.key` encrypts `vendo_secrets.ciphertext` only (AES-256-GCM). App data stays plaintext by design — encrypting it would defeat the page's host-can-query/join promise; at-rest encryption of the database is the host's disk/DB layer. Default-on composition is contracted here and ships in Wave 3: `vendo init` provisions `VENDO_STORE_ENCRYPTION_KEY` in `.env`, `createVendo` reads it from the environment, and AES-GCM binds ciphertext to the secret name as AAD with envelope versioning. Key rotation: out of v0 scope.
 - **No tenant axis**: `subject` is the one partition key — the host's stable user id. Multi-tenant hosts scope the same way they scope their own tables: by joining through `subject` and refs.
 - **Ephemeral principals** (`ephemeral: true`) never touch disk: their rows live in an adapter-level, per-process in-memory overlay that is dropped by `close()`. Multi-instance deployments therefore split anonymous-session state between processes. A real session lifecycle is Wave 4 scope and will amend this section again when designed.
+- **Anonymous→signed-in migration** (ENG-263, block-actions spec §C — ships with that PR): the first authenticated request carrying a valid anon cookie migrates the anonymous principal's **threads, apps, and state** to the real subject, clears the cookie, and is idempotent. **Grants and approvals deliberately do NOT migrate** — consent doesn't transfer identities; users re-approve. Connected accounts (04 §3.1) are consent-like and do not migrate either — users reconnect. This is the designed session lifecycle the previous bullet reserved.
 
 ## 5. Retention and erasure
 
 A store-level erase API is contracted here and ships in Wave 3. It erases by subject (full erasure), by app, or by age, cascading the matching data across all 13 tables, and is exposed on the umbrella. It is the only sanctioned deletion path for audit rows. Policy engines and schedulers remain out of scope; host SQL remains available for everything else.
 
 ## Amendments
+
+### 2026-07-15 — Org tables and anonymous migration (ENG-263, parent ENG-264)
+
+- **Changed:** Added `vendo_orgs` + `vendo_org_members` to the public table map (roles owner/admin/member) — the Vendo-owned home of real org principals; activation key-gated (01 §2, 04 §5).
+- **Changed:** Contracted the anonymous→signed-in migration semantics in §4: threads/apps/state migrate on first authenticated request with a valid anon cookie, idempotent, cookie cleared; grants, approvals, and connected accounts never migrate.
+- **Why:** The block-actions spec locks full org semantics in Vendo-owned tables and closes the silent loss of anonymous work on sign-in. **Ships with ENG-263 — merge of this amendment waits for that PR; key columns confirmed against the implementation at land time.**
+- **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
 
 ### 2026-07-14 — Routed block persistence, erasure, and secure composition
 

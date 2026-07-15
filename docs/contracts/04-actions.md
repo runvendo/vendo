@@ -26,7 +26,12 @@ export interface BreakingChange {
   tool: string;
   change: "removed" | "input-narrowed" | "renamed";
 }
-// Blast radius ("which saved apps reference this tool") is a runtime query over vendo_apps, not a build-step concern.
+// Blast radius ("which saved apps reference this tool") stays a runtime concern — now specified:
+// the umbrella serves a dev-gated POST /sync/impact (09 §3) mapping each tool to the saved apps,
+// automations, and standing grants that reference it. `vendo sync` queries it when the dev server
+// is reachable and prints per-tool impact; unreachable → graceful "impact unknown" fallback.
+// --strict exits 2 on breaking extraction, 3 when a breaking tool also has nonzero blast radius;
+// --report pushes the report to the Cloud console with a key (fail-soft warn, never fatal). (ENG-261)
 ```
 
 Extraction tier: **OpenAPI + route-scan + tRPC** (corpus-proven; tRPC added additively within `vendo/tools@1`, 2026-07-15). GraphQL/server actions next — new extractors change no format below. Extractors sit behind one seam: a registration list of `{ detect, extract }` pairs inside `vendoSync`, run in order (OpenAPI, tRPC, route-scan); route tools under a tRPC mount are shadowed by the extracted procedures (the catch-all HTTP route is not a real API surface). Extraction is fail-closed: a route the scanner can't classify is emitted `disabled: true` with a note, never silently auto-allowed.
@@ -184,28 +189,82 @@ export interface ActionsRegistry extends ToolRegistry {
 
 The umbrella wires `invokeTool` to the guard binding (09 §2).
 
+## 2.1 actAs presets — `@vendoai/actions/presets` (ENG-260)
+
+The `ActAs` seam ships implementations, both tiers: preset code for the four first-class providers plus a generic JWT preset, and documented copy-paste recipes for the long tail. Provider SDKs are optional peer deps of the subpath only; dependency-guard layering holds. Token caching lives inside the preset closures until expiry; `AuthMaterial` stays `{ headers }` — no contract change.
+
+```ts
+export function authJsPreset(options?: { secret?: SecretSource; cookieName?: string; secureCookie?: boolean; claims?: ClaimsOption; expiresInSeconds?: number; cacheSafetySeconds?: number }): ActAs;   // mints an Auth.js v5 encrypted-session JWE; returns { headers: { cookie } }
+export function supabasePreset(options?: { secret?: SecretSource; audience?: string; role?: string; claims?: ClaimsOption; expiresInSeconds?: number; cacheSafetySeconds?: number }): ActAs;           // HS256 native access token (project JWT secret)
+export function genericJwtPreset(options: { secret?: SecretSource; claims?: ClaimsOption; jwtHeader?: Record<string, Json>; headers?: (token: string) => Record<string, string>; expiresInSeconds?: number; cacheSafetySeconds?: number }): ActAs;
+
+/** Where offline minting is impossible (Clerk, Auth0 — RS256, provider-held keys), the preset ships BOTH halves:
+ *  an actAs producer signing a short-lived Vendo away-token, plus a small verify-middleware the host mounts on its API. */
+export function clerkPreset(options?: AwayTokenPresetOptions): AwayTokenPreset;
+export function auth0Preset(options?: AwayTokenPresetOptions): AwayTokenPreset;
+
+export interface AwayTokenPreset {
+  actAs: ActAs;                                              // producer half: authorization: VendoAway <token>, JWT typ "vendo-away+jwt"
+  verify(tokenOrAuthorization: string): Promise<AwayTokenClaims>;
+  nextMiddleware(request: Request): Promise<Response>;       // verify half, Next.js flavor
+  expressMiddleware: ExpressAwayTokenMiddleware;             // verify half, Express flavor
+}
+export interface AwayTokenClaims { iss: string; aud: string; sub: string; provider: "clerk" | "auth0"; grantId: string; tool: string; iat: number; exp: number }
+```
+
+The away-token secret defaults to `VENDO_AWAY_TOKEN_SECRET`; the verifier stamps the trusted `x-vendo-away-subject/-provider/-grant/-tool` headers for the host route. A `ClaimsResolver` returning `null` declines the mint — actAs answers `null` and the run fails closed (01 §13).
+
 ## 3. Connectors — lean, we build zero
 
 ```ts
-export interface Connector { name: string; descriptors(): Promise<ToolDescriptor[]>; execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome>; }
+export interface Connector {
+  name: string;
+  descriptors(): Promise<ToolDescriptor[]>;
+  execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome>;
+  connections?: ConnectorConnections;    // per-user connected accounts (ENG-262) — subject-scoped, optional
+}
 
-export function composioConnector(config: { apiKey: string; entityId?: (ctx: RunContext) => string; apps?: string[] }): Connector;
-export function mcpConnector(config: { url: string; headers?: Record<string, string>; name?: string }): Connector;
+/** Per-user connected accounts. Every operation is scoped to one subject —
+ *  the umbrella passes only the resolved principal's subject, never caller input (09 §3). */
+export interface ConnectorConnections {
+  list(subject: string): Promise<ConnectorAccount[]>;
+  initiate(subject: string, toolkit: string, options?: { callbackUrl?: string }): Promise<{ id: string; redirectUrl: string }>;
+  status(subject: string, connectionId: string): Promise<ConnectorAccount | null>;   // null → not this subject's account (no oracle)
+  disconnect(subject: string, connectionId: string): Promise<void>;                  // ownership-checked before any delete leaves the process
+}
+export interface ConnectorAccount { id: string; connector: string; toolkit: string; status: "initiated" | "active" | "expired" | "failed"; createdAt?: IsoDateTime }
+
+/** Audit identity a connector execution attaches to its outcome; the guard binding lifts it
+ *  into AuditEvent.detail.connectorAccount and strips it from the outcome (01 §7, 05 §2). */
+export interface ConnectorAccountIdentity { connector: string; toolkit?: string; entityId?: string; accountId?: string; credential?: "per-principal" | "shared" }
+
+export function composioConnector(config: { apiKey: string; entityId?: (ctx: RunContext) => string; apps?: string[] }): Connector;   // entityId default: the principal's subject — Composio connected accounts are per-user; every read is subject-filtered
+export function mcpConnector(config: { url: string; headers?: Record<string, string> | McpHeadersResolver; name?: string }): Connector;
+
+/** Per-principal connector identity (ENG-262): static shared headers stay the simple default;
+ *  a resolver receives presence/grant context and vends per-user credentials. With a resolver,
+ *  MCP sessions are per-subject (LRU-bounded; evicted sessions re-initialize on next call). */
+export type McpHeadersResolver = (auth: { principal?: Principal; presence?: RunContext["presence"]; grant?: PermissionGrant }) => Record<string, string> | Promise<Record<string, string>>;
 ```
 
-Normalization rules: connector tool names are underscore-prefixed inside the provider-safe charset (core §4): `gmail_send`, `mcp_<server>_<tool>` (truncated + suffix-hashed past 64 chars); risk labels come from connector annotations when present, else default **`write`** (conservative), overridable in `overrides.json`; MCP tools are re-described through the same descriptor shape so guard sees no difference.
+Normalization rules: connector tool names are underscore-prefixed inside the provider-safe charset (core §4): `gmail_send`, `mcp_<server>_<tool>` (truncated + suffix-hashed past 64 chars); MCP tools are re-described through the same descriptor shape so guard sees no difference. Risk labels (ENG-262, replacing the hardcoded conservative default that never let destructive ops hit the forced-ask gate): connector annotations win when present — Composio's `destructiveHint` tag or any destructive verb token (delete/remove/destroy/purge/…) anywhere in the slug → `destructive`; `readOnlyHint` or a leading read verb (get/list/search/…) → `read`; everything else defaults **`write`** (conservative). `overrides.json` still wins field-wise.
+
+### 3.1 connect-required — the missing-connection outcome (ENG-262)
+
+A connector call failing on a missing per-user connection produces the typed `connect-required` outcome (01 §4), never a bare error: the UI renders an inline connect card beside the tool part (`data-vendo-connect`, 01 §16; chrome 08 §4), the user completes the broker's OAuth redirect, and the call retries. Composio is the sole broker — no home-grown OAuth flows. Cloud: with `VENDO_API_KEY` and no BYO connector, connections ride the Vendo Cloud broker endpoints (bearer-authed against `VENDO_CLOUD_URL`) using Vendo's Composio credentials — cloud users bring zero keys; BYO always wins; posture is reported as `blocks.connections: "byo" | "cloud" | false` (09 §3). Ephemeral and synthetic (`webhook:`/`vendo:`) subjects are refused at initiate.
 
 ## 4. Execution semantics (normative)
 
-- **Present** (`presence: "present"`): the call rides the user's real session. Server-side route execution forwards the inbound request's auth material (`ctx.requestHeaders` — cookies/authorization captured by the umbrella handler) on a same-origin fetch to `binding.path`. Zero config.
+- **Present** (`presence: "present"`): the call rides the user's real session. Server-side route execution forwards the inbound request's auth material (`ctx.requestHeaders` — cookies/authorization captured by the umbrella handler) on a same-origin fetch to `binding.path`. **Forwarding requires a trusted base URL** (ENG-260, closing the silent trap): the umbrella trusts `VENDO_BASE_URL` (or an explicit `baseUrl`); a learned wire origin is untrusted and forwards nothing. When present execution forwards nothing despite inbound auth headers, the runtime fires `onPresentCredentialsNotForwarded` (reason `untrusted-host-origin` | `cross-origin-binding`) and the umbrella emits one structured audit warning per process (`detail.warning.code: "present-credentials-not-forwarded"`, 01 §7). `vendo init` writes `VENDO_BASE_URL`; `vendo doctor` live-probes that credentials actually arrive (`/doctor/present`) and that actAs mint+verify round-trips (`/doctor/act-as`) (09 §5).
 - **tRPC bindings** execute over the tRPC HTTP envelope against the host mount: queries `GET {mount}/{procedure}?input=<json>`, mutations `POST {mount}/{procedure}` with the input as the JSON body; `{ result: { data } }` is unwrapped on success. Calls are always single-procedure — HTTP batching (`/p1,p2?batch=1`) is a client optimization the runtime never uses. When `transformer: "superjson"` is present (detected per mount) the input/output ride superjson's `{ json: ... }` wrapping. Auth semantics (present-forward, away/actAs, venue=mcp) are identical to route bindings.
-- **Away** (`presence: "away"`): requires a captured grant (the only authority) and the host's `actAs(principal, grant)` → `AuthMaterial` attached to the request. `actAs` not implemented → `ToolOutcome{status:"error", code:"not-implemented"}` with agent-readable messaging ("away execution isn't set up for this product") — features degrade cleanly, no stack detection, no adapter framework.
-- Connector calls use the connector's own auth (Composio entity, MCP session) but identical guard treatment.
+- **Away** (`presence: "away"`): requires a captured grant (the only authority) and the host's `actAs(principal, grant)` → `AuthMaterial` attached to the request. **The away-needs-present-grant rule is normative**: away runs hold only grants captured while the user was present and bound to the running app (05 §6) — there is no other away authority. **Impersonation guard**: the runtime asserts `grant.subject === ctx.principal.subject` before invoking `actAs`; a mismatch is the error `act-as-subject-mismatch`, never a mint. `actAs` not implemented → `ToolOutcome{status:"error", code:"not-implemented"}` with agent-readable messaging ("away execution isn't set up for this product") — features degrade cleanly. `actAs` → `null` → the host declined this principal; the run fails closed (away re-verification rides this seam — no second seam, ENG-263). Shipped presets cover the first-class providers (§2.1); the long tail uses documented recipes. <!-- amended 2026-07-15: "no stack detection, no adapter framework" dropped — presets now exist (ENG-260); the disclaimer described the pre-preset world. -->
+- **MCP as actAs**: `venue: "mcp"` host-call auth rides this same seam — the door never forwards its inbound bearer; it hands `actAs` the guard-attached real grant or a per-call consent projection (10-mcp §2.1). One seam, three consumers: away automations, the doctor probe, the door.
+- Connector calls use the connector's own auth (Composio per-user entity, MCP per-principal or shared session — §3) but identical guard treatment; the account identity used is auditable via `detail.connectorAccount` (01 §7).
 - actions itself never checks policy: it executes what a guard binding lets through (05 §2). It stamps nothing on the audit trail directly; the binding does.
 
 ## 5. Principals
 
-OSS: `kind: "user"` only. Org principals (org-wide automations, admin actions, org-shared connections) are Cloud; the shapes already accommodate them via `Principal.kind` and change nothing here.
+`kind: "user"` everywhere, plus real `kind: "org"` principals (ENG-263): org-wide automations, admin actions, and org-shared surfaces run as an org subject. The machinery ships OSS in full (01 §2, 02 §2); **activation stays paid** — key-gated via the console's `/keys/validate` entitlement; without a key, org APIs return a posture error (`cloud-required`). Host principal resolvers still mint `kind: "user"` only and may never produce `vendo:`-prefixed subjects (01 §2). <!-- amended 2026-07-15: was "OSS: user only; org is Cloud" — the block-actions spec locks full org semantics in Vendo-owned tables with key-gated activation. -->
 
 ## 6. Compound tools (normative)
 
@@ -214,3 +273,15 @@ A `compound` binding contains ordered steps that reuse core §11 `Step`. Its exp
 Steps reference primitive host or connector tools only: no `fn:` references, compounds, or capability tools. Execution routes every step through the guard-bound registry via the umbrella-wired `invokeTool` seam. Grants, approvals, breakers, scanners, and audit see every real call. There is no second execution path. When the seam is absent, execution returns `not-implemented` and performs no work.
 
 Approvals are per-step in v1. A step's parked outcome becomes the compound's outcome; re-executing the same logical call resumes without re-running completed steps. Batch approval is an explicit follow-up.
+
+## Amendments
+
+### 2026-07-15 — Block-actions wave (ENG-260/261/262/263, parent ENG-264)
+
+- **Changed:** §2.1 contracts the shipped `@vendoai/actions/presets` subpath — both tiers, four first-class providers plus generic JWT, away-token producer+verify halves for Clerk/Auth0 (ENG-260, landed).
+- **Changed:** §4 documents the trust model that was previously silent: `VENDO_BASE_URL` gates credential forwarding with a loud structured warning, the away-needs-present-grant rule is normative, the impersonation guard (`act-as-subject-mismatch`) is asserted at the seam, doctor live-probes both paths, and the "no adapter framework" disclaimer is dropped. MCP-as-actAs is cross-referenced (10-mcp §2.1).
+- **Changed:** §3 gains optional `Connector.connections` (subject-scoped connected accounts), `ConnectorAccountIdentity` audit enrichment, `McpHeadersResolver` per-principal identity, and hint-tag + curated-verb risk derivation replacing the hardcoded `write`; §3.1 contracts the `connect-required` flow and the Cloud zero-key broker posture (ENG-262, landed).
+- **Changed:** §1's blast-radius note now points at the shipped dev-gated `/sync/impact` endpoint, `--strict` exit codes 2/3, and `--report` (ENG-261, landed).
+- **Changed:** §5 makes org principals real with key-gated activation. **Ships with ENG-263 — merge of this amendment waits for that PR.**
+- **Why:** The actions block now implements its vision beyond extraction; the frozen text described the pre-wave world. All changes are additive within the version train.
+- **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).

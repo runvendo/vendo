@@ -45,13 +45,13 @@ export interface VendoGuard extends Guard {
 
 ## 2. The choke point: `guard.bind(tools)` ⚑
 
-The one sanctioned path from a `ToolRegistry` to execution. `bind` wraps every `execute` with: decide → (maybe park) → execute → report. Chat (03), app function/tool proxying (06 §4), automation steps (07 §4), and the future MCP door all receive **bound** tool sets from the umbrella; nothing else in the system calls `ToolRegistry.execute`. This is how "binds every path equally" is made structural instead of aspirational.
+The one sanctioned path from a `ToolRegistry` to execution. `bind` wraps every `execute` with: decide → (maybe park) → execute → report. The report step performs audit enrichment (block-actions wave): a connector execution's `ConnectorAccountIdentity` passthrough (04 §3) is lifted into the audit event's `detail.connectorAccount` and **stripped from the outcome** — the model and UI never see it; the SIEM export does. Chat (03), app function/tool proxying (06 §4), automation steps (07 §4), and the future MCP door all receive **bound** tool sets from the umbrella; nothing else in the system calls `ToolRegistry.execute`. This is how "binds every path equally" is made structural instead of aspirational.
 
 Decision pipeline (normative order):
 
 1. **Critical** — `descriptor.critical` → `ask`, unsuppressible by grant, rule, or judge.
 2. **Scanners (input)** — a `block` finding blocks with the finding recorded.
-3. **Grant match** — an unrevoked, unexpired grant with matching `descriptorHash` and scope → `run`. `session`/`task` grants match only when their `contextKey` equals the current `ctx.sessionId` (task grants: the task's id) — that binding is what the durations mean.
+3. **Grant match** — an unrevoked, unexpired grant with matching `descriptorHash` and scope → `run`. `session`/`task` grants match only when their `contextKey` equals the current `ctx.sessionId` (task grants: the task's id) — that binding is what the durations mean. Grants never match across subjects: `grant.subject === ctx.principal.subject` is asserted here and again at the actAs seam (04 §4). **Loud invalidation (ENG-261):** when descriptor drift is the only reason a grant fails to match, the resulting `ask` is never silent — the `ApprovalRequest` (and its stream part) carries `invalidatedGrant` (01 §5), and one `policy-decision` audit event fires with `detail: { reason: "grant-invalidated", grantIds, tool, staleHash, currentHash }`.
 4. **Policy rules** — first matching rule in the data file → its action.
 5. **Code escape hatch** — if configured, may override with a decision or pass.
 6. **Judge** — if configured, decides `run | ask | block` with rationale. Judge errors/timeouts fail closed to `ask`.
@@ -125,3 +125,12 @@ Adapter surface for LLM Guard-style content scanners (prompt injection on inputs
 - Approvals and grants never transfer between users; grants key off `(subject, tool)` plus optional `appId` — never artifact contents (import mints fresh app ids, core §10).
 - Away runs hold only grants captured while the user was present **and bound to the running app** (`appId` match, 07 §3); chat-minted grants never authorize away execution. Everything else parks as `pending-approval`.
 - Artifacts and exports carry zero authority; there is no tools/permissions field anywhere in the app format.
+
+## Amendments
+
+### 2026-07-15 — Block-actions wave (ENG-261/262, parent ENG-264)
+
+- **Changed:** §2 contracts loud grant invalidation — descriptor-drift lapse attaches `invalidatedGrant` to the `ApprovalRequest` and emits a `policy-decision` audit event with `detail.reason: "grant-invalidated"` (ENG-261, landed) — and makes the cross-subject grant assertion explicit.
+- **Changed:** §2 contracts connector-account audit enrichment: `detail.connectorAccount` lifted at report time and stripped from the outcome (ENG-262, landed).
+- **Why:** Silent re-prompts hid policy-relevant drift, and guard console/insights need connector identity on every connector execution.
+- **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
