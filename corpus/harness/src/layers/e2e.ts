@@ -312,11 +312,10 @@ export async function evaluateAssertion(
     // Chat tool calls execute server-side in the composed umbrella (04 §4),
     // so many never surface as page-originated network requests. The thread
     // chrome renders every call as an "fl-tool-label" chip ("Tool: <name>");
-    // count those too.
-    const domMatches = matches.length > 0 || page === undefined
-      ? 0
-      : await countToolCallDomMatches(page, assertion.name);
-    const observed = matches.length + domMatches;
+    // count those too. The two sources can describe the SAME call, so take
+    // the larger count rather than the sum.
+    const domMatches = page === undefined ? 0 : await countToolCallDomMatches(page, assertion.name);
+    const observed = Math.max(matches.length, domMatches);
     const minimum = assertion.minimum ?? 1;
     return {
       id,
