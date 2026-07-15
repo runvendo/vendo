@@ -214,6 +214,20 @@ export function VendoThread({
     })();
   };
 
+  // ENG-214 — a broken turn (failed send, mid-stream drop, any thread.error)
+  // surfaces VISIBLY in the thread, not only through the hidden status span.
+  // The copy stays friendly — raw transport errors are announced to assistive
+  // tech below but never printed to end users. Retry regenerates the failed
+  // turn from the preserved user message (no duplication).
+  const errorBanner = thread.error ? (
+    <div className="fl-error">
+      <span>Something went wrong and the response didn&rsquo;t finish.</span>
+      <button type="button" className="fl-error-retry" onClick={() => void thread.regenerate()}>
+        Retry
+      </button>
+    </div>
+  ) : null;
+
   const composer = (
     <form className="fl-composer" aria-label="Message composer" onSubmit={event => { event.preventDefault(); send(); }}>
       {attachError ? <div className="fl-att-error" role="alert">{attachError}</div> : null}
@@ -342,6 +356,7 @@ export function VendoThread({
         <div className="fl-thread" role="region" aria-label="Vendo conversation">
           <div className="fl-landing">
             <h1 className="fl-greet">{greeting}</h1>
+            {errorBanner}
             <div className="fl-landing-composer">{composer}</div>
             {suggestions.length > 0 ? (
               <div className="fl-chips">
@@ -424,6 +439,7 @@ export function VendoThread({
             </button>
           ) : null}
         </div>
+        {errorBanner}
         {composer}
       </div>
     </ChromeRoot>

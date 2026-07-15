@@ -225,6 +225,9 @@ describe("headless hooks", () => {
     });
     expect(typeof result.current.addToolApprovalResponse).toBe("function");
     expect(typeof result.current.stop).toBe("function");
+    // ENG-214 — headless parity for the chrome's retry affordance.
+    expect(typeof result.current.regenerate).toBe("function");
+    expect(typeof result.current.clearError).toBe("function");
   });
 
   it("degrades a stale supplied thread id without requesting its missing history", async () => {

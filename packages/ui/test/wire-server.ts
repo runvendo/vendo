@@ -158,6 +158,11 @@ export async function createWireServer() {
     importBytes: new Uint8Array(),
     statusErrorCode: undefined as string | undefined,
     failures: [] as Array<{ method: string; path: string; code: string; message: string; status: number }>,
+    // ENG-214 — how many upcoming /threads turns die MID-stream (a partial
+    // delta lands, then the stream errors the way a dropped connection
+    // surfaces client-side). A counter rather than a text marker so a retry
+    // of the SAME user message can succeed.
+    streamFailures: 0,
     posture: "rules" as "unconfigured" | "rules" | "judge" | "rules+judge",
     threadReplyGate: undefined as Promise<void> | undefined,
   };
@@ -205,6 +210,23 @@ export async function createWireServer() {
         const sentText = input.message.parts
           .map(part => (part.type === "text" ? part.text : ""))
           .join(" ");
+        if (state.streamFailures > 0) {
+          state.streamFailures -= 1;
+          const failingChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => `msg_assistant_fail${suffix}`,
+            execute: async ({ writer }) => {
+              writer.write({ type: "text-start", id: "text_fail" });
+              writer.write({ type: "text-delta", id: "text_fail", delta: "Starting an answer that will be cut" });
+              throw new Error("connection reset mid-stream");
+            },
+            onError: error => (error instanceof Error ? error.message : String(error)),
+          });
+          const failingResponse = createUIMessageStreamResponse({ stream: failingChunks });
+          failingResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(failingResponse, response);
+          return;
+        }
         if (sentText.includes("[stream-long]")) {
           const longChunks = createUIMessageStream<UIMessage>({
             originalMessages: [input.message],

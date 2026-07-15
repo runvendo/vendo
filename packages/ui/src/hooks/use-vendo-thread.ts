@@ -136,5 +136,9 @@ export function useVendoThread(threadId?: string) {
     approvals,
     addToolApprovalResponse: chat.addToolApprovalResponse,
     stop: chat.stop,
+    // ENG-214 — retry/regenerate: re-issues the failed (or last) turn from the
+    // preserved user message, so a retry never duplicates what the user sent.
+    regenerate: chat.regenerate,
+    clearError: chat.clearError,
   };
 }
