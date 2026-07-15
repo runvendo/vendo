@@ -539,4 +539,30 @@ describe("memoryStoreAdapter reserved routing", () => {
       data: { subject: "user_two", messages: [] },
     })).rejects.toMatchObject({ code: "conflict" });
   });
+
+  it("mirrors the routed door's append-only vendo_audit (02-store §2)", async () => {
+    const audit = memoryStoreAdapter().records("vendo_audit");
+    await audit.put({ id: sampleAuditEvent.id, data: sampleAuditEvent });
+    await expect(audit.put({ id: sampleAuditEvent.id, data: sampleAuditEvent }))
+      .rejects.toMatchObject({ code: "conflict" });
+    await expect(audit.delete(sampleAuditEvent.id)).rejects.toMatchObject({ code: "blocked" });
+    expect((await audit.get(sampleAuditEvent.id))?.data).toEqual(sampleAuditEvent);
+  });
+
+  it("mirrors the routed door's cross-subject flip refusal for apps and grants (02-store §2)", async () => {
+    const adapter = memoryStoreAdapter();
+    const apps = adapter.records("vendo_apps");
+    await apps.put({ id: app.id, data: { subject: "user_one", enabled: true, doc: app } });
+    await expect(apps.put({ id: app.id, data: { subject: "user_two", enabled: true, doc: app } }))
+      .rejects.toMatchObject({ code: "conflict" });
+    const sameSubject = await apps.put({ id: app.id, data: { subject: "user_one", enabled: false, doc: app } });
+    expect((sameSubject.data as { enabled: boolean }).enabled).toBe(false);
+
+    const grants = adapter.records("vendo_grants");
+    await grants.put({ id: grant.id, data: grant });
+    await expect(grants.put({ id: grant.id, data: { ...grant, subject: "user_two" } }))
+      .rejects.toMatchObject({ code: "conflict" });
+    const revoked = await grants.put({ id: grant.id, data: { ...grant, revokedAt: "2026-07-11T16:05:00.000Z" } });
+    expect((revoked.data as { revokedAt?: string }).revokedAt).toBe("2026-07-11T16:05:00.000Z");
+  });
 });

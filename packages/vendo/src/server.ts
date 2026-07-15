@@ -25,6 +25,9 @@ import {
 import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import { createStore, envSecrets, registerEphemeralSubject, type VendoStore } from "@vendoai/store";
+// 02-store §5: the erase API ships on the umbrella's runtime surface so hosts
+// reach it without installing @vendoai/store directly.
+export { eraseStore, type EraseReport, type EraseTable } from "@vendoai/store";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
 import {
@@ -700,7 +703,13 @@ function createWireHandler(deps: {
 
 /** 09-vendo §2 — compose every live block around the guard choke point. */
 export function createVendo(config: CreateVendoConfig): Vendo {
-  const store = config.store ?? createStore();
+  // 02-store §4 default-on encryption: when the host doesn't hand us a store,
+  // the composed default picks up VENDO_STORE_ENCRYPTION_KEY (provisioned into
+  // .env by `vendo init`) so stored secrets are encrypted with zero extra
+  // wiring. An explicitly configured store always wins as-is.
+  const encryptionKey = environment("VENDO_STORE_ENCRYPTION_KEY");
+  const store = config.store
+    ?? createStore(encryptionKey === undefined ? {} : { encryption: { key: encryptionKey } });
   const ready = store.ensureSchema();
   // Keep eager schema readiness for hosts that reach into composed blocks,
   // while preventing an unhandled rejection before the first handler/emit awaits it.
