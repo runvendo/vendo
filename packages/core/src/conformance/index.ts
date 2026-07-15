@@ -495,6 +495,7 @@ const copyRecord = (record: VendoRecord & { seq?: number }): VendoRecord => ({
   ...(record.refs === undefined ? {} : { refs: { ...record.refs } }),
   createdAt: record.createdAt,
   updatedAt: record.updatedAt,
+  ...(record.revision === undefined ? {} : { revision: record.revision }),
 });
 
 /**
@@ -551,6 +552,7 @@ export function memoryStoreAdapter(): StoreAdapter & { ensureSchema(): Promise<v
             refs: input.refs === undefined ? undefined : { ...input.refs },
             createdAt: previous?.createdAt ?? now,
             updatedAt: previous !== undefined && previous.updatedAt > now ? previous.updatedAt : now,
+            revision: String(BigInt(previous?.revision ?? "0") + 1n),
             seq: previous?.seq ?? sequence,
           };
           records.set(record.id, record);
@@ -577,6 +579,40 @@ export function memoryStoreAdapter(): StoreAdapter & { ensureSchema(): Promise<v
             records: filtered.slice(offset, end).map(copyRecord),
             ...(end < filtered.length ? { cursor: String(end) } : {}),
           };
+        },
+        atomic: {
+          async insertIfAbsent(input) {
+            if (records.has(input.id)) return null;
+            const now = new Date().toISOString();
+            sequence += 1;
+            const record: VendoRecord & { seq: number } = {
+              id: input.id,
+              data: jsonCopy(input.data),
+              refs: input.refs === undefined ? undefined : { ...input.refs },
+              createdAt: now,
+              updatedAt: now,
+              revision: "1",
+              seq: sequence,
+            };
+            records.set(record.id, record);
+            return copyRecord(record);
+          },
+          async compareAndSwap(input, expectedRevision) {
+            const previous = records.get(input.id);
+            if (previous === undefined || previous.revision !== expectedRevision) return null;
+            const now = new Date().toISOString();
+            const record: VendoRecord & { seq: number } = {
+              id: input.id,
+              data: jsonCopy(input.data),
+              refs: input.refs === undefined ? undefined : { ...input.refs },
+              createdAt: previous.createdAt,
+              updatedAt: previous.updatedAt > now ? previous.updatedAt : now,
+              revision: String(BigInt(previous.revision) + 1n),
+              seq: previous.seq,
+            };
+            records.set(record.id, record);
+            return copyRecord(record);
+          },
         },
       };
     },

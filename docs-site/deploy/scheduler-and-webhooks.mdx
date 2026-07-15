@@ -36,3 +36,24 @@ and accept only a five-minute clock window.
 Vendo rejects unverified deliveries before principal resolution or dispatch.
 Delivery ids are deduplicated, so at-least-once retries do not double-run an
 automation. Secrets never travel in the URL.
+
+## Stopping a run
+
+Cancel an in-flight automation run when a schedule fires against stale state,
+an agent is looping on a bad plan, or a user asks to abort. Post to the run
+under its owning principal:
+
+```http
+POST /api/vendo/runs/:id/stop
+Content-Type: application/json
+```
+
+The engine signals cancellation cooperatively: the current step finishes,
+outstanding tool calls are drained, and the run transitions to a cancelled
+terminal state. Parked approvals attached to the run are dropped rather than
+resumed. Stopping a run that has already reached a terminal state is a no-op
+and returns 200.
+
+Cancellation is idempotent and audit-logged. The engine uses the store's
+atomic compare-and-set primitive on the run record, so concurrent stop
+requests and scheduler ticks cannot race a run into a resurrected state.

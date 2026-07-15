@@ -202,3 +202,6 @@ npx vendo sync
 `doctor` checks wiring and makes one live `/status` probe. `sync` extracts the
 host API and remix baselines. In strict mode, breaking extraction changes exit
 with code 2.
+
+To make the deployed door discoverable through the official registry, follow
+[Publish to the MCP registry](publish-mcp-registry.md).

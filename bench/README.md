@@ -21,6 +21,8 @@ run is a separate explicit command.
   (scripted model, memory store, tool registry). Those fixtures are not exported
   via a package subpath, so they are re-implemented here rather than imported.
 - `src/benches/*` — one file per suite; `src/run.ts` — the CLI.
+- `demo-capture/` — README and gitignored output for the four UI-generation
+  demo GIF beats; the TypeScript capture driver lives in `src/demo-capture/`.
 - `budgets.json` — the permanent gate thresholds.
 - `RESULTS.md` — a full captured run (deterministic + live) from a real machine.
 

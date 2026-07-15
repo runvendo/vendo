@@ -1,7 +1,10 @@
 import {
+  VENDO_VIEW_STREAM,
+  vendoViewStreamId,
   vendoApprovalPartSchema,
   vendoViewPartSchema,
   type ToolDescriptor,
+  type VendoViewStreamingToolCall,
 } from "@vendoai/core";
 import { readUIMessageStream, type UIMessage, type UIMessageChunk } from "ai";
 import { simulateReadableStream } from "ai/test";
@@ -97,7 +100,7 @@ describe("agent stream consumed by an ai-SDK client", () => {
     // Wire form: the ai-SDK data-chunk envelope carries the core part fields
     // under `data` — useChat's strict chunk schema rejects the flat form.
     const viewPart = partOfType(message, "data-vendo-view");
-    expect(viewPart).toEqual({ type: "data-vendo-view", data: view });
+    expect(viewPart).toEqual({ type: "data-vendo-view", id: vendoViewStreamId("app_1"), data: view });
     const viewData = (viewPart as { data: Record<string, unknown> }).data;
     expect(vendoViewPartSchema.safeParse({ type: "data-vendo-view", ...viewData }).success).toBe(true);
 
@@ -115,6 +118,82 @@ describe("agent stream consumed by an ai-SDK client", () => {
     expect(persisted.subject).toBe("u1");
     expect(persisted.messages.some((entry) => entry.id === message.id && entry.role === "assistant")).toBe(true);
     expect(persisted.messages.some((entry) => entry.id === "user_client_view")).toBe(true);
+  });
+
+  it("reconciles partial create views and the final open view by stable id on the stock client", async () => {
+    const appId = "app_stream";
+    const stableId = vendoViewStreamId(appId);
+    const partialOne = {
+      formatVersion: "vendo-genui/v1",
+      root: "r",
+      nodes: [{ id: "r", component: "Stack", children: ["later"] }],
+      streaming: true,
+    };
+    const partialTwo = {
+      ...partialOne,
+      nodes: [...partialOne.nodes, { id: "later", component: "Text", props: { text: "Loading data" } }],
+    };
+    const finalPayload = {
+      formatVersion: "vendo-genui/v1",
+      root: "r",
+      nodes: [...partialTwo.nodes],
+      data: { ready: true },
+    };
+    const createDescriptor: ToolDescriptor = {
+      name: "vendo_apps_create",
+      description: "Create an app.",
+      inputSchema: { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"] },
+      risk: "write",
+    };
+    const openDescriptor: ToolDescriptor = {
+      name: "vendo_apps_open",
+      description: "Open an app.",
+      inputSchema: { type: "object", properties: { appId: { type: "string" } }, required: ["appId"] },
+      risk: "read",
+    };
+    const model = scriptedModel([
+      toolCallTurn("vendo_apps_create", { prompt: "Stream it" }, "call_create_stream"),
+      toolCallTurn("vendo_apps_open", { appId }, "call_open_stream"),
+      textTurn("Ready.", "text_stream_done"),
+    ]);
+    const guard = testGuard({ vendo_apps_create: "run", vendo_apps_open: "run" });
+    const tools = boundRegistry({
+      vendo_apps_create: {
+        descriptor: createDescriptor,
+        execute: async (_args, _ctx, call) => {
+          const stream = (call as VendoViewStreamingToolCall)[VENDO_VIEW_STREAM];
+          if (stream === undefined) throw new Error("create stream hook missing");
+          stream({ id: stableId, part: { type: "data-vendo-view", appId, payload: partialOne } });
+          stream({ id: stableId, part: { type: "data-vendo-view", appId, payload: partialTwo } });
+          return { format: "vendo/app@1", id: appId, name: "Streamed", ui: "tree", tree: finalPayload };
+        },
+      },
+      vendo_apps_open: {
+        descriptor: openDescriptor,
+        execute: async () => ({ kind: "tree", payload: finalPayload }),
+      },
+    }, guard);
+    const agent = createAgent({ model, tools, guard });
+
+    const response = await agent.stream({
+      threadId: "thr_client_stream",
+      message: userMessage("user_client_stream", "Build the view"),
+      ctx: ctx(),
+    });
+    const [wire, message] = await Promise.all([
+      readSse(response.clone()),
+      assembleClientMessage(response),
+    ]);
+
+    const wireViews = wire.parts.filter((part) => part.type === "data-vendo-view");
+    expect(wireViews).toHaveLength(3);
+    expect(wireViews.map((part) => part.id)).toEqual([stableId, stableId, stableId]);
+    const clientViews = message.parts.filter((part) => part.type === "data-vendo-view");
+    expect(clientViews).toEqual([{
+      type: "data-vendo-view",
+      id: stableId,
+      data: { appId, payload: finalPayload },
+    }]);
   });
 
   it("surfaces the native approval request and the Vendo approval part to an ai-SDK client on pause", async () => {

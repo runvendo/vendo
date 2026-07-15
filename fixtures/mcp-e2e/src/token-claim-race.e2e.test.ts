@@ -114,6 +114,39 @@ describePostgres("multi-instance OAuth token claims (Postgres)", () => {
       (event) => (event.detail as { event?: unknown } | undefined)?.event === "revoke",
     )).toHaveLength(RACE_ITERATIONS);
   });
+
+  it(`keeps a grant family dead when refresh rotation races revocation across ${RACE_ITERATIONS} races`, async () => {
+    const clientId = await register(firstDoor);
+
+    for (let iteration = 0; iteration < RACE_ITERATIONS; iteration += 1) {
+      const code = await authorize(firstDoor, clientId);
+      const issued = await exchange(firstDoor, code, clientId);
+      expect(issued.status).toBe(200);
+      const first = await issued.json() as TokenResponse;
+
+      claimBarrier.arm();
+      const [rotation, revocation] = await Promise.all([
+        refresh(firstDoor, first.refresh_token, clientId),
+        revoke(secondDoor, first.refresh_token, clientId),
+      ]);
+
+      expect(revocation.status).toBe(200);
+      expect(await revocation.text()).toBe("");
+      expect([200, 400]).toContain(rotation.status);
+      if (rotation.status === 200) {
+        const successor = await rotation.json() as TokenResponse;
+        expect((await firstDoor.handler(new Request(BASE, {
+          method: "POST",
+          headers: { authorization: `Bearer ${successor.access_token}` },
+        }))).status).toBe(401);
+        expect((await refresh(secondDoor, successor.refresh_token, clientId)).status).toBe(400);
+      }
+      expect((await firstDoor.handler(new Request(BASE, {
+        method: "POST",
+        headers: { authorization: `Bearer ${first.access_token}` },
+      }))).status).toBe(401);
+    }
+  });
 });
 
 function makeDoor(store: StoreAdapter, audits: AuditEvent[]): McpDoor {
@@ -226,6 +259,14 @@ function refresh(door: McpDoor, refreshToken: string, clientId: string): Promise
     client_id: clientId,
     resource: BASE,
   });
+}
+
+function revoke(door: McpDoor, token: string, clientId: string): Promise<Response> {
+  return door.handler(new Request(`${BASE}/revoke`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ token, token_type_hint: "refresh_token", client_id: clientId }),
+  }));
 }
 
 function tokenRequest(door: McpDoor, values: Record<string, string>): Promise<Response> {

@@ -15,6 +15,7 @@ corpus/.repos/
 # browser-verification artifacts
 .playwright-mcp/
 *.png
+bench/demo-capture/output/
 
 # Vendo demo runtime state (PGlite) — never committed.
 apps/*/.vendo/data/
@@ -25,3 +26,6 @@ apps/*/.vendo/data/
 # type-surface test fixtures (packages/vendo/src/type-surface.test.ts) — cleaned
 # in afterEach; ignored so an interrupted run can never dirty a commit.
 packages/vendo/.type-surface.*.ts
+
+# Coverage reports (v8 / vitest)
+coverage/

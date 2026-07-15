@@ -7,7 +7,30 @@ import { runMcp } from "./cli/mcp/index.js";
 import { CLI_VERSION } from "./cli/shared.js";
 import { runSync } from "./cli/sync.js";
 
-const HELP = `vendo — default Vendo composition\n\nUsage: vendo <command> [dir] [options]\n\nCommands:\n  init [dir]      Scan, interview, write .vendo, and propose handler + VendoRoot wiring\n  doctor [dir]    Verify wiring and make one live /status round-trip\n  sync [dir]      Extract tools and remix baselines (use --strict for CI)\n  mcp <command>   Generate MCP registry discovery and domain-verification files\n  cloud <command> Use the public Vendo Cloud API\n\nOptions:\n  --agent         Init only: print a read-only plan with at most three questions\n  --yes           Init only: approve the displayed code changes\n  --force         Init/server-json: overwrite owned or generated files\n  --model-import  Init only: module exporting the host's ai-SDK model\n  --url           Doctor/server-json: mounted wire base or public MCP URL\n  --strict        Sync only: exit 2 on breaking changes\n  --version       Print the version\n`;
+const HELP = `vendo — default Vendo composition
+
+Usage: vendo <command> [dir] [options]
+
+Commands:
+  init [dir]      Scan, interview, write .vendo, and propose handler + VendoRoot wiring
+  doctor [dir]    Verify wiring and make one live /status round-trip
+  sync [dir]      Extract tools and remix baselines (use --strict for CI)
+  mcp <command>   Generate MCP registry discovery and domain-verification files
+  cloud <command> Use the public Vendo Cloud API
+
+Options:
+  --agent                    Init only: print a read-only plan with four questions
+  --yes                      Init only: skip the interview and approve displayed changes
+  --force                    Init/server-json: overwrite owned or generated files
+  --model-import <specifier> Init only: module exporting the host's ai-SDK model
+  --brief <text>             Init only: product brief used for non-interactive setup
+  --url <url>                Doctor/server-json: mounted wire base or public MCP URL
+  --strict                   Sync only: exit 2 on breaking changes, 3 when saved references are impacted
+  --report                   Sync only: push the report to Vendo Cloud
+  --key <key>                Sync/cloud: override VENDO_API_KEY
+  --api-url <url>            Sync/cloud: override VENDO_CLOUD_URL
+  --version                  Print the version
+`;
 
 function option(args: string[], name: string): string | undefined {
   const exact = args.indexOf(name);
@@ -17,7 +40,7 @@ function option(args: string[], name: string): string | undefined {
 
 function target(args: string[]): string {
   const optionValues = new Set<string>();
-  for (const name of ["--model-import", "--url", "--brief"]) {
+  for (const name of ["--model-import", "--url", "--brief", "--key", "--api-url"]) {
     const index = args.indexOf(name);
     if (index >= 0 && args[index + 1] !== undefined) optionValues.add(args[index + 1]!);
   }
@@ -50,7 +73,14 @@ export async function main(argv: string[]): Promise<number> {
     return runDoctor({ targetDir: target(args), url: option(args, "--url") });
   }
   if (command === "sync") {
-    return runSync({ targetDir: target(args), strict: args.includes("--strict") });
+    return runSync({
+      targetDir: target(args),
+      strict: args.includes("--strict"),
+      url: option(args, "--url"),
+      report: args.includes("--report"),
+      apiKey: option(args, "--key"),
+      apiUrl: option(args, "--api-url"),
+    });
   }
   console.error(`Unknown command: ${command}\n\n${HELP}`);
   return 1;

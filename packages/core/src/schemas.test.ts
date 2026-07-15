@@ -72,6 +72,14 @@ describe("tool, grant, and approval schemas", () => {
 
   it("accepts approval requests and remembered decisions", () => {
     expect(approvalRequestSchema.safeParse(approval).success).toBe(true);
+    expect(approvalRequestSchema.safeParse({
+      ...approval,
+      invalidatedGrant: { id: "grt_stale", grantedAt: at },
+    }).success).toBe(true);
+    expect(approvalRequestSchema.safeParse({
+      ...approval,
+      invalidatedGrant: { id: "approval_stale", grantedAt: at },
+    }).success).toBe(false);
     expect(approvalDecisionSchema.safeParse({
       approve: true,
       remember: { scope: { kind: "exact", inputHash: "sha256:args", inputPreview: "limit 10" }, duration: "task" },

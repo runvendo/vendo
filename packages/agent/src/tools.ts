@@ -1,4 +1,6 @@
 import {
+  VENDO_VIEW_STREAM,
+  vendoViewStreamId,
   vendoViewPartSchema,
   type Guard,
   type RunContext,
@@ -7,6 +9,7 @@ import {
   type ToolRegistry,
   type VendoApprovalPart,
   type VendoViewPart,
+  type VendoViewStreamingToolCall,
 } from "@vendoai/core";
 import {
   dynamicTool,
@@ -29,13 +32,17 @@ export interface ToolBridgeOptions {
   onCall?: (call: ToolCall) => (outcome: ToolOutcome) => void;
 }
 
-function writePart(writer: UIMessageStreamWriter<UIMessage> | undefined, part: VendoPart): void {
+function writePart(
+  writer: UIMessageStreamWriter<UIMessage> | undefined,
+  part: VendoPart,
+  id?: string,
+): void {
   if (!writer) return;
   // The ai-SDK UI message stream requires custom data chunks to carry their
   // payload under `data` ({ type: "data-*", data }); the stock client's chunk
   // schema hard-rejects the flat form. The core part fields ride inside data.
   const { type, ...data } = part;
-  writer.write({ type, data } as never);
+  writer.write({ type, data, ...(id === undefined ? {} : { id }) } as never);
 }
 
 function executionError(): ToolOutcome {
@@ -74,7 +81,15 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
 
   for (const descriptor of descriptors) {
     const execute = async (input: unknown, { toolCallId }: { toolCallId: string }): Promise<ToolOutcome> => {
-      const call: ToolCall = { id: toolCallId, tool: descriptor.name, args: input };
+      const call: VendoViewStreamingToolCall = { id: toolCallId, tool: descriptor.name, args: input };
+      if (descriptor.name === "vendo_apps_create" && options.writer !== undefined) {
+        Object.defineProperty(call, VENDO_VIEW_STREAM, {
+          value: (update: { id: string; part: VendoViewPart }) => {
+            const view = vendoViewPartSchema.safeParse(update.part);
+            if (view.success) writePart(options.writer, view.data, update.id);
+          },
+        });
+      }
       const finishCall = options.onCall?.(call);
       let outcome = options.gate?.(call);
       if (outcome === undefined) {
@@ -107,7 +122,7 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
             }
           : null;
         const view = vendoViewPartSchema.safeParse(candidate);
-        if (view.success) writePart(options.writer, view.data);
+        if (view.success) writePart(options.writer, view.data, vendoViewStreamId(view.data.appId));
       } else if (outcome.status === "pending-approval") {
         writePart(options.writer, {
           type: "data-vendo-approval",
@@ -136,6 +151,9 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
               toolCallId,
               risk: descriptor.risk,
               approvalId: decision.approval.id,
+              ...(decision.approval.invalidatedGrant === undefined
+                ? {}
+                : { invalidatedGrant: decision.approval.invalidatedGrant }),
             });
             return true;
           } catch {

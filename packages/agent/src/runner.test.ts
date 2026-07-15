@@ -1,4 +1,5 @@
 import { agentRunReportSchema, type ToolDescriptor } from "@vendoai/core";
+import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { createAgent } from "./index.js";
 import {
@@ -25,6 +26,31 @@ const descriptor: ToolDescriptor = {
 const awayCtx = ctx({ venue: "automation", presence: "away", sessionId: "run_session_1" });
 
 describe("headless AgentRunner", () => {
+  it("passes abortSignal to the model and reports an aborted generation as stopped", async () => {
+    let started!: () => void;
+    const didStart = new Promise<void>((resolve) => { started = resolve; });
+    const model = new MockLanguageModelV3({
+      doGenerate: async ({ abortSignal }) => await new Promise((_, reject) => {
+        started();
+        abortSignal?.addEventListener("abort", () => reject(abortSignal.reason), { once: true });
+      }),
+    });
+    const guard = testGuard({});
+    const tools = boundRegistry({}, guard);
+    const agent = createAgent({ model, tools, guard });
+    const controller = new AbortController();
+
+    const running = agent.asRunner()(
+      { prompt: "Wait until stopped", tools, abortSignal: controller.signal },
+      awayCtx,
+    );
+    await didStart;
+    controller.abort();
+
+    await expect(running).resolves.toMatchObject({ status: "stopped" });
+    expect(guard.events.at(-1)?.detail).toMatchObject({ status: "stopped" });
+  });
+
   it("fails soft when an away tool call parks for approval", async () => {
     const model = scriptedModel([
       toolCallTurn(descriptor.name, { value: "later" }, "call_away"),

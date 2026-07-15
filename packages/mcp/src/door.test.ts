@@ -32,6 +32,7 @@ import type {
 } from "./state.js";
 
 const BASE = "https://product.example/api/vendo/mcp";
+const PROXIED_BASE = "http://door.internal:8787/api/vendo/mcp";
 const REDIRECT = "https://client.example/callback";
 const VERIFIER = "a-very-long-pkce-verifier-that-is-valid-for-the-test-suite-1234567890";
 const CONSENT_THEME: VendoTheme = {
@@ -85,7 +86,9 @@ describe("createMcpDoor routing and OAuth", () => {
       issuer: BASE,
       authorization_endpoint: `${BASE}/authorize`,
       token_endpoint: `${BASE}/token`,
+      revocation_endpoint: `${BASE}/revoke`,
       registration_endpoint: `${BASE}/register`,
+      scopes_supported: ["read", "write"],
       code_challenge_methods_supported: ["S256"],
       client_id_metadata_document_supported: true,
     });
@@ -360,6 +363,133 @@ describe("createMcpDoor routing and OAuth", () => {
     expect(successorReuse.status).toBe(400);
   });
 
+  it("returns an empty 200 for an unknown token and ignores an unknown token type hint", async () => {
+    const harness = makeHarness();
+    const client = await register(harness.door);
+
+    const response = await revoke(harness.door, "vmrt_unknown", client.body.client_id, "future_token_type");
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("");
+    expect(harness.audits.filter((event) => event.detail?.event === "revoke")).toEqual([]);
+  });
+
+  it("refuses a valid public client trying to revoke another client's token", async () => {
+    const harness = makeHarness();
+    const owner = await register(harness.door);
+    const other = await register(harness.door);
+    const tokens = await issue(harness.door, owner.body.client_id);
+
+    const response = await revoke(harness.door, tokens.refresh_token, other.body.client_id, "refresh_token");
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "invalid_client" });
+    expect((await refresh(harness.door, tokens.refresh_token, owner.body.client_id)).status).toBe(200);
+  });
+
+  it("revokes one access token atomically without revoking its refresh grant", async () => {
+    const harness = makeHarness();
+    const client = await register(harness.door);
+    const tokens = await issue(harness.door, client.body.client_id);
+
+    const response = await revoke(harness.door, tokens.access_token, client.body.client_id, "access_token");
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("");
+    expect((await harness.door.handler(mcpRequest(tokens.access_token))).status).toBe(401);
+    expect((await refresh(harness.door, tokens.refresh_token, client.body.client_id)).status).toBe(200);
+    expect(harness.audits.map((event) => event.detail)).toContainEqual({
+      clientId: client.body.client_id,
+      event: "revoke",
+    });
+  });
+
+  it("revoking a refresh token kills its access tokens and rotated successors, but not another family", async () => {
+    const harness = makeHarness();
+    const client = await register(harness.door);
+    const first = await issue(harness.door, client.body.client_id);
+    const rotatedResponse = await refresh(harness.door, first.refresh_token, client.body.client_id);
+    const rotated = await rotatedResponse.json() as TokenResponse;
+    const independent = await issue(harness.door, client.body.client_id);
+
+    // A wrong recognized hint is only an optimization. RFC 7009 requires the
+    // server to continue across the other supported token type.
+    const response = await revoke(harness.door, first.refresh_token, client.body.client_id, "access_token");
+
+    expect(response.status).toBe(200);
+    expect((await harness.door.handler(mcpRequest(first.access_token))).status).toBe(401);
+    expect((await harness.door.handler(mcpRequest(rotated.access_token))).status).toBe(401);
+    expect((await refresh(harness.door, rotated.refresh_token, client.body.client_id)).status).toBe(400);
+    expect((await harness.door.handler(mcpRequest(independent.access_token))).status).toBe(200);
+
+    const families = harness.store.rows("vendo_mcp_grants")
+      .filter((row) => row.data.kind === "family")
+      .map((row) => row.data.status)
+      .sort();
+    expect(families).toEqual(["active", "revoked"]);
+  });
+
+  it("lets the host revoke all families and live sessions for one subject/client", async () => {
+    const harness = makeHarness();
+    const clientA = await register(harness.door);
+    const clientB = await register(harness.door);
+    const firstA = await issue(harness.door, clientA.body.client_id);
+    const secondA = await issue(harness.door, clientA.body.client_id);
+    const tokensB = await issue(harness.door, clientB.body.client_id);
+    const connectedA = await connect(harness.door, firstA.access_token);
+    const oldSessionId = connectedA.transport.sessionId;
+    expect(oldSessionId).toMatch(/^mcps_/);
+
+    await harness.door.revokeClient("user_1", clientA.body.client_id);
+
+    expect((await harness.door.handler(mcpRequest(firstA.access_token))).status).toBe(401);
+    expect((await harness.door.handler(mcpRequest(secondA.access_token))).status).toBe(401);
+    expect((await refresh(harness.door, firstA.refresh_token, clientA.body.client_id)).status).toBe(400);
+    expect((await harness.door.handler(mcpRequest(tokensB.access_token))).status).toBe(200);
+
+    // Revocation does not prohibit a later explicit re-authorization, but the
+    // old live runtime was removed rather than left reusable.
+    const reauthorizedA = await issue(harness.door, clientA.body.client_id);
+    expect((await harness.door.handler(mcpRequest(reauthorizedA.access_token, oldSessionId))).status).toBe(404);
+    expect(harness.audits.map((event) => event.detail)).toContainEqual({
+      clientId: clientA.body.client_id,
+      event: "revoke",
+    });
+    await connectedA.client.close().catch(() => undefined);
+  });
+
+  it("revokes a pre-family authorization code during a rolling deployment", async () => {
+    const harness = makeHarness();
+    const client = await register(harness.door);
+    const code = "vmcd_pre_family_code";
+    await harness.store.records("vendo_mcp_grants").put({
+      id: "mcpg_pre_family_code",
+      data: {
+        kind: "code",
+        subject: "user_1",
+        clientId: client.body.client_id,
+        resource: BASE,
+        scopes: ["read", "write"],
+        codeChallenge: await pkceChallenge(VERIFIER),
+        redirectUri: REDIRECT,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+      refs: { kind: "code", token_hash: await sha256Hex(code) },
+    });
+
+    await harness.door.revokeClient("user_1", client.body.client_id);
+
+    const exchangeResponse = await exchange(harness.door, {
+      code,
+      client_id: client.body.client_id,
+      code_verifier: VERIFIER,
+      resource: BASE,
+    });
+    expect(exchangeResponse.status).toBe(400);
+    expect(await exchangeResponse.json()).toMatchObject({ error: "invalid_grant" });
+    expect(harness.store.rows("vendo_mcp_grants")[0]?.data.revokedAt).toEqual(expect.any(String));
+  });
+
   it("consumes an authorization code the moment it is presented, even on PKCE failure", async () => {
     const harness = makeHarness();
     const registration = await register(harness.door);
@@ -560,6 +690,44 @@ describe("createMcpDoor routing and OAuth", () => {
 });
 
 describe("createMcpDoor remote authorization server trust", () => {
+  it("trusts the configured audience when a proxy changes the request origin", async () => {
+    const as = await remoteAsFixture();
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({
+      remoteAs: { issuer: as.issuer, audience: BASE },
+      principal: (subject) => ({ kind: "user", subject }),
+    });
+
+    const token = await as.mint({ sub: "proxied_user" });
+    const response = await harness.door.handler(mcpRequest(token, undefined, PROXIED_BASE));
+
+    expect(response.status).toBe(200);
+    expect(harness.principalSubjects).toEqual(["proxied_user"]);
+  });
+
+  it("rejects a wrong-audience JWT even when the request arrives through a proxy", async () => {
+    const as = await remoteAsFixture();
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({ remoteAs: { issuer: as.issuer, audience: BASE } });
+
+    const token = await as.mint({ audience: "https://attacker.example/api/vendo/mcp" });
+    const response = await harness.door.handler(mcpRequest(token, undefined, PROXIED_BASE));
+
+    expect(response.status).toBe(401);
+    expect(harness.principalSubjects).toEqual([]);
+  });
+
+  it("keeps request-derived resource binding in local authorization-server mode", async () => {
+    const harness = makeHarness();
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+
+    const response = await harness.door.handler(mcpRequest(tokens.access_token, undefined, PROXIED_BASE));
+
+    expect(response.status).toBe(401);
+    expect(harness.principalSubjects).toEqual([]);
+  });
+
   it("discovers and caches ES256 JWKS, accepts a valid JWT, and keeps principal() as the host kill switch", async () => {
     const as = await remoteAsFixture();
     vi.stubGlobal("fetch", as.fetch);
@@ -652,6 +820,7 @@ describe("createMcpDoor remote authorization server trust", () => {
       new Request(`${BASE}/authorize`),
       new Request(`${BASE}/authorize`, { method: "POST" }),
       new Request(`${BASE}/token`, { method: "POST" }),
+      new Request(`${BASE}/revoke`, { method: "POST" }),
       new Request(`${BASE}/register`, { method: "POST" }),
       new Request("https://product.example/.well-known/oauth-authorization-server/api/vendo/mcp"),
     ]) {
@@ -1300,6 +1469,18 @@ async function refresh(door: McpDoor, refreshToken: string, clientId: string) {
   }));
 }
 
+async function revoke(door: McpDoor, token: string, clientId: string, tokenTypeHint?: string) {
+  return door.handler(new Request(`${BASE}/revoke`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      token,
+      client_id: clientId,
+      ...(tokenTypeHint === undefined ? {} : { token_type_hint: tokenTypeHint }),
+    }),
+  }));
+}
+
 async function connect(door: McpDoor, accessToken: string) {
   const transport = new StreamableHTTPClientTransport(new URL(BASE), {
     requestInit: { headers: { authorization: `Bearer ${accessToken}` } },
@@ -1314,8 +1495,8 @@ async function connect(door: McpDoor, accessToken: string) {
   return { client, transport };
 }
 
-function mcpRequest(accessToken: string, sessionId?: string) {
-  return new Request(BASE, {
+function mcpRequest(accessToken: string, sessionId?: string, resource = BASE) {
+  return new Request(resource, {
     method: "POST",
     headers: {
       authorization: `Bearer ${accessToken}`,
@@ -1337,6 +1518,11 @@ function mcpRequest(accessToken: string, sessionId?: string) {
 async function pkceChallenge(verifier: string): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
   return Buffer.from(digest).toString("base64url");
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 interface RemoteTokenOverrides {
@@ -1487,6 +1673,16 @@ class TestMcpDoorState implements McpDoorState {
     return sessions;
   }
 
+  async deleteSessionsBySubjectClient(subject: string, clientId: string): Promise<McpStateSession[]> {
+    this.operations.push(`session:delete-client:${subject}:${clientId}`);
+    return this.#deleteSessionsWhere((record) => record.subject === subject && record.clientId === clientId);
+  }
+
+  async deleteSessionsByGrantFamily(familyId: string): Promise<McpStateSession[]> {
+    this.operations.push(`session:delete-family:${familyId}`);
+    return this.#deleteSessionsWhere((record) => record.grantFamilyId === familyId);
+  }
+
   async sweepExpiredSessions(now: number): Promise<McpStateSession[]> {
     this.operations.push("session:sweep");
     const sessions: McpStateSession[] = [];
@@ -1534,6 +1730,17 @@ class TestMcpDoorState implements McpDoorState {
   async deleteReplay(scope: string, key: string): Promise<void> {
     this.operations.push(`replay:delete:${scope}`);
     this.#replay.get(scope)?.delete(key);
+  }
+
+  #deleteSessionsWhere(predicate: (record: SessionStateRecord) => boolean): McpStateSession[] {
+    const sessions: McpStateSession[] = [];
+    for (const [sessionId, record] of this.#sessions) {
+      if (!predicate(record)) continue;
+      sessions.push(record.session);
+      this.#sessions.delete(sessionId);
+      this.#replay.delete(record.session.replayScope);
+    }
+    return sessions;
   }
 }
 

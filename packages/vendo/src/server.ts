@@ -19,6 +19,7 @@ import {
   vendoThemeSchema,
   type ActAs,
   type ApprovalDecision,
+  type ComponentCatalog,
   type Json,
   type Principal,
   type RunContext,
@@ -32,6 +33,11 @@ import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } fro
 import { createStore, envSecrets, registerEphemeralSubject, type VendoStore } from "@vendoai/store";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
+import {
+  capabilitySurfaceSnapshot,
+  createCapabilityMissCapture,
+} from "./capability-misses.js";
+import { computeImpact } from "./sync-impact.js";
 
 const VERSION = "0.3.0";
 const BASE_PATH = "/api/vendo";
@@ -62,6 +68,8 @@ export interface Vendo {
 export interface CreateVendoConfig {
   model: LanguageModel;
   principal: (req: Request) => Promise<Principal | null>;
+  /** Host components available to generated apps; entry names must mirror the client-side components map 1:1. */
+  catalog?: ComponentCatalog;
   store?: VendoStore;
   sandbox?: SandboxAdapter;
   connectors?: Connector[];
@@ -503,6 +511,17 @@ function createWireHandler(deps: {
         }
         return json({ runIds: await deps.automations.tick() });
       }
+      if (request.method === "POST" && path === "/sync/impact") {
+        if (process.env.NODE_ENV === "production") {
+          throw new VendoError("blocked", "sync impact is only available on a dev server");
+        }
+        const body = await requestJson(request);
+        const tools = body["tools"];
+        if (!Array.isArray(tools) || tools.length > 200 || tools.some((tool) => typeof tool !== "string")) {
+          throw new VendoError("validation", "tools must be an array of at most 200 strings");
+        }
+        return json({ impact: await computeImpact(deps.store, tools) });
+      }
       if (path.startsWith("/proxy/")) {
         const proxyPath = path.slice("/proxy".length);
         const proxyUrl = new URL(request.url);
@@ -728,8 +747,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // Keep eager schema readiness for hosts that reach into composed blocks,
   // while preventing an unhandled rejection before the first handler/emit awaits it.
   void ready.catch(() => undefined);
+  let resolveAppToolRisk: AppsRuntime["agentToolRisk"] | undefined;
   const guard = createGuard({
     store,
+    // The resolver is installed immediately after createApps below. Keeping the
+    // hook in guard means chat/SSE and the MCP door reach the same decision.
+    resolveRisk: (call, _descriptor, ctx) => resolveAppToolRisk?.(call, ctx),
     ...(config.policy === undefined ? {} : { policy: config.policy }),
     ...(config.judge === undefined ? {} : { judge: config.judge }),
   });
@@ -762,7 +785,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     guard,
     tools: boundTools,
     model: config.model,
-    catalog: [],
+    catalog: config.catalog ?? [],
     pinBaselines,
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
@@ -770,7 +793,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(config.sandbox === undefined ? {} : { sandbox: config.sandbox }),
     ...(environment("VENDO_PROXY_URL") === undefined ? {} : { proxyUrl: environment("VENDO_PROXY_URL") }),
   });
+  resolveAppToolRisk = apps.agentToolRisk;
   actions.add(apps.agentTools());
+  const missSurface = actions.descriptors()
+    .then(capabilitySurfaceSnapshot)
+    .catch(() => capabilitySurfaceSnapshot([]));
+  const missCapture = createCapabilityMissCapture({ surface: missSurface });
   const agent = createAgent({
     model: config.model,
     tools: boundTools,
@@ -780,6 +808,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       toolOutputCap: config.agent?.toolOutputCap ?? DEFAULT_TOOL_OUTPUT_CAP,
       ...(config.agent?.maxOutputTokens === undefined ? {} : { maxOutputTokens: config.agent.maxOutputTokens }),
       ...(config.agent?.historyWindow === undefined ? {} : { historyWindow: config.agent.historyWindow }),
+    },
+    capabilityMiss: {
+      hostId: missCapture.hostId,
+      surface: missSurface.then(({ hash }) => ({ format: "vendo/tools@1" as const, hash })),
+      emit: (event) => missCapture.record(event),
     },
   });
   const automations = createAutomations({

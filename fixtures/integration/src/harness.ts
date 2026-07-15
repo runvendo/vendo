@@ -136,11 +136,23 @@ const cookieCache = new Map<string, string>();
 export async function loginCookie(subject: string): Promise<string> {
   const cached = cookieCache.get(subject);
   if (cached !== undefined) return cached;
-  const response = await fetch(`${fixtureBaseUrl()}/api/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ user: subject }),
-  });
+  let response: Response | undefined;
+  let lastError: unknown;
+  // The shared Next dev fixture can reset its first login socket while sibling
+  // Turbo tasks finish compiling; retry only this idempotent session mint.
+  for (let attempt = 0; attempt < 3 && response === undefined; attempt += 1) {
+    try {
+      response = await fetch(`${fixtureBaseUrl()}/api/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ user: subject }),
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
+  if (response === undefined) throw lastError;
   if (!response.ok) throw new Error(`Fixture login failed (${response.status})`);
   const cookie = response.headers.get("set-cookie")?.split(";")[0];
   if (!cookie) throw new Error("Fixture login did not return a cookie");
@@ -180,6 +192,12 @@ export interface StackOptions {
    * composed from the umbrella's OWN parts — the way a host must today until the
    * `createVendo({ mcp: true })` hookup lands (docs/contracts/10-mcp-umbrella-hookup.md). */
   mcp?: boolean;
+  /** Compose the umbrella with `telemetry: true` (opt-in anonymous telemetry).
+   * Consent is still resolved at emit time from env/config (J11). */
+  telemetry?: boolean;
+  /** Back the composed store with real Postgres (createStore({ url })) instead of
+   * the default per-test PGlite temp dir. Used by the J9 durability journey. */
+  storeUrl?: string;
 }
 
 /** The door mounted alongside the wire when `createStack({ mcp: true })`. */
@@ -219,7 +237,9 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
   process.env.VENDO_TICK_SECRET ??= "integration-tick-secret";
 
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-integration-"));
-  const store = createStore({ dataDir });
+  const store = options.storeUrl === undefined
+    ? createStore({ dataDir })
+    : createStore({ url: options.storeUrl });
   // Open the DB up front so `store.raw()` (the SQL-assert seam) is usable
   // immediately; createVendo also calls ensureSchema (idempotent).
   await store.ensureSchema();
@@ -234,6 +254,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     store,
     actAs: fixtureActAs,
     policy: { file: ".vendo/policy.json" },
+    ...(options.telemetry === true ? { telemetry: true } : {}),
   });
 
   // J6 — the MCP door, composed from the umbrella's OWN parts (the hookup note's

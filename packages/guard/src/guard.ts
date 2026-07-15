@@ -30,7 +30,6 @@ import { PolicyResolver, ruleMatches } from "./policy.js";
 import type {
   CreateGuardConfig,
   Judge,
-  PolicyConfig,
   Scanner,
   VendoGuard,
 } from "./types.js";
@@ -68,10 +67,12 @@ interface DecisionMetadata {
   decision: DraftDecision;
   rationale?: string;
   blockAlreadyAudited?: boolean;
+  invalidatedGrants?: PermissionGrant[];
 }
 
 interface CompletedDecision {
   decision: GuardDecision;
+  descriptor: ToolDescriptor;
   rationale?: string;
 }
 
@@ -423,7 +424,7 @@ class GuardImplementation implements VendoGuard {
             approvalId: decision.approval.id,
           };
         } else {
-          const grant = await this.#grantForExecution(decision, call, descriptor, ctx);
+          const grant = await this.#grantForExecution(decision, call, completed.descriptor, ctx);
           const executeCtx =
             grant === undefined ? ctx : ({ ...ctx, grant } as RunContext & { grant: PermissionGrant });
           try {
@@ -480,8 +481,9 @@ class GuardImplementation implements VendoGuard {
     descriptor: ToolDescriptor,
     ctx: RunContext,
   ): Promise<CompletedDecision> {
+    const effectiveDescriptor = await this.#effectiveDescriptor(call, descriptor, ctx);
     const callsTripped = this.#recordCall(ctx.principal.subject);
-    const metadata = await this.#pipeline(call, descriptor, ctx);
+    const metadata = await this.#pipeline(call, effectiveDescriptor, ctx);
     let draft = metadata.decision;
 
     // 05 §6: away runs hold only grants captured while present and bound to the
@@ -492,7 +494,7 @@ class GuardImplementation implements VendoGuard {
     }
 
     if (draft.action === "run") {
-      const write = descriptor.risk === "write" || descriptor.risk === "destructive";
+      const write = effectiveDescriptor.risk === "write" || effectiveDescriptor.risk === "destructive";
       const runKey = ctx.trigger?.runId ?? ctx.sessionId;
       const writes = this.#writeCounts.get(runKey)?.count ?? 0;
       const writesTripped = write && writes >= this.#maxWritesPerRun;
@@ -505,12 +507,34 @@ class GuardImplementation implements VendoGuard {
     }
 
     if (draft.action === "ask") {
-      const approval = await this.#parkApproval(call, descriptor, ctx);
+      const invalidated = metadata.invalidatedGrants ?? [];
+      const approval = await this.#parkApproval(call, effectiveDescriptor, ctx, invalidated[0]);
       const decision: GuardDecision = {
         action: "ask",
         approval,
         decidedBy: draft.decidedBy,
       };
+      if (invalidated.length > 0) {
+        const first = invalidated[0];
+        if (first !== undefined) {
+          await this.report(
+            eventFromContext(ctx, {
+              kind: "policy-decision",
+              tool: call.tool,
+              inputPreview: approval.inputPreview,
+              outcome: "pending-approval",
+              decidedBy: "default",
+              detail: {
+                reason: "grant-invalidated",
+                grantIds: invalidated.map((grant) => grant.id),
+                tool: call.tool,
+                staleHash: first.descriptorHash,
+                currentHash: descriptorHash(effectiveDescriptor),
+              },
+            }),
+          );
+        }
+      }
       await this.report(
         eventFromContext(ctx, {
           kind: "approval",
@@ -525,6 +549,7 @@ class GuardImplementation implements VendoGuard {
       );
       return {
         decision,
+        descriptor: effectiveDescriptor,
         ...(metadata.rationale === undefined ? {} : { rationale: metadata.rationale }),
       };
     }
@@ -547,14 +572,34 @@ class GuardImplementation implements VendoGuard {
       const decision: GuardDecision = draft;
       return {
         decision,
+        descriptor: effectiveDescriptor,
         ...(metadata.rationale === undefined ? {} : { rationale: metadata.rationale }),
       };
     }
 
     return {
       decision: draft,
+      descriptor: effectiveDescriptor,
       ...(metadata.rationale === undefined ? {} : { rationale: metadata.rationale }),
     };
+  }
+
+  async #effectiveDescriptor(
+    call: ToolCall,
+    descriptor: ToolDescriptor,
+    ctx: RunContext,
+  ): Promise<ToolDescriptor> {
+    const resolveRisk = this.#config.resolveRisk;
+    if (resolveRisk === undefined) return descriptor;
+    try {
+      const risk = await resolveRisk(call, descriptor, ctx);
+      if (risk !== "read" && risk !== "write" && risk !== "destructive") return descriptor;
+      return risk === descriptor.risk ? descriptor : { ...descriptor, risk };
+    } catch {
+      // The static descriptor is the conservative fallback. Vendo's dynamic
+      // edit descriptor is write-class, so lookup/classifier failures still ask.
+      return descriptor;
+    }
   }
 
   #recordCall(subject: string): boolean {
@@ -615,7 +660,7 @@ class GuardImplementation implements VendoGuard {
       return { decision: { action: "run", decidedBy: "grant" } };
     }
 
-    const grant = await this.#matchingGrant(call, descriptor, ctx);
+    const { grant, invalidated } = await this.#matchingGrant(call, descriptor, ctx);
     if (grant !== undefined) {
       return {
         decision: {
@@ -625,35 +670,39 @@ class GuardImplementation implements VendoGuard {
         },
       };
     }
+    const withInvalidated = (metadata: DecisionMetadata): DecisionMetadata =>
+      invalidated.length === 0 ? metadata : { ...metadata, invalidatedGrants: invalidated };
 
     const rules = await this.#policy.rules();
     for (const rule of rules) {
       if (!ruleMatches(rule, call.tool, descriptor.risk, ctx.venue, ctx.presence)) continue;
       if (rule.action === "run") {
-        return { decision: { action: "run", decidedBy: "rule" } };
+        return withInvalidated({ decision: { action: "run", decidedBy: "rule" } });
       }
       if (rule.action === "ask") {
-        return { decision: { action: "ask", decidedBy: "rule" } };
+        return withInvalidated({ decision: { action: "ask", decidedBy: "rule" } });
       }
-      return {
+      return withInvalidated({
         decision: {
           action: "block",
           reason: rule.note ?? "blocked by policy rule",
           decidedBy: "rule",
         },
-      };
+      });
     }
 
     const code = this.#config.policy?.code;
     if (code !== undefined) {
       try {
         const decision = code(call, descriptor, ctx);
-        if (decision !== undefined) return { decision: normalizeCodeDecision(decision) };
+        if (decision !== undefined) {
+          return withInvalidated({ decision: normalizeCodeDecision(decision) });
+        }
       } catch (error) {
-        return {
+        return withInvalidated({
           decision: { action: "ask", decidedBy: "rule" },
           rationale: errorMessage(error),
-        };
+        });
       }
     }
 
@@ -669,34 +718,34 @@ class GuardImplementation implements VendoGuard {
           directions,
         });
         if (judged.action === "run") {
-          return {
+          return withInvalidated({
             decision: { action: "run", decidedBy: "judge" },
             rationale: judged.rationale,
-          };
+          });
         }
         if (judged.action === "ask") {
-          return {
+          return withInvalidated({
             decision: { action: "ask", decidedBy: "judge" },
             rationale: judged.rationale,
-          };
+          });
         }
-        return {
+        return withInvalidated({
           decision: {
             action: "block",
             reason: judged.rationale,
             decidedBy: "judge",
           },
           rationale: judged.rationale,
-        };
+        });
       } catch (error) {
-        return {
+        return withInvalidated({
           decision: { action: "ask", decidedBy: "judge" },
           rationale: errorMessage(error),
-        };
+        });
       }
     }
 
-    return { decision: { action: "run", decidedBy: "default" } };
+    return withInvalidated({ decision: { action: "run", decidedBy: "default" } });
   }
 
   async #judgeWithTimeout(
@@ -823,7 +872,7 @@ class GuardImplementation implements VendoGuard {
       return record === null ? undefined : (record.data as PermissionGrant);
     }
     if (ctx.presence !== "away") return undefined;
-    return this.#matchingGrant(call, descriptor, ctx);
+    return (await this.#matchingGrant(call, descriptor, ctx)).grant;
   }
 
   async #consumeApprovedCall(
@@ -878,37 +927,51 @@ class GuardImplementation implements VendoGuard {
     call: ToolCall,
     descriptor: ToolDescriptor,
     ctx: RunContext,
-  ): Promise<PermissionGrant | undefined> {
+  ): Promise<{ grant?: PermissionGrant; invalidated: PermissionGrant[] }> {
     const records = await listAll(this.#store.records(GRANTS_COLLECTION), {
       refs: { subject: ctx.principal.subject },
     });
     const fingerprint = descriptorHash(descriptor);
     const at = Date.now();
+    const invalidated: PermissionGrant[] = [];
 
     for (const record of records) {
       const grant = grantData(record);
       const expiresAt = grant.expiresAt === undefined ? undefined : Date.parse(grant.expiresAt);
       if (grant.subject !== ctx.principal.subject) continue;
-      if (grant.tool !== call.tool || grant.descriptorHash !== fingerprint) continue;
+      if (grant.tool !== call.tool) continue;
       if (grant.revokedAt !== undefined) continue;
       if (expiresAt !== undefined && (!Number.isFinite(expiresAt) || expiresAt <= at)) continue;
       if (!durationMatches(grant, ctx) || !presenceMatches(grant, ctx)) continue;
       if (!scopeMatches(grant.scope, call.args)) continue;
-      return grant;
+      if (grant.descriptorHash !== fingerprint) {
+        invalidated.push(grant);
+        continue;
+      }
+      return { grant, invalidated };
     }
-    return undefined;
+    return { invalidated };
   }
 
   async #parkApproval(
     call: ToolCall,
     descriptor: ToolDescriptor,
     ctx: RunContext,
+    invalidatedGrant?: PermissionGrant,
   ): Promise<ApprovalRequest> {
     const request: ApprovalRequest = {
       id: makeId("apr_") as ApprovalId,
       call: cloneJson(call),
       descriptor: cloneJson(descriptor),
       inputPreview: inputPreview(call),
+      ...(invalidatedGrant === undefined
+        ? {}
+        : {
+            invalidatedGrant: {
+              id: invalidatedGrant.id,
+              grantedAt: invalidatedGrant.grantedAt,
+            },
+          }),
       ctx: {
         principal: cloneJson(ctx.principal),
         venue: ctx.venue,
@@ -1174,12 +1237,6 @@ class GuardImplementation implements VendoGuard {
   }
 }
 
-export function createGuard(config: {
-  store: StoreAdapter;
-  policy?: PolicyConfig;
-  judge?: Judge;
-  breakers?: { maxCallsPerMinute?: number; maxWritesPerRun?: number };
-  scanners?: Scanner[];
-}): VendoGuard {
+export function createGuard(config: CreateGuardConfig): VendoGuard {
   return new GuardImplementation(config);
 }

@@ -1,0 +1,214 @@
+# Publish to the MCP registry
+
+Publish your deployed Vendo MCP door to the official registry at
+`registry.modelcontextprotocol.io`. The registry is still in preview, so its
+data may reset. If your listing disappears, authenticate and publish it again.
+
+Before you start, deploy the MCP door at its final public URL and choose a
+private-key path outside the repository. The examples below use
+`example.com`, `@acme/example-product`, and
+`https://mcp.example.com/api/vendo/mcp`.
+
+## 1. Choose the namespace
+
+The registry name combines the reverse-DNS form of your domain with the final
+segment of `package.json`'s `name`:
+
+```text
+example.com + @acme/example-product = com.example/example-product
+```
+
+Vendo also reads `description`, `version`, and optional `homepage` from
+`package.json`. Set those fields to the identity customers should see before
+you generate the listing.
+
+> **Required namespace and URL binding:** A `com.example/*` name may list
+> remote URLs only on `example.com` or one of its subdomains. For example,
+> `https://mcp.example.com/api/vendo/mcp` is valid, but a hosting-provider URL
+> on another domain is not.
+
+## 2. Prove domain ownership
+
+Choose either DNS or HTTP. Each `vendo mcp verify-domain` run creates a new
+Ed25519 keypair, so run only the variant you intend to use. `--key-out` is
+required. Keep that file secret, outside the repository, and backed up. Do not
+regenerate it after publishing the proof unless you also replace the proof.
+
+### DNS TXT record
+
+```bash
+npx vendo mcp verify-domain . \
+  --domain example.com \
+  --key-out "$HOME/.config/vendo/example-com-mcp.key"
+```
+
+Sanitized output:
+
+```text
+DNS TXT record at example.com:
+v=MCPv1; k=ed25519; p=<base64-public-key>
+HTTP challenge file at https://example.com/.well-known/mcp-registry-auth:
+v=MCPv1; k=ed25519; p=<base64-public-key>
+Private key written to /Users/you/.config/vendo/example-com-mcp.key; keep it secret and pass its hex value to mcp-publisher only when authenticating.
+```
+
+Create a TXT record at the domain apex, often shown as `@` by DNS providers,
+with the exact `v=MCPv1; k=ed25519; p=...` value printed by the command.
+
+### HTTPS challenge
+
+Pass your framework's public static directory with `--write-well-known`:
+
+```bash
+npx vendo mcp verify-domain . \
+  --domain example.com \
+  --key-out "$HOME/.config/vendo/example-com-mcp.key" \
+  --write-well-known public
+```
+
+The command prints the same proof and adds:
+
+```text
+Wrote /path/to/app/public/.well-known/mcp-registry-auth
+```
+
+Deploy the file so this exact URL returns the proof as plain text:
+
+```text
+https://example.com/.well-known/mcp-registry-auth
+```
+
+## 3. Generate `server.json`
+
+Run this from the host root:
+
+```bash
+npx vendo mcp server-json . \
+  --domain example.com \
+  --url https://mcp.example.com/api/vendo/mcp
+```
+
+Output:
+
+```text
+Wrote server.json for com.example/example-product
+```
+
+The generated file uses the registry schema pinned to `2025-12-11`:
+
+```json
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.example/example-product",
+  "description": "Example Product MCP tools",
+  "version": "1.2.3",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.example.com/api/vendo/mcp"
+    }
+  ],
+  "websiteUrl": "https://example.com/docs/mcp"
+}
+```
+
+Vendo refuses to replace an existing file:
+
+```text
+server.json already exists; pass --force to overwrite it
+```
+
+Review local edits first. Then rerun the same command with `--force` when you
+intend to regenerate the file.
+
+## 4. Validate the live deployment
+
+Pass the deployed Vendo wire base to doctor. This is the URL before the final
+`/mcp` segment:
+
+```bash
+npx vendo doctor . --url https://mcp.example.com/api/vendo
+```
+
+A healthy discovery result includes:
+
+```text
+ok: MCP protected-resource metadata resolves
+ok: MCP authorization-server metadata resolves
+ok: MCP server card parses
+ok: server.json matches MCP registry discovery requirements
+ok: server.json remote agrees with the live MCP door
+```
+
+Doctor checks that the live `/status` reports the MCP door open, both OAuth
+metadata documents resolve, and the server card has a name and transports. If
+`server.json` exists, it validates the pinned schema, the reversible namespace,
+the namespace-to-remote-domain binding, and exact agreement between the listed
+remote and the live door. When an HTTP challenge exists locally or at the live
+origin, doctor also checks that it starts with `v=MCPv1`.
+
+## 5. Authenticate and publish
+
+The external `mcp-publisher` CLI expects the private key's hex contents, not a
+file path. Use the login method that matches the proof you published.
+
+For DNS:
+
+```bash
+mcp-publisher login dns \
+  --domain example.com \
+  --private-key "$(tr -d '\n' < "$HOME/.config/vendo/example-com-mcp.key")"
+```
+
+For HTTP:
+
+```bash
+mcp-publisher login http \
+  --domain example.com \
+  --private-key "$(tr -d '\n' < "$HOME/.config/vendo/example-com-mcp.key")"
+```
+
+Then publish `./server.json` from the host root:
+
+```bash
+mcp-publisher publish
+```
+
+`mcp-publisher` uses `https://registry.modelcontextprotocol.io` by default.
+Publishing to the registry is self-serve.
+
+## 6. Give customers an install path
+
+Registry publication makes the server identity machine-readable. It does not
+configure a client automatically, so link customers to the appropriate client
+flow from your setup page:
+
+- **Claude.ai:** Add the remote MCP URL as a custom connector. Customers see a
+  `Custom` connector, complete your OAuth flow, and can enable its tools in a
+  conversation. See [Claude custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).
+- **ChatGPT:** In developer mode, create a custom app with the remote MCP
+  endpoint and scan its tools. It appears with a `Dev` label while testing and
+  in the workspace's app list after an admin publishes it. See [ChatGPT
+  developer mode](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt).
+- **Cursor:** Publish an Add to Cursor deeplink. The user sees the MCP install
+  prompt, then connects through OAuth and gets the server's tools. For this
+  example, the config in the link decodes to
+  `{"url":"https://mcp.example.com/api/vendo/mcp"}`:
+
+  ```text
+  cursor://anysphere.cursor-deeplink/mcp/install?name=example-product&config=eyJ1cmwiOiJodHRwczovL21jcC5leGFtcGxlLmNvbS9hcGkvdmVuZG8vbWNwIn0=
+  ```
+
+  See [Cursor MCP installation](https://docs.cursor.com/en/tools/mcp).
+
+## Directory submissions (follow-up)
+
+**This is a separate later step and is out of scope for registry publishing.**
+The registry flow above is self-serve. The Claude Connectors Directory and the
+ChatGPT app directory are curated submission queues, and a registry listing
+does not add your product to either one.
+
+- Claude directory submission requires an organization account and Anthropic
+  review.
+- ChatGPT app directory submission requires an organization account, OpenAI
+  business verification, and OpenAI review.

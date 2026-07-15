@@ -17,22 +17,7 @@ import {
   writeText,
 } from "./shared.js";
 
-const DEFAULT_THEME = {
-  colors: {
-    background: "#ffffff",
-    surface: "#f8fafc",
-    text: "#0f172a",
-    muted: "#64748b",
-    accent: "#2563eb",
-    accentText: "#ffffff",
-    danger: "#dc2626",
-    border: "#e2e8f0",
-  },
-  typography: { fontFamily: "system-ui, sans-serif", baseSize: "16px" },
-  radius: { small: "4px", medium: "8px", large: "12px" },
-  density: "comfortable",
-  motion: "full",
-} as const;
+const DEFAULT_RADIUS = { small: "4px", large: "12px" } as const;
 
 async function extractTheme(root: string): Promise<VendoTheme> {
   const { slots } = await extractThemeSlots(root);
@@ -47,21 +32,22 @@ async function extractTheme(root: string): Promise<VendoTheme> {
       text: slots.text,
       muted: slots.mutedText,
       accent: slots.accent,
-      accentText: DEFAULT_THEME.colors.accentText,
-      danger: DEFAULT_THEME.colors.danger,
-      border: DEFAULT_THEME.colors.border,
+      accentText: slots.accentText,
+      danger: slots.danger,
+      border: slots.border,
     },
     typography: {
       fontFamily: slots.fontFamily,
+      headingFamily: slots.headingFamily,
       baseSize: slots.baseSize,
     },
     radius: {
-      small: deriveRadius(0.5, DEFAULT_THEME.radius.small),
+      small: deriveRadius(0.5, DEFAULT_RADIUS.small),
       medium: slots.radius,
-      large: deriveRadius(1.5, DEFAULT_THEME.radius.large),
+      large: deriveRadius(1.5, DEFAULT_RADIUS.large),
     },
-    density: DEFAULT_THEME.density,
-    motion: DEFAULT_THEME.motion,
+    density: slots.density,
+    motion: slots.motion,
   };
 }
 
@@ -386,6 +372,33 @@ function diff(path: string, before: string | null, after: string): string {
   ].join("\n");
 }
 
+function packageWithSyncHooks(raw: string): string | null {
+  const manifest = JSON.parse(raw) as Record<string, unknown>;
+  const priorScripts = manifest["scripts"];
+  const scripts = typeof priorScripts === "object" && priorScripts !== null && !Array.isArray(priorScripts)
+    ? priorScripts as Record<string, unknown>
+    : {};
+  let changed = false;
+  const hook = (name: "predev" | "prebuild", command: string): void => {
+    const prior = scripts[name];
+    if (typeof prior !== "string") {
+      scripts[name] = command;
+      changed = true;
+    } else if (!prior.includes(command)) {
+      scripts[name] = `${command} && ${prior}`;
+      changed = true;
+    }
+  };
+  hook("predev", "vendo sync");
+  hook("prebuild", "vendo sync --strict");
+  if (!changed) return null;
+  manifest["scripts"] = scripts;
+
+  const detectedIndent = raw.match(/^[\t ]+(?=")/m)?.[0] ?? "  ";
+  const trailingNewline = raw.endsWith("\r\n") ? "\r\n" : raw.endsWith("\n") ? "\n" : "";
+  return `${JSON.stringify(manifest, null, detectedIndent)}${trailingNewline}`;
+}
+
 async function buildPlan(options: InitOptions, mcpEnabled = false): Promise<{ plan: InitPlan; changes: Array<{ absolute: string; path: string; before: string | null; after: string; diff: string }> }> {
   const root = resolve(options.targetDir);
   const framework = await detectFramework(root);
@@ -445,6 +458,21 @@ async function buildPlan(options: InitOptions, mcpEnabled = false): Promise<{ pl
     if (layoutAfter !== null && layoutAfter !== layoutBefore) {
       const path = relative(root, layout);
       changes.push({ absolute: layout, path, before: layoutBefore, after: layoutAfter, diff: diff(path, layoutBefore, layoutAfter) });
+    }
+  }
+  const packageJson = join(root, "package.json");
+  const packageBefore = await readOptional(packageJson);
+  if (packageBefore !== null) {
+    const packageAfter = packageWithSyncHooks(packageBefore);
+    if (packageAfter !== null) {
+      const path = relative(root, packageJson);
+      changes.push({
+        absolute: packageJson,
+        path,
+        before: packageBefore,
+        after: packageAfter,
+        diff: diff(path, packageBefore, packageAfter),
+      });
     }
   }
   const writes = [

@@ -95,7 +95,10 @@ describe("vendo init", () => {
     const root = await expressFixture(true);
     const sink = output();
     expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
-    expect(JSON.parse(sink.logs.join("\n"))).toMatchObject({ framework: "express", codeChanges: [] });
+    expect(JSON.parse(sink.logs.join("\n"))).toMatchObject({
+      framework: "express",
+      codeChanges: [{ path: "package.json" }],
+    });
 
     const initialized = output();
     expect(await runInit({ targetDir: root, yes: true, output: initialized.output })).toBe(0);
@@ -124,16 +127,17 @@ describe("vendo init", () => {
       codeChanges: Array<{ path: string; diff: string }>;
     };
     expect(plan.framework).toBe("express");
-    expect(plan.codeChanges).toHaveLength(2);
+    expect(plan.codeChanges).toHaveLength(3);
     expect(plan.codeChanges[0]?.path).toBe("vendo/server.ts");
     expect(plan.codeChanges[0]?.diff).toContain("createVendo");
     expect(plan.codeChanges[0]?.diff).toContain("new Request");
     expect(plan.codeChanges[1]?.path).toBe("vendo/ai.ts");
+    expect(plan.codeChanges[2]?.path).toBe("package.json");
 
     const declined = output();
     const confirm = vi.fn().mockResolvedValue(false);
     expect(await runInit({ targetDir: root, confirm, output: declined.output })).toBe(0);
-    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(confirm).toHaveBeenCalledTimes(3);
     expect(declined.logs.join("\n")).toContain("Proposed code change");
     await expect(readFile(join(root, "vendo", "server.ts")))
       .rejects.toMatchObject({ code: "ENOENT" });
@@ -179,6 +183,7 @@ describe("vendo init", () => {
     expect(codeChanges).toMatchObject([
       { path: "vendo/server.mjs" },
       { path: "vendo/ai.mjs" },
+      { path: "package.json" },
     ]);
     // The JS wiring hint must be pasteable JavaScript — no type-only syntax.
     const scaffold = codeChanges[0]?.diff ?? "";
@@ -195,10 +200,73 @@ describe("vendo init", () => {
     const sink = output();
     expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
     expect(await tree(root)).toEqual(before);
-    const plan = JSON.parse(sink.logs.join("\n")) as { questions: unknown[]; codeChanges: Array<{ diff: string }> };
+    const plan = JSON.parse(sink.logs.join("\n")) as {
+      questions: unknown[];
+      codeChanges: Array<{ path: string; diff: string }>;
+    };
     expect(plan.questions).toHaveLength(4);
-    expect(plan.codeChanges).toHaveLength(3); // route + layout + starter model module
+    expect(plan.codeChanges).toHaveLength(4); // route + layout + starter model module + package hooks
     expect(plan.codeChanges[0]?.diff).toContain("@vendoai/vendo/server");
+    expect(plan.codeChanges.find((change) => change.path === "package.json")?.diff)
+      .toContain('"predev": "vendo sync"');
+  });
+
+  it("adds predev and prebuild sync hooks only when the package change is approved", async () => {
+    const root = await fixture();
+    const before = await readFile(join(root, "package.json"), "utf8");
+    const confirm = vi.fn(async (change: { path: string }) => change.path === "package.json");
+
+    expect(await runInit({ targetDir: root, confirm, output: output().output })).toBe(0);
+
+    expect(confirm).toHaveBeenCalledTimes(4);
+    expect(JSON.parse(await readFile(join(root, "package.json"), "utf8"))).toMatchObject({
+      scripts: { predev: "vendo sync", prebuild: "vendo sync --strict" },
+    });
+    expect(await readFile(join(root, "package.json"), "utf8")).not.toBe(before);
+  });
+
+  it("prepends sync to existing lifecycle hooks and preserves package formatting", async () => {
+    const root = await fixture();
+    const manifest = {
+      name: "host",
+      scripts: { predev: "echo warmup", prebuild: "npm run check" },
+      dependencies: { next: "16.0.0", "@vendoai/vendo": "0.3.0" },
+    };
+    await writeFile(join(root, "package.json"), `${JSON.stringify(manifest, null, 4)}\n`);
+
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+
+    const raw = await readFile(join(root, "package.json"), "utf8");
+    expect(raw.endsWith("\n")).toBe(true);
+    expect(raw).toContain('    "scripts"');
+    expect(JSON.parse(raw)).toMatchObject({
+      scripts: {
+        predev: "vendo sync && echo warmup",
+        prebuild: "vendo sync --strict && npm run check",
+      },
+    });
+  });
+
+  it("offers no package change on an idempotent rerun", async () => {
+    const root = await fixture();
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    const first = await readFile(join(root, "package.json"), "utf8");
+    const confirm = vi.fn().mockResolvedValue(false);
+
+    expect(await runInit({ targetDir: root, confirm, output: output().output })).toBe(0);
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(await readFile(join(root, "package.json"), "utf8")).toBe(first);
+  });
+
+  it("leaves package.json untouched when its prompt is declined", async () => {
+    const root = await fixture();
+    const before = await readFile(join(root, "package.json"), "utf8");
+    const confirm = vi.fn(async (change: { path: string }) => change.path !== "package.json");
+
+    expect(await runInit({ targetDir: root, confirm, output: output().output })).toBe(0);
+
+    expect(await readFile(join(root, "package.json"), "utf8")).toBe(before);
   });
 
   it("writes the complete .vendo contract and permission-gated Next wiring idempotently", async () => {
@@ -284,7 +352,7 @@ describe("vendo init", () => {
     const sink = output();
     const confirm = vi.fn().mockResolvedValue(false);
     expect(await runInit({ targetDir: root, confirm, output: sink.output })).toBe(0);
-    expect(confirm).toHaveBeenCalledTimes(3); // route + layout + starter model module
+    expect(confirm).toHaveBeenCalledTimes(4); // route + layout + starter model module + package hooks
     expect(sink.logs.join("\n")).toContain("Proposed code change");
     expect(await readFile(join(root, "app", "layout.tsx"), "utf8")).not.toContain("VendoRoot");
     await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))
@@ -336,16 +404,24 @@ describe("vendo init", () => {
     // resolve to concrete hex/px (the jail knows no host custom properties).
     await writeFile(join(root, "app", "globals.css"),
       ":root { --background: #fafafa; --brand-hue: 262 83% 58%; --primary: hsl(var(--brand-hue)); " +
-      "--foreground: oklch(0.205 0 0); --card: 0 0% 100%; --radius: 0.625rem; }\n");
+      "--primary-foreground: #ffffff; --foreground: oklch(0.205 0 0); --card: 0 0% 100%; " +
+      "--border: #dedede; --destructive: #b91c1c; --font-heading: Newsreader, serif; " +
+      "--density: compact; --motion: reduced; --radius: 0.625rem; }\n");
     await runInit({ targetDir: root, yes: true, output: output().output });
     expect(JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"))).toMatchObject({
       colors: {
         background: "#fafafa",
         accent: "#7c3bed",
+        accentText: "#ffffff",
+        border: "#dedede",
+        danger: "#b91c1c",
         text: "#171717",
         surface: "#ffffff",
       },
+      typography: { headingFamily: "Newsreader, serif" },
       radius: { medium: "10px" },
+      density: "compact",
+      motion: "reduced",
     });
   });
 

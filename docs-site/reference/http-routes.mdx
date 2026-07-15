@@ -1,6 +1,6 @@
 ---
 title: "HTTP routes: threads, approvals, MCP door, and OAuth"
-description: "Reference for every HTTP route Vendo mounts under the base path, with method, body shape, response, and streaming behavior for the conversational wire."
+description: "Reference for every HTTP route Vendo mounts under the base path, including methods, body shapes, responses, and streaming for the wire."
 ---
 
 The default base is `/api/vendo`. Every request passes through
@@ -9,7 +9,7 @@ stream over SSE.
 
 | Route | Method | Body → Response |
 | --- | --- | --- |
-| `/threads` | POST | `{ threadId?, message }` → ai-SDK UI message stream (SSE), one conversational turn |
+| `/threads` | POST | `{ threadId?, message }` → ai-SDK UI message stream (SSE), one conversational turn. The response carries `X-Vendo-Thread-Id: <thr_…>` — the effective requested or server-minted id — so hosts can persist the identity of a default thread without a follow-up round trip |
 | `/threads` · `/threads/:id` | GET · GET/DELETE | thread summaries · thread |
 | `/approvals` | GET | pending `ApprovalRequest[]` |
 | `/approvals/decide` | POST | `{ ids, decision }` → `{}` (batch-capable) |
@@ -42,12 +42,19 @@ Bodies follow the MCP transport spec, not the wire's JSON envelope.
 | Path | Method | Purpose |
 | --- | --- | --- |
 | `/api/vendo/mcp` | POST · GET · DELETE | MCP Streamable HTTP transport |
-| `/api/vendo/mcp/authorize` | GET | OAuth authorization endpoint |
+| `/api/vendo/mcp/authorize` | GET · POST | OAuth authorization endpoint; POST receives the door-owned consent form submission |
 | `/api/vendo/mcp/token` | POST | OAuth token endpoint (form-encoded) |
+| `/api/vendo/mcp/revoke` | POST | RFC 7009 token revocation (form-encoded); always empty `200` |
 | `/api/vendo/mcp/register` | POST | OAuth dynamic client registration (JSON body) |
+| `/api/vendo/mcp/federate` | GET | signed login handshake for an external authorization server; only mounted when `federation` is configured |
 | `/.well-known/oauth-protected-resource/api/vendo/mcp` | GET | RFC 9728 protected-resource metadata |
 | `/.well-known/oauth-authorization-server/api/vendo/mcp` | GET | RFC 8414 authorization-server metadata |
 | `/.well-known/mcp/server-card.json` · `/.well-known/mcp-server-card` | GET | server card describing the door |
+
+With `remoteAs` configured, `/api/vendo/mcp/authorize`, `/token`, `/register`,
+and the RFC 8414 authorization-server metadata all return `404`; the external
+issuer owns those endpoints and RFC 9728 metadata advertises it. See [MCP
+door](/capabilities/mcp) for the delegation model.
 
 Door paths bypass the wire's principal resolver and CSRF JSON gate. The door
 re-resolves `oauth.principal(subject)` on every bearer-authenticated transport

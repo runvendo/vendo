@@ -63,3 +63,20 @@ writes nothing.
 
 Use `vendo doctor` after setup. It checks wiring and makes one live `/status`
 round trip.
+
+## Non-interactive setup
+
+Pass an app directory as the positional argument; it defaults to the current
+directory. For CI, agents, or a reviewed scripted setup, use:
+
+```bash
+npx vendo init [dir] --yes --model-import '@/lib/ai' --brief 'What the product does and who uses it'
+```
+
+- `--yes` skips the four-question interview, still prints each proposed diff,
+  and approves all code changes.
+- `--model-import <specifier>` chooses the module that exports the host's AI SDK
+  `model` (default `@/lib/ai` for Next.js and `./ai` for Express).
+- `--brief <text>` supplies the contents of `.vendo/brief.md`.
+- `--force` regenerates Vendo-owned `.vendo` files while preserving existing
+  host source files.
