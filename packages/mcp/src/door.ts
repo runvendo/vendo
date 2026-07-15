@@ -90,7 +90,8 @@ export interface McpDoorConfig {
    * discovery metadata from it advertises unreachable endpoints and binds the
    * RFC 8707 audience to the wrong resource. When set, the issuer, every
    * advertised endpoint, the protected-resource `resource`, the 401 challenge's
-   * metadata URL, and token audience validation all use THIS origin; only the
+   * metadata URL, token audience validation, and the interactive consent URLs
+   * (form action, host-login returnTo) all use THIS origin; only the
    * path still comes from the request (or `mount`). Only the URL's origin is
    * used — a path on the base URL is ignored. Forwarded headers (X-Forwarded-*,
    * Host) are attacker-controllable and are never consulted.
@@ -150,16 +151,22 @@ class Door {
     this.#publicOrigin = config.baseUrl === undefined ? undefined : publicOriginOf(config.baseUrl);
   }
 
-  /** The origin metadata, endpoints, resource URIs, and audience checks derive
-   * from: the configured public base when set, else the request's own URL —
-   * never a forwarded header. */
-  #origin(url: URL): string {
-    return this.#publicOrigin ?? url.origin;
-  }
-
   async handler(req: Request): Promise<Response> {
+    // ENG-333: behind a reverse proxy the request URL carries the proxy-
+    // internal origin. Rebase the request onto the configured canonical base
+    // ONCE, up front, so everything derived from the request URL downstream —
+    // discovery metadata, issuer/endpoint URLs, resource identifiers and
+    // audience checks, consent form actions, host-login returnTo URLs — speaks
+    // the public origin. Only the origin moves; path, query, method, headers,
+    // and body are preserved. Unconfigured doors keep request-derived origins,
+    // and forwarded headers (X-Forwarded-*, Host) are never consulted either
+    // way: the operator-set base is the only trusted origin channel.
+    const incoming = new URL(req.url);
+    if (this.#publicOrigin !== undefined && incoming.origin !== this.#publicOrigin) {
+      req = rebaseRequest(req, this.#publicOrigin, incoming);
+    }
     const url = new URL(req.url);
-    const origin = this.#origin(url);
+    const origin = url.origin;
     const path = url.pathname;
 
     if (path.startsWith(PRM_PREFIX)) {
@@ -233,7 +240,8 @@ class Door {
   }
 
   async #handleMcp(req: Request, mount: string): Promise<Response> {
-    const origin = this.#origin(new URL(req.url));
+    // handler() has already rebased req onto the canonical public base.
+    const origin = new URL(req.url).origin;
     const resource = resourceUri(origin, mount);
     await this.#sweepIdleSessions();
     const auth = this.#remoteAs === undefined
@@ -621,6 +629,20 @@ function publicOriginOf(baseUrl: string): string {
     throw new TypeError("baseUrl cannot contain credentials");
   }
   return url.origin;
+}
+
+/** Move a request onto the canonical public origin, preserving everything
+ * else. The shape production hosts proved as a workaround (runvendo/umami#1),
+ * now owned by the door itself. */
+function rebaseRequest(req: Request, origin: string, incoming: URL): Request {
+  const url = new URL(`${incoming.pathname}${incoming.search}`, origin);
+  const init: RequestInit & { duplex?: "half" } = {
+    method: req.method,
+    headers: req.headers,
+    signal: req.signal,
+    ...(req.method === "GET" || req.method === "HEAD" ? {} : { body: req.body, duplex: "half" }),
+  };
+  return new Request(url, init);
 }
 
 function resourceUri(origin: string, mount: string): string {

@@ -751,6 +751,33 @@ describe("createMcpDoor configured canonical base URL (ENG-333)", () => {
     expect(harness.principalSubjects).toEqual(["user_1"]);
   });
 
+  it("keeps the prebuilt consent flow on the public origin behind a proxy", async () => {
+    const returnTos: string[] = [];
+    const harness = makeHarness({
+      baseUrl: PUBLIC_ORIGIN,
+      oauth: {
+        async session(_req, ctx) {
+          returnTos.push(ctx.returnTo);
+          return { subject: "user_1" };
+        },
+        async principal(subject) { return { kind: "user", subject }; },
+      },
+    });
+    const registration = await register(harness.door, {}, PROXIED_BASE);
+    const page = await authorize(harness.door, registration.body.client_id, {}, PROXIED_BASE);
+    const html = await page.text();
+
+    // The user's BROWSER reached the door through the public origin; a form
+    // action or host-login returnTo naming the proxy-internal origin would be
+    // unreachable from it. Both must speak the configured public base.
+    expect(htmlAttribute(html, "form", "action")).toContain(`${BASE}/authorize?`);
+    expect(returnTos[0]).toContain(`${BASE}/authorize?`);
+
+    const approved = await submitConsent(harness.door, html, "approve");
+    expect(approved.status).toBe(302);
+    expect(new URL(approved.headers.get("location")!).searchParams.get("code")).toMatch(/^vmcd_/);
+  });
+
   it("rejects an authorization request whose resource names the proxy-internal origin", async () => {
     const harness = makeHarness({ baseUrl: PUBLIC_ORIGIN });
     const registration = await register(harness.door, {}, PROXIED_BASE);
