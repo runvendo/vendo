@@ -8,6 +8,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createApps } from "./index.js";
+import { pinComponentName } from "./pins.js";
 import type { SandboxAdapter } from "./sandbox.js";
 import {
   fakeSandbox,
@@ -346,6 +347,87 @@ describe("generation engine through createApps", () => {
     expect(result.version.rung).toBe(1);
     expect(await runtime.history(original.id).list()).toEqual([result.version]);
     await expect(runtime.history(original.id).undo()).resolves.toEqual(original);
+  });
+
+  it("forks a captured host slot and records a per-pin replayable intent trail", async () => {
+    const store = memoryStore();
+    const source = `export default function MapleNetWorthCard() {
+  return <section><h2>Net worth</h2><strong>$1.2M</strong></section>;
+}`;
+    const slot = "net-worth-card";
+    const componentName = pinComponentName(slot);
+    const model = scriptedLanguageModel(
+      (call) => {
+        const prompt = call.prompt.map((message) => typeof message.content === "string"
+          ? message.content
+          : message.content.map((part) => part.text ?? "").join("")).join("\n");
+        expect(prompt).toContain("REMIXABLE HOST SLOTS");
+        expect(prompt).toContain(slot);
+        expect(prompt).toContain("MapleNetWorthCard");
+        expect(prompt).toContain("$1.2M");
+        expect(prompt).toContain(componentName);
+        return JSON.stringify({
+          ops: [{ op: "fork-pin", slot, nodeId: "maple-net-worth", parentId: "root" }],
+        });
+      },
+      JSON.stringify({
+        ops: [{
+          op: "add-component",
+          name: componentName,
+          source: source.replace("$1.2M", "$1.4M"),
+        }],
+      }),
+      JSON.stringify({ ops: [{ op: "set-name", name: "Maple overview" }] }),
+    );
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model,
+      pinBaselines: [{
+        slot,
+        source,
+        hash: "sha256:maple-base",
+        exportable: false,
+        capturedAt: "2026-07-14T12:00:00.000Z",
+      }],
+    });
+    const original: AppDocument = {
+      format: "vendo/app@1",
+      id: "app_maple_pin",
+      name: "Maple overview",
+      ui: "tree",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
+      },
+    };
+    await putApp(store, original);
+
+    const forked = await runtime.edit(original.id, "Remix the net worth card", ctx);
+    expect(forked.issues).toBeUndefined();
+    expect(forked.app.pins).toEqual([{ slot, base: "sha256:maple-base" }]);
+    expect(forked.app.components?.[componentName]).toBe(source);
+    expect(forked.app.tree).toMatchObject({
+      nodes: expect.arrayContaining([expect.objectContaining({
+        id: "maple-net-worth",
+        component: componentName,
+        source: "generated",
+      })]),
+    });
+
+    await runtime.edit(original.id, "Increase the displayed net worth", ctx);
+    await runtime.edit(original.id, "Rename the app", ctx);
+
+    const rows = await store.records(`vendo:app-pin-intents:${original.id}`).list();
+    const trails = rows.records.map((record) => record.data);
+    expect(trails).toEqual(expect.arrayContaining([
+      expect.objectContaining({ slot, intent: "Remix the net worth card" }),
+      expect.objectContaining({ slot, intent: "Increase the displayed net worth" }),
+    ]));
+    expect(trails).toHaveLength(2);
   });
 
   it("contains twice-broken tree ops and leaves the original document untouched", async () => {
