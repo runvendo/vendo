@@ -54,6 +54,17 @@ describe("VendoOverlay supported entry API", () => {
     expect(dialogQuery()).toBeNull();
   });
 
+  it("closes on scrim click (full click, so the press cannot fall through to the page)", () => {
+    render(<VendoProvider client={client}><VendoOverlay defaultOpen /></VendoProvider>);
+    expect(dialogQuery()).toBeTruthy();
+    const scrim = document.querySelector(".fl-overlay-scrim")!;
+    fireEvent.mouseDown(scrim);
+    expect(dialogQuery()).toBeTruthy(); // mousedown alone must NOT dismiss
+    fireEvent.click(scrim);
+    expect(dialogQuery()).toBeNull();
+    expect(document.body.style.overflow).toBe("");
+  });
+
   it("drives open/close through the useVendoOverlay hook", async () => {
     function Host() {
       const overlay = useVendoOverlay();

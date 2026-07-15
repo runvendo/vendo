@@ -144,8 +144,10 @@ export function VendoOverlay({
       style={{ ...themeCssVariables(theme), fontFamily: "var(--vendo-font-family)", fontSize: "var(--vendo-font-size)" } as CSSProperties}
     >
       {/* Click-outside-to-dismiss: the visible frosted scrim reads as clickable,
-          so honor it (matching the palette). Keyboard users have Esc + the X. */}
-      <div className="fl-overlay-scrim" onMouseDown={close} />
+          so honor it. Dismissal fires on click (not mousedown) so the full
+          press-release is consumed by the scrim — closing on mousedown lets the
+          mouseup land on the revealed page and steal the restored focus. */}
+      <div className="fl-overlay-scrim" onClick={close} />
       <div ref={dialog} id="vendo-overlay-dialog" className="fl-overlay-panel" role="dialog" aria-modal="true" aria-label="Vendo assistant" onKeyDown={onKeyDown}>
         <strong className="fl-sr-only">Vendo</strong>
         <button className="fl-overlay-close" type="button" aria-label="Close Vendo" onClick={close}>

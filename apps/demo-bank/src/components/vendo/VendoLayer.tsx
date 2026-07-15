@@ -14,8 +14,9 @@ async function resetDemo(): Promise<void> {
 
 export function VendoLayer() {
   // ENG-220: Cmd/Ctrl+K drives the supported programmatic overlay API instead
-  // of DOM-poking the launcher; the launcher itself is the ui package's
-  // default fixed bottom-right pill.
+  // of DOM-poking the launcher. Maple keeps its dock as the visible Vendo
+  // surface, so the built-in launcher is suppressed the supported way
+  // (launcher="none") instead of the old display:none CSS hack.
   const overlay = useVendoOverlay();
   const { toggle } = overlay;
 
@@ -38,7 +39,7 @@ export function VendoLayer() {
 
   return (
     <>
-      <VendoOverlay {...overlay.overlayProps} />
+      <VendoOverlay {...overlay.overlayProps} launcher="none" />
       {/* VENDO-MIGRATION: 08-ui's frozen overlay does not expose custom
           greetings or suggestion chips; Cmd/Ctrl+K behavior remains intact. */}
       {/* VENDO-MIGRATION: connectors remain available to the server-side agent,
