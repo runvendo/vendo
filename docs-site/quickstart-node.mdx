@@ -93,12 +93,12 @@ standard `Request` and returns a standard `Response`. The Node adapter that
 - Return multi-value `Set-Cookie` as a header array, not a joined string.
 
 Set `VENDO_BASE_URL` to your trusted host origin — `http://localhost:3000` in
-development, your public HTTPS origin in production. It gates present-mode
-credential forwarding (Vendo passes `authorization` and `cookie` only to
-same-origin routes matching this value), marks the anonymous-session cookie
-`Secure` behind a TLS-terminating proxy, and provides the base for
-extracted route tools. When it is unset, present tool calls run without
-inbound auth and the composition emits one
+development, your public HTTPS origin in production. It does three jobs.
+It gates present-mode credential forwarding, so Vendo passes `authorization`
+and `cookie` only to same-origin routes matching this value. It marks the
+anonymous-session cookie `Secure` behind a TLS-terminating proxy. And it
+provides the base for extracted route tools. When it is unset, present tool
+calls run without inbound auth and the composition emits one
 `present-credentials-not-forwarded` audit event so the misconfiguration
 does not stay silent. `vendo init` writes it into `.env.example` for you.
 
