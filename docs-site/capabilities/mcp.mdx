@@ -385,10 +385,10 @@ the card.
 
 An app a user saved in your product still looks like your product when it
 renders inside Claude or ChatGPT. The shim reads the same `--vendo-*` tokens
-your product UI reads, wraps every rendered app in a `VendoProvider`, and
-propagates the tokens into the sandboxed frame that hosts generated components.
-Payload UI, notices, link-out cards, and generated components all inherit your
-theme.
+your product UI reads and wraps every rendered app in a `VendoProvider`. It
+also propagates the tokens into the sandboxed frame that hosts generated
+components, so payload UI, notices, link-out cards, and generated components
+all inherit your theme.
 
 You do not configure this per-app. When you use `createVendo({ mcp: true })`,
 the umbrella forwards your validated `.vendo/theme.json` to the door and the
