@@ -1,0 +1,20 @@
+TASK: Slim the UI-generation contract — leaner prompt, smaller trees, primitives/catalog preferred over generated jailed code (wave 2 of Linear ENG-240).
+
+CONTEXT: Vendo monorepo (pnpm + turbo), Orca worktree of runvendo/vendo, branch yousefh409/gs-slim-contract. Run pnpm install if node_modules missing. Contracts in docs/contracts/ are FROZEN — read 00-overview.md and 06-apps.md before coding; changes must be additive. This is wave-2 work building ON TOP of the merged ENG-240 streaming engine (PR #180) which restructured the engine prompt into COMPOSABLE SECTIONS, and the merged gen-catalog catalog section. Baseline after wave 1: first partial part ~13.2s after approval, first paint ~13.7s, complete ~65s (metrics in docs/evidence/eng-240-streaming/ and the #180 PR body). Targets: p95 first meaningful paint <1s after the generation tool call, usable <10s — your lever is CONTRACT SIZE: less prompt to process, fewer tokens before the first node closes, smaller trees overall. No quality sacrifice (locked decision).
+
+WHERE THE REMAINING TIME LIKELY GOES (verify, don't assume): the model must emit substantial JSON before the first complete node closes; the prompt is large (system sections + catalog + theme + few-shot examples); generated trees lean on from-scratch jailed component code where primitives would do.
+
+YOUR JOB:
+1. Measure FIRST: instrument or log (locally, cheap timers fine) where the ~13s to first-node actually goes on demo-bank: prompt tokens, model TTFB, tokens-until-first-node-closes. Write the numbers down; they anchor the PR body.
+2. Slim the prompt: cut redundancy, tighten few-shot examples, prefer terse schema-anchored instructions. HARD ZONE LIMITS: do NOT restructure or rewrite the catalog prompt section (gen-catalog's zone — you may relocate it as an intact composable section) and do NOT touch theme-slot content (gen-fidelity's zone). The composable-section structure from #180 must survive.
+3. Steer generation toward smaller trees: prompt guidance + few-shot bias toward host primitives and catalog components over generated jailed code; smaller node counts for common layouts. The renderer/streaming path is done — change what the model emits, not how it's parsed.
+4. Re-order emission if it helps first paint: e.g. emit root/layout nodes FIRST so the first flush paints structure (verify the incremental parser in packages/apps/src/incremental-tree.ts benefits).
+5. Guardrails: engine.test.ts, format-drill.test.ts, runtime e2e, and the full red-team suite stay green. Add a prompt token/byte budget regression assertion if practical.
+
+MEASURE AFTER: same demo-bank flow; report before/after first-part/first-paint/complete timings in the PR body.
+
+DISK RULE (fleet directive): screenshots-only Playwright (no video); delete test-results after extracting embedded frames; if df -h / shows <12Gi free before a heavy run (full build/test), ask the coordinator first.
+
+GIT SAFETY (fleet rule): before ANY git state change (checkout/reset/rebase/switch), run git rev-parse --show-toplevel and verify it prints THIS worktree's absolute path. Never operate on any other worktree. Use absolute paths, never inherited cwd.
+
+DELIVERY: branch yousefh409/gs-slim-contract, conventional commits, pnpm build && pnpm test && pnpm typecheck && pnpm lint green, PR to main titled "feat(apps): slim generation contract — leaner prompt, smaller trees (ENG-240)" with before/after timings + browser evidence. Report to the coordinator handle given in your dispatch preamble (heartbeat ~15min, one worker_done with taskId/dispatchId payload).

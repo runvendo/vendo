@@ -1,0 +1,16 @@
+TASK: Runtime timing spans + CI bench gates for UI generation latency (wave 2 of Linear ENG-240).
+
+CONTEXT: Vendo monorepo (pnpm + turbo), Orca worktree of runvendo/vendo, branch yousefh409/gs-spans-bench. Run pnpm install if node_modules missing. Contracts in docs/contracts/ FROZEN — additive only. Builds on the merged ENG-240 streaming engine (PR #180): engine streams partial trees via the onPartial seam, runtime threads them to the tool bridge, parts ride data-vendo-view SSE with id reconciliation. There is currently NO runtime timing instrumentation in the generation path (offline bench/ only, no remix bench).
+
+YOUR JOB:
+1. Runtime spans (additive, zero new observability vendors): instrument agent turn start → vendo_apps_create call → engine TTFB (first model token) → first partial tree flush → tree complete → open() queries resolved. Expose via a lightweight span record on the generation result / a debug channel the umbrella can surface; must work over the real HTTP wire; off by default or negligible overhead when unused.
+2. CI bench: extend the existing root bench/ harness with (a) a first-paint bench driving a scripted-model generation through the REAL runtime+SSE wire asserting p95 first-partial-part latency, and (b) a usable-view bench (core content interactive). Gates: p95 first paint <1s, usable <10s — wire them SOFT-FAIL initially if slimming hasn't closed the gap (flipping to hard-fail must be a one-line change; document it in the PR).
+3. Remix bench: same shape for vendo_apps_edit (tree-ops fast path from ENG-245): p95 edit-to-updated-view. Record and report, no hard gate yet.
+4. Benches use the scripted streaming model (bench/src/fixtures/scripted-model.ts — stream-capable since #180's fix), NOT live model calls: deterministic and CI-cheap.
+5. All existing tests/benches stay green.
+
+DISK RULE (fleet directive): no video recording; delete bench/test artifacts after runs; if df -h / shows <12Gi free before a heavy run, ask the coordinator first.
+
+GIT SAFETY (fleet rule): before ANY git state change (checkout/reset/rebase/switch), run git rev-parse --show-toplevel and verify it prints THIS worktree's absolute path. Never operate on any other worktree. Use absolute paths, never inherited cwd.
+
+DELIVERY: branch yousefh409/gs-spans-bench, conventional commits, pnpm build && pnpm test && pnpm typecheck && pnpm lint green, PR to main titled "feat(bench): generation latency spans + CI bench gates (ENG-240)" documenting span points, gate wiring, and current measured numbers. Report to the coordinator handle given in your dispatch preamble (heartbeat ~15min, one worker_done with taskId/dispatchId payload).
