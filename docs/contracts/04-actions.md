@@ -67,18 +67,54 @@ Re-extraction never touches it; answers from the init interview land here.
 
 Merge rule: descriptor = extracted ∪ overrides, overrides win field-wise; `descriptorHash` is computed post-merge (an override that changes risk lapses old grants — correct and intended).
 
+### `.vendo/capabilities.json` (agent-authored, reviewed diffs)
+
+```jsonc
+// .vendo/capabilities.json — agent-authored (refine engine), human-reviewed diffs, host-committed
+{
+  "format": "vendo/capabilities@1",
+  "tools": [
+    {
+      // ToolDescriptor fields (01-core §4)
+      "name": "host_invoice_send_flow",
+      "description": "Create an invoice and email it to the customer",
+      "inputSchema": { /* JSON Schema for the compound's own args */ },
+      "risk": "write",                    // MUST equal max of step risks post-merge
+      "critical": false,                  // optional, as any descriptor
+      "binding": {
+        "kind": "compound",
+        "steps": [                        // core Step shape (01-core §11), 1..50 steps
+          { "id": "create", "tool": "host_invoices_create", "args": { "amount": "args.amount" } },
+          { "id": "send", "tool": "host_invoices_send", "if": "args.email != null",
+            "args": { "id": "steps.create.id", "to": "args.email" } }
+        ]
+      },
+      "disabled": false,                  // optional
+      "note": "authored by vendo refine"  // optional
+    }
+  ],
+  "briefs": [
+    { "name": "bulk-paste", "text": "To paste a range, call host_cells_update per row…", "tools": ["host_cells_update"] }
+  ]
+}
+```
+
+Loaded alongside overrides, compounds are additional tools. A name collision with `tools.json` or a connector is a `conflict` error. `overrides.json` applies field-wise to compounds by name. Semantic-validation failures quarantine the entry: it is disabled, never executes, and boot never degrades. `tools.json` stays deterministic and never carries compounds.
+
 ## 2. Runtime
 
 ```ts
 import type { ToolRegistry, ToolCall, ToolDescriptor, RunContext, ActAs, ToolOutcome } from "@vendoai/core";
 
 export function createActions(config: {
-  dir?: string;                          // read .vendo/{tools,overrides}.json; or:
+  dir?: string;                          // read .vendo/{tools,overrides,capabilities}.json; or:
   tools?: ExtractedTool[];               // inject directly (tests, non-file hosts); ExtractedTool = ToolDescriptor & { binding: RouteBinding | OpenApiBinding }
+  capabilities?: CapabilitiesFile;       // inject directly (tests, non-file hosts)
   connectors?: Connector[];
   actAs?: ActAs;                         // host seam; absent → away execution cleanly unavailable
   baseUrl?: string;                      // host origin for server-side route execution
   fetch?: typeof fetch;
+  invokeTool?: ToolRegistry["execute"];
 }): ActionsRegistry;
 
 export interface ActionsRegistry extends ToolRegistry {
@@ -86,6 +122,8 @@ export interface ActionsRegistry extends ToolRegistry {
   add(tools: ToolRegistry): void;
 }
 ```
+
+The umbrella wires `invokeTool` to the guard binding (09 §2).
 
 ## 3. Connectors — lean, we build zero
 
@@ -108,3 +146,11 @@ Normalization rules: connector tool names are underscore-prefixed inside the pro
 ## 5. Principals
 
 OSS: `kind: "user"` only. Org principals (org-wide automations, admin actions, org-shared connections) are Cloud; the shapes already accommodate them via `Principal.kind` and change nothing here.
+
+## 6. Compound tools (normative)
+
+A `compound` binding contains ordered steps that reuse core §11 `Step`. Its expressions see `{ args, steps, item }`, where `args` is the compound call's arguments. The compound descriptor's risk MUST equal the maximum risk of its steps after overrides are merged.
+
+Steps reference primitive host or connector tools only: no `fn:` references, compounds, or capability tools. Execution routes every step through the guard-bound registry via the umbrella-wired `invokeTool` seam. Grants, approvals, breakers, scanners, and audit see every real call. There is no second execution path. When the seam is absent, execution returns `not-implemented` and performs no work.
+
+Approvals are per-step in v1. A step's parked outcome becomes the compound's outcome; re-executing the same logical call resumes without re-running completed steps. Batch approval is an explicit follow-up.
