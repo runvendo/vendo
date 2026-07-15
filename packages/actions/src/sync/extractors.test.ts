@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ExtractedTool } from "../formats.js";
+import { bindingIdentity } from "./common.js";
 import { extractorRegistrations, runExtractors, type Extractor } from "./extractors.js";
 
 function routeTool(name: string, path: string): ExtractedTool {
@@ -80,5 +81,15 @@ describe("extractor registrations", () => {
       ]),
     ]);
     expect(result.tools.map((tool) => tool.name)).toEqual(["host_polls_list", "host_trpcish", "host_health"]);
+  });
+
+  it("keeps the same procedure name distinct across two trpc mounts", () => {
+    // unionExtracted dedups by bindingIdentity — mount must be part of a trpc
+    // tool's identity or one of these silently disappears from tools.json.
+    const first = bindingIdentity({ kind: "trpc", procedure: "health", type: "query", mount: "/api/trpc" });
+    const second = bindingIdentity({ kind: "trpc", procedure: "health", type: "query", mount: "/api/admin/trpc" });
+    expect(first).not.toBe(second);
+    // Trailing-slash mounts normalize to the same identity.
+    expect(bindingIdentity({ kind: "trpc", procedure: "health", type: "query", mount: "/api/trpc/" })).toBe(first);
   });
 });

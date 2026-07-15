@@ -564,9 +564,10 @@ export function dedupKey(method: HttpMethod, urlPath: string): string {
 }
 
 /** The binding-kind-aware identity a tool is deduplicated and diffed by:
- * method+path for HTTP-shaped bindings, the procedure dot-path for tRPC. */
+ * method+path for HTTP-shaped bindings, mount+procedure for tRPC (a host can
+ * expose the same procedure name under two mounts — both tools must survive). */
 export function bindingIdentity(binding: ToolBinding): string {
-  if (binding.kind === "trpc") return `TRPC ${binding.procedure}`;
+  if (binding.kind === "trpc") return `TRPC ${binding.mount.replace(/\/+$/g, "")} ${binding.procedure}`;
   return dedupKey(binding.method, binding.path);
 }
 
