@@ -5,7 +5,7 @@
       "id": "websites",
       "label": "Umami websites overview",
       "path": "/websites",
-      "waitFor": "main"
+      "waitFor": "h2"
     }
   ],
   "prompts": [
