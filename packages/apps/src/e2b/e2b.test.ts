@@ -5,6 +5,7 @@ const sdk = vi.hoisted(() => {
   const sandbox = {
     sandboxId: "sandbox_123",
     getHost: vi.fn((port: number) => `${port}-sandbox_123.e2b.app`),
+    createSnapshot: vi.fn(async () => ({ snapshotId: "snapshot_789" })),
     pause: vi.fn(async () => true),
     kill: vi.fn(async () => true),
     commands: {
@@ -16,9 +17,16 @@ const sdk = vi.hoisted(() => {
       list: vi.fn(async () => [{ name: "a.txt" }, { name: "nested" }]),
     },
   };
+  const resumedSandbox = {
+    ...sandbox,
+    sandboxId: "sandbox_456",
+    getHost: vi.fn((port: number) => `${port}-sandbox_456.e2b.app`),
+  };
   return {
     sandbox,
-    create: vi.fn(async () => sandbox),
+    resumedSandbox,
+    create: vi.fn(async (templateOrOptions?: unknown) =>
+      typeof templateOrOptions === "string" ? resumedSandbox : sandbox),
     connect: vi.fn(async () => sandbox),
   };
 });
@@ -37,6 +45,12 @@ beforeEach(() => {
 });
 
 describe("e2bSandbox", () => {
+  const snapshotRef = `e2b:v1:${Buffer.from(JSON.stringify({
+    version: 1,
+    snapshotId: "snapshot_789",
+    port: 8080,
+  })).toString("base64url")}`;
+
   it("maps env, initial files, and provider-native egress at create", async () => {
     const adapter = e2bSandbox({ apiKey: "key_test", timeoutMs: 12_345 });
     await adapter.create({
@@ -61,7 +75,7 @@ describe("e2bSandbox", () => {
     ]);
   });
 
-  it("maps commands, files, URL requests, pause snapshots, and kill", async () => {
+  it("maps commands, files, URL requests, copyable snapshots, and kill", async () => {
     const machine = await e2bSandbox({ apiKey: "key_test", timeoutMs: 5_000 }).create({ env: {} });
 
     await expect(machine.exec("pwd", { cwd: "/app", timeoutMs: 200 })).resolves.toEqual({
@@ -70,6 +84,8 @@ describe("e2bSandbox", () => {
       stderr: "err",
     });
     expect(sdk.sandbox.commands.run).toHaveBeenCalledWith("pwd", { cwd: "/app", timeoutMs: 200 });
+    sdk.sandbox.commands.run.mockRejectedValueOnce({ exitCode: 23, stdout: "partial", stderr: "failed" });
+    await expect(machine.exec("false")).resolves.toEqual({ code: 23, stdout: "partial", stderr: "failed" });
     await expect(machine.files.read("/app/a")).resolves.toEqual(new Uint8Array([1, 2, 3]));
     expect(sdk.sandbox.files.read).toHaveBeenCalledWith("/app/a", { format: "bytes" });
     await machine.files.write("/app/b", new Uint8Array([6]));
@@ -87,20 +103,41 @@ describe("e2bSandbox", () => {
       body: expect.any(ArrayBuffer),
     }));
 
-    await expect(machine.snapshot()).resolves.toBe("e2b:sandbox_123");
-    expect(sdk.sandbox.pause).toHaveBeenCalledOnce();
+    await expect(machine.snapshot()).resolves.toBe(snapshotRef);
+    expect(sdk.sandbox.createSnapshot).toHaveBeenCalledOnce();
+    expect(sdk.sandbox.pause).not.toHaveBeenCalled();
     await machine.stop();
     expect(sdk.sandbox.kill).toHaveBeenCalledOnce();
   });
 
-  it("parses only e2b refs, reconnects with a fresh timeout, and leaves undefined egress unrestricted", async () => {
+  it("parses only e2b refs, creates an independent machine from a snapshot, and leaves undefined egress unrestricted", async () => {
     const adapter = e2bSandbox({ apiKey: "key_test", timeoutMs: 9_000 });
     await adapter.create({ env: {} });
     expect(sdk.create).toHaveBeenCalledWith(expect.objectContaining({ allowInternetAccess: true }));
 
     await expect(adapter.resume("modal:im_wrong")).rejects.toMatchObject({ code: "validation" });
     await expect(adapter.resume("e2b:")).rejects.toMatchObject({ code: "validation" });
-    await expect(adapter.resume("e2b:sandbox_123")).resolves.toMatchObject({ id: "sandbox_123" });
-    expect(sdk.connect).toHaveBeenCalledWith("sandbox_123", { apiKey: "key_test", timeoutMs: 9_000 });
+    await expect(adapter.resume(snapshotRef)).resolves.toMatchObject({ id: "sandbox_456" });
+    expect(sdk.create).toHaveBeenLastCalledWith("snapshot_789", {
+      apiKey: "key_test",
+      timeoutMs: 9_000,
+      allowInternetAccess: true,
+    });
+    expect(sdk.connect).not.toHaveBeenCalled();
+  });
+
+  it("persists a non-default port and denied egress in the opaque snapshot ref", async () => {
+    const adapter = e2bSandbox({ apiKey: "key_test", timeoutMs: 9_000 });
+    const machine = await adapter.create({ env: { PORT: "9090" }, egress: [] });
+    await machine.request({ method: "GET", path: "/port" });
+    expect(fetch).toHaveBeenLastCalledWith("https://9090-sandbox_123.e2b.app/port", expect.anything());
+
+    const snapshotRefWithPolicy = await machine.snapshot();
+    await adapter.resume(snapshotRefWithPolicy);
+    expect(sdk.create).toHaveBeenLastCalledWith("snapshot_789", {
+      apiKey: "key_test",
+      timeoutMs: 9_000,
+      network: { allowOut: [], denyOut: ["0.0.0.0/0"] },
+    });
   });
 });

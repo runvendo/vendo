@@ -12,6 +12,27 @@ is critical flag, input scanners, grant match, policy rules, policy code,
 judge, then the default posture. Critical tools always ask. Breakers can turn a
 run decision into an ask.
 
+## Effective risk resolution
+
+A tool's declared risk is a conservative default. For a small set of Vendo
+tools where the safe path depends on the arguments, guard resolves the
+effective risk per call before policy, grants, breakers, and approvals — so
+chat, SSE, and the MCP door reach the same decision.
+
+- `vendo_apps_create` is `read`. Creating an app writes only to Vendo's own
+  app store and always produces a jailed rung 1 UI document. It runs
+  immediately with no approval card.
+- `vendo_apps_edit` is declared `write`. It is downgraded to `read` for a
+  single call only when the app is owner-scoped, is a tree (rung 1) document,
+  and the edit instruction does not require server code. A tree-only edit
+  runs without approval; an edit that adds server behavior, host-tool writes,
+  destructive actions, or egress keeps the approval card. If an edit
+  classified as tree-only unexpectedly emits server code, the runtime fails
+  closed before the sandbox runs or the app is persisted.
+
+Custom tools you register are unaffected; they continue to use their declared
+`ToolDescriptor.risk`.
+
 Present calls can pause for an interactive approval. Away calls cannot. They
 park as `pending-approval` and resume only after the user returns and decides.
 

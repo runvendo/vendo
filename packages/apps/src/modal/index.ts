@@ -4,6 +4,7 @@ import type { SandboxAdapter, SandboxMachine } from "../sandbox.js";
 const DEFAULT_PORT = 8080;
 const APP_NAME = "vendo-apps";
 const BASE_IMAGE = "node:22-alpine";
+const SNAPSHOT_REF_PREFIX = "modal:v1:";
 const START_COMMAND = [
   "sh",
   "-c",
@@ -32,10 +33,58 @@ interface MachineState {
   port: number;
 }
 
+interface ModalSnapshotState extends MachineState {
+  version: 1;
+  imageId: string;
+}
+
 const textEncoder = new TextEncoder();
 
 const toBytes = (value: Uint8Array | string): Uint8Array =>
   typeof value === "string" ? textEncoder.encode(value) : value.slice();
+
+const encodeSnapshotRef = (imageId: string, state: MachineState): string =>
+  `${SNAPSHOT_REF_PREFIX}${Buffer.from(JSON.stringify({
+    version: 1,
+    imageId,
+    env: { ...state.env },
+    ...(state.egress === undefined ? {} : { egress: [...state.egress] }),
+    port: state.port,
+  } satisfies ModalSnapshotState)).toString("base64url")}`;
+
+const decodeSnapshotRef = (snapshotRef: string): ModalSnapshotState => {
+  if (!snapshotRef.startsWith(SNAPSHOT_REF_PREFIX) || snapshotRef.length === SNAPSHOT_REF_PREFIX.length) {
+    throw new VendoError("validation", "Modal snapshot references must start with modal:v1:");
+  }
+  try {
+    const value = JSON.parse(
+      Buffer.from(snapshotRef.slice(SNAPSHOT_REF_PREFIX.length), "base64url").toString("utf8"),
+    ) as unknown;
+    if (typeof value !== "object" || value === null) throw new Error("not an object");
+    const state = value as Record<string, unknown>;
+    if (state.version !== 1 || typeof state.imageId !== "string" || state.imageId.length === 0 ||
+      typeof state.env !== "object" || state.env === null || Array.isArray(state.env)) {
+      throw new Error("invalid state envelope");
+    }
+    const env = state.env as Record<string, unknown>;
+    if (Object.values(env).some((entry) => typeof entry !== "string")) throw new Error("invalid env");
+    if (!Number.isInteger(state.port) || (state.port as number) <= 0 || (state.port as number) > 65_535) {
+      throw new Error("invalid port");
+    }
+    if (state.egress !== undefined && (!Array.isArray(state.egress) || state.egress.some((host) => typeof host !== "string"))) {
+      throw new Error("invalid egress policy");
+    }
+    return {
+      version: 1,
+      imageId: state.imageId,
+      env: { ...env } as Record<string, string>,
+      ...(state.egress === undefined ? {} : { egress: [...state.egress as string[]] }),
+      port: state.port as number,
+    };
+  } catch {
+    throw new VendoError("validation", "invalid Modal snapshot reference");
+  }
+};
 
 const parsePort = (env: Record<string, string>): number => {
   const port = Number(env.PORT ?? DEFAULT_PORT);
@@ -46,34 +95,48 @@ const responseHeaders = (headers: Headers): Record<string, string> =>
   Object.fromEntries(headers.entries());
 
 const networkOptions = (egress: string[] | undefined): {
-  blockNetwork?: boolean;
+  outboundCidrAllowlist?: string[];
   outboundDomainAllowlist?: string[];
 } => egress === undefined
   ? {}
   : egress.length === 0
-    ? { blockNetwork: true }
+    ? { outboundCidrAllowlist: [], outboundDomainAllowlist: [] }
     : { outboundDomainAllowlist: [...egress] };
 
 /**
  * 06-apps §3–4 — adapt a Modal sandbox to Vendo's provider-neutral seam.
  *
- * Modal `snapshot()` is disk-only, unlike E2B's memory resume: `modal:im_...`
- * creates a new machine from the image and re-runs the start command. Processes
- * and the machine id do not survive. Modal snapshot images expire after roughly
- * 30 days by default. `modal:sb_...` reconnects to a still-running sandbox.
+ * Modal `snapshot()` is disk-only, unlike E2B's memory resume: `modal:v1:...`
+ * creates a new machine from the encoded image id and re-runs the start
+ * command. Processes and the machine id do not survive. Modal snapshot images
+ * expire after roughly 30 days by default.
  *
  * The app port must be declared in `encryptedPorts` at machine creation and
  * cannot be added later. Vendo therefore reads `$PORT` (default 8080) up front.
  * The start command waits for runtime-owned `/app/start.sh` or `/app/server.js`,
  * because Modal accepts initial files only through its post-create filesystem
  * API. Per-app egress uses Modal's provider-native domain allowlist; an empty
- * list sets `blockNetwork`. Image restore reuses the original create options
- * retained by this adapter instance. The optional SDK is imported lazily.
+ * list uses empty outbound-only CIDR/domain allowlists so serving tunnels stay
+ * reachable. The adapter encodes the image id, env (including opaque secret
+ * handles), egress, and port in a versioned opaque snapshot ref, so runtime
+ * state survives adapter/process restarts without trusting app-writable files.
+ * The optional SDK is imported lazily.
  */
-export const modalSandbox = (options: ModalSandboxOptions = {}): SandboxAdapter => {
-  const imageStates = new Map<string, MachineState>();
-  const sandboxStates = new Map<string, MachineState>();
+/** True when the optional `modal` SDK resolves from this package, so callers
+    can avoid wiring an adapter whose first create() would die on a missing
+    module. Runtimes without `import.meta.resolve` (bundlers inline the
+    dependency) are treated as available. */
+export const modalInstalled = (): boolean => {
+  if (typeof import.meta.resolve !== "function") return true;
+  try {
+    import.meta.resolve("modal");
+    return true;
+  } catch {
+    return false;
+  }
+};
 
+export const modalSandbox = (options: ModalSandboxOptions = {}): SandboxAdapter => {
   const clientOptions = (): Pick<ModalSandboxOptions, "tokenId" | "tokenSecret"> => ({
     ...(options.tokenId === undefined ? {} : { tokenId: options.tokenId }),
     ...(options.tokenSecret === undefined ? {} : { tokenSecret: options.tokenSecret }),
@@ -96,9 +159,7 @@ export const modalSandbox = (options: ModalSandboxOptions = {}): SandboxAdapter 
 
   const spawn = async (client: ModalClient, image: ModalImage, state: MachineState): Promise<ModalMachine> => {
     const app = await client.apps.fromName(APP_NAME, { createIfMissing: true });
-    const sandbox = await client.sandboxes.create(app, image, createParams(state));
-    sandboxStates.set(sandbox.sandboxId, state);
-    return sandbox;
+    return client.sandboxes.create(app, image, createParams(state));
   };
 
   const wrap = (sandbox: ModalMachine, state: MachineState): SandboxMachine => {
@@ -154,8 +215,7 @@ export const modalSandbox = (options: ModalSandboxOptions = {}): SandboxAdapter 
       },
       async snapshot() {
         const image = await sandbox.snapshotFilesystem();
-        imageStates.set(image.imageId, state);
-        return `modal:im_${image.imageId}`;
+        return encodeSnapshotRef(image.imageId, state);
       },
       url: servingUrl,
       async stop() {
@@ -179,19 +239,10 @@ export const modalSandbox = (options: ModalSandboxOptions = {}): SandboxAdapter 
       return wrap(sandbox, state);
     },
     async resume(snapshotRef) {
+      const state = decodeSnapshotRef(snapshotRef);
       const client = await newClient();
-      if (snapshotRef.startsWith("modal:sb_") && snapshotRef.length > "modal:sb_".length) {
-        const sandboxId = snapshotRef.slice("modal:sb_".length);
-        const state = sandboxStates.get(sandboxId) ?? { env: {}, port: DEFAULT_PORT };
-        return wrap(await client.sandboxes.fromId(sandboxId), state);
-      }
-      if (snapshotRef.startsWith("modal:im_") && snapshotRef.length > "modal:im_".length) {
-        const imageId = snapshotRef.slice("modal:im_".length);
-        const state = imageStates.get(imageId) ?? { env: {}, port: DEFAULT_PORT };
-        const image = await client.images.fromId(imageId);
-        return wrap(await spawn(client, image, state), state);
-      }
-      throw new VendoError("validation", "Modal snapshot references must start with modal:im_ or modal:sb_");
+      const image = await client.images.fromId(state.imageId);
+      return wrap(await spawn(client, image, state), state);
     },
   };
 };

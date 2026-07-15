@@ -17,6 +17,11 @@ user owns their own copy. Import, fork, sharing, and publishing mint a fresh
 The agent escalates when needed. Users do not choose a rung. The last working
 surface remains available while the next rung builds.
 
+Rung 1 create and tree-only edit calls run without an approval card because
+they cannot reach host tools, cannot perform egress, and render in the jailed
+UI surface. Edits that add server behavior stay approval-gated. See
+[Effective risk resolution](/concepts/tools-and-safety#effective-risk-resolution).
+
 The instant payload dispatches by `formatVersion`. V0 registers only
 `vendo-genui/v1`. Unknown formats render a contained notice. Generated
 components run inside an iframe with `connect-src 'none'`; they are never

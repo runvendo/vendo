@@ -35,8 +35,11 @@
 
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+// fileURLToPath (not .pathname) so a checkout path containing spaces or other
+// URL-escaped characters decodes correctly — .pathname leaves "%20" undecoded.
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const PACKAGES_DIR = join(ROOT, "packages");
 
 /** package name → allowed @vendoai/* (and umbrella) deps. "*" = anything in the map. */

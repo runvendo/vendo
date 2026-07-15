@@ -32,6 +32,24 @@ import type { LanguageModel } from "ai";
 
 export const fixtureBaseUrl = (): string => inject("fixtureBaseUrl");
 
+/** Next's dev server may reset a socket while lazily compiling a fixture
+ * route. Retry transport failures only so HTTP failures remain assertions. */
+export async function fixtureFetch(
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1],
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      return await fetch(input, init);
+    } catch (error) {
+      lastError = error;
+      if (attempt < 5) await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+    }
+  }
+  throw lastError;
+}
+
 /** Seeded fixture principals — resolved from the `x-vendo-test-user` header. */
 export const ADA: Principal = { kind: "user", subject: "user_ada" };
 export const BOB: Principal = { kind: "user", subject: "user_bob" };
@@ -136,7 +154,9 @@ const cookieCache = new Map<string, string>();
 export async function loginCookie(subject: string): Promise<string> {
   const cached = cookieCache.get(subject);
   if (cached !== undefined) return cached;
-  const response = await fetch(`${fixtureBaseUrl()}/api/login`, {
+  // The shared Next dev fixture can reset its first login socket while sibling
+  // Turbo tasks finish compiling; fixtureFetch retries only transport failures.
+  const response = await fixtureFetch(`${fixtureBaseUrl()}/api/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ user: subject }),
@@ -149,7 +169,7 @@ export async function loginCookie(subject: string): Promise<string> {
 }
 
 export async function resetFixture(): Promise<void> {
-  const response = await fetch(`${fixtureBaseUrl()}/fixture/reset`, { method: "POST" });
+  const response = await fixtureFetch(`${fixtureBaseUrl()}/fixture/reset`, { method: "POST" });
   if (!response.ok) throw new Error(`Fixture reset failed (${response.status})`);
 }
 
@@ -162,7 +182,7 @@ const fixtureActAs = async (principal: Principal): Promise<{ headers: Record<str
 
 /** A direct host-app fetch (bypasses the wire) for asserting real host state. */
 export async function hostFetch(path: string, subject: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(`${fixtureBaseUrl()}${path}`, {
+  return fixtureFetch(`${fixtureBaseUrl()}${path}`, {
     ...init,
     headers: { ...(init.headers ?? {}), cookie: await loginCookie(subject) },
   });
@@ -180,6 +200,12 @@ export interface StackOptions {
    * composed from the umbrella's OWN parts — the way a host must today until the
    * `createVendo({ mcp: true })` hookup lands (docs/contracts/10-mcp-umbrella-hookup.md). */
   mcp?: boolean;
+  /** Compose the umbrella with `telemetry: true` (opt-in anonymous telemetry).
+   * Consent is still resolved at emit time from env/config (J11). */
+  telemetry?: boolean;
+  /** Back the composed store with real Postgres (createStore({ url })) instead of
+   * the default per-test PGlite temp dir. Used by the J9 durability journey. */
+  storeUrl?: string;
 }
 
 /** The door mounted alongside the wire when `createStack({ mcp: true })`. */
@@ -219,7 +245,9 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
   process.env.VENDO_TICK_SECRET ??= "integration-tick-secret";
 
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-integration-"));
-  const store = createStore({ dataDir });
+  const store = options.storeUrl === undefined
+    ? createStore({ dataDir })
+    : createStore({ url: options.storeUrl });
   // Open the DB up front so `store.raw()` (the SQL-assert seam) is usable
   // immediately; createVendo also calls ensureSchema (idempotent).
   await store.ensureSchema();
@@ -234,6 +262,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     store,
     actAs: fixtureActAs,
     policy: { file: ".vendo/policy.json" },
+    ...(options.telemetry === true ? { telemetry: true } : {}),
   });
 
   // J6 — the MCP door, composed from the umbrella's OWN parts (the hookup note's
@@ -314,7 +343,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
         // against the host app (04 §4 trusted-origin forwarding).
         headers.cookie = await loginCookie(user.subject);
       }
-      return fetch(`${baseUrl}${WIRE_BASE}${path}`, { ...init, headers });
+      return fixtureFetch(`${baseUrl}${WIRE_BASE}${path}`, { ...init, headers });
     },
     async sql(query, params) {
       return (await raw.query(query, params)).rows as never;

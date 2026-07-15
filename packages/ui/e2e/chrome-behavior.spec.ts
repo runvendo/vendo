@@ -16,8 +16,8 @@ test("overlay traps focus, closes on Escape, and restores the launcher", async (
   const close = page.getByRole("button", { name: "Close Vendo" });
   const composer = page.getByRole("textbox", { name: "Message" });
   await expect(dialog).toBeVisible();
-  await expect(close).toBeFocused();
-  await composer.focus();
+  // ENG-220: initial focus lands in the composer, not on the close button.
+  await expect(composer).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(close).toBeFocused();
   await page.keyboard.press("Shift+Tab");

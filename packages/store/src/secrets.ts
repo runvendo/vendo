@@ -31,7 +31,7 @@ export function storeSecrets(store: VendoStore): SecretsProvider {
       const key = keyFor(store);
       const result = await db.query("SELECT ciphertext FROM vendo_secrets WHERE name = $1", [name]);
       const row = result.rows[0];
-      return row ? decryptSecret(text(row["ciphertext"]), key) : undefined;
+      return row ? decryptSecret(text(row["ciphertext"]), key, name) : undefined;
     },
   };
 }
@@ -45,10 +45,12 @@ export function secretStore(store: VendoStore): {
   const db = dbFor(store);
   return {
     async set(name, value) {
-      const ciphertext = encryptSecret(value, keyFor(store));
+      const ciphertext = encryptSecret(value, keyFor(store), name);
+      // updated_at marks the last write: a rotated secret is recent ACTIVITY for
+      // the erase-by-age axis (02 §5) even when created_at is old.
       await db.query(
-        `INSERT INTO vendo_secrets (name, ciphertext, created_at) VALUES ($1, $2, $3)
-         ON CONFLICT (name) DO UPDATE SET ciphertext = EXCLUDED.ciphertext`,
+        `INSERT INTO vendo_secrets (name, ciphertext, created_at, updated_at) VALUES ($1, $2, $3, $3)
+         ON CONFLICT (name) DO UPDATE SET ciphertext = EXCLUDED.ciphertext, updated_at = EXCLUDED.updated_at`,
         [name, ciphertext, new Date().toISOString()],
       );
     },

@@ -27,20 +27,35 @@ function riskByCall(messages: UIMessage[]): Map<string, RiskLabel> {
   return risks;
 }
 
-/** Guard approval ids (apr_…) by tool call — carried in the data-vendo-approval
+/** Guard approval metadata by tool call — carried in the data-vendo-approval
     part beside the native ai-SDK approval (whose own id is transport-local). */
-function approvalIdByCall(messages: UIMessage[]): Map<string, string> {
-  const ids = new Map<string, string>();
+function approvalByCall(messages: UIMessage[]): Map<string, {
+  approvalId?: string;
+  invalidatedGrant?: ApprovalRequest["invalidatedGrant"];
+}> {
+  const approvals = new Map<string, {
+    approvalId?: string;
+    invalidatedGrant?: ApprovalRequest["invalidatedGrant"];
+  }>();
   for (const message of messages) {
     for (const part of message.parts) {
       if (part.type !== "data-vendo-approval") continue;
-      const data = partData(part) as { toolCallId?: unknown; approvalId?: unknown };
-      if (typeof data.toolCallId === "string" && typeof data.approvalId === "string") {
-        ids.set(data.toolCallId, data.approvalId);
-      }
+      const data = partData(part) as {
+        toolCallId?: unknown;
+        approvalId?: unknown;
+        invalidatedGrant?: { id?: unknown; grantedAt?: unknown };
+      };
+      if (typeof data.toolCallId !== "string") continue;
+      approvals.set(data.toolCallId, {
+        ...(typeof data.approvalId === "string" ? { approvalId: data.approvalId } : {}),
+        ...(typeof data.invalidatedGrant?.id === "string"
+          && typeof data.invalidatedGrant.grantedAt === "string"
+          ? { invalidatedGrant: data.invalidatedGrant as NonNullable<ApprovalRequest["invalidatedGrant"]> }
+          : {}),
+      });
     }
   }
-  return ids;
+  return approvals;
 }
 
 function toolName(part: Extract<UIMessage["parts"][number], { toolCallId: string }>): string {
@@ -94,7 +109,7 @@ export function VendoThread({
   const fileRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const risks = useMemo(() => riskByCall(thread.messages), [thread.messages]);
-  const guardApprovalIds = useMemo(() => approvalIdByCall(thread.messages), [thread.messages]);
+  const guardApprovals = useMemo(() => approvalByCall(thread.messages), [thread.messages]);
   const busy = thread.status === "submitted" || thread.status === "streaming";
   const landing = thread.messages.length === 0;
   const activeAssistant = thread.messages.at(-1)?.role === "assistant" ? thread.messages.at(-1) : undefined;
@@ -279,15 +294,19 @@ export function VendoThread({
           {approvals.map(part => {
             const risk = risks.get(part.toolCallId) ?? "read";
             const input = "input" in part ? part.input : undefined;
+            const guardApproval = guardApprovals.get(part.toolCallId);
             const approval: ApprovalRequest = {
               id: part.approval.id,
               call: { id: part.toolCallId, tool: toolName(part), args: input as Json },
               descriptor: { name: toolName(part), description: `Approve ${toolName(part)}`, inputSchema: {}, risk },
               inputPreview: preview(input),
+              ...(guardApproval?.invalidatedGrant === undefined
+                ? {}
+                : { invalidatedGrant: guardApproval.invalidatedGrant }),
               ctx: { principal: { kind: "user", subject: "current-user", ephemeral: true }, venue: "chat", presence: "present" },
               createdAt: new Date().toISOString(),
             };
-            const guardApprovalId = guardApprovalIds.get(part.toolCallId);
+            const guardApprovalId = guardApproval?.approvalId;
             return (
               <ApprovalCard
                 key={part.approval.id}

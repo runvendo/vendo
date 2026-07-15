@@ -32,6 +32,12 @@ export function grantStore(store: VendoStore): {
       }
       if (principal.ephemeral === true) {
         registerEphemeralSubject(store, principal.subject);
+        // Mirror putGrantRow's cross-subject refusal (02 §2): a prior overlay
+        // grant owned by another subject is never flipped.
+        const prior = overlay.grants.get(parsedGrant.id);
+        if (prior !== undefined && prior.subject !== parsedGrant.subject) {
+          throw new VendoError("conflict", `grant ${parsedGrant.id} belongs to another subject`);
+        }
         overlay.grants.set(parsedGrant.id, snapshot(parsedGrant));
         return;
       }

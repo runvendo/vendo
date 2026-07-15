@@ -1,6 +1,6 @@
 # @vendoai/agent — the agent loop
 
-Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a major. One job: run the conversation — streaming, tool-calling, context engineering. Nothing else: no tools of its own, no policy, no persistence logic beyond the thread shape. Depends on core + `ai` (Vercel AI SDK ≥ 5) **as a peerDependency** — the host owns the one `ai` install, same singleton rule as React, so the `LanguageModel` a host passes is always assignable (mixed `ai` majors are a documented ai-SDK failure mode). The BYO-LLM seam **is** the ai-SDK `LanguageModel` (Yousef-approved): every provider ships one, and the streaming wire is the ai-SDK UI message stream.
+Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a major. One job: run the conversation — streaming, tool-calling, context engineering. Nothing else: no tools of its own, no policy, no persistence logic beyond the thread shape. Depends on core + `ai` (Vercel AI SDK `>=6.0.0 <7`) **as a peerDependency** — the host owns the one `ai` install, same singleton rule as React, so the `LanguageModel` a host passes is always assignable (mixed `ai` majors are a documented ai-SDK failure mode). The BYO-LLM seam **is** the ai-SDK `LanguageModel` (Yousef-approved): every provider ships one, and the streaming wire is the ai-SDK UI message stream.
 
 ## 1. Public API
 
@@ -44,6 +44,7 @@ export interface VendoAgent {
 - Every tool call goes through the guard-bound `ToolRegistry`. A `pending-approval` outcome surfaces as the ai-SDK native approval flow (`needsApproval` / `addToolApprovalResponse`); the turn pauses, the approval decision resumes it.
 - `blocked` outcomes are told to the model (it should explain and adapt), never silently swallowed.
 - Away tasks (`asRunner()`) run the same loop with `presence: "away"`: no interactive approvals — a `pending-approval` outcome is recorded, the step fails soft, and the run report says so.
+- The additive `AgentRunner` task field `abortSignal?: AbortSignal` is passed to the ai-SDK generation call. An in-process abort returns an `AgentRunReport` with status `"stopped"`; runners that predate the optional field remain structurally compatible.
 - The loop is venue-agnostic: chat, app editing, and automations all reuse it; venue arrives via `RunContext` and is stamped on every audit event by guard.
 
 ## 3. Context engineering (what the system prompt is made of)
@@ -62,3 +63,11 @@ export interface ThreadSummary { id: ThreadId; title: string; updatedAt: IsoDate
 ```
 
 Threads belong to a principal; `threads.*` never crosses subjects. Ephemeral principals get in-memory threads regardless of store.
+
+## Amendments
+
+### 2026-07-14 — AI SDK peer range corrected
+
+- **Changed:** Corrected the `ai` peer dependency contract to `>=6.0.0 <7`.
+- **Why:** Package manifests have always shipped on the v6 train; the contract document lagged behind them.
+- **Approved by:** Yousef, 2026-07-14.

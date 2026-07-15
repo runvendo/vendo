@@ -82,6 +82,61 @@ const storedServer = async (
 };
 
 describe("ladder rung transitions (e2e)", () => {
+  it("opens a non-empty generated surface after an in-place tree edit through the real runtime", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(
+        JSON.stringify({
+          name: "Editable dashboard",
+          tree: {
+            formatVersion: "vendo-genui/v1",
+            root: "root",
+            nodes: [
+              { id: "root", component: "Stack", source: "prewired", children: ["title"] },
+              { id: "title", component: "Text", source: "prewired", props: { text: "Spending" } },
+            ],
+          },
+        }),
+        JSON.stringify({
+          ops: [
+            {
+              op: "add-component",
+              name: "SpendingChart",
+              source: "export default function SpendingChart() { return <div role=\"img\">Chart</div>; }",
+            },
+            {
+              op: "add-node",
+              node: { id: "chart", component: "SpendingChart", source: "generated" },
+              parentId: "root",
+            },
+          ],
+        }),
+      ),
+    });
+    const ada = ctx();
+    const app = await runtime.create({ prompt: "Build a spending summary" }, ada);
+
+    const edited = await runtime.edit(app.id, "Add a visual dashboard with a chart", ada);
+    const surface = await runtime.open(app.id, ada);
+
+    expect(edited.app.id).toBe(app.id);
+    expect(edited.failure).toBeUndefined();
+    expect(surface).toMatchObject({
+      kind: "tree",
+      payload: {
+        root: "root",
+        nodes: expect.arrayContaining([
+          expect.objectContaining({ id: "chart", component: "SpendingChart", source: "generated" }),
+        ]),
+        components: { SpendingChart: expect.stringContaining("Chart") },
+      },
+    });
+  });
+
   it("walks rung 1 → 2 → 3 through edit() while open() always answers from last state", async () => {
     const store = memoryStore();
     const sandbox = fakeSandbox();

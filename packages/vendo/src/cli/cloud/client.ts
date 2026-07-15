@@ -4,6 +4,7 @@ import {
   writeCloudSession,
   type CloudSession,
 } from "./session.js";
+import { CLI_VERSION } from "../shared.js";
 
 const DEFAULT_CLOUD_URL = "https://console.vendo.run";
 
@@ -43,6 +44,7 @@ export interface CloudFetchOptions extends CloudUrlOptions {
   fetchImpl?: typeof fetch;
   home?: string;
   sessionStore?: SessionStore;
+  signal?: AbortSignal;
 }
 
 interface ErrorEnvelope {
@@ -100,7 +102,11 @@ async function refreshUserSession(
   }
   const response = await (options.fetchImpl ?? fetch)(requestUrl("/api/v1/auth/refresh", options), {
     method: "POST",
-    headers: { accept: "application/json", "content-type": "application/json" },
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "user-agent": `vendo-cli/${CLI_VERSION}`,
+    },
     body: JSON.stringify({ refresh_token: session.refresh_token }),
   });
   const body = await responseBody(response);
@@ -115,13 +121,17 @@ async function send(
   options: CloudFetchOptions,
   token: string | undefined,
 ): Promise<{ response: Response; body: unknown }> {
-  const headers: Record<string, string> = { accept: "application/json" };
+  const headers: Record<string, string> = {
+    accept: "application/json",
+    "user-agent": `vendo-cli/${CLI_VERSION}`,
+  };
   if (options.body !== undefined) headers["content-type"] = "application/json";
   if (token !== undefined) headers.authorization = `Bearer ${token}`;
   const response = await (options.fetchImpl ?? fetch)(requestUrl(path, options), {
     method: options.method ?? (options.body === undefined ? "GET" : "POST"),
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    signal: options.signal,
   });
   return { response, body: await responseBody(response) };
 }

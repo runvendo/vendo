@@ -116,5 +116,26 @@ describe("parseManifest", () => {
       expect(repo.bootstrap.database?.kind).toBe("docker-postgres");
       expect(repo.bootstrap.devServer?.readinessTimeoutMs).toBeGreaterThan(0);
     }
+
+    expect(manifest.find((repo) => repo.name === "teable")).toMatchObject({
+      appDir: "apps/nextjs-app",
+      tier: "deep",
+      bootstrap: {
+        envTemplate: {
+          PRISMA_DATABASE_URL: "postgresql://corpus:corpus@127.0.0.1:55436/teable?schema=public&statement_cache_size=0",
+        },
+        seedCommand: expect.stringContaining("prisma-db-seed -- --e2e"),
+        database: {
+          kind: "docker-postgres",
+          containerName: "vendo-corpus-teable-postgres",
+          hostPort: 55436,
+        },
+        devServer: {
+          command: "corepack pnpm --dir ../nestjs-backend exec dotenv-flow -p ../nextjs-app -- nest start --webpackPath ./webpack.swc.js -w",
+          readinessUrl: "http://127.0.0.1:43105/auth/login",
+          readinessBodyContains: "Teable",
+        },
+      },
+    });
   });
 });

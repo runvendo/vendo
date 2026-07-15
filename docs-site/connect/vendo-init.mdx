@@ -13,19 +13,21 @@ The wizard scans the app with deterministic analysis plus available AI
 assistance. It interviews you with recommendations on four questions: your model
 import, the product brief, risk labels for critical tools, and whether to open
 the MCP door. Theme is extracted automatically, not asked. It then proposes the
-handler route and `<VendoRoot>` wiring. The scaffolded `<VendoRoot>` imports the
-extracted `.vendo/theme.json` and passes it as the `theme` prop, so shipped
-chrome adopts the host brand from the first boot with no hand wiring. Every code
-change is permission-gated and shown as a diff.
+handler route, the MCP discovery route when you opt in, and `<VendoRoot>` wiring.
+The scaffolded `<VendoRoot>` imports the extracted `.vendo/theme.json` and
+passes it as the `theme` prop, so shipped chrome adopts the host brand from the
+first boot with no hand wiring. Every code change is permission-gated and shown
+as a diff.
 
 Critical-tool risk answers land in `.vendo/overrides.json` and remain
 authoritative across future sync runs. Init also writes policy, product brief,
 theme, and the PGlite ignore entry where applicable.
 
 One of those questions is whether to open the [MCP door](/capabilities/mcp).
-Opening it is
-a host decision and needs a `HostOAuthAdapter`, so init never scaffolds it: on
-yes it points you at the wiring. The door stays off unless you opt in.
+Opening it is a host decision and needs a `HostOAuthAdapter`, so init never
+invents auth wiring or flips `mcp: true`: on yes it generates the Next.js
+`/.well-known` sibling route and points you at the remaining wiring. The door
+stays off unless you opt in.
 
 ## Framework detection
 
@@ -34,7 +36,8 @@ frameworks by dependency:
 
 - **Next.js** (a `next` dependency): proposes `app/api/vendo/[...vendo]/route.ts`
   (under `src/app` when that directory exists) and wraps the root layout in
-  `<VendoRoot>`.
+  `<VendoRoot>`. Opting into MCP also proposes
+  `app/.well-known/[...vendo]/route.ts` in the same app-router layout.
 - **Express** (an `express` dependency): proposes a `vendo/server.ts` module
   (`vendo/server.mjs` without a `tsconfig.json`) holding the `createVendo()`
   composition and a Node HTTP-to-fetch adapter, plus a starter `vendo/ai.ts`. Two
@@ -60,3 +63,20 @@ writes nothing.
 
 Use `vendo doctor` after setup. It checks wiring and makes one live `/status`
 round trip.
+
+## Non-interactive setup
+
+Pass an app directory as the positional argument; it defaults to the current
+directory. For CI, agents, or a reviewed scripted setup, use:
+
+```bash
+npx vendo init [dir] --yes --model-import '@/lib/ai' --brief 'What the product does and who uses it'
+```
+
+- `--yes` skips the four-question interview, still prints each proposed diff,
+  and approves all code changes.
+- `--model-import <specifier>` chooses the module that exports the host's AI SDK
+  `model` (default `@/lib/ai` for Next.js and `./ai` for Express).
+- `--brief <text>` supplies the contents of `.vendo/brief.md`.
+- `--force` regenerates Vendo-owned `.vendo` files while preserving existing
+  host source files.

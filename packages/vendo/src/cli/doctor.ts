@@ -2,7 +2,8 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { Telemetry } from "@vendoai/telemetry";
 import { detectFramework, detectVendoWiring } from "./framework.js";
-import { consoleOutput, exists, toolingTelemetry, type Output } from "./shared.js";
+import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
+import { consoleOutput, exists, readOptional, toolingTelemetry, type Output } from "./shared.js";
 
 export interface DoctorOptions {
   targetDir: string;
@@ -87,6 +88,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     ?? "http://localhost:3000/api/vendo";
   const fetchImpl = options.fetchImpl ?? fetch;
   let mcpEnabled = false;
+  let sandboxVenue: unknown;
   try {
     const response = await fetchImpl(`${statusUrl}/status`, {
       headers: { accept: "application/json" },
@@ -94,7 +96,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     const body = await response.json() as {
       posture?: unknown;
       version?: unknown;
-      blocks?: { mcp?: unknown } | null;
+      blocks?: { mcp?: unknown; sandbox?: unknown } | null;
     };
     if (!response.ok || typeof body.posture !== "string" || typeof body.version !== "string"
       || typeof body.blocks !== "object" || body.blocks === null) {
@@ -103,6 +105,17 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       pass(`/status live round-trip (${body.version}, ${body.posture})`);
       // 10-mcp §1 — the door flag lives under blocks.mcp.
       mcpEnabled = body.blocks.mcp === true;
+      sandboxVenue = body.blocks.sandbox;
+      if (sandboxVenue === "e2b" || sandboxVenue === "modal" || sandboxVenue === "custom") {
+        pass(`execution venue: ${sandboxVenue}`);
+      } else if (sandboxVenue === false) {
+        warn("install the e2b package and set E2B_API_KEY, or install modal and set MODAL_TOKEN_ID+MODAL_TOKEN_SECRET, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable");
+      } else if (sandboxVenue === undefined) {
+        // Older hosts predate blocks.sandbox — version skew, not a broken install.
+        warn("host /status does not report an execution venue; upgrade @vendoai/vendo to enable the venue check");
+      } else {
+        fail("/status returned an invalid execution venue");
+      }
     }
   } catch {
     fail(`/status is unreachable at ${statusUrl}/status`);
@@ -139,9 +152,48 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       (body) => typeof body.name === "string" && Array.isArray(body.transports),
       "MCP server card parses",
     );
+
+    // 10-mcp §5 — the official registry artifact is optional until a host is
+    // published, but once present it must describe this live door exactly.
+    const serverJson = await readOptional(join(root, "server.json"));
+    if (serverJson !== null) {
+      try {
+        const server = JSON.parse(serverJson) as unknown;
+        const errors = validateRegistryServer(server);
+        if (errors.length === 0) pass("server.json matches MCP registry discovery requirements");
+        else fail(`server.json is invalid: ${errors.join("; ")}`);
+
+        const liveDoorUrl = `${origin}${mountPath}`;
+        if (remoteUrls(server).some((remote) => sameUrl(remote, liveDoorUrl))) {
+          pass("server.json remote agrees with the live MCP door");
+        } else {
+          fail(`server.json remote does not match the live MCP door ${liveDoorUrl}`);
+        }
+      } catch {
+        fail("server.json is invalid JSON");
+      }
+    }
+
+    const localChallenge = await readOptional(join(root, "public", ".well-known", "mcp-registry-auth"));
+    if (localChallenge !== null) {
+      if (localChallenge.trim().startsWith("v=MCPv1")) pass("local MCP registry auth challenge parses");
+      else fail("local MCP registry auth challenge must start with v=MCPv1");
+    }
+    try {
+      const response = await fetchImpl(`${origin}/.well-known/mcp-registry-auth`, {
+        headers: { accept: "text/plain" },
+      });
+      if (response.ok) {
+        const challenge = await response.text();
+        if (challenge.trim().startsWith("v=MCPv1")) pass("MCP registry auth challenge parses");
+        else fail("MCP registry auth challenge must start with v=MCPv1");
+      }
+    } catch {
+      // The HTTP proof is optional; DNS verification may be in use instead.
+    }
   }
 
-  output.log("Ladder: add sandbox to unlock server apps; actAs for away host actions; connectors for external tools.");
+  output.log("Ladder: execution venue is checked above; actAs for away host actions; connectors for external tools.");
   const wired = failures === 0;
   await telemetry.track("doctor_run", { failures, warnings, wired });
   return wired ? 0 : 1;

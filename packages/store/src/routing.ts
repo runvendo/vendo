@@ -64,6 +64,12 @@ export type ReservedCollection = typeof RESERVED_COLLECTIONS[number];
 interface RoutedConfig {
   table: ReservedCollection;
   select: string;
+  /** Optional lighter projection for `list` (get/point-reads still use `select`).
+   *  vendo_threads uses it to avoid transferring the full messages array per row. */
+  listSelect?: string;
+  /** 02-store §2: vendo_audit is append-only through this door — `delete` is
+   *  refused outright; rows are erased only via the store erase API (02 §5). */
+  appendOnly?: true;
   cursorColumn: string;
   refs: Readonly<Record<string, string>>;
   fromDb(row: Record<string, unknown>): VendoRecord;
@@ -121,7 +127,11 @@ function auditRecord(event: AuditEvent): VendoRecord {
 }
 
 function threadRecord(row: ThreadRow): VendoRecord {
-  const data: ThreadData = { subject: row.subject, messages: row.messages };
+  const data: ThreadData = {
+    subject: row.subject,
+    messages: row.messages,
+    ...(row.title === undefined || row.title === null ? {} : { title: row.title }),
+  };
   return {
     id: row.id,
     data,
@@ -147,7 +157,9 @@ function appRecord(row: AppRow): VendoRecord {
   return {
     id: row.id,
     data,
-    refs: { subject: row.subject },
+    // trigger_kind mirrors the persisted generated column (schema.ts) so the DB and the
+    // in-memory overlay agree on the same filterable ref (the automations tick / emit query it).
+    refs: refs({ subject: row.subject, trigger_kind: row.doc.trigger?.on.kind }),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -219,6 +231,12 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
     },
     async delete(id) {
       requireRecordId(id);
+      if (config.appendOnly === true) {
+        throw new VendoError(
+          "blocked",
+          `${config.table} is append-only; rows are erased only via the store erase API (02-store §5)`,
+        );
+      }
       if (config.deleteOverlay(id)) return;
       await db.query(`DELETE FROM ${config.table} WHERE id = $1`, [id]);
     },
@@ -246,7 +264,7 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
       }
       params.push(limit + 1);
       const result = await db.query(
-        `${config.select}${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""}
+        `${config.listSelect ?? config.select}${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""}
          ORDER BY ${config.cursorColumn} DESC, id DESC LIMIT $${params.length}`,
         params,
       );
@@ -281,8 +299,17 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         async put(record) {
           const grant = parsePermissionGrant(record.data);
           requireMatchingId(record.id, grant.id, "permission grant id");
-          if (isEphemeralSubject(store, grant.subject)) overlay.grants.set(grant.id, snapshot(grant));
-          else await putGrantRow(db, grant);
+          if (isEphemeralSubject(store, grant.subject)) {
+            // Mirror the SQL door's cross-subject refusal (02 §2): a prior
+            // overlay grant owned by another subject is never flipped.
+            const prior = overlay.grants.get(grant.id);
+            if (prior !== undefined && prior.subject !== grant.subject) {
+              throw new VendoError("conflict", `grant ${grant.id} belongs to another subject`);
+            }
+            overlay.grants.set(grant.id, snapshot(grant));
+          } else {
+            await putGrantRow(db, grant);
+          }
           return grantRecord(grant);
         },
         deleteOverlay: (id) => overlay.grants.delete(id),
@@ -321,6 +348,7 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
       return {
         table: collection,
         select: "SELECT * FROM vendo_audit",
+        appendOnly: true,
         cursorColumn: "at",
         refs: { subject: "subject", kind: "kind", app_id: "app_id", tool: "tool" },
         fromDb: (row) => auditRecord(row["event"] as AuditEvent),
@@ -330,18 +358,31 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
           requireMatchingId(record.id, event.id, "audit event id");
           if (event.principal.ephemeral === true) {
             registerEphemeralSubject(store, event.principal.subject);
+            // Mirror the SQL door's append-only refusal (02 §2): an existing
+            // overlay row is never replaced.
+            if (overlay.audit.has(event.id)) {
+              throw new VendoError("conflict", `audit event ${event.id} already exists (vendo_audit is append-only)`);
+            }
             overlay.audit.set(event.id, snapshot(event));
           } else {
-            await putAuditRow(db, event, true);
+            await putAuditRow(db, event);
           }
           return auditRecord(event);
         },
-        deleteOverlay: (id) => overlay.audit.delete(id),
+        // Unreachable through the routed door (appendOnly refuses first); the
+        // erase API clears overlay audit rows directly (02 §5).
+        deleteOverlay: () => false,
       };
     case "vendo_threads":
       return {
         table: collection,
         select: "SELECT * FROM vendo_threads",
+        // Listing derives only a title + timestamps; skip the (potentially large) messages
+        // column once a row carries a stored title. Legacy rows (title still NULL, written
+        // before the column existed) keep returning messages so the title stays derivable.
+        listSelect: `SELECT id, subject, title,
+           CASE WHEN title IS NULL THEN messages ELSE '[]'::jsonb END AS messages,
+           created_at, updated_at FROM vendo_threads`,
         cursorColumn: "created_at",
         refs: { subject: "subject" },
         fromDb: (row) => threadRecord(threadFromRow(row)),
@@ -362,6 +403,7 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
               id: record.id,
               subject: data.subject,
               messages: data.messages,
+              ...(data.title === undefined ? {} : { title: data.title }),
               createdAt: prior?.createdAt ?? now,
               updatedAt: now,
             };
@@ -395,7 +437,7 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         table: collection,
         select: "SELECT * FROM vendo_apps",
         cursorColumn: "created_at",
-        refs: { subject: "subject" },
+        refs: { subject: "subject", trigger_kind: "trigger_kind" },
         fromDb: (row) => appRecord(appFromRow(row)),
         overlayRecords: () => [...overlay.apps.values()].map((row) => appRecord(snapshot(row))),
         async put(record) {
@@ -404,6 +446,11 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
           let row: AppRow;
           if (isEphemeralSubject(store, data.subject)) {
             const prior = overlay.apps.get(record.id);
+            // Mirror the SQL door's cross-subject refusal (02 §2): a prior
+            // overlay app owned by another subject is never flipped.
+            if (prior !== undefined && prior.subject !== data.subject) {
+              throw new VendoError("conflict", `app ${record.id} belongs to another subject`);
+            }
             row = {
               id: record.id,
               subject: data.subject,

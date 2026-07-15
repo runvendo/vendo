@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useApps } from "../hooks/use-apps.js";
+import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { TakeoverPortal } from "./takeover-portal.js";
 
 export interface VendoCommand {
   id: string;
@@ -14,6 +16,7 @@ const FOCUSABLE = "button:not([disabled]),input:not([disabled]),textarea:not([di
 /** 08-ui §4 — global keyboard command palette with an ARIA combobox. */
 export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand): void }) {
   const { apps } = useApps();
+  const takeover = useMobileTakeover();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -105,17 +108,30 @@ export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand):
   return (
     <ChromeRoot>
       {open ? (
+        // ENG-228: in takeover the fixed scrim portals to body — a transformed
+        // host ancestor would otherwise capture it and confine the palette.
+        <TakeoverPortal active={takeover.active}>
         <div
           ref={dialog}
-          className="fl-overlay-scrim"
+          className={`fl-overlay-scrim${takeover.active ? " fl-takeover" : ""}`}
           role="dialog"
           aria-modal="true"
           aria-label="Vendo command palette"
           onKeyDown={onKeyDown}
           onMouseDown={event => { if (event.target === event.currentTarget) close(); }}
-          style={{ display: "grid", padding: 18, placeItems: "center" }}
+          // ENG-228: in takeover the palette pins to the top edge (inside the
+          // safe area) at full width, with the bottom padding tracking the
+          // virtual keyboard so the visible list is never hidden behind it.
+          style={takeover.active
+            ? {
+              display: "grid",
+              alignContent: "start",
+              padding: "calc(10px + env(safe-area-inset-top, 0px)) calc(10px + env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px) + var(--fl-kb-inset, 0px)) calc(10px + env(safe-area-inset-left, 0px))",
+              ...takeover.style,
+            }
+            : { display: "grid", padding: 18, placeItems: "center" }}
         >
-          <div className="fl-picker" style={{ alignSelf: "center", maxWidth: 560 }}>
+          <div className="fl-picker" style={takeover.active ? { maxWidth: "none", width: "100%" } : { alignSelf: "center", maxWidth: 560 }}>
             <label>
               <span className="fl-picker-group" style={{ display: "block", margin: "0 2px 9px" }}>Command</span>
               <input
@@ -175,6 +191,7 @@ export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand):
             </ul>
           </div>
         </div>
+        </TakeoverPortal>
       ) : null}
     </ChromeRoot>
   );

@@ -5,11 +5,13 @@ import { describe, expect, it } from "vitest";
 import {
   evaluateAssertion,
   parseConversationSuite,
+  prepareLayer3Page,
   runE2eLayer,
   scorePassAtK,
   type ConversationAssertion,
   type E2eFrameLocator,
   type E2eLocator,
+  type E2eNavigationOptions,
   type E2eObservableSignals,
   type E2ePage,
 } from "./e2e.js";
@@ -57,7 +59,7 @@ class FakePage implements E2ePage {
     private readonly frameCounts: Record<string, number> = {},
   ) {}
 
-  async goto(): Promise<void> {}
+  async goto(_url: string, _options?: E2eNavigationOptions): Promise<void> {}
 
   locator(selector: string): E2eLocator {
     if (selector === "body") return new FakeLocator(1, this.bodyText);
@@ -122,6 +124,24 @@ describe("conversation suite parsing", () => {
       "view-rendered",
       "no-error-toast",
     ]);
+  });
+});
+
+describe("prepareLayer3Page", () => {
+  it("forwards an explicit DOM-ready navigation policy to the host page", async () => {
+    const navigations: Array<{ url: string; options?: { waitUntil?: "load" | "domcontentloaded"; timeout?: number } }> = [];
+    const page = new FakePage({});
+    page.goto = async (url, options) => { navigations.push({ url, options }); };
+
+    await prepareLayer3Page("express-host", page, 30_000, "http://127.0.0.1:3210/", {
+      waitUntil: "domcontentloaded",
+      timeout: 30_000,
+    });
+
+    expect(navigations).toEqual([{
+      url: "http://127.0.0.1:3210/",
+      options: { waitUntil: "domcontentloaded", timeout: 30_000 },
+    }]);
   });
 });
 

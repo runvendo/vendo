@@ -1,4 +1,4 @@
-import type { AppId, AuditEvent, IsoDateTime, Principal } from "@vendoai/core";
+import { VendoError, type AppId, type AuditEvent, type IsoDateTime, type Principal } from "@vendoai/core";
 import { overlayFor, registerEphemeralSubject, snapshot } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
 import { putAuditRow } from "./rows.js";
@@ -32,6 +32,11 @@ export function auditStore(store: VendoStore): {
       const parsedEvent = parseAuditEvent(event);
       if (parsedEvent.principal.ephemeral === true) {
         registerEphemeralSubject(store, parsedEvent.principal.subject);
+        // Same append-only refusal as the routed door and the SQL path (02 §2):
+        // an existing overlay event is never replaced.
+        if (overlay.audit.has(parsedEvent.id)) {
+          throw new VendoError("conflict", `audit event ${parsedEvent.id} already exists (vendo_audit is append-only)`);
+        }
         overlay.audit.set(parsedEvent.id, snapshot(parsedEvent));
         return;
       }

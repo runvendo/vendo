@@ -24,12 +24,31 @@ import type {
   Trigger,
 } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
-import { createGuard, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
+import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createActions } from "@vendoai/actions";
 import { createApps, type AppsRuntime, type SandboxAdapter } from "@vendoai/apps";
 import { createAutomations, type AutomationsEngine } from "@vendoai/automations";
 
 export const fixtureBaseUrl = (): string => inject("fixtureBaseUrl");
+
+/** Next's dev server can briefly reset an in-flight socket while compiling a
+ * fixture route. Keep that test-runner behavior out of the block assertions by
+ * retrying only transport failures; HTTP responses are always returned as-is. */
+export async function fixtureFetch(
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1],
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      return await fetch(input, init);
+    } catch (error) {
+      lastError = error;
+      if (attempt < 5) await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+    }
+  }
+  throw lastError;
+}
 
 /** Seeded fixture principals. Owned here (not in support.js) so both the
  * harness helpers and the support helpers can share one definition. */
@@ -91,7 +110,7 @@ export const hostTools = [
 ] as const;
 
 export async function loginCookie(subject: string): Promise<string> {
-  const response = await fetch(`${fixtureBaseUrl()}/api/login`, {
+  const response = await fixtureFetch(`${fixtureBaseUrl()}/api/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ user: subject }),
@@ -103,7 +122,7 @@ export async function loginCookie(subject: string): Promise<string> {
 }
 
 export async function resetFixture(): Promise<void> {
-  const response = await fetch(`${fixtureBaseUrl()}/fixture/reset`, { method: "POST" });
+  const response = await fixtureFetch(`${fixtureBaseUrl()}/fixture/reset`, { method: "POST" });
   if (response.status !== 200) throw new Error(`Fixture reset failed (${response.status})`);
 }
 
@@ -136,17 +155,29 @@ export interface StackOptions {
   now?: () => Date;
   policy?: PolicyConfig;
   sandbox?: SandboxAdapter;
+  /** Guard LLM judge — passed straight to createGuard so judge-posture suites
+   *  can exercise the composed system's ask/block decisions (ENG-251). */
+  judge?: Judge;
+  /** Guard circuit breakers (rate / write caps) — passed to createGuard so
+   *  breaker-abuse suites can drive the composed system (ENG-251). */
+  breakers?: { maxCallsPerMinute?: number; maxWritesPerRun?: number };
 }
 
 export async function createStack(options: StackOptions = {}): Promise<Stack> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-redteam-e2e-"));
   const store = createStore({ dataDir });
   await store.ensureSchema();
-  const guard = createGuard({ store, ...(options.policy === undefined ? {} : { policy: options.policy }) });
+  const guard = createGuard({
+    store,
+    ...(options.policy === undefined ? {} : { policy: options.policy }),
+    ...(options.judge === undefined ? {} : { judge: options.judge }),
+    ...(options.breakers === undefined ? {} : { breakers: options.breakers }),
+  });
   const actions = createActions({
     tools: hostTools as unknown as Parameters<typeof createActions>[0]["tools"],
     baseUrl: fixtureBaseUrl(),
     actAs: fixtureActAs,
+    fetch: fixtureFetch,
   });
   const bound = guard.bind(actions);
   const apps = createApps({
