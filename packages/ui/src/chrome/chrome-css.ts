@@ -722,6 +722,10 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   border-radius: 9px; display: grid; place-items: center; border: 0; background: transparent;
   color: var(--vendo-fg-muted); cursor: pointer; transition: background .12s, color .12s; }
 .fl-overlay-close:hover { background: var(--vendo-accent-soft); color: var(--vendo-fg); }
+/* ENG-221: new-conversation sits just left of the close X — same quiet header
+   treatment (it shares .fl-overlay-close), only the horizontal offset differs.
+   Offsets = close's right + close's width + a 6px gap, per pointer density. */
+.fl-overlay-new { right: 46px; }
 @keyframes fl-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes fl-overlay-stretch {
   from { transform: translate(-50%, -50%) scaleX(.06) scaleY(.7); opacity: .4; }
@@ -763,6 +767,8 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-overlay-panel.fl-takeover .fl-overlay-close {
   top: calc(12px + env(safe-area-inset-top, 0px));
   right: calc(12px + env(safe-area-inset-right, 0px)); }
+.fl-overlay-panel.fl-takeover .fl-overlay-new {
+  right: calc(46px + env(safe-area-inset-right, 0px)); }
 .fl-page.fl-takeover { position: fixed; inset: 0; z-index: 2147483001; isolation: isolate;
   background: var(--vendo-bg);
   padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
@@ -783,10 +789,13 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   .fl-icon-btn { width: 44px; height: 44px; }
   .fl-jump { width: 44px; height: 44px; }
   .fl-overlay-close { width: 44px; height: 44px; }
+  .fl-overlay-new { right: 62px; }
   /* The grown close button keeps its visual position under the notch. */
   .fl-overlay-panel.fl-takeover .fl-overlay-close {
     top: calc(4px + env(safe-area-inset-top, 0px));
     right: calc(4px + env(safe-area-inset-right, 0px)); }
+  .fl-overlay-panel.fl-takeover .fl-overlay-new {
+    right: calc(52px + env(safe-area-inset-right, 0px)); }
 }
 
 .fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--vendo-border);

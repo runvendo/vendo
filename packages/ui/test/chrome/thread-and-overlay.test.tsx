@@ -66,10 +66,13 @@ describe("VendoThread and VendoOverlay exports", () => {
     await waitFor(() => expect(document.activeElement).toBe(textarea));
     expect(launcher.getAttribute("aria-expanded")).toBe("true");
 
+    // Tab from the last focusable (the composer) wraps to the first — the
+    // new-conversation header button (ENG-221), which precedes the close X.
     fireEvent.keyDown(dialog, { key: "Tab" });
-    expect(document.activeElement).toBe(close);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "New conversation" }));
     fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(textarea);
+    expect(close).toBeTruthy(); // still present, after the new-conversation affordance
 
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull();
