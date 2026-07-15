@@ -1,56 +1,91 @@
+import type { PermissionGrant } from "@vendoai/core";
+import { encode } from "next-auth/jwt";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  authenticateMapleUser,
-  createMapleSessionCookie,
+  actAsMapleUser,
   resolveMapleSession,
+  resolveMaplePrincipal,
   safeReturnTo,
 } from "./auth";
 
 afterEach(() => vi.unstubAllEnvs());
 
-describe("Maple demo auth", () => {
-  it("authenticates the configured seeded demo user", async () => {
-    vi.stubEnv("MAPLE_DEMO_EMAIL", "demo@maple.test");
-    vi.stubEnv("MAPLE_DEMO_PASSWORD", "correct horse battery staple");
-    vi.stubEnv("MAPLE_SESSION_SECRET", "a-long-test-only-session-secret");
+const DEV_SECRET = "maple-local-development-auth-secret";
+const COOKIE = "authjs.session-token";
 
-    await expect(authenticateMapleUser("DEMO@MAPLE.TEST", "correct horse battery staple"))
-      .resolves.toMatchObject({ subject: "vendo-demo", email: "demo@maple.test" });
-    await expect(authenticateMapleUser("demo@maple.test", "wrong" )).resolves.toBeNull();
-  });
+function grantFor(subject: string): PermissionGrant {
+  return {
+    id: "grt_test",
+    subject,
+    tool: "host_transferMoney",
+    descriptorHash: "sha256:test",
+    scope: { kind: "tool" },
+    duration: "standing",
+    source: "automation",
+    grantedAt: "2026-07-15T00:00:00.000Z",
+  };
+}
 
-  it("round-trips the signed HttpOnly session cookie and rejects tampering", async () => {
-    vi.stubEnv("MAPLE_DEMO_EMAIL", "demo@maple.test");
-    vi.stubEnv("MAPLE_DEMO_PASSWORD", "correct horse battery staple");
-    vi.stubEnv("MAPLE_SESSION_SECRET", "a-long-test-only-session-secret");
-    vi.stubEnv("VENDO_BASE_URL", "https://maple.example.com");
-    const user = await authenticateMapleUser("demo@maple.test", "correct horse battery staple");
-    expect(user).not.toBeNull();
+async function sessionCookie(sub: string): Promise<string> {
+  const token = await encode({ token: { sub }, secret: DEV_SECRET, salt: COOKIE, maxAge: 300 });
+  return `${COOKIE}=${token}`;
+}
 
-    const setCookie = await createMapleSessionCookie(
-      new Request("http://0.0.0.0:3000/api/auth/login"),
-      user!,
-    );
-    expect(setCookie).toContain("HttpOnly");
-    expect(setCookie).toContain("Secure");
-    const cookie = setCookie.split(";", 1)[0]!;
-
-    await expect(resolveMapleSession(new Request("https://maple.example.com/", {
+describe("Maple Auth.js sessions", () => {
+  it("resolves a real Auth.js session cookie to the seeded user", async () => {
+    const cookie = await sessionCookie("vendo-demo");
+    await expect(resolveMapleSession(new Request("http://localhost:3000/", {
       headers: { cookie },
-    }))).resolves.toMatchObject({ subject: "vendo-demo" });
-
-    const tampered = `${cookie.slice(0, -1)}x`;
-    await expect(resolveMapleSession(new Request("https://maple.example.com/", {
-      headers: { cookie: tampered },
-    }))).resolves.toBeNull();
+    }))).resolves.toMatchObject({ subject: "vendo-demo", display: "Yousef Helal" });
+    await expect(resolveMaplePrincipal(new Request("http://localhost:3000/", {
+      headers: { cookie },
+    }))).resolves.toEqual({ kind: "user", subject: "vendo-demo", display: "Yousef Helal" });
   });
 
-  it("only accepts same-origin login return targets", () => {
-    vi.stubEnv("VENDO_BASE_URL", "https://maple.example.com");
-    const request = new Request("http://0.0.0.0:3000/api/auth/login");
+  it("rejects tampered cookies, unknown subjects, and missing sessions", async () => {
+    const cookie = await sessionCookie("vendo-demo");
+    await expect(resolveMapleSession(new Request("http://localhost:3000/", {
+      headers: { cookie: `${cookie.slice(0, -2)}xx` },
+    }))).resolves.toBeNull();
+    await expect(resolveMapleSession(new Request("http://localhost:3000/", {
+      headers: { cookie: await sessionCookie("user_stranger") },
+    }))).resolves.toBeNull();
+    await expect(resolveMapleSession(new Request("http://localhost:3000/")))
+      .resolves.toBeNull();
+    await expect(resolveMaplePrincipal(new Request("http://localhost:3000/")))
+      .resolves.toBeNull();
+  });
+});
 
-    expect(safeReturnTo(request, "https://maple.example.com/api/vendo/mcp/authorize?state=ok"))
+describe("actAsMapleUser (Auth.js preset)", () => {
+  it("mints an away session Maple's own session reads accept", async () => {
+    // Cross-version proof: the preset encodes with @vendoai/actions' @auth/core
+    // while resolveMapleSession decodes with next-auth's bundled @auth/core.
+    const material = await actAsMapleUser(
+      { kind: "user", subject: "maple-mia", display: "Mia Nakamura" },
+      grantFor("maple-mia"),
+    );
+    expect(material?.headers.cookie).toMatch(/^authjs\.session-token=/);
+    await expect(resolveMapleSession(new Request("http://localhost:3000/api/transfers", {
+      headers: material!.headers,
+    }))).resolves.toMatchObject({ subject: "maple-mia", email: "mia@maple.com" });
+  });
+
+  it("declines subjects Maple never issued", async () => {
+    await expect(actAsMapleUser(
+      { kind: "user", subject: "user_stranger" },
+      grantFor("user_stranger"),
+    )).resolves.toBeNull();
+  });
+});
+
+describe("safeReturnTo", () => {
+  it("only accepts same-origin return targets", () => {
+    vi.stubEnv("VENDO_BASE_URL", "https://maple.example.com");
+    expect(safeReturnTo("https://maple.example.com/api/vendo/mcp/authorize?state=ok"))
       .toBe("/api/vendo/mcp/authorize?state=ok");
-    expect(safeReturnTo(request, "https://attacker.example/callback")).toBe("/");
+    expect(safeReturnTo("/settings")).toBe("/settings");
+    expect(safeReturnTo("https://attacker.example/callback")).toBe("/");
+    expect(safeReturnTo(null)).toBe("/");
   });
 });
