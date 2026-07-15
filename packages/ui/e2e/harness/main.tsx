@@ -926,18 +926,57 @@ function FormatDrillScenario({ registered }: { registered: boolean }) {
   );
 }
 
+/** A second long conversation for the thread-SWITCH scenario (ENG-213): both
+ *  ids ride the wire list() via the client override below. */
+const boundedThreadB: Thread = {
+  ...boundedThread,
+  id: "thr_1b",
+  messages: boundedThread.messages.slice(0, -1).map(message => ({
+    ...message,
+    id: `${message.id}_b`,
+  })),
+};
+
+/** Serves BOTH bounded fixtures: get() by id and a list() that includes them,
+ *  so useVendoThread adopts either when the scenario switches threads. */
+function boundedThreadsClient(client: VendoClient): VendoClient {
+  const fixtures = new Map([[boundedThread.id, boundedThread], [boundedThreadB.id, boundedThreadB]]);
+  return {
+    ...client,
+    threads: {
+      ...client.threads,
+      get: async id => fixtures.get(id) ?? client.threads.get(id),
+      list: async () => [...fixtures.values()].map(thread => ({
+        id: thread.id,
+        title: "Bounded fixture thread",
+        updatedAt: thread.updatedAt,
+      })),
+    },
+  };
+}
+
 /** ENG-212: the Cadence /assistant host shape — a bounded, overflow-hidden flex
  *  pane owning the height. The root must forward that height so .fl-msglist is
- *  the scroll container and the composer + approval actions stay reachable. */
+ *  the scroll container and the composer + approval actions stay reachable.
+ *  The switch button drives the ENG-213 thread-change reset: the new thread
+ *  must open at its latest turn even after a scroll-up in the previous one. */
 function BoundedThreadScenario() {
+  const [activeThread, setActiveThread] = useState(boundedThread.id);
   return (
-    <VendoProvider client={threadClient(baseClient, boundedThread)} components={components}>
+    <VendoProvider client={boundedThreadsClient(baseClient)} components={components}>
+      <button
+        type="button"
+        data-testid="switch-thread"
+        onClick={() => setActiveThread(current => current === boundedThread.id ? boundedThreadB.id : boundedThread.id)}
+      >
+        Switch conversation
+      </button>
       <div
         data-testid="bounded-pane"
         style={{ height: 560, display: "flex", flexDirection: "column", overflow: "hidden",
           border: "1px solid #cad3e0", borderRadius: 12 }}
       >
-        <VendoThread threadId="thr_1" />
+        <VendoThread threadId={activeThread} />
       </div>
     </VendoProvider>
   );

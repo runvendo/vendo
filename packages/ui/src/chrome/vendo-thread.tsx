@@ -1,6 +1,6 @@
 import type { ApprovalRequest, Json, RiskLabel, ToolOutcome, VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useVendoContext } from "../context.js";
 import { useVendoThread } from "../hooks/use-vendo-thread.js";
 import { PayloadView } from "../tree/renderer.js";
@@ -86,6 +86,77 @@ function preview(input: unknown): string {
   }
 }
 
+/** Within this many pixels of the end the reader counts as "at the bottom" —
+    a paragraph of slack so sub-line wobble (fractional scroll positions,
+    entrance easing) never breaks the stick. */
+const BOTTOM_SLACK_PX = 32;
+
+/** ENG-213 — scroll management for the message list.
+
+    Stick-to-bottom: while the reader is at the end, every content change
+    (history load, streamed deltas, tool chips, approvals) keeps the latest
+    content in view. The moment the reader scrolls up, the stick releases —
+    streaming must never yank them — and it re-arms when they return to the
+    bottom on their own. Jump-to-latest: when new content lands while the
+    reader is scrolled up, the stylesheet's .fl-jump affordance appears;
+    activating it scrolls to the latest turn and re-sticks. */
+function useStickToBottom(messages: UIMessage[], threadKey?: string) {
+  const listRef = useRef<HTMLDivElement>(null);
+  // The stick is a ref, not state: it flips inside scroll/effect timing and
+  // must be readable synchronously without re-render races.
+  const stuckRef = useRef(true);
+  const lastScrollHeightRef = useRef(0);
+  const [unseen, setUnseen] = useState(false);
+
+  // A different conversation is a different reader position: when the caller
+  // switches the hook to another thread, re-arm the stick and forget the
+  // previous thread's growth baseline — otherwise a scroll-up in the old
+  // thread would keep the new one from opening at its latest turn.
+  useEffect(() => {
+    stuckRef.current = true;
+    lastScrollHeightRef.current = 0;
+    setUnseen(false);
+  }, [threadKey]);
+
+  const atBottom = (node: HTMLElement) =>
+    node.scrollHeight - node.scrollTop - node.clientHeight <= BOTTOM_SLACK_PX;
+
+  const onScroll = () => {
+    const node = listRef.current;
+    if (!node) return;
+    // Both user scrolls and our own programmatic sticks land here; either way
+    // the reader's actual position is the single source of truth.
+    stuckRef.current = atBottom(node);
+    if (stuckRef.current) setUnseen(false);
+  };
+
+  const jumpToLatest = () => {
+    const node = listRef.current;
+    if (!node) return;
+    stuckRef.current = true;
+    setUnseen(false);
+    node.scrollTop = node.scrollHeight;
+  };
+
+  // After every content change: stick if the reader is at the bottom, or flag
+  // the new content if they've scrolled away. Layout effects would run before
+  // paint, but streamed markdown re-renders arrive in bursts — post-paint is
+  // indistinguishable here and cheaper.
+  useEffect(() => {
+    const node = listRef.current;
+    if (!node) return;
+    const grew = node.scrollHeight > lastScrollHeightRef.current;
+    lastScrollHeightRef.current = node.scrollHeight;
+    if (stuckRef.current) {
+      node.scrollTop = node.scrollHeight;
+    } else if (grew) {
+      setUnseen(true);
+    }
+  }, [messages]);
+
+  return { listRef, onScroll, jumpToLatest, showJump: unseen };
+}
+
 export interface VendoThreadProps {
   threadId?: string;
   /** Landing headline shown above the composer while the thread is empty. */
@@ -105,6 +176,7 @@ export function VendoThread({
 }: VendoThreadProps) {
   const { client, components } = useVendoContext();
   const thread = useVendoThread(threadId);
+  const scroll = useStickToBottom(thread.messages, threadId);
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -289,51 +361,68 @@ export function VendoThread({
       <div className="fl-thread" role="region" aria-label="Vendo conversation">
         {/* role="log" — aria-label is prohibited on a roleless div (WCAG 4.1.2), and a
             streaming message list is exactly what "log" names. */}
-        <div className="fl-msglist" role="log" aria-label="Conversation messages" aria-live="polite" aria-busy={busy}>
-          {thread.messages.map(message => (
-            <article
-              className={message.role === "user" ? "fl-turn-user" : "fl-turn-assistant"}
-              data-role={message.role}
-              key={message.id}
-              aria-label={`${message.role} message`}
-            >
-              {message.parts.map((part, index) => renderPart(part, `${message.id}-${index}`, message.role))}
-            </article>
-          ))}
-          {approvals.map(part => {
-            const risk = risks.get(part.toolCallId) ?? "read";
-            const input = "input" in part ? part.input : undefined;
-            const guardApproval = guardApprovals.get(part.toolCallId);
-            const approval: ApprovalRequest = {
-              id: part.approval.id,
-              call: { id: part.toolCallId, tool: toolName(part), args: input as Json },
-              descriptor: { name: toolName(part), description: `Approve ${toolName(part)}`, inputSchema: {}, risk },
-              inputPreview: preview(input),
-              ...(guardApproval?.invalidatedGrant === undefined
-                ? {}
-                : { invalidatedGrant: guardApproval.invalidatedGrant }),
-              ctx: { principal: { kind: "user", subject: "current-user", ephemeral: true }, venue: "chat", presence: "present" },
-              createdAt: new Date().toISOString(),
-            };
-            const guardApprovalId = guardApproval?.approvalId;
-            return (
-              <ApprovalCard
-                key={part.approval.id}
-                approval={approval}
-                allowRemember={guardApprovalId !== undefined}
-                onDecide={async decision => {
-                  // Decide the guard's approval record over the wire FIRST so the
-                  // resumed execution replays as approved (05 §1) — the native
-                  // response alone only tells the model loop to continue.
-                  if (guardApprovalId !== undefined) {
-                    await client.approvals.decide([guardApprovalId], decision);
-                  }
-                  thread.addToolApprovalResponse({ id: part.approval.id, approved: decision.approve });
-                }}
-              />
-            );
-          })}
-          {working ? <FluidThinking label="Working" /> : null}
+        <div className="fl-msglist-wrap">
+          <div
+            className="fl-msglist"
+            role="log"
+            aria-label="Conversation messages"
+            aria-live="polite"
+            aria-busy={busy}
+            ref={scroll.listRef}
+            onScroll={scroll.onScroll}
+          >
+            {thread.messages.map(message => (
+              <article
+                className={message.role === "user" ? "fl-turn-user" : "fl-turn-assistant"}
+                data-role={message.role}
+                key={message.id}
+                aria-label={`${message.role} message`}
+              >
+                {message.parts.map((part, index) => renderPart(part, `${message.id}-${index}`, message.role))}
+              </article>
+            ))}
+            {approvals.map(part => {
+              const risk = risks.get(part.toolCallId) ?? "read";
+              const input = "input" in part ? part.input : undefined;
+              const guardApproval = guardApprovals.get(part.toolCallId);
+              const approval: ApprovalRequest = {
+                id: part.approval.id,
+                call: { id: part.toolCallId, tool: toolName(part), args: input as Json },
+                descriptor: { name: toolName(part), description: `Approve ${toolName(part)}`, inputSchema: {}, risk },
+                inputPreview: preview(input),
+                ...(guardApproval?.invalidatedGrant === undefined
+                  ? {}
+                  : { invalidatedGrant: guardApproval.invalidatedGrant }),
+                ctx: { principal: { kind: "user", subject: "current-user", ephemeral: true }, venue: "chat", presence: "present" },
+                createdAt: new Date().toISOString(),
+              };
+              const guardApprovalId = guardApproval?.approvalId;
+              return (
+                <ApprovalCard
+                  key={part.approval.id}
+                  approval={approval}
+                  allowRemember={guardApprovalId !== undefined}
+                  onDecide={async decision => {
+                    // Decide the guard's approval record over the wire FIRST so the
+                    // resumed execution replays as approved (05 §1) — the native
+                    // response alone only tells the model loop to continue.
+                    if (guardApprovalId !== undefined) {
+                      await client.approvals.decide([guardApprovalId], decision);
+                    }
+                    thread.addToolApprovalResponse({ id: part.approval.id, approved: decision.approve });
+                  }}
+                />
+              );
+            })}
+            {working ? <FluidThinking label="Working" /> : null}
+          </div>
+          {scroll.showJump ? (
+            <button type="button" className="fl-jump" aria-label="Jump to latest" onClick={scroll.jumpToLatest}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 5v14" /><path d="m19 12-7 7-7-7" />
+              </svg>
+            </button>
+          ) : null}
         </div>
         {composer}
       </div>
