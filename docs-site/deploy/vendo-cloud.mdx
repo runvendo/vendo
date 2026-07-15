@@ -59,6 +59,71 @@ vendo cloud keys revoke --org <orgId> --id <keyId>
 
 `--org` is optional only when your account has exactly one organization.
 
+API keys use the format `vnd_` followed by 40 hex characters. The machine
+commands (`validate`, `share`, `publish`, `pin-ship`) reject malformed keys
+before making any network call.
+
+## Validate an API key
+
+`vendo cloud validate` checks a key against the hosted API and prints the
+organization, plan, capability grid, and quota meters it grants. Use it to
+confirm that a key is live before wiring it into CI, or to see how much
+headroom the key has left on metered resources.
+
+```bash
+vendo cloud validate --key vnd_...
+```
+
+By default the command renders a human-readable report:
+
+```
+Vendo Cloud key: valid
+Org: acme (org_...)   Plan: pro
+
+Capabilities
+  cloud.share         ✓
+  cloud.publish       ✓
+  cloud.pin_ship      ✓
+  ...
+
+Quotas
+  shares_per_month    [████████░░░░░░░░░░░░]   412 / 1,000
+  publishes_per_month [██░░░░░░░░░░░░░░░░░░]    47 / 500
+  storage_gb          [█████░░░░░░░░░░░░░░░]   2.4 / 10
+```
+
+Pass `--json` to get a machine-readable envelope instead — useful in CI or
+when piping into other tools:
+
+```bash
+vendo cloud validate --key vnd_... --json
+```
+
+The JSON envelope is stable across every path (live, stale cache, or degraded
+fallback) so scripts can key off the same fields regardless of connectivity.
+
+### Offline behavior and the entitlements cache
+
+`validate` is live-first: it always tries to revalidate against the hosted
+API and only falls back to the cache when the network fails. The cache lives
+at `~/.vendo/entitlements.json` (directory `0700`, file `0600`). Entries are
+keyed by a hash of the API URL and key, so no key material is written to
+disk.
+
+Behavior when the hosted API is unreachable:
+
+- **503 or network error, within the stale window** — serves the last known
+  entitlements and prints a `stale` banner. Exit code stays `0`.
+- **503 or network error, past the stale window** — degrades to a
+  fail-closed free contract (all capabilities `false`, meters exhausted) and
+  prints `Vendo Cloud key: unverified (offline)`. Exit code stays `0` so
+  scripts can branch on the JSON envelope.
+- **401 Unauthorized** — evicts the cached entry immediately and exits with
+  `Invalid or revoked API key (401)`.
+
+Free-tier keys can report `storage_gb` as exhausted on day one — that renders
+as no remaining headroom, not an error, and the exit code stays `0`.
+
 ## Point at a different Vendo Cloud URL
 
 By default the runtime and CLI both target `https://console.vendo.run`. Set
