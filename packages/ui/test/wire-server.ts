@@ -178,6 +178,14 @@ export async function createWireServer() {
     streamFailures: 0,
     posture: "rules" as "unconfigured" | "rules" | "judge" | "rules+judge",
     threadReplyGate: undefined as Promise<void> | undefined,
+    // ENG-217 — optional pacing gates for the canned turn so specs can observe
+    // exact streaming moments: before ANY chunk (generating skeleton), after
+    // text-start but before the first delta (lone caret on an empty streamed
+    // turn), and between deltas (trailing caret on flowing text). All default
+    // undefined: awaiting undefined is a no-op for every existing consumer.
+    turnStartGate: undefined as Promise<void> | undefined,
+    textStartGate: undefined as Promise<void> | undefined,
+    textMidGate: undefined as Promise<void> | undefined,
   };
   const requests: RecordedRequest[] = [];
   let closed = false;
@@ -269,6 +277,7 @@ export async function createWireServer() {
           originalMessages: [input.message],
           generateId: () => `msg_assistant${suffix}`,
           execute: async ({ writer }) => {
+            await state.turnStartGate;
             writer.write({
               type: "tool-input-available",
               toolCallId: `call_stream${suffix}`,
@@ -291,7 +300,10 @@ export async function createWireServer() {
             } as UIMessageChunk);
             await state.threadReplyGate;
             writer.write({ type: "text-start", id: "text_1" });
-            writer.write({ type: "text-delta", id: "text_1", delta: "Turn complete" });
+            await state.textStartGate;
+            writer.write({ type: "text-delta", id: "text_1", delta: "Turn " });
+            await state.textMidGate;
+            writer.write({ type: "text-delta", id: "text_1", delta: "complete" });
             writer.write({ type: "text-end", id: "text_1" });
           },
         });
