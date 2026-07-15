@@ -59,6 +59,17 @@ holds a key forever. The same compare-and-set machinery backs
 run-lifecycle transitions, so cancellations and scheduler ticks cannot
 race a run into a resurrected state. See [Persistence](/deploy/persistence).
 
+**Invisible graduation to rung 4.** Tree apps can now graduate to a
+machine-served HTTP app without a visible UI change. On graduation, the
+runtime writes a served-app scaffold that renders the identical kept tree,
+starts its static server, snapshots, then flips the document to
+`ui: "http"`. `fn:<name>` references become `POST /fn/<name>` on the
+graduated app's own server. Host-source components degrade to a contained
+"unknown component" notice on the served page; prewired and generated
+components render identically. If any step fails, the previous rung keeps
+serving and the document is untouched. See
+[Generated UI and apps](/concepts/generated-ui#invisible-graduation-to-rung-4).
+
 ## Updates
 
 **Rung 1 UI creates and tree-only edits skip approval.** Guard now resolves
