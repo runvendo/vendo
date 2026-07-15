@@ -22,7 +22,7 @@
       },
       "description": "Use for Cadence document-collection or checklist completion when the user needs progress toward a known total.",
       "examples": [
-        "<CadenceDocProgress value={7} max={10} />"
+        "{\"value\":7,\"max\":10}"
       ],
       "source": "registered"
     },
@@ -55,7 +55,7 @@
       },
       "description": "Use for a compact Cadence document, client, or workflow status label when the state should be immediately scannable.",
       "examples": [
-        "<CadenceStatusBadge text=\"Needs review\" variant=\"review\" dot />"
+        "{\"text\":\"Needs review\",\"variant\":\"review\",\"dot\":true}"
       ],
       "source": "registered"
     }
