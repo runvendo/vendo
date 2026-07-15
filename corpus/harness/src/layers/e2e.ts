@@ -26,7 +26,7 @@ export interface E2eRequest {
 }
 
 export interface E2ePage {
-  goto(url: string): Promise<void>;
+  goto(url: string, options?: E2eNavigationOptions): Promise<void>;
   locator(selector: string): E2eLocator;
   getByRole(role: string, options?: { name?: string | RegExp }): E2eLocator;
   getByLabel(label: string | RegExp): E2eLocator;
@@ -37,6 +37,11 @@ export interface E2ePage {
   off?(event: "request", listener: (request: E2eRequest) => void): void;
   screenshot?(options: { path: string; fullPage?: boolean }): Promise<Buffer | void>;
   close?(): Promise<void>;
+}
+
+export interface E2eNavigationOptions {
+  waitUntil?: "load" | "domcontentloaded";
+  timeout?: number;
 }
 
 export interface E2ePageSession {
@@ -498,9 +503,7 @@ async function runAttempt(
     session = await (ctx.pageFactory ?? defaultPageFactory)(script, attempt);
     recorder = await attachNetworkSignals(session.page, ctx.repoDir, ctx.readinessUrl, signals);
     const targetUrl = attemptUrl(ctx.readinessUrl, ctx.repoName, script, attempt);
-    await session.page.goto(targetUrl);
-    await prepareHostPage(ctx.repoName, session.page, timeoutMs, targetUrl);
-    await restoreAttemptUrlAfterHostPrep(ctx.repoName, session.page, targetUrl);
+    await prepareLayer3Page(ctx.repoName, session.page, timeoutMs, targetUrl);
     await openVendoSurface(session.page, timeoutMs);
     for (let index = 0; index < script.prompts.length; index += 1) {
       await sendPrompt(session.page, script.prompts[index] ?? "");
@@ -570,16 +573,32 @@ async function defaultPageFactory(): Promise<E2ePageSession> {
 }
 
 function attemptUrl(baseUrl: string, repoName: string, script: ConversationScript, attempt: number): string {
+  return layer3TargetUrl(baseUrl, repoName, `corpus-${safeFilePart(script.id)}-${attempt}`);
+}
+
+export function layer3TargetUrl(baseUrl: string, repoName: string, threadId: string): string {
   try {
     const url = new URL(baseUrl);
     if (repoName === "papermark") {
       url.pathname = "/corpus-e2e";
     }
-    url.searchParams.set("vendoThread", `corpus-${safeFilePart(script.id)}-${attempt}`);
+    url.searchParams.set("vendoThread", threadId);
     return url.toString();
   } catch {
     return baseUrl;
   }
+}
+
+export async function prepareLayer3Page(
+  repoName: string,
+  page: E2ePage,
+  timeoutMs: number,
+  targetUrl: string,
+  navigationOptions?: E2eNavigationOptions,
+): Promise<void> {
+  await page.goto(targetUrl, navigationOptions);
+  await prepareHostPage(repoName, page, timeoutMs, targetUrl, navigationOptions);
+  await restoreAttemptUrlAfterHostPrep(repoName, page, targetUrl, navigationOptions);
 }
 
 async function prepareHostPage(
@@ -587,19 +606,25 @@ async function prepareHostPage(
   page: E2ePage,
   timeoutMs: number,
   targetUrl: string,
+  navigationOptions?: E2eNavigationOptions,
 ): Promise<void> {
   if (repoName === "umami") {
     await loginToUmami(page, Math.min(timeoutMs, 15_000));
     return;
   }
   if (repoName === "papermark") {
-    await loginToPapermark(page, targetUrl);
+    await loginToPapermark(page, targetUrl, navigationOptions);
   }
 }
 
-async function restoreAttemptUrlAfterHostPrep(repoName: string, page: E2ePage, targetUrl: string): Promise<void> {
+async function restoreAttemptUrlAfterHostPrep(
+  repoName: string,
+  page: E2ePage,
+  targetUrl: string,
+  navigationOptions?: E2eNavigationOptions,
+): Promise<void> {
   if (repoName !== "umami" && repoName !== "papermark") return;
-  await page.goto(targetUrl);
+  await page.goto(targetUrl, navigationOptions);
 }
 
 async function loginToUmami(page: E2ePage, timeoutMs: number): Promise<void> {
@@ -615,9 +640,13 @@ async function loginToUmami(page: E2ePage, timeoutMs: number): Promise<void> {
   await waitFor(async () => (await safeCount(username)) === 0, timeoutMs).catch(() => undefined);
 }
 
-async function loginToPapermark(page: E2ePage, targetUrl: string): Promise<void> {
+async function loginToPapermark(
+  page: E2ePage,
+  targetUrl: string,
+  navigationOptions?: E2eNavigationOptions,
+): Promise<void> {
   const loginUrl = new URL("/api/corpus-login", targetUrl);
-  await page.goto(loginUrl.toString());
+  await page.goto(loginUrl.toString(), navigationOptions);
 }
 
 async function attachNetworkSignals(
@@ -680,7 +709,7 @@ async function loadManifestToolBindings(repoDir: string): Promise<ManifestToolBi
   });
 }
 
-async function openVendoSurface(page: E2ePage, timeoutMs: number): Promise<void> {
+export async function openVendoSurface(page: E2ePage, timeoutMs: number): Promise<void> {
   const dialog = page.getByRole("dialog");
   if (await safeCount(dialog) > 0) return;
 
@@ -702,7 +731,7 @@ async function openVendoSurface(page: E2ePage, timeoutMs: number): Promise<void>
   }, timeoutMs);
 }
 
-async function sendPrompt(page: E2ePage, prompt: string): Promise<void> {
+export async function sendPrompt(page: E2ePage, prompt: string): Promise<void> {
   // The overlay's composer form and its textarea both carry /message/i labels
   // (aria-label "Message composer" / "Message"), so a bare getByLabel violates
   // Playwright strict mode — target the textbox role.
@@ -731,7 +760,7 @@ async function waitForAssertions(
   return latest;
 }
 
-async function waitForIdle(page: E2ePage, timeoutMs: number): Promise<void> {
+export async function waitForIdle(page: E2ePage, timeoutMs: number): Promise<void> {
   await waitFor(async () => {
     const busy = await safeCount(page.locator('[aria-label="Working"], .fl-thinking, .fl-act-pulse'));
     return busy === 0;
