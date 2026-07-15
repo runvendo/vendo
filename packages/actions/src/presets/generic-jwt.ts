@@ -54,7 +54,7 @@ export function genericJwtPreset(options: GenericJwtPresetOptions): ActAs {
     let token = cache.get(key, nowMs, cacheSafetySeconds * 1000);
     if (!token) {
       token = await signHs256(payload, secret, options.jwtHeader);
-      cache.set(key, token, (nowSeconds + expiresInSeconds) * 1000);
+      cache.set(key, token, (nowSeconds + expiresInSeconds) * 1000, nowMs);
     }
     return { headers: { ...toHeaders(token) } };
   };

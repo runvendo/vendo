@@ -61,7 +61,7 @@ export function authJsPreset(options: AuthJsPresetOptions = {}): ActAs {
     if (!token) {
       const encode = await loadEncode();
       token = await encode({ token: claims, secret, salt: cookieName, maxAge: expiresInSeconds });
-      cache.set(key, token, (Math.floor(nowMs / 1000) + expiresInSeconds) * 1000);
+      cache.set(key, token, (Math.floor(nowMs / 1000) + expiresInSeconds) * 1000, nowMs);
     }
     return { headers: { cookie: `${cookieName}=${token}` } };
   };

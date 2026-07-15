@@ -17,6 +17,10 @@ interface CachedToken {
 export class TokenCache {
   readonly #tokens = new Map<string, CachedToken>();
 
+  get size(): number {
+    return this.#tokens.size;
+  }
+
   get(key: string, nowMs: number, safetyMs: number): string | undefined {
     const cached = this.#tokens.get(key);
     if (!cached) return undefined;
@@ -27,7 +31,12 @@ export class TokenCache {
     return cached.token;
   }
 
-  set(key: string, token: string, expiresAtMs: number): void {
+  set(key: string, token: string, expiresAtMs: number, nowMs: number): void {
+    // Evict every expired entry so keys that are never read again (users who
+    // stop triggering runs, rotated secrets) cannot grow the cache unbounded.
+    for (const [cachedKey, cached] of this.#tokens) {
+      if (nowMs >= cached.expiresAtMs) this.#tokens.delete(cachedKey);
+    }
     this.#tokens.set(key, { token, expiresAtMs });
   }
 }

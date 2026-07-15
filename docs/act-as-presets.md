@@ -166,7 +166,9 @@ pass through for the host's existing verifier.
 ### Express verifier
 
 Mount the middleware before protected API routes. Verified claims are attached
-to `req.vendoAwayToken`; a malformed or expired away-token returns 401.
+to `req.vendoAwayToken`; a malformed or expired away-token returns 401. Like
+the Next.js flavor, it removes caller-supplied `x-vendo-away-*` headers from
+every request, so only `req.vendoAwayToken` carries away identity.
 
 ```ts
 import { awayAuth } from "./vendo-away.js";

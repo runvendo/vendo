@@ -150,6 +150,42 @@ describe("trusted header spoofing", () => {
       .toBe("Bearer ordinary-provider-session");
   });
 
+  it("strips caller-supplied x-vendo-away-* headers in the Express flavor too", async () => {
+    const created = clerkPreset({ secret });
+    const material = await created.actAs(principal, grant);
+    const next = vi.fn();
+    const response = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    };
+
+    const awayRequest = {
+      headers: {
+        authorization: material?.headers.authorization,
+        "X-Vendo-Away-Subject": "attacker-user",
+        "x-vendo-away-grant": "grt_forged",
+      },
+      vendoAwayToken: undefined,
+    };
+    await created.expressMiddleware(awayRequest, response, next);
+    expect(awayRequest.headers["X-Vendo-Away-Subject"]).toBeUndefined();
+    expect(awayRequest.headers["x-vendo-away-grant"]).toBeUndefined();
+    expect(awayRequest.vendoAwayToken).toMatchObject({ sub: principal.subject });
+
+    const ordinaryRequest = {
+      headers: {
+        authorization: "Bearer ordinary-provider-session",
+        "x-vendo-away-subject": "attacker-user",
+      },
+      vendoAwayToken: undefined,
+    };
+    await created.expressMiddleware(ordinaryRequest, response, next);
+    expect(ordinaryRequest.headers["x-vendo-away-subject"]).toBeUndefined();
+    expect(ordinaryRequest.headers.authorization).toBe("Bearer ordinary-provider-session");
+    expect(ordinaryRequest.vendoAwayToken).toBeUndefined();
+    expect(next).toHaveBeenCalledTimes(2);
+  });
+
   it("overwrites spoofed identity headers with the verified claims on away requests", async () => {
     const created = clerkPreset({ secret });
     const material = await created.actAs(principal, grant);

@@ -137,6 +137,12 @@ function makeAwayTokenPreset(
 
   const expressMiddleware: ExpressAwayTokenMiddleware = async (request, response, next) => {
     delete request.vendoAwayToken;
+    // Same anti-spoofing rule as the Next.js flavor: caller-supplied trusted
+    // identity headers never survive this middleware, on any request.
+    const trusted = new Set<string>(Object.values(TRUSTED_HEADERS));
+    for (const name of Object.keys(request.headers)) {
+      if (trusted.has(name.toLowerCase())) delete request.headers[name];
+    }
     const authorization = authorizationValue(request.headers);
     if (!isAwayAuthorization(authorization)) {
       next();
