@@ -15,15 +15,16 @@ published copies, or a machine key for CI.
 
 ## Sign in from the CLI
 
-`vendo cloud login <email>` sends a six-digit code to your inbox, prompts for it
-on stdin, and stores the returned session at `~/.vendo/cloud-session.json`
-(file mode 0600). The user commands reuse that session; the machine commands
+`vendo cloud login <email>` sends a 6-10 digit code to your inbox, prompts for
+it on stdin, and stores the returned session at `~/.vendo/cloud-session.json`
+(file mode 0600). The exact code length depends on your Vendo Cloud project's
+OTP configuration. The user commands reuse that session; the machine commands
 (`validate`, `share`, `publish`, `pin-ship`) authenticate with `--key` or
 `VENDO_API_KEY` instead.
 
 ```bash
 vendo cloud login you@example.com
-# Enter the code sent to you@example.com: 123456
+# Enter the code sent to you@example.com: 12345678
 # { "loggedIn": true, "mode": "email", "email": "you@example.com" }
 ```
 
