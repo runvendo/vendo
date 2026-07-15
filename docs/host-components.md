@@ -43,9 +43,15 @@ export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
 
 Names are PascalCase and unique. `propsSchema` uses the Standard Schema
 interface. Set `remixable` only when sync may capture the component's real
-source as a pin baseline. A remixable registration may also declare a static,
+source as a pin baseline. A remixable component's module must carry a
+**default export** of the component — the jail's and the in-client mount's
+module loaders render the captured entry module's default export (a named-only
+export captures fine but fails at render with "must have a React default
+export"). A remixable registration may also declare a static,
 JSON-compatible `sampleProps` object: sync captures it into the baseline and
-the jail uses it as stubbed data when a fork renders without live props. Sync
+both venues use it as stubbed data when a fork renders without live props
+(the sandboxed jail and, for an approved version, the in-client host-page
+mount — promotion never changes what props the component sees). Sync
 also follows the component's local imports for two hops and snapshots direct
 `.css` imports from canonical app roots (`app/layout.*`, `app/root.*`,
 `pages/_app.*`, and `src/` variants) so forks render furnished — with the
@@ -71,6 +77,13 @@ the source only when no valid static baseline exists. The capture route is not
 mounted in production. `vendo sync` exits non-zero for any unresolved slot; a
 slot that is intentionally never capturable can be acknowledged in the
 human-owned `.vendo/overrides.json`:
+
+`vendo init` offers remix wrapping: every statically capturable
+`{ name, component }` registration that is not yet remixable becomes a
+proposed, permission-gated code change inserting `remixable: true` into the
+registration literal (router tables with a `path` field are never offered).
+Approved wraps are captured by an immediate re-sync so remix works right after
+init.
 
 ```json
 {

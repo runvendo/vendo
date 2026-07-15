@@ -80,6 +80,32 @@ const catalog: ComponentCatalog = [
       '{"slices":[{"category":"dining","amount":342.18},{"category":"groceries","amount":286.42}],"size":200}',
     ],
   },
+  {
+    name: "MapleNetWorthCard",
+    description: "The Maple total-balance card: animated USD total, change badge, range switcher, and an area trend of the balance history. Use it for net worth, total balance, or balance-over-time requests. Values are integer cents.",
+    propsSchema: z.object({
+      valueCents: z.number(),
+      series: z.array(z.number()),
+      changeLabel: z.string().optional(),
+      initialRange: z.enum(["1W", "1M", "3M", "1Y", "All"]).optional(),
+      chartHeight: z.number().optional(),
+    }),
+    propsJsonSchema: {
+      type: "object",
+      properties: {
+        valueCents: { type: "number", description: "Total balance in integer cents" },
+        series: { type: "array", items: { type: "number" }, description: "Balance history in integer cents" },
+        changeLabel: { type: "string" },
+        initialRange: { enum: ["1W", "1M", "3M", "1Y", "All"] },
+        chartHeight: { type: "number" },
+      },
+      required: ["valueCents", "series"],
+      additionalProperties: false,
+    },
+    examples: [
+      '{"valueCents":5490715,"series":[5329117,5446991,5589669,5679262,5733114,5794065,5901309,5748395],"changeLabel":"▲ 2.3% this month"}',
+    ],
+  },
 ];
 
 export const vendo = createVendo({

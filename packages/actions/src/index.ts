@@ -6,6 +6,7 @@ export { composioToolRisk } from "./connectors/composio-risk.js";
 export { mcpConnector, type McpAuthContext, type McpHeadersResolver } from "./connectors/mcp.js";
 export { createActions, type ActionsRegistry, type ActionsRunContext } from "./runtime/registry.js";
 export { vendoSync, type SyncReportWithWarnings } from "./sync/index.js";
+export { scanRemixRegistrations, type RemixRegistrationSite } from "./sync/pins.js";
 export { scanComponentCatalog, type CatalogScanResult } from "./sync/catalog-scan.js";
 export { mergeCatalogEntries, readCatalogFile, writeCatalog } from "./sync/catalog.js";
 export {

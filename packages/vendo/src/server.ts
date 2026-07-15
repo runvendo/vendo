@@ -975,6 +975,9 @@ function createWireHandler(deps: {
       throw new VendoError("not-found", "unknown Vendo route");
     } catch (error) {
       if (error instanceof VendoError) return errorResponse(error);
+      // The wire response stays generic (no internals leak to clients), but
+      // the host operator gets the real failure on their own server log.
+      console.error("[vendo] unhandled wire error:", error);
       return internalError();
     }
     };

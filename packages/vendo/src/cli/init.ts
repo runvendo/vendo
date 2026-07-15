@@ -3,7 +3,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { vendoSync } from "@vendoai/actions";
+import { scanRemixRegistrations, vendoSync, type RemixRegistrationSite } from "@vendoai/actions";
 import type { VendoTheme } from "@vendoai/core";
 import type { Telemetry } from "@vendoai/telemetry";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
@@ -377,6 +377,62 @@ function diff(path: string, before: string | null, after: string): string {
   ].join("\n");
 }
 
+interface RemixWrapChange {
+  absolute: string;
+  path: string;
+  before: string;
+  after: string;
+  diff: string;
+  /** The registration slots this change marks remixable. */
+  slots: string[];
+}
+
+/**
+ * The remix offering (06-apps §8): every statically capturable `{ name,
+ * component }` registration that is not yet remixable becomes one proposed
+ * code change per file, inserting `remixable: true` into the registration
+ * literal. Slots already remixable anywhere are never re-offered.
+ */
+async function remixWrapChanges(root: string): Promise<RemixWrapChange[]> {
+  let sites: RemixRegistrationSite[];
+  try {
+    sites = await scanRemixRegistrations(root);
+  } catch {
+    return []; // The offer is best-effort; sync still reports capture problems loudly.
+  }
+  const remixableSlots = new Set(sites.filter((site) => site.remixable).map((site) => site.slot));
+  const offered = new Set<string>();
+  const byFile = new Map<string, { path: string; offsets: number[]; slots: string[] }>();
+  for (const site of sites) {
+    if (site.remixable || remixableSlots.has(site.slot) || offered.has(site.slot)) continue;
+    offered.add(site.slot);
+    const entry = byFile.get(site.file) ?? { path: site.path, offsets: [], slots: [] };
+    entry.offsets.push(site.offset);
+    entry.slots.push(site.slot);
+    byFile.set(site.file, entry);
+  }
+  const changes: RemixWrapChange[] = [];
+  for (const [file, entry] of byFile) {
+    const before = await readOptional(file);
+    if (before === null) continue;
+    let after = before;
+    for (const offset of [...entry.offsets].sort((left, right) => right - left)) {
+      if (after[offset] !== "{") return []; // The source moved under us; offer nothing rather than corrupt it.
+      after = `${after.slice(0, offset + 1)} remixable: true,${after.slice(offset + 1)}`;
+    }
+    changes.push({
+      absolute: file,
+      path: entry.path,
+      before,
+      after,
+      diff: diff(entry.path, before, after),
+      slots: entry.slots.sort(),
+    });
+  }
+  changes.sort((left, right) => left.path.localeCompare(right.path));
+  return changes;
+}
+
 function packageWithSyncHooks(raw: string): string | null {
   const manifest = JSON.parse(raw) as Record<string, unknown>;
   const priorScripts = manifest["scripts"];
@@ -404,11 +460,21 @@ function packageWithSyncHooks(raw: string): string | null {
   return `${JSON.stringify(manifest, null, detectedIndent)}${trailingNewline}`;
 }
 
-async function buildPlan(options: InitOptions, mcpEnabled = false): Promise<{ plan: InitPlan; changes: Array<{ absolute: string; path: string; before: string | null; after: string; diff: string }> }> {
+interface PlannedChange {
+  absolute: string;
+  path: string;
+  before: string | null;
+  after: string;
+  diff: string;
+  /** Present on remix-offer changes: the slots the change marks remixable. */
+  remixSlots?: string[];
+}
+
+async function buildPlan(options: InitOptions, mcpEnabled = false): Promise<{ plan: InitPlan; changes: PlannedChange[] }> {
   const root = resolve(options.targetDir);
   const framework = await detectFramework(root);
   const modelImport = options.modelImport ?? (framework === "express" ? "./ai" : "@/lib/ai");
-  const changes: Array<{ absolute: string; path: string; before: string | null; after: string; diff: string }> = [];
+  const changes: PlannedChange[] = [];
 
   if (framework === "express") {
     const wiring = await detectVendoWiring(root);
@@ -464,6 +530,16 @@ async function buildPlan(options: InitOptions, mcpEnabled = false): Promise<{ pl
       const path = relative(root, layout);
       changes.push({ absolute: layout, path, before: layoutBefore, after: layoutAfter, diff: diff(path, layoutBefore, layoutAfter) });
     }
+  }
+  for (const wrap of await remixWrapChanges(root)) {
+    changes.push({
+      absolute: wrap.absolute,
+      path: wrap.path,
+      before: wrap.before,
+      after: wrap.after,
+      diff: wrap.diff,
+      remixSlots: wrap.slots,
+    });
   }
   const packageJson = join(root, "package.json");
   const packageBefore = await readOptional(packageJson);
@@ -652,12 +728,34 @@ export async function runInit(options: InitOptions): Promise<number> {
       output.error("Run `vendo sync` after resolving or explicitly ignoring these slots; sync exits non-zero while they remain unresolved.\n");
     }
 
+    let remixOffered = 0;
+    let remixWrapped = 0;
     for (const change of changes) {
-      output.log(`\nProposed code change:\n${change.diff}\n`);
+      const slots = change.remixSlots ?? [];
+      remixOffered += slots.length;
+      output.log(slots.length > 0
+        ? `\nRemix offer — mark ${slots.join(", ")} remixable so the agent can fork and restyle the captured source (06-apps §8):\n${change.diff}\n`
+        : `\nProposed code change:\n${change.diff}\n`);
       const approved = options.yes === true
         || await (options.confirm ?? ((candidate) => defaultConfirm(candidate, output)))(change);
-      if (approved) await writeText(change.absolute, change.after);
-      else output.error(`skipped ${change.path}; run again to apply it`);
+      if (approved) {
+        await writeText(change.absolute, change.after);
+        remixWrapped += slots.length;
+      } else output.error(`skipped ${change.path}; run again to apply it`);
+    }
+
+    if (remixWrapped > 0) {
+      // The wrap landed after the first sync — capture the new slots now so
+      // remix works immediately instead of on the next unrelated sync.
+      const recapture = await vendoSync({ root, out: join(root, ".vendo") });
+      output.log(`pins: ${recapture.pins.captured.length} captured, ${recapture.pins.drifted.length} drifted`);
+      if (recapture.unresolvedPins.length > 0) {
+        output.error("\nUNRESOLVED REMIXABLE SLOTS (init continues):");
+        for (const pin of recapture.unresolvedPins) {
+          output.error(`  ${pin.slot} [${pin.reason}]: ${pin.hint}`);
+        }
+        output.error("Run `vendo sync` after resolving or explicitly ignoring these slots; sync exits non-zero while they remain unresolved.\n");
+      }
     }
 
     let toolCount = 0;
@@ -675,9 +773,9 @@ export async function runInit(options: InitOptions): Promise<number> {
       command: "init",
       componentsOffered: 0,
       componentCount: 0,
-      remixOffered: 0,
-      remixWrapped: 0,
-      remixSkipped: 0,
+      remixOffered,
+      remixWrapped,
+      remixSkipped: remixOffered - remixWrapped,
       toolCount,
       durationMs: Date.now() - started,
     });

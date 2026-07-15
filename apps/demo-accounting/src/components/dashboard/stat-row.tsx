@@ -2,7 +2,7 @@
 
 import { CalendarClock, FileStack, FolderCheck } from "lucide-react"
 import useSWR from "swr"
-import { Badge } from "@/components/ui/badge"
+import { MissingDocsHero } from "@/components/dashboard/missing-docs-hero"
 import { Card } from "@/components/ui/card"
 import { ErrorState } from "@/components/ui/error-state"
 import { ProgressBar } from "@/components/ui/progress"
@@ -22,28 +22,6 @@ function StatRowSkeleton() {
         </Card>
       ))}
     </div>
-  )
-}
-
-/** The demo's hero number: clients with documents still outstanding. */
-function MissingDocsHero({ data }: { data: DashboardData }) {
-  return (
-    <Card className="border-evergreen-900 bg-gradient-to-br from-evergreen-800 to-evergreen-950 p-5">
-      <p className="text-[13px] font-medium whitespace-nowrap text-evergreen-100/80">
-        Clients missing documents
-      </p>
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <span className="text-[40px] leading-none font-semibold tracking-tight text-white tabular-nums">
-          {data.clientsMissingDocs}
-        </span>
-        <Badge variant="missing" dot>
-          Action needed
-        </Badge>
-      </div>
-      <p className="mt-2.5 text-[12px] text-evergreen-100/60">
-        of {data.clientsTotal} active clients need chasing
-      </p>
-    </Card>
   )
 }
 
@@ -97,7 +75,7 @@ export function StatRow() {
 
   return (
     <div className="grid grid-cols-4 gap-4">
-      <MissingDocsHero data={data} />
+      <MissingDocsHero missingCount={data.clientsMissingDocs} clientCount={data.clientsTotal} />
       <StatTile
         label="Documents outstanding"
         value={data.documentsOutstanding}
