@@ -196,6 +196,53 @@ describe("09 §3 public wire", () => {
     expect(history).not.toHaveBeenCalled();
   });
 
+  it("enforces history() ownership at the wire: cross-principal reads and undo are denied for real", async () => {
+    // 06-apps: history(appId) is ownership-blind by frozen signature; THIS route
+    // is the enforcement boundary. No mocks — a real store row, a real history
+    // entry, and the real apps runtime behind the handler.
+    let current: Principal = { kind: "user", subject: "user_owner" };
+    const { vendo } = await setup(vi.fn(async () => current));
+    expect((await vendo.handler(request("GET", "/status"))).status).toBe(200); // migrate the store
+    const doc = app("app_hist");
+    await vendo.store.records("vendo_apps").put({
+      id: "app_hist",
+      data: { subject: "user_owner", enabled: false, doc },
+      refs: { subject: "user_owner" },
+    });
+    const previous = { ...doc, name: "Wire app v1" };
+    await vendo.store.records("vendo:app-history:app_hist").put({
+      id: "ver_wire_1",
+      data: { doc: previous, entry: { at: new Date().toISOString(), intent: "rename", rung: 1 }, seq: 1 },
+    });
+
+    // The owner sees exactly the recorded entry.
+    const ownerList = await vendo.handler(request("GET", "/apps/app_hist/history"));
+    expect(ownerList.status).toBe(200);
+    expect(await ownerList.json()).toEqual([expect.objectContaining({ intent: "rename", rung: 1 })]);
+
+    // Another authenticated principal is told the app does not exist…
+    current = { kind: "user", subject: "user_mallory" };
+    for (const [method, body] of [["GET", undefined], ["POST", { op: "undo" }]] as const) {
+      const denied = await vendo.handler(request(method, "/apps/app_hist/history", body));
+      expect(denied.status).toBe(404);
+      expect(await denied.json()).toEqual({
+        error: { code: "not-found", message: "app not found: app_hist" },
+      });
+    }
+
+    // …and the denied undo mutated NOTHING: the app row and history survive.
+    current = { kind: "user", subject: "user_owner" };
+    const row = await vendo.store.records("vendo_apps").get("app_hist");
+    expect((row?.data as { doc: AppDocument }).doc).toEqual(doc);
+    const listAfter = await vendo.handler(request("GET", "/apps/app_hist/history"));
+    expect(await listAfter.json()).toHaveLength(1);
+
+    // The owner's undo works, proving the 404s above were ownership, not routing.
+    const undone = await vendo.handler(request("POST", "/apps/app_hist/history", { op: "undo" }));
+    expect(undone.status).toBe(200);
+    expect(await undone.json()).toMatchObject({ id: "app_hist", name: "Wire app v1" });
+  });
+
   it("enforces JSON CSRF on mutations with only the three contracted exceptions", async () => {
     const { vendo, resolver } = await setup();
     stubRouteBlocks(vendo);

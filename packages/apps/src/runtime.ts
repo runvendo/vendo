@@ -146,6 +146,50 @@ const allRecords = async (
   return records;
 };
 
+/** True (exit 0) when something answers HTTP on $PORT. fetch resolves on any
+    HTTP response, so a 404 still proves a listener. */
+const PROBE_SNIPPET =
+  "node -e 'fetch(\"http://127.0.0.1:\"+(process.env.PORT||\"8080\")+\"/\").then(()=>process.exit(0),()=>process.exit(1))'";
+
+/** Stop the server THIS runtime started in an earlier edit (recorded in
+    /tmp/vendo-app.pid), then wait for $PORT to free. Provider-started
+    processes (Modal's create command) carry no pid file and are left alone. */
+const STOP_OWNED_SERVER_SNIPPET = [
+  "if [ -f /tmp/vendo-app.pid ]; then",
+  "  kill -- \"-$(cat /tmp/vendo-app.pid)\" 2>/dev/null || true",
+  "  kill \"$(cat /tmp/vendo-app.pid)\" 2>/dev/null || true",
+  "  rm -f /tmp/vendo-app.pid",
+  `  i=0; while [ $i -lt 20 ] && ${PROBE_SNIPPET}; do i=$((i+1)); sleep 0.1; done`,
+  "fi",
+].join("\n");
+
+/**
+ * 06-apps §4.1 — the machine IS the server: a rung ≥2 snapshot must capture a
+ * machine that answers on $PORT, because `fn:` calls resume that snapshot and
+ * POST to it. E2B resumes a MEMORY image, so only a process serving at
+ * snapshot time serves after resume; Modal instead re-runs its create command
+ * (which waits for /app/start.sh or /app/server.js) on every disk-image
+ * resume. This snippet makes both true from the provider-neutral seam:
+ * restart the runtime-owned server so the just-written files take effect,
+ * leave a provider-started listener alone, and boot the conventional entry
+ * (/app/start.sh, else /app/server.js) when nothing serves. `setsid` puts the
+ * server in its own process group so a later edit can stop it cleanly.
+ */
+const ENSURE_SERVING_COMMAND = [
+  STOP_OWNED_SERVER_SNIPPET,
+  `if ${PROBE_SNIPPET}; then exit 0; fi`,
+  "if [ -f /app/start.sh ]; then",
+  "  nohup setsid sh /app/start.sh >/tmp/vendo-app.log 2>&1 & echo $! >/tmp/vendo-app.pid",
+  "elif [ -f /app/server.js ]; then",
+  "  nohup setsid node /app/server.js >/tmp/vendo-app.log 2>&1 & echo $! >/tmp/vendo-app.pid",
+  "else",
+  "  echo 'no /app/start.sh or /app/server.js to serve $PORT' >&2; exit 1",
+  "fi",
+  `i=0; while [ $i -lt 50 ]; do ${PROBE_SNIPPET} && exit 0; i=$((i+1)); sleep 0.1; done`,
+  "cat /tmp/vendo-app.log >&2",
+  "exit 1",
+].join("\n");
+
 const rungFor = (
   app: AppDocument,
   declared?: VersionEntry["rung"],
@@ -325,9 +369,16 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
               return { issues };
             }
             if (graduatesToHttp) {
+              // A graduation fork resumed from a serving rung-2/3 snapshot still
+              // carries that old server (E2B memory resume); stop it first or the
+              // scaffold loses the $PORT race and the "ready" probe would bless
+              // the OLD process into the rung-4 snapshot.
               const started = await machine.exec(
-                "nohup sh /app/start.sh >/tmp/vendo-app.log 2>&1 &",
-                { cwd: "/app", timeoutMs: 10_000 },
+                `${STOP_OWNED_SERVER_SNIPPET}\n`
+                + "nohup setsid sh /app/start.sh >/tmp/vendo-app.log 2>&1 & echo $! >/tmp/vendo-app.pid",
+                // The stop-owned prelude probes $PORT with short node spawns
+                // (~0.5s each on a cold machine); 10s aborted mid-loop live.
+                { cwd: "/app", timeoutMs: 30_000 },
               );
               if (started.code !== 0) {
                 const detail = started.stderr.trim() || started.stdout.trim() || `start command exited ${started.code}`;
@@ -340,11 +391,22 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
                 "i=0; while [ $i -lt 50 ]; do"
                 + " node -e \"fetch('http://127.0.0.1:'+(process.env.PORT||'8080')+'/').then(()=>process.exit(0),()=>process.exit(1))\""
                 + " && exit 0; i=$((i+1)); sleep 0.1; done; cat /tmp/vendo-app.log >&2; exit 1",
-                { cwd: "/app", timeoutMs: 15_000 },
+                // 50 probes are ~30s of real node spawns on a live machine, so
+                // the exec budget must outlive the loop, not race it.
+                { cwd: "/app", timeoutMs: 45_000 },
               );
               if (ready.code !== 0) {
                 const detail = ready.stderr.trim() || ready.stdout.trim() || "no response on $PORT";
                 return { issues: [`served-app scaffold did not become ready: ${detail}`] };
+              }
+            } else {
+              // Rungs 2–3 (and re-edits of an already-served app): the snapshot
+              // must capture a machine that serves $PORT, or every later fn:
+              // call resumes a dead machine. See ENSURE_SERVING_COMMAND.
+              const serving = await machine.exec(ENSURE_SERVING_COMMAND, { cwd: "/app", timeoutMs: 60_000 });
+              if (serving.code !== 0) {
+                const detail = serving.stderr.trim() || serving.stdout.trim() || "no listener on $PORT";
+                return { issues: [`app server is not serving on $PORT after this edit: ${detail}`] };
               }
             }
             const cover = rung === 4 && machine.screenshot !== undefined
