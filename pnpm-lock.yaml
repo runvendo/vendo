@@ -231,6 +231,9 @@ importers:
       '@ai-sdk/anthropic':
         specifier: 3.0.12
         version: 3.0.12(zod@3.25.76)
+      '@playwright/test':
+        specifier: ^1.48.0
+        version: 1.61.1
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
@@ -243,6 +246,9 @@ importers:
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
+      jsdom:
+        specifier: ^29.1.1
+        version: 29.1.1(@noble/hashes@2.2.0)
       react:
         specifier: 19.2.7
         version: 19.2.7
