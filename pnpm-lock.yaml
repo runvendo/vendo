@@ -666,6 +666,9 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../core
+      es-module-lexer:
+        specifier: ^1.7.0
+        version: 1.7.0
       yaml:
         specifier: ^2.6.0
         version: 2.9.0

@@ -135,6 +135,56 @@ describe("validation and route classification", () => {
     expect(report.warnings.some((warning) => warning.includes("connector_missing"))).toBe(false);
   });
 
+  it("returns machine-readable unresolved pins and honors the per-slot ignore list", async () => {
+    const unresolvedHost = await temporaryHost();
+    await writeFile(
+      unresolvedHost.root,
+      "src/vendo/components.tsx",
+      // A local re-export stands in for the umbrella helper: the dependency
+      // guard reads literal specifiers, and pins.ts keys on the remixable( call.
+      `import { remixable } from "./vendo-remix-helper";\n` +
+      `export const components = [remixable({ name: "InlineCard", component: () => null }, import.meta.url)];\n`,
+    );
+    const unresolved = await vendoSync(unresolvedHost);
+    expect(unresolved.unresolvedPins).toEqual([expect.objectContaining({
+      slot: "InlineCard",
+      reason: "inline-component",
+    })]);
+    expect(unresolved.unresolvedPins[0]?.hint).toContain("run the host in dev with Vendo mounted");
+
+    const ignoredHost = await temporaryHost();
+    await writeFile(
+      ignoredHost.root,
+      "src/vendo/components.tsx",
+      `import { remixable } from "./vendo-remix-helper";\n` +
+      `export const components = [remixable({ name: "InlineCard", component: () => null }, import.meta.url)];\n`,
+    );
+    await writeFile(ignoredHost.out, "overrides.json", JSON.stringify({
+      format: "vendo/overrides@1",
+      tools: {},
+      remix: { ignoreSlots: ["InlineCard"] },
+    }));
+    expect((await vendoSync(ignoredHost)).unresolvedPins).toEqual([]);
+  });
+
+  it("accepts a schema-valid runtime baseline for a statically unresolved slot", async () => {
+    const host = await temporaryHost();
+    await writeFile(
+      host.root,
+      "src/vendo/components.tsx",
+      `import { remixable } from "./vendo-remix-helper";\n` +
+      `export const components = [remixable({ name: "RuntimeCard", component: () => null }, import.meta.url)];\n`,
+    );
+    await writeFile(host.out, "remixable/RuntimeCard.json", JSON.stringify({
+      slot: "RuntimeCard",
+      source: "export function RuntimeCard() { return null; }",
+      hash: `sha256:${"a".repeat(64)}`,
+      exportable: false,
+      capturedAt: new Date().toISOString(),
+    }));
+    expect((await vendoSync(host)).unresolvedPins).toEqual([]);
+  });
+
   it("allocates colliding sanitized names independently of OpenAPI declaration order", async () => {
     const { root, out } = await temporaryHost();
     const firstPaths = {

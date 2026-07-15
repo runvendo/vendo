@@ -4,6 +4,7 @@ import { createVendoClient, VendoProvider } from "@vendoai/ui";
 import { useMemo, type ComponentProps } from "react";
 
 export * from "@vendoai/ui";
+export { remixable, type RemixableRegistration, type RemixableReportOptions } from "./remixable.js";
 
 type ProviderProps = ComponentProps<typeof VendoProvider>;
 
