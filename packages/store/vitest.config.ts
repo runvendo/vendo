@@ -15,9 +15,11 @@ export default defineConfig({
     },
     fileParallelism: false,
     // Dual-backend PGlite/Postgres CRUD + a SIGKILL durability drill; under CI
-    // cross-package parallelism these can starve past vitest's 5s default. 15s
-    // absorbs the contention without masking a real hang.
-    testTimeout: 15_000,
-    hookTimeout: 15_000,
+    // cross-package parallelism these can starve well past vitest's 5s default.
+    // Fresh PGlite startup has reached ~90s on the shared CI runner while the
+    // same conformance cases complete in ~2s on real Postgres, so leave enough
+    // room for initialization contention without changing production behavior.
+    testTimeout: 120_000,
+    hookTimeout: 120_000,
   },
 });

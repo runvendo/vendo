@@ -9,6 +9,7 @@ import type { RunRecord, RunStatus } from "@vendoai/automations";
 import { expect } from "vitest";
 import {
   fixtureBaseUrl,
+  fixtureFetch,
   loginCookie,
   type Stack,
 } from "./harness.js";
@@ -68,7 +69,7 @@ export async function enableAndApprove(
 
 export async function fixtureInvoices(subject = ADA.subject): Promise<Invoice[]> {
   const cookie = await loginCookie(subject);
-  const response = await fetch(`${fixtureBaseUrl()}/api/invoices`, { headers: { cookie } });
+  const response = await fixtureFetch(`${fixtureBaseUrl()}/api/invoices`, { headers: { cookie } });
   expect(response.status).toBe(200);
   const body = record(await response.json());
   const invoices = body.invoices;
