@@ -160,7 +160,11 @@ export const modalSandbox = (options: ModalSandboxOptions = {}): SandboxAdapter 
   });
 
   const newClient = async (): Promise<ModalClient> => {
-    const sdk = await import("modal");
+    // The optional SDK must stay a RUNTIME import: without the ignore hints,
+    // Next (webpack and Turbopack) resolves the literal specifier while
+    // bundling a host's route handler and fails the whole /api/vendo route
+    // when the SDK isn't installed.
+    const sdk = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "modal");
     return new sdk.ModalClient(clientOptions());
   };
 
