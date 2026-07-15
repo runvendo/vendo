@@ -1,0 +1,275 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - img [ref=e6]
+        - generic [ref=e9]: Maple
+      - navigation [ref=e10]:
+        - generic [ref=e11]:
+          - link "Home" [ref=e12] [cursor=pointer]:
+            - /url: /
+            - img [ref=e13]
+            - generic [ref=e18]: Home
+          - link "Accounts" [ref=e19] [cursor=pointer]:
+            - /url: /accounts
+            - img [ref=e20]
+            - generic [ref=e23]: Accounts
+          - link "Transactions" [ref=e24] [cursor=pointer]:
+            - /url: /transactions
+            - img [ref=e25]
+            - generic [ref=e28]: Transactions
+          - link "Cards" [ref=e29] [cursor=pointer]:
+            - /url: /cards
+            - img [ref=e30]
+            - generic [ref=e32]: Cards
+          - link "Payments" [ref=e33] [cursor=pointer]:
+            - /url: /payments
+            - img [ref=e34]
+            - generic [ref=e37]: Payments
+          - link "Insights" [ref=e38] [cursor=pointer]:
+            - /url: /insights
+            - img [ref=e39]
+            - generic [ref=e42]: Insights
+          - link "Ask Maple" [active] [ref=e43] [cursor=pointer]:
+            - /url: /vendo
+            - img [ref=e44]
+            - generic [ref=e47]: Ask Maple
+        - generic [ref=e49]:
+          - link "Activity" [ref=e50] [cursor=pointer]:
+            - /url: /activity
+            - img [ref=e51]
+            - generic [ref=e54]: Activity
+          - link "Settings" [ref=e55] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e56]
+            - generic [ref=e59]: Settings
+      - button "YH Yousef Helal Personal" [ref=e250]:
+        - generic [ref=e251]: YH
+        - generic [ref=e64]:
+          - generic [ref=e252]: Yousef Helal
+          - generic [ref=e253]: Personal
+        - img [ref=e66]
+    - generic [ref=e69]:
+      - banner [ref=e70]:
+        - generic [ref=e71]:
+          - heading "Home" [level=1] [ref=e72]
+          - button "Search… ⌘K" [ref=e73]:
+            - img [ref=e74]
+            - generic [ref=e77]: Search…
+            - generic [ref=e78]: ⌘K
+        - generic [ref=e79]:
+          - button "Send" [ref=e80]
+          - button "Request" [ref=e81]
+          - button "Move money" [ref=e82]
+          - button "Notifications" [ref=e83]:
+            - img [ref=e84]
+      - main [ref=e87]:
+        - generic [ref=e88]:
+          - generic [ref=e89]:
+            - heading "Overview" [level=1] [ref=e90]
+            - paragraph [ref=e91]: Here's where your money stands today.
+          - generic [ref=e92]:
+            - button "Send" [ref=e93]:
+              - img [ref=e95]
+              - generic [ref=e98]: Send
+            - button "Request" [ref=e99]:
+              - img [ref=e101]
+              - generic [ref=e104]: Request
+            - button "Move money" [ref=e105]:
+              - img [ref=e107]
+              - generic [ref=e110]: Move money
+            - button "Pay bill" [ref=e111]:
+              - img [ref=e113]
+              - generic [ref=e116]: Pay bill
+            - button "Deposit" [ref=e117]:
+              - img [ref=e119]
+              - generic [ref=e121]: Deposit
+          - generic [ref=e122]:
+            - generic [ref=e123]:
+              - generic [ref=e125]:
+                - generic [ref=e126]:
+                  - generic [ref=e127]:
+                    - generic [ref=e128]: Total balance
+                    - generic [ref=e255]: $54,907.15
+                    - generic [ref=e131]: ▲ 2.3% this month
+                  - generic [ref=e132]:
+                    - button "1W" [ref=e133]
+                    - button "1M" [ref=e134]
+                    - button "3M" [ref=e135]
+                    - button "1Y" [ref=e136]
+                    - button "All" [ref=e137]
+                - application [ref=e259]:
+                  - generic [ref=e267]:
+                    - generic [ref=e269]: "1"
+                    - generic [ref=e271]: "2"
+                    - generic [ref=e273]: "3"
+                    - generic [ref=e275]: "4"
+                    - generic [ref=e277]: "5"
+                    - generic [ref=e279]: "6"
+                    - generic [ref=e281]: "7"
+                    - generic [ref=e283]: "8"
+                    - generic [ref=e285]: "9"
+                    - generic [ref=e287]: "11"
+                    - generic [ref=e289]: "13"
+                    - generic [ref=e291]: "15"
+                    - generic [ref=e293]: "17"
+              - generic [ref=e140]:
+                - link "checking Maple Checking ·· 4471 $9,412.20" [ref=e294] [cursor=pointer]:
+                  - /url: /accounts/acc_checking
+                  - generic [ref=e295]:
+                    - generic [ref=e297]:
+                      - generic [ref=e298]: checking
+                      - generic [ref=e299]: Maple Checking
+                      - generic [ref=e300]: ·· 4471
+                    - generic [ref=e301]: $9,412.20
+                    - img [ref=e303]
+                - link "savings Maple Savings ·· 8820 4.25% APY $28,141.35" [ref=e306] [cursor=pointer]:
+                  - /url: /accounts/acc_savings
+                  - generic [ref=e307]:
+                    - generic [ref=e308]:
+                      - generic [ref=e309]:
+                        - generic [ref=e310]: savings
+                        - generic [ref=e311]: Maple Savings
+                        - generic [ref=e312]: ·· 8820
+                      - generic [ref=e313]: 4.25% APY
+                    - generic [ref=e314]: $28,141.35
+                    - img [ref=e316]
+                - link "credit Maple Credit ·· 0934 $1,288.40" [ref=e319] [cursor=pointer]:
+                  - /url: /accounts/acc_credit
+                  - generic [ref=e320]:
+                    - generic [ref=e322]:
+                      - generic [ref=e323]: credit
+                      - generic [ref=e324]: Maple Credit
+                      - generic [ref=e325]: ·· 0934
+                    - generic [ref=e326]: $1,288.40
+                    - img [ref=e328]
+                - link "investing Maple Invest ·· 5567 $18,642.00" [ref=e331] [cursor=pointer]:
+                  - /url: /accounts/acc_investing
+                  - generic [ref=e332]:
+                    - generic [ref=e334]:
+                      - generic [ref=e335]: investing
+                      - generic [ref=e336]: Maple Invest
+                      - generic [ref=e337]: ·· 5567
+                    - generic [ref=e338]: $18,642.00
+                    - img [ref=e340]
+              - generic [ref=e157]:
+                - generic [ref=e158]:
+                  - heading "Recent activity" [level=3] [ref=e159]
+                  - link "View all" [ref=e160] [cursor=pointer]:
+                    - /url: /transactions
+                - generic [ref=e162]:
+                  - link "DoorDash DoorDash Today · 1:14 AM · Dining -$87.00" [ref=e343] [cursor=pointer]:
+                    - /url: /transactions/txn_doordash_87
+                    - img "DoorDash" [ref=e345]
+                    - generic [ref=e346]:
+                      - generic [ref=e347]: DoorDash
+                      - generic [ref=e348]: Today · 1:14 AM · Dining
+                    - generic [ref=e349]: "-$87.00"
+                  - link "TB Tartine Bakery Yesterday · 8:52 PM · Dining -$39.39" [ref=e350] [cursor=pointer]:
+                    - /url: /transactions/txn_0119
+                    - generic [ref=e351]: TB
+                    - generic [ref=e352]:
+                      - generic [ref=e353]: Tartine Bakery
+                      - generic [ref=e354]: Yesterday · 8:52 PM · Dining
+                    - generic [ref=e355]: "-$39.39"
+                  - link "Whole Foods Market Whole Foods Market Yesterday · 6:40 PM · Groceries -$52.18" [ref=e356] [cursor=pointer]:
+                    - /url: /transactions/txn_0140
+                    - img "Whole Foods Market" [ref=e358]
+                    - generic [ref=e359]:
+                      - generic [ref=e360]: Whole Foods Market
+                      - generic [ref=e361]: Yesterday · 6:40 PM · Groceries
+                    - generic [ref=e362]: "-$52.18"
+                  - link "Apple Store Apple Store Yesterday · 11:31 AM · Shopping -$200.04" [ref=e363] [cursor=pointer]:
+                    - /url: /transactions/txn_0120
+                    - img "Apple Store" [ref=e365]
+                    - generic [ref=e366]:
+                      - generic [ref=e367]: Apple Store
+                      - generic [ref=e368]: Yesterday · 11:31 AM · Shopping
+                    - generic [ref=e369]: "-$200.04"
+                  - link "United Airlines United Airlines Yesterday · 11:05 AM · Transport authorized -$418.00" [ref=e370] [cursor=pointer]:
+                    - /url: /transactions/txn_0141
+                    - img "United Airlines" [ref=e372]
+                    - generic [ref=e373]:
+                      - generic [ref=e374]: United Airlines
+                      - generic [ref=e375]: Yesterday · 11:05 AM · Transport
+                    - generic [ref=e376]: authorized
+                    - generic [ref=e377]: "-$418.00"
+                  - link "TB Tartine Bakery Sun, Jul 12 · 4:00 PM · Dining -$16.21" [ref=e378] [cursor=pointer]:
+                    - /url: /transactions/txn_0118
+                    - generic [ref=e379]: TB
+                    - generic [ref=e380]:
+                      - generic [ref=e381]: Tartine Bakery
+                      - generic [ref=e382]: Sun, Jul 12 · 4:00 PM · Dining
+                    - generic [ref=e383]: "-$16.21"
+                  - link "ChatGPT ChatGPT Sun, Jul 12 · 6:00 AM · Subscriptions -$20.00" [ref=e384] [cursor=pointer]:
+                    - /url: /transactions/txn_0138
+                    - img "ChatGPT" [ref=e386]
+                    - generic [ref=e387]:
+                      - generic [ref=e388]: ChatGPT
+                      - generic [ref=e389]: Sun, Jul 12 · 6:00 AM · Subscriptions
+                    - generic [ref=e390]: "-$20.00"
+                  - link "Lyft Lyft Fri, Jul 10 · 2:18 AM · Transport -$23.40" [ref=e391] [cursor=pointer]:
+                    - /url: /transactions/txn_0143
+                    - img "Lyft" [ref=e393]
+                    - generic [ref=e394]:
+                      - generic [ref=e395]: Lyft
+                      - generic [ref=e396]: Fri, Jul 10 · 2:18 AM · Transport
+                    - generic [ref=e397]: "-$23.40"
+            - generic [ref=e211]:
+              - region "Custom view" [ref=e212]:
+                - link "Design a view with Maple" [ref=e213] [cursor=pointer]:
+                  - /url: /vendo
+              - generic [ref=e214]:
+                - heading "Cash flow" [level=3] [ref=e216]
+                - generic [ref=e399]:
+                  - generic [ref=e400]:
+                    - generic [ref=e401]: Money in
+                    - generic [ref=e402]: $34.99
+                  - generic [ref=e403]:
+                    - generic [ref=e404]: Money out
+                    - generic [ref=e405]: $4,664.02
+              - generic [ref=e221]:
+                - heading "Upcoming" [level=3] [ref=e223]
+                - generic [ref=e224]:
+                  - generic [ref=e409]:
+                    - generic [ref=e410]:
+                      - generic [ref=e411]: Mission St Property
+                      - generic [ref=e412]: Sat, Aug 1 · monthly
+                    - generic [ref=e413]: "-$2,850.00"
+                  - generic [ref=e414]:
+                    - generic [ref=e415]:
+                      - generic [ref=e416]: PG&E
+                      - generic [ref=e417]: Wed, Jul 15 · monthly
+                    - generic [ref=e418]: "-$86.40"
+              - generic [ref=e240]:
+                - heading "Goals" [level=3] [ref=e242]
+                - generic [ref=e243]:
+                  - generic [ref=e419]:
+                    - generic [ref=e420]:
+                      - generic [ref=e421]:
+                        - img [ref=e422]
+                        - generic [ref=e424]: Japan trip
+                      - generic [ref=e425]: 62%
+                    - generic [ref=e428]:
+                      - text: $3,120.00
+                      - generic [ref=e429]: / $5,000.00
+                  - generic [ref=e430]:
+                    - generic [ref=e431]:
+                      - generic [ref=e432]:
+                        - img [ref=e433]
+                        - generic [ref=e436]: Emergency fund
+                      - generic [ref=e437]: 74%
+                    - generic [ref=e440]:
+                      - text: $7,400.00
+                      - generic [ref=e441]: / $10,000.00
+                  - generic [ref=e442]:
+                    - generic [ref=e443]:
+                      - generic [ref=e444]:
+                        - img [ref=e445]
+                        - generic [ref=e447]: New MacBook
+                      - generic [ref=e448]: 36%
+                    - generic [ref=e451]:
+                      - text: $900.00
+                      - generic [ref=e452]: / $2,500.00
+  - alert [ref=e453]
+  - generic [ref=e454]: "0"

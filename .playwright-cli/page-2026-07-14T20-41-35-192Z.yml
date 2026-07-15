@@ -1,0 +1,104 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - img [ref=e6]
+      - generic [ref=e9]: Maple
+    - navigation [ref=e10]:
+      - generic [ref=e11]:
+        - link "Home" [ref=e12] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - generic [ref=e18]: Home
+        - link "Accounts" [ref=e19] [cursor=pointer]:
+          - /url: /accounts
+          - img [ref=e20]
+          - generic [ref=e23]: Accounts
+        - link "Transactions" [ref=e24] [cursor=pointer]:
+          - /url: /transactions
+          - img [ref=e25]
+          - generic [ref=e28]: Transactions
+        - link "Cards" [ref=e29] [cursor=pointer]:
+          - /url: /cards
+          - img [ref=e30]
+          - generic [ref=e32]: Cards
+        - link "Payments" [ref=e33] [cursor=pointer]:
+          - /url: /payments
+          - img [ref=e34]
+          - generic [ref=e37]: Payments
+        - link "Insights" [ref=e38] [cursor=pointer]:
+          - /url: /insights
+          - img [ref=e39]
+          - generic [ref=e42]: Insights
+        - link "Ask Maple" [ref=e43] [cursor=pointer]:
+          - /url: /vendo
+          - img [ref=e44]
+          - generic [ref=e47]: Ask Maple
+      - generic [ref=e49]:
+        - link "Activity" [ref=e50] [cursor=pointer]:
+          - /url: /activity
+          - img [ref=e51]
+          - generic [ref=e54]: Activity
+        - link "Settings" [ref=e55] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e56]
+          - generic [ref=e59]: Settings
+    - button [ref=e62]:
+      - img [ref=e66]
+  - generic [ref=e69]:
+    - banner [ref=e70]:
+      - generic [ref=e71]:
+        - heading "Home" [level=1] [ref=e72]
+        - button "Search… ⌘K" [ref=e73]:
+          - img [ref=e74]
+          - generic [ref=e77]: Search…
+          - generic [ref=e78]: ⌘K
+      - generic [ref=e79]:
+        - button "Send" [ref=e80]
+        - button "Request" [ref=e81]
+        - button "Move money" [ref=e82]
+        - button "Notifications" [ref=e83]:
+          - img [ref=e84]
+    - main [ref=e87]:
+      - generic [ref=e88]:
+        - generic [ref=e89]:
+          - heading "Overview" [level=1] [ref=e90]
+          - paragraph [ref=e91]: Here's where your money stands today.
+        - generic [ref=e92]:
+          - button "Send" [ref=e93]:
+            - img [ref=e95]
+            - generic [ref=e98]: Send
+          - button "Request" [ref=e99]:
+            - img [ref=e101]
+            - generic [ref=e104]: Request
+          - button "Move money" [ref=e105]:
+            - img [ref=e107]
+            - generic [ref=e110]: Move money
+          - button "Pay bill" [ref=e111]:
+            - img [ref=e113]
+            - generic [ref=e116]: Pay bill
+          - button "Deposit" [ref=e117]:
+            - img [ref=e119]
+            - generic [ref=e121]: Deposit
+        - generic [ref=e122]:
+          - generic [ref=e123]:
+            - generic [ref=e126]:
+              - generic [ref=e127]:
+                - generic [ref=e128]: Total balance
+                - generic [ref=e131]: ▲ 2.3% this month
+              - generic [ref=e132]:
+                - button "1W" [ref=e133]
+                - button "1M" [ref=e134]
+                - button "3M" [ref=e135]
+                - button "1Y" [ref=e136]
+                - button "All" [ref=e137]
+            - generic [ref=e158]:
+              - heading "Recent activity" [level=3] [ref=e159]
+              - link "View all" [ref=e160] [cursor=pointer]:
+                - /url: /transactions
+          - generic [ref=e211]:
+            - region "Custom view" [ref=e212]:
+              - link "Design a view with Maple" [ref=e213] [cursor=pointer]:
+                - /url: /vendo
+            - heading "Cash flow" [level=3] [ref=e216]
+            - heading "Upcoming" [level=3] [ref=e223]
+            - heading "Goals" [level=3] [ref=e242]

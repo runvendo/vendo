@@ -1,0 +1,128 @@
+- generic [active] [ref=f3e1]:
+  - generic [ref=f3e2]:
+    - complementary [ref=f3e3]:
+      - generic [ref=f3e4]:
+        - img [ref=f3e6]
+        - generic [ref=f3e9]: Maple
+      - navigation [ref=f3e10]:
+        - generic [ref=f3e11]:
+          - link "Home" [ref=f3e12] [cursor=pointer]:
+            - /url: /
+            - img [ref=f3e13]
+            - generic [ref=f3e18]: Home
+          - link "Accounts" [ref=f3e19] [cursor=pointer]:
+            - /url: /accounts
+            - img [ref=f3e20]
+            - generic [ref=f3e23]: Accounts
+          - link "Transactions" [ref=f3e24] [cursor=pointer]:
+            - /url: /transactions
+            - img [ref=f3e25]
+            - generic [ref=f3e28]: Transactions
+          - link "Cards" [ref=f3e29] [cursor=pointer]:
+            - /url: /cards
+            - img [ref=f3e30]
+            - generic [ref=f3e32]: Cards
+          - link "Payments" [ref=f3e33] [cursor=pointer]:
+            - /url: /payments
+            - img [ref=f3e34]
+            - generic [ref=f3e37]: Payments
+          - link "Insights" [ref=f3e38] [cursor=pointer]:
+            - /url: /insights
+            - img [ref=f3e39]
+            - generic [ref=f3e42]: Insights
+          - link "Ask Maple" [ref=f3e43] [cursor=pointer]:
+            - /url: /vendo
+            - img [ref=f3e44]
+            - generic [ref=f3e47]: Ask Maple
+        - generic [ref=f3e49]:
+          - link "Activity" [ref=f3e50] [cursor=pointer]:
+            - /url: /activity
+            - img [ref=f3e51]
+            - generic [ref=f3e54]: Activity
+          - link "Settings" [ref=f3e55] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=f3e56]
+            - generic [ref=f3e59]: Settings
+      - button "YH Yousef Helal Personal" [ref=f3e120]:
+        - generic [ref=f3e121]: YH
+        - generic [ref=f3e64]:
+          - generic [ref=f3e122]: Yousef Helal
+          - generic [ref=f3e123]: Personal
+        - img [ref=f3e66]
+    - generic [ref=f3e69]:
+      - banner [ref=f3e70]:
+        - generic [ref=f3e71]:
+          - heading "Ask Maple" [level=1] [ref=f3e72]
+          - button "Search… ⌘K" [ref=f3e73]:
+            - img [ref=f3e74]
+            - generic [ref=f3e77]: Search…
+            - generic [ref=f3e78]: ⌘K
+        - generic [ref=f3e79]:
+          - button "Send" [ref=f3e80]
+          - button "Request" [ref=f3e81]
+          - button "Move money" [ref=f3e82]
+          - button "Notifications" [ref=f3e83]:
+            - img [ref=f3e84]
+      - main [ref=f3e87]:
+        - generic [ref=f3e88]:
+          - region "Vendo conversation" [ref=f3e90]:
+            - log "Conversation messages" [ref=f3e126]:
+              - article "user message" [ref=f3e127]:
+                - generic [ref=f3e128]: Build and open a compact view that shows my spending by category and my monthly trend.
+              - article "assistant message" [ref=f3e148]:
+                - paragraph [ref=f3e150]: I'll build that app for you right away! Let me create it and fetch your spending data simultaneously.
+                - generic [ref=f3e151]:
+                  - img [ref=f3e190]
+                  - generic [ref=f3e153]: "Tool: vendo_apps_create"
+                  - generic [ref=f3e154]: write
+                  - generic [ref=f3e155]: output-available
+                - generic [ref=f3e156]:
+                  - img [ref=f3e177]
+                  - generic [ref=f3e158]: "Tool: host_getSpendingInsights"
+                  - generic [ref=f3e159]: read
+                  - generic [ref=f3e160]: output-available
+                - generic [ref=f3e179]:
+                  - img [ref=f3e181]
+                  - generic [ref=f3e183]: "Tool: host_getCashflowInsights"
+                  - generic [ref=f3e184]: read
+                  - generic [ref=f3e185]: output-available
+                - paragraph [ref=f3e193]: Got your real data — now let me update the app with your actual spending figures!
+                - generic [ref=f3e194]:
+                  - generic [ref=f3e196]: "Tool: vendo_apps_edit"
+                  - generic [ref=f3e197]: write
+                  - generic [ref=f3e198]: approval-requested
+              - article "Approval for vendo_apps_edit" [ref=f3e199]:
+                - generic [ref=f3e200]:
+                  - img [ref=f3e202]
+                  - generic [ref=f3e204]:
+                    - generic [ref=f3e205]: REQUESTED
+                    - generic [ref=f3e206]: vendo_apps_edit
+                  - generic [ref=f3e207]: write
+                - generic "Real tool inputs" [ref=f3e208]: "{ \"appId\": \"app_0a61ed0e-0bc5-4951-a998-595c06692f7f\", \"instruction\": \"Update the dashboard with the user's real financial data:\\n\\n**Spending by Category (current period, divide cents by 100):**\\n- Housing: $2,850.00\\n- Shopping: $617.49\\n- Transport: $562.06\\n- Subscriptions: $335.47\\n- Dining: $195.40\\n- Groceries: $79.38\\n- Coffee: $24.22\\n- Total: $4,664.02\\n\\n**Monthly Spending Trend (outflows, divide by 100):**\\n- Apr 2026: $899.18\\n- May 2026: $4,388.55\\n- Jun 2026: $4,673.82\\n- Jul 2026: $4,664.02\\n\\nReplace all placeholder/sample data with these real values. Update the monthly trend chart to show Apr–Jul 2026 with these outflow amounts. Update the category legend and donut chart with the real categories and amounts. Calculate percentages based on the real total of $4,664.02.\" }"
+                - generic [ref=f3e209]: chat · present
+                - group [ref=f3e210]:
+                  - generic "Remember this decision" [ref=f3e211] [cursor=pointer]
+                - generic [ref=f3e212]:
+                  - button "Approve" [disabled] [ref=f3e213] [cursor=pointer]
+                  - button "Deny" [disabled] [ref=f3e214] [cursor=pointer]
+            - form "Message composer" [ref=f3e135]:
+              - generic [ref=f3e136]:
+                - button "Attach files" [ref=f3e137] [cursor=pointer]:
+                  - img [ref=f3e138]
+                - generic [ref=f3e140]:
+                  - generic [ref=f3e141]: Message
+                  - textbox "Message" [ref=f3e142]:
+                    - /placeholder: Ask anything
+                - button "Send" [disabled] [ref=f3e215]:
+                  - img [ref=f3e144]
+                  - generic [ref=f3e146]: Send
+              - status [ref=f3e147]: ready
+          - region "Voice" [ref=f3e108]:
+            - generic [ref=f3e110]:
+              - generic [ref=f3e125]:
+                - generic:
+                  - img
+              - status [ref=f3e114]: "Voice: idle"
+              - list "Voice transcript" [ref=f3e115]
+            - button "Start voice" [ref=f3e118] [cursor=pointer]
+  - alert [ref=f3e119]
