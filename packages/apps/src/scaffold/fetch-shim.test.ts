@@ -163,6 +163,24 @@ describe("internal requests are never rewritten", () => {
     expect(await response.text()).toBe("native-ok");
   });
 
+  it("passes an internal Request object with a body through with the body intact", async () => {
+    // Regression (Devin, PR #268): constructing the inspection Request consumes
+    // a Request-object input's body; the shim must forward the CONSTRUCTED
+    // request, or the internal hop throws on a disturbed body.
+    let received = "";
+    const { calls } = installShim(async (call) => {
+      received = await (call.input as Request).text();
+      return new Response("native-ok");
+    });
+    const response = await fetch(new Request("http://127.0.0.1:8080/fn/total", {
+      method: "POST",
+      body: '{"args":{"a":1}}',
+    }));
+    expect(await response.text()).toBe("native-ok");
+    expect(calls).toHaveLength(1);
+    expect(received).toBe('{"args":{"a":1}}');
+  });
+
   it("delegates relative URLs to native fetch (native error semantics preserved)", async () => {
     const { calls } = installShim(() => new Response("native-ok"));
     const response = await fetch("/fn/total", { method: "POST" });
@@ -175,7 +193,7 @@ describe("internal requests are never rewritten", () => {
     const { calls } = installShim(() => new Response("native-ok"));
     await fetch("data:text/plain,hello");
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.input).toBe("data:text/plain,hello");
+    expect((calls[0]?.input as Request).url).toBe("data:text/plain,hello");
   });
 });
 

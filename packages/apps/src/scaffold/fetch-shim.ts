@@ -94,9 +94,12 @@ export const FETCH_SHIM_SOURCE = `// Vendo egress fetch shim — 06-apps §4.3/�
     try {
       url = new URL(request.url);
     } catch {
-      return nativeFetch(input, init);
+      return nativeFetch(request);
     }
-    if (isInternal(url)) return nativeFetch(input, init);
+    // Forward the CONSTRUCTED request, not the original input: constructing it
+    // above already consumed a Request-object input's body, so the original
+    // would arrive body-disturbed and throw.
+    if (isInternal(url)) return nativeFetch(request);
 
     const headers = {};
     for (const [name, value] of request.headers) headers[name] = value;
@@ -120,7 +123,7 @@ export const FETCH_SHIM_SOURCE = `// Vendo egress fetch shim — 06-apps §4.3/�
         "content-type": "application/json",
       },
       body: JSON.stringify(envelope),
-      ...(request.signal === undefined ? {} : { signal: request.signal }),
+      signal: request.signal, // always an AbortSignal per the fetch spec
     });
 
     let payload = null;
