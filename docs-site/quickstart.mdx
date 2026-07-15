@@ -97,6 +97,12 @@ export function Assistant() {
 }
 ```
 
+Closing the overlay hides the panel without discarding the conversation, so
+reopening within the same page session restores the prior messages and thread.
+To start fresh, call `overlay.newConversation()` from the hook, use the
+new-conversation button in the panel header, or bump the `conversationKey`
+prop from your own state.
+
 ## Send the first turn
 
 Open your conversation surface and ask for a view, such as “Show my overdue
