@@ -58,6 +58,7 @@ and `Divider`.
 | `useApp` | open, call, edit, history, undo, and refresh by re-opening |
 | `useAutomations` | enable, disable, runs, dry-run, and stop |
 | `useActivity` | self-scoped audit activity |
+| `useVendoOverlay` | programmatic open/close controller for `VendoOverlay` |
 | `useVendoStatus` | connection and guard posture |
 | `useVoice` | voice stage state, start, stop, and transcript |
 | `useVendoTheme` | resolved theme tokens |
@@ -72,6 +73,21 @@ All hooks are transport-only and SSR-safe.
 
 Chrome derives all styling from `VendoTheme` tokens. The required bar is WCAG
 2.1 AA, complete keyboard access, screen-reader testing, and mobile web.
+
+### Overlay entry
+
+`<VendoOverlay />` ships a fixed, brand-styled launcher pill in the
+bottom-right corner by default. `launcher="bottom-left"` moves it;
+`launcher="none"` removes it for hosts that trigger the overlay themselves.
+Open state is uncontrolled by default (`defaultOpen`), or controlled via
+`open` + `onOpenChange`. `useVendoOverlay()` returns
+`{ isOpen, open, close, toggle, overlayProps }` — spread `overlayProps` onto
+the component and call `toggle()` from your own shortcut or nav button.
+
+While open, the panel is portaled to `document.body` (so host `transform`/
+`filter`/`overflow` styles cannot trap it), body scroll is locked, and the
+page behind the scrim is `inert`. Focus lands in the composer on open and
+returns to the invoking element on close.
 
 ## Tree rendering
 

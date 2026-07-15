@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
+import { useVendoOverlay } from "@vendoai/ui";
 import { VendoOverlay } from "@vendoai/ui/chrome";
 import { VendoRoot } from "./VendoRoot";
 
@@ -15,8 +16,12 @@ async function resetDemo(): Promise<void> {
 
 export function VendoLayer({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const layer = useRef<HTMLDivElement>(null);
   const floatingSurface = !pathname?.startsWith("/assistant");
+  // ENG-220: Cmd/Ctrl+K drives the supported programmatic overlay API instead
+  // of DOM-poking the launcher; the launcher itself is the ui package's
+  // default fixed bottom-right pill.
+  const overlay = useVendoOverlay();
+  const { toggle } = overlay;
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -28,24 +33,17 @@ export function VendoLayer({ children }: { children: ReactNode }) {
       }
       if (!event.shiftKey && event.key.toLowerCase() === "k" && floatingSurface) {
         event.preventDefault();
-        layer.current?.querySelector<HTMLButtonElement>(".vendo-launcher")?.click();
+        toggle();
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [floatingSurface]);
+  }, [floatingSurface, toggle]);
 
   return (
     <VendoRoot>
       {children}
-      {floatingSurface ? (
-        <div ref={layer} className="cadence-vendo-layer">
-          <VendoOverlay />
-        </div>
-      ) : null}
-      <style jsx global>{`
-        .cadence-vendo-layer > .vendo-root > .vendo-launcher { display: none; }
-      `}</style>
+      {floatingSurface ? <VendoOverlay {...overlay.overlayProps} /> : null}
       {/* VENDO-MIGRATION: 08-ui's frozen overlay does not expose custom
           greetings or suggestion chips; Cmd/Ctrl+K behavior remains intact. */}
     </VendoRoot>
