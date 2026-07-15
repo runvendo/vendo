@@ -1,5 +1,5 @@
 import { mkdtemp, rm } from "node:fs/promises";
-import type { Server } from "node:http";
+import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -73,17 +73,41 @@ export interface TestHost {
   close(): Promise<void>;
 }
 
-export async function startTestHost(model: LanguageModel): Promise<TestHost> {
+async function reserveLoopbackPort(): Promise<number> {
+  const probe = createServer();
+  await new Promise<void>((resolve, reject) => {
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", resolve);
+  });
+  const address = probe.address();
+  if (address === null || typeof address === "string") throw new Error("Relay port probe did not bind TCP");
+  await new Promise<void>((resolve, reject) => probe.close((error) => error ? reject(error) : resolve()));
+  return address.port;
+}
+
+export async function startTestHost(
+  model: LanguageModel,
+  options: { trustedOrigin?: boolean } = {},
+): Promise<TestHost> {
   const dataDir = await mkdtemp(join(tmpdir(), "relay-express-e2e-"));
   const store = createStore({ dataDir });
-  const relay = createRelayServer({ model, store });
+  const port = options.trustedOrigin === true ? await reserveLoopbackPort() : 0;
+  const previousBaseUrl = process.env.VENDO_BASE_URL;
+  if (options.trustedOrigin === true) process.env.VENDO_BASE_URL = `http://127.0.0.1:${port}`;
+  let relay: ReturnType<typeof createRelayServer>;
+  try {
+    relay = createRelayServer({ model, store });
+  } finally {
+    if (previousBaseUrl === undefined) delete process.env.VENDO_BASE_URL;
+    else process.env.VENDO_BASE_URL = previousBaseUrl;
+  }
   let server: Server;
   try {
     // Let the eager composition migration settle before a bind failure enters
     // cleanup; closing PGlite while it is still opening can mask the listen error.
     await store.ensureSchema();
     server = await new Promise<Server>((resolve, reject) => {
-      const listening = relay.app.listen(0, "127.0.0.1", (error?: Error) => {
+      const listening = relay.app.listen(port, "127.0.0.1", (error?: Error) => {
         if (error !== undefined) {
           reject(error);
           return;
