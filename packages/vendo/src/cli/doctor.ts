@@ -109,7 +109,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       if (sandboxVenue === "e2b" || sandboxVenue === "modal" || sandboxVenue === "custom") {
         pass(`execution venue: ${sandboxVenue}`);
       } else if (sandboxVenue === false) {
-        warn("set E2B_API_KEY or MODAL_TOKEN_ID+MODAL_TOKEN_SECRET, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable");
+        warn("install the e2b package and set E2B_API_KEY, or install modal and set MODAL_TOKEN_ID+MODAL_TOKEN_SECRET, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable");
       } else if (sandboxVenue === undefined) {
         // Older hosts predate blocks.sandbox — version skew, not a broken install.
         warn("host /status does not report an execution venue; upgrade @vendoai/vendo to enable the venue check");

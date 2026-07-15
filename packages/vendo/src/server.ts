@@ -1,8 +1,8 @@
 import { createActions, type ActionsRegistry, type Connector } from "@vendoai/actions";
 import { createAgent, type VendoAgent } from "@vendoai/agent";
 import { createApps, type AppsRuntime, type SandboxAdapter } from "@vendoai/apps";
-import { e2bSandbox } from "@vendoai/apps/e2b";
-import { modalSandbox } from "@vendoai/apps/modal";
+import { e2bInstalled, e2bSandbox } from "@vendoai/apps/e2b";
+import { modalInstalled, modalSandbox } from "@vendoai/apps/modal";
 import {
   createAutomations,
   type AutomationsEngine,
@@ -105,14 +105,17 @@ function selectSandbox(configured: SandboxAdapter | undefined): {
 } {
   if (configured !== undefined) return { adapter: configured, venue: "custom" };
 
+  // An env key only lights a venue when its optional SDK is actually
+  // installed; otherwise /status would report a venue whose first
+  // create() dies on a missing module.
   const e2bApiKey = environment("E2B_API_KEY");
-  if (e2bApiKey !== undefined) {
+  if (e2bApiKey !== undefined && e2bInstalled()) {
     return { adapter: e2bSandbox({ apiKey: e2bApiKey }), venue: "e2b" };
   }
 
   const modalTokenId = environment("MODAL_TOKEN_ID");
   const modalTokenSecret = environment("MODAL_TOKEN_SECRET");
-  if (modalTokenId !== undefined && modalTokenSecret !== undefined) {
+  if (modalTokenId !== undefined && modalTokenSecret !== undefined && modalInstalled()) {
     return {
       adapter: modalSandbox({ tokenId: modalTokenId, tokenSecret: modalTokenSecret }),
       venue: "modal",
