@@ -1,11 +1,14 @@
 import { z } from "zod";
 import {
+  VENDO_CAPABILITIES_FORMAT,
   VENDO_OVERRIDES_FORMAT,
   VENDO_TOOLS_FORMAT,
   jsonSchemaSchema,
   riskLabelSchema,
+  stepSchema,
   toolDescriptorSchema,
   type JsonSchema,
+  type Step,
   type ToolDescriptor,
 } from "@vendoai/core";
 
@@ -152,23 +155,57 @@ export const openApiBindingSchema = z.object({
   path: z.string().startsWith("/"),
 }).passthrough() satisfies z.ZodType<OpenApiBinding>;
 
-export type ToolBinding = RouteBinding | OpenApiBinding;
+/**
+ * 04-actions §6: ordered steps over primitive host/connector tools, reusing the
+ * core §11 `Step` shape. Expressions see `{ args, steps, item }`. Compounds are
+ * agent-authored: they live in `.vendo/capabilities.json`, never `tools.json`.
+ */
+export interface CompoundBinding {
+  kind: "compound";
+  steps: Step[];
+}
 
-export const toolBindingSchema = z.discriminatedUnion("kind", [
+export const compoundBindingSchema = z.object({
+  kind: z.literal("compound"),
+  steps: z.array(stepSchema).min(1).max(50),
+}).passthrough().refine(
+  (binding) => new Set(binding.steps.map((step) => step.id)).size === binding.steps.length,
+  { message: "compound step ids must be unique" },
+) satisfies z.ZodType<CompoundBinding>;
+
+/** The bindings deterministic extraction may emit into `.vendo/tools.json`. */
+export type PrimitiveToolBinding = RouteBinding | OpenApiBinding;
+
+export type ToolBinding = RouteBinding | OpenApiBinding | CompoundBinding;
+
+export const toolBindingSchema = z.union([
   routeBindingSchema,
   openApiBindingSchema,
+  compoundBindingSchema,
 ]) satisfies z.ZodType<ToolBinding>;
+
+/** tools.json stays deterministic (04 §1/§6): a compound entry there fails loudly with a pointer home. */
+const rejectedCompoundBindingSchema = z.object({ kind: z.literal("compound") }).passthrough().refine(
+  () => false,
+  { message: "compound bindings live in .vendo/capabilities.json — .vendo/tools.json stays deterministic (04-actions §6)" },
+);
+
+const extractedBindingSchema = z.union([
+  routeBindingSchema,
+  openApiBindingSchema,
+  rejectedCompoundBindingSchema,
+]) as unknown as z.ZodType<PrimitiveToolBinding>;
 
 /** 04-actions §2: a descriptor plus its execution binding — one entry of `.vendo/tools.json`. */
 export type ExtractedTool = ToolDescriptor & {
-  binding: ToolBinding;
+  binding: PrimitiveToolBinding;
   /** Fail-closed extraction (04 §1): a route the scanner can't classify is emitted disabled, never silently auto-allowed. */
   disabled?: boolean;
   note?: string;
 };
 
 export const extractedToolSchema = toolDescriptorSchema.extend({
-  binding: toolBindingSchema,
+  binding: extractedBindingSchema,
   disabled: z.boolean().optional(),
   note: z.string().optional(),
 }) satisfies z.ZodType<ExtractedTool>;
@@ -216,6 +253,52 @@ export const overridesFileSchema = z.object({
     ignoreSlots: z.array(z.string().min(1)),
   }).strict().optional(),
 }).strict() satisfies z.ZodType<OverridesFile>;
+
+/**
+ * 04-actions §1: a capability brief — reviewed prose the agent layer may attach
+ * to primitive tools. Carried and validated today; consumed by later milestones.
+ */
+export interface CapabilityBrief {
+  name: string;
+  text: string;
+  tools?: string[];
+}
+
+export const capabilityBriefSchema = z.object({
+  name: z.string().min(1),
+  text: z.string().min(1),
+  tools: z.array(z.string().min(1)).optional(),
+}).passthrough() satisfies z.ZodType<CapabilityBrief>;
+
+/** 04-actions §6: one agent-authored compound tool of `.vendo/capabilities.json`. */
+export type CompoundTool = ToolDescriptor & {
+  binding: CompoundBinding;
+  disabled?: boolean;
+  note?: string;
+};
+
+export const compoundToolSchema = toolDescriptorSchema.extend({
+  binding: compoundBindingSchema,
+  disabled: z.boolean().optional(),
+  note: z.string().optional(),
+}) satisfies z.ZodType<CompoundTool>;
+
+/**
+ * `.vendo/capabilities.json` — agent-authored (refine engine), human-reviewed
+ * diffs, host-committed (04 §1/§6). Passthrough like `tools.json`: a generated
+ * artifact evolves additively, unknown keys must survive.
+ */
+export interface CapabilitiesFile {
+  format: typeof VENDO_CAPABILITIES_FORMAT;
+  tools: CompoundTool[];
+  briefs?: CapabilityBrief[];
+}
+
+export const capabilitiesFileSchema = z.object({
+  format: z.literal(VENDO_CAPABILITIES_FORMAT),
+  tools: z.array(compoundToolSchema),
+  briefs: z.array(capabilityBriefSchema).optional(),
+}).passthrough() satisfies z.ZodType<CapabilitiesFile>;
 
 /**
  * Remixable component baseline captured by sync (06 §8, written to
