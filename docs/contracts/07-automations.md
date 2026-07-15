@@ -48,7 +48,7 @@ export interface AutomationsEngine {
 - **`host-event`** — the honest one-seam cost: the host calls `engine.emit(event, payload, principal)` in its own code path (or points a webhook at the umbrella's `/webhooks/host` route). Fires every enabled automation of that principal whose `trigger.on.event` matches.
 - **`external`** — connector deliveries (Composio webhooks, plain webhooks) arrive at `webhook(req)`; `config` carries connector-specific subscription detail, including its verification material (the connector's own signature scheme, or the HMAC secret minted at enable — signing rules in 09 §3). Unverified deliveries are rejected before any dispatch; deliveries are deduped by delivery id so at-least-once retries never double-fire. Delivery → principal resolution comes from the app row (an automation always runs as its owner).
 
-Additive implementation note: when `store.records(...).atomic` is available, schedule cursor advances use revision CAS and webhook/resume delivery claims use atomic insert-if-absent. Multiple engine instances therefore do not double-fire those races. Adapters without the optional capability retain the original single-instance read/put fallback.
+Additive implementation note: when `store.records(...).claim` is available, schedule cursor advances use exact-record compare-and-replace and webhook/resume delivery claims use the additive absent-record form. Multiple engine instances therefore do not double-fire those races. Adapters without the optional capability retain the original single-instance read/put fallback.
 
 ## 3. Away identity and grant capture
 

@@ -9,7 +9,7 @@ import { createStore } from "./index.js";
 const CONTRACT_COLUMNS: Record<string, string[]> = {
   vendo_meta: ["key", "value"],
   vendo_apps: ["id", "subject", "enabled", "doc", "created_at", "updated_at"],
-  vendo_records: ["collection", "id", "data", "refs", "created_at", "updated_at", "revision"],
+  vendo_records: ["collection", "id", "data", "refs", "created_at", "updated_at"],
   vendo_blobs: ["namespace", "key", "bytes", "content_type", "created_at"],
   vendo_state: ["app_id", "subject", "data", "updated_at"],
   vendo_threads: ["id", "subject", "messages", "created_at", "updated_at"],

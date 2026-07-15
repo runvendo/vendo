@@ -109,7 +109,7 @@ const flush = async (): Promise<void> => {
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
 };
 
-const memoryStoreWithoutAtomic = (): StoreAdapter => {
+const memoryStoreWithoutClaim = (): StoreAdapter => {
   const base = memoryStoreAdapter();
   return {
     ensureSchema: () => base.ensureSchema(),
@@ -322,16 +322,12 @@ describe("steps execution, parking, and resumption", () => {
       blobs: (namespace) => baseStore.blobs(namespace),
       records(collection) {
         const records = baseStore.records(collection);
-        if (collection !== "automations:resume-claims" || records.atomic === undefined) return records;
+        if (collection !== "automations:resume-claims" || records.claim === undefined) return records;
         return {
           ...records,
-          atomic: {
-            async insertIfAbsent(record) {
-              resumeClaims += 1;
-              return await records.atomic!.insertIfAbsent(record);
-            },
-            compareAndSwap: (record, expectedRevision) =>
-              records.atomic!.compareAndSwap(record, expectedRevision),
+          async claim(expected, replacement) {
+            resumeClaims += 1;
+            return await records.claim!(expected, replacement);
           },
         };
       },
@@ -403,7 +399,7 @@ describe("steps execution, parking, and resumption", () => {
   });
 
   it("turns a denied parked call into a blocked hard failure and tick sweeps decided rows", async () => {
-    const store = memoryStoreWithoutAtomic();
+    const store = memoryStoreWithoutClaim();
     const guard = new GuardDouble();
     const tools = registry([writeTool], async (call, runCtx) => {
       const request = {
@@ -588,8 +584,8 @@ describe("schedule, webhook, and host triggers", () => {
     expect((await store.records("automations:schedule").get("app_at"))?.data).toMatchObject({ firedAt: NOW.toISOString() });
   });
 
-  it("retains single-instance schedule behavior when the atomic capability is absent", async () => {
-    const store = memoryStoreWithoutAtomic();
+  it("retains single-instance schedule behavior when the claim capability is absent", async () => {
+    const store = memoryStoreWithoutClaim();
     const doc = app("app_schedule_fallback", {
       on: { kind: "schedule", every: "15m" },
       run: { kind: "steps", steps: [] },

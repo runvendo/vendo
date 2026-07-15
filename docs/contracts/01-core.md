@@ -316,7 +316,6 @@ export interface VendoRecord {
   refs?: Record<string, string>;   // host-entity refs — queryable, joinable
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
-  revision?: string;               // opaque token when RecordStore.atomic is present
 }
 
 export interface RecordQuery { refs?: Record<string, string>; ids?: string[]; limit?: number; cursor?: string; }
@@ -324,15 +323,15 @@ export interface RecordQuery { refs?: Record<string, string>; ids?: string[]; li
 export interface RecordStore {
   get(id: string): Promise<VendoRecord | null>;
   put(record: Pick<VendoRecord, "id" | "data" | "refs">): Promise<VendoRecord>;
+  // Optional additive capability: one compare-and-claim statement. Exact data
+  // + refs match; replacement omitted means delete. Exactly one caller gets true.
+  // The absent form is an additive insert-if-absent extension used by automations.
+  claim?(
+    expected: Pick<VendoRecord, "id" | "data" | "refs"> | { id: string; absent: true },
+    replacement?: Pick<VendoRecord, "data" | "refs">,
+  ): Promise<boolean>;
   delete(id: string): Promise<void>;
   list(q?: RecordQuery): Promise<{ records: VendoRecord[]; cursor?: string }>;
-  atomic?: {
-    insertIfAbsent(record: Pick<VendoRecord, "id" | "data" | "refs">): Promise<VendoRecord | null>;
-    compareAndSwap(
-      record: Pick<VendoRecord, "id" | "data" | "refs">,
-      expectedRevision: string,
-    ): Promise<VendoRecord | null>;
-  };
 }
 
 export interface BlobStore {

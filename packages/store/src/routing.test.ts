@@ -154,6 +154,42 @@ for (const backend of backends()) {
           .toEqual([`${prefix}_a`]);
       });
 
+      it(`atomically claims ${collection} rows with compare and absent forms`, async () => {
+        const firstHandle = made.store.records(collection);
+        const secondHandle = made.store.records(collection);
+        if (!firstHandle.claim || !secondHandle.claim) throw new Error("store does not support atomic claims");
+        const expected = await firstHandle.put({
+          id: `${collection}_claim`,
+          data: { status: "unclaimed" },
+          refs: { kind: "claim" },
+        });
+        const compared = await Promise.all([
+          firstHandle.claim(expected, { data: { status: "claimed", by: "first" }, refs: expected.refs }),
+          secondHandle.claim(expected, { data: { status: "claimed", by: "second" }, refs: expected.refs }),
+        ]);
+        expect(compared.filter(Boolean)).toHaveLength(1);
+        expect((await firstHandle.get(expected.id))?.data).toEqual({
+          status: "claimed",
+          by: compared[0] ? "first" : "second",
+        });
+
+        const absent = await Promise.all([
+          firstHandle.claim(
+            { id: `${collection}_absent`, absent: true },
+            { data: { status: "inserted", by: "first" } },
+          ),
+          secondHandle.claim(
+            { id: `${collection}_absent`, absent: true },
+            { data: { status: "inserted", by: "second" } },
+          ),
+        ]);
+        expect(absent.filter(Boolean)).toHaveLength(1);
+        expect((await firstHandle.get(`${collection}_absent`))?.data).toEqual({
+          status: "inserted",
+          by: absent[0] ? "first" : "second",
+        });
+      });
+
       it(`walks cursor pages in ${collection} without duplicates or misses`, async () => {
         const records = made.store.records(collection);
         const pageSet = `${collection}_pages`;

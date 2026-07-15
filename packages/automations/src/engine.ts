@@ -760,19 +760,19 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
 
       const claimedBy = `${engineInstanceId}:${globalThis.crypto.randomUUID()}`;
       const claims = config.store.records(RESUME_CLAIMS);
-      const atomicClaim = claims.atomic === undefined
+      const atomicClaim = claims.claim === undefined
         ? undefined
-        : await claims.atomic.insertIfAbsent({
-          id: approvalId,
-          data: { runId, claimedBy, claimedAt: iso() },
-        });
-      if (claims.atomic !== undefined && atomicClaim === null) return;
+        : await claims.claim(
+          { id: approvalId, absent: true },
+          { data: { runId, claimedBy, claimedAt: iso() } },
+        );
+      if (claims.claim !== undefined && !atomicClaim) return;
 
       run.status = "running";
       delete run.summary;
       run.__resume.claimedBy = claimedBy;
       if (!await writeRun(run)) return;
-      if (claims.atomic === undefined) {
+      if (claims.claim === undefined) {
         // Optional-capability fallback: preserve the prior single-instance behavior.
         // The unique write/read narrows, but cannot close, a cross-process race.
         const claimedRecord = await config.store.records(RUNS).get(runId);
@@ -1025,8 +1025,8 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       }
       if (scheduledFor === undefined) {
         if (cursorRecord === null) {
-          if (scheduleRecords.atomic === undefined) await scheduleRecords.put({ id: row.doc.id, data: cursor });
-          else await scheduleRecords.atomic.insertIfAbsent({ id: row.doc.id, data: cursor });
+          if (scheduleRecords.claim === undefined) await scheduleRecords.put({ id: row.doc.id, data: cursor });
+          else await scheduleRecords.claim({ id: row.doc.id, absent: true }, { data: cursor });
         }
         continue;
       }
@@ -1037,13 +1037,13 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       };
       let claimed = true;
       if (cursorRecord === null) {
-        if (scheduleRecords.atomic === undefined) await scheduleRecords.put({ id: row.doc.id, data: nextCursor });
-        else claimed = await scheduleRecords.atomic.insertIfAbsent({ id: row.doc.id, data: nextCursor }) !== null;
-      } else if (scheduleRecords.atomic !== undefined && cursorRecord.revision !== undefined) {
-        claimed = await scheduleRecords.atomic.compareAndSwap(
-          { id: row.doc.id, data: nextCursor },
-          cursorRecord.revision,
-        ) !== null;
+        if (scheduleRecords.claim === undefined) await scheduleRecords.put({ id: row.doc.id, data: nextCursor });
+        else claimed = await scheduleRecords.claim(
+          { id: row.doc.id, absent: true },
+          { data: nextCursor },
+        );
+      } else if (scheduleRecords.claim !== undefined) {
+        claimed = await scheduleRecords.claim(cursorRecord, { data: nextCursor });
       } else {
         await scheduleRecords.put({ id: row.doc.id, data: nextCursor });
       }
@@ -1182,13 +1182,16 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           id: deliveryKey,
           data: { appId: row.doc.id, deliveryId: headerResult.data.id, receivedAt: iso() },
         };
-        if (deliveries.atomic === undefined) {
+        if (deliveries.claim === undefined) {
           if (await deliveries.get(deliveryKey) !== null) {
             deduped += 1;
             continue;
           }
           await deliveries.put(delivery);
-        } else if (await deliveries.atomic.insertIfAbsent(delivery) === null) {
+        } else if (!await deliveries.claim(
+          { id: deliveryKey, absent: true },
+          { data: delivery.data },
+        )) {
           deduped += 1;
           continue;
         }

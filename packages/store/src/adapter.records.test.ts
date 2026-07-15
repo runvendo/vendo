@@ -33,24 +33,23 @@ for (const backend of backends()) {
       expect(await records.get("note_1")).toBeNull();
     });
 
-    it("atomically inserts one claimant and lets only one matching revision swap win", async () => {
+    it("atomically claims an absent record and lets only one matching replacement win", async () => {
       const records = made.store.records("automations:claims");
-      expect(records.atomic).toBeDefined();
-      const atomic = records.atomic!;
+      expect(records.claim).toBeDefined();
+      const claim = records.claim!;
 
       const claims = await Promise.all(Array.from({ length: 8 }, (_, claimant) =>
-        atomic.insertIfAbsent({ id: "claim_1", data: { claimant } })));
-      const winners = claims.filter((claim) => claim !== null);
-      expect(winners).toHaveLength(1);
-      expect(winners[0]?.revision).toBeDefined();
+        claim({ id: "claim_1", absent: true }, { data: { claimant } })));
+      expect(claims.filter(Boolean)).toHaveLength(1);
 
-      const revision = winners[0]!.revision!;
+      const expected = await records.get("claim_1");
+      expect(expected).not.toBeNull();
       const swaps = await Promise.all([
-        atomic.compareAndSwap({ id: "claim_1", data: { claimant: "a" } }, revision),
-        atomic.compareAndSwap({ id: "claim_1", data: { claimant: "b" } }, revision),
+        claim(expected!, { data: { claimant: "a" } }),
+        claim(expected!, { data: { claimant: "b" } }),
       ]);
-      expect(swaps.filter((record) => record !== null)).toHaveLength(1);
-      expect((await records.get("claim_1"))?.revision).not.toBe(revision);
+      expect(swaps.filter(Boolean)).toHaveLength(1);
+      expect((await records.get("claim_1"))?.data).toEqual({ claimant: swaps[0] ? "a" : "b" });
     });
 
     it("filters by ids and refs containment", async () => {

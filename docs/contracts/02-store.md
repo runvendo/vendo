@@ -35,7 +35,7 @@ The page makes this public: "everything lives in the host's own DB under a `vend
 | --- | --- | --- |
 | `vendo_meta` | `key, value` | schema version, boot id |
 | `vendo_apps` | `id, subject, enabled, doc, created_at, updated_at` | each user's app: document (core §9) + ownership (core §10) — no installs table; the app row IS the user's copy |
-| `vendo_records` | `collection, id, data, refs, created_at, updated_at, revision` | app data collections; `refs` GIN-indexed for host joins; `revision` backs optional atomic writes |
+| `vendo_records` | `collection, id, data, refs, created_at, updated_at` | app data collections; `refs` GIN-indexed for host joins |
 | `vendo_blobs` | `namespace, key, bytes, content_type, created_at` | `files` storage kind, exports, screenshots |
 | `vendo_state` | `app_id, subject, data, updated_at` | the built-in per-user-per-app `state` singleton |
 | `vendo_threads` | `id, subject, messages, created_at, updated_at` | conversation threads (03 §5) |
@@ -62,13 +62,8 @@ The adapter treats collection names as opaque. Callers compose them; the convent
 
 - **PGlite default**: no `url` → embedded Postgres at `.vendo/data`; kill-the-server durability applies (fsync on write).
 - **Same schema everywhere**: one DDL, no dialect switches. `ensureSchema()` is the only migration entry point, keyed by `vendo_meta.schema_version`, forward-only within the version train.
+- **Atomic claims**: generic and door-owned record tables implement core's optional `RecordStore.claim` in one `INSERT ... ON CONFLICT DO NOTHING`, `UPDATE ... WHERE data/refs match RETURNING`, or `DELETE ... RETURNING` statement. The additive `{ id, absent: true }` expected form requires a replacement and provides insert-if-absent; the original full-record form compares exact data and refs, then replaces or deletes. Consumers that need cross-process exclusion use this capability, while adapters that omit it retain their documented single-instance fallback.
 - **Encryption at rest**: `encryption.key` encrypts `vendo_secrets.ciphertext` only (AES-256-GCM). App data stays plaintext by design — encrypting it would defeat the page's host-can-query/join promise; at-rest encryption of the database is the host's disk/DB layer. Key rotation: out of v0 scope.
 - **No tenant axis**: `subject` is the one partition key — the host's stable user id. Multi-tenant hosts scope the same way they scope their own tables: by joining through `subject` and refs.
 - **Ephemeral principals** (`ephemeral: true`) never touch disk: adapter-level in-memory overlay for their rows, dropped at session end.
 - **Retention**: per-org retention policies are Cloud. OSS retention is host SQL (`DELETE FROM vendo_audit WHERE at < ...` on their own cron) — the table map is public precisely so this works.
-
-## 5. Optional atomic record capability (additive)
-
-`RecordStore.atomic` is an optional capability added within the v0 version train. When present, `insertIfAbsent(record)` atomically inserts one winner for an absent `(collection, id)`, and `compareAndSwap(record, expectedRevision)` atomically replaces only the record whose opaque `revision` still matches. Both return the written record, including its new revision, or `null` when another writer won; callers must treat revisions as opaque strings.
-
-`@vendoai/store` provides this capability for ordinary collections stored in `vendo_records` on both PGlite and hosted Postgres. Its in-memory ephemeral overlay has the same semantics. Reserved typed-table routes may omit the capability. Third-party adapters may also omit it; consumers must retain their prior single-instance read/put behavior as the documented fallback rather than assuming cross-process exclusion.

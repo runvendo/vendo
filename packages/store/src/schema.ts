@@ -16,7 +16,6 @@ export const DDL = [
   `CREATE TABLE IF NOT EXISTS vendo_records (
     collection text NOT NULL, id text NOT NULL, data jsonb NOT NULL, refs jsonb,
     created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL,
-    revision bigint NOT NULL DEFAULT 1,
     PRIMARY KEY (collection, id)
   )`,
   "CREATE INDEX IF NOT EXISTS vendo_records_refs_idx ON vendo_records USING GIN (refs jsonb_path_ops)",
@@ -77,7 +76,6 @@ export const DDL = [
 // point lookups hit an index instead of seq-scanning) and its own created_at, so
 // the seam can expose a creation timestamp that survives updates.
 const ADDITIVE_DDL = [
-  "ALTER TABLE vendo_records ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1",
   "ALTER TABLE vendo_approvals ADD COLUMN IF NOT EXISTS session_id text",
   "ALTER TABLE vendo_approvals ADD COLUMN IF NOT EXISTS consumed_at timestamptz",
   "ALTER TABLE vendo_state ADD COLUMN IF NOT EXISTS id text GENERATED ALWAYS AS (app_id || ':' || subject) STORED",
