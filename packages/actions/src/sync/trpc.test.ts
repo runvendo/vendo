@@ -403,6 +403,31 @@ export const sub = t.router({
     expect(result.warnings.some((warning) => warning.includes("mergeRouters"))).toBe(true);
   });
 
+  it("resolves routers imported through a default export", async () => {
+    const root = await temporaryHost();
+    await writeFile(root, "package.json", JSON.stringify({
+      name: "trpc-default",
+      dependencies: { "@trpc/server": "^11.0.0" },
+    }));
+    await writeFile(root, "pages/api/trpc/[trpc].ts", `
+import { createNextApiHandler } from "@trpc/server/adapters/next";
+import appRouter from "@/server/router";
+
+export default createNextApiHandler({ router: appRouter });
+`);
+    await writeFile(root, "server/router.ts", `
+import { initTRPC } from "@trpc/server";
+
+const t = initTRPC.create();
+const appRouter = t.router({
+  health: t.procedure.query(() => "ok"),
+});
+export default appRouter;
+`);
+    const { tools } = await extractTrpc(root);
+    expect(tools.map((tool) => (tool.binding as TrpcBinding).procedure)).toEqual(["health"]);
+  });
+
   it("warns when the mount router identifier cannot be resolved", async () => {
     const root = await temporaryHost();
     await writeFile(root, "package.json", JSON.stringify({

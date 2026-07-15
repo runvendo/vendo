@@ -160,6 +160,20 @@ async function resolveExport(
   const local = localInitializer(extraction, module, name);
   if (local) return { module, expr: local };
 
+  if (name === "default") {
+    for (const statement of module.sf.statements) {
+      if (ts.isExportAssignment(statement) && !statement.isExportEquals) {
+        const expr = statement.expression;
+        // `export default appRouter` — chase the local identifier.
+        if (ts.isIdentifier(expr)) {
+          const resolved = await resolveIdentifier(extraction, module, expr.text, depth + 1);
+          if (resolved) return resolved;
+        }
+        return { module, expr };
+      }
+    }
+  }
+
   for (const statement of module.sf.statements) {
     if (!ts.isExportDeclaration(statement) || !statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
     const clause = statement.exportClause;
@@ -195,7 +209,7 @@ async function resolveIdentifier(
   const local = localInitializer(extraction, module, name);
   if (local) return { module, expr: local };
   const imported = importMap(extraction, module).get(name);
-  if (!imported || imported.imported === "*" || imported.imported === "default") return null;
+  if (!imported || imported.imported === "*") return null;
   const resolved = await resolveImportSource(module.file, imported.specifier, extraction.root);
   if (!resolved) return null;
   const target = parseModule(extraction, resolved.file, resolved.source);
