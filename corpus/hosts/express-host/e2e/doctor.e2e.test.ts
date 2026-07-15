@@ -25,7 +25,7 @@ function runDoctor(url: string): Promise<{ code: number | null; output: string }
 describe("vendo doctor on the Express host", () => {
   // Express discovery lands in a parallel lane; this pins its expected behavior.
   it("recognizes the committed wiring and completes a live status probe", async () => {
-    const host = await startTestHost(scriptedModel([textTurn("unused")]));
+    const host = await startTestHost(scriptedModel([textTurn("unused")]), { trustedOrigin: true });
     try {
       const result = await runDoctor(host.baseUrl);
       expect(result.code, result.output).toBe(0);
