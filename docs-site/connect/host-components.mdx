@@ -22,13 +22,57 @@ context. Vendo prefers host components when the catalog covers the requested
 UI.
 
 The prewired primitives are `Stack`, `Row`, `Grid`, `Text`, `Skeleton`,
-`Surface`, and `Divider`. Catalog entries and generated components cannot
-shadow them.
+`Surface`, `Divider`, `Card`, `Button`, `Input`, `Select`, `Table`, `Badge`,
+`Stat`, and `Tabs`. Catalog entries and generated components cannot shadow
+them. All prewired primitives read the same [theme tokens](/connect/theming)
+so they pick up your brand's colors, radii, density, and motion without extra
+wiring.
+
+`Card`, `Button`, `Badge`, `Stat`, `Table`, and `Tabs` are display and
+action surfaces — interactive controls invoke bound zero-arg action
+callbacks. `Input` and `Select` accept typed input locally, but under the
+current zero-arg binding contract they cannot round-trip a typed value back
+through a bound action. Treat them as display plus local input, not as form
+fields wired to server state.
 
 Set `remixable` only on components whose real frontend source sync may capture.
 Sync writes a baseline to `.vendo/remixable/<slot>.json`. Shipping a pin always
 requires host review of the net diff. A drifted or erroring pin falls back to
 the original component.
+
+## When static capture cannot see the source
+
+`vendo sync` never skips a remixable slot silently. When it cannot follow the
+registration to real source (an inline component, a dynamic import, a path it
+cannot resolve, or source outside the project root), it lists the slot with a
+machine-readable reason and exits non-zero.
+
+To capture such a slot at runtime instead, wrap the registration with the
+`remixable` helper and pass the module URL:
+
+```ts
+import { remixable } from "@vendoai/vendo/react";
+
+const invoiceCard = remixable({
+  name: "InvoiceCard",
+  component: InvoiceCard,
+  exportable: true,
+}, import.meta.url);
+```
+
+In development the helper reports the module to your Vendo endpoint, which
+writes the same `.vendo/remixable/<slot>.json` baseline sync produces — an
+existing static baseline is never overwritten, and the capture route is not
+mounted in production. A slot that is intentionally never capturable can be
+acknowledged in `.vendo/overrides.json`:
+
+```json
+{
+  "format": "vendo/overrides@1",
+  "tools": {},
+  "remix": { "ignoreSlots": ["ThirdPartyWidget"] }
+}
+```
 
 Host components render natively. Generated components remain in the sandboxed
 iframe jail.

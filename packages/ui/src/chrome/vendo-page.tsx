@@ -2,11 +2,13 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { useVendoContext } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useApps } from "../hooks/use-apps.js";
+import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { AppFrame } from "../tree/frames.js";
 import type { ThreadSummary } from "../wire-types.js";
 import { ActivityPanel } from "./activity-panel.js";
 import { AutomationsPanel } from "./automations-panel.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { TakeoverPortal } from "./takeover-portal.js";
 import { VendoThread } from "./vendo-thread.js";
 
 const TABS = ["chat", "apps", "automations", "activity"] as const;
@@ -18,6 +20,7 @@ function title(tab: Tab): string {
 
 function ChatWorkspace() {
   const { client } = useVendoContext();
+  const takeover = useMobileTakeover();
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [selected, setSelected] = useState<string>();
   useEffect(() => {
@@ -32,7 +35,16 @@ function ChatWorkspace() {
   return (
     <div
       className="fl-page-pane"
-      style={{ display: "grid", gap: 14, gridTemplateColumns: "minmax(180px, 240px) minmax(0, 1fr)", padding: 14 }}
+      style={{
+        display: "grid",
+        gap: 14,
+        // ENG-228: the sidebar+thread two-column grid is what crushed the
+        // thread to one character per line at 375px — below the breakpoint
+        // the conversation list stacks above a full-width thread.
+        gridTemplateColumns: takeover.active ? "minmax(0, 1fr)" : "minmax(180px, 240px) minmax(0, 1fr)",
+        gridTemplateRows: takeover.active ? "auto minmax(0, 1fr)" : undefined,
+        padding: 14,
+      }}
     >
       <nav
         className="fl-picker"
@@ -139,6 +151,7 @@ function AppsWorkspace() {
 
 /** 08-ui §4 — full workspace with WAI-ARIA automatic-activation tabs. */
 export function VendoPage() {
+  const takeover = useMobileTakeover();
   const [tab, setTab] = useState<Tab>("chat");
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -156,7 +169,15 @@ export function VendoPage() {
 
   return (
     <ChromeRoot>
-      <main className="fl-page" aria-label="Vendo workspace">
+      {/* ENG-228: below the breakpoint the page covers the host viewport
+          (`.fl-takeover`) instead of fighting the host layout for width,
+          portaled to body so transformed host ancestors cannot capture it. */}
+      <TakeoverPortal active={takeover.active}>
+      <main
+        className={`fl-page${takeover.active ? " fl-takeover" : ""}`}
+        style={takeover.style}
+        aria-label="Vendo workspace"
+      >
         <div className="fl-tabbar" role="tablist" aria-label="Workspace sections">
           {TABS.map((item, index) => (
             <button
@@ -183,6 +204,7 @@ export function VendoPage() {
           </section>
         </div>
       </main>
+      </TakeoverPortal>
     </ChromeRoot>
   );
 }

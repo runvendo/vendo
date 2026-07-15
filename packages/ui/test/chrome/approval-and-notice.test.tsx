@@ -50,6 +50,31 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
     expect(onDecide).toHaveBeenNthCalledWith(2, { approve: false });
   });
 
+  it("shows descriptor drift provenance only when a previous grant was invalidated", () => {
+    const grantedAt = "2026-07-01T12:00:00.000Z";
+    const expected = "This tool changed since you approved it on Jul 1, 2026 — your previous permission no longer applies.";
+    const view = render(
+      <VendoProvider client={client}>
+        <ApprovalCard
+          approval={{
+            ...approval,
+            invalidatedGrant: { id: "grt_stale", grantedAt },
+          }}
+          onDecide={() => undefined}
+        />
+      </VendoProvider>,
+    );
+
+    expect(screen.getByRole("note", { name: "Previous permission invalidated" }).textContent).toBe(expected);
+
+    view.rerender(
+      <VendoProvider client={client}>
+        <ApprovalCard approval={approval} onDecide={() => undefined} />
+      </VendoProvider>,
+    );
+    expect(screen.queryByRole("note", { name: "Previous permission invalidated" })).toBeNull();
+  });
+
   it("mints exact/session and whole-tool/standing remember shapes", async () => {
     const onDecide = vi.fn();
     render(<VendoProvider client={client}><ApprovalCard approval={approval} onDecide={onDecide} /></VendoProvider>);

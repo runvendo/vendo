@@ -7,10 +7,13 @@ import {
   type RunContext,
   type StoreAdapter,
   type Tree,
+  type TreeQuery,
   type UIPayload,
 } from "@vendoai/core";
 import type { AppCaller } from "./call.js";
+import type { InClientVenueState } from "./inclient.js";
 import type { MachineSessions } from "./machine.js";
+import { detectPinDrift, pinComponentName, type PinBaseline, type PinDrift } from "./pins.js";
 import type { OpenSurface } from "./runtime.js";
 
 const isObject = (value: unknown): value is Record<string, Json> =>
@@ -87,11 +90,116 @@ const bytesToDataUri = (bytes: Uint8Array, contentType = "image/png"): string =>
   return `data:${contentType};base64,${globalThis.btoa(binary)}`;
 };
 
+interface QueryState {
+  key: string;
+  query: TreeQuery;
+  settled: boolean;
+  result?: Awaited<ReturnType<AppCaller["callQuery"]>>;
+  error?: unknown;
+}
+
+export interface ProgressiveQueryResolver {
+  update(tree: Tree): void;
+  complete(): Promise<Record<string, Json>>;
+}
+
+/**
+ * Start queries as soon as they appear. Results may arrive in any order, but
+ * every emitted/final data model is rebuilt in source order so later queries
+ * retain the same deterministic last-write behavior as the old serial loop.
+ */
+export const createProgressiveQueryResolver = (
+  machines: MachineSessions,
+  caller: AppCaller,
+  app: AppDocument,
+  ctx: RunContext,
+  onData?: (data: Record<string, Json>) => void,
+  authorization?: Awaited<ReturnType<MachineSessions["mintRun"]>>,
+): ProgressiveQueryResolver => {
+  const authorizationPromise = authorization === undefined
+    ? machines.mintRun(app, ctx)
+    : Promise.resolve(authorization);
+  const states: QueryState[] = [];
+  const pending = new Set<Promise<void>>();
+  let baseData: Record<string, Json> = {};
+  let resolvedData: Record<string, Json> = {};
+
+  const recompute = (notify = true): void => {
+    const data = structuredClone(baseData);
+    for (const state of states) {
+      if (!state.settled || state.result === undefined) continue;
+      const { outcome, uiEnvelope } = state.result;
+      if (outcome.status !== "ok" || uiEnvelope) continue;
+      setQueryData(data, state.query.path, outcome.output);
+    }
+    resolvedData = data;
+    if (notify) onData?.(structuredClone(data));
+  };
+
+  const start = (query: NonNullable<Tree["queries"]>[number], index: number): void => {
+    const key = JSON.stringify(query);
+    const state: QueryState = { key, query: structuredClone(query), settled: false };
+    states[index] = state;
+    const task = authorizationPromise
+      .then((run) => caller.callQuery(app, query.tool, query.input ?? {}, ctx, run))
+      .then((result) => {
+        if (states[index] !== state) return;
+        state.result = result;
+        state.settled = true;
+        recompute();
+      })
+      .catch((error: unknown) => {
+        if (states[index] !== state) return;
+        state.settled = true;
+        state.error = error;
+        recompute();
+      });
+    pending.add(task);
+    void task.finally(() => pending.delete(task));
+  };
+
+  return {
+    update(tree) {
+      baseData = structuredClone(tree.data ?? {});
+      const queries = tree.queries ?? [];
+      if (states.length > queries.length) states.length = queries.length;
+      queries.forEach((query, index) => {
+        const key = JSON.stringify(query);
+        if (states[index]?.key !== key) start(query, index);
+      });
+      recompute(false);
+    },
+    async complete() {
+      while (pending.size > 0) await Promise.all([...pending]);
+      const fatal = states.find((state) =>
+        state.error instanceof VendoError && state.error.code === "sandbox-unavailable")?.error;
+      if (fatal !== undefined) throw fatal;
+      recompute(false);
+      return structuredClone(resolvedData);
+    },
+  };
+};
+
+/**
+ * 06-apps §§8–9 — the in-client venue field and the pin-drift report are
+ * SERVER-AUTHORITATIVE. The stored tree is model-written or imported from an
+ * untrusted `.vendoapp`, so a forged `inClient` or `pinDrift` riding the
+ * document must never reach the client: strip both before the verified
+ * verdict and the computed drift (when any) are attached.
+ */
+const stripForgedServerFields = <T extends object>(payload: T): T => {
+  delete (payload as { inClient?: unknown }).inClient;
+  delete (payload as { pinDrift?: unknown }).pinDrift;
+  return payload;
+};
+
 /** 06-apps §§1–2 — construct the invisible-graduation open surface. */
 export const createAppOpener = (
   machines: MachineSessions,
   caller: AppCaller,
   store: StoreAdapter,
+  pinBaselines: readonly PinBaseline[] = [],
+  inClientVenue?: (app: AppDocument) => Promise<InClientVenueState | undefined>,
 ): ((app: AppDocument, ctx: RunContext) => Promise<OpenSurface>) => async (app, ctx) => {
   const authorization = await machines.mintRun(app, ctx);
   if (app.ui === "http") {
@@ -120,9 +228,10 @@ export const createAppOpener = (
   // 01-core §8 — an unregistered format tag is a contained failure: the payload passes
   // through untouched (no query resolution) and the renderer shows the notice.
   if (app.tree.formatVersion !== VENDO_TREE_FORMAT) {
+    const payload = stripForgedServerFields(structuredClone(app.tree));
     return app.components === undefined
-      ? { kind: "tree", payload: structuredClone(app.tree) }
-      : { kind: "tree", payload: structuredClone(app.tree), components: structuredClone(app.components) };
+      ? { kind: "tree", payload }
+      : { kind: "tree", payload, components: structuredClone(app.components) };
   }
   const validation = validateTree({ ...app.tree, components: app.components });
   if (!validation.ok) throw new VendoError("validation", validation.error.message);
@@ -130,23 +239,37 @@ export const createAppOpener = (
   // field (01 §8, "lifted to the app document at rest") and the renderer compiles
   // generated components from payload.components. The OpenSurface sibling stays
   // for 06 §1 shape fidelity.
-  const tree: Tree = structuredClone(validation.tree);
-  const data: Record<string, Json> = structuredClone(tree.data ?? {});
-
-  for (const query of tree.queries ?? []) {
-    let result: Awaited<ReturnType<AppCaller["callQuery"]>>;
-    try {
-      result = await caller.callQuery(app, query.tool, query.input ?? {}, ctx, authorization);
-    } catch (error) {
-      if (error instanceof VendoError && error.code === "sandbox-unavailable") throw error;
-      continue;
-    }
-    const { outcome, uiEnvelope } = result;
-    if (outcome.status !== "ok") continue;
-    if (uiEnvelope) continue;
-    setQueryData(data, query.path, outcome.output);
+  const tree: Tree = stripForgedServerFields(structuredClone(validation.tree));
+  // Attach the venue verdict ONLY from the runtime's own hash-pin verification.
+  const inClient = await inClientVenue?.(app);
+  if (inClient !== undefined) {
+    (tree as Tree & { inClient: InClientVenueState }).inClient = inClient;
   }
-  tree.data = data;
+  // 06-apps §8 — "a host update to the component marks the pin drifted": the
+  // drift report rides every open() of a stale fork so the surface can say so
+  // loudly, not only sync output and the ship-diff. Server-computed only.
+  const pinDrift = detectPinDrift(app, pinBaselines);
+  if (pinDrift.length > 0) {
+    (tree as Tree & { pinDrift: PinDrift[] }).pinDrift = pinDrift;
+  }
+  const furnishings = Object.fromEntries((app.pins ?? []).flatMap((pin) => {
+    const baseline = pinBaselines.find((candidate) => candidate.slot === pin.slot && candidate.hash === pin.base);
+    if (baseline === undefined) return [];
+    return [[pinComponentName(pin.slot), {
+      ...(baseline.sourceImports === undefined ? {} : { sourceImports: structuredClone(baseline.sourceImports) }),
+      ...(baseline.subSources === undefined ? {} : { subSources: structuredClone(baseline.subSources) }),
+      ...(baseline.sampleProps === undefined ? {} : { sampleProps: structuredClone(baseline.sampleProps) }),
+      ...(baseline.styles === undefined ? {} : { styles: structuredClone(baseline.styles) }),
+    }]];
+  }));
+  // UIPayload is explicitly forward-compatible. Furnishing rides inside the
+  // tagged tree payload so the frozen OpenSurface sibling shape stays intact.
+  if (Object.keys(furnishings).length > 0) {
+    (tree as Tree & { furnishings: typeof furnishings }).furnishings = furnishings;
+  }
+  const queries = createProgressiveQueryResolver(machines, caller, app, ctx, undefined, authorization);
+  queries.update(tree);
+  tree.data = await queries.complete();
   return app.components === undefined
     ? { kind: "tree", payload: tree as unknown as UIPayload }
     : {

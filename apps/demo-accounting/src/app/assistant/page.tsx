@@ -46,7 +46,11 @@ export default function AssistantPage() {
         minHeight: 0,
         display: "flex",
         flexDirection: "column",
-        overflow: "hidden",
+        // ENG-228: x stays scrollable so the thread's new min-width floor is
+        // reachable when this host's fixed sidebar squeezes the column at
+        // mobile widths (375px was rendering one character per line).
+        overflowX: "auto",
+        overflowY: "hidden",
         position: "relative",
       }}
     >

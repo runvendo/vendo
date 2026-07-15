@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/telemetry",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Anonymous, opt-out telemetry for Vendo tooling.",
   "keywords": [
     "ai",
@@ -31,7 +31,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

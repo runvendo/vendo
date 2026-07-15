@@ -46,10 +46,12 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build:jail": "node scripts/build-jail-runtime.mjs",
+    "build:served-renderer": "node scripts/build-served-app-renderer.mjs",
     "prebuild": "pnpm run build:jail",
     "build": "tsc -p tsconfig.json",
     "pretest": "pnpm run build:jail",

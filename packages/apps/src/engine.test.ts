@@ -6,7 +6,9 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { createApps } from "./index.js";
+import { pinComponentName } from "./pins.js";
 import type { SandboxAdapter } from "./sandbox.js";
 import {
   fakeSandbox,
@@ -14,6 +16,7 @@ import {
   memoryStore,
   seedAppRow,
   scriptedLanguageModel,
+  type ScriptedModelCall,
 } from "./testing/index.js";
 import { modelEngine } from "./engine.js";
 
@@ -31,8 +34,25 @@ const tools: ToolRegistry = {
 
 const catalog: ComponentCatalog = [{
   name: "MetricCard",
-  description: "A branded card for a label, value, and trend.",
-  propsSchema: { "~standard": { validate: (value: unknown) => value } },
+  description: "Use for a single important metric with a short label and display value.",
+  propsSchema: z.object({
+    label: z.string(),
+    value: z.string(),
+    trend: z.number().optional(),
+    onSelect: z.string().optional(),
+  }),
+  propsJsonSchema: {
+    type: "object",
+    properties: {
+      label: { type: "string" },
+      value: { type: "string" },
+      trend: { type: "number" },
+      onSelect: { type: "string" },
+    },
+    required: ["label", "value"],
+    additionalProperties: false,
+  },
+  examples: ['{"label":"Revenue","value":"$42k","trend":12}'],
 }];
 
 const validCreate = (name = "Revenue dashboard") => JSON.stringify({
@@ -65,6 +85,29 @@ const putApp = async (
 ): Promise<void> => {
   await seedAppRow(store, app, ctx.principal.subject);
 };
+
+const promptText = (call: ScriptedModelCall): string => call.prompt.map((message) => {
+  if (typeof message.content === "string") return message.content;
+  return message.content.map((part) => part.text ?? "").join("");
+}).join("\n");
+
+const generatedTreeApp = (): AppDocument => ({
+  format: "vendo/app@1",
+  id: "app_generated_edit",
+  name: "Generated dashboard",
+  ui: "tree",
+  tree: {
+    formatVersion: "vendo-genui/v1",
+    root: "root",
+    nodes: [
+      { id: "root", component: "Stack", source: "prewired", children: ["existing"] },
+      { id: "existing", component: "ExistingPanel", source: "generated" },
+    ],
+  },
+  components: {
+    ExistingPanel: "export default function ExistingPanel() { return <section>Existing</section>; }",
+  },
+});
 
 describe("generation engine through createApps", () => {
   it("fails closed when a tree-classified edit unexpectedly yields server code", async () => {
@@ -111,6 +154,33 @@ describe("generation engine through createApps", () => {
     expect(resumeMachine).not.toHaveBeenCalled();
   });
 
+  it("includes catalog schemas, when-to-use guidance, and usage examples in the model prompt", async () => {
+    let capturedPrompt = "";
+    const model = scriptedLanguageModel((call) => {
+      capturedPrompt = call.prompt.map((message) => {
+        if (typeof message.content === "string") return message.content;
+        return message.content.map((part) => part.text ?? "").join("");
+      }).join("\n");
+      return validCreate();
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model,
+    });
+
+    await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+
+    expect(capturedPrompt).toContain('"whenToUse": "Use for a single important metric');
+    expect(capturedPrompt).toContain('"propsJsonSchema": {');
+    expect(capturedPrompt).toContain('"required": [');
+    expect(capturedPrompt).toContain('"examples": [');
+    expect(capturedPrompt).toContain('{\\"label\\":\\"Revenue\\",\\"value\\":\\"$42k\\",\\"trend\\":12}');
+    expect(capturedPrompt).toContain('you MUST use a source:"host" node with its exact name and props schema');
+  });
+
   it("creates a validated rung-1 document with a catalog host component", async () => {
     const store = memoryStore();
     const runtime = createApps({
@@ -130,6 +200,105 @@ describe("generation engine through createApps", () => {
       nodes: [{ component: "MetricCard", source: "host" }],
     });
     expect(validateTree({ ...app.tree, components: app.components }).ok).toBe(true);
+  });
+
+  it("reports wrong-typed host props as catalog issues", async () => {
+    const wrongProps = JSON.stringify({
+      name: "Broken metric",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "metric",
+        nodes: [{
+          id: "metric",
+          component: "MetricCard",
+          source: "host",
+          props: { label: "Revenue", value: 42 },
+        }],
+      },
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(wrongProps, wrongProps),
+    });
+
+    await expect(runtime.create({ prompt: "Build a broken metric" }, ctx)).rejects.toMatchObject({
+      code: "validation",
+      detail: expect.arrayContaining([
+        expect.stringMatching(/node "metric" props.*MetricCard.*value.*Expected string/i),
+      ]),
+    });
+  });
+
+  it("exempts path, state, and action bindings while validating the remaining host props", async () => {
+    const boundProps = JSON.stringify({
+      name: "Bound metric",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "metric",
+        nodes: [{
+          id: "metric",
+          component: "MetricCard",
+          source: "host",
+          props: {
+            label: { $path: "/headline/label" },
+            value: { $state: "selectedValue" },
+            onSelect: { action: "selectMetric", payload: { id: "revenue" } },
+          },
+        }],
+      },
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(boundProps),
+    });
+
+    await expect(runtime.create({ prompt: "Build a bound metric" }, ctx)).resolves.toMatchObject({
+      tree: { nodes: [{ component: "MetricCard" }] },
+    });
+  });
+
+  it("streams node-boundary view snapshots, resolves queries during create, and finishes with the open result", async () => {
+    const streamed = [
+      '{"name":"Streaming dashboard","tree":{"formatVersion":"vendo-genui/v1","root":"root","nodes":[{"id":"root","component":"Stack","source":"prewired","children":["metric"]},',
+      '{"id":"metric","component":"Text","source":"prewired","props":{"text":{"$path":"/metric"}}}],"queries":[{"path":"/metric","tool":"host_metric"}]}}',
+    ];
+    const queryTools: ToolRegistry = {
+      async descriptors() { return []; },
+      async execute(call) {
+        return call.tool === "host_metric"
+          ? { status: "ok", output: "$42k" }
+          : { status: "error", error: { code: "not-found", message: "missing" } };
+      },
+    };
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools: queryTools,
+      catalog: [],
+      model: scriptedLanguageModel(streamed),
+    });
+    const views: Array<{ appId: string; payload: Record<string, unknown> }> = [];
+
+    const app = await runtime.create({
+      prompt: "Build a streaming dashboard",
+      onView: (part) => views.push(part as unknown as typeof views[number]),
+    }, ctx);
+    const opened = await runtime.open(app.id, ctx);
+
+    expect(views.length).toBeGreaterThanOrEqual(3);
+    expect(views.every((view) => view.appId === app.id)).toBe(true);
+    expect(views[0]?.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }] });
+    expect(views.some((view) => (view.payload.data as { metric?: string } | undefined)?.metric === "$42k")).toBe(true);
+    expect(views.at(-1)?.payload).not.toHaveProperty("streaming");
+    expect(opened).toMatchObject({ kind: "tree" });
+    if (opened.kind !== "tree") throw new Error("Expected a tree surface");
+    expect(views.at(-1)?.payload).toEqual(opened.payload);
   });
 
   it("repairs one invalid create and rejects two invalid attempts without persisting", async () => {
@@ -180,6 +349,87 @@ describe("generation engine through createApps", () => {
     await expect(runtime.history(original.id).undo()).resolves.toEqual(original);
   });
 
+  it("forks a captured host slot and records a per-pin replayable intent trail", async () => {
+    const store = memoryStore();
+    const source = `export default function MapleNetWorthCard() {
+  return <section><h2>Net worth</h2><strong>$1.2M</strong></section>;
+}`;
+    const slot = "net-worth-card";
+    const componentName = pinComponentName(slot);
+    const model = scriptedLanguageModel(
+      (call) => {
+        const prompt = call.prompt.map((message) => typeof message.content === "string"
+          ? message.content
+          : message.content.map((part) => part.text ?? "").join("")).join("\n");
+        expect(prompt).toContain("REMIXABLE HOST SLOTS");
+        expect(prompt).toContain(slot);
+        expect(prompt).toContain("MapleNetWorthCard");
+        expect(prompt).toContain("$1.2M");
+        expect(prompt).toContain(componentName);
+        return JSON.stringify({
+          ops: [{ op: "fork-pin", slot, nodeId: "maple-net-worth", parentId: "root" }],
+        });
+      },
+      JSON.stringify({
+        ops: [{
+          op: "add-component",
+          name: componentName,
+          source: source.replace("$1.2M", "$1.4M"),
+        }],
+      }),
+      JSON.stringify({ ops: [{ op: "set-name", name: "Maple overview" }] }),
+    );
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model,
+      pinBaselines: [{
+        slot,
+        source,
+        hash: "sha256:maple-base",
+        exportable: false,
+        capturedAt: "2026-07-14T12:00:00.000Z",
+      }],
+    });
+    const original: AppDocument = {
+      format: "vendo/app@1",
+      id: "app_maple_pin",
+      name: "Maple overview",
+      ui: "tree",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
+      },
+    };
+    await putApp(store, original);
+
+    const forked = await runtime.edit(original.id, "Remix the net worth card", ctx);
+    expect(forked.issues).toBeUndefined();
+    expect(forked.app.pins).toEqual([{ slot, base: "sha256:maple-base" }]);
+    expect(forked.app.components?.[componentName]).toBe(source);
+    expect(forked.app.tree).toMatchObject({
+      nodes: expect.arrayContaining([expect.objectContaining({
+        id: "maple-net-worth",
+        component: componentName,
+        source: "generated",
+      })]),
+    });
+
+    await runtime.edit(original.id, "Increase the displayed net worth", ctx);
+    await runtime.edit(original.id, "Rename the app", ctx);
+
+    const rows = await store.records(`vendo:app-pin-intents:${original.id}`).list();
+    const trails = rows.records.map((record) => record.data);
+    expect(trails).toEqual(expect.arrayContaining([
+      expect.objectContaining({ slot, intent: "Remix the net worth card" }),
+      expect.objectContaining({ slot, intent: "Increase the displayed net worth" }),
+    ]));
+    expect(trails).toHaveLength(2);
+  });
+
   it("contains twice-broken tree ops and leaves the original document untouched", async () => {
     const store = memoryStore();
     const brokenOps = JSON.stringify({
@@ -200,6 +450,238 @@ describe("generation engine through createApps", () => {
     expect(result.issues).toEqual(expect.arrayContaining([expect.stringContaining("missing") ]));
     expect(await runtime.get(original.id, ctx)).toEqual(original);
     expect(await runtime.history(original.id).list()).toEqual([]);
+  });
+
+  it("retries a failed tree-edit plan with cumulative, indexed repair feedback", async () => {
+    const store = memoryStore();
+    const original = generatedTreeApp();
+    await putApp(store, original);
+    const duplicateRoot = JSON.stringify({
+      ops: [{
+        op: "add-node",
+        node: { id: "root", component: "Stack", source: "prewired" },
+      }],
+    });
+    const malformedComponent = JSON.stringify({
+      ops: [{ op: "add-component", component: { name: "PeriodFilter", source: "export default null" } }],
+    });
+    const repaired = JSON.stringify({
+      ops: [
+        {
+          op: "add-component",
+          name: "PeriodFilter",
+          source: "export default function PeriodFilter() { return <select><option>All time</option></select>; }",
+        },
+        {
+          op: "add-node",
+          node: { id: "filter", component: "PeriodFilter", source: "generated" },
+          parentId: "root",
+          index: 1,
+        },
+      ],
+    });
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(
+        duplicateRoot,
+        malformedComponent,
+        (call) => {
+          const prompt = promptText(call).replaceAll('\\"', '"');
+          expect(prompt).toContain('tree op[0] add-node failed: node "root" already exists');
+          expect(prompt).toContain("tree op[0] add-component failed: requires name and source strings");
+          expect(prompt).toContain('"index"');
+          expect(prompt).toContain('"nodeId"');
+          return repaired;
+        },
+      ),
+    });
+
+    const result = await runtime.edit(original.id, "Add a filter dropdown", ctx);
+
+    expect(result.failure).toBeUndefined();
+    expect(result.issues).toBeUndefined();
+    expect(result.app.tree?.nodes.find(({ id }) => id === "root")?.children).toEqual(["existing", "filter"]);
+    expect(result.app.components).toMatchObject({
+      ExistingPanel: original.components?.ExistingPanel,
+      PeriodFilter: expect.stringContaining("<select>"),
+    });
+  });
+
+  it("rejects an edit that leaves the rooted view empty and returns a retryable failure", async () => {
+    const store = memoryStore();
+    const original = generatedTreeApp();
+    await putApp(store, original);
+    const removeOnlyContent = JSON.stringify({
+      ops: [{ op: "remove-node", nodeId: "existing" }],
+    });
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(removeOnlyContent),
+    });
+
+    const result = await runtime.edit(original.id, "Remove the only visible panel", ctx);
+
+    expect(result.failure).toMatchObject({ code: "edit-rejected", retryable: true });
+    expect(result.issues).toEqual(expect.arrayContaining([expect.stringContaining("empty")]));
+    expect(result.app).toEqual(original);
+    expect(await runtime.get(original.id, ctx)).toEqual(original);
+  });
+
+  it("rejects unsupported position aliases instead of silently misplacing an added node", async () => {
+    const store = memoryStore();
+    const original = generatedTreeApp();
+    await putApp(store, original);
+    const source = "export default function PeriodFilter() { return <select><option>All</option></select>; }";
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(
+        JSON.stringify({
+          ops: [
+            { op: "add-component", name: "PeriodFilter", source },
+            {
+              op: "add-node",
+              node: { id: "filter", component: "PeriodFilter", source: "generated" },
+              parentId: "root",
+              position: 0,
+            },
+          ],
+        }),
+        (call) => {
+          expect(promptText(call).replaceAll('\\"', '"')).toContain('tree op[1] add-node failed: unsupported field "position"');
+          return JSON.stringify({
+            ops: [
+              { op: "add-component", name: "PeriodFilter", source },
+              {
+                op: "add-node",
+                node: { id: "filter", component: "PeriodFilter", source: "generated" },
+                parentId: "root",
+                index: 0,
+              },
+            ],
+          });
+        },
+      ),
+    });
+
+    const result = await runtime.edit(original.id, "Put a filter before the dashboard", ctx);
+
+    expect(result.failure).toBeUndefined();
+    expect(result.app.tree?.nodes.find(({ id }) => id === "root")?.children).toEqual(["filter", "existing"]);
+  });
+
+  it("repairs parent placement fields nested inside add-node instead of persisting an orphan", async () => {
+    const store = memoryStore();
+    const original = generatedTreeApp();
+    await putApp(store, original);
+    const source = "export default function PeriodFilter() { return <select><option>All</option></select>; }";
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(
+        JSON.stringify({
+          ops: [
+            { op: "add-component", name: "PeriodFilter", source },
+            {
+              op: "add-node",
+              node: {
+                id: "filter",
+                component: "PeriodFilter",
+                source: "generated",
+                parentId: "root",
+                position: 0,
+              },
+            },
+          ],
+        }),
+        (call) => {
+          const prompt = promptText(call).replaceAll('\\"', '"');
+          expect(prompt).toContain('tree op[1] add-node failed: node has unsupported fields "parentId", "position"');
+          expect(prompt).toContain("place parentId and index on the add-node operation");
+          return JSON.stringify({
+            ops: [
+              { op: "add-component", name: "PeriodFilter", source },
+              {
+                op: "add-node",
+                node: { id: "filter", component: "PeriodFilter", source: "generated" },
+                parentId: "root",
+                index: 0,
+              },
+            ],
+          });
+        },
+      ),
+    });
+
+    const result = await runtime.edit(original.id, "Put a filter before the dashboard", ctx);
+
+    expect(result.failure).toBeUndefined();
+    expect(result.app.tree?.nodes.find(({ id }) => id === "root")?.children).toEqual(["filter", "existing"]);
+    expect(result.app.tree?.nodes.filter(({ id }) => id === "filter")).toHaveLength(1);
+  });
+
+  it("rejects a move index that leaves a gap instead of silently appending the node", async () => {
+    const store = memoryStore();
+    const original = generatedTreeApp();
+    await putApp(store, original);
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(
+        JSON.stringify({
+          ops: [{ op: "move-node", nodeId: "existing", parentId: "root", index: 4 }],
+        }),
+        (call) => {
+          expect(promptText(call).replaceAll('\\"', '"')).toContain(
+            'tree op[0] move-node failed: index 4 leaves a gap in parent "root" children (length 0)',
+          );
+          return JSON.stringify({
+            ops: [{ op: "move-node", nodeId: "existing", parentId: "root", index: 0 }],
+          });
+        },
+      ),
+    });
+
+    const result = await runtime.edit(original.id, "Keep the panel first", ctx);
+
+    expect(result.failure).toBeUndefined();
+    expect(result.app.tree?.nodes.find(({ id }) => id === "root")?.children).toEqual(["existing"]);
+  });
+
+  it("preserves existing generated component sources across unrelated tree ops", async () => {
+    const store = memoryStore();
+    const original = generatedTreeApp();
+    await putApp(store, original);
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(JSON.stringify({
+        ops: [{ op: "set-prop", nodeId: "existing", prop: "tone", value: "green" }],
+      })),
+    });
+
+    const result = await runtime.edit(original.id, "Make the numbers green", ctx);
+
+    expect(result.app.components).toEqual(original.components);
+    await expect(runtime.open(original.id, ctx)).resolves.toMatchObject({
+      kind: "tree",
+      payload: { components: original.components },
+      components: original.components,
+    });
   });
 
   it("rejects moving a node under its own descendant without changing the document", async () => {
@@ -319,6 +801,93 @@ describe("generation engine through createApps", () => {
     const result = await runtime.edit(created.id, "Update the backend", ctx);
 
     expect(result.version.rung).toBe(3);
+  });
+
+  it("accepts a model-declared rung 4 for a tree app and flips the document ui", async () => {
+    const sandbox = fakeSandbox();
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog,
+      model: scriptedLanguageModel(
+        validCreate(),
+        JSON.stringify({ rung: 4, files: [{ path: "/app/custom.js", content: "export const ready = true;" }] }),
+      ),
+    });
+    const original = await runtime.create({ prompt: "Dashboard" }, ctx);
+
+    const result = await runtime.edit(original.id, "Update the backend", ctx);
+
+    expect(result.issues).toBeUndefined();
+    expect(result.version.rung).toBe(4);
+    expect(result.app.ui).toBe("http");
+    expect(result.app.tree).toEqual(original.tree);
+    expect(result.app.server).toMatch(/^fake:snap_/);
+    expect(await runtime.get(original.id, ctx)).toEqual(result.app);
+  });
+
+  it("routes every rung-4 phrase to the code dialect, so a custom-client ask graduates", async () => {
+    // "custom client" is a FULL_WEB_APP phrase with no SERVER_INSTRUCTION word in
+    // it; before the routing fix it took the tree dialect and could never graduate.
+    const sandbox = fakeSandbox();
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog,
+      model: scriptedLanguageModel(
+        validCreate(),
+        JSON.stringify({ rung: 4, files: [{ path: "/app/custom.js", content: "export const ready = true;" }] }),
+      ),
+    });
+    const original = await runtime.create({ prompt: "Dashboard" }, ctx);
+
+    const result = await runtime.edit(original.id, "Make this a custom client over the data", ctx);
+
+    expect(result.issues).toBeUndefined();
+    expect(result.version.rung).toBe(4);
+    expect(result.app.ui).toBe("http");
+    expect(result.app.tree).toEqual(original.tree);
+  });
+
+  it("keeps the first graduated version on the scaffold and repairs reserved-file edits", async () => {
+    const sandbox = fakeSandbox();
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog,
+      model: scriptedLanguageModel(
+        validCreate(),
+        JSON.stringify({
+          rung: 4,
+          files: [{ path: "/app/start.sh", content: "exec node /app/custom.js" }],
+        }),
+        JSON.stringify({
+          rung: 4,
+          files: [{ path: "/app/custom.js", content: "export const ready = true;" }],
+        }),
+      ),
+    });
+    const original = await runtime.create({ prompt: "Dashboard" }, ctx);
+
+    const result = await runtime.edit(original.id, "Turn this into a full web app", ctx);
+
+    expect(result.issues).toBeUndefined();
+    const graduatedMachine = [...sandbox.machines.values()].at(-1);
+    expect(new TextDecoder().decode(await graduatedMachine?.files.read("/app/.vendo/scaffold-server.cjs")))
+      .toContain("process.env.PORT");
+    expect(new TextDecoder().decode(await graduatedMachine?.files.read("/app/start.sh")))
+      .toContain("/app/.vendo/scaffold-server.cjs");
+    expect(new TextDecoder().decode(await graduatedMachine?.files.read("/app/custom.js")))
+      .toBe("export const ready = true;");
   });
 
   it("evicts a snapshotted code-edit machine before the next fn call", async () => {

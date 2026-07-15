@@ -7,7 +7,7 @@ Derived from the page's `@vendoai/mcp` block against the frozen contract set, th
 ## 1. Public API
 
 ```ts
-import type { ToolRegistry, Guard, StoreAdapter, Principal, RunContext, AppDocument, AppId, UIPayload, Json } from "@vendoai/core";
+import type { ToolRegistry, Guard, StoreAdapter, Principal, RunContext, AppDocument, AppId, UIPayload, Json, VendoTheme } from "@vendoai/core";
 
 export function createMcpDoor(config: {
   tools: ToolRegistry;                  // ALREADY guard-bound by the umbrella (05 §2) — the door never sees an unbound registry
@@ -15,6 +15,12 @@ export function createMcpDoor(config: {
   oauth: HostOAuthAdapter;              // §3 — two functions; the host owns identity + consent, the door owns the protocol
   store: StoreAdapter;                  // door-owned protocol state (clients, codes, refresh grants) — wired like every other block
   apps?: AppsPort;                      // §4 — saved apps ride along as MCP Apps; absent → tools-only door
+  baseUrl?: string;                     // §5 — canonical PUBLIC base URL (origin only); behind a reverse proxy the
+                                        // request URL carries the proxy-internal origin, so discovery, issuer,
+                                        // resource, and RFC 8707 audience derive from THIS when set (the umbrella
+                                        // defaults it from VENDO_BASE_URL); unset → request-URL derived. Forwarded
+                                        // headers are never trusted.
+  theme?: VendoTheme;                   // §4 — optional host brand; the umbrella forwards .vendo/theme.json automatically
   remoteAs?: {                          // §3.1 — trust an external authorization server instead of serving the local AS
     issuer: string;
     jwksUri?: string;                   // absent → discover jwks_uri from the issuer's RFC 8414 metadata
@@ -120,8 +126,10 @@ request.jti, iat, exp: iat + 60s }`. The endpoint renders no HTML.
 The user's saved layer, not just raw tools — delivered the way the MCP Apps spec (2026-01-26) actually works:
 
 - The door ships **one static HTML shim resource** — the tree renderer (`@vendoai/ui/tree`, which already ships as a library per 08 §1) — at a `ui://` URI with mimeType `text/html;profile=mcp-app`, negotiated via the `io.modelcontextprotocol/ui` extension.
+- The generated shim stays generic. When `theme` is present, the door specializes the resource it serves by injecting the canonical `--vendo-*` variables; the shim wraps every rendered surface in `VendoProvider`, so the same resolved theme reaches prewired primitives, notices/link-out chrome, and generated-component jail frames. The current `VendoTheme` contract carries one palette, so the shim declares the same light color-scheme as the in-product chrome rather than inventing an uncontracted dark palette.
 - App access is **ordinary door tools** (`vendo_apps_list`, `vendo_apps_open`) carrying `_meta: { ui: { resourceUri } }`; the host client renders the shim when the tool is called, and the tool result carries the `UIPayload` for the shim to render. Format dispatch inside the shim follows core §8 (unknown tags render a contained notice).
 - `AppsRuntime.open()` has already resolved v0 tree queries into `tree.data` (06 §1), so the MCP projection omits `tree.queries` from that resolved payload. The static shim retains query resolution only as a compatibility fallback for unresolved payloads from non-door hosts; a door open executes each query exactly once.
+- A rung-4 `{ kind: "http", url }` open is never embedded in the MCP client. The door projects it as the MCP-only structured envelope `{ kind: "vendo/open-in-product@1", url, productName, appName? }`; the shim renders a branded link-out card, and the tool's text content includes the same URL for clients that do not render MCP Apps. `appName` is best-effort; `productName` is the door's server identity.
 - Interactions inside the rendered app go back over the shim's `postMessage` JSON-RPC bridge as `tools/call` — which lands in the guard-bound path like every other door call. An app run from ChatGPT has exactly the authority it has in-product: the running user's, asked in context.
 
 ```ts
@@ -138,13 +146,14 @@ export interface AppsPort {
 ## 5. Discovery — agents find the host's server
 
 - Protected-resource metadata at the **path-inserted** well-known URL (RFC 9728 §3): a door mounted at `/api/vendo/mcp` serves `/.well-known/oauth-protected-resource/api/vendo/mcp`. Authorization-server metadata (RFC 8414) likewise.
+- **Origin derivation (ENG-333)**: every advertised origin — the issuer, endpoint URLs, the protected-resource `resource`, the `401` challenge's metadata URL — and RFC 8707 audience validation derive from the configured `baseUrl` (origin only) when set; unset, they derive from each request's own URL. `X-Forwarded-*`/`Host` headers are never consulted (Host-header injection). The umbrella defaults `baseUrl` from `VENDO_BASE_URL`; the additive `createVendo({ mcp: { baseUrl } })` form overrides it for compositions whose door origin differs from the route-binding origin.
 - With `remoteAs`, protected-resource metadata names the external issuer and the door does not serve RFC 8414 authorization-server metadata; the external server owns it (§3.1).
 - Server card at `/.well-known/mcp-server-card` — ⚑ **provisional**, tracking SEP-2127 (Draft); the path moves with the SEP if it changes before ratification. Registry listings are a publishing step, not code. The door accepts an optional `mount` (e.g. `/api/vendo/mcp`): when set it is authoritative for the card's advertised transport URL, so a **cold** composed umbrella advertises the right mount before any request arrives, and learned request paths never override it (the umbrella passes its fixed `MCP_MOUNT`). Unset, the card falls back to `/mcp` until an authenticated request teaches it a mount.
 - `vendo doctor` validates both metadata documents resolve and the card parses.
 
 ## 6. Testing doctrine (binding, e2e-first)
 
-The harness is a REAL MCP client: e2e drives the door with an actual MCP SDK client — `401` → `WWW-Authenticate` → metadata discovery at the path-inserted URL → OAuth round-trip against the fixture host app's auth (with `resource` sent and a wrong-resource token request rejected) → initialize → `tools/list` → `tools/call` — asserting: descriptors match the bound registry verbatim; a `destructive` call parks and the client sees the in-band `isError` result naming the approval; audit rows land with `venue='mcp'` and `kind='door-auth'` (SQL asserts); `principal() → null` kills an existing session. Apps-ride-along e2e: `vendo_apps_open` returns the fixture app's payload with `_meta.ui.resourceUri` set, and the shim resource serves with the MCP Apps mimeType. Live leg (env-gated): connect Claude Code itself via `claude mcp add` against a local door and run one tool call.
+The harness is a REAL MCP client: e2e drives the door with an actual MCP SDK client — `401` → `WWW-Authenticate` → metadata discovery at the path-inserted URL → OAuth round-trip against the fixture host app's auth (with `resource` sent and a wrong-resource token request rejected) → initialize → `tools/list` → `tools/call` — asserting: descriptors match the bound registry verbatim; a `destructive` call parks and the client sees the in-band `isError` result naming the approval; audit rows land with `venue='mcp'` and `kind='door-auth'` (SQL asserts); `principal() → null` kills an existing session. Apps-ride-along e2e: `vendo_apps_open` returns the fixture app's payload with `_meta.ui.resourceUri` set, and the shim resource serves with the MCP Apps mimeType and fixture `--vendo-*` theme variables. Live leg (env-gated): connect Claude Code itself via `claude mcp add` against a local door and run one tool call.
 
 External-AS coverage uses an in-test authorization server with a jose-generated
 ES256 keypair: valid JWTs cross the real MCP transport, claim/signature failures

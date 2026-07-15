@@ -7,5 +7,6 @@ export default defineConfig({
     // tests can exceed Vitest's 5s default when Turbo runs every workspace in
     // parallel, even though the operations themselves are bounded.
     testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 });

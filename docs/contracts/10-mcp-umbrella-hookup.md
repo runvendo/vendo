@@ -15,7 +15,10 @@ This wave wires it in. The normative content lives in `10-mcp` (auth model in
   chat/apps/automations use, the `VendoGuard`, the store, `config.oauth`, and an
   **AppsPort adapter** over `vendo.apps` (`AppsRuntime.open` carries an extra
   `"resuming"` variant that `AppsPort` — `tree | http` only — does not; the
-  adapter maps it for the door's viewer role).
+  adapter maps it for the door's viewer role). If `.vendo/theme.json` validated,
+  the umbrella also forwards that already-loaded `VendoTheme`; no second host
+  option is required. The door injects its `--vendo-*` projection into the MCP
+  Apps shim it serves, and the shim carries those tokens through its jail frames.
 - **Mount families.** `door.handler` is routed three path families (10-mcp §5):
   the door path itself (e.g. `/api/vendo/mcp`, POST/GET/DELETE);
   `/.well-known/oauth-protected-resource/*` and
@@ -43,6 +46,14 @@ base when a door tool call resolves its route binding; such hosts should set
 `VENDO_BASE_URL` explicitly (it is also the trusted origin credentials forward
 to, so setting it is the right move regardless).
 
+`VENDO_BASE_URL` is also the door's canonical public base (ENG-333): the
+umbrella passes it to `createMcpDoor` as `baseUrl`, so behind a reverse proxy
+the discovery documents, issuer/endpoint URLs, `resource`, and RFC 8707
+audience binding advertise the PUBLIC origin instead of the proxy-internal
+request origin. The additive `mcp: { baseUrl }` form of the flag overrides the
+env default for compositions whose door origin differs from the route-binding
+origin (`mcp: true` is unchanged). Forwarded headers are never trusted.
+
 ## Next.js note
 
 The `/api/vendo/[...]` catch-all cannot see origin-root paths, so
@@ -56,4 +67,5 @@ Umbrella e2e drives `createVendo({ mcp: true })` end to end: real MCP SDK client
 → 401 → discovery → OAuth → initialize → `tools/call` a host WRITE tool →
 executes AS the OAuth'd user via `actAs` → asserted side effect; wrong/
 unauthenticated principal rejected; no-cookie-forwarding and clean degradation
-locked by regression tests. Door-only proofs: PR #122.
+locked by regression tests. The same real SDK fixture asserts the served shim
+contains the project's theme variables. Door-only proofs: PR #122.

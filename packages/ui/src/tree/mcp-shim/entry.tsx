@@ -1,22 +1,35 @@
 import type { Json, UIPayload } from "@vendoai/core";
 import { App, PostMessageTransport } from "@modelcontextprotocol/ext-apps";
+import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import { VendoProvider } from "../../context.js";
 import { ContainedNotice } from "../notice.js";
 import { PayloadView } from "../renderer.js";
-import { createShimRuntime, type ShimRuntime } from "./shim-core.js";
+import { HttpOpenCard } from "./http-open-card.js";
+import { createShimRuntime, type OpenInProductPayload, type ShimRuntime } from "./shim-core.js";
+import { readThemeCssVariables } from "./theme.js";
 
 const mount = document.querySelector<HTMLElement>("#vendo-mcp-shim");
 if (!mount) throw new Error("The MCP Apps shim mount is missing");
 
 const root = createRoot(mount);
+const theme = readThemeCssVariables(getComputedStyle(document.documentElement));
 const bridge = new App(
   { name: "Vendo tree renderer", version: "0.3.0" },
   {},
   { autoResize: true, strict: true },
 );
 
+function renderWithTheme(children: ReactNode): void {
+  root.render(<VendoProvider theme={theme}>{children}</VendoProvider>);
+}
+
 function renderNotice(label: string, message: string): void {
-  root.render(<ContainedNotice label={label}>{message}</ContainedNotice>);
+  renderWithTheme(<ContainedNotice label={label}>{message}</ContainedNotice>);
+}
+
+function renderOpenInProduct(open: OpenInProductPayload): void {
+  renderWithTheme(<HttpOpenCard open={open} />);
 }
 
 let runtime: ShimRuntime;
@@ -27,7 +40,7 @@ function renderPayload(
   data?: Record<string, Json>,
   queryErrors: string[] = [],
 ): void {
-  root.render(
+  renderWithTheme(
     <>
       <PayloadView
         payload={payload}
@@ -47,6 +60,7 @@ function renderPayload(
 runtime = createShimRuntime({
   callServerTool: (request) => bridge.callServerTool(request),
   renderPayload,
+  renderOpenInProduct,
   renderNotice,
 });
 

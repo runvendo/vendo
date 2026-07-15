@@ -24,6 +24,33 @@ npx vendo init
 `@vendoai/vendo` is the default composition. The `vendoai` package is a thin
 alias. Install individual blocks when you want to compose Vendo yourself.
 
+## See it in action
+
+Every capture below is a real agent run in a demo host app, not a mockup.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="assets/hero.gif" alt="A Maple customer asks where their money went and the agent composes a live spending view" width="100%">
+      <p align="center"><sub><b>Build views.</b> Ask a question, get a live view composed from the host's own components and API.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="assets/remix.gif" alt="A Cadence user hovers the deadlines card, asks for urgency color-coding, and applies the remix in place" width="100%">
+      <p align="center"><sub><b>Remix the UI.</b> Hover a component, describe the change, apply it in place.</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="assets/automation.gif" alt="A Cadence user asks for a morning document-chase automation and turns it on with per-tool approvals" width="100%">
+      <p align="center"><sub><b>Automate across tools.</b> Plain language in, standing automation out, every tool gated by approval.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="assets/voice.gif" alt="A Maple voice session: the user asks out loud where their money went and the agent renders the view while talking back" width="100%">
+      <p align="center"><sub><b>Talk to it.</b> A live voice session: ask out loud, the agent talks back and renders the view.</sub></p>
+    </td>
+  </tr>
+</table>
+
 ## What Vendo does
 
 - Runs a streaming agent with any AI SDK `LanguageModel`.
@@ -55,8 +82,9 @@ tool proxy.
 
 ## Install flow
 
-`vendo init` scans the host app, interviews you about risk labels, theme, and
-remix candidates, then proposes the handler route and `<VendoRoot>` wiring.
+`vendo init` scans the host app, then asks about the model import, product brief,
+critical-tool risk labels, and whether to open the MCP door. It proposes the
+handler route and `<VendoRoot>` wiring while extracting the theme automatically.
 Every code change is permission-gated and shown as a diff. It writes the
 reviewable `.vendo/` directory and leaves the PGlite data directory ignored.
 

@@ -25,15 +25,25 @@ export async function putAppRow(
   input: Pick<AppRow, "id" | "subject" | "enabled" | "doc">,
   now = new Date().toISOString(),
 ): Promise<AppRow> {
+  // Apps never cross subjects (02 §2: the app row IS the user's copy). Same
+  // atomic guard as putThreadRow: on conflict the update applies ONLY when the
+  // existing row already belongs to EXCLUDED.subject — otherwise the WHERE
+  // fails, RETURNING is empty, and the cross-subject flip is refused without a
+  // TOCTOU window.
   const result = await db.query(
     `INSERT INTO vendo_apps (id, subject, enabled, doc, created_at, updated_at)
      VALUES ($1, $2, $3, $4::jsonb, $5, $5)
-     ON CONFLICT (id) DO UPDATE SET subject = EXCLUDED.subject, enabled = EXCLUDED.enabled,
+     ON CONFLICT (id) DO UPDATE SET enabled = EXCLUDED.enabled,
        doc = EXCLUDED.doc, updated_at = EXCLUDED.updated_at
+       WHERE vendo_apps.subject = EXCLUDED.subject
      RETURNING id, subject, enabled, doc, created_at, updated_at`,
     [input.id, input.subject, input.enabled, JSON.stringify(input.doc), now],
   );
-  return appFromRow(result.rows[0] as Record<string, unknown>);
+  const row = result.rows[0];
+  if (row === undefined) {
+    throw new VendoError("conflict", `app ${input.id} belongs to another subject`);
+  }
+  return appFromRow(row as Record<string, unknown>);
 }
 
 export function threadFromRow(row: Record<string, unknown>): ThreadRow {
@@ -125,19 +135,28 @@ export function grantFromRow(row: Record<string, unknown>): PermissionGrant {
 }
 
 export async function putGrantRow(db: Db, grant: PermissionGrant, upsert = true): Promise<void> {
-  await db.query(
+  // Grants never cross subjects either (02 §2). The upsert carries the same
+  // atomic guard as putThreadRow/putAppRow: on conflict it updates ONLY when
+  // the existing row already belongs to EXCLUDED.subject; an empty RETURNING
+  // on the upsert path means a foreign row holds the id — refuse the flip.
+  const result = await db.query(
     `INSERT INTO vendo_grants
      (id, subject, tool, descriptor_hash, scope, duration, context_key, app_id, source, granted_at, expires_at, revoked_at)
      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12)
-     ${upsert ? `ON CONFLICT (id) DO UPDATE SET subject = EXCLUDED.subject, tool = EXCLUDED.tool,
+     ${upsert ? `ON CONFLICT (id) DO UPDATE SET tool = EXCLUDED.tool,
        descriptor_hash = EXCLUDED.descriptor_hash, scope = EXCLUDED.scope,
        duration = EXCLUDED.duration, context_key = EXCLUDED.context_key,
        app_id = EXCLUDED.app_id, source = EXCLUDED.source, granted_at = EXCLUDED.granted_at,
-       expires_at = EXCLUDED.expires_at, revoked_at = EXCLUDED.revoked_at` : ""}`,
+       expires_at = EXCLUDED.expires_at, revoked_at = EXCLUDED.revoked_at
+       WHERE vendo_grants.subject = EXCLUDED.subject` : ""}
+     RETURNING id`,
     [grant.id, grant.subject, grant.tool, grant.descriptorHash, JSON.stringify(grant.scope), grant.duration,
       grant.contextKey ?? null, grant.appId ?? null, grant.source, grant.grantedAt,
       grant.expiresAt ?? null, grant.revokedAt ?? null],
   );
+  if (upsert && result.rows[0] === undefined) {
+    throw new VendoError("conflict", `grant ${grant.id} belongs to another subject`);
+  }
 }
 
 export function approvalFromRow(row: Record<string, unknown>): ApprovalRow {
@@ -169,16 +188,22 @@ export async function putApprovalRow(db: Db, row: ApprovalRow, upsert = true): P
   );
 }
 
-export async function putAuditRow(db: Db, event: AuditEvent, upsert = false): Promise<void> {
-  await db.query(
+/** 02-store §2: vendo_audit is append-only. The insert refuses to touch an
+ *  existing row ATOMICALLY — ON CONFLICT DO NOTHING plus an empty RETURNING
+ *  means the id already exists, and the write is rejected instead of replacing
+ *  history. Deletion happens only through the store erase API (02 §5). */
+export async function putAuditRow(db: Db, event: AuditEvent): Promise<void> {
+  const result = await db.query(
     `INSERT INTO vendo_audit (id, at, kind, subject, venue, presence, app_id, tool, event)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
-     ${upsert ? `ON CONFLICT (id) DO UPDATE SET at = EXCLUDED.at, kind = EXCLUDED.kind,
-       subject = EXCLUDED.subject, venue = EXCLUDED.venue, presence = EXCLUDED.presence,
-       app_id = EXCLUDED.app_id, tool = EXCLUDED.tool, event = EXCLUDED.event` : ""}`,
+     ON CONFLICT (id) DO NOTHING
+     RETURNING id`,
     [event.id, event.at, event.kind, event.principal.subject, event.venue, event.presence,
       event.appId ?? null, event.tool ?? null, JSON.stringify(event)],
   );
+  if (result.rows[0] === undefined) {
+    throw new VendoError("conflict", `audit event ${event.id} already exists (vendo_audit is append-only)`);
+  }
 }
 
 export function runFromRow(row: Record<string, unknown>): RunRow {

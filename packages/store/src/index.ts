@@ -1,5 +1,6 @@
 /** @vendoai/store — persistence under everything (docs/contracts/02-store.md). */
 export { createStore, type VendoStore } from "./store.js";
+export { eraseStore, type EraseReport, type EraseTable } from "./erase.js";
 export { registerEphemeralSubject } from "./ephemeral.js";
 export { envSecrets, secretStore, storeSecrets } from "./secrets.js";
 export { appStore, type AppRow } from "./helpers/apps.js";

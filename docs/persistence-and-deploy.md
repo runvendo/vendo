@@ -21,6 +21,14 @@ idempotent and forward-only within the version train.
 App data remains plaintext so hosts can query and join it. Database and disk
 encryption remain the host's responsibility.
 
+Encryption is on by default in the composed stack: `vendo init` provisions
+`VENDO_STORE_ENCRYPTION_KEY` into the host's `.env`, and `createVendo` reads it
+from the environment when no store is passed. Ciphertext is bound to its secret
+name (AES-GCM AAD, versioned envelope), so a ciphertext swapped between rows
+fails to decrypt; rows written before the AAD change keep decrypting and
+upgrade on their next write. Never rotate the key by hand — existing ciphertext
+would be orphaned.
+
 ## Public table map
 
 | Table | Stable key columns | Holds |
@@ -85,10 +93,23 @@ minutes, and deduplicate by delivery id. The secret never appears in a URL.
 Verification failure returns 401, resolves no principal, starts no run, and
 writes one audit event.
 
+## Reverse proxies
+
+Behind a reverse proxy (Railway, Fly, any TLS terminator), set `VENDO_BASE_URL`
+to the product's public origin. Route-binding host tools execute against it as
+the trusted origin, the anonymous-session cookie stays `Secure`, and the MCP
+door derives its OAuth discovery metadata (issuer, endpoints, `resource`) and
+token audience binding from it instead of the proxy-internal request URL.
+Forwarded headers such as `X-Forwarded-Host` are never trusted.
+
 ## Operations
 
 - Back up the `vendo_` tables with the host database.
-- Apply retention with host SQL against the public tables.
+- Apply retention with host SQL against the public tables, or use the erase
+  API: `eraseStore(store)` (also exported from `@vendoai/vendo/server`) erases
+  by subject, by app, or by age across all tables and returns per-table counts.
+- `vendo_audit` is append-only through the store door; the erase API is its
+  only deletion path (host SQL on the raw table still works for cron cleanup).
 - Use `/status` as the live composition probe.
 - Use run history and the stop endpoint as the automation kill switch.
 - Keep `.vendo/data` out of source control.

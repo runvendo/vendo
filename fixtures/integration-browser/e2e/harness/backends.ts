@@ -6,7 +6,8 @@
  *   2. the REAL composed umbrella — `createVendo` from `@vendoai/vendo/server` —
  *      backed by a temp-dir PGlite store, reading host tools + policy from the
  *      package's own committed `.vendo/` files (cwd), with route bindings pointed
- *      at the booted host app via VENDO_BASE_URL (trusted-origin present forward),
+ *      at the booted host app via VENDO_BASE_URL (trusted-origin present forward)
+ *      and its MCP door enabled through a real HostOAuthAdapter,
  *   3. a loopback node:http wire server that serves `vendo.handler` on the FULL
  *      `/api/vendo/...` path (self-routing — the URL is forwarded verbatim, never
  *      mount-relative) plus a small, obviously test-only control surface.
@@ -30,9 +31,18 @@ import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Principal } from "@vendoai/core";
+import { getToolUiResourceUri } from "@modelcontextprotocol/ext-apps/app-bridge";
+import type { CallToolRequest } from "@modelcontextprotocol/sdk/types.js";
+import { descriptorHash, type Principal } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import { createVendo } from "@vendoai/vendo/server";
+import { connectWithSdk, type ConnectedClient } from "../../../mcp-e2e/src/support.ts";
+import {
+  MCP_APPS_FIXTURE_ID,
+  MCP_APPS_INVOICE_ID,
+  MCP_APPS_SUBJECT,
+  mcpBrowserFixture,
+} from "./mcp-fixture.ts";
 import { createControllableModel, expandTurn, type TurnSpec } from "./model.ts";
 
 const WIRE_BASE = "/api/vendo";
@@ -111,11 +121,44 @@ export async function startBackends(): Promise<Backends> {
     cookieCache.set(subject, cookie);
     return cookie;
   };
+  // Next compiles route modules lazily. Warm the exact dynamic invoice module
+  // used by both existing and MCP Apps journeys before Playwright's clock starts,
+  // so the e2e measures the protocol/action path rather than first-compile time.
+  const warmCookie = await loginCookie(MCP_APPS_SUBJECT);
+  const warmInvoice = await fetch(`${hostBaseUrl}/api/invoices/${MCP_APPS_INVOICE_ID}`, {
+    headers: { cookie: warmCookie },
+  });
+  if (!warmInvoice.ok) throw new Error(`host invoice warmup failed (${warmInvoice.status})`);
 
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-integration-browser-"));
   const store = createStore({ dataDir });
   await store.ensureSchema();
   const scripted = createControllableModel();
+
+  // Listen BEFORE createVendo: the door's canonical public base defaults to
+  // VENDO_BASE_URL (ENG-333), which this harness deliberately points at the
+  // HOST APP (credential forwarding for route bindings). The door itself is
+  // served on this loopback wire, so its origin is passed explicitly via
+  // mcp.baseUrl below — discovery must advertise the URL the real SDK client
+  // can reach. Requests cannot arrive before `vendo` exists: nothing learns
+  // the port until this function returns.
+  const httpServer = createHttpServer((req, res) => {
+    void handle(req, res).catch((error) => {
+      res.statusCode = 500;
+      res.setHeader("content-type", "text/plain");
+      res.end(error instanceof Error ? error.message : "wire bridge failed");
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    httpServer.once("error", reject);
+    httpServer.listen(0, "127.0.0.1", () => {
+      httpServer.off("error", reject);
+      resolve();
+    });
+  });
+  const address = httpServer.address();
+  if (!address || typeof address === "string") throw new Error("wire server did not bind a TCP port");
+  const wireUrl = `http://127.0.0.1:${address.port}`;
 
   const vendo = createVendo({
     model: scripted.model,
@@ -126,16 +169,39 @@ export async function startBackends(): Promise<Backends> {
     store,
     actAs: async (principal: Principal) => ({ headers: { cookie: await loginCookie(principal.subject) } }),
     policy: { file: ".vendo/policy.json" },
+    mcp: { baseUrl: wireUrl },
+    oauth: {
+      async authorize() {
+        return { subject: MCP_APPS_SUBJECT };
+      },
+      async principal(subject) {
+        return subject === MCP_APPS_SUBJECT ? { kind: "user", subject } : null;
+      },
+    },
   });
+  await store.records("vendo_apps").put({
+    id: mcpBrowserFixture.id,
+    data: { subject: MCP_APPS_SUBJECT, enabled: false, doc: mcpBrowserFixture },
+    refs: { subject: MCP_APPS_SUBJECT },
+  });
+  const originalDescriptions = new Map(
+    (await vendo.actions.descriptors()).map((descriptor) => [descriptor.name, descriptor.description]),
+  );
 
   // --- 3. the loopback wire + control server ------------------------------
-  const httpServer = createHttpServer((req, res) => {
-    void handle(req, res).catch((error) => {
-      res.statusCode = 500;
-      res.setHeader("content-type", "text/plain");
-      res.end(error instanceof Error ? error.message : "wire bridge failed");
-    });
-  });
+  let connectedMcp: ConnectedClient | undefined;
+  let connectingMcp: Promise<ConnectedClient> | undefined;
+
+  async function mcpConnection(): Promise<ConnectedClient> {
+    if (connectedMcp !== undefined) return connectedMcp;
+    connectingMcp ??= connectWithSdk({ endpoint: `${wireUrl}${WIRE_BASE}/mcp` });
+    try {
+      connectedMcp = await connectingMcp;
+      return connectedMcp;
+    } finally {
+      connectingMcp = undefined;
+    }
+  }
 
   async function readBody(req: IncomingMessage): Promise<Buffer> {
     const chunks: Buffer[] = [];
@@ -146,6 +212,7 @@ export async function startBackends(): Promise<Backends> {
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     if (url.pathname.startsWith(CONTROL_BASE)) return control(req, res, url);
+    if (url.pathname.startsWith("/.well-known/")) return wire(req, res);
     if (url.pathname === WIRE_BASE || url.pathname.startsWith(`${WIRE_BASE}/`)) return wire(req, res);
     res.statusCode = 404;
     res.end("not found");
@@ -164,6 +231,10 @@ export async function startBackends(): Promise<Backends> {
     if (req.method === "POST" && sub === "/reset") {
       scripted.reset();
       await fetch(`${hostBaseUrl}/fixture/reset`, { method: "POST" });
+      for (const descriptor of await vendo.actions.descriptors()) {
+        const original = originalDescriptions.get(descriptor.name);
+        if (original !== undefined) descriptor.description = original;
+      }
       return respond({ ok: true });
     }
     if (req.method === "POST" && sub === "/script") {
@@ -172,12 +243,63 @@ export async function startBackends(): Promise<Backends> {
       scripted.enqueue(turns.map(expandTurn));
       return respond({ ok: true, enqueued: turns.length });
     }
+    if (req.method === "POST" && sub === "/descriptor-drift") {
+      const body = JSON.parse((await readBody(req)).toString("utf8") || "{}") as { tool?: unknown };
+      const descriptor = (await vendo.actions.descriptors()).find(
+        (candidate) => candidate.name === body.tool,
+      );
+      if (descriptor === undefined) return respond({ error: "unknown tool" }, 404);
+      const staleHash = descriptorHash(descriptor);
+      descriptor.description = `${originalDescriptions.get(descriptor.name) ?? descriptor.description} (descriptor v2)`;
+      return respond({ ok: true, staleHash, currentHash: descriptorHash(descriptor) });
+    }
+    if (req.method === "POST" && sub === "/mcp/open") {
+      const { client } = await mcpConnection();
+      const listed = await client.listTools();
+      const descriptor = listed.tools.find((tool) => tool.name === "vendo_apps_open");
+      if (descriptor === undefined) return respond({ error: "vendo_apps_open descriptor missing" }, 500);
+      const resourceUri = getToolUiResourceUri(descriptor);
+      if (resourceUri === undefined) return respond({ error: "vendo_apps_open UI resource missing" }, 500);
+
+      const toolInput = { arguments: { appId: MCP_APPS_FIXTURE_ID } };
+      const toolResult = await client.callTool({ name: "vendo_apps_open", ...toolInput });
+      if (toolResult.isError === true) return respond({ error: "vendo_apps_open failed", toolResult }, 500);
+      const resource = await client.readResource({ uri: resourceUri });
+      const content = resource.contents[0];
+      if (content === undefined || !("text" in content)) {
+        return respond({ error: "shim resource did not contain HTML text" }, 500);
+      }
+      return respond({
+        appId: MCP_APPS_FIXTURE_ID,
+        resourceUri,
+        mimeType: content.mimeType,
+        html: content.text,
+        toolInput,
+        toolResult,
+      });
+    }
+    if (req.method === "POST" && sub === "/mcp/call") {
+      const params = JSON.parse((await readBody(req)).toString("utf8") || "{}") as CallToolRequest["params"];
+      const { client } = await mcpConnection();
+      return respond(await client.callTool(params));
+    }
+    if (req.method === "GET" && sub === "/mcp/evidence") {
+      const raw = store.raw() as { query(query: string): Promise<{ rows: unknown[] }> };
+      const rows = (await raw.query(
+        "SELECT tool, venue, app_id FROM vendo_audit WHERE kind = 'tool-call' ORDER BY at ASC",
+      )).rows;
+      return respond({ rows });
+    }
     const invoice = /^\/host\/invoice\/(.+)$/.exec(sub);
     if (req.method === "GET" && invoice) {
       const response = await fetch(`${hostBaseUrl}/api/invoices/${invoice[1]}`, {
         headers: { cookie: await loginCookie("user_ada") },
       });
-      return respond({ exists: response.status === 200 });
+      const payload = response.ok ? await response.json() as { invoice?: unknown } : undefined;
+      return respond({
+        exists: response.status === 200,
+        ...(payload?.invoice === undefined ? {} : { invoice: payload.invoice }),
+      });
     }
     return respond({ error: "unknown control route" }, 404);
   }
@@ -194,7 +316,10 @@ export async function startBackends(): Promise<Backends> {
     // so the composed actions layer forwards it to the host (04 §4).
     const subject = headers.get("x-vendo-test-user");
     if (subject) headers.set("cookie", await loginCookie(subject));
-    const request = new Request(`http://127.0.0.1${req.url ?? "/"}`, {
+    // Preserve the loopback port in the Request URL. MCP OAuth discovery derives
+    // absolute metadata endpoints from this origin; dropping the port sends the
+    // real SDK client to an unrelated localhost listener.
+    const request = new Request(`http://${req.headers.host ?? "127.0.0.1"}${req.url ?? "/"}`, {
       method: req.method,
       headers,
       ...(body === undefined || body.length === 0 ? {} : { body: new Uint8Array(body) }),
@@ -205,21 +330,11 @@ export async function startBackends(): Promise<Backends> {
     res.end(Buffer.from(await response.arrayBuffer()));
   }
 
-  await new Promise<void>((resolve, reject) => {
-    httpServer.once("error", reject);
-    httpServer.listen(0, "127.0.0.1", () => {
-      httpServer.off("error", reject);
-      resolve();
-    });
-  });
-  const address = httpServer.address();
-  if (!address || typeof address === "string") throw new Error("wire server did not bind a TCP port");
-  const wireUrl = `http://127.0.0.1:${address.port}`;
-
   let closed = false;
   const close = async (): Promise<void> => {
     if (closed) return;
     closed = true;
+    await connectedMcp?.close().catch(() => undefined);
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     if (host.exitCode === null) {
       host.kill("SIGTERM");

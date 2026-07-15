@@ -25,9 +25,12 @@ import type {
   EditResult,
   EnableResult,
   OpenSurface,
+  PinDrift,
+  PinRebaseResult,
   RunPlan,
   RunRecord,
   RunStatus,
+  ShipDiff,
   Thread,
   ThreadSummary,
   VendoStatus,
@@ -76,6 +79,12 @@ export interface VendoClient {
     exportApp(id: AppId): Promise<Uint8Array>;
     importApp(bytes: Uint8Array): Promise<AppDocument>;
     fork(id: AppId): Promise<AppDocument>;
+    /** GET /apps/:id/ship-diff — the reviewable diff vs the captured host baselines (06 §8–§9). */
+    shipDiff(id: AppId): Promise<ShipDiff>;
+    /** GET /apps/:id/pin-drift — the pins whose captured host baseline changed under the fork (06 §8). */
+    pinDrift(id: AppId): Promise<PinDrift[]>;
+    /** POST /apps/:id/rebase-pin — re-fork one drifted pin from the new baseline and replay its recorded intents (06 §8). */
+    rebasePin(id: AppId, slot: string): Promise<PinRebaseResult>;
   };
 
   automations: {

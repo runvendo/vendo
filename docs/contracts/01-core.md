@@ -419,6 +419,8 @@ export interface RegisteredComponent {
   name: string;                    // PascalCase, unique
   description: string;             // what the generator reads
   propsSchema: StandardSchema;     // type-only (not zod-serializable)
+  propsJsonSchema?: JsonSchema;    // prompt-safe JSON Schema 2020-12; maps to catalog@1 propsSchema
+  examples?: string[];             // usage snippets shown to the generator; maps to catalog@1 examples
   remixable?: boolean;             // opt-in: source captured at sync, eligible for pins
 }
 // the catalog holds host registrations; prewired primitives are the fixed reserved-name set (§8), not entries
@@ -462,7 +464,67 @@ export interface VendoViewPart { type: "data-vendo-view"; appId: AppId; payload:
 export interface VendoApprovalPart { type: "data-vendo-approval"; toolCallId: string; risk: RiskLabel; approvalId?: ApprovalId }  // receipt/approval metadata beside native tool parts
 ```
 
+## 17. Capability-miss event (`vendo/capability-miss@1`)
+
+The embedded agent emits exactly one capability-miss event when it cannot fulfill a user ask for one of three reasons: no matching tool exists, tool use has failed repeatedly, or the agent explicitly gives up. The agent decides that a miss occurred; the umbrella composition owns persistence and optional transport so core remains shape-only and agent does not acquire filesystem or cloud dependencies.
+
+```ts
+export const VENDO_CAPABILITY_MISS_FORMAT = "vendo/capability-miss@1";
+
+export interface CapabilityMissToolFailure {
+  tool: string;
+  attempt: number;                 // 1-based attempt order within this miss
+  failure: { code?: string; message: string };
+}
+
+export interface CapabilityMissEvent {
+  format: "vendo/capability-miss@1";
+  id: string;                      // globally unique, "mis_..."
+  at: IsoDateTime;
+  hostId: string;                  // stable host-installation identity within its Cloud tenant
+  appId?: AppId;                   // set when the ask occurred inside a Vendo app
+  sessionId: string;
+  threadId?: ThreadId;
+  intent: string;                  // privacy-scrubbed user ask, preserving refinement intent
+  surface: {
+    format: "vendo/tools@1";
+    hash: string;                  // sha256:<hex> of canonicalJson(parsed .vendo/tools.json)
+  };
+  trigger:
+    | { kind: "no-matching-tool"; toolsConsidered: string[] }
+    | {
+        kind: "repeated-tool-failure";
+        toolsConsidered: string[];
+        attempts: [CapabilityMissToolFailure, CapabilityMissToolFailure, ...CapabilityMissToolFailure[]];
+      }
+    | { kind: "agent-give-up"; toolsConsidered: string[]; toolsAttempted: string[] };
+}
+```
+
+**Normative identity:** `hostId` MUST be the `TelemetryConfig.anonymousId` returned by `@vendoai/telemetry`'s `loadConfig()` (normally persisted in `~/.vendo/telemetry.json`; no `createVendo` override exists), while Cloud MUST derive the tenant from the organization authenticated by `VENDO_API_KEY` and use `hostId` only as the host-installation identity within that tenant.
+
+Trigger semantics are closed for `@1`:
+
+- `no-matching-tool`: the available/searchable surface contains no tool capable of the ask; no tool attempt is implied.
+- `repeated-tool-failure`: two or more failed attempts prevented fulfillment. `attempts` is ordered and carries each attempted tool name plus a scrubbed failure code/message.
+- `agent-give-up`: the agent makes an explicit terminal decision that it cannot fulfill the ask, whether or not it attempted a tool. This is not a catch-all for an unclassified exception.
+
+`surface.hash` identifies the exact extracted surface that existed at miss time; formatting-only changes do not alter it. The gap dashboard clusters by `intent` within `hostId`, resolves that surface snapshot by `(surface.format, surface.hash)`, and diffs the miss against its tools. Dashboard export and the refine feed consumed by `vendo refine` carry this same event shape unchanged.
+
+Persistence and transport are normative:
+
+- OSS always appends each event as one JSON object plus a newline to `.vendo/data/misses.jsonl`. This local append is not consent-gated, happens independently of upload, and remains the source of truth if upload fails.
+- Cloud upload is allowed when and only when `VENDO_API_KEY` is non-empty **and** `envOptOut(env) === false`, using the exported helper in `packages/vendo-telemetry/src/consent.ts`. `envOptOut` blocks upload when `VENDO_TELEMETRY_DISABLED` or `DO_NOT_TRACK` is `"1"` or `"true"`, or when `CI` is set to any value other than `""`, `"0"`, or `"false"`. The `NODE_ENV` development/test fail-close and the persisted telemetry config's `optedOut` flag do not gate miss upload; they remain product-telemetry-only, and production upload is allowed because non-empty `VENDO_API_KEY` is the host's explicit opt-in. Otherwise no miss data leaves the machine.
+- `intent` is user-authored content and may contain confidential or personal data. Emitters must remove credentials and secrets and minimize unrelated personal data while preserving the ask's intent; failure messages receive the same treatment. Events must never include raw tool arguments or outputs. Hosts must treat both the plaintext local JSONL and any Cloud copy as confidential user data.
+
 ## Amendments
+
+### 2026-07-14 — Capability-miss event shape (ENG-253)
+
+- **Changed:** Added the additive `vendo/capability-miss@1` persisted/wire shape, with the three locked emission triggers, exact extracted-surface identity, host/session context, and tool-attempt detail.
+- **Changed:** Contracted unconditional local JSONL persistence, API-key-plus-opt-out-gated Cloud upload, privacy handling, and reuse of the same event by the gap dashboard and refine feed.
+- **Why:** Miss capture needs one stable handoff between the embedded agent, OSS history, Cloud gap analysis, and `vendo refine` before ENG-253 implementation begins.
+- **Approved by:** Yousef, 2026-07-14 (consent semantics ruled: key + envOptOut kill switches; production allowed).
 
 ### 2026-07-14 — MCP additions, RunContext promotion, and shipped export surface
 

@@ -163,6 +163,10 @@ export async function createWireServer() {
   };
   const requests: RecordedRequest[] = [];
   let closed = false;
+  // Multi-turn sessions (ENG-221 reopen tests) must not mint colliding
+  // message/approval ids — duplicate React keys. Turn 1 keeps the historical
+  // bare ids so single-turn assertions stay stable.
+  let turns = 0;
 
   const handler = async (request: IncomingMessage, response: ServerResponse) => {
     try {
@@ -193,21 +197,62 @@ export async function createWireServer() {
       if (method === "POST" && url.pathname === "/threads") {
         const input = parsedBody as { threadId?: string; message: UIMessage };
         const threadId = input.threadId ?? "thr_minted";
+        const suffix = ++turns === 1 ? "" : `_${turns}`;
+        // ENG-213 — a paced long-form stream so real-browser specs can observe
+        // scroll behavior MID-stream (stick-to-bottom, scroll-up release, the
+        // jump-to-latest pill). Opt-in per message via a marker, so every
+        // existing consumer of the instant canned turn is untouched.
+        const sentText = input.message.parts
+          .map(part => (part.type === "text" ? part.text : ""))
+          .join(" ");
+        if (sentText.includes("[stream-long]")) {
+          const longChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_long",
+            execute: async ({ writer }) => {
+              writer.write({ type: "text-start", id: "text_long" });
+              // ~8s of pacing: long enough that a spec can act mid-stream (scroll
+              // up, watch for yanking, click the pill) even on a loaded CI worker.
+              for (let index = 0; index < 100; index += 1) {
+                writer.write({
+                  type: "text-delta",
+                  id: "text_long",
+                  delta: `Streamed paragraph ${index + 1}: the long answer keeps arriving so the list keeps growing while the reader watches.\n\n`,
+                });
+                await new Promise(resolve => setTimeout(resolve, 80));
+              }
+              writer.write({ type: "text-delta", id: "text_long", delta: "Long turn complete." });
+              writer.write({ type: "text-end", id: "text_long" });
+            },
+          });
+          const longResponse = createUIMessageStreamResponse({ stream: longChunks });
+          longResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(longResponse, response);
+          return;
+        }
         const chunks = createUIMessageStream<UIMessage>({
           originalMessages: [input.message],
-          generateId: () => "msg_assistant",
+          generateId: () => `msg_assistant${suffix}`,
           execute: async ({ writer }) => {
             writer.write({
               type: "tool-input-available",
-              toolCallId: "call_stream",
+              toolCallId: `call_stream${suffix}`,
               toolName: "host_email_send",
               input: { to: "a@example.com" },
               dynamic: true,
             });
-            writer.write({ type: "tool-approval-request", toolCallId: "call_stream", approvalId: "apr_stream" });
+            writer.write({ type: "tool-approval-request", toolCallId: `call_stream${suffix}`, approvalId: `apr_stream${suffix}` });
             writer.write({
               type: "data-vendo-approval",
-              data: { toolCallId: "call_stream", risk: "write", approvalId: "apr_stream" },
+              data: {
+                toolCallId: `call_stream${suffix}`,
+                risk: "write",
+                approvalId: `apr_stream${suffix}`,
+                invalidatedGrant: {
+                  id: "grt_stale",
+                  grantedAt: "2026-07-01T12:00:00.000Z",
+                },
+              },
             } as UIMessageChunk);
             await state.threadReplyGate;
             writer.write({ type: "text-start", id: "text_1" });

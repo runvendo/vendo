@@ -70,6 +70,30 @@ describe("TreeView public surface", () => {
     expect(document.querySelector('[data-dangling-node="not-yet-streamed"] [data-primitive="Skeleton"]')).not.toBeNull();
   });
 
+  it("skeletons a generated node until its streamed source arrives", () => {
+    const partial = {
+      ...tree([{ id: "root", component: "RevenueCard", source: "generated" }]),
+      streaming: true,
+    } as Tree;
+
+    render(<TreeView tree={partial} components={{}} onAction={ok} />);
+
+    expect(document.querySelector('[data-streaming-component="RevenueCard"] [data-primitive="Skeleton"]')).not.toBeNull();
+    expect(screen.queryByRole("note", { name: /invalid ui tree/i })).toBeNull();
+  });
+
+  it("contains a validated but empty rooted layout instead of rendering a blank surface", () => {
+    render(
+      <TreeView
+        tree={tree([{ id: "root", component: "Stack", source: "prewired" }])}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+
+    expect(screen.getByRole("note", { name: /empty ui tree/i }).textContent).toMatch(/no renderable content/i);
+  });
+
   it("contains an erroring host node while preserving its sibling", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const Boom = () => {

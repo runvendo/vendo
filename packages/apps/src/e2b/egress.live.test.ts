@@ -19,13 +19,18 @@ import { e2bSandbox } from "./index.js";
 //   3. A non-allowlisted host is refused with no forward.
 //   4. The real node:dns SSRF guard blocks the cloud metadata address.
 //
-// NOTE: with no E2B_API_KEY in this environment, this suite is SKIPPED and was
-// NOT executed here; it is written real + runnable for a keyed environment.
+// NOTE: first executed for real (keyed environment) in the ENG-290 live-lane
+// milestone, which fixed the fixture handle nonce below; still SKIPPED without
+// E2B_API_KEY.
 // ============================================================================
 
 const ALLOWED_HOST = "postman-echo.com"; // reflects request headers in its JSON response
 const REAL_SECRET = `sk_live_${Math.random().toString(36).slice(2)}`;
-const HANDLE = "vendo-secret:ECHO_KEY:live0nonce";
+// The nonce must be hex, like the runtime mints (machine.ts randomHex): the
+// proxy's HANDLE_PATTERN only recognizes vendo-secret:<NAME>:<hex>. The first
+// real run of this suite (ENG-290 live lanes) caught the old non-hex fixture
+// "live0nonce" silently never substituting.
+const HANDLE = "vendo-secret:ECHO_KEY:e2b259cafe";
 const tokenSecret = new TextEncoder().encode("eng-259-live-egress-secret-key-01");
 
 const app = {

@@ -25,3 +25,36 @@ joined to host tables with containment queries. Collection names use
 `encryption.key` encrypts secret values in `vendo_secrets` only. App records
 stay queryable. Ephemeral principals use an in-memory overlay and never write
 to disk.
+
+## Atomic claims
+
+The store contract exposes a compare-and-set (CAS) claim primitive so
+concurrent workers can safely coordinate on a shared key without external
+locks. Use it whenever two ticks, retries, or agent runs might race on the
+same record — for example, deduplicating a webhook delivery, claiming a
+queued token exchange, or ensuring only one worker processes an invoice.
+
+```ts
+const claim = await vendo.store.claim({
+  key: `invoice:${invoiceId}`,
+  owner: runId,
+  ttlMs: 60_000,
+});
+
+if (!claim.acquired) {
+  // Another run already holds this key. Skip.
+  return;
+}
+
+try {
+  await processInvoice(invoiceId);
+} finally {
+  await vendo.store.release(claim);
+}
+```
+
+Claims are keyed per principal and expire after `ttlMs`, so a crashed worker
+never holds a key forever. `acquired` is false when another owner holds the
+key and its TTL has not elapsed. The same CAS machinery backs run-lifecycle
+transitions (start, stop, complete), so cancellation and scheduler ticks
+cannot resurrect a terminal run.

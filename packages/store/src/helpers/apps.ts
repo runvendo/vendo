@@ -23,6 +23,11 @@ export function appStore(store: VendoStore): {
       if (principal.ephemeral === true) {
         registerEphemeralSubject(store, principal.subject);
         const prior = overlay.apps.get(parsedDoc.id);
+        // Mirror putAppRow's cross-subject refusal (02 §2): a prior overlay app
+        // owned by another subject is never flipped.
+        if (prior !== undefined && prior.subject !== principal.subject) {
+          throw new VendoError("conflict", `app ${parsedDoc.id} belongs to another subject`);
+        }
         const row: AppRow = {
           id: parsedDoc.id,
           subject: principal.subject,

@@ -17,6 +17,11 @@ import {
 import { mintAuditId } from "./ids.js";
 import { assembleSystemPrompt } from "./prompt.js";
 import { buildAgentTools } from "./tools.js";
+import {
+  createCapabilityMissDetector,
+  scrubCapabilityMissText,
+  type CapabilityMissConfig,
+} from "./capability-miss.js";
 
 /** 03-agent §2 */
 export interface RunnerConfig {
@@ -24,6 +29,7 @@ export interface RunnerConfig {
   guard: Guard;
   system?: { product?: string; instructions?: string };
   context?: { maxOutputTokens?: number; toolOutputCap?: number };
+  capabilityMiss?: CapabilityMissConfig;
 }
 
 interface RecordedCall {
@@ -54,7 +60,19 @@ export function createRunner(config: RunnerConfig): AgentRunner {
     let report: AgentRunReport;
 
     try {
-      const system = await assembleSystemPrompt(config.guard, awayCtx, config.system);
+      const system = await assembleSystemPrompt(
+        config.guard,
+        awayCtx,
+        config.system,
+        config.capabilityMiss !== undefined,
+      );
+      const missDetector = config.capabilityMiss === undefined
+        ? undefined
+        : createCapabilityMissDetector({
+            config: config.capabilityMiss,
+            ctx: awayCtx,
+            intent: scrubCapabilityMissText(task.prompt),
+          });
       const tools = await buildAgentTools({
         registry: task.tools,
         ctx: awayCtx,
@@ -76,11 +94,14 @@ export function createRunner(config: RunnerConfig): AgentRunner {
         onCall: (call) => {
           const entry: RecordedCall = { call, outcome: "error" };
           recorded.push(entry);
+          const finishMissCall = missDetector?.onCall(call);
           return (outcome) => {
             entry.outcome = outcome.status;
+            finishMissCall?.(outcome);
           };
         },
       });
+      missDetector?.attach(tools);
       const toolCallCap: StopCondition<ToolSet> = ({ steps }) =>
         steps.reduce((count, step) => count + step.toolCalls.length, 0) >= cap;
       const result = await generateText({

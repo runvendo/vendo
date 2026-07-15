@@ -2,6 +2,8 @@
 
 `@vendoai/store` implements the `@vendoai/core` persistence seams with one Postgres schema. It uses PGlite for a zero-config local database and the same schema on a hosted Postgres service.
 
+Read [Persistence](https://docs.vendo.run/deploy/persistence).
+
 ```ts
 import { createStore } from "@vendoai/store";
 
@@ -53,10 +55,18 @@ Blocks receive core's plain `StoreAdapter`, so these exact `records()` collectio
 | `vendo_mcp_clients` | client id | block-internal JSON | caller-supplied, arbitrary keys | table `created_at` / `updated_at` |
 | `vendo_mcp_grants` | grant id | block-internal JSON | caller-supplied, arbitrary keys | table `created_at` / `updated_at` |
 
-Typed reserved writes validate their data, require embedded ids to match the record id, and upsert the typed row. The data is authoritative: caller-supplied `refs` are ignored on write and synthesized from typed columns on read. Their routed `list({ refs })` accepts only the refs shown above. The two door-owned collections use generic record semantics in dedicated tables: the store does not validate their block-internal payloads, and refs filters accept arbitrary keys. Generic and routed record lists are uniformly newest-first by `(createdAt, id)`.
+Typed reserved writes validate their data, require embedded ids to match the record id, and upsert the typed row — with two enforced exceptions. `vendo_audit` is append-only: `put` on an existing id and `delete` are both refused; audit rows are erased only through the erase API below. `vendo_apps`, `vendo_grants`, and `vendo_threads` refuse cross-subject flips atomically: a put whose id already belongs to another subject fails with a conflict. The data is authoritative: caller-supplied `refs` are ignored on write and synthesized from typed columns on read. Their routed `list({ refs })` accepts only the refs shown above. The two door-owned collections use generic record semantics in dedicated tables: the store does not validate their block-internal payloads, and refs filters accept arbitrary keys. Generic and routed record lists are uniformly newest-first by `(createdAt, id)`.
 
 Ephemeral approvals and audit events route automatically from their embedded principal. For grants, threads, apps, and other subject-only writes, call `registerEphemeralSubject(store, subject)` before the first write, unless an earlier principal-bearing ephemeral write already registered that subject. Runs and `app:<appId>:<name>` record/blob storage inherit routing from their owning app. Routed, typed-helper, and app-convention generic storage share in-memory overlays, and `close()` clears them. Other blob namespaces remain principal-free and are not routed automatically.
 
 `stateStore.get()` and every principal-bearing helper operation register ephemeral subjects as a side effect. This is by design: the caller's `principal.ephemeral` flag is authoritative, and registration caches it so later subject-only writes (for example, routed grants) stay off disk.
 
 `auditStore.export()` reads only the durable audit log. Ephemeral session events appear in `query()` but are never included in exports, by design.
+
+## Encryption
+
+`createStore({ encryption: { key } })` (base64 32-byte key) encrypts `vendo_secrets.ciphertext` with AES-256-GCM; everything else stays host-queryable plaintext by design. The composed default is on: `vendo init` provisions `VENDO_STORE_ENCRYPTION_KEY` into the host's `.env` and `createVendo` reads it when no store is passed. Ciphertext is bound to its secret name via AAD (`v2` envelope); rows written before the AAD amendment (`v1` envelope) keep decrypting and upgrade on their next write.
+
+## Retention and erasure
+
+`eraseStore(store)` is the store-level erase API — `bySubject(subject)` for full erasure, `byApp(appId)`, and `byAge(olderThanIso)` — cascading the matching rows (durable and ephemeral-overlay alike) across all 13 tables and returning per-table deleted counts. It is the only sanctioned deletion path for `vendo_audit` rows. It is also re-exported from `@vendoai/vendo/server`. Host SQL remains available for everything else.

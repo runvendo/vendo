@@ -2,6 +2,7 @@
 export * from "./app-document.js";
 export * from "./audit.js";
 export * from "./catalog.js";
+export * from "./capability-miss.js";
 export * from "./descriptor-hash.js";
 export * from "./errors.js";
 export * from "./formats.js";

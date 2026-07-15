@@ -30,6 +30,10 @@ function vendoApproval(part: UIMessage["parts"][number]): VendoApprovalPart | un
     toolCallId: candidate.toolCallId,
     risk: candidate.risk as VendoApprovalPart["risk"],
     ...(candidate.approvalId === undefined ? {} : { approvalId: candidate.approvalId }),
+    ...(typeof candidate.invalidatedGrant?.id === "string"
+      && typeof candidate.invalidatedGrant.grantedAt === "string"
+      ? { invalidatedGrant: candidate.invalidatedGrant }
+      : {}),
   };
 }
 

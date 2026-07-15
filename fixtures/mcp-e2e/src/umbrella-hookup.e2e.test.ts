@@ -21,7 +21,16 @@ import type { HostOAuthAdapter } from "@vendoai/mcp";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { createVendo, type CreateVendoConfig, type Vendo } from "@vendoai/vendo/server";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { FIXTURE_APP_ID, fixtureBaseUrl, hostTools, loginCookie, resetFixture, SUBJECT, type Stack } from "./harness.js";
+import {
+  FIXTURE_APP_ID,
+  FIXTURE_THEME,
+  fixtureBaseUrl,
+  hostTools,
+  loginCookie,
+  resetFixture,
+  SUBJECT,
+  type Stack,
+} from "./harness.js";
 import { connectWithSdk, descriptorShape, textOf } from "./support.js";
 
 const MCP_PATH = "/api/vendo/mcp";
@@ -48,6 +57,7 @@ beforeAll(async () => {
     join(projectDir, ".vendo", "tools.json"),
     JSON.stringify({ format: VENDO_TOOLS_FORMAT, tools: hostTools }),
   );
+  await writeFile(join(projectDir, ".vendo", "theme.json"), JSON.stringify(FIXTURE_THEME));
   originalCwd = process.cwd();
   process.chdir(projectDir);
   process.env.VENDO_BASE_URL = fixtureBaseUrl();
@@ -105,12 +115,17 @@ async function createUmbrella(
         { match: { risk: "write" }, action: "run" },
       ],
     },
-    mcp: true,
     oauth,
     ...(options.withActAs === false ? {} : { actAs }),
   };
-  const vendo = createVendo(config);
-  const httpServer = createServer((req, res) => void bridge(req, res, vendo.handler));
+  // Listen BEFORE createVendo: the door's canonical public base defaults to
+  // VENDO_BASE_URL (ENG-333), but this fixture deliberately splits origins —
+  // VENDO_BASE_URL points at the fixture HOST APP (route bindings + actAs
+  // credential forwarding), while the door is served on this umbrella's own
+  // loopback origin. Pass that door origin explicitly via mcp.baseUrl so
+  // discovery advertises the URL the SDK client can actually reach.
+  let handler: Vendo["handler"] | undefined;
+  const httpServer = createServer((req, res) => void bridge(req, res, (request) => handler!(request)));
   await new Promise<void>((resolve, reject) => {
     httpServer.once("error", reject);
     httpServer.listen(0, "127.0.0.1", () => {
@@ -121,6 +136,8 @@ async function createUmbrella(
   const address = httpServer.address();
   if (!address || typeof address === "string") throw new Error("umbrella server did not bind a port");
   const origin = `http://127.0.0.1:${address.port}`;
+  const vendo = createVendo({ ...config, mcp: { baseUrl: origin } });
+  handler = vendo.handler;
   const umbrella: Umbrella = {
     vendo,
     origin,
@@ -237,6 +254,10 @@ describe("umbrella hookup — createVendo({ mcp: true }) mounts the door", () =>
         "vendo_apps_open",
         "vendo_apps_call",
       ]));
+      const resource = await connected.client.readResource({ uri: "ui://vendo/tree-shim.html" });
+      const html = "text" in resource.contents[0]! ? resource.contents[0].text : "";
+      expect(html).toContain("--vendo-color-background:#FBFBFA");
+      expect(html).toContain("--vendo-color-accent:#0A7CFF");
     } finally {
       await connected.close();
     }

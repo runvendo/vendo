@@ -2,10 +2,113 @@ import { z } from "zod";
 import {
   VENDO_OVERRIDES_FORMAT,
   VENDO_TOOLS_FORMAT,
+  jsonSchemaSchema,
   riskLabelSchema,
   toolDescriptorSchema,
+  type JsonSchema,
   type ToolDescriptor,
 } from "@vendoai/core";
+
+export const VENDO_CATALOG_FORMAT = "vendo/catalog@1" as const;
+export const VENDO_CATALOG_PROPOSALS_FORMAT = "vendo/catalog-proposals@1" as const;
+
+/** A deterministic or explicitly registered host-component catalog entry. */
+export interface CatalogEntry {
+  name: string;
+  /** Root-relative module plus export/property path, for example `./src/card.tsx#Card`. */
+  exportPath: string;
+  /** JSON Schema 2020-12 compatible shape, using the ToolDescriptor.inputSchema convention. */
+  propsSchema: JsonSchema;
+  /** Human-reviewed when-to-use guidance. Scanners never author this field. */
+  description: string;
+  /** Human-reviewed JSX snippets. Scanners never author this field. */
+  examples?: string[];
+  source: "registered" | "scanned";
+  disabled?: boolean;
+  note?: string;
+}
+
+/** Strict because hand edits must fail loudly rather than disappear on parse. */
+export const catalogEntrySchema = z.object({
+  name: z.string().regex(/^[A-Z][A-Za-z0-9_$]*$/),
+  exportPath: z.string().min(1),
+  propsSchema: jsonSchemaSchema,
+  description: z.string(),
+  examples: z.array(z.string().min(1)).optional(),
+  source: z.enum(["registered", "scanned"]),
+  disabled: z.boolean().optional(),
+  note: z.string().min(1).optional(),
+}).strict() satisfies z.ZodType<CatalogEntry>;
+
+export interface CatalogFile {
+  format: typeof VENDO_CATALOG_FORMAT;
+  entries: CatalogEntry[];
+}
+
+export const catalogFileSchema = z.object({
+  format: z.literal(VENDO_CATALOG_FORMAT),
+  entries: z.array(catalogEntrySchema),
+}).strict().superRefine((catalog, context) => {
+  const names = new Set<string>();
+  for (const [index, entry] of catalog.entries.entries()) {
+    if (names.has(entry.name)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `duplicate component name ${entry.name}`, path: ["entries", index, "name"] });
+    }
+    names.add(entry.name);
+  }
+}) satisfies z.ZodType<CatalogFile>;
+
+export interface CatalogCopyFields {
+  description: string;
+  examples?: string[];
+}
+
+export const catalogCopyFieldsSchema = z.object({
+  description: z.string(),
+  examples: z.array(z.string().min(1)).optional(),
+}).strict() satisfies z.ZodType<CatalogCopyFields>;
+
+const proposedCatalogCopyFieldsSchema = catalogCopyFieldsSchema.extend({
+  description: z.string().min(1),
+}).strict();
+
+export interface CatalogCopyProposal {
+  name: string;
+  /** Deterministic scanner context the proposal was authored against. */
+  basis: {
+    exportPath: string;
+    propsSchema: JsonSchema;
+    note?: string;
+  };
+  before: CatalogCopyFields;
+  after: CatalogCopyFields;
+}
+
+const catalogCopyProposalBasisSchema = z.object({
+  exportPath: z.string().min(1),
+  propsSchema: jsonSchemaSchema,
+  note: z.string().min(1).optional(),
+}).strict();
+
+export const catalogCopyProposalSchema = z.object({
+  name: z.string().regex(/^[A-Z][A-Za-z0-9_$]*$/),
+  basis: catalogCopyProposalBasisSchema,
+  before: catalogCopyFieldsSchema,
+  after: proposedCatalogCopyFieldsSchema,
+}).strict() satisfies z.ZodType<CatalogCopyProposal>;
+
+/** Review-only copy proposals. Runtime never reads this artifact. */
+export interface CatalogProposalsFile {
+  format: typeof VENDO_CATALOG_PROPOSALS_FORMAT;
+  catalogFormat: typeof VENDO_CATALOG_FORMAT;
+  proposals: CatalogCopyProposal[];
+}
+
+export const catalogProposalsFileSchema = z.object({
+  format: z.literal(VENDO_CATALOG_PROPOSALS_FORMAT),
+  catalogFormat: z.literal(VENDO_CATALOG_FORMAT),
+  proposals: z.array(catalogCopyProposalSchema),
+}).strict() satisfies z.ZodType<CatalogProposalsFile>;
 
 /** 04-actions §1: the http methods a binding can carry. */
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -103,11 +206,15 @@ export const toolOverrideSchema = z.object({
 export interface OverridesFile {
   format: typeof VENDO_OVERRIDES_FORMAT;
   tools: Record<string, ToolOverride>;
+  remix?: { ignoreSlots: string[] };
 }
 
 export const overridesFileSchema = z.object({
   format: z.literal(VENDO_OVERRIDES_FORMAT),
   tools: z.record(toolOverrideSchema),
+  remix: z.object({
+    ignoreSlots: z.array(z.string().min(1)),
+  }).strict().optional(),
 }).strict() satisfies z.ZodType<OverridesFile>;
 
 /**
@@ -121,7 +228,50 @@ export interface CapturedPinBaseline {
   hash: string;                    // "sha256:..." of source
   exportable: boolean;
   capturedAt: string;              // IsoDateTime
+  /** Import specifier -> captured module id for imports in the primary source. */
+  sourceImports?: Record<string, string>;
+  /** Source-owned modules reachable within two local-import hops. */
+  subSources?: Record<string, CapturedPinSubSource>;
+  /** Static JSON-compatible props declared by the remixable registration. */
+  sampleProps?: Record<string, unknown>;
+  /** Direct CSS imports from canonical app root files, in deterministic order. */
+  styles?: CapturedPinStyle[];
 }
+
+/** Machine-readable reason a remixable registration needs runtime capture. */
+export type UnresolvedPinReason =
+  | "inline-component"
+  | "component-not-imported"
+  | "import-not-found"
+  | "unsafe-source"
+  | "unsafe-slot";
+
+export interface UnresolvedPin {
+  slot: string;
+  component: string;
+  reason: UnresolvedPinReason;
+  hint: string;
+}
+
+export interface CapturedPinSubSource {
+  source: string;
+  imports: Record<string, string>;
+}
+
+export interface CapturedPinStyle {
+  path: string;
+  css: string;
+}
+
+const capturedPinSubSourceSchema = z.object({
+  source: z.string(),
+  imports: z.record(z.string()),
+}).passthrough() satisfies z.ZodType<CapturedPinSubSource>;
+
+const capturedPinStyleSchema = z.object({
+  path: z.string(),
+  css: z.string(),
+}).passthrough() satisfies z.ZodType<CapturedPinStyle>;
 
 export const capturedPinBaselineSchema = z.object({
   slot: z.string().min(1),
@@ -129,6 +279,10 @@ export const capturedPinBaselineSchema = z.object({
   hash: z.string().startsWith("sha256:"),
   exportable: z.boolean(),
   capturedAt: z.string(),
+  sourceImports: z.record(z.string()).optional(),
+  subSources: z.record(capturedPinSubSourceSchema).optional(),
+  sampleProps: z.record(z.unknown()).optional(),
+  styles: z.array(capturedPinStyleSchema).optional(),
 }).passthrough() satisfies z.ZodType<CapturedPinBaseline>;
 
 /** 04-actions §1 */
@@ -147,4 +301,5 @@ export interface SyncReport {
   tools: { added: string[]; removed: string[]; changed: string[] };
   breaking: BreakingChange[];
   pins: { captured: string[]; drifted: string[] };
+  catalog: { discovered: number; registered: number };
 }

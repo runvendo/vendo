@@ -1,11 +1,11 @@
 ---
-title: "CLI reference: vendo init, doctor, sync, and cloud"
-description: "Reference for the vendo bin commands: init for setup, doctor for wiring checks, sync for build-time extraction, and cloud for the Vendo Cloud API."
+title: "CLI reference: vendo init, doctor, sync, mcp, and cloud"
+description: "Reference for the vendo bin commands: init, doctor for wiring checks, sync for build-time extraction, mcp for registry publishing, and cloud."
 ---
 
-The umbrella owns the `vendo` bin. It has four commands.
+The umbrella owns the `vendo` bin. It has five commands.
 
-## `vendo init`
+## `vendo init [dir]`
 
 Interactive setup. It scans the app, interviews you about your model import, the
 product brief, risk labels for critical tools, and the MCP door (theme is
@@ -26,47 +26,134 @@ when you opt into MCP in the interview, a sibling
 to finish. Init detects only `next` and `express`, checking `next` first, so an
 app with both gets the Next scaffold; any other host is treated as Next.
 
-`--agent` emits the setup plan with its four plain-language questions and
-writes nothing.
+`dir` is the app to initialize and defaults to the current directory.
 
-## `vendo doctor`
+Options:
+
+- `--agent` emits the setup plan with its four plain-language questions and
+  writes nothing.
+- `--yes` skips the interview, shows the proposed diffs, and approves every
+  code change. Combine it with `--model-import` and `--brief` for unattended
+  setup.
+- `--force` regenerates Vendo-owned files under `.vendo/`. It does not replace
+  existing host source files.
+- `--model-import <specifier>` sets the module that exports the host's AI SDK
+  `model` (default `@/lib/ai` for Next.js and `./ai` for Express).
+- `--brief <text>` supplies the product brief written to `.vendo/brief.md`.
+
+## `vendo doctor [dir]`
 
 Checks wiring and makes one live `/status` round trip. It recognizes both Next.js
 (catch-all route plus a layout that mounts `<VendoRoot>`) and Express (the server
 composes `createVendo` from `@vendoai/vendo/server`; the client mounts
 `<VendoRoot>`), and ends with the config line that unlocks each remaining block.
-When the MCP door is open, doctor also verifies both OAuth metadata documents
-resolve and the server card parses.
+
+When the MCP door is open, doctor also validates the registry discovery surface:
+
+- both OAuth metadata documents (`/.well-known/oauth-protected-resource/...`
+  and `/.well-known/oauth-authorization-server/...`) resolve
+- the server card at `/.well-known/mcp/server-card.json` parses
+- a `server.json` in the project root, if present, matches the MCP registry
+  schema and its remote URL agrees with the live door
+- a local `public/.well-known/mcp-registry-auth` challenge file starts with
+  `v=MCPv1`, and the same challenge served over HTTP parses when present
 
 Exit codes:
 
 - `0`: green
 - `1`: broken wiring
 
-## `vendo sync`
+## `vendo sync [dir]`
 
 Runs the build-step extraction manually. It updates tool extraction and remix
-baselines. The default is fail-soft and warns on breaking changes.
+baselines for `dir`, which defaults to the current directory. The default is
+fail-soft and warns on breaking changes.
 
 Exit codes:
 
 - `0`: success, including fail-soft warnings
 - `2`: breaking changes when `--strict` is set
 
+## `vendo mcp`
+
+Tooling for publishing your door to the official MCP registry. Both
+subcommands operate on the current directory unless you pass a target `dir`.
+
+### `vendo mcp server-json`
+
+Generate and validate the `server.json` artifact the registry expects. The
+command reads your `package.json` for the name, version, description, and
+homepage, then combines that identity with the domain namespace and public
+door URL you pass in.
+
+```bash
+npx vendo mcp server-json --domain example.com --url https://app.example.com/api/vendo/mcp
+```
+
+Options:
+
+- `--domain <domain>` — registry namespace to publish under. Prompted if omitted.
+- `--url <public-mcp-url>` — public URL of the live door. Prompted if omitted.
+- `--force` — overwrite an existing `server.json`.
+
+On success, doctor's registry checks compare the file against the running
+door on every run.
+
+### `vendo mcp verify-domain`
+
+Generate the Ed25519 keypair and challenge string you need to prove ownership
+of a registry namespace. The private seed is written only to the path you
+choose so you can keep it outside the repository.
+
+```bash
+npx vendo mcp verify-domain \
+  --domain example.com \
+  --key-out ~/.vendo/mcp-registry.key \
+  --write-well-known ./public
+```
+
+Options:
+
+- `--domain <domain>` — required. Registry domain you are proving.
+- `--key-out <path>` — required. Path for the private key seed. Written with
+  mode `0600` and refuses to overwrite an existing file.
+- `--write-well-known <dir>` — optional. Also writes the challenge to
+  `<dir>/.well-known/mcp-registry-auth` so your host can serve the HTTP
+  proof.
+
+The command prints both the DNS TXT record and the HTTP challenge value
+(`v=MCPv1; k=ed25519; p=<base64>`). Publish either to satisfy registry
+verification, then pass the private key's hex value to `mcp-publisher` when
+authenticating.
+
 ## `vendo cloud`
 
-Client for the Vendo Cloud API. `vendo cloud login <email>` sends a six-digit
+Client for the Vendo Cloud API. `vendo cloud login <email>` sends a 6-10 digit
 email OTP, prompts for it, and stores the session at
 `~/.vendo/cloud-session.json`; `--token <jwt>` stores an access token instead.
 Other subcommands: `logout`, `whoami`, `orgs`, `keys` (`list`, `create`,
 `revoke`), `members`, `invite`, `deployments`, `usage`, `billing`, `validate`,
-`share`, `publish`, and `pin-ship`. Every result prints as JSON.
+`deploy`, `share`, `publish`, and `pin-ship`. Read results print as JSON, with
+two exceptions: `validate` renders a human-readable report by default (org,
+plan, capabilities, quota bars) and takes `--json` for a machine-readable
+envelope that stays stable across live, stale-cache, and offline-degraded
+paths; `deploy` prints a concise summary table by default and switches to raw
+JSON with `--json`.
+
+`vendo cloud deploy` pushes local enabled automations from `.vendo/data` to a
+hosted instance. Use `--app <id>` (repeatable) to restrict the set, `--subject
+<id>` when the local store holds more than one subject, and `--secret
+NAME=VALUE` (repeatable) to send referenced secret values. See
+[Vendo Cloud](/deploy/vendo-cloud#deploy-local-automations-to-hosted) for the
+full walkthrough.
 
 Global options:
 
 - `--api-url <url>` overrides `VENDO_CLOUD_URL` (default `https://console.vendo.run`).
 - `--key <vnd_...>` overrides `VENDO_API_KEY` for the machine commands
-  (`validate`, `share`, `publish`, `pin-ship`).
+  (`validate`, `deploy`, `share`, `publish`, `pin-ship`). Keys must match
+  `vnd_` followed by 40 hex characters or the command exits before any
+  network call.
 
 Org-scoped commands take `--org <id>`; omit it only when your account has one
 organization. Run `vendo cloud help` for the full list. See

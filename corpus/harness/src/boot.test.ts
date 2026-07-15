@@ -2,7 +2,7 @@ import { PassThrough } from "node:stream";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { bootRepo, type BootProcess } from "./boot.js";
 import { createRunContext } from "./run-context.js";
 import type { ManifestEntry } from "./manifest.js";
@@ -12,6 +12,7 @@ const validSha = "0123456789abcdef0123456789abcdef01234567";
 type FakeBootProcess = BootProcess & { stdout: PassThrough; stderr: PassThrough };
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
   tempRoots.length = 0;
 });
@@ -68,6 +69,7 @@ describe("bootRepo", () => {
     const corpusRoot = await makeTempRoot();
     const context = createRunContext({ corpusRoot });
     const repo = repoEntry();
+    Object.assign(repo.bootstrap.devServer!, { readinessBodyContains: "Teable" });
     const repoDir = context.repoDir(repo.name);
     await mkdir(repoDir, { recursive: true });
     const events: string[] = [];
@@ -87,8 +89,8 @@ describe("bootRepo", () => {
         events.push(`server:${command}:${options.cwd}`);
         return server;
       },
-      checkReadiness: async (url) => {
-        events.push(`ready:${url}`);
+      checkReadiness: async (...args) => {
+        events.push(`ready:${args.join(":")}`);
         server.stdout.write("ready stdout\n");
         server.stderr.write("ready stderr\n");
         return true;
@@ -103,7 +105,7 @@ describe("bootRepo", () => {
       "db:start:vendo-corpus-umami-postgres",
       `seed:pnpm seed-data:${repoDir}`,
       `server:pnpm dev:${repoDir}`,
-      "ready:http://127.0.0.1:3000",
+      "ready:http://127.0.0.1:3000:Teable",
       "kill:1234",
       "db:stop:vendo-corpus-umami-postgres",
     ]);
@@ -149,6 +151,32 @@ describe("bootRepo", () => {
       `seed:pnpm seed-data:${appRoot}`,
       `server:pnpm dev:${appRoot}`,
     ]);
+  });
+
+  it("rejects a foreign readiness response until the configured body marker is present", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repo = repoEntry("body-ready");
+    Object.assign(repo.bootstrap.devServer!, { readinessBodyContains: "Teable" });
+    await mkdir(context.repoDir(repo.name), { recursive: true });
+    const server = fakeProcess(3344);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("Maple", { status: 200 }))
+      .mockResolvedValueOnce(new Response("Welcome to Teable", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const boot = await bootRepo(repo, {
+      context,
+      provisionDatabase: async () => ({ teardown: async () => {} }),
+      runCommand: async () => ({ code: 0, signal: null, stdout: "", stderr: "" }),
+      spawnProcess: () => server,
+      killProcessTree: async () => {},
+      sleep: async () => {},
+    });
+
+    await boot.teardown();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("kills the server process tree and provisioned DB when readiness fails, and reports recent logs", async () => {

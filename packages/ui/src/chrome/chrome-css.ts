@@ -6,7 +6,10 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
    themeCssVariables() emits, so the host's brand still drives everything while
    the frosted-glass design system rides on top. */
 .vendo-root {
-  color-scheme: light;
+  /* ENG-226: scheme derived from the luminance of the theme's colors.background
+     (themeCssVariables emits --vendo-color-scheme) — a dark-brand host flips
+     every light-dark() branch below to its designed dark value. */
+  color-scheme: var(--vendo-color-scheme, light);
   /* brand → shell token bridge */
   --vendo-fg: var(--vendo-color-text, #14151a);
   /* Muted is pulled ~40% toward the text color so small muted labels
@@ -33,7 +36,7 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   --vendo-danger: var(--vendo-color-danger, #b0392b);
   --vendo-danger-bg: color-mix(in srgb, var(--vendo-danger) 8%, var(--vendo-surface));
   --vendo-danger-border: color-mix(in srgb, var(--vendo-danger) 32%, var(--vendo-border));
-  --vendo-warn: #7a5000;
+  --vendo-warn: light-dark(#7a5000, #d9a94e);
   --vendo-warn-bg: color-mix(in srgb, #f0b429 12%, var(--vendo-surface));
   --vendo-warn-border: color-mix(in srgb, #f0b429 32%, var(--vendo-border));
   color: var(--vendo-fg);
@@ -45,9 +48,30 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 }
 .vendo-root *, .vendo-root *::before, .vendo-root *::after { box-sizing: border-box; }
 .vendo-root[data-vendo-motion="reduced"] * { animation: none !important; transition: none !important; }
+/* The root joins the host's height chain (ENG-212). When it directly hosts a
+   height-filling surface (thread or page — each declares height:100%;
+   min-height:0), the root must forward the host's bounded height instead of
+   sitting as an unconstrained block between the host's pane and the surface —
+   otherwise .fl-msglist never gets a bounded height, nothing scrolls, and
+   under an overflow:hidden host the composer and approval actions clip below
+   the fold. Flex (not a bare height) so the automatic policy notice, when
+   present above the surface, shares the space instead of pushing the surface
+   past it. In an unbounded host the percentage resolves against an auto-height
+   parent and everything sizes to content exactly as before. Overlay, slot and
+   palette roots mount fixed/inline children and are deliberately NOT matched;
+   the voice stage is left to the voice-v1 stage-layout work (it commonly
+   mounts as a sibling of a thread — see Maple /vendo — where claiming 100%
+   would carve the pane in half). */
+.vendo-root:has(> .fl-thread), .vendo-root:has(> .fl-page) {
+  display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
 /* ---------- thread shell ---------- */
-.fl-thread { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+/* min-width floor (ENG-228): squeezed host columns (Cadence at 375px) were
+   collapsing the thread to one character per line — hold a readable floor and
+   let the host column scroll instead. Capped at 100vw so viewports narrower
+   than the floor never get horizontal overflow from us. */
+.fl-thread { display: flex; flex-direction: column; height: 100%; min-height: 0;
+  min-width: min(280px, 100vw); }
 /* Positioned wrapper so the "jump to latest" button stays fixed to the viewport
    of the list instead of scrolling away with the content. */
 .fl-msglist-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column;
@@ -310,7 +334,7 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   letter-spacing: -.01em; overflow-wrap: anywhere; }
 .fl-auto-logo-stack { display: flex; align-items: center; flex-shrink: 0; padding-top: 1px; }
 .fl-auto-logo { display: grid; place-items: center; width: 31px; height: 31px; border: 1px solid var(--vendo-border);
-  border-radius: 10px; background: var(--vendo-surface); box-shadow: inset 0 1px 0 rgba(255,255,255,.58); }
+  border-radius: 10px; background: var(--vendo-surface); box-shadow: inset 0 1px 0 light-dark(rgba(255,255,255,.58), rgba(255,255,255,.08)); }
 .fl-auto-logo + .fl-auto-logo { margin-left: -7px; }
 .fl-auto-summary { display: flex; flex-direction: column; gap: 9px; margin-top: 14px; padding-top: 12px;
   border-top: 1px solid var(--vendo-border); }
@@ -326,7 +350,7 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   min-width: 0; padding: 9px 0; border-top: 1px solid color-mix(in srgb, var(--vendo-border) 68%, transparent); }
 .fl-auto-access-row:first-of-type { border-top: 0; }
 .fl-auto-access-logo { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--vendo-border);
-  border-radius: 10px; background: var(--vendo-surface); box-shadow: inset 0 1px 0 rgba(255,255,255,.58); }
+  border-radius: 10px; background: var(--vendo-surface); box-shadow: inset 0 1px 0 light-dark(rgba(255,255,255,.58), rgba(255,255,255,.08)); }
 .fl-auto-access-copy { min-width: 0; }
 .fl-auto-access-title { color: var(--vendo-fg); font-size: 12.5px; font-weight: 650; line-height: 1.2; }
 .fl-auto-access-sub { margin-top: 2px; color: var(--vendo-fg-muted); font-size: 11.5px; line-height: 1.25;
@@ -353,7 +377,7 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
     linear-gradient(180deg, color-mix(in srgb, var(--vendo-surface) 94%, var(--vendo-accent) 6%), var(--vendo-surface)),
     var(--vendo-surface);
   -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  box-shadow: 0 18px 44px light-dark(rgba(20,21,26,.14), rgba(0,0,0,.42)), inset 0 1px 0 rgba(255,255,255,.58); }
+  box-shadow: 0 18px 44px light-dark(rgba(20,21,26,.14), rgba(0,0,0,.42)), inset 0 1px 0 light-dark(rgba(255,255,255,.58), rgba(255,255,255,.08)); }
 .fl-auto-created-live { position: relative; width: 9px; height: 9px; flex: 0 0 9px; border-radius: 999px;
   background: var(--vendo-accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--vendo-accent) 15%, transparent); }
 .fl-auto-created-live::after { position: absolute; inset: -4px; border: 1px solid color-mix(in srgb, var(--vendo-accent) 24%, transparent);
@@ -366,7 +390,7 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-auto-created-logos { display: flex; align-items: center; justify-content: flex-end; min-width: 38px; flex: 0 0 auto; }
 .fl-auto-created-logo { position: relative; display: inline-grid; width: 32px; height: 32px; place-items: center;
   border: 1px solid var(--vendo-border); border-radius: 10px; background: var(--vendo-surface);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.58); }
+  box-shadow: inset 0 1px 0 light-dark(rgba(255,255,255,.58), rgba(255,255,255,.08)); }
 .fl-auto-created-logo + .fl-auto-created-logo { margin-left: -7px; }
 .fl-auto-created-count { position: absolute; right: -5px; bottom: -5px; min-width: 16px; height: 16px; padding: 0 4px;
   border: 1px solid var(--vendo-surface); border-radius: 999px; background: var(--vendo-accent);
@@ -717,6 +741,10 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   border-radius: 9px; display: grid; place-items: center; border: 0; background: transparent;
   color: var(--vendo-fg-muted); cursor: pointer; transition: background .12s, color .12s; }
 .fl-overlay-close:hover { background: var(--vendo-accent-soft); color: var(--vendo-fg); }
+/* ENG-221: new-conversation sits just left of the close X — same quiet header
+   treatment (it shares .fl-overlay-close), only the horizontal offset differs.
+   Offsets = close's right + close's width + a 6px gap, per pointer density. */
+.fl-overlay-new { right: 46px; }
 @keyframes fl-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes fl-overlay-stretch {
   from { transform: translate(-50%, -50%) scaleX(.06) scaleY(.7); opacity: .4; }
@@ -748,6 +776,9 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   border: 0; border-radius: 0; isolation: isolate;
   padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
     env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  /* --fl-kb-inset is stamped by useMobileTakeover from visualViewport: the
+     bottom edge (the composer) lifts above the virtual keyboard. */
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--fl-kb-inset, 0px));
   /* The centered "squeeze" keyframes carry translate(-50%,-50%) — full bleed
      fades in instead of flying in from mid-screen. */
   animation: fl-takeover-fade .18s ease both; }
@@ -755,15 +786,49 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-overlay-panel.fl-takeover .fl-overlay-close {
   top: calc(12px + env(safe-area-inset-top, 0px));
   right: calc(12px + env(safe-area-inset-right, 0px)); }
+.fl-overlay-panel.fl-takeover .fl-overlay-new {
+  right: calc(46px + env(safe-area-inset-right, 0px)); }
 .fl-page.fl-takeover { position: fixed; inset: 0; z-index: 2147483001; isolation: isolate;
   background: var(--vendo-bg);
   padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
-    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--fl-kb-inset, 0px)); }
+/* The palette is a modal over EVERY takeover surface: its scrim (2147483000)
+   would otherwise sit under a takeover page/overlay panel (2147483001). */
+.fl-overlay-scrim.fl-takeover { z-index: 2147483002; }
+
+/* ---------- mobile input + touch ergonomics (ENG-228) ---------- */
+/* iOS Safari auto-zooms any focused text input under 16px, and 44px is the
+   HIG touch-target floor. Keyed to small viewports OR coarse pointers so
+   tablets in wide orientations still get honest targets; desktop keeps the
+   quieter 15px/34px design. */
+@media (max-width: 767px), (pointer: coarse) {
+  .fl-composer textarea { font-size: 16px; }
+  .fl-picker-search { font-size: 16px; }
+  .fl-icon-btn { width: 44px; height: 44px; }
+  .fl-jump { width: 44px; height: 44px; }
+  .fl-overlay-close { width: 44px; height: 44px; }
+  .fl-overlay-new { right: 62px; }
+  /* The grown close button keeps its visual position under the notch. */
+  .fl-overlay-panel.fl-takeover .fl-overlay-close {
+    top: calc(4px + env(safe-area-inset-top, 0px));
+    right: calc(4px + env(safe-area-inset-right, 0px)); }
+  .fl-overlay-panel.fl-takeover .fl-overlay-new {
+    right: calc(54px + env(safe-area-inset-right, 0px)); }
+}
 
 .fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--vendo-border);
   border-radius: 999px; padding: 10px 15px; font-size: 13px; font-weight: 600; color: var(--vendo-fg);
   background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
   box-shadow: var(--vendo-shadow); cursor: pointer; }
+/* ENG-220: the supported overlay entry — VendoOverlay's default launcher is a
+   fixed brand pill pinned to a viewport corner (safe-area aware). z-index sits
+   one below the scrim so the open overlay covers it. Placement variants keyed
+   off data-vendo-launcher so bare .fl-launcher keeps its in-flow behavior. */
+.fl-launcher[data-vendo-launcher="bottom-right"], .fl-launcher[data-vendo-launcher="bottom-left"] {
+  position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 2147482999; }
+.fl-launcher[data-vendo-launcher="bottom-right"] { right: calc(20px + env(safe-area-inset-right, 0px)); }
+.fl-launcher[data-vendo-launcher="bottom-left"] { left: calc(20px + env(safe-area-inset-left, 0px)); }
 
 /* ---------- page + tabs + slot ---------- */
 /* The Page surface is ingrained: the chat IS the page (no card-in-card). Tabs are
@@ -861,7 +926,9 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-error-retry { margin-left: auto; flex-shrink: 0; padding: 4px 11px; border-radius: 8px;
   border: 1px solid var(--vendo-danger-border); background: transparent;
   color: var(--vendo-danger); font: 600 12px/1.2 var(--vendo-font); cursor: pointer; }
-.fl-error-retry:hover { background: var(--vendo-danger); color: var(--vendo-bg, #fff); }
+/* Hover fill: page-bg text reads on the danger fill in light; on a dark theme
+   the page bg is near-black on red, so the dark branch pins white (ENG-226). */
+.fl-error-retry:hover { background: var(--vendo-danger); color: light-dark(var(--vendo-bg, #fff), #fff); }
 
 /* ---------- Trust screen (ENG-193 §3 Moment 12) ---------- */
 .fl-trust { display: flex; flex-direction: column; gap: 16px; padding: 16px; overflow-y: auto;
@@ -1118,8 +1185,12 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 
 /* --- a11y hardening (design port): guaranteed focus ring + AA ceremony buttons --- */
 .vendo-root :focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
-/* Amber ceremony/critical confirm buttons: darker fill so white text clears AA 4.5:1. */
-.fl-btn-ceremony, .fl-btn-critical { background: #7a5000; border-color: transparent; color: #fff; }
-.fl-btn-ceremony:hover, .fl-btn-critical:hover { opacity: .92; background: #7a5000; }
+/* Amber ceremony/critical confirm buttons stay AA 4.5:1 in BOTH schemes: dark
+   amber fill + white text in light (7.1:1); light amber fill + near-black text
+   in dark (8.7:1, and the fill itself pops ~8:1 off the dark warn-bg) — flipping only the fill
+   would drop white-on-#d9a94e to 2.2:1 (ENG-226 review catch). */
+.fl-btn-ceremony, .fl-btn-critical { background: light-dark(#7a5000, #d9a94e); border-color: transparent;
+  color: light-dark(#fff, #14151a); }
+.fl-btn-ceremony:hover, .fl-btn-critical:hover { opacity: .92; background: light-dark(#7a5000, #d9a94e); }
 
 `;

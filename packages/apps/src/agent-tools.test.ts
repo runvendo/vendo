@@ -50,7 +50,11 @@ describe("apps agent tools", () => {
     expect(descriptors.map((descriptor) => descriptor.name)).toEqual([
       "vendo_apps_create",
       "vendo_apps_edit",
+      "vendo_apps_rebase_pin",
       "vendo_apps_open",
+      "vendo_apps_data_list",
+      "vendo_apps_data_put",
+      "vendo_apps_data_delete",
     ]);
     for (const descriptor of descriptors) {
       expect(TOOL_NAME_PATTERN.test(descriptor.name)).toBe(true);
@@ -64,7 +68,10 @@ describe("apps agent tools", () => {
     }
     // Creating a document is a rung-1-only, jailed UI operation: it cannot
     // reach host tools, a server machine, or the network.
-    expect(descriptors.map((descriptor) => descriptor.risk)).toEqual(["read", "write", "read"]);
+    expect(descriptors.map((descriptor) => descriptor.risk)).toEqual([
+      "read", "write", "write", "read", "read", "write", "write",
+    ]);
+    expect(descriptors.find(({ name }) => name === "vendo_apps_edit")?.description).toMatch(/retry.*same app/i);
   });
 
   it("classifies only provable tree edits as read-class", async () => {
@@ -148,6 +155,39 @@ describe("apps agent tools", () => {
       tool: "vendo_apps_edit",
       args: { appId: "app_foreign", instruction: "Make the heading blue" },
     }, ctx)).resolves.toBe("write");
+  });
+
+  it("surfaces a structured retryable edit failure instead of implying the app changed", async () => {
+    const broken = JSON.stringify({
+      ops: [{ op: "set-prop", nodeId: "missing", prop: "value", value: 1 }],
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated, broken),
+    });
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_edit_failure",
+      tool: "vendo_apps_edit",
+      args: { appId: created.id, instruction: "Change a missing card" },
+    }, ctx);
+
+    expect(outcome).toMatchObject({
+      status: "ok",
+      output: {
+        app: created,
+        failure: {
+          code: "edit-rejected",
+          retryable: true,
+          message: expect.stringMatching(/same app/i),
+        },
+        issues: expect.arrayContaining([expect.stringContaining("missing")]),
+      },
+    });
   });
 
   it("creates and opens an app through the guard-bound fixture", async () => {
@@ -236,6 +276,78 @@ describe("apps agent tools", () => {
     }, ctx)).resolves.toMatchObject({
       status: "error",
       error: { code: "validation" },
+    });
+    // The rebase tool routes through runtime.pins.rebase with the same
+    // ownership scoping and contained VendoError codes as every other tool.
+    await expect(registry.execute({
+      id: "call_rebase_missing",
+      tool: "vendo_apps_rebase_pin",
+      args: { appId: "app_missing", slot: "net-worth-card" },
+    }, ctx)).resolves.toEqual({
+      status: "error",
+      error: { code: "not-found", message: "app not found: app_missing" },
+    });
+    await expect(registry.execute({
+      id: "call_rebase_bad_input",
+      tool: "vendo_apps_rebase_pin",
+      args: { appId: "app_missing" },
+    }, ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "validation" },
+    });
+  });
+
+  it("ownership-checks and round-trips declared data collections", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+    });
+    const created = await runtime.create({ prompt: "Data tools" }, ctx);
+    await seedAppRow(store, {
+      ...created,
+      storage: { notes: { about: "Invoice notes", refs: { invoice_id: "host.invoice" } } },
+    }, ctx.principal.subject);
+    const registry = runtime.agentTools();
+
+    await expect(registry.execute({
+      id: "call_data_put",
+      tool: "vendo_apps_data_put",
+      args: {
+        appId: created.id,
+        collection: "notes",
+        id: "note_1",
+        data: { body: "hello" },
+        refs: { invoice_id: "inv_1" },
+      },
+    }, ctx)).resolves.toMatchObject({ status: "ok", output: { id: "note_1" } });
+    await expect(registry.execute({
+      id: "call_data_list",
+      tool: "vendo_apps_data_list",
+      args: { appId: created.id, collection: "notes", refs: { invoice_id: "inv_1" } },
+    }, ctx)).resolves.toMatchObject({
+      status: "ok",
+      output: { records: [{ id: "note_1", data: { body: "hello" } }] },
+    });
+    await expect(registry.execute({
+      id: "call_data_delete",
+      tool: "vendo_apps_data_delete",
+      args: { appId: created.id, collection: "notes", id: "note_1" },
+    }, ctx)).resolves.toEqual({ status: "ok", output: { status: "ok" } });
+
+    await expect(registry.execute({
+      id: "call_intruder_data_list",
+      tool: "vendo_apps_data_list",
+      args: { appId: created.id, collection: "notes" },
+    }, {
+      ...ctx,
+      principal: { kind: "user", subject: "user_intruder" },
+    })).resolves.toEqual({
+      status: "error",
+      error: { code: "not-found", message: `app not found: ${created.id}` },
     });
   });
 });

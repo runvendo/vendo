@@ -127,6 +127,9 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
           body: bytes as BodyInit,
         }),
       fork: id => json(`/apps/${idPath(id)}/fork`, "POST"),
+      shipDiff: id => readJson(`/apps/${idPath(id)}/ship-diff`),
+      pinDrift: id => readJson(`/apps/${idPath(id)}/pin-drift`),
+      rebasePin: (id, slot) => json(`/apps/${idPath(id)}/rebase-pin`, "POST", { slot }),
     },
     automations: {
       list: () => readJson("/automations"),

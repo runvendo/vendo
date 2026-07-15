@@ -44,6 +44,7 @@ export interface CloudFetchOptions extends CloudUrlOptions {
   fetchImpl?: typeof fetch;
   home?: string;
   sessionStore?: SessionStore;
+  signal?: AbortSignal;
 }
 
 interface ErrorEnvelope {
@@ -130,6 +131,7 @@ async function send(
     method: options.method ?? (options.body === undefined ? "GET" : "POST"),
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    signal: options.signal,
   });
   return { response, body: await responseBody(response) };
 }

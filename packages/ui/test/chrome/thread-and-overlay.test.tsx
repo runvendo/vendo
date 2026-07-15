@@ -41,6 +41,9 @@ describe("VendoThread and VendoOverlay exports", () => {
     expect(receipt.parentElement?.getAttribute("data-vendo-approval")).toBe("write");
     const card = await screen.findByLabelText("Approval for host_email_send");
     expect(card.textContent).toContain("a@example.com");
+    expect(card.textContent).toContain(
+      "This tool changed since you approved it on Jul 1, 2026 — your previous permission no longer applies.",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
     expect(await screen.findByText("Turn complete")).toBeTruthy();
@@ -58,15 +61,18 @@ describe("VendoThread and VendoOverlay exports", () => {
     fireEvent.click(launcher);
     const dialog = screen.getByRole("dialog", { name: "Vendo assistant" });
     const close = await screen.findByRole("button", { name: "Close Vendo" });
-    await waitFor(() => expect(document.activeElement).toBe(close));
+    // ENG-220: initial focus lands in the composer, not on the close button.
+    const textarea = screen.getByRole("textbox", { name: "Message" });
+    await waitFor(() => expect(document.activeElement).toBe(textarea));
     expect(launcher.getAttribute("aria-expanded")).toBe("true");
 
-    const textarea = screen.getByRole("textbox", { name: "Message" });
-    textarea.focus();
+    // Tab from the last focusable (the composer) wraps to the first — the
+    // new-conversation header button (ENG-221), which precedes the close X.
     fireEvent.keyDown(dialog, { key: "Tab" });
-    expect(document.activeElement).toBe(close);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "New conversation" }));
     fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(textarea);
+    expect(close).toBeTruthy(); // still present, after the new-conversation affordance
 
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull();

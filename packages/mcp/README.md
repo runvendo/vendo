@@ -4,6 +4,8 @@
 
 The umbrella package wires it behind the one-flag setup, `createVendo({ mcp: true })`, so the same tool registry, guard policy, approvals, and audit trail apply to MCP calls as to in-product calls.
 
+Read [MCP](https://docs.vendo.run/capabilities/mcp).
+
 The MCP Apps tree renderer is a committed, prebuilt HTML artifact. This keeps `@vendoai/mcp` dependent on core rather than UI at runtime. Regenerate the artifact from its owner with:
 
 ```sh
@@ -11,6 +13,26 @@ pnpm --filter @vendoai/ui build:mcp-shim
 ```
 
 The server-card response tracks the provisional SEP-2127 draft and may move with that specification before ratification.
+
+## Reverse proxies and the canonical base URL
+
+Behind a reverse proxy (Railway, Fly, any TLS terminator) the request URL
+reaching the process carries the proxy-internal origin. Configure the door's
+canonical public base so discovery metadata (issuer, endpoint URLs, the
+protected-resource `resource`) and RFC 8707 token audience binding advertise
+and enforce the public origin instead:
+
+```ts
+createMcpDoor({
+  // tools, guard, oauth, store, ...
+  baseUrl: "https://product.example.com", // origin only; the mount stays path-derived
+});
+```
+
+The umbrella defaults `baseUrl` from `VENDO_BASE_URL`; pass
+`createVendo({ mcp: { baseUrl } })` to override the env default. Unset, origins
+derive from each request's own URL. Forwarded headers such as
+`X-Forwarded-Host` are never trusted.
 
 ## External authorization servers
 

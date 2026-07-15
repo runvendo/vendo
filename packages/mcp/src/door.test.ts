@@ -32,6 +32,7 @@ import type {
 } from "./state.js";
 
 const BASE = "https://product.example/api/vendo/mcp";
+const PROXIED_BASE = "http://door.internal:8787/api/vendo/mcp";
 const REDIRECT = "https://client.example/callback";
 const VERIFIER = "a-very-long-pkce-verifier-that-is-valid-for-the-test-suite-1234567890";
 const CONSENT_THEME: VendoTheme = {
@@ -53,6 +54,23 @@ const CONSENT_THEME: VendoTheme = {
   radius: { small: "4px", medium: "8px", large: "14px" },
   density: "compact",
   motion: "reduced",
+};
+
+const MAPLE_THEME: VendoTheme = {
+  colors: {
+    background: "#FBFBFA",
+    surface: "#FFFFFF",
+    text: "#111111",
+    muted: "#908C85",
+    accent: "#0A7CFF",
+    accentText: "#FFFFFF",
+    danger: "#B42318",
+    border: "#E2E1DE",
+  },
+  typography: { fontFamily: "Maple Sans, system-ui, sans-serif", baseSize: "15px" },
+  radius: { small: "6px", medium: "14px", large: "14px" },
+  density: "comfortable",
+  motion: "full",
 };
 
 // The door resolves CIMD hostnames and rejects private answers (SSRF DNS-rebind
@@ -688,7 +706,195 @@ describe("createMcpDoor routing and OAuth", () => {
   });
 });
 
+describe("createMcpDoor configured canonical base URL (ENG-333)", () => {
+  const PUBLIC_ORIGIN = "https://product.example";
+
+  it("serves discovery documents with the configured public origin behind a proxy", async () => {
+    const harness = makeHarness({ baseUrl: PUBLIC_ORIGIN });
+    const prm = await harness.door.handler(new Request(
+      "http://door.internal:8787/.well-known/oauth-protected-resource/api/vendo/mcp",
+    ));
+    expect(await prm.json()).toEqual({
+      resource: BASE,
+      authorization_servers: [BASE],
+      bearer_methods_supported: ["header"],
+    });
+
+    const as = await harness.door.handler(new Request(
+      "http://door.internal:8787/.well-known/oauth-authorization-server/api/vendo/mcp",
+    ));
+    expect(await as.json()).toMatchObject({
+      issuer: BASE,
+      authorization_endpoint: `${BASE}/authorize`,
+      token_endpoint: `${BASE}/token`,
+      revocation_endpoint: `${BASE}/revoke`,
+      registration_endpoint: `${BASE}/register`,
+    });
+  });
+
+  it("advertises the configured public origin on the server card behind a proxy", async () => {
+    const harness = makeHarness({ baseUrl: PUBLIC_ORIGIN, mount: "/api/vendo/mcp" });
+    const card = await harness.door.handler(new Request(
+      "http://door.internal:8787/.well-known/mcp/server-card.json",
+    ));
+    expect(await card.json()).toMatchObject({
+      transports: [{ type: "streamable-http", url: BASE }],
+      authorization: {
+        type: "oauth2",
+        resource_metadata: "https://product.example/.well-known/oauth-protected-resource/api/vendo/mcp",
+      },
+    });
+  });
+
+  it("names the public metadata URL in the 401 challenge on the proxy-internal origin", async () => {
+    const harness = makeHarness({ baseUrl: PUBLIC_ORIGIN });
+    const challenge = await harness.door.handler(new Request(PROXIED_BASE, { method: "POST" }));
+    expect(challenge.status).toBe(401);
+    expect(challenge.headers.get("www-authenticate")).toBe(
+      'Bearer resource_metadata="https://product.example/.well-known/oauth-protected-resource/api/vendo/mcp"',
+    );
+  });
+
+  it("binds the whole proxied OAuth flow and RFC 8707 audience to the public origin", async () => {
+    const harness = makeHarness({ baseUrl: PUBLIC_ORIGIN });
+    // Every request arrives at the proxy-INTERNAL origin, the way Railway/Fly
+    // hand requests to the process. The `resource` the client sends is the
+    // PUBLIC one it discovered.
+    const registration = await register(harness.door, {}, PROXIED_BASE);
+    const tokens = await issue(harness.door, registration.body.client_id, PROXIED_BASE);
+
+    const response = await harness.door.handler(mcpRequest(tokens.access_token, undefined, PROXIED_BASE));
+    expect(response.status).toBe(200);
+    expect(harness.principalSubjects).toEqual(["user_1"]);
+  });
+
+  it("keeps the prebuilt consent flow on the public origin behind a proxy", async () => {
+    const returnTos: string[] = [];
+    const harness = makeHarness({
+      baseUrl: PUBLIC_ORIGIN,
+      oauth: {
+        async session(_req, ctx) {
+          returnTos.push(ctx.returnTo);
+          return { subject: "user_1" };
+        },
+        async principal(subject) { return { kind: "user", subject }; },
+      },
+    });
+    const registration = await register(harness.door, {}, PROXIED_BASE);
+    const page = await authorize(harness.door, registration.body.client_id, {}, PROXIED_BASE);
+    const html = await page.text();
+
+    // The user's BROWSER reached the door through the public origin; a form
+    // action or host-login returnTo naming the proxy-internal origin would be
+    // unreachable from it. Both must speak the configured public base.
+    expect(htmlAttribute(html, "form", "action")).toContain(`${BASE}/authorize?`);
+    expect(returnTos[0]).toContain(`${BASE}/authorize?`);
+
+    const approved = await submitConsent(harness.door, html, "approve");
+    expect(approved.status).toBe(302);
+    expect(new URL(approved.headers.get("location")!).searchParams.get("code")).toMatch(/^vmcd_/);
+  });
+
+  it("rejects an authorization request whose resource names the proxy-internal origin", async () => {
+    const harness = makeHarness({ baseUrl: PUBLIC_ORIGIN });
+    const registration = await register(harness.door, {}, PROXIED_BASE);
+    const response = await authorize(harness.door, registration.body.client_id, { resource: PROXIED_BASE }, PROXIED_BASE);
+    expect(response.status).toBe(302);
+    expect(new URL(response.headers.get("location")!).searchParams.get("error")).toBe("invalid_target");
+  });
+
+  it("keeps request-derived origins and ignores forwarded headers when unconfigured", async () => {
+    const harness = makeHarness();
+    // X-Forwarded-*/Host are attacker-controllable (Host-header injection) and
+    // are never trusted — without a configured base the request URL stands.
+    const prm = await harness.door.handler(new Request(
+      "http://door.internal:8787/.well-known/oauth-protected-resource/api/vendo/mcp",
+      { headers: { "x-forwarded-host": "attacker.example", "x-forwarded-proto": "https", host: "attacker.example" } },
+    ));
+    expect(await prm.json()).toMatchObject({
+      resource: "http://door.internal:8787/api/vendo/mcp",
+      authorization_servers: ["http://door.internal:8787/api/vendo/mcp"],
+    });
+  });
+
+  it("ignores forwarded headers even when a base URL is configured", async () => {
+    const harness = makeHarness({ baseUrl: PUBLIC_ORIGIN });
+    const prm = await harness.door.handler(new Request(
+      "http://door.internal:8787/.well-known/oauth-protected-resource/api/vendo/mcp",
+      { headers: { "x-forwarded-host": "attacker.example", "x-forwarded-proto": "https" } },
+    ));
+    expect(await prm.json()).toMatchObject({ resource: BASE });
+  });
+
+  it("uses only the origin of a base URL that carries a path", async () => {
+    const harness = makeHarness({ baseUrl: "https://product.example/some/app/path" });
+    const prm = await harness.door.handler(new Request(
+      "http://door.internal:8787/.well-known/oauth-protected-resource/api/vendo/mcp",
+    ));
+    expect(await prm.json()).toMatchObject({ resource: BASE });
+  });
+
+  it("advertises the external issuer alongside the public resource under remoteAs", async () => {
+    const harness = makeHarness({
+      baseUrl: PUBLIC_ORIGIN,
+      remoteAs: { issuer: "https://auth.example", audience: BASE },
+    });
+    const prm = await harness.door.handler(new Request(
+      "http://door.internal:8787/.well-known/oauth-protected-resource/api/vendo/mcp",
+    ));
+    expect(await prm.json()).toEqual({
+      resource: BASE,
+      authorization_servers: ["https://auth.example"],
+      bearer_methods_supported: ["header"],
+    });
+  });
+
+  it("throws at construction for a malformed or credentialed base URL", () => {
+    for (const baseUrl of ["not a url", "ftp://product.example", "https://user:secret@product.example"]) {
+      expect(() => makeHarness({ baseUrl }), baseUrl).toThrow(TypeError);
+    }
+  });
+});
+
 describe("createMcpDoor remote authorization server trust", () => {
+  it("trusts the configured audience when a proxy changes the request origin", async () => {
+    const as = await remoteAsFixture();
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({
+      remoteAs: { issuer: as.issuer, audience: BASE },
+      principal: (subject) => ({ kind: "user", subject }),
+    });
+
+    const token = await as.mint({ sub: "proxied_user" });
+    const response = await harness.door.handler(mcpRequest(token, undefined, PROXIED_BASE));
+
+    expect(response.status).toBe(200);
+    expect(harness.principalSubjects).toEqual(["proxied_user"]);
+  });
+
+  it("rejects a wrong-audience JWT even when the request arrives through a proxy", async () => {
+    const as = await remoteAsFixture();
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({ remoteAs: { issuer: as.issuer, audience: BASE } });
+
+    const token = await as.mint({ audience: "https://attacker.example/api/vendo/mcp" });
+    const response = await harness.door.handler(mcpRequest(token, undefined, PROXIED_BASE));
+
+    expect(response.status).toBe(401);
+    expect(harness.principalSubjects).toEqual([]);
+  });
+
+  it("keeps request-derived resource binding in local authorization-server mode", async () => {
+    const harness = makeHarness();
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+
+    const response = await harness.door.handler(mcpRequest(tokens.access_token, undefined, PROXIED_BASE));
+
+    expect(response.status).toBe(401);
+    expect(harness.principalSubjects).toEqual([]);
+  });
+
   it("discovers and caches ES256 JWKS, accepts a valid JWT, and keeps principal() as the host kill switch", async () => {
     const as = await remoteAsFixture();
     vi.stubGlobal("fetch", as.fetch);
@@ -974,7 +1180,16 @@ describe("createMcpDoor MCP protocol", () => {
       async open() { return { kind: "tree", payload: app.tree! }; },
       async call(_appId, _ref, args) { return { received: args }; },
     };
-    const harness = makeHarness({ apps });
+    const harness = makeHarness({
+      apps,
+      theme: {
+        ...MAPLE_THEME,
+        typography: {
+          ...MAPLE_THEME.typography,
+          headingFamily: "Maple Display</style><script>alert(1)</script>",
+        },
+      },
+    });
     const registration = await register(harness.door);
     const tokens = await issue(harness.door, registration.body.client_id);
     const connected = await connect(harness.door, tokens.access_token);
@@ -1013,6 +1228,13 @@ describe("createMcpDoor MCP protocol", () => {
       mimeType: "text/html;profile=mcp-app",
       text: expect.stringContaining("<!doctype html>"),
     });
+    const html = "text" in resource.contents[0]! ? resource.contents[0].text : "";
+    expect(html).toContain("--vendo-color-background:#FBFBFA");
+    expect(html).toContain("--vendo-color-accent:#0A7CFF");
+    expect(html).toContain("--vendo-font-family:Maple Sans, system-ui, sans-serif");
+    expect(html).not.toContain("</style><script>alert(1)</script>");
+    expect(html).toContain("--vendo-heading-family:Maple Display\\3c /style\\3e ");
+    expect(html.slice(0, html.indexOf("<script>"))).not.toContain("--color-text-primary");
     await connected.client.close();
   });
 
@@ -1042,6 +1264,41 @@ describe("createMcpDoor MCP protocol", () => {
       data: { total: 42 },
     });
     expect(payload.queries).toEqual([{ path: "/total", tool: "host_total" }]);
+    await connected.client.close();
+  });
+
+  it("projects an HTTP app into a tagged open-in-product envelope with useful text", async () => {
+    const app: AppDocument = {
+      format: "vendo/app@1",
+      id: "app_http",
+      name: "Revenue dashboard",
+      ui: "http",
+      server: "fixture:http",
+    };
+    const apps: AppsPort = {
+      async list() { return [app]; },
+      async open() { return { kind: "http", url: "https://apps.example/revenue" }; },
+      async call() { return null; },
+    };
+    const harness = makeHarness({ apps });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+
+    const opened = await connected.client.callTool({
+      name: "vendo_apps_open",
+      arguments: { appId: app.id },
+    });
+    expect(opened.structuredContent).toEqual({
+      kind: "vendo/open-in-product@1",
+      url: "https://apps.example/revenue",
+      appName: "Revenue dashboard",
+      productName: expect.any(String),
+    });
+    expect(opened.content).toEqual([expect.objectContaining({
+      type: "text",
+      text: expect.stringMatching(/Open Revenue dashboard in .+: https:\/\/apps\.example\/revenue/),
+    })]);
     await connected.client.close();
   });
 
@@ -1261,6 +1518,7 @@ interface HarnessOptions {
   extraDescriptors?: Awaited<ReturnType<ToolRegistry["descriptors"]>>;
   check?: Guard["check"];
   mount?: string;
+  baseUrl?: string;
   remoteAs?: { issuer: string; jwksUri?: string; audience: string };
   federation?: { secret: string };
   authorizeResponse?: Response;
@@ -1303,6 +1561,7 @@ function makeHarness(options: HarnessOptions = {}) {
     store,
     apps: options.apps,
     ...(options.mount === undefined ? {} : { mount: options.mount }),
+    ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
     ...(options.remoteAs === undefined ? {} : { remoteAs: options.remoteAs }),
     ...(options.federation === undefined ? {} : { federation: options.federation }),
     ...(options.theme === undefined ? {} : { theme: options.theme }),
@@ -1324,8 +1583,8 @@ function makeHarness(options: HarnessOptions = {}) {
   return { door, store, audits, authorizeContexts, principalSubjects, executions };
 }
 
-async function register(door: McpDoor, metadata: Record<string, unknown> = {}) {
-  const response = await door.handler(new Request(`${BASE}/register`, {
+async function register(door: McpDoor, metadata: Record<string, unknown> = {}, base = BASE) {
+  const response = await door.handler(new Request(`${base}/register`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ client_name: "Test client", redirect_uris: [REDIRECT], scope: "read write", ...metadata }),
@@ -1333,7 +1592,7 @@ async function register(door: McpDoor, metadata: Record<string, unknown> = {}) {
   return { response, body: await response.clone().json() as { client_id: string } & Record<string, unknown> };
 }
 
-async function authorize(door: McpDoor, clientId: string, overrides: Record<string, string> = {}) {
+async function authorize(door: McpDoor, clientId: string, overrides: Record<string, string> = {}, base = BASE) {
   const challenge = await pkceChallenge(VERIFIER);
   const params = new URLSearchParams({
     response_type: "code",
@@ -1345,7 +1604,7 @@ async function authorize(door: McpDoor, clientId: string, overrides: Record<stri
     resource: BASE,
     ...overrides,
   });
-  return door.handler(new Request(`${BASE}/authorize?${params}`));
+  return door.handler(new Request(`${base}/authorize?${params}`));
 }
 
 function prebuiltOAuth(): HostOAuthAdapter {
@@ -1397,8 +1656,8 @@ function htmlAttribute(html: string, element: string, attribute: string): string
   return match[1];
 }
 
-async function exchange(door: McpDoor, values: Record<string, string>) {
-  return door.handler(new Request(`${BASE}/token`, {
+async function exchange(door: McpDoor, values: Record<string, string>, base = BASE) {
+  return door.handler(new Request(`${base}/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -1409,10 +1668,10 @@ async function exchange(door: McpDoor, values: Record<string, string>) {
   }));
 }
 
-async function issue(door: McpDoor, clientId: string): Promise<TokenResponse> {
-  const auth = await authorize(door, clientId);
+async function issue(door: McpDoor, clientId: string, base = BASE): Promise<TokenResponse> {
+  const auth = await authorize(door, clientId, {}, base);
   const code = new URL(auth.headers.get("location")!).searchParams.get("code")!;
-  const response = await exchange(door, { code, client_id: clientId, code_verifier: VERIFIER, resource: BASE });
+  const response = await exchange(door, { code, client_id: clientId, code_verifier: VERIFIER, resource: BASE }, base);
   expect(response.status).toBe(200);
   return response.json() as Promise<TokenResponse>;
 }
@@ -1456,8 +1715,8 @@ async function connect(door: McpDoor, accessToken: string) {
   return { client, transport };
 }
 
-function mcpRequest(accessToken: string, sessionId?: string) {
-  return new Request(BASE, {
+function mcpRequest(accessToken: string, sessionId?: string, resource = BASE) {
+  return new Request(resource, {
     method: "POST",
     headers: {
       authorization: `Bearer ${accessToken}`,

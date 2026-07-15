@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inject } from "vitest";
-import type { AppDocument, Principal, ToolRegistry } from "@vendoai/core";
+import type { AppDocument, Principal, ToolRegistry, VendoTheme } from "@vendoai/core";
 import { createActions } from "@vendoai/actions";
 import { createApps, type AppsRuntime } from "@vendoai/apps";
 import { createGuard, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
@@ -12,7 +12,24 @@ import { createStore, type VendoStore } from "@vendoai/store";
 
 export const SUBJECT = "user_1";
 export const FIXTURE_APP_ID = "app_mcp_fixture";
+export const HTTP_FIXTURE_APP_ID = "app_mcp_http_fixture";
 export const MCP_MOUNT = "/api/vendo/mcp";
+export const FIXTURE_THEME: VendoTheme = {
+  colors: {
+    background: "#FBFBFA",
+    surface: "#FFFFFF",
+    text: "#111111",
+    muted: "#908C85",
+    accent: "#0A7CFF",
+    accentText: "#FFFFFF",
+    danger: "#B42318",
+    border: "#E2E1DE",
+  },
+  typography: { fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif", baseSize: "15px" },
+  radius: { small: "6px", medium: "14px", large: "14px" },
+  density: "comfortable",
+  motion: "full",
+};
 
 export const fixtureBaseUrl = (): string => inject("fixtureBaseUrl");
 
@@ -82,6 +99,15 @@ const fixtureApp: AppDocument = {
   },
 };
 
+const httpFixtureApp: AppDocument = {
+  format: "vendo/app@1",
+  id: HTTP_FIXTURE_APP_ID,
+  name: "MCP hosted dashboard",
+  description: "A rung-4 fixture projected as an MCP open-in-product card.",
+  ui: "http",
+  server: "fixture:http",
+};
+
 export type OAuthMode = "auto" | "interactive" | "prebuilt";
 
 export interface Stack {
@@ -92,6 +118,8 @@ export interface Stack {
   revoked: Set<string>;
   autoSubject?: string;
   oauthMode: OAuthMode;
+  /** Successful resources/read URIs observed at the real HTTP door. */
+  resourceReads: string[];
   origin: string;
   endpoint: string;
   close(): Promise<void>;
@@ -161,6 +189,11 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     data: { subject: SUBJECT, enabled: false, doc: fixtureApp },
     refs: { subject: SUBJECT },
   });
+  await store.records("vendo_apps").put({
+    id: httpFixtureApp.id,
+    data: { subject: SUBJECT, enabled: false, doc: httpFixtureApp },
+    refs: { subject: SUBJECT },
+  });
   const resolvePrincipal: HostOAuthAdapter["principal"] = async (subject) => {
     return revoked.has(subject)
       ? null
@@ -185,9 +218,13 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     },
     principal: resolvePrincipal,
   };
+  let origin = "";
   const appsPort: AppsPort = {
     list: (ctx) => apps.list(ctx),
     async open(appId, ctx) {
+      if (appId === HTTP_FIXTURE_APP_ID) {
+        return { kind: "http", url: `${origin}/fixture/apps/${HTTP_FIXTURE_APP_ID}` };
+      }
       const opened = await apps.open(appId, ctx);
       if (opened.kind === "resuming") throw new Error("rung-1 fixture cannot resume");
       return opened.kind === "tree"
@@ -196,9 +233,10 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     },
     call: (appId, ref, args, ctx) => apps.call(appId, ref, args, ctx),
   };
-  const door = createMcpDoor({ tools: bound, guard, oauth, store, apps: appsPort });
+  const door = createMcpDoor({ tools: bound, guard, oauth, store, apps: appsPort, theme: FIXTURE_THEME });
+  const resourceReads: string[] = [];
   const httpServer = createServer((req, res) => {
-    void forwardToDoor(req, res, door.handler);
+    void forwardToDoor(req, res, door.handler, (uri) => resourceReads.push(uri));
   });
   await new Promise<void>((resolve, reject) => {
     httpServer.once("error", reject);
@@ -209,7 +247,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
   });
   const address = httpServer.address();
   if (!address || typeof address === "string") throw new Error("Door server did not bind a TCP port");
-  const origin = `http://127.0.0.1:${address.port}`;
+  origin = `http://127.0.0.1:${address.port}`;
 
   const stack: Stack = {
     store,
@@ -221,6 +259,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     set autoSubject(value) { control.autoSubject = value; },
     get oauthMode() { return control.oauthMode; },
     set oauthMode(value) { control.oauthMode = value; },
+    resourceReads,
     origin,
     endpoint: `${origin}${MCP_MOUNT}`,
     async sql(query, params) {
@@ -240,6 +279,7 @@ async function forwardToDoor(
   req: IncomingMessage,
   res: ServerResponse,
   handler: (request: Request) => Promise<Response>,
+  onResourceRead: (uri: string) => void,
 ): Promise<void> {
   try {
     const chunks: Buffer[] = [];
@@ -251,12 +291,27 @@ async function forwardToDoor(
       headers.set(name, Array.isArray(value) ? value.join(", ") : value);
     }
     const body = chunks.length === 0 ? undefined : Buffer.concat(chunks);
+    let resourceUri: string | undefined;
+    if (body !== undefined) {
+      try {
+        const parsed = JSON.parse(body.toString("utf8")) as unknown;
+        const messages = Array.isArray(parsed) ? parsed : [parsed];
+        const read = messages.find((message) => {
+          if (typeof message !== "object" || message === null) return false;
+          return (message as { method?: unknown }).method === "resources/read";
+        }) as { params?: { uri?: unknown } } | undefined;
+        if (typeof read?.params?.uri === "string") resourceUri = read.params.uri;
+      } catch {
+        // OAuth form posts and transport GETs are intentionally ignored.
+      }
+    }
     const request = new Request(`http://${host}${req.url ?? "/"}`, {
       method: req.method,
       headers,
       ...(body === undefined ? {} : { body }),
     });
     const response = await handler(request);
+    if (response.ok && resourceUri !== undefined) onResourceRead(resourceUri);
     res.statusCode = response.status;
     response.headers.forEach((value, name) => res.setHeader(name, value));
     res.end(Buffer.from(await response.arrayBuffer()));

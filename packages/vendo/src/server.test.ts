@@ -1,15 +1,19 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { capturedPinBaselineSchema } from "@vendoai/actions";
 import {
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
   VendoError,
   type AppDocument,
+  type ComponentCatalog,
   type Principal,
   type RunContext,
 } from "@vendoai/core";
-import { createStore, type VendoStore } from "@vendoai/store";
+import type { SandboxAdapter } from "@vendoai/apps";
+import { createStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
+import { randomBytes } from "node:crypto";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo, nextVendoHandler, type CreateVendoConfig, type Vendo } from "./server.js";
@@ -43,7 +47,7 @@ const app = (id = "app_wire"): AppDocument => ({
 
 async function setup(
   resolver = vi.fn(async () => principal),
-  options: Pick<Partial<CreateVendoConfig>, "policy"> = {},
+  options: Pick<Partial<CreateVendoConfig>, "policy" | "development"> = {},
 ): Promise<{ vendo: Vendo; resolver: typeof resolver }> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-"));
   const store = createStore({ dataDir });
@@ -173,6 +177,72 @@ describe("09 §3 public wire", () => {
     }
   });
 
+  it("does not read history for an unowned app on GET or undo", async () => {
+    const { vendo } = await setup();
+    stubRouteBlocks(vendo);
+    vi.mocked(vendo.apps.get).mockResolvedValue(null);
+    const history = vi.mocked(vendo.apps.history);
+
+    for (const [method, body] of [
+      ["GET", undefined],
+      ["POST", { op: "undo" }],
+    ] as const) {
+      const response = await vendo.handler(request(method, "/apps/app_other/history", body));
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({
+        error: { code: "not-found", message: "app not found: app_other" },
+      });
+    }
+    expect(history).not.toHaveBeenCalled();
+  });
+
+  it("enforces history() ownership at the wire: cross-principal reads and undo are denied for real", async () => {
+    // 06-apps: history(appId) is ownership-blind by frozen signature; THIS route
+    // is the enforcement boundary. No mocks — a real store row, a real history
+    // entry, and the real apps runtime behind the handler.
+    let current: Principal = { kind: "user", subject: "user_owner" };
+    const { vendo } = await setup(vi.fn(async () => current));
+    expect((await vendo.handler(request("GET", "/status"))).status).toBe(200); // migrate the store
+    const doc = app("app_hist");
+    await vendo.store.records("vendo_apps").put({
+      id: "app_hist",
+      data: { subject: "user_owner", enabled: false, doc },
+      refs: { subject: "user_owner" },
+    });
+    const previous = { ...doc, name: "Wire app v1" };
+    await vendo.store.records("vendo:app-history:app_hist").put({
+      id: "ver_wire_1",
+      data: { doc: previous, entry: { at: new Date().toISOString(), intent: "rename", rung: 1 }, seq: 1 },
+    });
+
+    // The owner sees exactly the recorded entry.
+    const ownerList = await vendo.handler(request("GET", "/apps/app_hist/history"));
+    expect(ownerList.status).toBe(200);
+    expect(await ownerList.json()).toEqual([expect.objectContaining({ intent: "rename", rung: 1 })]);
+
+    // Another authenticated principal is told the app does not exist…
+    current = { kind: "user", subject: "user_mallory" };
+    for (const [method, body] of [["GET", undefined], ["POST", { op: "undo" }]] as const) {
+      const denied = await vendo.handler(request(method, "/apps/app_hist/history", body));
+      expect(denied.status).toBe(404);
+      expect(await denied.json()).toEqual({
+        error: { code: "not-found", message: "app not found: app_hist" },
+      });
+    }
+
+    // …and the denied undo mutated NOTHING: the app row and history survive.
+    current = { kind: "user", subject: "user_owner" };
+    const row = await vendo.store.records("vendo_apps").get("app_hist");
+    expect((row?.data as { doc: AppDocument }).doc).toEqual(doc);
+    const listAfter = await vendo.handler(request("GET", "/apps/app_hist/history"));
+    expect(await listAfter.json()).toHaveLength(1);
+
+    // The owner's undo works, proving the 404s above were ownership, not routing.
+    const undone = await vendo.handler(request("POST", "/apps/app_hist/history", { op: "undo" }));
+    expect(undone.status).toBe(200);
+    expect(await undone.json()).toMatchObject({ id: "app_hist", name: "Wire app v1" });
+  });
+
   it("enforces JSON CSRF on mutations with only the three contracted exceptions", async () => {
     const { vendo, resolver } = await setup();
     stubRouteBlocks(vendo);
@@ -210,6 +280,9 @@ describe("09 §3 public wire", () => {
 
   it("requires tick bearer auth and returns the doctor status shape", async () => {
     vi.stubEnv("VENDO_TICK_SECRET", "right");
+    vi.stubEnv("E2B_API_KEY", "");
+    vi.stubEnv("MODAL_TOKEN_ID", "");
+    vi.stubEnv("MODAL_TOKEN_SECRET", "");
     const { vendo, resolver } = await setup();
     const denied = await vendo.handler(request("POST", "/tick", undefined, { authorization: "Bearer wrong" }));
     expect(denied.status).toBe(401);
@@ -220,8 +293,80 @@ describe("09 §3 public wire", () => {
     expect(await status.json()).toEqual({
       posture: "unconfigured",
       version: "0.3.0",
-      blocks: { store: true, agent: true, actions: true, guard: true, apps: true, automations: true, mcp: false },
+      blocks: {
+        store: true,
+        agent: true,
+        actions: true,
+        guard: true,
+        apps: true,
+        automations: true,
+        sandbox: false,
+        mcp: false,
+      },
     });
+  });
+
+  it("selects explicit, E2B, Modal, and dark venues with the required precedence", async () => {
+    const custom: SandboxAdapter = {
+      create: vi.fn(async () => { throw new Error("not called"); }),
+      resume: vi.fn(async () => { throw new Error("not called"); }),
+    };
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-custom-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    const statusFor = async (
+      env: { E2B_API_KEY: string; MODAL_TOKEN_ID: string; MODAL_TOKEN_SECRET: string },
+      sandbox?: SandboxAdapter,
+    ): Promise<unknown> => {
+      for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
+      const vendo = createVendo({
+        model: {} as LanguageModel,
+        principal: vi.fn(async () => principal),
+        store,
+        ...(sandbox === undefined ? {} : { sandbox }),
+      });
+      const status = await vendo.handler(request("GET", "/status"));
+      return (await status.json() as { blocks: { sandbox: unknown } }).blocks.sandbox;
+    };
+
+    const allKeys = { E2B_API_KEY: "e2b-key", MODAL_TOKEN_ID: "modal-id", MODAL_TOKEN_SECRET: "modal-secret" };
+    expect(await statusFor(allKeys, custom)).toBe("custom");
+    expect(await statusFor(allKeys)).toBe("e2b");
+    expect(await statusFor({ ...allKeys, E2B_API_KEY: "" })).toBe("modal");
+    expect(await statusFor({ ...allKeys, E2B_API_KEY: "", MODAL_TOKEN_SECRET: "" })).toBe(false);
+    expect(custom.create).not.toHaveBeenCalled();
+    expect(custom.resume).not.toHaveBeenCalled();
+  });
+
+  it("serves sync impact on dev servers and blocks it in production", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const { vendo } = await setup();
+
+    const response = await vendo.handler(request("POST", "/sync/impact", { tools: ["host_get_widgets"] }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      impact: [{ tool: "host_get_widgets", apps: [], automations: [], grants: 0 }],
+    });
+
+    vi.stubEnv("NODE_ENV", "production");
+    const blocked = await vendo.handler(request("POST", "/sync/impact", { tools: ["host_get_widgets"] }));
+    expect(blocked.status).toBe(403);
+    expect(await blocked.json()).toEqual({
+      error: { code: "blocked", message: "sync impact is only available on a dev server" },
+    });
+  });
+
+  it("validates sync impact tool arrays", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const { vendo } = await setup();
+
+    const nonStrings = await vendo.handler(request("POST", "/sync/impact", { tools: ["host_ok", 7] }));
+    expect(nonStrings.status).toBe(400);
+
+    const tooMany = await vendo.handler(request("POST", "/sync/impact", {
+      tools: Array.from({ length: 201 }, (_, index) => `host_${index}`),
+    }));
+    expect(tooMany.status).toBe(400);
   });
 
   it("adapts the same fetch handler to Next route exports", async () => {
@@ -229,6 +374,197 @@ describe("09 §3 public wire", () => {
     const next = nextVendoHandler(vendo);
     for (const method of ["GET", "POST", "DELETE"] as const) expect(next[method]).toBeTypeOf("function");
     expect((await next.GET(request("GET", "/status"))).status).toBe(200);
+  });
+});
+
+describe("development runtime source capture", () => {
+  async function captureRoot(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "vendo-runtime-capture-"));
+    cleanups.push(async () => { await rm(root, { recursive: true, force: true }); });
+    return root;
+  }
+
+  it("writes a schema-valid baseline for a runtime-only registration", async () => {
+    const root = await captureRoot();
+    const sourceFile = join(root, "src", "runtime-card.tsx");
+    await mkdir(join(root, "src"), { recursive: true });
+    await writeFile(sourceFile, "export const RuntimeCard = () => <article>runtime</article>;\n", "utf8");
+    const { vendo } = await setup(vi.fn(async () => principal), { development: { root } });
+
+    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
+      slot: "RuntimeCard",
+      source: new URL(`file://${sourceFile}`).href,
+      exportable: true,
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ slot: "RuntimeCard", status: "captured" });
+    const baseline = JSON.parse(await readFile(join(root, ".vendo", "remixable", "RuntimeCard.json"), "utf8"));
+    expect(capturedPinBaselineSchema.safeParse(baseline).success).toBe(true);
+    expect(baseline).toMatchObject({ slot: "RuntimeCard", exportable: true });
+  });
+
+  it("rejects capture from an anonymous session without touching disk", async () => {
+    const root = await captureRoot();
+    const sourceFile = join(root, "src", "runtime-card.tsx");
+    await mkdir(join(root, "src"), { recursive: true });
+    await writeFile(sourceFile, "export const RuntimeCard = () => null;\n", "utf8");
+    const { vendo } = await setup(vi.fn(async () => null), { development: { root } });
+
+    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
+      slot: "RuntimeCard",
+      source: sourceFile,
+      exportable: false,
+    }));
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: { code: "blocked", message: "runtime capture requires a host-resolved principal" },
+    });
+    await expect(access(join(root, ".vendo", "remixable", "RuntimeCard.json"))).rejects.toThrow();
+  });
+
+  it("does not mount the route outside development", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const { vendo } = await setup();
+    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
+      slot: "Absent",
+      source: "/tmp/absent.tsx",
+      exportable: false,
+    }));
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: { code: "not-found", message: "unknown Vendo route" } });
+  });
+
+  it("refuses sources outside the host root", async () => {
+    const root = await captureRoot();
+    const outside = await mkdtemp(join(tmpdir(), "vendo-runtime-outside-"));
+    cleanups.push(async () => { await rm(outside, { recursive: true, force: true }); });
+    const outsideFile = join(outside, "outside.tsx");
+    await writeFile(outsideFile, "export const Outside = () => null;\n", "utf8");
+    const { vendo } = await setup(vi.fn(async () => principal), { development: { root } });
+
+    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
+      slot: "Outside",
+      source: outsideFile,
+      exportable: false,
+    }));
+    expect(response.status).toBe(400);
+    await expect(access(join(root, ".vendo", "remixable", "Outside.json"))).rejects.toThrow();
+  });
+
+  it("preserves an existing static baseline", async () => {
+    const root = await captureRoot();
+    const sourceFile = join(root, "runtime-card.tsx");
+    const baselineFile = join(root, ".vendo", "remixable", "RuntimeCard.json");
+    await writeFile(sourceFile, "export const RuntimeCard = () => null;\n", "utf8");
+    await mkdir(join(root, ".vendo", "remixable"), { recursive: true });
+    const existing = {
+      slot: "RuntimeCard",
+      source: "export const RuntimeCard = () => <strong>static</strong>;",
+      hash: `sha256:${"b".repeat(64)}`,
+      exportable: true,
+      capturedAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    await writeFile(baselineFile, `${JSON.stringify(existing, null, 2)}\n`, "utf8");
+    const { vendo } = await setup(vi.fn(async () => principal), { development: { root } });
+
+    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
+      slot: "RuntimeCard",
+      source: sourceFile,
+      exportable: false,
+    }));
+    expect(await response.json()).toMatchObject({ status: "preserved", hash: existing.hash });
+    expect(JSON.parse(await readFile(baselineFile, "utf8"))).toEqual(existing);
+  });
+});
+
+describe("06-apps §9 in-client venue over the wire", () => {
+  const seedApp = async (vendo: Vendo, doc: AppDocument, subject = principal.subject) => {
+    await vendo.store.ensureSchema();
+    await vendo.store.records("vendo_apps").put({
+      id: doc.id,
+      data: { subject, enabled: true, doc },
+      refs: { subject },
+    });
+  };
+
+  it("serves the owner-scoped ship-diff for an app", async () => {
+    const { vendo } = await setup();
+    await seedApp(vendo, app("app_diff"));
+    const response = await vendo.handler(request("GET", "/apps/app_diff/ship-diff"));
+    expect(response.status).toBe(200);
+    const shipDiff = await response.json();
+    expect(shipDiff).toMatchObject({
+      appId: "app_diff",
+      versionHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      pins: [],
+      generated: [],
+    });
+  });
+
+  it("keeps ship-diff owner-scoped — another subject sees not-found", async () => {
+    const { vendo } = await setup(vi.fn(async () => ({ kind: "user", subject: "user_other" } as Principal)));
+    await seedApp(vendo, app("app_diff"), principal.subject);
+    const response = await vendo.handler(request("GET", "/apps/app_diff/ship-diff"));
+    expect(response.status).toBe(404);
+  });
+
+  it("injects an approval in development and open() rides the hash-pinned verdict end to end", async () => {
+    const { vendo } = await setup(vi.fn(async () => principal), { development: {} });
+    const doc = app("app_venue");
+    await seedApp(vendo, doc);
+
+    // Default: no approval → the payload carries no inClient field (jail).
+    const before = await (await vendo.handler(request("GET", "/apps/app_venue/open"))).json();
+    expect(before.payload.inClient).toBeUndefined();
+
+    const approve = await vendo.handler(request("POST", "/dev/inclient-approval", {
+      appId: "app_venue",
+      approvedBy: "demo-reviewer",
+    }));
+    expect(approve.status).toBe(200);
+    const approval = await approve.json();
+    expect(approval).toMatchObject({
+      appId: "app_venue",
+      approvedBy: "demo-reviewer",
+      versionHash: expect.stringMatching(/^sha256:/),
+    });
+
+    const granted = await (await vendo.handler(request("GET", "/apps/app_venue/open"))).json();
+    expect(granted.payload.inClient).toMatchObject({
+      granted: true,
+      versionHash: approval.versionHash,
+      approvedBy: "demo-reviewer",
+    });
+
+    // A new version (any content change) drops the venue back, loudly.
+    await seedApp(vendo, { ...doc, name: "Wire app v2" });
+    const dropped = await (await vendo.handler(request("GET", "/apps/app_venue/open"))).json();
+    expect(dropped.payload.inClient).toMatchObject({
+      granted: false,
+      reason: "version-changed",
+    });
+    expect(dropped.payload.inClient.versionHash).not.toBe(approval.versionHash);
+  });
+
+  it("rejects approval injection from an anonymous session", async () => {
+    const { vendo } = await setup(vi.fn(async () => null), { development: {} });
+    const response = await vendo.handler(request("POST", "/dev/inclient-approval", {
+      appId: "app_venue",
+    }));
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: { code: "blocked", message: "in-client approval injection requires a host-resolved principal" },
+    });
+  });
+
+  it("does not mount the injection route outside development", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const { vendo } = await setup();
+    const response = await vendo.handler(request("POST", "/dev/inclient-approval", {
+      appId: "app_venue",
+    }));
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: { code: "not-found", message: "unknown Vendo route" } });
   });
 });
 
@@ -562,10 +898,240 @@ describe("09 §3 conversational turn against the real composed store", () => {
     expect(rows.records).toHaveLength(1);
     expect(rows.records[0]?.id).toBe("thr_round_trip");
   });
+
+  it("carries reconciled partial create views through the real HTTP SSE handler before open completes", async () => {
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+    const usage = {
+      inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+      outputTokens: { total: 0, text: 0, reasoning: 0 },
+    } as const;
+    let agentCalls = 0;
+    const model = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        const serialized = JSON.stringify(prompt);
+        if (serialized.includes("TASK: CREATE_APP")) {
+          return {
+            stream: simulateReadableStream({ chunks: [
+              { type: "text-start", id: "generation" },
+              {
+                type: "text-delta",
+                id: "generation",
+                delta: '{"name":"SSE app","tree":{"formatVersion":"vendo-genui/v1","root":"root","nodes":[{"id":"root","component":"Stack","source":"prewired","children":["detail"]},',
+              },
+              {
+                type: "text-delta",
+                id: "generation",
+                delta: '{"id":"detail","component":"Text","source":"prewired","props":{"text":"Ready"}}]}}',
+              },
+              { type: "text-end", id: "generation" },
+              { type: "finish", usage, finishReason: { unified: "stop", raw: undefined } },
+            ] }),
+          };
+        }
+
+        agentCalls += 1;
+        if (agentCalls === 1) {
+          return {
+            stream: simulateReadableStream({ chunks: [
+              { type: "tool-call", toolCallId: "call_create_sse", toolName: "vendo_apps_create", input: JSON.stringify({ prompt: "Build an SSE app" }) },
+              { type: "finish", usage, finishReason: { unified: "tool-calls", raw: undefined } },
+            ] }),
+          };
+        }
+        if (agentCalls === 2) {
+          const appId = serialized.match(/app_[0-9a-f-]{36}/u)?.[0];
+          if (appId === undefined) throw new Error("created app id missing from tool result");
+          return {
+            stream: simulateReadableStream({ chunks: [
+              { type: "tool-call", toolCallId: "call_open_sse", toolName: "vendo_apps_open", input: JSON.stringify({ appId }) },
+              { type: "finish", usage, finishReason: { unified: "tool-calls", raw: undefined } },
+            ] }),
+          };
+        }
+        return {
+          stream: simulateReadableStream({ chunks: [
+            { type: "text-start", id: "done" },
+            { type: "text-delta", id: "done", delta: "Opened." },
+            { type: "text-end", id: "done" },
+            { type: "finish", usage, finishReason: { unified: "stop", raw: undefined } },
+          ] }),
+        };
+      },
+    });
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-stream-turn-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    const vendo = createVendo({
+      model: model as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+      policy: { rules: [{ match: { tool: "vendo_apps_*", presence: "present" }, action: "run" }] },
+    });
+
+    const response = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_stream_round_trip",
+      message: { id: "m_stream", role: "user", parts: [{ type: "text", text: "Build it" }] },
+    }));
+    const raw = await response.text();
+    const chunks = raw.split("\n")
+      .filter((line) => line.startsWith("data: {") && line !== "data: [DONE]")
+      .map((line) => JSON.parse(line.slice(6)) as Record<string, unknown>);
+    const views = chunks.filter((chunk) => chunk.type === "data-vendo-view") as Array<{
+      id: string;
+      data: { appId: string; payload: { nodes: unknown[]; streaming?: boolean } };
+    }>;
+
+    expect(response.status).toBe(200);
+    expect(views.length).toBeGreaterThanOrEqual(3);
+    expect(views[0]?.data.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }] });
+    expect(new Set(views.map((view) => view.id))).toEqual(new Set([`vendo-view:${views[0]?.data.appId}`]));
+    expect(views.at(-1)?.data.payload.nodes).toHaveLength(2);
+    expect(views.at(-1)?.data.payload.streaming).toBeUndefined();
+  });
+});
+
+describe("09 §2 apps composition", () => {
+  it("passes host-component catalog registrations to createApps", { timeout: 120_000 }, async () => {
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-catalog-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    const generated = JSON.stringify({
+      name: "Catalog app",
+      tree: {
+        formatVersion: VENDO_TREE_FORMAT,
+        root: "metric",
+        nodes: [{
+          id: "metric",
+          component: "MetricCard",
+          source: "host",
+          props: { label: "Revenue" },
+        }],
+      },
+    });
+    const model = new MockLanguageModelV3({
+      doStream: async () => ({
+        stream: simulateReadableStream({ chunks: [
+          { type: "text-start", id: "generation" },
+          { type: "text-delta", id: "generation", delta: generated },
+          { type: "text-end", id: "generation" },
+          {
+            type: "finish",
+            usage: {
+              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+              outputTokens: { total: 0, text: 0, reasoning: 0 },
+            },
+            finishReason: { unified: "stop", raw: undefined },
+          },
+        ] }),
+      }),
+    });
+    const catalog: ComponentCatalog = [{
+      name: "MetricCard",
+      description: "Use for a single headline metric.",
+      propsSchema: { "~standard": { validate: (value: unknown) => ({ value }) } },
+    }];
+    const vendo = createVendo({
+      model,
+      principal: async () => principal,
+      store,
+      catalog,
+    });
+    await store.ensureSchema();
+
+    await expect(vendo.apps.create({ prompt: "Show revenue" }, ctx)).resolves.toMatchObject({
+      tree: { nodes: [{ component: "MetricCard", source: "host" }] },
+    });
+  });
+
+  it("loads catalog@1 from .vendo and plumbs it through to createApps", { timeout: 120_000 }, async () => {
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+    const root = await mkdtemp(join(tmpdir(), "vendo-disk-catalog-"));
+    const dataDir = join(root, "data");
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "catalog.json"), JSON.stringify({
+      format: "vendo/catalog@1",
+      entries: [{
+        name: "DiskMetric",
+        exportPath: "./src/disk-metric.tsx#DiskMetric",
+        propsSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"], additionalProperties: false },
+        description: "Use for a metric loaded from the generated catalog.",
+        source: "scanned",
+      }],
+    }));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
+    const generated = JSON.stringify({
+      name: "Disk catalog app",
+      tree: {
+        formatVersion: VENDO_TREE_FORMAT,
+        root: "metric",
+        nodes: [{ id: "metric", component: "DiskMetric", source: "host", props: { value: 42 } }],
+      },
+    });
+    const model = new MockLanguageModelV3({
+      doStream: async () => ({
+        stream: simulateReadableStream({ chunks: [
+          { type: "text-start", id: "generation" },
+          { type: "text-delta", id: "generation", delta: generated },
+          { type: "text-end", id: "generation" },
+          {
+            type: "finish",
+            usage: {
+              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+              outputTokens: { total: 0, text: 0, reasoning: 0 },
+            },
+            finishReason: { unified: "stop", raw: undefined },
+          },
+        ] }),
+      }),
+    });
+    const previousCwd = process.cwd();
+    const vendo = (() => {
+      try {
+        process.chdir(root);
+        return createVendo({ model, principal: async () => principal, store });
+      } finally {
+        process.chdir(previousCwd);
+      }
+    })();
+    await store.ensureSchema();
+
+    await expect(vendo.apps.create({ prompt: "Show the disk metric" }, ctx)).resolves.toMatchObject({
+      tree: { nodes: [{ component: "DiskMetric", source: "host", props: { value: 42 } }] },
+    });
+  });
+
+  it("warns loudly when createVendo finds a malformed .vendo/catalog.json", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-malformed-disk-catalog-"));
+    const dataDir = join(root, "data");
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "catalog.json"), JSON.stringify({
+      format: "vendo/catalog@1",
+      entries: [],
+      typo: true,
+    }));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const previousCwd = process.cwd();
+    try {
+      process.chdir(root);
+      createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    } finally {
+      process.chdir(previousCwd);
+    }
+    await store.ensureSchema();
+
+    expect(error).toHaveBeenCalledOnce();
+    expect(error.mock.calls[0]?.[0]).toContain(".vendo/catalog.json");
+    expect(error.mock.calls[0]?.[0]).toContain("Unrecognized key");
+    expect(error.mock.calls[0]?.[0]).toContain("vendo sync");
+  });
 });
 
 describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H)", () => {
-  async function mcpVendo(): Promise<Vendo> {
+  async function mcpVendo(mcp: boolean | { baseUrl?: string } = true): Promise<Vendo> {
     const dataDir = await mkdtemp(join(tmpdir(), "vendo-door-"));
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
@@ -573,7 +1139,7 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
       model: {} as LanguageModel,
       principal: async () => null,
       store,
-      mcp: true,
+      mcp,
       oauth: {
         async authorize() { return { subject: "user_door" }; },
         async principal(subject) { return { kind: "user", subject }; },
@@ -594,6 +1160,40 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
     expect((await res.json() as { resource?: string }).resource).toBe("https://host.test/api/vendo/mcp");
   });
 
+  it("derives door metadata from VENDO_BASE_URL, not the proxy-internal request origin (ENG-333)", async () => {
+    // Behind a reverse proxy (Railway, Fly) the request URL reaching the
+    // process carries the proxy-INTERNAL origin; the operator-set
+    // VENDO_BASE_URL — the same trusted origin channel actions already use —
+    // is what discovery must advertise and what tokens must bind to.
+    vi.stubEnv("VENDO_BASE_URL", "https://app.example.com");
+    const vendo = await mcpVendo();
+    const res = await vendo.handler(new Request(
+      "http://10.0.3.7:8080/.well-known/oauth-protected-resource/api/vendo/mcp",
+    ));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      resource: "https://app.example.com/api/vendo/mcp",
+      authorization_servers: ["https://app.example.com/api/vendo/mcp"],
+    });
+
+    const as = await vendo.handler(new Request(
+      "http://10.0.3.7:8080/.well-known/oauth-authorization-server/api/vendo/mcp",
+    ));
+    expect(await as.json()).toMatchObject({
+      issuer: "https://app.example.com/api/vendo/mcp",
+      token_endpoint: "https://app.example.com/api/vendo/mcp/token",
+    });
+  });
+
+  it("lets mcp.baseUrl override the VENDO_BASE_URL default for split-origin compositions", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "https://host-routes.example.com");
+    const vendo = await mcpVendo({ baseUrl: "https://door.example.com" });
+    const res = await vendo.handler(new Request(
+      "http://10.0.3.7:8080/.well-known/oauth-protected-resource/api/vendo/mcp",
+    ));
+    expect((await res.json() as { resource?: string }).resource).toBe("https://door.example.com/api/vendo/mcp");
+  });
+
   it("does NOT route boundary-adjacent or foreign well-known paths to the door", async () => {
     const vendo = await mcpVendo();
     // A boundary-free prefix would have matched all of these; the exact-path set
@@ -610,5 +1210,40 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
       expect(body.resource, path).toBeUndefined();
       expect(body.issuer, path).toBeUndefined();
     }
+  });
+});
+
+describe("02-store §4 default-on encryption composition", () => {
+  it("createVendo reads VENDO_STORE_ENCRYPTION_KEY from the environment when no store is passed", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "vendo-default-store-"));
+    const prior = process.cwd();
+    vi.stubEnv("VENDO_STORE_ENCRYPTION_KEY", randomBytes(32).toString("base64"));
+    process.chdir(dir);
+    try {
+      // No `store` in the config: the composed default store must come up with
+      // encryption on, so stored secrets work with zero extra wiring.
+      const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal });
+      cleanups.push(async () => {
+        await vendo.store.close();
+        await rm(dir, { recursive: true, force: true });
+      });
+      await vendo.store.ensureSchema();
+      await secretStore(vendo.store).set("API_TOKEN", "secret-value");
+      expect(await storeSecrets(vendo.store).get("API_TOKEN")).toBe("secret-value");
+    } finally {
+      process.chdir(prior);
+    }
+  });
+
+  it("an explicitly configured store always wins over the environment key", async () => {
+    vi.stubEnv("VENDO_STORE_ENCRYPTION_KEY", randomBytes(32).toString("base64"));
+    // setup() passes an explicit store created WITHOUT encryption — createVendo
+    // must not silently rewrap it, so stored secrets stay unavailable.
+    const { vendo } = await setup();
+    // Let createVendo's eager schema init finish before teardown closes the
+    // store (closing PGlite mid-initialization wedges the driver).
+    await vendo.store.ensureSchema();
+    await expect(secretStore(vendo.store).set("API_TOKEN", "value"))
+      .rejects.toMatchObject({ code: "not-implemented" });
   });
 });

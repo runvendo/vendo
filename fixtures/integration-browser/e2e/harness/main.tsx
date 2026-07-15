@@ -7,10 +7,13 @@
  *  cookie so present host-tool calls execute for real (04 §4).
  */
 import { createVendoClient, useApps, VendoRoot } from "@vendoai/vendo/react";
-import { VendoThread } from "@vendoai/ui/chrome";
+import { ActivityPanel, VendoThread } from "@vendoai/ui/chrome";
 import { createRoot } from "react-dom/client";
+import { McpAppsHost } from "./mcp-host.tsx";
 
-const TEST_USER = "user_ada";
+const params = new URLSearchParams(window.location.search);
+const TEST_USER = params.get("user") ?? "user_ada";
+const threadId = params.get("thread") ?? "thr_j7";
 
 const client = createVendoClient({
   baseUrl: "/api/vendo",
@@ -46,8 +49,9 @@ function Page() {
     <VendoRoot client={client}>
       <main style={{ display: "grid", gap: 24, padding: 24, maxWidth: 900, margin: "0 auto" }}>
         <section aria-label="Thread" data-testid="thread-surface" style={{ minHeight: 360 }}>
-          <VendoThread threadId="thr_j7" greeting="What can I help you build?" />
+          <VendoThread threadId={threadId} greeting="What can I help you build?" />
         </section>
+        <ActivityPanel />
         <AppsProbe />
       </main>
     </VendoRoot>
@@ -56,4 +60,4 @@ function Page() {
 
 const root = document.getElementById("root");
 if (!root) throw new Error("browser harness root is missing");
-createRoot(root).render(<Page />);
+createRoot(root).render(window.location.pathname === "/mcp-apps" ? <McpAppsHost /> : <Page />);
