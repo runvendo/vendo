@@ -53,6 +53,22 @@ shipped inside the npm package. An edited copy is never overwritten or
 re-prompted; deleting the copy makes init offer it again on the next run,
 like any missing scaffold.
 
+Init also proposes idempotent `predev` and `prebuild` hooks in `package.json`
+so extraction runs alongside your existing dev and build scripts:
+
+```json
+{
+  "scripts": {
+    "predev": "vendo sync",
+    "prebuild": "vendo sync --strict"
+  }
+}
+```
+
+If either script already exists, `vendo sync` is prepended. Existing formatting
+is preserved. The change is shown as a permission-gated diff like every other
+init proposal, so you can accept or decline it.
+
 ## `vendo doctor [dir]`
 
 Checks wiring and makes one live `/status` round trip. It recognizes both Next.js
@@ -110,8 +126,18 @@ Options:
   is the per-tool blast radius (`[]` when nothing changed, `null` when unknown),
   and `notes` collects CLI-level events. An `error` field appears when
   extraction itself failed soft.
+- `--url <url>` — override `VENDO_URL` for the blast-radius impact query
+  against a running dev server (`POST /sync/impact`).
 - `--report` — push the report to Vendo Cloud (requires `VENDO_API_KEY` or
   `--key`; `--api-url` overrides `VENDO_CLOUD_URL`).
+
+```console
+$ vendo sync --strict --url http://127.0.0.1:3000/api/vendo
+tools: +0 -0 ~1
+pins: 0 captured, 0 drifted
+breaking: host_listAccounts input-narrowed
+impact: host_listAccounts breaks 1 automation, 1 grant
+```
 
 Exit codes:
 
