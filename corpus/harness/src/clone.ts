@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { cp, mkdir, rm } from "node:fs/promises";
+import { realpathSync } from "node:fs";
+import { cp, mkdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ManifestEntry } from "./manifest.js";
@@ -29,7 +30,18 @@ const defaultWorkspaceRoot = path.resolve(fileURLToPath(new URL("../../../", imp
 
 function runGit(gitBin: string, args: readonly string[], cwd: string): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(gitBin, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const targetDir = args[0] === "-C" && args[1] ? args[1] : cwd;
+    const child = spawn(gitBin, args, {
+      cwd,
+      env: {
+        ...process.env,
+        // All corpus clones are direct children of .repos. Even if a caller
+        // forgets the toplevel identity check, Git must not discover beyond
+        // that cache boundary.
+        GIT_CEILING_DIRECTORIES: realpathSync(path.dirname(targetDir)),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8");
@@ -59,8 +71,16 @@ async function checkedGit(gitBin: string, args: readonly string[], cwd: string):
 }
 
 async function isGitWorkTree(gitBin: string, repoDir: string): Promise<boolean> {
-  const result = await runGit(gitBin, ["-C", repoDir, "rev-parse", "--is-inside-work-tree"], process.cwd());
-  return result.code === 0 && result.stdout.trim() === "true";
+  // corpus/.repos sits inside the Vendo worktree: a cached dir that lost its
+  // .git resolves git commands against the ENCLOSING repo, so being inside a
+  // work tree is not enough — the work tree's root must be repoDir itself.
+  const result = await runGit(gitBin, ["-C", repoDir, "rev-parse", "--show-toplevel"], process.cwd());
+  if (result.code !== 0) return false;
+  const [toplevel, expected] = await Promise.all([
+    realpath(result.stdout.trim()).catch(() => null),
+    realpath(repoDir).catch(() => null),
+  ]);
+  return toplevel !== null && toplevel === expected;
 }
 
 async function ensureOrigin(gitBin: string, repoDir: string, gitUrl: string): Promise<void> {

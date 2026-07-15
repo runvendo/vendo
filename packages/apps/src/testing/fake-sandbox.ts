@@ -28,9 +28,16 @@ export interface FakeExecCall {
 
 interface FakeSnapshot {
   env: Readonly<Record<string, string>>;
+  egress?: readonly string[];
   files: ReadonlyMap<string, Uint8Array>;
   app: MachineApp;
 }
+
+// Fake provider state intentionally outlives one adapter object, matching the
+// durable provider refs returned by the real adapters across process restarts.
+const providerSnapshots = new Map<string, FakeSnapshot>();
+let nextProviderMachine = 1;
+let nextProviderSnapshot = 1;
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -100,6 +107,7 @@ export class FakeSandboxMachine implements SandboxMachine {
   constructor(
     readonly id: string,
     env: Record<string, string>,
+    readonly egress: readonly string[] | undefined,
     files: ReadonlyMap<string, Uint8Array>,
     app: MachineApp | undefined,
     private readonly saveSnapshot: (machine: FakeSandboxMachine) => string,
@@ -142,7 +150,27 @@ export class FakeSandboxMachine implements SandboxMachine {
 
   async exec(cmd: string, opts?: { cwd?: string; timeoutMs?: number }): Promise<FakeExecResult> {
     this.commands.push(opts === undefined ? { cmd } : { cmd, opts: { ...opts } });
-    return this.execResults.shift() ?? { code: 0, stdout: "", stderr: "" };
+    const programmed = this.execResults.shift();
+    if (programmed !== undefined) return programmed;
+
+    const printedEnv = /^printf\s+'%s'\s+"\$([A-Za-z_][A-Za-z0-9_]*)"$/.exec(cmd)?.[1];
+    if (printedEnv !== undefined) {
+      return { code: 0, stdout: this.env[printedEnv] ?? "", stderr: "" };
+    }
+
+    const fetchedHost = /fetch\(['"]https:\/\/([^/'"]+)/.exec(cmd)?.[1];
+    if (fetchedHost !== undefined) {
+      const allowed = this.egress === undefined || this.egress.some((rule) =>
+        rule === fetchedHost || (rule.startsWith("*.") && fetchedHost.endsWith(rule.slice(1))));
+      const exits = /then\(\(\) => process\.exit\((\d+)\)\)\.catch\(\(\) => process\.exit\((\d+)\)\)/.exec(cmd);
+      return {
+        code: Number(allowed ? exits?.[1] ?? 0 : exits?.[2] ?? 1),
+        stdout: "",
+        stderr: "",
+      };
+    }
+
+    return { code: 0, stdout: "", stderr: "" };
   }
 
   programExec(...results: FakeExecResult[]): void {
@@ -178,15 +206,13 @@ export interface FakeSandboxAdapter extends SandboxAdapter {
 /** Create an in-process sandbox adapter whose requests dispatch to a machine app handler. */
 export const fakeSandbox = (options: { app?: MachineApp } = {}): FakeSandboxAdapter => {
   const machines = new Map<string, FakeSandboxMachine>();
-  const snapshots = new Map<string, FakeSnapshot>();
-  let nextMachine = 1;
-  let nextSnapshot = 1;
   let installedApp = options.app;
 
   const saveSnapshot = (machine: FakeSandboxMachine): string => {
-    const ref = `fake:snap_${nextSnapshot++}`;
-    snapshots.set(ref, Object.freeze({
+    const ref = `fake:snap_${nextProviderSnapshot++}`;
+    providerSnapshots.set(ref, Object.freeze({
       env: Object.freeze({ ...machine.env }),
+      ...(machine.egress === undefined ? {} : { egress: Object.freeze([...machine.egress]) }),
       files: new Map([...machine.fileContents].map(([path, bytes]) => [path, bytes.slice()])),
       app: machine.app,
     }));
@@ -195,13 +221,15 @@ export const fakeSandbox = (options: { app?: MachineApp } = {}): FakeSandboxAdap
 
   const makeMachine = (
     env: Record<string, string>,
+    egress: readonly string[] | undefined,
     files: ReadonlyMap<string, Uint8Array>,
     app?: MachineApp,
   ): FakeSandboxMachine => {
-    const id = String(nextMachine++);
+    const id = String(nextProviderMachine++);
     const machine = new FakeSandboxMachine(
       id,
       env,
+      egress === undefined ? undefined : Object.freeze([...egress]),
       files,
       app,
       saveSnapshot,
@@ -219,12 +247,12 @@ export const fakeSandbox = (options: { app?: MachineApp } = {}): FakeSandboxAdap
     async create(spec): Promise<FakeSandboxMachine> {
       const files = new Map<string, Uint8Array>();
       for (const [path, bytes] of Object.entries(spec.files ?? {})) files.set(path, toBytes(bytes));
-      return makeMachine(spec.env, files, installedApp);
+      return makeMachine(spec.env, spec.egress, files, installedApp);
     },
     async resume(snapshotRef): Promise<FakeSandboxMachine> {
-      const snapshot = snapshots.get(snapshotRef);
+      const snapshot = providerSnapshots.get(snapshotRef);
       if (snapshot === undefined) throw new Error(`Unknown fake sandbox snapshot: ${snapshotRef}`);
-      return makeMachine({ ...snapshot.env }, snapshot.files, snapshot.app);
+      return makeMachine({ ...snapshot.env }, snapshot.egress, snapshot.files, snapshot.app);
     },
   };
 };

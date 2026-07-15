@@ -50,6 +50,7 @@ const proxy = createAppsProxy({
 
 const runToken = async (): Promise<string> => mintRunToken(tokenSecret, {
   appId: app.id, subject: "user_live", runId: "run_live", presence: "present", expiresAt: Date.now() + 120_000,
+  jti: "jti_live",
 });
 
 const egress = async (envelope: unknown): Promise<Response> => proxy.handler(new Request("https://proxy.test/egress", {

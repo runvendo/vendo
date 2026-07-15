@@ -7,8 +7,10 @@ import {
   type IsoDateTime,
   type Json,
   type RunContext,
+  type RiskLabel,
   type SecretsProvider,
   type StoreAdapter,
+  type ToolCall,
   type ToolOutcome,
   type ToolRegistry,
   type UIPayload,
@@ -39,6 +41,7 @@ import { createAppOpener } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
 import type { PinBaseline } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
+import { createRunTokenGate } from "./run-token-gate.js";
 import type { SandboxAdapter } from "./sandbox.js";
 import type { SandboxMachine } from "./sandbox.js";
 import type { IpResolver } from "./ssrf.js";
@@ -105,6 +108,9 @@ export interface AppsRuntime {
   share(appId: AppId, ctx: RunContext): Promise<ShareSnapshot>;
   publish(appId: AppId, ctx: RunContext): Promise<PublishRecord>;
   agentTools(): ToolRegistry;
+  /** Contextual policy projection for Vendo-owned agent tools. Undefined means
+   * the static descriptor remains authoritative. */
+  agentToolRisk(call: ToolCall, ctx: RunContext): Promise<RiskLabel | undefined>;
   proxy: AppsProxy;
 }
 
@@ -150,10 +156,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const data = createAppData(config.store);
   const history = createAppHistory(config.store);
   const tokenSecret = globalThis.crypto.getRandomValues(new Uint8Array(32));
+  // ENG-251 — one anti-replay gate shared by the machine cache (which burns a
+  // run's jti on teardown) and the proxy (which rejects a burned jti).
+  const consumedRunTokens = createRunTokenGate();
   const machines = createMachineSessions({
     sandbox: config.sandbox,
     proxyUrl: config.proxyUrl,
     tokenSecret,
+    consumedRunTokens,
   });
 
   const owned = async (appId: AppId, subject: string): Promise<AppDocument | null> => {
@@ -187,6 +197,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     ...(config.secrets === undefined ? {} : { secrets: config.secrets }),
     ...(config.egressTransport?.fetch === undefined ? {} : { fetch: config.egressTransport.fetch }),
     ...(config.egressTransport?.resolveIp === undefined ? {} : { resolveIp: config.egressTransport.resolveIp }),
+    consumedRunTokens,
   });
 
   const failedEdit = (
@@ -370,12 +381,27 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return structuredClone(fork);
     },
 
+    async agentToolRisk(call, ctx) {
+      if (call.tool !== "vendo_apps_edit") return undefined;
+      if (typeof call.args !== "object" || call.args === null || Array.isArray(call.args)) {
+        return "write";
+      }
+      const args = call.args as Record<string, Json>;
+      if (typeof args.appId !== "string" || typeof args.instruction !== "string") {
+        return "write";
+      }
+      const app = await owned(args.appId, ctx.principal.subject);
+      if (app === null) return "write";
+      return instructionRequiresServer(app, args.instruction) ? "write" : "read";
+    },
+
     async edit(appId, instruction, ctx) {
       if (config.model === undefined) {
         throw new VendoError("not-implemented", "generation requires a model");
       }
       const previous = await requireOwned(appId, ctx.principal.subject);
-      if (instructionRequiresServer(previous, instruction) && !machines.available()) {
+      const requiresServer = instructionRequiresServer(previous, instruction);
+      if (requiresServer && !machines.available()) {
         return failedEdit(previous, instruction, [
           "sandbox-unavailable: this edit requires server execution",
         ]);
@@ -404,6 +430,15 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             app: await persistEdit(previous, app, version, ctx.principal.subject),
             version: { ...version },
           };
+        }
+
+        // The contextual guard decision ran before generation. If the engine
+        // ever violates the tree dialect and emits code for a call classified
+        // read-class, stop before touching a machine or persisting anything.
+        if (!requiresServer) {
+          return failedEdit(previous, instruction, [
+            "approval-required: a tree-classified edit unexpectedly produced server code",
+          ]);
         }
 
         const applied = await applyCodeFiles(previous, generated.files, ctx);
@@ -477,7 +512,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
 
     agentTools() {
-      return createAgentTools(runtime);
+      return createAgentTools(runtime, { data, requireOwned });
     },
 
     proxy,

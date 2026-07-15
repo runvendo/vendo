@@ -5,7 +5,8 @@ import {
   type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { createApps } from "./index.js";
 import type { SandboxAdapter } from "./sandbox.js";
 import {
@@ -15,6 +16,7 @@ import {
   seedAppRow,
   scriptedLanguageModel,
 } from "./testing/index.js";
+import { modelEngine } from "./engine.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_engine" },
@@ -30,8 +32,25 @@ const tools: ToolRegistry = {
 
 const catalog: ComponentCatalog = [{
   name: "MetricCard",
-  description: "A branded card for a label, value, and trend.",
-  propsSchema: { "~standard": { validate: (value: unknown) => value } },
+  description: "Use for a single important metric with a short label and display value.",
+  propsSchema: z.object({
+    label: z.string(),
+    value: z.string(),
+    trend: z.number().optional(),
+    onSelect: z.string().optional(),
+  }),
+  propsJsonSchema: {
+    type: "object",
+    properties: {
+      label: { type: "string" },
+      value: { type: "string" },
+      trend: { type: "number" },
+      onSelect: { type: "string" },
+    },
+    required: ["label", "value"],
+    additionalProperties: false,
+  },
+  examples: ['{"label":"Revenue","value":"$42k","trend":12}'],
 }];
 
 const validCreate = (name = "Revenue dashboard") => JSON.stringify({
@@ -66,6 +85,77 @@ const putApp = async (
 };
 
 describe("generation engine through createApps", () => {
+  it("fails closed when a tree-classified edit unexpectedly yields server code", async () => {
+    const store = memoryStore();
+    const original: AppDocument = {
+      format: "vendo/app@1",
+      id: "app_unexpected_code",
+      name: "Safe tree",
+      ui: "tree",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{ id: "root", component: "Text", props: { text: "Safe" } }],
+      },
+    };
+    await putApp(store, original);
+    vi.spyOn(modelEngine, "edit").mockResolvedValueOnce({
+      kind: "code",
+      rung: 2,
+      files: [{ path: "/app/server.js", content: "export const changed = true;" }],
+    });
+    const sandbox = fakeSandbox();
+    const createMachine = vi.spyOn(sandbox, "create");
+    const resumeMachine = vi.spyOn(sandbox, "resume");
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog,
+      model: scriptedLanguageModel("unused"),
+    });
+
+    const result = await runtime.edit(original.id, "Make the heading blue", ctx);
+
+    expect(result.issues).toEqual([
+      "approval-required: a tree-classified edit unexpectedly produced server code",
+    ]);
+    expect(result.app).toEqual(original);
+    expect(await runtime.get(original.id, ctx)).toEqual(original);
+    expect(await runtime.history(original.id).list()).toEqual([]);
+    expect(sandbox.machines.size).toBe(0);
+    expect(createMachine).not.toHaveBeenCalled();
+    expect(resumeMachine).not.toHaveBeenCalled();
+  });
+
+  it("includes catalog schemas, when-to-use guidance, and usage examples in the model prompt", async () => {
+    let capturedPrompt = "";
+    const model = scriptedLanguageModel((call) => {
+      capturedPrompt = call.prompt.map((message) => {
+        if (typeof message.content === "string") return message.content;
+        return message.content.map((part) => part.text ?? "").join("");
+      }).join("\n");
+      return validCreate();
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model,
+    });
+
+    await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+
+    expect(capturedPrompt).toContain('"whenToUse": "Use for a single important metric');
+    expect(capturedPrompt).toContain('"propsJsonSchema": {');
+    expect(capturedPrompt).toContain('"required": [');
+    expect(capturedPrompt).toContain('"examples": [');
+    expect(capturedPrompt).toContain('{\\"label\\":\\"Revenue\\",\\"value\\":\\"$42k\\",\\"trend\\":12}');
+    expect(capturedPrompt).toContain('you MUST use a source:"host" node with its exact name and props schema');
+  });
+
   it("creates a validated rung-1 document with a catalog host component", async () => {
     const store = memoryStore();
     const runtime = createApps({
@@ -85,6 +175,67 @@ describe("generation engine through createApps", () => {
       nodes: [{ component: "MetricCard", source: "host" }],
     });
     expect(validateTree({ ...app.tree, components: app.components }).ok).toBe(true);
+  });
+
+  it("reports wrong-typed host props as catalog issues", async () => {
+    const wrongProps = JSON.stringify({
+      name: "Broken metric",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "metric",
+        nodes: [{
+          id: "metric",
+          component: "MetricCard",
+          source: "host",
+          props: { label: "Revenue", value: 42 },
+        }],
+      },
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(wrongProps, wrongProps),
+    });
+
+    await expect(runtime.create({ prompt: "Build a broken metric" }, ctx)).rejects.toMatchObject({
+      code: "validation",
+      detail: expect.arrayContaining([
+        expect.stringMatching(/node "metric" props.*MetricCard.*value.*Expected string/i),
+      ]),
+    });
+  });
+
+  it("exempts path, state, and action bindings while validating the remaining host props", async () => {
+    const boundProps = JSON.stringify({
+      name: "Bound metric",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "metric",
+        nodes: [{
+          id: "metric",
+          component: "MetricCard",
+          source: "host",
+          props: {
+            label: { $path: "/headline/label" },
+            value: { $state: "selectedValue" },
+            onSelect: { action: "selectMetric", payload: { id: "revenue" } },
+          },
+        }],
+      },
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(boundProps),
+    });
+
+    await expect(runtime.create({ prompt: "Build a bound metric" }, ctx)).resolves.toMatchObject({
+      tree: { nodes: [{ component: "MetricCard" }] },
+    });
   });
 
   it("repairs one invalid create and rejects two invalid attempts without persisting", async () => {

@@ -2,7 +2,9 @@
 
 Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a major. One job: contracts only — types, zod schemas, format constants, pure validators and hash helpers. No I/O, no behavior. Dependencies: `zod` only. Runs in any JS runtime.
 
-Everything below is exported from the package root (single entry point). Every type ships a matching zod schema (`<camelCaseName>Schema`) unless marked *type-only*.
+Everything below is exported from the package root unless noted. Core has one additional entry point: `@vendoai/core/conformance`, which exports the contract-conformance kits and `memoryStoreAdapter` for tests. That subpath is explicitly test-infrastructure behavior and is exempt from the root's "no behavior" rule; the package root remains governed by it. Every type ships a matching zod schema (`<camelCaseName>Schema`) unless marked *type-only*.
+
+The stable root utility surface also includes `canonicalJson`, `sha256Hex`, `safeErrorMessage`, `TOOL_NAME_PATTERN`, the `TREE_MAX_*` constants, `RESERVED_COMPONENT_NAMES`, and `PathBinding` / `StateBinding` with their guards. These are contract utilities shared by sibling blocks, not deep-import implementation details.
 
 ## 1. Formats, ids, time
 
@@ -50,10 +52,14 @@ export interface RunContext {
   appId?: AppId;        // set when running inside an app
   trigger?: TriggerRef;         // set when fired by a trigger
   requestHeaders?: Record<string, string>; // present-mode: the inbound host request's auth material (04 §4)
+  grant?: PermissionGrant;      // the exact grant captured by the guard binding
+  mcpConsent?: { clientId: string; scopes: string[] }; // door OAuth consent evidence (10-mcp §2.1)
 }
 
 export interface TriggerRef { runId: RunId; kind: TriggerSource["kind"]; }   // the app is RunContext.appId — never duplicated here
 ```
+
+`grant` and `mcpConsent` are contracted here and implemented in Wave 5. Until then, they ride through `RunContext`'s schema passthrough; the structural twins in actions and mcp remain temporary.
 
 ## 4. Tools
 
@@ -61,6 +67,7 @@ The one tool shape. Host API, connectors, and Vendo's own capabilities all speak
 
 ```ts
 export type RiskLabel = "read" | "write" | "destructive";
+export const TOOL_NAME_PATTERN: RegExp; // /^[a-zA-Z0-9_-]{1,64}$/
 
 export interface ToolDescriptor {
   name: string;                 // matches /^[a-zA-Z0-9_-]{1,64}$/ — the charset OpenAI, Anthropic, and MCP all enforce.
@@ -77,6 +84,8 @@ export interface ToolDescriptor {
  *  of { name, description, inputSchema, risk, critical }, absent optional fields omitted — so independent
  *  implementations always agree, and the algorithm can rotate without a flag-day. */
 export function descriptorHash(d: ToolDescriptor): string;   // "sha256:ab12..."
+export function canonicalJson(value: unknown): string;        // RFC 8785 canonical JSON
+export function sha256Hex(input: string): string;              // lowercase 64-character hex
 
 export interface ToolCall {
   id: string;                   // caller-minted, unique per call
@@ -97,7 +106,7 @@ export interface ToolRegistry {
 }
 ```
 
-Execution discipline (normative): nothing calls `ToolRegistry.execute` directly except a guard binding (05 §2). Chat, app functions, automations, and the future MCP door all reach tools through `guard.bind`.
+Execution discipline (normative): nothing calls `ToolRegistry.execute` directly except a guard binding (05 §2). Chat, app functions, automations, and the MCP door all reach tools through `guard.bind`.
 
 ## 5. Grants and approvals
 
@@ -108,7 +117,7 @@ export interface GrantConstraint { path: string; op: "eq" | "lte" | "gte" | "mat
 
 export type GrantScope =
   | { kind: "tool" }                                             // the whole tool
-  | { kind: "exact"; inputHash: string; inputPreview: string }   // these args only
+  | { kind: "exact"; inputHash: string; inputPreview: string }   // these args only; inputHash = `sha256:${sha256Hex(canonicalJson(args))}`
   | { kind: "constrained"; constraints: GrantConstraint[] };     // bounded args
 
 export type GrantDuration = "standing" | "session" | "task";
@@ -144,6 +153,8 @@ export interface ApprovalDecision {
   remember?: { scope: GrantScope; duration: GrantDuration };  // mint a grant from this answer
 }
 ```
+
+The additive `source: "mcp"` member originates in 10-mcp §2.1. Its only mint point is the door's per-call consent projection; that projection is never stored and never consulted by guard.
 
 ## 6. Guard seam
 
@@ -188,6 +199,8 @@ export interface AuditEvent {
 }
 ```
 
+The additive `door-auth` event originates in 10-mcp §3 and records successful door authorization.
+
 ## 8. The instant-path UI payload (format-tagged; v0 format: the tree, `vendo-genui/v1`)
 
 The instant path renders a **format-tagged document**, not "the tree" by fiat (Yousef, 2026-07-11 round 2):
@@ -228,11 +241,20 @@ export interface TreeQuery {
 
 **Prop bindings** (pinned): `{ "$path": "/invoices/0/total" }` binds a prop to the data model by JSON Pointer; `{ "$state": "draft" }` binds to client-side view state.
 
+```ts
+export interface PathBinding { $path: string; }
+export interface StateBinding { $state: string; }
+export function isPathBinding(value: unknown): value is PathBinding;
+export function isStateBinding(value: unknown): value is StateBinding;
+```
+
 **Actions**: an interactive node dispatches a named action `{ action: string, payload? }` through the renderer's dispatch chokepoint (08 §5). The action name is a tool name or an `fn:` reference; guard checks it like any call.
 
 **`fn:` references** (v0 addition, Yousef-approved): anywhere a tree names a callable — `TreeQuery.tool` or an action name — the form `fn:<name>` (`<name>` matching `/^[A-Za-z_][A-Za-z0-9_-]*$/`) targets a function of the app's own machine instead of a tool. Resolution: `POST /fn/<name>` on the app's server (06 §4). Trees without a machine must not contain `fn:` references (validation error).
 
 **Limits and reserved names** (pinned): max 5000 nodes, 16 queries, 16 generated components, 64 KB per component source / 256 KB total; generated component names are PascalCase and may not shadow the prewired primitives (`Stack`, `Row`, `Grid`, `Text`, `Skeleton`, `Surface`, `Divider`).
+
+Core deliberately does not bound the size of `Tree.data` or `TreeNode.props`. Hosts must enforce request-body limits before tree validation; the core DoS conformance test records this delegation.
 
 ```ts
 export function validateTree(input: unknown): { ok: true; tree: Tree } | { ok: false; error: { code: "version" | "provision"; message: string } };
@@ -316,6 +338,7 @@ export interface VendoRecord {
   refs?: Record<string, string>;   // host-entity refs — queryable, joinable
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
+  revision?: string;               // opaque token when RecordStore.atomic is present
 }
 
 export interface RecordQuery { refs?: Record<string, string>; ids?: string[]; limit?: number; cursor?: string; }
@@ -323,8 +346,19 @@ export interface RecordQuery { refs?: Record<string, string>; ids?: string[]; li
 export interface RecordStore {
   get(id: string): Promise<VendoRecord | null>;
   put(record: Pick<VendoRecord, "id" | "data" | "refs">): Promise<VendoRecord>;
+  // Optional additive capability: one compare-and-claim statement. Exact data
+  // + refs match; replacement omitted means delete. Exactly one caller gets true.
+  claim?(expected: Pick<VendoRecord, "id" | "data" | "refs">,
+         replacement?: Pick<VendoRecord, "data" | "refs">): Promise<boolean>;
   delete(id: string): Promise<void>;
   list(q?: RecordQuery): Promise<{ records: VendoRecord[]; cursor?: string }>;
+  atomic?: {
+    insertIfAbsent(record: Pick<VendoRecord, "id" | "data" | "refs">): Promise<VendoRecord | null>;
+    compareAndSwap(
+      record: Pick<VendoRecord, "id" | "data" | "refs">,
+      expectedRevision: string,
+    ): Promise<VendoRecord | null>;
+  };
 }
 
 export interface BlobStore {
@@ -358,7 +392,12 @@ export interface SecretsProvider { get(name: string): Promise<string | undefined
 /** Agentic execution seam — how automations run an agent without importing it.
  *  agent exports an implementation (03 §1 `asRunner`); the umbrella wires it. */
 export type AgentRunner = (
-  task: { prompt: string; tools: ToolRegistry; budget?: { maxToolCalls?: number } },
+  task: {
+    prompt: string;
+    tools: ToolRegistry;
+    budget?: { maxToolCalls?: number };
+    abortSignal?: AbortSignal;     // additive, best-effort in-process cancellation
+  },
   ctx: RunContext,
 ) => Promise<AgentRunReport>;
 
@@ -379,6 +418,8 @@ export interface RegisteredComponent {
   name: string;                    // PascalCase, unique
   description: string;             // what the generator reads
   propsSchema: StandardSchema;     // type-only (not zod-serializable)
+  propsJsonSchema?: JsonSchema;    // prompt-safe JSON Schema 2020-12; maps to catalog@1 propsSchema
+  examples?: string[];             // usage snippets shown to the generator; maps to catalog@1 examples
   remixable?: boolean;             // opt-in: source captured at sync, eligible for pins
 }
 // the catalog holds host registrations; prewired primitives are the fixed reserved-name set (§8), not entries
@@ -408,6 +449,7 @@ export type VendoErrorCode =
   | "conflict";
 
 export class VendoError extends Error { code: VendoErrorCode; detail?: Json; }
+export function safeErrorMessage(error: unknown): string; // never throws, including for hostile error objects
 ```
 
 Forward compatibility (normative): clients treat an unknown error code as a generic error, and renderers/consumers ignore unknown stream-part types, unknown `OpenSurface` kinds, and unknown discriminated-union variants they don't recognize — new codes, parts, trigger kinds, and run models are additive within the version train.
@@ -420,3 +462,80 @@ Typed `data-*` parts riding the ai-SDK UI message stream (03 §4). Live here —
 export interface VendoViewPart { type: "data-vendo-view"; appId: AppId; payload: UIPayload }                    // a rendered app surface in-thread
 export interface VendoApprovalPart { type: "data-vendo-approval"; toolCallId: string; risk: RiskLabel; approvalId?: ApprovalId }  // receipt/approval metadata beside native tool parts
 ```
+
+## 17. Capability-miss event (`vendo/capability-miss@1`)
+
+The embedded agent emits exactly one capability-miss event when it cannot fulfill a user ask for one of three reasons: no matching tool exists, tool use has failed repeatedly, or the agent explicitly gives up. The agent decides that a miss occurred; the umbrella composition owns persistence and optional transport so core remains shape-only and agent does not acquire filesystem or cloud dependencies.
+
+```ts
+export const VENDO_CAPABILITY_MISS_FORMAT = "vendo/capability-miss@1";
+
+export interface CapabilityMissToolFailure {
+  tool: string;
+  attempt: number;                 // 1-based attempt order within this miss
+  failure: { code?: string; message: string };
+}
+
+export interface CapabilityMissEvent {
+  format: "vendo/capability-miss@1";
+  id: string;                      // globally unique, "mis_..."
+  at: IsoDateTime;
+  hostId: string;                  // stable host-installation identity within its Cloud tenant
+  appId?: AppId;                   // set when the ask occurred inside a Vendo app
+  sessionId: string;
+  threadId?: ThreadId;
+  intent: string;                  // privacy-scrubbed user ask, preserving refinement intent
+  surface: {
+    format: "vendo/tools@1";
+    hash: string;                  // sha256:<hex> of canonicalJson(parsed .vendo/tools.json)
+  };
+  trigger:
+    | { kind: "no-matching-tool"; toolsConsidered: string[] }
+    | {
+        kind: "repeated-tool-failure";
+        toolsConsidered: string[];
+        attempts: [CapabilityMissToolFailure, CapabilityMissToolFailure, ...CapabilityMissToolFailure[]];
+      }
+    | { kind: "agent-give-up"; toolsConsidered: string[]; toolsAttempted: string[] };
+}
+```
+
+**Normative identity:** `hostId` MUST be the `TelemetryConfig.anonymousId` returned by `@vendoai/telemetry`'s `loadConfig()` (normally persisted in `~/.vendo/telemetry.json`; no `createVendo` override exists), while Cloud MUST derive the tenant from the organization authenticated by `VENDO_API_KEY` and use `hostId` only as the host-installation identity within that tenant.
+
+Trigger semantics are closed for `@1`:
+
+- `no-matching-tool`: the available/searchable surface contains no tool capable of the ask; no tool attempt is implied.
+- `repeated-tool-failure`: two or more failed attempts prevented fulfillment. `attempts` is ordered and carries each attempted tool name plus a scrubbed failure code/message.
+- `agent-give-up`: the agent makes an explicit terminal decision that it cannot fulfill the ask, whether or not it attempted a tool. This is not a catch-all for an unclassified exception.
+
+`surface.hash` identifies the exact extracted surface that existed at miss time; formatting-only changes do not alter it. The gap dashboard clusters by `intent` within `hostId`, resolves that surface snapshot by `(surface.format, surface.hash)`, and diffs the miss against its tools. Dashboard export and the refine feed consumed by `vendo refine` carry this same event shape unchanged.
+
+Persistence and transport are normative:
+
+- OSS always appends each event as one JSON object plus a newline to `.vendo/data/misses.jsonl`. This local append is not consent-gated, happens independently of upload, and remains the source of truth if upload fails.
+- Cloud upload is allowed when and only when `VENDO_API_KEY` is non-empty **and** `envOptOut(env) === false`, using the exported helper in `packages/vendo-telemetry/src/consent.ts`. `envOptOut` blocks upload when `VENDO_TELEMETRY_DISABLED` or `DO_NOT_TRACK` is `"1"` or `"true"`, or when `CI` is set to any value other than `""`, `"0"`, or `"false"`. The `NODE_ENV` development/test fail-close and the persisted telemetry config's `optedOut` flag do not gate miss upload; they remain product-telemetry-only, and production upload is allowed because non-empty `VENDO_API_KEY` is the host's explicit opt-in. Otherwise no miss data leaves the machine.
+- `intent` is user-authored content and may contain confidential or personal data. Emitters must remove credentials and secrets and minimize unrelated personal data while preserving the ask's intent; failure messages receive the same treatment. Events must never include raw tool arguments or outputs. Hosts must treat both the plaintext local JSONL and any Cloud copy as confidential user data.
+
+## Amendments
+
+### 2026-07-14 — Capability-miss event shape (ENG-253)
+
+- **Changed:** Added the additive `vendo/capability-miss@1` persisted/wire shape, with the three locked emission triggers, exact extracted-surface identity, host/session context, and tool-attempt detail.
+- **Changed:** Contracted unconditional local JSONL persistence, API-key-plus-opt-out-gated Cloud upload, privacy handling, and reuse of the same event by the gap dashboard and refine feed.
+- **Why:** Miss capture needs one stable handoff between the embedded agent, OSS history, Cloud gap analysis, and `vendo refine` before ENG-253 implementation begins.
+- **Approved by:** Yousef, 2026-07-14 (consent semantics ruled: key + envOptOut kill switches; production allowed).
+
+### 2026-07-14 — MCP additions, RunContext promotion, and shipped export surface
+
+- **Changed:** Made `PermissionGrant.source: "mcp"` and `AuditEvent.kind: "door-auth"` normative, with their origin in 10-mcp; removed the stale reservation note.
+- **Changed:** Contracted optional `RunContext.grant` and `RunContext.mcpConsent` fields. They ship in Wave 5 and ride through schema passthrough until then.
+- **Changed:** Documented the shipped `@vendoai/core/conformance` test-infrastructure subpath and the stable root utilities already consumed by sibling blocks, including the exact-grant input hash algorithm.
+- **Changed:** Recorded that `Tree.data` and `TreeNode.props` size limits are delegated to host request-body enforcement.
+- **Why:** Post-freeze MCP work and sibling usage had expanded the real surface without updating this contract, and the host-side tree size responsibility was only pinned in a test.
+- **Approved by:** Yousef, 2026-07-14.
+
+### 2026-07-14 — Atomic record claims
+
+- **Changed:** Added optional `RecordStore.claim(expected, replacement?)` as the core seam for one-statement compare-and-replace or compare-and-delete adapters.
+- **Why:** Store consumers that require single-use state need an additive capability they can require without importing the concrete store block.
+- **Approved by:** Yousef, 2026-07-14.

@@ -1,5 +1,6 @@
 import { canonicalJson, sha256Hex, type ApprovalDecision, type ApprovalRequest } from "@vendoai/core";
 import { useState } from "react";
+import { ContainedNotice } from "../tree/notice.js";
 import { ChromeRoot } from "./chrome-root.js";
 
 export interface ApprovalCardProps {
@@ -12,6 +13,12 @@ export interface ApprovalCardProps {
    * (the real wire decision) keep it. Default true.
    */
   allowRemember?: boolean;
+}
+
+function approvalDate(grantedAt: string): string {
+  return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" }).format(
+    new Date(grantedAt),
+  );
 }
 
 /** 01-core §5; 08-ui §4 — the one consent surface, always showing real inputs. */
@@ -123,6 +130,13 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true }: Appro
               </fieldset>
             </div>
           </details>
+        ) : null}
+        {approval.invalidatedGrant ? (
+          <div style={{ marginTop: "12px" }}>
+            <ContainedNotice label="Previous permission invalidated">
+              {`This tool changed since you approved it on ${approvalDate(approval.invalidatedGrant.grantedAt)} — your previous permission no longer applies.`}
+            </ContainedNotice>
+          </div>
         ) : null}
         {error ? <div role="alert" className="fl-error">{error}</div> : null}
         <div className="fl-approval-actions">

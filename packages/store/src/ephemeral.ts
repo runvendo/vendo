@@ -44,9 +44,33 @@ export function overlayFor(store: object): EphemeralOverlay {
   return overlay;
 }
 
-/** Declare a subject ephemeral before writing data that only carries its subject string. */
+/** Cap on the ephemeral-subject set (ENG-251). One anonymous visitor per entry;
+    without a bound the set grows for the life of the process as new anonymous
+    clients arrive. ~10k concurrent anonymous sessions is a generous ceiling for
+    a single-process OSS host. */
+const EPHEMERAL_SUBJECT_CAP = 10_000;
+
+/** Declare a subject ephemeral before writing data that only carries its subject
+    string. Bounded LRU by registration recency (ENG-251): re-registering an
+    active subject refreshes it to the most-recent slot, so the entry evicted
+    when the cap is exceeded is always the OLDEST idle subject — never the one
+    being registered for the current request.
+
+    Trade-off: an evicted subject's LATER writes route to the DURABLE store
+    instead of the in-memory ephemeral overlay, so a very long-idle anonymous
+    session could begin persisting. Acceptable — ephemeral sessions are already
+    best-effort and never outlive the process — and it buys a fixed memory
+    ceiling against anonymous-visitor churn. */
 export function registerEphemeralSubject(store: VendoStore, subject: string): void {
-  overlayFor(store).subjects.add(subject);
+  const subjects = overlayFor(store).subjects;
+  // delete+add bumps recency (Set preserves insertion order → first is oldest).
+  subjects.delete(subject);
+  subjects.add(subject);
+  while (subjects.size > EPHEMERAL_SUBJECT_CAP) {
+    const oldest = subjects.values().next().value;
+    if (oldest === undefined) break;
+    subjects.delete(oldest);
+  }
 }
 
 export function isEphemeralSubject(store: VendoStore, subject: string): boolean {

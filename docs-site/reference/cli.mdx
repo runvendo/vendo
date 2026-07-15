@@ -5,7 +5,7 @@ description: "Reference for the vendo bin commands: init for setup, doctor for w
 
 The umbrella owns the `vendo` bin. It has four commands.
 
-## `vendo init`
+## `vendo init [dir]`
 
 Interactive setup. It scans the app, interviews you about your model import, the
 product brief, risk labels for critical tools, and the MCP door (theme is
@@ -16,18 +16,32 @@ runs.
 
 Init detects the host framework from `package.json` and scaffolds only what
 applies. A `next` dependency gets `app/api/vendo/[...vendo]/route.ts` (under
-`src/app` when that directory exists) and a layout that wraps `<VendoRoot>`. An
-`express` dependency gets a `vendo/server.ts` (`vendo/server.mjs` without a
-`tsconfig.json`) holding the `createVendo()` composition and a Node
-HTTP-to-fetch adapter, plus a starter `vendo/ai.ts`. Mount the adapter with
+`src/app` when that directory exists), a layout that wraps `<VendoRoot>`, and,
+when you opt into MCP in the interview, a sibling
+`.well-known/[...vendo]/route.ts`. An `express` dependency gets a
+`vendo/server.ts` (`vendo/server.mjs` without a `tsconfig.json`) holding the
+`createVendo()` composition and a Node HTTP-to-fetch adapter, plus a starter
+`vendo/ai.ts`. Mount the adapter with
 `app.use("/api/vendo", mountVendo())` and wrap the client entry in `<VendoRoot>`
 to finish. Init detects only `next` and `express`, checking `next` first, so an
 app with both gets the Next scaffold; any other host is treated as Next.
 
-`--agent` emits the setup plan with its four plain-language questions and
-writes nothing.
+`dir` is the app to initialize and defaults to the current directory.
 
-## `vendo doctor`
+Options:
+
+- `--agent` emits the setup plan with its four plain-language questions and
+  writes nothing.
+- `--yes` skips the interview, shows the proposed diffs, and approves every
+  code change. Combine it with `--model-import` and `--brief` for unattended
+  setup.
+- `--force` regenerates Vendo-owned files under `.vendo/`. It does not replace
+  existing host source files.
+- `--model-import <specifier>` sets the module that exports the host's AI SDK
+  `model` (default `@/lib/ai` for Next.js and `./ai` for Express).
+- `--brief <text>` supplies the product brief written to `.vendo/brief.md`.
+
+## `vendo doctor [dir]`
 
 Checks wiring and makes one live `/status` round trip. It recognizes both Next.js
 (catch-all route plus a layout that mounts `<VendoRoot>`) and Express (the server
@@ -41,10 +55,11 @@ Exit codes:
 - `0`: green
 - `1`: broken wiring
 
-## `vendo sync`
+## `vendo sync [dir]`
 
 Runs the build-step extraction manually. It updates tool extraction and remix
-baselines. The default is fail-soft and warns on breaking changes.
+baselines for `dir`, which defaults to the current directory. The default is
+fail-soft and warns on breaking changes.
 
 Exit codes:
 
@@ -53,18 +68,27 @@ Exit codes:
 
 ## `vendo cloud`
 
-Client for the Vendo Cloud API. `vendo cloud login <email>` sends a six-digit
+Client for the Vendo Cloud API. `vendo cloud login <email>` sends a 6-10 digit
 email OTP, prompts for it, and stores the session at
 `~/.vendo/cloud-session.json`; `--token <jwt>` stores an access token instead.
 Other subcommands: `logout`, `whoami`, `orgs`, `keys` (`list`, `create`,
 `revoke`), `members`, `invite`, `deployments`, `usage`, `billing`, `validate`,
-`share`, `publish`, and `pin-ship`. Every result prints as JSON.
+`deploy`, `share`, `publish`, and `pin-ship`. Read results print as JSON;
+`deploy` prints a concise summary table by default and switches to raw JSON
+with `--json`.
+
+`vendo cloud deploy` pushes local enabled automations from `.vendo/data` to a
+hosted instance. Use `--app <id>` (repeatable) to restrict the set, `--subject
+<id>` when the local store holds more than one subject, and `--secret
+NAME=VALUE` (repeatable) to send referenced secret values. See
+[Vendo Cloud](/deploy/vendo-cloud#deploy-local-automations-to-hosted) for the
+full walkthrough.
 
 Global options:
 
 - `--api-url <url>` overrides `VENDO_CLOUD_URL` (default `https://console.vendo.run`).
 - `--key <vnd_...>` overrides `VENDO_API_KEY` for the machine commands
-  (`validate`, `share`, `publish`, `pin-ship`).
+  (`validate`, `deploy`, `share`, `publish`, `pin-ship`).
 
 Org-scoped commands take `--org <id>`; omit it only when your account has one
 organization. Run `vendo cloud help` for the full list. See

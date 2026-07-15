@@ -10,6 +10,7 @@ import {
   bindTools,
   guardFixture,
   memoryStore,
+  seedAppRow,
   scriptedLanguageModel,
 } from "./testing/index.js";
 
@@ -50,6 +51,9 @@ describe("apps agent tools", () => {
       "vendo_apps_create",
       "vendo_apps_edit",
       "vendo_apps_open",
+      "vendo_apps_data_list",
+      "vendo_apps_data_put",
+      "vendo_apps_data_delete",
     ]);
     for (const descriptor of descriptors) {
       expect(TOOL_NAME_PATTERN.test(descriptor.name)).toBe(true);
@@ -61,7 +65,94 @@ describe("apps agent tools", () => {
       });
       expect(() => JSON.stringify(descriptor.inputSchema)).not.toThrow();
     }
-    expect(descriptors.map((descriptor) => descriptor.risk)).toEqual(["write", "write", "read"]);
+    // Creating a document is a rung-1-only, jailed UI operation: it cannot
+    // reach host tools, a server machine, or the network.
+    expect(descriptors.map((descriptor) => descriptor.risk)).toEqual([
+      "read", "write", "read", "read", "write", "write",
+    ]);
+  });
+
+  it("classifies only provable tree edits as read-class", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+    });
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+    await seedAppRow(store, {
+      ...created,
+      id: "app_http",
+      ui: "http",
+      server: "fake:snap_http",
+    }, ctx.principal.subject);
+
+    await expect(runtime.agentToolRisk({
+      id: "call_tree_edit",
+      tool: "vendo_apps_edit",
+      args: { appId: created.id, instruction: "Make the heading blue" },
+    }, ctx)).resolves.toBe("read");
+    await expect(runtime.agentToolRisk({
+      id: "call_server_edit",
+      tool: "vendo_apps_edit",
+      args: { appId: created.id, instruction: "Persist this to the database" },
+    }, ctx)).resolves.toBe("write");
+
+    await expect(runtime.agentToolRisk({
+      id: "call_missing_edit",
+      tool: "vendo_apps_edit",
+      args: { appId: "app_missing", instruction: "Make the heading blue" },
+    }, ctx)).resolves.toBe("write");
+    await expect(runtime.agentToolRisk({
+      id: "call_http_edit",
+      tool: "vendo_apps_edit",
+      args: { appId: "app_http", instruction: "Make the heading blue" },
+    }, ctx)).resolves.toBe("write");
+    await expect(runtime.agentToolRisk({
+      id: "call_bad_edit",
+      tool: "vendo_apps_edit",
+      args: { appId: created.id },
+    }, ctx)).resolves.toBe("write");
+    await expect(runtime.agentToolRisk({
+      id: "call_host",
+      tool: "host_accounts_update",
+      args: {},
+    }, ctx)).resolves.toBeUndefined();
+  });
+
+  it("keeps malformed and foreign edit calls write-class", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+    });
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+    await seedAppRow(store, {
+      ...created,
+      id: "app_foreign",
+    }, "user_other");
+
+    for (const [id, args] of [
+      ["call_null_edit", null],
+      ["call_array_edit", []],
+      ["call_primitive_edit", "invalid"],
+    ] as const) {
+      await expect(runtime.agentToolRisk({
+        id,
+        tool: "vendo_apps_edit",
+        args,
+      }, ctx)).resolves.toBe("write");
+    }
+    await expect(runtime.agentToolRisk({
+      id: "call_foreign_edit",
+      tool: "vendo_apps_edit",
+      args: { appId: "app_foreign", instruction: "Make the heading blue" },
+    }, ctx)).resolves.toBe("write");
   });
 
   it("creates and opens an app through the guard-bound fixture", async () => {
@@ -150,6 +241,60 @@ describe("apps agent tools", () => {
     }, ctx)).resolves.toMatchObject({
       status: "error",
       error: { code: "validation" },
+    });
+  });
+
+  it("ownership-checks and round-trips declared data collections", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+    });
+    const created = await runtime.create({ prompt: "Data tools" }, ctx);
+    await seedAppRow(store, {
+      ...created,
+      storage: { notes: { about: "Invoice notes", refs: { invoice_id: "host.invoice" } } },
+    }, ctx.principal.subject);
+    const registry = runtime.agentTools();
+
+    await expect(registry.execute({
+      id: "call_data_put",
+      tool: "vendo_apps_data_put",
+      args: {
+        appId: created.id,
+        collection: "notes",
+        id: "note_1",
+        data: { body: "hello" },
+        refs: { invoice_id: "inv_1" },
+      },
+    }, ctx)).resolves.toMatchObject({ status: "ok", output: { id: "note_1" } });
+    await expect(registry.execute({
+      id: "call_data_list",
+      tool: "vendo_apps_data_list",
+      args: { appId: created.id, collection: "notes", refs: { invoice_id: "inv_1" } },
+    }, ctx)).resolves.toMatchObject({
+      status: "ok",
+      output: { records: [{ id: "note_1", data: { body: "hello" } }] },
+    });
+    await expect(registry.execute({
+      id: "call_data_delete",
+      tool: "vendo_apps_data_delete",
+      args: { appId: created.id, collection: "notes", id: "note_1" },
+    }, ctx)).resolves.toEqual({ status: "ok", output: { status: "ok" } });
+
+    await expect(registry.execute({
+      id: "call_intruder_data_list",
+      tool: "vendo_apps_data_list",
+      args: { appId: created.id, collection: "notes" },
+    }, {
+      ...ctx,
+      principal: { kind: "user", subject: "user_intruder" },
+    })).resolves.toEqual({
+      status: "error",
+      error: { code: "not-found", message: `app not found: ${created.id}` },
     });
   });
 });

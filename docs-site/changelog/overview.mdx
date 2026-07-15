@@ -3,6 +3,36 @@ title: "Vendo product changelog"
 description: "Weekly release notes covering new Vendo features, product updates, MCP door capabilities, and bug fixes shipped to the SDK and runtime."
 ---
 
+<Update label="July 14, 2026" description="Week of July 14 – July 20">
+
+## New features
+
+**Chat context controls.** `createVendo({ agent })` now accepts
+`toolOutputCap`, `maxOutputTokens`, and `historyWindow` so hosts can bound
+what the chat loop sends to the model. `toolOutputCap` defaults to 32,000
+characters (pass `0` to disable) and truncates a single runaway tool result
+before it reaches the model; the stored thread is untouched. `historyWindow`
+caps the last N whole messages re-sent per turn without splitting
+tool-call/result pairs. See [Handler options](/reference/handler-options#agent-context).
+
+## Updates
+
+**Anthropic prompt-cache breakpoints.** The agent now marks cache
+breakpoints on the static system prompt and the stable history prefix, so
+Anthropic models reuse cached tokens across turns. Other providers ignore
+the hints — behavior is unchanged there.
+
+**Faster automations tick.** The scheduler now fetches only
+schedule-triggered apps, batches cursor reads, and runs fired automations
+with bounded parallelism so one hung tenant can't block the interval.
+`/tick` return semantics are unchanged.
+
+**Faster thread listing.** Thread summaries derive titles from a stored
+column instead of loading every thread's full message array, so
+`GET /threads` scales with the list size, not the messages inside it.
+
+</Update>
+
 <Update label="July 13, 2026" description="Week of July 7 – July 13">
 
 ## New features

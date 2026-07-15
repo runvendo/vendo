@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createStack, resetFixture, SUBJECT } from "./harness.js";
-import { connectWithSdk, issueTokens, registerClient } from "./support.js";
+import { connectWithSdk, issueTokens, refreshToken, registerClient } from "./support.js";
+
+interface TokenResponse {
+  access_token: string;
+  refresh_token: string;
+}
 
 describe("host revocation kills an MCP session", () => {
   beforeEach(resetFixture);
@@ -57,4 +62,95 @@ describe("host revocation kills an MCP session", () => {
       await stack.close();
     }
   });
+
+  it("revokes tokens through RFC 7009 with PGlite-backed family semantics", async () => {
+    const stack = await createStack();
+    try {
+      const client = await registerClient(stack);
+      const first = await issueTokens(stack, client.body.client_id);
+      const rotatedResponse = await refreshToken(stack, first.body.refresh_token, client.body.client_id);
+      expect(rotatedResponse.status).toBe(200);
+      const rotated = await rotatedResponse.json() as TokenResponse;
+      const independent = await issueTokens(stack, client.body.client_id);
+
+      const revoked = await fetch(`${stack.endpoint}/revoke`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          token: first.body.refresh_token,
+          token_type_hint: "access_token",
+          client_id: client.body.client_id,
+        }),
+      });
+      expect(revoked.status).toBe(200);
+      expect(await revoked.text()).toBe("");
+      expect(await bearerStatus(stack.endpoint, first.body.access_token)).toBe(401);
+      expect(await bearerStatus(stack.endpoint, rotated.access_token)).toBe(401);
+      expect((await refreshToken(stack, rotated.refresh_token, client.body.client_id)).status).toBe(400);
+      expect((await refreshToken(stack, independent.body.refresh_token, client.body.client_id)).status).toBe(200);
+
+      const families = await stack.sql<{ status: string; count: number }>(
+        `SELECT data->>'status' AS status, count(*)::int AS count
+         FROM vendo_mcp_grants
+         WHERE data->>'kind' = 'family'
+         GROUP BY data->>'status'
+         ORDER BY status`,
+      );
+      expect(families).toEqual([
+        { status: "active", count: 1 },
+        { status: "revoked", count: 1 },
+      ]);
+
+      const accessOnly = await issueTokens(stack, client.body.client_id);
+      const accessRevoked = await fetch(`${stack.endpoint}/revoke`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          token: accessOnly.body.access_token,
+          token_type_hint: "access_token",
+          client_id: client.body.client_id,
+        }),
+      });
+      expect(accessRevoked.status).toBe(200);
+      expect(await bearerStatus(stack.endpoint, accessOnly.body.access_token)).toBe(401);
+      expect((await refreshToken(stack, accessOnly.body.refresh_token, client.body.client_id)).status).toBe(200);
+
+      const unknown = await fetch(`${stack.endpoint}/revoke`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          token: "vmrt_unknown",
+          token_type_hint: "future_token_type",
+          client_id: client.body.client_id,
+        }),
+      });
+      expect(unknown.status).toBe(200);
+      expect(await unknown.text()).toBe("");
+    } finally {
+      await stack.close();
+    }
+  });
 });
+
+async function bearerStatus(endpoint: string, token: string): Promise<number> {
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      accept: "application/json, text/event-stream",
+      "content-type": "application/json",
+      "mcp-protocol-version": "2025-11-25",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 99,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: { name: "revocation-e2e", version: "1.0.0" },
+      },
+    }),
+  });
+  return response.status;
+}

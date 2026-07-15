@@ -48,6 +48,24 @@ function output(): { output: Output; logs: string[]; errors: string[] } {
   return { output: { log: (message) => logs.push(message), error: (message) => errors.push(message) }, logs, errors };
 }
 
+const WELL_KNOWN_ROUTE = `import { GET as handleVendo } from "../../api/vendo/[...vendo]/route";
+
+const DOOR_PATHS = new Set([
+  "/.well-known/oauth-protected-resource/api/vendo/mcp",
+  "/.well-known/oauth-authorization-server/api/vendo/mcp",
+  "/.well-known/mcp/server-card.json",
+  "/.well-known/mcp-server-card",
+]);
+
+const forward = (request: Request) =>
+  DOOR_PATHS.has(new URL(request.url).pathname)
+    ? handleVendo(request)
+    : new Response(null, { status: 404 });
+
+export const GET = forward;
+export const POST = forward;
+`;
+
 async function tree(root: string, at = root): Promise<Record<string, string>> {
   const result: Record<string, string> = {};
   for (const name of await readdir(at, { withFileTypes: true })) {
@@ -197,6 +215,8 @@ describe("vendo init", () => {
     expect(await readFile(join(root, ".vendo", "data", ".gitignore"), "utf8")).toBe("*\n!.gitignore\n");
     expect(await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))
       .toContain("@vendoai/vendo/server");
+    await expect(readFile(join(root, "app", ".well-known", "[...vendo]", "route.ts"), "utf8"))
+      .rejects.toMatchObject({ code: "ENOENT" });
     const wiredLayout = await readFile(join(root, "app", "layout.tsx"), "utf8");
     expect(wiredLayout).toContain("<VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>");
     expect(wiredLayout).toContain('import theme from "../.vendo/theme.json";');
@@ -205,6 +225,58 @@ describe("vendo init", () => {
     const first = await tree(root);
     expect(await runInit({ targetDir: root, yes: true, output: sink.output })).toBe(0);
     expect(await tree(root)).toEqual(first);
+  });
+
+  it.each(["app", join("src", "app")])(
+    "generates the MCP sibling route with exact content under %s",
+    async (appDir) => {
+      const root = await mkdtemp(join(tmpdir(), "vendo-init-mcp-"));
+      cleanup.push(root);
+      await mkdir(join(root, appDir), { recursive: true });
+      await writeFile(join(root, "package.json"), JSON.stringify({
+        name: "host",
+        dependencies: { next: "16.0.0", "@vendoai/vendo": "0.3.0" },
+      }));
+      await writeFile(join(root, appDir, "layout.tsx"),
+        "export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n");
+
+      const confirm = vi.fn().mockResolvedValue(true);
+      expect(await runInit({
+        targetDir: root,
+        confirm,
+        interview: async () => ({ openDoor: true }),
+        output: output().output,
+      })).toBe(0);
+
+      const routePath = join(appDir, ".well-known", "[...vendo]", "route.ts");
+      await expect(readFile(join(root, routePath), "utf8"))
+        .resolves.toBe(WELL_KNOWN_ROUTE);
+      expect(confirm).toHaveBeenCalledWith(expect.objectContaining({
+        path: routePath,
+        diff: expect.stringContaining('+import { GET as handleVendo }'),
+      }));
+      const otherAppDir = appDir === "app" ? join("src", "app") : "app";
+      await expect(readFile(join(root, otherAppDir, ".well-known", "[...vendo]", "route.ts"), "utf8"))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    },
+  );
+
+  it("preserves an existing hand-written MCP sibling route", async () => {
+    const root = await fixture();
+    const routeDir = join(root, "app", ".well-known", "[...vendo]");
+    const route = join(routeDir, "route.ts");
+    const existing = "export { GET } from \"../../api/vendo/[...vendo]/route\";\n";
+    await mkdir(routeDir, { recursive: true });
+    await writeFile(route, existing);
+
+    expect(await runInit({
+      targetDir: root,
+      confirm: async () => true,
+      interview: async () => ({ openDoor: true }),
+      output: output().output,
+    })).toBe(0);
+
+    expect(await readFile(route, "utf8")).toBe(existing);
   });
 
   it("shows each code diff and writes no code without approval", async () => {
@@ -242,22 +314,46 @@ describe("vendo init", () => {
       .toEqual({ format: "vendo/overrides@1", tools: { host_invoices_send: { critical: true } } });
   });
 
+  it("guides an explicitly opened MCP door without generating registry-auth routes", async () => {
+    const root = await fixture();
+    const sink = output();
+    await runInit({
+      targetDir: root,
+      confirm: async () => true,
+      interview: async () => ({ openDoor: true }),
+      output: sink.output,
+    });
+
+    expect(sink.logs.join("\n")).toContain("vendo mcp server-json");
+    expect(sink.logs.join("\n")).toContain("vendo mcp verify-domain");
+    expect(sink.logs.join("\n")).toContain("vendo doctor");
+    expect(Object.keys(await tree(root)).some((path) => path.includes("mcp-registry-auth"))).toBe(false);
+  });
+
   it("extracts host CSS variables into the Vendo theme as concrete values", async () => {
     const root = await fixture();
     // hex, shadcn hsl triple behind a var() chain, oklch, rem radius — all
     // resolve to concrete hex/px (the jail knows no host custom properties).
     await writeFile(join(root, "app", "globals.css"),
       ":root { --background: #fafafa; --brand-hue: 262 83% 58%; --primary: hsl(var(--brand-hue)); " +
-      "--foreground: oklch(0.205 0 0); --card: 0 0% 100%; --radius: 0.625rem; }\n");
+      "--primary-foreground: #ffffff; --foreground: oklch(0.205 0 0); --card: 0 0% 100%; " +
+      "--border: #dedede; --destructive: #b91c1c; --font-heading: Newsreader, serif; " +
+      "--density: compact; --motion: reduced; --radius: 0.625rem; }\n");
     await runInit({ targetDir: root, yes: true, output: output().output });
     expect(JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"))).toMatchObject({
       colors: {
         background: "#fafafa",
         accent: "#7c3bed",
+        accentText: "#ffffff",
+        border: "#dedede",
+        danger: "#b91c1c",
         text: "#171717",
         surface: "#ffffff",
       },
+      typography: { headingFamily: "Newsreader, serif" },
       radius: { medium: "10px" },
+      density: "compact",
+      motion: "reduced",
     });
   });
 

@@ -7,6 +7,8 @@ import { appsApiSuite } from "./apps-api.js";
 import { genScriptedSuite } from "./gen-scripted.js";
 import { genLiveSuite } from "./gen-live.js";
 import { e2bSuite } from "./e2b.js";
+import { automationsTickSuite } from "./automations-tick.js";
+import { agentContextSuite } from "./agent-context.js";
 
 /** All registered suites, in run order. */
 export const SUITES: Suite[] = [
@@ -15,6 +17,8 @@ export const SUITES: Suite[] = [
   storeSuite,
   guardCallSuite,
   appsApiSuite,
+  automationsTickSuite,
+  agentContextSuite,
   genScriptedSuite,
   genLiveSuite,
   e2bSuite,

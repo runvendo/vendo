@@ -17,22 +17,7 @@ import {
   writeText,
 } from "./shared.js";
 
-const DEFAULT_THEME = {
-  colors: {
-    background: "#ffffff",
-    surface: "#f8fafc",
-    text: "#0f172a",
-    muted: "#64748b",
-    accent: "#2563eb",
-    accentText: "#ffffff",
-    danger: "#dc2626",
-    border: "#e2e8f0",
-  },
-  typography: { fontFamily: "system-ui, sans-serif", baseSize: "16px" },
-  radius: { small: "4px", medium: "8px", large: "12px" },
-  density: "comfortable",
-  motion: "full",
-} as const;
+const DEFAULT_RADIUS = { small: "4px", large: "12px" } as const;
 
 async function extractTheme(root: string): Promise<VendoTheme> {
   const { slots } = await extractThemeSlots(root);
@@ -47,21 +32,22 @@ async function extractTheme(root: string): Promise<VendoTheme> {
       text: slots.text,
       muted: slots.mutedText,
       accent: slots.accent,
-      accentText: DEFAULT_THEME.colors.accentText,
-      danger: DEFAULT_THEME.colors.danger,
-      border: DEFAULT_THEME.colors.border,
+      accentText: slots.accentText,
+      danger: slots.danger,
+      border: slots.border,
     },
     typography: {
       fontFamily: slots.fontFamily,
+      headingFamily: slots.headingFamily,
       baseSize: slots.baseSize,
     },
     radius: {
-      small: deriveRadius(0.5, DEFAULT_THEME.radius.small),
+      small: deriveRadius(0.5, DEFAULT_RADIUS.small),
       medium: slots.radius,
-      large: deriveRadius(1.5, DEFAULT_THEME.radius.large),
+      large: deriveRadius(1.5, DEFAULT_RADIUS.large),
     },
-    density: DEFAULT_THEME.density,
-    motion: DEFAULT_THEME.motion,
+    density: slots.density,
+    motion: slots.motion,
   };
 }
 
@@ -115,6 +101,22 @@ function routeSource(modelImport: string): string {
     `  principal: async () => null,\n` +
     `});\n\n` +
     `export const { GET, POST, DELETE } = nextVendoHandler(vendo);\n`;
+}
+
+function wellKnownRouteSource(): string {
+  return `import { GET as handleVendo } from "../../api/vendo/[...vendo]/route";\n\n` +
+    `const DOOR_PATHS = new Set([\n` +
+    `  "/.well-known/oauth-protected-resource/api/vendo/mcp",\n` +
+    `  "/.well-known/oauth-authorization-server/api/vendo/mcp",\n` +
+    `  "/.well-known/mcp/server-card.json",\n` +
+    `  "/.well-known/mcp-server-card",\n` +
+    `]);\n\n` +
+    `const forward = (request: Request) =>\n` +
+    `  DOOR_PATHS.has(new URL(request.url).pathname)\n` +
+    `    ? handleVendo(request)\n` +
+    `    : new Response(null, { status: 404 });\n\n` +
+    `export const GET = forward;\n` +
+    `export const POST = forward;\n`;
 }
 
 function expressServerSource(modelImport: string, typescript: boolean): string {
@@ -370,7 +372,7 @@ function diff(path: string, before: string | null, after: string): string {
   ].join("\n");
 }
 
-async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; changes: Array<{ absolute: string; path: string; before: string | null; after: string; diff: string }> }> {
+async function buildPlan(options: InitOptions, mcpEnabled = false): Promise<{ plan: InitPlan; changes: Array<{ absolute: string; path: string; before: string | null; after: string; diff: string }> }> {
   const root = resolve(options.targetDir);
   const framework = await detectFramework(root);
   const modelImport = options.modelImport ?? (framework === "express" ? "./ai" : "@/lib/ai");
@@ -399,8 +401,10 @@ async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; change
   } else {
     const app = await appDirectory(root);
     const route = join(app, "api", "vendo", "[...vendo]", "route.ts");
+    const wellKnownRoute = join(app, ".well-known", "[...vendo]", "route.ts");
     const layout = join(app, "layout.tsx");
     const routeBefore = await readOptional(route);
+    const wellKnownRouteBefore = await readOptional(wellKnownRoute);
     const layoutBefore = await readOptional(layout);
     const routeAfter = routeBefore ?? routeSource(modelImport);
     const themeSpecifier = await themeImportSpecifier(root, app);
@@ -418,6 +422,11 @@ async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; change
         const modelAfter = defaultModelSource();
         changes.push({ absolute: modelModule, path: modelPath, before: null, after: modelAfter, diff: diff(modelPath, null, modelAfter) });
       }
+    }
+    if (mcpEnabled && wellKnownRouteBefore === null) {
+      const path = relative(root, wellKnownRoute);
+      const after = wellKnownRouteSource();
+      changes.push({ absolute: wellKnownRoute, path, before: null, after, diff: diff(path, null, after) });
     }
     if (layoutAfter !== null && layoutAfter !== layoutBefore) {
       const path = relative(root, layout);
@@ -516,7 +525,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     modelImport: answers.modelImport ?? options.modelImport,
     brief: answers.brief ?? options.brief,
   };
-  const { plan, changes } = await buildPlan(effective);
+  const { plan, changes } = await buildPlan(effective, answers.openDoor === true);
 
   const telemetry = telemetryFor(options, output);
   await telemetry.track("init_started", { framework: plan.framework });
@@ -591,10 +600,10 @@ export async function runInit(options: InitOptions): Promise<number> {
     }
     // 10-mcp §2: the door never opens by default. When the host asks to open it,
     // point them at the one code change they make deliberately — a HostOAuthAdapter
-    // (identity + consent) plus `mcp: true` on createVendo. init cannot scaffold the
+    // (session + principal resolution) plus `mcp: true` on createVendo. init cannot scaffold the
     // adapter (it is host auth), so it guides rather than writes broken wiring.
     if (answers.openDoor === true) {
-      output.log("MCP door: implement a HostOAuthAdapter (identity + consent) and pass `createVendo({ mcp: true, oauth })`. See docs/contracts/10-mcp; `vendo doctor` verifies the discovery documents once it is live.");
+      output.log("MCP door: implement a HostOAuthAdapter (session lookup + principal resolution) and pass `createVendo({ mcp: true, oauth })`; the door serves consent. Then run `vendo mcp server-json`, `vendo mcp verify-domain`, and `vendo doctor` for registry discovery. See docs/quickstart.md.");
     }
     const finalWiring = plan.framework === "express" ? await detectVendoWiring(root) : null;
     if (finalWiring !== null && (!finalWiring.server || !finalWiring.client)) {

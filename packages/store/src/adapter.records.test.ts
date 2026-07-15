@@ -33,6 +33,26 @@ for (const backend of backends()) {
       expect(await records.get("note_1")).toBeNull();
     });
 
+    it("atomically inserts one claimant and lets only one matching revision swap win", async () => {
+      const records = made.store.records("automations:claims");
+      expect(records.atomic).toBeDefined();
+      const atomic = records.atomic!;
+
+      const claims = await Promise.all(Array.from({ length: 8 }, (_, claimant) =>
+        atomic.insertIfAbsent({ id: "claim_1", data: { claimant } })));
+      const winners = claims.filter((claim) => claim !== null);
+      expect(winners).toHaveLength(1);
+      expect(winners[0]?.revision).toBeDefined();
+
+      const revision = winners[0]!.revision!;
+      const swaps = await Promise.all([
+        atomic.compareAndSwap({ id: "claim_1", data: { claimant: "a" } }, revision),
+        atomic.compareAndSwap({ id: "claim_1", data: { claimant: "b" } }, revision),
+      ]);
+      expect(swaps.filter((record) => record !== null)).toHaveLength(1);
+      expect((await records.get("claim_1"))?.revision).not.toBe(revision);
+    });
+
     it("filters by ids and refs containment", async () => {
       const records = made.store.records("app:app_a:filters");
       await records.put({ id: "flt_a", data: { n: 1 }, refs: { owner: "one", kind: "invoice" } });
@@ -71,6 +91,98 @@ for (const backend of backends()) {
       await b.put({ id: "shared_note", data: { app: "b" } });
       expect((await a.get("shared_note"))?.data).toEqual({ app: "a" });
       expect((await b.get("shared_note"))?.data).toEqual({ app: "b" });
+    });
+
+    it("atomically compares and claims a record exactly once", async () => {
+      const firstHandle = made.store.records("atomic_claims");
+      const secondHandle = made.store.records("atomic_claims");
+      const expected = await firstHandle.put({
+        id: "claim_1",
+        data: { status: "unclaimed" },
+        refs: { owner: "user_1" },
+      });
+
+      expect(firstHandle.claim).toBeTypeOf("function");
+      expect(secondHandle.claim).toBeTypeOf("function");
+      if (!firstHandle.claim || !secondHandle.claim) throw new Error("store does not support atomic claims");
+
+      const [first, second] = await Promise.all([
+        firstHandle.claim(expected, {
+          data: { status: "claimed", winner: "first" },
+          refs: expected.refs,
+        }),
+        secondHandle.claim(expected, {
+          data: { status: "claimed", winner: "second" },
+          refs: expected.refs,
+        }),
+      ]);
+
+      expect([first, second].filter(Boolean)).toHaveLength(1);
+      expect((await firstHandle.get(expected.id))?.data).toEqual({
+        status: "claimed",
+        winner: first ? "first" : "second",
+      });
+
+      // A stale compare cannot consume the winner's row. The current value can.
+      expect(await firstHandle.claim(expected)).toBe(false);
+      const current = await firstHandle.get(expected.id);
+      expect(current).not.toBeNull();
+      expect(await firstHandle.claim(current!)).toBe(true);
+      expect(await firstHandle.get(expected.id)).toBeNull();
+    });
+
+    it("guards generic claims with the observed revision across an intervening same-value write", async () => {
+      const collection = "revision_guarded_claims";
+      const records = made.store.records(collection);
+      const expected = await records.put({
+        id: "claim_aba",
+        data: { status: "unclaimed" },
+        refs: { owner: "user_1" },
+      });
+      expect(expected.revision).toBeDefined();
+      if (!records.claim) throw new Error("store does not support atomic claims");
+
+      type RawQuery = (
+        text: string,
+        params?: unknown[],
+      ) => Promise<{ rows: Record<string, unknown>[] }>;
+      const raw = made.store.raw() as { query: RawQuery };
+      const originalQuery = raw.query.bind(raw);
+      let intercepted = false;
+      raw.query = async (text, params = []) => {
+        const result = await originalQuery(text, params);
+        if (
+          !intercepted
+          && text.includes("SELECT id, data, refs, created_at, updated_at, revision FROM vendo_records")
+          && params[0] === collection
+          && params[1] === expected.id
+        ) {
+          intercepted = true;
+          await originalQuery(
+            "UPDATE vendo_records SET revision = revision + 1 WHERE collection = $1 AND id = $2",
+            [collection, expected.id],
+          );
+        }
+        return result;
+      };
+
+      try {
+        expect(await records.claim(expected, {
+          data: { status: "claimed" },
+          refs: expected.refs,
+        })).toBe(false);
+      } finally {
+        raw.query = originalQuery;
+      }
+
+      expect(intercepted).toBe(true);
+      const current = await records.get(expected.id);
+      expect(current).toMatchObject({
+        data: expected.data,
+        refs: expected.refs,
+      });
+      expect(current?.revision).toBeDefined();
+      expect(current?.revision).not.toBe(expected.revision);
     });
 
     it("rejects malformed cursors as validation errors", async () => {

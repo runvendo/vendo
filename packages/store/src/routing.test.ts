@@ -154,6 +154,28 @@ for (const backend of backends()) {
           .toEqual([`${prefix}_a`]);
       });
 
+      it(`atomically claims ${collection} rows`, async () => {
+        const firstHandle = made.store.records(collection);
+        const secondHandle = made.store.records(collection);
+        const expected = await firstHandle.put({
+          id: `${collection}_claim`,
+          data: { status: "unclaimed" },
+          refs: { kind: "claim" },
+        });
+        if (!firstHandle.claim || !secondHandle.claim) throw new Error("store does not support atomic claims");
+
+        const results = await Promise.all([
+          firstHandle.claim(expected, { data: { status: "claimed", by: "first" }, refs: expected.refs }),
+          secondHandle.claim(expected, { data: { status: "claimed", by: "second" }, refs: expected.refs }),
+        ]);
+
+        expect(results.filter(Boolean)).toHaveLength(1);
+        expect((await firstHandle.get(expected.id))?.data).toEqual({
+          status: "claimed",
+          by: results[0] ? "first" : "second",
+        });
+      });
+
       it(`walks cursor pages in ${collection} without duplicates or misses`, async () => {
         const records = made.store.records(collection);
         const pageSet = `${collection}_pages`;
