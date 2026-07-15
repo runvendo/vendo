@@ -886,6 +886,35 @@ describe("createMcpDoor MCP protocol", () => {
     await connected.client.close();
   });
 
+  it("does not send already-resolved tree queries back to the MCP shim", async () => {
+    const payload = {
+      formatVersion: "vendo-genui/v1",
+      root: "root",
+      nodes: [],
+      data: { total: 42 },
+      queries: [{ path: "/total", tool: "host_total" }],
+    };
+    const apps: AppsPort = {
+      async list() { return []; },
+      async open() { return { kind: "tree", payload }; },
+      async call() { return null; },
+    };
+    const harness = makeHarness({ apps });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+
+    const opened = await connected.client.callTool({ name: "vendo_apps_open", arguments: { appId: "app_1" } });
+    expect(opened.structuredContent).toEqual({
+      formatVersion: "vendo-genui/v1",
+      root: "root",
+      nodes: [],
+      data: { total: 42 },
+    });
+    expect(payload.queries).toEqual([{ path: "/total", tool: "host_total" }]);
+    await connected.client.close();
+  });
+
   it("gives vendo_apps_* door tools full guard treatment with venue mcp", async () => {
     const apps: AppsPort = {
       async list() { return []; },
@@ -937,7 +966,13 @@ describe("createMcpDoor MCP protocol", () => {
   });
 
   it("keeps a registry-owned vendo_apps_* verbatim but attaches the shim _meta and renders its payload (FIX E)", async () => {
-    const treePayload = { formatVersion: "vendo-genui/v1", root: "root", nodes: [], data: { via: "registry" } };
+    const treePayload = {
+      formatVersion: "vendo-genui/v1",
+      root: "root",
+      nodes: [],
+      data: { via: "registry" },
+      queries: [{ path: "/via", tool: "host_source" }],
+    };
     const apps: AppsPort = {
       async list() { return []; },
       async open() { return { kind: "http", url: "https://app.example" }; },
@@ -979,10 +1014,18 @@ describe("createMcpDoor MCP protocol", () => {
 
     // Execution routes through the registry (one guard decision), not the
     // AppsPort — and the door unwraps its OpenSurface into a bare, shim-renderable
-    // format-tagged UIPayload (core §8), not the {kind,payload} envelope.
+    // format-tagged UIPayload (core §8), not the {kind,payload} envelope. The
+    // registry's AppsRuntime.open already resolved `queries` into `data`, so the
+    // MCP projection removes those declarations rather than calling them twice.
     const before = harness.executions.length;
     const result = await connected.client.callTool({ name: "vendo_apps_open", arguments: {} });
-    expect(result.structuredContent).toEqual(treePayload);
+    expect(result.structuredContent).toEqual({
+      formatVersion: "vendo-genui/v1",
+      root: "root",
+      nodes: [],
+      data: { via: "registry" },
+    });
+    expect(treePayload.queries).toEqual([{ path: "/via", tool: "host_source" }]);
     expect(harness.executions.length).toBe(before + 1);
     await connected.client.close();
   });

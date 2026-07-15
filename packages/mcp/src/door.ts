@@ -367,7 +367,7 @@ class Door {
     // MCP Apps shim renders a bare format-tagged UIPayload (core §8), so unwrap
     // it exactly as the door's own apps path does before mapping the result.
     if (name === "vendo_apps_open" && this.#config.apps !== undefined && outcome.status === "ok") {
-      return mapOutcome({ status: "ok", output: unwrapAppsOpen(outcome.output) }, identity.name);
+      return mapOutcome({ status: "ok", output: mcpAppsOpenOutput(outcome.output) as Json }, identity.name);
     }
     return mapOutcome(outcome, identity.name);
   }
@@ -427,7 +427,7 @@ class Door {
       if (!appId) return { status: "error", error: { code: "validation", message: "appId is required" } };
       if (name === "vendo_apps_open") {
         const opened = await apps.open(appId, ctx);
-        return { status: "ok", output: opened.kind === "http" ? { url: opened.url } : opened.payload };
+        return { status: "ok", output: mcpAppsOpenOutput(opened) as Json };
       }
       const ref = typeof args.ref === "string" ? args.ref : undefined;
       if (!ref) return { status: "error", error: { code: "validation", message: "ref is required" } };
@@ -647,6 +647,21 @@ function unwrapAppsOpen(output: unknown): unknown {
   return output;
 }
 
+/** AppsRuntime.open has already resolved every v0 tree query into `tree.data`
+ * (06-apps §1). The query declarations remain on the in-product payload so a
+ * later open/refresh can resolve them again, but forwarding them to the MCP
+ * shim would execute every query a second time. Project the already-resolved
+ * payload immutably and keep the shim resolver only as a compatibility fallback
+ * for non-door hosts that send unresolved trees directly. */
+function mcpAppsOpenOutput(output: unknown): unknown {
+  const payload = unwrapAppsOpen(output);
+  if (!isRecord(payload) || payload.formatVersion !== "vendo-genui/v1" || !Object.hasOwn(payload, "queries")) {
+    return payload;
+  }
+  const projected = { ...payload };
+  delete projected.queries;
+  return projected;
+}
 function replayKey(tool: string, args: Record<string, unknown>): string {
   return `${tool} ${canonicalJson(args)}`;
 }
