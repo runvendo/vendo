@@ -114,13 +114,20 @@ bottom-right corner by default. `launcher="bottom-left"` moves it;
 `launcher="none"` removes it for hosts that trigger the overlay themselves.
 Open state is uncontrolled by default (`defaultOpen`), or controlled via
 `open` + `onOpenChange`. `useVendoOverlay()` returns
-`{ isOpen, open, close, toggle, overlayProps }` — spread `overlayProps` onto
-the component and call `toggle()` from your own shortcut or nav button.
+`{ isOpen, open, close, toggle, newConversation, overlayProps }` — spread
+`overlayProps` onto the component and call `toggle()` from your own shortcut
+or nav button.
 
 While open, the panel is portaled to `document.body` (so host `transform`/
 `filter`/`overflow` styles cannot trap it), body scroll is locked, and the
 page behind the scrim is `inert`. Focus lands in the composer on open and
 returns to the invoking element on close.
+
+Closing the overlay (scrim click, Escape, close button, or programmatic)
+hides it without discarding the conversation: reopening within the page
+session shows the same thread. A new-conversation button in the panel header
+starts a fresh thread; `newConversation()` on the hook does the same, and
+hosts managing their own state can bump the `conversationKey` prop.
 
 ## Tree rendering
 

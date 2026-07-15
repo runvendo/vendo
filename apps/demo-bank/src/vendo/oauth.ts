@@ -1,5 +1,6 @@
 import type { HostOAuthAdapter } from "@vendoai/vendo";
-import { maplePublicUrl, resolveMapleSession, resolveMapleSubject } from "./auth";
+import { resolveMapleSubject } from "@/server/users";
+import { maplePublicUrl, resolveMapleSession } from "./auth";
 
 /** Maple supplies only host session lookup and subject resolution. The door
  * owns and renders the default consent page, plus CSRF/replay/redirect logic. */

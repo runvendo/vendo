@@ -21,6 +21,13 @@ export interface VendoOverlayProps {
    * programmatically (via `open`/`onOpenChange` or the `useVendoOverlay` hook).
    */
   launcher?: "bottom-right" | "bottom-left" | "none";
+  /**
+   * Change to discard the current conversation and start a fresh thread
+   * (ENG-221). `useVendoOverlay().newConversation()` drives this for you;
+   * hosts managing their own state can bump any number/string. The panel's
+   * built-in new-conversation button works with or without this prop.
+   */
+  conversationKey?: string | number;
 }
 
 /** display:none/visibility:hidden elements silently swallow focus() — skip them. */
@@ -39,10 +46,21 @@ export function VendoOverlay({
   defaultOpen = false,
   onOpenChange,
   launcher = "bottom-right",
+  conversationKey,
 }: VendoOverlayProps = {}) {
   const controlled = openProp !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
   const open = controlled ? openProp : uncontrolledOpen;
+  // ENG-221: closing must HIDE the panel, not unmount it — the conversation
+  // (VendoThread's chat state + adopted thr_ id) lives in the portal subtree
+  // and survives every close/reopen within the page session. Mount lazily on
+  // first open, then keep mounted (render-phase derived state, no extra pass).
+  const [hasOpened, setHasOpened] = useState(open);
+  if (open && !hasOpened) setHasOpened(true);
+  // The explicit new-conversation affordance: remount VendoThread under a new
+  // key so the next turn starts with no threadId (the server mints a fresh
+  // one). Combined with the prop so the hook's newConversation() works too.
+  const [conversationEpoch, setConversationEpoch] = useState(0);
   const theme = useVendoTheme();
   const takeover = useMobileTakeover();
   const launcherRef = useRef<HTMLButtonElement>(null);
@@ -131,6 +149,13 @@ export function VendoOverlay({
 
   const close = () => setOpen(false);
 
+  const newConversation = () => {
+    setConversationEpoch(epoch => epoch + 1);
+    // The remounted thread lands on the empty composer — put focus there so
+    // the affordance reads as "ready for a fresh start", not a dead click.
+    queueMicrotask(() => dialog.current?.querySelector<HTMLElement>("textarea:not([disabled])")?.focus());
+  };
+
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -155,13 +180,17 @@ export function VendoOverlay({
   // it is portaled to document.body. The wrapper is display:contents but
   // carries the .vendo-root token bridge + contract variables, so the panel
   // stays fully brand-themed outside the host ChromeRoot.
-  const portal = open && typeof document !== "undefined" ? createPortal(
+  const portal = hasOpened && typeof document !== "undefined" ? createPortal(
     <div
       ref={portalRoot}
       className="vendo-root fl-overlay-portal"
       data-vendo-motion={theme.motion}
       data-vendo-density={theme.density}
-      style={{ ...themeCssVariables(theme), fontFamily: "var(--vendo-font-family)", fontSize: "var(--vendo-font-size)" } as CSSProperties}
+      // Closed = hidden, NOT unmounted (ENG-221): inline display:none beats the
+      // class's display:contents, drops the subtree out of the a11y tree and
+      // tab order, and replays the open animation on reveal — while the thread
+      // state (and any in-flight stream) lives on underneath.
+      style={{ ...themeCssVariables(theme), fontFamily: "var(--vendo-font-family)", fontSize: "var(--vendo-font-size)", ...(open ? {} : { display: "none" }) } as CSSProperties}
     >
       {/* Click-outside-to-dismiss: the visible frosted scrim reads as clickable,
           so honor it. Dismissal fires on click (not mousedown) so the full
@@ -182,13 +211,22 @@ export function VendoOverlay({
         onKeyDown={onKeyDown}
       >
         <strong className="fl-sr-only">Vendo</strong>
+        {/* ENG-221: the explicit fresh-start affordance — closing never discards
+            the conversation, so THIS is how a new one begins. Shares the close
+            button's quiet header treatment; .fl-overlay-new only shifts it left. */}
+        <button className="fl-overlay-close fl-overlay-new" type="button" aria-label="New conversation" onClick={newConversation}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          <span className="fl-sr-only">New conversation</span>
+        </button>
         <button className="fl-overlay-close" type="button" aria-label="Close Vendo" onClick={close}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <path d="M18 6 6 18M6 6l12 12" />
           </svg>
           <span className="fl-sr-only">Close</span>
         </button>
-        <VendoThread />
+        <VendoThread key={`${conversationKey ?? 0}:${conversationEpoch}`} />
       </div>
     </div>,
     document.body,

@@ -2,6 +2,52 @@
   "format": "vendo/tools@1",
   "tools": [
     {
+      "name": "host_auth_create",
+      "description": "POST /api/auth/{nextauth}",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "nextauth": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nextauth"
+        ],
+        "additionalProperties": true
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "route",
+        "method": "POST",
+        "path": "/api/auth/{nextauth}",
+        "argsIn": "body"
+      }
+    },
+    {
+      "name": "host_auth_get",
+      "description": "GET /api/auth/{nextauth}",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "nextauth": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nextauth"
+        ],
+        "additionalProperties": true
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/auth/{nextauth}",
+        "argsIn": "query"
+      }
+    },
+    {
       "name": "host_createOrder",
       "description": "Place a delivery order on the user's account. This MOVES MONEY: it charges the user's card and appends a transaction.",
       "inputSchema": {

@@ -163,6 +163,10 @@ export async function createWireServer() {
   };
   const requests: RecordedRequest[] = [];
   let closed = false;
+  // Multi-turn sessions (ENG-221 reopen tests) must not mint colliding
+  // message/approval ids — duplicate React keys. Turn 1 keeps the historical
+  // bare ids so single-turn assertions stay stable.
+  let turns = 0;
 
   const handler = async (request: IncomingMessage, response: ServerResponse) => {
     try {
@@ -193,24 +197,25 @@ export async function createWireServer() {
       if (method === "POST" && url.pathname === "/threads") {
         const input = parsedBody as { threadId?: string; message: UIMessage };
         const threadId = input.threadId ?? "thr_minted";
+        const suffix = ++turns === 1 ? "" : `_${turns}`;
         const chunks = createUIMessageStream<UIMessage>({
           originalMessages: [input.message],
-          generateId: () => "msg_assistant",
+          generateId: () => `msg_assistant${suffix}`,
           execute: async ({ writer }) => {
             writer.write({
               type: "tool-input-available",
-              toolCallId: "call_stream",
+              toolCallId: `call_stream${suffix}`,
               toolName: "host_email_send",
               input: { to: "a@example.com" },
               dynamic: true,
             });
-            writer.write({ type: "tool-approval-request", toolCallId: "call_stream", approvalId: "apr_stream" });
+            writer.write({ type: "tool-approval-request", toolCallId: `call_stream${suffix}`, approvalId: `apr_stream${suffix}` });
             writer.write({
               type: "data-vendo-approval",
               data: {
-                toolCallId: "call_stream",
+                toolCallId: `call_stream${suffix}`,
                 risk: "write",
-                approvalId: "apr_stream",
+                approvalId: `apr_stream${suffix}`,
                 invalidatedGrant: {
                   id: "grt_stale",
                   grantedAt: "2026-07-01T12:00:00.000Z",
