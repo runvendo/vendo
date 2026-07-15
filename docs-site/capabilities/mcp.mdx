@@ -139,6 +139,100 @@ forwarded to your host routes. Door tool calls reach host APIs through the same
 The OAuth-authenticated user is the authority. Risky tools still stop at your
 per-call guard decision, whatever the token's scopes.
 
+## Delegate to an external authorization server
+
+If your product already runs its own OAuth authorization server, or you use an
+identity provider that issues bearer tokens for your APIs, point the door at it
+with `remoteAs` instead of letting the door mint tokens itself. The door then
+authenticates every MCP request by verifying the inbound bearer as a JWT signed
+by that issuer.
+
+```ts
+export const vendo = createVendo({
+  model,
+  principal: resolvePrincipal,
+  mcp: true,
+  oauth,
+  remoteAs: {
+    issuer: "https://auth.example.com",
+    audience: "https://app.example.com/api/vendo/mcp",
+    // jwksUri is optional — the door discovers it from the issuer's
+    // RFC 8414 metadata when omitted.
+  },
+});
+```
+
+Requirements and behavior:
+
+- Tokens must be ES256-signed JWTs with `iss`, `sub`, `aud`, `iat`, and `exp`
+  claims. `iss` must equal the configured `issuer`, `aud` must equal the
+  configured `audience`, and `exp` must be in the future.
+- The door caches the JWKS in memory and refetches it when a bearer arrives
+  with an unfamiliar `kid`, which covers ordinary key rotation.
+- The JWT `sub` is passed to `oauth.principal(subject)` on every request, so
+  returning `null` still kills a live session — this remains your revocation
+  point.
+- The local `/api/vendo/mcp/authorize`, `/token`, and `/register` endpoints
+  return `404` in this mode, and so does RFC 8414 authorization-server
+  metadata. RFC 9728 protected-resource metadata instead advertises
+  `authorization_servers: [remoteAs.issuer]`, so compliant clients discover
+  and use the external server directly.
+- `oauth` is still required — `oauth.authorize` is not called (the external
+  server owns the interactive step), but `oauth.principal` is.
+
+Use `remoteAs` when the external server is authoritative for user identity for
+your product. Skip it if you want the door to run its own OAuth surface.
+
+## Federate login from an external authorization server
+
+`federation` adds a signed handshake so an external authorization server can
+have your host complete the interactive login-and-consent step, then hand the
+answer back. This is useful when the external server owns tokens (see
+`remoteAs` above) but does not know how to authenticate your users — your app
+does.
+
+```ts
+export const vendo = createVendo({
+  model,
+  principal: resolvePrincipal,
+  mcp: true,
+  oauth,
+  federation: { secret: process.env.VENDO_MCP_FEDERATION_SECRET! },
+});
+```
+
+Set `VENDO_MCP_FEDERATION_SECRET` to a high-entropy secret shared with the
+external authorization server. That server crafts an HS256-signed request JWT
+and redirects the user's browser to
+`GET /api/vendo/mcp/federate?request=<compact JWS>`.
+
+The request JWT must carry:
+
+- `iss` — the external authorization server's issuer URL.
+- `aud` — the door's canonical URL (for example
+  `https://app.example.com/api/vendo/mcp`).
+- `exp` — no more than five minutes in the future.
+- `jti` — a fresh nonce per handshake.
+- `redirect_uri` — where to send the browser after login. Its origin must
+  match `iss`.
+- `scopes` — the string array the external server wants your user to consent
+  to.
+- `client_name` — the display name shown in your consent UI.
+
+The door verifies the request, then calls
+`oauth.authorize(request, { clientName, scopes })` — the same authorize step
+your local flow uses, so no separate consent UI is needed. If your adapter
+returns a `Response` (a login redirect or rendered page), the door forwards it
+so the browser can complete host login and retry. On a `{ subject }` result,
+the door redirects to `redirect_uri` with an HS256-signed `assertion`
+parameter that the external authorization server verifies with the same
+`secret`. The assertion carries `sub` (your host subject), `iss` (the door's
+canonical URL), `aud` (the request's `iss`), a matching `jti`, and a
+sixty-second `exp`.
+
+The endpoint renders no HTML of its own — it either returns your `authorize`
+response verbatim or issues a `302` back to the external server.
+
 ## Revoke access
 
 Clients and hosts can both retire an authorization without waiting for a token
