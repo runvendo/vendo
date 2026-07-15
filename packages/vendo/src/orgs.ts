@@ -228,8 +228,14 @@ export function createOrgs(options: OrgsOptions): OrgsService {
       try {
         await requireEntitlement();
         return await helpers().orgs.listByMember(principal.subject);
-      } catch {
-        return []; // unactivated orgs (or a store without SQL) degrade passively on read surfaces
+      } catch (error) {
+        // Only the POSTURE degrades passively (unactivated orgs / a store
+        // without SQL); a real store failure must surface, not silently hide
+        // every org-owned app from the listing.
+        if (error instanceof VendoError && (error.code === "cloud-required" || error.code === "not-implemented")) {
+          return [];
+        }
+        throw error;
       }
     },
 

@@ -972,18 +972,19 @@ function createWireHandler(deps: {
       if (path === "/apps") {
         const ctx = await context(request, "app");
         if (request.method === "GET") {
-          const own = await deps.apps.list(ctx);
-          // Org-owned apps the caller can run (block-actions design §C).
-          // memberships() degrades to [] when orgs are unactivated (paid gate).
-          const orgApps = [];
-          for (const membership of await deps.orgs.memberships(ctx.principal)) {
-            orgApps.push(...await deps.apps.list({
-              ...ctx,
-              principal: orgPrincipal(membership.id, membership.name),
-              actor: ctx.principal,
-            }));
-          }
-          return json([...own, ...orgApps]);
+          // Org-owned apps the caller can run (block-actions design §C) join
+          // the personal listing; memberships() degrades to [] when orgs are
+          // unactivated (paid gate). Listings fan out in parallel.
+          const [own, memberships] = await Promise.all([
+            deps.apps.list(ctx),
+            deps.orgs.memberships(ctx.principal),
+          ]);
+          const orgApps = await Promise.all(memberships.map((membership) => deps.apps.list({
+            ...ctx,
+            principal: orgPrincipal(membership.id, membership.name),
+            actor: ctx.principal,
+          })));
+          return json([...own, ...orgApps.flat()]);
         }
         if (request.method === "POST") {
           const body = await requestJson(request);
@@ -1082,9 +1083,14 @@ function createWireHandler(deps: {
       }
       if (head === "automations" && segments.length === 3 && request.method === "POST") {
         const appId = string(segments[1], "app id");
-        // Org-owned automations: enabling/disabling is managing — admin-gated
-        // through the same org re-contextualization as app mutations (§C).
-        const ctx = await deps.orgs.appContext(await context(request, "automation"), appId, "manage");
+        // Org-owned automations: enabling/disabling is managing (admin-gated
+        // through the same org re-contextualization as app mutations, §C);
+        // dry-run is a read-only preview of a run — member-level, like running.
+        const ctx = await deps.orgs.appContext(
+          await context(request, "automation"),
+          appId,
+          segments[2] === "dry-run" ? "run" : "manage",
+        );
         if (segments[2] === "enable") return json(await deps.automations.enable(appId, ctx));
         if (segments[2] === "disable") {
           await deps.automations.disable(appId, ctx);
@@ -1475,12 +1481,14 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   };
 }
 
-/** 09-vendo §2 — adapt the fetch handler to a Next.js catch-all route module. */
+/** 09-vendo §2 — adapt the fetch handler to a Next.js catch-all route module.
+    PATCH joined the wire with the org member role route (ENG-263). */
 export function nextVendoHandler(vendo: Vendo): {
   GET(request: Request): Promise<Response>;
   POST(request: Request): Promise<Response>;
+  PATCH(request: Request): Promise<Response>;
   DELETE(request: Request): Promise<Response>;
 } {
   const handle = (request: Request): Promise<Response> => vendo.handler(request);
-  return { GET: handle, POST: handle, DELETE: handle };
+  return { GET: handle, POST: handle, PATCH: handle, DELETE: handle };
 }

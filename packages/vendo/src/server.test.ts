@@ -377,7 +377,10 @@ describe("09 §3 public wire", () => {
   it("adapts the same fetch handler to Next route exports", async () => {
     const { vendo } = await setup();
     const next = nextVendoHandler(vendo);
-    for (const method of ["GET", "POST", "DELETE"] as const) expect(next[method]).toBeTypeOf("function");
+    // PATCH joined with the org member role route (ENG-263) — Next.js returns
+    // 405 for any method the module does not export, so its absence would make
+    // role changes fail before reaching the wire.
+    for (const method of ["GET", "POST", "PATCH", "DELETE"] as const) expect(next[method]).toBeTypeOf("function");
     expect((await next.GET(request("GET", "/status"))).status).toBe(200);
   });
 });
