@@ -13,7 +13,7 @@ import {
 } from "@vendoai/core";
 import type { SandboxAdapter } from "@vendoai/apps";
 import { createStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo, nextVendoHandler, type CreateVendoConfig, type Vendo } from "./server.js";
@@ -1173,7 +1173,7 @@ describe("09 §2 apps composition", () => {
 });
 
 describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H)", () => {
-  async function mcpVendo(mcp: boolean | { baseUrl?: string } = true): Promise<Vendo> {
+  async function mcpVendo(mcp: CreateVendoConfig["mcp"] = true): Promise<Vendo> {
     const dataDir = await mkdtemp(join(tmpdir(), "vendo-door-"));
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
@@ -1194,6 +1194,14 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
     return vendo;
   }
   const root = (path: string): Request => new Request(`https://host.test${path}`);
+
+  /** Compact HS256 JWS, enough to speak the 10-mcp §3.2 handshake in-test. */
+  function signHs256(secret: string, payload: Record<string, unknown>): string {
+    const part = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString("base64url");
+    const signingInput = `${part({ alg: "HS256", typ: "JWT" })}.${part(payload)}`;
+    const signature = createHmac("sha256", secret).update(signingInput).digest("base64url");
+    return `${signingInput}.${signature}`;
+  }
 
   it("serves protected-resource metadata at the door's exact path-inserted URL", async () => {
     const vendo = await mcpVendo();
@@ -1234,6 +1242,41 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
       "http://10.0.3.7:8080/.well-known/oauth-protected-resource/api/vendo/mcp",
     ));
     expect((await res.json() as { resource?: string }).resource).toBe("https://door.example.com/api/vendo/mcp");
+  });
+
+  it("plumbs mcp.remoteAs and mcp.federation through to the door (ENG-286)", async () => {
+    // A broker-fronted host trusts the external authorization server and
+    // answers its signed login handshake — both ride the `mcp` object form.
+    const issuer = "https://maple.mcp.vendo.run";
+    const secret = "umbrella-federation-secret-with-entropy";
+    const vendo = await mcpVendo({
+      remoteAs: { issuer, audience: `${issuer}/mcp` },
+      federation: { secret },
+    });
+
+    // Remote-AS mode: metadata names the external issuer, and the door stops
+    // serving its own authorization-server surface (10-mcp §3.1).
+    const prm = await vendo.handler(root("/.well-known/oauth-protected-resource/api/vendo/mcp"));
+    expect(prm.status).toBe(200);
+    expect((await prm.json() as { authorization_servers?: string[] }).authorization_servers).toEqual([issuer]);
+    expect((await vendo.handler(root("/.well-known/oauth-authorization-server/api/vendo/mcp"))).status).toBe(404);
+
+    // The login-federation handshake is live at the door's mount (10-mcp §3.2).
+    const now = Math.floor(Date.now() / 1_000);
+    const request = signHs256(secret, {
+      iss: issuer,
+      aud: "https://host.test/api/vendo/mcp",
+      exp: now + 300,
+      jti: "umbrella-federation-nonce",
+      redirect_uri: `${issuer}/federation/callback`,
+      scopes: ["tools"],
+      client_name: "Vendo broker",
+    });
+    const federated = await vendo.handler(root(`/api/vendo/mcp/federate?request=${request}`));
+    expect(federated.status).toBe(302);
+    const assertion = new URL(federated.headers.get("location")!).searchParams.get("assertion")!;
+    const payload = JSON.parse(Buffer.from(assertion.split(".")[1]!, "base64url").toString()) as Record<string, unknown>;
+    expect(payload).toMatchObject({ sub: "user_door", jti: "umbrella-federation-nonce", aud: issuer });
   });
 
   it("does NOT route boundary-adjacent or foreign well-known paths to the door", async () => {
