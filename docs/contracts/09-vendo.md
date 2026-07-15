@@ -60,9 +60,9 @@ Mounted under one base (default `/api/vendo`). Auth: every request passes throug
 | --- | --- | --- |
 | `/threads` | POST | `{ threadId?, message }` → ai-SDK UI message stream (SSE) — one conversational turn; response includes `X-Vendo-Thread-Id: ThreadId` (the effective requested or server-minted id) |
 | `/threads` · `/threads/:id` | GET · GET/DELETE | thread summaries · thread |
-| `/approvals` | GET | pending `ApprovalRequest[]` |
+| `/approvals` | GET | pending `ApprovalRequest[]`; `?org=<id>` scopes to an org the caller admins (ENG-263) |
 | `/approvals/decide` | POST | `{ ids, decision }` → `{}` (batch-capable) |
-| `/grants` · `/grants/:id` | GET · DELETE | grants · revoke |
+| `/grants` · `/grants/:id` | GET · DELETE | grants · revoke; `?org=<id>` scopes to an org the caller admins (ENG-263) |
 | `/apps` | GET · POST | list · `{ prompt }` → `AppDocument` |
 | `/apps/:id` | GET · DELETE | app · delete |
 | `/apps/:id/open` | GET | `OpenSurface` |
@@ -80,7 +80,10 @@ Mounted under one base (default `/api/vendo`). Auth: every request passes throug
 | `/tick` | POST | scheduler tick (serverless cron target; requires `Authorization: Bearer <secret>` — what Vercel cron sends natively) |
 | `/webhooks/:source` | POST | trigger ingress (Composio, host, plain) — verified, see below |
 | `/activity` | GET | `AuditEvent[]` — `guard.audit.query({ principal })` self-scoped at this route |
-| `/status` | GET | `{ posture, version, blocks: {...} }` (doctor's live probe); `blocks.connections: "byo" \| "cloud" \| false` reports the connected-accounts posture (04 §3.1) |
+| `/status` | GET | `{ posture, version, blocks: {...} }` (doctor's live probe); `blocks.connections: "byo" \| "cloud" \| false` (04 §3.1) and `blocks.orgs: "cloud" \| false` (ENG-263) report per-block posture |
+| `/orgs` · `/orgs/:id` | GET · POST · GET | list caller's orgs (+ posture) · create · one org with role + members |
+| `/orgs/:id/members` · `/orgs/:id/members/:subject` | POST · PATCH · DELETE | add member · set role · remove — admin-gated; owners control owners (ENG-263) |
+| `/orgs/:id/apps` | POST | transfer a durable app/automation to the org subject (admin-gated) |
 | `/connections` | GET | the resolved principal's `ConnectorAccount[]` (04 §3) — subject is never caller-supplied |
 | `/connections/initiate` | POST | `{ toolkit, connector?, callbackUrl? }` → `{ id, redirectUrl }` (the broker's OAuth URL); ephemeral and synthetic (`webhook:`/`vendo:`) subjects refused |
 | `/connections/:id` | GET · DELETE | `?connector=` — poll status (404 = not this subject's account, no oracle) · disconnect |
@@ -133,4 +136,10 @@ Exit codes: doctor `0` green / `1` broken wiring; sync `0` (fail-soft warns) / w
 - **Changed:** §3 adds the per-principal connection routes (`/connections`, `/connections/initiate`, `/connections/:id`), the dev-only `/sync/impact` blast-radius endpoint, the doctor probe routes, and the `blocks.connections` posture in `/status`.
 - **Changed:** §5 documents doctor's live probes, sync's impact query + `--report`, the 2/3 strict exit codes, and init writing `VENDO_BASE_URL` + predev/prebuild hooks.
 - **Why:** The silent-trap fixes (ENG-260), sync completion (ENG-261), and connected accounts (ENG-262) all landed umbrella surface; the frozen wire table predated them. All additive.
+- **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
+
+### 2026-07-15 — Org wire surface (ENG-263, parent ENG-264 follow-up)
+
+- **Changed:** §3 adds the `/orgs` routes (list/create, get-one, members add/set-role/remove, app transfer), `?org=<id>` scoping on `/approvals` and `/grants`, and the `blocks.orgs` posture in `/status`.
+- **Why:** ENG-263 shipped the org wire surface (PR #277); the coordinated contracts amendment (#269) landed before these route rows were written. This completes the 09-vendo half of the block-actions amendment.
 - **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
