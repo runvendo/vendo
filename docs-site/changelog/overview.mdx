@@ -36,6 +36,22 @@ invalidates immediately, and route through the new impersonation guard —
 `act-as-subject-mismatch` outcome before any outbound call. See
 [actAs presets](/connect/act-as-presets).
 
+**Loud credential-forwarding traps.** Two silent misconfigurations now
+surface loudly. `vendo init` writes `VENDO_BASE_URL=http://localhost:3000`
+into `.env.example` with a note that present-mode credential forwarding is
+disabled without it. `vendo doctor` runs two live HTTP probes against the
+running dev server: `POST /doctor/present` verifies that `authorization`
+and `cookie` reached the host on a synthetic same-origin call, and
+`POST /doctor/act-as` verifies that `createVendo({ actAs })` mints material
+the host principal resolver accepts. Both echo booleans only — no
+credential values are printed or persisted — and the routes return 404 in
+production. When present auth exists but is not forwarded, the composition
+emits one structured `present-credentials-not-forwarded` audit event
+(reason `untrusted-host-origin` or `cross-origin-binding`) per boot; a
+failing audit sink never blocks the host call. See the
+[CLI reference](/reference/cli#vendo-doctor-dir) and
+[Troubleshooting](/deploy/troubleshooting).
+
 **Atomic claims on the store contract.** `store.claim({ key, owner, ttlMs })`
 and `store.release(claim)` let concurrent workers coordinate on a shared
 key without external locks, with TTL-based expiry so a crashed owner never
