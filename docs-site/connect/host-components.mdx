@@ -174,16 +174,16 @@ jail with its real look and feel:
   each resolved file. Imports it cannot resolve, refuses (out-of-root or
   through a symlink escape), or that go beyond two hops are dropped with a
   named warning. Package imports never enter the jail.
-- **Root-level stylesheets.** Direct `.css` imports from your canonical app
-  root (`app/layout.*`, `app/root.*`, `pages/_app.*`, or their `src/`
-  variants) are snapshotted with the baseline and applied inside the jailed
-  document only. Component-local stylesheet imports are not followed and
-  produce a warning.
-- **Sample props.** A static, JSON-compatible `sampleProps` object on the
-  remixable registration is captured verbatim and used as stubbed rehearsal
-  data when a fork renders without live tree props. Live props always win
-  when they are present. Non-static `sampleProps` are skipped with a
-  warning.
+- **Root-level stylesheets.** Sync snapshots direct `.css` imports from your
+  canonical app root (`app/layout.*`, `app/root.*`, `pages/_app.*`, or their
+  `src/` variants) and applies them inside the jailed document only. Sync
+  does not follow component-local stylesheet imports and warns when it sees
+  one.
+- **Sample props.** Sync captures a static, JSON-compatible `sampleProps`
+  object on the remixable registration verbatim. The runtime uses it as
+  stubbed rehearsal data when a fork renders without live tree props; live
+  props always win when they are present. Non-static `sampleProps` are
+  skipped with a warning.
 
 ```ts
 export const catalog: ComponentCatalog = [
@@ -215,9 +215,9 @@ Once a slot is captured, an edit request against the app (`edit(appId,
 instruction)`, exposed on the wire as `POST /api/vendo/apps/:id/edit`) can fork
 the pin instead of only rewriting generated content. The runtime copies the
 captured source into a deterministic generated component and renders it through
-the same sandboxed jail as any other generated component, resolving its
-captured sub-imports through a per-module import table. Only the blessed React
-kit resolves outside that table. It records the pin on the app version as
+the same sandboxed jail as any other generated component. Captured sub-imports
+resolve through a per-module import table; only the blessed React kit resolves
+outside that table. It records the pin on the app version as
 `{ slot, base: <baseline hash> }`. A follow-up edit that touches the pinned
 subtree lands as a new version on the same app.
 
