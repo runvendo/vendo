@@ -79,12 +79,12 @@ document only flips to `ui: "http"` after the edit persists. If any step
 fails, the previous rung keeps serving and the document is untouched.
 
 The scaffold serves the kept tree from `/tree.json` and any document-level
-generated components from `/components.json`, and mounts them through the
+generated components from `/components.json`. It mounts them through the
 same renderer used before graduation, so component identity and jailed
 iframe boundaries are preserved. Tree references of the form `fn:<name>`
-become `POST /fn/<name>` requests to the app's own server on `$PORT` —
-handling those routes is the graduated app's responsibility, and the
-model's post-graduation edits own that code.
+become `POST /fn/<name>` requests to the app's own server on `$PORT`. The
+graduated app owns those routes, and the model's post-graduation edits
+supply the handlers.
 
 A few behaviors are specific to the served page and worth knowing when
 writing prompts or diagnosing a graduation:
