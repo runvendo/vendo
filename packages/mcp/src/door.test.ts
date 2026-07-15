@@ -14,6 +14,7 @@ import {
 } from "@vendoai/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { exportJWK, generateKeyPair, jwtVerify, SignJWT, type KeyLike } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMcpDoorWithState } from "./door.js";
 import { createMcpDoor, type AppsPort, type McpDoor } from "./index.js";
@@ -398,6 +399,166 @@ describe("createMcpDoor routing and OAuth", () => {
     expect(response.status).toBe(302);
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(harness.authorizeContexts).toEqual([{ clientName: "Metadata client", scopes: ["read", "write"] }]);
+  });
+});
+
+describe("createMcpDoor remote authorization server trust", () => {
+  it("discovers and caches ES256 JWKS, accepts a valid JWT, and keeps principal() as the host kill switch", async () => {
+    const as = await remoteAsFixture();
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({
+      remoteAs: { issuer: as.issuer, audience: BASE },
+      principal: (subject) => ({ kind: "user", subject }),
+    });
+
+    const token = await as.mint({ sub: "external_user" });
+    const connected = await connect(harness.door, token);
+    expect((await connected.client.listTools()).tools).toHaveLength(1);
+    expect(harness.principalSubjects.length).toBeGreaterThan(0);
+    expect(new Set(harness.principalSubjects)).toEqual(new Set(["external_user"]));
+    expect(as.fetch).toHaveBeenCalledTimes(2); // one RFC 8414 discovery + one JWKS fetch
+
+    await connected.client.listTools();
+    expect(as.fetch).toHaveBeenCalledTimes(2); // cached discovery and keys
+    await connected.client.close();
+  });
+
+  it.each([
+    ["issuer", { issuer: "https://attacker.example" }],
+    ["audience", { audience: "https://other.example/mcp" }],
+    ["expiry", { expiresAt: Math.floor(Date.now() / 1_000) - 1 }],
+  ])("rejects a JWT with a bad %s", async (_case, overrides) => {
+    const as = await remoteAsFixture();
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({ remoteAs: { issuer: as.issuer, audience: BASE } });
+    const token = await as.mint(overrides);
+
+    const response = await harness.door.handler(mcpRequest(token));
+    expect(response.status).toBe(401);
+    expect(harness.principalSubjects).toEqual([]);
+  });
+
+  it("rejects a JWT whose signature does not match the trusted key", async () => {
+    const as = await remoteAsFixture();
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({ remoteAs: { issuer: as.issuer, audience: BASE } });
+    const untrusted = await generateSigningKey("initial");
+    const token = await mintRemoteToken(untrusted.privateKey, untrusted.kid, {
+      issuer: as.issuer,
+      audience: BASE,
+      sub: "forged_user",
+    });
+
+    expect((await harness.door.handler(mcpRequest(token))).status).toBe(401);
+    expect(harness.principalSubjects).toEqual([]);
+  });
+
+  it("rejects an unknown kid and refreshes cached JWKS when a new kid appears", async () => {
+    const as = await remoteAsFixture();
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({
+      remoteAs: { issuer: as.issuer, jwksUri: as.jwksUri, audience: BASE },
+      principal: (subject) => ({ kind: "user", subject }),
+    });
+
+    expect((await harness.door.handler(mcpRequest(await as.mint({ sub: "before_rotation" })))).status).toBe(200);
+
+    const unknown = await generateSigningKey("unknown");
+    const unknownToken = await mintRemoteToken(unknown.privateKey, unknown.kid, {
+      issuer: as.issuer,
+      audience: BASE,
+      sub: "unknown_key",
+    });
+    expect((await harness.door.handler(mcpRequest(unknownToken))).status).toBe(401);
+    expect(harness.principalSubjects).not.toContain("unknown_key");
+
+    await as.rotate("rotated");
+    expect((await harness.door.handler(mcpRequest(await as.mint({ sub: "after_rotation" })))).status).toBe(200);
+    expect(harness.principalSubjects).toEqual(["before_rotation", "after_rotation"]);
+    expect(as.fetch).toHaveBeenCalledTimes(3); // initial, unknown-kid refresh, rotation refresh
+  });
+
+  it("disables the local AS surface and advertises only the configured remote issuer", async () => {
+    const as = await remoteAsFixture();
+    const harness = makeHarness({ remoteAs: { issuer: as.issuer, jwksUri: as.jwksUri, audience: BASE } });
+
+    const prm = await harness.door.handler(new Request(
+      "https://product.example/.well-known/oauth-protected-resource/api/vendo/mcp",
+    ));
+    expect(await prm.json()).toEqual({
+      resource: BASE,
+      authorization_servers: [as.issuer],
+      bearer_methods_supported: ["header"],
+    });
+
+    for (const request of [
+      new Request(`${BASE}/authorize`),
+      new Request(`${BASE}/token`, { method: "POST" }),
+      new Request(`${BASE}/register`, { method: "POST" }),
+      new Request("https://product.example/.well-known/oauth-authorization-server/api/vendo/mcp"),
+    ]) {
+      const response = await harness.door.handler(request);
+      expect(response.status).toBe(404);
+    }
+  });
+});
+
+describe("createMcpDoor login federation", () => {
+  const secret = "test-federation-secret-with-enough-entropy";
+  const issuer = "https://as.example/oauth";
+  const redirectUri = "https://as.example/login/callback?state=kept";
+
+  it("round-trips a signed login request through the host adapter and returns a one-minute assertion", async () => {
+    const harness = makeHarness({
+      federation: { secret },
+      authorizeSubject: () => "host_user_7",
+    });
+    const request = await mintFederationRequest(secret, { issuer, redirectUri });
+
+    const response = await harness.door.handler(new Request(`${BASE}/federate?request=${encodeURIComponent(request)}`));
+    expect(response.status).toBe(302);
+    const location = new URL(response.headers.get("location")!);
+    expect(location.origin + location.pathname).toBe("https://as.example/login/callback");
+    expect(location.searchParams.get("state")).toBe("kept");
+    expect(harness.authorizeContexts).toEqual([{ clientName: "Generic MCP client", scopes: ["tools", "apps"] }]);
+
+    const assertion = location.searchParams.get("assertion")!;
+    const verified = await jwtVerify(assertion, new TextEncoder().encode(secret), {
+      algorithms: ["HS256"],
+      issuer: BASE,
+      audience: issuer,
+    });
+    expect(verified.payload).toMatchObject({
+      iss: BASE,
+      aud: issuer,
+      sub: "host_user_7",
+      jti: "federation-request-1",
+    });
+    expect(verified.payload.exp! - verified.payload.iat!).toBe(60);
+  });
+
+  it("returns a host login bounce unchanged so the browser can retry the same signed request", async () => {
+    const bounce = new Response(null, { status: 302, headers: { location: "/login?return_to=federate" } });
+    const harness = makeHarness({ federation: { secret }, authorizeResponse: bounce });
+    const request = await mintFederationRequest(secret, { issuer, redirectUri });
+
+    const response = await harness.door.handler(new Request(`${BASE}/federate?request=${encodeURIComponent(request)}`));
+    expect(response).toBe(bounce);
+  });
+
+  it.each([
+    ["bad signature", "different-secret", {}],
+    ["expired request", secret, { expiresAt: Math.floor(Date.now() / 1_000) - 1 }],
+    ["wrong audience", secret, { audience: "https://other.example/mcp" }],
+    ["redirect origin mismatch", secret, { redirectUri: "https://evil.example/callback" }],
+  ])("rejects %s before calling the host adapter", async (_case, signingSecret, overrides) => {
+    const harness = makeHarness({ federation: { secret } });
+    const request = await mintFederationRequest(signingSecret, { issuer, redirectUri, ...overrides });
+
+    const response = await harness.door.handler(new Request(`${BASE}/federate?request=${encodeURIComponent(request)}`));
+    expect(response.status).toBe(400);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(harness.authorizeContexts).toEqual([]);
   });
 });
 
@@ -807,11 +968,14 @@ interface HarnessOptions {
   store?: MemoryStore;
   state?: McpDoorState;
   getOutcome?: () => ToolOutcome;
-  principal?: () => Principal | null;
+  principal?: (subject: string) => Principal | null;
   apps?: AppsPort;
   extraDescriptors?: Awaited<ReturnType<ToolRegistry["descriptors"]>>;
   check?: Guard["check"];
   mount?: string;
+  remoteAs?: { issuer: string; jwksUri?: string; audience: string };
+  federation?: { secret: string };
+  authorizeResponse?: Response;
   /** The subject the OAuth authorize step returns (defaults "user_1"); a fn lets
    * a test mint tokens for two different subjects against one door (FIX G). */
   authorizeSubject?: () => string;
@@ -821,6 +985,7 @@ function makeHarness(options: HarnessOptions = {}) {
   const store = options.store ?? new MemoryStore();
   const audits: AuditEvent[] = [];
   const authorizeContexts: Array<{ clientName: string; scopes: string[] }> = [];
+  const principalSubjects: string[] = [];
   const executions: Array<{ id: string; ctx: Parameters<ToolRegistry["execute"]>[1] }> = [];
   const guard: Guard = {
     check: options.check ?? (async () => ({ action: "run", decidedBy: "default" })),
@@ -848,20 +1013,24 @@ function makeHarness(options: HarnessOptions = {}) {
     store,
     apps: options.apps,
     ...(options.mount === undefined ? {} : { mount: options.mount }),
+    ...(options.remoteAs === undefined ? {} : { remoteAs: options.remoteAs }),
+    ...(options.federation === undefined ? {} : { federation: options.federation }),
     oauth: {
       async authorize(_req, ctx) {
         authorizeContexts.push(ctx);
+        if (options.authorizeResponse) return options.authorizeResponse;
         return { subject: options.authorizeSubject ? options.authorizeSubject() : "user_1" };
       },
-      async principal() {
-        return options.principal ? options.principal() : { kind: "user", subject: "user_1" };
+      async principal(subject) {
+        principalSubjects.push(subject);
+        return options.principal ? options.principal(subject) : { kind: "user", subject: "user_1" };
       },
     },
   };
   const door = options.state === undefined
     ? createMcpDoor(config)
     : createMcpDoorWithState(config, options.state);
-  return { door, store, audits, authorizeContexts, executions };
+  return { door, store, audits, authorizeContexts, principalSubjects, executions };
 }
 
 async function register(door: McpDoor) {
@@ -940,6 +1109,7 @@ function mcpRequest(accessToken: string, sessionId?: string) {
     method: "POST",
     headers: {
       authorization: `Bearer ${accessToken}`,
+      accept: "application/json, text/event-stream",
       "content-type": "application/json",
       ...(sessionId === undefined ? {} : { "mcp-session-id": sessionId }),
       "mcp-protocol-version": "2025-11-25",
@@ -957,6 +1127,89 @@ function mcpRequest(accessToken: string, sessionId?: string) {
 async function pkceChallenge(verifier: string): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
   return Buffer.from(digest).toString("base64url");
+}
+
+interface RemoteTokenOverrides {
+  issuer?: string;
+  audience?: string;
+  sub?: string;
+  issuedAt?: number;
+  expiresAt?: number;
+}
+
+async function generateSigningKey(kid: string) {
+  const pair = await generateKeyPair("ES256");
+  return { ...pair, kid };
+}
+
+async function mintRemoteToken(
+  privateKey: KeyLike,
+  kid: string,
+  options: { issuer: string; audience: string } & RemoteTokenOverrides,
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1_000);
+  return new SignJWT({})
+    .setProtectedHeader({ alg: "ES256", kid })
+    .setIssuer(options.issuer)
+    .setAudience(options.audience)
+    .setSubject(options.sub ?? "external_user")
+    .setIssuedAt(options.issuedAt ?? now)
+    .setExpirationTime(options.expiresAt ?? now + 300)
+    .sign(privateKey);
+}
+
+async function remoteAsFixture() {
+  const issuer = "https://as.example";
+  const jwksUri = `${issuer}/jwks`;
+  let key = await generateSigningKey("initial");
+  let jwks = { keys: [{ ...(await exportJWK(key.publicKey)), alg: "ES256", use: "sig", kid: key.kid }] };
+  const fetch = vi.fn(async (input: string | URL | Request) => {
+    const url = input instanceof Request ? input.url : input.toString();
+    if (url === `${issuer}/.well-known/oauth-authorization-server`) {
+      return Response.json({ issuer, jwks_uri: jwksUri });
+    }
+    if (url === jwksUri) return Response.json(jwks);
+    return new Response(null, { status: 404 });
+  });
+  return {
+    issuer,
+    jwksUri,
+    fetch,
+    async mint(overrides: RemoteTokenOverrides = {}) {
+      return mintRemoteToken(key.privateKey, key.kid, {
+        issuer: overrides.issuer ?? issuer,
+        audience: overrides.audience ?? BASE,
+        ...overrides,
+      });
+    },
+    async rotate(kid: string) {
+      key = await generateSigningKey(kid);
+      jwks = { keys: [{ ...(await exportJWK(key.publicKey)), alg: "ES256", use: "sig", kid: key.kid }] };
+    },
+  };
+}
+
+async function mintFederationRequest(
+  secret: string,
+  options: {
+    issuer: string;
+    redirectUri: string;
+    audience?: string;
+    expiresAt?: number;
+  },
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1_000);
+  return new SignJWT({
+    redirect_uri: options.redirectUri,
+    scopes: ["tools", "apps"],
+    client_name: "Generic MCP client",
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuer(options.issuer)
+    .setAudience(options.audience ?? BASE)
+    .setJti("federation-request-1")
+    .setExpirationTime(options.expiresAt ?? now + 300)
+    .sign(new TextEncoder().encode(secret));
 }
 
 function textOf(result: unknown): string {
