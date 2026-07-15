@@ -29,6 +29,7 @@ const SERVER_CARD_PATH = "/.well-known/mcp/server-card.json";
 const SERVER_CARD_ALIAS_PATH = "/.well-known/mcp-server-card";
 const SHIM_URI = "ui://vendo/tree-shim.html";
 const SHIM_MIME_TYPE = "text/html;profile=mcp-app";
+const OPEN_IN_PRODUCT_KIND = "vendo/open-in-product@1";
 
 interface HostIdentity {
   name: string;
@@ -328,7 +329,8 @@ class Door {
     // MCP Apps shim renders a bare format-tagged UIPayload (core §8), so unwrap
     // it exactly as the door's own apps path does before mapping the result.
     if (name === "vendo_apps_open" && this.#config.apps !== undefined && outcome.status === "ok") {
-      return mapOutcome({ status: "ok", output: mcpAppsOpenOutput(outcome.output) as Json }, identity.name);
+      const output = await this.#mcpAppsOpenOutput(outcome.output, args, state.context, identity);
+      return mapOutcome({ status: "ok", output: output as Json }, identity.name);
     }
     return mapOutcome(outcome, identity.name);
   }
@@ -361,7 +363,7 @@ class Door {
       ? { status: "blocked", reason: decision.reason }
       : decision.action === "ask"
         ? { status: "pending-approval", approvalId: decision.approval.id }
-        : await this.#executeAppsTool(name, args, ctx);
+        : await this.#executeAppsTool(name, args, ctx, identity);
     recordReplay(state, name, args, id, outcome.status);
     await this.#config.guard.report({
       id: `aud_${randomHex(12)}`,
@@ -378,7 +380,12 @@ class Door {
     return mapOutcome(outcome, identity.name);
   }
 
-  async #executeAppsTool(name: string, args: Record<string, unknown>, ctx: RunContext): Promise<ToolOutcome> {
+  async #executeAppsTool(
+    name: string,
+    args: Record<string, unknown>,
+    ctx: RunContext,
+    identity: HostIdentity,
+  ): Promise<ToolOutcome> {
     const apps = this.#config.apps!;
     try {
       if (name === "vendo_apps_list") {
@@ -388,7 +395,7 @@ class Door {
       if (!appId) return { status: "error", error: { code: "validation", message: "appId is required" } };
       if (name === "vendo_apps_open") {
         const opened = await apps.open(appId, ctx);
-        return { status: "ok", output: mcpAppsOpenOutput(opened) as Json };
+        return { status: "ok", output: await this.#mcpAppsOpenOutput(opened, args, ctx, identity) as Json };
       }
       const ref = typeof args.ref === "string" ? args.ref : undefined;
       if (!ref) return { status: "error", error: { code: "validation", message: "ref is required" } };
@@ -401,6 +408,24 @@ class Door {
       // "sandbox-unavailable") — 00-overview's "one error taxonomy" convention.
       return { status: "error", error: { code: errorCode(error), message: errorMessage(error) } };
     }
+  }
+
+  async #mcpAppsOpenOutput(
+    output: unknown,
+    args: Record<string, unknown>,
+    ctx: RunContext,
+    identity: HostIdentity,
+  ): Promise<unknown> {
+    let appName: string | undefined;
+    if (isHttpOpenSurface(output) && typeof args.appId === "string") {
+      try {
+        appName = (await this.#config.apps!.list(ctx)).find((app) => app.id === args.appId)?.name;
+      } catch {
+        // The app already opened successfully. Naming the card is best-effort;
+        // a secondary list failure must not hide the safe link-out path.
+      }
+    }
+    return mcpAppsOpenOutput(output, { productName: identity.name, appName });
   }
 
   async #sweepIdleSessions(): Promise<void> {
@@ -572,16 +597,27 @@ function appTools(): Tool[] {
 
 /** FIX E — the registry's vendo_apps_open returns an OpenSurface envelope
  * (`{ kind: "tree", payload } | { kind: "http", url } | { kind: "resuming" }`);
- * the door's own apps path hands the shim a bare payload / `{ url }`. Unwrap the
- * envelope so a registry-executed open renders identically over MCP Apps. A
+ * the door's own apps path projects that same envelope. Unwrap tree surfaces so
+ * a registry-executed open renders identically over MCP Apps. HTTP surfaces are
+ * retained for the explicitly-tagged link-out projection below. A
  * `resuming` (or any other shape) passes through untouched — the shim's core-§8
  * dispatch contains an unrenderable payload gracefully. */
 function unwrapAppsOpen(output: unknown): unknown {
   if (isRecord(output) && typeof output.kind === "string") {
-    if (output.kind === "http") return { url: output.url };
     if (output.kind === "tree") return output.payload;
   }
   return output;
+}
+
+function isHttpOpenSurface(output: unknown): output is { kind: "http"; url: string } {
+  return isRecord(output) && output.kind === "http" && typeof output.url === "string";
+}
+
+interface OpenInProductPayload {
+  kind: typeof OPEN_IN_PRODUCT_KIND;
+  url: string;
+  productName: string;
+  appName?: string;
 }
 
 /** AppsRuntime.open has already resolved every v0 tree query into `tree.data`
@@ -590,7 +626,19 @@ function unwrapAppsOpen(output: unknown): unknown {
  * shim would execute every query a second time. Project the already-resolved
  * payload immutably and keep the shim resolver only as a compatibility fallback
  * for non-door hosts that send unresolved trees directly. */
-function mcpAppsOpenOutput(output: unknown): unknown {
+function mcpAppsOpenOutput(
+  output: unknown,
+  details: { productName: string; appName?: string },
+): unknown {
+  if (isHttpOpenSurface(output)) {
+    const projected: OpenInProductPayload = {
+      kind: OPEN_IN_PRODUCT_KIND,
+      url: output.url,
+      productName: details.productName,
+      ...(details.appName === undefined ? {} : { appName: details.appName }),
+    };
+    return projected;
+  }
   const payload = unwrapAppsOpen(output);
   if (!isRecord(payload) || payload.formatVersion !== "vendo-genui/v1" || !Object.hasOwn(payload, "queries")) {
     return payload;
@@ -666,7 +714,10 @@ function mapOutcome(outcome: ToolOutcome, productName: string): CallToolResult {
 }
 
 function textResult(output: unknown): CallToolResult {
-  const result: CallToolResult = { content: [{ type: "text", text: stringify(output) }] };
+  const text = isOpenInProductPayload(output)
+    ? `Open ${output.appName ?? "this app"} in ${output.productName}: ${output.url}`
+    : stringify(output);
+  const result: CallToolResult = { content: [{ type: "text", text }] };
   if (isRecord(output)) result.structuredContent = output;
   return result;
 }
@@ -677,6 +728,14 @@ function inBandError(text: string): CallToolResult {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isOpenInProductPayload(value: unknown): value is OpenInProductPayload {
+  return isRecord(value)
+    && value.kind === OPEN_IN_PRODUCT_KIND
+    && typeof value.url === "string"
+    && typeof value.productName === "string"
+    && (value.appName === undefined || typeof value.appName === "string");
 }
 
 function stringify(value: unknown): string {

@@ -27,12 +27,43 @@ export type RenderPayload = (
 
 export type RenderNotice = (label: string, message: string) => void;
 
+export const OPEN_IN_PRODUCT_KIND = "vendo/open-in-product@1" as const;
+
+/** MCP-only link-out envelope for rung-4 apps. It deliberately lives outside
+ * core's frozen UIPayload union: full HTTP rendering is deferred, and the shim
+ * only needs enough trusted metadata to render a safe open-in-product card. */
+export interface OpenInProductPayload {
+  kind: typeof OPEN_IN_PRODUCT_KIND;
+  url: string;
+  productName: string;
+  appName?: string;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isPayload(value: unknown): value is UIPayload {
   return isRecord(value) && typeof value.formatVersion === "string";
+}
+
+function isHttpUrl(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+export function isOpenInProductPayload(value: unknown): value is OpenInProductPayload {
+  return isRecord(value)
+    && value.kind === OPEN_IN_PRODUCT_KIND
+    && isHttpUrl(value.url)
+    && typeof value.productName === "string"
+    && value.productName.length > 0
+    && (value.appName === undefined || (typeof value.appName === "string" && value.appName.length > 0));
 }
 
 function isToolOutcome(value: unknown): value is ToolOutcome {
@@ -208,19 +239,25 @@ export interface ShimRuntime {
 export function createShimRuntime(options: {
   callServerTool: ServerToolCaller;
   renderPayload: RenderPayload;
+  renderOpenInProduct: (open: OpenInProductPayload) => void;
   renderNotice: RenderNotice;
 }): ShimRuntime {
   let appId: string | undefined;
-  let pendingPayload: UIPayload | undefined;
+  let pendingOpen: { kind: "payload"; value: UIPayload } | { kind: "link"; value: OpenInProductPayload } | undefined;
   let renderVersion = 0;
 
   const call = (id: string, ref: string, args: Json) => callApp(options.callServerTool, id, ref, args);
 
   const flushOpenResult = (): void => {
-    if (!appId || !pendingPayload) return;
-    const payload = pendingPayload;
-    pendingPayload = undefined;
+    if (!appId || !pendingOpen) return;
+    const open = pendingOpen;
+    pendingOpen = undefined;
     const version = ++renderVersion;
+    if (open.kind === "link") {
+      options.renderOpenInProduct(open.value);
+      return;
+    }
+    const payload = open.value;
     options.renderPayload(appId, payload);
     void resolveQueries(appId, payload, version, {
       call,
@@ -236,11 +273,16 @@ export function createShimRuntime(options: {
       flushOpenResult();
     },
     onToolResult(result) {
+      if (isOpenInProductPayload(result.structuredContent)) {
+        pendingOpen = { kind: "link", value: result.structuredContent };
+        flushOpenResult();
+        return;
+      }
       if (!isPayload(result.structuredContent)) {
         options.renderNotice("Invalid app result", "vendo_apps_open did not return a format-tagged UI payload.");
         return;
       }
-      pendingPayload = result.structuredContent;
+      pendingOpen = { kind: "payload", value: result.structuredContent };
       flushOpenResult();
     },
   };
