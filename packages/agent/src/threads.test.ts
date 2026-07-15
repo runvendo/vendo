@@ -1,3 +1,4 @@
+import type { StoreAdapter } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import { createAgent } from "./index.js";
@@ -202,7 +203,17 @@ describe("agent threads", () => {
   });
 
   it("skips a malformed thread row instead of bricking the whole listing (M5)", async () => {
-    const store = memoryStore();
+    const canonicalStore = memoryStore();
+    // The canonical reserved route now rejects malformed rows on write, like
+    // the real store. Redirect this resilience test to a generic collection so
+    // it can still model a pre-existing/corrupt database row at the read seam.
+    const store: StoreAdapter = {
+      ensureSchema: () => canonicalStore.ensureSchema(),
+      records: (collection) => canonicalStore.records(
+        collection === "vendo_threads" ? "agent_corruptible_threads" : collection,
+      ),
+      blobs: (namespace) => canonicalStore.blobs(namespace),
+    };
     const guard = testGuard({});
     const tools = boundRegistry({}, guard);
     const agent = createAgent({

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { VENDO_APP_FORMAT } from "../index.js";
 import {
   actAsConformance,
   agentRunnerConformance,
@@ -314,5 +315,228 @@ describe("host seam conformance", () => {
       ctx,
     }));
     expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true, failures: [] });
+  });
+});
+
+describe("memoryStoreAdapter reserved routing", () => {
+  const approval = {
+    id: "apr_memory_projection",
+    call: readCall,
+    descriptor: readDescriptor,
+    inputPreview: JSON.stringify(readCall.args),
+    ctx: { principal, venue: ctx.venue, presence: ctx.presence, appId: ctx.appId },
+    createdAt: at,
+  };
+  const app = {
+    format: VENDO_APP_FORMAT,
+    id: "app_memory_projection",
+    name: "Memory projection",
+    trigger: {
+      on: { kind: "host-event" as const, event: "memory.changed" },
+      run: { kind: "steps" as const, steps: [] },
+    },
+  };
+  const grant: PermissionGrant = {
+    id: "grt_memory_projection",
+    subject: principal.subject,
+    tool: readDescriptor.name,
+    descriptorHash: "sha256:memory",
+    scope: { kind: "tool" },
+    duration: "standing",
+    appId: app.id,
+    source: "chat",
+    grantedAt: at,
+  };
+
+  it("validates every routed reserved collection and derives its public projection", async () => {
+    const adapter = memoryStoreAdapter({ timestamp: () => "2026-07-11T16:01:00.000Z" });
+    const cases = [
+      {
+        collection: "vendo_grants",
+        id: grant.id,
+        data: grant,
+        refs: { subject: principal.subject, tool: readDescriptor.name, app_id: app.id },
+        createdAt: at,
+      },
+      {
+        collection: "vendo_approvals",
+        id: approval.id,
+        data: { request: approval, status: "pending", ignored: true },
+        refs: { subject: principal.subject, status: "pending" },
+        createdAt: at,
+      },
+      {
+        collection: "vendo_audit",
+        id: sampleAuditEvent.id,
+        data: sampleAuditEvent,
+        refs: { subject: principal.subject, kind: sampleAuditEvent.kind, tool: readDescriptor.name },
+        createdAt: at,
+      },
+      {
+        collection: "vendo_threads",
+        id: "thr_memory_projection",
+        data: { subject: principal.subject, messages: [{ role: "user", content: "hello" }], ignored: true },
+        refs: { subject: principal.subject },
+        createdAt: "2026-07-11T16:01:00.000Z",
+      },
+      {
+        collection: "vendo_runs",
+        id: "run_memory_projection",
+        data: {
+          appId: app.id,
+          trigger: { kind: "external", ignored: true },
+          status: "running",
+          record: { ok: true },
+          startedAt: at,
+          ignored: true,
+        },
+        refs: { app_id: app.id, status: "running" },
+        createdAt: at,
+      },
+      {
+        collection: "vendo_apps",
+        id: app.id,
+        data: { subject: principal.subject, enabled: true, doc: app, ignored: true },
+        refs: { subject: principal.subject, trigger_kind: "host-event" },
+        createdAt: "2026-07-11T16:01:00.000Z",
+      },
+      {
+        collection: "vendo_state",
+        id: `${app.id}:${principal.subject}`,
+        data: { selected: "one" },
+        refs: { app_id: app.id, subject: principal.subject },
+        createdAt: "2026-07-11T16:01:00.000Z",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const stored = await adapter.records(testCase.collection).put({
+        id: testCase.id,
+        data: testCase.data,
+        refs: { forged: "caller refs must be ignored" },
+      });
+      expect(stored.refs, testCase.collection).toEqual(testCase.refs);
+      expect(stored.createdAt, testCase.collection).toBe(testCase.createdAt);
+      expect((stored.data as Record<string, unknown>)["ignored"], testCase.collection).toBeUndefined();
+    }
+    expect((await adapter.records("vendo_apps").list({ refs: { trigger_kind: "host-event" } })).records)
+      .toHaveLength(1);
+  });
+
+  it("rejects invalid shapes at all seven reserved doors", async () => {
+    const adapter = memoryStoreAdapter();
+    const invalid = [
+      ["vendo_grants", "grt_invalid", {}],
+      ["vendo_approvals", "apr_invalid", {}],
+      ["vendo_audit", "aud_invalid", {}],
+      ["vendo_threads", "thr_invalid", {}],
+      ["vendo_runs", "run_invalid", {}],
+      ["vendo_apps", "app_invalid", {}],
+      ["vendo_state", "invalid-state-id", undefined],
+    ] as const;
+    for (const [collection, id, data] of invalid) {
+      await expect(adapter.records(collection).put({ id, data }), collection).rejects.toMatchObject({
+        code: "validation",
+      });
+    }
+  });
+
+  it("round-trips optional approval decision fields into the projection", async () => {
+    const adapter = memoryStoreAdapter();
+    const stored = await adapter.records("vendo_approvals").put({
+      id: approval.id,
+      data: {
+        request: approval,
+        status: "approved",
+        decidedAt: "2026-07-11T16:02:00.000Z",
+        sessionId: "session_conformance",
+        consumedAt: "2026-07-11T16:03:00.000Z",
+      },
+    });
+    expect(stored.data).toMatchObject({
+      status: "approved",
+      decidedAt: "2026-07-11T16:02:00.000Z",
+      sessionId: "session_conformance",
+      consumedAt: "2026-07-11T16:03:00.000Z",
+    });
+    expect(stored.refs).toEqual({ subject: principal.subject, status: "approved" });
+    expect(stored.updatedAt).toBe("2026-07-11T16:03:00.000Z");
+  });
+
+  it("rejects field-level shape violations behind each reserved door", async () => {
+    const adapter = memoryStoreAdapter();
+    const rejects = (collection: string, id: string, data: unknown) =>
+      expect(
+        adapter.records(collection).put({ id, data: data as never }),
+        `${collection} ${JSON.stringify(data)}`,
+      ).rejects.toMatchObject({ code: "validation" });
+
+    await rejects("vendo_approvals", approval.id, ["not an object"]);
+    await rejects("vendo_approvals", approval.id, { request: approval, status: "consumed" });
+    await rejects("vendo_approvals", approval.id, { request: approval, status: "pending", sessionId: 5 });
+    await rejects("vendo_approvals", approval.id, { request: approval, status: "pending", decidedAt: "yesterday" });
+    await rejects("vendo_approvals", "apr_other_id", { request: approval, status: "pending" });
+    await rejects("vendo_threads", "thr_shape", { subject: 5, messages: [] });
+    await rejects("vendo_threads", "thr_shape", { subject: principal.subject, messages: "not an array" });
+    await rejects("vendo_runs", "run_shape", {
+      appId: app.id, trigger: { kind: "cron" }, status: "running", record: null, startedAt: at,
+    });
+    await rejects("vendo_runs", "run_shape", {
+      appId: app.id, trigger: { kind: "external", event: 5 }, status: "running", record: null, startedAt: at,
+    });
+    await rejects("vendo_runs", "run_shape", {
+      appId: app.id, trigger: { kind: "external" }, status: "done", record: null, startedAt: at,
+    });
+    await rejects("vendo_apps", app.id, { subject: 5, enabled: true, doc: app });
+    await rejects("vendo_apps", app.id, { subject: principal.subject, enabled: "yes", doc: app });
+  });
+
+  it("accepts only JSON-serializable thread messages", async () => {
+    const threads = memoryStoreAdapter().records("vendo_threads");
+    const stored = await threads.put({
+      id: "thr_json",
+      data: { subject: principal.subject, messages: [[1, "two", null], { nested: { ok: true } }] },
+    });
+    expect((stored.data as { messages: unknown[] }).messages).toEqual([[1, "two", null], { nested: { ok: true } }]);
+
+    const cyclicObject: Record<string, unknown> = {};
+    cyclicObject["self"] = cyclicObject;
+    const cyclicArray: unknown[] = [];
+    cyclicArray.push(cyclicArray);
+    const invalidMessages: unknown[] = [
+      cyclicObject,
+      cyclicArray,
+      () => {},
+      Number.NaN,
+      new Date(at),
+      [() => {}],
+    ];
+    for (const message of invalidMessages) {
+      await expect(threads.put({
+        id: "thr_json",
+        data: { subject: principal.subject, messages: [message] } as never,
+      })).rejects.toMatchObject({ code: "validation" });
+    }
+  });
+
+  it("requires well-formed vendo_state ids on put and delete", async () => {
+    const state = memoryStoreAdapter().records("vendo_state");
+    await expect(state.put({ id: "no-colon", data: {} })).rejects.toMatchObject({ code: "validation" });
+    await expect(state.put({ id: "invoice_1:user_one", data: {} })).rejects.toMatchObject({ code: "validation" });
+    await expect(state.put({ id: "app_x:", data: {} })).rejects.toMatchObject({ code: "validation" });
+    await expect(state.delete("invoice_1:user_one")).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("rejects unknown reserved ref filters and cross-subject thread updates", async () => {
+    const adapter = memoryStoreAdapter();
+    await expect(adapter.records("vendo_apps").list({ refs: { forged: "x" } })).rejects.toMatchObject({
+      code: "validation",
+    });
+    const threads = adapter.records("vendo_threads");
+    await threads.put({ id: "thr_owned", data: { subject: "user_one", messages: [] } });
+    await expect(threads.put({
+      id: "thr_owned",
+      data: { subject: "user_two", messages: [] },
+    })).rejects.toMatchObject({ code: "conflict" });
   });
 });

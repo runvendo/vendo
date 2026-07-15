@@ -13,6 +13,7 @@
  */
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import * as conformance from "./conformance/index.js";
 import * as core from "./index.js";
 import {
   VENDO_APP_FORMAT,
@@ -304,7 +305,7 @@ describe("§6/§7 — guard decisions and audit events", () => {
       id: "aud_1", at: "2026-07-11T16:00:00.000Z",
       principal: { kind: "user", subject: "u" }, venue: "chat", presence: "present",
     } as const;
-    for (const kind of ["tool-call", "approval", "policy-decision", "run", "app-lifecycle", "share"] as const) {
+    for (const kind of ["tool-call", "approval", "policy-decision", "run", "app-lifecycle", "share", "door-auth"] as const) {
       expect(auditEventSchema.safeParse({ ...base, kind }).success).toBe(true);
     }
     expect(auditEventSchema.safeParse({ ...base, kind: "unknown-kind" }).success).toBe(false);
@@ -535,5 +536,46 @@ describe("public export surface — every contracted camelCaseName schema is pre
       expect(name in registry, `missing export ${name}`).toBe(true);
       expect(typeof (registry[name] as { safeParse?: unknown }).safeParse, `${name} is not a zod schema`).toBe("function");
     }
+  });
+});
+
+describe("amended public export surface — root utilities and /conformance inventory", () => {
+  it("exports every newly blessed root utility from 01-core", () => {
+    const registry = core as unknown as Record<string, unknown>;
+    for (const name of [
+      "canonicalJson",
+      "sha256Hex",
+      "safeErrorMessage",
+      "isPathBinding",
+      "isStateBinding",
+    ]) {
+      expect(typeof registry[name], `missing function export ${name}`).toBe("function");
+    }
+    expect(registry.TOOL_NAME_PATTERN).toBeInstanceOf(RegExp);
+    for (const name of [
+      "TREE_MAX_NODES",
+      "TREE_MAX_QUERIES",
+      "TREE_MAX_GENERATED_COMPONENTS",
+      "TREE_MAX_COMPONENT_SOURCE_CHARS",
+      "TREE_MAX_TOTAL_COMPONENT_CHARS",
+    ]) {
+      expect(typeof registry[name], `missing numeric export ${name}`).toBe("number");
+    }
+    expect(registry.RESERVED_COMPONENT_NAMES).toEqual([
+      "Stack", "Row", "Grid", "Text", "Skeleton", "Surface", "Divider",
+    ]);
+  });
+
+  it("exports the exact executable /conformance kit inventory", () => {
+    expect(Object.keys(conformance).sort()).toEqual([
+      "actAsConformance",
+      "agentRunnerConformance",
+      "guardConformance",
+      "memoryStoreAdapter",
+      "runConformance",
+      "secretsProviderConformance",
+      "storeAdapterConformance",
+      "toolRegistryConformance",
+    ]);
   });
 });
