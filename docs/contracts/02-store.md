@@ -56,6 +56,8 @@ The page makes this public: "everything lives in the host's own DB under a `vend
 | `vendo_orgs` | `id, name, created_at, updated_at` | orgs (v3, ENG-263): Vendo-owned org rows; the org's subject is `vendo:org:<id>` (01-core §2) |
 | `vendo_org_members` | `org_id, subject, role, added_at` | org membership (v3, ENG-263): roles `owner`/`admin`/`member`; the store enforces role validity and never orphans an org of its last owner |
 
+The two org tables — `vendo_orgs` (organizations, real `kind:"org"` principals, 01 §2) and `vendo_org_members` (membership, roles `owner`/`admin`/`member` — members run, admins approve and manage) — are added to the map by the ENG-263 implementation (PR #277) together with their key columns and the erase-cascade coverage the map is conformance-tested against (§5). This PR carries the surrounding prose only; PR #277 owns the map rows and the §5 count so the conformance test and the doc land atomically.
+
 Host-entity refs are the join surface: `SELECT ... FROM invoices i JOIN vendo_records r ON r.refs @> jsonb_build_object('invoice_id', i.id)` (containment, so the GIN index is actually used).
 
 ## 3. Collection naming convention
@@ -89,6 +91,7 @@ For non-reserved names, `records()` remains app data and collection names are ot
 - **Encryption at rest**: `encryption.key` encrypts `vendo_secrets.ciphertext` only (AES-256-GCM). App data stays plaintext by design — encrypting it would defeat the page's host-can-query/join promise; at-rest encryption of the database is the host's disk/DB layer. Default-on composition is contracted here and ships in Wave 3: `vendo init` provisions `VENDO_STORE_ENCRYPTION_KEY` in `.env`, `createVendo` reads it from the environment, and AES-GCM binds ciphertext to the secret name as AAD with envelope versioning. Key rotation: out of v0 scope.
 - **No tenant axis**: `subject` is the one partition key — the host's stable user id. Multi-tenant hosts scope the same way they scope their own tables: by joining through `subject` and refs.
 - **Ephemeral principals** (`ephemeral: true`) never touch disk: their rows live in an adapter-level, per-process in-memory overlay that is dropped by `close()`. Multi-instance deployments therefore split anonymous-session state between processes. A real session lifecycle is Wave 4 scope and will amend this section again when designed.
+- **Anonymous→signed-in migration** (ENG-263, block-actions spec §C — ships with that PR): the first authenticated request carrying a valid anon cookie migrates the anonymous principal's **threads, apps, and state** to the real subject, clears the cookie, and is idempotent. **Grants and approvals deliberately do NOT migrate** — consent doesn't transfer identities; users re-approve. Connected accounts (04 §3.1) are consent-like and do not migrate either — users reconnect. This is the designed session lifecycle the previous bullet reserved.
 
 ## 5. Retention and erasure
 
@@ -123,3 +126,10 @@ A store-level erase API is contracted here and ships in Wave 3. It erases by sub
 
 - **Changed:** Added the optional derived `trigger_kind` ref to `vendo_apps`, matching the ENG-254 routed-store index used by automations tick and emit queries.
 - **Approved by:** Yousef, 2026-07-14.
+
+### 2026-07-15 — Org tables and anonymous migration (ENG-263, parent ENG-264)
+
+- **Changed:** Described `vendo_orgs` + `vendo_org_members` (roles owner/admin/member) — the Vendo-owned home of real org principals; activation key-gated (01 §2, 04 §5). The actual §2 map rows (`vendo_orgs`: id, name, created_at, updated_at; `vendo_org_members`: org_id, subject, role, added_at, PK(org_id,subject), idx subject), the §5 count (13→15), and the erase-cascade coverage are added by PR #277 (ENG-263) so the doc and the conformance test land atomically. Erase rule (PR #277): erase-by-subject drops that subject's memberships; erasing `vendo:org:<id>` drops the org row plus all its members; full subject erasure overrides the last-owner invariant. Schema version advances to 3.
+- **Changed:** Contracted the anonymous→signed-in migration semantics in §4: threads/apps/state migrate on first authenticated request with a valid anon cookie, idempotent, cookie cleared; grants, approvals, and connected accounts never migrate (users reconnect).
+- **Why:** The block-actions spec locks full org semantics in Vendo-owned tables and closes the silent loss of anonymous work on sign-in. **This PR carries prose; the §2 rows + §5 count ship in PR #277. Land the two coherently — whichever merges second rebases.**
+- **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
