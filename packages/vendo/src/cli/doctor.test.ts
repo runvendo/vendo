@@ -392,6 +392,8 @@ function discoveryFetch(challenge?: string): typeof fetch {
     if (url.endsWith("/api/vendo/status")) {
       return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { mcp: true, sandbox: "e2b" } });
     }
+    if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
+    if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
     if (url.includes("/.well-known/oauth-protected-resource/")) return Response.json({ resource: "mcp" });
     if (url.includes("/.well-known/oauth-authorization-server/")) return Response.json({ issuer: "auth" });
     if (url.endsWith("/.well-known/mcp/server-card.json")) {
