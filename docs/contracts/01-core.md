@@ -554,6 +554,12 @@ Persistence and transport are normative:
 - **Why:** Post-freeze MCP work and sibling usage had expanded the real surface without updating this contract, and the host-side tree size responsibility was only pinned in a test.
 - **Approved by:** Yousef, 2026-07-14.
 
+### 2026-07-14 — Atomic record claims
+
+- **Changed:** Added optional `RecordStore.claim(expected, replacement?)` as the core seam for one-statement compare-and-replace or compare-and-delete adapters.
+- **Why:** Store consumers that require single-use state need an additive capability they can require without importing the concrete store block.
+- **Approved by:** Yousef, 2026-07-14.
+
 ### 2026-07-15 — Block-actions wave (ENG-260/261/262/263, parent ENG-264)
 
 - **Changed:** `ToolOutcome` gains the additive `connect-required` variant with its `ConnectRequired` shape; `VendoConnectPart` (`data-vendo-connect`) joins the stream parts (ENG-262, landed).
@@ -563,9 +569,3 @@ Persistence and transport are normative:
 - **Changed:** §2 makes `kind: "org"` principals real (key-gated activation, Vendo-minted only) and reserves the `vendo:` subject namespace against host resolvers; the anonymous→signed-in migration note points at 02 §4. **Ships with ENG-263 — merge of this amendment waits for that PR.**
 - **Why:** The block-actions project implements execute-as-the-user beyond extraction: per-user connected accounts, loud invalidation, real principals. All additive within the version train (discriminated unions, optional fields — §15).
 - **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
-
-### 2026-07-14 — Atomic record claims
-
-- **Changed:** Added optional `RecordStore.claim(expected, replacement?)` as the core seam for one-statement compare-and-replace or compare-and-delete adapters.
-- **Why:** Store consumers that require single-use state need an additive capability they can require without importing the concrete store block.
-- **Approved by:** Yousef, 2026-07-14.

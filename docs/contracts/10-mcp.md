@@ -172,12 +172,6 @@ Dual review applied before any build: **standards** (verified against MCP 2025-1
 
 ## 9. Additive amendments
 
-### 2026-07-15 — connect-required over the door (ENG-262, parent ENG-264)
-
-- **Changed:** §2 maps the additive `connect-required` tool outcome to the door's in-band `isError` result, directing the user to connect the account in-product — same doctrine as `pending-approval`.
-- **Why:** Per-user connected accounts (04 §3.1) landed; an MCP client cannot host the broker's OAuth redirect.
-- **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
-
 ### 2026-07-14 — RFC 7009 token revocation
 
 - **Changed:** Added local `{mount}/revoke` handling for access and refresh
@@ -210,3 +204,9 @@ Dual review applied before any build: **standards** (verified against MCP 2025-1
 - **Compatibility:** both changes are additive; `mcp: true`, `mcp: { baseUrl }`,
   and `authorize`-bearing adapters behave exactly as before.
 - **Approved by:** pending Yousef review (ENG-286 — flagged in the PR).
+
+### 2026-07-15 — connect-required over the door (ENG-262, parent ENG-264)
+
+- **Changed:** §2 maps the additive `connect-required` tool outcome to the door's in-band `isError` result, directing the user to connect the account in-product — same doctrine as `pending-approval`.
+- **Why:** Per-user connected accounts (04 §3.1) landed; an MCP client cannot host the broker's OAuth redirect.
+- **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
