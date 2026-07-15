@@ -27,6 +27,32 @@ export type OpenSurface =
   | { kind: "http"; url: string }
   | { kind: "resuming"; cover?: string };
 
+/**
+ * 06-apps §9 — the additive in-client venue verdict riding a tree payload
+ * (`payload.inClient`). SERVER-AUTHORITATIVE: only the runtime's hash-pin
+ * verification writes it. `granted: true` is the ONLY state that lets the
+ * renderer mount generated code in the host page; a missing field and every
+ * other state stay in the sandboxed iframe jail.
+ */
+export type InClientVenue =
+  | { granted: true; versionHash: string; approvedBy: string; at: IsoDateTime }
+  | { granted: false; versionHash: string; reason: "version-changed" };
+
+/** 06-apps §8–§9 — what `GET /apps/:id/ship-diff` returns. */
+export interface ShipDiff {
+  appId: AppId;
+  versionHash: string;
+  pins: Array<{
+    slot: string;
+    component: string;
+    baseHash: string;
+    baselineHash?: string;
+    drifted: boolean;
+    diff: string;
+  }>;
+  generated: Array<{ component: string; diff: string }>;
+}
+
 /** 06-apps §1 — what `POST /apps/:id/edit` returns. */
 export interface EditResult {
   app: AppDocument;
