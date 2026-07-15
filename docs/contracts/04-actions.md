@@ -264,7 +264,7 @@ A connector call failing on a missing per-user connection produces the typed `co
 
 ## 5. Principals
 
-`kind: "user"` everywhere, plus real `kind: "org"` principals (ENG-263): org-wide automations, admin actions, and org-shared surfaces run as an org subject. The machinery ships OSS in full (01 §2, 02 §2); **activation stays paid** — key-gated via the console's `/keys/validate` entitlement; without a key, org APIs return a posture error (`cloud-required`). Host principal resolvers still mint `kind: "user"` only and may never produce `vendo:`-prefixed subjects (01 §2). <!-- amended 2026-07-15: was "OSS: user only; org is Cloud" — the block-actions spec locks full org semantics in Vendo-owned tables with key-gated activation. -->
+`kind: "user"` everywhere, plus real `kind: "org"` principals (ENG-263): org-wide automations, admin actions, and org-shared surfaces run as an org subject (`vendo:org:<id>`), with the initiating member carried as `RunContext.actor` (01 §3). The machinery ships OSS in full (01 §2, 02 §2); **activation stays paid** — key-gated via the console's `/keys/validate` `orgs` capability (the `CAPABILITY_KEYS` set); without an entitled key, org APIs return a posture error (`cloud-required`). Host principal resolvers still mint `kind: "user"` only and may never produce `vendo:`-prefixed subjects (01 §2). <!-- amended 2026-07-15: was "OSS: user only; org is Cloud" — the block-actions spec locks full org semantics in Vendo-owned tables with key-gated activation. -->
 
 ## 6. Compound tools (normative)
 

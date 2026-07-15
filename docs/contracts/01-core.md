@@ -30,7 +30,7 @@ export type JsonSchema = Record<string, unknown>; // JSON Schema draft 2020-12
 
 Who the agent is acting as. Host-minted for users; the host resolves its own session to a principal (09 §2). `kind: "org"` principals are real (ENG-263, block-actions spec §C): the full org machinery ships OSS, activation is key-gated per the Cloud line (00 conventions) — without `VENDO_API_KEY` entitlement, org surfaces return `cloud-required`. Org principals are minted only by Vendo's own org machinery over the org tables (02 §2); host principal resolvers mint `kind: "user"` only.
 
-**Reserved subjects (normative, ENG-263):** the `vendo:` subject prefix belongs to Vendo-synthetic principals — webhook firings run as `vendo:webhook:<source>` — and a host principal resolver returning a `vendo:`-prefixed subject is a validation error, never honored. This closes the collision between synthetic subjects and real users.
+**Reserved subjects (normative, ENG-263):** the `vendo:` subject prefix belongs to Vendo-synthetic principals — webhook firings run as `vendo:webhook:<source>`, org principals as `vendo:org:<id>` — and a host principal resolver returning a `vendo:`-prefixed subject is a validation error, never honored. This closes the collision between synthetic subjects and real users.
 
 ```ts
 export interface Principal {
@@ -48,6 +48,7 @@ Attached to every tool call, guard decision, and audit event. The two axes the p
 ```ts
 export interface RunContext {
   principal: Principal;
+  actor?: Principal;             // the human behind an org request (ENG-263): principal is the org (vendo:org:<id>), actor is the member who initiated it — audit records both
   venue: "chat" | "app" | "automation" | "mcp";   // "mcp" is live — the door (10-mcp.md)  <!-- amended 2026-07-14: MCP door landed (PR #139); original froze pre-door and read "mcp reserved for the deferred door". The value is now live in code (run-context.ts:21,32). -->
 
   presence: "present" | "away";
@@ -192,7 +193,7 @@ Every tool call, approval, and policy decision — recorded with principal + app
 export interface AuditEvent {
   id: string;                    // "aud_..."
   at: IsoDateTime;
-  kind: "tool-call" | "approval" | "policy-decision" | "run" | "app-lifecycle" | "share" | "door-auth";  // "door-auth": an MCP-door OAuth/principal-mint event  <!-- amended 2026-07-14: "door-auth" added — MCP door landed (PR #139), code audit.ts:12,29. -->
+  kind: "tool-call" | "approval" | "policy-decision" | "run" | "app-lifecycle" | "share" | "door-auth" | "principal";  // "door-auth": MCP-door OAuth/principal-mint; "principal": principal-lifecycle event — anon→signed-in migration, org membership change (ENG-263)  <!-- amended 2026-07-14: "door-auth" added — MCP door landed (PR #139), code audit.ts:12,29. -->
 
   principal: Principal;
   venue: RunContext["venue"];
@@ -566,6 +567,6 @@ Persistence and transport are normative:
 - **Changed:** `ApprovalRequest` and `VendoApprovalPart` gain optional `invalidatedGrant` — descriptor-drift grant lapse is loud, never a bare re-prompt (ENG-261, landed).
 - **Changed:** §7 contracts the enriched audit `detail` fields: `connectorAccount`, `reason: "grant-invalidated"`, and the `present-credentials-not-forwarded` warning (landed); org context follows with ENG-263.
 - **Changed:** §13 records the impersonation guard at the actAs seam (`act-as-subject-mismatch`) and away re-verification failing closed on a null mint (ENG-260 landed; re-verification semantics ENG-263).
-- **Changed:** §2 makes `kind: "org"` principals real (key-gated activation, Vendo-minted only) and reserves the `vendo:` subject namespace against host resolvers; the anonymous→signed-in migration note points at 02 §4. **Ships with ENG-263 — merge of this amendment waits for that PR.**
+- **Changed:** §2 makes `kind: "org"` principals real (subjects `vendo:org:<id>`, key-gated activation, Vendo-minted only) and reserves the `vendo:` subject namespace against host resolvers; §3 adds optional `RunContext.actor` (the human member behind an org request); §7 adds `AuditEvent.kind: "principal"` (anon-migration + membership-change lifecycle events); the anonymous→signed-in migration note points at 02 §4. **Ships with ENG-263 (PR #277) — merge of this amendment waits for that PR.**
 - **Why:** The block-actions project implements execute-as-the-user beyond extraction: per-user connected accounts, loud invalidation, real principals. All additive within the version train (discriminated unions, optional fields — §15).
 - **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).

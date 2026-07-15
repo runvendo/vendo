@@ -54,7 +54,7 @@ The page makes this public: "everything lives in the host's own DB under a `vend
 | `vendo_mcp_clients` | `id, data, refs, created_at, updated_at` | MCP client state (wave 6, additive — door-owned, shapes block-internal to `@vendoai/mcp`) |
 | `vendo_mcp_grants` | `id, data, refs, created_at, updated_at` | MCP grant state (wave 6, additive — door-owned, shapes block-internal to `@vendoai/mcp`) |
 
-Two org tables are contracted to join this map with ENG-263 (block-actions spec §C): `vendo_orgs` (organizations — real `kind:"org"` principals, 01 §2) and `vendo_org_members` (membership, roles `owner`/`admin`/`member` — members run, admins approve and manage). They are deliberately NOT rows in the map yet: the map is conformance-tested against the shipped erase cascade (§5), so the rows, their key columns, and the erase coverage land together with that implementation.
+The two org tables — `vendo_orgs` (organizations, real `kind:"org"` principals, 01 §2) and `vendo_org_members` (membership, roles `owner`/`admin`/`member` — members run, admins approve and manage) — are added to the map by the ENG-263 implementation (PR #277) together with their key columns and the erase-cascade coverage the map is conformance-tested against (§5). This PR carries the surrounding prose only; PR #277 owns the map rows and the §5 count so the conformance test and the doc land atomically.
 
 Host-entity refs are the join surface: `SELECT ... FROM invoices i JOIN vendo_records r ON r.refs @> jsonb_build_object('invoice_id', i.id)` (containment, so the GIN index is actually used).
 
@@ -127,7 +127,7 @@ A store-level erase API is contracted here and ships in Wave 3. It erases by sub
 
 ### 2026-07-15 — Org tables and anonymous migration (ENG-263, parent ENG-264)
 
-- **Changed:** Contracted `vendo_orgs` + `vendo_org_members` (roles owner/admin/member) — the Vendo-owned home of real org principals; activation key-gated (01 §2, 04 §5). The table-map rows, key columns, and erase-cascade coverage (§5, conformance-tested) land together with the ENG-263 implementation.
-- **Changed:** Contracted the anonymous→signed-in migration semantics in §4: threads/apps/state migrate on first authenticated request with a valid anon cookie, idempotent, cookie cleared; grants, approvals, and connected accounts never migrate.
-- **Why:** The block-actions spec locks full org semantics in Vendo-owned tables and closes the silent loss of anonymous work on sign-in. **Ships with ENG-263 — merge of this amendment waits for that PR; key columns confirmed against the implementation at land time.**
+- **Changed:** Described `vendo_orgs` + `vendo_org_members` (roles owner/admin/member) — the Vendo-owned home of real org principals; activation key-gated (01 §2, 04 §5). The actual §2 map rows (`vendo_orgs`: id, name, created_at, updated_at; `vendo_org_members`: org_id, subject, role, added_at, PK(org_id,subject), idx subject), the §5 count (13→15), and the erase-cascade coverage are added by PR #277 (ENG-263) so the doc and the conformance test land atomically. Erase rule (PR #277): erase-by-subject drops that subject's memberships; erasing `vendo:org:<id>` drops the org row plus all its members; full subject erasure overrides the last-owner invariant. Schema version advances to 3.
+- **Changed:** Contracted the anonymous→signed-in migration semantics in §4: threads/apps/state migrate on first authenticated request with a valid anon cookie, idempotent, cookie cleared; grants, approvals, and connected accounts never migrate (users reconnect).
+- **Why:** The block-actions spec locks full org semantics in Vendo-owned tables and closes the silent loss of anonymous work on sign-in. **This PR carries prose; the §2 rows + §5 count ship in PR #277. Land the two coherently — whichever merges second rebases.**
 - **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).

@@ -62,7 +62,7 @@ export interface Thread { id: ThreadId; subject: string; messages: UIMessage[]; 
 export interface ThreadSummary { id: ThreadId; title: string; updatedAt: IsoDateTime; }
 ```
 
-Threads belong to a principal; `threads.*` never crosses subjects. Ephemeral principals get in-memory threads regardless of store.
+Threads belong to a principal; `threads.*` never crosses subjects. Ephemeral principals' threads live in the store's per-process in-memory overlay (02 §4) — not a separate agent-owned map — so anon→signed-in migration (02 §4) can move them to the real subject through one seam.
 
 ## Amendments
 
@@ -71,3 +71,9 @@ Threads belong to a principal; `threads.*` never crosses subjects. Ephemeral pri
 - **Changed:** Corrected the `ai` peer dependency contract to `>=6.0.0 <7`.
 - **Why:** Package manifests have always shipped on the v6 train; the contract document lagged behind them.
 - **Approved by:** Yousef, 2026-07-14.
+
+### 2026-07-15 — Ephemeral threads own their overlay in store (ENG-263, parent ENG-264)
+
+- **Changed:** §5 no longer says ephemeral principals get an agent-owned in-memory thread map; ephemeral threads live in the store's per-process overlay (02 §4), so anonymous→signed-in migration moves them through one seam.
+- **Why:** ENG-263's anon-merge relocated ephemeral-subject threads out of `packages/agent/src/threads.ts` into the store overlay; the frozen prose described the pre-merge path.
+- **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
