@@ -906,6 +906,12 @@ importers:
       '@vendoai/ui':
         specifier: workspace:*
         version: link:../ui
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
+      ajv-formats:
+        specifier: ^3.0.1
+        version: 3.0.1(ajv@8.20.0)
     devDependencies:
       '@types/node':
         specifier: ^22.0.0

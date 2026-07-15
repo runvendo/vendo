@@ -9,4 +9,11 @@ describe("vendo CLI commands", () => {
     expect(error.mock.calls.flat().join("\n")).toContain("Unknown command");
     error.mockRestore();
   });
+
+  it("wires the mcp subcommand group", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    expect(await main(["mcp", "--help"])).toBe(0);
+    expect(log.mock.calls.flat().join("\n")).toContain("vendo mcp server-json");
+    log.mockRestore();
+  });
 });
