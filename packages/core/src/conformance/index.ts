@@ -610,6 +610,10 @@ const projectMemoryRecord = (
     case "vendo_grants": {
       const grant = parseReserved(permissionGrantSchema, input.data, "permission grant");
       requireMatchingRecordId(input.id, grant.id, "permission grant id");
+      // Mirrors the store routing's cross-subject refusal (02-store §2).
+      if (previous?.refs?.["subject"] !== undefined && previous.refs["subject"] !== grant.subject) {
+        throw new VendoError("conflict", `grant ${input.id} belongs to another subject`);
+      }
       return {
         data: grant,
         refs: derivedRefs({ subject: grant.subject, tool: grant.tool, app_id: grant.appId }),
@@ -644,6 +648,10 @@ const projectMemoryRecord = (
     case "vendo_audit": {
       const event = parseReserved(auditEventSchema, input.data, "audit event");
       requireMatchingRecordId(input.id, event.id, "audit event id");
+      // Mirrors the store routing's append-only refusal (02-store §2).
+      if (previous !== undefined) {
+        throw new VendoError("conflict", `audit event ${input.id} already exists (vendo_audit is append-only)`);
+      }
       return {
         data: event,
         refs: derivedRefs({
@@ -723,6 +731,10 @@ const projectMemoryRecord = (
         : invalidReserved("app enabled must be a boolean");
       const doc = parseReserved(appDocumentSchema, value["doc"], "app document");
       requireMatchingRecordId(input.id, doc.id, "app document id");
+      // Mirrors the store routing's cross-subject refusal (02-store §2).
+      if (previous?.refs?.["subject"] !== undefined && previous.refs["subject"] !== subject) {
+        throw new VendoError("conflict", `app ${input.id} belongs to another subject`);
+      }
       return {
         data: { subject, enabled, doc },
         refs: derivedRefs({ subject, trigger_kind: doc.trigger?.on.kind }),
@@ -824,6 +836,14 @@ export function memoryStoreAdapter(
           return copyRecord(record);
         },
         async delete(id) {
+          // Mirrors the store routing's append-only refusal (02-store §2):
+          // audit rows are erased only via the store erase API (02-store §5).
+          if (collection === "vendo_audit") {
+            throw new VendoError(
+              "blocked",
+              "vendo_audit is append-only; rows are erased only via the store erase API (02-store §5)",
+            );
+          }
           if (collection === "vendo_state") splitMemoryStateId(id);
           records.delete(id);
         },

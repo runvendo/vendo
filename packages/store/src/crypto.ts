@@ -27,23 +27,33 @@ export function dropEncryptionKey(store: object): void {
   keys.delete(store);
 }
 
-/** 02-store §4 */
-export function encryptSecret(value: string, key: Buffer): string {
+/** 02-store §4 — envelope versions:
+ *  - `v1`: legacy AES-256-GCM, no AAD. Still decrypted so rows written before
+ *    the AAD amendment keep working; never written anymore.
+ *  - `v2`: AES-256-GCM with the secret NAME bound as AAD, so a ciphertext
+ *    swapped between rows (or served for the wrong name) fails the auth tag
+ *    instead of decrypting to another secret's value. */
+export function encryptSecret(value: string, key: Buffer, name: string): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
+  cipher.setAAD(Buffer.from(name, "utf8"));
   const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
-  return `v1:${iv.toString("base64")}:${tag.toString("base64")}:${ciphertext.toString("base64")}`;
+  return `v2:${iv.toString("base64")}:${tag.toString("base64")}:${ciphertext.toString("base64")}`;
 }
 
 /** 02-store §4 */
-export function decryptSecret(value: string, key: Buffer): string {
+export function decryptSecret(value: string, key: Buffer, name: string): string {
   try {
     const [version, ivValue, tagValue, ciphertextValue, extra] = value.split(":");
-    if (version !== "v1" || !ivValue || !tagValue || ciphertextValue === undefined || extra !== undefined) {
+    if (
+      (version !== "v1" && version !== "v2")
+      || !ivValue || !tagValue || ciphertextValue === undefined || extra !== undefined
+    ) {
       throw new Error("invalid ciphertext envelope");
     }
     const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivValue, "base64"));
+    if (version === "v2") decipher.setAAD(Buffer.from(name, "utf8"));
     decipher.setAuthTag(Buffer.from(tagValue, "base64"));
     return Buffer.concat([
       decipher.update(Buffer.from(ciphertextValue, "base64")),

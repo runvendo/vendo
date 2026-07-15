@@ -40,7 +40,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "conformance": "tsc -p tsconfig.json && vitest run src/conformance.test.ts src/contract-routing.conformance.test.ts src/security/audit-mutation-characterization.test.ts src/postgres-gate.test.ts",
+    "conformance": "tsc -p tsconfig.json && vitest run src/conformance.test.ts src/contract-routing.conformance.test.ts src/security/audit-append-only.conformance.test.ts src/security/secrets-aad.conformance.test.ts src/flip-guards.conformance.test.ts src/erase.conformance.test.ts src/postgres-gate.test.ts",
     "test": "tsc -p tsconfig.json && vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:coverage": "tsc -p tsconfig.json && vitest run --coverage"
