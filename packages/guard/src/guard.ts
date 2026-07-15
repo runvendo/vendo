@@ -30,7 +30,6 @@ import { PolicyResolver, ruleMatches } from "./policy.js";
 import type {
   CreateGuardConfig,
   Judge,
-  PolicyConfig,
   Scanner,
   VendoGuard,
 } from "./types.js";
@@ -72,6 +71,7 @@ interface DecisionMetadata {
 
 interface CompletedDecision {
   decision: GuardDecision;
+  descriptor: ToolDescriptor;
   rationale?: string;
 }
 
@@ -423,7 +423,7 @@ class GuardImplementation implements VendoGuard {
             approvalId: decision.approval.id,
           };
         } else {
-          const grant = await this.#grantForExecution(decision, call, descriptor, ctx);
+          const grant = await this.#grantForExecution(decision, call, completed.descriptor, ctx);
           const executeCtx =
             grant === undefined ? ctx : ({ ...ctx, grant } as RunContext & { grant: PermissionGrant });
           try {
@@ -480,8 +480,9 @@ class GuardImplementation implements VendoGuard {
     descriptor: ToolDescriptor,
     ctx: RunContext,
   ): Promise<CompletedDecision> {
+    const effectiveDescriptor = await this.#effectiveDescriptor(call, descriptor, ctx);
     const callsTripped = this.#recordCall(ctx.principal.subject);
-    const metadata = await this.#pipeline(call, descriptor, ctx);
+    const metadata = await this.#pipeline(call, effectiveDescriptor, ctx);
     let draft = metadata.decision;
 
     // 05 §6: away runs hold only grants captured while present and bound to the
@@ -492,7 +493,7 @@ class GuardImplementation implements VendoGuard {
     }
 
     if (draft.action === "run") {
-      const write = descriptor.risk === "write" || descriptor.risk === "destructive";
+      const write = effectiveDescriptor.risk === "write" || effectiveDescriptor.risk === "destructive";
       const runKey = ctx.trigger?.runId ?? ctx.sessionId;
       const writes = this.#writeCounts.get(runKey)?.count ?? 0;
       const writesTripped = write && writes >= this.#maxWritesPerRun;
@@ -505,7 +506,7 @@ class GuardImplementation implements VendoGuard {
     }
 
     if (draft.action === "ask") {
-      const approval = await this.#parkApproval(call, descriptor, ctx);
+      const approval = await this.#parkApproval(call, effectiveDescriptor, ctx);
       const decision: GuardDecision = {
         action: "ask",
         approval,
@@ -525,6 +526,7 @@ class GuardImplementation implements VendoGuard {
       );
       return {
         decision,
+        descriptor: effectiveDescriptor,
         ...(metadata.rationale === undefined ? {} : { rationale: metadata.rationale }),
       };
     }
@@ -547,14 +549,34 @@ class GuardImplementation implements VendoGuard {
       const decision: GuardDecision = draft;
       return {
         decision,
+        descriptor: effectiveDescriptor,
         ...(metadata.rationale === undefined ? {} : { rationale: metadata.rationale }),
       };
     }
 
     return {
       decision: draft,
+      descriptor: effectiveDescriptor,
       ...(metadata.rationale === undefined ? {} : { rationale: metadata.rationale }),
     };
+  }
+
+  async #effectiveDescriptor(
+    call: ToolCall,
+    descriptor: ToolDescriptor,
+    ctx: RunContext,
+  ): Promise<ToolDescriptor> {
+    const resolveRisk = this.#config.resolveRisk;
+    if (resolveRisk === undefined) return descriptor;
+    try {
+      const risk = await resolveRisk(call, descriptor, ctx);
+      if (risk !== "read" && risk !== "write" && risk !== "destructive") return descriptor;
+      return risk === descriptor.risk ? descriptor : { ...descriptor, risk };
+    } catch {
+      // The static descriptor is the conservative fallback. Vendo's dynamic
+      // edit descriptor is write-class, so lookup/classifier failures still ask.
+      return descriptor;
+    }
   }
 
   #recordCall(subject: string): boolean {
@@ -1174,12 +1196,6 @@ class GuardImplementation implements VendoGuard {
   }
 }
 
-export function createGuard(config: {
-  store: StoreAdapter;
-  policy?: PolicyConfig;
-  judge?: Judge;
-  breakers?: { maxCallsPerMinute?: number; maxWritesPerRun?: number };
-  scanners?: Scanner[];
-}): VendoGuard {
+export function createGuard(config: CreateGuardConfig): VendoGuard {
   return new GuardImplementation(config);
 }

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -187,6 +187,36 @@ describe("ensureRepoCheckout", () => {
     await expect(readFile(path.join(repoDir, "app.txt"), "utf8")).resolves.toBe("clean\n");
     await expect(runGit(["status", "--porcelain"], repoDir)).resolves.toBe("");
     await expect(readFile(path.join(repoDir, "untracked.txt"), "utf8")).rejects.toThrow();
+  });
+
+  it("re-clones instead of hijacking an enclosing git repo when the cached dir has no .git", async () => {
+    const source = await createFixtureRepo();
+    const pinnedSha = await source.commitFile("fixture\n");
+
+    // corpus/.repos lives inside the Vendo worktree, so a cached dir that lost
+    // its .git resolves git commands against the ENCLOSING repo unless guarded.
+    const outerRoot = await makeTempRoot("outer-repo");
+    await runGit(["init"], outerRoot);
+    await runGit(["checkout", "-b", "main"], outerRoot);
+    await runGit(["config", "user.email", "corpus@example.com"], outerRoot);
+    await runGit(["config", "user.name", "Corpus Test"], outerRoot);
+    await runGit(["remote", "add", "origin", "https://example.com/outer.git"], outerRoot);
+    await writeFile(path.join(outerRoot, "outer.txt"), "outer\n");
+    await runGit(["add", "outer.txt"], outerRoot);
+    await runGit(["commit", "-m", "outer commit"], outerRoot);
+    const outerHead = await runGit(["rev-parse", "HEAD"], outerRoot);
+
+    const context = createRunContext({ corpusRoot: path.join(outerRoot, "corpus") });
+    await mkdir(context.repoDir("fixture-app"), { recursive: true });
+    await writeFile(path.join(context.repoDir("fixture-app"), "leftover.txt"), "partial\n");
+
+    const repoDir = await ensureRepoCheckout(entry(source.gitUrl, pinnedSha), { context });
+
+    await expect(runGit(["rev-parse", "HEAD"], outerRoot)).resolves.toBe(outerHead);
+    await expect(runGit(["rev-parse", "--abbrev-ref", "HEAD"], outerRoot)).resolves.toBe("main");
+    await expect(runGit(["remote", "get-url", "origin"], outerRoot)).resolves.toBe("https://example.com/outer.git");
+    await expect(runGit(["rev-parse", "--show-toplevel"], repoDir)).resolves.toBe(await realpath(repoDir));
+    await expect(runGit(["rev-parse", "HEAD"], repoDir)).resolves.toBe(pinnedSha);
   });
 
   it("recovers when the cached clone is corrupted", async () => {
