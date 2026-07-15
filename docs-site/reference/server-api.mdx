@@ -57,3 +57,23 @@ different base URL.
 
 `emit(event, payload, principal)` is the host-event seam. It returns the ids of
 runs started for enabled automations owned by that principal.
+
+## `eraseStore`
+
+`@vendoai/vendo/server` re-exports `eraseStore(store, target)`, the sanctioned
+deletion path across every store table and the ephemeral overlay. It is the
+only supported way to delete rows from the append-only `vendo_audit` table.
+
+```ts
+import { eraseStore } from "@vendoai/vendo/server";
+
+await eraseStore(vendo.store, { bySubject: "user_123" });
+await eraseStore(vendo.store, { byApp: "app_abc" });
+await eraseStore(vendo.store, { byAge: { before: cutoff } });
+```
+
+Pass exactly one of `bySubject`, `byApp`, or `byAge`. The call returns a map
+of per-table deleted counts. `byAge` retains any row whose lifecycle extends
+past the cutoff (for example, an unexpired standing grant or a recently
+rotated secret). See [Persistence](/deploy/persistence#erasing-data) for the
+full semantics.

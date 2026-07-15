@@ -34,6 +34,64 @@ environment](/reference/environment-variables#app-machine-environment) for the
 stay queryable. Ephemeral principals use an in-memory overlay and never write
 to disk.
 
+## Encryption is on by default
+
+`vendo init` provisions a 32-byte base64 key at `VENDO_STORE_ENCRYPTION_KEY`
+in your host `.env`. The default composition reads it when no store is passed
+to `createVendo`, so secret values in `vendo_secrets` are encrypted at rest
+without extra wiring. The key is append-safe: `vendo init` never regenerates
+it, even with `--force`. Do not rotate the key by hand — losing it makes
+existing secrets unreadable.
+
+An explicitly configured store always wins. If you pass
+`store: createStore({ encryption: { key } })` to `createVendo`, the environment
+variable is ignored.
+
+Ciphertext is bound to the secret name with AES-GCM authenticated data, so a
+tampered or swapped row fails to decrypt. Rows written before this hardening
+keep decrypting and upgrade to the bound envelope on their next write.
+
+## Audit is append-only
+
+`vendo_audit` is write-once. Calling `put` with an existing id fails with
+`conflict`, and `delete` is refused with `blocked`. The only sanctioned way
+to remove audit rows is the erase API below.
+
+## Ownership flips are refused
+
+`vendo_apps`, `vendo_grants`, and `vendo_threads` all reject same-id writes
+that move a row to a different subject. If you need to transfer ownership,
+delete the row and re-seed it under the new subject.
+
+## Erasing data
+
+`eraseStore(store)` is the sanctioned deletion path for `vendo_audit` and the
+one call that cascades across every store table plus the ephemeral overlay.
+Use it for right-to-erasure requests, tearing down a test app, or purging
+old runs.
+
+```ts
+import { eraseStore } from "@vendoai/vendo/server";
+
+// Full erasure for a subject across every store table and the overlay.
+const bySubject = await eraseStore(vendo.store, { bySubject: subjectId });
+
+// Erase everything owned by one app.
+const byApp = await eraseStore(vendo.store, { byApp: appId });
+
+// Erase rows whose entire lifecycle predates a cutoff.
+const byAge = await eraseStore(vendo.store, {
+  byAge: { before: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) },
+});
+```
+
+Each call returns per-table deleted counts so you can log or verify the
+cascade. `byAge` treats a row as recent when any lifecycle timestamp
+(including `updated_at`) is at or after the cutoff — so a standing grant
+with a future `expires_at` and a rotated secret both survive an age sweep.
+Overlay blobs carry no timestamps and are exempt from the age axis; they
+end with the process.
+
 ## Atomic claims
 
 The store contract exposes a compare-and-set (CAS) claim primitive so

@@ -29,6 +29,11 @@ app with both gets the Next scaffold; any other host is treated as Next.
 
 `dir` is the app to initialize and defaults to the current directory.
 
+Init also provisions `VENDO_STORE_ENCRYPTION_KEY` in your host `.env` — a
+32-byte base64 key the default composition uses to encrypt `vendo_secrets`
+at rest. The append is safe: init never regenerates the key, even with
+`--force`.
+
 Options:
 
 - `--agent` emits the setup plan as JSON and writes nothing: the detected
