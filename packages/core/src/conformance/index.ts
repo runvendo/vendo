@@ -515,7 +515,7 @@ const RESERVED_REF_KEYS: Readonly<Record<string, readonly string[]>> = {
   vendo_audit: ["subject", "kind", "app_id", "tool"],
   vendo_threads: ["subject"],
   vendo_runs: ["app_id", "status"],
-  vendo_apps: ["subject"],
+  vendo_apps: ["subject", "trigger_kind"],
   vendo_state: ["app_id", "subject"],
 };
 
@@ -725,7 +725,7 @@ const projectMemoryRecord = (
       requireMatchingRecordId(input.id, doc.id, "app document id");
       return {
         data: { subject, enabled, doc },
-        refs: { subject },
+        refs: derivedRefs({ subject, trigger_kind: doc.trigger?.on.kind }),
         createdAt: previous?.createdAt ?? now,
         updatedAt: now,
       };

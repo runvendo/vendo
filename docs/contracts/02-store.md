@@ -41,7 +41,7 @@ The page makes this public: "everything lives in the host's own DB under a `vend
 | Table | Key columns (stable) | Holds |
 | --- | --- | --- |
 | `vendo_meta` | `key, value` | schema version, boot id |
-| `vendo_apps` | `id, subject, enabled, doc, created_at, updated_at` | each user's app: document (core §9) + ownership (core §10) — no installs table; the app row IS the user's copy |
+| `vendo_apps` | `id, subject, enabled, doc, trigger_kind, created_at, updated_at` | each user's app: document (core §9) + ownership (core §10) — no installs table; the app row IS the user's copy |
 | `vendo_records` | `collection, id, data, refs, created_at, updated_at, revision` | app data collections; `refs` GIN-indexed for host joins; `revision` backs optional atomic writes |
 | `vendo_blobs` | `namespace, key, bytes, content_type, created_at` | `files` storage kind, exports, screenshots |
 | `vendo_state` | `app_id, subject, data, updated_at` | the built-in per-user-per-app `state` singleton |
@@ -69,6 +69,8 @@ Reserved-collection routing is THE sanctioned cross-block persistence seam. Bloc
 - `vendo_state`
 
 The door-owned `vendo_mcp_clients` and `vendo_mcp_grants` collections likewise route to their dedicated tables, with door-internal JSON shapes. The old typed-helper architecture is retired; reserved routing is the block seam.
+
+The `vendo_apps` route synthesizes `subject` and the optional `trigger_kind` derived from `doc.trigger.on.kind` as filterable refs.
 
 Reserved routes are a trusted-backend boundary, not an authorization gate: the store validates routed shapes, then trusts the caller. App and sandbox code must never receive a `StoreAdapter`; the umbrella gives it only to trusted blocks, including the door, and guard remains the authorization boundary.
 
@@ -113,4 +115,9 @@ A store-level erase API is contracted here and ships in Wave 3. It erases by sub
 
 - **Changed:** Added opaque `VendoRecord.revision` tokens and optional `RecordStore.atomic.insertIfAbsent` / `compareAndSwap` operations for ordinary record collections.
 - **Why:** Multi-instance automation schedulers need database-level first-writer and cursor-advance exclusion while third-party adapters retain the prior single-instance fallback.
+- **Approved by:** Yousef, 2026-07-14.
+
+### 2026-07-14 — Additive app trigger ref
+
+- **Changed:** Added the optional derived `trigger_kind` ref to `vendo_apps`, matching the ENG-254 routed-store index used by automations tick and emit queries.
 - **Approved by:** Yousef, 2026-07-14.
