@@ -73,13 +73,22 @@ email OTP, prompts for it, and stores the session at
 `~/.vendo/cloud-session.json`; `--token <jwt>` stores an access token instead.
 Other subcommands: `logout`, `whoami`, `orgs`, `keys` (`list`, `create`,
 `revoke`), `members`, `invite`, `deployments`, `usage`, `billing`, `validate`,
-`share`, `publish`, and `pin-ship`. Every result prints as JSON.
+`deploy`, `share`, `publish`, and `pin-ship`. Read results print as JSON;
+`deploy` prints a concise summary table by default and switches to raw JSON
+with `--json`.
+
+`vendo cloud deploy` pushes local enabled automations from `.vendo/data` to a
+hosted instance. Use `--app <id>` (repeatable) to restrict the set, `--subject
+<id>` when the local store holds more than one subject, and `--secret
+NAME=VALUE` (repeatable) to send referenced secret values. See
+[Vendo Cloud](/deploy/vendo-cloud#deploy-local-automations-to-hosted) for the
+full walkthrough.
 
 Global options:
 
 - `--api-url <url>` overrides `VENDO_CLOUD_URL` (default `https://console.vendo.run`).
 - `--key <vnd_...>` overrides `VENDO_API_KEY` for the machine commands
-  (`validate`, `share`, `publish`, `pin-ship`).
+  (`validate`, `deploy`, `share`, `publish`, `pin-ship`).
 
 Org-scoped commands take `--org <id>`; omit it only when your account has one
 organization. Run `vendo cloud help` for the full list. See
