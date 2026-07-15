@@ -608,6 +608,51 @@ describe("schedule, webhook, and host triggers", () => {
     await expect(engine.tick()).resolves.toHaveLength(1);
   });
 
+  it.each([
+    ["atomic", memoryStoreAdapter],
+    ["non-atomic", memoryStoreWithoutAtomic],
+  ])("initializes a future schedule cursor without firing via the %s store path", async (_path, createStore) => {
+    const store = createStore();
+    const doc = app("app_schedule_future", {
+      on: { kind: "schedule", at: "2026-07-12T13:00:00.000Z" },
+      run: { kind: "steps", steps: [] },
+    });
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({
+      apps: appsDouble(), tools: registry(), guard: new GuardDouble(), store, now: () => NOW,
+    });
+
+    await expect(engine.tick()).resolves.toEqual([]);
+    expect((await store.records("automations:schedule").get(doc.id))?.data).toEqual({
+      lastFiredAt: NOW.toISOString(),
+    });
+  });
+
+  it("atomically claims an uninitialized due schedule across engine instances", async () => {
+    const store = memoryStoreAdapter();
+    let calls = 0;
+    const apps = appsDouble(async () => {
+      calls += 1;
+      return { status: "ok", output: {} };
+    });
+    const doc = app("app_schedule_first_claim", {
+      on: { kind: "schedule", at: "2026-07-12T11:00:00.000Z" },
+      run: { kind: "steps", steps: [{ id: "run", tool: "fn:main" }] },
+    });
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({ apps, tools: registry(), guard: new GuardDouble(), store, now: () => NOW });
+    const peer = createAutomations({ apps, tools: registry(), guard: new GuardDouble(), store, now: () => NOW });
+
+    const ticks = await Promise.all([engine.tick(), peer.tick()]);
+
+    expect(ticks.flat()).toHaveLength(1);
+    expect(calls).toBe(1);
+    expect((await store.records("automations:schedule").get(doc.id))?.data).toEqual({
+      lastFiredAt: NOW.toISOString(),
+      firedAt: NOW.toISOString(),
+    });
+  });
+
   it("verifies HMAC vectors, dedupes deliveries, rejects bad/stale signatures once, and emits matching host events", async () => {
     const store = memoryStoreAdapter();
     const guard = new GuardDouble();
@@ -689,6 +734,45 @@ describe("schedule, webhook, and host triggers", () => {
     expect(await engine.emit("invoice.paid", {}, ctx("other").principal)).toEqual([]);
     expect(observed).toContainEqual({ payload: { answer: 42 } });
     expect(observed).toContainEqual({ payload: { invoice: "inv_1" } });
+  });
+
+  it("dedupes webhook deliveries when the store lacks atomic claims", async () => {
+    const store = memoryStoreWithoutAtomic();
+    const external = app("app_webhook_fallback", {
+      on: { kind: "external", connector: "github", event: "push" },
+      run: { kind: "steps", steps: [] },
+    });
+    await seedApp(store, external);
+    const engine = createAutomations({
+      apps: appsDouble(), tools: registry(), guard: new GuardDouble(), store, now: () => NOW,
+    });
+    await engine.enable(external.id, ctx());
+    const secret = ((await store.records("automations:webhook").get(external.id))?.data as { secret: string }).secret;
+    const body = JSON.stringify({ answer: 42 });
+    const timestamp = String(NOW.getTime() / 1_000);
+    const deliveryId = "delivery_fallback";
+    const signature = await sign(secret, deliveryId, timestamp, body);
+    const request = () => new Request("https://example.test/api/webhooks/github", {
+      method: "POST",
+      headers: {
+        "webhook-id": deliveryId,
+        "webhook-timestamp": timestamp,
+        "webhook-signature": `v1,${signature}`,
+      },
+      body,
+    });
+
+    const first = await engine.webhook(request());
+    const duplicate = await engine.webhook(request());
+
+    expect(await first.json()).toMatchObject({ runIds: [expect.stringMatching(/^run_/)] });
+    expect(await duplicate.json()).toEqual({ deduped: true });
+    expect((await store.records("vendo_runs").list()).records).toHaveLength(1);
+    expect((await store.records("automations:deliveries").get(`${external.id}:${deliveryId}`))?.data).toEqual({
+      appId: external.id,
+      deliveryId,
+      receivedAt: NOW.toISOString(),
+    });
   });
 });
 
