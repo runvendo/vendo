@@ -1,6 +1,7 @@
 /** Fetch/SSE bindings for the public wire route table (08-ui §2, 09-vendo §3). */
 import { VendoError, type VendoErrorCode } from "@vendoai/core";
 import type { VendoClient, VendoClientConfig } from "./client.js";
+import type { ConnectionAccount } from "./wire-types.js";
 
 const KNOWN_ERROR_CODES = new Set<VendoErrorCode>([
   "validation",
@@ -109,6 +110,14 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
       list: () => readJson("/grants"),
       revoke: id => json(`/grants/${idPath(id)}`, "DELETE"),
     },
+    connections: {
+      list: async () => (await readJson<{ connections: ConnectionAccount[] }>("/connections")).connections,
+      initiate: input => json("/connections/initiate", "POST", input),
+      status: (id, connector) =>
+        readJson(`/connections/${idPath(id)}${connector === undefined ? "" : `?connector=${encodeURIComponent(connector)}`}`),
+      disconnect: (id, connector) =>
+        json(`/connections/${idPath(id)}${connector === undefined ? "" : `?connector=${encodeURIComponent(connector)}`}`, "DELETE"),
+    },
     apps: {
       list: () => readJson("/apps"),
       create: input => json("/apps", "POST", input),
@@ -128,6 +137,8 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
         }),
       fork: id => json(`/apps/${idPath(id)}/fork`, "POST"),
       shipDiff: id => readJson(`/apps/${idPath(id)}/ship-diff`),
+      pinDrift: id => readJson(`/apps/${idPath(id)}/pin-drift`),
+      rebasePin: (id, slot) => json(`/apps/${idPath(id)}/rebase-pin`, "POST", { slot }),
     },
     automations: {
       list: () => readJson("/automations"),

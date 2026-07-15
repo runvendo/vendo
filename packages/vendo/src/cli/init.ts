@@ -241,6 +241,10 @@ function defaultModelSource(): string {
     `export const model = anthropic("claude-sonnet-4-6");\n`;
 }
 
+const VENDO_ENV_EXAMPLE =
+  "# Trusted host origin for same-origin API calls; credential forwarding is disabled without it.\n" +
+  "VENDO_BASE_URL=http://localhost:3000\n";
+
 /** Resolve an `@/`-style model import to a candidate file the scaffold owns.
     Anything else (a package, a relative path) is the host's own module. */
 async function modelModuleCandidate(root: string, appDir: string, modelImport: string): Promise<string | null> {
@@ -477,6 +481,7 @@ async function buildPlan(options: InitOptions, mcpEnabled = false): Promise<{ pl
     }
   }
   const writes = [
+    ".env.example",
     ".vendo/tools.json",
     ".vendo/overrides.json",
     ".vendo/policy.json",
@@ -562,6 +567,18 @@ async function ensureEncryptionKey(root: string, output: Output): Promise<void> 
   output.log("Generated VENDO_STORE_ENCRYPTION_KEY in .env — stored secrets are encrypted at rest.");
 }
 
+async function ensureVendoEnvExample(root: string): Promise<void> {
+  const path = join(root, ".env.example");
+  const current = await readOptional(path);
+  if (current === null) {
+    await writeText(path, VENDO_ENV_EXAMPLE);
+    return;
+  }
+  if (/^\s*VENDO_BASE_URL\s*=/m.test(current)) return;
+  const separator = current.length === 0 ? "" : current.endsWith("\n") ? "\n" : "\n\n";
+  await writeText(path, `${current}${separator}${VENDO_ENV_EXAMPLE}`);
+}
+
 function telemetryFor(options: InitOptions, output: Output): Telemetry {
   return toolingTelemetry({ ...options.telemetry, log: (message) => output.log(message) });
 }
@@ -592,6 +609,7 @@ export async function runInit(options: InitOptions): Promise<number> {
   await telemetry.track("init_started", { framework: plan.framework });
 
   try {
+    await ensureVendoEnvExample(root);
     await mkdir(join(root, ".vendo"), { recursive: true });
     await ensureEncryptionKey(root, output);
     await writeIfMissing(
@@ -625,6 +643,7 @@ export async function runInit(options: InitOptions): Promise<number> {
 
     const report = await vendoSync({ root, out: join(root, ".vendo") });
     for (const warning of report.warnings) output.error(`warning: ${warning}`);
+    output.log(`catalog.json: ${report.catalog.discovered} discovered, ${report.catalog.registered} registered`);
     if (report.unresolvedPins.length > 0) {
       output.error("\nUNRESOLVED REMIXABLE SLOTS (init continues):");
       for (const pin of report.unresolvedPins) {

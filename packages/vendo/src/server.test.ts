@@ -21,6 +21,7 @@ import { createVendo, nextVendoHandler, type CreateVendoConfig, type Vendo } fro
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
@@ -302,6 +303,8 @@ describe("09 §3 public wire", () => {
         automations: true,
         sandbox: false,
         mcp: false,
+        // 04-actions §3 — no BYO connector and no VENDO_API_KEY → no broker.
+        connections: false,
       },
     });
   });
@@ -569,6 +572,45 @@ describe("06-apps §9 in-client venue over the wire", () => {
 });
 
 describe("09 §2 composition", () => {
+  it("audits one structured warning when present auth cannot be forwarded", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "");
+    const { vendo } = await setup();
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const target = input instanceof Request ? input : new Request(input, init);
+      return vendo.handler(target);
+    }));
+
+    // Teach the zero-config route origin, then exercise the real present-forward
+    // branch twice with inbound credentials. The learned origin is deliberately
+    // untrusted, so both calls forward no auth but only one warning is recorded.
+    expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
+    for (let index = 0; index < 2; index += 1) {
+      await vendo.handler(request("POST", "/doctor/present", {}, {
+        authorization: "Bearer vendo-doctor-present",
+        cookie: "vendo_doctor_present=1",
+      }));
+    }
+
+    const events = await vendo.guard.audit.query({ principal });
+    const warnings = events.events.filter((event) =>
+      event.detail !== undefined
+      && typeof event.detail === "object"
+      && event.detail !== null
+      && "warning" in event.detail);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      kind: "tool-call",
+      presence: "present",
+      detail: {
+        warning: {
+          code: "present-credentials-not-forwarded",
+          reason: "untrusted-host-origin",
+          action: "Set VENDO_BASE_URL to the host origin and restart the server.",
+        },
+      },
+    });
+  });
+
   it("adds app capability tools and executes them only through the guard binding", async () => {
     const { vendo } = await setup();
     expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
@@ -1042,6 +1084,91 @@ describe("09 §2 apps composition", () => {
     await expect(vendo.apps.create({ prompt: "Show revenue" }, ctx)).resolves.toMatchObject({
       tree: { nodes: [{ component: "MetricCard", source: "host" }] },
     });
+  });
+
+  it("loads catalog@1 from .vendo and plumbs it through to createApps", { timeout: 120_000 }, async () => {
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+    const root = await mkdtemp(join(tmpdir(), "vendo-disk-catalog-"));
+    const dataDir = join(root, "data");
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "catalog.json"), JSON.stringify({
+      format: "vendo/catalog@1",
+      entries: [{
+        name: "DiskMetric",
+        exportPath: "./src/disk-metric.tsx#DiskMetric",
+        propsSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"], additionalProperties: false },
+        description: "Use for a metric loaded from the generated catalog.",
+        source: "scanned",
+      }],
+    }));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
+    const generated = JSON.stringify({
+      name: "Disk catalog app",
+      tree: {
+        formatVersion: VENDO_TREE_FORMAT,
+        root: "metric",
+        nodes: [{ id: "metric", component: "DiskMetric", source: "host", props: { value: 42 } }],
+      },
+    });
+    const model = new MockLanguageModelV3({
+      doStream: async () => ({
+        stream: simulateReadableStream({ chunks: [
+          { type: "text-start", id: "generation" },
+          { type: "text-delta", id: "generation", delta: generated },
+          { type: "text-end", id: "generation" },
+          {
+            type: "finish",
+            usage: {
+              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+              outputTokens: { total: 0, text: 0, reasoning: 0 },
+            },
+            finishReason: { unified: "stop", raw: undefined },
+          },
+        ] }),
+      }),
+    });
+    const previousCwd = process.cwd();
+    const vendo = (() => {
+      try {
+        process.chdir(root);
+        return createVendo({ model, principal: async () => principal, store });
+      } finally {
+        process.chdir(previousCwd);
+      }
+    })();
+    await store.ensureSchema();
+
+    await expect(vendo.apps.create({ prompt: "Show the disk metric" }, ctx)).resolves.toMatchObject({
+      tree: { nodes: [{ component: "DiskMetric", source: "host", props: { value: 42 } }] },
+    });
+  });
+
+  it("warns loudly when createVendo finds a malformed .vendo/catalog.json", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-malformed-disk-catalog-"));
+    const dataDir = join(root, "data");
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "catalog.json"), JSON.stringify({
+      format: "vendo/catalog@1",
+      entries: [],
+      typo: true,
+    }));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const previousCwd = process.cwd();
+    try {
+      process.chdir(root);
+      createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    } finally {
+      process.chdir(previousCwd);
+    }
+    await store.ensureSchema();
+
+    expect(error).toHaveBeenCalledOnce();
+    expect(error.mock.calls[0]?.[0]).toContain(".vendo/catalog.json");
+    expect(error.mock.calls[0]?.[0]).toContain("Unrecognized key");
+    expect(error.mock.calls[0]?.[0]).toContain("vendo sync");
   });
 });
 

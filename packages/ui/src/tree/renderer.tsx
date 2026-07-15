@@ -19,7 +19,7 @@ import {
 } from "react";
 import { useVendoThemeOrDefault } from "../context.js";
 import { themeCssVariables } from "../theme.js";
-import type { InClientVenue } from "../wire-types.js";
+import type { InClientVenue, PinDrift } from "../wire-types.js";
 import { resolvePointer } from "./bindings.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { InClientMount } from "./host-mount.js";
@@ -146,6 +146,15 @@ function outcomeNotice(outcome: ToolOutcome | undefined): ReactNode {
  * client and the parity test cover.
  */
 export type { InClientVenue } from "../wire-types.js";
+
+/**
+ * 06-apps §8 — the additive pin-drift report a tree payload may carry
+ * (`payload.pinDrift`). SERVER-AUTHORITATIVE: the apps runtime strips any
+ * document-carried value and attaches this only from its own baseline
+ * comparison. Re-exported from the wire type so tree consumers see the same
+ * shape the client and the parity test cover.
+ */
+export type { PinDrift } from "../wire-types.js";
 
 interface NodeRendererProps {
   nodeId: string;
@@ -322,6 +331,12 @@ function StatefulTreeView({
   const streaming = (tree as Tree & { streaming?: unknown }).streaming === true;
   const furnishings = (tree as Tree & { furnishings?: Record<string, JailFurnishing> }).furnishings ?? {};
   const inClient = (tree as Tree & { inClient?: InClientVenue }).inClient;
+  // Tolerate a malformed field (like every other payload extra): only an
+  // array of well-formed entries renders the notice.
+  const pinDriftRaw = (tree as Tree & { pinDrift?: unknown }).pinDrift;
+  const pinDrift = (Array.isArray(pinDriftRaw) ? pinDriftRaw : [])
+    .filter((entry): entry is PinDrift =>
+      typeof entry === "object" && entry !== null && typeof (entry as PinDrift).slot === "string");
   // The host-page mount unlocks on EXACTLY `granted === true` — the value only
   // the server's hash-pin verification writes. Everything else stays jailed.
   const inClientGranted = inClient?.granted === true;
@@ -396,9 +411,21 @@ function StatefulTreeView({
     )
     : null;
 
+  // 06-apps §8 — a host update under a remixed pin must be LOUD too: the fork
+  // keeps rendering (nothing is mutated without the user), but the surface
+  // says the host component moved on and a rebase is available.
+  const driftNotice = pinDrift.length > 0
+    ? (
+      <ContainedNotice label="Remixed component out of date">
+        {`The host updated ${pinDrift.map((pin) => `"${pin.slot}"`).join(", ")} since ${pinDrift.length === 1 ? "it was" : "they were"} remixed here. Ask the agent to rebase the remix onto the updated component.`}
+      </ContainedNotice>
+    )
+    : null;
+
   return (
     <NodeErrorBoundary nodeId={validation.tree.root}>
       {dropBackNotice}
+      {driftNotice}
       <NodeRenderer
         nodeId={validation.tree.root}
         ancestry={new Set()}

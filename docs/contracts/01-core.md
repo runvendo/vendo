@@ -13,6 +13,7 @@ export const VENDO_APP_FORMAT = "vendo/app@1";
 export const VENDO_TREE_FORMAT = "vendo-genui/v1";   // pinned wire name (renaming breaks stored records)
 export const VENDO_TOOLS_FORMAT = "vendo/tools@1";
 export const VENDO_OVERRIDES_FORMAT = "vendo/overrides@1";
+export const VENDO_CAPABILITIES_FORMAT = "vendo/capabilities@1";
 export const VENDO_POLICY_FORMAT = "vendo/policy@1";
 
 export type AppId = string;      // "app_..."

@@ -19,6 +19,7 @@ describe("vendoSync host fixture", () => {
 
     const first = await vendoSync({ root: fixtureRoot, out });
     const firstBytes = await fs.readFile(path.join(out, "tools.json"), "utf8");
+    const firstCatalogBytes = await fs.readFile(path.join(out, "catalog.json"), "utf8");
     const toolsFile = JSON.parse(firstBytes) as { format: string; tools: Array<Record<string, any>> };
     const byName = new Map(toolsFile.tools.map((tool) => [tool.name, tool]));
 
@@ -77,6 +78,7 @@ describe("vendoSync host fixture", () => {
 
     const second = await vendoSync({ root: fixtureRoot, out });
     expect(await fs.readFile(path.join(out, "tools.json"), "utf8")).toBe(firstBytes);
+    expect(await fs.readFile(path.join(out, "catalog.json"), "utf8")).toBe(firstCatalogBytes);
     expect(second.tools).toEqual({ added: [], removed: [], changed: [] });
     expect(second.breaking).toEqual([]);
     expect(second.pins).toEqual({ captured: [], drifted: [] });

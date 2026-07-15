@@ -316,6 +316,31 @@ describe("steps execution, parking, and resumption", () => {
     expect(guard.audit.map((event) => event.detail)).toEqual([{ status: "running" }, { status: "ok" }]);
   });
 
+  it("fails a run on connect-required with an actionable error and a readable step record", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    const tools = registry([writeTool], async () => ({
+      status: "connect-required",
+      connect: { connector: "composio", toolkit: "gmail", message: "Connect your gmail account first." },
+    }));
+    const doc = app("app_connect", {
+      on: { kind: "host-event", event: "send" },
+      run: { kind: "steps", steps: [{ id: "send", tool: writeTool.name }] },
+    });
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+
+    const [runId] = await engine.emit("send", {}, ctx().principal);
+    // The persisted record must READ BACK through the run schema — the step
+    // outcome enum includes connect-required (an away run has no user to show
+    // a connect card to; it fails with the actionable connect message).
+    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
+      status: "error",
+      error: { code: "connect-required", message: "Connect your gmail account first." },
+      steps: [{ id: "send", outcome: "connect-required", detail: "Connect your gmail account first." }],
+    });
+  });
+
   it("parks the exact call, resumes it after approval, mints a grant, and continues", async () => {
     const baseStore = memoryStoreAdapter();
     let resumeClaims = 0;

@@ -13,6 +13,7 @@ const report = (
   breaking,
   pins: { captured: [], drifted: [] },
   unresolvedPins: [],
+  catalog: { discovered: 2, registered: 1 },
   warnings: [],
 });
 
@@ -216,6 +217,20 @@ describe("vendo sync", () => {
     expect(errors.join("\n")).toContain("run the host in dev with Vendo mounted to runtime-capture it");
   });
 
+  it("names drifted slots and says forks stay on the old capture until rebased", async () => {
+    const messages = captureOutput();
+    const drifted = {
+      ...report(),
+      pins: { captured: ["invoice-card"], drifted: ["net-worth-card"] },
+    };
+    expect(await runSync({ targetDir: ".", output: messages.output, sync: async () => drifted })).toBe(0);
+    const log = messages.logs.join("\n");
+    expect(log).toContain("pins: 1 captured, 1 drifted");
+    expect(log).toContain("drifted: net-worth-card");
+    expect(log).toContain("rebase");
+    // Drift alone never fails the sync and never mutates any fork.
+  });
+
   it("still pushes --report and keeps blast-radius exit three when slots are also unresolved", async () => {
     const messages = captureOutput();
     const push = vi.fn(async () => {});
@@ -248,5 +263,11 @@ describe("vendo sync", () => {
     expect(exit).toBe(3);
     expect(push).toHaveBeenCalledWith(expect.objectContaining({ report: unresolved }));
     expect(messages.errors.join("\n")).toContain("InlineCard [inline-component]");
+  });
+
+  it("prints the init-style catalog summary", async () => {
+    const logs: string[] = [];
+    expect(await runSync({ targetDir: ".", output: { log: (line) => logs.push(line), error() {} }, sync: async () => report() })).toBe(0);
+    expect(logs).toContain("catalog.json: 2 discovered, 1 registered");
   });
 });

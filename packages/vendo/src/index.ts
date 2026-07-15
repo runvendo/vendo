@@ -5,9 +5,12 @@ export type { Thread, ThreadSummary, VendoAgent } from "@vendoai/agent";
 export type {
   ActionsRegistry,
   Connector,
+  ConnectorAccount,
+  ConnectorConnections,
   ExtractedTool,
   SyncReport,
 } from "@vendoai/actions";
+export type { ConnectionsService, InitiatedConnection, InitiateOptions } from "./connections.js";
 export type {
   Judge,
   PolicyConfig,
@@ -23,6 +26,8 @@ export type {
   InClientApproval,
   InClientVerdict,
   OpenSurface,
+  PinDrift,
+  PinRebaseResult,
   SandboxAdapter,
   SandboxMachine,
   ShipDiff,

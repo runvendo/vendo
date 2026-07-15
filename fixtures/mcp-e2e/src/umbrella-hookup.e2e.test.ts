@@ -21,7 +21,16 @@ import type { HostOAuthAdapter } from "@vendoai/mcp";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { createVendo, type CreateVendoConfig, type Vendo } from "@vendoai/vendo/server";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { FIXTURE_APP_ID, fixtureBaseUrl, hostTools, loginCookie, resetFixture, SUBJECT, type Stack } from "./harness.js";
+import {
+  FIXTURE_APP_ID,
+  FIXTURE_THEME,
+  fixtureBaseUrl,
+  hostTools,
+  loginCookie,
+  resetFixture,
+  SUBJECT,
+  type Stack,
+} from "./harness.js";
 import { connectWithSdk, descriptorShape, textOf } from "./support.js";
 
 const MCP_PATH = "/api/vendo/mcp";
@@ -48,6 +57,7 @@ beforeAll(async () => {
     join(projectDir, ".vendo", "tools.json"),
     JSON.stringify({ format: VENDO_TOOLS_FORMAT, tools: hostTools }),
   );
+  await writeFile(join(projectDir, ".vendo", "theme.json"), JSON.stringify(FIXTURE_THEME));
   originalCwd = process.cwd();
   process.chdir(projectDir);
   process.env.VENDO_BASE_URL = fixtureBaseUrl();
@@ -244,6 +254,10 @@ describe("umbrella hookup — createVendo({ mcp: true }) mounts the door", () =>
         "vendo_apps_open",
         "vendo_apps_call",
       ]));
+      const resource = await connected.client.readResource({ uri: "ui://vendo/tree-shim.html" });
+      const html = "text" in resource.contents[0]! ? resource.contents[0].text : "";
+      expect(html).toContain("--vendo-color-background:#FBFBFA");
+      expect(html).toContain("--vendo-color-accent:#0A7CFF");
     } finally {
       await connected.close();
     }

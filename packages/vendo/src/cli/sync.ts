@@ -73,6 +73,11 @@ export async function runSync(options: SyncOptions): Promise<number> {
     for (const warning of report.warnings) output.error(`warning: ${warning}`);
     output.log(`tools: +${report.tools.added.length} -${report.tools.removed.length} ~${report.tools.changed.length}`);
     output.log(`pins: ${report.pins.captured.length} captured, ${report.pins.drifted.length} drifted`);
+    output.log(`catalog.json: ${report.catalog.discovered} discovered, ${report.catalog.registered} registered`);
+    if (report.pins.drifted.length > 0) {
+      // 06-apps §8 — drift never auto-rebases: the fork's owner decides.
+      output.log(`drifted: ${report.pins.drifted.join(", ")} — existing forks stay on the old capture until each owner rebases (POST /apps/:id/rebase-pin or the vendo_apps_rebase_pin agent tool)`);
+    }
     // Unresolved slots fail the run regardless of --strict (silent remix skips
     // are eliminated), but impact analysis, the report push, and the breaking
     // gate below still execute so the most severe exit code wins.

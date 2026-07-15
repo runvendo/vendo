@@ -1,0 +1,63 @@
+{
+  "format": "vendo/catalog@1",
+  "entries": [
+    {
+      "name": "CadenceDocProgress",
+      "exportPath": "./src/vendo/host-components.tsx#cadenceHostComponents.CadenceDocProgress",
+      "propsSchema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "number"
+          },
+          "max": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "value",
+          "max"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Use for Cadence document-collection or checklist completion when the user needs progress toward a known total.",
+      "examples": [
+        "{\"value\":7,\"max\":10}"
+      ],
+      "source": "registered"
+    },
+    {
+      "name": "CadenceStatusBadge",
+      "exportPath": "./src/vendo/host-components.tsx#cadenceHostComponents.CadenceStatusBadge",
+      "propsSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "variant": {
+            "enum": [
+              "missing",
+              "overdue",
+              "review",
+              "verified",
+              "neutral"
+            ]
+          },
+          "dot": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Use for a compact Cadence document, client, or workflow status label when the state should be immediately scannable.",
+      "examples": [
+        "{\"text\":\"Needs review\",\"variant\":\"review\",\"dot\":true}"
+      ],
+      "source": "registered"
+    }
+  ]
+}

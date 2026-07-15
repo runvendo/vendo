@@ -4,13 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HostOAuthAdapter } from "@vendoai/mcp";
 import { createStore } from "@vendoai/store";
-import { afterEach, describe, expect, it } from "vitest";
-import { createVendo, type CreateVendoConfig } from "../server.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createVendo, type CreateVendoConfig, type Vendo } from "../server.js";
 import { runDoctor } from "./doctor.js";
 
 const cleanup: Array<() => Promise<void>> = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   for (const close of cleanup.splice(0).reverse()) await close();
 }, 180_000);
 
@@ -29,20 +30,13 @@ describe("vendo doctor MCP discovery live", () => {
       async authorize() { return { subject: "doctor-user" }; },
       async principal(subject) { return { kind: "user", subject }; },
     };
-    const vendo = createVendo({
-      model: {} as unknown as CreateVendoConfig["model"],
-      principal: async () => null,
-      store,
-      mcp: true,
-      oauth,
-      // Light the execution venue deterministically (independent of local
-      // E2B/Modal env keys) so doctor reports no venue warning here.
-      sandbox: {
-        create: async () => { throw new Error("not used by doctor"); },
-        resume: async () => { throw new Error("not used by doctor"); },
-      },
-    });
+    let vendo: Vendo | undefined;
     const server = createServer((request, response) => {
+      if (vendo === undefined) {
+        response.statusCode = 503;
+        response.end("Vendo is starting");
+        return;
+      }
       const host = request.headers.host ?? "127.0.0.1";
       void vendo.handler(new Request(`http://${host}${request.url ?? "/"}`, {
         method: request.method,
@@ -63,6 +57,31 @@ describe("vendo doctor MCP discovery live", () => {
     const address = server.address();
     if (address === null || typeof address === "string") throw new Error("fixture server did not bind");
     const origin = `http://127.0.0.1:${address.port}`;
+    // createVendo reads VENDO_BASE_URL at composition time; the doctor present
+    // probe only passes when the fixture origin is the trusted host origin.
+    vi.stubEnv("VENDO_BASE_URL", origin);
+    const minted = new Map<string, string>();
+    vendo = createVendo({
+      model: {} as unknown as CreateVendoConfig["model"],
+      principal: async (request) => ({
+        kind: "user",
+        subject: minted.get(request.headers.get("authorization") ?? "") ?? "doctor-user",
+      }),
+      actAs: async (principal) => {
+        const token = `Bearer doctor-${principal.subject}`;
+        minted.set(token, principal.subject);
+        return { headers: { authorization: token } };
+      },
+      store,
+      mcp: true,
+      oauth,
+      // Light the execution venue deterministically (independent of local
+      // E2B/Modal env keys) so doctor reports no venue warning here.
+      sandbox: {
+        create: async () => { throw new Error("not used by doctor"); },
+        resume: async () => { throw new Error("not used by doctor"); },
+      },
+    });
     cleanup.push(async () => {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
       await store.close();

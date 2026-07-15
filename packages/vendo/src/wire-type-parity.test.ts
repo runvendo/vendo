@@ -66,6 +66,8 @@ import type {
   ThreadSummary as UiThreadSummary,
   InClientVenue as UiInClientVenue,
   ShipDiff as UiShipDiff,
+  PinDrift as UiPinDrift,
+  PinRebaseResult as UiPinRebaseResult,
 } from "@vendoai/ui";
 import type {
   OpenSurface as AppsOpenSurface,
@@ -73,6 +75,8 @@ import type {
   VersionEntry as AppsVersionEntry,
   InClientVenueState as AppsInClientVenueState,
   ShipDiff as AppsShipDiff,
+  PinDrift as AppsPinDrift,
+  PinRebaseResult as AppsPinRebaseResult,
 } from "@vendoai/apps";
 import type {
   AutomationsEngine,
@@ -105,6 +109,10 @@ type Checks = [
   Assert<Assignable<AppsInClientVenueState, UiInClientVenue>>,
   Assert<Assignable<UiShipDiff, AppsShipDiff>>,
   Assert<Assignable<AppsShipDiff, UiShipDiff>>,
+  Assert<Assignable<UiPinDrift, AppsPinDrift>>,
+  Assert<Assignable<AppsPinDrift, UiPinDrift>>,
+  Assert<Assignable<UiPinRebaseResult, AppsPinRebaseResult>>,
+  Assert<Assignable<AppsPinRebaseResult, UiPinRebaseResult>>,
   Assert<Assignable<UiRunStatus, AutomationsRunStatus>>,
   Assert<Assignable<AutomationsRunStatus, UiRunStatus>>,
   Assert<Assignable<UiRunRecord, AutomationsRunRecord>>,

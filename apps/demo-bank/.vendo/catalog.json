@@ -1,0 +1,84 @@
+{
+  "format": "vendo/catalog@1",
+  "entries": [
+    {
+      "name": "MapleSparkline",
+      "exportPath": "./src/vendo/host-components.tsx#mapleHostComponents.MapleSparkline",
+      "propsSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "height": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "description": "The default Maple visualization for a compact financial trend, history, change over time, or monthly trend. Use it whenever the request includes one of those intents.",
+      "examples": [
+        "{\"data\":[1280,1315,1298,1360,1412],\"height\":32}"
+      ],
+      "source": "registered"
+    },
+    {
+      "name": "MapleSpendingDonut",
+      "exportPath": "./src/vendo/host-components.tsx#mapleHostComponents.MapleSpendingDonut",
+      "propsSchema": {
+        "type": "object",
+        "properties": {
+          "slices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "category": {
+                  "enum": [
+                    "dining",
+                    "groceries",
+                    "coffee",
+                    "transport",
+                    "subscriptions",
+                    "shopping",
+                    "income",
+                    "transfer",
+                    "housing",
+                    "other"
+                  ]
+                },
+                "amount": {
+                  "type": "number",
+                  "description": "Amount in dollars"
+                }
+              },
+              "required": [
+                "category",
+                "amount"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "size": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "slices"
+        ],
+        "additionalProperties": false
+      },
+      "description": "The default Maple visualization for spending by category, where money went, or category mix. Use it whenever the request includes one of those intents; slice amounts are dollars, not cents.",
+      "examples": [
+        "{\"slices\":[{\"category\":\"dining\",\"amount\":342.18},{\"category\":\"groceries\",\"amount\":286.42}],\"size\":200}"
+      ],
+      "source": "registered"
+    }
+  ]
+}

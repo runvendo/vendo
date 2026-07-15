@@ -22,9 +22,13 @@ import type {
 import type { UIMessage } from "ai";
 import type {
   AutomationEntry,
+  ConnectionAccount,
   EditResult,
   EnableResult,
+  InitiatedConnection,
   OpenSurface,
+  PinDrift,
+  PinRebaseResult,
   RunPlan,
   RunRecord,
   RunStatus,
@@ -64,6 +68,16 @@ export interface VendoClient {
     revoke(id: GrantId): Promise<void>;
   };
 
+  /** 04-actions §3 — per-principal connected accounts (Composio broker). */
+  connections: {
+    list(): Promise<ConnectionAccount[]>;
+    /** POST /connections/initiate — returns the broker's OAuth redirect URL. */
+    initiate(input: { toolkit: string; connector?: string; callbackUrl?: string }): Promise<InitiatedConnection>;
+    /** GET /connections/:id — poll while the user completes the redirect. */
+    status(id: string, connector?: string): Promise<ConnectionAccount>;
+    disconnect(id: string, connector?: string): Promise<void>;
+  };
+
   apps: {
     list(): Promise<AppDocument[]>;
     create(input: { prompt: string }): Promise<AppDocument>;
@@ -79,6 +93,10 @@ export interface VendoClient {
     fork(id: AppId): Promise<AppDocument>;
     /** GET /apps/:id/ship-diff — the reviewable diff vs the captured host baselines (06 §8–§9). */
     shipDiff(id: AppId): Promise<ShipDiff>;
+    /** GET /apps/:id/pin-drift — the pins whose captured host baseline changed under the fork (06 §8). */
+    pinDrift(id: AppId): Promise<PinDrift[]>;
+    /** POST /apps/:id/rebase-pin — re-fork one drifted pin from the new baseline and replay its recorded intents (06 §8). */
+    rebasePin(id: AppId, slot: string): Promise<PinRebaseResult>;
   };
 
   automations: {

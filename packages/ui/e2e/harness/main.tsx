@@ -582,6 +582,55 @@ function InClientScenario() {
   );
 }
 
+/** 06-apps §8 — the drift notice scenario: the host updated the component a
+ *  pin was remixed from, so the payload carries a server-written `pinDrift`
+ *  report. The surface says so loudly ABOVE the tree while the remixed fork
+ *  keeps rendering in its jail — nothing changes without the user. */
+const driftedPinSource = String.raw`
+import React from "react";
+
+export default function RemixedNetWorthCard() {
+  return <section aria-label="Remixed net worth card" className="promoted-card">
+    <h2>Net worth — remixed</h2>
+    <strong>$1.2M in green</strong>
+  </section>;
+}
+`;
+
+function PinDriftScenario() {
+  const tree: Tree = {
+    formatVersion: "vendo-genui/v1",
+    root: "root",
+    nodes: [
+      { id: "root", component: "Stack", children: ["worth", "sibling"] },
+      { id: "worth", component: "RemixedNetWorthCard", source: "generated" },
+      { id: "sibling", component: "Text", props: { text: "Host sibling survived" } },
+    ],
+    components: { RemixedNetWorthCard: driftedPinSource },
+    ...({
+      pinDrift: [{
+        slot: "net-worth-card",
+        component: "RemixedNetWorthCard",
+        baseHash: "sha256:maple-old",
+        baselineHash: "sha256:maple-new",
+        reason: "baseline-changed",
+      }],
+    } as object),
+  } as Tree;
+  return (
+    <TreeThemeBoundary>
+      <section aria-label="Drifted remixed pin">
+        <h2>Host component updated under the remix</h2>
+        <TreeView
+          tree={tree}
+          components={components}
+          onAction={async () => ({ status: "ok", output: null })}
+        />
+      </section>
+    </TreeThemeBoundary>
+  );
+}
+
 class ScriptedBrowserVoiceDriver implements VoiceDriver {
   start(handlers: VoiceDriverHandlers): VoiceSessionHandle {
     let active = true;
@@ -877,18 +926,57 @@ function FormatDrillScenario({ registered }: { registered: boolean }) {
   );
 }
 
+/** A second long conversation for the thread-SWITCH scenario (ENG-213): both
+ *  ids ride the wire list() via the client override below. */
+const boundedThreadB: Thread = {
+  ...boundedThread,
+  id: "thr_1b",
+  messages: boundedThread.messages.slice(0, -1).map(message => ({
+    ...message,
+    id: `${message.id}_b`,
+  })),
+};
+
+/** Serves BOTH bounded fixtures: get() by id and a list() that includes them,
+ *  so useVendoThread adopts either when the scenario switches threads. */
+function boundedThreadsClient(client: VendoClient): VendoClient {
+  const fixtures = new Map([[boundedThread.id, boundedThread], [boundedThreadB.id, boundedThreadB]]);
+  return {
+    ...client,
+    threads: {
+      ...client.threads,
+      get: async id => fixtures.get(id) ?? client.threads.get(id),
+      list: async () => [...fixtures.values()].map(thread => ({
+        id: thread.id,
+        title: "Bounded fixture thread",
+        updatedAt: thread.updatedAt,
+      })),
+    },
+  };
+}
+
 /** ENG-212: the Cadence /assistant host shape — a bounded, overflow-hidden flex
  *  pane owning the height. The root must forward that height so .fl-msglist is
- *  the scroll container and the composer + approval actions stay reachable. */
+ *  the scroll container and the composer + approval actions stay reachable.
+ *  The switch button drives the ENG-213 thread-change reset: the new thread
+ *  must open at its latest turn even after a scroll-up in the previous one. */
 function BoundedThreadScenario() {
+  const [activeThread, setActiveThread] = useState(boundedThread.id);
   return (
-    <VendoProvider client={threadClient(baseClient, boundedThread)} components={components}>
+    <VendoProvider client={boundedThreadsClient(baseClient)} components={components}>
+      <button
+        type="button"
+        data-testid="switch-thread"
+        onClick={() => setActiveThread(current => current === boundedThread.id ? boundedThreadB.id : boundedThread.id)}
+      >
+        Switch conversation
+      </button>
       <div
         data-testid="bounded-pane"
         style={{ height: 560, display: "flex", flexDirection: "column", overflow: "hidden",
           border: "1px solid #cad3e0", borderRadius: 12 }}
       >
-        <VendoThread threadId="thr_1" />
+        <VendoThread threadId={activeThread} />
       </div>
     </VendoProvider>
   );
@@ -911,6 +999,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree": return { title: "Tree containment", content: <TreeScenario /> };
     case "/tree-jail": return { title: "Generated component jail", content: <TreeScenario jail /> };
     case "/tree-inclient": return { title: "In-client venue (hash-pinned approval)", content: <InClientScenario /> };
+    case "/tree-drift": return { title: "Pin drift (host component updated)", content: <PinDriftScenario /> };
     case "/tree-themed": return { title: "Tree — loud host theme", theme: loudTheme, content: <TreeScenario /> };
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
