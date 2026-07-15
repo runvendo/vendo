@@ -215,4 +215,38 @@ describe("vendo sync", () => {
     expect(errors.join("\n")).toContain("InlineCard [inline-component]");
     expect(errors.join("\n")).toContain("run the host in dev with Vendo mounted to runtime-capture it");
   });
+
+  it("still pushes --report and keeps blast-radius exit three when slots are also unresolved", async () => {
+    const messages = captureOutput();
+    const push = vi.fn(async () => {});
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      impact: [{ tool: "host_x", apps: [{ id: "app_x", title: "X" }], automations: [], grants: 0 }],
+    }), { status: 200 })) as typeof fetch;
+    const unresolved = {
+      ...report([{ tool: "host_x", change: "removed" as const }]),
+      unresolvedPins: [{
+        slot: "InlineCard",
+        component: "() => null",
+        reason: "inline-component" as const,
+        hint: "run the host in dev with Vendo mounted to runtime-capture it",
+      }],
+    };
+
+    const exit = await runSync({
+      targetDir: ".",
+      strict: true,
+      report: true,
+      apiKey: "vendo_key",
+      output: messages.output,
+      fetchImpl,
+      push,
+      sync: async () => unresolved,
+    });
+
+    // Unresolved slots never mask the more severe blast-radius signal, and the
+    // pushed report still carries them for the Cloud console.
+    expect(exit).toBe(3);
+    expect(push).toHaveBeenCalledWith(expect.objectContaining({ report: unresolved }));
+    expect(messages.errors.join("\n")).toContain("InlineCard [inline-component]");
+  });
 });

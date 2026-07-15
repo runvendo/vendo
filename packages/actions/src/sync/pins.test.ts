@@ -86,6 +86,21 @@ describe("furnished pin capture", () => {
     ]));
   });
 
+  it("reports a broken named re-export chain as unresolved instead of capturing the barrel", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/vendo/components.ts", `
+      import { Card } from "../components/barrel";
+      export const components = [{ name: "Card", component: Card, remixable: true }];
+    `);
+    await write(root, "src/components/barrel/index.ts", `export { Card } from "./missing";\n`);
+
+    const result = await capturePins(root, path.join(root, ".vendo"));
+
+    expect(result.captured).toEqual([]);
+    expect(result.unresolved).toEqual([expect.objectContaining({ slot: "Card", reason: "import-not-found" })]);
+    await expect(fs.access(path.join(root, ".vendo/remixable/Card.json"))).rejects.toThrow();
+  });
+
   it("refuses a sub-import whose realpath escapes the host root", async () => {
     const root = await temporaryRoot();
     const outside = await fs.mkdtemp(path.join(os.tmpdir(), "vendo-furnished-outside-"));

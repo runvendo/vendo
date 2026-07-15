@@ -356,6 +356,25 @@ describe("development runtime source capture", () => {
     expect(baseline).toMatchObject({ slot: "RuntimeCard", exportable: true });
   });
 
+  it("rejects capture from an anonymous session without touching disk", async () => {
+    const root = await captureRoot();
+    const sourceFile = join(root, "src", "runtime-card.tsx");
+    await mkdir(join(root, "src"), { recursive: true });
+    await writeFile(sourceFile, "export const RuntimeCard = () => null;\n", "utf8");
+    const { vendo } = await setup(vi.fn(async () => null), { development: { root } });
+
+    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
+      slot: "RuntimeCard",
+      source: sourceFile,
+      exportable: false,
+    }));
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: { code: "blocked", message: "runtime capture requires a host-resolved principal" },
+    });
+    await expect(access(join(root, ".vendo", "remixable", "RuntimeCard.json"))).rejects.toThrow();
+  });
+
   it("does not mount the route outside development", async () => {
     vi.stubEnv("NODE_ENV", "production");
     const { vendo } = await setup();

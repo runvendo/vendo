@@ -553,7 +553,13 @@ function createWireHandler(deps: {
       // ordinary 404, so there is no guarded-but-mounted production endpoint.
       if (deps.runtimeCapture !== undefined && request.method === "POST" && path === "/dev/remixable-source") {
         const body = await requestJson(request);
-        await context(request, "app");
+        // Capture writes .vendo/remixable baselines on the developer's disk, so
+        // it requires a HOST-resolved principal — an anonymous visitor's minted
+        // ephemeral session is not enough, even in a development composition.
+        const captureContext = await context(request, "app");
+        if (captureContext.principal.ephemeral === true) {
+          return json({ error: { code: "blocked", message: "runtime capture requires a host-resolved principal" } }, 401);
+        }
         if (typeof body["exportable"] !== "boolean") {
           throw new VendoError("validation", "exportable must be a boolean");
         }

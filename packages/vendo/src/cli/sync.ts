@@ -73,12 +73,16 @@ export async function runSync(options: SyncOptions): Promise<number> {
     for (const warning of report.warnings) output.error(`warning: ${warning}`);
     output.log(`tools: +${report.tools.added.length} -${report.tools.removed.length} ~${report.tools.changed.length}`);
     output.log(`pins: ${report.pins.captured.length} captured, ${report.pins.drifted.length} drifted`);
+    // Unresolved slots fail the run regardless of --strict (silent remix skips
+    // are eliminated), but impact analysis, the report push, and the breaking
+    // gate below still execute so the most severe exit code wins.
+    let unresolvedExit = 0;
     if (report.unresolvedPins.length > 0) {
       output.error("unresolved remixable slots:");
       for (const pin of report.unresolvedPins) {
         output.error(`  ${pin.slot} [${pin.reason}]: ${pin.hint}`);
       }
-      return 2;
+      unresolvedExit = 2;
     }
 
     const tools = [...new Set([
@@ -130,7 +134,7 @@ export async function runSync(options: SyncOptions): Promise<number> {
       const breakingTools = new Set(report.breaking.map((breaking) => breaking.tool));
       return impact?.some((entry) => breakingTools.has(entry.tool) && nonzero(entry)) === true ? 3 : 2;
     }
-    return 0;
+    return unresolvedExit;
   } catch (error) {
     output.error(`warning: sync failed soft: ${error instanceof Error ? error.message : "unknown error"}`);
     return options.strict === true ? 2 : 0;

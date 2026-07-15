@@ -376,7 +376,10 @@ async function resolveImportedSource(
     if (!resolved) continue;
     const target = await reExportTarget(resolved.source, importedName);
     if (target.named) {
-      const followed = await resolveImportedSource(
+      // A named re-export is authoritative: when its chain cannot be followed
+      // the export does not resolve, and returning the barrel here would
+      // capture a false baseline that keeps sync green with unusable source.
+      return await resolveImportedSource(
         resolved.file,
         target.named.specifier,
         root,
@@ -384,14 +387,16 @@ async function resolveImportedSource(
         realRoot,
         seen,
       );
-      if (followed) return followed;
     }
     if (target.direct || importedName === "default") return resolved;
     for (const star of target.stars) {
       const followed = await resolveImportedSource(resolved.file, star, root, importedName, realRoot, seen);
       if (followed) return followed;
     }
-    return resolved;
+    // The requested export is absent from everything this module reaches.
+    // Fail loudly (unresolved pin + runtime-capture hint) over capturing a
+    // file that does not own the component.
+    return null;
   }
   return null;
 }
