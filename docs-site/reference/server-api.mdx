@@ -26,6 +26,13 @@ export function createVendo(config: {
   judge?: Judge;                              // e.g. vendoAutoJudge({ model }); one import, no shorthand union
   secrets?: SecretsProvider;                  // default envSecrets()
   telemetry?: boolean;                        // wires @vendoai/telemetry
+  mcp?: boolean;                              // opens the MCP door; off by default
+  oauth?: HostOAuthAdapter;                   // required when mcp is true
+  agent?: {                                   // chat context controls; see Handler options
+    toolOutputCap?: number;                   // default 32000; 0 disables the cap
+    maxOutputTokens?: number;
+    historyWindow?: number;                   // last N whole messages re-sent per turn
+  };
 }): Vendo;
 
 export interface Vendo {
