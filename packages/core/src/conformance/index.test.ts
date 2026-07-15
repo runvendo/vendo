@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { VENDO_APP_FORMAT } from "../index.js";
 import {
   actAsConformance,
   agentRunnerConformance,
@@ -314,5 +315,136 @@ describe("host seam conformance", () => {
       ctx,
     }));
     expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true, failures: [] });
+  });
+});
+
+describe("memoryStoreAdapter reserved routing", () => {
+  const approval = {
+    id: "apr_memory_projection",
+    call: readCall,
+    descriptor: readDescriptor,
+    inputPreview: JSON.stringify(readCall.args),
+    ctx: { principal, venue: ctx.venue, presence: ctx.presence, appId: ctx.appId },
+    createdAt: at,
+  };
+  const app = {
+    format: VENDO_APP_FORMAT,
+    id: "app_memory_projection",
+    name: "Memory projection",
+  };
+  const grant: PermissionGrant = {
+    id: "grt_memory_projection",
+    subject: principal.subject,
+    tool: readDescriptor.name,
+    descriptorHash: "sha256:memory",
+    scope: { kind: "tool" },
+    duration: "standing",
+    appId: app.id,
+    source: "chat",
+    grantedAt: at,
+  };
+
+  it("validates every routed reserved collection and derives its public projection", async () => {
+    const adapter = memoryStoreAdapter({ timestamp: () => "2026-07-11T16:01:00.000Z" });
+    const cases = [
+      {
+        collection: "vendo_grants",
+        id: grant.id,
+        data: grant,
+        refs: { subject: principal.subject, tool: readDescriptor.name, app_id: app.id },
+        createdAt: at,
+      },
+      {
+        collection: "vendo_approvals",
+        id: approval.id,
+        data: { request: approval, status: "pending", ignored: true },
+        refs: { subject: principal.subject, status: "pending" },
+        createdAt: at,
+      },
+      {
+        collection: "vendo_audit",
+        id: sampleAuditEvent.id,
+        data: sampleAuditEvent,
+        refs: { subject: principal.subject, kind: sampleAuditEvent.kind, tool: readDescriptor.name },
+        createdAt: at,
+      },
+      {
+        collection: "vendo_threads",
+        id: "thr_memory_projection",
+        data: { subject: principal.subject, messages: [{ role: "user", content: "hello" }], ignored: true },
+        refs: { subject: principal.subject },
+        createdAt: "2026-07-11T16:01:00.000Z",
+      },
+      {
+        collection: "vendo_runs",
+        id: "run_memory_projection",
+        data: {
+          appId: app.id,
+          trigger: { kind: "external", ignored: true },
+          status: "running",
+          record: { ok: true },
+          startedAt: at,
+          ignored: true,
+        },
+        refs: { app_id: app.id, status: "running" },
+        createdAt: at,
+      },
+      {
+        collection: "vendo_apps",
+        id: app.id,
+        data: { subject: principal.subject, enabled: true, doc: app, ignored: true },
+        refs: { subject: principal.subject },
+        createdAt: "2026-07-11T16:01:00.000Z",
+      },
+      {
+        collection: "vendo_state",
+        id: `${app.id}:${principal.subject}`,
+        data: { selected: "one" },
+        refs: { app_id: app.id, subject: principal.subject },
+        createdAt: "2026-07-11T16:01:00.000Z",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const stored = await adapter.records(testCase.collection).put({
+        id: testCase.id,
+        data: testCase.data,
+        refs: { forged: "caller refs must be ignored" },
+      });
+      expect(stored.refs, testCase.collection).toEqual(testCase.refs);
+      expect(stored.createdAt, testCase.collection).toBe(testCase.createdAt);
+      expect((stored.data as Record<string, unknown>)["ignored"], testCase.collection).toBeUndefined();
+    }
+  });
+
+  it("rejects invalid shapes at all seven reserved doors", async () => {
+    const adapter = memoryStoreAdapter();
+    const invalid = [
+      ["vendo_grants", "grt_invalid", {}],
+      ["vendo_approvals", "apr_invalid", {}],
+      ["vendo_audit", "aud_invalid", {}],
+      ["vendo_threads", "thr_invalid", {}],
+      ["vendo_runs", "run_invalid", {}],
+      ["vendo_apps", "app_invalid", {}],
+      ["vendo_state", "invalid-state-id", undefined],
+    ] as const;
+    for (const [collection, id, data] of invalid) {
+      await expect(adapter.records(collection).put({ id, data }), collection).rejects.toMatchObject({
+        code: "validation",
+      });
+    }
+  });
+
+  it("rejects unknown reserved ref filters and cross-subject thread updates", async () => {
+    const adapter = memoryStoreAdapter();
+    await expect(adapter.records("vendo_apps").list({ refs: { forged: "x" } })).rejects.toMatchObject({
+      code: "validation",
+    });
+    const threads = adapter.records("vendo_threads");
+    await threads.put({ id: "thr_owned", data: { subject: "user_one", messages: [] } });
+    await expect(threads.put({
+      id: "thr_owned",
+      data: { subject: "user_two", messages: [] },
+    })).rejects.toMatchObject({ code: "conflict" });
   });
 });

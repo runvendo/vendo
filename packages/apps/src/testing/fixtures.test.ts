@@ -27,13 +27,13 @@ describe("memory store fixture", () => {
     expect(await records.get("b")).toEqual(updated);
 
     const filtered = await records.list({ refs: { customer: "cus_1" }, ids: ["a", "b", "c"] });
-    expect(filtered.records.map((record) => record.id)).toEqual(["b", "a"]);
+    expect(filtered.records.map((record) => record.id)).toEqual(["a", "b"]);
 
     const pageOne = await records.list({ limit: 2 });
-    expect(pageOne.records.map((record) => record.id)).toEqual(["b", "a"]);
+    expect(pageOne.records.map((record) => record.id)).toEqual(["c", "a"]);
     expect(pageOne.cursor).toBeTypeOf("string");
     const pageTwo = await records.list({ limit: 2, cursor: pageOne.cursor });
-    expect(pageTwo.records.map((record) => record.id)).toEqual(["c"]);
+    expect(pageTwo.records.map((record) => record.id)).toEqual(["b"]);
     expect(pageTwo.cursor).toBeUndefined();
   });
 

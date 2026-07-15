@@ -80,9 +80,9 @@
 - Modify: `packages/core/src/conformance/index.ts` (`memoryStoreAdapter`)
 - Modify: `packages/apps/src/testing/memory-store.ts`, `packages/guard/test/fixtures/memory-store.ts` (become re-exports or get deleted)
 
-- [ ] **Step 1:** Upgrade `memoryStoreAdapter` to mirror the real store's reserved-collection routing semantics (shape validation on reserved names, the same projection behavior), per the amended 02 §3.
-- [ ] **Step 2:** Migrate apps and guard test fixtures onto it; delete the parallel implementations; full test suite green.
-- [ ] **Step 3:** Commit.
+- [x] **Step 1:** Upgrade `memoryStoreAdapter` to mirror the real store's reserved-collection routing semantics (shape validation on reserved names, the same projection behavior), per the amended 02 §3.
+- [x] **Step 2:** Migrate apps and guard test fixtures onto it; delete the parallel implementations; full test suite green.
+- [x] **Step 3:** Commit.
 
 ### Task 7: UI wire-type parity test — GATED on block-ui coordination
 
