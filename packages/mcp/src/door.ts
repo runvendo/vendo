@@ -41,6 +41,7 @@ const SERVER_CARD_ALIAS_PATH = "/.well-known/mcp-server-card";
 const SHIM_URI = "ui://vendo/tree-shim.html";
 const SHIM_MIME_TYPE = "text/html;profile=mcp-app";
 const OPEN_IN_PRODUCT_KIND = "vendo/open-in-product@1";
+const SHIM_THEME_MARKER = "<!--VENDO_MCP_THEME-->";
 
 interface HostIdentity {
   name: string;
@@ -76,8 +77,8 @@ export interface McpDoorConfig {
   store: StoreAdapter;
   /** §4 — saved apps ride along as MCP Apps; absent → tools-only door. */
   apps?: AppsPort;
-  /** The same resolved theme the UI pipeline consumes. The prebuilt consent
-   * page emits it as `--vendo-*` custom properties. */
+  /** The same resolved host brand the UI pipeline consumes. The prebuilt
+   * consent page and MCP Apps shim both emit it as `--vendo-*` variables. */
   theme?: VendoTheme;
   /** 10-mcp §5 — the door's canonical mount path (e.g. `/api/vendo/mcp`). When
    * set, the cold server card advertises THIS transport URL and learned request
@@ -143,6 +144,7 @@ class Door {
    * when `baseUrl` is configured; undefined → derive from each request URL. */
   readonly #publicOrigin: string | undefined;
   #identity: Promise<HostIdentity> | undefined;
+  readonly #shimHtml: string;
 
   constructor(config: McpDoorConfig, state: McpDoorState) {
     this.#config = config;
@@ -150,6 +152,7 @@ class Door {
     this.#oauth = new OAuthServer(config);
     this.#remoteAs = config.remoteAs === undefined ? undefined : new RemoteAsVerifier(config.remoteAs);
     this.#publicOrigin = config.baseUrl === undefined ? undefined : publicOriginOf(config.baseUrl);
+    this.#shimHtml = shimHtml(config.theme);
   }
 
   async handler(req: Request): Promise<Response> {
@@ -375,7 +378,7 @@ class Door {
       }));
       state.server.setRequestHandler(ReadResourceRequestSchema, async (request) => ({
         contents: request.params.uri === SHIM_URI
-          ? [{ uri: SHIM_URI, mimeType: SHIM_MIME_TYPE, text: SHIM_HTML }]
+          ? [{ uri: SHIM_URI, mimeType: SHIM_MIME_TYPE, text: this.#shimHtml }]
           : [],
       }));
     }
@@ -909,6 +912,47 @@ function mcpContext(
   consent: { clientId: string; scopes: string[] },
 ): McpRunContext {
   return { principal, venue: "mcp", presence: "present", sessionId, mcpConsent: consent };
+}
+
+/** Keep the shipped shim byte-for-byte generic. A door instance specializes
+ * only the resource it serves, at construction time, through one inert marker
+ * in the generated HTML. Known property names plus escaped values prevent host
+ * theme strings from breaking out of the declaration or style element. */
+function shimHtml(theme: VendoTheme | undefined): string {
+  const style = theme === undefined
+    ? ""
+    : `<style data-vendo-mcp-theme>:root{${themeDeclarations(theme)}}</style>`;
+  return SHIM_HTML.replace(SHIM_THEME_MARKER, style);
+}
+
+function themeDeclarations(theme: VendoTheme): string {
+  const declarations: Array<[string, string | undefined]> = [
+    ["--vendo-color-background", theme.colors.background],
+    ["--vendo-color-surface", theme.colors.surface],
+    ["--vendo-color-text", theme.colors.text],
+    ["--vendo-color-muted", theme.colors.muted],
+    ["--vendo-color-accent", theme.colors.accent],
+    ["--vendo-color-accent-text", theme.colors.accentText],
+    ["--vendo-color-danger", theme.colors.danger],
+    ["--vendo-color-border", theme.colors.border],
+    ["--vendo-font-family", theme.typography.fontFamily],
+    ["--vendo-heading-family", theme.typography.headingFamily],
+    ["--vendo-font-size", theme.typography.baseSize],
+    ["--vendo-radius-small", theme.radius.small],
+    ["--vendo-radius-medium", theme.radius.medium],
+    ["--vendo-radius-large", theme.radius.large],
+    ["--vendo-density", theme.density],
+    ["--vendo-motion", theme.motion],
+  ];
+  return declarations
+    .filter((entry): entry is [string, string] => entry[1] !== undefined)
+    .map(([name, value]) => `${name}:${escapeCssValue(value)};`)
+    .join("");
+}
+
+function escapeCssValue(value: string): string {
+  return value.replace(/[\0-\x1f\x7f\\;{}<>]/g, (character) =>
+    `\\${character.codePointAt(0)!.toString(16)} `);
 }
 
 async function readHostIdentity(): Promise<HostIdentity> {

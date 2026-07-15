@@ -43,12 +43,20 @@ const html = `<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Vendo app</title>
   <style>
-    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    :root { color-scheme: light; font-family: var(--vendo-font-family, system-ui, sans-serif); }
     * { box-sizing: border-box; }
-    body { margin: 0; padding: 12px; background: transparent; color: var(--color-text-primary, #1a1a1e); }
+    body {
+      margin: 0;
+      padding: 12px;
+      background: var(--vendo-color-background, #ffffff);
+      color: var(--vendo-color-text, #1a1a1e);
+      font-family: var(--vendo-font-family, system-ui, sans-serif);
+      font-size: var(--vendo-font-size, 15px);
+    }
     #vendo-mcp-shim { min-width: 0; }
     [role="note"] { margin-top: 8px; }
   </style>
+  <!--VENDO_MCP_THEME-->
 </head>
 <body>
   <main id="vendo-mcp-shim" aria-live="polite"></main>
