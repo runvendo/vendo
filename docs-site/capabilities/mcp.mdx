@@ -340,8 +340,10 @@ and editing stay in-product.
 npx vendo doctor
 ```
 
-When the door is open, doctor verifies both OAuth metadata documents resolve and
-the server card parses. `GET /status` returns `blocks.mcp: true`. See
+When the door is open, doctor verifies both OAuth metadata documents resolve,
+the server card parses, and — if you have started registry paperwork — that
+your `server.json` and `mcp-registry-auth` challenge match the live door.
+`GET /status` returns `blocks.mcp: true`. See
 [HTTP routes](/reference/http-routes) for the door's route table and
 [Handler options](/reference/handler-options) for the `mcp` and `oauth` options.
 
