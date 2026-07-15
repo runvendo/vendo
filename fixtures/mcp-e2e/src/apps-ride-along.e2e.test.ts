@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createStack, FIXTURE_APP_ID, resetFixture } from "./harness.js";
+import { createStack, FIXTURE_APP_ID, HTTP_FIXTURE_APP_ID, resetFixture } from "./harness.js";
 import { connectWithSdk, textOf } from "./support.js";
 
 const SHIM_URI = "ui://vendo/tree-shim.html";
@@ -58,6 +58,33 @@ describe("saved apps ride along as MCP Apps", () => {
         expect(await stack.sql(
           "SELECT tool, venue, app_id FROM vendo_audit WHERE kind = 'tool-call' AND tool = 'host_invoices_update'",
         )).toEqual([{ tool: "host_invoices_update", venue: "app", app_id: FIXTURE_APP_ID }]);
+      } finally {
+        await connected.close();
+      }
+    } finally {
+      await stack.close();
+    }
+  });
+
+  it("opens a rung-4 fixture as an explicit link-out envelope", async () => {
+    const stack = await createStack();
+    try {
+      const connected = await connectWithSdk(stack);
+      try {
+        const opened = await connected.client.callTool({
+          name: "vendo_apps_open",
+          arguments: { appId: HTTP_FIXTURE_APP_ID },
+        });
+        expect(opened.isError).not.toBe(true);
+        expect(opened.structuredContent).toEqual({
+          kind: "vendo/open-in-product@1",
+          url: `${stack.origin}/fixture/apps/${HTTP_FIXTURE_APP_ID}`,
+          appName: "MCP hosted dashboard",
+          productName: expect.any(String),
+        });
+        expect(textOf(opened)).toMatch(
+          new RegExp(`Open MCP hosted dashboard in .+: ${stack.origin}/fixture/apps/${HTTP_FIXTURE_APP_ID}`),
+        );
       } finally {
         await connected.close();
       }
