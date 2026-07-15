@@ -80,7 +80,7 @@
 - Modify: `packages/core/src/conformance/index.ts` (`memoryStoreAdapter`)
 - Modify: `packages/apps/src/testing/memory-store.ts`, `packages/guard/test/fixtures/memory-store.ts` (become re-exports or get deleted)
 
-- [x] **Step 1:** Upgrade `memoryStoreAdapter` to mirror the real store's reserved-collection routing semantics (shape validation on reserved names, the same projection behavior), per the amended 02 §3.
+- [x] **Step 1:** Upgrade `memoryStoreAdapter` to mirror the real store's reserved-collection routing semantics (shape validation on reserved names, the same projection behavior), per the amended 02 §3. After ENG-254 landed on main, the seam also derives and filters the additive `vendo_apps.trigger_kind` ref exactly like production.
 - [x] **Step 2:** Migrate apps and guard test fixtures onto it; delete the parallel implementations; full test suite green.
 - [x] **Step 3:** Commit.
 
