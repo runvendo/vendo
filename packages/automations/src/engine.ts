@@ -40,6 +40,7 @@ const GRANTS = "vendo_grants";
 const APPROVALS = "vendo_approvals";
 const CAPTURES = "automations:captures";
 const PARKED = "automations:parked";
+const RESUME_CLAIMS = "automations:resume-claims";
 const SCHEDULE = "automations:schedule";
 const WEBHOOK = "automations:webhook";
 const DELIVERIES = "automations:deliveries";
@@ -363,6 +364,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const active = new Set<string>();
   const resuming = new Set<string>();
   const inFlightDeliveries = new Set<string>();
+  const abortControllers = new Map<string, AbortController>();
   const engineInstanceId = globalThis.crypto.randomUUID();
   let tickTail: Promise<void> = Promise.resolve();
 
@@ -632,6 +634,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     trigger: Trigger,
     run: InternalRunRecord,
     ctx: RunContext,
+    abortSignal: AbortSignal,
   ): Promise<void> => {
     if (trigger.run.kind !== "agentic") throw new VendoError("validation", "agentic run expected");
     if (config.runner === undefined) {
@@ -649,8 +652,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         prompt: trigger.run.prompt,
         tools: config.tools,
         budget: { maxToolCalls: trigger.run.budget?.maxToolCalls ?? 50 },
+        abortSignal,
       }, ctx);
-      // AgentRunner has no abort channel; a result that arrives after stop is discarded.
+      // Cross-instance stops cannot reach this process's controller, so the persisted
+      // terminal-row check remains the best-effort fallback for a late result.
       if (await finishStoppedIfNeeded(run, ctx)) return;
       run.steps = report.toolCalls.map(({ call, outcome }) => ({
         id: call.id,
@@ -685,19 +690,25 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       steps: [],
     };
     const ctx = runContext(record, app.subject);
+    const agentController = trigger.run.kind === "agentic" ? new AbortController() : undefined;
+    if (agentController !== undefined) abortControllers.set(runId, agentController);
     const done = (async (): Promise<void> => {
-      await writeRun(record);
-      await audit(ctx, "running");
-      active.add(runId);
       try {
-        if (trigger.run.kind === "steps") {
-          await continueSteps(app, trigger, record, ctx, { stepIndex: 0, event, stepOutputs: {} });
-        } else {
-          await runAgentic(trigger, record, ctx);
+        await writeRun(record);
+        await audit(ctx, "running");
+        active.add(runId);
+        try {
+          if (trigger.run.kind === "steps") {
+            await continueSteps(app, trigger, record, ctx, { stepIndex: 0, event, stepOutputs: {} });
+          } else {
+            await runAgentic(trigger, record, ctx, agentController!.signal);
+          }
+        } finally {
+          active.delete(runId);
+          stopped.delete(runId);
         }
       } finally {
-        active.delete(runId);
-        stopped.delete(runId);
+        if (agentController !== undefined) abortControllers.delete(runId);
       }
     })();
     return { runId, done };
@@ -808,18 +819,29 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       if (approval === null) return;
       const approvalData = approvalRowSchema.parse(approval.data);
 
-      // RecordStore has no CAS. Persist and re-read a unique claim to narrow the
-      // cross-instance race; single-instance deployment remains the v0 contract.
       const claimedBy = `${engineInstanceId}:${globalThis.crypto.randomUUID()}`;
+      const claims = config.store.records(RESUME_CLAIMS);
+      const atomicClaim = claims.atomic === undefined
+        ? undefined
+        : await claims.atomic.insertIfAbsent({
+          id: approvalId,
+          data: { runId, claimedBy, claimedAt: iso() },
+        });
+      if (claims.atomic !== undefined && atomicClaim === null) return;
+
       run.status = "running";
       delete run.summary;
       run.__resume.claimedBy = claimedBy;
       if (!await writeRun(run)) return;
-      const claimedRecord = await config.store.records(RUNS).get(runId);
-      if (claimedRecord === null) return;
-      const claimedRun = parseRunRow(claimedRecord).record;
-      if (claimedRun.status !== "running" || claimedRun.__resume?.claimedBy !== claimedBy) return;
-      syncRun(run, claimedRun);
+      if (claims.atomic === undefined) {
+        // Optional-capability fallback: preserve the prior single-instance behavior.
+        // The unique write/read narrows, but cannot close, a cross-process race.
+        const claimedRecord = await config.store.records(RUNS).get(runId);
+        if (claimedRecord === null) return;
+        const claimedRun = parseRunRow(claimedRecord).record;
+        if (claimedRun.status !== "running" || claimedRun.__resume?.claimedBy !== claimedBy) return;
+        syncRun(run, claimedRun);
+      }
 
       const appFound = await appRecord(run.appId);
       if (appFound === null) {
@@ -1046,9 +1068,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     const rows = appRecords
       .map(parseAppRow)
       .filter((row) => row.enabled && row.doc.trigger?.on.kind === "schedule");
+    const scheduleRecords = config.store.records(SCHEDULE);
     const cursorRecords = rows.length === 0
       ? []
-      : await allRecords(config.store.records(SCHEDULE), { ids: rows.map((row) => row.doc.id) });
+      : await allRecords(scheduleRecords, { ids: rows.map((row) => row.doc.id) });
     const cursorById = new Map(cursorRecords.map((record) => [record.id, record]));
     const fired: Array<{ row: AppRow; scheduledFor: string; firedAt: string }> = [];
     for (const row of rows) {
@@ -1070,7 +1093,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         scheduledFor = trigger.on.at;
       }
       if (scheduledFor === undefined) {
-        if (cursorRecord === null) await config.store.records(SCHEDULE).put({ id: row.doc.id, data: cursor });
+        if (cursorRecord === null) {
+          if (scheduleRecords.atomic === undefined) await scheduleRecords.put({ id: row.doc.id, data: cursor });
+          else await scheduleRecords.atomic.insertIfAbsent({ id: row.doc.id, data: cursor });
+        }
         continue;
       }
       const nextCursor = {
@@ -1078,7 +1104,19 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         lastFiredAt: at.toISOString(),
         ...(trigger.on.at === undefined ? {} : { firedAt: at.toISOString() }),
       };
-      await config.store.records(SCHEDULE).put({ id: row.doc.id, data: nextCursor });
+      let claimed = true;
+      if (cursorRecord === null) {
+        if (scheduleRecords.atomic === undefined) await scheduleRecords.put({ id: row.doc.id, data: nextCursor });
+        else claimed = await scheduleRecords.atomic.insertIfAbsent({ id: row.doc.id, data: nextCursor }) !== null;
+      } else if (scheduleRecords.atomic !== undefined && cursorRecord.revision !== undefined) {
+        claimed = await scheduleRecords.atomic.compareAndSwap(
+          { id: row.doc.id, data: nextCursor },
+          cursorRecord.revision,
+        ) !== null;
+      } else {
+        await scheduleRecords.put({ id: row.doc.id, data: nextCursor });
+      }
+      if (!claimed) continue;
       fired.push({ row, scheduledFor, firedAt: atIso });
     }
     return await runFiredSchedules(fired);
@@ -1204,14 +1242,21 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       }
       inFlightDeliveries.add(deliveryKey);
       try {
-        if (await config.store.records(DELIVERIES).get(deliveryKey) !== null) {
+        const deliveries = config.store.records(DELIVERIES);
+        const delivery = {
+          id: deliveryKey,
+          data: { appId: row.doc.id, deliveryId: headerResult.data.id, receivedAt: iso() },
+        };
+        if (deliveries.atomic === undefined) {
+          if (await deliveries.get(deliveryKey) !== null) {
+            deduped += 1;
+            continue;
+          }
+          await deliveries.put(delivery);
+        } else if (await deliveries.atomic.insertIfAbsent(delivery) === null) {
           deduped += 1;
           continue;
         }
-        await config.store.records(DELIVERIES).put({
-          id: deliveryKey,
-          data: { appId: row.doc.id, deliveryId: headerResult.data.id, receivedAt: iso() },
-        });
         ids.push(await startRun(row, "external", body));
       } finally {
         inFlightDeliveries.delete(deliveryKey);
@@ -1332,6 +1377,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       throw new VendoError("conflict", `run cannot be stopped from status ${run.status}`);
     }
     stopped.add(runId);
+    abortControllers.get(runId)?.abort();
     const parkedApprovalId = run.__resume?.approvalId;
     const runCtx = runContext(run, app.row.subject);
     await terminal(run, runCtx, "stopped", "stopped by user");
