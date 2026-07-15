@@ -10,11 +10,11 @@ async function createSkateshopFixture(): Promise<{ appRoot: string; logsDir: str
   const appRoot = path.join(root, "skateshop");
   const logsDir = path.join(root, "logs");
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
-  await mkdir(path.join(appRoot, "src/app/api/vendo/[...path]"), { recursive: true });
+  await mkdir(path.join(appRoot, "src/app/api/vendo/[...vendo]"), { recursive: true });
   await mkdir(path.join(appRoot, "src/app"), { recursive: true });
   await writeFile(path.join(appRoot, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
   await writeFile(
-    path.join(appRoot, "src/app/api/vendo/[...path]/route.ts"),
+    path.join(appRoot, "src/app/api/vendo/[...vendo]/route.ts"),
     `import { createVendoHandler } from "vendoai/server";
 export const { GET, POST } = createVendoHandler();
 `,
@@ -97,16 +97,18 @@ export const config = {
   return { appRoot, logsDir };
 }
 
-async function createUmamiFixture(): Promise<{ appRoot: string; logsDir: string }> {
+async function createUmamiFixture(
+  routeSegment = "[...vendo]",
+): Promise<{ appRoot: string; logsDir: string; routeSegment: string }> {
   const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-prep-"));
   const appRoot = path.join(root, "umami");
   const logsDir = path.join(root, "logs");
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
-  await mkdir(path.join(appRoot, "src/app/api/vendo/[...path]"), { recursive: true });
+  await mkdir(path.join(appRoot, `src/app/api/vendo/${routeSegment}`), { recursive: true });
   await mkdir(path.join(appRoot, "src/app"), { recursive: true });
   await writeFile(path.join(appRoot, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
   await writeFile(
-    path.join(appRoot, "src/app/api/vendo/[...path]/route.ts"),
+    path.join(appRoot, `src/app/api/vendo/${routeSegment}/route.ts`),
     `import { createVendoHandler } from "vendoai/server";
 export const { GET, POST } = createVendoHandler();
 `,
@@ -128,7 +130,7 @@ export function AppVendoRoot({ children }: { children: ReactNode }) {
 }
 `,
   );
-  return { appRoot, logsDir };
+  return { appRoot, logsDir, routeSegment };
 }
 
 async function createPapermarkFixture(): Promise<{ appRoot: string; logsDir: string }> {
@@ -136,12 +138,12 @@ async function createPapermarkFixture(): Promise<{ appRoot: string; logsDir: str
   const appRoot = path.join(root, "papermark");
   const logsDir = path.join(root, "logs");
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
-  await mkdir(path.join(appRoot, "app/api/vendo/[...path]"), { recursive: true });
+  await mkdir(path.join(appRoot, "app/api/vendo/[...vendo]"), { recursive: true });
   await mkdir(path.join(appRoot, "app"), { recursive: true });
   await mkdir(path.join(appRoot, "pages/api"), { recursive: true });
   await writeFile(path.join(appRoot, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
   await writeFile(
-    path.join(appRoot, "app/api/vendo/[...path]/route.ts"),
+    path.join(appRoot, "app/api/vendo/[...vendo]/route.ts"),
     `import { createVendoHandler } from "vendoai/server";
 export const { GET, POST } = createVendoHandler();
 `,
@@ -198,7 +200,7 @@ describe("prepareE2eRepo", () => {
         binding: { method: string; path: string };
       }>;
     };
-    const route = await readFile(path.join(appRoot, "src/app/api/vendo/[...path]/route.ts"), "utf8");
+    const route = await readFile(path.join(appRoot, "src/app/api/vendo/[...vendo]/route.ts"), "utf8");
     const root = await readFile(path.join(appRoot, "src/app/vendo-root.tsx"), "utf8");
     const layout = await readFile(path.join(appRoot, "src/app/layout.tsx"), "utf8");
     const corpusLib = await readFile(path.join(appRoot, "src/app/api/corpus/_lib.ts"), "utf8");
@@ -270,7 +272,7 @@ describe("prepareE2eRepo", () => {
     const tools = JSON.parse(await readFile(path.join(appRoot, ".vendo/tools.json"), "utf8")) as {
       tools: Array<{ name: string }>;
     };
-    const route = await readFile(path.join(appRoot, "src/app/api/vendo/[...path]/route.ts"), "utf8");
+    const route = await readFile(path.join(appRoot, "src/app/api/vendo/[...vendo]/route.ts"), "utf8");
     const root = await readFile(path.join(appRoot, "src/app/vendo-root.tsx"), "utf8");
     const log = await readFile(logs[0]!, "utf8");
 
@@ -292,6 +294,17 @@ describe("prepareE2eRepo", () => {
     expect(root).toContain('headers.set("authorization"');
     expect(log).toContain("read-only tools manifest");
     expect(log).toContain("Umami auth headers");
+  });
+
+  it("derives the Vendo route segment from the repo instead of hardcoding init's name", async () => {
+    // A repo init'd before 1e577988 (or by a future rename) keeps working:
+    // the harness patches whatever catch-all segment exists under api/vendo.
+    const { appRoot, logsDir } = await createUmamiFixture("[...path]");
+    await prepareE2eRepo({ name: "umami" }, appRoot, logsDir);
+
+    const route = await readFile(path.join(appRoot, "src/app/api/vendo/[...path]/route.ts"), "utf8");
+    expect(route).toContain("storage: false");
+    expect(route).toContain("instructionsExtra");
   });
 
   it("does nothing for repos without a Layer 3 prep fixture", async () => {
@@ -356,10 +369,16 @@ describe("prepareE2eRepo", () => {
     const { appRoot, logsDir } = await createPapermarkFixture();
     const logs = await prepareE2eRepo({ name: "papermark" }, appRoot, logsDir);
 
-    const tools = JSON.parse(await readFile(path.join(appRoot, ".vendo/tools.json"), "utf8")) as {
+    const tools = JSON.parse(await readFile(path.join(appRoot, ".vendo/tools.corpus.json"), "utf8")) as {
       tools: Array<{ name: string; risk: "read" | "write" | "destructive"; binding: { method: string; path: string } }>;
     };
-    const route = await readFile(path.join(appRoot, "app/api/vendo/[...path]/route.ts"), "utf8");
+    // The sync-managed extraction pin must stay untouched: papermark's npm
+    // build runs `vendo sync --strict`, and a curated manifest in tools.json
+    // reads as breaking tool renames (exit 2).
+    const extractionPin = JSON.parse(await readFile(path.join(appRoot, ".vendo/tools.json"), "utf8")) as {
+      tools: unknown[];
+    };
+    const route = await readFile(path.join(appRoot, "app/api/vendo/[...vendo]/route.ts"), "utf8");
     const root = await readFile(path.join(appRoot, "app/vendo-root.tsx"), "utf8");
     const layout = await readFile(path.join(appRoot, "app/layout.tsx"), "utf8");
     const corpusPage = await readFile(path.join(appRoot, "app/corpus-e2e/page.tsx"), "utf8");
@@ -396,11 +415,14 @@ describe("prepareE2eRepo", () => {
       path: "/api/teams/{teamId}/documents",
       argsIn: "query",
     });
+    expect(extractionPin.tools).toEqual([]);
     expect(route).toContain("storage: false");
     expect(route).toContain("instructionsExtra");
     expect(route).toContain("Corpus Q3 Board Packet.pdf");
     expect(root).toContain("threadId={threadId}");
     expect(root).toContain("vendoThread");
+    expect(root).toContain('from "../.vendo/tools.corpus.json"');
+    expect(root).not.toContain('from "../.vendo/tools.json"');
     expect(layout).toContain("<AppVendoRoot>{children}</AppVendoRoot>");
     expect(corpusPage).toContain("Corpus Papermark E2E");
     expect(loginRoute).toContain("next-auth.session-token");

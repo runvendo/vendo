@@ -1,5 +1,6 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { vendoRouteFilePath } from "./route-path.js";
 
 const skateshopInstructions = [
   "This corpus run uses Skateshop seed data from src/assets/data/products.json, stored in the app database by the corpus-only API route on first use.",
@@ -588,7 +589,7 @@ export async function prepareSkateshopE2eRepo(appRoot: string, logsDir: string):
   await patchSkateshopUserQuery(appRoot);
   actions.push("patched Skateshop cached user query corpus bypass");
 
-  const routePath = path.join(appRoot, "src/app/api/vendo/[...path]/route.ts");
+  const routePath = await vendoRouteFilePath(appRoot, "src/app");
   await patchFile(routePath, (source) => {
     if (source.includes("storage: false") && source.includes("instructionsExtra")) return source;
     return source.replace(

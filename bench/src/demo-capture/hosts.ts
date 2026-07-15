@@ -13,6 +13,12 @@ export interface DemoHostDefinition {
   packageName: "demo-bank" | "demo-accounting";
   route: string;
   threadId: string;
+  /** ENG-260 put both demos behind a real login wall. The /login form
+   * prefills the primary seeded demo user's email, so the capture only needs
+   * the shared demo password: the deploy-time env knob when set, otherwise
+   * the seeded dev fallback. */
+  demoPasswordEnv: string;
+  demoPasswordFallback: string;
 }
 
 export const demoHosts: Record<ConcreteDemoHost, DemoHostDefinition> = {
@@ -22,6 +28,8 @@ export const demoHosts: Record<ConcreteDemoHost, DemoHostDefinition> = {
     packageName: "demo-bank",
     route: "/vendo",
     threadId: "thr_maple_demo",
+    demoPasswordEnv: "MAPLE_DEMO_PASSWORD",
+    demoPasswordFallback: "maple-demo",
   },
   cadence: {
     id: "cadence",
@@ -29,6 +37,8 @@ export const demoHosts: Record<ConcreteDemoHost, DemoHostDefinition> = {
     packageName: "demo-accounting",
     route: "/assistant",
     threadId: "thr_cadence_demo",
+    demoPasswordEnv: "CADENCE_DEMO_PASSWORD",
+    demoPasswordFallback: "cadence-demo",
   },
 };
 

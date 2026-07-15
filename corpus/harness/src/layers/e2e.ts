@@ -687,11 +687,18 @@ async function attachNetworkSignals(
 }
 
 async function loadManifestToolBindings(repoDir: string): Promise<ManifestToolBinding[]> {
+  // Fixtures whose curated Layer 3 manifest must not clobber the sync-managed
+  // extraction pin (papermark) ship it as .vendo/tools.corpus.json instead of
+  // .vendo/tools.json; prefer the curated manifest when it exists.
   let raw: string;
   try {
-    raw = await readFile(path.join(repoDir, ".vendo/tools.json"), "utf8");
+    raw = await readFile(path.join(repoDir, ".vendo/tools.corpus.json"), "utf8");
   } catch {
-    return [];
+    try {
+      raw = await readFile(path.join(repoDir, ".vendo/tools.json"), "utf8");
+    } catch {
+      return [];
+    }
   }
   const value = JSON.parse(raw) as unknown;
   const tools = isRecord(value) && Array.isArray(value.tools) ? value.tools : Array.isArray(value) ? value : [];

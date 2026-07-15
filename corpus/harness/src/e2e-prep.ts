@@ -1,6 +1,7 @@
 import { access, copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ManifestEntry } from "./manifest.js";
+import { vendoRouteFilePath } from "./e2e-prep/route-path.js";
 import { prepareSkateshopE2eRepo } from "./e2e-prep/skateshop.js";
 
 const umamiInstructions = [
@@ -739,7 +740,7 @@ export async function prepareE2eRepo(
   );
   actions.push("wrote Umami Layer 3 read-only tools manifest");
 
-  const routePath = path.join(appRoot, "src/app/api/vendo/[...path]/route.ts");
+  const routePath = await vendoRouteFilePath(appRoot, "src/app");
   await patchFile(routePath, (source) => {
     if (source.includes("storage: false") && source.includes("instructionsExtra")) return source;
     return source.replace(
@@ -853,14 +854,21 @@ async function prepareTeableE2eRepo(appRoot: string, logPath: string): Promise<s
 async function preparePapermarkE2eRepo(appRoot: string, logPath: string): Promise<string[]> {
   const actions: string[] = [];
 
+  // Papermark is the one npm-driven deep fixture, so `npm run build` runs the
+  // init-installed `prebuild: vendo sync --strict` gate. sync re-extracts and
+  // diffs against `.vendo/tools.json`; overwriting that pin with the curated
+  // manifest reads as breaking tool renames (exit 2) now that extraction
+  // covers these endpoints (ENG-242 widen). Keep `.vendo/tools.json` pinned to
+  // init's current extraction output and ship the curated Layer 3 manifest as
+  // a separate, sync-ignored file that the Vendo root imports instead.
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
   await writeFile(
-    path.join(appRoot, ".vendo/tools.json"),
+    path.join(appRoot, ".vendo/tools.corpus.json"),
     `${JSON.stringify(papermarkTools, null, 2)}\n`,
   );
-  actions.push("wrote Papermark Layer 3 curated tools manifest");
+  actions.push("wrote Papermark Layer 3 curated tools manifest (sync-ignored tools.corpus.json; .vendo/tools.json stays pinned to extraction)");
 
-  const routePath = path.join(appRoot, "app/api/vendo/[...path]/route.ts");
+  const routePath = await vendoRouteFilePath(appRoot, "app");
   await mkdir(path.dirname(routePath), { recursive: true });
   await ensureFile(routePath, `import { createVendoHandler } from "vendoai/server";
 
@@ -887,7 +895,7 @@ export const { GET, POST } = createVendoHandler();
 import { VendoRoot } from "vendoai/react";
 import type { ReactNode } from "react";
 import theme from "../.vendo/theme.json";
-import tools from "../.vendo/tools.json";
+import tools from "../.vendo/tools.corpus.json";
 
 export function AppVendoRoot({ children }: { children: ReactNode }) {
   return (
@@ -897,8 +905,10 @@ export function AppVendoRoot({ children }: { children: ReactNode }) {
   );
 }
 `);
+  await patchFile(rootPath, (source) =>
+    source.replace('.vendo/tools.json"', '.vendo/tools.corpus.json"'));
   await patchVendoRoot(rootPath, "Papermark");
-  actions.push("patched Vendo root to accept per-attempt thread ids");
+  actions.push("patched Vendo root to accept per-attempt thread ids and import the curated corpus manifest");
 
   const corpusPagePath = path.join(appRoot, "app/corpus-e2e/page.tsx");
   await mkdir(path.dirname(corpusPagePath), { recursive: true });

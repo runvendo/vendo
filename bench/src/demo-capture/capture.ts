@@ -57,6 +57,21 @@ function hostList(host: BrowserCaptureArgs["host"]): ConcreteDemoHost[] {
   return host === "both" ? ["maple", "cadence"] : [host];
 }
 
+/** Both demo hosts sit behind a real login wall (ENG-260): unauthenticated
+ * visits land on a plain, scriptable /login form with the primary demo user's
+ * email prefilled and a single password field. Signs in when the wall is
+ * present and waits to land back on the capture route; no-op when a session
+ * cookie already exists. */
+async function signInIfNeeded(page: Page, host: DemoHostDefinition, timeoutMs: number): Promise<void> {
+  const loginForm = page.locator('form[action="/login"]');
+  if (await loginForm.count() === 0) return;
+  const password = process.env[host.demoPasswordEnv] ?? host.demoPasswordFallback;
+  await loginForm.locator('input[name="password"]').fill(password);
+  await loginForm.locator('button[type="submit"]').click();
+  await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: timeoutMs });
+  await page.waitForLoadState("domcontentloaded");
+}
+
 async function clearThread(page: Page, threadId: string): Promise<void> {
   const status = await page.evaluate(async (id) => {
     const response = await fetch(`/api/vendo/threads/${encodeURIComponent(id)}`, {
@@ -153,6 +168,7 @@ async function captureHost(options: {
     });
     const page = await context.newPage();
     await page.goto(new URL(options.host.route, running.baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: options.args.timeoutMs });
+    await signInIfNeeded(page, options.host, options.args.timeoutMs);
     await clearThread(page, options.host.threadId);
     await page.reload({ waitUntil: "domcontentloaded", timeout: options.args.timeoutMs });
     await page.getByRole("textbox", { name: "Message" }).waitFor({ state: "visible", timeout: options.args.timeoutMs });
