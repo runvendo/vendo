@@ -9,6 +9,7 @@ import {
   type RunContext,
   type SecretsProvider,
   type StoreAdapter,
+  type Tree,
   type ToolOutcome,
   type ToolRegistry,
   type UIPayload,
@@ -37,7 +38,7 @@ import { createAppInterchange } from "./interchange.js";
 import { createMachineSessions } from "./machine.js";
 import { createAppOpener } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
-import type { PinBaseline } from "./pins.js";
+import { pinComponentName, type PinBaseline } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
 import { createRunTokenGate } from "./run-token-gate.js";
 import type { SandboxAdapter } from "./sandbox.js";
@@ -142,7 +143,37 @@ const generationDependencies = (
   catalog: config.catalog,
   theme: config.theme,
   designRules: config.designRules,
+  pinBaselines: config.pinBaselines,
 });
+
+const pinnedSubtree = (app: AppDocument, componentName: string): unknown[] => {
+  if (app.tree?.formatVersion !== "vendo-genui/v1") return [];
+  const tree = app.tree as unknown as Tree;
+  const included = new Set(tree.nodes.filter((node) => node.component === componentName).map((node) => node.id));
+  const pending = [...included];
+  while (pending.length > 0) {
+    const node = tree.nodes.find(({ id }) => id === pending.pop());
+    for (const child of node?.children ?? []) {
+      if (included.has(child)) continue;
+      included.add(child);
+      pending.push(child);
+    }
+  }
+  return tree.nodes.filter(({ id }) => included.has(id));
+};
+
+const touchedPinSlots = (previous: AppDocument, next: AppDocument): string[] => {
+  const previousPins = new Map((previous.pins ?? []).map((pin) => [pin.slot, pin]));
+  return (next.pins ?? []).flatMap((pin) => {
+    const prior = previousPins.get(pin.slot);
+    if (prior?.base !== pin.base) return [pin.slot];
+    const componentName = pinComponentName(pin.slot);
+    if (previous.components?.[componentName] !== next.components?.[componentName]) return [pin.slot];
+    return JSON.stringify(pinnedSubtree(previous, componentName)) === JSON.stringify(pinnedSubtree(next, componentName))
+      ? []
+      : [pin.slot];
+  });
+};
 
 /** 06-apps §1 — construct the app lifecycle, generation, execution, and interchange surface. */
 export const createApps = (config: AppsConfig): AppsRuntime => {
@@ -283,7 +314,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return row.enabled;
     };
     await assertCurrent();
-    await history.append(app.id, previous, version);
+    await history.append(app.id, previous, version, touchedPinSlots(previous, app));
     const wasEnabled = await assertCurrent();
     // A changed trigger must be re-armed — enable() re-captures and re-mints trigger state.
     const enabled = enabledAfterDocumentEdit(previous, app, wasEnabled);

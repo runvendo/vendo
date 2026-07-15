@@ -18,12 +18,14 @@ import {
   type VendoTheme,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
+import { pinComponentName, type PinBaseline } from "./pins.js";
 
 export interface GenerationDependencies {
   model: LanguageModel;
   catalog: ComponentCatalog;
   theme?: VendoTheme;
   designRules?: string;
+  pinBaselines?: readonly PinBaseline[];
 }
 
 export interface GenerationCreateInput {
@@ -89,6 +91,16 @@ const catalogPrompt = (catalog: ComponentCatalog): string => JSON.stringify(
   2,
 );
 
+const pinBaselinesPrompt = (baselines: readonly PinBaseline[] = []): string => JSON.stringify(
+  baselines.map((baseline) => ({
+    slot: baseline.slot,
+    componentName: pinComponentName(baseline.slot),
+    source: baseline.source,
+  })),
+  null,
+  2,
+);
+
 const formatContract = (deps: GenerationDependencies): string => `
 You are the Vendo app generation engine. Return JSON only, with no markdown.
 
@@ -118,6 +130,11 @@ ${JSON.stringify(deps.theme ?? null, null, 2)}
 
 HOST DESIGN RULES:
 ${deps.designRules?.trim() || "(none provided)"}
+
+REMIXABLE HOST SLOTS:
+${pinBaselinesPrompt(deps.pinBaselines)}
+- A remixable slot is captured host source. To start editing it, emit fork-pin with its exact slot, a new nodeId, and an optional parentId/index. The engine copies the trusted captured source into the named generated component, renders that component, and records the baseline pin.
+- After a slot is forked, edit its named generated component with add-component while preserving the pin. Never reproduce or alter a baseline hash yourself.
 `.trim();
 
 const generateJson = async (
@@ -270,6 +287,7 @@ const reachesNode = (tree: Tree, startId: string, targetId: string): boolean => 
 const applyTreeOps = (
   source: AppDocument,
   ops: TreeOp[],
+  deps: GenerationDependencies,
 ): { app?: AppDocument; issues: string[] } => {
   const app = structuredClone(source);
   if (app.tree?.formatVersion !== "vendo-genui/v1") {
@@ -349,6 +367,41 @@ const applyTreeOps = (
           return issue("add-component requires name and source strings");
         }
         app.components = { ...(app.components ?? {}), [operation.name]: operation.source };
+        break;
+      }
+      case "fork-pin": {
+        if (typeof operation.slot !== "string" || operation.slot.length === 0
+          || typeof operation.nodeId !== "string" || operation.nodeId.length === 0) {
+          return issue("fork-pin requires non-empty slot and nodeId strings");
+        }
+        const baseline = deps.pinBaselines?.find(({ slot }) => slot === operation.slot);
+        if (baseline === undefined) return issue(`pin baseline "${operation.slot}" is unavailable`);
+        if (app.pins?.some(({ slot }) => slot === baseline.slot)) {
+          return issue(`pin slot "${baseline.slot}" is already forked`);
+        }
+        const componentName = pinComponentName(baseline.slot);
+        if (app.components?.[componentName] !== undefined) {
+          return issue(`generated component "${componentName}" already exists`);
+        }
+        if (tree.nodes.some(({ id }) => id === operation.nodeId)) {
+          return issue(`node "${operation.nodeId}" already exists`);
+        }
+        const parentId = operation.parentId === undefined ? tree.root : operation.parentId;
+        if (typeof parentId !== "string") return issue("fork-pin parentId must be a string when present");
+        const parent = tree.nodes.find(({ id }) => id === parentId);
+        if (parent === undefined) return issue(`fork-pin parent "${parentId}" does not exist`);
+        const node: TreeNode = {
+          id: operation.nodeId,
+          component: componentName,
+          source: "generated",
+          ...(isRecord(operation.props)
+            ? { props: structuredClone(operation.props) as TreeNode["props"] }
+            : {}),
+        };
+        tree.nodes.push(node);
+        insertChild(parent, node.id, operation.index);
+        app.components = { ...(app.components ?? {}), [componentName]: baseline.source };
+        app.pins = [...(app.pins ?? []), { slot: baseline.slot, base: baseline.hash }];
         break;
       }
       case "set-name": {
@@ -446,7 +499,7 @@ const editTree = async (
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const output = await generateJson(
       deps,
-      `${formatContract(deps)}\n\nTREE EDIT DIALECT: emit {"ops":[...]}. Allowed ops: set-prop, add-node, remove-node, move-node, set-query, add-component, set-name, set-description. Patch the supplied app; do not regenerate it.`,
+      `${formatContract(deps)}\n\nTREE EDIT DIALECT: emit {"ops":[...]}. Allowed ops: set-prop, add-node, remove-node, move-node, set-query, add-component, fork-pin, set-name, set-description. Patch the supplied app; do not regenerate it.`,
       `TASK: EDIT_TREE\nINSTRUCTION: ${input.instruction}\nCURRENT_APP: ${JSON.stringify(input.app)}${repairPrompt(issues)}`,
     );
     issues = output.issues;
@@ -454,7 +507,7 @@ const editTree = async (
       const parsed = treeOpsFrom(output.value);
       issues = parsed.issues;
       if (parsed.ops !== undefined) {
-        const applied = applyTreeOps(input.app, parsed.ops);
+        const applied = applyTreeOps(input.app, parsed.ops, deps);
         issues = applied.issues;
         if (applied.app !== undefined) {
           issues = validateEditedApp(applied.app, deps);

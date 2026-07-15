@@ -34,6 +34,7 @@ export {
   type PinBaseline,
   type PinShipRequest,
 } from "./pins.js";
+export { appVersionHash } from "./version-hash.js";
 export {
   hostAllowed,
   substituteSecretHandles,

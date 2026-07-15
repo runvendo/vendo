@@ -1,6 +1,12 @@
 import { createActions, type ActionsRegistry, type Connector } from "@vendoai/actions";
 import { createAgent, type VendoAgent } from "@vendoai/agent";
-import { createApps, type AppsRuntime, type SandboxAdapter } from "@vendoai/apps";
+import {
+  createApps,
+  pinBaselineSchema,
+  type AppsRuntime,
+  type PinBaseline,
+  type SandboxAdapter,
+} from "@vendoai/apps";
 import {
   createAutomations,
   type AutomationsEngine,
@@ -157,6 +163,42 @@ function dotVendoTheme(): VendoTheme | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** 06-apps §8 — load sync-captured host source into the composition. Invalid
+    files are warned and skipped so one bad slot cannot crash the host; an
+    absent directory is the normal zero-remixable-components case. */
+function dotVendoPinBaselines(): PinBaseline[] {
+  const proc = (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown } }).process;
+  const fs = proc?.getBuiltinModule?.("node:fs") as typeof import("node:fs") | undefined;
+  if (fs === undefined) return [];
+  const directory = ".vendo/remixable";
+  let names: string[];
+  try {
+    names = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort();
+  } catch (error) {
+    if ((error as { code?: unknown }).code === "ENOENT") return [];
+    console.warn(`[vendo] could not read ${directory}; pin baselines were skipped`);
+    return [];
+  }
+
+  const baselines: PinBaseline[] = [];
+  const slots = new Set<string>();
+  for (const name of names) {
+    const file = `${directory}/${name}`;
+    try {
+      const parsed = pinBaselineSchema.parse(JSON.parse(fs.readFileSync(file, "utf8")));
+      if (slots.has(parsed.slot)) {
+        console.warn(`[vendo] invalid pin baseline ${file}; duplicate slot ${parsed.slot} was skipped`);
+        continue;
+      }
+      slots.add(parsed.slot);
+      baselines.push(parsed);
+    } catch {
+      console.warn(`[vendo] invalid pin baseline ${file}; file was skipped`);
+    }
+  }
+  return baselines;
 }
 
 function relativePath(url: URL): string | null {
@@ -714,12 +756,14 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const boundTools = guard.bind(actions);
   const theme = dotVendoTheme();
   const designRules = dotVendoFile("design-rules.md");
+  const pinBaselines = dotVendoPinBaselines();
   const apps = createApps({
     store,
     guard,
     tools: boundTools,
     model: config.model,
     catalog: [],
+    pinBaselines,
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
     secrets: config.secrets ?? envSecrets(),
