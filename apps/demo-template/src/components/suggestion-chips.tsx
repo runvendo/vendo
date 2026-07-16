@@ -19,8 +19,10 @@ import type { DemoBeat } from "@/lib/demo-config";
 // composer-prefill seam, replace the copy fallback with it.
 // ============================================================================
 
-/** How long the "Copied" confirmation lingers on the copy button. */
+/** How long the "Copied"/"Copy failed" feedback lingers on the copy button. */
 const COPIED_FEEDBACK_MS = 2000;
+
+type CopyState = "idle" | "copied" | "failed";
 
 /**
  * The demo.config beats as a persistent chip strip above the thread. Clicking
@@ -29,23 +31,28 @@ const COPIED_FEEDBACK_MS = 2000;
  */
 export function SuggestionChips({ beats }: { beats: DemoBeat[] }) {
   const [openKey, setOpenKey] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<CopyState>("idle");
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => () => clearTimeout(copiedTimer.current), []);
 
   if (beats.length === 0) return null;
   const open = beats.find((beat) => beat.key === openKey);
+  const promptPanelId = (key: string) => `demo-beat-prompt-${key}`;
 
   const copyPrompt = async (prompt: string) => {
+    let next: CopyState;
     try {
       await navigator.clipboard.writeText(prompt);
-      setCopied(true);
-      clearTimeout(copiedTimer.current);
-      copiedTimer.current = setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
+      next = "copied";
     } catch {
-      // Clipboard unavailable — the prompt is already revealed for manual selection.
+      // Clipboard unavailable/denied — say so; the prompt is revealed for
+      // manual selection either way.
+      next = "failed";
     }
+    setCopyState(next);
+    clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopyState("idle"), COPIED_FEEDBACK_MS);
   };
 
   return (
@@ -57,12 +64,13 @@ export function SuggestionChips({ beats }: { beats: DemoBeat[] }) {
             key={beat.key}
             type="button"
             aria-expanded={openKey === beat.key}
+            aria-controls={openKey === beat.key ? promptPanelId(beat.key) : undefined}
             className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
               openKey === beat.key ? "bg-ink text-surface" : "text-ink hover:bg-bg"
             }`}
             onClick={() => {
               setOpenKey((key) => (key === beat.key ? null : beat.key));
-              setCopied(false);
+              setCopyState("idle");
             }}
           >
             {beat.chip}
@@ -70,14 +78,21 @@ export function SuggestionChips({ beats }: { beats: DemoBeat[] }) {
         ))}
       </div>
       {open !== undefined ? (
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-bg px-3 py-2">
+        <div
+          id={promptPanelId(open.key)}
+          className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-bg px-3 py-2"
+        >
           <span className="text-sm text-ink">{open.prompt}</span>
           <button
             type="button"
             className="rounded-full border bg-surface px-3 py-1 text-xs font-medium text-ink hover:bg-bg"
             onClick={() => void copyPrompt(open.prompt)}
           >
-            {copied ? "Copied" : "Copy prompt"}
+            {copyState === "copied"
+              ? "Copied"
+              : copyState === "failed"
+                ? "Copy failed — select the text"
+                : "Copy prompt"}
           </button>
         </div>
       ) : null}

@@ -174,6 +174,19 @@ export function createCapsGuard(options: {
     return next
   }
 
+  // THE gate, shared by consumeTurn (which increments+saves on null) and
+  // peekRefusal (read-only) so the two can never silently diverge. Corrupt
+  // counters fail closed here WITHOUT logging — peeks arrive on the chrome's
+  // poll cadence and would spam the log; consumeTurn logs its own error.
+  function gateRefusal(state: { counters: CountersFile } | { corrupt: true }): CapsRefusal | null {
+    if (isExpired(config, now())) return refusal("expired")
+    if ("corrupt" in state) return refusal("turns")
+    const entry = state.counters[config.id] ?? { turns: 0, spendUsd: 0 }
+    if (entry.turns >= config.caps.maxTurns) return refusal("turns")
+    if (entry.spendUsd >= config.caps.maxSpendUsd) return refusal("spend")
+    return null
+  }
+
   return {
     refuseIfExpired() {
       return isExpired(config, now()) ? refusal("expired") : null
@@ -181,33 +194,25 @@ export function createCapsGuard(options: {
 
     consumeTurn() {
       return serialized(() => {
-        if (isExpired(config, now())) return refusal("expired")
         const state = load()
         if ("corrupt" in state) {
           console.error(`[caps] counters file at "${countersPath}" is corrupt — failing closed`)
-          return refusal("turns")
+          return gateRefusal(state) // expired still wins over the fail-closed turns refusal
         }
+        const refused = gateRefusal(state)
+        if (refused !== null) return refused
         const entry = state.counters[config.id] ?? { turns: 0, spendUsd: 0 }
-        if (entry.turns >= config.caps.maxTurns) return refusal("turns")
-        if (entry.spendUsd >= config.caps.maxSpendUsd) return refusal("spend")
         state.counters[config.id] = { ...entry, turns: entry.turns + 1 }
         save(state.counters)
         return null
       })
     },
 
-    // Same checks as consumeTurn, minus the consume/save — serialized so a
-    // peek never reads the counters file mid-write.
+    // gateRefusal minus the consume/save — serialized so a peek never reads
+    // the counters file mid-write. No corrupt-file console.error here by
+    // design (see gateRefusal's note).
     peekRefusal() {
-      return serialized(() => {
-        if (isExpired(config, now())) return refusal("expired")
-        const state = load()
-        if ("corrupt" in state) return refusal("turns")
-        const entry = state.counters[config.id] ?? { turns: 0, spendUsd: 0 }
-        if (entry.turns >= config.caps.maxTurns) return refusal("turns")
-        if (entry.spendUsd >= config.caps.maxSpendUsd) return refusal("spend")
-        return null
-      })
+      return serialized(() => gateRefusal(load()))
     },
 
     recordSpend(usd: number) {

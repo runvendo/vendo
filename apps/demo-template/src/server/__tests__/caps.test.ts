@@ -144,6 +144,17 @@ describe("peekRefusal", () => {
     expect(refusal!.status).toBe(410)
     expect(refusal!.body.vendoDemo.limit).toBe("expired")
   })
+
+  it("fails closed on a corrupt counters file, without writing to it", async () => {
+    const countersPath = tempCountersPath()
+    writeFileSync(countersPath, "{ not json", "utf8")
+    const { guard } = makeGuard(makeConfig(), countersPath)
+    const refusal = await guard.peekRefusal()
+    expect(refusal!.status).toBe(429)
+    expect(refusal!.body.vendoDemo.limit).toBe("turns")
+    // Read-only even in the fail-closed branch: the poison stays for inspection.
+    expect(readFileSync(countersPath, "utf8")).toBe("{ not json")
+  })
 })
 
 describe("refusal body shape", () => {

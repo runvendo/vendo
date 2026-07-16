@@ -17,5 +17,10 @@ export const dynamic = "force-dynamic"
 
 export async function GET(): Promise<Response> {
   const refusal = await getCapsGuard().peekRefusal()
-  return Response.json({ vendoDemo: refusal === null ? null : refusal.body.vendoDemo })
+  return Response.json(
+    { vendoDemo: refusal === null ? null : refusal.body.vendoDemo },
+    // force-dynamic covers Next's own cache; no-store keeps any proxy/CDN in
+    // front of a deployed demo from serving a stale "live" status.
+    { headers: { "cache-control": "no-store" } },
+  )
 }

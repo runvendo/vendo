@@ -85,5 +85,23 @@ describe("DemoChrome limit card", () => {
     )
     await act(() => vi.advanceTimersByTimeAsync(9000))
     expect(screen.getByText("surface")).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "This demo has reached its limit" })).toBeNull()
+    expect(screen.queryByRole("heading", { name: "This demo has expired" })).toBeNull()
+  })
+
+  it("stops polling once refused — the terminal state never un-trips", async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn(async () => Response.json({ vendoDemo: turnsRefusal }))
+    vi.stubGlobal("fetch", fetchMock)
+    render(
+      <DemoChrome prospect="Acme" ctaUrl="https://cal.com/x">
+        <p>surface</p>
+      </DemoChrome>,
+    )
+    await act(() => vi.advanceTimersByTimeAsync(9000))
+    expect(screen.getByRole("heading", { name: "This demo has reached its limit" })).toBeTruthy()
+    const callsAtRefusal = fetchMock.mock.calls.length
+    await act(() => vi.advanceTimersByTimeAsync(16000))
+    expect(fetchMock.mock.calls.length).toBe(callsAtRefusal)
   })
 })

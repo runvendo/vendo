@@ -6,12 +6,22 @@ import { SuggestionChips } from "@/components/suggestion-chips";
 import { VendoRoot } from "@/components/vendo/VendoRoot";
 import type { DemoBeat } from "@/lib/demo-config";
 
+// ============================================================================
+// PLUMBING — RESTYLE, DON'T REWIRE, PER PROSPECT.
 // Client composition of the /vendo panel: demo chrome (badge/CTA/limit card)
 // wrapping the beat chips + Vendo surface. Lives in its own client file
 // because @vendoai/ui ships no "use client" directives — the server page
 // (src/app/vendo/page.tsx) loads demo.config + caps status and passes them in.
-// The thread's landing `suggestions` get the beats' full prompts: clicking one
-// there submits it directly (the official @vendoai/ui seam).
+// Creator agents may change wrapper layout/styling (the outer div, spacing,
+// ordering of chips vs thread), but three wirings are LOAD-BEARING and must
+// survive any rewrite:
+//   1. DemoChrome wraps the whole surface (badge/CTA/limit card).
+//   2. `initialRefusal` flows from the server page's peekRefusal() into
+//      DemoChrome — dropping it kills the on-load limit/expired card.
+//   3. VendoThread's `suggestions` get the beats' full prompts: clicking one
+//      on the empty landing submits it directly (the official @vendoai/ui
+//      seam) — losing this kills click-to-run for the demo beats.
+// ============================================================================
 export function DemoPanel(props: {
   prospect: string;
   ctaUrl: string;
