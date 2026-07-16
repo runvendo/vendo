@@ -350,6 +350,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     store: config.store,
     guard: config.guard,
     sandbox: config.sandbox,
+    machines,
     pinBaselines: config.pinBaselines,
     requireOwned,
   });
