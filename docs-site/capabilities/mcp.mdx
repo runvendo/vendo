@@ -349,6 +349,35 @@ render through a static HTML shim. Interactions inside a rendered app route back
 through the same guard-bound path. The door is a viewer and runner: app creation
 and editing stay in-product.
 
+### HTTP apps open in-product
+
+Rung-4 HTTP apps run on a machine-served origin the shim cannot host, so the
+door opens them as a link-out instead. `vendo_apps_open` returns a themed card
+with an "Open in {product}" call to action and the target URL, and text-only
+clients receive a human-readable message with the URL inline. The link opens
+in a new tab.
+
+The card is driven by a versioned structured envelope so newer clients dispatch
+on `kind` rather than sniffing shape:
+
+```json
+{
+  "kind": "vendo/open-in-product@1",
+  "url": "https://app.example.com/apps/app_123",
+  "productName": "Acme",
+  "appName": "Sales dashboard"
+}
+```
+
+- `productName` comes from your MCP server identity, so the CTA always names
+  your product.
+- `appName` is best-effort — the door omits it when the app has no title.
+- The card themes itself from the same `--vendo-*` CSS tokens as the consent
+  page, so no extra configuration is needed to match your brand.
+
+Rung 1–3 apps still render inline through the shim; only rung 4 link-outs use
+the card.
+
 ## Verify
 
 ```bash
