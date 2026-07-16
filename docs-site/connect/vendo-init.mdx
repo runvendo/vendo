@@ -25,7 +25,7 @@ theme, and the PGlite ignore entry where applicable.
 
 One of those questions is whether to open the [MCP door](/capabilities/mcp).
 Opening it is a host decision and needs a `HostOAuthAdapter`, so init never
-invents auth wiring or flips `mcp: true`: on yes it generates the Next.js
+invents auth wiring or flips `mcp: true`. On yes, init generates the Next.js
 `/.well-known` sibling route and points you at the remaining wiring. The door
 stays off unless you opt in.
 
