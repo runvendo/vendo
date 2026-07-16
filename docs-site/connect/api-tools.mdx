@@ -47,7 +47,10 @@ disabled, with a note.
 ```
 
 Sync never edits overrides. Overrides win field by field, then Vendo computes
-the descriptor hash. A risk change intentionally lapses old grants.
+the descriptor hash. A risk change intentionally lapses old grants: the next
+call parks a fresh approval that names the invalidated grant and audits one
+`grant-invalidated` policy decision. See [Tools and
+safety](/concepts/tools-and-safety) for the surfaced notice and event shape.
 
 Present route calls forward the inbound request's cookie and authorization
 headers on a same-origin fetch. Away calls require both an app-bound grant and
