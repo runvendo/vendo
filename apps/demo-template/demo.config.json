@@ -1,0 +1,27 @@
+{
+  "id": "template-sample",
+  "prospect": "Template Sample",
+  "ctaUrl": "https://cal.com/yousefhelal",
+  "beats": [
+    {
+      "key": "generate-ui",
+      "prompt": "Show me a dashboard of my data",
+      "chip": "Dashboard of my data"
+    },
+    {
+      "key": "take-action",
+      "prompt": "Take an action with approval",
+      "chip": "Take an action with approval"
+    },
+    {
+      "key": "save-app",
+      "prompt": "Save this as a reusable app",
+      "chip": "Save this as an app"
+    }
+  ],
+  "caps": {
+    "maxTurns": 20,
+    "maxSpendUsd": 5
+  },
+  "expiresAt": "2099-01-01T00:00:00Z"
+}
