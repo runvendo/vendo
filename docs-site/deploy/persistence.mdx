@@ -22,6 +22,14 @@ All structured payloads use `jsonb`. App record refs are GIN-indexed and can be
 joined to host tables with containment queries. Collection names use
 `app:<appId>:<name>`.
 
+App machines reach `vendo_records` and `vendo_blobs` through the guarded proxy,
+not directly. Each collection must appear in the app's `storage` declaration
+with the `refs` keys it will write; the reserved name `state` is rejected.
+Records are capped at 256 KB, blobs at 5 MB, and every declared `refs` key must
+carry a non-empty string value at write time. See the [app machine
+environment](/reference/environment-variables#app-machine-environment) for the
+`/data` and `/files` proxy routes.
+
 `encryption.key` encrypts secret values in `vendo_secrets` only. App records
 stay queryable. Ephemeral principals use an in-memory overlay and never write
 to disk.

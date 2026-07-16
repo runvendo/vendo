@@ -43,6 +43,21 @@ in-machine fetch shim routes outbound `fetch()` calls to external hosts through
 the proxy's egress route, where secret handles are substituted for allowlisted
 hosts only. See [Secrets and outbound requests](/concepts/generated-ui#secrets-and-outbound-requests).
 
+The proxy authenticates every request with `VENDO_RUN_TOKEN` and enforces the
+app's declarations. It exposes:
+
+| Path | Methods | Purpose |
+| --- | --- | --- |
+| `/state` | GET · PUT | the app's own `/state` document (JSON, 256 KB cap) |
+| `/data/<collection>` | GET | list records with `refs.<key>=<value>`, `limit`, and `cursor` filters |
+| `/data/<collection>/<id>` | GET · PUT · DELETE | read or write a declared record (JSON, 256 KB cap) |
+| `/files/<collection>` | GET | list blob keys in a declared file collection |
+| `/files/<collection>/<key>` | GET · PUT · DELETE | read or write a blob (5 MB cap; `Content-Type` required on PUT) |
+| `/egress` | POST | outbound call gated by the app's egress declaration |
+
+Collections not present in the app's `storage` declaration return `403`.
+Records reject unknown or empty `refs` keys with `400`.
+
 ## Peer configuration
 
 Vendo receives an AI SDK `LanguageModel`; model provider keys are configured by
