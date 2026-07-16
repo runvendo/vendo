@@ -201,6 +201,34 @@ If your composition serves the door on a different origin than the one host
 routes resolve against, pass the door's public base explicitly:
 `createVendo({ mcp: { baseUrl: "https://app.example.com" }, oauth })`.
 
+## Configure the door through the umbrella
+
+`mcp: true` opens the door with defaults. To pass door-specific settings
+through `createVendo` — for example when you front the door with a hosted
+broker or a different origin — replace `true` with an object:
+
+```ts
+export const vendo = createVendo({
+  model,
+  principal: resolvePrincipal,
+  oauth,
+  mcp: {
+    baseUrl: "https://app.example.com",
+    remoteAs: {
+      issuer: "https://auth.example.com",
+      audience: "https://app.example.com/api/vendo/mcp",
+    },
+    federation: { secret: process.env.VENDO_MCP_FEDERATION_SECRET! },
+  },
+});
+```
+
+`mcp: { … }` accepts the same `baseUrl`, `remoteAs`, and `federation` fields
+as the top-level `createVendo` options, and takes precedence over them when
+both are set. Use the object form when you want one place to gate broker
+trust behind environment variables, and the top-level form when the door
+runs on its own alongside your host.
+
 ## How door calls reach host tools
 
 MCP clients have no host browser session, so Vendo never forwards the inbound
@@ -298,11 +326,21 @@ The request JWT must carry:
   to.
 - `client_name` — the display name shown in your consent UI.
 
-The door verifies the request, then calls
-`oauth.authorize(request, { clientName, scopes })`. This is the same authorize
-step your local flow uses, so you do not need a separate consent UI. If your
-adapter returns a `Response` (a login redirect or rendered page), the door
-forwards it so the browser can complete host login and retry. On a
+The door verifies the request, then authenticates the user through your
+adapter:
+
+- If your adapter implements `authorize`, the door calls
+  `oauth.authorize(request, { clientName, scopes })`. This is the same
+  authorize step your local flow uses, so you do not need a separate consent
+  UI.
+- If your adapter is session-only (no `authorize`), the door calls
+  `oauth.session(request, { returnTo })` with the federate request URL as
+  `returnTo`, so a logged-out user bounces to your login page and resumes the
+  handshake automatically. The external authorization server owns consent, so
+  no in-product consent UI runs.
+
+If your adapter returns a `Response` (a login redirect or rendered page), the
+door forwards it so the browser can complete host login and retry. On a
 `{ subject }` result, the door redirects to `redirect_uri` with an HS256-signed
 `assertion` parameter that the external authorization server verifies with the
 same `secret`. The assertion carries `sub` (your host subject), `iss` (the
