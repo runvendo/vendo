@@ -1,9 +1,9 @@
 ---
-title: "CLI reference: vendo init, doctor, sync, mcp, and cloud"
-description: "Reference for the vendo bin commands: init, doctor for wiring checks, sync for build-time extraction, mcp for registry publishing, and cloud."
+title: "CLI reference: vendo init, doctor, sync, refine, mcp, and cloud"
+description: "Reference for the vendo bin commands: init, doctor for wiring checks, sync for build-time extraction, refine for agent-layer improvements, mcp for registry publishing, and cloud."
 ---
 
-The umbrella owns the `vendo` bin. It has five commands.
+The umbrella owns the `vendo` bin. It has six commands.
 
 ## `vendo init [dir]`
 
@@ -196,11 +196,10 @@ feed (`.vendo/data/misses.jsonl`), and a short interview proposes:
   `.vendo/overrides.json`
 - product-brief improvements to `.vendo/brief.md`
 
-With `--url` pointing at your running dev server, each proposed compound is
-probed before it is offered: the composition's `/status` is checked and
-read-risk steps are verified against the live app. Write-risk steps are never
-executed by the probe. Compounds that fail their probe are dropped with the
-reason printed.
+Point `--url` at your running dev server and refine probes each proposed
+compound before offering it: the composition's `/status` is checked and
+read-risk steps run against the live app. The probe never executes write-risk
+steps. Compounds that fail their probe are dropped with the reason printed.
 
 ```bash
 npx vendo refine --url http://localhost:3000/api/vendo
