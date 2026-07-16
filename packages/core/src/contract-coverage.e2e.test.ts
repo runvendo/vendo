@@ -383,6 +383,21 @@ describe("§8 — validateTree validates fn: GRAMMAR only; machine-presence is a
     }
   });
 
+  it("CORE-5: enforces the same grammar on fn: ACTION names inside node props (the wire-enforceable half)", () => {
+    const treeWithAction = (action: string) => ({
+      formatVersion: "vendo-genui/v1", root: "r",
+      nodes: [{ id: "r", component: "Text", props: { rows: [{ action, label: "Go" }] } }],
+    });
+    expect(validateTree(treeWithAction("fn:refresh")).ok).toBe(true);
+    for (const action of ["fn:", "fn:9lead", "fn:has space", "fn:slash/x"]) {
+      const result = validateTree(treeWithAction(action));
+      expect(result.ok, action).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("provision");
+    }
+    // Non-fn action names are the host's tool namespace — not this grammar's job.
+    expect(validateTree(treeWithAction("host_refresh")).ok).toBe(true);
+  });
+
   it("validateAppDocument is where a machine-less fn: reference becomes an error", () => {
     const withFnNoServer = {
       format: "vendo/app@1", id: "app_x", name: "X", ui: "tree" as const,

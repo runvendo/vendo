@@ -5,12 +5,16 @@
  */
 import {
   RESERVED_COMPONENT_NAMES,
-  TREE_MAX_COMPONENT_SOURCE_CHARS,
+  TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
-  TREE_MAX_TOTAL_COMPONENT_CHARS,
+  TREE_MAX_TOTAL_COMPONENT_BYTES,
 } from "./tree-limits.js";
 
 const COMPONENT_NAME_PATTERN = /^[A-Z][A-Za-z0-9]*$/;
+
+// CORE-6: the contract pins the caps in kilobytes; measure encoded UTF-8, not
+// UTF-16 code units (multibyte sources are up to 3x larger encoded).
+const utf8ByteLength = (source: string): number => new TextEncoder().encode(source).length;
 
 /** Returns an error message, or null when the map honors every pinned limit. */
 export function componentMapError(components: Record<string, unknown>): string | null {
@@ -18,7 +22,7 @@ export function componentMapError(components: Record<string, unknown>): string |
   if (names.length > TREE_MAX_GENERATED_COMPONENTS) {
     return `too many generated components (max ${TREE_MAX_GENERATED_COMPONENTS})`;
   }
-  let totalChars = 0;
+  let totalBytes = 0;
   for (const name of names) {
     if (!COMPONENT_NAME_PATTERN.test(name)) {
       return `generated component name "${name}" must be a PascalCase identifier`;
@@ -30,13 +34,14 @@ export function componentMapError(components: Record<string, unknown>): string |
     if (typeof source !== "string") {
       return `generated component "${name}" source must be a string`;
     }
-    if (source.length > TREE_MAX_COMPONENT_SOURCE_CHARS) {
-      return `generated component "${name}" source too large (max ${TREE_MAX_COMPONENT_SOURCE_CHARS} chars)`;
+    const sourceBytes = utf8ByteLength(source);
+    if (sourceBytes > TREE_MAX_COMPONENT_SOURCE_BYTES) {
+      return `generated component "${name}" source too large (max ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes)`;
     }
-    totalChars += source.length;
+    totalBytes += sourceBytes;
   }
-  if (totalChars > TREE_MAX_TOTAL_COMPONENT_CHARS) {
-    return `generated component sources too large in total (max ${TREE_MAX_TOTAL_COMPONENT_CHARS} chars)`;
+  if (totalBytes > TREE_MAX_TOTAL_COMPONENT_BYTES) {
+    return `generated component sources too large in total (max ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes)`;
   }
   return null;
 }
