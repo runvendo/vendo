@@ -208,16 +208,34 @@ export function createCapsGuard(options: {
 }
 
 /**
- * ai-SDK model middleware that observes REAL token usage from each provider
- * stream's `finish` part and records it as spend. createVendo exposes no
- * usage callback, but the host constructs the LanguageModel itself, so
- * wrapping it (`wrapLanguageModel`) is an honest seam: every LLM call — chat
- * turns, app create/edit — flows through here. Pass-through tap; parts are
- * never altered.
+ * ai-SDK model middleware that observes REAL token usage and records it as
+ * spend. createVendo exposes no usage callback, but the host constructs the
+ * LanguageModel itself, so wrapping it (`wrapLanguageModel`) is an honest
+ * seam: every call made THROUGH THIS MODEL INSTANCE — chat turns and app
+ * create/edit today (streamed), plus any future generateText/generateObject
+ * consumers such as a policy judge or automations runner — is metered via
+ * wrapStream/wrapGenerate. Pass-through only; results are never altered.
+ * Known gap: a stream aborted mid-flight (client disconnect cancels
+ * downstream, or a provider error) skips the flush, so that fragment's spend
+ * goes unrecorded — an under-count bounded by the turn cap.
  */
 export function spendMeteringMiddleware(guard: CapsGuard, modelId: string): LanguageModelMiddleware {
+  const record = async (usd: number) => {
+    await guard.recordSpend(usd).catch((error) => {
+      console.error("[caps] failed to record spend:", error)
+    })
+  }
   return {
     specificationVersion: "v3",
+    wrapGenerate: async ({ doGenerate }) => {
+      const result = await doGenerate()
+      // estimateTurnUsd charges FALLBACK_TURN_ESTIMATE_USD when the provider
+      // reported no usable usage; a result missing `usage` entirely (defensive
+      // — the V3 contract requires it) gets the same conservative treatment.
+      const usage = (result as { usage?: TurnUsage }).usage
+      await record(usage === undefined ? FALLBACK_TURN_ESTIMATE_USD : estimateTurnUsd(modelId, usage))
+      return result
+    },
     wrapStream: async ({ doStream }) => {
       const result = await doStream()
       let recordedUsd = 0
@@ -229,13 +247,14 @@ export function spendMeteringMiddleware(guard: CapsGuard, modelId: string): Lang
           }
           controller.enqueue(part)
         },
+        // NOTE: flush is NOT unconditional — it fires only when the source
+        // stream closes normally. A downstream cancel (client disconnect) or
+        // stream error skips it, un-recording that fragment's spend; see the
+        // "known gap" note above.
         async flush() {
           // A stream that ends without a finish part still burned tokens we
           // couldn't see — charge the conservative per-turn fallback.
-          const usd = recordedUsd > 0 ? recordedUsd : FALLBACK_TURN_ESTIMATE_USD
-          await guard.recordSpend(usd).catch((error) => {
-            console.error("[caps] failed to record spend:", error)
-          })
+          await record(recordedUsd > 0 ? recordedUsd : FALLBACK_TURN_ESTIMATE_USD)
         },
       })
       return { ...result, stream: result.stream.pipeThrough(tap) as never }

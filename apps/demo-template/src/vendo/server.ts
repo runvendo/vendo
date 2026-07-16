@@ -7,7 +7,10 @@ import { getCapsGuard, spendMeteringMiddleware } from "@/server/caps";
 
 // PLUMBING — DO NOT MODIFY the model wrapping below per prospect. The spend
 // middleware observes real token usage for the caps guard (the only thing
-// bounding cost on our Anthropic key); removing it un-meters the demo.
+// bounding cost on our Anthropic key) on every call made through this model
+// instance — streamed chat/app-edit calls and non-streaming generate calls
+// (e.g. a policy judge, automations runs) alike. Removing the wrapping, or
+// constructing a second unwrapped model, un-meters the demo.
 const modelId = process.env.VENDO_DEMO_MODEL ?? "claude-sonnet-4-6";
 const model = wrapLanguageModel({
   model: anthropic(modelId),

@@ -248,4 +248,48 @@ describe("spendMeteringMiddleware", () => {
     const persisted = JSON.parse(readFileSync(countersPath, "utf8"))
     expect(persisted["test-demo"].spendUsd).toBeCloseTo(4.5)
   })
+
+  it("records real usage from a non-streaming doGenerate result", async () => {
+    const { guard, countersPath } = makeGuard()
+    const middleware = spendMeteringMiddleware(guard, "claude-sonnet-4-6")
+    const generated = {
+      content: [{ type: "text", text: "hi" }],
+      finishReason: "stop",
+      usage: {
+        inputTokens: { total: 1_000_000, noCache: 1_000_000, cacheRead: 0, cacheWrite: 0 },
+        outputTokens: { total: 100_000, text: 100_000, reasoning: 0 },
+      },
+    }
+    const result = await middleware.wrapGenerate!({
+      doGenerate: (async () => generated) as never,
+      doStream: undefined as never,
+      params: {} as never,
+      model: {} as never,
+    })
+    // The result must pass through untouched.
+    expect(result).toEqual(generated)
+    const persisted = JSON.parse(readFileSync(countersPath, "utf8"))
+    expect(persisted["test-demo"].spendUsd).toBeCloseTo(4.5)
+  })
+
+  it("charges the conservative fallback when a doGenerate result reports no usage", async () => {
+    const { guard, countersPath } = makeGuard()
+    const middleware = spendMeteringMiddleware(guard, "claude-sonnet-4-6")
+    const generated = {
+      content: [{ type: "text", text: "hi" }],
+      finishReason: "stop",
+      usage: {
+        inputTokens: { total: undefined, noCache: undefined, cacheRead: undefined, cacheWrite: undefined },
+        outputTokens: { total: undefined, text: undefined, reasoning: undefined },
+      },
+    }
+    await middleware.wrapGenerate!({
+      doGenerate: (async () => generated) as never,
+      doStream: undefined as never,
+      params: {} as never,
+      model: {} as never,
+    })
+    const persisted = JSON.parse(readFileSync(countersPath, "utf8"))
+    expect(persisted["test-demo"].spendUsd).toBe(FALLBACK_TURN_ESTIMATE_USD)
+  })
 })
