@@ -1,0 +1,11 @@
+{
+  "format": "vendo/policy@1",
+  "directions": [
+    "Be concise and use the host's own data without inventing records."
+  ],
+  "rules": [
+    { "match": { "risk": "destructive" }, "action": "ask" },
+    { "match": { "risk": "write" }, "action": "ask" },
+    { "match": { "risk": "read" }, "action": "run" }
+  ]
+}

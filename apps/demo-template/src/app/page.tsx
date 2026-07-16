@@ -8,6 +8,9 @@ export default function HomePage() {
       <p className="text-sm text-muted">
         PLACEHOLDER — the demo creator rewrites everything visible.
       </p>
+      <a href="/vendo" className="text-sm underline underline-offset-4">
+        Open the Vendo panel →
+      </a>
     </div>
   )
 }
