@@ -14,6 +14,20 @@ brings headless parity with `VendoOverlay`, and `useApps` gains
 `export(appId)` and `import(bytes)` for round-tripping an `AppDocument`
 through the wire. See [Headless hooks](/reference/hooks).
 
+**Composer autogrow, type-while-streaming, edit, and regenerate.** The
+shipped chrome composer now grows with its content up to a 200px cap, then
+scrolls internally, so a long paste is no longer clipped to one line. The
+textarea stays enabled while a turn is streaming — a Send issued mid-turn
+shows as a cancelable **Queued** pill above the input and auto-sends the
+instant the reply finishes. Stop remains the explicit interrupt. Because
+the textarea no longer disables mid-turn, focus stays put and Escape and
+the overlay focus trap keep working. An **Edit** affordance on the last
+user turn drops that turn (and anything after) and refills the composer so
+re-sending amends instead of duplicates, and a **Regenerate** affordance
+on the last assistant turn re-issues from the preserved user message.
+Headless callers of `useVendoThread` get a new `setMessages` on the hook
+return that backs the same edit flow. See [Headless hooks](/reference/hooks#threads).
+
 </Update>
 
 <Update label="July 15, 2026" description="Week of July 14 – July 20">
