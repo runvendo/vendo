@@ -1120,7 +1120,7 @@ async function nestEndpoints(
           endpoints.push(DEFAULT_ENDPOINT);
           return;
         }
-        const direct = absolutePathLiterals(ts, module.sf, options);
+        const direct = absolutePathLiterals(ts, options);
         if (direct.length > 0) {
           endpoints.push(direct[0]!);
           return;
@@ -1129,7 +1129,7 @@ async function nestEndpoints(
         if (factory && ts.isIdentifier(factory)) {
           const resolved = await resolveIdentifier(extraction, module, factory.text, 0);
           if (resolved) {
-            const fromFactory = absolutePathLiterals(extraction.ts, resolved.module.sf, resolved.node);
+            const fromFactory = absolutePathLiterals(extraction.ts, resolved.node);
             if (fromFactory.length > 0) {
               endpoints.push(fromFactory[0]!);
               return;
