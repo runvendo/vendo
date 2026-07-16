@@ -77,15 +77,28 @@ Exit codes:
 
 ## `vendo sync [dir]`
 
-Runs the build-step extraction manually. It updates tool extraction and remix
-baselines for `dir`, which defaults to the current directory. The default is
-fail-soft and warns on breaking changes. When tools changed or broke, sync
-asks the running dev server which saved apps, automations, and grants they
-impact and prints one `impact:` line per tool (or `impact unknown` when no
-server is reachable). Drifted pins get an advisory `drifted:` line — drift
-never auto-rebases; each fork's owner decides. Unresolved remixable slots
-are listed and fail the run with exit 2 regardless of `--strict` (silent
-remix skips are eliminated).
+Runs the build-step extraction manually. It updates tool extraction, remix
+baselines, and the host component catalog for `dir`, which defaults to the
+current directory. The default is fail-soft and warns on breaking changes.
+When tools changed or broke, sync asks the running dev server which saved
+apps, automations, and grants they impact and prints one `impact:` line per
+tool (or `impact unknown` when no server is reachable). Drifted pins get an
+advisory `drifted:` line — drift never auto-rebases; each fork's owner
+decides. Unresolved remixable slots are listed and fail the run with exit 2
+regardless of `--strict` (silent remix skips are eliminated).
+
+Sync scans exported JSX components referenced by your `<VendoRoot>`
+`components` map and writes `.vendo/catalog.json` (see
+[Host components](/connect/host-components)). Rescans are deterministic and
+byte-stable, so the file is safe to commit. Both `sync` and `init` print one
+status line summarizing what was found:
+
+```
+catalog.json: 2 discovered, 2 registered
+```
+
+A malformed existing `.vendo/catalog.json` fails sync loudly instead of
+being silently overwritten.
 
 Options:
 

@@ -11,6 +11,7 @@ description: "Every createVendo configuration option and fetch-handler setting, 
 | `principal` | yes | resolves the host request to a principal; `null` creates an ephemeral session |
 | `store` | no | defaults to PGlite at `.vendo/data` |
 | `sandbox` | no | unlocks app rungs 2 through 4; absent means rung 1 only |
+| `catalog` | no | `ComponentCatalog` of host components exposed to the generation prompt; merged with any `.vendo/catalog.json` written by `vendo sync`, with explicit entries winning by name — see [Host components](/connect/host-components) |
 | `connectors` | no | adds external connector tool registries |
 | `actAs` | no | supplies scoped auth material for away host API execution |
 | `policy` | no | policy file, rules, directions, and code escape hatch |

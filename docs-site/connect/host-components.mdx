@@ -1,6 +1,6 @@
 ---
 title: "Host components"
-description: "Register branded host components for generated Vendo apps and opt selected sources into remix baselines so the agent can rework your own UI."
+description: "Register branded host components with prop schemas and JSON examples so Vendo's generated apps can select and render your own UI natively."
 ---
 
 Register host component implementations by the same names used in the catalog
@@ -11,6 +11,8 @@ export interface RegisteredComponent {
   name: string;
   description: string;
   propsSchema: StandardSchema;
+  propsJsonSchema?: JsonSchema;   // prompt-safe JSON Schema for generation
+  examples?: string[];            // JSON prop examples shown to the model
   remixable?: boolean;
 }
 
@@ -20,6 +22,94 @@ export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
 Names are PascalCase and unique. Descriptions and prop schemas are generation
 context. Vendo prefers host components when the catalog covers the requested
 UI.
+
+## Register a catalog
+
+Pass the catalog to `createVendo` so its entries flow into the generation
+prompt and the engine validates emitted props against the schema before
+render. Keep each `name` identical to the key you use in the client
+`components` map so `source:"host"` nodes resolve without an alias.
+
+```ts
+import { createVendo } from "@vendoai/vendo/server";
+import { z } from "zod";
+
+const catalog = [
+  {
+    name: "MapleSpendingDonut",
+    description:
+      "Category breakdown of spending. Use when the user asks to see spend by category.",
+    propsSchema: z.object({
+      categories: z.array(z.object({ label: z.string(), amount: z.number() })),
+      currency: z.string().default("USD"),
+    }),
+    propsJsonSchema: {
+      type: "object",
+      properties: {
+        categories: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { label: { type: "string" }, amount: { type: "number" } },
+            required: ["label", "amount"],
+          },
+        },
+        currency: { type: "string" },
+      },
+      required: ["categories"],
+    },
+    examples: [
+      '{ "categories": [{ "label": "Groceries", "amount": 412.55 }], "currency": "USD" }',
+    ],
+  },
+] as const;
+
+const vendo = createVendo({ model, principal, catalog });
+```
+
+- `description` is selection guidance for the model. State when to pick the
+  component and when to skip it — hedged copy leads to worse selection.
+- `propsSchema` validates props at render time. Bindings for `$path`,
+  `$state`, and zero-arg actions are exempt from that validation.
+- `propsJsonSchema` is the prompt-safe form the model sees. Keep it
+  serializable so an init or sync flow can reuse the same contract later.
+- `examples` are JSON strings the model can copy from. One or two concrete
+  shapes usually beat a long prose description.
+
+## Auto-extract with sync
+
+`vendo sync` scans exported JSX components referenced by your `<VendoRoot>`
+`components` map and writes a strict `.vendo/catalog.json` with each entry's
+export path, JSON Schema props, description, and example props. Rescans are
+deterministic and byte-stable, so the file is safe to commit. Both `vendo
+init` and `vendo sync` print one status line:
+
+```
+catalog.json: 2 discovered, 2 registered
+```
+
+`createVendo` loads `.vendo/catalog.json` at boot alongside `.vendo/theme.json`
+and uses each entry's JSON Schema for prompt guidance. Explicit
+`createVendo({ catalog })` registrations win by `name`, so keep code as the
+source of truth for anything you want strictly validated at render time —
+disk entries use a pass-through validator because JSON Schema on disk is
+prompt guidance, not an executable validator.
+
+If sync cannot infer a prop type it falls back to a permissive schema and
+attaches a note; correct the entry by registering the component in code
+rather than hand-editing the file. A malformed `.vendo/catalog.json` fails
+sync loudly, and `createVendo` logs one actionable error naming the file and
+telling you to rerun `vendo sync`.
+
+### Review AI-authored copy
+
+Sync can optionally draft descriptions and examples for scanned entries. Any
+proposed copy is written to `.vendo/catalog.proposals.json` as a before/after
+diff — nothing enters `.vendo/catalog.json` until you accept it through the
+explicit acceptance API. The runtime never reads the proposals file. Accepted
+copy is pinned to the deterministic basis (export path, prop schema, note)
+so a later rescan that changes the underlying component invalidates the
+accepted copy instead of applying it silently.
 
 The prewired primitives are `Stack`, `Row`, `Grid`, `Text`, `Skeleton`,
 `Surface`, `Divider`, `Card`, `Button`, `Input`, `Select`, `Table`, `Badge`,
