@@ -23,6 +23,22 @@ Critical-tool risk answers land in `.vendo/overrides.json` and remain
 authoritative across future sync runs. Init also writes policy, product brief,
 theme, and the PGlite ignore entry where applicable.
 
+Init also proposes `predev` and `prebuild` hooks in `package.json` so
+extraction runs alongside your dev and build:
+
+```json
+{
+  "scripts": {
+    "predev": "vendo sync",
+    "prebuild": "vendo sync --strict"
+  }
+}
+```
+
+The proposal is idempotent (`vendo sync` is prepended when a hook already
+exists), preserves your existing formatting, and only writes if you approve
+the diff.
+
 One of those questions is whether to open the [MCP door](/capabilities/mcp).
 Opening it is a host decision and needs a `HostOAuthAdapter`, so init never
 invents auth wiring or flips `mcp: true`. On yes, init generates the Next.js

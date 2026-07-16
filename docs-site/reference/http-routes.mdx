@@ -32,6 +32,7 @@ stream over SSE.
 | `/webhooks/:source` | POST | trigger ingress (Composio, host, plain), verified as described below |
 | `/activity` | GET | `AuditEvent[]`, self-scoped with `guard.audit.query({ principal })` |
 | `/status` | GET | `{ posture, version, blocks: {...} }`, includes `blocks.mcp: true` when the door is open and `blocks.sandbox` reporting the execution venue (`"e2b"`, `"modal"`, `"custom"`, or `false` when none is wired) |
+| `/sync/impact` | POST | dev-only. `{ tools: string[] }` → per-tool reference counts across enabled apps, enabled automations, and active standing grants. Accepts up to 200 tool names per call and returns `404` in production |
 
 ## MCP door
 
