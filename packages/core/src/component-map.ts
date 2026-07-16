@@ -13,8 +13,13 @@ import {
 const COMPONENT_NAME_PATTERN = /^[A-Z][A-Za-z0-9]*$/;
 
 // CORE-6: the contract pins the caps in kilobytes; measure encoded UTF-8, not
-// UTF-16 code units (multibyte sources are up to 3x larger encoded).
-const utf8ByteLength = (source: string): number => new TextEncoder().encode(source).length;
+// UTF-16 code units (multibyte sources are up to 3x larger encoded). One
+// module-level encoder -- componentMapError sits under validateTree on the
+// render hot path -- and pure-ASCII sources (bytes === chars) skip encoding.
+const utf8 = new TextEncoder();
+const NON_ASCII_PATTERN = /[\u0080-\uffff]/;
+const utf8ByteLength = (source: string): number =>
+  NON_ASCII_PATTERN.test(source) ? utf8.encode(source).length : source.length;
 
 /** Returns an error message, or null when the map honors every pinned limit. */
 export function componentMapError(components: Record<string, unknown>): string | null {

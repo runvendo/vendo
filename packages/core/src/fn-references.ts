@@ -10,7 +10,8 @@ export const FN_REFERENCE_PATTERN = /^fn:[A-Za-z_][A-Za-z0-9_-]*$/;
 
 /** Walk a props value collecting every `{ action: "fn:..." }` reference — the
  *  renderer's dispatch chokepoint reads action names from anywhere in props,
- *  so validation must find them anywhere too. */
+ *  so validation must find them anywhere too. Cold path (app documents at
+ *  rest); the wire path uses {@link findInvalidActionReference}. */
 export function collectActionReferences(value: unknown, references: string[]): void {
   if (Array.isArray(value)) {
     for (const item of value) collectActionReferences(item, references);
@@ -22,4 +23,30 @@ export function collectActionReferences(value: unknown, references: string[]): v
     references.push(record.action);
   }
   for (const nested of Object.values(record)) collectActionReferences(nested, references);
+}
+
+/** The first grammar-violating `fn:` action reference in a props value, or
+ *  null. HOT wire path: validateTree runs on every render, so this walk is
+ *  allocation-free (no collected arrays, no Object.values copies) — the
+ *  tree-render perf budget is measured with it inline. */
+export function findInvalidActionReference(value: unknown): string | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const invalid = findInvalidActionReference(item);
+      if (invalid !== null) return invalid;
+    }
+    return null;
+  }
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as Record<string, unknown>;
+  const action = record.action;
+  if (typeof action === "string" && action.startsWith("fn:") && !FN_REFERENCE_PATTERN.test(action)) {
+    return action;
+  }
+  for (const key in record) {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) continue;
+    const invalid = findInvalidActionReference(record[key]);
+    if (invalid !== null) return invalid;
+  }
+  return null;
 }
