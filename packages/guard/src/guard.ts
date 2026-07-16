@@ -388,6 +388,24 @@ class GuardImplementation implements VendoGuard {
     };
   }
 
+  /** AGENT-6: deny approvals the conversation abandoned. Rides the same
+   *  locked decide path as an explicit denial (audit + callbacks), but is
+   *  idempotent: an already-decided (conflict) or unknown/foreign (not-found)
+   *  approval already holds the state abandonment wants — only a real store
+   *  failure propagates. */
+  async abandonApprovals(ids: ApprovalId[], ctx: RunContext): Promise<void> {
+    for (const id of ids) {
+      try {
+        await this.#decideApprovals(id, { approve: false }, ctx.principal);
+      } catch (error) {
+        if (error instanceof VendoError && (error.code === "conflict" || error.code === "not-found")) {
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
+
   bind(tools: ToolRegistry): ToolRegistry {
     return {
       descriptors: () => tools.descriptors(),

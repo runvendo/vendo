@@ -2,6 +2,7 @@ import {
   VendoError,
   toVendoWirePart,
   type AgentRunner,
+  type ApprovalId,
   type Guard,
   type RunContext,
   type StoreAdapter,
@@ -170,10 +171,12 @@ function upsertMessage(messages: UIMessage[], message: UIMessage): void {
   else messages[index] = message;
 }
 
-function abandonPendingApprovals(messages: UIMessage[]): void {
+function abandonPendingApprovals(messages: UIMessage[]): string[] {
+  const abandonedToolCallIds: string[] = [];
   for (const message of messages) {
     message.parts = message.parts.map((part) => {
       if (!isToolUIPart(part) || part.state !== "approval-requested") return part;
+      abandonedToolCallIds.push(part.toolCallId);
       return {
         ...part,
         state: "approval-responded",
@@ -185,6 +188,28 @@ function abandonPendingApprovals(messages: UIMessage[]): void {
       };
     });
   }
+  return abandonedToolCallIds;
+}
+
+/** AGENT-6: the guard's approval ids for abandoned tool calls. The native tool
+ *  part's `approval.id` is the ai-SDK's own handle; the GUARD's approvalId
+ *  rides the data-vendo-approval part beside it, keyed by toolCallId — read it
+ *  from either the persisted nested envelope or the flat §16 shape. */
+function guardApprovalIds(messages: UIMessage[], toolCallIds: string[]): ApprovalId[] {
+  if (toolCallIds.length === 0) return [];
+  const wanted = new Set(toolCallIds);
+  const ids: ApprovalId[] = [];
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.type !== "data-vendo-approval") continue;
+      const payload = ("data" in part ? part.data : part) as { toolCallId?: unknown; approvalId?: unknown };
+      if (typeof payload.toolCallId === "string" && wanted.has(payload.toolCallId)
+        && typeof payload.approvalId === "string") {
+        ids.push(payload.approvalId as ApprovalId);
+      }
+    }
+  }
+  return ids;
 }
 
 function providerHistory(messages: UIMessage[]): UIMessage[] {
@@ -240,7 +265,19 @@ export function createAgent(config: AgentConfig): VendoAgent {
       const thread = await threads.resolve(input.threadId, input.ctx);
       if (input.message.role === "user"
         && !thread.messages.some((message) => message.id === input.message.id)) {
-        abandonPendingApprovals(thread.messages);
+        const abandonedCalls = abandonPendingApprovals(thread.messages);
+        // AGENT-6: resolve the abandoned asks guard-side too (denied, no
+        // grant), so the pending queue tracks the thread. Best-effort — the
+        // fresh turn must stream even when the guard write fails.
+        const approvalIds = guardApprovalIds(thread.messages, abandonedCalls);
+        if (approvalIds.length > 0 && config.guard.abandonApprovals !== undefined) {
+          try {
+            await config.guard.abandonApprovals(approvalIds, input.ctx);
+          } catch {
+            // The thread already reflects abandonment; queue cleanup retries
+            // implicitly on the next abandoned turn.
+          }
+        }
       }
       upsertMessage(thread.messages, input.message);
       const system = await assembleSystemPrompt(

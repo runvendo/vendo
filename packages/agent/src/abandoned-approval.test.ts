@@ -82,6 +82,9 @@ describe("abandoned approval", () => {
       state: "approval-responded",
       approval: { approved: false, reason: "abandoned" },
     });
-    expect(guard.pending()).toHaveLength(1);
+    // AGENT-6: the guard's queue resolves with the thread — the abandoned
+    // approval is denied guard-side, not left pending forever.
+    expect(guard.pending()).toHaveLength(0);
+    expect(guard.abandoned).toEqual(["apr_call_abandoned"]);
   });
 });

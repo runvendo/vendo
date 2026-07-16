@@ -98,6 +98,8 @@ export function scriptedModel(turns: LanguageModelV3StreamPart[][]): ScriptedMod
 export type TestGuard = Guard & {
   events: AuditEvent[];
   directionValues: string[];
+  /** AGENT-6: approval ids resolved through abandonApprovals, in call order. */
+  abandoned: ApprovalId[];
   decide(approvalId: ApprovalId, approved: boolean): void;
   pending(): ApprovalRequest[];
 };
@@ -123,6 +125,18 @@ export function testGuard(
   const guard: TestGuard = {
     events,
     directionValues,
+    abandoned: [],
+    // AGENT-6: mirror the real guard — abandoning denies each still-pending
+    // approval (idempotent; unknown/decided ids are no-ops) and notifies
+    // decision subscribers.
+    async abandonApprovals(ids) {
+      for (const id of ids) {
+        const known = [...approvalsByCall.values()].some((approval) => approval.id === id);
+        if (!known || decisions.has(id)) continue;
+        guard.abandoned.push(id);
+        guard.decide(id, false);
+      }
+    },
     async check(call, descriptor, runCtx): Promise<GuardDecision> {
       const action = policy[call.tool] ?? "run";
       if (action === "run") return { action: "run", decidedBy: "default" };
