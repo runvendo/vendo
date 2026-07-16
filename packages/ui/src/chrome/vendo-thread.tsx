@@ -189,7 +189,16 @@ export function VendoThread({
   const assistantHasVisibleText = activeAssistant?.parts.some(
     part => part.type === "text" && part.text.trim().length > 0,
   ) ?? false;
-  const working = busy && !assistantHasVisibleText;
+  // ENG-217 — the three streaming moments each get exactly ONE affordance:
+  // before the first chunk the generating skeleton holds the floor; a streamed
+  // turn whose text is still empty shows the lone caret (renderPart); once
+  // text flows the trailing caret rides .fl-md--streaming. FluidThinking
+  // covers the remaining gap (tool phases with no text yet).
+  const awaitingFirstChunk = busy && (activeAssistant === undefined || activeAssistant.parts.length === 0);
+  const lastPart = activeAssistant?.parts.at(-1);
+  const caretShowing = busy && lastPart?.type === "text" && lastPart.state === "streaming"
+    && lastPart.text.trim().length === 0;
+  const working = busy && !assistantHasVisibleText && !awaitingFirstChunk && !caretShowing;
 
   const [attachError, setAttachError] = useState<string>();
   const send = (override?: string) => {
@@ -305,9 +314,14 @@ export function VendoThread({
 
   const renderPart = (part: UIMessage["parts"][number], key: string, role: UIMessage["role"]) => {
     if (part.type === "text") {
-      return role === "user"
-        ? <div className="fl-usertext" key={key}>{part.text}</div>
-        : <Markdown key={key} text={part.text} streaming={part.state === "streaming"} />;
+      if (role === "user") return <div className="fl-usertext" key={key}>{part.text}</div>;
+      // ENG-217 — lone caret while the streamed turn is still empty (stable
+      // line box); once text flows, Markdown's .fl-md--streaming trailing
+      // caret takes over.
+      if (part.state === "streaming" && part.text.trim().length === 0) {
+        return <span className="fl-caret" aria-hidden="true" key={key} />;
+      }
+      return <Markdown key={key} text={part.text} streaming={part.state === "streaming"} />;
     }
     if (isToolUIPart(part)) {
       const risk = risks.get(part.toolCallId) ?? "read";
@@ -481,6 +495,19 @@ export function VendoThread({
                 }}
               />
             ))}
+            {awaitingFirstChunk ? (
+              <>
+                <div className="fl-generating">
+                  <span className="fl-pulse" aria-hidden="true" />
+                  Generating&hellip;
+                </div>
+                <div className="fl-skeleton" aria-hidden="true">
+                  <div className="fl-skeleton-bar" />
+                  <div className="fl-skeleton-bar" />
+                  <div className="fl-skeleton-bar" />
+                </div>
+              </>
+            ) : null}
             {working ? <FluidThinking label="Working" /> : null}
           </div>
           {scroll.showJump ? (

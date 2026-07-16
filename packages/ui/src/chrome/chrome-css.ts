@@ -243,6 +243,12 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
     color-mix(in srgb, var(--vendo-fg) 10%, transparent) 37%,
     color-mix(in srgb, var(--vendo-fg) 5%, transparent) 63%);
   background-size: 400% 100%; animation: fl-shimmer 1.5s ease infinite; border-radius: 6px; }
+/* An answer taking shape: three shortening lines of "text". */
+.fl-skeleton-bar { height: 10px; }
+.fl-skeleton-bar + .fl-skeleton-bar { margin-top: 9px; }
+.fl-skeleton-bar:nth-child(1) { width: 91%; }
+.fl-skeleton-bar:nth-child(2) { width: 76%; }
+.fl-skeleton-bar:nth-child(3) { width: 58%; }
 @keyframes fl-shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 
 /* ---------- glass skeleton (2026-07-05 recipe): a view taking shape ---------- */
