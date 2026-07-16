@@ -184,10 +184,12 @@ pnpm build`), and create the reap routine below.
 
 Expired or killed demos must actually come down (`railway down` + registry
 row delete), not just stop routing. Schedule it once on the mini with the
-`routines` wrapper (`bin/routine`), gtm line:
+`routines` wrapper (`bin/routine`). Note: the mini's wrapper only accepts
+line-prefixed names (`yousef-`, `pa-`, …) since the gtm/eng/ops lines moved
+to Slack — installed 2026-07-16 as `yousef-demo-reap` (id 41a24bac):
 
 ```bash
-routine create --name gtm-demo-reap --schedule daily --time 09:00 \
+routine create --name yousef-demo-reap --schedule daily --time 09:00 \
   --role gtm \
   --precheck "test -f <vendo checkout>/bench/dist/demo-creator/cli.js" \
   --prompt "Vendo demo reaper. cd <vendo checkout on this machine>, then run: export ROUTER_ADMIN_TOKEN=\"\$(cat ~/.vendo/demo-router-admin-token)\" && pnpm --filter @vendoai/bench demo:reap -- --execute. It removes Railway deployments + registry rows for demos past expiresAt or killed (Railway cannot delete the empty service shells; that stays a manual dashboard step). Report via agent-notify to Yousef ONLY if something was reaped (ids + reasons, one plain-text message) or the command failed (include the error output). If it prints 'Nothing to reap', do not notify."
