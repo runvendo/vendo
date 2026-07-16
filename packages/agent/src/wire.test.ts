@@ -1,4 +1,9 @@
-import { VENDO_APPS_TOOL_PREFIX, vendoViewPartSchema, type ToolDescriptor } from "@vendoai/core";
+import {
+  VENDO_APPS_TOOL_PREFIX,
+  vendoViewPartSchema,
+  vendoViewWirePartSchema,
+  type ToolDescriptor,
+} from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createAgent } from "./index.js";
 import {
@@ -179,6 +184,8 @@ describe("agent UI message wire", () => {
     expect(part).toEqual({ type: "data-vendo-view", id: "vendo-view:app_1", data: view });
     const viewData = (part as { data: Record<string, unknown> }).data;
     expect(vendoViewPartSchema.safeParse({ type: "data-vendo-view", ...viewData }).success).toBe(true);
+    // AGENT-10: the emitted envelope IS core's nested wire shape, byte for byte.
+    expect(vendoViewWirePartSchema.safeParse(part).success).toBe(true);
   });
 
   it("gates view emission on core's VENDO_APPS_TOOL_PREFIX, not a local string match (AGENT-4)", async () => {

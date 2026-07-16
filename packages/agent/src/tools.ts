@@ -2,6 +2,7 @@ import {
   VENDO_APPS_CREATE_TOOL,
   VENDO_APPS_TOOL_PREFIX,
   VENDO_VIEW_STREAM,
+  toVendoWirePart,
   vendoViewStreamId,
   vendoViewPartSchema,
   type Guard,
@@ -43,9 +44,8 @@ function writePart(
   if (!writer) return;
   // The ai-SDK UI message stream requires custom data chunks to carry their
   // payload under `data` ({ type: "data-*", data }); the stock client's chunk
-  // schema hard-rejects the flat form. The core part fields ride inside data.
-  const { type, ...data } = part;
-  writer.write({ type, data, ...(id === undefined ? {} : { id }) } as never);
+  // schema hard-rejects the flat form. Core owns that envelope (AGENT-10).
+  writer.write(toVendoWirePart(part, id) as never);
 }
 
 function executionError(): ToolOutcome {

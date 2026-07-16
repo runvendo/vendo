@@ -27,6 +27,41 @@ export const vendoViewPartSchema = z.object({
   payload: uiPayloadSchema,
 }).passthrough() satisfies z.ZodType<VendoViewPart>;
 
+/** AGENT-10 (wave 5, additive — 01 §16 amendment parked): the ai-SDK envelope
+ *  the wire and persisted UIMessages ACTUALLY carry. The flat §16 interfaces
+ *  above are the logical parts; on the wire the ai-SDK data-chunk schema
+ *  requires the payload nested under `data`, with an optional reconciliation
+ *  `id`. Producers convert with {@link toVendoWirePart}; consumers parse with
+ *  the *WirePartSchema pairings below. */
+export interface VendoWirePart<Part extends { type: string }> {
+  type: Part["type"];
+  data: Omit<Part, "type">;
+  /** Stable ai-SDK data-part id so successive writes reconcile in place. */
+  id?: string;
+}
+
+export type VendoViewWirePart = VendoWirePart<VendoViewPart>;
+export type VendoApprovalWirePart = VendoWirePart<VendoApprovalPart>;
+export type VendoConnectWirePart = VendoWirePart<VendoConnectPart>;
+
+/** Nest a flat §16 part into its wire envelope ({ type, ...rest } → { type, data: rest }). */
+export function toVendoWirePart<Part extends { type: string }>(
+  part: Part,
+  id?: string,
+): VendoWirePart<Part> {
+  const { type, ...data } = part;
+  return { type, data, ...(id === undefined ? {} : { id }) } as VendoWirePart<Part>;
+}
+
+const wirePartSchema = <Type extends string, Data extends z.ZodRawShape>(
+  type: Type,
+  data: z.ZodObject<Data>,
+) => z.object({
+  type: z.literal(type),
+  data: data.passthrough(),
+  id: z.string().optional(),
+}).passthrough();
+
 /** Additive internal bridge seam: one tool execution can publish view updates. */
 export const VENDO_VIEW_STREAM = Symbol.for("@vendoai/core/vendo-view-stream");
 
@@ -85,3 +120,21 @@ export const vendoApprovalPartSchema = z.object({
     grantedAt: isoDateTimeSchema,
   }).passthrough().optional(),
 }).passthrough() satisfies z.ZodType<VendoApprovalPart>;
+
+/** AGENT-10 — the nested wire envelope of {@link vendoViewPartSchema}. */
+export const vendoViewWirePartSchema = wirePartSchema(
+  "data-vendo-view",
+  vendoViewPartSchema.omit({ type: true }),
+) satisfies z.ZodType<VendoViewWirePart>;
+
+/** AGENT-10 — the nested wire envelope of {@link vendoApprovalPartSchema}. */
+export const vendoApprovalWirePartSchema = wirePartSchema(
+  "data-vendo-approval",
+  vendoApprovalPartSchema.omit({ type: true }),
+) satisfies z.ZodType<VendoApprovalWirePart>;
+
+/** AGENT-10 — the nested wire envelope of {@link vendoConnectPartSchema}. */
+export const vendoConnectWirePartSchema = wirePartSchema(
+  "data-vendo-connect",
+  vendoConnectPartSchema.omit({ type: true }),
+) satisfies z.ZodType<VendoConnectWirePart>;
