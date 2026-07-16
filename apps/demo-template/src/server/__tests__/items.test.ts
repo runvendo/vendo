@@ -1,3 +1,7 @@
+// DELETE OR REWRITE when creating a demo from this template — this whole file
+// tests the sample `items` entity, which the creator replaces with
+// prospect-domain entities (playbook §2.4: keep the pattern — list + one
+// mutating action, mutation visible through the read path).
 import { describe, it, expect, beforeEach } from "vitest"
 import { __reseed } from "../store"
 import { listItems, archiveItem, ItemError } from "../items"

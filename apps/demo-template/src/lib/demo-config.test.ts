@@ -101,20 +101,68 @@ describe("demoConfigSchema / parseDemoConfig", () => {
   })
 })
 
+// Structural invariants over the checked-in demo.config.json. These must hold
+// for ANY demo cloned from this template — do NOT delete or weaken them when
+// rewriting the app for a prospect. They load the real file, so they verify
+// whatever config the clone ships.
+describe("demo.config.json structural invariants (keep for every demo)", () => {
+  const config = () => loadDemoConfig(SAMPLE_CONFIG_PATH)
+
+  it("parses and round-trips through the schema", () => {
+    expect(demoConfigSchema.parse(config())).toEqual(config())
+  })
+
+  it("has at least the fixed 3-beat arc", () => {
+    expect(config().beats.length).toBeGreaterThanOrEqual(3)
+  })
+
+  it("has positive caps (maxTurns integer, maxSpendUsd number)", () => {
+    const { caps } = config()
+    expect(Number.isInteger(caps.maxTurns)).toBe(true)
+    expect(caps.maxTurns).toBeGreaterThan(0)
+    expect(caps.maxSpendUsd).toBeGreaterThan(0)
+  })
+
+  it("is not already expired", () => {
+    expect(isExpired(config(), new Date())).toBe(false)
+  })
+
+  it("has a non-empty prompt and chip on every beat", () => {
+    for (const beat of config().beats) {
+      expect(beat.prompt.trim().length).toBeGreaterThan(0)
+      expect(beat.chip.trim().length).toBeGreaterThan(0)
+    }
+  })
+
+  it("has no TODO(creator) leftovers in prompts or chips", () => {
+    for (const beat of config().beats) {
+      expect(beat.prompt).not.toContain("TODO(creator)")
+      expect(beat.chip).not.toContain("TODO(creator)")
+    }
+  })
+})
+
+// DELETE OR REWRITE when creating a demo from this template — these pin the
+// template's sample content only (ids, prospect name, sample prompts). A
+// rewritten demo.config.json is SUPPOSED to fail them; the structural
+// invariants above are the ones every demo must keep passing.
+describe("template-sample content (DELETE OR REWRITE on clone)", () => {
+  it("pins the sample id, prospect, and beat arc", () => {
+    const config = loadDemoConfig(SAMPLE_CONFIG_PATH)
+    expect(config.id).toBe("template-sample")
+    expect(config.prospect).toBe("Template Sample")
+    expect(config.beats).toHaveLength(3)
+    expect(config.beats.map((b) => b.key)).toEqual(["generate-ui", "take-action", "save-app"])
+    expect(config.beats[1].prompt).toBe("Archive the item named Bravo")
+  })
+})
+
 describe("loadDemoConfig", () => {
   let tmpDir: string | undefined
 
   afterEach(async () => {
     if (tmpDir) await rm(tmpDir, { recursive: true, force: true })
     tmpDir = undefined
-  })
-
-  it("loads and parses the checked-in sample demo.config.json", () => {
-    const config = loadDemoConfig(SAMPLE_CONFIG_PATH)
-    expect(config.id).toBe("template-sample")
-    expect(config.prospect).toBe("Template Sample")
-    expect(config.beats).toHaveLength(3)
-    expect(demoConfigSchema.parse(config)).toEqual(config)
   })
 
   it("throws a clear error when the file does not exist", () => {

@@ -59,5 +59,10 @@ cd apps/demo-template
 pnpm dev
 ```
 
-Open http://localhost:3000. Run `pnpm test` for the (currently trivial) test
-suite.
+Open http://localhost:3000. Run `pnpm test` for the test suite. Tests come in
+two kinds, marked in the files: structural invariants that must keep passing
+for ANY demo cloned from this template (config schema, caps guard, seed
+determinism, no `TODO(creator)` leftovers), and blocks/files headed
+"DELETE OR REWRITE on clone" that pin the template's sample content only — a
+rewritten demo is supposed to fail exactly those until the creator rewrites
+them for its domain.

@@ -97,6 +97,11 @@ theme-color, favicon, and a computed-style palette sample into
       lean on provided screenshots instead. If only screenshots were supplied
       (no URL), copy them into `RESEARCH/` so the fidelity scoring in §3 has
       side-by-side evidence.
+- [ ] `demo:research` cannot click through bot walls, cookie banners, or
+      login/interstitial pages — it only loads URLs and screenshots them. For
+      admin-only or gated surfaces, hand-drive a Playwright session (headed or
+      MCP), save the screenshots into `RESEARCH/`, and note in
+      `RESEARCH/README.md` which evidence was hand-captured and from where.
 
 ### 2.3 Study the evidence
 
@@ -147,7 +152,11 @@ Edit `apps/demo-<id>/demo.config.json`:
       ```
 - [ ] Keep the fixed 3-beat arc and its expectation declarations verbatim:
   1. `generate-ui` — a UI-generation prompt over the seeded domain data,
-     `expectsView: true`.
+     `expectsView: true`. **The prompt must be IMPERATIVE** — "Build me a
+     dashboard of X — show Y and Z", not a question. Question-form prompts
+     ("Can you show me...?", "What do my orders look like?") get answered as
+     markdown with no generated view and fail the `expectsView` declaration
+     (this struck the Shopify run).
   2. `take-action` — a consented mutating action, `expectsApproval: true`.
      **The prompt must name a specific seeded record** — the template's
      precedent is "Archive the item named Bravo" — so the agent acts
@@ -170,8 +179,12 @@ Port 3000 belongs to the capture harness's shared lock
 (`/tmp/vendo-l3-port3000.lock`) and other Layer-3 runs; always pick another.
 
 ```sh
-pnpm --filter demo-<id> dev -- --port 3150
+pnpm --filter demo-<id> dev --port 3150
 ```
+
+(No `--` before `--port`: pnpm already forwards unknown flags to the script,
+and with `--` the literal `--port` reaches `next dev` as a positional arg,
+which Next treats as a project directory and fails.)
 
 - [ ] Open `http://localhost:3150` (product page) and
       `http://localhost:3150/vendo`: badge + CTA visible, 3 chips render,
