@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { fileURLToPath } from "node:url";
 import { displayAppPath, parseDemoCreateArgs, runDemoCreate, type DemoCreateResult } from "./create.js";
+import { parseDemoDeployArgs, runDemoDeploy } from "./deploy.js";
+import { parseDemoReapArgs, runDemoReap } from "./reap.js";
 import { parseDemoResearchArgs, runDemoResearch } from "./research.js";
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
@@ -9,11 +11,18 @@ function usage(): string {
   return `Usage:
   pnpm --filter @vendoai/bench demo:create -- --id SLUG --prospect NAME [--cta-url URL] [--target-dir DIR] [--url PROSPECT_SITE]
   pnpm --filter @vendoai/bench demo:research -- --app APP_DIR --url https://... [--url https://...]
+  pnpm --filter @vendoai/bench demo:deploy -- --app apps/demo-SLUG [--project NAME] [--router-url URL] [--skip-registry] [--dry-run]
+  pnpm --filter @vendoai/bench demo:reap -- [--router-url URL] [--project NAME] [--execute]
 
 demo:create clones apps/demo-template into <target-dir>/demo-<id> (default apps/)
 and writes a TODO-fenced demo.config.json skeleton plus a RESEARCH/ pointer.
 demo:research captures each prospect URL's brand evidence (screenshots, title,
-theme-color, favicon, computed-style palette) into <APP_DIR>/RESEARCH/.`;
+theme-color, favicon, computed-style palette) into <APP_DIR>/RESEARCH/.
+demo:deploy ships one demo app to Railway (project vendo-demos by default) and
+registers it with the demos.vendo.run router; needs ANTHROPIC_API_KEY and
+ROUTER_ADMIN_TOKEN in the environment (neither is ever logged).
+demo:reap lists registry rows past expiry or killed and (with --execute) removes
+their Railway deployments + registry rows; dry-run by default.`;
 }
 
 function createEpilogue(result: DemoCreateResult, prospectUrl: string | undefined): string {
@@ -54,6 +63,18 @@ async function main(): Promise<void> {
         : { url: page.url, title: page.title, botChallenge: page.botChallenge })),
       palette: result.report.palette,
     }, null, 2)}\n`);
+    return;
+  }
+  if (command === "deploy") {
+    const args = parseDemoDeployArgs(rest);
+    const result = await runDemoDeploy(args, { repoRoot });
+    if (!result.dryRun && result.registryPayload !== undefined) {
+      process.stdout.write(`\nLive at ${args.routerUrl.replace(/\/+$/, "")}/${result.registryPayload.id}\n`);
+    }
+    return;
+  }
+  if (command === "reap") {
+    await runDemoReap(parseDemoReapArgs(rest), {});
     return;
   }
   throw new Error(`Unknown demo-creator command: ${command ?? "(missing)"}`);
