@@ -1,9 +1,18 @@
 import { anthropic } from "@ai-sdk/anthropic";
+import { wrapLanguageModel } from "ai";
 import type { ComponentCatalog } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import { createVendo } from "@vendoai/vendo/server";
+import { getCapsGuard, spendMeteringMiddleware } from "@/server/caps";
 
-const model = anthropic(process.env.VENDO_DEMO_MODEL ?? "claude-sonnet-4-6");
+// PLUMBING — DO NOT MODIFY the model wrapping below per prospect. The spend
+// middleware observes real token usage for the caps guard (the only thing
+// bounding cost on our Anthropic key); removing it un-meters the demo.
+const modelId = process.env.VENDO_DEMO_MODEL ?? "claude-sonnet-4-6";
+const model = wrapLanguageModel({
+  model: anthropic(modelId),
+  middleware: spendMeteringMiddleware(getCapsGuard(), modelId),
+});
 const store = createStore({ dataDir: ".vendo/data" });
 
 // CREATOR SEAM — host-component catalog. Empty in the template: the creator
