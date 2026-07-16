@@ -1,12 +1,12 @@
 # Wave 4 contract-amendment inventory — session lifecycle for ephemeral principals (ENG-237)
 
-> **STATUS: PARKED — awaiting Yousef's approval.** This document is an
-> inventory only. `docs/contracts/` is FROZEN; nothing below has been applied.
-> Each item lists the contract file + section, the current frozen text, the
-> change it needs to describe wave-4 reality, and why. The four
-> RECOMMENDATION defaults (30 min TTL, 60 s sweep interval, 10 000 session
-> cap, evict-on-expiry sweep-before-touch ordering) are part of what needs
-> sign-off.
+> **STATUS: APPROVED by Yousef, 2026-07-16 — APPLIED.** All 9 items below
+> (including the four RECOMMENDATION defaults: 30 min TTL, 60 s sweep
+> interval, 10 000 session cap, evict-on-expiry sweep-before-touch ordering)
+> were signed off and applied to `docs/contracts/02-store.md`, `03-agent.md`,
+> and `09-vendo.md` as their 2026-07-16 amendment entries. This document is
+> kept as the amendment's working record; "current text" below quotes the
+> pre-amendment frozen text.
 
 Shipped surface being described: TTL session registry + cascading eviction +
 fail-closed unknown-app writes in `packages/store/src/ephemeral.ts` /
