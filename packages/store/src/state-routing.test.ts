@@ -70,14 +70,18 @@ for (const backend of backends()) {
     });
 
     it("leaves near-miss collection names in vendo_records", async () => {
+      // ENG-237 (STORE-1): the near-miss app-scoped collection needs a durable
+      // owning app; routing (generic vendo_records, not the dedicated table) is
+      // what this asserts and is unchanged.
+      await appStore(made.store).put(persistentPrincipal, appFixture("app_x"));
       await made.store.records("vendo_state2").put({ id: "row_a", data: { n: 1 } });
-      await made.store.records("app:x:vendo_state").put({ id: "row_b", data: { n: 2 } });
+      await made.store.records("app:app_x:vendo_state").put({ id: "row_b", data: { n: 2 } });
       expect(await made.sql(
         "SELECT collection FROM vendo_records WHERE id IN ('row_a', 'row_b') ORDER BY collection",
-      )).toEqual([{ collection: "app:x:vendo_state" }, { collection: "vendo_state2" }]);
+      )).toEqual([{ collection: "app:app_x:vendo_state" }, { collection: "vendo_state2" }]);
       // ...and none of it reached the dedicated table.
       expect(Number((await made.sql(
-        "SELECT COUNT(*)::int AS count FROM vendo_state WHERE app_id = 'app:x'",
+        "SELECT COUNT(*)::int AS count FROM vendo_state WHERE app_id = 'app_x'",
       ))[0]?.["count"])).toBe(0);
     });
 

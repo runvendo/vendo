@@ -1,6 +1,6 @@
-import type { BlobStore } from "@vendoai/core";
+import { VendoError, type BlobStore } from "@vendoai/core";
 import type { Db } from "./db.js";
-import { isEphemeralApp, overlayFor, snapshot } from "./ephemeral.js";
+import { appEphemerality, appScopeId, overlayFor, snapshot, type AppEphemerality } from "./ephemeral.js";
 import { text } from "./helpers/utils.js";
 import type { VendoStore } from "./store.js";
 
@@ -10,7 +10,7 @@ function escapeLike(value: string): string {
 
 /** 01-core §12 */
 export function createBlobStore(store: VendoStore, db: Db, namespace: string): BlobStore {
-  const appId = /^app:([^:]+):/.exec(namespace)?.[1];
+  const appId = appScopeId(namespace);
   const ephemeralBlobs = (): Map<string, { bytes: Uint8Array; contentType?: string }> => {
     const blobs = overlayFor(store).blobs;
     let namespaceBlobs = blobs.get(namespace);
@@ -20,11 +20,22 @@ export function createBlobStore(store: VendoStore, db: Db, namespace: string): B
     }
     return namespaceBlobs;
   };
-  const isEphemeral = async (): Promise<boolean> => appId !== undefined && isEphemeralApp(store, db, appId);
+  // ENG-237 (STORE-1): mirrors records.ts — an app-scoped blob write to an
+  // "unknown" app (never existed / session evicted) fails closed rather than
+  // orphaning a durable row; reads on "unknown" return empty.
+  const ephemerality = async (): Promise<AppEphemerality> =>
+    appId === undefined ? "durable" : await appEphemerality(store, db, appId);
+  const requireKnownApp = (state: AppEphemerality): void => {
+    if (state === "unknown") {
+      throw new VendoError("not-found", `app ${appId} does not exist (its session may have expired)`);
+    }
+  };
 
   return {
     async put(key, bytes, meta) {
-      if (await isEphemeral()) {
+      const state = await ephemerality();
+      requireKnownApp(state);
+      if (state === "ephemeral") {
         ephemeralBlobs().set(key, snapshot({
           bytes,
           ...(meta?.contentType === undefined ? {} : { contentType: meta.contentType }),
@@ -48,7 +59,9 @@ export function createBlobStore(store: VendoStore, db: Db, namespace: string): B
       );
     },
     async get(key) {
-      if (await isEphemeral()) {
+      const state = await ephemerality();
+      if (state === "unknown") return null;
+      if (state === "ephemeral") {
         const found = overlayFor(store).blobs.get(namespace)?.get(key);
         return found ? snapshot(found) : null;
       }
@@ -69,14 +82,18 @@ export function createBlobStore(store: VendoStore, db: Db, namespace: string): B
       };
     },
     async delete(key) {
-      if (await isEphemeral()) {
+      const state = await ephemerality();
+      requireKnownApp(state);
+      if (state === "ephemeral") {
         overlayFor(store).blobs.get(namespace)?.delete(key);
         return;
       }
       await db.query("DELETE FROM vendo_blobs WHERE namespace = $1 AND key = $2", [namespace, key]);
     },
     async list(prefix = "") {
-      if (await isEphemeral()) {
+      const state = await ephemerality();
+      if (state === "unknown") return [];
+      if (state === "ephemeral") {
         return [...(overlayFor(store).blobs.get(namespace)?.keys() ?? [])]
           .filter((key) => key.startsWith(prefix))
           .sort();

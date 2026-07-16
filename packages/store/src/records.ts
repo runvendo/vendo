@@ -8,7 +8,7 @@ import {
   type VendoRecord,
 } from "@vendoai/core";
 import type { Db } from "./db.js";
-import { isEphemeralApp, overlayFor, snapshot } from "./ephemeral.js";
+import { appEphemerality, appScopeId, overlayFor, snapshot, type AppEphemerality } from "./ephemeral.js";
 import { decodeCursor, encodeCursor, iso, jsonParam, pageLimit, text } from "./helpers/utils.js";
 import type { VendoStore } from "./store.js";
 
@@ -60,7 +60,7 @@ export function createRecordStore(
 ): RecordStore {
   const table = dedicatedTable ?? "vendo_records";
   const usesCollection = dedicatedTable === undefined;
-  const appId = /^app:([^:]+):/.exec(collection)?.[1];
+  const appId = appScopeId(collection);
   const ephemeralRecords = (): Map<string, VendoRecord> => {
     const records = overlayFor(store).records;
     let collectionRecords = records.get(collection);
@@ -70,10 +70,24 @@ export function createRecordStore(
     }
     return collectionRecords;
   };
-  const isEphemeral = async (): Promise<boolean> => appId !== undefined && isEphemeralApp(store, db, appId);
+  // ENG-237 (STORE-1): app-scoped collections resolve to a tri-state. A write to
+  // an "unknown" app (no overlay row, no vendo_apps row — the app never existed
+  // or its ephemeral session was evicted) fails CLOSED instead of silently
+  // routing to disk and orphaning a row. Non-app-scoped collections are always
+  // durable. Reads on "unknown" return empty (a stale client sees an expired
+  // session, not an error storm).
+  const ephemerality = async (): Promise<AppEphemerality> =>
+    appId === undefined ? "durable" : await appEphemerality(store, db, appId);
+  const requireKnownApp = (state: AppEphemerality): void => {
+    if (state === "unknown") {
+      throw new VendoError("not-found", `app ${appId} does not exist (its session may have expired)`);
+    }
+  };
 
   const getRecord = async (id: string): Promise<VendoRecord | null> => {
-    if (await isEphemeral()) {
+    const state = await ephemerality();
+    if (state === "unknown") return null;
+    if (state === "ephemeral") {
       const row = overlayFor(store).records.get(collection)?.get(id);
       return row ? snapshot(row) : null;
     }
@@ -99,7 +113,9 @@ export function createRecordStore(
     }
     if (expected.kind === "revision") requireRevision(expected.revision);
 
-    if (await isEphemeral()) {
+    const state = await ephemerality();
+    requireKnownApp(state);
+    if (state === "ephemeral") {
       const records = ephemeralRecords();
       const prior = records.get(expectedId);
       const matches = prior !== undefined && (expected.kind === "revision"
@@ -173,7 +189,9 @@ export function createRecordStore(
   const atomic: AtomicRecordStore = {
     async insertIfAbsent(record) {
       const now = new Date().toISOString();
-      if (await isEphemeral()) {
+      const state = await ephemerality();
+      requireKnownApp(state);
+      if (state === "ephemeral") {
         const records = ephemeralRecords();
         if (records.has(record.id)) return null;
         const stored: VendoRecord = {
@@ -208,7 +226,9 @@ export function createRecordStore(
     get: getRecord,
     async put(record) {
       const now = new Date().toISOString();
-      if (await isEphemeral()) {
+      const state = await ephemerality();
+      requireKnownApp(state);
+      if (state === "ephemeral") {
         const records = ephemeralRecords();
         const prior = records.get(record.id);
         const stored: VendoRecord = {
@@ -267,7 +287,9 @@ export function createRecordStore(
       return await compareAndMutate(expectation, next) !== null;
     },
     async delete(id) {
-      if (await isEphemeral()) {
+      const state = await ephemerality();
+      requireKnownApp(state);
+      if (state === "ephemeral") {
         overlayFor(store).records.get(collection)?.delete(id);
         return;
       }
@@ -279,7 +301,9 @@ export function createRecordStore(
     },
     async list(query: RecordQuery = {}) {
       const limit = pageLimit(query.limit);
-      if (await isEphemeral()) {
+      const state = await ephemerality();
+      if (state === "unknown") return { records: [] };
+      if (state === "ephemeral") {
         const cursor = query.cursor === undefined ? undefined : decodeCursor(query.cursor);
         const matching = [...(overlayFor(store).records.get(collection)?.values() ?? [])]
           .filter((record) => query.ids === undefined || query.ids.includes(record.id))

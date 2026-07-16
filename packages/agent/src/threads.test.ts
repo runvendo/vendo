@@ -496,4 +496,38 @@ describe("agent threads", () => {
     expect(aliceThread!.messages.some((m) => m.id === "m_b")).toBe(false);
     expect(bobThread!.messages.some((m) => m.id === "m_a")).toBe(false);
   });
+
+  it("evictSubject drops exactly one subject's in-memory threads (AGENT-11 / ENG-237)", async () => {
+    // No-store (BYO) composition keeps threads in per-subject #memory maps, which
+    // pre-ENG-237 lived for the whole process. The umbrella calls evictSubject on
+    // idle-session eviction; it must drop precisely the evicted subject's threads.
+    const guard = testGuard({});
+    const agent = createAgent({
+      model: scriptedModel([
+        textTurn("Alice reply.", "text_evict_alice"),
+        textTurn("Bob reply.", "text_evict_bob"),
+      ]),
+      tools: boundRegistry({}, guard),
+      guard,
+      // no store → threads live in the agent's #memory
+    });
+    const alice = ctx({ principal: { kind: "user", subject: "alice", ephemeral: true }, sessionId: "sa" });
+    const bob = ctx({ principal: { kind: "user", subject: "bob", ephemeral: true }, sessionId: "sb" });
+
+    await readSse(await agent.stream({ threadId: "thr_a", message: userMessage("m_a", "Hi Alice"), ctx: alice }));
+    await readSse(await agent.stream({ threadId: "thr_b", message: userMessage("m_b", "Hi Bob"), ctx: bob }));
+    expect(await agent.threads.list(alice)).toHaveLength(1);
+    expect(await agent.threads.list(bob)).toHaveLength(1);
+
+    agent.evictSubject("alice");
+
+    // Alice's threads are gone; Bob's are untouched.
+    expect(await agent.threads.list(alice)).toEqual([]);
+    expect(await agent.threads.get("thr_a", alice)).toBeNull();
+    expect(await agent.threads.list(bob)).toHaveLength(1);
+    expect(await agent.threads.get("thr_b", bob)).not.toBeNull();
+
+    // Evicting an unknown subject is a harmless no-op.
+    expect(() => agent.evictSubject("nobody")).not.toThrow();
+  });
 });

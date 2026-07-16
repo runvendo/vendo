@@ -10,6 +10,18 @@ When `principal(req)` returns `null`, the visitor gets a per-client ephemeral
 principal carried by a signed httpOnly cookie. Nothing an anonymous session
 touches lands on disk.
 
+**Sessions expire.** Every request touches the session; a session idle past
+`sessions.ttlMs` (default 30 minutes) is evicted — its in-memory data
+(threads, apps, state, grants, approvals) is discarded in one cascade. A
+request still in flight holds its session open, however long the turn streams.
+The cookie itself stays valid: the next request simply gets a fresh, empty
+session. A write that races an eviction fails closed with `not-found`
+("session may have expired") rather than landing on disk. Tune with
+`createVendo({ sessions: { ttlMs, sweepIntervalMs, maxSessions } })`;
+`ttlMs: 0` disables TTL eviction (the `maxSessions` cap still applies).
+Sessions are per-process: multi-instance deployments need sticky routing for
+anonymous traffic.
+
 **Auto-merge on sign-in.** The first authenticated request that still carries
 a valid anonymous-session cookie adopts that session's work into the signed-in
 subject, then retires the cookie. The merge is idempotent, and an existing row
