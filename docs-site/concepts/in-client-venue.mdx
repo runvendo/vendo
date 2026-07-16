@@ -1,0 +1,146 @@
+---
+title: "In-client venue and approvals"
+description: "How approved apps render in the host page instead of the sandboxed iframe, how approvals pin the app version hash, and dropping back on version change."
+---
+
+Generated apps render inside a sandboxed iframe by default. When you approve
+a specific version of an app, that version can also render in the host page,
+sharing the page's authority and network — the *in-client venue*. Approvals
+pin the app's content hash, so any edit invalidates the grant and the surface
+drops back to the sandbox until it is re-approved.
+
+## Two venues, one default
+
+- **Jail (default).** Every app runs inside an iframe with
+  `connect-src 'none'`, cannot reach the host page's DOM, and cannot make
+  network calls. This is the surface for every unreviewed or model-generated
+  component.
+- **In-client (approved).** After a human review, an approved version of the
+  app renders natively in the host DOM. It participates in the page's origin,
+  cookies, and CSP.
+
+The server decides the venue on every `open()`. A forged `inClient` field on a
+stored, imported, or streamed tree is stripped before the runtime attaches its
+own verdict. In-thread previews always render in the jail — the approved venue
+is never used for conversation surfaces.
+
+## The approval record
+
+An in-client approval is a small audit-trail record:
+
+```ts
+type InClientApproval = {
+  appId: string;
+  versionHash: string;   // pins the exact content approved
+  approvedBy: string;    // principal id
+  at: string;            // ISO timestamp
+};
+```
+
+Records live in the `vendo_inclient_approvals` collection. The verdict is
+simply *"some stored approval pins the current version's content hash"*.
+Corrupt or hand-crafted rows can never grant. Deleting an app clears its
+approvals.
+
+The version hash covers all app content, so any edit — pin change,
+generated-component change, tree edit — produces a new hash and invalidates
+every existing approval for that app.
+
+## Verdict states
+
+`open()` attaches a `payload.inClient` field to the tree surface:
+
+| State | Field on `payload.inClient` | Rendering |
+| --- | --- | --- |
+| Approved | `{ granted: true, versionHash }` | Host-page mount |
+| Approval exists but version changed | `{ granted: false, reason: "version-changed" }` | Jailed, with a loud in-surface notice |
+| No approval ever recorded | field omitted | Jailed, silent (the default) |
+
+"Never approved" is the universal state and does not announce itself.
+`version-changed` is loud: users see a visible notice ("…running in the
+sandbox again until the new version is re-approved") so they know an approval
+was invalidated. If an approved component fails to compile or render, the
+surface drops back to the jail with an error notice.
+
+## Reviewing what changed: ship-diff
+
+Before minting an approval, a reviewer reads the *ship-diff* — the diff of
+approvable code against the last approved baseline, hash-pinned to the current
+version:
+
+```json
+{
+  "versionHash": "…",
+  "pins": [{ "slot": "…", "component": "…", "baseHash": "…",
+             "baselineHash": "…", "drifted": false, "diff": "…" }],
+  "generated": [{ "component": "…", "diff": "…" }]
+}
+```
+
+Pinned host slots are diffed against the baseline captured when the pin was
+created; drift or a missing baseline is flagged and fails closed. Net-new
+generated components appear as pure additions. The tree structure itself is
+not in the diff — the reviewable *code* is.
+
+Fetch the ship-diff over the wire:
+
+```ts
+const diff = await client.apps.shipDiff(appId);
+```
+
+Or on the server:
+
+```ts
+const diff = await vendo.apps.inClient.shipDiff(appId, { principal });
+```
+
+Both routes are owner-scoped. Only the app's owner can read the diff.
+
+## Minting approvals
+
+Vendo Cloud provides the human review console that mints approvals for
+production hosts. For local demos and development, Vendo exposes a documented
+injection seam that pins the app's *current* version hash — you approve what
+is running, never a hand-crafted hash.
+
+### Server-side
+
+```ts
+await vendo.apps.inClient.approve(appId, { principal });
+```
+
+### Development wire route
+
+```bash
+curl -X POST http://localhost:3000/api/vendo/dev/inclient-approval \
+  -H "content-type: application/json" \
+  -d '{ "appId": "app_…" }'
+```
+
+This route is only mounted in development compositions (production returns
+`404`, matching `/dev/remixable-source`). The request must resolve a host
+principal — anonymous callers get `401`.
+
+Approvals are audited through `guard.report`. Read the record store with
+`vendo.apps.inClient.approvals(appId, { principal })`.
+
+## What runs in the host page
+
+Approved content runs in a closed module space: sucrase-compiled code with a
+controlled `require` that resolves React and captured sub-sources only — the
+same evaluation model the jail uses, in the venue the approved verdict
+unlocks. `sampleProps` are not used in the host mount; the shipped surface
+never renders stub data.
+
+The `$action` dispatch continues to route through the tree chokepoint, so
+host tools remain gated by the same policy, grants, and audit path as the
+jailed venue.
+
+## Related reading
+
+- [Generated UI and apps](/concepts/generated-ui) — the ladder and the default
+  jail.
+- [Tools and safety](/concepts/tools-and-safety) — how host tool calls are
+  gated regardless of venue.
+- [HTTP routes](/reference/http-routes) — wire endpoints for ship-diff and the
+  dev injection seam.

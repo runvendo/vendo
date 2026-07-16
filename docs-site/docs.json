@@ -36,7 +36,7 @@
       },
       {
         "group": "Concepts",
-        "pages": ["concepts/architecture", "concepts/generated-ui", "concepts/tools-and-safety", "concepts/prompts"]
+        "pages": ["concepts/architecture", "concepts/generated-ui", "concepts/in-client-venue", "concepts/tools-and-safety", "concepts/prompts"]
       },
       {
         "group": "Connect your app",
