@@ -32,7 +32,10 @@ environment](/reference/environment-variables#app-machine-environment) for the
 
 `encryption.key` encrypts secret values in `vendo_secrets` only. App records
 stay queryable. Ephemeral principals use an in-memory overlay and never write
-to disk.
+to disk; the overlay is swept on idle-session eviction and torn down with
+`store.close()`. See
+[Anonymous sessions](/deploy/principals-and-orgs#session-lifecycle) to tune
+the TTL, sweep cadence, and concurrent-session cap.
 
 ## Encryption is on by default
 

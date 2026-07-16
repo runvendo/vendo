@@ -35,6 +35,11 @@ export function createVendo(config: {
     maxOutputTokens?: number;
     historyWindow?: number;                   // last N whole messages re-sent per turn
   };
+  sessions?: {                                // anonymous-session lifecycle; see Principals and organizations
+    ttlMs?: number;                           // idle timeout, default 30 min; 0 disables TTL eviction
+    sweepIntervalMs?: number;                 // sweep cadence, default 60 s
+    maxSessions?: number;                     // concurrent anonymous-session cap, default 10 000
+  };
 }): Vendo;
 
 export interface Vendo {
@@ -46,7 +51,9 @@ export interface Vendo {
 
 When `principal(req)` resolves null, each client gets its own ephemeral session
 principal, carried by a signed httpOnly cookie scoped to the wire base. Sessions
-are per client, never persisted, and reset on process restart.
+are per client, never persisted, and reset on process restart. Idle sessions are
+swept after `sessions.ttlMs` (default 30 minutes); tune the lifecycle with
+`sessions`. See [Anonymous sessions](/deploy/principals-and-orgs#anonymous-sessions).
 
 The composition registers app capability tools in actions and guard-binds every
 tool registry passed to agent, apps, and automations.

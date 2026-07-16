@@ -50,6 +50,58 @@ principal and carries it in a signed, `httpOnly` cookie scoped to the wire
 base path. Ephemeral principals never write to disk — threads, apps, and
 state live in an in-memory overlay for the life of the process.
 
+### Session lifecycle
+
+Every request touches its anonymous session. A session that stays idle past
+`sessions.ttlMs` (default 30 minutes) is evicted in one cascade: its
+in-memory threads, apps, per-app records and blobs, state, grants,
+approvals, audit rows, and runs are all discarded together. A request
+already in flight holds its session open for however long the turn streams,
+including long-lived UI message streams.
+
+The cookie itself stays valid. The next request from that client simply
+gets a fresh, empty session under the same cookie. A write that races an
+eviction fails closed with `not-found` ("session may have expired") rather
+than landing on disk.
+
+Sweeps run two ways so both long-lived and serverless hosts stay
+consistent:
+
+- **Background timer.** `createVendo` starts an unref'd interval that
+  sweeps every `sessions.sweepIntervalMs` (default 60 s) and is torn down
+  by `store.close()`. No wiring required.
+- **Amortized on-request.** Every request runs a sweep at the top of the
+  handler, before its own session is touched. A request that arrives past
+  the TTL sweeps its own idle session first and then gets a fresh empty
+  one. This keeps serverless platforms (no timer guarantee) in sync with
+  long-lived hosts.
+
+Tune the lifecycle when composing:
+
+```ts
+const vendo = createVendo({
+  model,
+  principal,
+  sessions: {
+    ttlMs: 30 * 60 * 1000,   // 30 min; 0 disables TTL eviction
+    sweepIntervalMs: 60_000, // 60 s
+    maxSessions: 10_000,     // hard cap on concurrent anonymous sessions
+  },
+});
+```
+
+Setting `ttlMs: 0` disables TTL eviction entirely; the `maxSessions` cap
+still applies and is enforced by evicting the least-recently-touched
+session that is not currently in flight.
+
+<Note>
+  Sessions are per process. Multi-instance deployments that terminate
+  anonymous traffic on more than one node need sticky routing (by the
+  anonymous cookie) so a visitor keeps hitting the same instance until
+  they sign in. After sign-in, requests are keyed by the durable subject
+  and can route anywhere.
+</Note>
+
 ### Auto-merge on sign-in
 
 The first authenticated request that arrives with a valid anonymous cookie
