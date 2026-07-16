@@ -8,6 +8,9 @@ import {
   guardDecisionSchema,
   permissionGrantSchema,
   runContextSchema,
+  runModelSchema,
+  triggerRefSchema,
+  vendoErrorCodeSchema,
   toolDescriptorSchema,
   toolOutcomeSchema,
   triggerSourceSchema,
@@ -145,6 +148,22 @@ describe("context, triggers, host reports, theme, and stream schemas", () => {
     expect(triggerSourceSchema.safeParse({ kind: "schedule", cron: "0 9 * * 1" }).success).toBe(true);
     expect(triggerSourceSchema.safeParse({ kind: "schedule" }).success).toBe(false);
     expect(triggerSourceSchema.safeParse({ kind: "schedule", cron: "* * * * *", every: "1h" }).success).toBe(false);
+  });
+
+  it("CORE-11 — §15 forward-compat: unknown additive variants parse; known variants stay strict", () => {
+    // Error codes: a future code is a generic error, not a parse failure.
+    expect(vendoErrorCodeSchema.safeParse("rate-limited").success).toBe(true);
+    expect(vendoErrorCodeSchema.safeParse("").success).toBe(false);
+    expect(vendoErrorCodeSchema.safeParse(42).success).toBe(false);
+    // Trigger kinds are additive; known kinds still validate their shape.
+    expect(triggerSourceSchema.safeParse({ kind: "geo-fence", region: "EU" }).success).toBe(true);
+    expect(triggerSourceSchema.safeParse({ kind: "host-event" }).success).toBe(false);
+    // Run models are additive; a malformed KNOWN model still fails.
+    expect(runModelSchema.safeParse({ kind: "workflow", graph: [] }).success).toBe(true);
+    expect(runModelSchema.safeParse({ kind: "steps", steps: "nope" }).success).toBe(false);
+    // TriggerRef tolerates a future kind while still requiring a run id.
+    expect(triggerRefSchema.safeParse({ runId: "run_1", kind: "geo-fence" }).success).toBe(true);
+    expect(triggerRefSchema.safeParse({ runId: "job_1", kind: "geo-fence" }).success).toBe(false);
   });
 
   it("CORE-2: run context carries typed optional grant and mcpConsent (no structural twins)", () => {

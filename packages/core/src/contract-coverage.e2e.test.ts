@@ -150,7 +150,9 @@ describe("§3 — run context and trigger ref", () => {
   it("triggerRef requires a run_ id and a known trigger kind", () => {
     expect(triggerRefSchema.safeParse({ runId: "run_1", kind: "schedule" }).success).toBe(true);
     expect(triggerRefSchema.safeParse({ runId: "job_1", kind: "schedule" }).success).toBe(false);
-    expect(triggerRefSchema.safeParse({ runId: "run_1", kind: "webhook" }).success).toBe(false);
+    // CORE-11 — §15: trigger kinds are additive; a future kind parses (the run id format still gates).
+    expect(triggerRefSchema.safeParse({ runId: "run_1", kind: "webhook" }).success).toBe(true);
+    expect(triggerRefSchema.safeParse({ runId: "run_1", kind: "" }).success).toBe(false);
   });
 });
 
@@ -462,7 +464,9 @@ describe("§11 — trigger sources and run models", () => {
     expect(runModelSchema.safeParse({ kind: "agentic", prompt: "do it" }).success).toBe(true);
     expect(runModelSchema.safeParse({ kind: "agentic", prompt: "do it", budget: { maxToolCalls: 3 } }).success).toBe(true);
     expect(runModelSchema.safeParse({ kind: "steps", steps: [{ id: "s1", tool: "host_x" }] }).success).toBe(true);
-    expect(runModelSchema.safeParse({ kind: "pipeline", steps: [] }).success).toBe(false);
+    // CORE-11 — §15: run models are additive; an unknown kind parses, a malformed known kind does not.
+    expect(runModelSchema.safeParse({ kind: "pipeline", steps: [] }).success).toBe(true);
+    expect(runModelSchema.safeParse({ kind: "steps", steps: "nope" }).success).toBe(false);
     expect(stepSchema.safeParse({ id: "s1", tool: "fn:x", if: "$exists(event)", forEach: "steps.load" }).success).toBe(true);
     expect(triggerSchema.safeParse({
       on: { kind: "host-event", event: "e" }, run: { kind: "agentic", prompt: "p" },
@@ -519,8 +523,11 @@ describe("§15 — VendoErrorCode taxonomy and unknown-code forward compatibilit
     ]) {
       expect(vendoErrorCodeSchema.safeParse(code).success).toBe(true);
     }
-    expect(vendoErrorCodeSchema.safeParse("grant-required").success).toBe(false); // cut in round-4
-    expect(vendoErrorCodeSchema.safeParse("teapot").success).toBe(false);
+    // CORE-11 — §15: unknown codes are additive within the train; clients render them generically.
+    // ("grant-required" was cut in round-4 as a NAMED code — as an unknown string it now parses.)
+    expect(vendoErrorCodeSchema.safeParse("grant-required").success).toBe(true);
+    expect(vendoErrorCodeSchema.safeParse("teapot").success).toBe(true);
+    expect(vendoErrorCodeSchema.safeParse("").success).toBe(false);
   });
 
   it("VendoError still constructs with a future code (additive within the train)", () => {

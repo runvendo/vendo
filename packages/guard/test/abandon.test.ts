@@ -39,7 +39,7 @@ describe("abandoned approvals resolve guard-side", () => {
 
     expect(await guard.approvals.pending(alice)).toHaveLength(0);
     expect(await guard.grants.list(alice)).toHaveLength(0);
-    const { events } = await guard.audit.query({ subject: alice.subject });
+    const { events } = await guard.audit.query({ principal: alice });
     const decision = events.find((event) => event.kind === "approval");
     expect(decision?.detail).toMatchObject({ approved: false });
   });
