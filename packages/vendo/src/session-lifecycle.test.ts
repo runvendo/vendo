@@ -98,9 +98,14 @@ describe("ephemeral session lifecycle through the umbrella (ENG-237)", () => {
     expect(ephemeralOverlaySizes(store).threads).toBe(1);
 
     // (touch) a request inside the TTL refreshes the session — no eviction.
-    setNow(1500); // 1500 - 0 = 1500 idle, but the touch below re-stamps to 1500
+    // (A request arriving PAST the TTL would evict first: the amortized sweep
+    // runs at the top of the handler, before the touch — evict-on-expiry keeps
+    // timer-swept and request-swept hosts consistent.)
+    setNow(900); // 900ms idle < 1000ms TTL; the touch re-stamps to 900
     await drain(await vendo.handler(listThreads(cookie)));
-    // A host sweep now: the session was just touched at 1500, so 1500-1500 < ttl.
+    // A host sweep at 1800: idle time is measured from the touch (900), so the
+    // session is 900ms idle — still inside the TTL.
+    setNow(1800);
     await drain(await vendo.handler(hostSweep()));
     expect(ephemeralOverlaySizes(store).subjects).toBe(1);
     expect(ephemeralOverlaySizes(store).threads).toBe(1);
