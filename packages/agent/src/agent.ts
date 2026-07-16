@@ -194,22 +194,25 @@ function jsonEqual(left: unknown, right: unknown): boolean {
 }
 
 /** AGENT-12: is `incoming` the one client-writable change to a stored part —
- *  answering a pending approval? Identity fields (type, toolCallId, toolName,
- *  input) must survive untouched; only state flips to approval-responded with
- *  a boolean verdict on the SAME native approval id. */
+ *  answering a pending approval? The verdict payload is exactly
+ *  `{ id (unchanged), approved, reason? }` and EVERY other field of the part
+ *  must stay byte-identical — no fabricated output or altered props may ride
+ *  along on the flip. */
 function isApprovalResponse(stored: unknown, incoming: unknown): boolean {
   const before = stored as Record<string, unknown>;
   const after = incoming as Record<string, unknown>;
   if (before.state !== "approval-requested" || after.state !== "approval-responded") return false;
-  if (after.type !== before.type || after.toolCallId !== before.toolCallId) return false;
-  if ("toolName" in before && after.toolName !== before.toolName) return false;
-  if (!jsonEqual(after.input, before.input)) return false;
   const beforeApproval = before.approval as { id?: unknown } | undefined;
-  const afterApproval = after.approval as { id?: unknown; approved?: unknown } | undefined;
-  return beforeApproval !== undefined
-    && afterApproval !== undefined
-    && afterApproval.id === beforeApproval.id
-    && typeof afterApproval.approved === "boolean";
+  const afterApproval = after.approval as Record<string, unknown> | undefined;
+  if (beforeApproval === undefined || afterApproval === undefined) return false;
+  if (afterApproval.id !== beforeApproval.id
+    || typeof afterApproval.approved !== "boolean"
+    || (afterApproval.reason !== undefined && typeof afterApproval.reason !== "string")
+    || Object.keys(afterApproval).some((key) => !["id", "approved", "reason"].includes(key))) {
+    return false;
+  }
+  // Reverting the flip must reproduce the stored part exactly.
+  return jsonEqual({ ...after, state: before.state, approval: before.approval }, before);
 }
 
 /** AGENT-12: clients may add fresh USER messages and answer approvals — they
@@ -249,7 +252,18 @@ function abandonPendingApprovals(messages: UIMessage[]): string[] {
   const abandonedToolCallIds: string[] = [];
   for (const message of messages) {
     message.parts = message.parts.map((part) => {
-      if (!isToolUIPart(part) || part.state !== "approval-requested") return part;
+      if (!isToolUIPart(part)) return part;
+      // Parts flipped on an EARLIER turn re-collect too: guard-side resolution
+      // is best-effort per turn, so a failed abandonApprovals call retries on
+      // the next fresh turn (the guard method is idempotent — an
+      // already-denied id is a no-op there).
+      if (part.state === "approval-responded"
+        && part.approval?.approved === false
+        && (part.approval as { reason?: string }).reason === "abandoned") {
+        abandonedToolCallIds.push(part.toolCallId);
+        return part;
+      }
+      if (part.state !== "approval-requested") return part;
       abandonedToolCallIds.push(part.toolCallId);
       return {
         ...part,
