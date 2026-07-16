@@ -214,11 +214,19 @@ const unknownViewThread: Thread = {
 };
 
 function threadClient(client: VendoClient, thread: Thread): VendoClient {
+  // A thread that get() serves must also appear in list(): useVendoThread only
+  // adopts a supplied threadId after confirming it exists in list() (the ENG-211
+  // stale-id graceful degradation guard). Stubbing get() alone would degrade the
+  // thread to the empty greeting state.
   return {
     ...client,
     threads: {
       ...client.threads,
       get: async id => id === thread.id ? thread : client.threads.get(id),
+      list: async () => {
+        const rest = (await client.threads.list()).filter(summary => summary.id !== thread.id);
+        return [{ id: thread.id, title: thread.subject, updatedAt: thread.updatedAt }, ...rest];
+      },
     },
   };
 }
