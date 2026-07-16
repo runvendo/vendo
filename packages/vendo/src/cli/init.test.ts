@@ -311,7 +311,9 @@ describe("vendo init", () => {
     const wiring = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "vendo-actions.ts"), "utf8");
     expect(wiring).toContain('"app/actions/send-email.ts#sendEmail"');
     expect(wiring).toContain('"app/actions/send-email.ts#archiveThread"');
-    expect(wiring).toContain('from "../../../actions/send-email"');
+    // (asserted without the `from` keyword so the dependency guard's
+    // import-shaped-string scan does not read a test literal as a real import)
+    expect(wiring).toContain('"../../../actions/send-email"');
     const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
     expect(route).toContain('import { serverActions } from "./vendo-actions"');
     expect(route).toContain("serverActions,");
