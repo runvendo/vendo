@@ -150,7 +150,9 @@ describe("§3 — run context and trigger ref", () => {
   it("triggerRef requires a run_ id and a known trigger kind", () => {
     expect(triggerRefSchema.safeParse({ runId: "run_1", kind: "schedule" }).success).toBe(true);
     expect(triggerRefSchema.safeParse({ runId: "job_1", kind: "schedule" }).success).toBe(false);
-    expect(triggerRefSchema.safeParse({ runId: "run_1", kind: "webhook" }).success).toBe(false);
+    // CORE-11 — §15: trigger kinds are additive; a future kind parses (the run id format still gates).
+    expect(triggerRefSchema.safeParse({ runId: "run_1", kind: "webhook" }).success).toBe(true);
+    expect(triggerRefSchema.safeParse({ runId: "run_1", kind: "" }).success).toBe(false);
   });
 });
 
@@ -383,6 +385,21 @@ describe("§8 — validateTree validates fn: GRAMMAR only; machine-presence is a
     }
   });
 
+  it("CORE-5: enforces the same grammar on fn: ACTION names inside node props (the wire-enforceable half)", () => {
+    const treeWithAction = (action: string) => ({
+      formatVersion: "vendo-genui/v1", root: "r",
+      nodes: [{ id: "r", component: "Text", props: { rows: [{ action, label: "Go" }] } }],
+    });
+    expect(validateTree(treeWithAction("fn:refresh")).ok).toBe(true);
+    for (const action of ["fn:", "fn:9lead", "fn:has space", "fn:slash/x"]) {
+      const result = validateTree(treeWithAction(action));
+      expect(result.ok, action).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("provision");
+    }
+    // Non-fn action names are the host's tool namespace — not this grammar's job.
+    expect(validateTree(treeWithAction("host_refresh")).ok).toBe(true);
+  });
+
   it("validateAppDocument is where a machine-less fn: reference becomes an error", () => {
     const withFnNoServer = {
       format: "vendo/app@1", id: "app_x", name: "X", ui: "tree" as const,
@@ -447,7 +464,9 @@ describe("§11 — trigger sources and run models", () => {
     expect(runModelSchema.safeParse({ kind: "agentic", prompt: "do it" }).success).toBe(true);
     expect(runModelSchema.safeParse({ kind: "agentic", prompt: "do it", budget: { maxToolCalls: 3 } }).success).toBe(true);
     expect(runModelSchema.safeParse({ kind: "steps", steps: [{ id: "s1", tool: "host_x" }] }).success).toBe(true);
-    expect(runModelSchema.safeParse({ kind: "pipeline", steps: [] }).success).toBe(false);
+    // CORE-11 — §15: run models are additive; an unknown kind parses, a malformed known kind does not.
+    expect(runModelSchema.safeParse({ kind: "pipeline", steps: [] }).success).toBe(true);
+    expect(runModelSchema.safeParse({ kind: "steps", steps: "nope" }).success).toBe(false);
     expect(stepSchema.safeParse({ id: "s1", tool: "fn:x", if: "$exists(event)", forEach: "steps.load" }).success).toBe(true);
     expect(triggerSchema.safeParse({
       on: { kind: "host-event", event: "e" }, run: { kind: "agentic", prompt: "p" },
@@ -504,8 +523,11 @@ describe("§15 — VendoErrorCode taxonomy and unknown-code forward compatibilit
     ]) {
       expect(vendoErrorCodeSchema.safeParse(code).success).toBe(true);
     }
-    expect(vendoErrorCodeSchema.safeParse("grant-required").success).toBe(false); // cut in round-4
-    expect(vendoErrorCodeSchema.safeParse("teapot").success).toBe(false);
+    // CORE-11 — §15: unknown codes are additive within the train; clients render them generically.
+    // ("grant-required" was cut in round-4 as a NAMED code — as an unknown string it now parses.)
+    expect(vendoErrorCodeSchema.safeParse("grant-required").success).toBe(true);
+    expect(vendoErrorCodeSchema.safeParse("teapot").success).toBe(true);
+    expect(vendoErrorCodeSchema.safeParse("").success).toBe(false);
   });
 
   it("VendoError still constructs with a future code (additive within the train)", () => {

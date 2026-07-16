@@ -164,6 +164,26 @@ describe("09 §3 public wire", () => {
     }
   });
 
+  it("wires client disconnect to the agent turn: POST /threads hands the request signal to agent.stream (AGENT-3)", async () => {
+    const { vendo } = await setup();
+    stubRouteBlocks(vendo);
+    const controller = new AbortController();
+    const disconnectable = new Request("https://host.test/api/vendo/threads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: { id: "m_abort", role: "user", parts: [] } }),
+      signal: controller.signal,
+    });
+    await vendo.handler(disconnectable);
+    const streamInput = vi.mocked(vendo.agent.stream).mock.calls[0]?.[0];
+    expect(streamInput?.signal).toBeInstanceOf(AbortSignal);
+    expect(streamInput?.signal?.aborted).toBe(false);
+    // The handed signal is live-wired to the request: a client disconnect
+    // (request abort) after the handler returned still cancels the loop.
+    controller.abort();
+    expect(streamInput?.signal?.aborted).toBe(true);
+  });
+
   it("maps every VendoError to the fixed envelope and status", async () => {
     const { vendo } = await setup();
     const cases = [
@@ -883,6 +903,95 @@ describe("00 overview / 01-core §2 — per-client anonymous sessions", () => {
       const cookieId = anonCookieValue(response)!.split(".")[0];
       expect(seen[i]).toBe(`anonymous_${cookieId}`);
     });
+  });
+});
+
+describe("XCUT-3 — umbrella runtime store surface", () => {
+  it("re-exports the store runtime so a production deploy needs only the umbrella", async () => {
+    const server = await import("./server.js") as Record<string, unknown>;
+    const store = await import("@vendoai/store") as Record<string, unknown>;
+    for (const name of ["createStore", "envSecrets", "storeSecrets", "secretStore", "eraseStore"]) {
+      expect(server[name], `${name} must be re-exported from @vendoai/vendo/server`).toBe(store[name]);
+    }
+  });
+});
+
+describe("03 §3 prompt wiring (AGENT-1/2)", () => {
+  it("feeds .vendo/brief.md and the catalog+theme summary into the composed system prompt", async () => {
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+    const root = await mkdtemp(join(tmpdir(), "vendo-prompt-"));
+    const dataDir = join(root, "store-data");
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "brief.md"), "Maple is a neobank for freelancers.\n");
+    await writeFile(join(root, ".vendo", "theme.json"), JSON.stringify({
+      colors: {
+        background: "#fff", surface: "#fff", text: "#111", muted: "#777",
+        accent: "#00f", accentText: "#fff", danger: "#f00", border: "#ddd",
+      },
+      typography: { fontFamily: "Inter", baseSize: "16px" },
+      radius: { small: "4px", medium: "8px", large: "16px" },
+      density: "comfortable",
+      motion: "reduced",
+    }));
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    cleanups.push(async () => {
+      process.chdir(originalCwd);
+      await rm(root, { recursive: true, force: true });
+    });
+
+    const prompts: Array<Array<{ role: string; content: unknown }>> = [];
+    const model = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        prompts.push(structuredClone(prompt) as never);
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "t1" },
+              { type: "text-delta", id: "t1", delta: "Hi." },
+              { type: "text-end", id: "t1" },
+              {
+                type: "finish",
+                usage: {
+                  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+                  outputTokens: { total: 0, text: 0, reasoning: 0 },
+                },
+                finishReason: { unified: "stop", raw: undefined },
+              },
+            ],
+          }),
+        };
+      },
+    });
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); });
+    const vendo = createVendo({
+      model: model as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+      catalog: [{
+        name: "InvoiceTable",
+        description: "Renders invoice line items with totals.",
+        propsSchema: { "~standard": { validate: (value: unknown) => ({ value }) } } as never,
+      }],
+    });
+
+    const turn = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_prompt_wiring",
+      message: { id: "m_prompt", role: "user", parts: [{ type: "text", text: "Hello" }] },
+    }));
+    expect(turn.status).toBe(200);
+    await turn.text();
+
+    const system = prompts[0]?.find((message) => message.role === "system");
+    expect(system).toBeDefined();
+    const content = typeof system!.content === "string" ? system!.content : JSON.stringify(system!.content);
+    // AGENT-2: the host product brief rides as the Product section.
+    expect(content).toContain("Product\nMaple is a neobank for freelancers.");
+    // AGENT-1: catalog + theme summary assembled per 03 §3 item (4).
+    expect(content).toContain("InvoiceTable: Renders invoice line items with totals.");
+    expect(content).toContain("comfortable");
+    expect(content).toContain("Inter");
   });
 });
 

@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { vendoApprovalPartSchema, vendoConnectPartSchema, vendoViewPartSchema } from "./stream-parts.js";
+import {
+  toVendoWirePart,
+  vendoApprovalPartSchema,
+  vendoApprovalWirePartSchema,
+  vendoStepLimitPartSchema,
+  vendoConnectPartSchema,
+  vendoConnectWirePartSchema,
+  vendoViewPartSchema,
+  vendoViewWirePartSchema,
+} from "./stream-parts.js";
 
 /** 01-core §16 — the custom data-parts the wire carries. */
 describe("vendoViewPartSchema", () => {
@@ -85,5 +94,75 @@ describe("vendoConnectPartSchema", () => {
         message: "x",
       }).success,
     ).toBe(false);
+  });
+});
+
+/** AGENT-10 (wave 5, additive): the nested ai-SDK envelope the wire and
+ *  persisted UIMessages actually carry — `{ type, data: {...}, id? }`. */
+describe("wire envelopes for §16 parts", () => {
+  it("toVendoWirePart nests every flat field under data and carries the reconciliation id", () => {
+    const flat = {
+      type: "data-vendo-view" as const,
+      appId: "app_1",
+      payload: { formatVersion: "vendo-genui/v1", root: "r", nodes: [] },
+    };
+    expect(toVendoWirePart(flat, "vendo-view:app_1")).toEqual({
+      type: "data-vendo-view",
+      id: "vendo-view:app_1",
+      data: { appId: "app_1", payload: flat.payload },
+    });
+    expect(toVendoWirePart(flat)).toEqual({
+      type: "data-vendo-view",
+      data: { appId: "app_1", payload: flat.payload },
+    });
+  });
+
+  it("vendoViewWirePartSchema parses the nested shape and rejects the flat one", () => {
+    const wire = {
+      type: "data-vendo-view",
+      id: "vendo-view:app_1",
+      data: { appId: "app_1", payload: { formatVersion: "vendo-genui/v1" } },
+    };
+    expect(vendoViewWirePartSchema.safeParse(wire).success).toBe(true);
+    expect(vendoViewWirePartSchema.safeParse({
+      type: "data-vendo-view",
+      appId: "app_1",
+      payload: { formatVersion: "vendo-genui/v1" },
+    }).success).toBe(false);
+  });
+
+  it("approval and connect wire envelopes parse their nested shapes", () => {
+    expect(vendoApprovalWirePartSchema.safeParse({
+      type: "data-vendo-approval",
+      data: { toolCallId: "call_1", risk: "write", approvalId: "apr_1" },
+    }).success).toBe(true);
+    expect(vendoConnectWirePartSchema.safeParse({
+      type: "data-vendo-connect",
+      data: { toolCallId: "call_1", connector: "composio", toolkit: "gmail", message: "Connect gmail" },
+    }).success).toBe(true);
+  });
+});
+
+/** AGENT-7 (wave 5, additive): visible step-cap exhaustion. */
+describe("vendoStepLimitPartSchema", () => {
+  it("accepts a step-limit notice with the cap and a renderable message", () => {
+    expect(vendoStepLimitPartSchema.safeParse({
+      type: "data-vendo-step-limit",
+      limit: 20,
+      message: "Stopped after 20 steps.",
+    }).success).toBe(true);
+  });
+
+  it("rejects a wrong type literal or a non-integer limit", () => {
+    expect(vendoStepLimitPartSchema.safeParse({
+      type: "data-vendo-view",
+      limit: 20,
+      message: "x",
+    }).success).toBe(false);
+    expect(vendoStepLimitPartSchema.safeParse({
+      type: "data-vendo-step-limit",
+      limit: 1.5,
+      message: "x",
+    }).success).toBe(false);
   });
 });

@@ -1,5 +1,8 @@
 import {
+  VENDO_APPS_CREATE_TOOL,
+  VENDO_APPS_TOOL_PREFIX,
   VENDO_VIEW_STREAM,
+  toVendoWirePart,
   vendoViewStreamId,
   vendoViewPartSchema,
   type Guard,
@@ -41,9 +44,8 @@ function writePart(
   if (!writer) return;
   // The ai-SDK UI message stream requires custom data chunks to carry their
   // payload under `data` ({ type: "data-*", data }); the stock client's chunk
-  // schema hard-rejects the flat form. The core part fields ride inside data.
-  const { type, ...data } = part;
-  writer.write({ type, data, ...(id === undefined ? {} : { id }) } as never);
+  // schema hard-rejects the flat form. Core owns that envelope (AGENT-10).
+  writer.write(toVendoWirePart(part, id) as never);
 }
 
 function executionError(): ToolOutcome {
@@ -83,7 +85,7 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
   for (const descriptor of descriptors) {
     const execute = async (input: unknown, { toolCallId }: { toolCallId: string }): Promise<ToolOutcome> => {
       const call: VendoViewStreamingToolCall = { id: toolCallId, tool: descriptor.name, args: input };
-      if (descriptor.name === "vendo_apps_create" && options.writer !== undefined) {
+      if (descriptor.name === VENDO_APPS_CREATE_TOOL && options.writer !== undefined) {
         Object.defineProperty(call, VENDO_VIEW_STREAM, {
           value: (update: { id: string; part: VendoViewPart }) => {
             const view = vendoViewPartSchema.safeParse(update.part);
@@ -105,7 +107,7 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
       // tools returning a tree OpenSurface (06 §1) — never by duck-typing an
       // arbitrary host tool's output, which could otherwise smuggle an unrelated
       // result onto the app-view channel and mis-route its actions (01 §16).
-      const producesView = descriptor.name.startsWith("vendo_apps_");
+      const producesView = descriptor.name.startsWith(VENDO_APPS_TOOL_PREFIX);
       if (outcome.status === "ok" && producesView) {
         const surface = typeof outcome.output === "object" && outcome.output !== null
           ? outcome.output as Record<string, unknown>

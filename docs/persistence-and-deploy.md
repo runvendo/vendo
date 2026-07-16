@@ -6,11 +6,25 @@ Vendo uses Postgres only. Development defaults to embedded PGlite at
 ## Store configuration
 
 ```ts
+import { createStore } from "@vendoai/vendo/server"; // or "vendoai/server"
+
 export function createStore(config?: {
   url?: string;
   dataDir?: string;
   encryption?: { key: string };
 }): VendoStore;
+```
+
+The umbrella re-exports the store runtime — `createStore`, `envSecrets`,
+`storeSecrets`, and `secretStore` — from `@vendoai/vendo/server`, so a
+production deploy needs no direct `@vendoai/store` install:
+
+```ts
+import { createStore, createVendo } from "@vendoai/vendo/server";
+
+const store = createStore({ url: process.env.DATABASE_URL });
+await store.ensureSchema();
+const vendo = createVendo({ model, principal, store });
 ```
 
 Omit `url` to use PGlite. `dataDir` defaults to `.vendo/data`. When `url` is

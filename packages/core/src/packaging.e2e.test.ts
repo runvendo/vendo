@@ -136,10 +136,19 @@ describe("packaging e2e — the artifact blocks will install", () => {
     const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
       entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)],
     );
-    for (const file of walk(distDir).filter((name) => name.endsWith(".js"))) {
+    // CORE-10: dist/cjs is the CommonJS condition — require() IS its module
+    // system. The platform-clean (edge/Bun) guarantee applies to the ESM dist,
+    // the `default` condition every non-CJS runtime resolves.
+    const cjsDir = join(distDir, "cjs");
+    for (const file of walk(distDir).filter((name) => name.endsWith(".js") && !name.startsWith(cjsDir))) {
       const source = readFileSync(file, "utf8");
       expect(source, `${file} imports a platform module`).not.toMatch(/from\s+["']node:/);
       expect(source, `${file} uses require`).not.toMatch(/\brequire\s*\(/);
+    }
+    // The CJS leg still must not touch platform modules.
+    for (const file of walk(cjsDir).filter((name) => name.endsWith(".js"))) {
+      const source = readFileSync(file, "utf8");
+      expect(source, `${file} imports a platform module`).not.toMatch(/require\(["']node:/);
     }
   });
 

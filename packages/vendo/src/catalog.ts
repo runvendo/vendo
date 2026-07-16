@@ -1,5 +1,5 @@
 import { catalogFileSchema } from "@vendoai/actions";
-import type { ComponentCatalog, RegisteredComponent } from "@vendoai/core";
+import type { ComponentCatalog, RegisteredComponent, VendoTheme } from "@vendoai/core";
 
 function permissivePropsSchema(): RegisteredComponent["propsSchema"] {
   return { "~standard": { validate: (value: unknown) => ({ value }) } };
@@ -42,6 +42,27 @@ export function runtimeCatalogFromJson(
     );
     return [];
   }
+}
+
+/** AGENT-1 — 03 §3 item (4): the model-facing summary of the host components a
+ * generated view may use and how the host's brand should feel. One succinct
+ * block; the agent injects it only for venues that render trees. */
+export function catalogThemeSummary(
+  catalog: ComponentCatalog,
+  theme?: VendoTheme,
+): string | undefined {
+  const sections: string[] = [];
+  if (catalog.length > 0) {
+    const lines = catalog.map((entry) =>
+      `- ${entry.name}: ${entry.description.split("\n", 1)[0] ?? ""}`.trimEnd());
+    sections.push(`Host components (usable in generated views beside the built-in primitives)\n${lines.join("\n")}`);
+  }
+  if (theme !== undefined) {
+    sections.push(
+      `Theme: ${theme.density} density, ${theme.motion} motion, ${theme.typography.fontFamily} typography.`,
+    );
+  }
+  return sections.length > 0 ? sections.join("\n\n") : undefined;
 }
 
 /** Explicit createVendo registrations win by name over disk registrations. */

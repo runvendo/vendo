@@ -48,16 +48,11 @@ export interface ActionsRegistry extends ToolRegistry {
   search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]>;
 }
 
-/** Away calls carry the exact grant captured by the guard binding; venue="mcp"
- * calls carry the door's OAuth-consent projection (10-mcp §3) as `mcpConsent`,
- * attached by the door. `mcpConsent` is the STRUCTURAL twin of @vendoai/mcp's
- * `McpRunContext` — actions depends on core only (so the type can't be
- * imported); the door guarantees the shape, exactly as guard guarantees
- * `grant`. */
-export type ActionsRunContext = RunContext & {
-  grant?: PermissionGrant;
-  mcpConsent?: { clientId: string; scopes: string[] };
-};
+/** CORE-2 (wave 5): `grant` and `mcpConsent` are first-class optional fields
+ * on core's RunContext now — the structural twin this alias used to declare is
+ * gone. The alias survives for existing imports; new code can use RunContext
+ * directly. */
+export type ActionsRunContext = RunContext;
 
 interface RegistryConfig {
   dir?: string;

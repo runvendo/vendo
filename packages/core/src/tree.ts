@@ -2,6 +2,7 @@ import { z } from "zod";
 import { componentMapError } from "./component-map.js";
 import { safeErrorMessage } from "./errors.js";
 import { VENDO_TREE_FORMAT } from "./formats.js";
+import { FN_REFERENCE_PATTERN, findInvalidActionReference } from "./fn-references.js";
 import type { Json } from "./ids.js";
 import { TREE_MAX_NODES, TREE_MAX_QUERIES } from "./tree-limits.js";
 
@@ -9,6 +10,8 @@ export {
   TREE_MAX_NODES,
   TREE_MAX_QUERIES,
   TREE_MAX_GENERATED_COMPONENTS,
+  TREE_MAX_COMPONENT_SOURCE_BYTES,
+  TREE_MAX_TOTAL_COMPONENT_BYTES,
   TREE_MAX_COMPONENT_SOURCE_CHARS,
   TREE_MAX_TOTAL_COMPONENT_CHARS,
   RESERVED_COMPONENT_NAMES,
@@ -110,8 +113,6 @@ type TreeValidation =
   | { ok: true; tree: Tree }
   | { ok: false; error: { code: "version" | "provision"; message: string } };
 
-const FN_REFERENCE_PATTERN = /^fn:[A-Za-z_][A-Za-z0-9_-]*$/;
-
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -188,6 +189,16 @@ const validateTreeUnsafe = (input: unknown): TreeValidation => {
     }
     if (node.props !== undefined && !isPlainObject(node.props)) {
       return fail("provision", `node "${node.id}" props must be a plain object`);
+    }
+    if (node.props !== undefined) {
+      // CORE-5 (01 §8): fn: grammar holds ANYWHERE a tree names a callable —
+      // action names in props included. (Machine-presence is enforced one
+      // level up by validateAppDocument, which knows `server`.) The walk is
+      // allocation-free: validateTree sits on the per-render hot path.
+      const invalidAction = findInvalidActionReference(node.props);
+      if (invalidAction !== null) {
+        return fail("provision", `node "${node.id}" action "${invalidAction}" is not a valid fn: reference`);
+      }
     }
     if (ids.has(node.id)) {
       return fail("provision", `duplicate node id "${node.id}"`);

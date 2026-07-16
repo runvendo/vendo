@@ -60,6 +60,11 @@ import {
 // 02-store §5: the erase API ships on the umbrella's runtime surface so hosts
 // reach it without installing @vendoai/store directly.
 export { eraseStore, type EraseReport, type EraseTable } from "@vendoai/store";
+// XCUT-3: the production-deploy path — createStore({ url }) plus the secrets
+// runtime — is reachable from the umbrella itself (docs/persistence-and-deploy
+// imports these from "@vendoai/vendo/server"); hosts never need to install
+// @vendoai/store directly.
+export { createStore, envSecrets, secretStore, storeSecrets } from "@vendoai/store";
 export {
   runRefine,
   type RefineChange,
@@ -77,7 +82,7 @@ import {
   capabilitySurfaceSnapshot,
   createCapabilityMissCapture,
 } from "./capability-misses.js";
-import { mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
+import { catalogThemeSummary, mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
 import { createConnections, type ConnectionsService } from "./connections.js";
 import { createOrgs, type OrgsService } from "./orgs.js";
 import { createRuntimeCapture, type RuntimeCaptureHandler } from "./runtime-capture.js";
@@ -180,6 +185,9 @@ export interface CreateVendoConfig {
         discoverable via `vendo_tools_search`. Defaults to the agent block's
         DEFAULT_MAX_INITIAL_TOOLS. */
     maxInitialTools?: number;
+    /** AGENT-7: agent-loop step cap per turn (default 20). Exhaustion streams a
+        renderable `data-vendo-step-limit` part instead of ending silently. */
+    maxSteps?: number;
   };
   /** 02-store §4 / ENG-237 — ephemeral (anonymous) session lifecycle. Anonymous
       visitors get a TTL-based session: every request touches it, an idle session
@@ -901,6 +909,10 @@ function createWireHandler(deps: {
           ...(body["threadId"] === undefined ? {} : { threadId: string(body["threadId"], "threadId") }),
           message: body["message"] as never,
           ctx,
+          // AGENT-3: client disconnect aborts the request, which cancels the
+          // agent loop — provider calls stop instead of running to completion
+          // for a reader that is gone.
+          signal: request.signal,
         });
       }
       if (request.method === "GET" && path === "/threads") {
@@ -1488,15 +1500,28 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     .then(capabilitySurfaceSnapshot)
     .catch(() => capabilitySurfaceSnapshot([]));
   const missCapture = createCapabilityMissCapture({ surface: missSurface });
+  // AGENT-1/2 — 03 §3: the host product brief (init writes .vendo/brief.md)
+  // and the catalog+theme summary feed the system prompt; prompt.ts places
+  // them (brief = Product section; summary only where trees render).
+  const brief = dotVendoFile("brief.md")?.trim();
+  const promptCatalog = catalogThemeSummary(catalog, theme);
+  const system = brief || promptCatalog !== undefined
+    ? {
+        ...(brief ? { product: brief } : {}),
+        ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
+      }
+    : undefined;
   const agent = createAgent({
     model: config.model,
     tools: boundTools,
     guard,
     store,
+    ...(system === undefined ? {} : { system }),
     context: {
       toolOutputCap: config.agent?.toolOutputCap ?? DEFAULT_TOOL_OUTPUT_CAP,
       ...(config.agent?.maxOutputTokens === undefined ? {} : { maxOutputTokens: config.agent.maxOutputTokens }),
       ...(config.agent?.historyWindow === undefined ? {} : { historyWindow: config.agent.historyWindow }),
+      ...(config.agent?.maxSteps === undefined ? {} : { maxSteps: config.agent.maxSteps }),
     },
     capabilityMiss: {
       hostId: missCapture.hostId,

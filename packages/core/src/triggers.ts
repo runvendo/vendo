@@ -1,11 +1,26 @@
 import { z } from "zod";
-import { isoDateTimeSchema, type IsoDateTime } from "./ids.js";
+import { isoDateTimeSchema, runIdSchema, type IsoDateTime, type RunId } from "./ids.js";
+import { openEnum, openKindVariant } from "./open-enum.js";
 
 /** 01-core §11 */
 export type TriggerSource =
   | { kind: "schedule"; cron?: string; every?: string; at?: IsoDateTime }
   | { kind: "host-event"; event: string }
   | { kind: "external"; connector: string; event: string; config?: unknown };
+
+/** 01-core §3. Lives beside TriggerSource (not in run-context.ts) so grants,
+ *  audit, AND run-context can all import it without a runtime module cycle. */
+export interface TriggerRef {
+  runId: RunId;
+  kind: TriggerSource["kind"];
+}
+
+/** 01-core §3 */
+export const triggerRefSchema = z.object({
+  runId: runIdSchema,
+  // CORE-11: trigger kinds are §15-additive — a future kind must not brick refs.
+  kind: openEnum<TriggerSource["kind"]>(["schedule", "host-event", "external"]),
+}).passthrough() satisfies z.ZodType<TriggerRef>;
 
 /** 01-core §11 */
 export const triggerSourceSchema = z.discriminatedUnion("kind", [
@@ -29,7 +44,8 @@ export const triggerSourceSchema = z.discriminatedUnion("kind", [
   (source) => source.kind !== "schedule"
     || [source.cron, source.every, source.at].filter((value) => value !== undefined).length === 1,
   { message: "schedule must specify exactly one of cron, every, or at" },
-) satisfies z.ZodType<TriggerSource>;
+  // CORE-11 — §15: unknown trigger kinds are additive; known kinds stay strict.
+).or(openKindVariant(["schedule", "host-event", "external"])) satisfies z.ZodType<TriggerSource>;
 
 /** 01-core §11 */
 export interface Step {
@@ -65,7 +81,8 @@ export const runModelSchema = z.discriminatedUnion("kind", [
     kind: z.literal("steps"),
     steps: z.array(stepSchema),
   }).passthrough(),
-]) satisfies z.ZodType<RunModel>;
+  // CORE-11 — §15: run models are additive; known kinds stay strict.
+]).or(openKindVariant(["agentic", "steps"])) satisfies z.ZodType<RunModel>;
 
 /** 01-core §11 */
 export interface Trigger {

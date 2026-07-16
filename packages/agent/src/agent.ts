@@ -1,6 +1,8 @@
 import {
   VendoError,
+  toVendoWirePart,
   type AgentRunner,
+  type ApprovalId,
   type Guard,
   type RunContext,
   type StoreAdapter,
@@ -30,6 +32,10 @@ import {
 import { createToolSearchSession, type ToolSearchConfig } from "./tool-search.js";
 
 const THREAD_ID_HEADER = "x-vendo-thread-id";
+
+// AGENT-7: the default agent-loop step cap (unchanged from the previously
+// hardcoded value); hosts raise or lower it via context.maxSteps.
+const DEFAULT_MAX_STEPS = 20;
 
 // ENG-309: backoff between persist attempts after a completed stream. Short and
 // bounded — long waits would hold the response open for nothing (the user
@@ -81,6 +87,9 @@ interface AgentConfig {
   store?: StoreAdapter;
   system?: {
     product?: string;
+    /** AGENT-1 (03 §3 item 4): catalog + theme summary, assembled by the
+     *  umbrella; injected only for venues that render trees. */
+    catalog?: string;
     instructions?: string;
   };
   context?: {
@@ -90,6 +99,9 @@ interface AgentConfig {
      *  so tool-call/result pairing inside a message is never split). Undefined → send the
      *  full thread (current behavior). Persistence and the streamed thread are unaffected. */
     historyWindow?: number;
+    /** AGENT-7: the agent-loop step cap (default 20). Exhausting it is VISIBLE:
+     *  the stream carries a `data-vendo-step-limit` part the client can render. */
+    maxSteps?: number;
   };
   capabilityMiss?: CapabilityMissConfig;
   /** ENG-252: enable the `vendo_tools_search` meta-tool and runtime loadout.
@@ -105,7 +117,15 @@ const CACHE_BREAKPOINT = { anthropic: { cacheControl: { type: "ephemeral" } } } 
 
 /** 03-agent §1 */
 export interface VendoAgent {
-  stream(input: { threadId?: ThreadId; message: UIMessage; ctx: RunContext }): Promise<Response>;
+  /** AGENT-3: `signal` cancels the turn — provider calls stop (the in-flight
+   *  call is aborted, no further step starts) and the thread persists in a
+   *  consistent, resumable state. The umbrella wires client disconnect here. */
+  stream(input: {
+    threadId?: ThreadId;
+    message: UIMessage;
+    ctx: RunContext;
+    signal?: AbortSignal;
+  }): Promise<Response>;
   threads: {
     get(id: ThreadId, ctx: RunContext): Promise<Thread | null>;
     list(ctx: RunContext): Promise<ThreadSummary[]>;
@@ -130,6 +150,10 @@ function validateConfig(config: AgentConfig): void {
   if (historyWindow !== undefined && (!Number.isInteger(historyWindow) || historyWindow < 1)) {
     throw new VendoError("validation", "historyWindow must be a positive integer");
   }
+  const { maxSteps } = config.context ?? {};
+  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps < 1)) {
+    throw new VendoError("validation", "maxSteps must be a positive integer");
+  }
 }
 
 // System-role messages are rejected: the system prompt is assembled server-side
@@ -150,10 +174,97 @@ function upsertMessage(messages: UIMessage[], message: UIMessage): void {
   else messages[index] = message;
 }
 
-function abandonPendingApprovals(messages: UIMessage[]): void {
+/** Structural JSON equality, key-order independent (both sides are
+ *  wire-serializable UIMessage parts). */
+function jsonEqual(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right)
+      && left.length === right.length
+      && left.every((item, index) => jsonEqual(item, right[index]));
+  }
+  if (typeof left !== "object" || typeof right !== "object" || left === null || right === null) {
+    return false;
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const keys = Object.keys(leftRecord);
+  return keys.length === Object.keys(rightRecord).length
+    && keys.every((key) => jsonEqual(leftRecord[key], rightRecord[key]));
+}
+
+/** AGENT-12: is `incoming` the one client-writable change to a stored part —
+ *  answering a pending approval? The verdict payload is exactly
+ *  `{ id (unchanged), approved, reason? }` and EVERY other field of the part
+ *  must stay byte-identical — no fabricated output or altered props may ride
+ *  along on the flip. */
+function isApprovalResponse(stored: unknown, incoming: unknown): boolean {
+  const before = stored as Record<string, unknown>;
+  const after = incoming as Record<string, unknown>;
+  if (before.state !== "approval-requested" || after.state !== "approval-responded") return false;
+  const beforeApproval = before.approval as { id?: unknown } | undefined;
+  const afterApproval = after.approval as Record<string, unknown> | undefined;
+  if (beforeApproval === undefined || afterApproval === undefined) return false;
+  if (afterApproval.id !== beforeApproval.id
+    || typeof afterApproval.approved !== "boolean"
+    || (afterApproval.reason !== undefined && typeof afterApproval.reason !== "string")
+    || Object.keys(afterApproval).some((key) => !["id", "approved", "reason"].includes(key))) {
+    return false;
+  }
+  // Reverting the flip must reproduce the stored part exactly.
+  return jsonEqual({ ...after, state: before.state, approval: before.approval }, before);
+}
+
+/** AGENT-12: clients may add fresh USER messages and answer approvals — they
+ *  may not author assistant content or rewrite history by replaying a known
+ *  message id with different parts. */
+function validateUpsert(messages: UIMessage[], message: UIMessage): void {
+  const existing = messages.find((candidate) => candidate.id === message.id);
+  if (existing === undefined) {
+    if (message.role !== "user") {
+      throw new VendoError("validation", "assistant messages are server-authored; a new message must be role user");
+    }
+    return;
+  }
+  if (existing.role !== message.role) {
+    throw new VendoError("validation", "a message upsert cannot change the message role");
+  }
+  // Serialize both sides so explicit-undefined props (which JSON drops on the
+  // wire anyway) never make an identical part read as different.
+  const stored = JSON.parse(JSON.stringify(existing.parts)) as unknown[];
+  const incoming = JSON.parse(JSON.stringify(message.parts)) as unknown[];
+  if (message.role === "user") {
+    if (!jsonEqual(stored, incoming)) {
+      throw new VendoError("validation", "an existing user message cannot be rewritten");
+    }
+    return;
+  }
+  if (stored.length !== incoming.length
+    || !stored.every((part, index) => jsonEqual(part, incoming[index]) || isApprovalResponse(part, incoming[index]))) {
+    throw new VendoError(
+      "validation",
+      "an assistant message upsert may only answer pending approvals",
+    );
+  }
+}
+
+function abandonPendingApprovals(messages: UIMessage[]): string[] {
+  const abandonedToolCallIds: string[] = [];
   for (const message of messages) {
     message.parts = message.parts.map((part) => {
-      if (!isToolUIPart(part) || part.state !== "approval-requested") return part;
+      if (!isToolUIPart(part)) return part;
+      // Parts flipped on an EARLIER turn re-collect too: guard-side resolution
+      // is best-effort per turn, so a failed abandonApprovals call retries on
+      // the next fresh turn (the guard method is idempotent — an
+      // already-denied id is a no-op there).
+      if (part.state === "approval-responded"
+        && part.approval?.approved === false
+        && (part.approval as { reason?: string }).reason === "abandoned") {
+        abandonedToolCallIds.push(part.toolCallId);
+        return part;
+      }
+      if (part.state !== "approval-requested") return part;
+      abandonedToolCallIds.push(part.toolCallId);
       return {
         ...part,
         state: "approval-responded",
@@ -165,6 +276,28 @@ function abandonPendingApprovals(messages: UIMessage[]): void {
       };
     });
   }
+  return abandonedToolCallIds;
+}
+
+/** AGENT-6: the guard's approval ids for abandoned tool calls. The native tool
+ *  part's `approval.id` is the ai-SDK's own handle; the GUARD's approvalId
+ *  rides the data-vendo-approval part beside it, keyed by toolCallId — read it
+ *  from either the persisted nested envelope or the flat §16 shape. */
+function guardApprovalIds(messages: UIMessage[], toolCallIds: string[]): ApprovalId[] {
+  if (toolCallIds.length === 0) return [];
+  const wanted = new Set(toolCallIds);
+  const ids: ApprovalId[] = [];
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.type !== "data-vendo-approval") continue;
+      const payload = ("data" in part ? part.data : part) as { toolCallId?: unknown; approvalId?: unknown };
+      if (typeof payload.toolCallId === "string" && wanted.has(payload.toolCallId)
+        && typeof payload.approvalId === "string") {
+        ids.push(payload.approvalId as ApprovalId);
+      }
+    }
+  }
+  return ids;
 }
 
 function providerHistory(messages: UIMessage[]): UIMessage[] {
@@ -218,9 +351,22 @@ export function createAgent(config: AgentConfig): VendoAgent {
     async stream(input) {
       validateMessage(input?.message);
       const thread = await threads.resolve(input.threadId, input.ctx);
+      validateUpsert(thread.messages, input.message);
       if (input.message.role === "user"
         && !thread.messages.some((message) => message.id === input.message.id)) {
-        abandonPendingApprovals(thread.messages);
+        const abandonedCalls = abandonPendingApprovals(thread.messages);
+        // AGENT-6: resolve the abandoned asks guard-side too (denied, no
+        // grant), so the pending queue tracks the thread. Best-effort — the
+        // fresh turn must stream even when the guard write fails.
+        const approvalIds = guardApprovalIds(thread.messages, abandonedCalls);
+        if (approvalIds.length > 0 && config.guard.abandonApprovals !== undefined) {
+          try {
+            await config.guard.abandonApprovals(approvalIds, input.ctx);
+          } catch {
+            // The thread already reflects abandonment; queue cleanup retries
+            // implicitly on the next abandoned turn.
+          }
+        }
       }
       upsertMessage(thread.messages, input.message);
       const system = await assembleSystemPrompt(
@@ -233,6 +379,9 @@ export function createAgent(config: AgentConfig): VendoAgent {
       const stream = createUIMessageStream<UIMessage>({
         originalMessages: thread.messages,
         execute: async ({ writer }) => {
+          // AGENT-3: a client that disconnected before the turn started gets no
+          // provider call at all — the stream closes empty but well-formed.
+          if (input.signal?.aborted) return;
           const missDetector = config.capabilityMiss === undefined
             ? undefined
             : createCapabilityMissDetector({
@@ -277,11 +426,12 @@ export function createAgent(config: AgentConfig): VendoAgent {
             { role: "system", content: system, providerOptions: CACHE_BREAKPOINT },
             ...converted,
           ];
+          const maxSteps = config.context?.maxSteps ?? DEFAULT_MAX_STEPS;
           const result = streamText({
             model: config.model,
             messages: modelMessages,
             tools,
-            stopWhen: stepCountIs(20),
+            stopWhen: stepCountIs(maxSteps),
             maxOutputTokens: config.context?.maxOutputTokens,
             // ENG-252 loadout: restrict what the model may pick to the current
             // loadout. `prepareStep` re-reads it each step so a tool loaded via
@@ -294,6 +444,9 @@ export function createAgent(config: AgentConfig): VendoAgent {
                   activeTools: toolSearch.activeToolNames(),
                   prepareStep: () => ({ activeTools: toolSearch.activeToolNames() }),
                 }),
+            // AGENT-3: cancellation reaches the provider call itself; the loop
+            // never starts another step once the signal fires.
+            abortSignal: input.signal,
           });
           writer.merge(result.toUIMessageStream({
             originalMessages: thread.messages,
@@ -301,6 +454,22 @@ export function createAgent(config: AgentConfig): VendoAgent {
             // carry request internals); the error part is a fixed generic message.
             onError: () => "An error occurred while generating the response.",
           }));
+          // AGENT-7: exhausting the step cap is VISIBLE. A run that still wants
+          // tool calls after its final permitted step ended because of the cap,
+          // not because the model finished — stream a renderable notice.
+          try {
+            const [finishReason, steps] = await Promise.all([result.finishReason, result.steps]);
+            if (finishReason === "tool-calls" && steps.length >= maxSteps) {
+              writer.write(toVendoWirePart({
+                type: "data-vendo-step-limit",
+                limit: maxSteps,
+                message: `Stopped after reaching the ${maxSteps}-step limit for one turn. Reply to continue.`,
+              }) as never);
+            }
+          } catch {
+            // The merged stream already surfaced the run failure; the notice is
+            // best-effort and must never replace or mask that error.
+          }
         },
         onFinish: async ({ messages }) => {
           await persistFinishedTurn(threads, thread, messages, input.ctx);

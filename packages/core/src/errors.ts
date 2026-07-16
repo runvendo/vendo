@@ -1,5 +1,6 @@
-import { z } from "zod";
+import type { z } from "zod";
 import type { Json } from "./ids.js";
+import { openEnum } from "./open-enum.js";
 
 /** 01-core §15 */
 export type VendoErrorCode =
@@ -11,8 +12,9 @@ export type VendoErrorCode =
   | "not-found"
   | "conflict";
 
-/** 01-core §15 */
-export const vendoErrorCodeSchema = z.enum([
+/** 01-core §15 — open per §15 forward-compat (CORE-11): clients treat an
+ * unknown code as a generic error, so the schema tolerates future codes. */
+export const vendoErrorCodeSchema = openEnum<VendoErrorCode>([
   "validation",
   "blocked",
   "not-implemented",

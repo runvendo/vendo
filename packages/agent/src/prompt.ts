@@ -16,11 +16,16 @@ const CAPABILITY_MISS_PROMPT = `When the user's ask cannot be fulfilled:
 - List only tool names you actually considered. Do not call the reporter for a pending approval or a policy-blocked call.
 Repeated failures are detected automatically; if the reporter says the miss was already recorded, do not call it again.`;
 
+// 03-agent §3 item (4): the catalog+theme summary rides only where generated
+// trees can actually render — the chat surface and the app venue. Away
+// automation runs and the MCP door get no component vocabulary.
+const TREE_VENUES: ReadonlySet<RunContext["venue"]> = new Set(["chat", "app"]);
+
 /** 03-agent §3: company directions are mandatory policy context and fail closed. */
 export async function assembleSystemPrompt(
   guard: Guard,
   ctx: RunContext,
-  system?: { product?: string; instructions?: string },
+  system?: { product?: string; catalog?: string; instructions?: string },
   capabilityMiss = false,
 ): Promise<string> {
   const sections = [OPERATING_PROMPT];
@@ -35,7 +40,11 @@ export async function assembleSystemPrompt(
     sections.push(`Directions\n${directions.map((direction) => `- ${direction}`).join("\n")}`);
   }
 
-  // 03-agent §3 item 4: v0 has no catalog/theme config; the umbrella folds it into system.instructions.
+  // 03-agent §3 item (4) — the umbrella assembles the summary (AGENT-1); the
+  // agent places it, venue-gated.
+  const catalog = system?.catalog?.trim();
+  if (catalog && TREE_VENUES.has(ctx.venue)) sections.push(catalog);
+
   const instructions = system?.instructions?.trim();
   if (instructions) sections.push(instructions);
   return sections.join("\n\n");
