@@ -22,6 +22,18 @@ Verdict, latency table, transcripts and the wave-2 API sketch live in
   dev-mode does today when a key exists).
 - `src/run-*.ts` — key/auth-gated measurement scripts (never part of `pnpm test`).
 
+## Install (standalone, not part of the workspace)
+
+This spike needs **zod ^4** (Claude Agent SDK peer) while the repo is on zod 3;
+as a workspace member it flipped zod peer resolution to 4.x for every ai-SDK
+consumer (packages/agent, packages/ui, fixtures). It is therefore excluded in
+`pnpm-workspace.yaml` and carries its own lockfile:
+
+```sh
+cd spikes/install-dx-creds
+pnpm install --ignore-workspace
+```
+
 ## Run the gates
 
 `pnpm build && pnpm test && pnpm typecheck` — no network, no credentials.
