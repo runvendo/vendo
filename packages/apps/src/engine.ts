@@ -25,7 +25,7 @@ import {
   parseModelJson,
   type IncrementalGeneratedTree,
 } from "./incremental-tree.js";
-import { pinComponentName, type PinBaseline } from "./pins.js";
+import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "./pins.js";
 
 export interface GenerationDependencies {
   model: LanguageModel;
@@ -567,6 +567,14 @@ const applyTreeOps = (
         if (app.pins?.some(({ slot }) => slot === baseline.slot)) {
           return issue(index, operation, `pin slot "${baseline.slot}" is already forked`);
         }
+        // ENG-348 — a named-export capture forks with a synthesized default
+        // export (the jail entry renders only a default export). No detectable
+        // component export means the fork could never render: fail loudly here
+        // instead of crashing at render.
+        const forkSource = pinForkSource(baseline.source);
+        if (!hasDefaultExport(forkSource)) {
+          return issue(index, operation, `pin baseline "${baseline.slot}" has no default export and no detectable named component export; export the component from its module and re-run vendo sync`);
+        }
         const componentName = pinComponentName(baseline.slot);
         if (app.components?.[componentName] !== undefined) {
           return issue(index, operation, `generated component "${componentName}" already exists`);
@@ -588,7 +596,7 @@ const applyTreeOps = (
         };
         tree.nodes.push(node);
         insertChild(parent, node.id, operation.index);
-        app.components = { ...(app.components ?? {}), [componentName]: baseline.source };
+        app.components = { ...(app.components ?? {}), [componentName]: forkSource };
         app.pins = [...(app.pins ?? []), { slot: baseline.slot, base: baseline.hash }];
         break;
       }

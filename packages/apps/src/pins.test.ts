@@ -9,6 +9,7 @@ import {
   pinShipRequestSchema,
   type PinBaseline,
 } from "./index.js";
+import { pinForkSource } from "./pins.js";
 
 const capturedAt = "2026-07-11T12:00:00.000Z";
 
@@ -42,6 +43,77 @@ describe("pin contract shapes", () => {
     })).toMatchObject({ versionHash: "sha256:z" });
   });
 
+});
+
+describe("pinForkSource", () => {
+  it("keeps a source with a default export verbatim", () => {
+    const declared = "export default function Card() { return null; }";
+    expect(pinForkSource(declared)).toBe(declared);
+    const aliased = "function Card() { return null; }\nexport { Card as default };";
+    expect(pinForkSource(aliased)).toBe(aliased);
+    const reExported = "export { default } from \"./card\";";
+    expect(pinForkSource(reExported)).toBe(reExported);
+  });
+
+  it("ignores commented-out and quoted default exports", () => {
+    const commented = "// export default function Old() {}\nexport function InvoiceCard() { return null; }";
+    expect(pinForkSource(commented)).toBe(`${commented}\nexport { InvoiceCard as default };\n`);
+    const block = "/* export default Old */\nexport function InvoiceCard() { return null; }";
+    expect(pinForkSource(block)).toContain("export { InvoiceCard as default };");
+    // A commented-out export is never the alias target either.
+    const staleExport = "// export function OldCard() {}\nexport function InvoiceCard() { return null; }";
+    expect(pinForkSource(staleExport)).toContain("export { InvoiceCard as default };");
+    // A quoted phrase neither adds nor masks a real default export.
+    const quoted = "const hint = \"export default\";\nexport function InvoiceCard() { return null; }\nexport default InvoiceCard;";
+    expect(pinForkSource(quoted)).toBe(quoted);
+  });
+
+  it("ignores type-only default exports, which are erased at runtime", () => {
+    const inline = "export function InvoiceCard() { return null; }\nexport { type Props as default };";
+    expect(pinForkSource(inline)).toContain("export { InvoiceCard as default };");
+    const statement = "export function InvoiceCard() { return null; }\nexport type { Props as default };";
+    expect(pinForkSource(statement)).toContain("export { InvoiceCard as default };");
+    const declared = "export default interface Props { label: string }\nexport function InvoiceCard() { return null; }";
+    expect(pinForkSource(declared)).toContain("export { InvoiceCard as default };");
+  });
+
+  it("does not mistake a renamed default re-export for a default export", () => {
+    // `export { default as InvoiceCard } from …` exposes only the NAMED
+    // binding; there is no local binding to alias either, so the source passes
+    // through unchanged and fork-pin refuses it loudly.
+    const renamed = "export { default as InvoiceCard } from \"./InvoiceCard\";";
+    expect(pinForkSource(renamed)).toBe(renamed);
+  });
+
+  it("synthesizes a default export for a named function export (ENG-348)", () => {
+    const source = "export function InvoiceCard() { return <b>invoices</b>; }";
+    expect(pinForkSource(source)).toBe(`${source}\nexport { InvoiceCard as default };\n`);
+  });
+
+  it("synthesizes a default export for a named const export", () => {
+    const source = "export const InvoiceCard = () => <b>invoices</b>;";
+    expect(pinForkSource(source)).toBe(`${source}\nexport { InvoiceCard as default };\n`);
+  });
+
+  it("picks the component-cased export over helper exports", () => {
+    const source = [
+      "export const useInvoiceTotals = () => 0;",
+      "export function InvoiceCard() { return null; }",
+    ].join("\n");
+    expect(pinForkSource(source)).toContain("export { InvoiceCard as default };");
+  });
+
+  it("aliases an export-list component back to its local binding", () => {
+    const source = "function Internal() { return null; }\nexport { Internal as InvoiceCard };";
+    expect(pinForkSource(source)).toContain("export { Internal as default };");
+  });
+
+  it("leaves a source with no detectable component export unchanged", () => {
+    const local = "const Card = () => null;";
+    expect(pinForkSource(local)).toBe(local);
+    const lowercase = "export const helpers = { format: (value: number) => value };";
+    expect(pinForkSource(lowercase)).toBe(lowercase);
+  });
 });
 
 describe("detectPinDrift", () => {

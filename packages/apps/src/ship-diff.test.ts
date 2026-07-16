@@ -1,6 +1,6 @@
 import { VENDO_APP_FORMAT, type AppDocument } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { pinComponentName, type PinBaseline } from "./pins.js";
+import { pinComponentName, pinForkSource, type PinBaseline } from "./pins.js";
 import { computeShipDiff } from "./ship-diff.js";
 import { appVersionHash } from "./version-hash.js";
 
@@ -58,6 +58,17 @@ describe("computeShipDiff", () => {
   it("reports an unchanged fork as an empty diff", () => {
     const doc = app({ components: { [componentName]: baseline.source } });
     expect(computeShipDiff(doc, [baseline]).pins[0]?.diff).toBe("");
+  });
+
+  it("reports an unedited fork of a named-export baseline as an empty diff (ENG-348)", () => {
+    const named: PinBaseline = {
+      ...baseline,
+      source: "export function Card() {\n  return <b>host</b>;\n}",
+    };
+    // The fork ships pinForkSource(baseline.source) — the synthesized default
+    // export is fork plumbing, not a host edit, so it never shows to approvers.
+    const doc = app({ components: { [componentName]: pinForkSource(named.source) } });
+    expect(computeShipDiff(doc, [named]).pins[0]?.diff).toBe("");
   });
 
   it("flags drift when the captured baseline hash no longer matches the pin base", () => {
