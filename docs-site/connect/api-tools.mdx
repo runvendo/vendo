@@ -1,6 +1,6 @@
 ---
 title: "Tools from your API"
-description: "How vendo sync extracts OpenAPI operations, tRPC procedures, GraphQL operations, and host routes into .vendo/tools.json and runs them as the signed-in user under guard."
+description: "How Vendo sync extracts OpenAPI, tRPC, GraphQL, and host routes into .vendo/tools.json and runs them as the signed-in user under guard."
 ---
 
 Vendo sync extracts OpenAPI operations, tRPC procedures, GraphQL operations,
@@ -135,11 +135,11 @@ up whichever your app uses:
 
 Each binding records the operation name, its `query` or `mutation` type, the
 endpoint, and a full executable `document`. The document declares variables
-for every argument (nullable when the argument is optional or defaulted, so the
-agent can omit it) and a depth-limited default selection set with a
+for every argument, marks optional or defaulted arguments as nullable so the
+agent can omit them, and uses a depth-limited default selection set with a
 `{ __typename }` floor. At runtime Vendo POSTs
-`{ query: document, variables: args }` to the endpoint, unwraps a single root
-field on success, and surfaces a 200 response with a non-empty `errors` array
+`{ query: document, variables: args }` to the endpoint and unwraps a single
+root field on success. A 200 response with a non-empty `errors` array surfaces
 as an http-error outcome.
 
 The extractor discovers the endpoint from Next route files hosting Yoga or
