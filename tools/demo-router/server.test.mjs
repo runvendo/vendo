@@ -18,11 +18,13 @@ const liveRow = {
 /** Boot a router on an ephemeral port; returns fetch helpers bound to it. */
 async function boot({ adminToken = ADMIN_TOKEN, seed = [], corrupt = false } = {}) {
   const filePath = path.join(mkdtempSync(path.join(tmpdir(), "demo-router-server-")), "registry.json");
-  const registry = createRegistry({ filePath, log: () => {} });
+  // Threshold 1 = flush every hit, so tests can assert persisted counters
+  // synchronously (production uses the coalescing defaults).
+  const registry = createRegistry({ filePath, log: () => {}, hitFlushThreshold: 1 });
   for (const row of seed) registry.upsert(row);
   if (corrupt) writeFileSync(filePath, "{ not json");
   const server = createRouterServer({
-    registry: corrupt ? createRegistry({ filePath, log: () => {} }) : registry,
+    registry: corrupt ? createRegistry({ filePath, log: () => {}, hitFlushThreshold: 1 }) : registry,
     adminToken,
     log: () => {},
   });
@@ -53,11 +55,11 @@ describe("public routes", () => {
     assert.equal(response.headers.get("location"), "https://vendo.run");
   });
 
-  it("GET /:id 302s a live demo and increments hits", async () => {
+  it("GET /:id 302s a live demo (normalized URL) and increments hits", async () => {
     const { request, registry } = await boot({ seed: [liveRow] });
     const response = await request("/acme");
     assert.equal(response.status, 302);
-    assert.equal(response.headers.get("location"), liveRow.url);
+    assert.equal(response.headers.get("location"), new URL(liveRow.url).href);
     assert.equal(registry.get("acme").hits, 1);
   });
 
@@ -153,7 +155,7 @@ describe("admin CRUD", () => {
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.id, "acme");
-    assert.equal(registry.get("acme").url, liveRow.url);
+    assert.equal(registry.get("acme").url, new URL(liveRow.url).href);
   });
 
   it("POST validation: rejects bad slug, non-https url, bad expiresAt, malformed JSON", async () => {

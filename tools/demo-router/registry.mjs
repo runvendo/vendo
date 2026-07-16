@@ -48,8 +48,20 @@ export function createRegistry({
   filePath = process.env.REGISTRY_PATH ?? "/data/registry.json",
   log = (message) => console.error(message),
   now = () => new Date(),
+  /** Pending hits that force a flush (public GETs must never write per request). */
+  hitFlushThreshold = 50,
+  /** Periodic flush of pending hits; the timer is unref'd so it never holds shutdown. */
+  hitFlushIntervalMs = 30_000,
 } = {}) {
   let warnedCorrupt = false;
+
+  // Hit coalescing: redirects on the hot path only bump this in-memory map;
+  // the file is written at most every `hitFlushThreshold` hits or
+  // `hitFlushIntervalMs`. Deliberately lossy — a crash loses the buffer, and
+  // that is fine for a best-effort usage counter.
+  const pendingHits = new Map();
+  let pendingHitCount = 0;
+  let flushTimer;
 
   // Missing file => empty registry (deleting the file resets it).
   // Unreadable/unparseable/wrong shape => corrupt: fail closed, never write.
@@ -94,6 +106,38 @@ export function createRegistry({
 
   const withId = (id, entry) => ({ id, ...entry });
 
+  /** WHATWG-normalize before storing: .href strips CR/LF/tab and canonicalizes,
+   * so a Location header can never carry raw registry bytes. Throws on junk. */
+  function normalizeUrl(url) {
+    try {
+      return new URL(url).href;
+    } catch {
+      throw new Error(`registry url must be a valid URL (received ${JSON.stringify(url)})`);
+    }
+  }
+
+  function flushHits() {
+    if (pendingHitCount === 0) return;
+    // Lossy by design: the buffer is cleared whether or not the flush lands,
+    // so a corrupt file or missing rows can't grow it without bound.
+    const buffered = new Map(pendingHits);
+    pendingHits.clear();
+    pendingHitCount = 0;
+    try {
+      const state = load();
+      if (state.corrupt) return;
+      let dirty = false;
+      for (const [id, count] of buffered) {
+        if (state.entries[id] === undefined) continue; // row removed before the flush
+        state.entries[id] = { ...state.entries[id], hits: state.entries[id].hits + count };
+        dirty = true;
+      }
+      if (dirty) save(state.entries);
+    } catch (error) {
+      log(`[registry] failed to flush hit counters: ${error?.message ?? error}`);
+    }
+  }
+
   return {
     get(id) {
       const entries = loadForAdmin();
@@ -117,7 +161,7 @@ export function createRegistry({
       const entries = loadForAdmin();
       const existing = entries[id];
       entries[id] = {
-        url,
+        url: normalizeUrl(url),
         prospect,
         expiresAt,
         killed,
@@ -132,7 +176,8 @@ export function createRegistry({
     patch(id, partial) {
       const entries = loadForAdmin();
       if (entries[id] === undefined) return undefined;
-      entries[id] = { ...entries[id], ...partial };
+      const normalized = partial.url === undefined ? partial : { ...partial, url: normalizeUrl(partial.url) };
+      entries[id] = { ...entries[id], ...normalized };
       save(entries);
       return withId(id, entries[id]);
     },
@@ -161,16 +206,22 @@ export function createRegistry({
       return { kind: "live", url: entry.url };
     },
 
-    /** Best-effort hit counter — never throws, never blocks a redirect. */
+    /**
+     * Best-effort hit counter — never throws, never blocks a redirect, and
+     * never touches the file on the request path: hits coalesce in memory
+     * and flush at the threshold or on the (unref'd) interval timer.
+     */
     recordHit(id) {
-      try {
-        const state = load();
-        if (state.corrupt || state.entries[id] === undefined) return;
-        state.entries[id] = { ...state.entries[id], hits: state.entries[id].hits + 1 };
-        save(state.entries);
-      } catch (error) {
-        log(`[registry] failed to record hit for "${id}": ${error?.message ?? error}`);
+      pendingHits.set(id, (pendingHits.get(id) ?? 0) + 1);
+      pendingHitCount += 1;
+      if (flushTimer === undefined) {
+        flushTimer = setInterval(flushHits, hitFlushIntervalMs);
+        flushTimer.unref?.();
       }
+      if (pendingHitCount >= hitFlushThreshold) flushHits();
     },
+
+    /** Force-persist the pending hit buffer (used by tests; the timer calls this too). */
+    flushHits,
   };
 }

@@ -21,7 +21,7 @@ describe("registry CRUD", () => {
     const registry = createRegistry({ filePath: tempRegistryPath() });
     const stored = registry.upsert(sampleRow);
     assert.equal(stored.id, "acme");
-    assert.equal(stored.url, sampleRow.url);
+    assert.equal(stored.url, new URL(sampleRow.url).href);
     assert.equal(stored.prospect, "Acme Widgets");
     assert.equal(stored.killed, false);
     assert.equal(stored.hits, 0);
@@ -33,8 +33,9 @@ describe("registry CRUD", () => {
     const registry = createRegistry({ filePath: tempRegistryPath() });
     const first = registry.upsert(sampleRow);
     registry.recordHit("acme");
+    registry.flushHits();
     const second = registry.upsert({ ...sampleRow, url: "https://elsewhere.example" });
-    assert.equal(second.url, "https://elsewhere.example");
+    assert.equal(second.url, "https://elsewhere.example/");
     assert.equal(second.createdAt, first.createdAt);
     assert.equal(second.hits, 1);
   });
@@ -42,6 +43,18 @@ describe("registry CRUD", () => {
   it("rejects an id that is not slug-shaped", () => {
     const registry = createRegistry({ filePath: tempRegistryPath() });
     assert.throws(() => registry.upsert({ ...sampleRow, id: "Not A Slug" }), /slug/);
+  });
+
+  it("stores WHATWG-normalized urls (upsert AND patch), rejecting unparseable ones", () => {
+    const registry = createRegistry({ filePath: tempRegistryPath() });
+    // .href strips CR/LF/tab and normalizes the shape — the Location header
+    // can never carry raw registry bytes.
+    const stored = registry.upsert({ ...sampleRow, url: "https://demo\n-acme.up.railway.app" });
+    assert.equal(stored.url, "https://demo-acme.up.railway.app/");
+    const patched = registry.patch("acme", { url: "https://elsewhere.example" });
+    assert.equal(patched.url, "https://elsewhere.example/");
+    assert.throws(() => registry.upsert({ ...sampleRow, url: "not a url" }), /url/i);
+    assert.throws(() => registry.patch("acme", { url: "not a url" }), /url/i);
   });
 
   it("list returns every row and remove deletes one", () => {
@@ -59,7 +72,7 @@ describe("registry CRUD", () => {
     registry.upsert(sampleRow);
     const patched = registry.patch("acme", { killed: true });
     assert.equal(patched.killed, true);
-    assert.equal(patched.url, sampleRow.url);
+    assert.equal(patched.url, new URL(sampleRow.url).href);
     assert.equal(registry.patch("nope", { killed: true }), undefined);
   });
 
@@ -91,7 +104,7 @@ describe("routeFor", () => {
     registry.upsert({ ...sampleRow, id: "old", expiresAt: "2020-01-01T00:00:00Z" });
 
     const now = new Date("2026-07-16T00:00:00Z");
-    assert.deepEqual(registry.routeFor("acme", now), { kind: "live", url: sampleRow.url });
+    assert.deepEqual(registry.routeFor("acme", now), { kind: "live", url: new URL(sampleRow.url).href });
     assert.deepEqual(registry.routeFor("dead", now), { kind: "killed" });
     assert.deepEqual(registry.routeFor("old", now), { kind: "expired" });
     assert.deepEqual(registry.routeFor("nope", now), { kind: "unknown" });
@@ -103,7 +116,10 @@ describe("routeFor", () => {
     registry.upsert({ ...sampleRow, id: "edge", expiresAt: "2026-07-16T00:00:00Z" });
     assert.deepEqual(registry.routeFor("both", new Date("2026-07-16T00:00:00Z")), { kind: "killed" });
     assert.deepEqual(registry.routeFor("edge", new Date("2026-07-16T00:00:00.000Z")), { kind: "expired" });
-    assert.deepEqual(registry.routeFor("edge", new Date("2026-07-15T23:59:59Z")), { kind: "live", url: sampleRow.url });
+    assert.deepEqual(registry.routeFor("edge", new Date("2026-07-15T23:59:59Z")), {
+      kind: "live",
+      url: new URL(sampleRow.url).href,
+    });
   });
 
   it("treats an unparseable expiresAt as expired (fail closed)", () => {
@@ -119,14 +135,52 @@ describe("routeFor", () => {
   });
 });
 
-describe("recordHit", () => {
-  it("increments hits and is a silent no-op for unknown ids", () => {
+describe("recordHit coalescing", () => {
+  it("buffers hits in memory and only persists on flush (public GETs never write the file)", () => {
     const registry = createRegistry({ filePath: tempRegistryPath() });
     registry.upsert(sampleRow);
     registry.recordHit("acme");
     registry.recordHit("acme");
-    registry.recordHit("nope");
+    registry.recordHit("nope"); // unknown ids stay a silent no-op
+    assert.equal(registry.get("acme").hits, 0, "hits are pending, not yet persisted");
+    registry.flushHits();
     assert.equal(registry.get("acme").hits, 2);
+  });
+
+  it("flushes automatically once the pending-hit threshold is reached", () => {
+    const registry = createRegistry({ filePath: tempRegistryPath(), hitFlushThreshold: 5 });
+    registry.upsert(sampleRow);
+    for (let hit = 0; hit < 4; hit += 1) registry.recordHit("acme");
+    assert.equal(registry.get("acme").hits, 0, "below the threshold nothing is persisted");
+    registry.recordHit("acme");
+    assert.equal(registry.get("acme").hits, 5, "the threshold hit flushes the buffer");
+  });
+
+  it("flushes on the interval timer (unref'd so it never holds shutdown)", async () => {
+    const registry = createRegistry({ filePath: tempRegistryPath(), hitFlushIntervalMs: 20 });
+    registry.upsert(sampleRow);
+    registry.recordHit("acme");
+    assert.equal(registry.get("acme").hits, 0);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    assert.equal(registry.get("acme").hits, 1);
+  });
+
+  it("drops pending hits for rows removed before the flush (best-effort, lossy)", () => {
+    const registry = createRegistry({ filePath: tempRegistryPath() });
+    registry.upsert(sampleRow);
+    registry.recordHit("acme");
+    registry.remove("acme");
+    assert.doesNotThrow(() => registry.flushHits());
+    assert.equal(registry.get("acme"), undefined);
+  });
+
+  it("a second flush does not double-count already-persisted hits", () => {
+    const registry = createRegistry({ filePath: tempRegistryPath() });
+    registry.upsert(sampleRow);
+    registry.recordHit("acme");
+    registry.flushHits();
+    registry.flushHits();
+    assert.equal(registry.get("acme").hits, 1);
   });
 });
 
@@ -157,9 +211,10 @@ describe("corrupt file fail-closed", () => {
     assert.equal(readFileSync(filePath, "utf8"), "{ not json");
   });
 
-  it("recordHit is best-effort: silent no-op on a corrupt file", () => {
+  it("recordHit + flush are best-effort: silent no-op on a corrupt file, poison untouched", () => {
     const { filePath, registry } = corruptRegistry();
     assert.doesNotThrow(() => registry.recordHit("acme"));
+    assert.doesNotThrow(() => registry.flushHits());
     assert.equal(readFileSync(filePath, "utf8"), "{ not json");
   });
 

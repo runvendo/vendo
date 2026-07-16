@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import { pathToFileURL } from "node:url";
 import { createRegistry, RegistryCorruptError, SLUG_PATTERN } from "./registry.mjs";
@@ -53,10 +53,10 @@ export function brandedPage({ ended }) {
 }
 
 function timingSafeTokenEqual(expected, received) {
-  const expectedBuffer = Buffer.from(expected, "utf8");
-  const receivedBuffer = Buffer.from(received, "utf8");
-  if (expectedBuffer.length !== receivedBuffer.length) return false;
-  return timingSafeEqual(expectedBuffer, receivedBuffer);
+  // Hash both sides first: equal-length inputs for timingSafeEqual AND no
+  // early-exit that would leak the token's length.
+  const digest = (value) => createHash("sha256").update(value, "utf8").digest();
+  return timingSafeEqual(digest(expected), digest(received));
 }
 
 function readBody(request) {
