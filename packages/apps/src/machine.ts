@@ -49,8 +49,11 @@ export interface MachineSessionsConfig {
    */
   resolveExposedSecrets?: (app: AppDocument) => Promise<Set<string>>;
   /**
-   * ENG-345 — emit one audit event for a run that executes with a secret exposed
-   * in-sandbox (via the guard's existing report seam). Constraint 4.
+   * ENG-345 — emit one audit event for a run whose machine this runtime boots
+   * with a secret ACTUALLY exposed in-sandbox (via the guard's existing report
+   * seam). Constraint 4. Fired at the injection point (adapter.create), so it
+   * can never report an exposed run for a handle-only machine — including the
+   * resume path, which cannot inject env and therefore never triggers it.
    */
   reportExposedRun?: (app: AppDocument, ctx: RunContext, secrets: string[]) => Promise<void>;
 }
@@ -107,29 +110,9 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     return config.sandbox;
   };
 
-  // ENG-345 — a run touches a real sandbox (so a secret can actually be exposed
-  // in-sandbox) only when the app is machine-backed. A rung-1 pure-tree app has
-  // no machine, so an exposure grant on it exposes nothing and audits nothing.
-  const machineBacked = (app: AppDocument): boolean =>
-    app.server !== undefined || app.ui === "http";
-
-  const newRun = async (
-    app: AppDocument,
-    ctx: RunContext,
-    opts: { auditExposure?: boolean } = {},
-  ): Promise<MachineAuthorization> => {
+  const newRun = async (app: AppDocument, ctx: RunContext): Promise<MachineAuthorization> => {
     const runId = `run_${globalThis.crypto.randomUUID()}`;
     const jti = `jti_${randomHex(16)}`; // 128-bit anti-replay nonce (ENG-251)
-    // ENG-345 — one exposed-run audit per run (open()/call()) that executes with
-    // an in-sandbox exposure grant active on a machine-backed app (constraint 4).
-    if (opts.auditExposure === true
-      && machineBacked(app)
-      && config.resolveExposedSecrets !== undefined
-      && config.reportExposedRun !== undefined) {
-      const exposed = await config.resolveExposedSecrets(app);
-      const present = (app.secrets ?? []).filter((name) => exposed.has(name));
-      if (present.length > 0) await config.reportExposedRun(app, ctx, present);
-    }
     return {
       runId,
       jti,
@@ -144,7 +127,10 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     };
   };
 
-  const environment = async (app: AppDocument, runToken: string): Promise<Record<string, string>> => {
+  const environment = async (
+    app: AppDocument,
+    runToken: string,
+  ): Promise<{ env: Record<string, string>; injected: string[] }> => {
     // ENG-345 — the ONE place a secret's real value can replace its handle in the
     // sandbox env, and ONLY for a secret with an active exposure grant (the
     // exception to §4.3). Every other secret stays an opaque handle (Option B).
@@ -153,22 +139,40 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
       : await config.resolveExposedSecrets(app);
     const nonce = randomHex(4);
     const secretEnv: Record<string, string> = {};
+    const injected: string[] = [];
     for (const name of app.secrets ?? []) {
       if (exposed.has(name) && config.secrets !== undefined) {
         const value = await config.secrets.get(name);
         if (typeof value === "string" && value.length > 0) {
           secretEnv[name] = value; // exposed: REAL value in-sandbox
+          injected.push(name);
           continue;
         }
       }
       secretEnv[name] = `vendo-secret:${name}:${nonce}`; // default: opaque handle
     }
     return {
-      ...secretEnv,
-      PORT,
-      ...(config.proxyUrl === undefined ? {} : { VENDO_PROXY_URL: config.proxyUrl }),
-      VENDO_RUN_TOKEN: runToken,
+      env: {
+        ...secretEnv,
+        PORT,
+        ...(config.proxyUrl === undefined ? {} : { VENDO_PROXY_URL: config.proxyUrl }),
+        VENDO_RUN_TOKEN: runToken,
+      },
+      injected,
     };
+  };
+
+  // ENG-345 — one audit event per run whose machine this runtime boots with a
+  // secret ACTUALLY exposed in-sandbox (constraint 4). Emitted at the injection
+  // point (adapter.create), so it is impossible to report an exposed run for a
+  // machine that carries only handles — including the resume path, which cannot
+  // inject env (adapter.resume takes no env) and therefore never audits here.
+  const auditInjection = async (
+    app: AppDocument,
+    ctx: RunContext,
+    injected: string[],
+  ): Promise<void> => {
+    if (injected.length > 0) await config.reportExposedRun?.(app, ctx, injected);
   };
 
   const start = async (
@@ -183,15 +187,16 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     if (pending !== undefined) return pending;
 
     const fresh = app.server === undefined;
-    const promise = app.server === undefined
+    const built = fresh ? await environment(app, auth.runToken) : undefined;
+    const promise = built !== undefined
       ? adapter.create({
-        env: await environment(app, auth.runToken),
+        env: built.env,
         // ENG-290 M4 — every fresh machine carries the egress fetch shim; the
         // boot convention (runtime.ts) requires it into the app's node processes.
         files: { [FETCH_SHIM_PATH]: FETCH_SHIM_SOURCE },
         egress: app.egress,
       })
-      : adapter.resume(app.server);
+      : adapter.resume(app.server as string);
     waking.set(app.id, promise);
     try {
       const machine = await promise;
@@ -199,6 +204,9 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
       // Only a freshly created machine carries THIS run's env token; a resume
       // keeps its snapshot-time token, whose jti is not ours to burn.
       if (fresh) envJti.set(app.id, auth.jti);
+      // ENG-345 — audit the exposed run at the moment real values enter the
+      // sandbox (fresh boot only). A resume injects nothing, so it never fires.
+      if (built !== undefined) await auditInjection(app, ctx, built.injected);
       return machine;
     } finally {
       if (waking.get(app.id) === promise) waking.delete(app.id);
@@ -211,7 +219,7 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     fn: (run: MachineRun) => Promise<T>,
   ): Promise<T> => {
     requireAdapter();
-    const run = await newRun(app, ctx, { auditExposure: true });
+    const run = await newRun(app, ctx);
     const machine = await start(app, ctx, run);
     return fn({ machine, ...run });
   };
@@ -234,13 +242,20 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
   ): Promise<T> => {
     const adapter = requireAdapter();
     const run = await newRun(app, ctx);
-    const machine = app.server === undefined
-      ? await adapter.create({
-        env: await environment(app, run.runToken),
-        files: { [FETCH_SHIM_PATH]: FETCH_SHIM_SOURCE },
-        egress: app.egress,
-      })
-      : await adapter.resume(app.server);
+    if (app.server !== undefined) {
+      const machine = await adapter.resume(app.server);
+      return fn({ machine, ...run });
+    }
+    // A fresh edit/graduation fork bakes the current exposure state into its
+    // snapshot: this is the materialization path for a served app (its next
+    // snapshot carries the real value the owner approved). Audit that boot too.
+    const built = await environment(app, run.runToken);
+    const machine = await adapter.create({
+      env: built.env,
+      files: { [FETCH_SHIM_PATH]: FETCH_SHIM_SOURCE },
+      egress: app.egress,
+    });
+    await auditInjection(app, ctx, built.injected);
     return fn({ machine, ...run });
   };
 
@@ -251,12 +266,16 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
   ): Promise<string> => {
     const adapter = requireAdapter();
     const run = await newRun(app, ctx);
+    // An imported app has a fresh AppId with no grants, so environment() injects
+    // no real values here — a copy always boots handle-only (constraint 5).
+    const built = await environment(app, run.runToken);
     const machine = await adapter.create({
-      env: await environment(app, run.runToken),
+      env: built.env,
       files: { ...files, [FETCH_SHIM_PATH]: FETCH_SHIM_SOURCE },
       egress: app.egress,
     });
     try {
+      await auditInjection(app, ctx, built.injected);
       return await machine.snapshot();
     } finally {
       await machine.stop().catch(() => undefined);
@@ -282,8 +301,7 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     available: () => config.sandbox !== undefined,
     peek: (appId) => live.get(appId),
     isWaking: (appId) => waking.has(appId),
-    // open() mints one run and fans it out to every query — audit exposure once here.
-    mintRun: (app, ctx) => newRun(app, ctx, { auditExposure: true }),
+    mintRun: newRun,
     wake(app, ctx, authorization) {
       if (live.has(app.id) || waking.has(app.id)) return;
       requireAdapter();

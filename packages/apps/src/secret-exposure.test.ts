@@ -231,9 +231,10 @@ describe("ENG-345 (c) — an active grant injects the real value into sandbox en
   });
 });
 
-// ── Constraint 4 + (d): one audit event per run that executes with an exposed secret.
-describe("ENG-345 constraint 4 & (d) — one exposed-run audit per run", () => {
-  it("emits exactly one exposed-run event per run.mint, and none once machine-backed is false", async () => {
+// ── Constraint 4 + (d): one audit event per run that ACTUALLY exposes a secret,
+// emitted at the injection point — never a false positive on a handle-only boot.
+describe("ENG-345 constraint 4 & (d) — one exposed-run audit at the injection point", () => {
+  it("emits exactly one exposed-run event when a fresh boot injects a real value", async () => {
     const sandbox = fakeSandbox();
     const reported: string[][] = [];
     const machines = createMachineSessions({
@@ -248,31 +249,49 @@ describe("ENG-345 constraint 4 & (d) — one exposed-run audit per run", () => {
     };
     await machines.withMachine(httpApp, context("user_ada"), async () => undefined);
     expect(reported).toEqual([["STRIPE_KEY"]]);
+  });
 
-    // A rung-1 tree app has no machine → an exposure grant exposes nothing → no audit.
-    const treeApp: AppDocument = {
-      format: VENDO_APP_FORMAT, id: "app_tree", name: "n", ui: "tree", secrets: ["STRIPE_KEY"],
+  it("regression (Greptile P1): a RESUME never reports an exposed run — a handle-only snapshot cannot lie", async () => {
+    const sandbox = fakeSandbox();
+    // A snapshot baked with a HANDLE (the app was built before any grant).
+    const seed = await sandbox.create({ env: { PORT: "8080", STRIPE_KEY: "vendo-secret:STRIPE_KEY:abc123" } });
+    const server = await seed.snapshot();
+    await seed.stop();
+
+    const reported: string[][] = [];
+    const machines = createMachineSessions({
+      sandbox,
+      tokenSecret: new Uint8Array(32),
+      secrets,
+      // Grant is active now, but the RESUMED snapshot still carries the handle:
+      // resume cannot inject env, so no exposed-run audit may be emitted.
+      resolveExposedSecrets: async () => new Set(["STRIPE_KEY"]),
+      reportExposedRun: async (_app, _ctx, names) => { reported.push(names); },
+    });
+    const servedApp: AppDocument = {
+      format: VENDO_APP_FORMAT, id: "app_resumed", name: "n", ui: "tree", server, secrets: ["STRIPE_KEY"],
     };
-    reported.length = 0;
-    await machines.withMachine(treeApp, context("user_ada"), async () => undefined);
+    await machines.withMachine(servedApp, context("user_ada"), async ({ machine }) => {
+      // The resumed env is still a handle — and the audit below must agree.
+      expect((machine as FakeSandboxMachine).env.STRIPE_KEY).toMatch(HANDLE);
+    });
     expect(reported).toEqual([]);
   });
 
-  it("runtime open() emits one exposed-run event carrying the exposed secret name", async () => {
+  it("runtime open() over a served app resumed from a handle snapshot emits NO false exposed-run event", async () => {
     const { store, guard, sandbox, runtime } = setup();
     await seedServedApp(store, sandbox, "app_srv", "user_ada");
     const ada = context("user_ada");
     await expose(runtime, guard, "app_srv", ada, "STRIPE_KEY");
 
+    // The flip itself is audited as a lifecycle event (constraint 3 / audit trail).
+    expect(guard.audit.some((event) =>
+      (event.detail as { operation?: string } | undefined)?.operation === "secret-exposure-set")).toBe(true);
+
+    // But open() resumes a handle-only snapshot, so it must NOT claim an exposed run.
     guard.audit.length = 0;
     await runtime.open("app_srv", ada);
-    const first = exposedRunEvents(guard.audit);
-    expect(first).toHaveLength(1);
-    expect((first[0]?.detail as { secrets?: string[] }).secrets).toEqual(["STRIPE_KEY"]);
-    expect(first[0]?.appId).toBe("app_srv");
-
-    await runtime.open("app_srv", ada);
-    expect(exposedRunEvents(guard.audit)).toHaveLength(2);
+    expect(exposedRunEvents(guard.audit)).toHaveLength(0);
   });
 });
 
