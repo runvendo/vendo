@@ -1,10 +1,16 @@
 ---
-title: "Telemetry: what Vendo collects and how to opt out"
-description: "What Vendo's build and development telemetry collects, what it never sends, and every environment and config control you can use to opt out."
+title: "Telemetry and capability misses"
+description: "What Vendo's build telemetry and capability-miss events collect, what they never send, and every environment variable and config flag that opts you out."
 ---
 
-Vendo telemetry runs in build and development tooling. It does not fire from a
-deployed production app and does not collect end-user product activity.
+Vendo collects two separate streams: build and development telemetry, and
+capability-miss events. Each has its own consent model.
+
+## Build and development telemetry
+
+Build and development telemetry runs in build and development tooling. It does
+not fire from a deployed production app and does not collect end-user product
+activity.
 
 Events contain a random anonymous id plus allowlisted counts and short enums.
 They never contain source, file paths, prompts, generated UI, tool inputs or
@@ -23,3 +29,63 @@ The stored id is a random UUID and is not derived from a machine, account,
 project, or host app. Deleting the file rotates it.
 
 The full event allowlist is maintained in the repository's `TELEMETRY.md`.
+
+## Capability misses
+
+Capability misses record moments when the agent could not complete a user
+request with the tools you exposed. Each event follows the
+`vendo/capability-miss@1` contract and fires in exactly three cases:
+
+- no tool in the extracted `vendo/tools@1` surface matched the intent
+- the same tool failed at least twice in order and the agent stopped retrying
+- the agent explicitly gave up
+
+Each event carries a stable event and time identity, host and app context, the
+session and thread, a privacy-scrubbed intent string, the exact tool surface
+identity that was in scope, and the considered or attempted tools with
+scrubbed failure detail.
+
+Raw tool arguments and outputs never appear in the event. Credentials and
+secrets are redacted, and unrelated personal data is minimized before write.
+
+### Local persistence
+
+The OSS runtime always appends one JSON object per line to
+`.vendo/data/misses.jsonl` on the host machine. Writes are fire-and-forget:
+sink failures never alter the agent turn, and the local file is not
+consent-gated. Treat it as runtime state, like the rest of `.vendo/data/`, and
+keep it out of version control.
+
+### Cloud upload
+
+Vendo Cloud uploads capability misses when, and only when, both of these hold:
+
+- `VENDO_API_KEY` is set to a non-empty value
+- the environment does not trip a kill switch (see below)
+
+The non-empty API key is the host's explicit opt-in, so production runs upload
+misses by default once a key is present. The build-and-development-only
+`NODE_ENV=production` fail-close and the persisted `optedOut` flag in
+`~/.vendo/telemetry.json` do not gate this stream.
+
+Any of these environment values blocks upload for the current process:
+
+| Variable | Blocks upload when |
+| --- | --- |
+| `VENDO_TELEMETRY_DISABLED` | equal to `"1"` or `"true"` |
+| `DO_NOT_TRACK` | equal to `"1"` or `"true"` |
+| `CI` | set to any value other than `""`, `"0"`, or `"false"` |
+
+Uploads are best-effort, batched, and bounded by retry and timeout limits, so
+they never replace or delay the local append. When no API key is set, or a
+kill switch is tripped, nothing leaves the machine. The local
+`.vendo/data/misses.jsonl` file still accumulates so you can inspect misses
+locally.
+
+### Downstream use
+
+Uploaded misses feed the Vendo Cloud gap dashboard. The dashboard clusters
+them by intent and diffs each cluster against the extracted tool surface named
+in the event. The same shape flows into the refine feed consumed by
+`vendo refine`, so the coverage gaps you see in Cloud match what refine
+offers to fix.

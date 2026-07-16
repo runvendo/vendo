@@ -13,6 +13,7 @@ description: "Every path inside the .vendo directory, which tool writes it, and 
 | `design-rules.md` | host, optional | generation-time design rules (06 §5) |
 | `theme.json` | init extraction | `VendoTheme` |
 | `data/` | store | PGlite files (gitignored; init writes the ignore) |
+| `data/misses.jsonl` | runtime | one `vendo/capability-miss@1` event per line ([Telemetry](/deploy/telemetry#capability-misses)) |
 
 This table is complete. Sync owns generated tool and remix baseline files.
 Human overrides remain separate so extraction never overwrites reviewed risk,
