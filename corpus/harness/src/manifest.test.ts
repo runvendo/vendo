@@ -104,6 +104,35 @@ describe("parseManifest", () => {
     expect(() => parseManifest([invalid])).toThrow(/requiresBuild/i);
   });
 
+  it("accepts docker-redis service provisioning and rejects malformed redis recipes", () => {
+    const redis = {
+      kind: "docker-redis",
+      containerName: "vendo-corpus-twenty-redis",
+      image: "redis:7-alpine",
+      hostPort: 56379,
+      readinessTimeoutMs: 30_000,
+    };
+    const withRedis = {
+      ...entry,
+      bootstrap: { ...entry.bootstrap, redis },
+    };
+    expect(parseManifest([withRedis])[0]?.bootstrap.redis).toEqual(redis);
+
+    // The redis slot only takes the redis kind, and postgres-only fields never sneak in.
+    expect(() => parseManifest([{
+      ...entry,
+      bootstrap: { ...entry.bootstrap, redis: { ...redis, kind: "docker-postgres" } },
+    }])).toThrow(/kind/i);
+    expect(() => parseManifest([{
+      ...entry,
+      bootstrap: { ...entry.bootstrap, redis: { ...redis, username: "corpus" } },
+    }])).toThrow(/username/i);
+    expect(() => parseManifest([{
+      ...entry,
+      bootstrap: { ...entry.bootstrap, redis: { ...redis, hostPort: 70000 } },
+    }])).toThrow(/hostPort/i);
+  });
+
   it("rejects invalid deep-tier docker database provisioning", () => {
     const invalid = {
       ...entry,

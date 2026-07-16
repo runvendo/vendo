@@ -565,14 +565,19 @@ export function dedupKey(method: HttpMethod, urlPath: string): string {
 
 /** The binding-kind-aware identity a tool is deduplicated and diffed by:
  * method+path for HTTP-shaped bindings, mount+procedure for tRPC (a host can
- * expose the same procedure name under two mounts — both tools must survive). */
+ * expose the same procedure name under two mounts — both tools must survive),
+ * endpoint+operation for GraphQL. */
 export function bindingIdentity(binding: PrimitiveToolBinding): string {
   if (binding.kind === "trpc") return `TRPC ${binding.mount.replace(/\/+$/g, "")} ${binding.procedure}`;
+  // The operation kind joins the key: GraphQL allows a query and a mutation
+  // to share one field name across the two root types.
+  if (binding.kind === "graphql") return `GRAPHQL ${binding.endpoint.replace(/\/+$/g, "")} ${binding.type} ${binding.operation}`;
   return dedupKey(binding.method, binding.path);
 }
 
 function uniqueNameFallback(binding: PrimitiveToolBinding): string {
-  return binding.kind === "trpc" ? binding.type : binding.method;
+  if (binding.kind === "trpc" || binding.kind === "graphql") return binding.type;
+  return binding.method;
 }
 
 export function withUniqueNames(tools: ExtractedTool[]): ExtractedTool[] {
@@ -620,4 +625,16 @@ export function trpcRisk(type: "query" | "mutation", procedure: string): Extract
 export function trpcToolFullName(procedure: string): string {
   const parts = words(procedure);
   return `host_${parts.length > 0 ? parts.join("_") : "procedure"}`;
+}
+
+/** GraphQL risk labeling (04 §1, fail-closed): identical semantics to tRPC —
+ * the destructive word list applies unchanged; a query earns `read` only with
+ * a read-shaped name; mutations and ambiguously-named queries default `write`. */
+export function graphqlRisk(type: "query" | "mutation", operation: string): ExtractedTool["risk"] {
+  return trpcRisk(type, operation);
+}
+
+export function graphqlToolFullName(operation: string): string {
+  const parts = words(operation);
+  return `host_${parts.length > 0 ? parts.join("_") : "operation"}`;
 }

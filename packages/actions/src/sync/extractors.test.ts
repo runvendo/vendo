@@ -14,10 +14,11 @@ function routeTool(name: string, path: string): ExtractedTool {
 }
 
 describe("extractor registrations", () => {
-  it("keeps OpenAPI ahead of trpc ahead of route-scan", () => {
+  it("keeps OpenAPI ahead of trpc ahead of graphql ahead of route-scan", () => {
     expect(extractorRegistrations.map((extractor) => extractor.name)).toEqual([
       "openapi",
       "trpc",
+      "graphql",
       "route-scan",
     ]);
   });
@@ -81,6 +82,38 @@ describe("extractor registrations", () => {
       ]),
     ]);
     expect(result.tools.map((tool) => tool.name)).toEqual(["host_polls_list", "host_trpcish", "host_health"]);
+  });
+
+  it("drops route tools shadowed by a graphql endpoint, and only those", async () => {
+    const graphqlTool: ExtractedTool = {
+      name: "host_poll_get",
+      description: "GraphQL query pollGet",
+      inputSchema: { type: "object", properties: {} },
+      risk: "read",
+      binding: { kind: "graphql", operation: "pollGet", type: "query", endpoint: "/api/graphql", document: "query pollGet { pollGet }" },
+    };
+    const fake = (name: string, tools: ExtractedTool[]): Extractor => ({
+      name,
+      detect: async () => true,
+      extract: async () => ({ tools, warnings: [] }),
+    });
+    const result = await runExtractors("/host", [
+      fake("graphql", [graphqlTool]),
+      fake("route-scan", [
+        routeTool("host_graphql_catchall", "/api/graphql/{slug}"),
+        routeTool("host_graphql_root", "/api/graphql"),
+        routeTool("host_graphqlish", "/api/graphqlish"),
+        routeTool("host_health", "/api/health"),
+      ]),
+    ]);
+    expect(result.tools.map((tool) => tool.name)).toEqual(["host_poll_get", "host_graphqlish", "host_health"]);
+  });
+
+  it("keeps the same operation name distinct across two graphql endpoints", () => {
+    const first = bindingIdentity({ kind: "graphql", operation: "pollGet", type: "query", endpoint: "/graphql" });
+    const second = bindingIdentity({ kind: "graphql", operation: "pollGet", type: "query", endpoint: "/metadata" });
+    expect(first).not.toBe(second);
+    expect(bindingIdentity({ kind: "graphql", operation: "pollGet", type: "query", endpoint: "/graphql/" })).toBe(first);
   });
 
   it("keeps the same procedure name distinct across two trpc mounts", () => {

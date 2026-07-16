@@ -34,20 +34,36 @@ const devServerSchema = z
   })
   .strict();
 
+const dockerPostgresProvisioningSchema = z
+  .object({
+    kind: z.literal("docker-postgres"),
+    containerName: z.string().min(1),
+    image: z.string().min(1),
+    hostPort: z.number().int().min(1024).max(65535),
+    database: z.string().min(1),
+    username: z.string().min(1),
+    password: z.string().min(1),
+    readinessTimeoutMs: z.number().int().positive().optional(),
+    readinessIntervalMs: z.number().int().positive().optional(),
+  })
+  .strict();
+
+/** Redis mirrors the Postgres provisioning shape (docker container + readiness
+ * probe). Twenty is deliberately the only Redis boot in the corpus. */
+const dockerRedisProvisioningSchema = z
+  .object({
+    kind: z.literal("docker-redis"),
+    containerName: z.string().min(1),
+    image: z.string().min(1),
+    hostPort: z.number().int().min(1024).max(65535),
+    readinessTimeoutMs: z.number().int().positive().optional(),
+    readinessIntervalMs: z.number().int().positive().optional(),
+  })
+  .strict();
+
 const databaseProvisioningSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("docker-postgres"),
-      containerName: z.string().min(1),
-      image: z.string().min(1),
-      hostPort: z.number().int().min(1024).max(65535),
-      database: z.string().min(1),
-      username: z.string().min(1),
-      password: z.string().min(1),
-      readinessTimeoutMs: z.number().int().positive().optional(),
-      readinessIntervalMs: z.number().int().positive().optional(),
-    })
-    .strict(),
+  dockerPostgresProvisioningSchema,
+  dockerRedisProvisioningSchema,
 ]);
 
 const bootstrapRecipeSchema = z
@@ -55,7 +71,8 @@ const bootstrapRecipeSchema = z
     installCommand: z.string().min(1),
     envTemplate: z.record(z.string(), z.string()),
     seedCommand: z.string().min(1).optional(),
-    database: databaseProvisioningSchema.optional(),
+    database: dockerPostgresProvisioningSchema.optional(),
+    redis: dockerRedisProvisioningSchema.optional(),
     typecheckCommand: z.string().min(1).optional(),
     buildCommand: z.string().min(1),
     devServer: devServerSchema.optional(),

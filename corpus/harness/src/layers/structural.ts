@@ -167,6 +167,21 @@ async function readText(repoDir: string, rel: string): Promise<string | null> {
   }
 }
 
+/** Two valid Express wirings exist: the pre-wired shape (an app like
+ * express-host that already composes createVendo in src/server + renders
+ * VendoRoot in src/client) and the generated shape `vendo init` writes for a
+ * real Express/Nest API host (vendo/server.ts|mjs; the client lives in a
+ * separate frontend, so no VendoRoot requirement). */
+async function expressShape(repoDir: string): Promise<"pre-wired" | "generated"> {
+  return await exists(path.join(repoDir, "src/server/vendo.ts")) ? "pre-wired" : "generated";
+}
+
+async function generatedExpressServerRel(repoDir: string): Promise<string> {
+  return await exists(path.join(repoDir, "vendo/server.mjs")) && !await exists(path.join(repoDir, "vendo/server.ts"))
+    ? "vendo/server.mjs"
+    : "vendo/server.ts";
+}
+
 async function defaultExpectedFilesForFramework(
   repoDir: string,
   framework: "next" | "express",
@@ -182,7 +197,11 @@ async function defaultExpectedFilesForFramework(
   ];
 
   if (framework === "express") {
-    files.push("src/server/vendo.ts", "src/server/index.ts", "src/client/main.tsx");
+    if (await expressShape(repoDir) === "pre-wired") {
+      files.push("src/server/vendo.ts", "src/server/index.ts", "src/client/main.tsx");
+    } else {
+      files.push(await generatedExpressServerRel(repoDir));
+    }
   } else if (app) {
     files.push(routeRel(app), app.layoutRel);
   }
@@ -248,16 +267,23 @@ async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<Structur
   const wiringProblems: string[] = [];
   if (!ctx.expectedFiles) {
     if (framework === "express") {
-      const server = await sourceTreeText(ctx.repoDir, "src/server");
-      const client = await sourceTreeText(ctx.repoDir, "src/client");
-      if (!server.includes("@vendoai/vendo/server") || !server.includes("createVendo")) {
-        wiringProblems.push("Express server sources do not compose createVendo from @vendoai/vendo/server");
-      }
-      if (!hasFunctionalExpressVendoMount(server)) {
-        wiringProblems.push("Express server does not mount vendo.handler at /api/vendo");
-      }
-      if (!client.includes("<VendoRoot")) {
-        wiringProblems.push("Express client sources do not render <VendoRoot");
+      if (await expressShape(ctx.repoDir) === "pre-wired") {
+        const server = await sourceTreeText(ctx.repoDir, "src/server");
+        const client = await sourceTreeText(ctx.repoDir, "src/client");
+        if (!server.includes("@vendoai/vendo/server") || !server.includes("createVendo")) {
+          wiringProblems.push("Express server sources do not compose createVendo from @vendoai/vendo/server");
+        }
+        if (!hasFunctionalExpressVendoMount(server)) {
+          wiringProblems.push("Express server does not mount vendo.handler at /api/vendo");
+        }
+        if (!client.includes("<VendoRoot")) {
+          wiringProblems.push("Express client sources do not render <VendoRoot");
+        }
+      } else {
+        const server = await readText(ctx.repoDir, await generatedExpressServerRel(ctx.repoDir));
+        if (server !== null && (!server.includes("@vendoai/vendo/server") || !server.includes("createVendo"))) {
+          wiringProblems.push("generated vendo/server module does not compose createVendo from @vendoai/vendo/server");
+        }
       }
     } else if (!app) {
       wiringProblems.push("no App Router root layout found at app/layout.* or src/app/layout.*");
@@ -420,9 +446,12 @@ async function checkIdempotency(ctx: StructuralLayerContext): Promise<Structural
   return { id: "init.idempotent", pass: false, detail: pieces.join("; ") };
 }
 
-/** A tRPC mutation is write-shaped exactly like a POST; a query like a GET. */
+/** A tRPC or GraphQL mutation is write-shaped exactly like a POST; a query
+ * like a GET. */
 function effectiveWriteMethod(tool: ExtractedTool): string {
-  if (tool.binding.kind === "trpc") return tool.binding.type === "query" ? "GET" : "POST";
+  if (tool.binding.kind === "trpc" || tool.binding.kind === "graphql") {
+    return tool.binding.type === "query" ? "GET" : "POST";
+  }
   return tool.binding.method;
 }
 

@@ -23,6 +23,7 @@ import {
   type CapabilityBrief,
   type CompoundTool,
   type ExtractedTool,
+  type GraphqlBinding,
   type HttpMethod,
   type OpenApiBinding,
   type OverridesFile,
@@ -397,6 +398,64 @@ function trpcOutput(binding: TrpcBinding, parsed: unknown): unknown {
   return data;
 }
 
+/** The GraphQL HTTP transport (04 §1): every operation — query or mutation —
+ * is a POST of `{ query: document, variables: args }` to the host endpoint.
+ * The binding's document declares each tool argument as a same-named variable,
+ * so the agent's args ride through unmodified. Auth semantics (present-forward,
+ * away/actAs, venue=mcp) are identical to route bindings. */
+function graphqlRequest(binding: GraphqlBinding, args: Record<string, unknown>, configuredBaseUrl?: string): {
+  url: URL;
+  method: HttpMethod;
+  body: string;
+} {
+  if (!binding.document) {
+    throw new VendoError(
+      "validation",
+      `Cannot execute graphql binding ${binding.operation}; extraction emitted no executable document for it (fail-closed); review the tool's note before enabling`,
+    );
+  }
+  if (!configuredBaseUrl) {
+    throw new VendoError(
+      "validation",
+      `Cannot execute graphql binding ${binding.operation}; set createActions({ baseUrl }) for server-side graphql execution`,
+    );
+  }
+  let url: URL;
+  try {
+    url = joinedUrl(configuredBaseUrl, binding.endpoint.length > 1 ? binding.endpoint.replace(/\/+$/, "") : binding.endpoint);
+  } catch {
+    throw new VendoError("validation", `Invalid baseUrl for graphql operation ${binding.operation}; set createActions({ baseUrl }) to a valid origin`);
+  }
+  return { url, method: "POST", body: JSON.stringify({ query: binding.document, variables: args }) };
+}
+
+/** Unwrap the GraphQL response envelope. GraphQL reports failures as a 200
+ * with an `errors` array — that is still a failed call and surfaces as an
+ * http-error outcome so the agent sees the server's message. On success the
+ * single root field's value (the document has exactly one) is the output. */
+function graphqlOutput(binding: GraphqlBinding, parsed: unknown): ToolOutcome {
+  const envelope = parsed !== null && typeof parsed === "object"
+    ? parsed as { data?: unknown; errors?: unknown }
+    : undefined;
+  const errors = envelope?.errors;
+  if (Array.isArray(errors) && errors.length > 0) {
+    const message = errors
+      .map((item) => item !== null && typeof item === "object" && typeof (item as { message?: unknown }).message === "string"
+        ? (item as { message: string }).message
+        : "GraphQL error")
+      .join("; ");
+    return error("http-error", `graphql ${binding.operation} → errors: ${message.slice(0, 200)}`);
+  }
+  const data = envelope && "data" in envelope ? envelope.data : parsed;
+  if (data !== null && typeof data === "object" && !Array.isArray(data)) {
+    const record = data as Record<string, unknown>;
+    if (Object.keys(record).length === 1 && binding.operation in record) {
+      return { status: "ok", output: record[binding.operation] };
+    }
+  }
+  return { status: "ok", output: data };
+}
+
 async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {
   if (!isArgsObject(call.args)) return error("validation", `Arguments for ${call.tool} must be an object`);
 
@@ -406,6 +465,11 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
   try {
     if (tool.binding.kind === "trpc") {
       const request = trpcRequest(tool.binding, call.args, config.baseUrl);
+      url = request.url;
+      method = request.method;
+      body = request.body;
+    } else if (tool.binding.kind === "graphql") {
+      const request = graphqlRequest(tool.binding, call.args, config.baseUrl);
       url = request.url;
       method = request.method;
       body = request.body;
@@ -517,6 +581,7 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
       if (text) {
         try {
           const parsed: unknown = JSON.parse(text);
+          if (tool.binding.kind === "graphql") return graphqlOutput(tool.binding, parsed);
           return {
             status: "ok",
             output: tool.binding.kind === "trpc" ? trpcOutput(tool.binding, parsed) : parsed,
