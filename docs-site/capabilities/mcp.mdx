@@ -97,6 +97,9 @@ the rest of your product UI reads — `--vendo-color-*`, `--vendo-font-*`,
 automatically. Edit `.vendo/theme.json` to restyle the page; no consent-specific
 configuration is needed.
 
+The same theme also carries into apps rendered inside MCP clients. See
+[Saved apps ride along](#saved-apps-ride-along).
+
 ### Replace the page
 
 If you need a custom consent page — different copy, a compliance disclosure, a
@@ -377,6 +380,20 @@ on `kind` rather than sniffing shape:
 
 Rung 1–3 apps still render inline through the shim; only rung 4 link-outs use
 the card.
+
+### Host branding crosses the boundary
+
+An app a user saved in your product still looks like your product when it
+renders inside Claude or ChatGPT. The shim reads the same `--vendo-*` tokens
+your product UI reads and wraps every rendered app in a `VendoProvider`. It
+also propagates the tokens into the sandboxed frame that hosts generated
+components, so payload UI, notices, link-out cards, and generated components
+all inherit your theme.
+
+You do not configure this per-app. When you use `createVendo({ mcp: true })`,
+the umbrella forwards your validated `.vendo/theme.json` to the door and the
+door serves it in the shim. Edit `.vendo/theme.json` to restyle both the
+consent page and MCP-rendered apps in one place.
 
 ## Verify
 
