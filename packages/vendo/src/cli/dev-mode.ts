@@ -262,6 +262,16 @@ export async function runInitFinale(options: InitFinaleOptions): Promise<void> {
   const env = options.env ?? process.env;
   if (options.framework !== "next") return;
   if (credential.rung === "none" || credential.rung === "vendo-cloud") return;
+  // A session rung without recorded consent cannot serve a turn — the runtime
+  // resolver refuses it (honest 503). Don't boot the server for a seed that is
+  // guaranteed to fail server-side; point at the next step instead.
+  if (
+    (credential.rung === "claude-session" || credential.rung === "codex-session")
+    && !(await hasSessionConsent(root, credential.rung, env))
+  ) {
+    output.log("Next: start your dev server once a model key or a consented CLI session is available — then the agent is live in your product. (Production needs a real model key.)");
+    return;
+  }
 
   const confirm = options.confirm ?? askYesNo;
   if (options.yes || !(await confirm("Start the dev server and see your agent's first turn now?", true))) {

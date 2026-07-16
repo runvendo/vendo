@@ -1,8 +1,8 @@
-import type { ToolDescriptor } from "@vendoai/core";
-import type { UIMessage } from "ai";
-import { describe, expect, it } from "vitest";
+import type { Guard, ToolDescriptor } from "@vendoai/core";
+import type { UIMessage, UIMessageStreamWriter } from "ai";
+import { describe, expect, it, vi } from "vitest";
 import { createAgent } from "./index.js";
-import type { RiderSession, RiderSessionStart } from "./rider.js";
+import { RiderThreadBridge, type RiderSession, type RiderSessionStart } from "./rider.js";
 import { boundRegistry, ctx, readSse, testGuard, type TestGuard } from "./test-helpers.js";
 
 /**
@@ -292,5 +292,313 @@ describe("rider bridge wire parity", () => {
     });
     const { parts } = await readSse(response);
     expect(parts.some((part) => part.type === "error")).toBe(true);
+  });
+
+  it("surfaces a rider turn error as a generic error part and finish{error}", async () => {
+    const guard = testGuard({});
+    const session: RiderSession = {
+      started: null as unknown,
+      async start() {},
+      async runTurn() {
+        throw new Error("SDK spawn failed");
+      },
+      async dispose() {},
+    } as unknown as RiderSession;
+    const agent = createAgent({
+      model: "unused" as never,
+      tools: registry(guard),
+      guard,
+      rider: { session: async () => session },
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { parts } = await streamTurn(agent, "thr_err", userMessage("u1", "hi"));
+    errorSpy.mockRestore();
+    const error = parts.find((part) => part.type === "error") as { errorText: string } | undefined;
+    expect(error?.errorText).toBe("An error occurred while generating the response.");
+    expect(parts.at(-1)).toEqual({ type: "finish", finishReason: "error" });
+  });
+
+  it("returns an error result to the rider for a tool that is not in the registry", async () => {
+    const guard = testGuard({});
+    const session = new FakeRiderSession([
+      [{ tool: "ghost_tool", args: {} }, { text: "Handled." }],
+    ]);
+    const { agent, tools } = agentWith(session, guard);
+    const { parts } = await streamTurn(agent, "thr_ghost", userMessage("u1", "go"));
+    expect(tools.invocations.send_echo).toBe(0);
+    // The rider saw a structured not-found result and carried on.
+    expect(JSON.parse(session.toolResults[0]!)).toMatchObject({
+      status: "error",
+      error: { code: "not-found" },
+    });
+    expect(parts.some((part) => part.type === "text-delta" && (part as { delta: string }).delta === "Handled.")).toBe(true);
+  });
+
+  it("fails closed to the ask flow when guard.check throws", async () => {
+    const base = testGuard({});
+    const throwingGuard: Guard = {
+      ...base,
+      check: async () => {
+        throw new Error("guard exploded");
+      },
+    };
+    const tools = boundRegistry({
+      [descriptor.name]: { descriptor, execute: async () => ({ echoed: "x" }) },
+    }, throwingGuard);
+    const session = new FakeRiderSession([
+      [{ tool: descriptor.name, args: { value: "x" } }],
+    ]);
+    const agent = createAgent({
+      model: "unused" as never,
+      tools,
+      guard: throwingGuard,
+      rider: { session: async () => session },
+    });
+    const { parts } = await streamTurn(agent, "thr_guard_throw", userMessage("u1", "send"));
+    // No data-vendo-approval part (the guard threw before producing one), but the
+    // call still parks via the native approval-request part and does NOT execute.
+    expect(tools.invocations.send_echo).toBe(0);
+    expect(parts.find((part) => part.type === "tool-approval-request")).toBeDefined();
+    expect(parts.at(-1)).toEqual({ type: "finish", finishReason: "tool-calls" });
+  });
+
+  it("carries invalidated-grant provenance onto the Vendo approval part", async () => {
+    const invalidatedGrant = { id: "grt_stale", grantedAt: "2026-07-01T12:00:00.000Z" } as const;
+    const guard = testGuard({ [descriptor.name]: "ask" });
+    const check = guard.check.bind(guard);
+    guard.check = async (...args) => {
+      const decision = await check(...args);
+      return decision.action === "ask"
+        ? { ...decision, approval: { ...decision.approval, invalidatedGrant } }
+        : decision;
+    };
+    const session = new FakeRiderSession([[{ tool: descriptor.name, args: { value: "x" } }]]);
+    const { agent } = agentWith(session, guard);
+    const { parts } = await streamTurn(agent, "thr_grant", userMessage("u1", "send"));
+    const vendoPart = parts.find((part) => part.type === "data-vendo-approval") as { data: Record<string, unknown> };
+    expect(vendoPart.data.invalidatedGrant).toEqual(invalidatedGrant);
+  });
+});
+
+/** A single-turn scripted session for direct-bridge tests. */
+class OneTurnSession implements RiderSession {
+  started: RiderSessionStart | null = null;
+  disposed = false;
+  lastText: string | null = null;
+  private readonly reply: string;
+
+  constructor(reply = "ok") {
+    this.reply = reply;
+  }
+
+  async start(options: RiderSessionStart): Promise<void> {
+    this.started = options;
+  }
+
+  async runTurn(text: string, onTextDelta: (delta: string) => void): Promise<{ text: string }> {
+    this.lastText = text;
+    onTextDelta(this.reply);
+    return { text: this.reply };
+  }
+
+  async dispose(): Promise<void> {
+    this.disposed = true;
+  }
+}
+
+/** Collect the chunks a bridge writes, plus a finish latch. */
+function fakeStream(): {
+  writer: UIMessageStreamWriter<UIMessage>;
+  chunks: Array<Record<string, unknown>>;
+} {
+  const chunks: Array<Record<string, unknown>> = [];
+  const writer = { write: (chunk: unknown) => chunks.push(chunk as Record<string, unknown>) };
+  return { writer: writer as unknown as UIMessageStreamWriter<UIMessage>, chunks };
+}
+
+function approvalResponse(toolCallId: string, toolName: string, approved: boolean, input: unknown = {}): UIMessage {
+  return {
+    id: "asst_restart",
+    role: "assistant",
+    parts: [
+      {
+        type: "dynamic-tool",
+        toolName,
+        toolCallId,
+        state: "approval-responded",
+        input,
+        approval: { id: `apr_${toolCallId}`, approved },
+      } as unknown as UIMessage["parts"][number],
+    ],
+  };
+}
+
+describe("RiderThreadBridge direct edge paths", () => {
+  const system = "You are the test agent.";
+
+  it("restart fallback: settles an approved call and continues the rider turn", async () => {
+    const guard = testGuard({});
+    const tools = boundRegistry({
+      [descriptor.name]: { descriptor, execute: async (args) => ({ echoed: (args as { value: string }).value }) },
+    }, guard);
+    const session = new OneTurnSession("Continuing after approval.");
+    const bridge = new RiderThreadBridge(session, { registry: tools, guard }, ctx());
+    const { writer, chunks } = fakeStream();
+
+    await bridge.handleApprovalResponse({
+      message: approvalResponse("call_restart", descriptor.name, true, { value: "v" }),
+      system,
+      ctx: ctx(),
+      writer,
+    });
+
+    // The tool executed through the guarded path (no live park to resolve).
+    expect(tools.invocations.send_echo).toBe(1);
+    const output = chunks.find((chunk) => chunk.type === "tool-output-available") as Record<string, unknown>;
+    expect(output.output).toEqual({ status: "ok", output: { echoed: "v" } });
+    // A fresh turn carried the settlement to the rider.
+    expect(session.lastText).toContain("approved your earlier send_echo");
+    expect(chunks.some((chunk) => chunk.type === "text-delta" && (chunk as { delta: string }).delta === "Continuing after approval.")).toBe(true);
+    expect(chunks.at(-1)).toEqual({ type: "finish", finishReason: "stop" });
+  });
+
+  it("restart fallback: a denied call emits tool-output-denied and continues", async () => {
+    const guard = testGuard({});
+    const tools = boundRegistry({
+      [descriptor.name]: { descriptor, execute: async () => ({ echoed: "x" }) },
+    }, guard);
+    const session = new OneTurnSession("Understood.");
+    const bridge = new RiderThreadBridge(session, { registry: tools, guard }, ctx());
+    const { writer, chunks } = fakeStream();
+
+    await bridge.handleApprovalResponse({
+      message: approvalResponse("call_denied", descriptor.name, false),
+      system,
+      ctx: ctx(),
+      writer,
+    });
+
+    expect(tools.invocations.send_echo).toBe(0);
+    expect(chunks.find((chunk) => chunk.type === "tool-output-denied")).toBeDefined();
+    expect(session.lastText).toContain("declined your earlier send_echo");
+    expect(chunks.at(-1)).toEqual({ type: "finish", finishReason: "stop" });
+  });
+
+  it("restart fallback with an approved unknown tool records a not-found outcome", async () => {
+    const guard = testGuard({});
+    const tools = boundRegistry({}, guard);
+    const session = new OneTurnSession();
+    const bridge = new RiderThreadBridge(session, { registry: tools, guard }, ctx());
+    const { writer, chunks } = fakeStream();
+
+    await bridge.handleApprovalResponse({
+      message: approvalResponse("call_unknown", "ghost_tool", true),
+      system,
+      ctx: ctx(),
+      writer,
+    });
+
+    const output = chunks.find((chunk) => chunk.type === "tool-output-available") as Record<string, unknown>;
+    expect(output.output).toMatchObject({ status: "error", error: { code: "not-found" } });
+  });
+
+  it("executeGuarded surfaces a thrown executor as a generic execution error", async () => {
+    const guard = testGuard({});
+    const tools = boundRegistry({
+      [descriptor.name]: {
+        descriptor,
+        execute: () => {
+          throw new Error("boom");
+        },
+      },
+    }, guard);
+    const session = new OneTurnSession();
+    const bridge = new RiderThreadBridge(session, { registry: tools, guard }, ctx());
+    const { writer, chunks } = fakeStream();
+
+    await bridge.handleApprovalResponse({
+      message: approvalResponse("call_boom", descriptor.name, true, { value: "v" }),
+      system,
+      ctx: ctx(),
+      writer,
+    });
+
+    const output = chunks.find((chunk) => chunk.type === "tool-output-available") as Record<string, unknown>;
+    // The registry itself catches the throw as a structured execution error;
+    // either way the bridge never leaks the raw message.
+    expect((output.output as { status: string }).status).toBe("error");
+  });
+
+  it("resolves with nothing to stream when a resubmission has no approval parts", async () => {
+    const guard = testGuard({});
+    const bridge = new RiderThreadBridge(new OneTurnSession(), { registry: boundRegistry({}, guard), guard }, ctx());
+    const { writer, chunks } = fakeStream();
+    await bridge.handleApprovalResponse({
+      message: { id: "asst_empty", role: "assistant", parts: [{ type: "text", text: "noop" }] },
+      system,
+      ctx: ctx(),
+      writer,
+    });
+    // start + finish{stop}, nothing else.
+    expect(chunks.map((chunk) => chunk.type)).toEqual(["start", "finish"]);
+    expect(chunks.at(-1)).toEqual({ type: "finish", finishReason: "stop" });
+  });
+
+  it("swallows writes to a dead client stream without failing the turn", async () => {
+    const guard = testGuard({});
+    const session = new OneTurnSession("hello");
+    const bridge = new RiderThreadBridge(session, { registry: boundRegistry({}, guard), guard }, ctx());
+    const deadWriter = {
+      write: () => {
+        throw new Error("client disconnected");
+      },
+    } as unknown as UIMessageStreamWriter<UIMessage>;
+    // Must resolve (not reject) even though every write throws.
+    await expect(
+      bridge.handleUserTurn({
+        message: userMessage("u1", "hi"),
+        system,
+        ctx: ctx(),
+        writer: deadWriter,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("dispose resolves parked calls and tears the session down", async () => {
+    const guard = testGuard({ [descriptor.name]: "ask" });
+    const tools = boundRegistry({
+      [descriptor.name]: { descriptor, execute: async () => ({ echoed: "x" }) },
+    }, guard);
+    // A session that parks on its tool call (never resolves on its own).
+    let parkedResult: Promise<{ text: string; ok: boolean }> | null = null;
+    const session: RiderSession = {
+      started: null,
+      disposed: false,
+      async start(options: RiderSessionStart) {
+        (this as { started: RiderSessionStart }).started = options;
+      },
+      async runTurn() {
+        parkedResult = (this as unknown as { started: RiderSessionStart }).started.onToolCall({
+          tool: descriptor.name,
+          args: { value: "x" },
+        });
+        await parkedResult; // stays pending until the park resolves
+        return { text: "" };
+      },
+      async dispose() {
+        (this as { disposed: boolean }).disposed = true;
+      },
+    } as unknown as RiderSession;
+    const bridge = new RiderThreadBridge(session, { registry: tools, guard }, ctx());
+    const { writer } = fakeStream();
+
+    // The turn parks (finishAttached resolves the request promise).
+    await bridge.handleUserTurn({ message: userMessage("u1", "send"), system, ctx: ctx(), writer });
+    await bridge.dispose();
+
+    expect((session as unknown as { disposed: boolean }).disposed).toBe(true);
+    // The parked executor was released as a denial so the rider turn can settle.
+    const result = await parkedResult!;
+    expect(result.ok).toBe(false);
   });
 });

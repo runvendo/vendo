@@ -192,6 +192,7 @@ describe("runInitFinale", () => {
       framework: "next",
       credential: { rung: "codex-session" },
       yes: false,
+      env: { VENDO_DEV_ALLOW_SESSIONS: "1" },
       confirm: async () => true,
       spawnDev: () => fakeChild(),
       openBrowser: (url) => opened.push(url),
@@ -225,6 +226,52 @@ describe("runInitFinale", () => {
     });
     expect(spawned).toBe(false);
     expect(logs.join("\n")).toContain("Production needs a real model key");
+  });
+
+  it("does not boot the server for a session rung the user has not consented to", async () => {
+    const { output, logs } = sink();
+    let spawned = false;
+    await runInitFinale({
+      root, // fresh temp dir → no recorded consent
+      output,
+      framework: "next",
+      credential: { rung: "claude-session" },
+      yes: false,
+      env: {}, // no VENDO_DEV_ALLOW_SESSIONS
+      confirm: async () => true,
+      spawnDev: () => {
+        spawned = true;
+        return fakeChild();
+      },
+      waitForServerExit: false,
+    });
+    expect(spawned).toBe(false);
+    expect(logs.join("\n")).toContain("consented CLI session");
+  });
+
+  it("boots for a consented session rung", async () => {
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    const { output } = sink();
+    let spawned = false;
+    await runInitFinale({
+      root,
+      output,
+      framework: "next",
+      credential: { rung: "codex-session" },
+      yes: false,
+      env: { VENDO_DEV_ALLOW_SESSIONS: "1" },
+      confirm: async () => true,
+      spawnDev: () => {
+        spawned = true;
+        return fakeChild();
+      },
+      fetchImpl: (async () => {
+        throw new Error("refused");
+      }) as typeof fetch,
+      statusTimeoutMs: 100,
+      waitForServerExit: false,
+    });
+    expect(spawned).toBe(true);
   });
 
   it("skips non-Next frameworks and credential-less rungs", async () => {
@@ -264,6 +311,7 @@ describe("runInitFinale", () => {
       framework: "next",
       credential: { rung: "claude-session" },
       yes: false,
+      env: { VENDO_DEV_ALLOW_SESSIONS: "1" },
       confirm: async () => true,
       spawnDev: () => child,
       fetchImpl: (async () => {
