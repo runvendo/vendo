@@ -18,6 +18,11 @@
       "id": "status-breakdown",
       "label": "Status breakdown",
       "prompt": "Using the real seeded test base data, create and open a read-only status breakdown of the grid table grouped by Status, showing how many records sit in each group, without changing anything. Match teable's native visual style and use no emoji."
+    },
+    {
+      "id": "field-summary",
+      "label": "Field summary",
+      "prompt": "Using the real seeded test base table, create and open a read-only field summary listing each column's name and type, without changing anything. Match teable's native visual style and use no emoji."
     }
   ]
 }
