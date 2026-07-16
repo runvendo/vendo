@@ -6,7 +6,7 @@ import {
   type ExtractedTool,
   type ServerActionHandler,
 } from "@vendoai/actions";
-import { createAgent, type VendoAgent } from "@vendoai/agent";
+import { assembleSystemPrompt, createAgent, type VendoAgent } from "@vendoai/agent";
 import {
   createApps,
   pinBaselineSchema,
@@ -84,6 +84,25 @@ import {
   createCapabilityMissCapture,
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
+import { devModelController } from "./dev-creds/model.js";
+// ENG-338 — the dev-mode model-credential ladder: `devModel()` is what a fresh
+// `vendo init` scaffolds; the resolver is shared by init, doctor, and
+// extraction --deep (one credential story, install-dx design §2).
+export {
+  devModel,
+  DevModelController,
+  NO_CREDENTIAL_MESSAGE,
+  type DevModelOptions,
+} from "./dev-creds/model.js";
+export {
+  describeDevCredential,
+  hasSessionConsent,
+  readDevSessionConsent,
+  resolveDevCredential,
+  writeDevSessionConsent,
+  type DevCredential,
+  type ResolveDevCredentialOptions,
+} from "./dev-creds/resolve.js";
 import { createConnections, type ConnectionsService } from "./connections.js";
 import { createOrgs, type OrgsService } from "./orgs.js";
 import { createRuntimeCapture, type RuntimeCaptureHandler } from "./runtime-capture.js";
@@ -1518,10 +1537,19 @@ export function createVendo(config: CreateVendoConfig): Vendo {
         ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
       }
     : undefined;
+  // ENG-338 dev-mode ladder: when the host's model came from devModel(), wire
+  // its rider seam into the agent — session rungs (authed Claude/Codex CLI
+  // logins) own the model loop while tools + consent stay on the guard-bound
+  // path. Key rungs resolve to null and run the native loop unchanged. The
+  // controller refuses session rungs outright when NODE_ENV === "production".
+  const devController = devModelController(config.model);
   const agent = createAgent({
     model: config.model,
     tools: boundTools,
     guard,
+    ...(devController === null
+      ? {}
+      : { rider: { session: ({ threadId }: { threadId: string }) => devController.chatSession(threadId) } }),
     store,
     ...(system === undefined ? {} : { system }),
     context: {
@@ -1658,6 +1686,27 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     || (config.development !== false && environment("NODE_ENV") === "development");
   const developmentPaths = typeof config.development === "object" ? config.development : {};
   const runtimeCapture = development ? createRuntimeCapture(developmentPaths) : null;
+  // ENG-338: pre-spawn the first Claude rider session at dev-server boot (its
+  // spawn+init costs ~12s; the user's first message must not pay it). The
+  // warmup system prompt approximates the loop's (synthetic dev principal);
+  // the adopting thread swaps in its live tool bridge. Fire-and-forget: any
+  // failure just means a cold start on the first message.
+  if (devController !== null && development) {
+    void (async () => {
+      // The warmed Claude session keeps this prompt (adoption never restarts
+      // it), so assemble the SAME brief/catalog system the loop would use.
+      const [descriptors, warmupSystem] = await Promise.all([
+        boundTools.descriptors(),
+        assembleSystemPrompt(guard, {
+          principal: { kind: "user", subject: "vendo_dev_warmup", ephemeral: true },
+          venue: "chat",
+          presence: "present",
+          sessionId: "session_vendo_dev_warmup",
+        }, system, false),
+      ]);
+      devController.warmup({ system: warmupSystem, tools: descriptors });
+    })().catch(() => undefined);
+  }
   const handler = createWireHandler({
     principal: config.principal,
     ready,

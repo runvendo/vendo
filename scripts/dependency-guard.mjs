@@ -55,6 +55,10 @@ const LAYERS = {
   // prebuilt committed artifact (built by packages/ui/scripts), never an import
   "@vendoai/mcp": ["@vendoai/core"],
   "@vendoai/automations": ["@vendoai/core", "@vendoai/apps"],
+  // dev-mode rider sessions (ENG-338): a dependency-free leaf — the agent-seam
+  // types are structural copies, and the Claude Agent SDK (zod@4 peer) is
+  // resolved from the HOST app at runtime, never from this workspace
+  "@vendoai/dev-riders": [],
   // the canonical umbrella is the only package allowed to depend on every block
   "@vendoai/vendo": "*",
   // the unscoped compatibility package is a thin alias of the canonical umbrella

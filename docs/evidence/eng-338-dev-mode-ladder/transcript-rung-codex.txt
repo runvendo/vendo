@@ -1,0 +1,8 @@
+[rung-codex] dev server up at http://localhost:3400
+[rung-codex] POST /threads → 200; thread=thr_d0b29ebc53834bc79f0971fd4b589b66
+[rung-codex] turn 7795ms; parts=[start,start-step,text-start,text-delta,text-end,finish-step,finish]
+[rung-codex] REPLY: I’m Vendo’s built-in AI assistant, here to help you build and manage apps. I can create, edit, open, and manage Vendo apps and their data; generate images; browse the web; inspect connected resources; run approved workspace commands; coordinate sub-agents; and suggest supported plugins such as Google Drive, Slack, Figma, and calendars.
+[rung-codex] server log:
+[vendo] dev-mode model: your authed Codex session (dev only) — production needs a real key
+[vendo] dev-mode model: your authed Codex session (dev only) — production needs a real key
+[vendo] dev-mode model: your authed Codex session (dev only) — production needs a real key
