@@ -10,7 +10,7 @@ Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a
 | `@vendoai/vendo` | root types re-exported from core (+ each block's primary types) |
 | `@vendoai/vendo/server` | `createVendo` — the composition + handler |
 | `@vendoai/vendo/react` | re-exports `@vendoai/ui` (+ `<VendoRoot>` = provider wired to defaults) |
-| bin `vendo` | `init`, `doctor`, `sync`, `cloud` |
+| bin `vendo` | `init`, `doctor`, `sync`, `refine`, `cloud` | <!-- amended 2026-07-15: `refine` added (ENG-250, §5) -->
 
 ## 2. The composition
 
@@ -122,6 +122,7 @@ Rung-4 app UI is **not** proxied through the wire: `OpenSurface.kind === "http"`
 - **`vendo doctor`** — wiring checks + one live round-trip against `/status`; green = working agent; ends with ladder hints (the one config line that unlocks each remaining block). Live probes (ENG-260): `POST /doctor/present` proves present credentials reach the host API (fail advises `VENDO_BASE_URL`); `POST /doctor/act-as` proves the actAs mint+verify round-trip (not configured → warn, not fail).
 - **`vendo sync`** — the build-step extraction, callable manually (04 §1). Queries `/sync/impact` when the dev server is reachable and prints per-tool blast radius; `--report` pushes the report to the Cloud console (requires `VENDO_API_KEY` or `--key`; push failure warns, never fails the build) (ENG-261).
 - **`vendo cloud <command>`** — talk to the public Vendo Cloud API (auth/session, keys, members, services, reads); the paid line's CLI surface (§6). <!-- amended 2026-07-14: `cloud` command landed post-freeze (cli.ts, cli/cloud/ tree); original froze with only init/doctor/sync. -->
+- **`vendo refine`** — the refine engine's CLI surface (04 §1/§6): one BYO-model pass over the extraction output, host source, the miss feed, and a dev interview proposes compound capabilities + briefs (`capabilities.json`), risk/curation/description corrections (`overrides.json`), and `brief.md` updates — probed against the running dev app (doctor's `/status` machinery; write-risk steps never executed), every file presented as a diff and applied only on approval. Also offered once at the end of `vendo init` (one engine, two surfaces). <!-- amended 2026-07-15: `refine` command landed (cli.ts, cli/refine.ts, refine.ts) per the approved extraction design (spec §3, ENG-250); extraction stays a build step — refine is a command by design (04 §1). -->
 
 Exit codes: doctor `0` green / `1` broken wiring; sync `0` (fail-soft warns) / with `--strict`: `2` on breaking changes, `3` when a breaking tool also has nonzero blast radius (impact-unknown stays `2`). `vendo init` also writes `VENDO_BASE_URL` into `.env`/`.env.example` (04 §4) and scaffolds the `predev` (`vendo sync`) / `prebuild` (`vendo sync --strict`) hooks into the host package.json — permission-prompted, like route wiring (ENG-260/261).
 
