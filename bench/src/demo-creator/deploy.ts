@@ -180,19 +180,36 @@ export function buildRegistryPayload(config: Pick<DemoConfig, "id" | "prospect" 
   };
 }
 
+export interface DeployPlan {
+  /** link, add, domain — everything that must run BEFORE the public domain is known. */
+  prepare: DeployStep[];
+  /**
+   * variables + up, parametrized by the service's public base URL (from the
+   * prepare phase's `railway domain` output; the dry run passes a placeholder).
+   */
+  finalize(publicBaseUrl: string): DeployStep[];
+}
+
 /**
  * The railway CLI drive, as data. Verified against railway 4.36.1:
- * `add --service <name> --json`, `variables --set K=V ... --service <name>
- * --skip-deploys`, `up --service <name> --detach`, `domain --service <name>
- * --json`. All run from the repo root (the linked directory), which is also
- * `railway up`'s upload context.
+ * `add --service <name> --json`, `domain --service <name> --json`,
+ * `variables --set K=V ... --service <name> --skip-deploys`, `up --service
+ * <name> --detach`. All run from the repo root (the linked directory), which
+ * is also `railway up`'s upload context.
+ *
+ * Two phases because the domain must exist BEFORE variables are set:
+ * Railway's TLS proxy hands the app a proxy-internal origin, so the app
+ * rewrites its self-call origin from VENDO_BASE_URL (see
+ * apps/demo-template/src/vendo/request.ts) — which needs the public domain,
+ * and `railway domain` happily mints it pre-deploy. `up` runs last so the
+ * one deploy already has every variable in place.
  */
 export function buildDeployPlan(options: {
   serviceName: string;
   project: string;
   dockerfilePath: string;
   anthropicApiKey: string;
-}): DeployStep[] {
+}): DeployPlan {
   const { serviceName, project, dockerfilePath, anthropicApiKey } = options;
   const asDisplay = (command: string[]): string =>
     command.map((part) => (part.startsWith("ANTHROPIC_API_KEY=") ? "ANTHROPIC_API_KEY=<redacted>" : part)).join(" ");
@@ -201,21 +218,26 @@ export function buildDeployPlan(options: {
     display: asDisplay(command),
     ...(allowFailure === undefined ? {} : { allowFailure }),
   });
-  return [
-    step(["railway", "link", "--project", project]),
-    // Fails when the service already exists — that is fine, we then deploy onto it.
-    step(["railway", "add", "--service", serviceName, "--json"], true),
-    step([
-      "railway", "variables",
-      "--set", `ANTHROPIC_API_KEY=${anthropicApiKey}`,
-      "--set", "NODE_ENV=production",
-      "--set", `RAILWAY_DOCKERFILE_PATH=${dockerfilePath}`,
-      "--service", serviceName,
-      "--skip-deploys",
-    ]),
-    step(["railway", "up", "--service", serviceName, "--detach"]),
-    step(["railway", "domain", "--service", serviceName, "--json"]),
-  ];
+  return {
+    prepare: [
+      step(["railway", "link", "--project", project]),
+      // Fails when the service already exists — that is fine, we then deploy onto it.
+      step(["railway", "add", "--service", serviceName, "--json"], true),
+      step(["railway", "domain", "--service", serviceName, "--json"]),
+    ],
+    finalize: (publicBaseUrl) => [
+      step([
+        "railway", "variables",
+        "--set", `ANTHROPIC_API_KEY=${anthropicApiKey}`,
+        "--set", "NODE_ENV=production",
+        "--set", `RAILWAY_DOCKERFILE_PATH=${dockerfilePath}`,
+        "--set", `VENDO_BASE_URL=${publicBaseUrl}`,
+        "--service", serviceName,
+        "--skip-deploys",
+      ]),
+      step(["railway", "up", "--service", serviceName, "--detach"]),
+    ],
+  };
 }
 
 /** Loaded lazily for the same reason as create.ts: the schema resolves to TS
@@ -312,7 +334,8 @@ export async function runDemoDeploy(args: DemoDeployArgs, io: DeployIo): Promise
 
   if (args.dryRun) {
     write(`Dry run — plan for ${appPath} (service ${serviceName}, project ${args.project}):`);
-    for (const step of plan) write(`  ${step.display}${step.allowFailure === true ? "   # tolerated if the service already exists" : ""}`);
+    const steps = [...plan.prepare, ...plan.finalize("<from railway domain>")];
+    for (const step of steps) write(`  ${step.display}${step.allowFailure === true ? "   # tolerated if the service already exists" : ""}`);
     if (args.skipRegistry) {
       write("  (registry registration skipped: --skip-registry)");
     } else {
@@ -338,18 +361,26 @@ export async function runDemoDeploy(args: DemoDeployArgs, io: DeployIo): Promise
     throw new Error(`"pnpm install --lockfile-only" failed (exit ${lockSync.code}):\n${scrub(lockSync.stderr || lockSync.stdout)}`);
   }
 
-  let domainOutput = "";
-  for (const step of plan) {
+  const runStep = async (step: DeployStep): Promise<ExecResult | undefined> => {
     write(`$ ${step.display}`);
     const result = await exec(step.command, { cwd: io.repoRoot });
     if (result.code !== 0) {
       if (step.allowFailure === true) {
         write(`  (non-fatal, continuing) ${scrub(firstLine(result.stderr) ?? firstLine(result.stdout) ?? `exit ${result.code}`)}`);
-        continue;
+        return undefined;
       }
       throw new Error(`"${step.display}" failed (exit ${result.code}):\n${scrub(result.stderr || result.stdout)}`);
     }
-    if (step.command[1] === "domain") domainOutput = `${result.stdout}\n${result.stderr}`;
+    return result;
+  };
+
+  // Prepare phase: link, add, domain. The domain step's output is the single
+  // source of the public domain — reused for VENDO_BASE_URL AND the registry
+  // row (never a second `railway domain` call).
+  let domainOutput = "";
+  for (const step of plan.prepare) {
+    const result = await runStep(step);
+    if (result !== undefined && step.command[1] === "domain") domainOutput = `${result.stdout}\n${result.stderr}`;
   }
   const domain = parseRailwayDomain(domainOutput);
   if (domain === undefined) {
@@ -358,6 +389,12 @@ export async function runDemoDeploy(args: DemoDeployArgs, io: DeployIo): Promise
     );
   }
   write(`Service domain: https://${domain}`);
+
+  // Finalize phase: variables (incl. VENDO_BASE_URL) land BEFORE the one
+  // deploy, so the app boots already knowing its public origin.
+  for (const step of plan.finalize(`https://${domain}`)) {
+    await runStep(step);
+  }
 
   // (4) Register with the router.
   if (args.skipRegistry) {

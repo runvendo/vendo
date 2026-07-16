@@ -142,40 +142,48 @@ describe("buildDeployPlan", () => {
     dockerfilePath: "apps/demo-linear/Dockerfile",
     anthropicApiKey: "sk-ant-SECRET",
   });
+  const finalizeSteps = plan.finalize("https://demo-linear-production.up.railway.app");
 
-  it("drives the verified railway CLI syntax in order: link, add, variables, up, domain", () => {
-    expect(plan.map((step) => step.command.slice(0, 2).join(" "))).toEqual([
+  it("prepares link/add/domain first — the domain must exist BEFORE variables are set", () => {
+    expect(plan.prepare.map((step) => step.command.slice(0, 2).join(" "))).toEqual([
       "railway link",
       "railway add",
-      "railway variables",
-      "railway up",
       "railway domain",
     ]);
-    const [link, add, variables, up, domain] = plan;
+    const [link, add, domain] = plan.prepare;
     expect(link?.command).toEqual(["railway", "link", "--project", "vendo-demos"]);
     expect(add?.command).toEqual(["railway", "add", "--service", "demo-linear", "--json"]);
+    expect(domain?.command).toEqual(["railway", "domain", "--service", "demo-linear", "--json"]);
+  });
+
+  it("finalizes with variables (including VENDO_BASE_URL from the domain) then up", () => {
+    expect(finalizeSteps.map((step) => step.command.slice(0, 2).join(" "))).toEqual([
+      "railway variables",
+      "railway up",
+    ]);
+    const [variables, up] = finalizeSteps;
     expect(variables?.command).toEqual([
       "railway", "variables",
       "--set", "ANTHROPIC_API_KEY=sk-ant-SECRET",
       "--set", "NODE_ENV=production",
       "--set", "RAILWAY_DOCKERFILE_PATH=apps/demo-linear/Dockerfile",
+      "--set", "VENDO_BASE_URL=https://demo-linear-production.up.railway.app",
       "--service", "demo-linear",
       "--skip-deploys",
     ]);
     expect(up?.command).toEqual(["railway", "up", "--service", "demo-linear", "--detach"]);
-    expect(domain?.command).toEqual(["railway", "domain", "--service", "demo-linear", "--json"]);
   });
 
   it("NEVER exposes the anthropic key in the display rendering", () => {
-    for (const step of plan) {
+    for (const step of [...plan.prepare, ...finalizeSteps]) {
       expect(step.display).not.toContain("sk-ant-SECRET");
     }
-    expect(plan[2]?.display).toContain("ANTHROPIC_API_KEY=<redacted>");
+    expect(finalizeSteps[0]?.display).toContain("ANTHROPIC_API_KEY=<redacted>");
   });
 
-  it("tolerates `railway add` failing when the service already exists", () => {
-    expect(plan[1]?.allowFailure).toBe(true);
-    expect(plan.filter((step) => step.allowFailure !== true)).toHaveLength(4);
+  it("tolerates ONLY `railway add` failing (when the service already exists)", () => {
+    expect(plan.prepare[1]?.allowFailure).toBe(true);
+    expect([...plan.prepare, ...finalizeSteps].filter((step) => step.allowFailure !== true)).toHaveLength(4);
   });
 });
 
@@ -230,6 +238,8 @@ describe("runDemoDeploy (dry run against a fixture app)", () => {
     expect(existsSync(path.join(appDir, ".dockerignore"))).toBe(false);
     const output = lines.join("\n");
     expect(output).toContain("railway up --service demo-linear --detach");
+    // The dry run is honest about the not-yet-known domain.
+    expect(output).toContain("VENDO_BASE_URL=<from railway domain>");
     expect(output).toContain("POST https://demos.vendo.run/admin/demos");
     expect(output).not.toContain("sk-ant");
   });
@@ -286,15 +296,20 @@ describe("runDemoDeploy (dry run against a fixture app)", () => {
       const commands = exec.mock.calls.map(([command]) => (command as string[]).join(" "));
       // `railway up` archives the working tree, so the lockfile must be
       // synced BEFORE any railway step (untracked scratch apps otherwise
-      // break --frozen-lockfile inside the image build).
+      // break --frozen-lockfile inside the image build). The domain is
+      // fetched BEFORE variables so VENDO_BASE_URL can carry it, and up runs
+      // last (one deploy, with all variables already in place).
       expect(commands[0]).toBe("pnpm install --lockfile-only");
       expect(commands.slice(1)).toEqual([
         "railway link --project vendo-demos",
         "railway add --service demo-linear --json",
-        "railway variables --set ANTHROPIC_API_KEY=sk-ant-SECRET --set NODE_ENV=production --set RAILWAY_DOCKERFILE_PATH=apps/demo-linear/Dockerfile --service demo-linear --skip-deploys",
-        "railway up --service demo-linear --detach",
         "railway domain --service demo-linear --json",
+        "railway variables --set ANTHROPIC_API_KEY=sk-ant-SECRET --set NODE_ENV=production --set RAILWAY_DOCKERFILE_PATH=apps/demo-linear/Dockerfile --set VENDO_BASE_URL=https://demo-linear-production.up.railway.app --service demo-linear --skip-deploys",
+        "railway up --service demo-linear --detach",
       ]);
+      // No second `railway domain` call: the early result is reused for both
+      // VENDO_BASE_URL and the registry row.
+      expect(commands.filter((command) => command.includes("railway domain"))).toHaveLength(1);
       expect(result.domain).toBe("demo-linear-production.up.railway.app");
       expect(fetchImpl).toHaveBeenCalledWith("https://demos.vendo.run/admin/demos", expect.objectContaining({ method: "POST" }));
       expect(result.registryPayload).toEqual({
@@ -307,10 +322,14 @@ describe("runDemoDeploy (dry run against a fixture app)", () => {
 
     it("scrubs the anthropic key out of echoed child output on failure", async () => {
       const { repoRoot } = await writeFixture();
-      const exec = vi.fn().mockImplementation(async (command: string[]) =>
-        command[1] === "up"
-          ? { code: 1, stdout: "", stderr: "boom: variables were ANTHROPIC_API_KEY=sk-ant-SECRET etc" }
-          : { code: 0, stdout: "", stderr: "" });
+      const exec = vi.fn().mockImplementation(async (command: string[]) => {
+        if (command[1] === "up") return { code: 1, stdout: "", stderr: "boom: variables were ANTHROPIC_API_KEY=sk-ant-SECRET etc" };
+        return {
+          code: 0,
+          stdout: command[1] === "domain" ? '{"domain":"demo-linear.up.railway.app"}' : "",
+          stderr: "",
+        };
+      });
       const lines: string[] = [];
       const error = await runDemoDeploy(liveArgs, {
         repoRoot,
