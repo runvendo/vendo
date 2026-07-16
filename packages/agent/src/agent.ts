@@ -191,8 +191,28 @@ export function createAgent(config: AgentConfig): VendoAgent {
   validateConfig(config);
   const threads = new ThreadRepository(config.store);
   // ENG-252: per-thread set of tools loaded in via `vendo_tools_search`. It
-  // persists across turns within a run so a discovered tool stays callable.
+  // persists across turns within a run so a discovered tool stays callable, and
+  // is reclaimed on thread delete + session eviction. The LRU cap bounds memory
+  // for long-lived, store-backed processes where threads never get evicted (a
+  // reused/live thread is touched to the end, so only cold threads are dropped).
   const loadedTools = new Map<string, Set<string>>();
+  const MAX_LOADED_THREADS = 1024;
+  const loadedFor = (threadId: string): Set<string> => {
+    const existing = loadedTools.get(threadId);
+    if (existing !== undefined) {
+      loadedTools.delete(threadId);
+      loadedTools.set(threadId, existing); // touch: most-recently-used
+      return existing;
+    }
+    const fresh = new Set<string>();
+    loadedTools.set(threadId, fresh);
+    while (loadedTools.size > MAX_LOADED_THREADS) {
+      const oldest = loadedTools.keys().next().value;
+      if (oldest === undefined) break;
+      loadedTools.delete(oldest);
+    }
+    return fresh;
+  };
 
   return {
     async stream(input) {
@@ -235,11 +255,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
             : createToolSearchSession({
                 config: config.toolSearch,
                 descriptors: await config.tools.descriptors(),
-                loaded: (() => {
-                  const existing = loadedTools.get(thread.id) ?? new Set<string>();
-                  loadedTools.set(thread.id, existing);
-                  return existing;
-                })(),
+                loaded: loadedFor(thread.id),
               });
           toolSearch?.attach(tools);
           // History windowing: bound what is re-sent per turn to the last N whole messages.
@@ -306,7 +322,11 @@ export function createAgent(config: AgentConfig): VendoAgent {
         await threads.delete(id, ctx);
       },
     },
-    evictSubject: (subject) => threads.evictSubject(subject),
+    evictSubject: (subject) => {
+      // Release each evicted thread's searched-in loadout so a reused id can't
+      // inherit stale tools, and so memory is reclaimed on session sweep.
+      for (const id of threads.evictSubject(subject)) loadedTools.delete(id);
+    },
     asRunner: () => createRunner(config),
   };
 }

@@ -1,6 +1,7 @@
 import type { ToolDescriptor } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import {
+  CAPABILITY_MISS_TOOL_NAME,
   DEFAULT_MAX_INITIAL_TOOLS,
   VENDO_TOOLS_SEARCH_TOOL_NAME,
   computeInitialLoadout,
@@ -39,6 +40,8 @@ function registrySearch(tools: BoundRegistry): ToolSearchFn {
       .map((d) => ({ name: d.name, description: d.description, risk: d.risk, score: 1 }));
   };
 }
+
+const missSurface = { format: "vendo/tools@1" as const, hash: `sha256:${"c".repeat(64)}` };
 
 const impls: Record<string, TestToolImplementation> = {
   host_transactions_list: {
@@ -167,6 +170,57 @@ describe("vendo_tools_search meta-tool", () => {
     // The second turn's FIRST model call already offers the tool loaded last turn.
     const secondTurnFirstCall = model.toolNamesPerCall[2]!;
     expect(secondTurnFirstCall).toContain("host_export_csv");
+  });
+
+  it("keeps the capability-miss meta-tool active when tool search is enabled (regression)", async () => {
+    const misses: unknown[] = [];
+    const model = scriptedModel([textTurn("Nothing to do.", "text_only")]);
+    const guard = testGuard({});
+    const tools = boundRegistry(impls, guard);
+    const agent = createAgent({
+      model,
+      tools,
+      guard,
+      capabilityMiss: { hostId: "host_x", surface: Promise.resolve(missSurface), emit: (e) => misses.push(e) },
+      toolSearch: { search: registrySearch(tools), loadout: [] },
+    });
+
+    await readSse(await agent.stream({ threadId: "thr_both", message: userMessage("u1", "hi"), ctx: ctx() }));
+
+    // Both meta-tools stay offered even though host tools are gated by the loadout.
+    expect(model.toolNamesPerCall[0]).toContain(VENDO_TOOLS_SEARCH_TOOL_NAME);
+    expect(model.toolNamesPerCall[0]).toContain(CAPABILITY_MISS_TOOL_NAME);
+    expect(model.toolNamesPerCall[0]).not.toContain("host_export_csv");
+  });
+
+  it("clears a thread's loaded tools on session eviction so a reused id starts fresh (regression)", async () => {
+    const model = scriptedModel([
+      toolCallTurn(VENDO_TOOLS_SEARCH_TOOL_NAME, { query: "export csv" }, "call_search"),
+      textTurn("Found it.", "text_first"),
+      textTurn("Fresh turn.", "text_second"),
+    ]);
+    const guard = testGuard({});
+    const tools = boundRegistry(impls, guard);
+    // No store → the in-memory (BYO) path, which is the one evictSubject reclaims.
+    const agent = createAgent({ model, tools, guard, toolSearch: { search: registrySearch(tools), loadout: [] } });
+
+    await readSse(await agent.stream({
+      threadId: "thr_evict",
+      message: userMessage("u1", "Find a way to export CSV"),
+      ctx: ctx({ principal: { kind: "user", subject: "u_evict" } }),
+    }));
+    // Loaded within the first run.
+    expect(model.toolNamesPerCall[1]).toContain("host_export_csv");
+
+    agent.evictSubject("u_evict");
+
+    await readSse(await agent.stream({
+      threadId: "thr_evict",
+      message: userMessage("u2", "now do it"),
+      ctx: ctx({ principal: { kind: "user", subject: "u_evict" } }),
+    }));
+    // A reused thread id after eviction must NOT inherit the evicted loadout.
+    expect(model.toolNamesPerCall[2]).not.toContain("host_export_csv");
   });
 
   it("bounds the initial loadout and searches in the needle on a 300+ tool host", async () => {

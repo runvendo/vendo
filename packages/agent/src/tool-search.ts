@@ -106,17 +106,24 @@ export interface ToolSearchSessionOptions {
 export function createToolSearchSession(options: ToolSearchSessionOptions): ToolSearchSession {
   const available = new Set(options.descriptors.map((descriptor) => descriptor.name));
   const initial = computeInitialLoadout(options.descriptors, options.config);
+  // Captured at attach: the full run toolset. Every Vendo-owned `vendo_*` tool
+  // in it stays active regardless of loadout — including the OTHER meta-tools
+  // (notably `vendo_report_capability_miss`) that are attached after the host
+  // descriptors and so are NOT in `options.descriptors`. Gating them out would
+  // silently disable miss capture whenever tool search is on.
+  let attached: ToolSet | undefined;
 
   return {
     activeToolNames() {
       const active = new Set<string>(initial);
       active.add(VENDO_TOOLS_SEARCH_TOOL_NAME);
-      for (const descriptor of options.descriptors) if (isAlwaysActive(descriptor.name)) active.add(descriptor.name);
+      for (const name of Object.keys(attached ?? {})) if (isAlwaysActive(name)) active.add(name);
       for (const name of options.loaded) if (available.has(name)) active.add(name);
       return [...active];
     },
 
     attach(tools) {
+      attached = tools;
       if (tools[VENDO_TOOLS_SEARCH_TOOL_NAME] !== undefined) {
         throw new VendoError("conflict", `Reserved internal tool name: ${VENDO_TOOLS_SEARCH_TOOL_NAME}`);
       }
