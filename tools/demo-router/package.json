@@ -1,0 +1,14 @@
+{
+  "name": "demo-router",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Always-on 302 router + registry for demos.vendo.run. Zero dependencies, deployed standalone (deliberately outside the pnpm workspace).",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "start": "node server.mjs"
+  }
+}
