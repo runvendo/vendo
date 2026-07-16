@@ -276,6 +276,14 @@ export class ThreadRepository {
     return thread;
   }
 
+  /** AGENT-11 / ENG-237: drop a subject's in-memory threads on session
+   *  eviction. Only the no-store (BYO) composition keeps threads here; a
+   *  store-backed agent holds them in the store overlay (cascaded there), so
+   *  this is a no-op then. The umbrella calls it per swept ephemeral subject. */
+  evictSubject(subject: string): void {
+    this.#memory.delete(subject);
+  }
+
   private usesMemory(_ctx: RunContext): boolean {
     return this.store === undefined;
   }

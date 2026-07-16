@@ -105,6 +105,11 @@ export interface VendoAgent {
     list(ctx: RunContext): Promise<ThreadSummary[]>;
     delete(id: ThreadId, ctx: RunContext): Promise<void>;
   };
+  /** ENG-237 (AGENT-11): drop a subject's in-memory threads when its ephemeral
+   *  session is evicted. The umbrella calls this for every subject the store's
+   *  idle sweep returns; store-backed threads live in the store overlay (already
+   *  cascaded), so this only bites the no-store (BYO) composition. */
+  evictSubject(subject: string): void;
   asRunner(): AgentRunner;
 }
 
@@ -266,6 +271,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
       list: (ctx) => threads.list(ctx),
       delete: (id, ctx) => threads.delete(id, ctx),
     },
+    evictSubject: (subject) => threads.evictSubject(subject),
     asRunner: () => createRunner(config),
   };
 }
