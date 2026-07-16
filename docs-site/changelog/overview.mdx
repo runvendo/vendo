@@ -111,6 +111,36 @@ components render identically. If any step fails, the previous rung keeps
 serving and the document is untouched. See
 [Generated UI and apps](/concepts/generated-ui#invisible-graduation-to-rung-4).
 
+**Visible error surface and retry in the thread.** A failed send, a
+mid-stream network drop, or any other transport error in the conversation
+now renders a friendly banner with a Retry button in the shipped chrome,
+instead of surfacing only through the accessibility-only status region.
+Retry re-issues the failed turn from the preserved user message, so
+nothing is duplicated. Headless callers of `useVendoThread` get matching
+`regenerate()` and `clearError()` methods on the hook return, alongside
+the existing `error` field, so custom surfaces can wire the same recovery
+flow:
+
+```tsx
+import { useVendoThread } from "@vendoai/ui";
+
+function Composer() {
+  const thread = useVendoThread();
+  return thread.error ? (
+    <div role="alert">
+      <span>Something went wrong and the response didn’t finish.</span>
+      <button
+        onClick={() =>
+          thread.messages.length === 0 ? thread.clearError() : thread.regenerate()
+        }
+      >
+        Retry
+      </button>
+    </div>
+  ) : null;
+}
+```
+
 ## Updates
 
 **Raw-IP egress fails closed on the Modal adapter.** When an app has a
