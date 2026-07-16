@@ -588,6 +588,35 @@ export class ThingResolver {
     expect(find.note).toContain("filter");
   });
 
+  it("treats graphql-type-json imports as the JSON scalar", async () => {
+    const root = await temporaryHost();
+    await writeFile(root, "package.json", JSON.stringify({
+      name: "nest-json",
+      dependencies: { "@nestjs/graphql": "^12.0.0", graphql: "^16.9.0", "graphql-type-json": "^0.3.2" },
+    }));
+    await writeFile(root, "src/config.resolver.ts", `
+import { Args, Query, Resolver } from "@nestjs/graphql";
+import graphqlTypeJson from "graphql-type-json";
+
+@Resolver()
+export class ConfigResolver {
+  @Query(() => graphqlTypeJson)
+  configGet(@Args("section", { type: () => graphqlTypeJson, nullable: true }) section: unknown): unknown {
+    return {};
+  }
+}
+`);
+    const { tools } = await extractGraphql(root);
+    const get = tools.find((tool) => binding(tool).operation === "configGet")!;
+    expect(get.disabled).toBeUndefined();
+    expect(get.inputSchema).toEqual({
+      type: "object",
+      properties: { section: {} },
+      additionalProperties: false,
+    });
+    expect(binding(get).document).toBe("query configGet($section: JSON) { configGet(section: $section) }");
+  });
+
   it("expands @Args() args-classes into per-field arguments", async () => {
     const root = await temporaryHost();
     await writeFile(root, "package.json", JSON.stringify({

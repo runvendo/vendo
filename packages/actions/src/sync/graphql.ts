@@ -739,6 +739,11 @@ async function interpretTypeExpression(
   if (ts.isIdentifier(expr)) {
     const scalar = scalarByName(expr.text);
     if (scalar) return scalar;
+    // The graphql-type-json package IS the JSON scalar — no resolution needed.
+    const imported = importMap(extraction, module).get(expr.text);
+    if (imported?.specifier === "graphql-type-json") {
+      return { typeName: imported.imported === "GraphQLJSONObject" ? "JSONObject" : "JSON", schema: {}, selection: "" };
+    }
     const resolved = await resolveIdentifier(extraction, module, expr.text, depth + 1);
     if (!resolved) return unresolvableType(`type reference "${expr.text}" could not be statically resolved`);
     return interpretResolvedType(extraction, resolved, expr.text, depth + 1);
