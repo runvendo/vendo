@@ -7,6 +7,7 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "src"),
       // Force one React instance across the host and Vendo UI in jsdom.
+      // (kept in lockstep with demo-bank; applies once Vendo is wired)
       react: path.resolve(__dirname, "node_modules/react"),
       "react-dom": path.resolve(__dirname, "node_modules/react-dom"),
       "react/jsx-runtime": path.resolve(__dirname, "node_modules/react/jsx-runtime"),

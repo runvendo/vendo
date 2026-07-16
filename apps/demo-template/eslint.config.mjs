@@ -13,6 +13,7 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     // Built sandbox bundles copied into public/ at build time (git-ignored).
+    // (kept in lockstep with demo-bank; applies once Vendo is wired)
     "public/vendo/**",
     "vendo-sandbox/dist/**",
     ".vendo/env/**",

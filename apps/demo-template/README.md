@@ -7,9 +7,10 @@ tooling, lint/test config, and the minimal Next.js scaffolding needed to boot
 
 Everything visible (pages, components, styling, copy, seed data) is a
 placeholder the creator agent replaces. Vendo itself is not wired up yet: no
-`src/vendo`, no API routes, no `.vendo/` product contract. That lands in a
-later pass; `vendo sync` still runs in `predev`/`prebuild` today and no-ops
-(fails soft) until then.
+`src/vendo` and no API routes. The committed `.vendo/catalog.json` /
+`.vendo/tools.json` are the *empty output* of `vendo sync .` (run
+automatically in `predev`/`prebuild`), committed so builds leave the tree
+clean. The real product contract lands in a later pass.
 
 ## Setup
 
