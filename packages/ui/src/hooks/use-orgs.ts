@@ -37,6 +37,9 @@ export function useOrgs(options?: PollOptions): {
         setGated(reason instanceof Error ? reason.message : String(reason));
         return [];
       }
+      // A real failure is not a gating verdict — clear any stale `gated` so the
+      // panel never shows the upgrade state and an error wall at once.
+      setGated(undefined);
       throw reason;
     }
   }, [client]);

@@ -69,10 +69,21 @@ export function useActivity(options?: PollOptions): {
     };
   }, [refresh]);
 
+  // Self-scheduling so a slow request can't stack overlapping polls (see
+  // use-resource.ts for the rationale).
   useEffect(() => {
     if (pollMs === undefined || pollMs <= 0) return;
-    const timer = setInterval(() => void refresh(), pollMs);
-    return () => clearInterval(timer);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      await refresh();
+      if (!cancelled) timer = setTimeout(() => void tick(), pollMs);
+    };
+    timer = setTimeout(() => void tick(), pollMs);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [pollMs, refresh]);
 
   const loadMore = useCallback(async () => {

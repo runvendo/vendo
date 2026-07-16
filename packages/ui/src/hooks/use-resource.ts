@@ -66,10 +66,23 @@ export function useResource<T>(fetcher: () => Promise<T>, initial: T, { pollMs }
     };
   }, [refresh]);
 
+  // Self-scheduling rather than setInterval: the next poll is armed only after
+  // the current refresh settles, so a slow request (pollMs < latency) can never
+  // stack overlapping fetches that stale each other out (and leave the first
+  // load stuck loading).
   useEffect(() => {
     if (pollMs === undefined || pollMs <= 0) return;
-    const timer = setInterval(() => void refresh(), pollMs);
-    return () => clearInterval(timer);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      await refresh();
+      if (!cancelled) timer = setTimeout(() => void tick(), pollMs);
+    };
+    timer = setTimeout(() => void tick(), pollMs);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [pollMs, refresh]);
 
   return { data, error, isLoading, refresh };

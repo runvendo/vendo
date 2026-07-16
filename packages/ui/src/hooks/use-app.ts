@@ -22,16 +22,20 @@ export function useApp(appId: AppId): {
   const [error, setError] = useState<Error>();
   const [isLoading, setIsLoading] = useState(true);
   const generationRef = useRef(0);
+  // Reset per appId (below), so `isLoading` reflects only the first load of the
+  // current app — an edit/undo refresh does not flicker it true→false.
+  const loadedRef = useRef(false);
 
   const refresh = useCallback(async () => {
     const generation = generationRef.current;
-    setIsLoading(true);
+    if (!loadedRef.current) setIsLoading(true);
     try {
       const [nextApp, nextSurface] = await Promise.all([client.apps.get(appId), client.apps.open(appId)]);
       if (generation !== generationRef.current) return;
       setApp(nextApp);
       setSurface(nextSurface);
       setError(undefined);
+      loadedRef.current = true;
     } catch (reason) {
       if (generation !== generationRef.current) return;
       setError(reason instanceof Error ? reason : new Error(String(reason)));
@@ -43,6 +47,7 @@ export function useApp(appId: AppId): {
   useEffect(() => {
     const generation = generationRef.current + 1;
     generationRef.current = generation;
+    loadedRef.current = false;
     setApp(undefined);
     setSurface(undefined);
     setError(undefined);

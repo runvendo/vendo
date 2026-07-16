@@ -373,6 +373,17 @@ describe("ENG-219 — consistent { data, error, isLoading, refresh } + polling +
     }
   });
 
+  it("keeps useApp isLoading settled through an edit refresh (only the first load flickers)", async () => {
+    const { result } = renderHook(() => useApp("app_1"), { wrapper });
+    expect(result.current.isLoading).toBe(true);
+    await waitFor(() => expect(result.current.app?.id).toBe("app_1"));
+    expect(result.current.isLoading).toBe(false);
+
+    await act(() => result.current.edit("Add totals"));
+    // The edit refresh must not re-flip isLoading true.
+    expect(result.current.isLoading).toBe(false);
+  });
+
   it("surfaces an initial fetch failure instead of swallowing it", async () => {
     wire.state.failures.push({ method: "GET", path: "/grants", code: "boom", message: "kaboom", status: 500 });
     const { result } = renderHook(() => useGrants(), { wrapper });
