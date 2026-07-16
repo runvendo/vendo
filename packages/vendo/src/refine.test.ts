@@ -228,6 +228,29 @@ describe("runRefine — proposals become reviewable diffs", () => {
     expect(result.dropped.some((drop) => drop.target === "host_existing_flow" && drop.reason.includes("existing compound"))).toBe(true);
   });
 
+  it("keeps only output tools in brief references — a dropped compound is never referenced", async () => {
+    const root = await makeRoot();
+    const result = await runRefine({
+      root,
+      model: proposalModel({
+        compounds: [
+          completeAllOpen,
+          { name: "host_dropped", description: "dropped: unknown step", steps: [{ id: "one", tool: "host_nope" }] },
+        ],
+        briefs: [{
+          name: "sweep",
+          text: "Use the compound to sweep tasks.",
+          // References a surviving compound, a real primitive, the dropped
+          // compound, and a bogus name — only the first two may survive.
+          tools: ["host_complete_open_tasks", "host_listTasks", "host_dropped", "host_bogus"],
+        }],
+      }),
+    });
+    const file = JSON.parse(result.changes[0]!.after) as { briefs: Array<{ name: string; tools?: string[] }> };
+    expect(file.briefs[0]!.tools).toEqual(["host_complete_open_tasks", "host_listTasks"]);
+    expect(result.dropped.some((drop) => drop.target === "host_dropped")).toBe(true);
+  });
+
   it("merges risk corrections, curation, and description improvements into overrides.json field-wise", async () => {
     const existingOverrides = {
       format: VENDO_OVERRIDES_FORMAT,

@@ -434,6 +434,10 @@ function normalize(proposals: RefineProposals, inputs: RefineInputs): Normalized
   });
 
   const existingBriefNames = new Set((inputs.capabilities?.briefs ?? []).map((brief) => brief.name));
+  // Only tools that survive to the OUTPUT are legal brief references: primitives
+  // plus compounds that passed the final validateCapabilities gate — never a
+  // compound this run dropped (Devin/Greptile: no dangling brief references).
+  const outputCompoundNames = new Set(validCompounds.map((compound) => compound.name));
   const briefs: CapabilityBrief[] = [];
   for (const candidate of proposals.briefs ?? []) {
     if (candidate.name.trim() === "" || candidate.text.trim() === "") {
@@ -444,7 +448,7 @@ function normalize(proposals: RefineProposals, inputs: RefineInputs): Normalized
       dropped.push({ kind: "brief", target: candidate.name, reason: "brief already exists" });
       continue;
     }
-    const knownTools = candidate.tools?.filter((tool) => primitives.has(tool) || acceptedNames.has(tool));
+    const knownTools = candidate.tools?.filter((tool) => primitives.has(tool) || outputCompoundNames.has(tool));
     briefs.push({
       name: candidate.name,
       text: candidate.text,

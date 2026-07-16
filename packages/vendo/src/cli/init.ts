@@ -100,7 +100,7 @@ export interface InitOptions {
   };
   /** End-of-init refine offer (spec §3); injectable for tests. */
   offerRefine?: () => Promise<boolean>;
-  runRefine?: (options: { targetDir: string; output?: Output }) => Promise<number>;
+  runRefine?: (options: { targetDir: string; output?: Output; modelImport?: string }) => Promise<number>;
 }
 
 /** Interactive y/N for the end-of-init `vendo refine` offer. */
@@ -913,7 +913,13 @@ export async function runInit(options: InitOptions): Promise<number> {
       output.log("Next: with your dev server running, `vendo refine` proposes compound capabilities from your app's real surface.");
     } else if (await (options.offerRefine ?? defaultOfferRefine)()) {
       const { runRefineCommand } = await import("./refine.js");
-      const refineExit = await (options.runRefine ?? runRefineCommand)({ targetDir: root, output });
+      // Forward the model the dev just configured so the offer can succeed
+      // without a separate ANTHROPIC_API_KEY (Devin review on #275).
+      const refineExit = await (options.runRefine ?? runRefineCommand)({
+        targetDir: root,
+        output,
+        ...(effective.modelImport === undefined ? {} : { modelImport: effective.modelImport }),
+      });
       if (refineExit !== 0) output.error("vendo refine did not complete; run `vendo refine` again once your dev server and model key are ready.");
     }
     return 0;

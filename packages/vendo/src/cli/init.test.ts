@@ -843,6 +843,20 @@ describe("vendo init", () => {
       expect(runRefine).toHaveBeenCalledWith(expect.objectContaining({ targetDir: root }));
     });
 
+    it("forwards the model the dev configured during init into the refine offer", async () => {
+      const runRefine = vi.fn(async () => 0);
+      expect(await runInit({
+        targetDir: await fixture(),
+        modelImport: "@/lib/ai",
+        interview: async () => ({}),
+        confirm: async () => true,
+        output: output().output,
+        offerRefine: async () => true,
+        runRefine,
+      })).toBe(0);
+      expect(runRefine).toHaveBeenCalledWith(expect.objectContaining({ modelImport: "@/lib/ai" }));
+    });
+
     it("a declined offer runs nothing; a failed refine never fails init", async () => {
       const declinedRefine = vi.fn(async () => 0);
       const declined = output();
