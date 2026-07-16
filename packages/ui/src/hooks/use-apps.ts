@@ -1,21 +1,25 @@
 /** App collection transport (08-ui §3). */
 import type { AppDocument, AppId } from "@vendoai/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import { useVendoContext } from "../context.js";
+import { type PollOptions, useResource } from "./use-resource.js";
 
-export function useApps(): {
+export function useApps(options?: PollOptions): {
+  /** Back-compat alias for `data` (contract §3). */
   apps: AppDocument[];
+  data: AppDocument[];
+  error: Error | undefined;
+  isLoading: boolean;
+  refresh(): Promise<void>;
   create(prompt: string): Promise<AppDocument>;
   remove(id: AppId): Promise<void>;
   fork(id: AppId): Promise<AppDocument>;
+  exportApp(id: AppId): Promise<Uint8Array>;
+  importApp(bytes: Uint8Array): Promise<AppDocument>;
 } {
   const { client } = useVendoContext();
-  const [apps, setApps] = useState<AppDocument[]>([]);
-  const refresh = useCallback(async () => setApps(await client.apps.list()), [client]);
-
-  useEffect(() => {
-    void refresh().catch(() => undefined);
-  }, [refresh]);
+  const list = useCallback(() => client.apps.list(), [client]);
+  const { data, error, isLoading, refresh } = useResource(list, [] as AppDocument[], options);
 
   const create = useCallback(
     async (prompt: string) => {
@@ -40,6 +44,15 @@ export function useApps(): {
     },
     [client, refresh],
   );
+  const exportApp = useCallback((id: AppId) => client.apps.exportApp(id), [client]);
+  const importApp = useCallback(
+    async (bytes: Uint8Array) => {
+      const app = await client.apps.importApp(bytes);
+      await refresh();
+      return app;
+    },
+    [client, refresh],
+  );
 
-  return { apps, create, remove, fork };
+  return { apps: data, data, error, isLoading, refresh, create, remove, fork, exportApp, importApp };
 }

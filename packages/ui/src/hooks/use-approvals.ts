@@ -1,20 +1,21 @@
 /** Pending approval transport (08-ui §3). */
 import type { ApprovalDecision, ApprovalId, ApprovalRequest } from "@vendoai/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import { useVendoContext } from "../context.js";
+import { type PollOptions, useResource } from "./use-resource.js";
 
-export function useApprovals(): {
+export function useApprovals(options?: PollOptions): {
+  /** Back-compat alias for `data` (contract §3). */
   pending: ApprovalRequest[];
+  data: ApprovalRequest[];
+  error: Error | undefined;
+  isLoading: boolean;
+  refresh(): Promise<void>;
   decide(ids: ApprovalId | ApprovalId[], decision: ApprovalDecision): Promise<void>;
 } {
   const { client } = useVendoContext();
-  const [pending, setPending] = useState<ApprovalRequest[]>([]);
-
-  const refresh = useCallback(async () => setPending(await client.approvals.pending()), [client]);
-
-  useEffect(() => {
-    void refresh().catch(() => undefined);
-  }, [refresh]);
+  const list = useCallback(() => client.approvals.pending(), [client]);
+  const { data, error, isLoading, refresh } = useResource(list, [] as ApprovalRequest[], options);
 
   const decide = useCallback(
     async (ids: ApprovalId | ApprovalId[], decision: ApprovalDecision) => {
@@ -24,5 +25,5 @@ export function useApprovals(): {
     [client, refresh],
   );
 
-  return { pending, decide };
+  return { pending: data, data, error, isLoading, refresh, decide };
 }

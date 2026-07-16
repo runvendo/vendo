@@ -6,7 +6,11 @@ import type { EditResult, OpenSurface, VersionEntry } from "../wire-types.js";
 
 export function useApp(appId: AppId): {
   app: AppDocument | undefined;
+  /** Alias for `app` — the consistent `data` field across data hooks (§3). */
+  data: AppDocument | undefined;
   surface: OpenSurface | undefined;
+  error: Error | undefined;
+  isLoading: boolean;
   call(ref: string, args: Json): Promise<ToolOutcome>;
   edit(instruction: string): Promise<EditResult>;
   history: { list(): Promise<VersionEntry[]>; undo(): Promise<AppDocument> };
@@ -15,14 +19,25 @@ export function useApp(appId: AppId): {
   const { client } = useVendoContext();
   const [app, setApp] = useState<AppDocument>();
   const [surface, setSurface] = useState<OpenSurface>();
+  const [error, setError] = useState<Error>();
+  const [isLoading, setIsLoading] = useState(true);
   const generationRef = useRef(0);
 
   const refresh = useCallback(async () => {
     const generation = generationRef.current;
-    const [nextApp, nextSurface] = await Promise.all([client.apps.get(appId), client.apps.open(appId)]);
-    if (generation !== generationRef.current) return;
-    setApp(nextApp);
-    setSurface(nextSurface);
+    setIsLoading(true);
+    try {
+      const [nextApp, nextSurface] = await Promise.all([client.apps.get(appId), client.apps.open(appId)]);
+      if (generation !== generationRef.current) return;
+      setApp(nextApp);
+      setSurface(nextSurface);
+      setError(undefined);
+    } catch (reason) {
+      if (generation !== generationRef.current) return;
+      setError(reason instanceof Error ? reason : new Error(String(reason)));
+    } finally {
+      if (generation === generationRef.current) setIsLoading(false);
+    }
   }, [appId, client]);
 
   useEffect(() => {
@@ -30,7 +45,8 @@ export function useApp(appId: AppId): {
     generationRef.current = generation;
     setApp(undefined);
     setSurface(undefined);
-    void refresh().catch(() => undefined);
+    setError(undefined);
+    void refresh();
     return () => {
       if (generationRef.current === generation) generationRef.current += 1;
     };
@@ -57,5 +73,5 @@ export function useApp(appId: AppId): {
     [appId, client, refresh],
   );
 
-  return { app, surface, call, edit, history, refresh };
+  return { app, data: app, surface, error, isLoading, call, edit, history, refresh };
 }

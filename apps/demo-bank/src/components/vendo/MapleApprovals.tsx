@@ -8,7 +8,9 @@ import { ApprovalCard } from "@vendoai/ui/chrome";
  * the standard ApprovalCard, so "resolve it in-product" has a visible place
  * in Maple's own UI. Renders nothing while the queue is empty. */
 export function MapleApprovals() {
-  const { pending, decide } = useApprovals();
+  // Poll so an approval raised elsewhere (a thread turn, the MCP door, an
+  // automation) appears in this inbox on its own — no page remount (ENG-219).
+  const { pending, decide } = useApprovals({ pollMs: 5000 });
   if (pending.length === 0) return null;
   return (
     <section aria-label="Pending Vendo approvals" className="space-y-3 pb-4">
