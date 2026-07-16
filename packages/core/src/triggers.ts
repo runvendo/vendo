@@ -1,11 +1,24 @@
 import { z } from "zod";
-import { isoDateTimeSchema, type IsoDateTime } from "./ids.js";
+import { isoDateTimeSchema, runIdSchema, type IsoDateTime, type RunId } from "./ids.js";
 
 /** 01-core §11 */
 export type TriggerSource =
   | { kind: "schedule"; cron?: string; every?: string; at?: IsoDateTime }
   | { kind: "host-event"; event: string }
   | { kind: "external"; connector: string; event: string; config?: unknown };
+
+/** 01-core §3. Lives beside TriggerSource (not in run-context.ts) so grants,
+ *  audit, AND run-context can all import it without a runtime module cycle. */
+export interface TriggerRef {
+  runId: RunId;
+  kind: TriggerSource["kind"];
+}
+
+/** 01-core §3 */
+export const triggerRefSchema = z.object({
+  runId: runIdSchema,
+  kind: z.enum(["schedule", "host-event", "external"]),
+}).passthrough() satisfies z.ZodType<TriggerRef>;
 
 /** 01-core §11 */
 export const triggerSourceSchema = z.discriminatedUnion("kind", [

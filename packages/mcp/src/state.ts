@@ -1,9 +1,11 @@
-import type { RunContext } from "@vendoai/core";
+import type { McpConsent, RunContext } from "@vendoai/core";
 
-/** The RunContext the door mints for every MCP tool call. The OAuth consent is
- * structural because actions cannot import this package (dependency guard). */
+/** The RunContext the door mints for every MCP tool call. CORE-2 (wave 5):
+ * `mcpConsent` is core's own typed field now — this narrows it to required
+ * (every door call carries the consent projection) instead of re-declaring
+ * the shape structurally. */
 export type McpRunContext = RunContext & {
-  mcpConsent: { clientId: string; scopes: string[] };
+  mcpConsent: McpConsent;
 };
 
 /** An opaque transport/runtime handle associated with the current protocol's

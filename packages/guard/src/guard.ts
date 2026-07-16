@@ -443,8 +443,8 @@ class GuardImplementation implements VendoGuard {
           };
         } else {
           const grant = await this.#grantForExecution(decision, call, completed.descriptor, ctx);
-          const executeCtx =
-            grant === undefined ? ctx : ({ ...ctx, grant } as RunContext & { grant: PermissionGrant });
+          // CORE-2: `grant` is a first-class RunContext field — no cast needed.
+          const executeCtx = grant === undefined ? ctx : { ...ctx, grant };
           try {
             outcome = await tools.execute(call, executeCtx);
           } catch (error) {

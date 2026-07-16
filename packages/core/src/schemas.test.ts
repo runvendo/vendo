@@ -14,6 +14,7 @@ import {
   vendoApprovalPartSchema,
   vendoThemeSchema,
   vendoViewPartSchema,
+  type RunContext,
 } from "./index.js";
 
 const at = "2026-07-11T16:00:00.000Z";
@@ -144,6 +145,46 @@ describe("context, triggers, host reports, theme, and stream schemas", () => {
     expect(triggerSourceSchema.safeParse({ kind: "schedule", cron: "0 9 * * 1" }).success).toBe(true);
     expect(triggerSourceSchema.safeParse({ kind: "schedule" }).success).toBe(false);
     expect(triggerSourceSchema.safeParse({ kind: "schedule", cron: "* * * * *", every: "1h" }).success).toBe(false);
+  });
+
+  it("CORE-2: run context carries typed optional grant and mcpConsent (no structural twins)", () => {
+    const base = {
+      principal,
+      venue: "automation",
+      presence: "away",
+      sessionId: "session_grant",
+    };
+    const grant = {
+      id: "grt_1",
+      subject: principal.subject,
+      tool: "send_echo",
+      descriptorHash: "sha256:abc",
+      scope: { kind: "tool" },
+      duration: "standing",
+      source: "chat",
+      grantedAt: "2026-07-16T00:00:00.000Z",
+    };
+    expect(runContextSchema.safeParse({ ...base, grant }).success).toBe(true);
+    expect(runContextSchema.safeParse({ ...base, grant: { id: "grt_1" } }).success).toBe(false);
+    expect(runContextSchema.safeParse({
+      ...base,
+      venue: "mcp",
+      mcpConsent: { clientId: "client_1", scopes: ["tools:run"] },
+    }).success).toBe(true);
+    expect(runContextSchema.safeParse({
+      ...base,
+      venue: "mcp",
+      mcpConsent: { clientId: "client_1" },
+    }).success).toBe(false);
+    // Type-level: the fields are first-class on RunContext.
+    const typed: RunContext = {
+      principal,
+      venue: "mcp",
+      presence: "present",
+      sessionId: "session_typed",
+      mcpConsent: { clientId: "client_1", scopes: ["tools:run"] },
+    };
+    expect(typed.mcpConsent?.scopes).toEqual(["tools:run"]);
   });
 
   it("validates agent reports", () => {
