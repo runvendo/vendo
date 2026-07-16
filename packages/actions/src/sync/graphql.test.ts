@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { GraphqlBinding } from "../formats.js";
+import { bindingIdentity } from "./common.js";
 import { runExtractors } from "./extractors.js";
 import { detectGraphql, extractGraphql } from "./graphql.js";
 
@@ -516,6 +517,51 @@ describe("extractGraphql — code-first NestJS sources", () => {
     );
   });
 
+  it("gives list-returning operations the same selection depth as single-object ones", async () => {
+    const root = await temporaryHost();
+    await writeNestHost(root);
+    const { tools } = await extractGraphql(root);
+    // [InvoiceDto] must keep the nested customer selection exactly like the
+    // bare InvoiceDto return — the list wrapper is not a nesting level.
+    const list = tools.find((tool) => binding(tool).operation === "invoicesList")!;
+    expect(binding(list).document).toBe(
+      "query invoicesList($search: String) { invoicesList(search: $search) { id reference total lineCount customer { id name } } }",
+    );
+  });
+
+  it("keeps the list wrapper for Array<T> generic argument annotations", async () => {
+    const root = await temporaryHost();
+    await writeFile(root, "package.json", JSON.stringify({
+      name: "nest-array-generic",
+      dependencies: { "@nestjs/graphql": "^12.0.0", graphql: "^16.9.0" },
+    }));
+    await writeFile(root, "src/tags.resolver.ts", `
+import { Args, Mutation, Resolver } from "@nestjs/graphql";
+
+@Resolver()
+export class TagsResolver {
+  @Mutation(() => Boolean)
+  applyTags(@Args("tags") tags: Array<string>, @Args("names") names: string[]): boolean {
+    return true;
+  }
+}
+`);
+    const { tools } = await extractGraphql(root);
+    const apply = tools.find((tool) => binding(tool).operation === "applyTags")!;
+    expect(apply.inputSchema).toEqual({
+      type: "object",
+      properties: {
+        tags: { type: "array", items: { type: "string" } },
+        names: { type: "array", items: { type: "string" } },
+      },
+      required: ["tags", "names"],
+      additionalProperties: false,
+    });
+    expect(binding(apply).document).toBe(
+      "mutation applyTags($tags: [String!]!, $names: [String!]!) { applyTags(tags: $tags, names: $names) }",
+    );
+  });
+
   it("emits code-first subscriptions disabled with a note", async () => {
     const root = await temporaryHost();
     await writeNestHost(root);
@@ -671,6 +717,31 @@ describe("graphql + route-scan interplay", () => {
     const result = await runExtractors(root);
     expect(result.tools.some((tool) => tool.binding.kind === "route" && tool.binding.path.startsWith("/api/graphql"))).toBe(false);
     expect(result.tools.some((tool) => tool.binding.kind === "graphql")).toBe(true);
+  });
+
+  it("keeps a query and a mutation that share one field name as two tools", async () => {
+    const root = await temporaryHost();
+    await writeFile(root, "package.json", JSON.stringify({
+      name: "sdl-shared-name",
+      dependencies: { graphql: "^16.9.0" },
+    }));
+    await writeFile(root, "schema.graphql", `
+type Query {
+  sync: String!
+}
+
+type Mutation {
+  sync(force: Boolean): String!
+}
+`);
+    const { tools } = await extractGraphql(root);
+    const shared = tools.filter((tool) => binding(tool).operation === "sync");
+    expect(shared).toHaveLength(2);
+    expect(shared.map((tool) => binding(tool).type).sort()).toEqual(["mutation", "query"]);
+    // Distinct dedup identities and distinct provider-safe names survive the
+    // sync union unchanged.
+    expect(new Set(shared.map((tool) => bindingIdentity(tool.binding))).size).toBe(2);
+    expect(new Set(shared.map((tool) => tool.name)).size).toBe(2);
   });
 
   it("keeps SDL and code-first from double-describing one operation", async () => {

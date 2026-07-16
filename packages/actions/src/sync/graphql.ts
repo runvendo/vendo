@@ -727,7 +727,9 @@ async function interpretTypeExpression(
   if (ts.isArrayLiteralExpression(expr)) {
     const element = expr.elements[0];
     if (!element) return unresolvableType("empty list type expression");
-    const inner = await interpretTypeExpression(extraction, module, element, depth + 1);
+    // A list wrapper is not a nesting level: [Invoice] must produce the same
+    // depth-limited selection set as a bare Invoice return.
+    const inner = await interpretTypeExpression(extraction, module, element, depth);
     return {
       typeName: inner.typeName === null ? null : `[${inner.typeName}!]`,
       schema: { type: "array", items: inner.schema },
@@ -818,7 +820,7 @@ async function interpretTypeAnnotation(
   if (annotation.kind === ts.SyntaxKind.NumberKeyword) return scalarByName("Number")!;
   if (annotation.kind === ts.SyntaxKind.BooleanKeyword) return scalarByName("Boolean")!;
   if (ts.isArrayTypeNode(annotation)) {
-    const inner = await interpretTypeAnnotation(extraction, module, annotation.elementType, depth + 1);
+    const inner = await interpretTypeAnnotation(extraction, module, annotation.elementType, depth);
     return {
       typeName: inner.typeName === null ? null : `[${inner.typeName}!]`,
       schema: { type: "array", items: inner.schema },
@@ -828,8 +830,19 @@ async function interpretTypeAnnotation(
   }
   if (ts.isTypeReferenceNode(annotation) && ts.isIdentifier(annotation.typeName)) {
     const name = annotation.typeName.text;
-    if (name === "Promise" || name === "Array") {
-      return interpretTypeAnnotation(extraction, module, annotation.typeArguments?.[0], depth + 1);
+    // Promise<T> is a pure unwrap; Array<T> is the generic spelling of T[]
+    // and must keep its list wrapper in both the schema and the variable type.
+    if (name === "Promise") {
+      return interpretTypeAnnotation(extraction, module, annotation.typeArguments?.[0], depth);
+    }
+    if (name === "Array") {
+      const inner = await interpretTypeAnnotation(extraction, module, annotation.typeArguments?.[0], depth);
+      return {
+        typeName: inner.typeName === null ? null : `[${inner.typeName}!]`,
+        schema: { type: "array", items: inner.schema },
+        selection: inner.selection,
+        ...(inner.reason ? { reason: inner.reason } : {}),
+      };
     }
     const scalar = scalarByName(name);
     if (scalar && name !== "Number") return scalar; // Date and friends
@@ -1257,12 +1270,20 @@ export async function extractGraphql(root: string): Promise<GraphqlExtractResult
   }
 
   // SDL is the more authoritative schema description; code-first duplicates
-  // of the same operation name are dropped.
+  // of the same operation are dropped. The key carries the binding-visible
+  // kind, so a query and a mutation legitimately sharing one name stay two
+  // tools; invokable operations are deduplicated before subscription
+  // placeholders so a disabled placeholder never shadows a real operation.
   const seen = new Set<string>();
   const operations: OperationDef[] = [];
-  for (const def of [...sdlOperationDefs, ...codeFirstOperationDefs]) {
-    if (seen.has(def.operation)) continue;
-    seen.add(def.operation);
+  const ordered = [...sdlOperationDefs, ...codeFirstOperationDefs];
+  for (const def of [
+    ...ordered.filter((def) => def.type !== "subscription"),
+    ...ordered.filter((def) => def.type === "subscription"),
+  ]) {
+    const key = `${def.type === "query" ? "query" : "mutation"}\t${def.operation}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     operations.push(def);
   }
 

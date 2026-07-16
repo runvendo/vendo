@@ -569,7 +569,9 @@ export function dedupKey(method: HttpMethod, urlPath: string): string {
  * endpoint+operation for GraphQL. */
 export function bindingIdentity(binding: PrimitiveToolBinding): string {
   if (binding.kind === "trpc") return `TRPC ${binding.mount.replace(/\/+$/g, "")} ${binding.procedure}`;
-  if (binding.kind === "graphql") return `GRAPHQL ${binding.endpoint.replace(/\/+$/g, "")} ${binding.operation}`;
+  // The operation kind joins the key: GraphQL allows a query and a mutation
+  // to share one field name across the two root types.
+  if (binding.kind === "graphql") return `GRAPHQL ${binding.endpoint.replace(/\/+$/g, "")} ${binding.type} ${binding.operation}`;
   return dedupKey(binding.method, binding.path);
 }
 
