@@ -276,8 +276,12 @@ export async function runInitFinale(options: InitFinaleOptions): Promise<void> {
   output.log(`\nStarting the dev server (${packageManager} run dev)…`);
   const child = (options.spawnDev ?? defaultSpawnDev)(packageManager, root);
   const bootLog: string[] = [];
-  child.stdout?.on("data", (data: Buffer) => bootLog.push(data.toString()));
-  child.stderr?.on("data", (data: Buffer) => bootLog.push(data.toString()));
+  const record = (data: Buffer): void => {
+    bootLog.push(data.toString());
+    if (bootLog.length > 200) bootLog.shift(); // bounded: init may hold the server open for hours
+  };
+  child.stdout?.on("data", record);
+  child.stderr?.on("data", record);
 
   const up = await waitForStatus(base, fetchImpl, options.statusTimeoutMs ?? 120_000);
   if (!up) {
