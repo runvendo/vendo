@@ -48,6 +48,7 @@ export async function putAppRow(
 
 export function threadFromRow(row: Record<string, unknown>): ThreadRow {
   const title = row["title"];
+  const revision = row["revision"];
   return {
     id: text(row["id"]),
     subject: text(row["subject"]),
@@ -55,6 +56,9 @@ export function threadFromRow(row: Record<string, unknown>): ThreadRow {
     ...(typeof title === "string" ? { title } : {}),
     createdAt: iso(row["created_at"]),
     updatedAt: iso(row["updated_at"]),
+    ...(typeof revision === "string" || typeof revision === "number" || typeof revision === "bigint"
+      ? { revision: String(revision) }
+      : {}),
   };
 }
 
@@ -70,12 +74,13 @@ export async function putThreadRow(
   // This closes the TOCTOU window that a resolve()-time pre-check alone cannot
   // (a foreign row can appear during a long streaming turn, before persist runs).
   const result = await db.query(
-    `INSERT INTO vendo_threads (id, subject, messages, title, created_at, updated_at)
-     VALUES ($1, $2, $3::jsonb, $4, $5, $5)
+    `INSERT INTO vendo_threads (id, subject, messages, title, created_at, updated_at, revision)
+     VALUES ($1, $2, $3::jsonb, $4, $5, $5, 1)
      ON CONFLICT (id) DO UPDATE
-       SET messages = EXCLUDED.messages, title = EXCLUDED.title, updated_at = EXCLUDED.updated_at
+       SET messages = EXCLUDED.messages, title = EXCLUDED.title, updated_at = EXCLUDED.updated_at,
+           revision = vendo_threads.revision + 1
        WHERE vendo_threads.subject = EXCLUDED.subject
-     RETURNING id, subject, messages, title, created_at, updated_at`,
+     RETURNING id, subject, messages, title, created_at, updated_at, revision`,
     [input.id, input.subject, JSON.stringify(input.messages), input.title ?? null, now],
   );
   const row = result.rows[0];

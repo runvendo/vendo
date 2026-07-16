@@ -1,0 +1,13 @@
+
+ RUN  v2.1.9 /Users/yousefh/Desktop/Cool Code/flowlet/.claude/worktrees/agent-a43f9e48364eb09ae/packages/store
+
+stdout | src/thread-scoping.test.ts
+POSTGRES_URL not set — postgres leg skipped
+
+ ✓ src/thread-scoping.test.ts (6 tests) 13516ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  12:18:30
+   Duration  15.17s (transform 578ms, setup 0ms, collect 1.13s, tests 13.52s, environment 0ms, prepare 195ms)
+

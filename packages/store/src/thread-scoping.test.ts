@@ -68,4 +68,108 @@ for (const backend of backends()) {
       expect(await threads.get(e2, "thr_overlay")).toBeNull();
     });
   });
+
+  describe(`${backend.name} vendo_threads guarded writes (ENG-310)`, () => {
+    let made: MadeBackend;
+    beforeAll(async () => {
+      made = await backend.make();
+      await made.store.ensureSchema();
+    });
+    afterAll(async () => { if (made) await made.cleanup(); });
+
+    const threadData = (subject: string, text: string): { subject: string; messages: unknown[] } => ({
+      subject,
+      messages: [{ role: "user", text }],
+    });
+
+    it("exposes atomic on the routed seam: one insert winner, revision-guarded swaps", async () => {
+      const seam = made.store.records("vendo_threads");
+      expect(seam.atomic).toBeDefined();
+
+      // Exactly one concurrent first-persist lands; the loser gets null.
+      const [first, second] = await Promise.all([
+        seam.atomic!.insertIfAbsent({ id: "thr_cas", data: threadData(u1.subject, "one") }),
+        seam.atomic!.insertIfAbsent({ id: "thr_cas", data: threadData(u1.subject, "two") }),
+      ]);
+      const winners = [first, second].filter((record) => record !== null);
+      expect(winners).toHaveLength(1);
+      expect(winners[0]!.revision).toBe("1");
+
+      // Only the CURRENT revision swaps — and exactly one concurrent swapper wins.
+      const revision = winners[0]!.revision!;
+      const swaps = await Promise.all([
+        seam.atomic!.compareAndSwap({ id: "thr_cas", data: threadData(u1.subject, "swap a") }, revision),
+        seam.atomic!.compareAndSwap({ id: "thr_cas", data: threadData(u1.subject, "swap b") }, revision),
+      ]);
+      expect(swaps.filter((record) => record !== null)).toHaveLength(1);
+      const surviving = swaps[0] !== null ? "swap a" : "swap b";
+      expect((await seam.get("thr_cas"))?.data).toMatchObject({
+        messages: [{ role: "user", text: surviving }],
+      });
+      // The stale token keeps losing.
+      expect(await seam.atomic!.compareAndSwap(
+        { id: "thr_cas", data: threadData(u1.subject, "stale") },
+        revision,
+      )).toBeNull();
+      // A malformed token is refused outright, not treated as a miss.
+      await expect(seam.atomic!.compareAndSwap(
+        { id: "thr_cas", data: threadData(u1.subject, "junk token") },
+        "not-a-revision",
+      )).rejects.toMatchObject<VendoError>({ code: "validation" });
+      // Plain put still bumps the counter, so a pre-put token can no longer swap.
+      const bumped = await seam.put({ id: "thr_cas", data: threadData(u1.subject, "via put") });
+      expect(BigInt(bumped.revision!)).toBeGreaterThan(BigInt(revision));
+    });
+
+    it("a foreign subject can never land a guarded write, even with the current revision", async () => {
+      const seam = made.store.records("vendo_threads");
+      const mine = await seam.put({ id: "thr_cas_foreign", data: threadData(u1.subject, "mine") });
+
+      // insertIfAbsent: the id is taken → null, no takeover.
+      expect(await seam.atomic!.insertIfAbsent({
+        id: "thr_cas_foreign",
+        data: threadData(u2.subject, "steal by insert"),
+      })).toBeNull();
+      // compareAndSwap with the RIGHT revision but the WRONG subject → null, row intact.
+      expect(await seam.atomic!.compareAndSwap(
+        { id: "thr_cas_foreign", data: threadData(u2.subject, "steal by swap") },
+        mine.revision!,
+      )).toBeNull();
+      expect(await made.sql("SELECT subject, messages FROM vendo_threads WHERE id = 'thr_cas_foreign'"))
+        .toEqual([{ subject: u1.subject, messages: [{ role: "user", text: "mine" }] }]);
+    });
+
+    it("guards the ephemeral overlay path the same way", async () => {
+      const eSubject = "sess_cas";
+      registerEphemeralSubject(made.store, eSubject);
+      const seam = made.store.records("vendo_threads");
+
+      const inserted = await seam.atomic!.insertIfAbsent({
+        id: "thr_cas_overlay",
+        data: threadData(eSubject, "overlay one"),
+      });
+      expect(inserted).not.toBeNull();
+      expect(inserted!.revision).toBe("1");
+      expect(await seam.atomic!.insertIfAbsent({
+        id: "thr_cas_overlay",
+        data: threadData(eSubject, "overlay dupe"),
+      })).toBeNull();
+
+      const swapped = await seam.atomic!.compareAndSwap(
+        { id: "thr_cas_overlay", data: threadData(eSubject, "overlay two") },
+        "1",
+      );
+      expect(swapped).not.toBeNull();
+      expect(swapped!.revision).toBe("2");
+      expect(await seam.atomic!.compareAndSwap(
+        { id: "thr_cas_overlay", data: threadData(eSubject, "overlay stale") },
+        "1",
+      )).toBeNull();
+
+      // Nothing hit disk: the overlay owns the row.
+      expect(Number((await made.sql(
+        "SELECT COUNT(*)::int AS count FROM vendo_threads WHERE id = 'thr_cas_overlay'",
+      ))[0]?.["count"])).toBe(0);
+    });
+  });
 }
