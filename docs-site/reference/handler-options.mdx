@@ -22,7 +22,7 @@ description: "Every createVendo configuration option and fetch-handler setting, 
 | `oauth` | conditional | `HostOAuthAdapter` used by the door for session lookup and principal resolution; required when `mcp` is enabled. The door renders consent when the adapter uses `session`, or hands off the whole page when it supplies `authorize` instead — see [MCP door](/capabilities/mcp) |
 | `remoteAs` | no | delegates MCP bearer authentication to an external ES256-signing authorization server (`{ issuer, audience, jwksUri? }`); disables the door's local OAuth endpoints. Also accepted under `mcp: { remoteAs }` — see [MCP door](/capabilities/mcp) |
 | `federation` | no | enables the `/api/vendo/mcp/federate` handshake so an external authorization server can borrow the host's login flow; takes a shared `{ secret }`. Also accepted under `mcp: { federation }` — see [MCP door](/capabilities/mcp) |
-| `agent` | no | chat context controls: `toolOutputCap`, `maxOutputTokens`, `historyWindow` (see [Agent context](#agent-context)) |
+| `agent` | no | chat context controls: `toolOutputCap`, `maxOutputTokens`, `historyWindow`, `maxSteps` (see [Agent context](#agent-context)) |
 
 ## Agent context
 
@@ -37,6 +37,7 @@ createVendo({
     toolOutputCap: 32_000, // char cap per tool result before it reaches the model; 0 disables
     maxOutputTokens: 4_000, // upper bound on tokens the model may emit per turn
     historyWindow: 20,      // last N whole messages re-sent per turn; omit to send the full thread
+    maxSteps: 20,           // max agent steps per turn before Vendo stops the loop
   },
 });
 ```
@@ -51,6 +52,19 @@ createVendo({
   each turn. Vendo keeps whole messages so tool-call/result pairs stay
   paired. Omit to send the full thread (current behavior). The stored
   thread is untouched; only the per-turn model context shrinks.
+- `maxSteps` caps how many agent steps (model call + tool round-trip) run in
+  a single turn. Defaults to `20`. When the cap is hit, Vendo stops the loop
+  and emits a step-limit notice on the stream so the client can render a
+  visible signal; the thread stays consistent and the user can send another
+  message to continue. Raise it for long tool chains; lower it to fail fast.
+
+## Turn cancellation
+
+Vendo cancels an in-flight turn when the client disconnects. The wire
+handler forwards the request's `AbortSignal` into the agent loop, so
+closing the browser tab or aborting the `fetch` from the client aborts the
+provider call, stops further steps from starting, and leaves the thread in
+a consistent, resumable state. No configuration is required.
 
 ## Base path
 
