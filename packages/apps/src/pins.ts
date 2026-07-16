@@ -69,13 +69,75 @@ export const pinComponentName = (slot: string): string => {
   return `Pinned${stem}${sha256Hex(slot).slice(0, 8)}`;
 };
 
+/**
+ * Blank comment and string/template contents (length-preserving) so export
+ * detection never matches commented-out or quoted code. Adapted from sync's
+ * `stripComments` (packages/actions/src/sync/common.ts — actions may not be
+ * imported here), extended to blank string contents too.
+ */
+const blankCommentsAndStrings = (source: string): string => {
+  let output = "";
+  let quote: "'" | "\"" | "`" | null = null;
+  let escaped = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index]!;
+    const next = source[index + 1];
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        output += " ";
+        continue;
+      }
+      if (character === "\\") {
+        escaped = true;
+        output += " ";
+        continue;
+      }
+      if (character === quote) {
+        quote = null;
+        output += character;
+        continue;
+      }
+      output += character === "\n" ? "\n" : " ";
+      continue;
+    }
+    if (character === "'" || character === "\"" || character === "`") {
+      quote = character;
+      output += character;
+      continue;
+    }
+    if (character === "/" && next === "/") {
+      while (index < source.length && source[index] !== "\n") {
+        output += " ";
+        index += 1;
+      }
+      if (index < source.length) output += "\n";
+      continue;
+    }
+    if (character === "/" && next === "*") {
+      output += "  ";
+      index += 2;
+      while (index < source.length && !(source[index] === "*" && source[index + 1] === "/")) {
+        output += source[index] === "\n" ? "\n" : " ";
+        index += 1;
+      }
+      if (index < source.length) output += "  ";
+      index += 1;
+      continue;
+    }
+    output += character;
+  }
+  return output;
+};
+
 const EXPORT_LIST = /\bexport\s*\{([^}]*)\}/gu;
 
 /** Whether the fork entry source exposes the default export the jail renders:
     `export default …`, `export { X as default }`, or `export { default } from …`
     — but NOT a renamed re-export like `export { default as X } from …`, which
     exposes only the named binding. */
-export const hasDefaultExport = (source: string): boolean => {
+export const hasDefaultExport = (rawSource: string): boolean => {
+  const source = blankCommentsAndStrings(rawSource);
   // `export default interface …` (and any type-level default) is erased from
   // the emitted JavaScript, so it is not a runtime default export.
   if (/\bexport\s+default\b(?!\s+(?:interface|type)\b)/u.test(source)) return true;
@@ -121,7 +183,8 @@ const namedExportBindings = (source: string): Array<{ local: string; exported: s
  */
 export const pinForkSource = (source: string): string => {
   if (hasDefaultExport(source)) return source;
-  const component = namedExportBindings(source).find(({ exported }) => /^[A-Z]/u.test(exported));
+  const component = namedExportBindings(blankCommentsAndStrings(source))
+    .find(({ exported }) => /^[A-Z]/u.test(exported));
   if (component === undefined) return source;
   return `${source}\nexport { ${component.local} as default };\n`;
 };

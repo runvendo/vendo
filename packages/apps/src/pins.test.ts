@@ -55,6 +55,19 @@ describe("pinForkSource", () => {
     expect(pinForkSource(reExported)).toBe(reExported);
   });
 
+  it("ignores commented-out and quoted default exports", () => {
+    const commented = "// export default function Old() {}\nexport function InvoiceCard() { return null; }";
+    expect(pinForkSource(commented)).toBe(`${commented}\nexport { InvoiceCard as default };\n`);
+    const block = "/* export default Old */\nexport function InvoiceCard() { return null; }";
+    expect(pinForkSource(block)).toContain("export { InvoiceCard as default };");
+    // A commented-out export is never the alias target either.
+    const staleExport = "// export function OldCard() {}\nexport function InvoiceCard() { return null; }";
+    expect(pinForkSource(staleExport)).toContain("export { InvoiceCard as default };");
+    // A quoted phrase neither adds nor masks a real default export.
+    const quoted = "const hint = \"export default\";\nexport function InvoiceCard() { return null; }\nexport default InvoiceCard;";
+    expect(pinForkSource(quoted)).toBe(quoted);
+  });
+
   it("ignores type-only default exports, which are erased at runtime", () => {
     const inline = "export function InvoiceCard() { return null; }\nexport { type Props as default };";
     expect(pinForkSource(inline)).toContain("export { InvoiceCard as default };");
