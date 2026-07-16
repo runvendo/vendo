@@ -1,0 +1,149 @@
+Wave 6b beat D (ENG-239) — client disconnect cancels the agent loop (Maple).
+Captured 2026-07-16 against `pnpm --filter demo-bank dev` on localhost:3000.
+
+Setup (no source changes): the host ran with
+  ANTHROPIC_BASE_URL=http://127.0.0.1:8788/v1
+pointed at anthropic-passthrough-proxy.mjs (`@ai-sdk/anthropic` reads that env
+var), so every provider call the agent loop makes is one numbered line in the
+proxy log (05-client-disconnect-proxy-log.txt). The wave-5 path under test
+(ENG-238, PR #318): POST /threads hands `request.signal` to `agent.stream`
+(packages/vendo/src/server.ts), which passes it to `streamText` as
+`abortSignal` (packages/agent/src/agent.ts) — when it fires, the in-flight
+provider call is torn down and no further step starts.
+
+Drill: client-disconnect.mjs POSTs a real chat turn at /api/vendo/threads
+(cookie-less; the wire mints an anonymous session), reads the UI-message
+stream, and in abort mode disconnects the client mid-generation
+(AbortController.abort() on the fetch) a fixed delay after the first
+provider-generated stream part.
+
+============================================================================
+1. CONTROL — the same turn left alone takes TWO provider calls (#1 tool step,
+   #2 answer step) and ~9 s:
+
+[drill] 2026-07-16T12:57:40.710Z mode=control base=http://localhost:3000
+[drill] message: "I'm saving for a trip to Kyoto in November and want to free up $300 a month — where can I cut back? Check my spending and my budgets."
+[drill] 2026-07-16T12:57:40.745Z +    35ms response 200 text/event-stream
+[drill] 2026-07-16T12:57:40.745Z +    35ms first stream part of type "start"
+[drill] 2026-07-16T12:57:43.205Z +  2495ms first stream part of type "start-step"
+[drill] 2026-07-16T12:57:43.205Z +  2495ms first stream part of type "tool-input-start"
+[drill] 2026-07-16T12:57:43.424Z +  2714ms first stream part of type "tool-input-available"
+[drill] 2026-07-16T12:57:43.431Z +  2721ms first stream part of type "tool-output-available"
+[drill] 2026-07-16T12:57:43.456Z +  2746ms first stream part of type "finish-step"
+[drill] 2026-07-16T12:57:44.679Z +  3969ms first stream part of type "text-start"
+[drill] 2026-07-16T12:57:44.679Z +  3969ms first stream part of type "text-delta"
+[drill] 2026-07-16T12:57:49.379Z +  8669ms first stream part of type "text-end"
+[drill] 2026-07-16T12:57:49.412Z +  8702ms first stream part of type "finish"
+[drill] 2026-07-16T12:57:49.414Z +  8704ms stream ended normally (turn completed)
+[drill] part types seen: {"start":1,"start-step":2,"tool-input-start":2,"tool-input-available":2,"tool-output-available":2,"finish-step":2,"text-start":1,"text-delta":13,"text-end":1,"finish":1}
+
+  proxy: #1 completed (tool step), #2 completed (answer step). Host log:
+  POST /api/vendo/threads 200 in 8.7s.
+
+============================================================================
+2. DISCONNECT RIGHT AFTER THE TOOL STEP — the answer step's provider call is
+   torn down 3 ms after the client vanishes, and the settle window is silent:
+
+[drill] 2026-07-16T12:57:56.817Z mode=abort base=http://localhost:3000
+[drill] 2026-07-16T12:57:56.849Z +    32ms response 200 text/event-stream
+[drill] 2026-07-16T12:58:00.044Z +  3227ms first stream part of type "tool-input-start"
+[drill] 2026-07-16T12:58:00.044Z +  3227ms generation is live — disconnecting client in 400ms
+[drill] 2026-07-16T12:58:00.272Z +  3455ms first stream part of type "finish-step"
+[drill] 2026-07-16T12:58:00.445Z +  3628ms CLIENT DISCONNECT: aborting the fetch mid-generation (same as closing the tab)
+[drill] 2026-07-16T12:58:00.447Z +  3630ms fetch torn down after client disconnect (AbortError)
+[drill] 2026-07-16T12:58:00.447Z settling 45s — the provider-proxy log must show the in-flight call torn down at the disconnect timestamp and NO provider request lines from now on
+[drill] 2026-07-16T12:58:45.448Z settle window over
+
+  proxy, same clock:
+[provider-proxy] #3 2026-07-16T12:58:00.269Z completed in 3415ms                <- tool step finished
+[provider-proxy] #4 2026-07-16T12:58:00.273Z POST /v1/messages ... — forwarding upstream   <- answer step issued
+[provider-proxy] #4 2026-07-16T12:58:00.448Z CLIENT DISCONNECTED after 176ms — in-flight provider call torn down by the host, upstream canceled
+  ... then NOTHING for the whole 45 s settle window (the next proxy line is
+  the next run, 56 s later). The control run proves call #4's step would have
+  run ~6 s and been followed by a full answer; instead the loop stopped 3 ms
+  after the disconnect. Host log: POST /api/vendo/threads 200 in 3.6s (the
+  request ended AT the disconnect, vs 8.7s for the control).
+
+============================================================================
+3. DISCONNECT MID-ANSWER-STREAM — the streaming provider call itself is torn
+   down 6 ms after the client vanishes:
+
+[drill] 2026-07-16T12:58:56.465Z mode=abort base=http://localhost:3000
+[drill] 2026-07-16T12:58:58.696Z +  2231ms generation is live — disconnecting client in 2600ms
+[drill] 2026-07-16T12:59:00.156Z +  3691ms first stream part of type "text-delta"
+[drill] 2026-07-16T12:59:01.298Z +  4833ms CLIENT DISCONNECT: aborting the fetch mid-generation (same as closing the tab)
+[drill] 2026-07-16T12:59:01.302Z +  4837ms fetch torn down after client disconnect (AbortError)
+[drill] part types seen: {..., "text-delta":3}   <- 3 answer tokens received, then disconnect
+[drill] 2026-07-16T12:59:46.303Z settle window over
+
+  proxy, same clock:
+[provider-proxy] #6 2026-07-16T12:59:00.149Z upstream responded 200             <- answer step streaming
+[provider-proxy] #6 2026-07-16T12:59:01.304Z CLIENT DISCONNECTED after 2373ms — in-flight provider call torn down by the host, upstream canceled
+  ... then NOTHING through the settle window. Host log: POST 200 in 4.8s.
+
+============================================================================
+4. PROCESS-DEATH DISCONNECT — curl reading the same wire, SIGKILLed mid-turn;
+   teardown 7 ms after the kill, settle silent:
+
+$ curl -sN -X POST http://localhost:3000/api/vendo/threads ... &   # long Kyoto turn
+KILLING curl pid 43304 at 2026-07-16T13:15:28.844877+00:00
+
+  proxy:
+[provider-proxy] #27 2026-07-16T13:15:28.103Z upstream responded 200
+[provider-proxy] #27 2026-07-16T13:15:28.851Z CLIENT DISCONNECTED after 3734ms — in-flight provider call torn down by the host, upstream canceled
+  ... last line in the log for the following 6+ minutes (until the next test's
+  turn). Host log: POST 200 in 6.0s.
+
+============================================================================
+FINDING (flagged for follow-up, not fixed here): a REAL BROWSER closing the
+tab or navigating away does NOT trigger this path under `next dev`.
+
+The scripted aborts above and the curl kill are abrupt socket teardowns, and
+Next fires `request.signal` within milliseconds. But when a real Chromium
+client disconnects gracefully mid-turn, Next 16.2.9 (Turbopack, dev) ends the
+POST (the request logs its duration at the disconnect moment) WITHOUT firing
+`request.signal`, and the agent loop runs the whole turn against a reader
+that is gone. Observed three ways, each with the turn visibly continuing in
+the proxy log:
+
+  - Orca embedded browser, tab closed 13:06:33 (POST ended at 9.3 s = the
+    close): calls #16–#22 — SEVEN provider calls — issued entirely after the
+    disconnect; the abandoned turn ran until 13:13:47, 7m14s past the close.
+  - Plain Playwright Chromium driving the real UI (fresh profile against the
+    local dev server only), page.close() at 13:21:56.6: #30–#32 issued after
+    the close; abandoned turn ran 2m28s past it.
+  - Same, navigating to example.com at 13:25:40.8 instead of closing:
+    #36–#41 issued after the navigation; abandoned turn ran 3m33s past it.
+
+06-client-disconnect-browser.png is the Playwright page one second before its
+close: the turn mid-generation (four host tool calls done, vendo_apps_create
+still input-streaming). Reproduce with browser-disconnect.mjs.
+
+So the wave-5 abort wiring itself is correct and fast — whenever
+`request.signal` fires, the loop stops within single-digit milliseconds and
+issues zero further provider calls. The gap is upstream of the wire: the Next
+dev server does not translate a graceful browser disconnect into a
+`request.signal` abort (an abrupt client abort, it does). Not yet tested
+under `next start`; whether the fix belongs in Next's disconnect detection or
+in the umbrella also observing response-stream cancellation is for the
+follow-up ticket. Until then, every closed-tab turn on a Next dev host runs
+to completion and pays for its remaining provider calls.
+
+============================================================================
+Reproduce (repo root):
+
+  # terminal 1 — logging provider proxy
+  node docs/verification/foundations-wave6/resilience/anthropic-passthrough-proxy.mjs 8788
+
+  # terminal 2 — Maple through the proxy
+  set -a; source <keys>.env; set +a          # ANTHROPIC_API_KEY
+  ANTHROPIC_BASE_URL=http://127.0.0.1:8788/v1 VENDO_BASE_URL=http://localhost:3000 \
+    pnpm --filter demo-bank dev
+
+  # terminal 3 — the drills
+  node docs/verification/foundations-wave6/resilience/client-disconnect.mjs --mode control
+  node docs/verification/foundations-wave6/resilience/client-disconnect.mjs --mode abort --abort-after-ms 400
+  node docs/verification/foundations-wave6/resilience/client-disconnect.mjs --mode abort --abort-after-ms 2600
+  # browser-close finding (from fixtures/integration-browser so @playwright/test resolves):
+  node ../../docs/verification/foundations-wave6/resilience/browser-disconnect.mjs page-close
+  node ../../docs/verification/foundations-wave6/resilience/browser-disconnect.mjs navigate-away

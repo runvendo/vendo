@@ -1,0 +1,156 @@
+# Wave 6b beat D (ENG-239) — full provider-proxy log, one dev-server session.
+#
+# The Maple host ran with ANTHROPIC_BASE_URL=http://127.0.0.1:8788/v1 pointed at
+# anthropic-passthrough-proxy.mjs (no source change — @ai-sdk/anthropic reads
+# that env var), so every provider call the agent loop made is one numbered
+# request here. "completed" = the response streamed to the end; "CLIENT
+# DISCONNECTED" = the HOST tore the in-flight call down (the wave-5 AbortSignal
+# reached streamText and aborted its provider fetch).
+#
+# Run map (details + client-side timelines in 04-client-disconnect-transcript.txt):
+#   #1–#2    scripted control turn (client-disconnect.mjs --mode control): 2 calls, both complete.
+#   #3–#4    scripted abort right after the tool step: client disconnected 12:58:00.445;
+#            #4 torn down at 12:58:00.448 (3 ms later, 176 ms into the call).
+#            ZERO provider lines for the 45 s settle window (next line is the next run, 56 s later).
+#   #5–#6    scripted abort mid-answer-stream: client disconnected 12:59:01.298; #6 torn
+#            down at 12:59:01.304 (6 ms). ZERO provider lines through the settle window.
+#   #7–#11   Orca embedded browser (logged-in UI), tab closed 13:01:32 mid-turn:
+#            NO teardown — #9 streamed on for 60 s, then #10 and #11 were issued
+#            after the close; the turn ran to completion at 13:02:30.
+#   #12–#13  Orca embedded browser, short turn that completed before the tab close (inconclusive, kept for numbering).
+#   #14–#22  Orca embedded browser, long turn, tab closed 13:06:33: #15 streamed on,
+#            then SEVEN more provider calls (#16–#22) entirely after the disconnect;
+#            the abandoned turn ran until 13:13:47 — 7m14s past the close.
+#   #23–#25  curl control turn (completed before the planned kill).
+#   #26–#27  curl SIGKILLed mid-turn at 13:15:28.844: #27 torn down at 13:15:28.851
+#            (7 ms). ZERO provider lines afterwards.
+#   #28–#32  Plain Playwright Chromium driving the real UI, page.close() at 13:21:56.6:
+#            NO teardown — #29 streamed on, then #30–#32 issued after the close;
+#            abandoned turn ran until 13:24:24 (2m28s past the close).
+#   #33–#41  Same, but navigating away to example.com at 13:25:40.8 instead of closing:
+#            NO teardown — #35 streamed on, then #36–#41 after the navigation;
+#            abandoned turn ran until 13:29:14 (3m33s past it). (#34/#38
+#            "upstream error: fetch failed" are transient local socket errors the
+#            AI SDK retried; they belong to the live turn, not the disconnect.)
+#
+[provider-proxy] 2026-07-16T12:57:29.690Z listening on http://127.0.0.1:8788 -> https://api.anthropic.com
+[provider-proxy] #1 2026-07-16T12:57:40.747Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #1 2026-07-16T12:57:43.201Z upstream responded 200
+[provider-proxy] #1 2026-07-16T12:57:43.453Z completed in 2708ms
+[provider-proxy] #2 2026-07-16T12:57:43.457Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #2 2026-07-16T12:57:44.675Z upstream responded 200
+[provider-proxy] #2 2026-07-16T12:57:49.407Z completed in 5951ms
+[provider-proxy] #3 2026-07-16T12:57:56.855Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #3 2026-07-16T12:58:00.036Z upstream responded 200
+[provider-proxy] #3 2026-07-16T12:58:00.269Z completed in 3415ms
+[provider-proxy] #4 2026-07-16T12:58:00.273Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #4 2026-07-16T12:58:00.448Z CLIENT DISCONNECTED after 176ms — in-flight provider call torn down by the host, upstream canceled
+[provider-proxy] #5 2026-07-16T12:58:56.500Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #5 2026-07-16T12:58:58.689Z upstream responded 200
+[provider-proxy] #5 2026-07-16T12:58:58.928Z completed in 2429ms
+[provider-proxy] #6 2026-07-16T12:58:58.932Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #6 2026-07-16T12:59:00.149Z upstream responded 200
+[provider-proxy] #6 2026-07-16T12:59:01.304Z CLIENT DISCONNECTED after 2373ms — in-flight provider call torn down by the host, upstream canceled
+[provider-proxy] #7 2026-07-16T13:00:56.786Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #7 2026-07-16T13:00:59.702Z upstream responded 200
+[provider-proxy] #7 2026-07-16T13:00:59.923Z completed in 3138ms
+[provider-proxy] #8 2026-07-16T13:01:00.019Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #8 2026-07-16T13:01:02.245Z upstream responded 200
+[provider-proxy] #9 2026-07-16T13:01:15.992Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #8 2026-07-16T13:01:16.000Z completed in 15982ms
+[provider-proxy] #9 2026-07-16T13:01:17.190Z upstream responded 200
+[provider-proxy] #9 2026-07-16T13:02:16.774Z completed in 60783ms
+[provider-proxy] #10 2026-07-16T13:02:16.787Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #10 2026-07-16T13:02:19.040Z upstream responded 200
+[provider-proxy] #10 2026-07-16T13:02:19.430Z completed in 2644ms
+[provider-proxy] #11 2026-07-16T13:02:19.440Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #11 2026-07-16T13:02:20.914Z upstream responded 200
+[provider-proxy] #11 2026-07-16T13:02:30.733Z completed in 11294ms
+[provider-proxy] #12 2026-07-16T13:05:31.285Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #12 2026-07-16T13:05:33.588Z upstream responded 200
+[provider-proxy] #12 2026-07-16T13:05:33.690Z completed in 2406ms
+[provider-proxy] #13 2026-07-16T13:05:33.693Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #13 2026-07-16T13:05:35.324Z upstream responded 200
+[provider-proxy] #13 2026-07-16T13:05:38.053Z completed in 4360ms
+[provider-proxy] #14 2026-07-16T13:06:23.923Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #14 2026-07-16T13:06:26.214Z upstream responded 200
+[provider-proxy] #14 2026-07-16T13:06:26.988Z completed in 3066ms
+[provider-proxy] #15 2026-07-16T13:06:27.060Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #15 2026-07-16T13:06:28.933Z upstream responded 200
+[provider-proxy] #16 2026-07-16T13:07:00.270Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #15 2026-07-16T13:07:00.285Z completed in 33226ms
+[provider-proxy] #16 2026-07-16T13:07:01.359Z upstream responded 200
+[provider-proxy] #16 2026-07-16T13:09:01.092Z completed in 120822ms
+[provider-proxy] #17 2026-07-16T13:09:01.095Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #17 2026-07-16T13:09:02.618Z upstream responded 200
+[provider-proxy] #17 2026-07-16T13:10:34.695Z completed in 93600ms
+[provider-proxy] #18 2026-07-16T13:10:34.704Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #18 2026-07-16T13:10:38.684Z upstream responded 200
+[provider-proxy] #19 2026-07-16T13:10:52.989Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #18 2026-07-16T13:10:53.152Z completed in 18449ms
+[provider-proxy] #19 2026-07-16T13:10:54.123Z upstream responded 200
+[provider-proxy] #19 2026-07-16T13:12:10.912Z completed in 77923ms
+[provider-proxy] #20 2026-07-16T13:12:10.917Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #20 2026-07-16T13:12:12.107Z upstream responded 200
+[provider-proxy] #20 2026-07-16T13:13:32.735Z completed in 81818ms
+[provider-proxy] #21 2026-07-16T13:13:32.746Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #21 2026-07-16T13:13:34.890Z upstream responded 200
+[provider-proxy] #21 2026-07-16T13:13:35.403Z completed in 2658ms
+[provider-proxy] #22 2026-07-16T13:13:35.413Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #22 2026-07-16T13:13:37.184Z upstream responded 200
+[provider-proxy] #22 2026-07-16T13:13:47.893Z completed in 12481ms
+[provider-proxy] #23 2026-07-16T13:14:54.327Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #23 2026-07-16T13:14:56.233Z upstream responded 200
+[provider-proxy] #23 2026-07-16T13:14:56.255Z completed in 1929ms
+[provider-proxy] #24 2026-07-16T13:14:56.258Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #24 2026-07-16T13:14:58.519Z upstream responded 200
+[provider-proxy] #24 2026-07-16T13:14:58.567Z completed in 2309ms
+[provider-proxy] #25 2026-07-16T13:14:58.572Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #25 2026-07-16T13:14:59.899Z upstream responded 200
+[provider-proxy] #25 2026-07-16T13:15:02.331Z completed in 3760ms
+[provider-proxy] #26 2026-07-16T13:15:22.830Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #26 2026-07-16T13:15:24.592Z upstream responded 200
+[provider-proxy] #26 2026-07-16T13:15:25.114Z completed in 2285ms
+[provider-proxy] #27 2026-07-16T13:15:25.118Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #27 2026-07-16T13:15:28.103Z upstream responded 200
+[provider-proxy] #27 2026-07-16T13:15:28.851Z CLIENT DISCONNECTED after 3734ms — in-flight provider call torn down by the host, upstream canceled
+[provider-proxy] #28 2026-07-16T13:21:46.551Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #28 2026-07-16T13:21:48.592Z upstream responded 200
+[provider-proxy] #28 2026-07-16T13:21:49.315Z completed in 2764ms
+[provider-proxy] #29 2026-07-16T13:21:49.319Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #29 2026-07-16T13:21:51.251Z upstream responded 200
+[provider-proxy] #30 2026-07-16T13:22:16.633Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #29 2026-07-16T13:22:16.668Z completed in 27350ms
+[provider-proxy] #30 2026-07-16T13:22:18.500Z upstream responded 200
+[provider-proxy] #30 2026-07-16T13:24:08.102Z completed in 111469ms
+[provider-proxy] #31 2026-07-16T13:24:08.113Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #31 2026-07-16T13:24:10.724Z upstream responded 200
+[provider-proxy] #31 2026-07-16T13:24:11.258Z completed in 3146ms
+[provider-proxy] #32 2026-07-16T13:24:11.264Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #32 2026-07-16T13:24:13.246Z upstream responded 200
+[provider-proxy] #32 2026-07-16T13:24:24.253Z completed in 12990ms
+[provider-proxy] #33 2026-07-16T13:25:32.838Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #33 2026-07-16T13:25:37.246Z upstream responded 200
+[provider-proxy] #33 2026-07-16T13:25:38.413Z completed in 5575ms
+[provider-proxy] #34 2026-07-16T13:25:38.418Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #34 2026-07-16T13:25:38.507Z upstream error: fetch failed
+[provider-proxy] #35 2026-07-16T13:25:40.512Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #35 2026-07-16T13:25:42.035Z upstream responded 200
+[provider-proxy] #36 2026-07-16T13:26:08.025Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #35 2026-07-16T13:26:08.043Z completed in 27532ms
+[provider-proxy] #36 2026-07-16T13:26:09.288Z upstream responded 200
+[provider-proxy] #36 2026-07-16T13:28:43.952Z completed in 155927ms
+[provider-proxy] #37 2026-07-16T13:28:43.962Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #37 2026-07-16T13:28:48.180Z upstream responded 200
+[provider-proxy] #37 2026-07-16T13:28:48.492Z completed in 4531ms
+[provider-proxy] #38 2026-07-16T13:28:48.495Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #38 2026-07-16T13:28:48.519Z upstream error: fetch failed
+[provider-proxy] #39 2026-07-16T13:28:50.525Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #39 2026-07-16T13:28:52.567Z upstream responded 200
+[provider-proxy] #39 2026-07-16T13:28:52.604Z completed in 2080ms
+[provider-proxy] #40 2026-07-16T13:28:52.608Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #40 2026-07-16T13:28:54.190Z upstream responded 200
+[provider-proxy] #40 2026-07-16T13:28:55.366Z completed in 2759ms
+[provider-proxy] #41 2026-07-16T13:28:55.370Z POST /v1/messages model=claude-sonnet-4-6 stream=true — forwarding upstream
+[provider-proxy] #41 2026-07-16T13:28:57.215Z upstream responded 200
+[provider-proxy] #41 2026-07-16T13:29:14.083Z completed in 18714ms
