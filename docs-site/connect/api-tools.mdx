@@ -1,17 +1,18 @@
 ---
 title: "Tools from your API"
-description: "How vendo sync extracts OpenAPI operations, tRPC procedures, and host routes into .vendo/tools.json and runs them as the signed-in user under guard."
+description: "How vendo sync extracts OpenAPI operations, tRPC procedures, GraphQL operations, and host routes into .vendo/tools.json and runs them as the signed-in user under guard."
 ---
 
-Vendo sync extracts OpenAPI operations, tRPC procedures, and host routes into
-`.vendo/tools.json`. Extraction runs during build and development so the tool
-surface does not drift.
+Vendo sync extracts OpenAPI operations, tRPC procedures, GraphQL operations,
+and host routes into `.vendo/tools.json`. Extraction runs during build and
+development so the tool surface does not drift.
 
-Extractors run in a fixed order: OpenAPI first, then tRPC, then the route scan.
-Each extractor decides whether it applies to your app; the ones that do not
-detect anything are skipped. When the tRPC extractor emits tools for a mount,
-the opaque `/api/trpc/[trpc]` catch-all from the route scan is dropped so you
-do not see duplicate coverage of the same surface.
+Extractors run in a fixed order: OpenAPI first, then tRPC, then GraphQL, then
+the route scan. Each extractor decides whether it applies to your app; the ones
+that do not detect anything are skipped. When the tRPC or GraphQL extractor
+emits tools for a mount, any catch-all route under that mount (for example
+`/api/trpc/[trpc]` or `/api/graphql/[...slug]`) is dropped from the route scan
+so you do not see duplicate coverage of the same surface.
 
 ```json
 {
@@ -95,6 +96,78 @@ so the tool still surfaces without blocking your build.
 The extractor loads the TypeScript compiler from your app's own
 `node_modules`. If TypeScript is not available, tRPC extraction is skipped with
 a warning and no tRPC tools are emitted — extraction never fails your build.
+
+## GraphQL operations
+
+If your app serves a GraphQL API, sync extracts each query and mutation as its
+own tool. The extractor reads two static sources — no server runs — and picks
+up whichever your app uses:
+
+- **SDL files** (`.graphql`, `.gql`, `.graphqls`), including split schemas,
+  `schema { query: X }` root renames, `extend type`, enums, input objects,
+  custom scalars, and list or non-null wrappers. SDL is parsed with your app's
+  own `graphql` package.
+- **Code-first resolvers** using `@nestjs/graphql` or `type-graphql`.
+  `@Query`, `@Mutation`, and `@Subscription` methods are read from the
+  TypeScript source, along with `@Args`, `@InputType`, `@ObjectType`,
+  `@ArgsType`, `registerEnumType`, and custom scalars declared with
+  `new GraphQLScalarType({ name })` or `graphql-type-json`.
+
+```json
+{
+  "name": "host_polls_delete",
+  "description": "polls.delete",
+  "inputSchema": {
+    "type": "object",
+    "properties": { "id": { "type": "string" } },
+    "required": ["id"]
+  },
+  "risk": "destructive",
+  "binding": {
+    "kind": "graphql",
+    "operation": "delete",
+    "type": "mutation",
+    "endpoint": "/graphql",
+    "document": "mutation delete($id: ID!) { delete(id: $id) { __typename } }"
+  }
+}
+```
+
+Each binding records the operation name, its `query` or `mutation` type, the
+endpoint, and a full executable `document`. The document declares variables
+for every argument (nullable when the argument is optional or defaulted, so the
+agent can omit it) and a depth-limited default selection set with a
+`{ __typename }` floor. At runtime Vendo POSTs
+`{ query: document, variables: args }` to the endpoint, unwraps a single root
+field on success, and surfaces a 200 response with a non-empty `errors` array
+as an http-error outcome.
+
+The extractor discovers the endpoint from Next route files hosting Yoga or
+Apollo handlers, from `GraphQLModule.forRoot*` `path` literals (including
+through `useFactory` cross-file resolution), and from `createYoga` endpoint
+literals. It falls back to `/graphql` when no literal is found.
+
+Risk labels follow the operation type. Queries are `read` only when the
+operation name reads like a fetch; anything else falls back to the conservative
+default. Mutations default to `write`, and the destructive word list can lift
+them to `destructive` — the same rules that apply to route and tRPC tools.
+
+Some surfaces are always emitted as `disabled` with a note so you can promote
+them explicitly through overrides:
+
+- Subscriptions (Vendo does not open long-lived transports for you).
+- Operations whose argument or return types are declared outside the app root
+  — for example, types imported from a sibling workspace package.
+- Every operation on hosts that serve multiple GraphQL schemas from separate
+  endpoints (for example, an app with `/graphql`, `/metadata`, and
+  `/admin-panel` mounted independently). Static analysis cannot attribute each
+  operation to a single endpoint, so the extractor fails closed rather than
+  guess.
+
+The GraphQL extractor loads both the `graphql` and TypeScript packages from
+your app's own `node_modules`. If either is missing, GraphQL extraction is
+skipped with a warning and no GraphQL tools are emitted — extraction never
+fails your build.
 
 ## Durable overrides
 
