@@ -286,6 +286,34 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
       .toBe(`${namedSource}\nexport { NetWorthCard as default };\n`);
   });
 
+  it("refuses to rebase onto a baseline with no detectable component export, loudly", async () => {
+    const store = memoryStore();
+    const app = seedDoc("app_unexported_rebase");
+    await seedAppRow(store, app, ctx.principal.subject);
+    const original = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(forkOps),
+      pinBaselines: [baseline(OLD_SOURCE, "sha256:maple-old")],
+    });
+    expect((await original.edit(app.id, "Remix the net worth card", ctx)).failure).toBeUndefined();
+
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(forkOps),
+      pinBaselines: [baseline("const NetWorthCard = () => null;", "sha256:maple-unexported")],
+    });
+    await expect(runtime.pins.rebase({ appId: app.id, slot: SLOT }, ctx)).rejects.toMatchObject({
+      code: "conflict",
+      message: expect.stringContaining("no default export"),
+    });
+  });
+
   it("drops an in-client approval by construction: the rebased version needs re-approval", async () => {
     const store = memoryStore();
     const appId = await seedForkedHistory(store);

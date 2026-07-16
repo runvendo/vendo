@@ -43,7 +43,7 @@ import { createAppInterchange } from "./interchange.js";
 import { createMachineSessions } from "./machine.js";
 import { createAppOpener, createProgressiveQueryResolver } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
-import { detectPinDrift, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
+import { detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
 import { createRunTokenGate } from "./run-token-gate.js";
 import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
@@ -919,8 +919,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         // fork-pin), so replay starts after it.
         const replayIntents = intents.slice(1);
         const componentName = pinComponentName(input.slot);
+        // ENG-348 — same bar as fork-pin: a baseline the jail could never
+        // render must not persist as a "successful" rebase.
+        const forkSource = pinForkSource(baseline.source);
+        if (!hasDefaultExport(forkSource)) {
+          throw new VendoError("conflict", `pin ${input.slot} baseline has no default export and no detectable named component export; export the component from its module and re-run vendo sync`);
+        }
         let working: AppDocument = structuredClone(app);
-        working.components = { ...(working.components ?? {}), [componentName]: pinForkSource(baseline.source) };
+        working.components = { ...(working.components ?? {}), [componentName]: forkSource };
         working.pins = (working.pins ?? []).map((candidate) => candidate.slot === input.slot
           ? { ...candidate, base: baseline.hash }
           : candidate);
