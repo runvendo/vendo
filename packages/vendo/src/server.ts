@@ -904,6 +904,10 @@ function createWireHandler(deps: {
           ...(body["threadId"] === undefined ? {} : { threadId: string(body["threadId"], "threadId") }),
           message: body["message"] as never,
           ctx,
+          // AGENT-3: client disconnect aborts the request, which cancels the
+          // agent loop — provider calls stop instead of running to completion
+          // for a reader that is gone.
+          signal: request.signal,
         });
       }
       if (request.method === "GET" && path === "/threads") {

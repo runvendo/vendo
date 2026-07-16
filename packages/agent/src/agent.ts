@@ -113,7 +113,15 @@ const CACHE_BREAKPOINT = { anthropic: { cacheControl: { type: "ephemeral" } } } 
 
 /** 03-agent §1 */
 export interface VendoAgent {
-  stream(input: { threadId?: ThreadId; message: UIMessage; ctx: RunContext }): Promise<Response>;
+  /** AGENT-3: `signal` cancels the turn — provider calls stop (the in-flight
+   *  call is aborted, no further step starts) and the thread persists in a
+   *  consistent, resumable state. The umbrella wires client disconnect here. */
+  stream(input: {
+    threadId?: ThreadId;
+    message: UIMessage;
+    ctx: RunContext;
+    signal?: AbortSignal;
+  }): Promise<Response>;
   threads: {
     get(id: ThreadId, ctx: RunContext): Promise<Thread | null>;
     list(ctx: RunContext): Promise<ThreadSummary[]>;
@@ -245,6 +253,9 @@ export function createAgent(config: AgentConfig): VendoAgent {
       const stream = createUIMessageStream<UIMessage>({
         originalMessages: thread.messages,
         execute: async ({ writer }) => {
+          // AGENT-3: a client that disconnected before the turn started gets no
+          // provider call at all — the stream closes empty but well-formed.
+          if (input.signal?.aborted) return;
           const missDetector = config.capabilityMiss === undefined
             ? undefined
             : createCapabilityMissDetector({
@@ -307,6 +318,9 @@ export function createAgent(config: AgentConfig): VendoAgent {
                   activeTools: toolSearch.activeToolNames(),
                   prepareStep: () => ({ activeTools: toolSearch.activeToolNames() }),
                 }),
+            // AGENT-3: cancellation reaches the provider call itself; the loop
+            // never starts another step once the signal fires.
+            abortSignal: input.signal,
           });
           writer.merge(result.toUIMessageStream({
             originalMessages: thread.messages,

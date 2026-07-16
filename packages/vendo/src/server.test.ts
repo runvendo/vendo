@@ -164,6 +164,26 @@ describe("09 §3 public wire", () => {
     }
   });
 
+  it("wires client disconnect to the agent turn: POST /threads hands the request signal to agent.stream (AGENT-3)", async () => {
+    const { vendo } = await setup();
+    stubRouteBlocks(vendo);
+    const controller = new AbortController();
+    const disconnectable = new Request("https://host.test/api/vendo/threads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: { id: "m_abort", role: "user", parts: [] } }),
+      signal: controller.signal,
+    });
+    await vendo.handler(disconnectable);
+    const streamInput = vi.mocked(vendo.agent.stream).mock.calls[0]?.[0];
+    expect(streamInput?.signal).toBeInstanceOf(AbortSignal);
+    expect(streamInput?.signal?.aborted).toBe(false);
+    // The handed signal is live-wired to the request: a client disconnect
+    // (request abort) after the handler returned still cancels the loop.
+    controller.abort();
+    expect(streamInput?.signal?.aborted).toBe(true);
+  });
+
   it("maps every VendoError to the fixed envelope and status", async () => {
     const { vendo } = await setup();
     const cases = [
