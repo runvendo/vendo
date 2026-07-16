@@ -253,6 +253,39 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     await expect(runtime.pins.drift(app.id, ctx)).resolves.toEqual([]);
   });
 
+  it("re-forks a host update that switched to a named export with a synthesized default export (ENG-348)", async () => {
+    const store = memoryStore();
+    const app = seedDoc("app_named_rebase");
+    await seedAppRow(store, app, ctx.principal.subject);
+    const original = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(forkOps),
+      pinBaselines: [baseline(OLD_SOURCE, "sha256:maple-old")],
+    });
+    expect((await original.edit(app.id, "Remix the net worth card", ctx)).failure).toBeUndefined();
+
+    const namedSource = NEW_SOURCE.replace("export default function", "export function");
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(forkOps),
+      pinBaselines: [baseline(namedSource, "sha256:maple-named")],
+    });
+    const result = await runtime.pins.rebase({ appId: app.id, slot: SLOT }, ctx);
+
+    if (result.status !== "rebased") throw new Error("expected a rebased result");
+    expect(result.app.pins).toEqual([{ slot: SLOT, base: "sha256:maple-named" }]);
+    // The mechanical re-fork ships through pinForkSource, exactly like
+    // fork-pin, so the named-export capture still renders in the jail.
+    expect(result.app.components?.[COMPONENT])
+      .toBe(`${namedSource}\nexport { NetWorthCard as default };\n`);
+  });
+
   it("drops an in-client approval by construction: the rebased version needs re-approval", async () => {
     const store = memoryStore();
     const appId = await seedForkedHistory(store);

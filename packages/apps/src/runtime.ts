@@ -43,7 +43,7 @@ import { createAppInterchange } from "./interchange.js";
 import { createMachineSessions } from "./machine.js";
 import { createAppOpener, createProgressiveQueryResolver } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
-import { detectPinDrift, pinComponentName, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
+import { detectPinDrift, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
 import { createRunTokenGate } from "./run-token-gate.js";
 import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
@@ -915,11 +915,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         // intents[0] is the forking edit by construction: the first edit that
         // can touch a slot is the fork-pin that creates it, and undo removes a
         // reverted fork's intent. Re-forking is mechanical (the captured
-        // baseline source is copied verbatim), so replay starts after it.
+        // baseline source is copied through `pinForkSource`, exactly like
+        // fork-pin), so replay starts after it.
         const replayIntents = intents.slice(1);
         const componentName = pinComponentName(input.slot);
         let working: AppDocument = structuredClone(app);
-        working.components = { ...(working.components ?? {}), [componentName]: baseline.source };
+        working.components = { ...(working.components ?? {}), [componentName]: pinForkSource(baseline.source) };
         working.pins = (working.pins ?? []).map((candidate) => candidate.slot === input.slot
           ? { ...candidate, base: baseline.hash }
           : candidate);

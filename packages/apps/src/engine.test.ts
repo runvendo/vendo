@@ -430,6 +430,93 @@ describe("generation engine through createApps", () => {
     expect(trails).toHaveLength(2);
   });
 
+  it("forks a named-export host slot with a synthesized default export (ENG-348)", async () => {
+    const store = memoryStore();
+    const source = `export function MapleNetWorthCard() {
+  return <section><h2>Net worth</h2><strong>$1.2M</strong></section>;
+}`;
+    const slot = "net-worth-card";
+    const componentName = pinComponentName(slot);
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(JSON.stringify({
+        ops: [{ op: "fork-pin", slot, nodeId: "maple-net-worth", parentId: "root" }],
+      })),
+      pinBaselines: [{
+        slot,
+        source,
+        hash: "sha256:maple-base",
+        exportable: false,
+        capturedAt: "2026-07-14T12:00:00.000Z",
+      }],
+    });
+    const original: AppDocument = {
+      format: "vendo/app@1",
+      id: "app_maple_named_pin",
+      name: "Maple overview",
+      ui: "tree",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
+      },
+    };
+    await putApp(store, original);
+
+    const forked = await runtime.edit(original.id, "Remix the net worth card", ctx);
+    expect(forked.issues).toBeUndefined();
+    expect(forked.app.pins).toEqual([{ slot, base: "sha256:maple-base" }]);
+    // The jail entry renders only a default export; the fork ships the captured
+    // source plus the synthesized alias so the remix never crashes at render.
+    expect(forked.app.components?.[componentName])
+      .toBe(`${source}\nexport { MapleNetWorthCard as default };\n`);
+  });
+
+  it("refuses to fork a baseline with no detectable component export, loudly", async () => {
+    const store = memoryStore();
+    const slot = "net-worth-card";
+    const forkOps = JSON.stringify({
+      ops: [{ op: "fork-pin", slot, nodeId: "maple-net-worth", parentId: "root" }],
+    });
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(forkOps, forkOps),
+      pinBaselines: [{
+        slot,
+        source: "const NetWorthCard = () => null;",
+        hash: "sha256:maple-base",
+        exportable: false,
+        capturedAt: "2026-07-14T12:00:00.000Z",
+      }],
+    });
+    const original: AppDocument = {
+      format: "vendo/app@1",
+      id: "app_maple_unexported_pin",
+      name: "Maple overview",
+      ui: "tree",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
+      },
+    };
+    await putApp(store, original);
+
+    const result = await runtime.edit(original.id, "Remix the net worth card", ctx);
+    expect(result.app).toEqual(original);
+    expect(result.issues).toEqual(expect.arrayContaining([
+      expect.stringContaining("no default export"),
+    ]));
+    // The unrenderable fork was refused at fork time, never persisted.
+    expect(await runtime.get(original.id, ctx)).toEqual(original);
+  });
+
   it("contains twice-broken tree ops and leaves the original document untouched", async () => {
     const store = memoryStore();
     const brokenOps = JSON.stringify({

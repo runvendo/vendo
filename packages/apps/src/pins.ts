@@ -69,6 +69,48 @@ export const pinComponentName = (slot: string): string => {
   return `Pinned${stem}${sha256Hex(slot).slice(0, 8)}`;
 };
 
+/** Matches a default export in any spelling: `export default …`,
+    `export { X as default }`, `export { default } from …`. */
+const DEFAULT_EXPORT = /\bexport\s+default\b|\bexport\s*\{[^}]*\bdefault\b[^}]*\}/u;
+
+/** Whether the fork entry source exposes the default export the jail renders. */
+export const hasDefaultExport = (source: string): boolean => DEFAULT_EXPORT.test(source);
+
+/** Every named-export binding: the local name to alias plus the exported name. */
+const namedExportBindings = (source: string): Array<{ local: string; exported: string; at: number }> => {
+  const bindings: Array<{ local: string; exported: string; at: number }> = [];
+  const declaration = /\bexport\s+(?:async\s+)?(?:function\s*\*?|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gu;
+  for (const match of source.matchAll(declaration)) {
+    bindings.push({ local: match[1]!, exported: match[1]!, at: match.index ?? 0 });
+  }
+  // Local export lists only — a `from` re-export has no local binding to alias.
+  const list = /\bexport\s*\{([^}]*)\}(?!\s*from\b)/gu;
+  for (const match of source.matchAll(list)) {
+    for (const entry of match[1]!.split(",")) {
+      const [local, exported] = entry.trim().split(/\s+as\s+/u).map((part) => part.trim());
+      if (!local || !/^[A-Za-z_$][\w$]*$/u.test(local)) continue;
+      bindings.push({ local, exported: exported ?? local, at: match.index ?? 0 });
+    }
+  }
+  return bindings.sort((left, right) => left.at - right.at);
+};
+
+/**
+ * ENG-348 — the generated-component entry source a fork ships. The jail entry
+ * renders only a default export, but a host may register a NAMED export as
+ * remixable and sync captures its module verbatim; forking that capture as-is
+ * crashes at render ("must have a React default export"). Synthesize the
+ * default export by aliasing the captured component's named export. A source
+ * that already has a default export — or offers no component-cased export to
+ * alias — passes through verbatim.
+ */
+export const pinForkSource = (source: string): string => {
+  if (hasDefaultExport(source)) return source;
+  const component = namedExportBindings(source).find(({ exported }) => /^[A-Z]/u.test(exported));
+  if (component === undefined) return source;
+  return `${source}\nexport { ${component.local} as default };\n`;
+};
+
 /** 06-apps §8 — unified source diff proposed for host approval. */
 export interface PinShipRequest {
   appId: AppId;
