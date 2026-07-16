@@ -74,6 +74,10 @@ export function themeCssVariables(theme: VendoTheme): Record<string, string> {
   vars["--vendo-font-family"] = theme.typography.fontFamily;
   if (theme.typography.headingFamily) vars["--vendo-heading-family"] = theme.typography.headingFamily;
   vars["--vendo-font-size"] = theme.typography.baseSize;
+  // baseSize is the anchor of the chrome type scale: the sheet derives every
+  // text size (and a couple of spacing steps) from --vendo-base-size via calc,
+  // so a host's baseSize scales the whole surface instead of only the root font.
+  vars["--vendo-base-size"] = theme.typography.baseSize;
   for (const [key, value] of Object.entries(theme.radius)) vars[`--vendo-radius-${kebab(key)}`] = value;
   vars["--vendo-density"] = theme.density;
   vars["--vendo-motion"] = theme.motion;
