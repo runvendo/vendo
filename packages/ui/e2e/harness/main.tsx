@@ -992,9 +992,61 @@ function BoundedThreadScenario() {
   );
 }
 
+/** ENG-215 — a clean two-turn thread (no tools/approvals) so the composer's
+ *  edit-last / regenerate / autogrow / queued-send behaviors read without the
+ *  approval clutter of the canned wire turn. */
+const composerThread: Thread = {
+  id: "thr_composer",
+  subject: "browser-user",
+  createdAt: NOW,
+  updatedAt: NOW,
+  messages: [
+    {
+      id: "cmp_u1",
+      role: "user",
+      parts: [{ type: "text", text: "Draft a friendly welcome email for new Maple customers." }],
+    },
+    {
+      id: "cmp_a1",
+      role: "assistant",
+      parts: [{
+        type: "text",
+        text: "Here's a warm welcome email you can send to new Maple customers. It opens with a "
+          + "greeting, points them at their first three actions, and closes with a human sign-off "
+          + "so it never reads like an autoresponder.",
+      }],
+    },
+  ],
+};
+
+/** Serves the clean composer thread by id and in list() so useVendoThread adopts it. */
+function composerThreadClient(client: VendoClient): VendoClient {
+  return {
+    ...client,
+    threads: {
+      ...client.threads,
+      get: async id => id === composerThread.id ? composerThread : client.threads.get(id),
+      list: async () => [{ id: composerThread.id, title: "Welcome email", updatedAt: composerThread.updatedAt }],
+    },
+  };
+}
+
+function ComposerScenario({ theme }: { theme: Partial<VendoTheme> }) {
+  return (
+    <VendoProvider client={composerThreadClient(baseClient)} components={components} theme={theme}>
+      <div style={{ height: 560, display: "flex", flexDirection: "column", overflow: "hidden",
+        border: "1px solid var(--vendo-border)", borderRadius: 12 }}>
+        <VendoThread threadId="thr_composer" />
+      </div>
+    </VendoProvider>
+  );
+}
+
 function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme>; content: ReactNode; ownProvider?: boolean } {
   switch (pathname) {
     case "/thread": return { title: "Thread — dark theme", theme: darkTheme, content: <VendoThread threadId="thr_1" /> };
+    case "/composer": return { title: "Composer (Maple)", content: <ComposerScenario theme={mapleTheme} />, ownProvider: true };
+    case "/composer-dark": return { title: "Composer — dark", content: <ComposerScenario theme={darkTheme} />, ownProvider: true };
     case "/thread-bounded": return { title: "Thread — bounded host pane", content: <BoundedThreadScenario />, ownProvider: true };
     case "/thread-landing": return { title: "Landing (Maple host)", content: <LandingScenario />, ownProvider: true };
     case "/overlay": return { title: "Overlay", content: <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'><VendoOverlay /></AutoOpen> };

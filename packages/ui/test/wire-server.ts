@@ -248,6 +248,25 @@ export async function createWireServer() {
           await sendFetchResponse(failingResponse, response);
           return;
         }
+        if (sentText.includes("[stream-hang]")) {
+          // ENG-215 — a turn that starts streaming then holds the connection
+          // open indefinitely, so a real-browser capture has unlimited time to
+          // observe the mid-stream composer (queued-send pill, Stop, live input).
+          // Never used by the deterministic suite; opt-in via the marker only.
+          const hangChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_hang",
+            execute: async ({ writer }) => {
+              writer.write({ type: "text-start", id: "text_hang" });
+              writer.write({ type: "text-delta", id: "text_hang", delta: "Working on the welcome flow" });
+              await new Promise<void>(() => undefined);
+            },
+          });
+          const hangResponse = createUIMessageStreamResponse({ stream: hangChunks });
+          hangResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(hangResponse, response);
+          return;
+        }
         if (sentText.includes("[stream-long]")) {
           const longChunks = createUIMessageStream<UIMessage>({
             originalMessages: [input.message],
