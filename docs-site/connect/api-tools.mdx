@@ -1,11 +1,17 @@
 ---
 title: "Tools from your API"
-description: "How vendo sync extracts your OpenAPI operations and host routes into .vendo/tools.json and executes them as the signed-in user with guard applied."
+description: "How vendo sync extracts OpenAPI operations, tRPC procedures, and host routes into .vendo/tools.json and runs them as the signed-in user under guard."
 ---
 
-Vendo sync extracts OpenAPI operations and host routes into
+Vendo sync extracts OpenAPI operations, tRPC procedures, and host routes into
 `.vendo/tools.json`. Extraction runs during build and development so the tool
 surface does not drift.
+
+Extractors run in a fixed order: OpenAPI first, then tRPC, then the route scan.
+Each extractor decides whether it applies to your app; the ones that do not
+detect anything are skipped. When the tRPC extractor emits tools for a mount,
+the opaque `/api/trpc/[trpc]` catch-all from the route scan is dropped so you
+do not see duplicate coverage of the same surface.
 
 ```json
 {
@@ -33,6 +39,62 @@ and a `read`, `write`, or `destructive` risk label.
 
 Route scans fail closed. The extractor emits any route it cannot classify as
 disabled, with a note.
+
+## tRPC procedures
+
+If your app mounts a tRPC router, sync extracts each procedure as its own tool.
+The extractor statically parses your router — no server runs — and follows
+`router({...})`, `createTRPCRouter`, and `mergeRouters` across nested and
+cross-file routers. Both app router and pages router mounts are supported, and
+each mount is detected independently.
+
+```json
+{
+  "name": "host_polls_delete",
+  "description": "polls.delete",
+  "inputSchema": {
+    "type": "object",
+    "properties": { "id": { "type": "string" } },
+    "required": ["id"]
+  },
+  "risk": "write",
+  "binding": {
+    "kind": "trpc",
+    "procedure": "polls.delete",
+    "type": "mutation",
+    "mount": "/api/trpc",
+    "transformer": "superjson"
+  }
+}
+```
+
+Each tRPC tool name uses the procedure's dot path with `_` as the namespace
+separator. The binding records the procedure, its `query` or `mutation` type,
+the mount path, and the transformer when one is in use.
+
+At runtime Vendo speaks the tRPC HTTP envelope. Queries use
+`GET {mount}/{procedure}?input=` and mutations `POST` with a JSON body. When
+the router uses `superjson`, Vendo wraps and unwraps the payload automatically.
+
+Auth is unchanged from route tools. Present calls forward the inbound cookie
+and authorization headers on same-origin fetches, and away calls still require
+the host's `actAs` seam plus an app-bound grant.
+
+Risk labels follow the procedure type. Queries are `read` only when the
+procedure name reads like a fetch; anything else falls back to the conservative
+default. Mutations default to `write`, and the destructive word list can lift
+them to `destructive` — the same rules that apply to route tools. Subscriptions
+and any procedure the extractor cannot classify are emitted as `disabled` with
+a note so you can promote them explicitly through overrides.
+
+Zod input schemas are interpreted into JSON Schema for common patterns
+(objects, primitives, unions, enums, optionals). If the extractor cannot
+recognize a validator, it fails closed to a permissive schema and adds a note
+so the tool still surfaces without blocking your build.
+
+The extractor loads the TypeScript compiler from your app's own
+`node_modules`. If TypeScript is not available, tRPC extraction is skipped with
+a warning and no tRPC tools are emitted — extraction never fails your build.
 
 ## Durable overrides
 
