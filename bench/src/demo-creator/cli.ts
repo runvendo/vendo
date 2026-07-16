@@ -60,8 +60,15 @@ async function main(): Promise<void> {
       reportPath: result.reportPath,
       pages: result.report.pages.map((page) => ("error" in page
         ? { url: page.url, error: page.error }
-        : { url: page.url, title: page.title, botChallenge: page.botChallenge })),
+        : {
+          url: page.url,
+          title: page.title,
+          botChallenge: page.botChallenge,
+          assetsSaved: page.assets.filter((asset) => asset.file !== null).length,
+          assetsSkipped: page.assets.filter((asset) => asset.file === null).length,
+        })),
       palette: result.report.palette,
+      fonts: result.report.fonts,
     }, null, 2)}\n`);
     return;
   }

@@ -89,14 +89,31 @@ pnpm --filter @vendoai/bench demo:research -- \
 ```
 
 Captures per-URL viewport + full-page screenshots, page title, meta
-theme-color, favicon, and a computed-style palette sample into
-`apps/demo-<id>/RESEARCH/` (`research.json` + `page-*.png`).
+theme-color, favicon, a computed-style palette sample with named color roles
+(`body-bg`, `header-bg`, `primary-button-bg`, `link`, ...), font evidence
+(`fonts.families`/`faceSrcs`/`webfontLinks` — evidence only, never font
+files), and downloaded logo/icon assets into `apps/demo-<id>/RESEARCH/`
+(`research.json` + `page-*.png` + `assets/logo-*`, `assets/favicon-*`,
+`assets/og-image.*`, ...).
 
 - [ ] `research.json` exists and at least one page captured cleanly. Pages
       flagged `botChallenge: true` (or recorded as errors) are junk evidence —
       lean on provided screenshots instead. If only screenshots were supplied
       (no URL), copy them into `RESEARCH/` so the fidelity scoring in §3 has
       side-by-side evidence.
+- [ ] **REAL APP SCREENS are mandatory reference material.** Provided
+      screenshots first; if none show the actual product UI, find real
+      product-UI imagery (marketing /product or /features pages, docs, press
+      kits, public sandboxes/demos) and hand-capture it into `RESEARCH/`,
+      recording provenance (what, from where, captured how) in
+      `RESEARCH/README.md`. **The marketing homepage alone is NOT an
+      acceptable reference for the rebuild.**
+- [ ] **Confirm the logo landed.** `research.json` records every harvested
+      asset under `pages[].assets` (source URL/element, saved path,
+      dimensions); `RESEARCH/assets/` must contain a usable real logo (the
+      header/nav SVG or img, or the SVG favicon). If the harvest missed it,
+      hand-save one into `RESEARCH/assets/` and note the source in
+      `RESEARCH/README.md` — §2.4 needs it and §3 hard-gates on it.
 - [ ] `demo:research` cannot click through bot walls, cookie banners, or
       login/interstitial pages — it only loads URLs and screenshots them. For
       admin-only or gated surfaces, hand-drive a Playwright session (headed or
@@ -105,11 +122,18 @@ theme-color, favicon, and a computed-style palette sample into
 
 ### 2.3 Study the evidence
 
-- [ ] Read `RESEARCH/research.json` (palette `colors`/`fontFamilies`,
-      `themeColor`, titles) and LOOK at every screenshot. Decide, in writing
-      (a scratch note is fine): primary/accent/background colors, font stack,
-      corner radius language, nav structure (sidebar vs topbar, section
-      names), and the prospect's domain vocabulary and copy voice.
+- [ ] Read `RESEARCH/research.json` (`colorRoles`, palette
+      `colors`/`fontFamilies`, `fonts`, `pages[].assets`, `themeColor`,
+      titles) and LOOK at every screenshot. Decide, in writing (a scratch
+      note is fine): primary/accent/background colors (exact values, mapped
+      to tokens via `colorRoles`), font stack, corner radius language, nav
+      structure (sidebar vs topbar, section names), and the prospect's
+      domain vocabulary and copy voice.
+- [ ] **Choose ONE reference screen** — the real product-UI screenshot the
+      rebuild will clone structurally (§2.4) and be scored against (§3).
+      Name it in the scratch note and in `RESEARCH/README.md`. It must show
+      the actual product (app chrome, nav, real surfaces), not a marketing
+      hero.
 
 ### 2.4 Rewrite the visible product
 
@@ -131,12 +155,27 @@ surfaces. The worked example to imitate is the template's own
 
       (also runs automatically on `predev`/`prebuild`). Confirm
       `.vendo/tools.json` lists the new operations.
-- [ ] **Pages** — rewrite `src/app/page.tsx` (and any components/`globals.css`
-      styling) into the fake product surface: the prospect's layout structure,
-      nav, and voice, populated from the seeded data.
+- [ ] **Pages — a STRUCTURAL 1:1 clone of the chosen reference screen.**
+      Rewrite `src/app/page.tsx` (and any components/`globals.css` styling)
+      to mirror the reference screen (§2.3) region by region: same regions,
+      same nav items/labels, same column set, same header composition —
+      populated from the seeded data. "Inspired by" layouts fail §3.
+- [ ] **Logo** — copy the real logo from `RESEARCH/assets/` into the app
+      (e.g. `public/`) and render it in the header/sidebar exactly where the
+      product puts it. The demo is watermarked and sent to the brand owner
+      themselves, so using their real logo inside the demo is a deliberate,
+      accepted call — and it still never leaves the untracked app dir (§1).
+- [ ] **Fonts** — use the REAL font when it's freely loadable (Google Fonts,
+      rsms Inter, open-source); NEVER pirate licensed font files (e.g.
+      Stripe's söhne) — closest freely-available metric match instead,
+      documented. `research.json`'s `fonts` block names the families and
+      where they load from; when a fallback was used, note the substitution
+      and the license reason (one line) in `RESEARCH/README.md`.
 - [ ] **Theme** — overwrite `.vendo/theme.json` with the prospect's brand
-      tokens (colors, type, radius); `src/vendo/theme.ts` just validates it at
-      boot, leave it alone.
+      tokens (colors, type, radius) using the EXACT values from
+      `research.json` (`colorRoles` + palette; convert `rgb()` to hex, never
+      eyeball); `src/vendo/theme.ts` just validates it at boot, leave it
+      alone.
 - [ ] **Host-component catalog stays empty** — both the catalog in
       `src/vendo/server.ts` and `src/vendo/host-components.tsx`.
 
@@ -224,22 +263,40 @@ Then run §3 (fidelity score) and §4 (uncanny-data pass), write the manifest
 
 ## 3. Brand-fidelity self-score
 
-Score the finished demo against the `RESEARCH/` evidence **side by side**
-(demo screenshots/GIF frames next to `RESEARCH/page-*.png` or provided
-screenshots). Four dimensions, each 1–5. **Be harsh: every dimension starts at
-3 and moves only on visible evidence.** The ship bar is 4 on every dimension
-("would the prospect recognize this as their product" — VERIFY.md §3); a
-dimension below 4 gets fixed and re-scored, not shipped with a caveat.
+Score the finished demo against the **chosen reference screen** (§2.3) **side
+by side**. Build the comparison artifact first — it is mandatory, not
+optional:
 
-| Dimension | 2 looks like | 4 looks like |
+- [ ] `RESEARCH/side-by-side.png` — the reference screen next to the rebuilt
+      screen (`product.png` from §2.9). Any simple compositing works, e.g.:
+
+      ```sh
+      magick RESEARCH/<reference>.png bench/demo-capture/output/<id>-verify/product.png \
+        +append RESEARCH/side-by-side.png
+      # or: ffmpeg -i RESEARCH/<reference>.png -i .../product.png \
+      #        -filter_complex hstack RESEARCH/side-by-side.png
+      ```
+
+**Hard gate — logo presence is PASS/FAIL, not scored.** The real logo (from
+`RESEARCH/assets/`) renders in the header/sidebar where the product puts it.
+**No logo = void run**; fix it before scoring anything.
+
+Four dimensions, each 1–5. **Be harsh: every dimension starts at 3 and moves
+only on visible evidence.** Ship bars ("would the prospect recognize this as
+their product" — VERIFY.md §3): **Palette 5, Layout structure 5, Typography
+≥4, Voice + tone ≥4.** A dimension below its bar gets fixed and re-scored,
+not shipped with a caveat.
+
+| Dimension | Below the bar | At the bar |
 | --- | --- | --- |
-| **Palette** | Template neutrals survive, or a primary color that's "close" but visibly the wrong hue next to the prospect's screenshot. | Primary/accent/background sampled from the evidence; a squint test on the side-by-side can't tell which panel is whose. |
-| **Typography** | Generic system UI stack; weights/sizes don't match the prospect's hierarchy. | Font family (or its closest available stand-in) and weight pairing read as the prospect's; headings/body hierarchy mirrors theirs. |
-| **Layout structure** | Template's single-column placeholder layout with renamed labels; radius language wrong (sharp where they're soft). | Nav placement (sidebar vs topbar), section names/ordering, card/button radius all mirror how the prospect's real product is organized. |
-| **Voice + tone** | Placeholder-ish copy ("items", "example"), or vocabulary from the wrong domain. | Every label and seeded string uses the prospect's domain terminology and register (formal/playful) as seen in the evidence. |
+| **Palette (bar: 5)** | A primary color that's "close" but not the sampled value; template neutrals surviving anywhere. | EXACT hexes from `research.json` (`colorRoles` + palette) on every token; the side-by-side shows zero hue drift. |
+| **Layout structure (bar: 5)** | Same general shape but regions, nav items/labels, or columns differ from the reference screen; radius language wrong (sharp where they're soft). | STRUCTURAL 1:1 vs the chosen reference screen: same regions, same nav items/labels, same column set, same header composition. |
+| **Typography (bar: 4)** | Generic system UI stack; weights/sizes don't match the prospect's hierarchy. | The REAL font when freely loadable, else the closest freely-available metric match with a one-line license note in the manifest; weight pairing and headings/body hierarchy mirror theirs. |
+| **Voice + tone (bar: 4)** | Placeholder-ish copy ("items", "example"), or vocabulary from the wrong domain. | Every label and seeded string uses the prospect's domain terminology and register (formal/playful) as seen in the evidence. |
 
 - [ ] The score table, with a one-line justification per row citing the
-      specific evidence compared, goes in the output manifest (§6).
+      specific evidence compared, plus the logo PASS/FAIL line, goes in the
+      output manifest (§6).
 
 ## 4. Uncanny-data pass
 
@@ -288,7 +345,9 @@ containing, with real paths:
 - [ ] App directory path (`apps/demo-<id>`).
 - [ ] Capture GIF path + `capture.json` path (from the passing §2.8 run).
 - [ ] The 2 static screenshot paths (§2.9).
-- [ ] The brand-fidelity table (§3) with one-line justifications.
+- [ ] The brand-fidelity table (§3) with one-line justifications, the logo
+      PASS/FAIL line, and the `RESEARCH/side-by-side.png` path (the §3
+      comparison artifact).
 - [ ] Uncanny-data pass confirmation (§4).
 - [ ] **Frictions list** — every point where this playbook or the tooling made
       the run harder than it should be (missing flags, manual steps, unclear
