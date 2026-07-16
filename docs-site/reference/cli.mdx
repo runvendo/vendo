@@ -244,10 +244,10 @@ email OTP, prompts for it, and stores the session at
 Other subcommands: `logout`, `whoami`, `orgs`, `keys` (`list`, `create`,
 `revoke`), `members`, `invite`, `deployments`, `usage`, `billing`, `validate`,
 `deploy`, `share`, `publish`, and `pin-ship`. Read results print as JSON, with
-two exceptions: `validate` renders a human-readable report by default (org,
+two exceptions. `validate` renders a human-readable report by default (org,
 plan, capabilities, quota bars) and takes `--json` for a machine-readable
 envelope that stays stable across live, stale-cache, and offline-degraded
-paths; `deploy` prints a concise summary table by default and switches to raw
+paths. `deploy` prints a concise summary table by default and switches to raw
 JSON with `--json`.
 
 `vendo cloud deploy` pushes local enabled automations from `.vendo/data` to a
