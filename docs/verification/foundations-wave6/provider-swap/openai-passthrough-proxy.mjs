@@ -49,7 +49,13 @@ const server = http.createServer(async (req, res) => {
     console.log(
       `[proxy] #${id} ${new Date().toISOString()} ${req.method} ${req.url} model=${model} -> ${response.status}`,
     );
-    res.writeHead(response.status, Object.fromEntries(response.headers));
+    // fetch() already decompressed the body, so the upstream content-encoding/
+    // content-length headers no longer describe the bytes we forward. (Multiple
+    // set-cookie headers would also collapse here, but the OpenAI API sets none.)
+    const responseHeaders = Object.fromEntries(response.headers);
+    delete responseHeaders["content-encoding"];
+    delete responseHeaders["content-length"];
+    res.writeHead(response.status, responseHeaders);
     if (response.body) {
       for await (const chunk of response.body) res.write(chunk);
     }
