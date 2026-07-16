@@ -1,6 +1,6 @@
 ---
 title: "Tools from your API"
-description: "How vendo sync extracts your OpenAPI operations, tRPC procedures, and host routes into .vendo/tools.json and executes them as the signed-in user with guard applied."
+description: "How vendo sync extracts OpenAPI operations, tRPC procedures, and host routes into .vendo/tools.json and runs them as the signed-in user under guard."
 ---
 
 Vendo sync extracts OpenAPI operations, tRPC procedures, and host routes into
@@ -69,13 +69,16 @@ each mount is detected independently.
 ```
 
 Each tRPC tool name uses the procedure's dot path with `_` as the namespace
-separator, and each binding records the procedure, its `query` or `mutation`
-type, the mount path, and the transformer when one is in use. At runtime Vendo
-speaks the tRPC HTTP envelope: queries `GET {mount}/{procedure}?input=` and
-mutations `POST` with a JSON body, with `superjson` wrap and unwrap applied
-automatically when the router uses it. Auth is unchanged from route tools — the
-inbound cookie and authorization headers are forwarded on same-origin fetches,
-and away calls still require the host's `actAs` seam plus an app-bound grant.
+separator. The binding records the procedure, its `query` or `mutation` type,
+the mount path, and the transformer when one is in use.
+
+At runtime Vendo speaks the tRPC HTTP envelope. Queries use
+`GET {mount}/{procedure}?input=` and mutations `POST` with a JSON body. When
+the router uses `superjson`, Vendo wraps and unwraps the payload automatically.
+
+Auth is unchanged from route tools. Present calls forward the inbound cookie
+and authorization headers on same-origin fetches, and away calls still require
+the host's `actAs` seam plus an app-bound grant.
 
 Risk labels follow the procedure type. Queries are `read` only when the
 procedure name reads like a fetch; anything else falls back to the conservative
