@@ -1,5 +1,6 @@
 import { nextVendoHandler } from "@vendoai/vendo/server";
 import { getCapsGuard, isAgentRunRequest, type CapsRefusal } from "@/server/caps";
+import { publicVendoRequest } from "@/vendo/request";
 import { vendo } from "@/vendo/server";
 
 // ============================================================================
@@ -36,6 +37,10 @@ function guarded(method: (request: Request) => Promise<Response>) {
   };
 }
 
-export const GET = guarded(handler.GET);
-export const POST = guarded(handler.POST);
-export const DELETE = guarded(handler.DELETE);
+// publicVendoRequest rewrites the proxy-internal origin from VENDO_BASE_URL
+// (set by demo:deploy) so the door's self-referential URLs — including the
+// host-tool calls back into this app's own /api routes — use the public
+// https origin. No-op when the env var is unset (local dev/capture).
+export const GET = guarded((request) => handler.GET(publicVendoRequest(request)));
+export const POST = guarded((request) => handler.POST(publicVendoRequest(request)));
+export const DELETE = guarded((request) => handler.DELETE(publicVendoRequest(request)));
