@@ -13,6 +13,7 @@
     "build": "tsc -p tsconfig.json",
     "bench": "node dist/run.js",
     "demo:capture": "node dist/demo-capture/cli.js",
+    "demo:create": "node dist/demo-creator/cli.js create",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
