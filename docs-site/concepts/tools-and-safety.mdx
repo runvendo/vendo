@@ -37,6 +37,38 @@ chat, SSE, and the MCP door reach the same decision.
 Custom tools you register are unaffected; they continue to use their declared
 `ToolDescriptor.risk`.
 
+## Initial loadout and runtime tool search
+
+Hosts that expose hundreds of tools would flood the model's context if every
+tool were sent up front. The agent instead starts each thread from a bounded
+**initial loadout** and discovers the rest at runtime through the
+`vendo_tools_search` meta-tool.
+
+Loadout selection is deterministic:
+
+- If you pass an explicit `agent.loadout` list, the agent loads exactly those
+  tool names (missing names are dropped).
+- Else, if the enabled host surface fits `agent.maxInitialTools` (default
+  `128`), every enabled host tool is loaded.
+- Else, the agent picks a read-first bounded default: safest risk first, then
+  name. The remainder stay searchable.
+
+`vendo_tools_search` ranks candidates from the enabled, post-override
+descriptor set: name-token matches beat name substrings, name matches beat
+description matches, and a full-query match in the name earns a bonus. Ties
+break by name so results are stable. Disabled tools are never returned. When
+the model calls a searched-in tool, it becomes available on the very next
+step; loaded tools persist for the life of the thread and are cleared when
+the thread is deleted.
+
+The guard invariant is unchanged: every tool — initial or searched-in —
+executes through the same guard-bound registry. The loadout gates only what
+the model *sees*, not what can run. A searched-in write tool still requires
+approval before it fires.
+
+See [`agent.maxInitialTools` and `agent.loadout`](/reference/handler-options#agent-context)
+for the configuration surface.
+
 Present calls can pause for an interactive approval. Away calls cannot. They
 park as `pending-approval` and resume only after the user returns and decides.
 
