@@ -40,7 +40,7 @@ export function createVendo(config: {
 export interface Vendo {
   handler: (req: Request) => Promise<Response>;   // fetch-style; mount at /api/vendo/[...]
   emit(event: string, payload: Json, principal: Principal): Promise<RunId[]>;   // the host-event seam, re-exposed
-  agent: VendoAgent; guard: VendoGuard; apps: AppsRuntime; automations: AutomationsEngine; actions: ActionsRegistry; store: VendoStore;
+  agent: VendoAgent; guard: VendoGuard; apps: AppsRuntime; automations: AutomationsEngine; actions: ActionsRegistry; connections: ConnectionsService; store: VendoStore;
 }
 ```
 
