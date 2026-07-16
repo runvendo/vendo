@@ -863,8 +863,7 @@ async function classFields(
       interpretation = await interpretTypeExpression(extraction, module, unwrapArrowBody(ts, first), depth + 1);
     }
     if (!interpretation) {
-      const annotation = ts.isMethodDeclaration(member) || ts.isGetAccessorDeclaration(member) ? member.type : member.type;
-      interpretation = await interpretTypeAnnotation(extraction, module, annotation, depth + 1);
+      interpretation = await interpretTypeAnnotation(extraction, module, member.type, depth + 1);
     }
     const nullable = options ? isTruthyLiteral(ts, objectProperty(ts, options, "nullable")) : false;
     const questioned = ts.isPropertyDeclaration(member) && member.questionToken !== undefined;
@@ -1087,7 +1086,7 @@ function graphqlEndpointLiteral(source: string): string | null {
 /** All `path: "/x"` string literals within a node (a GraphQLModule options
  * object or a resolved module factory body). Non-absolute literals — like a
  * playground's `path: 'metadata'` — never count as endpoints. */
-function absolutePathLiterals(ts: Ts, sf: TS.SourceFile, node: TS.Node): string[] {
+function absolutePathLiterals(ts: Ts, node: TS.Node): string[] {
   const literals: string[] = [];
   const visit = (current: TS.Node): void => {
     if (ts.isPropertyAssignment(current)) {
