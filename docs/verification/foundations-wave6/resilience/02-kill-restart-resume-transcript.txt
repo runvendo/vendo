@@ -1,0 +1,40 @@
+== Wave 6b beat B: kill-the-server + restart-and-resume (Maple on Postgres) ==
+store: postgres://vendo@127.0.0.1:54331/vendo_maple  (VENDO_DATABASE_URL)
+
+-- thread persisted through the composed stack before the kill:
+                  id                  |  subject   |                            title                             |         created_at         
+--------------------------------------+------------+--------------------------------------------------------------+----------------------------
+ thr_1a7382cc7d444db4a339b0c643531ace | vendo-demo | I'm saving for a trip to Kyoto in November and want to free  | 2026-07-16 04:40:47.239-07
+(1 row)
+
+-- 2026-07-16 04:41:26 SIGKILL the dev server mid-conversation:
+   next-server pid(s): 3081
+-- server is down:
+   curl http://localhost:3000 -> exit 7 (connection refused)
+   curl http://localhost:3000 -> FAILED (connection refused)
+-- 2026-07-16 04:41:50 server restarted on the same VENDO_DATABASE_URL
+
+-- 2026-07-16 04:43:24 resume the SAME thread over the wire (threadId from before the kill):
+   POST /api/vendo/threads {"threadId":"thr_1a7382cc7d444db4a339b0c643531ace","message":{"role":"user","parts":[{"type":"text","text":"Quick check after the outage: what city and month is my trip, and how much am I trying to free up per month?"}]}}
+
+-- assistant reply (SSE text deltas, joined):
+   Based on what you just told me in our conversation:
+   
+   - 🗾 **City:** Kyoto
+   - 📅 **Month:** November
+   - 💰 **Monthly savings goal:** $300
+   
+   No tools needed — that's straight from what you shared a moment ago!
+
+-- thread history via the host wire after the restart (GET /threads/<id>): message roles + first text of each:
+   user      tools=[] text="I'm saving for a trip to Kyoto in November and want to free up $300 a month. Which spending category"
+   assistant tools=[] text='Let me pull up your spending insights and budget data to give you a tailored recommendation!'
+   user      tools=[] text='Quick check after the outage: what city and month is my trip, and how much am I trying to free up pe'
+   assistant tools=[] text='Based on what you just told me in our conversation:\n\n- 🗾 **City:** Kyoto\n- 📅 **Month:** November\n- 💰'
+
+-- rows in Postgres after the drill:
+                  id                  |  subject   |                            title                             
+--------------------------------------+------------+--------------------------------------------------------------
+ thr_1a7382cc7d444db4a339b0c643531ace | vendo-demo | I'm saving for a trip to Kyoto in November and want to free 
+(1 row)
+
