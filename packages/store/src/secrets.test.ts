@@ -2,7 +2,8 @@ import { randomBytes } from "node:crypto";
 import { VendoError } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
-import { createStore, envSecrets, secretStore, storeSecrets } from "./index.js";
+import { appStore, createStore, envSecrets, secretStore, storeSecrets } from "./index.js";
+import { appFixture, persistentPrincipal } from "./fixtures.test-util.js";
 
 for (const backend of backends()) {
   describe(backend.name, () => {
@@ -61,6 +62,7 @@ for (const backend of backends()) {
     it("keeps app record data plaintext even when encryption is configured", async () => {
       // §4: only vendo_secrets.ciphertext is encrypted; app data stays plaintext so the
       // host-can-query/join promise survives — encrypting it would defeat §2.
+      await appStore(made.store).put(persistentPrincipal, appFixture("app_plain")); // ENG-237: owning app
       await made.store.records("app:app_plain:notes").put({
         id: "plain_note",
         data: { body: "queryable-cleartext" },

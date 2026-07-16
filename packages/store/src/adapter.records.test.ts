@@ -1,6 +1,8 @@
 import { VendoError, isoDateTimeSchema } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
+import { appStore } from "./index.js";
+import { appFixture, persistentPrincipal } from "./fixtures.test-util.js";
 
 for (const backend of backends()) {
   describe(backend.name, () => {
@@ -9,6 +11,11 @@ for (const backend of backends()) {
     beforeAll(async () => {
       made = await backend.make();
       await made.store.ensureSchema();
+      // ENG-237: app-scoped record collections (app:<id>:*) now require an
+      // owning app row (writes to an unknown app fail closed — STORE-1). These
+      // generic-store tests use app: collections as opaque namespaces, so give
+      // them durable owning apps; durable routing is otherwise unchanged.
+      for (const id of ["app_a", "app_b"]) await appStore(made.store).put(persistentPrincipal, appFixture(id));
     });
     afterAll(async () => { if (made) await made.cleanup(); });
 
