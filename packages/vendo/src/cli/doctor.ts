@@ -35,7 +35,22 @@ function telemetryFor(options: DoctorOptions, output: Output): Telemetry {
   return toolingTelemetry({ ...options.telemetry, log: (message) => output.log(message) });
 }
 
-/** 09-vendo §5 — read-only wiring checks plus one real /status probe. */
+interface DoctorProbeBody {
+  ok?: unknown;
+  error?: { code?: unknown; message?: unknown };
+}
+
+async function probeBody(response: Response): Promise<DoctorProbeBody> {
+  try {
+    const body = await response.json() as unknown;
+    return typeof body === "object" && body !== null ? body as DoctorProbeBody : {};
+  } catch {
+    return {};
+  }
+}
+
+/** 09-vendo §5 / block-actions A — wiring checks plus live composition,
+    present-credential, and actAs mint+verify round-trips. */
 export async function runDoctor(options: DoctorOptions): Promise<number> {
   const root = resolve(options.targetDir);
   const output = options.output ?? consoleOutput;
@@ -89,6 +104,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   const fetchImpl = options.fetchImpl ?? fetch;
   let mcpEnabled = false;
   let sandboxVenue: unknown;
+  let liveComposition = false;
   try {
     const response = await fetchImpl(`${statusUrl}/status`, {
       headers: { accept: "application/json" },
@@ -103,6 +119,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       fail(`/status returned an invalid composition response (${response.status})`);
     } else {
       pass(`/status live round-trip (${body.version}, ${body.posture})`);
+      liveComposition = true;
       // 10-mcp §1 — the door flag lives under blocks.mcp.
       mcpEnabled = body.blocks.mcp === true;
       sandboxVenue = body.blocks.sandbox;
@@ -119,6 +136,50 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     }
   } catch {
     fail(`/status is unreachable at ${statusUrl}/status`);
+  }
+
+  if (!liveComposition) {
+    fail(`present credential probe cannot run; start the dev server at ${statusUrl} and retry`);
+    fail(`cannot probe actAs; start the dev server at ${statusUrl} and retry`);
+  } else {
+    try {
+      const response = await fetchImpl(`${statusUrl}/doctor/present`, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+          authorization: "Bearer vendo-doctor-present",
+          cookie: "vendo_doctor_present=1",
+        },
+        body: "{}",
+      });
+      const body = await probeBody(response);
+      if (response.ok && body.ok === true) {
+        pass("present credentials reach the host API");
+      } else {
+        fail("present credentials did not reach the host API; set VENDO_BASE_URL to the running host origin and restart the dev server");
+      }
+    } catch {
+      fail(`present credential probe is unreachable at ${statusUrl}/doctor/present; restart the dev server and verify VENDO_BASE_URL`);
+    }
+
+    try {
+      const response = await fetchImpl(`${statusUrl}/doctor/act-as`, {
+        method: "POST",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        body: "{}",
+      });
+      const body = await probeBody(response);
+      if (response.ok && body.ok === true) {
+        pass("actAs mint + host verification live round-trip");
+      } else if (body.error?.code === "act-as-not-configured") {
+        warn("actAs is not configured; pass createVendo({ actAs }) before enabling away host actions");
+      } else {
+        fail("actAs mint + host verification failed; check createVendo({ actAs }), its verifier middleware, and the host principal resolver");
+      }
+    } catch {
+      fail(`actAs probe is unreachable at ${statusUrl}/doctor/act-as; restart the dev server and check createVendo({ actAs })`);
+    }
   }
 
   // 10-mcp §5 — when the door is open, verify both discovery documents resolve

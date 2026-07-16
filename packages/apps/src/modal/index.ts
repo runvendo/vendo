@@ -1,14 +1,18 @@
 import { VendoError } from "@vendoai/core";
 import type { SandboxAdapter, SandboxMachine } from "../sandbox.js";
+import { FETCH_SHIM_BOOT_PRELUDE } from "../scaffold/fetch-shim.js";
 
 const DEFAULT_PORT = 8080;
 const APP_NAME = "vendo-apps";
 const BASE_IMAGE = "node:22-alpine";
 const SNAPSHOT_REF_PREFIX = "modal:v1:";
+// Modal re-runs this command on every disk-image resume, so it IS the boot
+// convention here: load the egress fetch shim (ENG-290 M4) into the app's
+// node processes before handing off to the conventional entry point.
 const START_COMMAND = [
   "sh",
   "-c",
-  "while [ ! -f /app/start.sh ] && [ ! -f /app/server.js ]; do sleep 0.05; done; cd /app; if [ -f start.sh ]; then exec sh start.sh; else exec node server.js; fi",
+  `while [ ! -f /app/start.sh ] && [ ! -f /app/server.js ]; do sleep 0.05; done; cd /app; ${FETCH_SHIM_BOOT_PRELUDE}; if [ -f start.sh ]; then exec sh start.sh; else exec node server.js; fi`,
 ];
 
 export interface ModalSandboxOptions {
@@ -160,7 +164,11 @@ export const modalSandbox = (options: ModalSandboxOptions = {}): SandboxAdapter 
   });
 
   const newClient = async (): Promise<ModalClient> => {
-    const sdk = await import("modal");
+    // The optional SDK must stay a RUNTIME import: without the ignore hints,
+    // Next (webpack and Turbopack) resolves the literal specifier while
+    // bundling a host's route handler and fails the whole /api/vendo route
+    // when the SDK isn't installed.
+    const sdk = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "modal");
     return new sdk.ModalClient(clientOptions());
   };
 

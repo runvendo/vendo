@@ -1,6 +1,6 @@
 import type { StoreAdapter } from "@vendoai/core";
 import type { UIMessage } from "ai";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAgent } from "./index.js";
 import {
   boundRegistry,
@@ -168,7 +168,13 @@ describe("agent threads", () => {
     expect(await agent.threads.list(u2)).toEqual([]);
   });
 
-  it("keeps ephemeral principal threads in session memory even when a store is configured", async () => {
+  it("routes ephemeral principal threads through the store (ENG-263: the overlay owns ephemerality)", async () => {
+    // Pre-ENG-263 the agent kept ephemeral threads in a PRIVATE in-memory map,
+    // which the anonymous→signed-in merge could never drain — an anonymous
+    // visitor's conversations silently vanished on sign-in. Ephemeral threads
+    // now go through the store like everyone else's; keeping them off disk is
+    // the STORE's job (02-store §4 overlay, exercised by the composed-wire
+    // anonymous-isolation and anon-merge journeys).
     const store = memoryStore();
     const guard = testGuard({});
     const tools = boundRegistry({}, guard);
@@ -192,7 +198,7 @@ describe("agent threads", () => {
     await readSse(response);
 
     const persisted = await store.records("vendo_threads").list();
-    expect(persisted.records).toEqual([]);
+    expect(persisted.records.map((record) => record.id)).toEqual([threadId]);
     const thread = await agent.threads.get(threadId, ephemeralCtx);
     expect(thread).not.toBeNull();
     expect(thread).toMatchObject({ id: threadId, subject: "guest_1" });
@@ -200,6 +206,8 @@ describe("agent threads", () => {
     expect(await agent.threads.list(ephemeralCtx)).toEqual([
       expect.objectContaining({ id: threadId, title: "Temporary question" }),
     ]);
+    // Subject scoping still holds: another subject can see none of it.
+    expect(await agent.threads.get(threadId, ctx({ principal: { kind: "user", subject: "u2" } }))).toBeNull();
   });
 
   it("skips a malformed thread row instead of bricking the whole listing (M5)", async () => {
@@ -254,6 +262,206 @@ describe("agent threads", () => {
     expect(summaries.map((s) => s.id).sort()).toEqual(["thr_good", "thr_junk_msgs"]);
     expect(summaries.find((s) => s.id === "thr_good")).toMatchObject({ title: "Good question" });
     expect(summaries.find((s) => s.id === "thr_junk_msgs")).toMatchObject({ title: "New thread" });
+  });
+
+  describe("persist failure after a completed stream (ENG-309 / AGENT-8)", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    /** A store whose vendo_threads WRITES fail the first `failures` times (all
+     *  other collections and operations pass through untouched). */
+    function failingThreadWrites(inner: StoreAdapter, failures: number): {
+      store: StoreAdapter;
+      writeAttempts: () => number;
+    } {
+      let attempts = 0;
+      const failNext = (): void => {
+        attempts += 1;
+        if (attempts <= failures) throw new Error("injected store write failure");
+      };
+      const store: StoreAdapter = {
+        ensureSchema: () => inner.ensureSchema(),
+        blobs: (namespace) => inner.blobs(namespace),
+        records: (collection) => {
+          const records = inner.records(collection);
+          if (collection !== "vendo_threads") return records;
+          return {
+            ...records,
+            async put(record) {
+              failNext();
+              return records.put(record);
+            },
+            ...(records.atomic === undefined ? {} : {
+              atomic: {
+                async insertIfAbsent(record) {
+                  failNext();
+                  return records.atomic!.insertIfAbsent(record);
+                },
+                async compareAndSwap(record, expectedRevision) {
+                  failNext();
+                  return records.atomic!.compareAndSwap(record, expectedRevision);
+                },
+              },
+            }),
+          };
+        },
+      };
+      return { store, writeAttempts: () => attempts };
+    }
+
+    it("retries a transient store write failure so the completed turn is not silently lost", async () => {
+      const { store, writeAttempts } = failingThreadWrites(memoryStore(), 2);
+      const guard = testGuard({});
+      const agent = createAgent({
+        model: scriptedModel([textTurn("Saved reply.", "text_retry")]),
+        tools: boundRegistry({}, guard),
+        guard,
+        store,
+      });
+      const runCtx = ctx();
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const response = await agent.stream({
+        threadId: "thr_retry",
+        message: userMessage("user_retry", "Please save this"),
+        ctx: runCtx,
+      });
+      const { rawFrames } = await readSse(response);
+
+      // The user saw a complete, successful stream…
+      expect(rawFrames.at(-1)).toBe("data: [DONE]\n\n");
+      // …and the thread survived the transient write failures.
+      await vi.waitFor(async () => {
+        const thread = await agent.threads.get("thr_retry", runCtx);
+        expect(thread).not.toBeNull();
+        expect(thread!.messages.some((message) => message.id === "user_retry")).toBe(true);
+        expect(assistantText(thread!.messages)).toContain("Saved reply.");
+      });
+      expect(writeAttempts()).toBeGreaterThan(2);
+      // A recovered persist is not a loud failure.
+      expect(errorSpy.mock.calls.filter(([first]) => String(first).includes("thread persist failed"))).toEqual([]);
+    });
+
+    it("surfaces a permanent store write failure loudly instead of swallowing it", async () => {
+      const { store } = failingThreadWrites(memoryStore(), Number.POSITIVE_INFINITY);
+      const guard = testGuard({});
+      const agent = createAgent({
+        model: scriptedModel([textTurn("Doomed reply.", "text_doomed")]),
+        tools: boundRegistry({}, guard),
+        guard,
+        store,
+      });
+      const runCtx = ctx();
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const response = await agent.stream({
+        threadId: "thr_doomed",
+        message: userMessage("user_doomed", "This write always fails"),
+        ctx: runCtx,
+      });
+      // The stream still completes cleanly for the user — persist failure after
+      // [DONE] must never corrupt or error the already-delivered response.
+      const { rawFrames } = await readSse(response);
+      expect(rawFrames.at(-1)).toBe("data: [DONE]\n\n");
+
+      // The failure is surfaced as a loud, structured error naming the thread.
+      await vi.waitFor(() => {
+        const call = errorSpy.mock.calls.find(([first]) => String(first).includes("thread persist failed"));
+        expect(call).toBeDefined();
+        expect(call![0]).toContain("[vendo]");
+        expect(call![1]).toMatchObject({
+          threadId: "thr_doomed",
+          subject: "u1",
+          error: "injected store write failure",
+        });
+      });
+    });
+  });
+
+  describe("concurrent turns on one thread (ENG-310 / AGENT-9)", () => {
+    it("two overlapping stream() calls on one threadId keep BOTH turns' messages", async () => {
+      const store = memoryStore();
+      const guard = testGuard({});
+      const agent = createAgent({
+        model: scriptedModel([
+          textTurn("Reply one.", "text_race_1"),
+          textTurn("Reply two.", "text_race_2"),
+        ]),
+        tools: boundRegistry({}, guard),
+        guard,
+        store,
+      });
+      const runCtx = ctx();
+      const threadId = "thr_race";
+
+      // Two tabs on one thread: both turns resolve the thread BEFORE either
+      // persists, so each holds its own copy — the last-write-wins put used to
+      // clobber whichever turn finished first.
+      const [first, second] = await Promise.all([
+        agent.stream({ threadId, message: userMessage("user_race_1", "Question one"), ctx: runCtx }),
+        agent.stream({ threadId, message: userMessage("user_race_2", "Question two"), ctx: runCtx }),
+      ]);
+      await Promise.all([readSse(first), readSse(second)]);
+
+      // waitFor: robust against a store whose writes settle after stream close.
+      const thread = await vi.waitFor(async () => {
+        const persisted = await agent.threads.get(threadId, runCtx);
+        expect(persisted).not.toBeNull();
+        expect(persisted!.messages.some((message) => message.id === "user_race_1")).toBe(true);
+        expect(persisted!.messages.some((message) => message.id === "user_race_2")).toBe(true);
+        return persisted!;
+      });
+      const replies = assistantText(thread.messages);
+      expect(replies).toContain("Reply one.");
+      expect(replies).toContain("Reply two.");
+      // One thread row, not a fork.
+      const rows = await store.records("vendo_threads").list({ refs: { subject: "u1" } });
+      expect(rows.records).toHaveLength(1);
+    });
+
+    it("overlapping turns on an EXISTING thread preserve prior history and both new turns", async () => {
+      const store = memoryStore();
+      const guard = testGuard({});
+      const agent = createAgent({
+        model: scriptedModel([
+          textTurn("Seed reply.", "text_seed"),
+          textTurn("Branch A.", "text_branch_a"),
+          textTurn("Branch B.", "text_branch_b"),
+        ]),
+        tools: boundRegistry({}, guard),
+        guard,
+        store,
+      });
+      const runCtx = ctx();
+      const threadId = "thr_race_existing";
+
+      await readSse(await agent.stream({
+        threadId,
+        message: userMessage("user_seed", "Seed question"),
+        ctx: runCtx,
+      }));
+
+      const [first, second] = await Promise.all([
+        agent.stream({ threadId, message: userMessage("user_branch_a", "Branch question A"), ctx: runCtx }),
+        agent.stream({ threadId, message: userMessage("user_branch_b", "Branch question B"), ctx: runCtx }),
+      ]);
+      await Promise.all([readSse(first), readSse(second)]);
+
+      // waitFor: robust against a store whose writes settle after stream close.
+      const thread = await vi.waitFor(async () => {
+        const persisted = await agent.threads.get(threadId, runCtx);
+        expect(persisted).not.toBeNull();
+        for (const id of ["user_seed", "user_branch_a", "user_branch_b"]) {
+          expect(persisted!.messages.some((message) => message.id === id)).toBe(true);
+        }
+        return persisted!;
+      });
+      const replies = assistantText(thread.messages);
+      expect(replies).toContain("Seed reply.");
+      expect(replies).toContain("Branch A.");
+      expect(replies).toContain("Branch B.");
+    });
   });
 
   it("lets two subjects privately use the same thread id in MEMORY mode (no store)", async () => {

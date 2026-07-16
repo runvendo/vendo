@@ -9,7 +9,7 @@ import type { ToolOutcome } from "./tools.js";
 export interface AuditEvent {
   id: string;
   at: IsoDateTime;
-  kind: "tool-call" | "approval" | "policy-decision" | "run" | "app-lifecycle" | "share" | "door-auth";
+  kind: "tool-call" | "approval" | "policy-decision" | "run" | "app-lifecycle" | "share" | "door-auth" | "principal";
   principal: Principal;
   venue: RunContext["venue"];
   presence: RunContext["presence"];
@@ -26,7 +26,7 @@ export interface AuditEvent {
 export const auditEventSchema = z.object({
   id: z.string().regex(/^aud_.+$/),
   at: isoDateTimeSchema,
-  kind: z.enum(["tool-call", "approval", "policy-decision", "run", "app-lifecycle", "share", "door-auth"]),
+  kind: z.enum(["tool-call", "approval", "policy-decision", "run", "app-lifecycle", "share", "door-auth", "principal"]),
   principal: principalSchema,
   venue: z.enum(["chat", "app", "automation", "mcp"]),
   presence: z.enum(["present", "away"]),
@@ -34,7 +34,7 @@ export const auditEventSchema = z.object({
   trigger: triggerRefSchema.optional(),
   tool: z.string().optional(),
   inputPreview: z.string().optional(),
-  outcome: z.enum(["ok", "error", "pending-approval", "blocked"]).optional(),
+  outcome: z.enum(["ok", "error", "pending-approval", "blocked", "connect-required"]).optional(),
   decidedBy: z.enum(["grant", "rule", "judge", "default", "critical", "breaker", "scanner"]).optional(),
   detail: z.unknown().optional(),
 }).passthrough() satisfies z.ZodType<AuditEvent>;

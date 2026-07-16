@@ -50,6 +50,7 @@ import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
 import { appVersionHash } from "./version-hash.js";
 import type { SandboxAdapter } from "./sandbox.js";
 import type { SandboxMachine } from "./sandbox.js";
+import { FETCH_SHIM_BOOT_PRELUDE, FETCH_SHIM_PATH, FETCH_SHIM_SOURCE } from "./scaffold/fetch-shim.js";
 import { servedAppScaffold } from "./scaffold/index.js";
 import type { IpResolver } from "./ssrf.js";
 
@@ -241,6 +242,9 @@ const STOP_OWNED_SERVER_SNIPPET = [
 const ENSURE_SERVING_COMMAND = [
   STOP_OWNED_SERVER_SNIPPET,
   `if ${PROBE_SNIPPET}; then exit 0; fi`,
+  // ENG-290 M4 — the rung-2/3 boot convention loads the egress fetch shim into
+  // every node process the entry spawns (NODE_OPTIONS propagates to children).
+  FETCH_SHIM_BOOT_PRELUDE,
   "if [ -f /app/start.sh ]; then",
   "  nohup setsid sh /app/start.sh >/tmp/vendo-app.log 2>&1 & echo $! >/tmp/vendo-app.pid",
   "elif [ -f /app/server.js ]; then",
@@ -445,6 +449,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
               }
             }
             for (const file of files) await machine.files.write(file.path, file.content);
+            // ENG-290 M4 — make sure the egress fetch shim exists on this fork:
+            // a fresh machine carries it from create, but a fork resumed from a
+            // pre-shim snapshot needs it written before the boot prelude can
+            // require it. Written AFTER the model's files so the runtime-owned
+            // shim always wins (it is part of the boot convention, not app code).
+            await machine.files.write(FETCH_SHIM_PATH, FETCH_SHIM_SOURCE);
             const issues: string[] = [];
             for (const file of files) {
               const issue = await syntaxCheck(machine, file);
@@ -459,7 +469,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
               // scaffold loses the $PORT race and the "ready" probe would bless
               // the OLD process into the rung-4 snapshot.
               const started = await machine.exec(
-                `${STOP_OWNED_SERVER_SNIPPET}\n`
+                `${STOP_OWNED_SERVER_SNIPPET}\n${FETCH_SHIM_BOOT_PRELUDE}\n`
                 + "nohup setsid sh /app/start.sh >/tmp/vendo-app.log 2>&1 & echo $! >/tmp/vendo-app.pid",
                 // The stop-owned prelude probes $PORT with short node spawns
                 // (~0.5s each on a cold machine); 10s aborted mid-loop live.

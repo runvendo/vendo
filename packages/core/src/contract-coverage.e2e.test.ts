@@ -20,6 +20,7 @@ import {
   VENDO_TREE_FORMAT,
   VENDO_TOOLS_FORMAT,
   VENDO_OVERRIDES_FORMAT,
+  VENDO_CAPABILITIES_FORMAT,
   VENDO_POLICY_FORMAT,
   TOOL_NAME_PATTERN,
   VendoError,
@@ -82,6 +83,7 @@ describe("§1 — format constants are pinned to their exact wire strings", () =
     expect(VENDO_TREE_FORMAT).toBe("vendo-genui/v1");
     expect(VENDO_TOOLS_FORMAT).toBe("vendo/tools@1");
     expect(VENDO_OVERRIDES_FORMAT).toBe("vendo/overrides@1");
+    expect(VENDO_CAPABILITIES_FORMAT).toBe("vendo/capabilities@1");
     expect(VENDO_POLICY_FORMAT).toBe("vendo/policy@1");
   });
 });
@@ -114,7 +116,7 @@ describe("§1 — id schemas enforce their stable prefixes", () => {
   });
 });
 
-describe("§2 — principalSchema pins kind to user, org is Cloud-reserved", () => {
+describe("§2 — principalSchema pins kind to user | org (block-actions design §C)", () => {
   it("accepts a user principal with optional display and ephemeral", () => {
     expect(principalSchema.safeParse({ kind: "user", subject: "user_1" }).success).toBe(true);
     expect(principalSchema.safeParse({
@@ -122,8 +124,9 @@ describe("§2 — principalSchema pins kind to user, org is Cloud-reserved", () 
     }).success).toBe(true);
   });
 
-  it("rejects the reserved org kind and a missing subject", () => {
-    expect(principalSchema.safeParse({ kind: "org", subject: "org_1" }).success).toBe(false);
+  it("accepts an org principal, rejects unknown kinds and a missing subject", () => {
+    expect(principalSchema.safeParse({ kind: "org", subject: "vendo:org:org_1" }).success).toBe(true);
+    expect(principalSchema.safeParse({ kind: "service", subject: "svc_1" }).success).toBe(false);
     expect(principalSchema.safeParse({ kind: "user" }).success).toBe(false);
   });
 });

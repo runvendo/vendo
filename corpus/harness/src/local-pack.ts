@@ -2,7 +2,12 @@ import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-export const LOCAL_DIRECT_DEPENDENCIES = ["@vendoai/vendo"] as const;
+// Direct dependencies every injected fixture gets. @vendoai/ui rides along
+// because the corpus e2e prep mounts the shipped chat chrome
+// (@vendoai/ui/chrome VendoOverlay) exactly like a real host would — init
+// wires the provider only, and pnpm's strict node_modules make transitive
+// packages unimportable.
+export const LOCAL_DIRECT_DEPENDENCIES = ["@vendoai/vendo", "@vendoai/ui"] as const;
 
 export const LOCAL_VENDO_PACKAGE_NAMES = [
   "@vendoai/core",

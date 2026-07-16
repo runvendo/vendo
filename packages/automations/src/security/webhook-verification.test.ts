@@ -137,7 +137,8 @@ describe("webhook signature verification", () => {
     expect(await response.json()).toEqual({ error: { code: "blocked", message: "webhook signature verification failed" } });
     expect(await runCount(store)).toBe(0);
     // Rejection audits as an anonymous webhook principal — the owner is never resolved.
-    expect(guard.audit.some((event) => event.principal.subject === "webhook:github")).toBe(true);
+    // Reserved namespace (ENG-263): webhook principals mint as vendo:webhook:<source>.
+    expect(guard.audit.some((event) => event.principal.subject === "vendo:webhook:github")).toBe(true);
     expect(guard.audit.some((event) => event.principal.subject === "user_a")).toBe(false);
   });
 

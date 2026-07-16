@@ -6,6 +6,7 @@ import { useVendoThread } from "../hooks/use-vendo-thread.js";
 import { PayloadView } from "../tree/renderer.js";
 import { ApprovalCard } from "./approval-card.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { ConnectCard } from "./connect-card.js";
 import { FluidThinking } from "./fluid-thinking.js";
 import { Markdown } from "./markdown.js";
 
@@ -188,7 +189,16 @@ export function VendoThread({
   const assistantHasVisibleText = activeAssistant?.parts.some(
     part => part.type === "text" && part.text.trim().length > 0,
   ) ?? false;
-  const working = busy && !assistantHasVisibleText;
+  // ENG-217 — the three streaming moments each get exactly ONE affordance:
+  // before the first chunk the generating skeleton holds the floor; a streamed
+  // turn whose text is still empty shows the lone caret (renderPart); once
+  // text flows the trailing caret rides .fl-md--streaming. FluidThinking
+  // covers the remaining gap (tool phases with no text yet).
+  const awaitingFirstChunk = busy && (activeAssistant === undefined || activeAssistant.parts.length === 0);
+  const lastPart = activeAssistant?.parts.at(-1);
+  const caretShowing = busy && lastPart?.type === "text" && lastPart.state === "streaming"
+    && lastPart.text.trim().length === 0;
+  const working = busy && !assistantHasVisibleText && !awaitingFirstChunk && !caretShowing;
 
   const [attachError, setAttachError] = useState<string>();
   const send = (override?: string) => {
@@ -213,6 +223,33 @@ export function VendoThread({
       void thread.sendMessage(parts.length > 0 ? { text, files: parts } : { text });
     })();
   };
+
+  // ENG-214 — a broken turn (failed send, mid-stream drop, any thread.error)
+  // surfaces VISIBLY in the thread, not only through the hidden status span.
+  // The copy stays friendly — raw transport errors are announced to assistive
+  // tech below but never printed to end users. Retry regenerates the failed
+  // turn from the preserved user message (no duplication).
+  const errorBanner = thread.error ? (
+    <div className="fl-error">
+      <span>Something went wrong and the response didn&rsquo;t finish.</span>
+      <button
+        type="button"
+        className="fl-error-retry"
+        onClick={() => {
+          // Nothing to re-issue (sends append the user turn before any request
+          // fires, so this is a defensive rail): degrade to dismissing the
+          // error instead of letting regenerate() throw on an empty thread.
+          if (thread.messages.length === 0) {
+            thread.clearError();
+            return;
+          }
+          void thread.regenerate();
+        }}
+      >
+        Retry
+      </button>
+    </div>
+  ) : null;
 
   const composer = (
     <form className="fl-composer" aria-label="Message composer" onSubmit={event => { event.preventDefault(); send(); }}>
@@ -277,9 +314,14 @@ export function VendoThread({
 
   const renderPart = (part: UIMessage["parts"][number], key: string, role: UIMessage["role"]) => {
     if (part.type === "text") {
-      return role === "user"
-        ? <div className="fl-usertext" key={key}>{part.text}</div>
-        : <Markdown key={key} text={part.text} streaming={part.state === "streaming"} />;
+      if (role === "user") return <div className="fl-usertext" key={key}>{part.text}</div>;
+      // ENG-217 — lone caret while the streamed turn is still empty (stable
+      // line box); once text flows, Markdown's .fl-md--streaming trailing
+      // caret takes over.
+      if (part.state === "streaming" && part.text.trim().length === 0) {
+        return <span className="fl-caret" aria-hidden="true" key={key} />;
+      }
+      return <Markdown key={key} text={part.text} streaming={part.state === "streaming"} />;
     }
     if (isToolUIPart(part)) {
       const risk = risks.get(part.toolCallId) ?? "read";
@@ -336,12 +378,36 @@ export function VendoThread({
 
   const approvals = thread.messages.flatMap(message => message.parts).filter(isToolUIPart).filter(part => part.state === "approval-requested");
 
+  // 04-actions §3 — connector calls that ended `connect-required`, from the
+  // LAST assistant message only: a stale turn must not re-offer a connect
+  // (the persistent panel covers standing management). The typed outcome on
+  // the native tool part is the source of truth; the data-vendo-connect part
+  // mirrors it for streaming consumers, matching the approvals pattern.
+  const lastMessage = thread.messages.at(-1);
+  const connectRequests = (lastMessage?.role === "assistant" ? lastMessage.parts : [])
+    .filter(isToolUIPart)
+    .flatMap(part => {
+      if (part.state !== "output-available") return [];
+      const output = part.output as { status?: unknown; connect?: unknown } | undefined;
+      const connect = output?.status === "connect-required"
+        ? output.connect as { connector?: unknown; toolkit?: unknown; message?: unknown } | undefined
+        : undefined;
+      if (typeof connect?.connector !== "string" || typeof connect.toolkit !== "string") return [];
+      return [{
+        part,
+        connector: connect.connector,
+        toolkit: connect.toolkit,
+        message: typeof connect.message === "string" ? connect.message : `Connect ${connect.toolkit} to continue.`,
+      }];
+    });
+
   if (landing) {
     return (
       <ChromeRoot>
         <div className="fl-thread" role="region" aria-label="Vendo conversation">
           <div className="fl-landing">
             <h1 className="fl-greet">{greeting}</h1>
+            {errorBanner}
             <div className="fl-landing-composer">{composer}</div>
             {suggestions.length > 0 ? (
               <div className="fl-chips">
@@ -414,6 +480,34 @@ export function VendoThread({
                 />
               );
             })}
+            {connectRequests.map(({ part, connector, toolkit, message }) => (
+              <ConnectCard
+                key={`connect-${part.toolCallId}`}
+                connector={connector}
+                toolkit={toolkit}
+                message={message}
+                onConnected={() => {
+                  // The retry: the account is live, so continue the turn — the
+                  // model re-issues the call, which now executes.
+                  void thread.sendMessage({
+                    text: `I connected my ${toolkit} account — retry ${toolName(part)}.`,
+                  });
+                }}
+              />
+            ))}
+            {awaitingFirstChunk ? (
+              <>
+                <div className="fl-generating">
+                  <span className="fl-pulse" aria-hidden="true" />
+                  Generating&hellip;
+                </div>
+                <div className="fl-skeleton" aria-hidden="true">
+                  <div className="fl-skeleton-bar" />
+                  <div className="fl-skeleton-bar" />
+                  <div className="fl-skeleton-bar" />
+                </div>
+              </>
+            ) : null}
             {working ? <FluidThinking label="Working" /> : null}
           </div>
           {scroll.showJump ? (
@@ -424,6 +518,7 @@ export function VendoThread({
             </button>
           ) : null}
         </div>
+        {errorBanner}
         {composer}
       </div>
     </ChromeRoot>

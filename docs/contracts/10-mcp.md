@@ -7,7 +7,7 @@ Derived from the page's `@vendoai/mcp` block against the frozen contract set, th
 ## 1. Public API
 
 ```ts
-import type { ToolRegistry, Guard, StoreAdapter, Principal, RunContext, AppDocument, AppId, UIPayload, Json } from "@vendoai/core";
+import type { ToolRegistry, Guard, StoreAdapter, Principal, RunContext, AppDocument, AppId, UIPayload, Json, VendoTheme } from "@vendoai/core";
 
 export function createMcpDoor(config: {
   tools: ToolRegistry;                  // ALREADY guard-bound by the umbrella (05 §2) — the door never sees an unbound registry
@@ -20,6 +20,7 @@ export function createMcpDoor(config: {
                                         // resource, and RFC 8707 audience derive from THIS when set (the umbrella
                                         // defaults it from VENDO_BASE_URL); unset → request-URL derived. Forwarded
                                         // headers are never trusted.
+  theme?: VendoTheme;                   // §4 — optional host brand; the umbrella forwards .vendo/theme.json automatically
   remoteAs?: {                          // §3.1 — trust an external authorization server instead of serving the local AS
     issuer: string;
     jwksUri?: string;                   // absent → discover jwks_uri from the issuer's RFC 8414 metadata
@@ -39,7 +40,7 @@ The umbrella exposes it as the page's one flag — literally `createVendo({ mcp:
 
 ## 2. Door semantics (normative)
 
-- **Same perimeter**: every door tool call becomes a `ToolCall` executed through the guard-bound registry with `RunContext{ venue: "mcp", presence: "present", principal }` — risk labels, grants, approvals, audit, breakers all apply identically. A `pending-approval` outcome returns as a **tool result with `isError: true`** whose content names the approval and says to resolve it in-product (MCP tool *execution* errors are in-band, never JSON-RPC protocol errors — the model must see the message); `blocked` likewise with the guard's reason. Nothing is auto-elevated for being "just MCP".
+- **Same perimeter**: every door tool call becomes a `ToolCall` executed through the guard-bound registry with `RunContext{ venue: "mcp", presence: "present", principal }` — risk labels, grants, approvals, audit, breakers all apply identically. A `pending-approval` outcome returns as a **tool result with `isError: true`** whose content names the approval and says to resolve it in-product (MCP tool *execution* errors are in-band, never JSON-RPC protocol errors — the model must see the message); `blocked` likewise with the guard's reason. A `connect-required` outcome (01 §4, ENG-262) maps the same way: the door has no browser surface to run an OAuth redirect through, so the in-band error tells the user to connect the named toolkit account in the product and retry. Nothing is auto-elevated for being "just MCP".
 - **Principal**: minted by the OAuth layer (§3) — the door never trusts client-supplied identity. Anonymous/ephemeral principals are not served: an unauthenticated request gets `401` with the challenge header (§3), never a session.
 - **Tool surface**: `tools/list` = the bound registry's descriptors verbatim (names are already MCP-safe, `inputSchema` is already the MCP field). No door-specific renames, no second catalog.
 - **Default policy posture**: unchanged from guard's — but the shipped policy example (05 §3) blocks `venue: "mcp"`; `vendo init` asks before opening the door. Opening it is a host decision, never a default.
@@ -125,6 +126,7 @@ request.jti, iat, exp: iat + 60s }`. The endpoint renders no HTML.
 The user's saved layer, not just raw tools — delivered the way the MCP Apps spec (2026-01-26) actually works:
 
 - The door ships **one static HTML shim resource** — the tree renderer (`@vendoai/ui/tree`, which already ships as a library per 08 §1) — at a `ui://` URI with mimeType `text/html;profile=mcp-app`, negotiated via the `io.modelcontextprotocol/ui` extension.
+- The generated shim stays generic. When `theme` is present, the door specializes the resource it serves by injecting the canonical `--vendo-*` variables; the shim wraps every rendered surface in `VendoProvider`, so the same resolved theme reaches prewired primitives, notices/link-out chrome, and generated-component jail frames. The current `VendoTheme` contract carries one palette, so the shim declares the same light color-scheme as the in-product chrome rather than inventing an uncontracted dark palette.
 - App access is **ordinary door tools** (`vendo_apps_list`, `vendo_apps_open`) carrying `_meta: { ui: { resourceUri } }`; the host client renders the shim when the tool is called, and the tool result carries the `UIPayload` for the shim to render. Format dispatch inside the shim follows core §8 (unknown tags render a contained notice).
 - `AppsRuntime.open()` has already resolved v0 tree queries into `tree.data` (06 §1), so the MCP projection omits `tree.queries` from that resolved payload. The static shim retains query resolution only as a compatibility fallback for unresolved payloads from non-door hosts; a door open executes each query exactly once.
 - A rung-4 `{ kind: "http", url }` open is never embedded in the MCP client. The door projects it as the MCP-only structured envelope `{ kind: "vendo/open-in-product@1", url, productName, appName? }`; the shim renders a branded link-out card, and the tool's text content includes the same URL for clients that do not render MCP Apps. `appName` is best-effort; `productName` is the door's server identity.
@@ -151,7 +153,7 @@ export interface AppsPort {
 
 ## 6. Testing doctrine (binding, e2e-first)
 
-The harness is a REAL MCP client: e2e drives the door with an actual MCP SDK client — `401` → `WWW-Authenticate` → metadata discovery at the path-inserted URL → OAuth round-trip against the fixture host app's auth (with `resource` sent and a wrong-resource token request rejected) → initialize → `tools/list` → `tools/call` — asserting: descriptors match the bound registry verbatim; a `destructive` call parks and the client sees the in-band `isError` result naming the approval; audit rows land with `venue='mcp'` and `kind='door-auth'` (SQL asserts); `principal() → null` kills an existing session. Apps-ride-along e2e: `vendo_apps_open` returns the fixture app's payload with `_meta.ui.resourceUri` set, and the shim resource serves with the MCP Apps mimeType. Live leg (env-gated): connect Claude Code itself via `claude mcp add` against a local door and run one tool call.
+The harness is a REAL MCP client: e2e drives the door with an actual MCP SDK client — `401` → `WWW-Authenticate` → metadata discovery at the path-inserted URL → OAuth round-trip against the fixture host app's auth (with `resource` sent and a wrong-resource token request rejected) → initialize → `tools/list` → `tools/call` — asserting: descriptors match the bound registry verbatim; a `destructive` call parks and the client sees the in-band `isError` result naming the approval; audit rows land with `venue='mcp'` and `kind='door-auth'` (SQL asserts); `principal() → null` kills an existing session. Apps-ride-along e2e: `vendo_apps_open` returns the fixture app's payload with `_meta.ui.resourceUri` set, and the shim resource serves with the MCP Apps mimeType and fixture `--vendo-*` theme variables. Live leg (env-gated): connect Claude Code itself via `claude mcp add` against a local door and run one tool call.
 
 External-AS coverage uses an in-test authorization server with a jose-generated
 ES256 keypair: valid JWTs cross the real MCP transport, claim/signature failures
@@ -186,3 +188,25 @@ Dual review applied before any build: **standards** (verified against MCP 2025-1
   through guarded token updates. External authorization-server mode continues
   to delegate the complete OAuth surface, including revocation, to `remoteAs`.
 - **Approved by:** Yousef, 2026-07-14 (ENG-269).
+
+### 2026-07-15 — broker-frontable umbrella seams (ENG-286)
+
+- **Changed:** §3.2's login-federation handshake accepts a prebuilt-flow
+  adapter: when `HostOAuthAdapter.authorize` is absent, the door authenticates
+  through `session(req, { returnTo: <the federate request URL> })` — federation
+  delegates consent to the external authorization server, so the host only has
+  to answer identity. A returned login `Response` still passes through
+  unchanged. Adapters that implement `authorize` keep their original semantics.
+- **Changed:** the umbrella's additive object form `createVendo({ mcp: {…} })`
+  now carries `remoteAs` and `federation` through to the door, so a composed
+  host can be fronted by an external authorization server (e.g. the hosted
+  broker at `{tenant}.mcp.vendo.run`) without dropping to `createMcpDoor`.
+- **Compatibility:** both changes are additive; `mcp: true`, `mcp: { baseUrl }`,
+  and `authorize`-bearing adapters behave exactly as before.
+- **Approved by:** pending Yousef review (ENG-286 — flagged in the PR).
+
+### 2026-07-15 — connect-required over the door (ENG-262, parent ENG-264)
+
+- **Changed:** §2 maps the additive `connect-required` tool outcome to the door's in-band `isError` result, directing the user to connect the account in-product — same doctrine as `pending-approval`.
+- **Why:** Per-user connected accounts (04 §3.1) landed; an MCP client cannot host the broker's OAuth redirect.
+- **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).

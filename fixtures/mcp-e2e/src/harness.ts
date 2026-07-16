@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inject } from "vitest";
-import type { AppDocument, Principal, ToolRegistry } from "@vendoai/core";
+import type { AppDocument, Principal, ToolRegistry, VendoTheme } from "@vendoai/core";
 import { createActions } from "@vendoai/actions";
 import { createApps, type AppsRuntime } from "@vendoai/apps";
 import { createGuard, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
@@ -14,6 +14,22 @@ export const SUBJECT = "user_1";
 export const FIXTURE_APP_ID = "app_mcp_fixture";
 export const HTTP_FIXTURE_APP_ID = "app_mcp_http_fixture";
 export const MCP_MOUNT = "/api/vendo/mcp";
+export const FIXTURE_THEME: VendoTheme = {
+  colors: {
+    background: "#FBFBFA",
+    surface: "#FFFFFF",
+    text: "#111111",
+    muted: "#908C85",
+    accent: "#0A7CFF",
+    accentText: "#FFFFFF",
+    danger: "#B42318",
+    border: "#E2E1DE",
+  },
+  typography: { fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif", baseSize: "15px" },
+  radius: { small: "6px", medium: "14px", large: "14px" },
+  density: "comfortable",
+  motion: "full",
+};
 
 export const fixtureBaseUrl = (): string => inject("fixtureBaseUrl");
 
@@ -217,7 +233,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     },
     call: (appId, ref, args, ctx) => apps.call(appId, ref, args, ctx),
   };
-  const door = createMcpDoor({ tools: bound, guard, oauth, store, apps: appsPort });
+  const door = createMcpDoor({ tools: bound, guard, oauth, store, apps: appsPort, theme: FIXTURE_THEME });
   const resourceReads: string[] = [];
   const httpServer = createServer((req, res) => {
     void forwardToDoor(req, res, door.handler, (uri) => resourceReads.push(uri));

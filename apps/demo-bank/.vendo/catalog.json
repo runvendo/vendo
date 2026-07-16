@@ -1,0 +1,129 @@
+{
+  "format": "vendo/catalog@1",
+  "entries": [
+    {
+      "name": "MapleNetWorthCard",
+      "exportPath": "./src/vendo/host-components.tsx#mapleHostComponents.MapleNetWorthCard",
+      "propsSchema": {
+        "type": "object",
+        "properties": {
+          "valueCents": {
+            "type": "number",
+            "description": "Total balance in integer cents"
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "description": "Balance history in integer cents"
+          },
+          "changeLabel": {
+            "type": "string"
+          },
+          "initialRange": {
+            "enum": [
+              "1W",
+              "1M",
+              "3M",
+              "1Y",
+              "All"
+            ]
+          },
+          "chartHeight": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "valueCents",
+          "series"
+        ],
+        "additionalProperties": false
+      },
+      "description": "The Maple total-balance card: animated USD total, change badge, range switcher, and an area trend of the balance history. Use it for net worth, total balance, or balance-over-time requests. Values are integer cents.",
+      "examples": [
+        "{\"valueCents\":5490715,\"series\":[5329117,5446991,5589669,5679262,5733114,5794065,5901309,5748395],\"changeLabel\":\"▲ 2.3% this month\"}"
+      ],
+      "source": "registered"
+    },
+    {
+      "name": "MapleSparkline",
+      "exportPath": "./src/vendo/host-components.tsx#mapleHostComponents.MapleSparkline",
+      "propsSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "height": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "description": "The default Maple visualization for a compact financial trend, history, change over time, or monthly trend. Use it whenever the request includes one of those intents.",
+      "examples": [
+        "{\"data\":[1280,1315,1298,1360,1412],\"height\":32}"
+      ],
+      "source": "registered"
+    },
+    {
+      "name": "MapleSpendingDonut",
+      "exportPath": "./src/vendo/host-components.tsx#mapleHostComponents.MapleSpendingDonut",
+      "propsSchema": {
+        "type": "object",
+        "properties": {
+          "slices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "category": {
+                  "enum": [
+                    "dining",
+                    "groceries",
+                    "coffee",
+                    "transport",
+                    "subscriptions",
+                    "shopping",
+                    "income",
+                    "transfer",
+                    "housing",
+                    "other"
+                  ]
+                },
+                "amount": {
+                  "type": "number",
+                  "description": "Amount in dollars"
+                }
+              },
+              "required": [
+                "category",
+                "amount"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "size": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "slices"
+        ],
+        "additionalProperties": false
+      },
+      "description": "The default Maple visualization for spending by category, where money went, or category mix. Use it whenever the request includes one of those intents; slice amounts are dollars, not cents.",
+      "examples": [
+        "{\"slices\":[{\"category\":\"dining\",\"amount\":342.18},{\"category\":\"groceries\",\"amount\":286.42}],\"size\":200}"
+      ],
+      "source": "registered"
+    }
+  ]
+}

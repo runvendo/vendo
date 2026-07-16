@@ -119,7 +119,7 @@ export const runRecordSchema = z.object({
     z.object({
       id: z.string(),
       tool: z.string(),
-      outcome: z.enum(["ok", "error", "pending-approval", "blocked"]),
+      outcome: z.enum(["ok", "error", "pending-approval", "blocked", "connect-required"]),
       at: z.string(),
       detail: z.string().optional(),
     }),

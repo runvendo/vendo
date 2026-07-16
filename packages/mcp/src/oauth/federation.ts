@@ -18,7 +18,7 @@ export async function handleFederation(
   secret: string,
   oauth: HostOAuthAdapter,
 ): Promise<Response> {
-  if (oauth.authorize === undefined) return invalidRequest();
+  if (oauth.authorize === undefined && oauth.session === undefined) return invalidRequest();
   const compact = new URL(req.url).searchParams.get("request");
   if (!compact) return invalidRequest();
 
@@ -44,10 +44,14 @@ export async function handleFederation(
     return invalidRequest();
   }
 
-  const authorized = await oauth.authorize(req, {
-    clientName: claims.client_name,
-    scopes: claims.scopes,
-  });
+  // Federation delegates the consent decision to the external authorization
+  // server, so the host only has to answer "who is this user". A full
+  // `authorize` adapter keeps its original semantics; a prebuilt-flow adapter
+  // authenticates through `session` with the federate request itself as the
+  // returnTo, so a host login bounce comes back and retries the handshake.
+  const authorized = oauth.authorize !== undefined
+    ? await oauth.authorize(req, { clientName: claims.client_name, scopes: claims.scopes })
+    : await oauth.session!(req, { returnTo: req.url });
   if (authorized instanceof Response) return authorized;
 
   const assertion = await new SignJWT({})

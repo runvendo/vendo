@@ -11,7 +11,7 @@
         "DATABASE_URL": "postgresql://corpus:corpus@127.0.0.1:55432/umami",
         "HASH_SALT": "corpus-layer1-hash-salt"
       },
-      "seedCommand": "pnpm --ignore-workspace update-db && pnpm --ignore-workspace seed-data -- --clear",
+      "seedCommand": "pnpm --ignore-workspace build-db && pnpm --ignore-workspace update-db && pnpm --ignore-workspace seed-data -- --clear",
       "database": {
         "kind": "docker-postgres",
         "containerName": "vendo-corpus-umami-postgres",
@@ -462,6 +462,7 @@
       "buildCommand": "pnpm --ignore-workspace build",
       "devServer": {
         "command": "pnpm --ignore-workspace start",
+        "requiresBuild": true,
         "readinessUrl": "http://127.0.0.1:3210",
         "readinessTimeoutMs": 120000
       }

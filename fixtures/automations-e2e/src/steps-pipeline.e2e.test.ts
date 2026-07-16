@@ -68,6 +68,18 @@ describe("deterministic steps pipelines", () => {
         "SELECT COUNT(*)::int AS count FROM vendo_audit WHERE kind = 'run' AND app_id = $1",
         [appId],
       ))[0]?.count)).toBeGreaterThanOrEqual(2);
+
+      // Audit enrichment (ENG-264): every guard tool-call event from a
+      // trigger-fired away run carries the trigger ref { runId, kind } into
+      // the persisted audit row's event jsonb.
+      const triggered = await stack.sql<{ trigger: { runId?: string; kind?: string } | null }>(
+        "SELECT event->'trigger' AS trigger FROM vendo_audit WHERE kind = 'tool-call' AND app_id = $1",
+        [appId],
+      );
+      expect(triggered.length).toBeGreaterThanOrEqual(3);
+      for (const row of triggered) {
+        expect(row.trigger).toEqual({ runId, kind: "host-event" });
+      }
     } finally {
       await stack.close();
     }

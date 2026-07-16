@@ -19,6 +19,8 @@ export interface Backend {
 
 const TABLES = [
   "invoices",
+  "vendo_org_members",
+  "vendo_orgs",
   "vendo_mcp_grants",
   "vendo_mcp_clients",
   "vendo_secrets",

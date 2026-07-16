@@ -65,19 +65,157 @@ describe("audit persistence, query, and export", () => {
       tool: string | null;
       outcome: string | null;
       decided_by: string | null;
+      grant_id: string | null;
     }>(`SELECT kind, subject, app_id, tool,
                event->>'outcome' AS outcome,
-               event->>'decidedBy' AS decided_by
+               event->>'decidedBy' AS decided_by,
+               event->'detail'->>'grantId' AS grant_id
         FROM vendo_audit`);
     expect(rows.rows.length).toBeGreaterThanOrEqual(6);
     expect(rows.rows).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: "tool-call", subject: alice.subject, app_id: "app_1", tool: "host_read", outcome: "ok", decided_by: "default" }),
+        expect.objectContaining({ kind: "tool-call", subject: alice.subject, app_id: "app_1", tool: "host_read", outcome: "ok", decided_by: "default", grant_id: null }),
         expect.objectContaining({ kind: "tool-call", tool: "host_write", outcome: "blocked", decided_by: "rule" }),
         expect.objectContaining({ kind: "tool-call", tool: "host_destructive", outcome: "pending-approval", decided_by: "rule" }),
-        expect.objectContaining({ kind: "tool-call", tool: "host_granted", outcome: "ok", decided_by: "grant" }),
+        // Audit enrichment: a grant-decided run records WHICH grant decided it.
+        expect.objectContaining({ kind: "tool-call", tool: "host_granted", outcome: "ok", decided_by: "grant", grant_id: "grt_audit" }),
       ]),
     );
+  });
+
+  it("audits the actAs subject-mismatch error outcome for a grant-decided away call", async () => {
+    const sqlStore = await store();
+    const probe: ToolDescriptor = descriptor("write", { name: "host_probe" });
+    await seedGrant(sqlStore, {
+      descriptor: probe,
+      appId: "app_1",
+      source: "automation",
+      id: "grt_actas",
+    });
+    const tools = new FixtureTools([probe]);
+    // Actions never self-authorizes (04-actions): a grant/principal subject
+    // mismatch surfaces as an error OUTCOME, not an exception. The guard must
+    // land that outcome in the audit trail so the refusal is visible beyond
+    // the return value — alongside the grant that authorized the attempt.
+    tools.setOutcome("host_probe", {
+      status: "error",
+      error: { code: "act-as-subject-mismatch", message: "Grant subject does not match the acting principal" },
+    });
+    const guard = createGuard({ store: sqlStore });
+    const bound = guard.bind(tools);
+    const ctx = context({ venue: "automation", presence: "away", appId: "app_1" });
+
+    await expect(bound.execute(call("host_probe", {}, "audit_actas"), ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "act-as-subject-mismatch" },
+    });
+
+    const rows = await sqlStore.query<{ outcome: string | null; decided_by: string | null; grant_id: string | null }>(
+      `SELECT event->>'outcome' AS outcome,
+              event->>'decidedBy' AS decided_by,
+              event->'detail'->>'grantId' AS grant_id
+       FROM vendo_audit WHERE kind = 'tool-call' AND tool = 'host_probe'`,
+    );
+    expect(rows.rows).toEqual([
+      expect.objectContaining({ outcome: "error", decided_by: "grant", grant_id: "grt_actas" }),
+    ]);
+  });
+
+  it("lifts the connector account identity off the outcome into the audit detail", async () => {
+    const sqlStore = await store();
+    const tools = new FixtureTools();
+    // A connector attaches its account identity as the outcome passthrough
+    // `connectorAccount` (04-actions §3 / cross-cutting audit enrichment).
+    tools.setOutcome("host_read", {
+      status: "ok",
+      output: { sent: true },
+      connectorAccount: { connector: "composio", toolkit: "gmail", entityId: alice.subject },
+    } as never);
+    const guard = createGuard({ store: sqlStore });
+    const bound = guard.bind(tools);
+
+    const outcome = await bound.execute(call("host_read", {}, "audit_connector"), context());
+    // The identity is audit enrichment, not model/UI payload: stripped here.
+    expect(outcome).toEqual({ status: "ok", output: { sent: true } });
+
+    const rows = await sqlStore.query<{ detail: string | null }>(
+      `SELECT event->>'detail' AS detail FROM vendo_audit WHERE tool = 'host_read'`,
+    );
+    const detail = JSON.parse(rows.rows[0]!.detail!) as Record<string, unknown>;
+    expect(detail.connectorAccount).toEqual({ connector: "composio", toolkit: "gmail", entityId: alice.subject });
+  });
+
+  it("lifts the actAs disposition off the outcome into the audit detail (ENG-263)", async () => {
+    const sqlStore = await store();
+    const tools = new FixtureTools();
+    // The actAs seam tags its disposition as the outcome passthrough `actAs`
+    // (block-actions design §C — "declined" is away re-verification failing closed).
+    tools.setOutcome("host_read", {
+      status: "error",
+      error: { code: "not-implemented", message: "the host declined away execution for this action" },
+      actAs: "declined",
+    } as never);
+    const guard = createGuard({ store: sqlStore });
+    const bound = guard.bind(tools);
+
+    const outcome = await bound.execute(call("host_read", {}, "audit_actas"), context());
+    // The disposition is audit enrichment, not model/UI payload: stripped here.
+    expect(outcome).toEqual({
+      status: "error",
+      error: { code: "not-implemented", message: "the host declined away execution for this action" },
+    });
+
+    const rows = await sqlStore.query<{ detail: string | null }>(
+      `SELECT event->>'detail' AS detail FROM vendo_audit WHERE tool = 'host_read'`,
+    );
+    const detail = JSON.parse(rows.rows[0]!.detail!) as Record<string, unknown>;
+    expect(detail.actAs).toBe("declined");
+  });
+
+  it("audits org context (org principal + actor) on org-owned executions (ENG-263)", async () => {
+    const sqlStore = await store();
+    const tools = new FixtureTools();
+    const guard = createGuard({ store: sqlStore });
+    const bound = guard.bind(tools);
+
+    const orgCtx = {
+      ...context(),
+      principal: { kind: "org" as const, subject: "vendo:org:org_1", display: "Acme" },
+      actor: alice,
+    };
+    await expect(bound.execute(call("host_read", {}, "audit_org"), orgCtx)).resolves.toMatchObject({ status: "ok" });
+
+    const rows = await sqlStore.query<{ subject: string; detail: string | null }>(
+      `SELECT subject, event->>'detail' AS detail FROM vendo_audit WHERE tool = 'host_read'`,
+    );
+    expect(rows.rows[0]?.subject).toBe("vendo:org:org_1");
+    const detail = JSON.parse(rows.rows[0]!.detail!) as Record<string, unknown>;
+    expect(detail.org).toEqual({ subject: "vendo:org:org_1", actor: alice.subject });
+  });
+
+  it("audits connect-required connector outcomes with their identity", async () => {
+    const sqlStore = await store();
+    const tools = new FixtureTools();
+    tools.setOutcome("host_read", {
+      status: "connect-required",
+      connect: { connector: "composio", toolkit: "gmail", message: "Connect gmail" },
+      connectorAccount: { connector: "composio", toolkit: "gmail", entityId: alice.subject },
+    } as never);
+    const guard = createGuard({ store: sqlStore });
+    const bound = guard.bind(tools);
+
+    const outcome = await bound.execute(call("host_read", {}, "audit_connect"), context());
+    expect(outcome).toEqual({
+      status: "connect-required",
+      connect: { connector: "composio", toolkit: "gmail", message: "Connect gmail" },
+    });
+
+    const rows = await sqlStore.query<{ outcome: string | null; detail: string | null }>(
+      `SELECT event->>'outcome' AS outcome, event->>'detail' AS detail FROM vendo_audit WHERE tool = 'host_read'`,
+    );
+    expect(rows.rows[0]?.outcome).toBe("connect-required");
+    const detail = JSON.parse(rows.rows[0]!.detail!) as Record<string, unknown>;
+    expect(detail.connectorAccount).toMatchObject({ connector: "composio", toolkit: "gmail" });
   });
 
   it("filters inclusively and pages with the underlying opaque cursor", async () => {

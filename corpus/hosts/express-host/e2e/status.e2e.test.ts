@@ -19,6 +19,10 @@ describe("Relay Vendo status over Express", () => {
           automations: true,
           mcp: false,
           sandbox: false,
+          // 04-actions §3 — no BYO connector and no VENDO_API_KEY → no broker.
+          connections: false,
+          // block-actions §C — orgs are key-gated; no VENDO_API_KEY → off.
+          orgs: false,
         },
       });
     } finally {

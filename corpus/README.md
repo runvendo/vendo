@@ -97,7 +97,10 @@ Each deep-tier gallery config contains one or two `nativeScreens` (`id`,
 UI-generating `prompts` (`id`, `label`, `prompt`, and optional `timeoutMs`). The
 gallery command reuses the normal checkout, bootstrap, local-package injection,
 `vendo init`, per-repo e2e preparation, and boot recipes before opening the
-Layer-3 Playwright surface.
+Layer-3 Playwright surface. The manifest `buildCommand` runs first only when
+the recipe's `devServer.requiresBuild` is true (express-host, whose start
+script serves prebuilt `dist/` output); self-compiling dev servers boot
+directly, exactly like `pnpm corpus boot`.
 
 Artifacts are written under
 `corpus/.repos/.gallery/<runId>/<repo>/`. Every prompt gets

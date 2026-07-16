@@ -3,8 +3,11 @@ import { randomUUID } from "node:crypto";
 import type { Db } from "./db.js";
 import { withSchemaLock } from "./db.js";
 
-/** 02-store §4 */
-export const SCHEMA_VERSION = 2;
+/** 02-store §4. v3 (block-actions design §C, ENG-263) adds the Vendo-owned org
+    tables: `vendo_orgs` + `vendo_org_members`. The version bump makes existing
+    v2 databases re-run the (idempotent, IF NOT EXISTS) DDL so the new tables
+    appear; no data moves. */
+export const SCHEMA_VERSION = 3;
 
 /** 02-store §2 */
 export const DDL = [
@@ -70,6 +73,18 @@ export const DDL = [
     created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
   )`,
   "CREATE INDEX IF NOT EXISTS vendo_mcp_grants_refs_idx ON vendo_mcp_grants USING GIN (refs jsonb_path_ops)",
+  // v3 (block-actions design §C): full org semantics, Vendo-owned tables. Org
+  // subjects are `vendo:org:<id>` (reserved namespace, 01-core §2); membership
+  // roles are owner | admin | member — members run, admins approve and manage.
+  `CREATE TABLE IF NOT EXISTS vendo_orgs (
+    id text PRIMARY KEY, name text NOT NULL,
+    created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS vendo_org_members (
+    org_id text NOT NULL, subject text NOT NULL, role text NOT NULL,
+    added_at timestamptz NOT NULL, PRIMARY KEY (org_id, subject)
+  )`,
+  "CREATE INDEX IF NOT EXISTS vendo_org_members_subject_idx ON vendo_org_members (subject)",
 ] as const;
 
 // Additive columns stay compatible with same-version development databases (02 §2
@@ -108,6 +123,11 @@ const ADDITIVE_DDL = [
   // Thread listing derives a title without loading the full messages array (routing.ts uses a
   // messages-less listSelect once a row has a stored title). NULLable; populated on next write.
   "ALTER TABLE vendo_threads ADD COLUMN IF NOT EXISTS title text",
+  // ENG-310: revision counter backing the routed vendo_threads atomic capability
+  // (01 §12 — insertIfAbsent / compareAndSwap), so concurrent turns on one thread
+  // can do guarded read-merge-write instead of last-write-wins. DEFAULT backfills
+  // existing rows on ALTER; every write path bumps it.
+  "ALTER TABLE vendo_threads ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1",
   // Secret rewrites (rotation) must count as activity for the erase-by-age axis
   // (02 §5): set() stamps it; NULL on legacy rows means created_at IS the last
   // write, so byAge reads COALESCE(updated_at, created_at).
@@ -170,9 +190,10 @@ async function migrate(query: Query): Promise<void> {
   // same-version development databases compatible without a version bump.
   for (const statement of ADDITIVE_DDL) await query(statement);
   // The v2 backfill is destructive-adjacent (it DELETEs from vendo_records), so it
-  // runs ONLY while upgrading past its version — never unconditionally, or a newer
-  // vendo_records write in a mixed-version deploy would be repeatedly relocated/lost.
-  if (upgrading) {
+  // runs ONLY while upgrading past ITS version (< 2) — never unconditionally, or a
+  // newer vendo_records write in a mixed-version deploy would be repeatedly
+  // relocated/lost, and never on later bumps (v2→v3 adds tables only).
+  if (version === undefined || version < 2) {
     for (const statement of DATA_BACKFILL) await query(statement);
   }
   await query(

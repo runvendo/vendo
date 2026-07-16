@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { capturedPinBaselineSchema } from "../formats.js";
-import { capturePins } from "./pins.js";
+import { capturePins, scanRemixRegistrations } from "./pins.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -129,5 +129,112 @@ describe("furnished pin capture", () => {
     expect(result.warnings).toEqual(expect.arrayContaining([
       expect.stringMatching(/\.\/Escape.*could not be resolved/u),
     ]));
+  });
+});
+
+describe("furnished pin capture on semicolon-free hosts", () => {
+  it("captures a component declared after an exported interface in a semicolon-free module", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/vendo/components.ts", `
+      import { Card } from "../components/Card";
+      export const components = [{ name: "Card", component: Card, remixable: true }];
+    `);
+    // Prettier semi:false style — no statement semicolons anywhere. The
+    // exported interface above the component must not swallow its export.
+    await write(root, "src/components/Card.tsx",
+      "\"use client\"\n" +
+      "export interface CardProps {\n" +
+      "  title: string\n" +
+      "}\n" +
+      "\n" +
+      "export function Card({ title }: CardProps) {\n" +
+      "  return <div>{title}</div>\n" +
+      "}\n");
+
+    const result = await capturePins(root, path.join(root, ".vendo"));
+
+    expect(result.unresolved).toEqual([]);
+    expect(result.captured).toEqual(["Card"]);
+  });
+
+  it("still captures root CSS declared after a type-only import in a semicolon-free layout", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/vendo/components.ts", `
+      import { Card } from "../components/Card";
+      export const components = [{ name: "Card", component: Card, remixable: true }];
+    `);
+    await write(root, "src/components/Card.tsx", "export function Card() {\n  return <div>card</div>\n}\n");
+    await write(root, "src/app/layout.tsx",
+      "import type { Metadata } from \"next\"\n" +
+      "import \"./globals.css\"\n" +
+      "\n" +
+      "export default function Layout({ children }: { children: React.ReactNode }) {\n" +
+      "  return <html><body>{children}</body></html>\n" +
+      "}\n");
+    await write(root, "src/app/globals.css", ".semifree { color: rgb(1, 2, 3); }\n");
+
+    await capturePins(root, path.join(root, ".vendo"));
+    const baseline = capturedPinBaselineSchema.parse(JSON.parse(
+      await fs.readFile(path.join(root, ".vendo/remixable/Card.json"), "utf8"),
+    ));
+
+    expect(baseline.styles).toEqual([{ path: "src/app/globals.css", css: ".semifree { color: rgb(1, 2, 3); }\n" }]);
+  });
+});
+
+describe("remix registration scan (the init offer surface)", () => {
+  it("reports wrapped and unwrapped registrations with the literal offset", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/vendo/components.ts", `
+      import { Card } from "../components/Card";
+      import { Badge } from "../components/Badge";
+      export const components = [
+        { name: "Card", component: Card, remixable: true, exportable: true },
+        { name: "Badge", component: Badge },
+      ];
+    `);
+    await write(root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }");
+    await write(root, "src/components/Badge.tsx", "export function Badge() { return <span>badge</span>; }");
+
+    const sites = await scanRemixRegistrations(root);
+
+    expect(sites).toEqual([
+      expect.objectContaining({
+        path: "src/vendo/components.ts",
+        slot: "Card",
+        component: "Card",
+        remixable: true,
+        exportable: true,
+      }),
+      expect.objectContaining({
+        path: "src/vendo/components.ts",
+        slot: "Badge",
+        component: "Badge",
+        remixable: false,
+        exportable: false,
+      }),
+    ]);
+    const source = await fs.readFile(path.join(root, "src/vendo/components.ts"), "utf8");
+    for (const site of sites) expect(source[site.offset]).toBe("{");
+    expect(source.slice(sites[1]!.offset)).toMatch(/^\{ name: "Badge"/u);
+  });
+
+  it("skips inline components, unresolvable imports, and router-style path entries", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/vendo/components.ts", `
+      import { Card } from "../components/Card";
+      import { Missing } from "../components/Missing";
+      export const components = [
+        { name: "InlineCard", component: () => null },
+        { name: "MissingCard", component: Missing },
+        { name: "UnimportedCard", component: SomethingUndeclared },
+      ];
+      export const routes = [
+        { path: "/cards", name: "cards", component: Card },
+      ];
+    `);
+    await write(root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }");
+
+    expect(await scanRemixRegistrations(root)).toEqual([]);
   });
 });

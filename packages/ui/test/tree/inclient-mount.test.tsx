@@ -66,6 +66,22 @@ describe("in-client venue enforcement (06-apps §9)", () => {
     expect(onAction).toHaveBeenCalledWith({ nodeId: "gen", action: "fn:run", payload: { id: 7 } });
   });
 
+  it("renders captured sampleProps for a prop-less approved node — venue parity with the jail (ENG-288 M6)", async () => {
+    // A forked pin commonly has no live tree props; the jail rehearses it with
+    // the baseline's sampleProps. Promotion is hash-pinned, so the approved
+    // mount must see the same props instead of crashing on undefined.
+    const tree = venueTree(GRANTED, "export default function Widget({ label }) { return <p>Sampled {label}</p>; }") as Tree & {
+      furnishings?: Record<string, { sampleProps?: Record<string, unknown> }>;
+    };
+    delete (tree.nodes[1] as { props?: unknown }).props;
+    tree.furnishings = { Widget: { sampleProps: { label: "rehearsal" } } };
+    render(<TreeView tree={tree} components={{}} onAction={ok} />);
+
+    expect((await screen.findByText("Sampled rehearsal")).textContent).toBe("Sampled rehearsal");
+    expect(document.querySelector('[data-vendo-inclient-mount="Widget"]')).not.toBeNull();
+    expect(screen.queryByRole("note", { name: "In-client mount failed" })).toBeNull();
+  });
+
   it("ignores a forged granted flag of the wrong shape", () => {
     render(
       <TreeView

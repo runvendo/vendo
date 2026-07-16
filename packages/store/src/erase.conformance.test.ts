@@ -18,7 +18,7 @@ describe("02-store §5 — erase cascade covers the contract's table map", () =>
       "utf8",
     );
     const documented = [...contract.matchAll(/^\| `(vendo_[a-z_]+)` \|/gm)].map((match) => match[1]);
-    expect(documented).toHaveLength(13);
+    expect(documented).toHaveLength(15);
     expect(documented).toEqual([...ERASE_TABLES]);
   });
 });
@@ -115,6 +115,8 @@ for (const backend of backends()) {
         vendo_secrets: 0,
         vendo_mcp_clients: 0,
         vendo_mcp_grants: 1,
+        vendo_orgs: 0,
+        vendo_org_members: 0,
       });
 
       // Gone through the doors...

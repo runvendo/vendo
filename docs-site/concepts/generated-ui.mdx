@@ -24,9 +24,33 @@ UI surface. Edits that add server behavior stay approval-gated. See
 
 The instant payload dispatches by `formatVersion`. V0 registers only
 `vendo-genui/v1`. Unknown formats render a contained notice. Generated
-components run inside an iframe with `connect-src 'none'`; they are never
-evaluated in the host page.
+components run inside an iframe with `connect-src 'none'`; the host page never
+evaluates them.
 
 Rung 4 uses the sandbox provider URL directly. While a snapshot resumes, the
 UI shows a dimmed, non-interactive cover. Machine code reaches host tools only
 through `VENDO_PROXY_URL` with a short-lived `VENDO_RUN_TOKEN`.
+
+## Secrets and outbound requests
+
+Secret values never enter the machine. Each declared secret name is injected
+as an opaque handle (`vendo-secret:<name>:<nonce>`); app code reads
+`process.env.STRIPE_KEY` normally and never learns the value. Real values
+resolve only inside the runtime's egress proxy, only for hosts on the app's
+declared `egress` allowlist, after an SSRF guard on the resolved IP. Reflected
+secrets are stripped from responses before they return to app code.
+
+App code does not call the proxy itself. The runtime writes a fetch shim into
+every machine and loads it at boot: outbound `fetch()` to an external host is
+rewritten into `POST {VENDO_PROXY_URL}/egress` authenticated by the run token,
+so plain `fetch` with the secret env var in a header or body just works.
+Internal requests are never rewritten — relative URLs, the proxy itself, and
+loopback (the app's own `$PORT` server) pass straight through. The shim
+activates only when `VENDO_PROXY_URL` and `VENDO_RUN_TOKEN` are present.
+
+A request the proxy refuses (non-allowlisted host, private address) surfaces
+as an ordinary fetch error. One limitation to know: clients outside the Node
+fetch path — raw sockets, non-Node runtimes, binaries the app spawns — skip
+the shim, so those integrations do not authenticate. They also cannot leak:
+everything they can send is the opaque handle, because the machine never held
+a value.

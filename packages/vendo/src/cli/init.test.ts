@@ -279,7 +279,13 @@ describe("vendo init", () => {
     const policy = JSON.parse(await readFile(join(root, ".vendo", "policy.json"), "utf8"));
     expect(overrides).toEqual({ format: "vendo/overrides@1", tools: {}, remix: { ignoreSlots: [] } });
     expect(tools).toMatchObject({ format: "vendo/tools@1", tools: [] });
+    const catalog = JSON.parse(await readFile(join(root, ".vendo", "catalog.json"), "utf8"));
+    expect(catalog).toEqual({ format: "vendo/catalog@1", entries: [] });
+    expect(sink.logs).toContain("catalog.json: 0 discovered, 0 registered");
     expect(policy).toMatchObject({ format: "vendo/policy@1" });
+    const envExample = await readFile(join(root, ".env.example"), "utf8");
+    expect(envExample).toContain("VENDO_BASE_URL=http://localhost:3000");
+    expect(envExample).toContain("credential forwarding is disabled without it");
     expect(await readFile(join(root, ".vendo", "data", ".gitignore"), "utf8")).toBe("*\n!.gitignore\n");
     expect(await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))
       .toContain("@vendoai/vendo/server");
@@ -293,6 +299,74 @@ describe("vendo init", () => {
     const first = await tree(root);
     expect(await runInit({ targetDir: root, yes: true, output: sink.output })).toBe(0);
     expect(await tree(root)).toEqual(first);
+  });
+
+  it("offers remix wrapping for capturable registrations and captures approved slots (ENG-288 M6)", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "app", "card.tsx"),
+      "export function HostCard() { return <div>host card</div>; }\n");
+    await writeFile(join(root, "app", "vendo-components.ts"),
+      "import { HostCard } from \"./card\";\n" +
+      "export const components = [\n" +
+      "  { name: \"HostCard\", component: HostCard, description: \"A host card\" },\n" +
+      "];\n");
+    const home = await mkdtemp(join(tmpdir(), "vendo-home-remix-"));
+    cleanup.push(home);
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    const sink = output();
+    expect(await runInit({
+      targetDir: root,
+      yes: true,
+      output: sink.output,
+      telemetry: { home, posthogKey: "phc_test", env: { NODE_ENV: "test" }, fetchImpl },
+    })).toBe(0);
+
+    const rewritten = await readFile(join(root, "app", "vendo-components.ts"), "utf8");
+    expect(rewritten).toContain("{ remixable: true, name: \"HostCard\", component: HostCard");
+    expect(sink.logs.join("\n")).toContain("Remix offer — mark HostCard remixable");
+    // The post-wrap re-sync captured the freshly wrapped slot immediately.
+    const baseline = JSON.parse(await readFile(join(root, ".vendo", "remixable", "HostCard.json"), "utf8"));
+    expect(baseline).toMatchObject({ slot: "HostCard", exportable: false });
+    expect(baseline.source).toContain("host card");
+    const completed = fetchImpl.mock.calls
+      .map((call) => JSON.parse(String(call[1]?.body)))
+      .find((event) => event.event === "init_completed");
+    expect(completed?.properties).toMatchObject({ remixOffered: 1, remixWrapped: 1, remixSkipped: 0 });
+
+    // Idempotent: the wrapped registration is never offered again.
+    const first = await tree(root);
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    expect(await tree(root)).toEqual(first);
+  });
+
+  it("counts declined remix offers as skipped and leaves the source untouched", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "app", "card.tsx"),
+      "export function HostCard() { return <div>host card</div>; }\n");
+    const registration = "import { HostCard } from \"./card\";\n" +
+      "export const components = [{ name: \"HostCard\", component: HostCard }];\n";
+    await writeFile(join(root, "app", "vendo-components.ts"), registration);
+    const home = await mkdtemp(join(tmpdir(), "vendo-home-remix-skip-"));
+    cleanup.push(home);
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    // Approve everything except the remix wrap.
+    const confirm = vi.fn(async (change: { path: string; diff: string }) =>
+      !change.diff.includes("remixable: true"));
+    expect(await runInit({
+      targetDir: root,
+      confirm,
+      interview: async () => ({}),
+      output: output().output,
+      telemetry: { home, posthogKey: "phc_test", env: { NODE_ENV: "test" }, fetchImpl },
+    })).toBe(0);
+
+    expect(await readFile(join(root, "app", "vendo-components.ts"), "utf8")).toBe(registration);
+    await expect(readFile(join(root, ".vendo", "remixable", "HostCard.json"), "utf8"))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    const completed = fetchImpl.mock.calls
+      .map((call) => JSON.parse(String(call[1]?.body)))
+      .find((event) => event.event === "init_completed");
+    expect(completed?.properties).toMatchObject({ remixOffered: 1, remixWrapped: 0, remixSkipped: 1 });
   });
 
   it("surfaces unresolved remixable slots loudly at init without aborting", async () => {
@@ -382,6 +456,19 @@ describe("vendo init", () => {
     })).toBe(0);
 
     expect(await readFile(route, "utf8")).toBe(existing);
+  });
+
+  it("preserves an existing env example while appending the trusted Vendo origin once", async () => {
+    const root = await fixture();
+    await writeFile(join(root, ".env.example"), "DATABASE_URL=postgres://localhost/host\n");
+
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+
+    const envExample = await readFile(join(root, ".env.example"), "utf8");
+    expect(envExample).toContain("DATABASE_URL=postgres://localhost/host");
+    expect(envExample).toContain("credential forwarding is disabled without it");
+    expect(envExample.match(/^VENDO_BASE_URL=/gm)).toHaveLength(1);
   });
 
   it("shows each code diff and writes no code without approval", async () => {

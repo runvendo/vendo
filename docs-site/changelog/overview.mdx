@@ -79,9 +79,8 @@ and the [quickstart](/quickstart) for setup.
 **Authenticated host tool calls from MCP.** MCP clients have no host
 browser session, so host tools now authenticate through the same `actAs`
 seam that powers automations. Grants are consent-keyed against the door's
-consent evidence, so tool calls made from a Claude or ChatGPT session run
-as the connected user without the door ever forwarding the inbound MCP
-bearer. Missing consent fails closed with a clean not-implemented tool
+consent evidence. Tool calls made from a Claude or ChatGPT session run as
+the connected user, and the door never forwards the inbound MCP bearer. Missing consent fails closed with a clean not-implemented tool
 error. See [Server API reference](/reference/server-api).
 
 ## Updates

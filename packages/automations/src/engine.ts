@@ -3,8 +3,10 @@ import {
   approvalRequestSchema,
   appDocumentSchema,
   descriptorHash,
+  isOrgSubject,
   permissionGrantSchema,
   triggerSchema,
+  webhookSubject,
   type AppDocument,
   type ApprovalRequest,
   type AuditEvent,
@@ -120,7 +122,7 @@ const baseRunRecordSchema = z.object({
   steps: z.array(z.object({
     id: z.string(),
     tool: z.string(),
-    outcome: z.enum(["ok", "error", "pending-approval", "blocked"]),
+    outcome: z.enum(["ok", "error", "pending-approval", "blocked", "connect-required"]),
     at: z.string(),
     detail: z.string().optional(),
   })),
@@ -251,12 +253,16 @@ const outcomeDetail = (outcome: ToolOutcome): string | undefined => {
   if (outcome.status === "error") return outcome.error.message;
   if (outcome.status === "blocked") return outcome.reason;
   if (outcome.status === "pending-approval") return outcome.approvalId;
+  if (outcome.status === "connect-required") return outcome.connect.message;
   return undefined;
 };
 
 const errorForOutcome = (outcome: Exclude<ToolOutcome, { status: "ok" }>): { code: string; message: string } => {
   if (outcome.status === "error") return outcome.error;
   if (outcome.status === "blocked") return { code: "blocked", message: outcome.reason };
+  // An away run has no user to show a connect card to; the run fails with an
+  // actionable message and the user connects in-product before re-running.
+  if (outcome.status === "connect-required") return { code: "connect-required", message: outcome.connect.message };
   return { code: "blocked", message: `approval required: ${outcome.approvalId}` };
 };
 
@@ -460,7 +466,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   };
 
   const runContext = (run: InternalRunRecord, subject: string): RunContext => ({
-    principal: { kind: "user", subject },
+    // Org-owned automations run as the org principal (block-actions design §C):
+    // grants and approvals for the run live under the org subject, so admins
+    // approve and any member's session can never be impersonated by the run.
+    principal: isOrgSubject(subject) ? { kind: "org", subject } : { kind: "user", subject },
     venue: "automation",
     presence: "away",
     sessionId: `sess_${run.id}`,
@@ -1168,7 +1177,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       id: id("aud_"),
       at: iso(),
       kind: "run",
-      principal: { kind: "user", subject: `webhook:${source}` },
+      // Reserved namespace (block-actions design §C): runtime-minted webhook
+      // principals live under `vendo:` so they can never collide with a
+      // host-resolved subject.
+      principal: { kind: "user", subject: webhookSubject(source) },
       venue: "automation",
       presence: "away",
       detail: { status: "webhook-rejected", reason: text },

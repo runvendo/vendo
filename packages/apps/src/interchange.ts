@@ -12,6 +12,7 @@ import { unzipSync, zipSync, type Zippable } from "fflate";
 import { appRecordInput } from "./persistence.js";
 import { assertPinsExportable, type PinBaseline } from "./pins.js";
 import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
+import { FETCH_SHIM_PATH, FETCH_SHIM_SOURCE } from "./scaffold/fetch-shim.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -95,6 +96,10 @@ const normalizedMachinePath = (dir: string, entry: string): string => {
 };
 
 const excludedMachinePath = (path: string): boolean => {
+  // ENG-290 M4 — the egress fetch shim is runtime infrastructure, not app
+  // code: every machine gets the current version at create/edit time, so a
+  // copy never carries it (and an archive can never smuggle a stale one out).
+  if (path === FETCH_SHIM_PATH) return true;
   const relative = path.slice(`${APP_ROOT}/`.length);
   const segments = relative.split("/");
   if (segments.some((segment) => EXCLUDED_DIRECTORY_NAMES.has(segment))) return true;
@@ -276,7 +281,12 @@ export const createAppInterchange = (
       if (parsed.hasAppDirectory && dependencies.sandbox !== undefined) {
         // A temporary non-authoritative ref lets core validate fn: surfaces before provisioning.
         validateImportedDocument({ ...candidate, server: "import:pending" });
-        const machine = await dependencies.sandbox.create({ env: { PORT: "8080" }, files: parsed.files });
+        // The runtime-owned fetch shim is written LAST so the recipient's copy
+        // boots with the CURRENT shim, never one an archive smuggled in.
+        const machine = await dependencies.sandbox.create({
+          env: { PORT: "8080" },
+          files: { ...parsed.files, [FETCH_SHIM_PATH]: encoder.encode(FETCH_SHIM_SOURCE) },
+        });
         try {
           imported = validateImportedDocument({ ...candidate, server: await machine.snapshot() });
           appDirectory = "rebuilt";

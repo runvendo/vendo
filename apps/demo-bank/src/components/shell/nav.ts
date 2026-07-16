@@ -1,4 +1,4 @@
-import { LayoutGrid, Wallet, ArrowLeftRight, CreditCard, Send, PieChart, Sparkles, Bell, Settings, type LucideIcon } from "lucide-react"
+import { LayoutGrid, Wallet, ArrowLeftRight, CreditCard, Send, PieChart, Sparkles, Blocks, Bell, Settings, type LucideIcon } from "lucide-react"
 
 export interface NavItem { label: string; href: string; icon: LucideIcon }
 export const PRIMARY_NAV: NavItem[] = [
@@ -9,6 +9,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { label: "Payments", href: "/payments", icon: Send },
   { label: "Insights", href: "/insights", icon: PieChart },
   { label: "Ask Maple", href: "/vendo", icon: Sparkles },
+  { label: "Apps", href: "/vendo/apps", icon: Blocks },
 ]
 export const SECONDARY_NAV: NavItem[] = [
   { label: "Activity", href: "/activity", icon: Bell },

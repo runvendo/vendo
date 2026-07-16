@@ -166,7 +166,9 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
 
   return {
     async create(spec) {
-      const { ALL_TRAFFIC, Sandbox } = await import("e2b");
+      // Optional SDK: keep it a runtime import so hosts without e2b installed
+      // don't fail Next's (webpack/Turbopack) bundling of the vendo route.
+      const { ALL_TRAFFIC, Sandbox } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "e2b");
       const sandbox = await Sandbox.create({
         ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
         envs: spec.env,
@@ -182,7 +184,7 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
     },
     async resume(snapshotRef) {
       const state = decodeSnapshotRef(snapshotRef);
-      const { ALL_TRAFFIC, Sandbox } = await import("e2b");
+      const { ALL_TRAFFIC, Sandbox } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "e2b");
       return wrap(await Sandbox.create(state.snapshotId, {
         ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
         timeoutMs,

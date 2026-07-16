@@ -2,6 +2,7 @@ import {
   VendoError,
   type AppDocument,
   type ApprovalRequest,
+  type AtomicRecordStore,
   type AuditEvent,
   type Json,
   type PermissionGrant,
@@ -10,7 +11,7 @@ import {
   type VendoRecord,
 } from "@vendoai/core";
 import type { Db } from "./db.js";
-import { createRecordStore, type DedicatedRecordTable } from "./records.js";
+import { createRecordStore, requireRevision, type DedicatedRecordTable } from "./records.js";
 import { isEphemeralApp, isEphemeralSubject, overlayFor, registerEphemeralSubject, snapshot, stateKey } from "./ephemeral.js";
 import {
   appFromRow,
@@ -76,6 +77,9 @@ interface RoutedConfig {
   overlayRecords(): VendoRecord[];
   put(record: { id: string; data: Json; refs?: Record<string, string> }): Promise<VendoRecord>;
   deleteOverlay(id: string): boolean;
+  /** Optional additive capability (01 §12): guarded writes for collections whose
+   *  table carries a revision counter. vendo_threads provides it (ENG-310). */
+  atomic?: AtomicRecordStore;
 }
 
 function refs(values: Record<string, string | undefined>): Record<string, string> {
@@ -138,6 +142,9 @@ function threadRecord(row: ThreadRow): VendoRecord {
     refs: { subject: row.subject },
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    // Present when the row carries the write counter (01 §12: opaque token when
+    // atomic is present); the messages-less listSelect projection omits it.
+    ...(row.revision === undefined ? {} : { revision: row.revision }),
   };
 }
 
@@ -282,6 +289,7 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
         ...(hasMore && last ? { cursor: encodeCursor(last.createdAt, last.id) } : {}),
       };
     },
+    ...(config.atomic === undefined ? {} : { atomic: config.atomic }),
   };
 }
 
@@ -406,6 +414,7 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
               ...(data.title === undefined ? {} : { title: data.title }),
               createdAt: prior?.createdAt ?? now,
               updatedAt: now,
+              revision: String(BigInt(prior?.revision ?? "0") + 1n),
             };
             overlay.threads.set(record.id, snapshot(row));
           } else {
@@ -414,6 +423,77 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
           return threadRecord(row);
         },
         deleteOverlay: (id) => overlay.threads.delete(id),
+        // ENG-310: guarded writes (01 §12) backed by the vendo_threads revision
+        // counter, so a concurrent-turn persist can read-merge-write without
+        // last-write-wins clobbering. Both verbs keep the same cross-subject
+        // refusal as put: a foreign-subject write NEVER lands (it just loses —
+        // insertIfAbsent finds the id taken, compareAndSwap's guarded WHERE /
+        // overlay subject check fails — and returns null).
+        atomic: {
+          async insertIfAbsent(record) {
+            requireRecordId(record.id);
+            const data = parseThreadData(record.data, record.id);
+            const now = new Date().toISOString();
+            if (isEphemeralSubject(store, data.subject)) {
+              if (overlay.threads.has(record.id)) return null;
+              const row: ThreadRow = {
+                id: record.id,
+                subject: data.subject,
+                messages: data.messages,
+                ...(data.title === undefined ? {} : { title: data.title }),
+                createdAt: now,
+                updatedAt: now,
+                revision: "1",
+              };
+              overlay.threads.set(record.id, snapshot(row));
+              return threadRecord(row);
+            }
+            const result = await db.query(
+              `INSERT INTO vendo_threads (id, subject, messages, title, created_at, updated_at, revision)
+               VALUES ($1, $2, $3::jsonb, $4, $5, $5, 1)
+               ON CONFLICT (id) DO NOTHING
+               RETURNING id, subject, messages, title, created_at, updated_at, revision`,
+              [record.id, data.subject, JSON.stringify(data.messages), data.title ?? null, now],
+            );
+            return result.rows[0]
+              ? threadRecord(threadFromRow(result.rows[0] as Record<string, unknown>))
+              : null;
+          },
+          async compareAndSwap(record, expectedRevision) {
+            requireRecordId(record.id);
+            requireRevision(expectedRevision);
+            const data = parseThreadData(record.data, record.id);
+            const now = new Date().toISOString();
+            if (isEphemeralSubject(store, data.subject)) {
+              const prior = overlay.threads.get(record.id);
+              if (prior === undefined || prior.subject !== data.subject
+                || prior.revision !== expectedRevision) {
+                return null;
+              }
+              const row: ThreadRow = {
+                id: record.id,
+                subject: data.subject,
+                messages: data.messages,
+                ...(data.title === undefined ? {} : { title: data.title }),
+                createdAt: prior.createdAt,
+                updatedAt: now,
+                revision: String(BigInt(expectedRevision) + 1n),
+              };
+              overlay.threads.set(record.id, snapshot(row));
+              return threadRecord(row);
+            }
+            const result = await db.query(
+              `UPDATE vendo_threads
+               SET messages = $3::jsonb, title = $4, updated_at = $5, revision = revision + 1
+               WHERE id = $1 AND subject = $2 AND revision = $6::bigint
+               RETURNING id, subject, messages, title, created_at, updated_at, revision`,
+              [record.id, data.subject, JSON.stringify(data.messages), data.title ?? null, now, expectedRevision],
+            );
+            return result.rows[0]
+              ? threadRecord(threadFromRow(result.rows[0] as Record<string, unknown>))
+              : null;
+          },
+        },
       };
     case "vendo_runs":
       return {

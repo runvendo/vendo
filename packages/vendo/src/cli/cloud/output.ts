@@ -29,7 +29,8 @@ function capabilityLine(contract: ContractV2, offset: number): string {
   const entries = CAPABILITY_KEYS.slice(offset, offset + 3).map((key) => {
     return `${contract.capabilities[key] ? "✓" : "✗"} ${key}`;
   });
-  return `  ${entries[0]!.padEnd(17)}${entries[1]!.padEnd(17)}${entries[2]!}`;
+  // The final row may be partial (CAPABILITY_KEYS need not be a multiple of 3).
+  return `  ${entries.map((entry, index) => (index < entries.length - 1 ? entry.padEnd(17) : entry)).join("")}`;
 }
 
 function number(value: number): string {

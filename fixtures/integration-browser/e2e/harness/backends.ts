@@ -33,10 +33,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getToolUiResourceUri } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { CallToolRequest } from "@modelcontextprotocol/sdk/types.js";
+import { composioConnector } from "@vendoai/actions";
 import { descriptorHash, type Principal } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
 import { createVendo } from "@vendoai/vendo/server";
 import { connectWithSdk, type ConnectedClient } from "../../../mcp-e2e/src/support.ts";
+import { startComposioStub } from "./composio-stub.ts";
 import {
   MCP_APPS_FIXTURE_ID,
   MCP_APPS_INVOICE_ID,
@@ -134,6 +136,9 @@ export async function startBackends(): Promise<Backends> {
   const store = createStore({ dataDir });
   await store.ensureSchema();
   const scripted = createControllableModel();
+  // The connected-accounts leg (04-actions §3): the REAL composioConnector,
+  // aimed at a loopback stub serving Composio's wire shapes.
+  const composioStub = await startComposioStub();
 
   // Listen BEFORE createVendo: the door's canonical public base defaults to
   // VENDO_BASE_URL (ENG-333), which this harness deliberately points at the
@@ -169,6 +174,7 @@ export async function startBackends(): Promise<Backends> {
     store,
     actAs: async (principal: Principal) => ({ headers: { cookie: await loginCookie(principal.subject) } }),
     policy: { file: ".vendo/policy.json" },
+    connectors: [composioConnector({ apiKey: "stub-key", apps: ["gmail"], baseUrl: composioStub.url })],
     mcp: { baseUrl: wireUrl },
     oauth: {
       async authorize() {
@@ -230,6 +236,7 @@ export async function startBackends(): Promise<Backends> {
 
     if (req.method === "POST" && sub === "/reset") {
       scripted.reset();
+      composioStub.reset();
       await fetch(`${hostBaseUrl}/fixture/reset`, { method: "POST" });
       for (const descriptor of await vendo.actions.descriptors()) {
         const original = originalDescriptions.get(descriptor.name);
@@ -335,6 +342,7 @@ export async function startBackends(): Promise<Backends> {
     if (closed) return;
     closed = true;
     await connectedMcp?.close().catch(() => undefined);
+    await composioStub.close().catch(() => undefined);
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     if (host.exitCode === null) {
       host.kill("SIGTERM");

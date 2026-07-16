@@ -26,6 +26,12 @@ documented `.env.local` pattern, but the capture tool intentionally writes
 nothing under `apps/`. Maple is `demo-bank` at `/vendo`; Cadence is
 `demo-accounting` at `/assistant`.
 
+Both demos sit behind a real login wall (ENG-260). The capture signs in by
+itself with the primary seeded demo user (the login form prefills the email)
+and the shared demo password: `MAPLE_DEMO_PASSWORD` / `CADENCE_DEMO_PASSWORD`
+when set, otherwise each demo's seeded dev fallback (`maple-demo` /
+`cadence-demo`). No flags are needed for a local capture.
+
 ## The four one-command beats
 
 Use a distinct `--run-id` for each measurement wave so its raw recording and

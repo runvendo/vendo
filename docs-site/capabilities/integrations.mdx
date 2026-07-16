@@ -1,5 +1,5 @@
 ---
-title: "Connectors"
+title: "Connectors: Composio and remote MCP tools in Vendo"
 description: "Add Composio and remote MCP tools to Vendo by normalizing them into the same guarded tool registry with policy, approvals, and audit applied."
 ---
 
@@ -17,8 +17,8 @@ export function mcpConnector(config: { url: string; headers?: Record<string, str
 ```
 
 Connector names normalize into the provider-safe tool charset, such as
-`gmail_send` and `mcp_server_tool`. Names longer than 64 characters are
-truncated and suffix-hashed.
+`gmail_send` and `mcp_server_tool`. Vendo truncates and suffix-hashes names
+longer than 64 characters.
 
 Connector annotations supply risk when available. Otherwise Vendo defaults to
 `write`. Overrides can change the reviewed risk. Connector authentication is
@@ -26,8 +26,8 @@ provider-specific, but every call still crosses the same guard and approval
 path.
 
 This connector support is distinct from the MCP door, which runs the other
-direction: connectors pull remote MCP tools *into* your agent, while the door
-serves *your* host tools *out* to MCP clients like Claude and ChatGPT. Enable
+direction. Connectors pull remote MCP tools *into* your agent; the door serves
+*your* host tools *out* to MCP clients like Claude and ChatGPT. Enable
 the door with `createVendo({ mcp: true, oauth })`. Door tool calls authenticate
 over the same `actAs` seam away automations use, since MCP clients have no host
 browser session. See the quickstart for setup.

@@ -15,18 +15,26 @@ import {
 } from "@vendoai/core";
 import type { Connector } from "../connectors/connector.js";
 import {
+  capabilitiesFileSchema,
   extractedToolSchema,
   overridesFileSchema,
   toolsFileSchema,
+  type CapabilitiesFile,
+  type CapabilityBrief,
+  type CompoundTool,
   type ExtractedTool,
   type OpenApiBinding,
   type OverridesFile,
   type RouteBinding,
   type ToolOverride,
 } from "../formats.js";
+import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
+import { error, isArgsObject } from "./outcome.js";
 
 export interface ActionsRegistry extends ToolRegistry {
   add(tools: ToolRegistry): void;
+  /** Capability briefs carried by `.vendo/capabilities.json` (04 §1). Validated and exposed; consumed by later milestones. */
+  briefs(): Promise<CapabilityBrief[]>;
 }
 
 /** Away calls carry the exact grant captured by the guard binding; venue="mcp"
@@ -56,13 +64,31 @@ interface RegistryConfig {
    * so an explicitly-passed baseUrl keeps forwarding.
    */
   baseUrlTrusted?: boolean;
+  /** Umbrella-owned structured warning hook. It fires only when a present host
+   * call has browser auth to forward but the target fails the trusted-origin
+   * rule. Callers should de-duplicate at the composition boundary. */
+  onPresentCredentialsNotForwarded?: (event: {
+    ctx: RunContext;
+    tool: ToolDescriptor;
+    reason: "untrusted-host-origin" | "cross-origin-binding";
+  }) => void | Promise<void>;
   fetch?: typeof fetch;
+  /** Inject `.vendo/capabilities.json` directly (tests, non-file hosts); takes precedence over `dir` (04 §1/§6). */
+  capabilities?: CapabilitiesFile;
+  /**
+   * 04 §6: the guard-bound execution seam every compound step routes through.
+   * The umbrella assigns it AFTER `guard.bind(actions)` — read at execution
+   * time, exactly like `baseUrl`. Absent → compounds return `not-implemented`
+   * and perform no work; there is no second execution path.
+   */
+  invokeTool?: ToolRegistry["execute"];
 }
 
 type Dispatch =
   | { kind: "host"; descriptor: ToolDescriptor; tool: ExtractedTool }
   | { kind: "connector"; descriptor: ToolDescriptor; connector: Connector }
-  | { kind: "registry"; descriptor: ToolDescriptor; registry: ToolRegistry };
+  | { kind: "registry"; descriptor: ToolDescriptor; registry: ToolRegistry }
+  | { kind: "compound"; descriptor: ToolDescriptor; tool: CompoundTool };
 
 interface LoadedRegistry {
   descriptors: ToolDescriptor[];
@@ -78,11 +104,7 @@ const STRIPPED_HEADERS = new Set([
   "upgrade",
 ]);
 
-function error(code: string, message: string): ToolOutcome {
-  return { status: "error", error: { code, message } };
-}
-
-function descriptorOf(tool: ExtractedTool): ToolDescriptor {
+function descriptorOf(tool: ToolDescriptor): ToolDescriptor {
   return {
     name: tool.name,
     description: tool.description,
@@ -130,10 +152,6 @@ async function readOptionalJson<T>(path: string, parse: (value: unknown) => T): 
       cause: cause instanceof Error ? cause.message : String(cause),
     });
   }
-}
-
-function isArgsObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function appendQuery(url: URL, key: string, value: unknown): void {
@@ -198,6 +216,13 @@ function forwardedHeaders(ctx: RunContext): Record<string, string> {
   return headers;
 }
 
+function hasInboundAuthHeaders(ctx: RunContext): boolean {
+  return Object.keys(ctx.requestHeaders ?? {}).some((name) => {
+    const normalized = name.toLowerCase();
+    return normalized === "authorization" || normalized === "cookie";
+  });
+}
+
 function absoluteHttpUrl(value: string | undefined): URL | undefined {
   if (!value) return undefined;
   try {
@@ -252,10 +277,21 @@ function setHeader(headers: Record<string, string>, name: string, value: string)
   headers[name] = value;
 }
 
+/** The actAs seam's disposition, riding the outcome as a passthrough field the
+ * guard binding lifts into audit `detail.actAs` and strips (block-actions
+ * design cross-cutting audit enrichment — the same mechanism as
+ * `connectorAccount`). "declined" IS the away re-verification outcome: the
+ * host refusing to mint fails the run closed; there is no second seam. */
+export type ActAsDisposition = "minted" | "declined" | "mismatch" | "error";
+
+function withActAs(outcome: ToolOutcome, actAs: ActAsDisposition): ToolOutcome {
+  return { ...outcome, actAs } as unknown as ToolOutcome;
+}
+
 /** The shared ActAs invocation for away + venue="mcp" host execution (04 §4).
  * The two paths source the grant differently but the seam call is identical:
  * `null` → the host declined; a throw → act-as-error. Returns the AuthMaterial
- * headers or the ToolOutcome to surface. */
+ * headers or the ToolOutcome to surface (tagged with its actAs disposition). */
 async function actAsAuth(
   actAs: ActAs,
   principal: Principal,
@@ -264,18 +300,18 @@ async function actAsAuth(
 ): Promise<{ headers: Record<string, string> } | { error: ToolOutcome }> {
   if (grant.subject !== principal.subject) {
     return {
-      error: error(
+      error: withActAs(error(
         "act-as-subject-mismatch",
         "the captured grant does not belong to the current principal",
-      ),
+      ), "mismatch"),
     };
   }
   try {
     const auth = await actAs(principal, grant);
-    if (!auth) return { error: error("not-implemented", messages.declined) };
+    if (!auth) return { error: withActAs(error("not-implemented", messages.declined), "declined") };
     return { headers: { ...auth.headers } };
   } catch (cause) {
-    return { error: error("act-as-error", cause instanceof Error ? cause.message : messages.failed) };
+    return { error: withActAs(error("act-as-error", cause instanceof Error ? cause.message : messages.failed), "error") };
   }
 }
 
@@ -326,6 +362,7 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
   }
 
   let headers: Record<string, string>;
+  let actAsMinted = false;
   if (ctx.presence === "away") {
     if (!config.actAs) return error("not-implemented", "away execution isn't set up for this product");
     const grant = (ctx as ActionsRunContext).grant;
@@ -336,6 +373,7 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
     });
     if ("error" in authed) return authed.error;
     headers = authed.headers;
+    actAsMinted = true;
   } else if (ctx.venue === "mcp" || (ctx as ActionsRunContext).mcpConsent !== undefined) {
     // 04 §4 / 10-mcp §2.1 / §3: an MCP-OAuth user has no host browser session,
     // so the present path has nothing to forward — and we forward NOTHING even
@@ -367,61 +405,112 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
     });
     if ("error" in authed) return authed.error;
     headers = authed.headers;
+    actAsMinted = true;
   } else {
-    headers = mayForwardPresentHeaders(tool.binding, url, config.baseUrl, config.baseUrlTrusted ?? true)
-      ? forwardedHeaders(ctx)
-      : {};
+    const forwardsPresentHeaders = mayForwardPresentHeaders(
+      tool.binding,
+      url,
+      config.baseUrl,
+      config.baseUrlTrusted ?? true,
+    );
+    if (!forwardsPresentHeaders && hasInboundAuthHeaders(ctx) && config.onPresentCredentialsNotForwarded !== undefined) {
+      const reason = config.baseUrlTrusted === false
+        ? "untrusted-host-origin" as const
+        : "cross-origin-binding" as const;
+      try {
+        await config.onPresentCredentialsNotForwarded({ ctx, tool: descriptorOf(tool), reason });
+      } catch {
+        // A warning sink must never turn a host API call into a product failure.
+      }
+    }
+    headers = forwardsPresentHeaders ? forwardedHeaders(ctx) : {};
   }
   setHeader(headers, "accept", "application/json");
   if (body !== undefined) setHeader(headers, "content-type", "application/json");
 
-  try {
-    const request = config.fetch ?? globalThis.fetch;
-    const response = await request(url, {
-      method: tool.binding.method,
-      headers,
-      ...(body !== undefined ? { body } : {}),
-    });
-    const text = await response.text();
-    if (!response.ok) {
-      return error(
-        "http-error",
-        `${tool.binding.method} ${url.pathname} → ${response.status}: ${text.slice(0, 200)}`,
-      );
-    }
-    if (text) {
-      try {
-        return { status: "ok", output: JSON.parse(text) };
-      } catch {
-        // Successful non-JSON responses retain their HTTP status and text.
+  const outcome = await (async (): Promise<ToolOutcome> => {
+    try {
+      const request = config.fetch ?? globalThis.fetch;
+      const response = await request(url, {
+        method: tool.binding.method,
+        headers,
+        ...(body !== undefined ? { body } : {}),
+      });
+      const text = await response.text();
+      if (!response.ok) {
+        return error(
+          "http-error",
+          `${tool.binding.method} ${url.pathname} → ${response.status}: ${text.slice(0, 200)}`,
+        );
       }
+      if (text) {
+        try {
+          return { status: "ok", output: JSON.parse(text) };
+        } catch {
+          // Successful non-JSON responses retain their HTTP status and text.
+        }
+      }
+      return { status: "ok", output: { status: response.status, text } };
+    } catch (cause) {
+      return error("network-error", cause instanceof Error ? cause.message : `Network request failed for ${call.tool}`);
     }
-    return { status: "ok", output: { status: response.status, text } };
-  } catch (cause) {
-    return error("network-error", cause instanceof Error ? cause.message : `Network request failed for ${call.tool}`);
-  }
+  })();
+  // Audit enrichment: every actAs-authenticated host call reports the seam's
+  // disposition, even when the host request itself then fails.
+  return actAsMinted ? withActAs(outcome, "minted") : outcome;
+}
+
+interface LoadedHost {
+  tools: ExtractedTool[];
+  overrides: OverridesFile;
+  capabilities?: CapabilitiesFile;
 }
 
 export function createActions(config: RegistryConfig): ActionsRegistry {
   const connectors = config.connectors ?? [];
   const added: ToolRegistry[] = [];
-  let hostPromise: Promise<{ tools: ExtractedTool[]; overrides: OverridesFile }> | undefined;
+  let hostPromise: Promise<LoadedHost> | undefined;
   const connectorPromises = new Map<Connector, Promise<ToolDescriptor[]>>();
   const registryPromises = new Map<ToolRegistry, Promise<ToolDescriptor[]>>();
   let loadedPromise: Promise<LoadedRegistry> | undefined;
 
-  function loadHost(): Promise<{ tools: ExtractedTool[]; overrides: OverridesFile }> {
+  function parseCapabilities(value: unknown, source: string): CapabilitiesFile {
+    try {
+      return capabilitiesFileSchema.parse(value);
+    } catch (cause) {
+      throw new VendoError("validation", `Invalid Vendo actions file ${source}`, {
+        cause: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  }
+
+  function loadHost(): Promise<LoadedHost> {
     if (!hostPromise) hostPromise = (async () => {
       const emptyOverrides: OverridesFile = { format: "vendo/overrides@1", tools: {} };
       const configuredTools = config.tools?.map((tool, index) => parseExtractedTool(tool, `config.tools[${index}]`));
-      if (!config.dir) return { tools: configuredTools ?? [], overrides: emptyOverrides };
+      const configuredCapabilities = config.capabilities === undefined
+        ? undefined
+        : parseCapabilities(config.capabilities, "config.capabilities");
+      if (!config.dir) {
+        return {
+          tools: configuredTools ?? [],
+          overrides: emptyOverrides,
+          ...(configuredCapabilities === undefined ? {} : { capabilities: configuredCapabilities }),
+        };
+      }
       // `dir` may be the host root (we look inside its .vendo/) or the .vendo directory itself.
       const vendoDir = basename(resolve(config.dir)) === ".vendo" ? config.dir : join(config.dir, ".vendo");
-      const [toolsFile, overrides] = await Promise.all([
+      const [toolsFile, overrides, capabilitiesFile] = await Promise.all([
         readOptionalJson(join(vendoDir, "tools.json"), (value) => toolsFileSchema.parse(value)),
         readOptionalJson(join(vendoDir, "overrides.json"), (value) => overridesFileSchema.parse(value)),
+        readOptionalJson(join(vendoDir, "capabilities.json"), (value) => capabilitiesFileSchema.parse(value)),
       ]);
-      return { tools: configuredTools ?? toolsFile?.tools ?? [], overrides: overrides ?? emptyOverrides };
+      const capabilities = configuredCapabilities ?? capabilitiesFile;
+      return {
+        tools: configuredTools ?? toolsFile?.tools ?? [],
+        overrides: overrides ?? emptyOverrides,
+        ...(capabilities === undefined ? {} : { capabilities }),
+      };
     })();
     return hostPromise;
   }
@@ -451,6 +540,9 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       const registryLists = await Promise.all(added.map((registry) => addedDescriptors(registry)));
       const dispatch = new Map<string, Dispatch>();
       const descriptors: ToolDescriptor[] = [];
+      // The primitive table compound steps validate against: post-override host +
+      // connector tools ONLY — never compounds, never `add()`-registry tools.
+      const primitives = new Map<string, PrimitiveStepTarget>();
 
       function register(name: string, source: string, entry?: Dispatch): void {
         if (dispatch.has(name)) throw new VendoError("conflict", `Duplicate tool name ${name} from ${source}`);
@@ -468,6 +560,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
         const descriptor = descriptorOf(merged);
         const disabled = merged.disabled === true;
         register(merged.name, "host tools", disabled ? undefined : { kind: "host", descriptor, tool: merged });
+        primitives.set(merged.name, { risk: merged.risk, disabled });
       }
       for (let index = 0; index < connectors.length; index += 1) {
         const connector = connectors[index]!;
@@ -483,6 +576,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
             `connector ${connector.name}`,
             merged.disabled === true ? undefined : { kind: "connector", descriptor, connector },
           );
+          primitives.set(descriptor.name, { risk: merged.risk, disabled: merged.disabled === true });
         }
       }
       for (let index = 0; index < added.length; index += 1) {
@@ -496,12 +590,47 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
         }
       }
 
+      // 04 §6: compounds are additional tools merged at load like overrides.
+      // Name collisions (any direction) throw `conflict` via register(); a
+      // semantic-validation failure QUARANTINES the entry — name reserved,
+      // absent from descriptors and dispatch, boot never degrades.
+      const compounds = (host.capabilities?.tools ?? []).map(
+        (tool) => mergeOverride({ ...tool }, host.overrides.tools[tool.name]),
+      );
+      const issuesByTool = new Map<string, string[]>();
+      for (const issue of validateCapabilities({ tools: compounds }, primitives)) {
+        issuesByTool.set(issue.tool, [...(issuesByTool.get(issue.tool) ?? []), issue.message]);
+      }
+      for (const compound of compounds) {
+        const compoundIssues = issuesByTool.get(compound.name) ?? [];
+        if (compound.disabled === true || compoundIssues.length > 0) {
+          // Disabled and quarantined compounds both reserve the name (collision
+          // detection) without dispatching; only quarantine warns.
+          register(compound.name, "capabilities", undefined);
+          if (compound.disabled !== true) {
+            console.warn(
+              `[vendo] quarantined compound tool ${compound.name} from .vendo/capabilities.json: ${compoundIssues.join("; ")}`,
+            );
+          }
+          continue;
+        }
+        register(compound.name, "capabilities", { kind: "compound", descriptor: descriptorOf(compound), tool: compound });
+      }
+
       // Strip disabled reservations from runtime dispatch after all collision checks.
       for (const [name, entry] of dispatch) if (!entry) dispatch.delete(name);
       return { descriptors, dispatch };
     })();
     return loadedPromise;
   }
+
+  const compoundExecutor = createCompoundExecutor({
+    config,
+    async isPrimitive(name: string): Promise<boolean> {
+      const entry = (await load()).dispatch.get(name);
+      return entry !== undefined && (entry.kind === "host" || entry.kind === "connector");
+    },
+  });
 
   return {
     add(tools: ToolRegistry): void {
@@ -513,10 +642,15 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       return (await load()).descriptors;
     },
 
+    async briefs(): Promise<CapabilityBrief[]> {
+      return (await loadHost()).capabilities?.briefs ?? [];
+    },
+
     async execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {
       const entry = (await load()).dispatch.get(call.tool);
       if (!entry) return error("not-found", `Unknown tool: ${call.tool}`);
       if (entry.kind === "host") return executeHost(config, entry.tool, call, ctx);
+      if (entry.kind === "compound") return compoundExecutor.execute(entry.tool, call, ctx);
       if (entry.kind === "registry") return entry.registry.execute(call, ctx);
       try {
         return await entry.connector.execute(call, ctx);

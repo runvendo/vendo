@@ -13,7 +13,7 @@ Usage: vendo <command> [dir] [options]
 
 Commands:
   init [dir]      Scan, interview, write .vendo, and propose handler + VendoRoot wiring
-  doctor [dir]    Verify wiring and make one live /status round-trip
+  doctor [dir]    Verify wiring, present credentials, and actAs over live HTTP
   sync [dir]      Extract tools and remix baselines (use --strict for CI)
   mcp <command>   Generate MCP registry discovery and domain-verification files
   cloud <command> Use the public Vendo Cloud API

@@ -87,6 +87,25 @@ function toPlainJson(messages: UIMessage[]): UIMessage[] {
   return JSON.parse(JSON.stringify(messages)) as UIMessage[];
 }
 
+// ENG-310: how many times persist re-reads and re-merges after losing a write
+// race. Each retry starts from the freshly-read row, so a loss only recurs
+// while OTHER writers keep landing between our read and our guarded write.
+const MAX_PERSIST_ATTEMPTS = 5;
+
+/** ENG-310: fold this turn's messages into the CURRENT persisted history —
+ *  upsert by message id (same identity rule as the in-stream upsertMessage),
+ *  so two concurrent turns on one thread both survive: shared history is
+ *  updated in place, each turn's new messages are appended. */
+function mergeMessages(current: UIMessage[], turn: UIMessage[]): UIMessage[] {
+  const merged = [...current];
+  for (const message of turn) {
+    const index = merged.findIndex((candidate) => candidate.id === message.id);
+    if (index === -1) merged.push(message);
+    else merged[index] = message;
+  }
+  return merged;
+}
+
 /** 03-agent §5 */
 export class ThreadRepository {
   readonly #memory = new Map<string, Map<ThreadId, Thread>>();
@@ -98,8 +117,12 @@ export class ThreadRepository {
     if (!THREAD_ID_PATTERN.test(id)) {
       throw new VendoError("validation", "threadId is malformed");
     }
-    // Memory paths (no store / ephemeral) use per-subject maps, so ids are private
+    // The memory path (no store at all) uses per-subject maps, so ids are private
     // and no takeover is possible — resolve straight from this subject's map.
+    // Ephemeral subjects go THROUGH the store: its overlay routing (02-store §4)
+    // keeps them off disk with the same cross-subject guards, and it is what the
+    // anonymous→signed-in merge (ENG-263) drains — a private map here would
+    // silently lose an anonymous visitor's threads on sign-in.
     if (this.usesMemory(ctx)) {
       return this.subjectMemory(ctx.principal.subject).get(id) ?? this.create(ctx, id);
     }
@@ -172,27 +195,70 @@ export class ThreadRepository {
   }
 
   async persist(thread: Thread, messages: UIMessage[], ctx: RunContext): Promise<void> {
-    const updated: Thread = {
+    // ai-SDK UIMessages carry explicit `undefined`-valued optional props on
+    // tool parts (e.g. an approval-requested part with no output yet). The
+    // store seam is typed `Json` and rejects `undefined` values, so serialize
+    // to plain JSON — dropping absent-anyway keys — before it crosses.
+    const turnMessages = toPlainJson(messages);
+    // ENG-310 (AGENT-9): persist is read-modify-write, never a blind overwrite.
+    // Two overlapping turns on one thread each finish with their OWN copy of the
+    // history; a bare put made the last writer clobber the other turn's messages.
+    // Every write below first merges this turn into the CURRENT stored history.
+    if (this.usesMemory(ctx)) {
+      // The read+merge+set below is synchronous — atomic in JS — so the memory
+      // path needs no further guard.
+      const threads = this.subjectMemory(ctx.principal.subject);
+      const current = threads.get(thread.id);
+      threads.set(thread.id, this.updatedThread(
+        thread,
+        current === undefined ? turnMessages : mergeMessages(current.messages, turnMessages),
+      ));
+      return;
+    }
+    const records = this.store!.records(THREAD_COLLECTION);
+    for (let attempt = 0; attempt < MAX_PERSIST_ATTEMPTS; attempt += 1) {
+      const record = await records.get(thread.id);
+      const current = record === null ? null : threadFromRecord(record);
+      if (current !== null && current.subject !== thread.subject) {
+        // Mirror the door's guarded upsert (03 §5): never take over a foreign row.
+        throw new VendoError("conflict", "threadId is already in use");
+      }
+      const updated = this.updatedThread(
+        thread,
+        current === null ? turnMessages : mergeMessages(current.messages, turnMessages),
+      );
+      const input = { id: updated.id, data: updated, refs: { subject: updated.subject } };
+      // Guarded write when the adapter has the optional atomic capability (01
+      // §12): insert-if-absent for a first turn, revision CAS for an existing
+      // row — exactly one concurrent writer lands; the loser re-reads and
+      // re-merges. Without atomic (or on a legacy pre-revision row) the merged
+      // put still shrinks the race window from a whole streaming turn to one
+      // read-write, and the door's subject guard keeps refusing takeovers.
+      if (records.atomic === undefined || (record !== null && record.revision === undefined)) {
+        await records.put(input);
+        return;
+      }
+      const written = record === null
+        ? await records.atomic.insertIfAbsent(input)
+        : await records.atomic.compareAndSwap(input, record.revision!);
+      if (written !== null) return;
+    }
+    throw new VendoError(
+      "conflict",
+      `thread ${thread.id} persist lost the update race ${MAX_PERSIST_ATTEMPTS} times`,
+    );
+  }
+
+  /** The Thread as it should be written for this turn: merged messages, a
+   *  freshly-derived listing title (never a stale prior title — `list` reads it
+   *  back without loading messages), and a new updatedAt. */
+  private updatedThread(thread: Thread, messages: UIMessage[]): Thread {
+    return {
       ...thread,
-      // ai-SDK UIMessages carry explicit `undefined`-valued optional props on
-      // tool parts (e.g. an approval-requested part with no output yet). The
-      // store seam is typed `Json` and rejects `undefined` values, so serialize
-      // to plain JSON — dropping absent-anyway keys — before it crosses.
-      messages: toPlainJson(messages),
-      // Precompute the listing title from the derivation (never a stale prior title),
-      // so `list` can read it back without loading the messages array.
+      messages,
       title: deriveTitle(messages),
       updatedAt: new Date().toISOString(),
     };
-    if (this.usesMemory(ctx)) {
-      this.subjectMemory(ctx.principal.subject).set(updated.id, updated);
-      return;
-    }
-    await this.store!.records(THREAD_COLLECTION).put({
-      id: updated.id,
-      data: updated,
-      refs: { subject: updated.subject },
-    });
   }
 
   private create(ctx: RunContext, requestedId?: ThreadId): Thread {
@@ -210,8 +276,8 @@ export class ThreadRepository {
     return thread;
   }
 
-  private usesMemory(ctx: RunContext): boolean {
-    return this.store === undefined || ctx.principal.ephemeral === true;
+  private usesMemory(_ctx: RunContext): boolean {
+    return this.store === undefined;
   }
 
   private subjectMemory(subject: string): Map<ThreadId, Thread> {

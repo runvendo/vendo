@@ -22,9 +22,16 @@ import type {
 import type { UIMessage } from "ai";
 import type {
   AutomationEntry,
+  ConnectionAccount,
   EditResult,
   EnableResult,
+  InitiatedConnection,
   OpenSurface,
+  OrgDetail,
+  OrgMember,
+  OrgRole,
+  OrgsPosture,
+  OrgSummary,
   PinDrift,
   PinRebaseResult,
   RunPlan,
@@ -64,6 +71,27 @@ export interface VendoClient {
   grants: {
     list(): Promise<PermissionGrant[]>;
     revoke(id: GrantId): Promise<void>;
+  };
+
+  /** block-actions §C — key-gated org workspaces. Every call may reject with
+   * VendoError("cloud-required") when orgs are unactivated (the posture error). */
+  orgs: {
+    list(): Promise<{ orgs: OrgSummary[]; posture: OrgsPosture }>;
+    create(name: string): Promise<{ id: string; name: string }>;
+    get(id: string): Promise<OrgDetail>;
+    addMember(id: string, subject: string, role?: OrgRole): Promise<OrgMember>;
+    setRole(id: string, subject: string, role: OrgRole): Promise<OrgMember>;
+    removeMember(id: string, subject: string): Promise<void>;
+  };
+
+  /** 04-actions §3 — per-principal connected accounts (Composio broker). */
+  connections: {
+    list(): Promise<ConnectionAccount[]>;
+    /** POST /connections/initiate — returns the broker's OAuth redirect URL. */
+    initiate(input: { toolkit: string; connector?: string; callbackUrl?: string }): Promise<InitiatedConnection>;
+    /** GET /connections/:id — poll while the user completes the redirect. */
+    status(id: string, connector?: string): Promise<ConnectionAccount>;
+    disconnect(id: string, connector?: string): Promise<void>;
   };
 
   apps: {

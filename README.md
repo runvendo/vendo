@@ -34,24 +34,27 @@ alias. Install individual blocks when you want to compose Vendo yourself.
 
 ## See it in action
 
-Every capture below is a real agent run in a demo host app, not a mockup. The
-stopwatch in each recording is real elapsed time; waits are played back faster.
+Every capture below is a real agent run in a demo host app, not a mockup.
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="assets/hero.gif" alt="A Maple customer asks for a spending dashboard and the agent streams a live generated view built from the bank's own API data" width="100%">
-      <p align="center"><sub><b>Build views.</b> Ask a question, get a live view generated from your product's own API data.</sub></p>
+      <img src="assets/hero.gif" alt="A Maple customer asks where their money went and the agent composes a live spending view" width="100%">
+      <p align="center"><sub><b>Build views.</b> Ask a question, get a live view composed from the host's own components and API.</sub></p>
     </td>
     <td width="50%" valign="top">
-      <img src="assets/remix.gif" alt="A Cadence user asks for an edit to a generated workload dashboard and the view updates in place while staying visible the whole time" width="100%">
-      <p align="center"><sub><b>Edit in place.</b> Ask for a change and the view updates without a rebuild, staying visible while it happens.</sub></p>
+      <img src="assets/remix.gif" alt="A Cadence user hovers the deadlines card, asks for urgency color-coding, and applies the remix in place" width="100%">
+      <p align="center"><sub><b>Remix the UI.</b> Hover a component, describe the change, apply it in place.</sub></p>
     </td>
   </tr>
   <tr>
-    <td colspan="2" align="center">
-      <img src="assets/host-component.gif" alt="The agent composes Maple's registered MapleSparkline React component into a generated balance-trend card inside the sandbox" width="48%">
-      <p align="center"><sub><b>Compose your components.</b> Generated views reuse the React components your product registers in the catalog.</sub></p>
+    <td width="50%" valign="top">
+      <img src="assets/automation.gif" alt="A Cadence user asks for a morning document-chase automation and turns it on with per-tool approvals" width="100%">
+      <p align="center"><sub><b>Automate across tools.</b> Plain language in, standing automation out, every tool gated by approval.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="assets/voice.gif" alt="A Maple voice session: the user asks out loud where their money went and the agent renders the view while talking back" width="100%">
+      <p align="center"><sub><b>Talk to it.</b> A live voice session: ask out loud, the agent talks back and renders the view.</sub></p>
     </td>
   </tr>
 </table>

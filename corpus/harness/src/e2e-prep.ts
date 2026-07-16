@@ -1,19 +1,17 @@
 import { access, copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ManifestEntry } from "./manifest.js";
+import { mountCorpusOverlay } from "./e2e-prep/overlay-mount.js";
+import { vendoRouteFilePath } from "./e2e-prep/route-path.js";
 import { prepareSkateshopE2eRepo } from "./e2e-prep/skateshop.js";
 
-const umamiInstructions = [
-  "This corpus run uses Umami seed data for Demo Blog (blog.example.com) and Demo SaaS (app.example.com).",
-  "Always call list_umami_websites first to map a requested site name or domain to its websiteId.",
-  "For top pages, blog article comparisons, signup events, and referrers, call get_umami_website_metrics.",
-  "For revenue questions, call get_umami_revenue_report.",
-  "Use UTC. Seeded date windows: last 7 days startAt=1782691200000 endAt=1783382399000; this month startDate=2026-07-01T00:00:00.000Z endDate=2026-07-06T23:59:59.000Z; last 30 days startAt=1780704000000 endAt=1783382399000.",
-  "For every corpus prompt, answer only after gathering data. The visible answer must include labels and numeric values from the Umami tool result.",
-  "If you render a view, keep it compact and still summarize the key values in visible text.",
-].join("\n");
-
-const umamiRootAuthShim = `
+// Umami authenticates its API with a Bearer token the app keeps in
+// localStorage. Chat tool calls now execute SERVER-side (route bindings,
+// 04 §4), and the registry forwards the WIRE request's cookie/authorization
+// headers to same-origin bindings when VENDO_BASE_URL is operator-set — so
+// the shim attaches the Bearer to every same-origin /api/ request INCLUDING
+// /api/vendo, and prep pins VENDO_BASE_URL in the fixture .env.
+const umamiAuthShim = `
 const UMAMI_AUTH_KEY = "umami.auth";
 
 function readUmamiAuthToken(): string | undefined {
@@ -37,9 +35,11 @@ function isUmamiApiRequest(input: Parameters<typeof fetch>[0]): boolean {
       : input.url;
   try {
     const url = new URL(rawUrl, window.location.href);
+    // Includes /api/vendo on purpose: the Vendo wire forwards
+    // cookie/authorization to same-origin route bindings, which is how the
+    // server-side Umami tool calls authenticate.
     return url.origin === window.location.origin
-      && url.pathname.startsWith("/api/")
-      && !url.pathname.startsWith("/api/vendo");
+      && url.pathname.startsWith("/api/");
   } catch {
     return false;
   }
@@ -67,162 +67,89 @@ function installUmamiAuthFetch(): () => void {
 }
 `;
 
-const umamiTools = {
-  format: "vendo/tools@1",
-  tools: [
-    {
-      name: "list_umami_websites",
-      description: "List Umami websites visible to the logged-in user, including seeded Demo Blog and Demo SaaS IDs/domains.",
-      inputSchema: {
-        type: "object",
-        properties: {},
-        additionalProperties: false,
-      },
-      risk: "read",
-      binding: { kind: "route", method: "GET", path: "/api/me/websites", argsIn: "query" },
-    },
-    {
-      name: "get_umami_website_metrics",
-      description: "Get ranked Umami metrics for one website. Use type=path for top pages, type=event for custom events such as signup_started/signup_completed, and type=referrer for acquisition sources.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          websiteId: { type: "string", description: "Umami website UUID from list_umami_websites." },
-          type: {
-            type: "string",
-            enum: ["path", "event", "referrer", "title", "hostname"],
-            description: "Metric dimension to rank.",
-          },
-          startAt: { type: "integer", description: "UTC start time in Unix milliseconds." },
-          endAt: { type: "integer", description: "UTC end time in Unix milliseconds." },
-          unit: { type: "string", enum: ["day", "hour", "month"], default: "day" },
-          timezone: { type: "string", default: "UTC" },
-          limit: { type: "integer", default: 10, minimum: 1, maximum: 50 },
-        },
-        required: ["websiteId", "type", "startAt", "endAt"],
-        additionalProperties: false,
-      },
-      risk: "read",
-      binding: { kind: "route", method: "GET", path: "/api/websites/{websiteId}/metrics", argsIn: "query" },
-    },
-    {
-      name: "get_umami_pageviews",
-      description: "Get Umami pageview and session time series for one website over a date range.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          websiteId: { type: "string", description: "Umami website UUID from list_umami_websites." },
-          startAt: { type: "integer", description: "UTC start time in Unix milliseconds." },
-          endAt: { type: "integer", description: "UTC end time in Unix milliseconds." },
-          unit: { type: "string", enum: ["day", "hour", "month"], default: "day" },
-          timezone: { type: "string", default: "UTC" },
-        },
-        required: ["websiteId", "startAt", "endAt"],
-        additionalProperties: false,
-      },
-      risk: "read",
-      binding: { kind: "route", method: "GET", path: "/api/websites/{websiteId}/pageviews", argsIn: "query" },
-    },
-    {
-      name: "get_umami_revenue_report",
-      description: "Get seeded Umami revenue totals and breakdowns for one website. Use this for Demo SaaS purchase revenue questions.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          body: {
-            type: "object",
-            properties: {
-              websiteId: { type: "string", description: "Umami website UUID from list_umami_websites." },
-              filters: { type: "object", additionalProperties: true, default: {} },
-              type: { type: "string", const: "revenue" },
-              parameters: {
-                type: "object",
-                properties: {
-                  startDate: { type: "string", description: "ISO start date." },
-                  endDate: { type: "string", description: "ISO end date." },
-                  unit: { type: "string", enum: ["day", "hour", "month"], default: "day" },
-                  timezone: { type: "string", default: "UTC" },
-                  currency: { type: "string", default: "USD" },
-                  compare: { type: "string", enum: ["prev", "yoy"], default: "prev" },
-                },
-                required: ["startDate", "endDate", "currency"],
-                additionalProperties: false,
-              },
-            },
-            required: ["websiteId", "filters", "type", "parameters"],
-            additionalProperties: false,
-          },
-        },
-        required: ["body"],
-        additionalProperties: false,
-      },
-      risk: "read",
-      binding: { kind: "openapi", operationId: "getUmamiRevenueReport", method: "POST", path: "/api/reports/revenue" },
-      formats: { value: "cents", total: "cents" },
-    },
-    {
-      name: "get_umami_funnel_report",
-      description: "Get an Umami funnel report for path or event steps. Use for signup_started to signup_completed conversion questions.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          body: {
-            type: "object",
-            properties: {
-              websiteId: { type: "string", description: "Umami website UUID from list_umami_websites." },
-              filters: { type: "object", additionalProperties: true, default: {} },
-              type: { type: "string", const: "funnel" },
-              parameters: {
-                type: "object",
-                properties: {
-                  startDate: { type: "string", description: "ISO start date." },
-                  endDate: { type: "string", description: "ISO end date." },
-                  window: { type: "integer", default: 30 },
-                  steps: {
-                    type: "array",
-                    minItems: 2,
-                    maxItems: 8,
-                    items: {
-                      type: "object",
-                      properties: {
-                        type: { type: "string", enum: ["path", "event"] },
-                        value: { type: "string" },
-                      },
-                      required: ["type", "value"],
-                      additionalProperties: false,
-                    },
-                  },
-                },
-                required: ["startDate", "endDate", "window", "steps"],
-                additionalProperties: false,
-              },
-            },
-            required: ["websiteId", "filters", "type", "parameters"],
-            additionalProperties: false,
-          },
-        },
-        required: ["body"],
-        additionalProperties: false,
-      },
-      risk: "read",
-      binding: { kind: "openapi", operationId: "getUmamiFunnelReport", method: "POST", path: "/api/reports/funnel" },
-    },
-  ],
-};
+// A curated endpoint expressed through the overrides channel: matched to init's
+// extraction by binding (method + path), then given the reviewed description +
+// risk. The overrides file only carries description/risk/disabled (04 §1), so
+// every schema hint the agent needs — required args, seeded windows, request
+// body shape, cents units — lives in the description prose, the same way the
+// Papermark curated surface encodes its write-tool bodies.
+interface CuratedEndpoint {
+  binding: { method: string; path: string };
+  // "read" | "write"; validated against riskLabelSchema when overrides load.
+  risk: string;
+  description: string;
+}
 
-const papermarkInstructions = [
-  "This corpus run uses a deterministic Papermark fixture.",
-  "Fixture user: e2e@corpus.test. Fixture team: Corpus E2E Team.",
-  "Fixture documents: Corpus Q3 Board Packet.pdf, Pricing Memo.pdf, and Security Overview.pdf.",
-  "Fixture dataroom: Investor Room. Fixture test recipient/viewer: analyst@example.test.",
-  "Always call getTeams first and use the returned Corpus E2E Team id as teamId.",
-  "For document lists, call listTeamDocuments and render a compact table with document names, status, views, links, and dataroom counts.",
-  "For viewer activity, call listTeamDocuments to find the document id, then call getDocumentStats and getDocumentViews before answering.",
-  "For link updates, call listDocumentLinks after finding the document id so you can identify the seeded link.",
-  "For dataroom actions, call listDatarooms after getTeams so you can identify Investor Room.",
-  "For every corpus prompt, fetch data before answering. Include the exact fixture names and analyst@example.test when relevant.",
-  "Render a table for list asks, and render visible text that mentions viewer, visit, document, or activity for analytics asks.",
-].join("\n");
+// Shared fixture framing prepended to every curated Umami description so the
+// seeded sites/windows guidance survives without a handler-level knob.
+const umamiFixtureNote =
+  "Deterministic Umami corpus fixture: seeded sites Demo Blog (blog.example.com) and "
+  + "Demo SaaS (app.example.com). Call the websites-list tool first to map a requested site "
+  + "name or domain to its websiteId, fetch data before answering, and quote the exact "
+  + "labels and numeric values from the tool results.";
+
+const umamiCuratedTools: readonly CuratedEndpoint[] = [
+  {
+    binding: { method: "GET", path: "/api/me/websites" },
+    risk: "read",
+    description:
+      "List Umami websites visible to the logged-in user, including the seeded Demo Blog "
+      + "(blog.example.com) and Demo SaaS (app.example.com) ids and domains. Always call this "
+      + "first to resolve a requested site name or domain to its websiteId.",
+  },
+  {
+    binding: { method: "GET", path: "/api/websites/{websiteId}/metrics" },
+    risk: "read",
+    description:
+      "Get ranked Umami metrics for one website. Pass query args websiteId, type, startAt, endAt. "
+      + "Use type=path for top pages, type=event for custom events such as "
+      + "signup_started/signup_completed, type=referrer for acquisition sources, and "
+      + "type=title/hostname where relevant. Use UTC with the seeded windows: last 7 days "
+      + "startAt=1782691200000 endAt=1783382399000; last 30 days startAt=1780704000000 "
+      + "endAt=1783382399000. Optional unit (day/hour/month), timezone (default UTC), and limit "
+      + "(default 10).",
+  },
+  {
+    binding: { method: "GET", path: "/api/websites/{websiteId}/pageviews" },
+    risk: "read",
+    description:
+      "Get the Umami pageview and session time series for one website over a date range. Pass "
+      + "query args websiteId, startAt, endAt. Use UTC with the seeded windows: last 7 days "
+      + "startAt=1782691200000 endAt=1783382399000; last 30 days startAt=1780704000000 "
+      + "endAt=1783382399000. Optional unit (day/hour/month) and timezone (default UTC).",
+  },
+  {
+    binding: { method: "POST", path: "/api/reports/revenue" },
+    risk: "read",
+    description:
+      "Get seeded Umami revenue totals and breakdowns for one website; use it for Demo SaaS "
+      + "purchase-revenue questions. Send the request body "
+      + '{ websiteId, filters: {}, type: "revenue", parameters: { startDate, endDate, '
+      + 'currency: "USD", timezone: "UTC" } } using the seeded this-month window (UTC) '
+      + "startDate=2026-07-01T00:00:00.000Z endDate=2026-07-06T23:59:59.000Z. Revenue amounts are "
+      + "returned in integer cents — divide by 100 for dollar figures.",
+  },
+  {
+    binding: { method: "POST", path: "/api/reports/funnel" },
+    risk: "read",
+    description:
+      "Get an Umami funnel report for path or event steps; use it for signup_started to "
+      + "signup_completed conversion questions. Send the request body "
+      + '{ websiteId, filters: {}, type: "funnel", parameters: { startDate, endDate, window: 30, '
+      + 'steps: [{ type: "event", value: "signup_started" }, { type: "event", value: '
+      + '"signup_completed" }] } } using the seeded this-month window (UTC) '
+      + "startDate=2026-07-01T00:00:00.000Z endDate=2026-07-06T23:59:59.000Z.",
+  },
+];
+
+// Shared fixture framing prepended to every curated Papermark description so
+// the guidance survives without the old handler-level instructionsExtra knob
+// (the descriptions are what the agent sees).
+const papermarkFixtureNote =
+  "Deterministic Papermark corpus fixture: user e2e@corpus.test, team Corpus E2E Team, "
+  + "documents Corpus Q3 Board Packet.pdf / Pricing Memo.pdf / Security Overview.pdf, "
+  + "dataroom Investor Room, test recipient analyst@example.test. "
+  + "Fetch data before answering and quote the exact fixture names.";
 
 const papermarkTools = {
   format: "vendo/tools@1",
@@ -733,66 +660,31 @@ export async function prepareE2eRepo(
 
   const actions: string[] = [];
 
-  await writeFile(
-    path.join(appRoot, ".vendo/tools.json"),
-    `${JSON.stringify(umamiTools, null, 2)}\n`,
-  );
-  actions.push("wrote Umami Layer 3 read-only tools manifest");
-
-  const routePath = path.join(appRoot, "src/app/api/vendo/[...path]/route.ts");
-  await patchFile(routePath, (source) => {
-    if (source.includes("storage: false") && source.includes("instructionsExtra")) return source;
-    return source.replace(
-      "export const { GET, POST } = createVendoHandler();",
-      `export const { GET, POST } = createVendoHandler({
-  storage: false,
-  maxSteps: 8,
-  instructionsExtra: ${JSON.stringify(umamiInstructions)},
-});`,
-    );
+  // Umami's init-installed dev/build hooks run `vendo sync` (`predev`,
+  // `prebuild --strict`), which re-extracts and diffs against .vendo/tools.json.
+  // A curated manifest written INTO tools.json is therefore clobbered on the
+  // next boot back to the ~147 generic host_* route-scan tools. So the pin
+  // stays exactly what init extracted, and the curation ships through
+  // .vendo/overrides.json — the human channel both sync (symmetric merge, no
+  // diff) and the runtime registry (description/risk/disabled) respect.
+  await writeCuratedOverrides({
+    appRoot,
+    curatedTools: umamiCuratedTools,
+    fixtureNote: umamiFixtureNote,
+    repoLabel: "Umami",
   });
-  actions.push("patched Vendo handler for e2e-only in-memory storage and Umami tool guidance");
+  actions.push("kept .vendo/tools.json pinned to init's extraction; wrote curated overrides.json (descriptions/risk for the 5 fixture endpoints, everything else disabled)");
 
-  const rootPath = path.join(appRoot, "src/app/vendo-root.tsx");
-  await patchFile(rootPath, (source) => {
-    let next = source;
-    if (!next.includes('installUmamiAuthFetch')) {
-      next = next
-        .replace(
-          'import type { ReactNode } from "react";',
-          'import { useEffect, type ReactNode } from "react";',
-        )
-        .replace(
-          'import tools from "../../.vendo/tools.json";',
-          `import tools from "../../.vendo/tools.json";\n${umamiRootAuthShim}`,
-        );
-    }
-    if (!next.includes("threadId={threadId}")) {
-      next = next
-      .replace(
-        "export function AppVendoRoot({ children }: { children: ReactNode }) {\n  return (",
-        `export function AppVendoRoot({ children }: { children: ReactNode }) {
-  const threadId = typeof window === "undefined"
-    ? "vendo"
-    : new URLSearchParams(window.location.search).get("vendoThread") ?? "vendo";
+  // Credential forwarding to route bindings requires a TRUSTED operator-set
+  // base URL (04 §4); a learned origin never receives the caller's headers.
+  await ensureEnvValue(path.join(appRoot, ".env"), "VENDO_BASE_URL", "http://127.0.0.1:3000");
+  actions.push("pinned VENDO_BASE_URL so the wire forwards Umami Bearer auth to route bindings");
 
-  return (`,
-      )
-      .replace(
-        '<VendoRoot theme={theme} tools={tools} productName="Umami">',
-        '<VendoRoot theme={theme} tools={tools} productName="Umami" threadId={threadId}>',
-      );
-    }
-    if (!next.includes("installUmamiAuthFetch();")) {
-      next = next.replace(
-        "export function AppVendoRoot({ children }: { children: ReactNode }) {",
-        `export function AppVendoRoot({ children }: { children: ReactNode }) {
-  useEffect(() => installUmamiAuthFetch(), []);`,
-      );
-    }
-    return next;
+  await mountCorpusOverlay(appRoot, "src/app", {
+    moduleSource: umamiAuthShim,
+    effect: "installUmamiAuthFetch()",
   });
-  actions.push("patched Vendo root to accept per-attempt thread ids and Umami auth headers");
+  actions.push("mounted the corpus Vendo overlay with the Umami auth fetch shim");
 
   await writeFile(logPath, `${actions.join("\n")}\n`);
   return [logPath];
@@ -853,52 +745,41 @@ async function prepareTeableE2eRepo(appRoot: string, logPath: string): Promise<s
 async function preparePapermarkE2eRepo(appRoot: string, logPath: string): Promise<string[]> {
   const actions: string[] = [];
 
-  await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
-  await writeFile(
-    path.join(appRoot, ".vendo/tools.json"),
-    `${JSON.stringify(papermarkTools, null, 2)}\n`,
-  );
-  actions.push("wrote Papermark Layer 3 curated tools manifest");
+  // Papermark is the one npm-driven deep fixture, so `npm run build` / `npm
+  // run dev` execute the init-installed `vendo sync` hooks (`--strict` on
+  // build). sync re-extracts and diffs against the .vendo/tools.json pin,
+  // which means the curated Layer 3 manifest can never live IN tools.json
+  // here: replacing the pin read as 9 breaking tool renames (exit 2) once
+  // ENG-242's widened extraction covered these endpoints. The pin therefore
+  // stays exactly what init extracted, and the curation ships as
+  // .vendo/overrides.json — the human-written channel that both sync
+  // (symmetric merge, no diff) and the runtime registry (description/risk/
+  // disabled) respect.
+  await writePapermarkOverrides(appRoot);
+  actions.push("kept .vendo/tools.json pinned to init's extraction; wrote curated overrides.json (descriptions/risk for the 9 fixture endpoints, everything else disabled)");
 
-  const routePath = path.join(appRoot, "app/api/vendo/[...path]/route.ts");
+  const routePath = await vendoRouteFilePath(appRoot, "app");
   await mkdir(path.dirname(routePath), { recursive: true });
-  await ensureFile(routePath, `import { createVendoHandler } from "vendoai/server";
+  await ensureFile(routePath, `import { model } from "@/lib/ai";
+import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+const vendo = createVendo({
+  model,
+  principal: async () => null,
+});
 
-export const { GET, POST } = createVendoHandler();
+export const { GET, POST, DELETE } = nextVendoHandler(vendo);
 `);
-  await patchFile(routePath, (source) => {
-    if (source.includes("storage: false") && source.includes("instructionsExtra")) return source;
-    return source.replace(
-      "export const { GET, POST } = createVendoHandler();",
-      `export const { GET, POST } = createVendoHandler({
-  storage: false,
-  maxSteps: 8,
-  instructionsExtra: ${JSON.stringify(papermarkInstructions)},
-});`,
-    );
-  });
-  actions.push("patched Vendo handler for e2e-only in-memory storage and Papermark fixture guidance");
+  actions.push("ensured the Vendo App Router handler exists (current init scaffold)");
 
-  const rootPath = path.join(appRoot, "app/vendo-root.tsx");
-  await ensureFile(rootPath, `"use client";
-import { VendoRoot } from "vendoai/react";
-import type { ReactNode } from "react";
-import theme from "../.vendo/theme.json";
-import tools from "../.vendo/tools.json";
+  // Credential forwarding to route bindings requires a TRUSTED operator-set
+  // base URL (04 §4); the fixture session cookie set by /api/corpus-login
+  // only reaches the real Papermark API through it.
+  await ensureEnvValue(path.join(appRoot, ".env"), "VENDO_BASE_URL", "http://127.0.0.1:3000");
+  actions.push("pinned VENDO_BASE_URL so the wire forwards the fixture session cookie to route bindings");
 
-export function AppVendoRoot({ children }: { children: ReactNode }) {
-  return (
-    <VendoRoot theme={theme} tools={tools} productName="Papermark">
-      {children}
-    </VendoRoot>
-  );
-}
-`);
-  await patchVendoRoot(rootPath, "Papermark");
-  actions.push("patched Vendo root to accept per-attempt thread ids");
+  await mountCorpusOverlay(appRoot, "app");
+  actions.push("mounted the corpus Vendo overlay");
 
   const corpusPagePath = path.join(appRoot, "app/corpus-e2e/page.tsx");
   await mkdir(path.dirname(corpusPagePath), { recursive: true });
@@ -912,16 +793,6 @@ export function AppVendoRoot({ children }: { children: ReactNode }) {
 }
 `);
   actions.push("wrote Papermark App Router e2e host page");
-
-  const layoutPath = path.join(appRoot, "app/layout.tsx");
-  await patchFile(layoutPath, (source) => {
-    if (source.includes("<AppVendoRoot")) return source;
-    const withImport = source.includes('import { AppVendoRoot } from "./vendo-root";')
-      ? source
-      : `import { AppVendoRoot } from "./vendo-root";\n${source}`;
-    return withImport.replace("{children}", "<AppVendoRoot>{children}</AppVendoRoot>");
-  });
-  actions.push("patched root layout to wrap children with AppVendoRoot");
 
   const loginRoutePath = path.join(appRoot, "pages/api/corpus-login.ts");
   await mkdir(path.dirname(loginRoutePath), { recursive: true });
@@ -967,26 +838,75 @@ async function writePapermarkApiSupportShims(appRoot: string): Promise<void> {
   await ensureFile(path.join(appRoot, "lib/api/errors.ts"), papermarkApiErrorShim);
 }
 
-async function patchVendoRoot(rootPath: string, productName: string): Promise<void> {
-  await patchFile(rootPath, (source) => {
-    let next = source;
-    if (!next.includes("threadId={threadId}")) {
-      next = next.replace(
-        "export function AppVendoRoot({ children }: { children: ReactNode }) {\n  return (",
-        `export function AppVendoRoot({ children }: { children: ReactNode }) {
-  const threadId = typeof window === "undefined"
-    ? "vendo"
-    : new URLSearchParams(window.location.search).get("vendoThread") ?? "vendo";
-
-  return (`,
-      );
-      next = next.replace(
-        `<VendoRoot theme={theme} tools={tools} productName="${productName}">`,
-        `<VendoRoot theme={theme} tools={tools} productName="${productName}" threadId={threadId}>`,
-      );
-    }
-    return next;
+async function writePapermarkOverrides(appRoot: string): Promise<void> {
+  await writeCuratedOverrides({
+    appRoot,
+    curatedTools: papermarkTools.tools,
+    fixtureNote: papermarkFixtureNote,
+    repoLabel: "Papermark",
   });
+}
+
+/**
+ * A curated deep-tier surface expressed through the overrides channel:
+ * `.vendo/tools.json` stays pinned to init's extraction (so the fixture's
+ * `vendo sync`/`--strict` hooks are a no-op diff), and each curated endpoint's
+ * description + risk are keyed to the EXTRACTION name for that binding. Every
+ * other extracted tool is disabled so the agent works only the curated surface
+ * the fixture was written against. Fails loudly when extraction stops covering
+ * a curated endpoint — that is a real re-pin moment, not a skip.
+ */
+async function writeCuratedOverrides(options: {
+  appRoot: string;
+  curatedTools: readonly CuratedEndpoint[];
+  fixtureNote: string;
+  repoLabel: string;
+}): Promise<void> {
+  const toolsPath = path.join(options.appRoot, ".vendo/tools.json");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(toolsPath, "utf8"));
+  } catch {
+    throw new Error(`${options.repoLabel} e2e prep expected vendo init to write .vendo/tools.json before prep runs`);
+  }
+  const extracted = isRecord(parsed) && Array.isArray(parsed.tools) ? parsed.tools : [];
+  // Param NAMES differ between the curated bindings ({documentId}) and
+  // route-scan output ({id}); match endpoints the way sync itself does
+  // (dedupKey): method + path with every {param} normalized to {}.
+  const endpointKey = (method: string, bindingPath: string): string =>
+    `${method} ${bindingPath.replace(/\{[^}]+\}/g, "{}")}`;
+  const nameByBinding = new Map<string, string>();
+  const extractedNames: string[] = [];
+  for (const tool of extracted) {
+    if (!isRecord(tool) || typeof tool.name !== "string" || !isRecord(tool.binding)) continue;
+    extractedNames.push(tool.name);
+    if (typeof tool.binding.method === "string" && typeof tool.binding.path === "string") {
+      nameByBinding.set(endpointKey(tool.binding.method, tool.binding.path), tool.name);
+    }
+  }
+
+  const overrides: Record<string, { risk?: string; description?: string; disabled?: boolean }> = {};
+  const curatedNames = new Set<string>();
+  for (const curated of options.curatedTools) {
+    const endpoint = `${curated.binding.method} ${curated.binding.path}`;
+    const extractedName = nameByBinding.get(endpointKey(curated.binding.method, curated.binding.path));
+    if (extractedName === undefined) {
+      throw new Error(`${options.repoLabel} e2e prep: extraction has no tool for curated endpoint ${endpoint}; re-pin the curated manifest against current extraction output`);
+    }
+    curatedNames.add(extractedName);
+    overrides[extractedName] = {
+      risk: curated.risk,
+      description: `${options.fixtureNote} ${curated.description}`,
+    };
+  }
+  for (const name of extractedNames) {
+    if (!curatedNames.has(name)) overrides[name] = { disabled: true };
+  }
+
+  await writeFile(
+    path.join(options.appRoot, ".vendo/overrides.json"),
+    `${JSON.stringify({ format: "vendo/overrides@1", tools: overrides }, null, 2)}\n`,
+  );
 }
 
 async function patchPapermarkSeedCommand(packageJsonPath: string): Promise<void> {

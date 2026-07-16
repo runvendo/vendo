@@ -22,6 +22,7 @@ const response = {
     insights: false,
     mcp_broker: false,
     sso_saml: false,
+    orgs: false,
   },
   limits: {
     sandbox_minutes: { included: 5000, used: 1234, remaining: 3766, exhausted: false },
@@ -63,6 +64,7 @@ describe("contract v2 entitlements", () => {
         insights: false,
         mcp_broker: false,
         sso_saml: false,
+        orgs: false,
       },
       limits: {
         sandbox_minutes: { included: 0, used: 0, remaining: 0, exhausted: false },
@@ -80,9 +82,9 @@ describe("contract v2 entitlements", () => {
   });
 
   it("defines a fail-closed free contract", () => {
-    expect(CAPABILITY_KEYS).toHaveLength(9);
+    expect(CAPABILITY_KEYS).toHaveLength(10);
     expect(METER_KEYS).toHaveLength(3);
-    expect(Object.values(FREE_CONTRACT.capabilities)).toEqual(Array(9).fill(false));
+    expect(Object.values(FREE_CONTRACT.capabilities)).toEqual(Array(10).fill(false));
     expect(Object.values(FREE_CONTRACT.limits)).toEqual(Array(3).fill({
       included: 0,
       used: 0,
