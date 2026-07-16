@@ -52,7 +52,7 @@
       },
       {
         "group": "Reference",
-        "pages": ["reference/handler-options", "reference/server-api", "reference/cli", "reference/dot-vendo", "reference/http-routes", "reference/environment-variables"]
+        "pages": ["reference/handler-options", "reference/server-api", "reference/hooks", "reference/cli", "reference/dot-vendo", "reference/http-routes", "reference/environment-variables"]
       },
       {
         "group": "Changelog",
