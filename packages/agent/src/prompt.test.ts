@@ -39,4 +39,31 @@ describe("assembleSystemPrompt", () => {
     expect(prompt).not.toContain("Directions");
     expect(prompt.endsWith("Only this.")).toBe(true);
   });
+
+  it("AGENT-1: injects the catalog+theme summary after directions, before instructions, when the venue renders trees", async () => {
+    const guard = testGuard({}, ["Never disclose balances"]);
+    const summary = "Host components:\n- InvoiceTable: renders invoice line items";
+    for (const venue of ["chat", "app"] as const) {
+      const prompt = await assembleSystemPrompt(guard, ctx({ venue }), {
+        product: "Maple, a neobank",
+        catalog: summary,
+        instructions: "Prefer concise answers.",
+      });
+      expect(prompt).toContain(summary);
+      expect(prompt.indexOf("Directions")).toBeLessThan(prompt.indexOf("InvoiceTable"));
+      expect(prompt.indexOf("InvoiceTable")).toBeLessThan(prompt.indexOf("Prefer concise answers."));
+    }
+  });
+
+  it("AGENT-1: omits the catalog summary for venues that cannot render trees", async () => {
+    const summary = "Host components:\n- InvoiceTable: renders invoice line items";
+    for (const venue of ["automation", "mcp"] as const) {
+      const prompt = await assembleSystemPrompt(testGuard({}, []), ctx({ venue }), {
+        catalog: summary,
+        instructions: "Only this.",
+      });
+      expect(prompt).not.toContain("InvoiceTable");
+      expect(prompt.endsWith("Only this.")).toBe(true);
+    }
+  });
 });

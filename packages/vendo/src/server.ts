@@ -77,7 +77,7 @@ import {
   capabilitySurfaceSnapshot,
   createCapabilityMissCapture,
 } from "./capability-misses.js";
-import { mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
+import { catalogThemeSummary, mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
 import { createConnections, type ConnectionsService } from "./connections.js";
 import { createOrgs, type OrgsService } from "./orgs.js";
 import { createRuntimeCapture, type RuntimeCaptureHandler } from "./runtime-capture.js";
@@ -1495,11 +1495,23 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     .then(capabilitySurfaceSnapshot)
     .catch(() => capabilitySurfaceSnapshot([]));
   const missCapture = createCapabilityMissCapture({ surface: missSurface });
+  // AGENT-1/2 — 03 §3: the host product brief (init writes .vendo/brief.md)
+  // and the catalog+theme summary feed the system prompt; prompt.ts places
+  // them (brief = Product section; summary only where trees render).
+  const brief = dotVendoFile("brief.md")?.trim();
+  const promptCatalog = catalogThemeSummary(catalog, theme);
+  const system = brief || promptCatalog !== undefined
+    ? {
+        ...(brief ? { product: brief } : {}),
+        ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
+      }
+    : undefined;
   const agent = createAgent({
     model: config.model,
     tools: boundTools,
     guard,
     store,
+    ...(system === undefined ? {} : { system }),
     context: {
       toolOutputCap: config.agent?.toolOutputCap ?? DEFAULT_TOOL_OUTPUT_CAP,
       ...(config.agent?.maxOutputTokens === undefined ? {} : { maxOutputTokens: config.agent.maxOutputTokens }),

@@ -87,6 +87,9 @@ interface AgentConfig {
   store?: StoreAdapter;
   system?: {
     product?: string;
+    /** AGENT-1 (03 §3 item 4): catalog + theme summary, assembled by the
+     *  umbrella; injected only for venues that render trees. */
+    catalog?: string;
     instructions?: string;
   };
   context?: {

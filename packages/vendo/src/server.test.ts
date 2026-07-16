@@ -906,6 +906,85 @@ describe("00 overview / 01-core §2 — per-client anonymous sessions", () => {
   });
 });
 
+describe("03 §3 prompt wiring (AGENT-1/2)", () => {
+  it("feeds .vendo/brief.md and the catalog+theme summary into the composed system prompt", async () => {
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+    const root = await mkdtemp(join(tmpdir(), "vendo-prompt-"));
+    const dataDir = join(root, "store-data");
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "brief.md"), "Maple is a neobank for freelancers.\n");
+    await writeFile(join(root, ".vendo", "theme.json"), JSON.stringify({
+      colors: {
+        background: "#fff", surface: "#fff", text: "#111", muted: "#777",
+        accent: "#00f", accentText: "#fff", danger: "#f00", border: "#ddd",
+      },
+      typography: { fontFamily: "Inter", baseSize: "16px" },
+      radius: { small: "4px", medium: "8px", large: "16px" },
+      density: "comfortable",
+      motion: "reduced",
+    }));
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    cleanups.push(async () => {
+      process.chdir(originalCwd);
+      await rm(root, { recursive: true, force: true });
+    });
+
+    const prompts: Array<Array<{ role: string; content: unknown }>> = [];
+    const model = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        prompts.push(structuredClone(prompt) as never);
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "t1" },
+              { type: "text-delta", id: "t1", delta: "Hi." },
+              { type: "text-end", id: "t1" },
+              {
+                type: "finish",
+                usage: {
+                  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+                  outputTokens: { total: 0, text: 0, reasoning: 0 },
+                },
+                finishReason: { unified: "stop", raw: undefined },
+              },
+            ],
+          }),
+        };
+      },
+    });
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); });
+    const vendo = createVendo({
+      model: model as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+      catalog: [{
+        name: "InvoiceTable",
+        description: "Renders invoice line items with totals.",
+        propsSchema: { "~standard": { validate: (value: unknown) => ({ value }) } } as never,
+      }],
+    });
+
+    const turn = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_prompt_wiring",
+      message: { id: "m_prompt", role: "user", parts: [{ type: "text", text: "Hello" }] },
+    }));
+    expect(turn.status).toBe(200);
+    await turn.text();
+
+    const system = prompts[0]?.find((message) => message.role === "system");
+    expect(system).toBeDefined();
+    const content = typeof system!.content === "string" ? system!.content : JSON.stringify(system!.content);
+    // AGENT-2: the host product brief rides as the Product section.
+    expect(content).toContain("Product\nMaple is a neobank for freelancers.");
+    // AGENT-1: catalog + theme summary assembled per 03 §3 item (4).
+    expect(content).toContain("InvoiceTable: Renders invoice line items with totals.");
+    expect(content).toContain("comfortable");
+    expect(content).toContain("Inter");
+  });
+});
+
 describe("09 §3 conversational turn against the real composed store", () => {
   it("streams a turn, persists the thread through the routed vendo_threads table, and reads it back", async () => {
     const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
