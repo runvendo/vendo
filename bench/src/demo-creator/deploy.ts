@@ -333,6 +333,17 @@ export async function runDemoDeploy(args: DemoDeployArgs, io: DeployIo): Promise
     return { serviceName, appPath, dryRun: true };
   }
 
+  // (2.5) `railway up` archives the whole working tree, including untracked
+  // scratch demo apps, so the uploaded pnpm-lock.yaml must cover every
+  // workspace app or the Dockerfile's `pnpm install --frozen-lockfile` fails
+  // on an unrelated demo. --lockfile-only syncs the lockfile without touching
+  // node_modules.
+  write("$ pnpm install --lockfile-only   # sync lockfile with the upload's workspace");
+  const lockSync = await exec(["pnpm", "install", "--lockfile-only"], { cwd: io.repoRoot });
+  if (lockSync.code !== 0) {
+    throw new Error(`"pnpm install --lockfile-only" failed (exit ${lockSync.code}):\n${lockSync.stderr || lockSync.stdout}`);
+  }
+
   let domainOutput = "";
   for (const step of plan) {
     write(`$ ${step.display}`);
