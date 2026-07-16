@@ -121,6 +121,27 @@ export const vendoApprovalPartSchema = z.object({
   }).passthrough().optional(),
 }).passthrough() satisfies z.ZodType<VendoApprovalPart>;
 
+/** AGENT-7 (wave 5, additive — 01 §16 amendment parked): streamed when the
+ *  agent loop stops because it exhausted its step cap, so the exhaustion is
+ *  visible to the client instead of the turn just ending mid-plan. Consumers
+ *  that don't recognize it ignore it (§15 forward-compat). */
+export interface VendoStepLimitPart {
+  type: "data-vendo-step-limit";
+  /** The step cap the run exhausted. */
+  limit: number;
+  /** A renderable, provider-safe explanation. */
+  message: string;
+}
+
+/** AGENT-7 */
+export const vendoStepLimitPartSchema = z.object({
+  type: z.literal("data-vendo-step-limit"),
+  limit: z.number().int().positive(),
+  message: z.string(),
+}).passthrough() satisfies z.ZodType<VendoStepLimitPart>;
+
+export type VendoStepLimitWirePart = VendoWirePart<VendoStepLimitPart>;
+
 /** AGENT-10 — the nested wire envelope of {@link vendoViewPartSchema}. */
 export const vendoViewWirePartSchema = wirePartSchema(
   "data-vendo-view",

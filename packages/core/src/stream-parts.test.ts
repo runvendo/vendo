@@ -3,6 +3,7 @@ import {
   toVendoWirePart,
   vendoApprovalPartSchema,
   vendoApprovalWirePartSchema,
+  vendoStepLimitPartSchema,
   vendoConnectPartSchema,
   vendoConnectWirePartSchema,
   vendoViewPartSchema,
@@ -139,5 +140,29 @@ describe("wire envelopes for §16 parts", () => {
       type: "data-vendo-connect",
       data: { toolCallId: "call_1", connector: "composio", toolkit: "gmail", message: "Connect gmail" },
     }).success).toBe(true);
+  });
+});
+
+/** AGENT-7 (wave 5, additive): visible step-cap exhaustion. */
+describe("vendoStepLimitPartSchema", () => {
+  it("accepts a step-limit notice with the cap and a renderable message", () => {
+    expect(vendoStepLimitPartSchema.safeParse({
+      type: "data-vendo-step-limit",
+      limit: 20,
+      message: "Stopped after 20 steps.",
+    }).success).toBe(true);
+  });
+
+  it("rejects a wrong type literal or a non-integer limit", () => {
+    expect(vendoStepLimitPartSchema.safeParse({
+      type: "data-vendo-view",
+      limit: 20,
+      message: "x",
+    }).success).toBe(false);
+    expect(vendoStepLimitPartSchema.safeParse({
+      type: "data-vendo-step-limit",
+      limit: 1.5,
+      message: "x",
+    }).success).toBe(false);
   });
 });

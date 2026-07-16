@@ -1,5 +1,6 @@
 import {
   VendoError,
+  toVendoWirePart,
   type AgentRunner,
   type Guard,
   type RunContext,
@@ -30,6 +31,10 @@ import {
 import { createToolSearchSession, type ToolSearchConfig } from "./tool-search.js";
 
 const THREAD_ID_HEADER = "x-vendo-thread-id";
+
+// AGENT-7: the default agent-loop step cap (unchanged from the previously
+// hardcoded value); hosts raise or lower it via context.maxSteps.
+const DEFAULT_MAX_STEPS = 20;
 
 // ENG-309: backoff between persist attempts after a completed stream. Short and
 // bounded — long waits would hold the response open for nothing (the user
@@ -90,6 +95,9 @@ interface AgentConfig {
      *  so tool-call/result pairing inside a message is never split). Undefined → send the
      *  full thread (current behavior). Persistence and the streamed thread are unaffected. */
     historyWindow?: number;
+    /** AGENT-7: the agent-loop step cap (default 20). Exhausting it is VISIBLE:
+     *  the stream carries a `data-vendo-step-limit` part the client can render. */
+    maxSteps?: number;
   };
   capabilityMiss?: CapabilityMissConfig;
   /** ENG-252: enable the `vendo_tools_search` meta-tool and runtime loadout.
@@ -129,6 +137,10 @@ function validateConfig(config: AgentConfig): void {
   }
   if (historyWindow !== undefined && (!Number.isInteger(historyWindow) || historyWindow < 1)) {
     throw new VendoError("validation", "historyWindow must be a positive integer");
+  }
+  const { maxSteps } = config.context ?? {};
+  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps < 1)) {
+    throw new VendoError("validation", "maxSteps must be a positive integer");
   }
 }
 
@@ -277,11 +289,12 @@ export function createAgent(config: AgentConfig): VendoAgent {
             { role: "system", content: system, providerOptions: CACHE_BREAKPOINT },
             ...converted,
           ];
+          const maxSteps = config.context?.maxSteps ?? DEFAULT_MAX_STEPS;
           const result = streamText({
             model: config.model,
             messages: modelMessages,
             tools,
-            stopWhen: stepCountIs(20),
+            stopWhen: stepCountIs(maxSteps),
             maxOutputTokens: config.context?.maxOutputTokens,
             // ENG-252 loadout: restrict what the model may pick to the current
             // loadout. `prepareStep` re-reads it each step so a tool loaded via
@@ -301,6 +314,22 @@ export function createAgent(config: AgentConfig): VendoAgent {
             // carry request internals); the error part is a fixed generic message.
             onError: () => "An error occurred while generating the response.",
           }));
+          // AGENT-7: exhausting the step cap is VISIBLE. A run that still wants
+          // tool calls after its final permitted step ended because of the cap,
+          // not because the model finished — stream a renderable notice.
+          try {
+            const [finishReason, steps] = await Promise.all([result.finishReason, result.steps]);
+            if (finishReason === "tool-calls" && steps.length >= maxSteps) {
+              writer.write(toVendoWirePart({
+                type: "data-vendo-step-limit",
+                limit: maxSteps,
+                message: `Stopped after reaching the ${maxSteps}-step limit for one turn. Reply to continue.`,
+              }) as never);
+            }
+          } catch {
+            // The merged stream already surfaced the run failure; the notice is
+            // best-effort and must never replace or mask that error.
+          }
         },
         onFinish: async ({ messages }) => {
           await persistFinishedTurn(threads, thread, messages, input.ctx);

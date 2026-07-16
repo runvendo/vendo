@@ -180,6 +180,9 @@ export interface CreateVendoConfig {
         discoverable via `vendo_tools_search`. Defaults to the agent block's
         DEFAULT_MAX_INITIAL_TOOLS. */
     maxInitialTools?: number;
+    /** AGENT-7: agent-loop step cap per turn (default 20). Exhaustion streams a
+        renderable `data-vendo-step-limit` part instead of ending silently. */
+    maxSteps?: number;
   };
   /** 02-store §4 / ENG-237 — ephemeral (anonymous) session lifecycle. Anonymous
       visitors get a TTL-based session: every request touches it, an idle session
@@ -1497,6 +1500,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       toolOutputCap: config.agent?.toolOutputCap ?? DEFAULT_TOOL_OUTPUT_CAP,
       ...(config.agent?.maxOutputTokens === undefined ? {} : { maxOutputTokens: config.agent.maxOutputTokens }),
       ...(config.agent?.historyWindow === undefined ? {} : { historyWindow: config.agent.historyWindow }),
+      ...(config.agent?.maxSteps === undefined ? {} : { maxSteps: config.agent.maxSteps }),
     },
     capabilityMiss: {
       hostId: missCapture.hostId,
