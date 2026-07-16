@@ -1,4 +1,4 @@
-import { VendoError, type AppDocument, type RunContext } from "@vendoai/core";
+import { VendoError, type AppDocument, type RunContext, type SecretsProvider } from "@vendoai/core";
 import { mintRunToken, type RunTokenSecret } from "./run-token.js";
 import type { RunTokenGate } from "./run-token-gate.js";
 import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
@@ -35,6 +35,24 @@ export interface MachineSessionsConfig {
       machine is torn down its env token's jti is burned here, revoking the token
       before its TTL elapses. */
   consumedRunTokens?: RunTokenGate;
+  /**
+   * ENG-345 — resolves real secret values, the SAME seam the egress proxy uses.
+   * Consulted ONLY for a secret with an active in-sandbox exposure grant; a
+   * secret with no grant stays a handle (Option B default, §4.3).
+   */
+  secrets?: SecretsProvider;
+  /**
+   * ENG-345 — the set of declared secret names currently exposed in-sandbox for
+   * this app (its active exposure grants). Absent → nothing is exposed, so every
+   * secret is a handle. Injected by the runtime from the exposure store so this
+   * cache reads the current grant state at every boot.
+   */
+  resolveExposedSecrets?: (app: AppDocument) => Promise<Set<string>>;
+  /**
+   * ENG-345 — emit one audit event for a run that executes with a secret exposed
+   * in-sandbox (via the guard's existing report seam). Constraint 4.
+   */
+  reportExposedRun?: (app: AppDocument, ctx: RunContext, secrets: string[]) => Promise<void>;
 }
 
 /** 06-apps §4.2 — cache, boot, and resume live machines by app id. */
@@ -89,9 +107,29 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     return config.sandbox;
   };
 
-  const newRun = async (app: AppDocument, ctx: RunContext): Promise<MachineAuthorization> => {
+  // ENG-345 — a run touches a real sandbox (so a secret can actually be exposed
+  // in-sandbox) only when the app is machine-backed. A rung-1 pure-tree app has
+  // no machine, so an exposure grant on it exposes nothing and audits nothing.
+  const machineBacked = (app: AppDocument): boolean =>
+    app.server !== undefined || app.ui === "http";
+
+  const newRun = async (
+    app: AppDocument,
+    ctx: RunContext,
+    opts: { auditExposure?: boolean } = {},
+  ): Promise<MachineAuthorization> => {
     const runId = `run_${globalThis.crypto.randomUUID()}`;
     const jti = `jti_${randomHex(16)}`; // 128-bit anti-replay nonce (ENG-251)
+    // ENG-345 — one exposed-run audit per run (open()/call()) that executes with
+    // an in-sandbox exposure grant active on a machine-backed app (constraint 4).
+    if (opts.auditExposure === true
+      && machineBacked(app)
+      && config.resolveExposedSecrets !== undefined
+      && config.reportExposedRun !== undefined) {
+      const exposed = await config.resolveExposedSecrets(app);
+      const present = (app.secrets ?? []).filter((name) => exposed.has(name));
+      if (present.length > 0) await config.reportExposedRun(app, ctx, present);
+    }
     return {
       runId,
       jti,
@@ -106,12 +144,25 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     };
   };
 
-  const environment = (app: AppDocument, runToken: string): Record<string, string> => {
+  const environment = async (app: AppDocument, runToken: string): Promise<Record<string, string>> => {
+    // ENG-345 — the ONE place a secret's real value can replace its handle in the
+    // sandbox env, and ONLY for a secret with an active exposure grant (the
+    // exception to §4.3). Every other secret stays an opaque handle (Option B).
+    const exposed = config.resolveExposedSecrets === undefined
+      ? new Set<string>()
+      : await config.resolveExposedSecrets(app);
     const nonce = randomHex(4);
-    const secretEnv = Object.fromEntries((app.secrets ?? []).map((name) => [
-      name,
-      `vendo-secret:${name}:${nonce}`,
-    ]));
+    const secretEnv: Record<string, string> = {};
+    for (const name of app.secrets ?? []) {
+      if (exposed.has(name) && config.secrets !== undefined) {
+        const value = await config.secrets.get(name);
+        if (typeof value === "string" && value.length > 0) {
+          secretEnv[name] = value; // exposed: REAL value in-sandbox
+          continue;
+        }
+      }
+      secretEnv[name] = `vendo-secret:${name}:${nonce}`; // default: opaque handle
+    }
     return {
       ...secretEnv,
       PORT,
@@ -134,7 +185,7 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     const fresh = app.server === undefined;
     const promise = app.server === undefined
       ? adapter.create({
-        env: environment(app, auth.runToken),
+        env: await environment(app, auth.runToken),
         // ENG-290 M4 — every fresh machine carries the egress fetch shim; the
         // boot convention (runtime.ts) requires it into the app's node processes.
         files: { [FETCH_SHIM_PATH]: FETCH_SHIM_SOURCE },
@@ -160,7 +211,7 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     fn: (run: MachineRun) => Promise<T>,
   ): Promise<T> => {
     requireAdapter();
-    const run = await newRun(app, ctx);
+    const run = await newRun(app, ctx, { auditExposure: true });
     const machine = await start(app, ctx, run);
     return fn({ machine, ...run });
   };
@@ -185,7 +236,7 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     const run = await newRun(app, ctx);
     const machine = app.server === undefined
       ? await adapter.create({
-        env: environment(app, run.runToken),
+        env: await environment(app, run.runToken),
         files: { [FETCH_SHIM_PATH]: FETCH_SHIM_SOURCE },
         egress: app.egress,
       })
@@ -201,7 +252,7 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     const adapter = requireAdapter();
     const run = await newRun(app, ctx);
     const machine = await adapter.create({
-      env: environment(app, run.runToken),
+      env: await environment(app, run.runToken),
       files: { ...files, [FETCH_SHIM_PATH]: FETCH_SHIM_SOURCE },
       egress: app.egress,
     });
@@ -231,7 +282,8 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     available: () => config.sandbox !== undefined,
     peek: (appId) => live.get(appId),
     isWaking: (appId) => waking.has(appId),
-    mintRun: newRun,
+    // open() mints one run and fans it out to every query — audit exposure once here.
+    mintRun: (app, ctx) => newRun(app, ctx, { auditExposure: true }),
     wake(app, ctx, authorization) {
       if (live.has(app.id) || waking.has(app.id)) return;
       requireAdapter();
