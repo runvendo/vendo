@@ -84,7 +84,7 @@ interface CuratedEndpoint {
 // seeded sites/windows guidance survives without a handler-level knob.
 const umamiFixtureNote =
   "Deterministic Umami corpus fixture: seeded sites Demo Blog (blog.example.com) and "
-  + "Demo SaaS (app.example.com). Call list_umami_websites first to map a requested site "
+  + "Demo SaaS (app.example.com). Call the websites-list tool first to map a requested site "
   + "name or domain to its websiteId, fetch data before answering, and quote the exact "
   + "labels and numeric values from the tool results.";
 
