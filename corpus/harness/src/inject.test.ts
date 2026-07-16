@@ -279,6 +279,72 @@ describe("createLocalVendoInjector", () => {
     await expect(readFile(path.join(repoDir, "pnpm-lock.yaml"), "utf8")).resolves.toContain("file:vendor/vendoai-vendo-0.3.0.tgz");
   });
 
+  for (const curation of [
+    {
+      name: "onlyBuiltDependencies in pnpm-workspace.yaml",
+      async write(repoDir: string) {
+        await writeFile(
+          path.join(repoDir, "pnpm-workspace.yaml"),
+          "packages:\n  - '.'\nonlyBuiltDependencies:\n  - prisma\n",
+        );
+      },
+    },
+    {
+      name: "allowBuilds in pnpm-workspace.yaml",
+      async write(repoDir: string) {
+        await writeFile(
+          path.join(repoDir, "pnpm-workspace.yaml"),
+          "packages:\n  - '.'\nallowBuilds:\n  '@prisma/engines': true\n  esbuild: false\n",
+        );
+      },
+    },
+    {
+      name: "pnpm.onlyBuiltDependencies in package.json",
+      async write(repoDir: string) {
+        const pkg = await readAnyPackageJson(repoDir);
+        await writeJson(path.join(repoDir, "package.json"), {
+          ...pkg,
+          pnpm: { ...(pkg.pnpm as Record<string, unknown> | undefined), onlyBuiltDependencies: ["prisma"] },
+        });
+      },
+    },
+  ]) {
+    it(`skips dangerouslyAllowAllBuilds when the repo curates builds via ${curation.name}`, async () => {
+      const workspaceRoot = await createWorkspace();
+      const corpusRoot = await makeTempRoot();
+      const repoDir = await createTargetRepo(corpusRoot, "repo-curated-builds");
+      await curation.write(repoDir);
+      const pack: PackWorkspacePackage = async (pkg, opts) => {
+        await mkdir(opts.vendorDir, { recursive: true });
+        await writeFile(path.join(opts.vendorDir, opts.fileName), `packed ${pkg.name}`);
+      };
+      const installCalls: string[] = [];
+      const injector = createLocalVendoInjector({
+        context: createRunContext({ corpusRoot }),
+        workspaceRoot,
+        pack,
+        log() {},
+        async buildWorkspace() {},
+        async runInstallCommand(command, cwd) {
+          installCalls.push(`${command} @ ${cwd}`);
+          await writeFile(path.join(cwd, "pnpm-lock.yaml"), [
+            "dependencies:",
+            "  '@vendoai/vendo':",
+            "    specifier: file:vendor/vendoai-vendo-0.3.0.tgz",
+            "    version: file:vendor/vendoai-vendo-0.3.0.tgz",
+            "",
+          ].join("\n"));
+        },
+      });
+
+      await injector.inject({ name: "repo-curated-builds" });
+
+      expect(installCalls).toEqual([
+        `pnpm --config.minimumReleaseAge=0 install --no-frozen-lockfile @ ${repoDir}`,
+      ]);
+    });
+  }
+
   it("targets appDir package.json when injecting into monorepo apps", async () => {
     const workspaceRoot = await createWorkspace();
     const corpusRoot = await makeTempRoot();
