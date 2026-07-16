@@ -84,9 +84,28 @@ export default async function sendReport(formData: FormData) {
   // A wrapped export the extractor cannot confirm is a function — fail closed.
   await writeFile(root, "src/actions/misc.ts", `
 "use server";
+import { withTelemetry } from "@/lib/telemetry";
+
+export const wrapped = withTelemetry(async () => []);
+`);
+  // react cache() memoization — the export is the inner function, unwrapped.
+  await writeFile(root, "src/actions/cached.ts", `
+"use server";
 import { cache } from "react";
 
-export const wrapped = cache(async () => []);
+export const getReports = cache(async (accountId: string) => []);
+`);
+  // createSafeAction(schema, handler) — one validated "data" param from the zod schema.
+  await writeFile(root, "src/actions/safe.ts", `
+"use server";
+import { z } from "zod";
+import { createSafeAction } from "@/lib/create-safe-action";
+
+const createProductSchema = z.object({ name: z.string().min(1), sku: z.string().optional() });
+
+const handler = async (data: z.infer<typeof createProductSchema>) => ({ data });
+
+export const createProduct = createSafeAction(createProductSchema, handler);
 `);
   // Inline action inside a component — real surface, but not importable.
   await writeFile(root, "src/app/settings/page.tsx", `
@@ -145,12 +164,47 @@ describe("extractServerActions", () => {
       "src/actions/api-tokens.ts#deleteApiToken",
       "src/actions/api-tokens.ts#listApiTokens",
       "src/actions/api-tokens.ts#searchAccounts",
+      "src/actions/cached.ts#getReports",
       "src/actions/invoices.ts#createInvoice",
       "src/actions/invoices.ts#updateInvoice",
       "src/actions/misc.ts#wrapped",
       "src/actions/report.ts#default",
+      "src/actions/safe.ts#createProduct",
       "src/app/settings/page.tsx#setSmtpKey",
     ]);
+  });
+
+  it("unwraps react cache() to the inner function's parameters", async () => {
+    const { byKey } = await extractFixture();
+    const cached = byKey.get("src/actions/cached.ts#getReports")!;
+    expect(cached.disabled).toBeUndefined();
+    expect(cached.binding).toMatchObject({ exportName: "getReports", params: ["accountId"] });
+    expect(cached.inputSchema).toEqual({
+      type: "object",
+      properties: { accountId: { type: "string" } },
+      required: ["accountId"],
+      additionalProperties: false,
+    });
+  });
+
+  it("recognizes createSafeAction(schema, handler) as one zod-validated data parameter", async () => {
+    const { byKey } = await extractFixture();
+    const safe = byKey.get("src/actions/safe.ts#createProduct")!;
+    expect(safe.disabled).toBeUndefined();
+    expect(safe.binding).toMatchObject({ exportName: "createProduct", params: ["data"] });
+    expect(safe.inputSchema).toEqual({
+      type: "object",
+      properties: {
+        data: {
+          type: "object",
+          properties: { name: { type: "string", minLength: 1 }, sku: { type: "string" } },
+          required: ["name"],
+          additionalProperties: false,
+        },
+      },
+      required: ["data"],
+      additionalProperties: false,
+    });
   });
 
   it("binds actions by module path, export name, and ordered parameters", async () => {
@@ -302,9 +356,11 @@ describe("serverActionRegistrations", () => {
       "src/actions/api-tokens.ts#deleteApiToken",
       "src/actions/api-tokens.ts#listApiTokens",
       "src/actions/api-tokens.ts#searchAccounts",
+      "src/actions/cached.ts#getReports",
       "src/actions/invoices.ts#createInvoice",
       "src/actions/invoices.ts#updateInvoice",
       "src/actions/report.ts#default",
+      "src/actions/safe.ts#createProduct",
     ]);
   });
 });

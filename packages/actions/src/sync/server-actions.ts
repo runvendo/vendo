@@ -10,6 +10,7 @@ import {
 } from "./common.js";
 import {
   MAX_RESOLVE_DEPTH,
+  calleeName,
   hasDependency,
   loadTypescript,
   localInitializer,
@@ -342,8 +343,17 @@ async function collectModuleActions(
         const exportName = declaration.name.text;
         if (!declaration.initializer) continue;
         const fn = functionNode(ts, declaration.initializer);
-        if (fn) await pushFunction(exportName, exportName, fn);
-        else pushUnclassifiable(exportName, "the export is not a statically confirmable function");
+        if (fn) {
+          await pushFunction(exportName, exportName, fn);
+          continue;
+        }
+        const wrapped = await wrappedAction(extraction, module, declaration.initializer);
+        if (wrapped !== null) {
+          if ("fn" in wrapped) await pushFunction(exportName, exportName, wrapped.fn);
+          else out.push({ ...base, exportName, riskName: exportName, params: wrapped.params });
+          continue;
+        }
+        pushUnclassifiable(exportName, "the export is not a statically confirmable function");
       }
       continue;
     }
@@ -379,6 +389,42 @@ async function collectModuleActions(
       }
     }
   }
+}
+
+/**
+ * Recognized action wrappers whose export is still an importable callable:
+ * - `cache(fn)` — react memoization; the surface is the inner function.
+ * - `createSafeAction(schema, handler)` — the ubiquitous safe-action pattern;
+ *   the returned action takes ONE validated `data` argument shaped by the zod
+ *   schema. Anything else stays fail-closed (disabled + note).
+ */
+async function wrappedAction(
+  extraction: Extraction,
+  module: FileModule,
+  initializer: TS.Expression,
+): Promise<{ fn: FunctionNode } | { params: ActionParam[] } | null> {
+  const { ts } = extraction;
+  const call = unwrapExpression(ts, initializer);
+  if (!ts.isCallExpression(call)) return null;
+  const callee = calleeName(extraction, call);
+  if (callee === "cache" && call.arguments.length >= 1) {
+    const inner = functionNode(ts, call.arguments[0]!);
+    return inner === null ? null : { fn: inner };
+  }
+  if (callee === "createSafeAction" && call.arguments.length >= 2) {
+    const interpreted = await zodFromExpression(extraction, module, call.arguments[0]!, 0);
+    return {
+      params: [{
+        name: "data",
+        schema: interpreted.recognized ? interpreted.schema : {},
+        required: true,
+        ...(interpreted.reason !== undefined || !interpreted.recognized
+          ? { reason: `data: ${interpreted.reason ?? "not statically interpreted"}` }
+          : {}),
+      }],
+    };
+  }
+  return null;
 }
 
 /** A local function declaration or function-initialized variable by name. */
