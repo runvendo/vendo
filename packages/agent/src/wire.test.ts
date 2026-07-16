@@ -1,4 +1,4 @@
-import { vendoViewPartSchema, type ToolDescriptor } from "@vendoai/core";
+import { VENDO_APPS_TOOL_PREFIX, vendoViewPartSchema, type ToolDescriptor } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createAgent } from "./index.js";
 import {
@@ -179,5 +179,48 @@ describe("agent UI message wire", () => {
     expect(part).toEqual({ type: "data-vendo-view", id: "vendo-view:app_1", data: view });
     const viewData = (part as { data: Record<string, unknown> }).data;
     expect(vendoViewPartSchema.safeParse({ type: "data-vendo-view", ...viewData }).success).toBe(true);
+  });
+
+  it("gates view emission on core's VENDO_APPS_TOOL_PREFIX, not a local string match (AGENT-4)", async () => {
+    const payload = {
+      formatVersion: "vendo-genui/v1",
+      root: "r",
+      nodes: [{ id: "r", component: "Text", props: { text: "Ready" } }],
+    };
+    const openSurface = { kind: "tree" as const, payload };
+    const surfaceTool = (name: string): Parameters<typeof boundRegistry>[0][string] => ({
+      descriptor: {
+        name,
+        description: "Returns a tree OpenSurface.",
+        inputSchema: { type: "object", properties: { appId: { type: "string" } }, required: ["appId"] },
+        risk: "read",
+      },
+      execute: async () => openSurface,
+    });
+    const prefixed = `${VENDO_APPS_TOOL_PREFIX}open`;
+    const model = scriptedModel([
+      toolCallTurn(prefixed, { appId: "app_1" }, "call_prefixed"),
+      toolCallTurn("host_open_lookalike", { appId: "app_1" }, "call_lookalike"),
+      textTurn("Done.", "text_prefix_gate"),
+    ]);
+    const guard = testGuard({});
+    const tools = boundRegistry({
+      [prefixed]: surfaceTool(prefixed),
+      host_open_lookalike: surfaceTool("host_open_lookalike"),
+    }, guard);
+    const agent = createAgent({ model, tools, guard });
+
+    const response = await agent.stream({
+      threadId: "thr_prefix_gate",
+      message: userMessage("user_prefix_gate", "Open it twice"),
+      ctx: ctx(),
+    });
+    const { parts } = await readSse(response);
+    const views = parts.filter((candidate) => candidate.type === "data-vendo-view");
+
+    // Only the core-prefixed tool's OpenSurface reaches the view channel; an
+    // arbitrary host tool returning the same shape must not (01 §16).
+    expect(views).toHaveLength(1);
+    expect(views[0]).toMatchObject({ id: "vendo-view:app_1" });
   });
 });
