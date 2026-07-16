@@ -1,0 +1,37 @@
+# Beat B — encryption + retention proof against the same local Postgres the Cadence host used
+# WAVE6_ENC_KEY=$(openssl rand -base64 32)  (generated locally, never committed)
+
+$ node ../../docs/verification/foundations-wave6/encryption-retention/encryption-retention-demo.mjs postgres://vendo@127.0.0.1:54329/vendo_cadence
+=== 1. Secrets are ciphertext at rest ===
+  QUICKBOOKS_TOKEN: v2:S2SzIau7bFsp/Pg3:vbu4Ahep3yYC5ryXenDEUg==:yF/ugZyGxCailitypOYV3dXK2ECSgi4=
+  STRIPE_API_KEY: v2:v1FCkZSSZ452/i2A:IloKBbQJutHWNJYSziQxUQ==:2gcua1P8i5+WXVObeeoycxV2F+OZsjnqHoKtPSRSTXxz
+  plaintext visible in any ciphertext column? no
+  decrypt with the configured key works? yes
+
+=== 2. AAD tamper rejection (v2 envelope binds the secret NAME) ===
+  swapped QUICKBOOKS_TOKEN's ciphertext into the STRIPE_API_KEY row via raw SQL
+  read of STRIPE_API_KEY rejected: Stored secret could not be decrypted
+  flipped trailing ciphertext bytes on QUICKBOOKS_TOKEN via raw SQL
+  read of QUICKBOOKS_TOKEN rejected: Stored secret could not be decrypted
+
+=== 3. Erase API removes one subject's data across tables ===
+  before erase:
+    vendo_grants  subject=wave6-erase-subject  rows=1
+    vendo_grants  subject=wave6-keep-subject  rows=1
+    vendo_threads  subject=8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01  rows=1
+    vendo_threads  subject=wave6-erase-subject  rows=2
+    vendo_threads  subject=wave6-keep-subject  rows=1
+  eraseStore(store).bySubject("wave6-erase-subject") report: {"vendo_threads":2,"vendo_grants":1}
+  after erase:
+    vendo_grants  subject=wave6-keep-subject  rows=1
+    vendo_threads  subject=8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01  rows=1
+    vendo_threads  subject=wave6-keep-subject  rows=1
+
+# External view — raw psql inspection of the tampered table (still only envelopes):
+$ psql -c "SELECT name, left(ciphertext, 60) || '...' AS ciphertext FROM vendo_secrets;"
+       name       |                           ciphertext                            
+------------------+-----------------------------------------------------------------
+ STRIPE_API_KEY   | v2:S2SzIau7bFsp/Pg3:vbu4Ahep3yYC5ryXenDEUg==:yF/ugZyGxCailit...
+ QUICKBOOKS_TOKEN | v2:S2SzIau7bFsp/Pg3:vbu4Ahep3yYC5ryXenDEUg==:yF/ugZyGxCailit...
+(2 rows)
+
