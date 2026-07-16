@@ -237,7 +237,7 @@ export function ephemeralOverlaySizes(store: VendoStore): Record<string, number>
 }
 
 export function stateKey(subject: string, appId: string): string {
-  return `${subject} ${appId}`;
+  return `${subject}\u0000${appId}`;
 }
 
 export function dropOverlay(store: object): void {
