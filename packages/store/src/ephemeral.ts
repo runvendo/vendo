@@ -29,6 +29,12 @@ export interface EphemeralOverlay {
    *  deterministic in tests. Store-internal self-registration reads it too, so
    *  every touch on a subject — door-side or mid-turn — shares one time source. */
   clock: () => number;
+  /** Registry cap (ENG-237). Defaults to EPHEMERAL_SUBJECT_CAP; the umbrella
+   *  wires sessions.maxSessions here so store-internal self-registrations
+   *  enforce the SAME cap as the umbrella's own register calls — otherwise a
+   *  host raising maxSessions above the default would have a mid-turn re-touch
+   *  (default-cap) mass-evict sessions the umbrella's cap allows. */
+  cap: number;
 }
 
 const overlays = new WeakMap<object, EphemeralOverlay>();
@@ -53,6 +59,7 @@ export function overlayFor(store: object): EphemeralOverlay {
       records: new Map(),
       blobs: new Map(),
       clock: Date.now,
+      cap: EPHEMERAL_SUBJECT_CAP,
     };
     overlays.set(store, overlay);
   }
@@ -63,6 +70,13 @@ export function overlayFor(store: object): EphemeralOverlay {
  *  time source (the umbrella wires createVendo({ sessions: { now } }) here). */
 export function setSessionClock(store: VendoStore, clock: () => number): void {
   overlayFor(store).clock = clock;
+}
+
+/** ENG-237 policy seam: set the registry cap the overlay enforces by default
+ *  (the umbrella wires createVendo({ sessions: { maxSessions } }) here), so
+ *  store-internal self-registrations and umbrella register calls agree. */
+export function setSessionCap(store: VendoStore, cap: number): void {
+  overlayFor(store).cap = cap;
 }
 
 /** app:<appId>:… is the collection/namespace grammar for app-scoped record and
@@ -92,12 +106,15 @@ export const EPHEMERAL_SUBJECT_CAP = 10_000;
     Cap overflow now runs the FULL eviction cascade (ENG-237), not the old
     key-only drop: the evicted subject's overlay data is cleared with it, closing
     the ENG-251 trade-off where an over-cap subject's later writes silently began
-    persisting to disk and its stale overlay rows were never cleaned. */
+    persisting to disk and its stale overlay rows were never cleaned. Overflow
+    never evicts an inflight subject (a mid-stream turn would lose its overlay
+    and its final thread-persist would land on disk — the STORE-1 leak); if every
+    other subject is inflight the registry temporarily exceeds the cap instead. */
 export function registerEphemeralSubject(
   store: VendoStore,
   subject: string,
   now: number = overlayFor(store).clock(),
-  cap: number = EPHEMERAL_SUBJECT_CAP,
+  cap: number = overlayFor(store).cap,
 ): void {
   const subjects = overlayFor(store).subjects;
   const prior = subjects.get(subject);
@@ -105,10 +122,11 @@ export function registerEphemeralSubject(
   // while preserving any inflight refcount an in-progress request holds.
   subjects.delete(subject);
   subjects.set(subject, { touchedAt: now, inflight: prior?.inflight ?? 0 });
-  while (subjects.size > cap) {
-    const oldest = subjects.keys().next().value;
-    if (oldest === undefined || oldest === subject) break;
+  if (subjects.size <= cap) return;
+  for (const [oldest, session] of subjects) {
+    if (oldest === subject || session.inflight > 0) continue;
     evictEphemeralSubject(store, oldest);
+    if (subjects.size <= cap) return;
   }
 }
 

@@ -52,6 +52,7 @@ import {
   endEphemeralRequest,
   envSecrets,
   registerEphemeralSubject,
+  setSessionCap,
   setSessionClock,
   sweepEphemeralSubjects,
   type VendoStore,
@@ -1344,8 +1345,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const sessionsConfig = validateSessionsConfig(config.sessions);
   const sessionNow = sessionsConfig.now ?? Date.now;
   // Route the store's session clock (touch/TTL) through the umbrella's clock so
-  // door-side and mid-turn touches share ONE time source (deterministic in tests).
+  // door-side and mid-turn touches share ONE time source (deterministic in tests),
+  // and its default registry cap through maxSessions so store-internal
+  // self-registrations enforce the same ceiling as the umbrella's own registers.
   setSessionClock(store, sessionNow);
+  setSessionCap(store, sessionsConfig.maxSessions);
   const sandbox = selectSandbox(config.sandbox);
   const ready = store.ensureSchema();
   // Keep eager schema readiness for hosts that reach into composed blocks,

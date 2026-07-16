@@ -65,7 +65,7 @@ Ephemeral approvals and audit events route automatically from their embedded pri
 
 ## Ephemeral session lifecycle
 
-Registered ephemeral subjects form a TTL session registry. `registerEphemeralSubject(store, subject, now?, cap?)` both declares the subject ephemeral and stamps its touch time (registration == touch). The registry is a bounded LRU (default cap `EPHEMERAL_SUBJECT_CAP`, 10 000); over-cap registration evicts the oldest idle subject through the full cascade below, never a key-only drop.
+Registered ephemeral subjects form a TTL session registry. `registerEphemeralSubject(store, subject, now?, cap?)` both declares the subject ephemeral and stamps its touch time (registration == touch). The registry is a bounded LRU (default cap `EPHEMERAL_SUBJECT_CAP`, 10 000; `setSessionCap` changes the default the overlay enforces — the umbrella wires `sessions.maxSessions` there); over-cap registration evicts the oldest not-inflight subject through the full cascade below, never a key-only drop and never a session with a request mid-turn (if every other subject is inflight, the registry temporarily exceeds the cap instead).
 
 `sweepEphemeralSubjects(store, { idleMs })` evicts every registered subject idle for at least `idleMs` with no in-flight request and returns the evicted subjects so the caller can cascade further (the umbrella forwards them to `agent.evictSubject`). `beginEphemeralRequest`/`endEphemeralRequest` bracket a request so the sweep never evicts a session mid-turn, however long it streams. TTL policy is the caller's — the store stays config-free; `createVendo({ sessions })` owns the knobs and the sweep cadence.
 

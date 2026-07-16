@@ -8,6 +8,7 @@ export {
   evictEphemeralSubject,
   sweepEphemeralSubjects,
   setSessionClock,
+  setSessionCap,
   ephemeralOverlaySizes,
   EPHEMERAL_SUBJECT_CAP,
   type EphemeralSession,

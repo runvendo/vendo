@@ -15,6 +15,7 @@ import {
   isEphemeralSubject,
   overlayFor,
   registerEphemeralSubject,
+  setSessionCap,
   sweepEphemeralSubjects,
 } from "./ephemeral.js";
 import { dbFor } from "./store.js";
@@ -63,6 +64,38 @@ describe("ephemeral session registry (ENG-237)", () => {
 
     endEphemeralRequest(store, "busy");
     expect(sweepEphemeralSubjects(store, { idleMs: 500, now: 1000 })).toEqual(["busy"]);
+  });
+
+  it("cap overflow skips inflight subjects (a mid-stream session is never evicted)", () => {
+    const store = memoryStore();
+    registerEphemeralSubject(store, "streaming", 0, 10);
+    beginEphemeralRequest(store, "streaming"); // oldest, but mid-turn
+    registerEphemeralSubject(store, "idle", 100, 10);
+    registerEphemeralSubject(store, "new", 200, 2); // over cap → evict oldest NOT-inflight
+    expect(isEphemeralSubject(store, "streaming")).toBe(true); // survived — inflight
+    expect(isEphemeralSubject(store, "idle")).toBe(false);
+    expect(isEphemeralSubject(store, "new")).toBe(true);
+
+    // If everything else is inflight, the registry exceeds the cap rather than
+    // evicting a live session; the next sweep/registration reclaims it.
+    beginEphemeralRequest(store, "new");
+    registerEphemeralSubject(store, "another", 300, 2);
+    expect(overlayFor(store).subjects.size).toBe(3); // streaming + new + another
+    expect(isEphemeralSubject(store, "streaming")).toBe(true);
+    endEphemeralRequest(store, "streaming");
+    registerEphemeralSubject(store, "another", 400, 2); // re-touch enforces the cap again
+    expect(isEphemeralSubject(store, "streaming")).toBe(false);
+    expect(overlayFor(store).subjects.size).toBe(2);
+  });
+
+  it("setSessionCap governs registrations that pass no explicit cap", () => {
+    const store = memoryStore();
+    setSessionCap(store, 2);
+    registerEphemeralSubject(store, "a", 0); // store-internal style: no cap arg
+    registerEphemeralSubject(store, "b", 100);
+    registerEphemeralSubject(store, "c", 200);
+    expect(isEphemeralSubject(store, "a")).toBe(false); // oldest evicted at cap 2
+    expect(overlayFor(store).subjects.size).toBe(2);
   });
 });
 
