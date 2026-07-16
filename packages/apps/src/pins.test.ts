@@ -55,6 +55,14 @@ describe("pinForkSource", () => {
     expect(pinForkSource(reExported)).toBe(reExported);
   });
 
+  it("does not mistake a renamed default re-export for a default export", () => {
+    // `export { default as InvoiceCard } from …` exposes only the NAMED
+    // binding; there is no local binding to alias either, so the source passes
+    // through unchanged and fork-pin refuses it loudly.
+    const renamed = "export { default as InvoiceCard } from \"./InvoiceCard\";";
+    expect(pinForkSource(renamed)).toBe(renamed);
+  });
+
   it("synthesizes a default export for a named function export (ENG-348)", () => {
     const source = "export function InvoiceCard() { return <b>invoices</b>; }";
     expect(pinForkSource(source)).toBe(`${source}\nexport { InvoiceCard as default };\n`);

@@ -69,12 +69,22 @@ export const pinComponentName = (slot: string): string => {
   return `Pinned${stem}${sha256Hex(slot).slice(0, 8)}`;
 };
 
-/** Matches a default export in any spelling: `export default …`,
-    `export { X as default }`, `export { default } from …`. */
-const DEFAULT_EXPORT = /\bexport\s+default\b|\bexport\s*\{[^}]*\bdefault\b[^}]*\}/u;
+const EXPORT_LIST = /\bexport\s*\{([^}]*)\}/gu;
 
-/** Whether the fork entry source exposes the default export the jail renders. */
-export const hasDefaultExport = (source: string): boolean => DEFAULT_EXPORT.test(source);
+/** Whether the fork entry source exposes the default export the jail renders:
+    `export default …`, `export { X as default }`, or `export { default } from …`
+    — but NOT a renamed re-export like `export { default as X } from …`, which
+    exposes only the named binding. */
+export const hasDefaultExport = (source: string): boolean => {
+  if (/\bexport\s+default\b/u.test(source)) return true;
+  for (const match of source.matchAll(EXPORT_LIST)) {
+    for (const entry of match[1]!.split(",")) {
+      const [local, exported] = entry.trim().split(/\s+as\s+/u).map((part) => part.trim());
+      if ((exported ?? local) === "default") return true;
+    }
+  }
+  return false;
+};
 
 /** Every named-export binding: the local name to alias plus the exported name. */
 const namedExportBindings = (source: string): Array<{ local: string; exported: string; at: number }> => {
