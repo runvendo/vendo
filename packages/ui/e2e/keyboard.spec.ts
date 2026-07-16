@@ -3,7 +3,7 @@ import { expectFocusIndicator, expectKeyboardReachability, openScenario, tabTo }
 
 test("thread is keyboard-complete with visible focus", async ({ page }) => {
   await openScenario(page, "thread");
-  await expect(page.getByLabel("Approval for host_email_send")).toBeVisible();
+  await expect(page.getByLabel("Approval for Email send")).toBeVisible();
   await expectKeyboardReachability(page, 'main[data-scenario="thread"]');
   await tabTo(page, async () => page.evaluate(() => document.activeElement?.getAttribute("aria-label") === null
     && document.activeElement?.textContent?.trim() === "Approve"));

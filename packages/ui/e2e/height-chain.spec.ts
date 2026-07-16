@@ -16,7 +16,7 @@ test.beforeEach(async ({ page }) => {
   await openScenario(page, "thread-bounded");
   // The long fixture thread has loaded once the last turn's approval exists
   // (visible-to-Playwright even when clipped by the pane's overflow:hidden).
-  await expect(page.getByLabel("Approval for host_email_send")).toBeVisible();
+  await expect(page.getByLabel("Approval for Email send")).toBeVisible();
 });
 
 test("the root forwards the pane's bounded height to the thread", async ({ page }) => {

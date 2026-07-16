@@ -9,11 +9,19 @@ import { ApprovalCard } from "./approval-card.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { ConnectCard } from "./connect-card.js";
 import { FluidThinking } from "./fluid-thinking.js";
+import { previewArgs, summarizeArgs, toolTitle } from "./humanize.js";
 import { Markdown } from "./markdown.js";
 
 function partData(part: UIMessage["parts"][number]): unknown {
   return "data" in part ? part.data : part;
 }
+
+// ENG-216 — a stable placeholder for the in-thread synthesized ApprovalRequest's
+// required `createdAt`. The wire approval part carries no timestamp; this value
+// is never displayed (the card hides the context byline in-thread) and a fixed
+// constant replaces the former per-render `new Date()` that churned on every
+// re-render and broke deterministic tests.
+const SYNTHESIZED_CREATED_AT = "1970-01-01T00:00:00.000Z";
 
 function riskByCall(messages: UIMessage[]): Map<string, RiskLabel> {
   const risks = new Map<string, RiskLabel>();
@@ -64,6 +72,42 @@ function toolName(part: Extract<UIMessage["parts"][number], { toolCallId: string
   return part.type === "dynamic-tool" && "toolName" in part ? part.toolName : part.type.replace(/^tool-/, "");
 }
 
+/** A stable signature for a tool part — same tool + same input = the same call. */
+function toolSignature(part: Extract<UIMessage["parts"][number], { toolCallId: string }>): string {
+  const input = "input" in part ? part.input : undefined;
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(input);
+  } catch {
+    serialized = String(input);
+  }
+  return `${toolName(part)}::${serialized}`;
+}
+
+/** ENG-216 — collapse runs of consecutive identical tool chips (e.g. eight
+    `host_listClientDocuments` calls) into one entry carrying a count. The
+    latest part in the run is kept so the chip icon reflects the final state. */
+function collapseToolRuns(
+  parts: UIMessage["parts"],
+): { part: UIMessage["parts"][number]; index: number; count: number }[] {
+  const items: { part: UIMessage["parts"][number]; index: number; count: number }[] = [];
+  parts.forEach((part, index) => {
+    const previous = items.at(-1);
+    if (
+      isToolUIPart(part)
+      && previous !== undefined
+      && isToolUIPart(previous.part)
+      && toolSignature(previous.part) === toolSignature(part)
+    ) {
+      previous.count += 1;
+      previous.part = part;
+      return;
+    }
+    items.push({ part, index, count: 1 });
+  });
+  return items;
+}
+
 /** A picked File → an ai-SDK FileUIPart (data URL) so it can ride the turn. */
 function fileToPart(file: File): Promise<{ type: "file"; mediaType: string; filename: string; url: string }> {
   return new Promise((resolve, reject) => {
@@ -88,13 +132,11 @@ function userText(message: UIMessage): string {
     .join("");
 }
 
+/** ENG-216 — the in-thread approval preview is built client-side (the wire part
+    carries no descriptor), so format args as readable `Label: value` lines
+    instead of the raw JSON with literal \n escapes end users were reading. */
 function preview(input: unknown): string {
-  if (typeof input === "string") return input;
-  try {
-    return JSON.stringify(input, null, 2);
-  } catch {
-    return String(input);
-  }
+  return previewArgs(input);
 }
 
 /** Within this many pixels of the end the reader counts as "at the bottom" —
@@ -188,7 +230,7 @@ export function VendoThread({
   suggestions = [],
   onVoice,
 }: VendoThreadProps) {
-  const { client, components } = useVendoContext();
+  const { client, components, tools } = useVendoContext();
   const thread = useVendoThread(threadId);
   const busy = thread.status === "submitted" || thread.status === "streaming";
   // busy is a content-revision signal for the scroll hook: turn-actions mount
@@ -416,7 +458,7 @@ export function VendoThread({
     </form>
   );
 
-  const renderPart = (part: UIMessage["parts"][number], key: string, role: UIMessage["role"]) => {
+  const renderPart = (part: UIMessage["parts"][number], key: string, role: UIMessage["role"], count = 1) => {
     if (part.type === "text") {
       if (role === "user") return <div className="fl-usertext" key={key}>{part.text}</div>;
       // ENG-217 — lone caret while the streamed turn is still empty (stable
@@ -431,6 +473,13 @@ export function VendoThread({
       const risk = risks.get(part.toolCallId) ?? "read";
       const error = part.state === "output-error";
       const done = part.state === "output-available";
+      // ENG-216 — humanize: friendly label (host metadata, else prettified id)
+      // plus a readable arg summary; the lifecycle string (`output-available`)
+      // and raw slug are never shown — the icon carries state instead.
+      const name = toolName(part);
+      const label = toolTitle(name, tools[name]);
+      const input = "input" in part ? part.input : undefined;
+      const summary = tools[name]?.summarize?.(input as Json) ?? summarizeArgs(input);
       return (
         <div
           className={`fl-tool ${error ? "fl-tool-error" : done ? "fl-tool-done" : "fl-tool-working"}`}
@@ -450,9 +499,9 @@ export function VendoThread({
               </svg>
             </span>
           ) : <span className="fl-tool-spinner" aria-hidden="true" />}
-          <span className="fl-tool-label">Tool: {toolName(part)}</span>
-          <span className="fl-tool-detail" data-risk={risk}>{risk}</span>
-          <span className="fl-tool-detail">{part.state}</span>
+          <span className="fl-tool-label">{label}</span>
+          {summary ? <span className="fl-tool-detail">{summary}</span> : null}
+          {count > 1 ? <span className="fl-tool-count" aria-label={`repeated ${count} times`}>×{count}</span> : null}
         </div>
       );
     }
@@ -548,7 +597,8 @@ export function VendoThread({
                 key={message.id}
                 aria-label={`${message.role} message`}
               >
-                {message.parts.map((part, index) => renderPart(part, `${message.id}-${index}`, message.role))}
+                {collapseToolRuns(message.parts).map(({ part, index, count }) =>
+                  renderPart(part, `${message.id}-${index}`, message.role, count))}
                 {/* ENG-215 — edit the last user turn / regenerate the last
                     assistant turn. Revealed on hover/focus (see chrome-css). */}
                 {!busy && messageIndex === lastUserIndex && message.role === "user" ? (
@@ -577,22 +627,33 @@ export function VendoThread({
               const risk = risks.get(part.toolCallId) ?? "read";
               const input = "input" in part ? part.input : undefined;
               const guardApproval = guardApprovals.get(part.toolCallId);
+              const name = toolName(part);
               const approval: ApprovalRequest = {
                 id: part.approval.id,
-                call: { id: part.toolCallId, tool: toolName(part), args: input as Json },
-                descriptor: { name: toolName(part), description: `Approve ${toolName(part)}`, inputSchema: {}, risk },
+                call: { id: part.toolCallId, tool: name, args: input as Json },
+                // The wire approval part carries no descriptor (01-core), so the
+                // name is the raw tool id (ApprovalCard humanizes it) and the
+                // description is left to host metadata — never a fabricated
+                // "Approve <tool>" sentence.
+                descriptor: { name, description: tools[name]?.description ?? "", inputSchema: {}, risk },
                 inputPreview: preview(input),
                 ...(guardApproval?.invalidatedGrant === undefined
                   ? {}
                   : { invalidatedGrant: guardApproval.invalidatedGrant }),
-                ctx: { principal: { kind: "user", subject: "current-user", ephemeral: true }, venue: "chat", presence: "present" },
-                createdAt: new Date().toISOString(),
+                // ENG-216 — the in-thread card renders inside the live conversation,
+                // which IS its context, and the wire carries no ctx: rather than
+                // invent a principal/venue/presence and stamp a per-render `new
+                // Date()`, we hide the context byline in-thread (showContext=false)
+                // and only structurally-true, stable values ride here (never shown).
+                ctx: { principal: { kind: "user", subject: "" }, venue: "chat", presence: "present" },
+                createdAt: SYNTHESIZED_CREATED_AT,
               };
               const guardApprovalId = guardApproval?.approvalId;
               return (
                 <ApprovalCard
                   key={part.approval.id}
                   approval={approval}
+                  showContext={false}
                   allowRemember={guardApprovalId !== undefined}
                   onDecide={async decision => {
                     // Decide the guard's approval record over the wire FIRST so the

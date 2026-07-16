@@ -1,7 +1,9 @@
 import { canonicalJson, sha256Hex, type ApprovalDecision, type ApprovalRequest } from "@vendoai/core";
 import { useState } from "react";
+import { useVendoTools } from "../context.js";
 import { ContainedNotice } from "../tree/notice.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { toolTitle } from "./humanize.js";
 
 export interface ApprovalCardProps {
   approval: ApprovalRequest;
@@ -13,6 +15,13 @@ export interface ApprovalCardProps {
    * (the real wire decision) keep it. Default true.
    */
   allowRemember?: boolean;
+  /**
+   * ENG-216 — show the `venue · presence · appId` context byline. Queue
+   * surfaces carry a real server `ctx` and keep it (default true); the
+   * in-thread card sets this false because the live conversation is already
+   * the context and the wire carries no ctx to display honestly.
+   */
+  showContext?: boolean;
 }
 
 function approvalDate(grantedAt: string): string {
@@ -22,13 +31,19 @@ function approvalDate(grantedAt: string): string {
 }
 
 /** 01-core §5; 08-ui §4 — the one consent surface, always showing real inputs. */
-export function ApprovalCard({ approval, onDecide, allowRemember = true }: ApprovalCardProps) {
+export function ApprovalCard({ approval, onDecide, allowRemember = true, showContext = true }: ApprovalCardProps) {
   const [remember, setRemember] = useState(false);
   const [scope, setScope] = useState<"exact" | "tool">("exact");
   const [duration, setDuration] = useState<"session" | "standing">("session");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const critical = approval.descriptor.risk === "destructive" || approval.descriptor.critical === true;
+  // ENG-216 — humanize: host label wins, else the prettified tool id. Never the
+  // raw slug. The description subtitle shows only when it adds information.
+  const meta = useVendoTools()[approval.descriptor.name];
+  const title = toolTitle(approval.descriptor.name, meta);
+  const description = (meta?.description ?? approval.descriptor.description).trim();
+  const showDescription = description.length > 0 && description !== title;
 
   const decide = async (approve: boolean) => {
     const decision: ApprovalDecision = { approve };
@@ -57,7 +72,7 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true }: Appro
 
   return (
     <ChromeRoot>
-      <article className={`fl-approval fl-item-in${critical ? " fl-approval--ceremony" : ""}`} aria-label={`Approval for ${approval.descriptor.name}`}>
+      <article className={`fl-approval fl-item-in${critical ? " fl-approval--ceremony" : ""}`} aria-label={`Approval for ${title}`}>
         <div className="fl-approval-head">
           <span className="fl-approval-ic" aria-hidden="true">
             <svg
@@ -75,7 +90,8 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true }: Appro
           </span>
           <div className="fl-approval-heading">
             <div className="fl-approval-eyebrow">{critical ? "CRITICAL" : "REQUESTED"}</div>
-            <div className="fl-approval-title">{approval.descriptor.name}</div>
+            <div className="fl-approval-title">{title}</div>
+            {showDescription ? <div className="fl-approval-desc">{description}</div> : null}
           </div>
           <span
             className="fl-chip"
@@ -92,10 +108,12 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true }: Appro
         >
           {approval.inputPreview}
         </pre>
-        <div className="fl-approval-more" style={{ marginTop: "8px" }}>
-          {approval.ctx.venue} · {approval.ctx.presence}
-          {approval.ctx.appId ? ` · ${approval.ctx.appId}` : ""}
-        </div>
+        {showContext ? (
+          <div className="fl-approval-more" style={{ marginTop: "8px" }}>
+            {approval.ctx.venue} · {approval.ctx.presence}
+            {approval.ctx.appId ? ` · ${approval.ctx.appId}` : ""}
+          </div>
+        ) : null}
         {allowRemember ? (
           <details className="fl-auto-details">
             <summary>Remember this decision</summary>
