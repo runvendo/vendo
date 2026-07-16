@@ -30,7 +30,8 @@ export const repoExpectedThemeSchema = z
   })
   .strict();
 
-export const expectedToolInventorySchema = z
+/** HTTP-shaped tool identity: method + path (route and openapi bindings). */
+export const expectedHttpToolInventorySchema = z
   .object({
     name: z.string().min(1),
     method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
@@ -38,6 +39,22 @@ export const expectedToolInventorySchema = z
     readOrWrite: z.enum(["read", "write"]),
   })
   .strict();
+
+/** Binding-kind-aware tool identity: a tRPC tool is identified by its
+ * procedure dot-path, not a method+path pair. */
+export const expectedTrpcToolInventorySchema = z
+  .object({
+    name: z.string().min(1),
+    kind: z.literal("trpc"),
+    procedure: z.string().min(1),
+    readOrWrite: z.enum(["read", "write"]),
+  })
+  .strict();
+
+export const expectedToolInventorySchema = z.union([
+  expectedHttpToolInventorySchema,
+  expectedTrpcToolInventorySchema,
+]);
 
 export const expectedToolAnnotationSchema = z
   .object({
@@ -85,6 +102,13 @@ export type ExpectedToolAnnotation = z.infer<typeof expectedToolAnnotationSchema
 export type ExpectedComponentAnnotation = z.infer<typeof expectedComponentAnnotationSchema>;
 export type RepoExpectations = z.infer<typeof repoExpectationsSchema>;
 export type RepoBaseline = z.infer<typeof repoBaselineSchema>;
+
+/** The binding-kind-aware identity an expectation joins on: procedure for
+ * tRPC entries, method+path for HTTP-shaped entries. Names stay out of the
+ * key (01-core §15 renames them deterministically). */
+export function expectedToolIdentity(item: ExpectedToolInventory): string {
+  return "procedure" in item ? `trpc\t${item.procedure}` : `${item.method}\t${item.path}`;
+}
 
 export function repoExpectationsDir(expectationsRoot: string, repoName: string): string {
   return path.join(expectationsRoot, repoName);

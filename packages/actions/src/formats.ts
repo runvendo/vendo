@@ -156,6 +156,30 @@ export const openApiBindingSchema = z.object({
 }).passthrough() satisfies z.ZodType<OpenApiBinding>;
 
 /**
+ * 04-actions §1 (additive within vendo/tools@1): execution binding for a tRPC
+ * procedure. Tool identity is mount + `procedure` dot-path, not a method+path
+ * pair. Execution is the tRPC HTTP envelope against the host mount: queries
+ * are GET `{mount}/{procedure}?input=...`, mutations POST `{mount}/{procedure}`.
+ * `transformer: "superjson"` marks mounts whose tRPC root applies the superjson
+ * data transformer, so the runtime wraps/unwraps the `{ json: ... }` envelope.
+ */
+export interface TrpcBinding {
+  kind: "trpc";
+  procedure: string;               // dot-path, e.g. "polls.list"
+  type: "query" | "mutation";
+  mount: string;                   // "/api/trpc" — resolved against createActions baseUrl
+  transformer?: "superjson";
+}
+
+export const trpcBindingSchema = z.object({
+  kind: z.literal("trpc"),
+  procedure: z.string().min(1),
+  type: z.enum(["query", "mutation"]),
+  mount: z.string().startsWith("/"),
+  transformer: z.literal("superjson").optional(),
+}).passthrough() satisfies z.ZodType<TrpcBinding>;
+
+/**
  * 04-actions §6: ordered steps over primitive host/connector tools, reusing the
  * core §11 `Step` shape. Expressions see `{ args, steps, item }`. Compounds are
  * agent-authored: they live in `.vendo/capabilities.json`, never `tools.json`.
@@ -174,13 +198,14 @@ export const compoundBindingSchema = z.object({
 ) satisfies z.ZodType<CompoundBinding>;
 
 /** The bindings deterministic extraction may emit into `.vendo/tools.json`. */
-export type PrimitiveToolBinding = RouteBinding | OpenApiBinding;
+export type PrimitiveToolBinding = RouteBinding | OpenApiBinding | TrpcBinding;
 
-export type ToolBinding = RouteBinding | OpenApiBinding | CompoundBinding;
+export type ToolBinding = RouteBinding | OpenApiBinding | TrpcBinding | CompoundBinding;
 
 export const toolBindingSchema = z.union([
   routeBindingSchema,
   openApiBindingSchema,
+  trpcBindingSchema,
   compoundBindingSchema,
 ]) satisfies z.ZodType<ToolBinding>;
 
@@ -194,6 +219,7 @@ const compoundKindSchema = z.object({ kind: z.literal("compound") }).passthrough
 const extractedBindingSchema = z.discriminatedUnion("kind", [
   routeBindingSchema,
   openApiBindingSchema,
+  trpcBindingSchema,
   compoundKindSchema,
 ]) as unknown as z.ZodType<PrimitiveToolBinding>;
 

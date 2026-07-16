@@ -420,8 +420,14 @@ async function checkIdempotency(ctx: StructuralLayerContext): Promise<Structural
   return { id: "init.idempotent", pass: false, detail: pieces.join("; ") };
 }
 
+/** A tRPC mutation is write-shaped exactly like a POST; a query like a GET. */
+function effectiveWriteMethod(tool: ExtractedTool): string {
+  if (tool.binding.kind === "trpc") return tool.binding.type === "query" ? "GET" : "POST";
+  return tool.binding.method;
+}
+
 function isUnsafeAutoAllowed(tool: ExtractedTool): boolean {
-  const method = tool.binding.method;
+  const method = effectiveWriteMethod(tool);
   if (WRITE_METHODS.has(method) && tool.risk === "read") return true;
   if ((method === "DELETE" || DESTRUCTIVE_NAME.test(tool.name)) && tool.risk !== "destructive") return true;
   return false;

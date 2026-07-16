@@ -23,10 +23,13 @@ import {
   type CapabilityBrief,
   type CompoundTool,
   type ExtractedTool,
+  type HttpMethod,
   type OpenApiBinding,
   type OverridesFile,
   type RouteBinding,
+  type ToolBinding,
   type ToolOverride,
+  type TrpcBinding,
 } from "../formats.js";
 import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
 import { error, isArgsObject } from "./outcome.js";
@@ -234,7 +237,7 @@ function absoluteHttpUrl(value: string | undefined): URL | undefined {
 }
 
 function mayForwardPresentHeaders(
-  binding: RouteBinding | OpenApiBinding,
+  binding: ToolBinding,
   requestUrl: URL,
   configuredBaseUrl: string | undefined,
   baseUrlTrusted: boolean,
@@ -335,27 +338,88 @@ function mcpConsentGrant(ctx: ActionsRunContext, call: ToolCall, tool: Extracted
   };
 }
 
+/** The tRPC HTTP envelope (04 §1): queries GET `{mount}/{procedure}?input=...`,
+ * mutations POST the input as the JSON body. Hosts whose tRPC root applies the
+ * superjson transformer expect the `{ json: ... }` wrapping — which is exactly
+ * `superjson.serialize(value)` for every value that can traverse the agent
+ * tool-call wire (plain JSON; no Date/Map/Set instances exist there, so no
+ * `meta` is ever needed). Known limitation: a host validator that demands a
+ * rich type (e.g. `z.date()`) rejects the ISO string visibly as a tRPC 400 —
+ * request-path date coercion via schema-informed `meta` is a follow-up. */
+function trpcRequest(binding: TrpcBinding, args: Record<string, unknown>, configuredBaseUrl?: string): {
+  url: URL;
+  method: HttpMethod;
+  body?: string;
+} {
+  if (!configuredBaseUrl) {
+    throw new VendoError(
+      "validation",
+      `Cannot execute trpc binding ${binding.procedure}; set createActions({ baseUrl }) for server-side trpc execution`,
+    );
+  }
+  let url: URL;
+  try {
+    url = joinedUrl(configuredBaseUrl, `${binding.mount.replace(/\/$/, "")}/${binding.procedure}`);
+  } catch {
+    throw new VendoError("validation", `Invalid baseUrl for trpc procedure ${binding.procedure}; set createActions({ baseUrl }) to a valid origin`);
+  }
+  const payload = Object.keys(args).length > 0
+    ? (binding.transformer === "superjson" ? { json: args } : args)
+    : undefined;
+  if (binding.type === "query") {
+    if (payload !== undefined) url.searchParams.set("input", JSON.stringify(payload));
+    return { url, method: "GET" };
+  }
+  return { url, method: "POST", ...(payload !== undefined ? { body: JSON.stringify(payload) } : {}) };
+}
+
+/** Unwrap the tRPC success envelope: `{ result: { data } }`, with superjson's
+ * `{ json }` wrapping inside `data` when the host applies the transformer.
+ * `meta` is intentionally ignored: rich types come back as their JSON
+ * projections (ISO strings etc.), the format the agent layer consumes. */
+function trpcOutput(binding: TrpcBinding, parsed: unknown): unknown {
+  const result = parsed !== null && typeof parsed === "object" && "result" in parsed
+    ? (parsed as { result: unknown }).result
+    : undefined;
+  const data = result !== null && typeof result === "object" && result !== undefined && "data" in result
+    ? (result as { data: unknown }).data
+    : parsed;
+  if (binding.transformer === "superjson" && data !== null && typeof data === "object" && "json" in (data as Record<string, unknown>)) {
+    return (data as { json: unknown }).json;
+  }
+  return data;
+}
+
 async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {
   if (!isArgsObject(call.args)) return error("validation", `Arguments for ${call.tool} must be an object`);
 
   let url: URL;
+  let method: HttpMethod;
   let body: string | undefined;
   try {
-    const substituted = withPathArgs(tool.binding.path, call.args);
-    url = resolveUrl({ ...tool.binding, path: substituted.path }, config.baseUrl);
-    if (tool.binding.kind === "route") {
-      if (tool.binding.argsIn === "query") {
-        for (const [key, value] of Object.entries(substituted.remaining)) appendQuery(url, key, value);
-      } else {
-        body = JSON.stringify(substituted.remaining);
-      }
+    if (tool.binding.kind === "trpc") {
+      const request = trpcRequest(tool.binding, call.args, config.baseUrl);
+      url = request.url;
+      method = request.method;
+      body = request.body;
     } else {
-      const remaining = { ...substituted.remaining };
-      if (Object.prototype.hasOwnProperty.call(remaining, "body")) {
-        body = JSON.stringify(remaining.body);
-        delete remaining.body;
+      method = tool.binding.method;
+      const substituted = withPathArgs(tool.binding.path, call.args);
+      url = resolveUrl({ ...tool.binding, path: substituted.path }, config.baseUrl);
+      if (tool.binding.kind === "route") {
+        if (tool.binding.argsIn === "query") {
+          for (const [key, value] of Object.entries(substituted.remaining)) appendQuery(url, key, value);
+        } else {
+          body = JSON.stringify(substituted.remaining);
+        }
+      } else {
+        const remaining = { ...substituted.remaining };
+        if (Object.prototype.hasOwnProperty.call(remaining, "body")) {
+          body = JSON.stringify(remaining.body);
+          delete remaining.body;
+        }
+        for (const [key, value] of Object.entries(remaining)) appendQuery(url, key, value);
       }
-      for (const [key, value] of Object.entries(remaining)) appendQuery(url, key, value);
     }
   } catch (cause) {
     return error("validation", cause instanceof Error ? cause.message : `Invalid arguments for ${call.tool}`);
@@ -432,7 +496,7 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
     try {
       const request = config.fetch ?? globalThis.fetch;
       const response = await request(url, {
-        method: tool.binding.method,
+        method,
         headers,
         ...(body !== undefined ? { body } : {}),
       });
@@ -440,12 +504,16 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
       if (!response.ok) {
         return error(
           "http-error",
-          `${tool.binding.method} ${url.pathname} → ${response.status}: ${text.slice(0, 200)}`,
+          `${method} ${url.pathname} → ${response.status}: ${text.slice(0, 200)}`,
         );
       }
       if (text) {
         try {
-          return { status: "ok", output: JSON.parse(text) };
+          const parsed: unknown = JSON.parse(text);
+          return {
+            status: "ok",
+            output: tool.binding.kind === "trpc" ? trpcOutput(tool.binding, parsed) : parsed,
+          };
         } catch {
           // Successful non-JSON responses retain their HTTP status and text.
         }

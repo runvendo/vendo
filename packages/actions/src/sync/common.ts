@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { sha256Hex } from "@vendoai/core";
 import { init, parse } from "es-module-lexer";
-import type { ExtractedTool, HttpMethod } from "../formats.js";
+import type { ExtractedTool, HttpMethod, PrimitiveToolBinding } from "../formats.js";
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"] as const;
 // Hidden directories are never route sources; alternate Next dist dirs
@@ -539,13 +539,13 @@ export function unclassifiedToolFullName(urlPath: string): string {
   return `host_${parts.length > 0 ? parts.join("_") : "route"}_unclassified`;
 }
 
-export function allocateToolName(preferred: string, method: HttpMethod, used: Set<string>): string {
+export function allocateToolName(preferred: string, fallbackSuffix: string, used: Set<string>): string {
   const first = limitToolName(preferred);
   if (!used.has(first)) {
     used.add(first);
     return first;
   }
-  const methodFallback = limitToolName(`${preferred}_${method.toLowerCase()}`);
+  const methodFallback = limitToolName(`${preferred}_${fallbackSuffix.toLowerCase()}`);
   if (!used.has(methodFallback)) {
     used.add(methodFallback);
     return methodFallback;
@@ -563,11 +563,23 @@ export function dedupKey(method: HttpMethod, urlPath: string): string {
   return `${method} ${urlPath.replace(/\{[^}]+\}/g, "{}").replace(/\/+$/g, "") || "/"}`;
 }
 
+/** The binding-kind-aware identity a tool is deduplicated and diffed by:
+ * method+path for HTTP-shaped bindings, mount+procedure for tRPC (a host can
+ * expose the same procedure name under two mounts — both tools must survive). */
+export function bindingIdentity(binding: PrimitiveToolBinding): string {
+  if (binding.kind === "trpc") return `TRPC ${binding.mount.replace(/\/+$/g, "")} ${binding.procedure}`;
+  return dedupKey(binding.method, binding.path);
+}
+
+function uniqueNameFallback(binding: PrimitiveToolBinding): string {
+  return binding.kind === "trpc" ? binding.type : binding.method;
+}
+
 export function withUniqueNames(tools: ExtractedTool[]): ExtractedTool[] {
   const used = new Set<string>();
   return tools.map((tool) => ({
     ...tool,
-    name: allocateToolName(tool.name, tool.binding.method, used),
+    name: allocateToolName(tool.name, uniqueNameFallback(tool.binding), used),
   }));
 }
 
@@ -594,4 +606,18 @@ export function extractedRisk(method: HttpMethod, name: string, source: "openapi
   if (method === "DELETE" || containsWord(name, DESTRUCTIVE_WORDS)) return "destructive";
   if (source === "openapi" && method === "GET" && containsWord(name, READ_WORDS)) return "read";
   return "write";
+}
+
+/** tRPC risk labeling (04 §1, fail-closed): the destructive word list applies
+ * unchanged; a query earns `read` only with a read-shaped name; everything
+ * else — mutations and ambiguously-named queries — defaults to `write`. */
+export function trpcRisk(type: "query" | "mutation", procedure: string): ExtractedTool["risk"] {
+  if (containsWord(procedure, DESTRUCTIVE_WORDS)) return "destructive";
+  if (type === "query" && containsWord(procedure, READ_WORDS)) return "read";
+  return "write";
+}
+
+export function trpcToolFullName(procedure: string): string {
+  const parts = words(procedure);
+  return `host_${parts.length > 0 ? parts.join("_") : "procedure"}`;
 }
