@@ -65,7 +65,9 @@ function unknownInitOptions(args: string[]): string[] {
     if (!arg.startsWith("--")) continue;
     if (INIT_FLAGS.has(arg)) continue;
     if (INIT_VALUE_OPTIONS.includes(arg)) {
-      index += 1; // skip the option's value
+      // Skip the option's value — unless it looks like another flag (a missing
+      // value), so `--brief --dry-run` still reports --dry-run as unknown.
+      if (args[index + 1] !== undefined && !args[index + 1]!.startsWith("--")) index += 1;
       continue;
     }
     if (INIT_VALUE_OPTIONS.some((name) => arg.startsWith(`${name}=`))) continue;

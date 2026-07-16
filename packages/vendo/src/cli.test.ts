@@ -49,6 +49,11 @@ describe("vendo CLI commands", () => {
     expect(error.mock.calls.flat().join("\n")).toContain("--dry-run");
     expect(log.mock.calls.flat().join("\n")).not.toContain('"framework"'); // init never ran
     expect(await readdir(root)).toEqual([]); // and wrote nothing
+
+    // A value option with a missing value must not swallow the next flag
+    // (Devin review): --dry-run is still reported as unknown.
+    expect(await main(["init", root, "--agent", "--brief", "--dry-run"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--dry-run");
     error.mockRestore();
     log.mockRestore();
   });
