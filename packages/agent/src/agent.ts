@@ -171,6 +171,77 @@ function upsertMessage(messages: UIMessage[], message: UIMessage): void {
   else messages[index] = message;
 }
 
+/** Structural JSON equality, key-order independent (both sides are
+ *  wire-serializable UIMessage parts). */
+function jsonEqual(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right)
+      && left.length === right.length
+      && left.every((item, index) => jsonEqual(item, right[index]));
+  }
+  if (typeof left !== "object" || typeof right !== "object" || left === null || right === null) {
+    return false;
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const keys = Object.keys(leftRecord);
+  return keys.length === Object.keys(rightRecord).length
+    && keys.every((key) => jsonEqual(leftRecord[key], rightRecord[key]));
+}
+
+/** AGENT-12: is `incoming` the one client-writable change to a stored part —
+ *  answering a pending approval? Identity fields (type, toolCallId, toolName,
+ *  input) must survive untouched; only state flips to approval-responded with
+ *  a boolean verdict on the SAME native approval id. */
+function isApprovalResponse(stored: unknown, incoming: unknown): boolean {
+  const before = stored as Record<string, unknown>;
+  const after = incoming as Record<string, unknown>;
+  if (before.state !== "approval-requested" || after.state !== "approval-responded") return false;
+  if (after.type !== before.type || after.toolCallId !== before.toolCallId) return false;
+  if ("toolName" in before && after.toolName !== before.toolName) return false;
+  if (!jsonEqual(after.input, before.input)) return false;
+  const beforeApproval = before.approval as { id?: unknown } | undefined;
+  const afterApproval = after.approval as { id?: unknown; approved?: unknown } | undefined;
+  return beforeApproval !== undefined
+    && afterApproval !== undefined
+    && afterApproval.id === beforeApproval.id
+    && typeof afterApproval.approved === "boolean";
+}
+
+/** AGENT-12: clients may add fresh USER messages and answer approvals — they
+ *  may not author assistant content or rewrite history by replaying a known
+ *  message id with different parts. */
+function validateUpsert(messages: UIMessage[], message: UIMessage): void {
+  const existing = messages.find((candidate) => candidate.id === message.id);
+  if (existing === undefined) {
+    if (message.role !== "user") {
+      throw new VendoError("validation", "assistant messages are server-authored; a new message must be role user");
+    }
+    return;
+  }
+  if (existing.role !== message.role) {
+    throw new VendoError("validation", "a message upsert cannot change the message role");
+  }
+  // Serialize both sides so explicit-undefined props (which JSON drops on the
+  // wire anyway) never make an identical part read as different.
+  const stored = JSON.parse(JSON.stringify(existing.parts)) as unknown[];
+  const incoming = JSON.parse(JSON.stringify(message.parts)) as unknown[];
+  if (message.role === "user") {
+    if (!jsonEqual(stored, incoming)) {
+      throw new VendoError("validation", "an existing user message cannot be rewritten");
+    }
+    return;
+  }
+  if (stored.length !== incoming.length
+    || !stored.every((part, index) => jsonEqual(part, incoming[index]) || isApprovalResponse(part, incoming[index]))) {
+    throw new VendoError(
+      "validation",
+      "an assistant message upsert may only answer pending approvals",
+    );
+  }
+}
+
 function abandonPendingApprovals(messages: UIMessage[]): string[] {
   const abandonedToolCallIds: string[] = [];
   for (const message of messages) {
@@ -263,6 +334,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
     async stream(input) {
       validateMessage(input?.message);
       const thread = await threads.resolve(input.threadId, input.ctx);
+      validateUpsert(thread.messages, input.message);
       if (input.message.role === "user"
         && !thread.messages.some((message) => message.id === input.message.id)) {
         const abandonedCalls = abandonPendingApprovals(thread.messages);
