@@ -49,24 +49,29 @@ export function toolCallTurn(
 
 export type ScriptedModel = MockLanguageModelV3 & {
   prompts: LanguageModelV3Prompt[];
+  /** The tool names offered to the model on each call, in order — i.e. the
+   *  effective loadout after `activeTools`/`prepareStep` filtering (ENG-252). */
+  toolNamesPerCall: string[][];
 };
 
 export function scriptedModel(turns: LanguageModelV3StreamPart[][]): ScriptedModel {
   const remaining = turns.map((turn) => [...turn]);
   const prompts: LanguageModelV3Prompt[] = [];
-  const shift = (prompt: LanguageModelV3Prompt): LanguageModelV3StreamPart[] => {
-    prompts.push(structuredClone(prompt));
+  const toolNamesPerCall: string[][] = [];
+  const shift = (request: { prompt: LanguageModelV3Prompt; tools?: Array<{ name: string }> }): LanguageModelV3StreamPart[] => {
+    prompts.push(structuredClone(request.prompt));
+    toolNamesPerCall.push((request.tools ?? []).map((tool) => tool.name));
     const chunks = remaining.shift();
     if (chunks === undefined) throw new Error("scripted model exhausted");
     return chunks;
   };
   const model = new MockLanguageModelV3({
     doStream: async (request) => {
-      const chunks = shift(request.prompt);
+      const chunks = shift(request);
       return { stream: simulateReadableStream({ chunks }) };
     },
     doGenerate: async (request): Promise<LanguageModelV3GenerateResult> => {
-      const chunks = shift(request.prompt);
+      const chunks = shift(request);
       const finish = chunks.find((part) => part.type === "finish");
       const content: LanguageModelV3Content[] = [];
       const text = chunks
@@ -86,6 +91,7 @@ export function scriptedModel(turns: LanguageModelV3StreamPart[][]): ScriptedMod
     },
   }) as ScriptedModel;
   model.prompts = prompts;
+  model.toolNamesPerCall = toolNamesPerCall;
   return model;
 }
 
