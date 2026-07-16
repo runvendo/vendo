@@ -81,7 +81,11 @@ describe("composer: type-while-streaming, queued send, edit, regenerate (ENG-215
     type("First");
     fireEvent.keyDown(composer(), { key: "Enter" });
     await screen.findByRole("button", { name: "Stop" });
-    expect(threadPosts(wire)).toHaveLength(1);
+    // The Stop button rides the optimistic busy flip (status → "submitted"),
+    // which lands a tick before the send's POST completes its round-trip to the
+    // wire server. Poll for the recorded request rather than reading it the
+    // instant Stop appears — under CI load the socket hasn't delivered it yet.
+    await waitFor(() => expect(threadPosts(wire)).toHaveLength(1));
 
     // Queue a second message mid-turn via the Send affordance.
     type("Queued follow-up");
