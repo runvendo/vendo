@@ -1,0 +1,185 @@
+---
+title: "actAs presets for Auth.js, Supabase, Clerk, Auth0"
+description: "Wire Auth.js, Supabase, Clerk, Auth0, or a generic HS256 JWT into Vendo's actAs seam so away automations and MCP calls act as the signed-in user."
+---
+
+Away automations, scheduled runs, and MCP door calls all reach host APIs
+through the `actAs` seam because none of them carry a browser session. Presets
+in `@vendoai/actions/presets` mint the right auth material for common
+providers so you don't have to hand-roll `actAs` for each one.
+
+## When to use a preset
+
+- You already sign users in with Auth.js, Supabase, Clerk, or Auth0.
+- You want scheduled automations, webhooks, or MCP door calls to hit your
+  host APIs as the connected user, using the same policy and approvals as
+  in-product chat.
+- You use a bespoke JWT for service-to-service auth and want the generic HS256
+  preset instead of writing an `actAs` function from scratch.
+
+Skip presets if your host API is happy with the inbound cookie or bearer on a
+same-origin fetch. Present tool execution already forwards those; presets only
+matter for [away calls](/reference/handler-options).
+
+## Choose a preset
+
+Presets fall into two shapes depending on what the identity provider allows.
+
+**Offline session minting.** Auth.js and Supabase let a host holding the
+session secret mint a session token the provider's own verifier accepts. The
+preset mints a fresh token per away call — no extra middleware in your app.
+
+**Host-owned away tokens.** Clerk and Auth0 sign sessions with RS256 private
+keys you don't hold, so offline minting is impossible. These presets ship two
+halves: a producer that signs a short-lived `VendoAway` HS256 token, and a
+verify middleware you mount on your host app to trade that token for the
+verified identity headers your API code reads.
+
+**Generic HS256.** For any other provider that accepts an HS256 JWT with
+configurable claims and header shape.
+
+| Preset | Provider | Shape |
+| --- | --- | --- |
+| `authJsPreset` | Auth.js / NextAuth | Offline session-JWE via `@auth/core` |
+| `supabasePreset` | Supabase Auth | Offline HS256 with project JWT secret |
+| `clerkPreset` | Clerk | Host-owned away token + middleware |
+| `auth0Preset` | Auth0 | Host-owned away token + middleware |
+| `genericJwtPreset` | Anything HS256 | Configurable secret, claims, header |
+
+## Wire a preset
+
+Import the preset you want and hand it to `createVendo` as `actAs`. Each
+preset closes over a secret you provision (session secret, project JWT
+secret, or a host-generated away secret) and returns the `ActAs` function
+Vendo calls before every away tool call.
+
+```ts
+import { createVendo } from "@vendoai/vendo/server";
+import { authJsPreset } from "@vendoai/actions/presets";
+
+export const vendo = createVendo({
+  model,
+  principal: resolvePrincipal,
+  actAs: authJsPreset({
+    secret: process.env.AUTH_SECRET!,
+    // Cookie name doubles as the JWE salt — match your Auth.js config.
+    cookieName: "authjs.session-token",
+    secureCookie: process.env.NODE_ENV === "production",
+  }),
+});
+```
+
+Supabase is similar — pass the project JWT secret and the claims the preset
+should stamp on each minted token:
+
+```ts
+import { supabasePreset } from "@vendoai/actions/presets";
+
+actAs: supabasePreset({
+  jwtSecret: process.env.SUPABASE_JWT_SECRET!,
+  role: "authenticated",
+  audience: "authenticated",
+});
+```
+
+Clerk and Auth0 both take a host-owned signing secret you generate once and
+share with the verify middleware in the next section:
+
+```ts
+import { clerkPreset } from "@vendoai/actions/presets";
+
+actAs: clerkPreset({
+  awaySecret: process.env.VENDO_AWAY_SECRET!,
+});
+```
+
+The generic preset covers anything else. Configure the claims map, header
+name, and prefix your host API expects:
+
+```ts
+import { genericJwtPreset } from "@vendoai/actions/presets";
+
+actAs: genericJwtPreset({
+  secret: process.env.HOST_JWT_SECRET!,
+  header: "authorization",
+  prefix: "Bearer ",
+  claims: (principal) => ({
+    sub: principal.subject,
+    scope: "api:call",
+  }),
+});
+```
+
+## Mount the verify middleware (Clerk and Auth0)
+
+Because the Clerk and Auth0 presets sign a host-owned token instead of a real
+Clerk or Auth0 session, your host API needs to accept that token on away
+requests and turn it back into a user. Each preset exports a Next.js
+middleware and an Express middleware — mount the one that fits your app.
+
+```ts
+// middleware.ts (Next.js)
+import { clerkPreset } from "@vendoai/actions/presets";
+
+export const middleware = clerkPreset.nextMiddleware({
+  awaySecret: process.env.VENDO_AWAY_SECRET!,
+});
+
+export const config = { matcher: "/api/:path*" };
+```
+
+```ts
+// server.ts (Express)
+import express from "express";
+import { auth0Preset } from "@vendoai/actions/presets";
+
+const app = express();
+app.use(auth0Preset.expressMiddleware({
+  awaySecret: process.env.VENDO_AWAY_SECRET!,
+}));
+```
+
+Middleware does three things on every request:
+
+- Strips any caller-supplied `x-vendo-away-*` headers so callers can't spoof
+  identity by setting them by hand.
+- On requests that carry a valid `VendoAway` token, verifies the token and
+  injects the extracted subject on `x-vendo-away-*` headers your API can
+  trust.
+- Rejects forged, expired, or wrong-audience tokens before your handler
+  runs.
+
+The `awaySecret` you pass to the preset and the middleware must match. Store
+it as an environment variable and rotate by redeploying both halves.
+
+## Impersonation guard
+
+Vendo compares the grant's `subject` to the current principal's `subject`
+before invoking `actAs`. If they don't match, the call fails closed with an
+`act-as-subject-mismatch` outcome and no outbound request is made. This
+covers both away automations and MCP door calls, and applies to every
+preset — you don't wire it separately.
+
+## Token caching and rotation
+
+Every preset caches minted tokens in memory until just before expiry (default
+300 s safety margin, 30 s for the short-lived away tokens). Cache keys
+include a fingerprint of the signing secret, so rotating the secret
+invalidates the cache immediately — the next away call mints against the new
+secret. Expired entries are dropped on write, so the cache size stays bounded
+by the number of active principals.
+
+## Verify wiring
+
+```bash
+npx vendo doctor
+```
+
+Doctor probes your `actAs` configuration end-to-end. For Clerk and Auth0,
+doctor also checks that the verify middleware round-trips a synthetic away
+token so a misconfigured secret surfaces before the first real away call.
+
+If away calls fail with `not-implemented`, `actAs` is not configured. If they
+fail with `act-as-subject-mismatch`, the grant belongs to a different user
+than the current principal — see the [troubleshooting
+guide](/deploy/troubleshooting).

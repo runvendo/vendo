@@ -87,6 +87,26 @@ Checks wiring and makes one live `/status` round trip. It recognizes both Next.j
 composes `createVendo` from `@vendoai/vendo/server`; the client mounts
 `<VendoRoot>`). It ends with the config line that unlocks each remaining block.
 
+Doctor also runs two live HTTP probes against the running dev server so silent
+credential-forwarding traps surface before you ship:
+
+- **Present-mode forwarding.** Doctor calls `POST /doctor/present` and the
+  composition executes a synthetic same-origin tool. The echo route reports
+  booleans indicating whether the doctor's `authorization` and `cookie`
+  headers reached the host API. The probe fails with actionable text when
+  `VENDO_BASE_URL` is unset or points at the wrong origin, when the binding
+  is cross-origin, or when the dev server is down. No credential values are
+  printed, logged, or persisted.
+- **actAs mint and verify.** Doctor calls `POST /doctor/act-as` so the
+  host-configured `createVendo({ actAs })` mints auth material and the host's
+  own principal resolver accepts it. This works with any `actAs`
+  implementation, including the [actAs presets](/connect/act-as-presets).
+  When `actAs` is unconfigured, doctor warns but does not fail; mint or
+  verify errors produce actionable failure text.
+
+The synthetic `/doctor/*` routes are development-only and return 404 in
+production.
+
 When the MCP door is open, doctor also validates the registry discovery surface:
 
 - both OAuth metadata documents (`/.well-known/oauth-protected-resource/...`

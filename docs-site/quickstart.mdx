@@ -115,6 +115,16 @@ arrives as `data-vendo-approval` parts.
   Shipped chrome displays the unconfigured-policy notice.
 </Note>
 
+## Set the trusted origin
+
+Init writes `VENDO_BASE_URL=http://localhost:3000` into `.env.example`.
+Copy it into `.env.local` (or your deployment's environment) and set it to
+the origin serving your app. Vendo forwards `authorization` and `cookie`
+headers to same-origin tool calls only when the request origin matches this
+value; without it, present-mode credential forwarding is silently disabled
+and same-origin tools run without inbound auth. In production, set it to
+your public HTTPS origin.
+
 ## Verify
 
 ```bash
@@ -122,5 +132,8 @@ npx vendo doctor
 npx vendo sync
 ```
 
-Doctor checks wiring and probes `/status`. Sync extracts tools and remix
-baselines for build and development flows.
+Doctor checks wiring, probes `/status`, and runs live HTTP probes that
+confirm present-mode credentials forward and that `actAs` (if configured)
+mints material your host accepts. Sync extracts tools and remix baselines
+for build and development flows. See the
+[CLI reference](/reference/cli#vendo-doctor-dir) for the probe details.
