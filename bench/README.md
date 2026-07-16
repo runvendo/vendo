@@ -24,8 +24,11 @@ run is a separate explicit command.
 - `demo-capture/` — README and gitignored output for the four UI-generation
   demo GIF beats; the TypeScript capture driver lives in `src/demo-capture/`.
 - `demo-creator/PLAYBOOK.md` — the creator-agent contract for generating
-  per-prospect demos (`demo:create` / `demo:research`, implemented in
-  `src/demo-creator/`; verified via `demo:capture -- demo-beats`).
+  per-prospect demos (`demo:create` / `demo:research` / `demo:deploy` /
+  `demo:reap`, implemented in `src/demo-creator/`; verified via
+  `demo:capture -- demo-beats`, hosted via `tools/demo-router` at
+  demos.vendo.run; the mac-mini GTM packaging lives in
+  `docs/gtm/demo-creator-skill/SKILL.md`).
 - `budgets.json` — the permanent gate thresholds.
 - `RESULTS.md` — a full captured run (deterministic + live) from a real machine.
 

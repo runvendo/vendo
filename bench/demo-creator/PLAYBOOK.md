@@ -45,7 +45,7 @@ Invariants — violating any of these voids the run:
     `/vendo` panel route path (the capture harness assumes it).
 - [ ] **The demo stays an untracked scratch app.** Commit nothing: not the app
       directory, not `pnpm-lock.yaml`, not RESEARCH evidence. `git status` at
-      the end must show only the app dir as untracked (stage 8).
+      the end must show only the app dir as untracked (§7).
 - [ ] Never relax a beat expectation, a stopwatch mark, or a cap to make
       verification pass (VERIFY.md's standing rule).
 
@@ -305,3 +305,27 @@ containing, with real paths:
 - [ ] `git checkout pnpm-lock.yaml` — revert the install-time lockfile drift.
 - [ ] `git status` shows ONLY `apps/demo-<id>/` as untracked and nothing
       modified. Commit nothing.
+
+## 8. Deploy — separate step, after verification
+
+Deployment is NOT part of the creator run: the session ends at VERIFIED (or
+escalates), and whoever operates the pipeline (Yousef, or the mini's
+`demo-creator` skill — `docs/gtm/demo-creator-skill/SKILL.md`) deploys the
+verified app:
+
+```sh
+set -a
+source /Users/yousefh/orca/workspaces/flowlet/.env   # ANTHROPIC_API_KEY
+set +a
+export ROUTER_ADMIN_TOKEN="$(cat ~/.vendo/demo-router-admin-token)"
+pnpm --filter @vendoai/bench demo:deploy -- --app apps/demo-<id>
+```
+
+`demo:deploy` renders a Dockerfile/.dockerignore into the app, syncs the
+lockfile, ships one Railway service (`demo-<id>` in project `vendo-demos`)
+from the working tree — untracked scratch apps deploy without committing —
+sets `ANTHROPIC_API_KEY` on the service, and registers the demo with the
+demos.vendo.run router (`Live at https://demos.vendo.run/<id>`). Both
+secrets are required and never logged; `--dry-run` prints the redacted
+plan. Expiry teardown is `demo:reap` (dry-run by default, `--execute` to
+tear down).
