@@ -302,7 +302,13 @@ async function evaluateRouterExpression(
   if (name && ROUTER_FACTORY_NAMES.has(name) && expr.arguments.length === 1) {
     const argument = expr.arguments[0]!;
     if (ts.isObjectLiteralExpression(argument)) {
-      recordRouterFactorySource(extraction, module, ts.isIdentifier(expr.expression) ? expr.expression.text : name);
+      // For `t.router({...})` the factory source is the namespace base `t`
+      // (the initTRPC instance), not the "router" method name; for a bare
+      // `router({...})` it is the imported `router` identifier itself.
+      const factoryName = ts.isPropertyAccessExpression(expr.expression) && ts.isIdentifier(expr.expression.expression)
+        ? expr.expression.expression.text
+        : ts.isIdentifier(expr.expression) ? expr.expression.text : name;
+      recordRouterFactorySource(extraction, module, factoryName);
       const entries = new Map<string, RouterDef | ProcedureDef>();
       for (const property of argument.properties) {
         if (ts.isPropertyAssignment(property)) {
@@ -664,7 +670,11 @@ async function findMounts(extraction: Extraction): Promise<TrpcMount[]> {
     const options = handlerOptions(extraction, module);
     if (!options) continue;
     const relativePath = path.relative(extraction.root, file);
-    const mount = options.endpoint ?? mountPathFromFile(relativePath) ?? DEFAULT_MOUNT;
+    const rawMount = options.endpoint ?? mountPathFromFile(relativePath) ?? DEFAULT_MOUNT;
+    // Normalize a trailing slash (an `endpoint: "/api/trpc/"` literal) so the
+    // mount matches route-scan's `/api/trpc/{trpc}` shadowing and stays a
+    // single identity; the root mount "/" is preserved.
+    const mount = rawMount.length > 1 ? rawMount.replace(/\/+$/, "") : rawMount;
     mounts.push({ file, mount, routerName: options.routerName, module });
   }
   return mounts;

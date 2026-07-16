@@ -434,6 +434,67 @@ export const plainRouter = t.router({
     expect(byMount.get("/api/plain")).toEqual(new Set([undefined]));
   });
 
+  it("detects superjson for a namespace-factory router (t.router) with an imported instance", async () => {
+    const root = await temporaryHost();
+    await writeFile(root, "package.json", JSON.stringify({
+      name: "trpc-ns-factory",
+      dependencies: { "@trpc/server": "^11.0.0" },
+    }));
+    await writeFile(root, "pages/api/trpc/[trpc].ts", `
+import { createNextApiHandler } from "@trpc/server/adapters/next";
+import { appRouter } from "@/server/root";
+
+export default createNextApiHandler({ router: appRouter });
+`);
+    await writeFile(root, "server/init.ts", `
+import { initTRPC } from "@trpc/server";
+import superjson from "superjson";
+export const t = initTRPC.create({ transformer: superjson });
+`);
+    await writeFile(root, "server/root.ts", `
+import { t } from "@/server/init";
+
+export const appRouter = t.router({
+  ping: t.procedure.query(() => "pong"),
+});
+`);
+    const { tools } = await extractTrpc(root);
+    expect(tools).toHaveLength(1);
+    expect((tools[0]!.binding as TrpcBinding).transformer).toBe("superjson");
+  });
+
+  it("shadows and identifies a trailing-slash endpoint mount", async () => {
+    const root = await temporaryHost();
+    await writeFile(root, "package.json", JSON.stringify({
+      name: "trpc-trailing",
+      dependencies: { "@trpc/server": "^11.0.0" },
+    }));
+    await writeFile(root, "tsconfig.json", JSON.stringify({
+      compilerOptions: { paths: { "@/*": ["./src/*"] } },
+    }));
+    await writeFile(root, "src/app/api/trpc/[trpc]/route.ts", `
+import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+import { appRouter } from "@/server/router";
+
+const handler = (req: Request) =>
+  fetchRequestHandler({ endpoint: "/api/trpc/", req, router: appRouter, createContext: () => ({}) });
+
+export { handler as GET, handler as POST };
+`);
+    await writeFile(root, "src/server/router.ts", `
+import { initTRPC } from "@trpc/server";
+const t = initTRPC.create();
+export const appRouter = t.router({ status: t.procedure.query(() => "ok") });
+`);
+    const trpcOnly = await extractTrpc(root);
+    // Trailing slash normalized off the mount.
+    expect((trpcOnly.tools[0]!.binding as TrpcBinding).mount).toBe("/api/trpc");
+    // And the catch-all route under that mount is shadowed by runExtractors.
+    const all = await runExtractors(root);
+    expect(all.tools.some((tool) => tool.binding.kind === "route" && tool.binding.path.startsWith("/api/trpc"))).toBe(false);
+    expect(all.tools.some((tool) => tool.binding.kind === "trpc")).toBe(true);
+  });
+
   it("resolves routers imported through a default export", async () => {
     const root = await temporaryHost();
     await writeFile(root, "package.json", JSON.stringify({
@@ -457,6 +518,36 @@ export default appRouter;
 `);
     const { tools } = await extractTrpc(root);
     expect(tools.map((tool) => (tool.binding as TrpcBinding).procedure)).toEqual(["health"]);
+  });
+
+  it("warns when the handler declares no router and when the router is not a parsable router", async () => {
+    const noRouter = await temporaryHost();
+    await writeFile(noRouter, "package.json", JSON.stringify({
+      name: "trpc-no-router-opt",
+      dependencies: { "@trpc/server": "^11.0.0" },
+    }));
+    await writeFile(noRouter, "pages/api/trpc/[trpc].ts", `
+import { createNextApiHandler } from "@trpc/server/adapters/next";
+export default createNextApiHandler({ createContext: () => ({}) });
+`);
+    const a = await extractTrpc(noRouter);
+    expect(a.tools).toEqual([]);
+    expect(a.warnings.some((w) => w.includes("does not reference a statically-resolvable router"))).toBe(true);
+
+    const notRouter = await temporaryHost();
+    await writeFile(notRouter, "package.json", JSON.stringify({
+      name: "trpc-not-a-router",
+      dependencies: { "@trpc/server": "^11.0.0" },
+    }));
+    await writeFile(notRouter, "pages/api/trpc/[trpc].ts", `
+import { createNextApiHandler } from "@trpc/server/adapters/next";
+import { notARouter } from "@/server/thing";
+export default createNextApiHandler({ router: notARouter });
+`);
+    await writeFile(notRouter, "server/thing.ts", `export const notARouter = { not: "a router" };`);
+    const b = await extractTrpc(notRouter);
+    expect(b.tools).toEqual([]);
+    expect(b.warnings.some((w) => w.includes("is not a statically-parsable router"))).toBe(true);
   });
 
   it("warns when the mount router identifier cannot be resolved", async () => {
