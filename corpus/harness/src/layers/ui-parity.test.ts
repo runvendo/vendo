@@ -42,9 +42,24 @@ describe("diffUiParity", () => {
     expect(result.entries[0]?.status).toBe("covered");
     expect(result.entries[0]?.matchedTools).toEqual(["bulk_paste_range"]);
     expect(result.entries[0]?.missingTools).toEqual(["does_not_exist"]);
-    // A partial claim is still counted a phantom for the reviewer's attention.
-    expect(result.phantoms).toHaveLength(1);
+    // Partial coverage is NOT double-counted: a covered capability is never
+    // also a phantom. Its stray claim stays visible on the entry itself.
+    expect(result.phantoms).toHaveLength(0);
     expect(result.coverage.value).toBe(1);
+  });
+
+  it("does not double-count a partially-covered capability in the metric or phantom list", () => {
+    const result = diffUiParity(
+      [
+        capability({ id: "partial", expectedTools: ["host_records_update", "ghost"] }),
+        capability({ id: "pure-phantom", expectedTools: ["ghost_only"] }),
+      ],
+      surface,
+    );
+    // "partial" is covered exactly once; only "pure-phantom" is a phantom.
+    expect(result.coverage).toEqual({ passed: 1, total: 2, value: 0.5 });
+    expect(result.phantoms.map((entry) => entry.capability.id)).toEqual(["pure-phantom"]);
+    expect(result.gaps.map((entry) => entry.capability.id)).toEqual(["pure-phantom"]);
   });
 
   it("marks a capability a gap when no covering tool is claimed", () => {

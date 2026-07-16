@@ -34,13 +34,27 @@ async function importDynamic(specifier: string): Promise<Record<string, unknown>
   return import(resolved) as Promise<Record<string, unknown>>;
 }
 
-async function resolveModel(env: NodeJS.ProcessEnv): Promise<{ model: unknown; generateText: GenerateTextLike }> {
+export interface ResolvedModel {
+  model: unknown;
+  generateText: GenerateTextLike;
+}
+
+export async function resolveModel(env: NodeJS.ProcessEnv): Promise<ResolvedModel> {
   const apiKey = env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) {
     throw new Error("ui-parity nightly needs ANTHROPIC_API_KEY (BYO key) to enumerate frontend capabilities.");
   }
-  const ai = await importDynamic("ai");
-  const anthropicMod = await importDynamic("@ai-sdk/anthropic");
+  let ai: Record<string, unknown>;
+  let anthropicMod: Record<string, unknown>;
+  try {
+    ai = await importDynamic("ai");
+    anthropicMod = await importDynamic("@ai-sdk/anthropic");
+  } catch (error) {
+    throw new Error(
+      `ai-SDK not available (${error instanceof Error ? error.message : String(error)}); `
+        + "install `ai` and `@ai-sdk/anthropic` in corpus/harness to run the audit.",
+    );
+  }
   const createAnthropic = anthropicMod.createAnthropic as (config: { apiKey: string }) => (model: string) => unknown;
   const generateText = ai.generateText as GenerateTextLike;
   const model = createAnthropic({ apiKey })(env.UI_PARITY_MODEL?.trim() || DEFAULT_MODEL);
@@ -76,16 +90,31 @@ function renderRepoReport(repo: string, result: UiParityLayerRunResult): string 
   ].join("\n");
 }
 
+export interface UiParityNightlyDeps {
+  /** Test seam / provider override; defaults to the BYO-key ai-SDK resolver. */
+  resolveModel?: (env: NodeJS.ProcessEnv) => Promise<ResolvedModel>;
+}
+
 export async function runUiParityNightly(
   argv: readonly string[],
   env: NodeJS.ProcessEnv,
   log: (line: string) => void,
+  deps: UiParityNightlyDeps = {},
 ): Promise<number> {
   const manifest = await loadManifest();
   const requested = argv.filter((arg) => !arg.startsWith("-"));
   const context = createRunContext();
-  const { model, generateText } = await resolveModel(env);
-  const enumerate = createLlmEnumerator({ model, generateText });
+
+  // Degrade gracefully: a missing key or a missing/broken ai-SDK must SKIP the
+  // audit with a clear message, never crash the nightly job (Greptile P1).
+  let resolved: ResolvedModel;
+  try {
+    resolved = await (deps.resolveModel ?? resolveModel)(env);
+  } catch (error) {
+    log(`ui-parity audit skipped: ${error instanceof Error ? error.message : String(error)}`);
+    return 0;
+  }
+  const enumerate = createLlmEnumerator({ model: resolved.model, generateText: resolved.generateText });
 
   const repos = requested.length > 0
     ? manifest.filter((repo) => requested.includes(repo.name))

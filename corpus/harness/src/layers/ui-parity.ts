@@ -158,7 +158,11 @@ export function diffUiParity(
     entries,
     coverage: scoreOf(covered, entries.length),
     gaps: entries.filter((entry) => entry.status !== "covered"),
-    phantoms: entries.filter((entry) => entry.missingTools.length > 0),
+    // Only genuinely-phantom entries (claimed tools, none real) — a covered
+    // capability that happens to also claim a missing tool is NOT a phantom, so
+    // partial coverage is never double-counted. Its stray claim stays visible
+    // on the entry's own `missingTools`.
+    phantoms: entries.filter((entry) => entry.status === "phantom"),
   };
 }
 
