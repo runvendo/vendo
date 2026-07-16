@@ -1,6 +1,7 @@
 import type { ApprovalRequest, Json, RiskLabel, ToolOutcome, VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useVendoContext } from "../context.js";
 import { useVendoThread } from "../hooks/use-vendo-thread.js";
 import { PayloadView } from "../tree/renderer.js";
@@ -78,6 +79,15 @@ function fileToPart(file: File): Promise<{ type: "file"; mediaType: string; file
   });
 }
 
+/** The plain text a user turn carried, joined across its text parts — the seed
+    for "edit last message" (ENG-215). */
+function userText(message: UIMessage): string {
+  return message.parts
+    .filter((part): part is Extract<UIMessage["parts"][number], { type: "text" }> => part.type === "text")
+    .map(part => part.text)
+    .join("");
+}
+
 function preview(input: unknown): string {
   if (typeof input === "string") return input;
   try {
@@ -101,7 +111,7 @@ const BOTTOM_SLACK_PX = 32;
     bottom on their own. Jump-to-latest: when new content lands while the
     reader is scrolled up, the stylesheet's .fl-jump affordance appears;
     activating it scrolls to the latest turn and re-sticks. */
-function useStickToBottom(messages: UIMessage[], threadKey?: string) {
+function useStickToBottom(messages: UIMessage[], threadKey?: string, contentRevision?: unknown) {
   const listRef = useRef<HTMLDivElement>(null);
   // The stick is a ref, not state: it flips inside scroll/effect timing and
   // must be readable synchronously without re-render races.
@@ -153,7 +163,10 @@ function useStickToBottom(messages: UIMessage[], threadKey?: string) {
     } else if (grew) {
       setUnseen(true);
     }
-  }, [messages]);
+    // contentRevision — ENG-215: turn-actions (Edit/Regenerate) mount below the
+    // last turn the instant a stream settles (busy→false), adding height AFTER
+    // the message-driven stick already ran. Re-run so the reader stays pinned.
+  }, [messages, contentRevision]);
 
   return { listRef, onScroll, jumpToLatest, showJump: unseen };
 }
@@ -177,13 +190,21 @@ export function VendoThread({
 }: VendoThreadProps) {
   const { client, components } = useVendoContext();
   const thread = useVendoThread(threadId);
-  const scroll = useStickToBottom(thread.messages, threadId);
+  const busy = thread.status === "submitted" || thread.status === "streaming";
+  // busy is a content-revision signal for the scroll hook: turn-actions mount
+  // below the last turn when a stream settles, which changes the list height.
+  const scroll = useStickToBottom(thread.messages, threadId, busy);
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [files, setFiles] = useState<File[]>([]);
+  // ENG-215 — a message the user sent DURING a turn: it parks here (visible as a
+  // pill) and auto-sends the instant the turn finishes. A single slot — a second
+  // send while one is parked replaces it — because there is only ever one "next"
+  // turn. Stop stays the explicit interrupt; queueing never cancels the stream.
+  const [queued, setQueued] = useState<{ text: string; files: File[] } | null>(null);
   const risks = useMemo(() => riskByCall(thread.messages), [thread.messages]);
   const guardApprovals = useMemo(() => approvalByCall(thread.messages), [thread.messages]);
-  const busy = thread.status === "submitted" || thread.status === "streaming";
   const landing = thread.messages.length === 0;
   const activeAssistant = thread.messages.at(-1)?.role === "assistant" ? thread.messages.at(-1) : undefined;
   const assistantHasVisibleText = activeAssistant?.parts.some(
@@ -201,27 +222,97 @@ export function VendoThread({
   const working = busy && !assistantHasVisibleText && !awaitingFirstChunk && !caretShowing;
 
   const [attachError, setAttachError] = useState<string>();
-  const send = (override?: string) => {
-    const text = (override ?? draft).trim();
-    if ((!text && files.length === 0) || busy) return;
-    const pending = files;
+
+  // ENG-215 — commit a turn to the transport (reads any attachments first). Used
+  // both by an immediate send and by the deferred flush of a queued message.
+  const dispatch = (text: string, pending: File[]) => {
     void (async () => {
       let parts: Awaited<ReturnType<typeof fileToPart>>[];
       try {
         parts = await Promise.all(pending.map(fileToPart));
       } catch (reason) {
-        // A file read failed — DON'T clear the draft/attachments, or the message
-        // would vanish silently. Surface the error and let the user retry.
+        // A file read failed — surface it and restore the message so it never
+        // vanishes silently.
         setAttachError(reason instanceof Error ? reason.message : "Couldn't read an attachment.");
+        setDraft(current => current || text);
+        setFiles(current => (current.length > 0 ? current : pending));
         return;
       }
-      // Only clear once the turn is committed.
       setAttachError(undefined);
-      setDraft("");
-      setFiles([]);
-      if (fileRef.current) fileRef.current.value = "";
       void thread.sendMessage(parts.length > 0 ? { text, files: parts } : { text });
     })();
+  };
+
+  const send = (override?: string) => {
+    const text = (override ?? draft).trim();
+    const pending = files;
+    if (!text && pending.length === 0) return;
+    // The message leaves the input immediately (whether it sends now or parks).
+    setDraft("");
+    setFiles([]);
+    if (fileRef.current) fileRef.current.value = "";
+    if (busy) {
+      setQueued({ text, files: pending });
+      return;
+    }
+    dispatch(text, pending);
+  };
+
+  // Flush the queued message the moment the active turn finishes. A ref-tracked
+  // busy edge keeps this from firing on unrelated re-renders.
+  const wasBusyRef = useRef(busy);
+  useEffect(() => {
+    if (wasBusyRef.current && !busy && queued) {
+      const pending = queued;
+      setQueued(null);
+      dispatch(pending.text, pending.files);
+    }
+    wasBusyRef.current = busy;
+    // dispatch is recreated each render but closes only over stable setters and
+    // thread.sendMessage; the busy edge + queued slot are the real triggers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, queued]);
+
+  // ENG-215 — autogrow: the textarea tracks its content height (CSS caps it at
+  // max-height and scrolls past that). Runs on every draft change, including the
+  // programmatic reset on send and the refill on edit.
+  useEffect(() => {
+    const node = textareaRef.current;
+    if (!node) return;
+    node.style.height = "auto";
+    node.style.height = `${node.scrollHeight}px`;
+  }, [draft]);
+
+  // ENG-215 — edit the last user turn: drop it (and anything after) from the
+  // transcript and refill the composer, so re-sending amends rather than
+  // duplicates. Only meaningful when idle.
+  const lastUserIndex = (() => {
+    for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
+      if (thread.messages[index]?.role === "user") return index;
+    }
+    return -1;
+  })();
+  const editLast = () => {
+    if (busy || lastUserIndex < 0) return;
+    const message = thread.messages[lastUserIndex];
+    if (!message) return;
+    thread.setMessages(thread.messages.slice(0, lastUserIndex));
+    setQueued(null);
+    setDraft(userText(message));
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  // ENG-215 — regenerate the last assistant turn (re-issues from the preserved
+  // user message; no duplication). Only when idle and an assistant turn exists.
+  const lastAssistantIndex = (() => {
+    for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
+      if (thread.messages[index]?.role === "assistant") return index;
+    }
+    return -1;
+  })();
+  const regenerateLast = () => {
+    if (busy || lastAssistantIndex < 0) return;
+    void thread.regenerate();
   };
 
   // ENG-214 — a broken turn (failed send, mid-stream drop, any thread.error)
@@ -254,6 +345,14 @@ export function VendoThread({
   const composer = (
     <form className="fl-composer" aria-label="Message composer" onSubmit={event => { event.preventDefault(); send(); }}>
       {attachError ? <div className="fl-att-error" role="alert">{attachError}</div> : null}
+      {queued ? (
+        <div className="fl-queued" role="status" aria-live="polite">
+          <span className="fl-queued-tag">Queued</span>
+          <span className="fl-queued-text">{queued.text || `${queued.files.length} attachment(s)`}</span>
+          <span className="fl-queued-hint">sends when the reply finishes</span>
+          <button type="button" className="fl-att-rm fl-queued-rm" aria-label="Cancel queued message" onClick={() => setQueued(null)}>×</button>
+        </div>
+      ) : null}
       {files.length > 0 ? (
         <div className="fl-att-chips">
           {files.map((file, i) => (
@@ -276,13 +375,17 @@ export function VendoThread({
         <label style={{ display: "contents" }}>
           <span className="fl-sr-only">Message</span>
           <textarea
+            ref={textareaRef}
             aria-label="Message"
             placeholder="Ask anything"
             rows={1}
             value={draft}
-            disabled={busy}
+            // ENG-215 — never disabled: typing (and queueing) stays live through
+            // the whole turn, and the composer never dumps focus to <body>.
             onChange={event => setDraft(event.currentTarget.value)}
-            onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }}
+            onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+              if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); }
+            }}
           />
         </label>
         {onVoice ? (
@@ -292,19 +395,20 @@ export function VendoThread({
             </svg>
           </button>
         ) : null}
+        {/* ENG-215 — Stop is the explicit interrupt (only mid-turn); Send is
+            always available and, during a turn, queues the message instead. */}
         {busy ? (
-          <button className="fl-icon-btn" type="button" aria-label="Stop" onClick={() => void thread.stop()}>
+          <button className="fl-icon-btn fl-stop" type="button" aria-label="Stop" onClick={() => void thread.stop()}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5" /></svg>
             <span className="fl-sr-only">Stop</span>
           </button>
-        ) : (
-          <button className="fl-icon-btn fl-send" type="submit" aria-label="Send" disabled={!draft.trim() && files.length === 0}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 19V5" /><path d="m5 12 7-7 7 7" />
-            </svg>
-            <span className="fl-sr-only">Send</span>
-          </button>
-        )}
+        ) : null}
+        <button className="fl-icon-btn fl-send" type="submit" aria-label="Send" disabled={!draft.trim() && files.length === 0}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 19V5" /><path d="m5 12 7-7 7 7" />
+          </svg>
+          <span className="fl-sr-only">Send</span>
+        </button>
       </div>
       <span role="status" aria-live="polite" className="fl-sr-only">
         {thread.status === "error" && thread.error ? `error: ${thread.error.message}` : thread.status}
@@ -437,7 +541,7 @@ export function VendoThread({
             ref={scroll.listRef}
             onScroll={scroll.onScroll}
           >
-            {thread.messages.map(message => (
+            {thread.messages.map((message, messageIndex) => (
               <article
                 className={message.role === "user" ? "fl-turn-user" : "fl-turn-assistant"}
                 data-role={message.role}
@@ -445,6 +549,28 @@ export function VendoThread({
                 aria-label={`${message.role} message`}
               >
                 {message.parts.map((part, index) => renderPart(part, `${message.id}-${index}`, message.role))}
+                {/* ENG-215 — edit the last user turn / regenerate the last
+                    assistant turn. Revealed on hover/focus (see chrome-css). */}
+                {!busy && messageIndex === lastUserIndex && message.role === "user" ? (
+                  <div className="fl-turn-actions">
+                    <button type="button" className="fl-turn-btn" aria-label="Edit message" onClick={editLast}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                      </svg>
+                      Edit
+                    </button>
+                  </div>
+                ) : null}
+                {!busy && messageIndex === lastAssistantIndex && message.role === "assistant" ? (
+                  <div className="fl-turn-actions">
+                    <button type="button" className="fl-turn-btn" aria-label="Regenerate" onClick={regenerateLast}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 21v-5h5" />
+                      </svg>
+                      Regenerate
+                    </button>
+                  </div>
+                ) : null}
               </article>
             ))}
             {approvals.map(part => {

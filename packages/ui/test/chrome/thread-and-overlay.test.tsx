@@ -35,7 +35,9 @@ describe("VendoThread and VendoOverlay exports", () => {
     fireEvent.keyDown(composer, { key: "Enter" });
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy());
-    expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).disabled).toBe(true);
+    // ENG-215 — typing is never blocked mid-turn (the composer stays enabled so
+    // it can queue a follow-up and never dumps focus to <body>).
+    expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).disabled).toBe(false);
     await act(async () => release());
     const receipt = await screen.findByText("Tool: host_email_send");
     expect(receipt.parentElement?.getAttribute("data-vendo-approval")).toBe("write");

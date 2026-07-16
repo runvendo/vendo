@@ -569,6 +569,18 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-att-rm-file { top: 50%; transform: translateY(-50%); background: var(--vendo-accent-soft); color: var(--vendo-fg); }
 .fl-att-error { font-size: 11.5px; color: var(--vendo-danger); padding: 0 2px; }
 
+/* queued-send pill (ENG-215): a message typed mid-turn parks here and auto-sends
+   when the turn completes. Reads as a pending chip, not a sent bubble. */
+.fl-queued { position: relative; display: flex; align-items: center; gap: 8px; padding: 7px 34px 7px 10px;
+  border: 1px dashed var(--vendo-border-strong); border-radius: var(--vendo-radius-sm);
+  background: var(--vendo-accent-soft); font-size: 12.5px; color: var(--vendo-fg); }
+.fl-queued-tag { flex-shrink: 0; font: 600 10px/1 var(--vendo-font); text-transform: uppercase; letter-spacing: .04em;
+  color: var(--vendo-accent); border: 1px solid color-mix(in srgb, var(--vendo-accent) 40%, transparent);
+  border-radius: 5px; padding: 3px 5px; }
+.fl-queued-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.fl-queued-hint { margin-left: auto; flex-shrink: 0; color: var(--vendo-fg-muted); font-size: 11px; }
+.fl-queued-rm { background: var(--vendo-accent-soft); color: var(--vendo-fg); }
+
 /* sent attachments (in transcript) */
 .fl-turn-user-att { align-self: flex-end; max-width: 82%; display: flex; flex-wrap: wrap; gap: 6px;
   align-items: flex-start; justify-content: flex-end; }
@@ -622,6 +634,11 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-turn-assistant:hover .fl-turn-actions,
 .fl-turn-assistant:focus-within .fl-turn-actions,
 .fl-turn-assistant:last-child .fl-turn-actions { opacity: 1; }
+/* ENG-215 — the last user turn carries an Edit action; reveal on hover/focus so
+   keyboard users reach it too (the button stays tabbable while faint). */
+.fl-turn-user .fl-turn-actions { justify-content: flex-end; }
+.fl-turn-user:hover .fl-turn-actions,
+.fl-turn-user:focus-within .fl-turn-actions { opacity: 1; }
 .fl-turn-btn { display: inline-flex; align-items: center; gap: 5px; height: 27px; min-width: 27px; padding: 0 6px;
   border: 0; border-radius: 7px; background: transparent; color: var(--vendo-fg-muted); cursor: pointer;
   font: 550 12px/1 var(--vendo-font); transition: background .12s, color .12s; }
