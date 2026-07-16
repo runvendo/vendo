@@ -111,17 +111,6 @@ async function sendPrompt(page: Page, prompt: string): Promise<{ assistantTurns:
   return { assistantTurns };
 }
 
-/** True while a generated turn is still working: the composer textarea is
- * disabled, the message list is marked busy, or a thinking/pulse indicator is
- * on screen. Used to observe a full generate→settle cycle. */
-async function isGenerating(page: Page): Promise<boolean> {
-  const textarea = page.locator('form[aria-label="Message composer"]')
-    .getByRole("textbox", { name: "Message" });
-  const idle = await textarea.isEnabled().catch(() => false);
-  if (!idle) return true;
-  return await page.locator('.fl-msglist[aria-busy="true"], .fl-thinking, .fl-act-pulse').count() > 0;
-}
-
 async function waitForTurn(options: {
   page: Page;
   previousAssistantTurns: number;
@@ -131,22 +120,29 @@ async function waitForTurn(options: {
    * new assistant article, so a new-turn check never fires. In this mode the
    * turn is complete once a full generate→settle cycle is observed (the
    * composer goes busy and returns idle) with a generated view still on
-   * screen. */
+   * screen. When omitted, the original new-turn condition is used, unchanged. */
   inPlaceRevision?: boolean;
 }): Promise<void> {
   const deadline = Date.now() + options.timeoutMs;
-  let sawGenerating = false;
+  let sawBusy = false;
   while (Date.now() < deadline) {
     await approveIfPresent(options.page);
     const alert = options.page.locator(".fl-error:visible, .fl-att-error:visible").first();
     if (await alert.count() > 0 && await alert.isVisible().catch(() => false)) {
       throw new Error(`Vendo capture surfaced an error: ${(await alert.textContent())?.trim() ?? "unknown error"}`);
     }
-    const generating = await isGenerating(options.page);
-    if (generating) sawGenerating = true;
+    const textarea = options.page.locator('form[aria-label="Message composer"]')
+      .getByRole("textbox", { name: "Message" });
+    const idle = await textarea.isEnabled().catch(() => false);
     if (options.inPlaceRevision) {
+      // "Generating" spans the composer being disabled and the busy/pulse
+      // indicators. A remix's generation runs for seconds, so the busy state is
+      // always observed by the 300ms poll before it settles.
+      const busy = !idle
+        || await options.page.locator('.fl-msglist[aria-busy="true"], .fl-thinking, .fl-act-pulse').count() > 0;
+      if (busy) sawBusy = true;
       const hasView = await options.page.locator("[data-vendo-node-id]").count() > 0;
-      if (sawGenerating && !generating && hasView) return;
+      if (sawBusy && !busy && hasView) return;
     } else {
       const turns = await options.page.locator('article[data-role="assistant"]').count();
       let hasView = true;
@@ -155,7 +151,7 @@ async function waitForTurn(options: {
         hasView = turns > options.previousAssistantTurns
           && await lastAssistant.locator("[data-vendo-node-id]").count() > 0;
       }
-      if (turns > options.previousAssistantTurns && !generating && hasView) return;
+      if (turns > options.previousAssistantTurns && idle && hasView) return;
     }
     await options.page.waitForTimeout(300);
   }
