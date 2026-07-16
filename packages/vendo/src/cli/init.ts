@@ -383,6 +383,41 @@ function themeWiring(specifier: string | null): { importLine: string; prop: stri
       };
 }
 
+/**
+ * Wire the server-action registration map into an EXISTING generated route
+ * (ENG-248 idempotency fix): a host that adds `"use server"` actions AFTER the
+ * initial init gets vendo-actions.ts generated, but its route.ts still calls
+ * `createVendo` without `serverActions` — so every server-action call fails
+ * closed at runtime. Best-effort like wireLayout: rewrites only the recognized
+ * `createVendo({ ... })` shape; returns null when already wired or the shape is
+ * unrecognized (never corrupts a hand-customized route). Idempotent: a route
+ * that already imports and passes serverActions yields null.
+ */
+function wireRouteServerActions(source: string): string | null {
+  const importsMap = /from\s+["']\.\/vendo-actions["']/.test(source);
+  const call = source.match(/createVendo\(\s*\{/);
+  if (!call) return null; // unrecognized composition — leave it untouched
+  const callIndex = source.indexOf(call[0]);
+  const passesActions = /(^|[\s{,])serverActions\b/.test(source.slice(callIndex));
+  if (importsMap && passesActions) return null; // already wired
+
+  let next = source;
+  if (!importsMap) {
+    const importLine = `import { serverActions } from "./vendo-actions";`;
+    const serverImport = next.match(/^.*from\s+["']@vendoai\/vendo\/server["'];?[^\n]*$/m);
+    if (serverImport) {
+      const at = next.indexOf(serverImport[0]) + serverImport[0].length;
+      next = `${next.slice(0, at)}\n${importLine}${next.slice(at)}`;
+    } else {
+      next = `${importLine}\n${next}`;
+    }
+  }
+  if (!passesActions) {
+    next = next.replace(/createVendo\(\s*\{/, (match) => `${match}\n  serverActions,`);
+  }
+  return next === source ? null : next;
+}
+
 function defaultLayoutSource(themeSpecifier: string | null): string {
   const theme = themeWiring(themeSpecifier);
   return `import { VendoRoot } from "@vendoai/vendo/react";\n` +
@@ -672,6 +707,15 @@ async function buildPlan(options: InitOptions, mcpEnabled = false): Promise<{ pl
         const modelPath = relative(root, modelModule);
         const modelAfter = defaultModelSource();
         changes.push({ absolute: modelModule, path: modelPath, before: null, after: modelAfter, diff: diff(modelPath, null, modelAfter) });
+      }
+    } else if (registrations.length > 0) {
+      // The route already exists but server actions appeared since it was
+      // generated: wire the registration map into the existing createVendo so
+      // server-action execution doesn't fail closed (ENG-248 idempotency fix).
+      const wiredRoute = wireRouteServerActions(routeBefore);
+      if (wiredRoute !== null) {
+        const path = relative(root, route);
+        changes.push({ absolute: route, path, before: routeBefore, after: wiredRoute, diff: diff(path, routeBefore, wiredRoute) });
       }
     }
     if (mcpEnabled && wellKnownRouteBefore === null) {

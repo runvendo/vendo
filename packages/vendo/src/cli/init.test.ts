@@ -349,6 +349,32 @@ describe("vendo init", () => {
     expect(wiring).toContain('"app/actions/tags.ts#createTag"');
   });
 
+  it("wires serverActions into a pre-existing route when actions appear on re-init (ENG-248 Greptile P1)", async () => {
+    const root = await fixture();
+    // First init with no server actions: route.ts is created without serverActions wiring.
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    const routePath = join(root, "app", "api", "vendo", "[...vendo]", "route.ts");
+    expect(await readFile(routePath, "utf8")).not.toContain("serverActions");
+
+    // A server action appears; re-init must wire it into the EXISTING route,
+    // not just emit vendo-actions.ts (else every call fails closed at runtime).
+    await mkdir(join(root, "app", "actions"), { recursive: true });
+    await writeFile(join(root, "app", "actions", "notify.ts"),
+      '"use server";\n\nexport async function notify(userId: string) {\n  return { userId };\n}\n');
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+
+    const route = await readFile(routePath, "utf8");
+    expect(route).toContain('import { serverActions } from "./vendo-actions"');
+    expect(route).toContain("serverActions,");
+    expect(route).toContain("createVendo(");
+    await readFile(join(root, "app", "api", "vendo", "[...vendo]", "vendo-actions.ts"), "utf8");
+
+    // Re-init over the now-wired route stays idempotent.
+    const wired = await tree(root);
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    expect(await tree(root)).toEqual(wired);
+  });
+
   it("scaffolds no registration map for hosts without server actions", async () => {
     const root = await fixture();
     expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
