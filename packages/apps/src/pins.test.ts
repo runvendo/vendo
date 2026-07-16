@@ -60,6 +60,8 @@ describe("pinForkSource", () => {
     expect(pinForkSource(inline)).toContain("export { InvoiceCard as default };");
     const statement = "export function InvoiceCard() { return null; }\nexport type { Props as default };";
     expect(pinForkSource(statement)).toContain("export { InvoiceCard as default };");
+    const declared = "export default interface Props { label: string }\nexport function InvoiceCard() { return null; }";
+    expect(pinForkSource(declared)).toContain("export { InvoiceCard as default };");
   });
 
   it("does not mistake a renamed default re-export for a default export", () => {

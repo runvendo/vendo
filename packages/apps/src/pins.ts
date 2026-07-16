@@ -76,7 +76,9 @@ const EXPORT_LIST = /\bexport\s*\{([^}]*)\}/gu;
     — but NOT a renamed re-export like `export { default as X } from …`, which
     exposes only the named binding. */
 export const hasDefaultExport = (source: string): boolean => {
-  if (/\bexport\s+default\b/u.test(source)) return true;
+  // `export default interface …` (and any type-level default) is erased from
+  // the emitted JavaScript, so it is not a runtime default export.
+  if (/\bexport\s+default\b(?!\s+(?:interface|type)\b)/u.test(source)) return true;
   for (const match of source.matchAll(EXPORT_LIST)) {
     for (const entry of match[1]!.split(",")) {
       const trimmed = entry.trim();
