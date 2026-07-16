@@ -55,6 +55,13 @@ describe("pinForkSource", () => {
     expect(pinForkSource(reExported)).toBe(reExported);
   });
 
+  it("ignores type-only default exports, which are erased at runtime", () => {
+    const inline = "export function InvoiceCard() { return null; }\nexport { type Props as default };";
+    expect(pinForkSource(inline)).toContain("export { InvoiceCard as default };");
+    const statement = "export function InvoiceCard() { return null; }\nexport type { Props as default };";
+    expect(pinForkSource(statement)).toContain("export { InvoiceCard as default };");
+  });
+
   it("does not mistake a renamed default re-export for a default export", () => {
     // `export { default as InvoiceCard } from …` exposes only the NAMED
     // binding; there is no local binding to alias either, so the source passes

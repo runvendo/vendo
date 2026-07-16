@@ -79,7 +79,10 @@ export const hasDefaultExport = (source: string): boolean => {
   if (/\bexport\s+default\b/u.test(source)) return true;
   for (const match of source.matchAll(EXPORT_LIST)) {
     for (const entry of match[1]!.split(",")) {
-      const [local, exported] = entry.trim().split(/\s+as\s+/u).map((part) => part.trim());
+      const trimmed = entry.trim();
+      // A `type` entry is erased from the emitted JavaScript — no runtime default.
+      if (/^type\s/u.test(trimmed)) continue;
+      const [local, exported] = trimmed.split(/\s+as\s+/u).map((part) => part.trim());
       if ((exported ?? local) === "default") return true;
     }
   }
