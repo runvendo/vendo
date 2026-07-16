@@ -17,6 +17,7 @@ import {
 } from "@vendoai/actions";
 import type { VendoTheme } from "@vendoai/core";
 import type { Telemetry } from "@vendoai/telemetry";
+import { runCloudStep, type CloudStepOptions } from "./cloud-init.js";
 import {
   runDevModeStep,
   runInitFinale,
@@ -120,6 +121,8 @@ export interface InitOptions {
   /** ENG-338 seams (tests): dev-mode ladder step + init finale overrides. */
   devMode?: Partial<Omit<DevModeStepOptions, "root" | "output" | "yes">>;
   finale?: Partial<Omit<InitFinaleOptions, "root" | "output" | "yes" | "framework" | "credential">> & { skip?: boolean };
+  /** ENG-339 seam (tests): cloud-in-init step overrides. */
+  cloud?: Partial<Omit<CloudStepOptions, "root" | "output" | "yes" | "credential">>;
 }
 
 /** Interactive y/N for the end-of-init `vendo refine` offer. */
@@ -1024,6 +1027,15 @@ export async function runInit(options: InitOptions): Promise<number> {
       output,
       yes: options.yes === true,
       ...(options.devMode ?? {}),
+    });
+    // ENG-339: cloud in init — validate VENDO_API_KEY (state what it unlocks),
+    // else offer `vendo cloud login` + a starter allowance written to .env.local.
+    await runCloudStep({
+      root,
+      output,
+      yes: options.yes === true,
+      credential: devCredential,
+      ...(options.cloud ?? {}),
     });
     // 10-mcp §2: the door never opens by default. When the host asks to open it,
     // point them at the one code change they make deliberately — a HostOAuthAdapter
