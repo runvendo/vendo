@@ -51,9 +51,21 @@ export const expectedTrpcToolInventorySchema = z
   })
   .strict();
 
+/** Binding-kind-aware tool identity: a GraphQL tool is identified by its
+ * operation name (the schema field on the query/mutation root). */
+export const expectedGraphqlToolInventorySchema = z
+  .object({
+    name: z.string().min(1),
+    kind: z.literal("graphql"),
+    operation: z.string().min(1),
+    readOrWrite: z.enum(["read", "write"]),
+  })
+  .strict();
+
 export const expectedToolInventorySchema = z.union([
   expectedHttpToolInventorySchema,
   expectedTrpcToolInventorySchema,
+  expectedGraphqlToolInventorySchema,
 ]);
 
 export const expectedToolAnnotationSchema = z
@@ -104,10 +116,13 @@ export type RepoExpectations = z.infer<typeof repoExpectationsSchema>;
 export type RepoBaseline = z.infer<typeof repoBaselineSchema>;
 
 /** The binding-kind-aware identity an expectation joins on: procedure for
- * tRPC entries, method+path for HTTP-shaped entries. Names stay out of the
- * key (01-core §15 renames them deterministically). */
+ * tRPC entries, operation for GraphQL entries, method+path for HTTP-shaped
+ * entries. Names stay out of the key (01-core §15 renames them
+ * deterministically). */
 export function expectedToolIdentity(item: ExpectedToolInventory): string {
-  return "procedure" in item ? `trpc\t${item.procedure}` : `${item.method}\t${item.path}`;
+  if ("procedure" in item) return `trpc\t${item.procedure}`;
+  if ("operation" in item) return `graphql\t${item.operation}`;
+  return `${item.method}\t${item.path}`;
 }
 
 export function repoExpectationsDir(expectationsRoot: string, repoName: string): string {

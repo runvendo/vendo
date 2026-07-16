@@ -488,5 +488,56 @@
       }
     },
     "notes": "Permanent local Express host proving the framework-agnostic fetch handler composition through all corpus layers."
+  },
+  {
+    "name": "twenty",
+    "gitUrl": "https://github.com/twentyhq/twenty.git",
+    "pinnedSha": "b53f1832d80f87be2cfd88990b855c0e5f3cc926",
+    "appDir": "packages/twenty-server",
+    "framework": "express",
+    "license": "AGPL-3.0",
+    "tier": "broad",
+    "bootstrap": {
+      "installCommand": "YARN_ENABLE_HARDENED_MODE=false YARN_ENABLE_CONSTRAINTS_CHECKS=false corepack yarn install",
+      "envTemplate": {
+        "NODE_ENV": "development",
+        "PG_DATABASE_URL": "postgres://corpus:corpus@127.0.0.1:55437/twenty",
+        "REDIS_URL": "redis://127.0.0.1:56379",
+        "APP_SECRET": "corpus-twenty-app-secret-0123456789",
+        "SIGN_IN_PREFILLED": "true",
+        "NODE_PORT": "43120",
+        "SERVER_URL": "http://127.0.0.1:43120",
+        "FRONTEND_URL": "http://127.0.0.1:43120"
+      },
+      "seedCommand": "NX_DAEMON=false npx nx run twenty-server:database:init",
+      "database": {
+        "kind": "docker-postgres",
+        "containerName": "vendo-corpus-twenty-postgres",
+        "image": "postgres:16-alpine",
+        "hostPort": 55437,
+        "database": "twenty",
+        "username": "corpus",
+        "password": "corpus",
+        "readinessTimeoutMs": 30000,
+        "readinessIntervalMs": 500
+      },
+      "redis": {
+        "kind": "docker-redis",
+        "containerName": "vendo-corpus-twenty-redis",
+        "image": "redis:7-alpine",
+        "hostPort": 56379,
+        "readinessTimeoutMs": 30000,
+        "readinessIntervalMs": 500
+      },
+      "typecheckCommand": "NX_DAEMON=false npx nx run twenty-server:typecheck",
+      "buildCommand": "NX_DAEMON=false npx nx run twenty-server:build",
+      "devServer": {
+        "command": "NX_DAEMON=false npx nx run twenty-server:start",
+        "readinessUrl": "http://127.0.0.1:43120/graphql",
+        "readinessTimeoutMs": 900000,
+        "readinessIntervalMs": 2000
+      }
+    },
+    "notes": "First GraphQL corpus fixture (ENG-247): NestJS code-first GraphQL (yoga driver) in a yarn 4 + nx monorepo; appDir is packages/twenty-server (the API host; the Vite frontend lives in twenty-front). Pinned at the v2.9.0 release tag (b53f1832, 2026-06-04) verified via the GitHub tags API. The core /graphql workspace schema is metadata-generated at runtime; the statically extractable surface is the code-first resolver set, which spans three schema scopes (/graphql, /metadata, /admin-panel) so extraction emits every operation disabled fail-closed. Hardened mode and constraints checks are disabled for corpus installs (hardened-mode registry audits are slow and constraints reject the injected local Vendo tarballs). Redis (the corpus's only Redis boot) backs Twenty's cache storage; database:init needs both containers up."
   }
 ]

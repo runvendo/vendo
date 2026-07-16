@@ -103,18 +103,18 @@ function scoreTheme(expected: RepoExpectations, actual: VendoTheme): WeightedRes
 }
 
 // A tool's IDENTITY for scoring is binding-kind-aware — the endpoint
-// (method + path) for HTTP-shaped bindings, the procedure dot-path for tRPC —
-// plus its read/write classification, and NOT its name. Tool names are a
-// deterministic, contract-defined value (01-core §15: provider-safe
-// `host_<path>` slugs), while the checked-in expectations carry the pre-freeze
-// OpenAPI-operationId names (`getAdminTeams`). Keying on the identity is the
-// "adapted names" the v0 corpus requires, and still catches every real
-// extraction defect: a missed surface drops recall, a mis-classified
-// read/write breaks the key.
+// (method + path) for HTTP-shaped bindings, the procedure dot-path for tRPC,
+// the operation name for GraphQL — plus its read/write classification, and
+// NOT its name. Tool names are a deterministic, contract-defined value
+// (01-core §15: provider-safe `host_<path>` slugs), while the checked-in
+// expectations carry the pre-freeze OpenAPI-operationId names
+// (`getAdminTeams`). Keying on the identity is the "adapted names" the v0
+// corpus requires, and still catches every real extraction defect: a missed
+// surface drops recall, a mis-classified read/write breaks the key.
 function actualToolIdentity(tool: ExtractedTool): string {
-  return tool.binding.kind === "trpc"
-    ? `trpc\t${tool.binding.procedure}`
-    : `${tool.binding.method}\t${tool.binding.path}`;
+  if (tool.binding.kind === "trpc") return `trpc\t${tool.binding.procedure}`;
+  if (tool.binding.kind === "graphql") return `graphql\t${tool.binding.operation}`;
+  return `${tool.binding.method}\t${tool.binding.path}`;
 }
 
 function actualInventoryKey(tool: ExtractedTool): string {
@@ -158,9 +158,12 @@ function expectedAnnotationMatches(expected: ExpectedToolAnnotation, actual: Ext
   return actual.risk === expectedRisk;
 }
 
-/** A tRPC mutation is write-shaped exactly like a POST; a query like a GET. */
+/** A tRPC or GraphQL mutation is write-shaped exactly like a POST; a query
+ * like a GET. */
 function effectiveWriteMethod(tool: ExtractedTool): string {
-  if (tool.binding.kind === "trpc") return tool.binding.type === "query" ? "GET" : "POST";
+  if (tool.binding.kind === "trpc" || tool.binding.kind === "graphql") {
+    return tool.binding.type === "query" ? "GET" : "POST";
+  }
   return tool.binding.method;
 }
 

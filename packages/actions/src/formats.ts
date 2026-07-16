@@ -180,6 +180,33 @@ export const trpcBindingSchema = z.object({
 }).passthrough() satisfies z.ZodType<TrpcBinding>;
 
 /**
+ * 04-actions §1 (additive within vendo/tools@1): execution binding for a
+ * GraphQL operation. Tool identity is endpoint + `operation` (the schema field
+ * name on the query/mutation root), not a method+path pair. Execution is a
+ * POST of `{ query: document, variables: args }` to the host endpoint; every
+ * tool argument rides as a same-named GraphQL variable. `document` carries the
+ * full statically-generated operation (variable declarations derived from the
+ * schema's argument types plus a depth-limited default selection set); it is
+ * absent only on disabled tools whose operation could not be made statically
+ * executable (fail-closed, 04 §1).
+ */
+export interface GraphqlBinding {
+  kind: "graphql";
+  operation: string;               // schema field name, e.g. "createInvoice"
+  type: "query" | "mutation";
+  endpoint: string;                // "/graphql" — resolved against createActions baseUrl
+  document?: string;
+}
+
+export const graphqlBindingSchema = z.object({
+  kind: z.literal("graphql"),
+  operation: z.string().min(1),
+  type: z.enum(["query", "mutation"]),
+  endpoint: z.string().startsWith("/"),
+  document: z.string().min(1).optional(),
+}).passthrough() satisfies z.ZodType<GraphqlBinding>;
+
+/**
  * 04-actions §6: ordered steps over primitive host/connector tools, reusing the
  * core §11 `Step` shape. Expressions see `{ args, steps, item }`. Compounds are
  * agent-authored: they live in `.vendo/capabilities.json`, never `tools.json`.
@@ -198,14 +225,15 @@ export const compoundBindingSchema = z.object({
 ) satisfies z.ZodType<CompoundBinding>;
 
 /** The bindings deterministic extraction may emit into `.vendo/tools.json`. */
-export type PrimitiveToolBinding = RouteBinding | OpenApiBinding | TrpcBinding;
+export type PrimitiveToolBinding = RouteBinding | OpenApiBinding | TrpcBinding | GraphqlBinding;
 
-export type ToolBinding = RouteBinding | OpenApiBinding | TrpcBinding | CompoundBinding;
+export type ToolBinding = RouteBinding | OpenApiBinding | TrpcBinding | GraphqlBinding | CompoundBinding;
 
 export const toolBindingSchema = z.union([
   routeBindingSchema,
   openApiBindingSchema,
   trpcBindingSchema,
+  graphqlBindingSchema,
   compoundBindingSchema,
 ]) satisfies z.ZodType<ToolBinding>;
 
@@ -220,6 +248,7 @@ const extractedBindingSchema = z.discriminatedUnion("kind", [
   routeBindingSchema,
   openApiBindingSchema,
   trpcBindingSchema,
+  graphqlBindingSchema,
   compoundKindSchema,
 ]) as unknown as z.ZodType<PrimitiveToolBinding>;
 

@@ -26,6 +26,7 @@ export interface BootLogPaths {
   server: string;
   seed?: string;
   database?: string;
+  redis?: string;
 }
 
 export interface BootHandle {
@@ -157,7 +158,7 @@ async function defaultProvisionDatabase(
   context: DatabaseProvisionContext,
 ): Promise<DatabaseProvisionHandle> {
   await writeFile(context.logPath, "");
-  if (database.kind !== "docker-postgres") {
+  if (database.kind !== "docker-postgres" && database.kind !== "docker-redis") {
     throw new Error(`Unsupported database provisioning kind: ${(database as { kind: string }).kind}`);
   }
 
@@ -166,23 +167,40 @@ async function defaultProvisionDatabase(
   const removeBefore = await runBinary("docker", ["rm", "-f", database.containerName], dockerOptions);
   await appendDatabaseLog(context.logPath, `docker rm -f ${database.containerName}`, removeBefore);
 
+  const runArgs = database.kind === "docker-postgres"
+    ? [
+        "run",
+        "-d",
+        "--name",
+        database.containerName,
+        "-e",
+        `POSTGRES_USER=${database.username}`,
+        "-e",
+        `POSTGRES_PASSWORD=${database.password}`,
+        "-e",
+        `POSTGRES_DB=${database.database}`,
+        "-p",
+        `127.0.0.1:${database.hostPort}:5432`,
+        database.image,
+      ]
+    : [
+        "run",
+        "-d",
+        "--name",
+        database.containerName,
+        "-p",
+        `127.0.0.1:${database.hostPort}:6379`,
+        database.image,
+      ];
+  const readinessArgs = database.kind === "docker-postgres"
+    ? ["exec", database.containerName, "pg_isready", "-U", database.username, "-d", database.database]
+    : ["exec", database.containerName, "redis-cli", "ping"];
+  const readinessLabel = database.kind === "docker-postgres" ? "pg_isready" : "redis-cli ping";
+  const isReady = (result: BinaryResult): boolean =>
+    result.code === 0 && (database.kind !== "docker-redis" || result.stdout.includes("PONG"));
+
   let startedContainer = false;
   try {
-    const runArgs = [
-      "run",
-      "-d",
-      "--name",
-      database.containerName,
-      "-e",
-      `POSTGRES_USER=${database.username}`,
-      "-e",
-      `POSTGRES_PASSWORD=${database.password}`,
-      "-e",
-      `POSTGRES_DB=${database.database}`,
-      "-p",
-      `127.0.0.1:${database.hostPort}:5432`,
-      database.image,
-    ];
     const started = await checkedBinary("docker", runArgs, dockerOptions);
     startedContainer = true;
     await appendDatabaseLog(context.logPath, `docker ${runArgs.join(" ")}`, started);
@@ -192,17 +210,9 @@ async function defaultProvisionDatabase(
     const attempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
     let lastResult: BinaryResult | undefined;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
-      lastResult = await runBinary("docker", [
-        "exec",
-        database.containerName,
-        "pg_isready",
-        "-U",
-        database.username,
-        "-d",
-        database.database,
-      ], dockerOptions);
-      await appendDatabaseLog(context.logPath, "docker exec ... pg_isready", lastResult);
-      if (lastResult.code === 0) {
+      lastResult = await runBinary("docker", readinessArgs, dockerOptions);
+      await appendDatabaseLog(context.logPath, `docker exec ... ${readinessLabel}`, lastResult);
+      if (isReady(lastResult)) {
         return {
           teardown: async () => {
             const stopped = await runBinary("docker", ["rm", "-f", database.containerName], dockerOptions);
@@ -392,10 +402,12 @@ export async function bootRepo(repo: BootRepo, options: BootRepoOptions = {}): P
   };
   if (repo.bootstrap.seedCommand) logPaths.seed = path.join(logsDir, "boot.seed.log");
   if (repo.bootstrap.database) logPaths.database = path.join(logsDir, "boot.database.log");
+  if (repo.bootstrap.redis) logPaths.redis = path.join(logsDir, "boot.redis.log");
 
   await mkdir(logsDir, { recursive: true });
 
   let databaseHandle: DatabaseProvisionHandle | undefined;
+  let redisHandle: DatabaseProvisionHandle | undefined;
   let serverProcess: BootProcess | undefined;
   let closeServerLog: (() => Promise<void>) | undefined;
   let serverExit: string | undefined;
@@ -427,6 +439,11 @@ export async function bootRepo(repo: BootRepo, options: BootRepoOptions = {}): P
       }
     }
     try {
+      await redisHandle?.teardown?.();
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
       await databaseHandle?.teardown?.();
     } catch (error) {
       errors.push(error);
@@ -443,6 +460,17 @@ export async function bootRepo(repo: BootRepo, options: BootRepoOptions = {}): P
         context,
         logsDir,
         logPath: logPaths.database ?? path.join(logsDir, "boot.database.log"),
+        env,
+        sleep: sleepFn,
+      });
+    }
+
+    if (repo.bootstrap.redis) {
+      redisHandle = await provisionDatabase(repo.bootstrap.redis, {
+        repo,
+        context,
+        logsDir,
+        logPath: logPaths.redis ?? path.join(logsDir, "boot.redis.log"),
         env,
         sleep: sleepFn,
       });

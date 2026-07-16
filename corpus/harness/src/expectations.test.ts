@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   THEME_RUBRIC_DIMENSIONS,
+  expectedToolIdentity,
   loadRepoBaseline,
   loadRepoExpectations,
   parseRepoBaseline,
@@ -75,6 +76,34 @@ describe("repo expectations format", () => {
       descriptionIncludes: ["invoice", "status"],
       props: ["status"],
     });
+  });
+
+  it("parses binding-kind-aware inventory rows and keys each by its own identity", () => {
+    const parsed = parseRepoExpectations({
+      version: 1,
+      theme,
+      tools: [
+        { name: "listInvoices", method: "GET", path: "/api/invoices", readOrWrite: "read" },
+        { name: "pollsList", kind: "trpc", procedure: "polls.list", readOrWrite: "read" },
+        { name: "createApiKey", kind: "graphql", operation: "createApiKey", readOrWrite: "write" },
+      ],
+      annotations: [],
+      components: [],
+    });
+    expect(parsed.tools.map(expectedToolIdentity)).toEqual([
+      "GET\t/api/invoices",
+      "trpc\tpolls.list",
+      "graphql\tcreateApiKey",
+    ]);
+
+    // A graphql row without its operation never parses.
+    expect(() => parseRepoExpectations({
+      version: 1,
+      theme,
+      tools: [{ name: "createApiKey", kind: "graphql", readOrWrite: "write" }],
+      annotations: [],
+      components: [],
+    })).toThrow();
   });
 
   it("rejects incomplete theme labels and incomplete tool inventory rows", () => {

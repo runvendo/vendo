@@ -153,6 +153,44 @@ describe("bootRepo", () => {
     ]);
   });
 
+  it("provisions Redis after Postgres and tears both down in reverse order", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repo = repoEntry("twentyish");
+    repo.bootstrap.redis = {
+      kind: "docker-redis",
+      containerName: "vendo-corpus-twentyish-redis",
+      image: "redis:7-alpine",
+      hostPort: 56379,
+    };
+    await mkdir(context.repoDir(repo.name), { recursive: true });
+    const events: string[] = [];
+    const server = fakeProcess(7788);
+
+    const boot = await bootRepo(repo, {
+      context,
+      provisionDatabase: async (database) => {
+        events.push(`service:start:${database.kind}:${database.containerName}`);
+        return { teardown: async () => { events.push(`service:stop:${database.kind}`); } };
+      },
+      runCommand: async () => ({ code: 0, signal: null, stdout: "", stderr: "" }),
+      spawnProcess: () => server,
+      checkReadiness: async () => true,
+      killProcessTree: async () => {},
+      sleep: async () => {},
+    });
+
+    expect(boot.logPaths.redis).toBe(path.join(context.logsDir(repo.name), "boot.redis.log"));
+    await boot.teardown();
+
+    expect(events).toEqual([
+      "service:start:docker-postgres:vendo-corpus-twentyish-postgres",
+      "service:start:docker-redis:vendo-corpus-twentyish-redis",
+      "service:stop:docker-redis",
+      "service:stop:docker-postgres",
+    ]);
+  });
+
   it("rejects a foreign readiness response until the configured body marker is present", async () => {
     const corpusRoot = await makeTempRoot();
     const context = createRunContext({ corpusRoot });

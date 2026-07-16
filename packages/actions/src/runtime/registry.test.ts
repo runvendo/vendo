@@ -775,3 +775,72 @@ describe("host HTTP execution — trpc bindings (04 §1 tRPC HTTP envelope)", ()
     });
   });
 });
+
+describe("host HTTP execution — graphql bindings (04 §1 GraphQL transport)", () => {
+  const document = "query pollGet($id: ID!) { pollGet(id: $id) { id title } }";
+  const graphqlTool = (extras: Partial<ExtractedTool["binding"] & Record<string, unknown>> = {}): ExtractedTool => ({
+    name: "host_poll_get",
+    description: "GraphQL query pollGet",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+    risk: "read",
+    binding: { kind: "graphql", operation: "pollGet", type: "query", endpoint: "/api/graphql", document, ...extras },
+  });
+
+  function capturingFetch(status: number, payload: unknown): { fetch: typeof fetch; seen: Array<{ url: string; method?: string; body?: unknown }> } {
+    const seen: Array<{ url: string; method?: string; body?: unknown }> = [];
+    const impl = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      seen.push({
+        url: String(input),
+        method: init?.method,
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    return { fetch: impl, seen };
+  }
+
+  it("executes as POST {endpoint} with the document and args as variables, unwrapping the root field", async () => {
+    const { fetch, seen } = capturingFetch(200, { data: { pollGet: { id: "p1", title: "Standup" } } });
+    const actions = createActions({ tools: [graphqlTool()], baseUrl: "http://host.test", fetch });
+
+    const outcome = await actions.execute({ id: "1", tool: "host_poll_get", args: { id: "p1" } }, ctx);
+    expect(outcome).toEqual({ status: "ok", output: { id: "p1", title: "Standup" } });
+    expect(new URL(seen[0]!.url).pathname).toBe("/api/graphql");
+    expect(seen[0]!.method).toBe("POST");
+    expect(seen[0]!.body).toEqual({ query: document, variables: { id: "p1" } });
+  });
+
+  it("surfaces a 200-with-errors GraphQL response as an http-error outcome", async () => {
+    const { fetch } = capturingFetch(200, { data: null, errors: [{ message: "Poll not found" }] });
+    const actions = createActions({ tools: [graphqlTool()], baseUrl: "http://host.test", fetch });
+    await expect(actions.execute({ id: "1", tool: "host_poll_get", args: { id: "p1" } }, ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "http-error", message: expect.stringContaining("Poll not found") },
+    });
+  });
+
+  it("returns a validation outcome when no baseUrl is configured", async () => {
+    const actions = createActions({ tools: [graphqlTool()] });
+    await expect(actions.execute({ id: "1", tool: "host_poll_get", args: { id: "p1" } }, ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "validation", message: expect.stringContaining("baseUrl") },
+    });
+  });
+
+  it("fails closed with a validation outcome when the binding carries no executable document", async () => {
+    const actions = createActions({ tools: [graphqlTool({ document: undefined })], baseUrl: "http://host.test" });
+    await expect(actions.execute({ id: "1", tool: "host_poll_get", args: { id: "p1" } }, ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "validation", message: expect.stringContaining("no executable document") },
+    });
+  });
+
+  it("maps non-2xx graphql responses to http-error outcomes", async () => {
+    const { fetch } = capturingFetch(500, { errors: [{ message: "boom" }] });
+    const actions = createActions({ tools: [graphqlTool()], baseUrl: "http://host.test", fetch });
+    await expect(actions.execute({ id: "1", tool: "host_poll_get", args: { id: "p1" } }, ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "http-error", message: expect.stringContaining("500") },
+    });
+  });
+});
