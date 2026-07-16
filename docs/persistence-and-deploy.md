@@ -64,6 +64,10 @@ returned function stops the timer. Cron expressions use five fields and are
 evaluated in UTC. A missed window fires once on the next tick and does not
 back-fill.
 
+Anonymous-session eviction needs no wiring: `createVendo` runs an unref'd
+background timer (every `sessions.sweepIntervalMs`, default 60 s) that sweeps
+idle sessions, and tears it down with `store.close()`.
+
 ## Serverless hosts
 
 Schedule `POST /api/vendo/tick` from the platform cron. Send:
@@ -75,6 +79,10 @@ Authorization: Bearer <secret>
 The `/tick` endpoint is outside cookie auth and requires this bearer secret.
 Use hosted Postgres for serverless deployment. Local PGlite files are suitable
 for a durable single-process host, not an ephemeral filesystem.
+
+Serverless platforms give no timer guarantee, so anonymous-session eviction
+also runs amortized on request: any request arriving `sessions.sweepIntervalMs`
+after the last sweep triggers one before it is handled.
 
 ## Host events and webhooks
 
