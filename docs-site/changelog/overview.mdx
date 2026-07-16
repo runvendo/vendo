@@ -31,6 +31,33 @@ approval that was granted against the pre-rebase content. See
 [Host components](/connect/host-components#drift-and-rebase) and the
 [HTTP routes reference](/reference/http-routes).
 
+**Anonymous sessions carry into sign-in.** The first authenticated request
+with a valid anonymous cookie now adopts that session's threads, apps
+(with their records and blobs), and state into the signed-in user, then
+retires the cookie. Grants, approvals, connected accounts, and history
+are deliberately kept where they were. Nothing on the host side changes —
+as long as your `principal(req)` returns `null` before sign-in and a real
+principal after, Vendo does the merge. See
+[Principals and organizations](/deploy/principals-and-orgs).
+
+**Organization workspaces (Cloud-gated).** New `/orgs` routes let admins
+create an organization, invite members with `owner`, `admin`, or `member`
+roles, and transfer apps into shared ownership. Org-owned runs execute
+under `vendo:org:<orgId>` while `RunContext.actor` records the human that
+triggered the run. Approvals and grants accept `?org=<orgId>` to operate
+under the org's subject. The route family is gated on `VENDO_API_KEY`
+with the new `orgs` capability; without it, `/status` reports
+`blocks.orgs: false` and the chrome renders an upgrade state. See
+[Principals and organizations](/deploy/principals-and-orgs).
+
+**Reserved `vendo:` subject namespace.** Webhook deliveries now execute
+under `vendo:webhook:<source>` and organization workspaces under
+`vendo:org:<orgId>`. `principal(req)` resolvers that return a `vendo:*`
+subject or `kind: "org"` are rejected at the wire — those identities are
+Vendo-owned. Update audit readers that filter on the bare
+`webhook:<source>` form to match the new prefix. See
+[Principals and organizations](/deploy/principals-and-orgs).
+
 **Stop a running automation.** `POST /api/vendo/runs/:id/stop` cancels an
 in-flight run cooperatively — the current step finishes, outstanding tool
 calls drain, and the run reaches a cancelled terminal state. Parked

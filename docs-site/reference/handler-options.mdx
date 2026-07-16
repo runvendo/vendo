@@ -64,6 +64,16 @@ Every wire request passes through `principal(req)`. The returned
 `Principal.subject` scopes threads, apps, approvals, grants, activity, and
 runs. Ephemeral principals never write to disk.
 
+`principal(req)` must return `kind: "user"` (or `null`). Returning
+`kind: "org"` or a subject that starts with `vendo:` is rejected at the
+wire — those identities are Vendo-owned. See
+[Principals and organizations](/deploy/principals-and-orgs).
+
+When `principal(req)` returns `null`, Vendo issues an anonymous session
+cookie. The first authenticated request afterward merges the anonymous
+session's threads, apps, and state into the signed-in user; grants,
+approvals, connected accounts, and history stay put.
+
 ## CSRF floor
 
 Cookie-authenticated state-changing requests require
