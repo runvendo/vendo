@@ -826,4 +826,74 @@ describe("vendo init", () => {
     });
     expect(disabled).not.toHaveBeenCalled();
   });
+
+  describe("end-of-init refine offer (one engine, two surfaces)", () => {
+    it("runs `vendo refine` against the initialized root when the offer is accepted", async () => {
+      const root = await fixture();
+      const sink = output();
+      const runRefine = vi.fn(async () => 0);
+      expect(await runInit({
+        targetDir: root,
+        interview: async () => ({}),
+        confirm: async () => true,
+        output: sink.output,
+        offerRefine: async () => true,
+        runRefine,
+      })).toBe(0);
+      expect(runRefine).toHaveBeenCalledWith(expect.objectContaining({ targetDir: root }));
+    });
+
+    it("forwards the model the dev configured during init into the refine offer", async () => {
+      const runRefine = vi.fn(async () => 0);
+      expect(await runInit({
+        targetDir: await fixture(),
+        modelImport: "@/lib/ai",
+        interview: async () => ({}),
+        confirm: async () => true,
+        output: output().output,
+        offerRefine: async () => true,
+        runRefine,
+      })).toBe(0);
+      expect(runRefine).toHaveBeenCalledWith(expect.objectContaining({ modelImport: "@/lib/ai" }));
+    });
+
+    it("a declined offer runs nothing; a failed refine never fails init", async () => {
+      const declinedRefine = vi.fn(async () => 0);
+      const declined = output();
+      expect(await runInit({
+        targetDir: await fixture(),
+        interview: async () => ({}),
+        confirm: async () => true,
+        output: declined.output,
+        offerRefine: async () => false,
+        runRefine: declinedRefine,
+      })).toBe(0);
+      expect(declinedRefine).not.toHaveBeenCalled();
+
+      const failed = output();
+      expect(await runInit({
+        targetDir: await fixture(),
+        interview: async () => ({}),
+        confirm: async () => true,
+        output: failed.output,
+        offerRefine: async () => true,
+        runRefine: async () => 1,
+      })).toBe(0);
+      expect(failed.errors.join("\n")).toContain("vendo refine did not complete");
+    });
+
+    it("--yes skips the prompt and points at `vendo refine` instead", async () => {
+      const sink = output();
+      const runRefine = vi.fn(async () => 0);
+      expect(await runInit({
+        targetDir: await fixture(),
+        yes: true,
+        output: sink.output,
+        offerRefine: async () => true,
+        runRefine,
+      })).toBe(0);
+      expect(runRefine).not.toHaveBeenCalled();
+      expect(sink.logs.join("\n")).toContain("`vendo refine` proposes compound capabilities");
+    });
+  });
 });

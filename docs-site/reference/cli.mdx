@@ -184,6 +184,42 @@ Exit codes:
 - `3`: breaking changes that impact saved apps, automations, or grants when
   `--strict` is set
 
+## `vendo refine [dir]`
+
+Proposes agent-layer improvements as reviewable diffs — nothing is ever
+applied silently, and deterministic `tools.json` is never touched. One
+model pass over the extracted tools, your app's source, the capability-miss
+feed (`.vendo/data/misses.jsonl`), and a short interview proposes:
+
+- compound capabilities and briefs into `.vendo/capabilities.json`
+- risk corrections, enable/disable curation, and clearer descriptions into
+  `.vendo/overrides.json`
+- product-brief improvements to `.vendo/brief.md`
+
+With `--url` pointing at your running dev server, each proposed compound is
+probed before it is offered: the composition's `/status` is checked and
+read-risk steps are verified against the live app. Write-risk steps are never
+executed by the probe. Compounds that fail their probe are dropped with the
+reason printed.
+
+```bash
+npx vendo refine --url http://localhost:3000/api/vendo
+```
+
+The model rides your own key: `--model-import` loads the module that exports
+your AI SDK `model`, and without it the init starter default is used
+(`@ai-sdk/anthropic` installed in your app plus `ANTHROPIC_API_KEY`).
+
+Options:
+
+- `--url <url>` — mounted wire base of the running dev app; enables the probe.
+- `--model-import <specifier>` — module exporting your AI SDK `model`.
+- `--ask <text>` — interview answer for non-interactive runs (repeatable).
+- `--yes` — approve every displayed diff without prompting.
+
+Each run writes a transcript under `.vendo/data/refine/`. `vendo init` offers
+to run refine once at the end of a successful interactive setup.
+
 ## `vendo mcp`
 
 Tooling for publishing your door to the official MCP registry. Both

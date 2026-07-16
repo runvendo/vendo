@@ -49,6 +49,17 @@ import { adoptEphemeralSubject, createStore, envSecrets, registerEphemeralSubjec
 // 02-store §5: the erase API ships on the umbrella's runtime surface so hosts
 // reach it without installing @vendoai/store directly.
 export { eraseStore, type EraseReport, type EraseTable } from "@vendoai/store";
+export {
+  runRefine,
+  type RefineChange,
+  type RefineDrop,
+  type RefineOptions,
+  type RefineProbe,
+  type RefineProbeCheck,
+  type RefineProposals,
+  type RefineResult,
+  type RefineTranscript,
+} from "./refine.js";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
 import {

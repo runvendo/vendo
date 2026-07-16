@@ -68,7 +68,8 @@
     "@vendoai/telemetry": "workspace:*",
     "@vendoai/ui": "workspace:*",
     "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1"
+    "ajv-formats": "^3.0.1",
+    "zod": "^3.24.0"
   },
   "peerDependencies": {
     "ai": ">=6.0.0 <7",
