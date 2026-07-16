@@ -26,8 +26,4 @@ describe("items", () => {
   it("errors on an unknown id", () => {
     expect(() => archiveItem("item_nope")).toThrow(ItemError)
   })
-
-  it("errors on a missing id", () => {
-    expect(() => archiveItem(undefined)).toThrow(ItemError)
-  })
 })

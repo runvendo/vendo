@@ -1,6 +1,8 @@
 // EXAMPLE MUTATION — the "real action with consent" beat acts through this.
-// Declared in openapi.json as write-risk, so the agent only reaches it after
-// the visitor approves the consent card.
+// `vendo sync .` derives this tool's risk from the method + operationId
+// ("archive" is a destructive word → destructive), so the agent only reaches
+// it after the visitor approves the consent card. policy.json asks on both
+// write and destructive, so a renamed mutation stays consent-gated.
 import { archiveItem, ItemError } from "@/server/items"
 import { ok, notFound } from "@/server/http"
 
