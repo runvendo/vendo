@@ -7,12 +7,13 @@ The umbrella owns the `vendo` bin. It has five commands.
 
 ## `vendo init [dir]`
 
-Interactive setup. It scans the app, interviews you about your model import, the
-product brief, risk labels for critical tools, and the MCP door (theme is
-extracted automatically), then proposes the handler and `<VendoRoot>` wiring.
-Every code change is permission-gated and shown as a diff. Critical-tool risk
-answers are written to `.vendo/overrides.json` and respected by future sync
-runs.
+Interactive setup. It scans the app, then interviews you about your model
+import, the product brief, risk labels for critical tools, and the MCP door
+(theme is extracted automatically). It then proposes the handler and
+`<VendoRoot>` wiring.
+Every code change is permission-gated and shown as a diff. Init writes
+critical-tool risk answers to `.vendo/overrides.json`, and future sync runs
+respect them.
 
 Init detects the host framework from `package.json` and scaffolds only what
 applies. A `next` dependency gets `app/api/vendo/[...vendo]/route.ts` (under
@@ -46,7 +47,7 @@ Options:
 Checks wiring and makes one live `/status` round trip. It recognizes both Next.js
 (catch-all route plus a layout that mounts `<VendoRoot>`) and Express (the server
 composes `createVendo` from `@vendoai/vendo/server`; the client mounts
-`<VendoRoot>`), and ends with the config line that unlocks each remaining block.
+`<VendoRoot>`). It ends with the config line that unlocks each remaining block.
 
 When the MCP door is open, doctor also validates the registry discovery surface:
 

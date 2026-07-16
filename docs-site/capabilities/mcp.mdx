@@ -5,7 +5,7 @@ description: "Serve your product's tools to Claude, ChatGPT, Cursor, and other M
 
 The MCP door makes your host product installable in MCP clients such as Claude,
 ChatGPT, and Cursor. Every door tool call runs through the same guard-bound
-registry, policy, approvals, and audit path as chat, so outside agents get no
+registry, policy, approvals, and audit path as chat. Outside agents get no
 weaker perimeter than your own conversation surface.
 
 Opening the door is a host decision. It is off by default, and `vendo init`
@@ -200,8 +200,8 @@ routes resolve against, pass the door's public base explicitly:
 
 ## How door calls reach host tools
 
-MCP clients have no host browser session, so the inbound MCP bearer is never
-forwarded to your host routes. Door tool calls reach host APIs through the same
+MCP clients have no host browser session, so Vendo never forwards the inbound
+MCP bearer to your host routes. Door tool calls reach host APIs through the same
 `actAs` seam away automations use:
 
 - On successful OAuth, the door records the user's consent for that client.

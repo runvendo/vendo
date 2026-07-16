@@ -51,6 +51,26 @@ const catalog: ComponentCatalog = [
     },
     examples: ['{"value":7,"max":10}'],
   },
+  {
+    name: "CadenceMissingDocsHero",
+    description: "The Cadence dashboard hero card: clients with outstanding documents, an action badge, and the active-client total. Use it for who-still-owes-documents or chase-list summary requests.",
+    propsSchema: z.object({
+      missingCount: z.number(),
+      clientCount: z.number(),
+      badgeLabel: z.string().optional(),
+    }),
+    propsJsonSchema: {
+      type: "object",
+      properties: {
+        missingCount: { type: "number", description: "Clients with at least one outstanding document" },
+        clientCount: { type: "number", description: "All active clients" },
+        badgeLabel: { type: "string" },
+      },
+      required: ["missingCount", "clientCount"],
+      additionalProperties: false,
+    },
+    examples: ['{"missingCount":8,"clientCount":12}'],
+  },
 ];
 
 export const vendo = createVendo({
