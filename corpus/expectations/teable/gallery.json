@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "nativeScreens": [
+    {
+      "id": "space",
+      "label": "teable space",
+      "path": "/space",
+      "waitFor": "main"
+    }
+  ],
+  "prompts": [
+    {
+      "id": "records-overview",
+      "label": "Records overview",
+      "prompt": "Using the real seeded test base grid table, create and open a records overview dashboard listing each record's Name and Status with a count per status. Match teable's native visual style and use no emoji."
+    },
+    {
+      "id": "status-breakdown",
+      "label": "Status breakdown",
+      "prompt": "Using the real seeded test base data, create and open a read-only status breakdown of the grid table grouped by Status, showing how many records sit in each group, without changing anything. Match teable's native visual style and use no emoji."
+    }
+  ]
+}

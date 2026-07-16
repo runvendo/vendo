@@ -12,6 +12,7 @@
     "lint": "node scripts/dependency-guard.mjs && turbo run lint",
     "deps:guard": "node scripts/dependency-guard.mjs",
     "corpus": "pnpm --filter @vendoai/corpus-harness corpus",
+    "corpus:ui-parity": "pnpm --filter @vendoai/corpus-harness ui-parity",
     "test:coverage": "turbo run test:coverage",
     "changeset": "changeset",
     "changeset:status": "changeset status --since=origin/main",

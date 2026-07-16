@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "corpus": "node --import tsx src/cli.ts",
+    "ui-parity": "node --import tsx src/ui-parity-nightly.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
