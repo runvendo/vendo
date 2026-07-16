@@ -379,6 +379,91 @@ describe("agent threads", () => {
     });
   });
 
+  describe("concurrent turns on one thread (ENG-310 / AGENT-9)", () => {
+    it("two overlapping stream() calls on one threadId keep BOTH turns' messages", async () => {
+      const store = memoryStore();
+      const guard = testGuard({});
+      const agent = createAgent({
+        model: scriptedModel([
+          textTurn("Reply one.", "text_race_1"),
+          textTurn("Reply two.", "text_race_2"),
+        ]),
+        tools: boundRegistry({}, guard),
+        guard,
+        store,
+      });
+      const runCtx = ctx();
+      const threadId = "thr_race";
+
+      // Two tabs on one thread: both turns resolve the thread BEFORE either
+      // persists, so each holds its own copy — the last-write-wins put used to
+      // clobber whichever turn finished first.
+      const [first, second] = await Promise.all([
+        agent.stream({ threadId, message: userMessage("user_race_1", "Question one"), ctx: runCtx }),
+        agent.stream({ threadId, message: userMessage("user_race_2", "Question two"), ctx: runCtx }),
+      ]);
+      await Promise.all([readSse(first), readSse(second)]);
+
+      // waitFor: robust against a store whose writes settle after stream close.
+      const thread = await vi.waitFor(async () => {
+        const persisted = await agent.threads.get(threadId, runCtx);
+        expect(persisted).not.toBeNull();
+        expect(persisted!.messages.some((message) => message.id === "user_race_1")).toBe(true);
+        expect(persisted!.messages.some((message) => message.id === "user_race_2")).toBe(true);
+        return persisted!;
+      });
+      const replies = assistantText(thread.messages);
+      expect(replies).toContain("Reply one.");
+      expect(replies).toContain("Reply two.");
+      // One thread row, not a fork.
+      const rows = await store.records("vendo_threads").list({ refs: { subject: "u1" } });
+      expect(rows.records).toHaveLength(1);
+    });
+
+    it("overlapping turns on an EXISTING thread preserve prior history and both new turns", async () => {
+      const store = memoryStore();
+      const guard = testGuard({});
+      const agent = createAgent({
+        model: scriptedModel([
+          textTurn("Seed reply.", "text_seed"),
+          textTurn("Branch A.", "text_branch_a"),
+          textTurn("Branch B.", "text_branch_b"),
+        ]),
+        tools: boundRegistry({}, guard),
+        guard,
+        store,
+      });
+      const runCtx = ctx();
+      const threadId = "thr_race_existing";
+
+      await readSse(await agent.stream({
+        threadId,
+        message: userMessage("user_seed", "Seed question"),
+        ctx: runCtx,
+      }));
+
+      const [first, second] = await Promise.all([
+        agent.stream({ threadId, message: userMessage("user_branch_a", "Branch question A"), ctx: runCtx }),
+        agent.stream({ threadId, message: userMessage("user_branch_b", "Branch question B"), ctx: runCtx }),
+      ]);
+      await Promise.all([readSse(first), readSse(second)]);
+
+      // waitFor: robust against a store whose writes settle after stream close.
+      const thread = await vi.waitFor(async () => {
+        const persisted = await agent.threads.get(threadId, runCtx);
+        expect(persisted).not.toBeNull();
+        for (const id of ["user_seed", "user_branch_a", "user_branch_b"]) {
+          expect(persisted!.messages.some((message) => message.id === id)).toBe(true);
+        }
+        return persisted!;
+      });
+      const replies = assistantText(thread.messages);
+      expect(replies).toContain("Seed reply.");
+      expect(replies).toContain("Branch A.");
+      expect(replies).toContain("Branch B.");
+    });
+  });
+
   it("lets two subjects privately use the same thread id in MEMORY mode (no store)", async () => {
     // With no store, threads live in per-subject maps: the same id is two distinct
     // private threads — no conflict, no leak. This pins the intentional divergence
