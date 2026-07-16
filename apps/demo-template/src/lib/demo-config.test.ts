@@ -1,12 +1,10 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { describe, expect, it } from "vitest"
-import {
-  demoConfigSchema,
-  isExpired,
-  loadDemoConfig,
-  parseDemoConfig,
-  type DemoConfig,
-} from "./demo-config"
+import { afterEach, describe, expect, it } from "vitest"
+import { demoConfigSchema, isExpired, parseDemoConfig, type DemoConfig } from "./demo-config"
+import { loadDemoConfig } from "./demo-config-loader"
 
 const SAMPLE_CONFIG_PATH = fileURLToPath(new URL("../../demo.config.json", import.meta.url))
 
@@ -49,6 +47,11 @@ describe("demoConfigSchema / parseDemoConfig", () => {
     expect(() => parseDemoConfig(config)).toThrow(/expiresAt/i)
   })
 
+  it("rejects a non-UTC offset expiresAt (UTC-only, locked behavior)", () => {
+    const config = { ...validConfig(), expiresAt: "2030-01-01T00:00:00+02:00" }
+    expect(() => parseDemoConfig(config)).toThrow(/expiresAt/i)
+  })
+
   it("rejects a non-positive maxTurns", () => {
     const config = { ...validConfig(), caps: { maxTurns: 0, maxSpendUsd: 5 } }
     expect(() => parseDemoConfig(config)).toThrow(/maxTurns/i)
@@ -83,6 +86,13 @@ describe("demoConfigSchema / parseDemoConfig", () => {
 })
 
 describe("loadDemoConfig", () => {
+  let tmpDir: string | undefined
+
+  afterEach(async () => {
+    if (tmpDir) await rm(tmpDir, { recursive: true, force: true })
+    tmpDir = undefined
+  })
+
   it("loads and parses the checked-in sample demo.config.json", () => {
     const config = loadDemoConfig(SAMPLE_CONFIG_PATH)
     expect(config.id).toBe("template-sample")
@@ -92,12 +102,30 @@ describe("loadDemoConfig", () => {
   })
 
   it("throws a clear error when the file does not exist", () => {
-    expect(() => loadDemoConfig("/nonexistent/demo.config.json")).toThrow()
+    expect(() => loadDemoConfig("/nonexistent/demo.config.json")).toThrow(/could not read demo config/)
   })
 
   it("throws a clear error when the file is not valid JSON", () => {
-    const path = fileURLToPath(new URL("./demo-config.test.ts", import.meta.url))
-    expect(() => loadDemoConfig(path)).toThrow()
+    const jsonPath = fileURLToPath(new URL("./demo-config.test.ts", import.meta.url))
+    expect(() => loadDemoConfig(jsonPath)).toThrow(/not valid JSON/)
+  })
+
+  it("throws a single, non-double-wrapped message for a schema-invalid config file", async () => {
+    tmpDir = await mkdtemp(path.join(tmpdir(), "demo-config-test-"))
+    const configPath = path.join(tmpDir, "demo.config.json")
+    const invalid: Record<string, unknown> = { ...validConfig() }
+    delete invalid.prospect
+    await writeFile(configPath, JSON.stringify(invalid), "utf8")
+
+    let message: string | undefined
+    try {
+      loadDemoConfig(configPath)
+    } catch (error) {
+      message = (error as Error).message
+    }
+    expect(message).toMatch(/prospect/i)
+    // Exactly one "invalid ... :" prefix — not double-wrapped.
+    expect(message?.match(/invalid demo config/gi)).toHaveLength(1)
   })
 })
 

@@ -1,13 +1,12 @@
-import { readFileSync } from "node:fs"
-import path from "node:path"
-import { safeErrorMessage } from "@vendoai/core"
 import { z } from "zod"
 
 /**
- * demo.config.json — the single source of truth for one generated demo.
- * Consumed by: this app's chrome (suggestion chips + caps guard) and the
- * bench/ GIF-capture harness, so the schema stays a plain, fs-free module —
- * only `loadDemoConfig` touches disk.
+ * demo.config.json's shape — the single source of truth for one generated
+ * demo. Consumed by: this app's chrome (suggestion chips + caps guard) and
+ * the bench/ GIF-capture harness. This module depends on zod only and is
+ * genuinely fs-free, so it's safe to import from client components. Disk
+ * access (`loadDemoConfig`) lives in `./demo-config-loader`, which is
+ * server/bench-only.
  */
 
 /** Lowercase alphanumeric segments joined by single hyphens, e.g. "acme-widgets". No leading/trailing/double hyphens. */
@@ -44,7 +43,9 @@ export type DemoCaps = z.infer<typeof demoCapsSchema>
  * dropped. `expiresAt` is validated for FORMAT only — a config whose
  * `expiresAt` is already in the past still parses so the app can boot and
  * show a friendly "demo expired" state; enforcement lives in the caps guard,
- * which calls {@link isExpired}.
+ * which calls {@link isExpired}. Format is UTC-only (zod's `datetime()`
+ * default): a "Z"-terminated instant, deterministic for generated configs —
+ * offset timestamps like `+02:00` are rejected, not normalized.
  */
 export const demoConfigSchema = z
   .object({
@@ -56,7 +57,9 @@ export const demoConfigSchema = z
     ctaUrl: z.string().url("must be a valid URL"),
     beats: z.array(demoBeatSchema).min(1, "must be a non-empty array"),
     caps: demoCapsSchema,
-    expiresAt: z.string().datetime({ message: "must be an ISO-8601 date-time string" }),
+    expiresAt: z.string().datetime({
+      message: 'must be a UTC ISO-8601 date-time ending in "Z" (e.g. 2026-01-01T00:00:00Z)',
+    }),
   })
   .strict()
 
@@ -70,44 +73,16 @@ const formatZodError = (error: z.ZodError): string =>
 /**
  * Validates a parsed JSON value against {@link demoConfigSchema}, throwing a
  * single Error whose message names every offending field so malformed
- * configs fail loudly instead of silently coercing.
+ * configs fail loudly instead of silently coercing. `source` labels the
+ * error prefix (defaults to "demo config") so callers like the loader can
+ * fold in a file path without double-wrapping the message.
  */
-export function parseDemoConfig(input: unknown): DemoConfig {
+export function parseDemoConfig(input: unknown, source = "demo config"): DemoConfig {
   const result = demoConfigSchema.safeParse(input)
   if (!result.success) {
-    throw new Error(`invalid demo config: ${formatZodError(result.error)}`)
+    throw new Error(`invalid ${source}: ${formatZodError(result.error)}`)
   }
   return result.data
-}
-
-/**
- * Reads and validates a demo.config.json file. Defaults to the app root
- * (process.cwd()/demo.config.json). Node `fs` only — safe to call from
- * server-side code (route handlers, the bench capture harness) but never
- * from client components.
- */
-export function loadDemoConfig(
-  configPath: string = path.join(process.cwd(), "demo.config.json"),
-): DemoConfig {
-  let raw: string
-  try {
-    raw = readFileSync(configPath, "utf8")
-  } catch (error) {
-    throw new Error(`could not read demo config at "${configPath}": ${safeErrorMessage(error)}`)
-  }
-
-  let json: unknown
-  try {
-    json = JSON.parse(raw)
-  } catch (error) {
-    throw new Error(`demo config at "${configPath}" is not valid JSON: ${safeErrorMessage(error)}`)
-  }
-
-  try {
-    return parseDemoConfig(json)
-  } catch (error) {
-    throw new Error(`demo config at "${configPath}" is invalid: ${safeErrorMessage(error)}`)
-  }
 }
 
 /**
