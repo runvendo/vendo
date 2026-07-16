@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 import { fileURLToPath } from "node:url";
 import { displayAppPath, parseDemoCreateArgs, runDemoCreate, type DemoCreateResult } from "./create.js";
+import { parseDemoResearchArgs, runDemoResearch } from "./research.js";
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
 function usage(): string {
   return `Usage:
   pnpm --filter @vendoai/bench demo:create -- --id SLUG --prospect NAME [--cta-url URL] [--target-dir DIR] [--url PROSPECT_SITE]
+  pnpm --filter @vendoai/bench demo:research -- --app APP_DIR --url https://... [--url https://...]
 
 demo:create clones apps/demo-template into <target-dir>/demo-<id> (default apps/)
-and writes a TODO-fenced demo.config.json skeleton plus a RESEARCH/ pointer.`;
+and writes a TODO-fenced demo.config.json skeleton plus a RESEARCH/ pointer.
+demo:research captures each prospect URL's brand evidence (screenshots, title,
+theme-color, favicon, computed-style palette) into <APP_DIR>/RESEARCH/.`;
 }
 
 function createEpilogue(result: DemoCreateResult, prospectUrl: string | undefined): string {
@@ -37,6 +41,19 @@ async function main(): Promise<void> {
     const args = parseDemoCreateArgs(rest);
     const result = await runDemoCreate(args, { repoRoot });
     process.stdout.write(`${createEpilogue(result, args.url)}\n`);
+    return;
+  }
+  if (command === "research") {
+    const args = parseDemoResearchArgs(rest);
+    const result = await runDemoResearch(args, { repoRoot });
+    process.stdout.write(`${JSON.stringify({
+      researchDir: result.researchDir,
+      reportPath: result.reportPath,
+      pages: result.report.pages.map((page) => ("error" in page
+        ? { url: page.url, error: page.error }
+        : { url: page.url, title: page.title, botChallenge: page.botChallenge })),
+      palette: result.report.palette,
+    }, null, 2)}\n`);
     return;
   }
   throw new Error(`Unknown demo-creator command: ${command ?? "(missing)"}`);
