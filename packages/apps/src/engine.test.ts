@@ -18,7 +18,7 @@ import {
   scriptedLanguageModel,
   type ScriptedModelCall,
 } from "./testing/index.js";
-import { modelEngine } from "./engine.js";
+import { instructionRequiresServer, modelEngine } from "./engine.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_engine" },
@@ -942,6 +942,30 @@ describe("generation engine through createApps", () => {
     expect(result.app.tree).toEqual(original.tree);
   });
 
+  it("routes a UI ask that mentions the API to the tree dialect (ENG-349)", async () => {
+    // "API" and "function" are SERVER_INSTRUCTION words, but here they label
+    // visible elements; before the routing fix this edit took the code dialect
+    // and failed slowly (here: sandbox-unavailable, since no sandbox is wired).
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(
+        validCreate(),
+        JSON.stringify({ ops: [{ op: "set-prop", nodeId: "metric", prop: "label", value: "API status" }] }),
+      ),
+    });
+    const original = await runtime.create({ prompt: "Dashboard" }, ctx);
+
+    const result = await runtime.edit(original.id, "Make the API status card blue", ctx);
+
+    expect(result.issues).toBeUndefined();
+    expect(result.version.rung).toBe(1);
+    expect(result.app.tree).toMatchObject({ nodes: [{ props: { label: "API status" } }] });
+  });
+
   it("keeps the first graduated version on the scaffold and repairs reserved-file edits", async () => {
     const sandbox = fakeSandbox();
     const store = memoryStore();
@@ -1181,5 +1205,41 @@ describe("generation engine through createApps", () => {
     expect(result.app).toEqual(original);
     expect(result.issues).toContain("sandbox-unavailable: this edit requires server execution");
     expect(await runtime.history(original.id).list()).toEqual([]);
+  });
+});
+
+describe("instructionRequiresServer (ENG-349)", () => {
+  const app = (ui?: "tree" | "http"): AppDocument => ({
+    format: "vendo/app@1",
+    id: "app_router",
+    name: "Router fixture",
+    ...(ui === undefined ? {} : { ui }),
+  });
+
+  it.each([
+    "Make the API status card blue",
+    "Rename the function list header",
+    "Move the HTTP status badge next to the title",
+    "Update the External vendors table caption",
+    "Make the secret santa list festive",
+  ])("routes the UI ask %j to the tree dialect", (instruction) => {
+    expect(instructionRequiresServer(app(), instruction)).toBe(false);
+  });
+
+  it.each([
+    "Add a server function that calls the api and stores results",
+    "Call the external api and cache the results",
+    "Add a function that fetches live prices",
+    "Use my secret key to authenticate the request",
+    "Persist mutations in server state",
+    "Make the api card blue and call the api for fresh data",
+    "Make this a custom client over the data",
+    "Turn this into a full web app",
+  ])("routes the server ask %j to the code dialect", (instruction) => {
+    expect(instructionRequiresServer(app(), instruction)).toBe(true);
+  });
+
+  it("always routes an http app to the code dialect", () => {
+    expect(instructionRequiresServer(app("http"), "Make the heading blue")).toBe(true);
   });
 });

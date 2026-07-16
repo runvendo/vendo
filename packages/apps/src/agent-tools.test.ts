@@ -101,6 +101,18 @@ describe("apps agent tools", () => {
       tool: "vendo_apps_edit",
       args: { appId: created.id, instruction: "Persist this to the database" },
     }, ctx)).resolves.toBe("write");
+    // ENG-349: a server keyword used as a visible-element label is still a tree edit,
+    // while the same word in an action context stays write-class.
+    await expect(runtime.agentToolRisk({
+      id: "call_labeled_edit",
+      tool: "vendo_apps_edit",
+      args: { appId: created.id, instruction: "Make the API status card blue" },
+    }, ctx)).resolves.toBe("read");
+    await expect(runtime.agentToolRisk({
+      id: "call_api_edit",
+      tool: "vendo_apps_edit",
+      args: { appId: created.id, instruction: "Call the api and store the results" },
+    }, ctx)).resolves.toBe("write");
 
     await expect(runtime.agentToolRisk({
       id: "call_missing_edit",
