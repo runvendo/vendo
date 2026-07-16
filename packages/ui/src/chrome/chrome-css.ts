@@ -633,7 +633,7 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 
 /* ---------- markdown: tables + math ---------- */
 .fl-md table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 8px 0; }
-.fl-md th, .fl-md td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--vendo-border); }
+.fl-md th, .fl-md td { text-align: left; padding: var(--vendo-density-table-padding); border-bottom: 1px solid var(--vendo-border); }
 .fl-md thead th { color: var(--vendo-fg-muted); font: 600 11px/1.3 var(--vendo-font);
   text-transform: uppercase; letter-spacing: .03em; }
 .fl-md tbody tr:nth-child(even) { background: var(--vendo-accent-soft); }
