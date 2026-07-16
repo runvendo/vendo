@@ -27,6 +27,7 @@ import {
   latestUserIntent,
   type CapabilityMissConfig,
 } from "./capability-miss.js";
+import { createToolSearchSession, type ToolSearchConfig } from "./tool-search.js";
 
 const THREAD_ID_HEADER = "x-vendo-thread-id";
 
@@ -91,6 +92,11 @@ interface AgentConfig {
     historyWindow?: number;
   };
   capabilityMiss?: CapabilityMissConfig;
+  /** ENG-252: enable the `vendo_tools_search` meta-tool and runtime loadout.
+   *  When set, the model starts with a bounded initial loadout and discovers the
+   *  rest through search; searched-in tools execute through the same guard-bound
+   *  registry as any initially-enabled tool. */
+  toolSearch?: ToolSearchConfig;
 }
 
 // Anthropic prompt-caching breakpoint. providerOptions.anthropic is ignored by every
@@ -184,6 +190,29 @@ function providerHistory(messages: UIMessage[]): UIMessage[] {
 export function createAgent(config: AgentConfig): VendoAgent {
   validateConfig(config);
   const threads = new ThreadRepository(config.store);
+  // ENG-252: per-thread set of tools loaded in via `vendo_tools_search`. It
+  // persists across turns within a run so a discovered tool stays callable, and
+  // is reclaimed on thread delete + session eviction. The LRU cap bounds memory
+  // for long-lived, store-backed processes where threads never get evicted (a
+  // reused/live thread is touched to the end, so only cold threads are dropped).
+  const loadedTools = new Map<string, Set<string>>();
+  const MAX_LOADED_THREADS = 1024;
+  const loadedFor = (threadId: string): Set<string> => {
+    const existing = loadedTools.get(threadId);
+    if (existing !== undefined) {
+      loadedTools.delete(threadId);
+      loadedTools.set(threadId, existing); // touch: most-recently-used
+      return existing;
+    }
+    const fresh = new Set<string>();
+    loadedTools.set(threadId, fresh);
+    while (loadedTools.size > MAX_LOADED_THREADS) {
+      const oldest = loadedTools.keys().next().value;
+      if (oldest === undefined) break;
+      loadedTools.delete(oldest);
+    }
+    return fresh;
+  };
 
   return {
     async stream(input) {
@@ -221,6 +250,14 @@ export function createAgent(config: AgentConfig): VendoAgent {
             ...(missDetector === undefined ? {} : { onCall: missDetector.onCall }),
           });
           missDetector?.attach(tools);
+          const toolSearch = config.toolSearch === undefined
+            ? undefined
+            : createToolSearchSession({
+                config: config.toolSearch,
+                descriptors: await config.tools.descriptors(),
+                loaded: loadedFor(thread.id),
+              });
+          toolSearch?.attach(tools);
           // History windowing: bound what is re-sent per turn to the last N whole messages.
           // Slicing whole UIMessages keeps each turn's tool-call/result pairing intact.
           const window = config.context?.historyWindow;
@@ -246,6 +283,17 @@ export function createAgent(config: AgentConfig): VendoAgent {
             tools,
             stopWhen: stepCountIs(20),
             maxOutputTokens: config.context?.maxOutputTokens,
+            // ENG-252 loadout: restrict what the model may pick to the current
+            // loadout. `prepareStep` re-reads it each step so a tool loaded via
+            // `vendo_tools_search` becomes callable on the very next step. This
+            // gates the model's CHOICE only — every tool still executes through
+            // the guard-bound registry, so there is no unguarded path.
+            ...(toolSearch === undefined
+              ? {}
+              : {
+                  activeTools: toolSearch.activeToolNames(),
+                  prepareStep: () => ({ activeTools: toolSearch.activeToolNames() }),
+                }),
           });
           writer.merge(result.toUIMessageStream({
             originalMessages: thread.messages,
@@ -269,9 +317,16 @@ export function createAgent(config: AgentConfig): VendoAgent {
     threads: {
       get: (id, ctx) => threads.get(id, ctx),
       list: (ctx) => threads.list(ctx),
-      delete: (id, ctx) => threads.delete(id, ctx),
+      delete: async (id, ctx) => {
+        loadedTools.delete(id);
+        await threads.delete(id, ctx);
+      },
     },
-    evictSubject: (subject) => threads.evictSubject(subject),
+    evictSubject: (subject) => {
+      // Release each evicted thread's searched-in loadout so a reused id can't
+      // inherit stale tools, and so memory is reclaimed on session sweep.
+      for (const id of threads.evictSubject(subject)) loadedTools.delete(id);
+    },
     asRunner: () => createRunner(config),
   };
 }

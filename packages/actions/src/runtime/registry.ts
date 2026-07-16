@@ -33,11 +33,18 @@ import {
 } from "../formats.js";
 import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
 import { error, isArgsObject } from "./outcome.js";
+import { searchToolDescriptors, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
 
 export interface ActionsRegistry extends ToolRegistry {
   add(tools: ToolRegistry): void;
   /** Capability briefs carried by `.vendo/capabilities.json` (04 §1). Validated and exposed; consumed by later milestones. */
   briefs(): Promise<CapabilityBrief[]>;
+  /**
+   * Runtime tool search (ENG-252): rank the merged, enabled tool surface against
+   * a free-text intent. Disabled tools are excluded (they never enter the loaded
+   * descriptor set), so a hit is always a loadable, guard-bound tool.
+   */
+  search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]>;
 }
 
 /** Away calls carry the exact grant captured by the guard binding; venue="mcp"
@@ -712,6 +719,12 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
 
     async briefs(): Promise<CapabilityBrief[]> {
       return (await loadHost()).capabilities?.briefs ?? [];
+    },
+
+    async search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]> {
+      // load().descriptors is the post-override, enabled-only surface — disabled
+      // tools never reach it, so they can never be returned as loadable.
+      return searchToolDescriptors((await load()).descriptors, query, options);
     },
 
     async execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {

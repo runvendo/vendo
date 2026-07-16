@@ -5,6 +5,7 @@ export { composioConnector } from "./connectors/composio.js";
 export { composioToolRisk } from "./connectors/composio-risk.js";
 export { mcpConnector, type McpAuthContext, type McpHeadersResolver } from "./connectors/mcp.js";
 export { createActions, type ActionsRegistry, type ActionsRunContext } from "./runtime/registry.js";
+export { searchToolDescriptors, type ToolSearchMatch, type ToolSearchOptions } from "./runtime/search.js";
 export { validateCapabilities, type CapabilityIssue, type PrimitiveStepTarget } from "./runtime/compound.js";
 export { walkSteps, STEP_FOREACH_MAX_ITEMS, type StepResumePoint, type StepWalkOptions, type StepWalkResult } from "./runtime/steps.js";
 export { mergeOverrides, vendoSync, type SyncReportWithWarnings } from "./sync/index.js";

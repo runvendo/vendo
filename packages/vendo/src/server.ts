@@ -176,6 +176,10 @@ export interface CreateVendoConfig {
     toolOutputCap?: number;
     maxOutputTokens?: number;
     historyWindow?: number;
+    /** ENG-252 — cap on the uncurated initial tool loadout; the rest stay
+        discoverable via `vendo_tools_search`. Defaults to the agent block's
+        DEFAULT_MAX_INITIAL_TOOLS. */
+    maxInitialTools?: number;
   };
   /** 02-store §4 / ENG-237 — ephemeral (anonymous) session lifecycle. Anonymous
       visitors get a TTL-based session: every request touches it, an idle session
@@ -1498,6 +1502,13 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       hostId: missCapture.hostId,
       surface: missSurface.then(({ hash }) => ({ format: "vendo/tools@1" as const, hash })),
       emit: (event) => missCapture.record(event),
+    },
+    // ENG-252: the agent starts with a bounded loadout and discovers the rest via
+    // `vendo_tools_search`. The search seam is the SAME guard-bound registry the
+    // agent executes through — a searched-in tool has no unguarded path.
+    toolSearch: {
+      search: (query, options) => actions.search(query, options),
+      ...(config.agent?.maxInitialTools === undefined ? {} : { maxInitialTools: config.agent.maxInitialTools }),
     },
   });
   // ENG-237 idle sweep: evict every idle, not-inflight ephemeral session from the
