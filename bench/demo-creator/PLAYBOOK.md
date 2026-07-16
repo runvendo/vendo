@@ -142,7 +142,8 @@ Edit `apps/demo-<id>/demo.config.json`:
 - [ ] Replace **every** `TODO(creator): ` prefix (prompts AND chips). Check:
 
       ```sh
-      grep -rn "TODO(creator)" apps/demo-<id>   # must return nothing
+      grep -n "TODO(creator)" apps/demo-<id>/demo.config.json   # must return nothing
+      # (RESEARCH/README.md may legitimately keep its TODO when no --url was given)
       ```
 - [ ] Keep the fixed 3-beat arc and its expectation declarations verbatim:
   1. `generate-ui` — a UI-generation prompt over the seeded domain data,
@@ -191,8 +192,9 @@ beat doesn't settle or any declared `expectsView`/`expectsApproval` isn't
 visibly delivered.
 
 - [ ] The command exits 0.
-- [ ] READ `bench/demo-capture/output/<id>-verify/<id>/capture.json` (per-beat
-      `firstPaintMs`, `usableMs`, `elapsedMs`, `approvals`) and WATCH
+- [ ] READ `bench/demo-capture/output/<id>-verify/<id>/capture.json` (each beat
+      records `approvals` plus its overlay marks — `firstPaintMs`, `usableMs`,
+      `elapsedMs` — nested under the beat's `overlay` object) and WATCH
       `bench/demo-capture/output/<id>-verify/demo-beats-<id>.gif`. Don't just
       confirm the files exist.
 - [ ] On failure, apply §5 (three strikes).

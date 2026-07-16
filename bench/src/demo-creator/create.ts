@@ -43,6 +43,12 @@ export const cloneExclusions = [
   "docs/verification",
   ".turbo",
   "tsconfig.tsbuildinfo",
+  // Defensive: the template carries no env files today, but a future
+  // .env.local with a real key must never be copied into generated demos.
+  ".env",
+  ".env.local",
+  ".env.development.local",
+  ".env.production.local",
 ] as const;
 
 const defaultCtaUrl = "https://cal.com/yousefhelal";
