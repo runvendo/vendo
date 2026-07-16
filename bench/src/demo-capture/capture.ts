@@ -2,9 +2,18 @@ import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import type { BrowserCaptureArgs } from "./cli-args.js";
-import { bootDemoHost, demoHosts, type ConcreteDemoHost, type DemoHostDefinition } from "./hosts.js";
+import type { DemoBeat as DemoConfigBeat } from "demo-template/demo-config";
+import type { BrowserCaptureArgs, ConfigCaptureArgs } from "./cli-args.js";
 import {
+  bootDemoHost,
+  configDemoHost,
+  demoHosts,
+  type CaptureHostDefinition,
+  type ConcreteDemoHost,
+  type DemoHostDefinition,
+} from "./hosts.js";
+import {
+  demoBeatCompletionPhase,
   installCaptureOverlayInPage,
   remixCompletionPhase,
   type CaptureOverlaySnapshot,
@@ -63,10 +72,14 @@ function hostList(host: BrowserCaptureArgs["host"]): ConcreteDemoHost[] {
  * server-side (Maple via Auth.js, Cadence via a Supabase password grant) and
  * 303 back to the capture route. Signs in when the wall is present and waits
  * to land back off /login; no-op when a session cookie already exists. */
-async function signInIfNeeded(page: Page, host: DemoHostDefinition, timeoutMs: number): Promise<void> {
+async function signInIfNeeded(page: Page, host: CaptureHostDefinition, timeoutMs: number): Promise<void> {
   const loginForm = page.locator('form[action="/login"]');
   if (await loginForm.count() === 0) return;
-  const password = process.env[host.demoPasswordEnv] ?? host.demoPasswordFallback;
+  const password = (host.demoPasswordEnv === undefined ? undefined : process.env[host.demoPasswordEnv])
+    ?? host.demoPasswordFallback;
+  if (password === undefined) {
+    throw new Error(`${host.label} presented a login wall, but its host definition carries no demo password`);
+  }
   await loginForm.locator('input[name="password"]').fill(password);
   await loginForm.locator('button[type="submit"]').click();
   // Resolve as soon as the post-login navigation commits off /login. The
@@ -122,11 +135,18 @@ async function waitForTurn(options: {
    * composer goes busy and returns idle) with a generated view still on
    * screen. When omitted, the original new-turn condition is used, unchanged. */
   inPlaceRevision?: boolean;
-}): Promise<void> {
+}): Promise<{ approvals: number }> {
   const deadline = Date.now() + options.timeoutMs;
   let sawBusy = false;
+  let approvals = 0;
   while (Date.now() < deadline) {
-    await approveIfPresent(options.page);
+    if (await approveIfPresent(options.page)) {
+      // The run resumes right after an approval is granted, so this poll
+      // cycle cannot be the settled end of the turn — look again next tick.
+      approvals += 1;
+      await options.page.waitForTimeout(300);
+      continue;
+    }
     const alert = options.page.locator(".fl-error:visible, .fl-att-error:visible").first();
     if (await alert.count() > 0 && await alert.isVisible().catch(() => false)) {
       throw new Error(`Vendo capture surfaced an error: ${(await alert.textContent())?.trim() ?? "unknown error"}`);
@@ -142,7 +162,7 @@ async function waitForTurn(options: {
         || await options.page.locator('.fl-msglist[aria-busy="true"], .fl-thinking, .fl-act-pulse').count() > 0;
       if (busy) sawBusy = true;
       const hasView = await options.page.locator("[data-vendo-node-id]").count() > 0;
-      if (sawBusy && !busy && hasView) return;
+      if (sawBusy && !busy && hasView) return { approvals };
     } else {
       const turns = await options.page.locator('article[data-role="assistant"]').count();
       let hasView = true;
@@ -151,7 +171,7 @@ async function waitForTurn(options: {
         hasView = turns > options.previousAssistantTurns
           && await lastAssistant.locator("[data-vendo-node-id]").count() > 0;
       }
-      if (turns > options.previousAssistantTurns && idle && hasView) return;
+      if (turns > options.previousAssistantTurns && idle && hasView) return { approvals };
     }
     await options.page.waitForTimeout(300);
   }
@@ -260,6 +280,132 @@ async function captureHost(options: {
     rawVideo,
   }, null, 2)}\n`);
   return { host: options.host.id, gif, rawVideo, overlay };
+}
+
+export interface DemoBeatStep {
+  key: string;
+  prompt: string;
+  overlayBeat: string;
+}
+
+/** demo-beats plays the config's beats sequentially in one continuous
+ * recording (the thread is never reset between beats — one demo story); each
+ * step reinstalls the stopwatch overlay under its own label so every beat
+ * gets its own submit-anchored marks. */
+export function demoBeatPlan(beats: readonly DemoConfigBeat[]): DemoBeatStep[] {
+  return beats.map((beat, index) => ({
+    key: beat.key,
+    prompt: beat.prompt,
+    overlayBeat: `BEAT ${index + 1}/${beats.length} · ${beat.key.replaceAll("-", " ").toUpperCase()}`,
+  }));
+}
+
+export interface ConfigBeatCapture {
+  key: string;
+  prompt: string;
+  /** Consent cards auto-approved while this beat's turn ran. */
+  approvals: number;
+  overlay: CaptureOverlaySnapshot;
+}
+
+export interface ConfigCaptureResult {
+  beat: "demo-beats";
+  runDir: string;
+  gif: string;
+  rawVideo: string;
+  host: string;
+  beats: ConfigBeatCapture[];
+}
+
+/** The generic capture: boot a template-derived app from its own directory
+ * (see {@link configDemoHost}) and run its demo.config beats back to back in
+ * one recording. Completion per beat is a settled new assistant turn, not a
+ * generated view — a config beat may be an action (its consent card is
+ * auto-approved and counted) rather than a UI generation. */
+export async function runConfigCapture(args: ConfigCaptureArgs): Promise<ConfigCaptureResult> {
+  // The pnpm-filtered script runs with cwd bench/, while the documented
+  // invocation passes repo-root-relative paths (apps/demo-template) — so a
+  // relative --host-config is anchored at the repo root, never the cwd.
+  const appDir = path.resolve(repoRoot, args.hostConfig);
+  const { host, config } = configDemoHost(appDir);
+  const outputRoot = path.resolve(args.outputDir ?? defaultOutputRoot);
+  const runDir = path.join(outputRoot, safeRunId(args.runId));
+  const hostDir = path.join(runDir, host.id);
+  await mkdir(hostDir, { recursive: true });
+  const running = args.boot
+    ? await bootDemoHost({
+      host,
+      port: args.port,
+      repoRoot,
+      logFile: path.join(hostDir, "server.log"),
+      timeoutMs: args.timeoutMs,
+    })
+    : {
+      baseUrl: args.url ?? `http://127.0.0.1:${args.port}`,
+      stop: async () => undefined,
+    };
+
+  const rawDir = path.join(hostDir, "video");
+  await mkdir(rawDir, { recursive: true });
+  let browser: Browser | undefined;
+  let context: BrowserContext | undefined;
+  let rawVideo = "";
+  const beats: ConfigBeatCapture[] = [];
+  try {
+    browser = await chromium.launch({ headless: !args.headed });
+    context = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      recordVideo: { dir: rawDir, size: { width: 1280, height: 800 } },
+    });
+    const page = await context.newPage();
+    await page.goto(new URL(host.route, running.baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: args.timeoutMs });
+    await signInIfNeeded(page, host, args.timeoutMs);
+    await clearThread(page, host.threadId);
+    await page.reload({ waitUntil: "domcontentloaded", timeout: args.timeoutMs });
+    await page.getByRole("textbox", { name: "Message" }).waitFor({ state: "visible", timeout: args.timeoutMs });
+
+    for (const step of demoBeatPlan(config.beats)) {
+      await page.evaluate(installCaptureOverlayInPage, { label: host.label, beat: step.overlayBeat });
+      const sent = await sendPrompt(page, step.prompt);
+      const { approvals } = await waitForTurn({
+        page,
+        previousAssistantTurns: sent.assistantTurns,
+        timeoutMs: args.timeoutMs,
+        requireView: false,
+      });
+      await page.waitForTimeout(2_000);
+      const overlay = await page.evaluate(() => window.__vendoDemoCapture?.snapshot())
+        ?? { elapsedMs: 0, blankSamples: 0, continuityWatching: false };
+      await page.evaluate(
+        (phase) => window.__vendoDemoCapture?.setPhase(phase),
+        demoBeatCompletionPhase(approvals),
+      );
+      await page.waitForTimeout(500);
+      beats.push({ key: step.key, prompt: step.prompt, approvals, overlay });
+    }
+
+    const video = page.video();
+    await context.close();
+    context = undefined;
+    rawVideo = await video?.path() ?? "";
+  } finally {
+    await context?.close().catch(() => undefined);
+    await browser?.close().catch(() => undefined);
+    await running.stop();
+  }
+  if (rawVideo === "") throw new Error(`Playwright did not produce a video for ${host.label}`);
+  const gif = path.join(runDir, `demo-beats-${host.id}.gif`);
+  await videoToGif(rawVideo, gif);
+  await writeFile(path.join(hostDir, "capture.json"), `${JSON.stringify({
+    beat: args.beat,
+    host: host.id,
+    prospect: config.prospect,
+    appDir,
+    beats,
+    gif,
+    rawVideo,
+  }, null, 2)}\n`);
+  return { beat: args.beat, runDir, gif, rawVideo, host: host.id, beats };
 }
 
 export async function runBrowserCapture(args: BrowserCaptureArgs): Promise<BrowserCaptureResult> {

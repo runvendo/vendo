@@ -386,6 +386,9 @@ importers:
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
+      demo-template:
+        specifier: workspace:*
+        version: link:../apps/demo-template
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1(@noble/hashes@2.2.0)

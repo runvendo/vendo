@@ -4,6 +4,7 @@ export const demoBeats = [
   "streaming-first-paint",
   "host-component",
   "remix-edit",
+  "demo-beats",
   "corpus-montage",
 ] as const;
 
@@ -11,10 +12,24 @@ export type DemoBeat = typeof demoBeats[number];
 export type DemoHost = "maple" | "cadence" | "both";
 
 export interface BrowserCaptureArgs {
-  beat: Exclude<DemoBeat, "corpus-montage">;
+  beat: Exclude<DemoBeat, "corpus-montage" | "demo-beats">;
   host: DemoHost;
   prompt?: string;
   editPrompt?: string;
+  port: number;
+  timeoutMs: number;
+  runId?: string;
+  headed: boolean;
+  boot: boolean;
+  url: string | undefined;
+  outputDir: string | undefined;
+}
+
+/** The generic adapter: one template-derived app directory (demo.config.json
+ * + package.json) instead of a concrete maple/cadence host. */
+export interface ConfigCaptureArgs {
+  beat: "demo-beats";
+  hostConfig: string;
   port: number;
   timeoutMs: number;
   runId?: string;
@@ -35,10 +50,11 @@ export interface MontageArgs {
   panelHeight: number;
 }
 
-export type DemoCaptureArgs = BrowserCaptureArgs | MontageArgs;
+export type DemoCaptureArgs = BrowserCaptureArgs | ConfigCaptureArgs | MontageArgs;
 
 const valueOptions = new Set([
   "--host",
+  "--host-config",
   "--prompt",
   "--edit-prompt",
   "--port",
@@ -116,6 +132,28 @@ export function parseDemoCaptureArgs(argv: string[]): DemoCaptureArgs {
       panelWidth: positiveNumber(options, "--panel-width", 320),
       panelHeight: positiveNumber(options, "--panel-height", 180),
     };
+  }
+
+  const hostConfig = textOption(options, "--host-config");
+  if (hostConfig !== undefined && options.has("--host")) {
+    throw new Error("--host and --host-config are mutually exclusive");
+  }
+  if (beat === "demo-beats") {
+    if (hostConfig === undefined) throw new Error("--host-config is required for demo-beats");
+    return {
+      beat,
+      hostConfig,
+      port: positiveNumber(options, "--port", 3000),
+      timeoutMs: positiveNumber(options, "--timeout-ms", 180_000),
+      ...(textOption(options, "--run-id") === undefined ? {} : { runId: textOption(options, "--run-id") }),
+      headed: options.has("--headed"),
+      boot: !options.has("--no-boot"),
+      url: textOption(options, "--url"),
+      outputDir: textOption(options, "--output-dir"),
+    } as ConfigCaptureArgs;
+  }
+  if (hostConfig !== undefined) {
+    throw new Error("--host-config is only supported by the demo-beats beat");
   }
 
   const fallbackHost: DemoHost = beat === "streaming-first-paint" ? "both" : "maple";

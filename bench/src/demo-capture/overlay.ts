@@ -25,6 +25,13 @@ export function remixCompletionPhase(blankSamples: number): string {
     : `REMIX COMPLETE · ${blankSamples} BLANK SAMPLES`;
 }
 
+/** demo-beats: shown once a beat's turn settles, so the recording never ends
+ * on a stale GENERATING label; consent approvals are part of the proof. */
+export function demoBeatCompletionPhase(approvals: number): string {
+  if (approvals === 0) return "BEAT COMPLETE";
+  return `BEAT COMPLETE · ${approvals} CONSENT${approvals === 1 ? "" : "S"} APPROVED`;
+}
+
 declare global {
   interface Window {
     __vendoDemoCapture?: CaptureOverlayApi;
@@ -88,6 +95,13 @@ export function installCaptureOverlayInPage(options: CaptureOverlayOptions): voi
   overlay.append(title, timer, phase, paint, usable, bars, continuity);
   doc.body.append(overlay);
 
+  // Generated nodes already on screen when the overlay is (re)installed belong
+  // to an earlier beat (demo-beats keeps one continuous thread), so first
+  // paint must come from a genuinely new element — node ids recur across
+  // views, hence element identity. Empty for the single-beat captures, whose
+  // thread is cleared before the overlay is installed.
+  const preexisting = new WeakSet<Element>([...doc.querySelectorAll("[data-vendo-node-id]")]);
+
   let armed = true;
   let startedAt: number | undefined;
   let firstPaintMs: number | undefined;
@@ -127,7 +141,7 @@ export function installCaptureOverlayInPage(options: CaptureOverlayOptions): voi
   const inspect = () => {
     if (startedAt === undefined) return;
     const nodes = [...doc.querySelectorAll<HTMLElement>("[data-vendo-node-id]")];
-    if (firstPaintMs === undefined && nodes.some(visible)) {
+    if (firstPaintMs === undefined && nodes.some((node) => !preexisting.has(node) && visible(node))) {
       firstPaintMs = elapsed();
       phase.textContent = "FIRST GENERATED PAINT";
       phase.style.color = firstPaintMs < 1_000 ? "#86efac" : "#fca5a5";

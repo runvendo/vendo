@@ -1,8 +1,9 @@
 # Demo capture
 
-This is the repeatable capture tool for the four UI-generation demo beats:
-streaming first paint, host-component composition, remix/edit continuity, and
-the five-repo corpus montage. The driver lives in `bench/src/demo-capture/` so
+This is the repeatable capture tool for the UI-generation demo beats:
+streaming first paint, host-component composition, remix/edit continuity, the
+five-repo corpus montage, and the generic `demo-beats` capture for
+template-derived demo apps. The driver lives in `bench/src/demo-capture/` so
 it participates in the existing `@vendoai/bench` build, tests, and typecheck.
 Artifacts land in `bench/demo-capture/output/<run-id>/`, which is gitignored.
 
@@ -80,6 +81,53 @@ Each host directory contains the raw Playwright video, `server.log`, and
 `capture.json` with the prompts and measured overlay marks. The run root holds
 the converted GIFs. With `--host both`, the beat-named GIF is the combined
 artifact while `*-maple.gif` and `*-cadence.gif` remain available for review.
+
+## Generic template-derived demos (`--host-config`)
+
+`demo-beats` verifies a generated per-prospect demo end to end: if the capture
+can boot the app, play its configured beats, and hit the stopwatch marks, the
+demo is verified — the GIF capture IS the verification.
+
+```sh
+pnpm --filter @vendoai/bench demo:capture -- demo-beats \
+  --host-config apps/demo-template --run-id my-demo --port 3100
+```
+
+`--host-config` takes the app directory of a template-derived demo
+(`apps/demo-template` or a per-prospect clone) instead of `--host` — the two
+are mutually exclusive, and there is no `both`. A relative path is anchored at
+the repo root. Everything else is derived from the directory by the template's
+conventions, so there are no route/thread flags:
+
+- The app must contain `demo.config.json` (validated with the app's own
+  schema, `apps/demo-template/src/lib/demo-config.ts`, imported by bench via
+  the `demo-template/demo-config` package export) and a `package.json` whose
+  `name` is used to boot it through `pnpm --filter <name> dev`.
+- The panel route is always `/vendo` — fenced template plumbing that clones
+  keep.
+- The reset thread id derives from the demo id the way the concrete hosts pin
+  theirs: `"acme-widgets"` → `thr_acme_widgets_demo`.
+- No login wall: the sign-in helper no-ops when no `/login` form is present.
+
+The config's `beats[]` run sequentially in ONE continuous recording — the
+thread is never reset between beats, so the GIF tells one demo story. Each
+beat reinstalls the stopwatch overlay under its own `BEAT n/m · <key>` label:
+the timer starts from that beat's real composer submit, and first paint only
+counts generated nodes that appeared after the beat started (earlier beats'
+views stay on screen). Any consent card that parks a run is auto-approved
+(the `Approve` button of `@vendoai/ui`'s ApprovalCard) and counted per beat. A
+beat completes on a settled new assistant turn — an action beat may finish
+without generating a view, so `capture.json` records per-beat marks
+(`firstPaintMs`/`usableMs` when UI was generated, `approvals`, elapsed) rather
+than requiring one.
+
+Outputs match the concrete hosts: `<run>/<demo-id>/server.log`, raw video,
+`capture.json` with per-beat marks, and `demo-beats-<demo-id>.gif` at the run
+root. Booting runs the app's own `pnpm dev` (which resyncs `.vendo/`); the
+deployed demo's caps still apply, so reset
+`<app>/.vendo/data/demo-caps.json` if a capture exhausts the configured
+turns. Note the runtime import of the app's TypeScript schema relies on
+Node's type stripping (Node 23.6+, as shipped with this repo's toolchain).
 
 The montage discovers one immediate directory per repo, recursively selects a
 host/native screenshot plus a generated GIF/video, and reads `timings.json`

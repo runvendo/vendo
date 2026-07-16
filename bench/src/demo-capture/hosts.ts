@@ -1,22 +1,33 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { createWriteStream } from "node:fs";
+import { createWriteStream, readFileSync } from "node:fs";
 import { mkdir, rmdir } from "node:fs/promises";
 import { createConnection } from "node:net";
 import path from "node:path";
+import { parseDemoConfig, type DemoConfig } from "demo-template/demo-config";
 import type { DemoHost } from "./cli-args.js";
 
 export type ConcreteDemoHost = Exclude<DemoHost, "both">;
 
-export interface DemoHostDefinition {
-  id: ConcreteDemoHost;
+/** What booting + driving any demo host needs. Config-driven hosts have no
+ * login wall, so the password knobs are optional; `packageName` is whatever
+ * the app's package.json declares. */
+export interface CaptureHostDefinition {
+  id: string;
   label: string;
-  packageName: "demo-bank" | "demo-accounting";
+  packageName: string;
   route: string;
   threadId: string;
   /** ENG-260 put both demos behind a real login wall. The /login form
    * prefills the primary seeded demo user's email, so the capture only needs
    * the shared demo password: the deploy-time env knob when set, otherwise
    * the seeded dev fallback. */
+  demoPasswordEnv?: string;
+  demoPasswordFallback?: string;
+}
+
+export interface DemoHostDefinition extends CaptureHostDefinition {
+  id: ConcreteDemoHost;
+  packageName: "demo-bank" | "demo-accounting";
   demoPasswordEnv: string;
   demoPasswordFallback: string;
 }
@@ -42,6 +53,48 @@ export const demoHosts: Record<ConcreteDemoHost, DemoHostDefinition> = {
   },
 };
 
+/**
+ * The generic adapter for a template-derived demo app (apps/demo-template or
+ * a per-prospect clone). Everything is derived from the app directory by the
+ * template's conventions, not flags:
+ *
+ *  - `packageName` comes from the app's own package.json — the boot still
+ *    goes through `pnpm --filter <name> dev`.
+ *  - `route` is always `/vendo`: the template's panel page is fenced plumbing
+ *    that clones keep.
+ *  - `threadId` derives deterministically from the demo id the same way the
+ *    concrete hosts pin theirs (`thr_maple_demo`): hyphens become
+ *    underscores, e.g. "acme-widgets" → `thr_acme_widgets_demo`.
+ *  - No password knobs: template demos have no login wall, and the sign-in
+ *    helper already no-ops when no /login form is present.
+ *
+ * demo.config.json is validated with the app's OWN zod schema
+ * (`demo-template/demo-config`), so a malformed config fails here with the
+ * schema's message instead of half-booting a broken demo.
+ */
+export function configDemoHost(appDir: string): { host: CaptureHostDefinition; config: DemoConfig } {
+  const packagePath = path.join(appDir, "package.json");
+  const packageName: unknown = (JSON.parse(readFileSync(packagePath, "utf8")) as Record<string, unknown>).name;
+  if (typeof packageName !== "string" || packageName === "") {
+    throw new Error(`Cannot boot the demo app: no "name" in "${packagePath}"`);
+  }
+  const configPath = path.join(appDir, "demo.config.json");
+  const config = parseDemoConfig(
+    JSON.parse(readFileSync(configPath, "utf8")),
+    `demo config at "${configPath}"`,
+  );
+  return {
+    host: {
+      id: config.id,
+      label: config.prospect.toUpperCase(),
+      packageName,
+      route: "/vendo",
+      threadId: `thr_${config.id.replaceAll("-", "_")}_demo`,
+    },
+    config,
+  };
+}
+
 const port3000Lock = "/tmp/vendo-l3-port3000.lock";
 
 export interface RunningDemoHost {
@@ -49,7 +102,7 @@ export interface RunningDemoHost {
   stop(): Promise<void>;
 }
 
-export function demoHostCommandArgs(packageName: DemoHostDefinition["packageName"], port: number): string[] {
+export function demoHostCommandArgs(packageName: CaptureHostDefinition["packageName"], port: number): string[] {
   // pnpm's filtered script invocation already treats everything after `dev`
   // as script arguments. Supplying another `--` reaches `next dev` literally
   // and Next mistakes the following flag for a project directory.
@@ -144,7 +197,7 @@ async function stopProcess(child: ChildProcess): Promise<void> {
 }
 
 export async function bootDemoHost(options: {
-  host: DemoHostDefinition;
+  host: CaptureHostDefinition;
   port: number;
   repoRoot: string;
   logFile: string;

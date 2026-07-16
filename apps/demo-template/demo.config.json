@@ -10,12 +10,12 @@
     },
     {
       "key": "take-action",
-      "prompt": "Take an action with approval",
-      "chip": "Take an action with approval"
+      "prompt": "Archive the item named Bravo",
+      "chip": "Archive an item, with approval"
     },
     {
       "key": "save-app",
-      "prompt": "Save this as a reusable app",
+      "prompt": "Save this dashboard as a reusable app",
       "chip": "Save this as an app"
     }
   ],

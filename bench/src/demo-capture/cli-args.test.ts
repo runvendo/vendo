@@ -60,6 +60,51 @@ describe("parseDemoCaptureArgs", () => {
     });
   });
 
+  it("parses a demo-beats capture against a template-derived app directory", () => {
+    expect(parseDemoCaptureArgs([
+      "demo-beats",
+      "--host-config", "apps/demo-template",
+      "--port", "3100",
+      "--run-id", "task6-acceptance",
+    ])).toEqual({
+      beat: "demo-beats",
+      hostConfig: "apps/demo-template",
+      port: 3100,
+      timeoutMs: 180_000,
+      runId: "task6-acceptance",
+      headed: false,
+      boot: true,
+      url: undefined,
+      outputDir: undefined,
+    });
+  });
+
+  it("requires --host-config for demo-beats", () => {
+    expect(() => parseDemoCaptureArgs(["demo-beats"]))
+      .toThrow("--host-config is required for demo-beats");
+  });
+
+  it("rejects mixing --host with --host-config, including --host both", () => {
+    expect(() => parseDemoCaptureArgs([
+      "demo-beats",
+      "--host-config", "apps/demo-template",
+      "--host", "maple",
+    ])).toThrow("--host and --host-config are mutually exclusive");
+
+    expect(() => parseDemoCaptureArgs([
+      "demo-beats",
+      "--host-config", "apps/demo-template",
+      "--host", "both",
+    ])).toThrow("--host and --host-config are mutually exclusive");
+  });
+
+  it("rejects --host-config on the concrete maple/cadence beats", () => {
+    expect(() => parseDemoCaptureArgs([
+      "streaming-first-paint",
+      "--host-config", "apps/demo-template",
+    ])).toThrow("--host-config is only supported by the demo-beats beat");
+  });
+
   it("rejects an ambiguous no-boot capture for both hosts", () => {
     expect(() => parseDemoCaptureArgs([
       "streaming-first-paint",
