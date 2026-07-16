@@ -51,6 +51,33 @@ function options(args: string[], name: string): string[] {
   return values;
 }
 
+const INIT_FLAGS = new Set(["--agent", "--yes", "--force"]);
+const INIT_VALUE_OPTIONS = ["--model-import", "--brief"];
+
+/** ENG-335: init options the CLI does not recognize — or value options missing
+    their value — must fail loudly before anything runs. Silently dropping a
+    flag is how the "--agent writes nothing" promise broke in the field: an
+    older CLI ignored --agent and ran a full, writing init. */
+function initOptionErrors(args: string[]): string[] {
+  const errors: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (!arg.startsWith("--")) continue;
+    if (INIT_FLAGS.has(arg)) continue;
+    if (INIT_VALUE_OPTIONS.includes(arg)) {
+      // A value that looks like another flag is a missing value, not a value —
+      // otherwise `--model-import --force` proceeds with modelImport "--force".
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith("--")) errors.push(`${arg} requires a value`);
+      else index += 1;
+      continue;
+    }
+    if (INIT_VALUE_OPTIONS.some((name) => arg.startsWith(`${name}=`))) continue;
+    errors.push(`unknown option: ${arg}`);
+  }
+  return errors;
+}
+
 function target(args: string[]): string {
   const optionValues = new Set<string>();
   for (const name of ["--model-import", "--url", "--brief", "--key", "--api-url", "--ask"]) {
@@ -74,6 +101,11 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "cloud") return runCloud(args);
   if (command === "mcp") return runMcp(args);
   if (command === "init") {
+    const problems = initOptionErrors(args);
+    if (problems.length > 0) {
+      console.error(`vendo init: ${problems.join("; ")}\n\n${HELP}`);
+      return 1;
+    }
     return runInit({
       targetDir: target(args),
       agent: args.includes("--agent"),

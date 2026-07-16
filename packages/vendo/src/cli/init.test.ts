@@ -689,6 +689,48 @@ describe("vendo init", () => {
     });
   });
 
+  // ENG-335: the documented promise is that --agent writes NOTHING into the
+  // target — not `.vendo/`, not scaffolds, not sync hooks. Exercise every
+  // write-adjacent path at once (extraction, pin capture for an already
+  // remixable slot, catalog scan, skill offer, package.json hooks, layout
+  // wiring) and require the tree byte-identical.
+  it("agent mode writes nothing on the richest plan path (ENG-335)", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      scripts: { dev: "next dev", build: "next build" },
+      dependencies: { next: "16.0.0", "@vendoai/vendo": "0.3.0" },
+    }));
+    await writeFile(join(root, "openapi.json"), JSON.stringify({
+      openapi: "3.1.0",
+      info: { title: "Host", version: "1.0.0" },
+      paths: { "/api/invoices/{id}": { delete: { summary: "Delete an invoice" } } },
+    }));
+    await writeFile(join(root, "app", "card.tsx"),
+      "export function HostCard() { return <div>host card</div>; }\n");
+    await writeFile(join(root, "app", "vendo-components.ts"),
+      "import { HostCard } from \"./card\";\n" +
+      "export const components = [\n" +
+      "  { remixable: true, name: \"HostCard\", component: HostCard, description: \"A host card\" },\n" +
+      "  { name: \"HostBadge\", component: HostCard, description: \"A host badge\" },\n" +
+      "];\n");
+    await mkdir(join(root, ".claude"), { recursive: true });
+    const before = await tree(root);
+    const sink = output();
+
+    expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
+
+    expect(await tree(root)).toEqual(before);
+    // tree() cannot see empty directories — assert .vendo was never created.
+    expect(await readdir(root)).not.toContain(".vendo");
+    const plan = JSON.parse(sink.logs.join("\n")) as {
+      extraction: { tools: Array<{ name: string }> };
+      codeChanges: Array<{ path: string }>;
+    };
+    expect(plan.extraction.tools.length).toBeGreaterThan(0); // the plan still reports
+    expect(plan.codeChanges.length).toBeGreaterThan(0);
+  });
+
   it("agent-plan recommendations respect existing overrides", async () => {
     const root = await fixture();
     await writeFile(join(root, "openapi.json"), JSON.stringify({
