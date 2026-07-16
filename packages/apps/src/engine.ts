@@ -67,7 +67,11 @@ export interface GenerationEngine {
 
 const PASCAL_CASE = /^[A-Z][A-Za-z0-9]*$/;
 const SAFE_MACHINE_PATH = /^\/app\/[A-Za-z0-9._/-]+$/;
-const SERVER_INSTRUCTION = /\b(server|server-side|backend|api|database|persist|mutation|mutate|external|http|web app|function|secret|egress)\b/i;
+const SERVER_INSTRUCTION = /\b(server|server-side|backend|database|persist|mutation|mutate|egress)\b/i;
+// Words that signal server work only outside a visible-element label: "call the
+// api" needs code, "the API status card" is a tree edit (ENG-349).
+const AMBIGUOUS_SERVER_TERM = /\b(api|http|web app|function|external|secret)\b/gi;
+const VISIBLE_ELEMENT_LABEL = /^(?:\w+\s+)?(card|button|badge|chip|header|heading|title|label|caption|text|list|table|column|row|cell|section|panel|chart|graph|icon|field|tab|menu|toolbar|sidebar|footer|banner|tile|widget)s?\b/i;
 const SERVER_COMPUTED_INSTRUCTION = /\b(server-computed|computed (?:view|tree)|render(?:ed)? on the server)\b/i;
 const FULL_WEB_APP_INSTRUCTION = /\b(full web app|served web app|custom client|ui:? ?http)\b/i;
 const reserved = new Set<string>(RESERVED_COMPONENT_NAMES);
@@ -803,11 +807,16 @@ export const modelEngine: GenerationEngine = {
  * Every rung-4 phrase `codePlanFrom` recognizes must route here too, or a
  * graduation request (e.g. "custom client") would take the tree dialect and
  * never reach the scaffold (Greptile, PR #243).
+ * Ambiguous words like "api" or "function" count only when they are not
+ * labeling a visible element — "make the API status card blue" must stay on
+ * the cheap tree dialect instead of failing slowly through code (ENG-349).
  */
 export const instructionRequiresServer = (app: AppDocument, instruction: string): boolean =>
   SERVER_INSTRUCTION.test(instruction)
   || FULL_WEB_APP_INSTRUCTION.test(instruction)
-  || app.ui === "http";
+  || app.ui === "http"
+  || [...instruction.matchAll(AMBIGUOUS_SERVER_TERM)].some((match) =>
+    !VISIBLE_ELEMENT_LABEL.test(instruction.slice(match.index + match[0].length).trimStart()));
 
 /** 01-core §8 — generated component naming check exported for focused engine tests. */
 export const isGeneratedComponentName = (name: string): boolean =>
