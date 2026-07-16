@@ -54,26 +54,28 @@ function options(args: string[], name: string): string[] {
 const INIT_FLAGS = new Set(["--agent", "--yes", "--force"]);
 const INIT_VALUE_OPTIONS = ["--model-import", "--brief"];
 
-/** ENG-335: init options the CLI does not recognize must fail loudly before
-    anything runs. Silently dropping a flag is how the "--agent writes nothing"
-    promise broke in the field — an older CLI ignored --agent and ran a full,
-    writing init. */
-function unknownInitOptions(args: string[]): string[] {
-  const unknown: string[] = [];
+/** ENG-335: init options the CLI does not recognize — or value options missing
+    their value — must fail loudly before anything runs. Silently dropping a
+    flag is how the "--agent writes nothing" promise broke in the field: an
+    older CLI ignored --agent and ran a full, writing init. */
+function initOptionErrors(args: string[]): string[] {
+  const errors: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
     if (!arg.startsWith("--")) continue;
     if (INIT_FLAGS.has(arg)) continue;
     if (INIT_VALUE_OPTIONS.includes(arg)) {
-      // Skip the option's value — unless it looks like another flag (a missing
-      // value), so `--brief --dry-run` still reports --dry-run as unknown.
-      if (args[index + 1] !== undefined && !args[index + 1]!.startsWith("--")) index += 1;
+      // A value that looks like another flag is a missing value, not a value —
+      // otherwise `--model-import --force` proceeds with modelImport "--force".
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith("--")) errors.push(`${arg} requires a value`);
+      else index += 1;
       continue;
     }
     if (INIT_VALUE_OPTIONS.some((name) => arg.startsWith(`${name}=`))) continue;
-    unknown.push(arg);
+    errors.push(`unknown option: ${arg}`);
   }
-  return unknown;
+  return errors;
 }
 
 function target(args: string[]): string {
@@ -99,9 +101,9 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "cloud") return runCloud(args);
   if (command === "mcp") return runMcp(args);
   if (command === "init") {
-    const unknown = unknownInitOptions(args);
-    if (unknown.length > 0) {
-      console.error(`vendo init: unknown option${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}\n\n${HELP}`);
+    const problems = initOptionErrors(args);
+    if (problems.length > 0) {
+      console.error(`vendo init: ${problems.join("; ")}\n\n${HELP}`);
       return 1;
     }
     return runInit({

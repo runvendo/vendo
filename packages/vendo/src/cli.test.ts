@@ -54,6 +54,12 @@ describe("vendo CLI commands", () => {
     // (Devin review): --dry-run is still reported as unknown.
     expect(await main(["init", root, "--agent", "--brief", "--dry-run"])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain("--dry-run");
+
+    // And a missing value before a KNOWN flag is rejected too (Greptile P1):
+    // otherwise init proceeds — writing — with modelImport "--force".
+    expect(await main(["init", root, "--yes", "--model-import", "--force"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--model-import requires a value");
+    expect(await readdir(root)).toEqual([]);
     error.mockRestore();
     log.mockRestore();
   });
