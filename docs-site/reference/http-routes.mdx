@@ -24,6 +24,8 @@ stream over SSE.
 | `/apps/:id/export` | GET | `.vendoapp` bytes |
 | `/apps/import` | POST | bytes → `AppDocument` (fresh id minted) |
 | `/apps/:id/fork` | POST | → `AppDocument` |
+| `/apps/:id/pin-drift` | GET | `PinDrift[]` — pins whose captured baseline no longer matches |
+| `/apps/:id/rebase-pin` | POST | `{ slot }` → `PinRebaseResult` — re-fork from the new baseline and replay recorded intents, all-or-nothing |
 | `/automations` | GET | list |
 | `/automations/:id/enable` · `/disable` | POST | `{ enabled, missing }` · `{}` |
 | `/automations/:id/dry-run` | POST | `RunPlan` |
