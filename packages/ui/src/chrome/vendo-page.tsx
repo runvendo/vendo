@@ -3,8 +3,8 @@ import { useVendoContext } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useApps } from "../hooks/use-apps.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
+import { useThreads } from "../hooks/use-threads.js";
 import { AppFrame } from "../tree/frames.js";
-import type { ThreadSummary } from "../wire-types.js";
 import { ActivityPanel } from "./activity-panel.js";
 import { AutomationsPanel } from "./automations-panel.js";
 import { ChromeRoot } from "./chrome-root.js";
@@ -21,19 +21,14 @@ function title(tab: Tab): string {
 }
 
 function ChatWorkspace() {
-  const { client } = useVendoContext();
   const takeover = useMobileTakeover();
-  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const { threads } = useThreads();
   const [selected, setSelected] = useState<string>();
+  // Default to the most recent conversation once the list loads; leave the
+  // caller's explicit selection (including the "New conversation" reset) alone.
   useEffect(() => {
-    let active = true;
-    void client.threads.list().then(items => {
-      if (!active) return;
-      setThreads(items);
-      setSelected(current => current ?? items[0]?.id);
-    }).catch(() => undefined);
-    return () => { active = false; };
-  }, [client]);
+    setSelected(current => current ?? threads[0]?.id);
+  }, [threads]);
   return (
     <div
       className="fl-page-pane"

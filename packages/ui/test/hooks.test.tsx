@@ -10,12 +10,24 @@ import {
   useApps,
   useApprovals,
   useAutomations,
+  useConnections,
   useGrants,
+  useOrgs,
+  useThreads,
   useVendoStatus,
   useVendoThread,
   type VendoClient,
 } from "../src/index.js";
+import type { AppDocument } from "@vendoai/core";
 import { createWireServer } from "./wire-server.js";
+
+const extraApp: AppDocument = {
+  format: "vendo/app@1",
+  id: "app_extra",
+  name: "Extra",
+  ui: "tree",
+  tree: { formatVersion: "vendo-genui/v1", root: "root", nodes: [{ id: "root", component: "Text", props: { text: "x" } }] },
+};
 
 describe("headless hooks", () => {
   let wire: Awaited<ReturnType<typeof createWireServer>>;
@@ -319,5 +331,113 @@ describe("headless hooks", () => {
       state: "approval-responded",
       approval: { id: "apr_stream", approved: true },
     }));
+  });
+});
+
+describe("ENG-219 — consistent { data, error, isLoading, refresh } + polling + headless parity", () => {
+  let wire: Awaited<ReturnType<typeof createWireServer>>;
+  let client: VendoClient;
+
+  beforeEach(async () => {
+    wire = await createWireServer();
+    client = createVendoClient({ baseUrl: wire.url, headers: { "X-Hook-Test": "true" } });
+  });
+
+  afterEach(async () => {
+    await wire.close();
+  });
+
+  function wrapper({ children }: PropsWithChildren) {
+    return <VendoProvider client={client}>{children}</VendoProvider>;
+  }
+
+  it("exposes data, error, isLoading, and refresh on every data hook", () => {
+    const hooks = [
+      () => useApps(),
+      () => useApprovals(),
+      () => useGrants(),
+      () => useActivity(),
+      () => useConnections(),
+      () => useOrgs(),
+      () => useAutomations(),
+      () => useApp("app_1"),
+      () => useThreads(),
+    ];
+    for (const hook of hooks) {
+      const { result, unmount } = renderHook(hook, { wrapper });
+      expect(result.current).toHaveProperty("data");
+      expect(result.current).toHaveProperty("error");
+      expect(result.current.isLoading).toBe(true);
+      expect(typeof result.current.refresh).toBe("function");
+      unmount();
+    }
+  });
+
+  it("keeps useApp isLoading settled through an edit refresh (only the first load flickers)", async () => {
+    const { result } = renderHook(() => useApp("app_1"), { wrapper });
+    expect(result.current.isLoading).toBe(true);
+    await waitFor(() => expect(result.current.app?.id).toBe("app_1"));
+    expect(result.current.isLoading).toBe(false);
+
+    await act(() => result.current.edit("Add totals"));
+    // The edit refresh must not re-flip isLoading true.
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it("surfaces an initial fetch failure instead of swallowing it", async () => {
+    wire.state.failures.push({ method: "GET", path: "/grants", code: "boom", message: "kaboom", status: 500 });
+    const { result } = renderHook(() => useGrants(), { wrapper });
+    await waitFor(() => expect(result.current.error).toBeInstanceOf(Error));
+    expect(result.current.data).toEqual([]);
+    expect(result.current.grants).toEqual([]);
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it("clears a prior error and finishes loading on a successful first fetch", async () => {
+    const { result } = renderHook(() => useApps(), { wrapper });
+    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    expect(result.current.error).toBeUndefined();
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.apps).toEqual(result.current.data);
+  });
+
+  it("refresh re-fetches the collection", async () => {
+    const { result } = renderHook(() => useApps(), { wrapper });
+    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    wire.state.apps.push(extraApp);
+    await act(() => result.current.refresh());
+    expect(result.current.data).toHaveLength(3);
+  });
+
+  it("re-fetches on the opt-in polling interval without a remount", async () => {
+    const { result } = renderHook(() => useApprovals({ pollMs: 25 }), { wrapper });
+    await waitFor(() => expect(result.current.data).toHaveLength(1));
+    // A new pending approval appears server-side after the initial fetch.
+    wire.state.approvals.push({ ...wire.state.approvals[0]!, id: "apr_2" });
+    await waitFor(() => expect(result.current.data).toHaveLength(2));
+  });
+
+  it("lists, gets, and deletes threads headlessly", async () => {
+    const { result } = renderHook(() => useThreads(), { wrapper });
+    await waitFor(() => expect(result.current.data.map(thread => thread.id)).toEqual(["thr_1"]));
+    await expect(result.current.get("thr_1")).resolves.toMatchObject({ id: "thr_1" });
+    await act(() => result.current.remove("thr_1"));
+    expect(result.current.data).toEqual([]);
+    expect(wire.requests).toContainEqual(expect.objectContaining({ method: "DELETE", path: "/threads/thr_1" }));
+  });
+
+  it("exposes app export and import via the hook", async () => {
+    const { result } = renderHook(() => useApps(), { wrapper });
+    await waitFor(() => expect(result.current.data).toHaveLength(2));
+
+    const bytes = await result.current.exportApp("app_1");
+    expect(Array.from(bytes)).toEqual([0, 1, 255]);
+
+    let imported: AppDocument | undefined;
+    await act(async () => {
+      imported = await result.current.importApp(new Uint8Array([9, 9]));
+    });
+    expect(imported).toMatchObject({ id: "app_imported" });
+    expect(result.current.data).toHaveLength(3);
   });
 });

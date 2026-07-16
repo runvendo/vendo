@@ -1,7 +1,8 @@
 /** Self-scoped audit activity transport (08-ui §3). */
 import type { AuditEvent } from "@vendoai/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useVendoContext } from "../context.js";
+import type { PollOptions } from "./use-resource.js";
 
 function dedupe(events: AuditEvent[]): AuditEvent[] {
   const seen = new Set<string>();
@@ -21,22 +22,69 @@ function pageCursor(event: AuditEvent | undefined): string | undefined {
   return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-export function useActivity(): { events: AuditEvent[]; loadMore(): Promise<void> } {
+function asError(reason: unknown): Error {
+  return reason instanceof Error ? reason : new Error(String(reason));
+}
+
+export function useActivity(options?: PollOptions): {
+  /** Back-compat alias for `data` (contract §3). */
+  events: AuditEvent[];
+  data: AuditEvent[];
+  error: Error | undefined;
+  isLoading: boolean;
+  loadMore(): Promise<void>;
+  refresh(): Promise<void>;
+} {
   const { client } = useVendoContext();
   const [events, setEvents] = useState<AuditEvent[]>([]);
+  const [error, setError] = useState<Error>();
+  const [isLoading, setIsLoading] = useState(true);
+  const generationRef = useRef(0);
+  const loadedRef = useRef(false);
+  const pollMs = options?.pollMs;
+
+  const refresh = useCallback(async () => {
+    const generation = (generationRef.current += 1);
+    if (!loadedRef.current) setIsLoading(true);
+    try {
+      const firstPage = await client.activity.list();
+      if (generation !== generationRef.current) return;
+      // A refresh reloads the first page rather than appending — pagination
+      // continues from the reset head via loadMore.
+      setEvents(dedupe(firstPage));
+      setError(undefined);
+      loadedRef.current = true;
+    } catch (reason) {
+      if (generation !== generationRef.current) return;
+      setError(asError(reason));
+    } finally {
+      if (generation === generationRef.current) setIsLoading(false);
+    }
+  }, [client]);
 
   useEffect(() => {
-    let active = true;
-    void client.activity
-      .list()
-      .then(firstPage => {
-        if (active) setEvents(dedupe(firstPage));
-      })
-      .catch(() => undefined);
+    void refresh();
     return () => {
-      active = false;
+      generationRef.current += 1;
     };
-  }, [client]);
+  }, [refresh]);
+
+  // Self-scheduling so a slow request can't stack overlapping polls (see
+  // use-resource.ts for the rationale).
+  useEffect(() => {
+    if (pollMs === undefined || pollMs <= 0) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      await refresh();
+      if (!cancelled) timer = setTimeout(() => void tick(), pollMs);
+    };
+    timer = setTimeout(() => void tick(), pollMs);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [pollMs, refresh]);
 
   const loadMore = useCallback(async () => {
     const cursor = pageCursor(events.at(-1));
@@ -44,5 +92,5 @@ export function useActivity(): { events: AuditEvent[]; loadMore(): Promise<void>
     setEvents(current => dedupe([...current, ...next]));
   }, [client, events]);
 
-  return { events, loadMore };
+  return { events, data: events, error, isLoading, loadMore, refresh };
 }
