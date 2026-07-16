@@ -23,6 +23,9 @@ run is a separate explicit command.
 - `src/benches/*` — one file per suite; `src/run.ts` — the CLI.
 - `demo-capture/` — README and gitignored output for the four UI-generation
   demo GIF beats; the TypeScript capture driver lives in `src/demo-capture/`.
+- `demo-creator/PLAYBOOK.md` — the creator-agent contract for generating
+  per-prospect demos (`demo:create` / `demo:research`, implemented in
+  `src/demo-creator/`; verified via `demo:capture -- demo-beats`).
 - `budgets.json` — the permanent gate thresholds.
 - `RESULTS.md` — a full captured run (deterministic + live) from a real machine.
 

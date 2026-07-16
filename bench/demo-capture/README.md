@@ -84,7 +84,9 @@ artifact while `*-maple.gif` and `*-cadence.gif` remain available for review.
 
 ## Generic template-derived demos (`--host-config`)
 
-`demo-beats` is the acceptance check for a generated per-prospect demo. A
+`demo-beats` is the acceptance check for a generated per-prospect demo (the
+full creator flow — `demo:create` → `demo:research` → rewrite → this capture —
+is contracted in `bench/demo-creator/PLAYBOOK.md`). A
 passing run proves exactly this contract: the app boots from its own
 directory, every configured beat's prompt submits and settles without a
 surfaced error, each beat's DECLARED expectations are met (`expectsView` — a
