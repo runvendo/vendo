@@ -73,6 +73,22 @@ describe("demoConfigSchema / parseDemoConfig", () => {
     expect(() => parseDemoConfig(config)).toThrow()
   })
 
+  it("accepts the optional per-beat capture expectations", () => {
+    const config = validConfig()
+    config.beats = [
+      { ...config.beats[0], expectsView: true },
+      { ...config.beats[1], expectsApproval: true },
+      ...config.beats.slice(2),
+    ]
+    expect(parseDemoConfig(config)).toEqual(config)
+  })
+
+  it("rejects a non-boolean capture expectation", () => {
+    const config = validConfig()
+    config.beats = [{ ...config.beats[0], expectsView: "yes" } as never, ...config.beats.slice(1)]
+    expect(() => parseDemoConfig(config)).toThrow(/expectsView/i)
+  })
+
   it("rejects unknown fields on a beat", () => {
     const config = validConfig()
     config.beats = [{ ...config.beats[0], extra: true } as never, ...config.beats.slice(1)]

@@ -1,4 +1,4 @@
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type BrowserContext, type Page } from "@playwright/test";
@@ -117,14 +117,34 @@ async function approveIfPresent(page: Page): Promise<boolean> {
 async function sendPrompt(page: Page, prompt: string): Promise<{ assistantTurns: number }> {
   const assistantTurns = await page.locator('article[data-role="assistant"]').count();
   const composer = page.locator('form[aria-label="Message composer"]');
+  const userTurns = await page.locator('article[data-role="user"]').count();
   const message = composer.getByRole("textbox", { name: "Message" });
   await message.waitFor({ state: "visible", timeout: 30_000 });
   await message.fill(prompt);
   await composer.getByRole("button", { name: "Send", exact: true }).click();
+  // The prompt must land in the thread as a user turn; otherwise the composer
+  // swallowed the submit and every later wait would time out on nothing.
+  await page.locator('article[data-role="user"]').nth(userTurns).waitFor({ state: "attached", timeout: 30_000 });
   return { assistantTurns };
 }
 
-async function waitForTurn(options: {
+/** Caps refusal (429/410 `vendoDemo` body) on a template-derived demo host.
+ * The route only exists there; on maple/cadence the fetch resolves to a 404
+ * page and the parse yields null, so this never misfires for them. */
+async function demoCapsRefusal(page: Page): Promise<{ limit: string } | null> {
+  return await page.evaluate(async () => {
+    try {
+      const response = await fetch("/demo-status");
+      const body = (await response.json()) as { vendoDemo?: { limit: string } | null };
+      return body.vendoDemo ?? null;
+    } catch {
+      return null;
+    }
+  }).catch(() => null);
+}
+
+/** Exported for the unit test of the approval-settle sequence. */
+export async function waitForTurn(options: {
   page: Page;
   previousAssistantTurns: number;
   timeoutMs: number;
@@ -139,28 +159,49 @@ async function waitForTurn(options: {
   const deadline = Date.now() + options.timeoutMs;
   let sawBusy = false;
   let approvals = 0;
+  // Granting an approval auto-resumes the parked run, so the turn must not be
+  // declared settled until that resumed run has visibly gone busy and come
+  // back idle with no approval still pending — otherwise a fast poll could
+  // settle while the just-approved tool is still executing.
+  let resettleAfterApproval = false;
+  let sawBusySinceApproval = false;
   while (Date.now() < deadline) {
     if (await approveIfPresent(options.page)) {
-      // The run resumes right after an approval is granted, so this poll
-      // cycle cannot be the settled end of the turn — look again next tick.
       approvals += 1;
+      resettleAfterApproval = true;
+      sawBusySinceApproval = false;
       await options.page.waitForTimeout(300);
       continue;
     }
     const alert = options.page.locator(".fl-error:visible, .fl-att-error:visible").first();
     if (await alert.count() > 0 && await alert.isVisible().catch(() => false)) {
+      const refusal = await demoCapsRefusal(options.page);
+      if (refusal !== null) {
+        throw new Error(`demo caps exhausted (${refusal.limit}) — the capture burned the demo's own turns; a capture-side condition, not a demo failure`);
+      }
       throw new Error(`Vendo capture surfaced an error: ${(await alert.textContent())?.trim() ?? "unknown error"}`);
     }
     const textarea = options.page.locator('form[aria-label="Message composer"]')
       .getByRole("textbox", { name: "Message" });
     const idle = await textarea.isEnabled().catch(() => false);
+    const busy = !idle
+      || await options.page.locator('.fl-msglist[aria-busy="true"], .fl-thinking, .fl-act-pulse').count() > 0;
+    if (busy) {
+      sawBusy = true;
+      sawBusySinceApproval = true;
+    }
+    if (resettleAfterApproval) {
+      const approvalPending = await options.page
+        .locator(".fl-tool-detail", { hasText: "approval-requested" }).count() > 0;
+      if (approvalPending || busy || !sawBusySinceApproval) {
+        await options.page.waitForTimeout(300);
+        continue;
+      }
+    }
     if (options.inPlaceRevision) {
       // "Generating" spans the composer being disabled and the busy/pulse
       // indicators. A remix's generation runs for seconds, so the busy state is
       // always observed by the 300ms poll before it settles.
-      const busy = !idle
-        || await options.page.locator('.fl-msglist[aria-busy="true"], .fl-thinking, .fl-act-pulse').count() > 0;
-      if (busy) sawBusy = true;
       const hasView = await options.page.locator("[data-vendo-node-id]").count() > 0;
       if (sawBusy && !busy && hasView) return { approvals };
     } else {
@@ -286,6 +327,11 @@ export interface DemoBeatStep {
   key: string;
   prompt: string;
   overlayBeat: string;
+  /** The beat's declared verification contract (demo.config `expectsView` /
+   * `expectsApproval`, defaulting to false): unmet expectations fail the
+   * capture instead of settling green. */
+  expectsView: boolean;
+  expectsApproval: boolean;
 }
 
 /** demo-beats plays the config's beats sequentially in one continuous
@@ -297,6 +343,8 @@ export function demoBeatPlan(beats: readonly DemoConfigBeat[]): DemoBeatStep[] {
     key: beat.key,
     prompt: beat.prompt,
     overlayBeat: `BEAT ${index + 1}/${beats.length} · ${beat.key.replaceAll("-", " ").toUpperCase()}`,
+    expectsView: beat.expectsView === true,
+    expectsApproval: beat.expectsApproval === true,
   }));
 }
 
@@ -327,11 +375,17 @@ export async function runConfigCapture(args: ConfigCaptureArgs): Promise<ConfigC
   // invocation passes repo-root-relative paths (apps/demo-template) — so a
   // relative --host-config is anchored at the repo root, never the cwd.
   const appDir = path.resolve(repoRoot, args.hostConfig);
-  const { host, config } = configDemoHost(appDir);
+  const { host, config } = await configDemoHost(appDir);
   const outputRoot = path.resolve(args.outputDir ?? defaultOutputRoot);
   const runDir = path.join(outputRoot, safeRunId(args.runId));
   const hostDir = path.join(runDir, host.id);
-  await mkdir(hostDir, { recursive: true });
+  const rawDir = path.join(hostDir, "video");
+  // All directories before the server boots: a mkdir failure must not leak it.
+  await mkdir(rawDir, { recursive: true });
+  // A demo-beats run consumes several of the demo's own capped turns. A local
+  // capture starts from fresh counters — the file only exists where the app
+  // process runs, so deployed demos are untouched.
+  await rm(path.join(appDir, ".vendo", "data", "demo-caps.json"), { force: true });
   const running = args.boot
     ? await bootDemoHost({
       host,
@@ -345,8 +399,6 @@ export async function runConfigCapture(args: ConfigCaptureArgs): Promise<ConfigC
       stop: async () => undefined,
     };
 
-  const rawDir = path.join(hostDir, "video");
-  await mkdir(rawDir, { recursive: true });
   let browser: Browser | undefined;
   let context: BrowserContext | undefined;
   let rawVideo = "";
@@ -365,6 +417,12 @@ export async function runConfigCapture(args: ConfigCaptureArgs): Promise<ConfigC
     await page.getByRole("textbox", { name: "Message" }).waitFor({ state: "visible", timeout: args.timeoutMs });
 
     for (const step of demoBeatPlan(config.beats)) {
+      // The caps guard swaps the panel for the limit/expired card; surface
+      // that as its own condition instead of a composer timeout.
+      const unavailable = page.locator('[aria-label="Demo unavailable"]');
+      if (await unavailable.count() > 0 && await unavailable.isVisible().catch(() => false)) {
+        throw new Error(`demo caps exhausted before beat "${step.key}" — a capture-side condition, not a demo failure`);
+      }
       await page.evaluate(installCaptureOverlayInPage, { label: host.label, beat: step.overlayBeat });
       const sent = await sendPrompt(page, step.prompt);
       const { approvals } = await waitForTurn({
@@ -374,8 +432,16 @@ export async function runConfigCapture(args: ConfigCaptureArgs): Promise<ConfigC
         requireView: false,
       });
       await page.waitForTimeout(2_000);
-      const overlay = await page.evaluate(() => window.__vendoDemoCapture?.snapshot())
-        ?? { elapsedMs: 0, blankSamples: 0, continuityWatching: false };
+      const overlay = await page.evaluate(() => window.__vendoDemoCapture?.snapshot());
+      if (!overlay) {
+        throw new Error(`the capture overlay disappeared during beat "${step.key}" — the page reloaded or the stopwatch failed to install`);
+      }
+      if (step.expectsApproval && approvals === 0) {
+        throw new Error(`beat "${step.key}" expected a consent approval, but no approval card appeared`);
+      }
+      if (step.expectsView && overlay.firstPaintMs === undefined) {
+        throw new Error(`beat "${step.key}" expected a generated view, but no first paint was marked`);
+      }
       await page.evaluate(
         (phase) => window.__vendoDemoCapture?.setPhase(phase),
         demoBeatCompletionPhase(approvals),

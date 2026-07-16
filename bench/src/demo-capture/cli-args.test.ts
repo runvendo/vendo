@@ -98,9 +98,15 @@ describe("parseDemoCaptureArgs", () => {
     ])).toThrow("--host and --host-config are mutually exclusive");
   });
 
-  it("rejects --host-config on the concrete maple/cadence beats", () => {
+  it("rejects --host-config on every beat that is not demo-beats", () => {
     expect(() => parseDemoCaptureArgs([
       "streaming-first-paint",
+      "--host-config", "apps/demo-template",
+    ])).toThrow("--host-config is only supported by the demo-beats beat");
+
+    expect(() => parseDemoCaptureArgs([
+      "corpus-montage",
+      "--gallery-run", "corpus/.repos/.gallery/run-42",
       "--host-config", "apps/demo-template",
     ])).toThrow("--host-config is only supported by the demo-beats beat");
   });

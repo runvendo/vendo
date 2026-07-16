@@ -99,6 +99,16 @@ describe("installCaptureOverlayInPage", () => {
     expect(overlay?.textContent).toMatch(/FIRST PAINT\s+00:00\./);
   });
 
+  it("disposes the previous overlay's ticker and listeners on reinstall", async () => {
+    installCaptureOverlayInPage({ label: "ACME", beat: "BEAT 1/3 · GENERATE UI" });
+    const baseline = vi.getTimerCount();
+    installCaptureOverlayInPage({ label: "ACME", beat: "BEAT 2/3 · TAKE ACTION" });
+    installCaptureOverlayInPage({ label: "ACME", beat: "BEAT 3/3 · SAVE APP" });
+    // Reinstalls must clear the previous interval, not stack three tickers.
+    expect(vi.getTimerCount()).toBe(baseline);
+    expect(document.querySelectorAll("[data-demo-capture-overlay]")).toHaveLength(1);
+  });
+
   it("reports continuous iframe visibility during a remix", async () => {
     installCaptureOverlayInPage({ label: "MAPLE", beat: "REMIX / EDIT", continuity: true });
     document.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));

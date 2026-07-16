@@ -6,12 +6,14 @@
     {
       "key": "generate-ui",
       "prompt": "Show me a dashboard of my data",
-      "chip": "Dashboard of my data"
+      "chip": "Dashboard of my data",
+      "expectsView": true
     },
     {
       "key": "take-action",
       "prompt": "Archive the item named Bravo",
-      "chip": "Archive an item, with approval"
+      "chip": "Archive an item, with approval",
+      "expectsApproval": true
     },
     {
       "key": "save-app",

@@ -118,6 +118,14 @@ export function parseDemoCaptureArgs(argv: string[]): DemoCaptureArgs {
   }
   const options = optionMap(normalizedArgv);
 
+  const hostConfig = textOption(options, "--host-config");
+  if (hostConfig !== undefined && options.has("--host")) {
+    throw new Error("--host and --host-config are mutually exclusive");
+  }
+  if (hostConfig !== undefined && beat !== "demo-beats") {
+    throw new Error("--host-config is only supported by the demo-beats beat");
+  }
+
   if (beat === "corpus-montage") {
     const galleryRun = textOption(options, "--gallery-run");
     if (galleryRun === undefined) throw new Error("--gallery-run is required for corpus-montage");
@@ -134,10 +142,6 @@ export function parseDemoCaptureArgs(argv: string[]): DemoCaptureArgs {
     };
   }
 
-  const hostConfig = textOption(options, "--host-config");
-  if (hostConfig !== undefined && options.has("--host")) {
-    throw new Error("--host and --host-config are mutually exclusive");
-  }
   if (beat === "demo-beats") {
     if (hostConfig === undefined) throw new Error("--host-config is required for demo-beats");
     return {
@@ -151,9 +155,6 @@ export function parseDemoCaptureArgs(argv: string[]): DemoCaptureArgs {
       url: textOption(options, "--url"),
       outputDir: textOption(options, "--output-dir"),
     } as ConfigCaptureArgs;
-  }
-  if (hostConfig !== undefined) {
-    throw new Error("--host-config is only supported by the demo-beats beat");
   }
 
   const fallbackHost: DemoHost = beat === "streaming-first-paint" ? "both" : "maple";

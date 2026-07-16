@@ -22,6 +22,15 @@ export const demoBeatSchema = z
     prompt: z.string().min(1, "must be non-empty"),
     /** Short label shown as a suggestion chip. */
     chip: z.string().min(1, "must be non-empty"),
+    /**
+     * Capture-verifier expectations (bench demo-beats). When set, the GIF
+     * capture FAILS unless the beat visibly delivered: `expectsView` requires
+     * a generated-UI first paint; `expectsApproval` requires at least one
+     * consent card to appear (it is auto-approved). Optional so existing
+     * configs parse; beats without expectations only need to settle cleanly.
+     */
+    expectsView: z.boolean().optional(),
+    expectsApproval: z.boolean().optional(),
   })
   .strict()
 

@@ -45,7 +45,7 @@ describe("configDemoHost", () => {
 
   it("builds the host definition from the app directory conventions", async () => {
     const appDir = await writeAppFixture();
-    const { host, config } = configDemoHost(appDir);
+    const { host, config } = await configDemoHost(appDir);
     expect(host).toEqual({
       id: "acme-widgets",
       label: "ACME WIDGETS",
@@ -60,11 +60,11 @@ describe("configDemoHost", () => {
     const appDir = await writeAppFixture({
       config: { ...sampleConfig, prospect: "", beats: [] },
     });
-    expect(() => configDemoHost(appDir)).toThrow(/invalid demo config .*prospect: must be non-empty.*beats: must be a non-empty array/);
+    await expect(configDemoHost(appDir)).rejects.toThrow(/invalid demo config .*prospect: must be non-empty.*beats: must be a non-empty array/);
   });
 
   it("fails loudly when the app's package.json has no usable name", async () => {
     const appDir = await writeAppFixture({ packageJson: { private: true } });
-    expect(() => configDemoHost(appDir)).toThrow(`no "name" in "${path.join(appDir, "package.json")}"`);
+    await expect(configDemoHost(appDir)).rejects.toThrow(`no "name" in "${path.join(appDir, "package.json")}"`);
   });
 });

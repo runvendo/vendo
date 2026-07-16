@@ -3,7 +3,7 @@ import { createWriteStream, readFileSync } from "node:fs";
 import { mkdir, rmdir } from "node:fs/promises";
 import { createConnection } from "node:net";
 import path from "node:path";
-import { parseDemoConfig, type DemoConfig } from "demo-template/demo-config";
+import type { DemoConfig } from "demo-template/demo-config";
 import type { DemoHost } from "./cli-args.js";
 
 export type ConcreteDemoHost = Exclude<DemoHost, "both">;
@@ -72,11 +72,26 @@ export const demoHosts: Record<ConcreteDemoHost, DemoHostDefinition> = {
  * (`demo-template/demo-config`), so a malformed config fails here with the
  * schema's message instead of half-booting a broken demo.
  */
-export function configDemoHost(appDir: string): { host: CaptureHostDefinition; config: DemoConfig } {
+export async function configDemoHost(appDir: string): Promise<{ host: CaptureHostDefinition; config: DemoConfig }> {
   const packagePath = path.join(appDir, "package.json");
   const packageName: unknown = (JSON.parse(readFileSync(packagePath, "utf8")) as Record<string, unknown>).name;
   if (typeof packageName !== "string" || packageName === "") {
     throw new Error(`Cannot boot the demo app: no "name" in "${packagePath}"`);
+  }
+  // Loaded lazily: the demo-template/demo-config export resolves to
+  // TypeScript SOURCE that node executes via type stripping (Node >= 23.6).
+  // That works because pnpm's workspace symlink resolves OUT of node_modules
+  // (stripping refuses real node_modules paths; --preserve-symlinks would
+  // break it). A top-level import would take down every beat on older Node,
+  // while bench's engines floor is >= 20 — only demo-beats pays this cost.
+  let parseDemoConfig: typeof import("demo-template/demo-config").parseDemoConfig;
+  try {
+    ({ parseDemoConfig } = await import("demo-template/demo-config"));
+  } catch (error) {
+    throw new Error(
+      "demo-beats needs Node >= 23.6 (native TypeScript type stripping) to load the app's own demo.config schema; "
+      + `the maple/cadence/montage beats are unaffected. (${error instanceof Error ? error.message : String(error)})`,
+    );
   }
   const configPath = path.join(appDir, "demo.config.json");
   const config = parseDemoConfig(

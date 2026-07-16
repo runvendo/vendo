@@ -84,9 +84,15 @@ artifact while `*-maple.gif` and `*-cadence.gif` remain available for review.
 
 ## Generic template-derived demos (`--host-config`)
 
-`demo-beats` verifies a generated per-prospect demo end to end: if the capture
-can boot the app, play its configured beats, and hit the stopwatch marks, the
-demo is verified — the GIF capture IS the verification.
+`demo-beats` is the acceptance check for a generated per-prospect demo. A
+passing run proves exactly this contract: the app boots from its own
+directory, every configured beat's prompt submits and settles without a
+surfaced error, each beat's DECLARED expectations are met (`expectsView` — a
+generated-UI first paint was marked; `expectsApproval` — a consent card
+appeared and was auto-approved), and the stopwatch marks land in
+`capture.json` with the GIF. Beats without declared expectations are only
+verified to settle cleanly — declare expectations in demo.config.json for
+anything the demo story depends on.
 
 ```sh
 pnpm --filter @vendoai/bench demo:capture -- demo-beats \
@@ -111,23 +117,30 @@ conventions, so there are no route/thread flags:
 
 The config's `beats[]` run sequentially in ONE continuous recording — the
 thread is never reset between beats, so the GIF tells one demo story. Each
-beat reinstalls the stopwatch overlay under its own `BEAT n/m · <key>` label:
-the timer starts from that beat's real composer submit, and first paint only
-counts generated nodes that appeared after the beat started (earlier beats'
-views stay on screen). Any consent card that parks a run is auto-approved
-(the `Approve` button of `@vendoai/ui`'s ApprovalCard) and counted per beat. A
-beat completes on a settled new assistant turn — an action beat may finish
-without generating a view, so `capture.json` records per-beat marks
-(`firstPaintMs`/`usableMs` when UI was generated, `approvals`, elapsed) rather
-than requiring one.
+beat reinstalls the stopwatch overlay under its own `BEAT n/m · <key>` label
+(disposing the previous overlay's ticker): the timer starts from that beat's
+real composer submit, and first paint only counts generated nodes that
+appeared after the beat started (earlier beats' views stay on screen). Any
+consent card that parks a run is auto-approved (the `Approve` button of
+`@vendoai/ui`'s ApprovalCard) and counted per beat; after an approval, the
+beat is not considered settled until the resumed run has visibly gone busy
+and returned idle with no approval still pending, so the approved tool's
+execution is inside the recording. A beat completes on a settled new
+assistant turn — an action beat may legitimately finish without generating a
+view, which is why unmet `expectsView`/`expectsApproval` declarations (not
+guesses) are what fail the run.
 
 Outputs match the concrete hosts: `<run>/<demo-id>/server.log`, raw video,
 `capture.json` with per-beat marks, and `demo-beats-<demo-id>.gif` at the run
-root. Booting runs the app's own `pnpm dev` (which resyncs `.vendo/`); the
-deployed demo's caps still apply, so reset
-`<app>/.vendo/data/demo-caps.json` if a capture exhausts the configured
-turns. Note the runtime import of the app's TypeScript schema relies on
-Node's type stripping (Node 23.6+, as shipped with this repo's toolchain).
+root. Booting runs the app's own `pnpm dev` (which resyncs `.vendo/`). A
+capture consumes several of the demo's own capped turns, so it deletes
+`<app>/.vendo/data/demo-caps.json` at start for a fresh local run (deployed
+demos are untouched — that file only exists where the app process runs); if
+caps are still exhausted mid-run, the capture fails with a distinct
+"demo caps exhausted" error rather than a generic one. Note the runtime
+import of the app's TypeScript schema relies on Node's type stripping
+(Node 23.6+, as shipped with this repo's toolchain); the other beats keep
+working on Node >= 20.
 
 The montage discovers one immediate directory per repo, recursively selects a
 host/native screenshot plus a generated GIF/video, and reads `timings.json`
