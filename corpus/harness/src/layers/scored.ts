@@ -114,6 +114,7 @@ function scoreTheme(expected: RepoExpectations, actual: VendoTheme): WeightedRes
 function actualToolIdentity(tool: ExtractedTool): string {
   if (tool.binding.kind === "trpc") return `trpc\t${tool.binding.procedure}`;
   if (tool.binding.kind === "graphql") return `graphql\t${tool.binding.operation}`;
+  if (tool.binding.kind === "server-action") return `server-action\t${tool.binding.module}#${tool.binding.exportName}`;
   return `${tool.binding.method}\t${tool.binding.path}`;
 }
 
@@ -159,11 +160,12 @@ function expectedAnnotationMatches(expected: ExpectedToolAnnotation, actual: Ext
 }
 
 /** A tRPC or GraphQL mutation is write-shaped exactly like a POST; a query
- * like a GET. */
+ * like a GET; a server action is always POST-shaped. */
 function effectiveWriteMethod(tool: ExtractedTool): string {
   if (tool.binding.kind === "trpc" || tool.binding.kind === "graphql") {
     return tool.binding.type === "query" ? "GET" : "POST";
   }
+  if (tool.binding.kind === "server-action") return "POST";
   return tool.binding.method;
 }
 

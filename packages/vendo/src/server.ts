@@ -4,6 +4,7 @@ import {
   type ActionsRunContext,
   type Connector,
   type ExtractedTool,
+  type ServerActionHandler,
 } from "@vendoai/actions";
 import { createAgent, type VendoAgent } from "@vendoai/agent";
 import {
@@ -145,6 +146,10 @@ export interface CreateVendoConfig {
   sandbox?: SandboxAdapter;
   connectors?: Connector[];
   actAs?: ActAs;
+  /** 04-actions §1 (ENG-248): the server-action registration map emitted by the
+      generated wiring file, keyed `"<module>#<exportName>"`. Server-action tools
+      dispatch in-process through it; a missing key fails closed at execution. */
+  serverActions?: Record<string, ServerActionHandler>;
   policy?: PolicyConfig;
   judge?: Judge;
   secrets?: SecretsProvider;
@@ -1427,6 +1432,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     dir: string;
     connectors?: Connector[];
     actAs?: ActAs;
+    serverActions?: Record<string, ServerActionHandler>;
     baseUrl?: string;
     baseUrlTrusted?: boolean;
     onPresentCredentialsNotForwarded: typeof warnPresentCredentialsNotForwarded;
@@ -1435,6 +1441,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     dir: ".",
     ...(config.connectors === undefined ? {} : { connectors: config.connectors }),
     ...(config.actAs === undefined ? {} : { actAs: config.actAs }),
+    ...(config.serverActions === undefined ? {} : { serverActions: config.serverActions }),
     ...(configuredBaseUrl === undefined ? {} : { baseUrl: configuredBaseUrl, baseUrlTrusted: true }),
     onPresentCredentialsNotForwarded: warnPresentCredentialsNotForwarded,
   };
