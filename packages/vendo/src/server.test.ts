@@ -906,6 +906,16 @@ describe("00 overview / 01-core §2 — per-client anonymous sessions", () => {
   });
 });
 
+describe("XCUT-3 — umbrella runtime store surface", () => {
+  it("re-exports the store runtime so a production deploy needs only the umbrella", async () => {
+    const server = await import("./server.js") as Record<string, unknown>;
+    const store = await import("@vendoai/store") as Record<string, unknown>;
+    for (const name of ["createStore", "envSecrets", "storeSecrets", "secretStore", "eraseStore"]) {
+      expect(server[name], `${name} must be re-exported from @vendoai/vendo/server`).toBe(store[name]);
+    }
+  });
+});
+
 describe("03 §3 prompt wiring (AGENT-1/2)", () => {
   it("feeds .vendo/brief.md and the catalog+theme summary into the composed system prompt", async () => {
     const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");

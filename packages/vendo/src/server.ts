@@ -60,6 +60,11 @@ import {
 // 02-store §5: the erase API ships on the umbrella's runtime surface so hosts
 // reach it without installing @vendoai/store directly.
 export { eraseStore, type EraseReport, type EraseTable } from "@vendoai/store";
+// XCUT-3: the production-deploy path — createStore({ url }) plus the secrets
+// runtime — is reachable from the umbrella itself (docs/persistence-and-deploy
+// imports these from "@vendoai/vendo/server"); hosts never need to install
+// @vendoai/store directly.
+export { createStore, envSecrets, secretStore, storeSecrets } from "@vendoai/store";
 export {
   runRefine,
   type RefineChange,
