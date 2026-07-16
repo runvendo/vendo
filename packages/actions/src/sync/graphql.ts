@@ -57,7 +57,6 @@ const DEFAULT_ENDPOINT = "/graphql";
 const MAX_SELECTION_DEPTH = 2;
 const MAX_RESOLVE_DEPTH = 16;
 const MAX_SOURCE_FILES = 20_000;
-const PERMISSIVE_INPUT: Record<string, unknown> = { type: "object", additionalProperties: true };
 
 const GRAPHQL_SERVER_DEPENDENCIES = [
   "graphql",
