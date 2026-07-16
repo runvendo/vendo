@@ -3,6 +3,19 @@ title: "Vendo product changelog"
 description: "Weekly release notes covering new Vendo features, product updates, MCP door capabilities, and bug fixes shipped to the SDK and runtime."
 ---
 
+<Update label="July 16, 2026" description="Week of July 14 – July 20">
+
+## New features
+
+**Uniform headless hooks.** Every read hook in `@vendoai/ui` now returns
+`{ data, error, isLoading, refresh }` and accepts an optional `pollMs` for
+serialized background polling that pauses in hidden tabs. `useThreads`
+brings headless parity with `VendoOverlay`, and `useApps` gains
+`export(appId)` and `import(bytes)` for round-tripping an `AppDocument`
+through the wire. See [Headless hooks](/reference/hooks).
+
+</Update>
+
 <Update label="July 15, 2026" description="Week of July 14 – July 20">
 
 ## New features

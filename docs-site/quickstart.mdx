@@ -45,7 +45,9 @@ export function Root({ children }: { children: React.ReactNode }) {
 ```
 
 Choose headless hooks from `@vendoai/ui` or a ready-made surface from
-`@vendoai/ui/chrome`.
+`@vendoai/ui/chrome`. Every read hook shares a
+`{ data, error, isLoading, refresh }` shape with optional polling — see
+[Headless hooks](/reference/hooks).
 
 ## Add the overlay
 

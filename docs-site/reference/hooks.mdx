@@ -1,0 +1,150 @@
+---
+title: "Headless hooks"
+description: "React hooks from @vendoai/ui share a { data, error, isLoading, refresh } contract with optional polling for threads, apps, approvals, and grants."
+---
+
+`@vendoai/ui` exposes headless React hooks that read from the same wire the
+built-in chrome uses. Pair them with your own UI when you need a bespoke
+surface, or drop them next to `VendoOverlay` to power an inline widget.
+
+## Uniform result shape
+
+Every read hook returns the same four fields, so you can render loading,
+error, and empty states with one pattern across the whole surface.
+
+```ts
+export interface UseResourceResult<T> {
+  data: T | undefined;   // undefined while loading or after an error
+  error: Error | null;   // last fetch error, or null when the read succeeded
+  isLoading: boolean;    // true only on the first load; refresh does not flip it
+  refresh: () => Promise<void>;  // re-fetch on demand; returns after the read settles
+}
+```
+
+`isLoading` is `true` only for the first fetch. Subsequent `refresh()` calls
+and background polls do not flip it back to `true`, so a spinner shown on
+first mount does not flash on every update. Read `error` to render a retry
+affordance without losing the last good `data`.
+
+## Available hooks
+
+| Hook | Reads |
+| --- | --- |
+| `useThreads()` | thread summaries for the current principal |
+| `useApp(appId)` | one `AppDocument` |
+| `useApps()` | the principal's owned apps |
+| `useApprovals()` | pending approval requests |
+| `useGrants()` | active standing grants |
+| `useConnections()` | connected accounts by connector |
+| `useOrgs()` | organizations and the current selection |
+| `useAutomations()` | automations and their enablement state |
+| `useActivity()` | audit events, self-scoped |
+| `useVendoStatus()` | posture, version, and block wiring from `/status` |
+
+Hooks that write (approve, revoke, enable, disable) return an `execute`
+callback alongside the same `{ data, error, isLoading }` fields, where
+`isLoading` reflects the in-flight mutation.
+
+## Polling
+
+Pass `pollMs` to any read hook to keep the value fresh without a manual
+refresh. Polls are serialized per hook: an in-flight request finishes before
+the next tick starts, so a slow server never stacks up requests. When the tab
+is hidden, polling pauses; it resumes on focus.
+
+```tsx
+"use client";
+
+import { useApprovals } from "@vendoai/ui";
+
+export function ApprovalBadge() {
+  const { data, error, isLoading, refresh } = useApprovals({ pollMs: 5_000 });
+
+  if (isLoading) return <span aria-hidden />;
+  if (error) return <button onClick={refresh}>Retry</button>;
+
+  const pending = data?.length ?? 0;
+  return pending > 0 ? <span>{pending} to review</span> : null;
+}
+```
+
+Omit `pollMs` for a one-shot fetch on mount. Call `refresh()` from a websocket
+message, a mutation callback, or a button when you want to invalidate on your
+own schedule.
+
+## Threads
+
+`useThreads` reads the same thread summaries `VendoOverlay` uses, so you can
+build a custom conversation list without giving up parity with the shipped
+chrome.
+
+```tsx
+"use client";
+
+import { useThreads } from "@vendoai/ui";
+
+export function ThreadList({ onSelect }: { onSelect: (id: string) => void }) {
+  const { data, error, isLoading, refresh } = useThreads();
+
+  if (isLoading) return <p>Loading…</p>;
+  if (error) return <button onClick={refresh}>Retry</button>;
+  if (!data?.length) return <p>No conversations yet.</p>;
+
+  return (
+    <ul>
+      {data.map((thread) => (
+        <li key={thread.id}>
+          <button onClick={() => onSelect(thread.id)}>
+            {thread.title ?? "Untitled"}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+Pair with `useVendoThread(threadId)` to drive the streaming turn for the
+selected conversation.
+
+## Apps export and import
+
+`useApps` exposes `export(appId)` and `import(bytes)` alongside the read
+fields so a custom apps drawer can round-trip an `AppDocument` through the
+wire without hand-rolling calls to `/apps/:id/export` and `/apps/import`.
+
+```tsx
+"use client";
+
+import { useApps } from "@vendoai/ui";
+
+export function AppsDrawer() {
+  const { data, error, isLoading, refresh, export: exportApp, import: importApp } = useApps();
+
+  async function onExport(id: string) {
+    const bytes = await exportApp(id);
+    // save to disk, share, or hand to another user
+  }
+
+  async function onImport(file: File) {
+    await importApp(new Uint8Array(await file.arrayBuffer()));
+    await refresh();
+  }
+
+  // …render list, use error/isLoading as with any read hook
+}
+```
+
+Import mints a fresh `app_` id and does not carry over data, grants, or
+authority — see [Generated UI and apps](/concepts/generated-ui) for the
+ownership model.
+
+## When to use hooks vs. chrome
+
+- Reach for `VendoOverlay` and the other chrome components when you want the
+  shipped surface with brand tokens applied.
+- Reach for hooks when you need to place counts, badges, or lists inside
+  your own layout, or when your chrome needs to react to Vendo state without
+  rendering the overlay at all.
+
+Both paths speak the same wire, so mixing them in one app is safe.
