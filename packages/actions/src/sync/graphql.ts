@@ -25,7 +25,7 @@ import {
   resolveImportSource,
   walk,
 } from "./common.js";
-import { loadTypescript } from "./trpc.js";
+import { loadTypescript } from "./static-ts.js";
 
 /**
  * Static GraphQL extraction (04 §1, additive within vendo/tools@1).
