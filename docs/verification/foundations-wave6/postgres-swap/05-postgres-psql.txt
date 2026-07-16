@@ -1,0 +1,61 @@
+# Beat A(3) — host-side SQL against the Cadence Vendo store on real Postgres 18 (Homebrew)
+# Cadence booted with POSTGRES_URL=postgres://vendo@127.0.0.1:54329/vendo_cadence -> createStore({ url })
+
+$ psql -c '\dt'
+               List of tables
+ Schema |       Name        | Type  | Owner 
+--------+-------------------+-------+-------
+ public | vendo_approvals   | table | vendo
+ public | vendo_apps        | table | vendo
+ public | vendo_audit       | table | vendo
+ public | vendo_blobs       | table | vendo
+ public | vendo_grants      | table | vendo
+ public | vendo_mcp_clients | table | vendo
+ public | vendo_mcp_grants  | table | vendo
+ public | vendo_meta        | table | vendo
+ public | vendo_org_members | table | vendo
+ public | vendo_orgs        | table | vendo
+ public | vendo_records     | table | vendo
+ public | vendo_runs        | table | vendo
+ public | vendo_secrets     | table | vendo
+ public | vendo_state       | table | vendo
+ public | vendo_threads     | table | vendo
+(15 rows)
+
+$ psql -c "SELECT id, subject, title, created_at FROM vendo_threads;"
+                  id                  |               subject                |                                      title                                       |         created_at         
+--------------------------------------+--------------------------------------+----------------------------------------------------------------------------------+----------------------------
+ thr_cca1b65d88274b26966dcc4289e7c1ba | 8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01 | Give me a chase plan for clients with documents still missing before their filin | 2026-07-16 02:38:04.329-07
+(1 row)
+
+$ psql -c "SELECT relname AS table_name, n_live_tup AS live_rows FROM pg_stat_user_tables WHERE relname LIKE 'vendo_%' ORDER BY relname;"
+    table_name     | live_rows 
+-------------------+-----------
+ vendo_approvals   |         0
+ vendo_apps        |         0
+ vendo_audit       |         1
+ vendo_blobs       |         0
+ vendo_grants      |         0
+ vendo_mcp_clients |         0
+ vendo_mcp_grants  |         0
+ vendo_meta        |         2
+ vendo_org_members |         0
+ vendo_orgs        |         0
+ vendo_records     |         0
+ vendo_runs        |         0
+ vendo_secrets     |         0
+ vendo_state       |         0
+ vendo_threads     |         1
+(15 rows)
+
+$ psql -c "SELECT id, kind, at FROM vendo_audit ORDER BY at DESC LIMIT 3;"
+                    id                    |   kind    |             at             
+------------------------------------------+-----------+----------------------------
+ aud_c7f6a7e1-a7d6-4b57-9b22-e4d264ed8ef3 | tool-call | 2026-07-16 02:37:50.925-07
+(1 row)
+
+
+# Restart-survival: dev server stopped and rebooted against the same POSTGRES_URL,
+# then the host API lists the same thread — durable in Postgres across restarts.
+$ curl -s http://localhost:3000/api/vendo/threads -H "Cookie: cadence-session=<maya-jwt>"
+[{"id":"thr_cca1b65d88274b26966dcc4289e7c1ba","title":"Give me a chase plan for clients with documents still missing before their filin","updatedAt":"2026-07-16T09:38:04.329Z"}]
