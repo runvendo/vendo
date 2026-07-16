@@ -134,6 +134,6 @@ Approved with the contracts (Yousef, 2026-07-11): the blocks are built as if fro
 
 ### 2026-07-16 — GraphQL binding kind added to vendo/tools@1
 
-- **Changed:** `04-actions.md` §1/§2/§4 — additive `graphql` binding kind (`operation`/`type`/`endpoint`/`document?`), the extractor seam registration list (OpenAPI → tRPC → GraphQL → route-scan, with endpoint shadowing), GraphQL static-extraction (SDL + code-first) and fail-closed risk rules, the GraphQL HTTP transport execution semantics (POST query+variables, 200-with-errors is a failure), and the binding-kind-aware tool-identity note (endpoint + operation name for GraphQL).
+- **Changed:** `04-actions.md` §1/§2/§4 — additive `graphql` binding kind (`operation`/`type`/`endpoint`/`document?`), the extractor seam registration list (OpenAPI → tRPC → GraphQL → route-scan, with endpoint shadowing), GraphQL static-extraction (SDL + code-first) and fail-closed risk rules, the GraphQL HTTP transport execution semantics (POST query+variables, 200-with-errors is a failure), and the binding-kind-aware tool-identity note (endpoint + operation kind + operation name for GraphQL).
 - **Why:** ENG-247 (extraction-survives-real-apps M2) ships the GraphQL extractor with the Twenty fixture; the binding kind is additive within `vendo/tools@1` per the discriminated-union evolution rule — existing consumers ignore unknown kinds.
 - **Approved by:** awaiting Yousef's personal sign-off (PR stays draft until then).
