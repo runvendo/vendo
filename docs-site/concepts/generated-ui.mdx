@@ -68,3 +68,40 @@ so one failing query does not block the rest of the view.
 You do not need to change your client. Existing consumers of `data-vendo-view`
 parts see progressive frames followed by the final tree under a single stable
 part id.
+
+## Invisible graduation to rung 4
+
+When a tree app graduates to rung 4, the first served version renders the
+identical kept tree — users see no visible change. The runtime writes a
+served-app scaffold to the machine before the model's files, boots the
+scaffold's static server, captures a cover screenshot, then snapshots. The
+document only flips to `ui: "http"` after the edit persists. If any step
+fails, the previous rung keeps serving and the document is untouched.
+
+The scaffold serves the kept tree from `/tree.json` and any document-level
+generated components from `/components.json`. It mounts them through the
+same renderer used before graduation, so component identity and jailed
+iframe boundaries are preserved. Tree references of the form `fn:<name>`
+become `POST /fn/<name>` requests to the app's own server on `$PORT`. The
+graduated app owns those routes, and the model's post-graduation edits
+supply the handlers.
+
+App server code follows a fixed boot convention on every rung that runs
+one. The machine boots `/app/start.sh` when present, otherwise
+`/app/server.js`. The server listens on `$PORT` and answers
+`POST /fn/<name>` with the `fn:` envelope. Before every snapshot on rungs
+2 and 3, the runtime confirms the server is actually listening. If
+nothing serves, the edit fails and the previous rung keeps serving.
+
+A few behaviors are specific to the served page and worth knowing when
+writing prompts or diagnosing a graduation:
+
+- Nodes that reference host-source components degrade to a contained
+  "unknown component" notice, because host components cannot ship inside
+  a served app. Prewired and generated components render identically.
+- The served page renders with the tree's at-rest data. Progressive query
+  re-resolution, which happens while the host still renders the tree,
+  does not run once the app is serving itself.
+- Non-`fn:` host actions are refused with a structured error outcome and
+  make no network calls. Mount failures surface as a visible alert
+  instead of a blank page.
