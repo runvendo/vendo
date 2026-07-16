@@ -5,6 +5,18 @@ story. Its deterministic seed includes an $87 DoorDash charge at 1:14 AM,
 alongside accounts, cards, transactions, goals, payments, and spending
 insights.
 
+## Try the demo
+
+The live demo runs at **https://maple.vendo.run**. Sign in with the public
+demo credentials:
+
+- **Email:** `yousef@maple.com`
+- **Password:** `maple-demo`
+
+These are intentionally public, non-secret credentials for a fictional demo
+bank — no real money moves. A second seeded user, `mia@maple.com` (same
+password), exists to demonstrate per-user isolation.
+
 ## Setup
 
 ```bash
