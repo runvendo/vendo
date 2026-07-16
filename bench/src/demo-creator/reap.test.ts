@@ -30,6 +30,12 @@ describe("parseDemoReapArgs", () => {
   it("rejects unknown options", () => {
     expect(() => parseDemoReapArgs(["--nope"])).toThrow("Unknown option: --nope");
   });
+
+  it("requires an https router URL (localhost excepted) and normalizes trailing slashes", () => {
+    expect(() => parseDemoReapArgs(["--router-url", "http://router.example"])).toThrow(/--router-url must be https/);
+    expect(parseDemoReapArgs(["--router-url", "http://localhost:8080"]).routerUrl).toBe("http://localhost:8080");
+    expect(parseDemoReapArgs(["--router-url", "https://router.example/"]).routerUrl).toBe("https://router.example");
+  });
 });
 
 describe("selectReapable", () => {
@@ -131,13 +137,36 @@ describe("runDemoReap", () => {
     expect((deleteCall?.[1] as RequestInit).headers).toMatchObject({ Authorization: "Bearer token" });
   });
 
-  it("still deletes the registry row when railway down fails (deployment already gone), and reports it", async () => {
+  it("treats a no-deployment-to-remove failure as already-gone and still deletes the row", async () => {
     const rows = [row({ id: "old", expiresAt: "2020-01-01T00:00:00Z" })];
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(listResponse(rows))
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
     const exec = vi.fn().mockImplementation(async (command: string[]) =>
       command[1] === "down" ? { code: 1, stdout: "", stderr: "No deployments found" } : { code: 0, stdout: "", stderr: "" });
+    const result = await runDemoReap(parseDemoReapArgs(["--execute"]), {
+      env,
+      exec,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      write: () => {},
+      now: () => new Date("2026-07-16T00:00:00Z"),
+    });
+    expect(result.failed).toEqual([]);
+    expect(fetchImpl.mock.calls[1]?.[0]).toBe("https://demos.vendo.run/admin/demos/old");
+  });
+
+  it("KEEPS the registry row when railway down fails transiently (no orphaned live service)", async () => {
+    const rows = [
+      row({ id: "flaky", expiresAt: "2020-01-01T00:00:00Z" }),
+      row({ id: "old", expiresAt: "2020-01-01T00:00:00Z" }),
+    ];
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(listResponse(rows))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const exec = vi.fn().mockImplementation(async (command: string[]) =>
+      command.join(" ") === "railway down --service demo-flaky --yes"
+        ? { code: 1, stdout: "", stderr: "502 Bad Gateway" }
+        : { code: 0, stdout: "", stderr: "" });
     const lines: string[] = [];
     const result = await runDemoReap(parseDemoReapArgs(["--execute"]), {
       env,
@@ -146,9 +175,11 @@ describe("runDemoReap", () => {
       write: (line) => lines.push(line),
       now: () => new Date("2026-07-16T00:00:00Z"),
     });
-    expect(result.executed).toBe(true);
-    expect(fetchImpl.mock.calls[1]?.[0]).toBe("https://demos.vendo.run/admin/demos/old");
-    expect(lines.join("\n")).toMatch(/railway down failed/i);
+    expect(result.failed).toEqual(["flaky"]);
+    // flaky's row was NOT deleted (a future reap must still see it); old's was.
+    const deletedUrls = fetchImpl.mock.calls.slice(1).map(([url]) => url);
+    expect(deletedUrls).toEqual(["https://demos.vendo.run/admin/demos/old"]);
+    expect(lines.join("\n")).toMatch(/railway down failed .*keeping its registry row/i);
   });
 
   it("fails loudly when the registry read is unauthorized", async () => {

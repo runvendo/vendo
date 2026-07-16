@@ -110,8 +110,11 @@ export ROUTER_ADMIN_TOKEN="$(cat ~/.vendo/demo-router-admin-token)"
 pnpm --filter @vendoai/bench demo:deploy -- --app apps/demo-<slug>
 ```
 
-What it does: renders a Dockerfile + .dockerignore into the app, syncs the
-lockfile, creates/updates the `demo-<slug>` service in Railway project
+The creator session must already have run `pnpm build` in the worktree
+(`bench/dist/` exists) — `demo:deploy` runs the built CLI, not the sources.
+
+What it does: renders a Dockerfile into the app (upload exclusions live in
+the repo-root .dockerignore), syncs the lockfile, creates/updates the `demo-<slug>` service in Railway project
 `vendo-demos`, sets `ANTHROPIC_API_KEY` on the service, `railway up`s the
 working tree, then registers the demo with the demos.vendo.run router. It
 prints `Live at https://demos.vendo.run/<id>` on success. Neither secret is

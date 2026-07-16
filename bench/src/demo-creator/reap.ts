@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { defaultExec, type ExecFn } from "./deploy.js";
+import { defaultExec, normalizeRouterUrl, type ExecFn } from "./deploy.js";
 
 /**
  * `demo:reap` — expiry teardown for deployed demos. Reads the registry via
@@ -43,6 +43,8 @@ export interface ReapCandidate {
 export interface DemoReapResult {
   candidates: ReapCandidate[];
   executed: boolean;
+  /** Ids whose Railway teardown failed — their registry rows were KEPT so a future reap still sees them. */
+  failed: string[];
 }
 
 const defaultRouterUrl = "https://demos.vendo.run";
@@ -69,7 +71,7 @@ export function parseDemoReapArgs(argv: string[]): DemoReapArgs {
     index += 1;
   }
   return {
-    routerUrl: options.get("--router-url") ?? defaultRouterUrl,
+    routerUrl: normalizeRouterUrl("--router-url", options.get("--router-url") ?? defaultRouterUrl),
     project: options.get("--project") ?? defaultProject,
     execute: flags.has("--execute"),
   };
@@ -139,7 +141,7 @@ export async function runDemoReap(args: DemoReapArgs, io: ReapIo): Promise<DemoR
 
   if (candidates.length === 0) {
     write(`Nothing to reap — ${demos.length} registered demo(s), none expired or killed.`);
-    return { candidates, executed: args.execute };
+    return { candidates, executed: args.execute, failed: [] };
   }
 
   write(`${candidates.length} demo(s) to reap (of ${demos.length} registered):`);
@@ -152,7 +154,7 @@ export async function runDemoReap(args: DemoReapArgs, io: ReapIo): Promise<DemoR
 
   if (!args.execute) {
     write("Dry run (the default) — re-run with --execute to tear these down.");
-    return { candidates, executed: false };
+    return { candidates, executed: false, failed: [] };
   }
 
   const exec = io.exec ?? defaultExec;
@@ -163,13 +165,21 @@ export async function runDemoReap(args: DemoReapArgs, io: ReapIo): Promise<DemoR
     throw new Error(`"railway link --project ${args.project}" failed (exit ${link.code}):\n${link.stderr || link.stdout}`);
   }
 
+  const failed: string[] = [];
   for (const candidate of candidates) {
     const plan = buildReapPlan(candidate.row, args.routerUrl);
     // `railway down` removes the latest deployment — the service stops
-    // serving/billing. Tolerated failure: the deployment may already be gone.
+    // serving/billing. The ONLY tolerated failure is "nothing to remove"
+    // (already torn down); any other failure keeps the registry row, so the
+    // still-live service stays visible to the next reap instead of becoming
+    // an orphan running on our key.
     const down = await exec(plan.railwayDown, { cwd: repoRoot });
-    if (down.code !== 0) {
-      write(`  ${candidate.row.id}: railway down failed (${(down.stderr || down.stdout).trim().split("\n")[0] ?? `exit ${down.code}`}) — removing the registry row anyway`);
+    const alreadyGone = /no\s+(recent\s+|active\s+)?deployments?/i.test(`${down.stderr}\n${down.stdout}`);
+    if (down.code !== 0 && !alreadyGone) {
+      const detail = (down.stderr || down.stdout).trim().split("\n")[0] ?? `exit ${down.code}`;
+      write(`  ${candidate.row.id}: railway down failed (${detail}) — keeping its registry row so the next reap retries`);
+      failed.push(candidate.row.id);
+      continue;
     }
     const deleted = await fetchImpl(plan.registryDelete, {
       method: "DELETE",
@@ -181,7 +191,10 @@ export async function runDemoReap(args: DemoReapArgs, io: ReapIo): Promise<DemoR
     write(`  ${candidate.row.id}: deployment removed + registry row deleted`);
   }
   write("NOTE: railway CLI 4.36.1 cannot delete a service — the empty service shells remain; delete them in the Railway dashboard (project settings) when convenient.");
-  return { candidates, executed: true };
+  if (failed.length > 0) {
+    write(`FAILED to tear down: ${failed.join(", ")} — registry rows kept; investigate and re-run.`);
+  }
+  return { candidates, executed: true, failed };
 }
 
 function repoRootFromHere(): string {

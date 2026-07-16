@@ -74,7 +74,10 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "reap") {
-    await runDemoReap(parseDemoReapArgs(rest), {});
+    const result = await runDemoReap(parseDemoReapArgs(rest), {});
+    // Failed teardowns kept their registry rows — surface that to callers
+    // (the mini's reap routine alerts on nonzero exit).
+    if (result.failed.length > 0) process.exitCode = 1;
     return;
   }
   throw new Error(`Unknown demo-creator command: ${command ?? "(missing)"}`);
