@@ -19,13 +19,14 @@ Commands:
   cloud <command> Use the public Vendo Cloud API
 
 Options:
-  --agent                    Init only: print a read-only plan with four questions
+  --agent                    Init only: print a read-only plan — four questions, code diffs, extracted tools, risk recommendations
   --yes                      Init only: skip the interview and approve displayed changes
   --force                    Init/server-json: overwrite owned or generated files
   --model-import <specifier> Init only: module exporting the host's ai-SDK model
   --brief <text>             Init only: product brief used for non-interactive setup
   --url <url>                Doctor/server-json: mounted wire base or public MCP URL
   --strict                   Sync only: exit 2 on breaking changes, 3 when saved references are impacted
+  --json                     Sync only: print one machine-readable report object
   --report                   Sync only: push the report to Vendo Cloud
   --key <key>                Sync/cloud: override VENDO_API_KEY
   --api-url <url>            Sync/cloud: override VENDO_CLOUD_URL
@@ -77,6 +78,7 @@ export async function main(argv: string[]): Promise<number> {
       targetDir: target(args),
       strict: args.includes("--strict"),
       url: option(args, "--url"),
+      json: args.includes("--json"),
       report: args.includes("--report"),
       apiKey: option(args, "--key"),
       apiUrl: option(args, "--api-url"),

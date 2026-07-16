@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { scanRemixRegistrations, vendoSync, type RemixRegistrationSite } from "@vendoai/actions";
+import { mergeOverrides, scanRemixRegistrations, vendoSync, type ExtractedTool, type OverridesFile, type RemixRegistrationSite } from "@vendoai/actions";
 import type { VendoTheme } from "@vendoai/core";
 import type { Telemetry } from "@vendoai/telemetry";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
@@ -58,12 +59,22 @@ export interface InitQuestion {
   recommendation: string;
 }
 
+export interface RiskRecommendation {
+  tool: string;
+  risk: ExtractedTool["risk"];
+  recommendation: string;
+}
+
 export interface InitPlan {
   framework: HostFramework;
   root: string;
   writes: string[];
   codeChanges: Array<{ path: string; diff: string }>;
   questions: InitQuestion[];
+  /** --agent only: deterministic extraction results, so an agent can answer the
+      risk question from real tool names instead of re-deriving them. */
+  extraction?: { tools: ExtractedTool[]; warnings: string[] };
+  riskRecommendations?: RiskRecommendation[];
 }
 
 export interface InitOptions {
@@ -470,6 +481,63 @@ interface PlannedChange {
   remixSlots?: string[];
 }
 
+/** Read-only extraction for the agent plan. vendoSync writes its artifacts, so
+    it runs against a throwaway out dir — the host tree stays untouched (the
+    --agent contract). Existing overrides ride along so the plan reflects prior
+    human risk decisions, mirroring vendoSync's own merge semantics. */
+async function extractForPlan(root: string): Promise<{ tools: ExtractedTool[]; warnings: string[] }> {
+  const out = await mkdtemp(join(tmpdir(), "vendo-agent-plan-"));
+  try {
+    const overridesRaw = await readOptional(join(root, ".vendo", "overrides.json"));
+    if (overridesRaw !== null) await writeText(join(out, "overrides.json"), overridesRaw);
+    const report = await vendoSync({ root, out });
+    const file = JSON.parse(await readFile(join(out, "tools.json"), "utf8")) as { tools?: ExtractedTool[] };
+    let overrides: OverridesFile | null = null;
+    try {
+      overrides = overridesRaw === null ? null : JSON.parse(overridesRaw) as OverridesFile;
+    } catch {
+      // vendoSync already validated the copy; an unreadable original merges as absent.
+    }
+    return { tools: mergeOverrides(file.tools ?? [], overrides), warnings: report.warnings };
+  } catch (error) {
+    // The plan must always emit — extraction failures degrade to a warning.
+    return { tools: [], warnings: [`extraction failed: ${error instanceof Error ? error.message : "unknown error"}`] };
+  } finally {
+    await rm(out, { recursive: true, force: true });
+  }
+}
+
+/** 04-actions §1 risk ladder projected as advice: destructive asks first,
+    writes get reviewed, reads auto-run (no entry). */
+function riskRecommendations(tools: ExtractedTool[]): RiskRecommendation[] {
+  return tools.flatMap((tool) => {
+    if (tool.disabled === true) {
+      return [{ tool: tool.name, risk: tool.risk, recommendation: "extracted disabled (unclassifiable); enable it deliberately in .vendo/overrides.json after review" }];
+    }
+    if (tool.critical === true) {
+      return [{ tool: tool.name, risk: tool.risk, recommendation: "already marked critical in .vendo/overrides.json; policy asks before running it" }];
+    }
+    if (tool.risk === "destructive") {
+      return [{ tool: tool.name, risk: tool.risk, recommendation: "irreversible; mark it critical in .vendo/overrides.json so policy asks first" }];
+    }
+    if (tool.risk === "write") {
+      return [{ tool: tool.name, risk: tool.risk, recommendation: "writes host data; review it and mark critical in .vendo/overrides.json when irreversible" }];
+    }
+    return [];
+  });
+}
+
+/** The packaged vendo-setup skill (shipped in the npm tarball next to dist/).
+    Resolved relative to this module so src (tests) and dist (published bin)
+    agree; a missing file degrades to not offering the skill. */
+async function setupSkillSource(): Promise<string | null> {
+  try {
+    return await readFile(new URL("../../skills/vendo-setup/SKILL.md", import.meta.url), "utf8");
+  } catch {
+    return null;
+  }
+}
+
 async function buildPlan(options: InitOptions, mcpEnabled = false): Promise<{ plan: InitPlan; changes: PlannedChange[] }> {
   const root = resolve(options.targetDir);
   const framework = await detectFramework(root);
@@ -554,6 +622,20 @@ async function buildPlan(options: InitOptions, mcpEnabled = false): Promise<{ pl
         after: packageAfter,
         diff: diff(path, packageBefore, packageAfter),
       });
+    }
+  }
+  // Agent surface: a host that already uses skills (.claude/ exists) is offered
+  // the packaged vendo-setup skill through the same diff-consent flow. Offered
+  // only while missing — an edited copy is respected (never overwritten); a
+  // deleted copy is offered again on the next init, like any missing scaffold.
+  if (await exists(join(root, ".claude"))) {
+    const skillAbsolute = join(root, ".claude", "skills", "vendo-setup", "SKILL.md");
+    if (!(await exists(skillAbsolute))) {
+      const skillSource = await setupSkillSource();
+      if (skillSource !== null) {
+        const path = relative(root, skillAbsolute);
+        changes.push({ absolute: skillAbsolute, path, before: null, after: skillSource, diff: diff(path, null, skillSource) });
+      }
     }
   }
   const writes = [
@@ -667,7 +749,15 @@ export async function runInit(options: InitOptions): Promise<number> {
   const initial = await buildPlan(options);
 
   if (options.agent === true) {
-    output.log(JSON.stringify(initial.plan, null, 2));
+    // Extraction runs before the plan is emitted so the plan carries real tool
+    // names and risk advice; the throwaway out dir keeps --agent read-only.
+    const extraction = await extractForPlan(root);
+    const plan: InitPlan = {
+      ...initial.plan,
+      extraction,
+      riskRecommendations: riskRecommendations(extraction.tools),
+    };
+    output.log(JSON.stringify(plan, null, 2));
     return 0;
   }
 

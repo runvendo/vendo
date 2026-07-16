@@ -25,11 +25,14 @@
     "dark": "/logo/dark.svg"
   },
   "favicon": "/favicon.svg",
+  "contextual": {
+    "options": ["copy", "view", "chatgpt", "claude", "cursor", "vscode"]
+  },
   "navigation": {
     "groups": [
       {
         "group": "Getting started",
-        "pages": ["index", "quickstart", "quickstart-node"]
+        "pages": ["index", "install", "quickstart", "quickstart-node"]
       },
       {
         "group": "Concepts",
