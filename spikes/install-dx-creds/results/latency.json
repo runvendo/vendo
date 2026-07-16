@@ -1,0 +1,758 @@
+[
+  {
+    "rung": "codex-app-server (gpt-5.6-sol)",
+    "scenario": "short",
+    "trial": 1,
+    "ttftMs": 1921.3462499999998,
+    "totalMs": 2152.192959,
+    "model": "gpt-5.6-sol",
+    "usage": {
+      "id": "019f66f4-c2e6-7e93-b58c-d7a232e2fa46",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1784138744,
+      "completedAt": 1784138746,
+      "durationMs": 2143
+    },
+    "answer": "pong",
+    "notes": "tools=[] status=completed"
+  },
+  {
+    "rung": "codex-app-server (gpt-5.6-sol)",
+    "scenario": "short",
+    "trial": 2,
+    "ttftMs": 3688.5267089999998,
+    "totalMs": 3825.0853749999997,
+    "model": "gpt-5.6-sol",
+    "usage": {
+      "id": "019f66f4-cb4d-7b31-9cbf-9452103ded1e",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1784138746,
+      "completedAt": 1784138750,
+      "durationMs": 3821
+    },
+    "answer": "pong",
+    "notes": "tools=[] status=completed"
+  },
+  {
+    "rung": "codex-app-server (gpt-5.6-sol)",
+    "scenario": "short",
+    "trial": 3,
+    "ttftMs": 1157.7793330000004,
+    "totalMs": 1274.715333,
+    "model": "gpt-5.6-sol",
+    "usage": {
+      "id": "019f66f4-da40-7da1-b6be-89a952da2c65",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1784138750,
+      "completedAt": 1784138751,
+      "durationMs": 1259
+    },
+    "answer": "pong",
+    "notes": "tools=[] status=completed"
+  },
+  {
+    "rung": "codex-app-server (gpt-5.6-sol)",
+    "scenario": "short",
+    "trial": 4,
+    "ttftMs": 1135.1343340000003,
+    "totalMs": 1266.7311250000002,
+    "model": "gpt-5.6-sol",
+    "usage": {
+      "id": "019f66f4-df3a-75d1-906d-43929781b074",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1784138751,
+      "completedAt": 1784138753,
+      "durationMs": 1260
+    },
+    "answer": "pong",
+    "notes": "tools=[] status=completed"
+  },
+  {
+    "rung": "codex-app-server (gpt-5.6-sol)",
+    "scenario": "tool-read",
+    "trial": 1,
+    "ttftMs": 1418.4560419999998,
+    "totalMs": 3986.419082999999,
+    "model": "gpt-5.6-sol",
+    "usage": {
+      "id": "019f66f4-e42c-73a1-89f4-ae03f1753d05",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1784138753,
+      "completedAt": 1784138757,
+      "durationMs": 3984
+    },
+    "answer": "I’ll check your recent payments list and count the entries.2",
+    "notes": "tools=[vendo_payments_list] status=completed"
+  },
+  {
+    "rung": "codex-app-server (gpt-5.6-sol)",
+    "scenario": "tool-read",
+    "trial": 2,
+    "ttftMs": 3124.3928749999995,
+    "totalMs": 5477.937875000001,
+    "model": "gpt-5.6-sol",
+    "usage": {
+      "id": "019f66f4-f3bf-79a2-a6c9-4318a25b3e26",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1784138757,
+      "completedAt": 1784138762,
+      "durationMs": 5476
+    },
+    "answer": "I’ll check the recent payments list.2",
+    "notes": "tools=[vendo_payments_list] status=completed"
+  },
+  {
+    "rung": "codex-app-server (gpt-5.6-sol)",
+    "scenario": "tool-read",
+    "trial": 3,
+    "ttftMs": 3345.780208,
+    "totalMs": 5492.995457999998,
+    "model": "gpt-5.6-sol",
+    "usage": {
+      "id": "019f66f5-0925-7b12-8bee-eea0c8beea9c",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1784138762,
+      "completedAt": 1784138768,
+      "durationMs": 5491
+    },
+    "answer": "I’ll check your recent payments.2",
+    "notes": "tools=[vendo_payments_list] status=completed"
+  },
+  {
+    "rung": "codex-app-server (gpt-5.6-sol)",
+    "scenario": "tool-read",
+    "trial": 4,
+    "ttftMs": 4473.974833,
+    "totalMs": 7677.884540999999,
+    "model": "gpt-5.6-sol",
+    "usage": {
+      "id": "019f66f5-1e9a-7592-a45c-c3011af0adbe",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1784138768,
+      "completedAt": 1784138775,
+      "durationMs": 7676
+    },
+    "answer": "I’ll count your recent payments.2",
+    "notes": "tools=[vendo_payments_list] status=completed"
+  },
+  {
+    "rung": "codex-app-server (gpt-5.6-sol)",
+    "scenario": "tool-approve(+3000ms park)",
+    "trial": 1,
+    "ttftMs": 1894.2780420000017,
+    "totalMs": 7159.823958999998,
+    "model": "gpt-5.6-sol",
+    "usage": {
+      "id": "019f66f5-3c98-7ad2-b3a7-567900190f69",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1784138775,
+      "completedAt": 1784138782,
+      "durationMs": 7158
+    },
+    "answer": "I’ll send 1,250 cents to Acme Water Co.conf_spike_001",
+    "notes": "tools=[vendo_payments_send] status=completed"
+  },
+  {
+    "rung": "codex-app-server (gpt-5.6-sol)",
+    "scenario": "tool-approve(+3000ms park)",
+    "trial": 2,
+    "ttftMs": 1449.4749169999996,
+    "totalMs": 15506.411166999998,
+    "model": "gpt-5.6-sol",
+    "usage": {
+      "id": "019f66f5-5890-7c53-b827-ce89ef8e2a41",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1784138782,
+      "completedAt": 1784138798,
+      "durationMs": 15504
+    },
+    "answer": "I’ll send 1,250 cents to Acme Water Co.conf_spike_001",
+    "notes": "tools=[vendo_payments_send] status=completed"
+  },
+  {
+    "rung": "claude-agent-sdk (claude-opus-4-8[1m])",
+    "scenario": "warmup(spawn+turn)",
+    "trial": 1,
+    "ttftMs": 11530.810959,
+    "totalMs": 12013.846667000002,
+    "model": "claude-opus-4-8[1m]",
+    "usage": {
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 26091,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 4,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 26091
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 4,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 26091,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 26091,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard"
+      },
+      "totalCostUsd": 0.16376475,
+      "subtype": "success"
+    },
+    "answer": "ready",
+    "notes": "tools=[]"
+  },
+  {
+    "rung": "claude-agent-sdk (claude-opus-4-8[1m])",
+    "scenario": "short",
+    "trial": 1,
+    "ttftMs": 1680.606208000001,
+    "totalMs": 1766.8631670000013,
+    "model": "claude-opus-4-8[1m]",
+    "usage": {
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 16,
+        "cache_read_input_tokens": 26091,
+        "output_tokens": 4,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 16
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 4,
+            "cache_read_input_tokens": 26091,
+            "cache_creation_input_tokens": 16,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 16,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard"
+      },
+      "totalCostUsd": 0.17702025,
+      "subtype": "success"
+    },
+    "answer": "pong",
+    "notes": "tools=[]"
+  },
+  {
+    "rung": "claude-agent-sdk (claude-opus-4-8[1m])",
+    "scenario": "short",
+    "trial": 2,
+    "ttftMs": 1877.2709999999988,
+    "totalMs": 1910.9999169999992,
+    "model": "claude-opus-4-8[1m]",
+    "usage": {
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 16,
+        "cache_read_input_tokens": 26107,
+        "output_tokens": 4,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 16
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 4,
+            "cache_read_input_tokens": 26107,
+            "cache_creation_input_tokens": 16,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 16,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard"
+      },
+      "totalCostUsd": 0.19028375,
+      "subtype": "success"
+    },
+    "answer": "pong",
+    "notes": "tools=[]"
+  },
+  {
+    "rung": "claude-agent-sdk (claude-opus-4-8[1m])",
+    "scenario": "short",
+    "trial": 3,
+    "ttftMs": 1867.249917000001,
+    "totalMs": 1902.822250000001,
+    "model": "claude-opus-4-8[1m]",
+    "usage": {
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 16,
+        "cache_read_input_tokens": 26123,
+        "output_tokens": 4,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 16
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 4,
+            "cache_read_input_tokens": 26123,
+            "cache_creation_input_tokens": 16,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 16,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard"
+      },
+      "totalCostUsd": 0.20355525,
+      "subtype": "success"
+    },
+    "answer": "pong",
+    "notes": "tools=[]"
+  },
+  {
+    "rung": "claude-agent-sdk (claude-opus-4-8[1m])",
+    "scenario": "short",
+    "trial": 4,
+    "ttftMs": 2122.486541000002,
+    "totalMs": 2239.2229160000024,
+    "model": "claude-opus-4-8[1m]",
+    "usage": {
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 16,
+        "cache_read_input_tokens": 26139,
+        "output_tokens": 4,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 16
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 4,
+            "cache_read_input_tokens": 26139,
+            "cache_creation_input_tokens": 16,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 16,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard"
+      },
+      "totalCostUsd": 0.21683475,
+      "subtype": "success"
+    },
+    "answer": "pong",
+    "notes": "tools=[]"
+  },
+  {
+    "rung": "claude-agent-sdk (claude-opus-4-8[1m])",
+    "scenario": "tool-read",
+    "trial": 1,
+    "ttftMs": 8722.216,
+    "totalMs": 8904.447833000002,
+    "model": "claude-opus-4-8[1m]",
+    "usage": {
+      "usage": {
+        "input_tokens": 6,
+        "cache_creation_input_tokens": 367,
+        "cache_read_input_tokens": 78756,
+        "output_tokens": 151,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 367
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 12,
+            "cache_read_input_tokens": 26415,
+            "cache_creation_input_tokens": 107,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 107,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard"
+      },
+      "totalCostUsd": 0.2623115,
+      "subtype": "success"
+    },
+    "answer": "You have 2 recent payments.",
+    "notes": "tools=[mcp__vendo__payments_list]"
+  },
+  {
+    "rung": "claude-agent-sdk (claude-opus-4-8[1m])",
+    "scenario": "tool-read",
+    "trial": 2,
+    "ttftMs": 4049.4827090000035,
+    "totalMs": 4313.326375000004,
+    "model": "claude-opus-4-8[1m]",
+    "usage": {
+      "usage": {
+        "input_tokens": 4,
+        "cache_creation_input_tokens": 146,
+        "cache_read_input_tokens": 53083,
+        "output_tokens": 47,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 146
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 12,
+            "cache_read_input_tokens": 26561,
+            "cache_creation_input_tokens": 107,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 107,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard"
+      },
+      "totalCostUsd": 0.29096049999999996,
+      "subtype": "success"
+    },
+    "answer": "You have 2 recent payments.",
+    "notes": "tools=[mcp__vendo__payments_list]"
+  },
+  {
+    "rung": "claude-agent-sdk (claude-opus-4-8[1m])",
+    "scenario": "tool-read",
+    "trial": 3,
+    "ttftMs": 4126.9355420000065,
+    "totalMs": 4308.148417000004,
+    "model": "claude-opus-4-8[1m]",
+    "usage": {
+      "usage": {
+        "input_tokens": 3,
+        "cache_creation_input_tokens": 275,
+        "cache_read_input_tokens": 53505,
+        "output_tokens": 47,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 275
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 12,
+            "cache_read_input_tokens": 26837,
+            "cache_creation_input_tokens": 106,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 106,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard"
+      },
+      "totalCostUsd": 0.3206217499999999,
+      "subtype": "success"
+    },
+    "answer": "You have 2 recent payments.",
+    "notes": "tools=[mcp__vendo__payments_list]"
+  },
+  {
+    "rung": "claude-agent-sdk (claude-opus-4-8[1m])",
+    "scenario": "tool-read",
+    "trial": 4,
+    "ttftMs": 3230.791124999996,
+    "totalMs": 3276.929624999997,
+    "model": "claude-opus-4-8[1m]",
+    "usage": {
+      "usage": {
+        "input_tokens": 4,
+        "cache_creation_input_tokens": 146,
+        "cache_read_input_tokens": 53925,
+        "output_tokens": 47,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 146
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 12,
+            "cache_read_input_tokens": 26982,
+            "cache_creation_input_tokens": 107,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 107,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard"
+      },
+      "totalCostUsd": 0.3496917499999999,
+      "subtype": "success"
+    },
+    "answer": "You have 2 recent payments.",
+    "notes": "tools=[mcp__vendo__payments_list]"
+  },
+  {
+    "rung": "claude-agent-sdk (claude-opus-4-8[1m])",
+    "scenario": "tool-approve(+3000ms park)",
+    "trial": 1,
+    "ttftMs": 10767.145459000007,
+    "totalMs": 11003.607417000007,
+    "model": "claude-opus-4-8[1m]",
+    "usage": {
+      "usage": {
+        "input_tokens": 6,
+        "cache_creation_input_tokens": 531,
+        "cache_read_input_tokens": 81631,
+        "output_tokens": 283,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 531
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 22,
+            "cache_read_input_tokens": 27398,
+            "cache_creation_input_tokens": 222,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 222,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard"
+      },
+      "totalCostUsd": 0.4009309999999999,
+      "subtype": "success"
+    },
+    "answer": "Payment sent — confirmation id is conf_spike_001.",
+    "notes": "tools=[mcp__vendo__payments_send]"
+  },
+  {
+    "rung": "claude-agent-sdk (claude-opus-4-8[1m])",
+    "scenario": "tool-approve(+3000ms park)",
+    "trial": 2,
+    "ttftMs": 7241.981999999996,
+    "totalMs": 7433.928083999999,
+    "model": "claude-opus-4-8[1m]",
+    "usage": {
+      "usage": {
+        "input_tokens": 4,
+        "cache_creation_input_tokens": 200,
+        "cache_read_input_tokens": 55305,
+        "output_tokens": 110,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 200
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 22,
+            "cache_read_input_tokens": 27685,
+            "cache_creation_input_tokens": 135,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 135,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard"
+      },
+      "totalCostUsd": 0.4326034999999999,
+      "subtype": "success"
+    },
+    "answer": "Payment sent — confirmation id is conf_spike_001.",
+    "notes": "tools=[mcp__vendo__payments_send]"
+  },
+  {
+    "rung": "env-key claude-opus-4-8",
+    "scenario": "short",
+    "trial": 1,
+    "ttftMs": 1173.39375,
+    "totalMs": 1181.3856250000001,
+    "model": "claude-opus-4-8",
+    "usage": {
+      "input_tokens": 47,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 4,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      }
+    },
+    "answer": "pong"
+  },
+  {
+    "rung": "env-key claude-opus-4-8",
+    "scenario": "short",
+    "trial": 2,
+    "ttftMs": 1992.265125,
+    "totalMs": 2131.056,
+    "model": "claude-opus-4-8",
+    "usage": {
+      "input_tokens": 47,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 4,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      }
+    },
+    "answer": "pong"
+  },
+  {
+    "rung": "env-key claude-opus-4-8",
+    "scenario": "short",
+    "trial": 3,
+    "ttftMs": 1069.6219589999996,
+    "totalMs": 1179.7942499999995,
+    "model": "claude-opus-4-8",
+    "usage": {
+      "input_tokens": 47,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 4,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      }
+    },
+    "answer": "pong"
+  },
+  {
+    "rung": "env-key claude-opus-4-8",
+    "scenario": "short",
+    "trial": 4,
+    "ttftMs": 1619.4640420000005,
+    "totalMs": 1731.133167,
+    "model": "claude-opus-4-8",
+    "usage": {
+      "input_tokens": 47,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 4,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      }
+    },
+    "answer": "pong"
+  }
+]

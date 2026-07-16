@@ -6,3 +6,8 @@ packages:
   - "apps/*"
   - "bench"
   - "spikes/*"
+  # install-dx-creds is evidence-only and needs zod ^4 (Claude Agent SDK peer);
+  # keeping it in the workspace flips zod peer resolution to 4.x for every
+  # ai-SDK consumer (packages/agent, packages/ui, fixtures, ...). It installs
+  # standalone with its own lockfile instead — see spikes/install-dx-creds/README.md.
+  - "!spikes/install-dx-creds"
