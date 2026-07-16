@@ -1,24 +1,22 @@
-"use client";
+import { DemoPanel } from "@/components/demo-panel";
+import { loadDemoConfig } from "@/lib/demo-config-loader";
+import { getCapsGuard } from "@/server/caps";
 
-import { VendoThread } from "@vendoai/ui/chrome";
-import { VendoRoot } from "@/components/vendo/VendoRoot";
+// Caps counters move per request — never prerender a stale limit state.
+export const dynamic = "force-dynamic";
 
-// Minimal panel page — demo chrome (beat chips, CTA, caps) lands in later
-// passes; this mounts the Vendo surface itself.
-export default function VendoTabPage() {
+// The panel page: a server component so demo.config and the caps guard are
+// read server-side, composed client-side by DemoPanel (chrome + chips +
+// VendoRoot + VendoThread).
+export default async function VendoTabPage() {
+  const config = loadDemoConfig();
+  const refusal = await getCapsGuard().peekRefusal();
   return (
-    <div
-      style={{
-        height: "100dvh",
-        minHeight: 0,
-        display: "flex",
-        flexDirection: "column",
-        overflow: "auto",
-      }}
-    >
-      <VendoRoot>
-        <VendoThread />
-      </VendoRoot>
-    </div>
+    <DemoPanel
+      prospect={config.prospect}
+      ctaUrl={config.ctaUrl}
+      beats={config.beats}
+      initialRefusal={refusal === null ? null : refusal.body.vendoDemo}
+    />
   );
 }

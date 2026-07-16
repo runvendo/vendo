@@ -40,6 +40,12 @@ export interface CapsGuard {
    * or, when allowed, consumes one turn and returns null.
    */
   consumeTurn(): Promise<CapsRefusal | null>
+  /**
+   * Read-only view of the same gate `consumeTurn` applies, WITHOUT consuming a
+   * turn. Powers the demo chrome's friendly limit/expired card (server render
+   * of /vendo and GET /demo-status); never mutates counters.
+   */
+  peekRefusal(): Promise<CapsRefusal | null>
   /** Add estimated USD to the demo's cumulative spend counter. */
   recordSpend(usd: number): Promise<void>
 }
@@ -186,6 +192,20 @@ export function createCapsGuard(options: {
         if (entry.spendUsd >= config.caps.maxSpendUsd) return refusal("spend")
         state.counters[config.id] = { ...entry, turns: entry.turns + 1 }
         save(state.counters)
+        return null
+      })
+    },
+
+    // Same checks as consumeTurn, minus the consume/save — serialized so a
+    // peek never reads the counters file mid-write.
+    peekRefusal() {
+      return serialized(() => {
+        if (isExpired(config, now())) return refusal("expired")
+        const state = load()
+        if ("corrupt" in state) return refusal("turns")
+        const entry = state.counters[config.id] ?? { turns: 0, spendUsd: 0 }
+        if (entry.turns >= config.caps.maxTurns) return refusal("turns")
+        if (entry.spendUsd >= config.caps.maxSpendUsd) return refusal("spend")
         return null
       })
     },

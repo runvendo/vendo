@@ -1,6 +1,9 @@
-// PLACEHOLDER — the demo creator rewrites everything visible per prospect.
-// This page exists only so the app builds and runs; no brand, copy, or
-// product surface here is meant to survive a real demo generation pass.
+// PLACEHOLDER — the demo creator rewrites everything visible per prospect,
+// EXCEPT the demo chrome (src/components/demo-chrome.tsx + the beat chips in
+// src/components/suggestion-chips.tsx): the badge, CTA, and caps limit card
+// are fenced plumbing and must survive the rewrite. This page exists only so
+// the app builds and runs; no brand, copy, or product surface here is meant
+// to survive a real demo generation pass.
 export default function HomePage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-2 p-8 text-center">

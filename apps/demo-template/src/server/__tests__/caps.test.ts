@@ -113,6 +113,39 @@ describe("expiry", () => {
   })
 })
 
+describe("peekRefusal", () => {
+  it("never consumes a turn", async () => {
+    const { guard, countersPath } = makeGuard(makeConfig({ caps: { maxTurns: 2, maxSpendUsd: 5 } }))
+    expect(await guard.peekRefusal()).toBeNull()
+    expect(await guard.peekRefusal()).toBeNull()
+    expect(await guard.consumeTurn()).toBeNull() // peeks left both turns available
+    expect(JSON.parse(readFileSync(countersPath, "utf8"))["test-demo"].turns).toBe(1)
+  })
+
+  it("mirrors the turn refusal once the cap is exhausted", async () => {
+    const { guard } = makeGuard(makeConfig({ caps: { maxTurns: 1, maxSpendUsd: 5 } }))
+    await guard.consumeTurn()
+    const refusal = await guard.peekRefusal()
+    expect(refusal!.status).toBe(429)
+    expect(refusal!.body.vendoDemo.limit).toBe("turns")
+  })
+
+  it("mirrors the spend refusal once cumulative spend reaches the cap", async () => {
+    const { guard } = makeGuard()
+    await guard.recordSpend(5)
+    const refusal = await guard.peekRefusal()
+    expect(refusal!.status).toBe(429)
+    expect(refusal!.body.vendoDemo.limit).toBe("spend")
+  })
+
+  it("reports expiry with 410", async () => {
+    const { guard } = makeGuard(makeConfig({ expiresAt: "2026-01-01T00:00:00.000Z" }))
+    const refusal = await guard.peekRefusal()
+    expect(refusal!.status).toBe(410)
+    expect(refusal!.body.vendoDemo.limit).toBe("expired")
+  })
+})
+
 describe("refusal body shape", () => {
   it("carries a stable machine-readable vendoDemo body with the config ctaUrl", async () => {
     const { guard } = makeGuard(makeConfig({ caps: { maxTurns: 1, maxSpendUsd: 5 } }))

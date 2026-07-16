@@ -32,8 +32,23 @@ placeholder the creator agent replaces. Vendo is wired minimally:
   the OpenAPI spec so `vendo sync .` (run automatically in
   `predev`/`prebuild`) exposes them as agent-callable tools in
   `.vendo/tools.json`.
-- `/vendo` — the panel page mounting `VendoRoot` + `VendoThread`; demo chrome
-  lands in later passes.
+- `/vendo` — the panel page: `DemoPanel` composes the demo chrome, the beat
+  chips, and `VendoRoot` + `VendoThread`. The server page reads demo.config
+  and the caps guard's non-consuming `peekRefusal()` so a limited/expired demo
+  renders the friendly card on load.
+- `src/components/demo-chrome.tsx` — PLUMBING the creator must keep: the
+  "[Prospect] demo · built with Vendo · sample data" badge, the "Get this in
+  your product" CTA (demo.config `ctaUrl`), and the limit/expired card. The
+  mounted chrome polls `GET /demo-status` (a read-only caps check that
+  never consumes a turn) so an exhausted cap swaps in the card mid-session
+  instead of leaving only the thread's generic error toast.
+- `src/components/suggestion-chips.tsx` — demo.config `beats` as a persistent
+  chip strip (labels from `beats[].chip`). First-turn submission goes through
+  `VendoThread`'s official `suggestions` prop (the panel passes the beats'
+  prompts, shown on the empty landing; clicking sends one). Mid-thread there
+  is no @vendoai/ui seam to prefill/submit the composer from outside, so a
+  clicked chip reveals its prompt with a copy button — see the SEAM NOTE in
+  the file before "improving" this with DOM hacks.
 
 Set `ANTHROPIC_API_KEY` (and optionally `VENDO_DEMO_MODEL`) to chat.
 
