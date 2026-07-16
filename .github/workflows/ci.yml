@@ -74,11 +74,16 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Build only the workspace deps the two integration suites need (the `...`
+      # Build only the workspace deps the integration suites need (the `...`
       # suffix pulls each fixture package's transitive workspace deps).
-      - run: pnpm turbo run build --filter=@vendoai-fixtures/integration... --filter=@vendoai-fixtures/integration-browser...
+      - run: pnpm turbo run build --filter=@vendoai-fixtures/integration... --filter=@vendoai-fixtures/integration-browser... --filter=@vendoai-fixtures/mcp-e2e...
       # The node suite boots the real composed umbrella over HTTP against the host app.
       - run: pnpm --filter @vendoai-fixtures/integration test
+      # The MCP door e2e suite: its multi-instance token-claim race test
+      # (token-claim-race.e2e.test.ts, the ENG-270 single-use-token guarantee)
+      # gates on POSTGRES_URL and otherwise silently skips — the job-level
+      # POSTGRES_URL above makes it actually run its forced-overlap races here.
+      - run: pnpm --filter @vendoai-fixtures/mcp-e2e test
       # The browser leg drives the shipped hooks/chrome in Chromium against the same wire.
       - run: pnpm --filter @vendoai-fixtures/integration-browser exec playwright install --with-deps chromium
       - run: pnpm --filter @vendoai-fixtures/integration-browser test:browser
