@@ -116,6 +116,25 @@ jobs:
             echo "No scorecard produced (sweep may have failed before scoring)." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: UI-parity audit (LLM-costed, nightly only)
+        if: always()
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CORPUS_REPOS: ${{ github.event.inputs.repos }}
+        run: |
+          set -euo pipefail
+          # Runs AFTER the sweep, over the checkouts it left in corpus/.repos.
+          # It enumerates each frontend with the model and diffs against the
+          # generated tool surface. Informational: it never fails the job.
+          repos=()
+          for repo in ${CORPUS_REPOS:-}; do
+            if ! printf '%s' "$repo" | grep -Eq '^[a-z0-9][a-z0-9-]*$'; then
+              echo "::error::invalid repo name '$repo'"; exit 1
+            fi
+            repos+=("$repo")
+          done
+          pnpm corpus:ui-parity "${repos[@]}" >> "$GITHUB_STEP_SUMMARY" || true
+
       - name: Append trend to job summary
         if: always()
         run: |

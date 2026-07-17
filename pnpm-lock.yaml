@@ -320,12 +320,18 @@ importers:
         specifier: ^3.24.0
         version: 3.25.76
     devDependencies:
+      '@ai-sdk/anthropic':
+        specifier: 3.0.12
+        version: 3.0.12(zod@3.25.76)
       '@playwright/test':
         specifier: ^1.48.0
         version: 1.61.1
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
+      ai:
+        specifier: '>=6.0.0 <7'
+        version: 6.0.28(zod@3.25.76)
       tsx:
         specifier: ^4.19.0
         version: 4.23.0
