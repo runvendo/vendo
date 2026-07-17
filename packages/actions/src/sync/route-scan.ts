@@ -10,6 +10,7 @@ import {
   resolveImportSource,
   routeToolFullName,
   unclassifiedToolFullName,
+  visitNodes,
   walk,
   type ParsedModule,
 } from "./common.js";
@@ -94,14 +95,6 @@ function isVendoRoute(urlPath: string): boolean {
 function addMethod(methods: Set<HttpMethod>, value: string | undefined): void {
   const method = value?.toUpperCase();
   if (method && HTTP_METHOD_SET.has(method)) methods.add(method as HttpMethod);
-}
-
-function visitNodes(ts: typeof TS, root: TS.Node, visit: (node: TS.Node) => void): void {
-  const walkNode = (node: TS.Node): void => {
-    visit(node);
-    ts.forEachChild(node, walkNode);
-  };
-  ts.forEachChild(root, walkNode);
 }
 
 function calleeSimpleName(ts: typeof TS, expression: TS.CallExpression): string | null {

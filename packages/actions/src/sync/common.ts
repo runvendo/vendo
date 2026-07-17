@@ -61,53 +61,6 @@ export async function walk(
   return files.sort();
 }
 
-export function stripComments(source: string): string {
-  let output = "";
-  let quote: "'" | "\"" | "`" | null = null;
-  let escaped = false;
-  for (let index = 0; index < source.length; index += 1) {
-    const character = source[index]!;
-    const next = source[index + 1];
-    if (quote) {
-      output += character;
-      if (escaped) escaped = false;
-      else if (character === "\\") escaped = true;
-      else if (character === quote) quote = null;
-      continue;
-    }
-    if (character === "'" || character === "\"" || character === "`") {
-      quote = character;
-      output += character;
-      continue;
-    }
-    if (character === "/" && next === "/") {
-      while (index < source.length && source[index] !== "\n") {
-        output += " ";
-        index += 1;
-      }
-      if (index < source.length) output += "\n";
-      continue;
-    }
-    if (character === "/" && next === "*") {
-      output += "  ";
-      index += 2;
-      while (index < source.length && !(source[index] === "*" && source[index + 1] === "/")) {
-        output += source[index] === "\n" ? "\n" : " ";
-        index += 1;
-      }
-      if (index < source.length) output += "  ";
-      index += 1;
-      continue;
-    }
-    output += character;
-  }
-  return output;
-}
-
-function parseJsonLike(source: string): unknown {
-  return JSON.parse(stripComments(source).replace(/,\s*([}\]])/g, "$1"));
-}
-
 function extendsPath(value: unknown, configDir: string): string | null {
   if (typeof value !== "string" || (!value.startsWith(".") && !path.isAbsolute(value))) return null;
   const resolved = path.resolve(configDir, value);
@@ -115,12 +68,15 @@ function extendsPath(value: unknown, configDir: string): string | null {
 }
 
 async function loadAliases(configPath: string, depth = 0): Promise<TsconfigPathAlias[]> {
+  // tsconfig files are JSONC; the compiler's own config parser reads them.
+  const ts = loadCompiler();
   let parsed: any;
   try {
-    parsed = parseJsonLike(await fs.readFile(configPath, "utf8"));
+    parsed = ts?.parseConfigFileTextToJson(configPath, await fs.readFile(configPath, "utf8")).config;
   } catch {
     return [];
   }
+  if (!parsed || typeof parsed !== "object") return [];
   const configDir = path.dirname(configPath);
   const aliases: TsconfigPathAlias[] = [];
   const extended = depth < 4 ? extendsPath(parsed?.extends, configDir) : null;
@@ -222,6 +178,15 @@ export function parseModuleSource(source: string, fileName = "module.tsx"): Pars
   if (!ts) return null;
   const kind = /\.[cm]?ts$/u.test(fileName) ? ts.ScriptKind.TS : ts.ScriptKind.TSX;
   return { ts, sf: ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind) };
+}
+
+/** Depth-first visit of every node under `root` (root excluded). */
+export function visitNodes(ts: typeof TS, root: TS.Node, visit: (node: TS.Node) => void): void {
+  const walkNode = (node: TS.Node): void => {
+    visit(node);
+    ts.forEachChild(node, walkNode);
+  };
+  ts.forEachChild(root, walkNode);
 }
 
 function hasExportModifier(ts: typeof TS, statement: TS.Statement): boolean {
@@ -390,60 +355,6 @@ export async function importReferenceFor(source: string, localExpression: string
     if (clause.name?.text === localName) return { specifier, imported: "default" };
   }
   return undefined;
-}
-
-export function topLevelObjectLiteral(source: string, openBrace: number): string | null {
-  let depth = 0;
-  let quote: "'" | "\"" | "`" | null = null;
-  let escaped = false;
-  for (let index = openBrace; index < source.length; index += 1) {
-    const character = source[index]!;
-    if (quote) {
-      if (escaped) escaped = false;
-      else if (character === "\\") escaped = true;
-      else if (character === quote) quote = null;
-      continue;
-    }
-    if (character === "'" || character === "\"" || character === "`") {
-      quote = character;
-      continue;
-    }
-    if (character === "{") depth += 1;
-    else if (character === "}") {
-      depth -= 1;
-      if (depth === 0) return source.slice(openBrace + 1, index);
-    }
-  }
-  return null;
-}
-
-export function splitTopLevel(source: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let quote: "'" | "\"" | "`" | null = null;
-  let escaped = false;
-  let start = 0;
-  for (let index = 0; index < source.length; index += 1) {
-    const character = source[index]!;
-    if (quote) {
-      if (escaped) escaped = false;
-      else if (character === "\\") escaped = true;
-      else if (character === quote) quote = null;
-      continue;
-    }
-    if (character === "'" || character === "\"" || character === "`") {
-      quote = character;
-      continue;
-    }
-    if (character === "(" || character === "[" || character === "{") depth += 1;
-    else if (character === ")" || character === "]" || character === "}") depth = Math.max(0, depth - 1);
-    else if (character === "," && depth === 0) {
-      parts.push(source.slice(start, index));
-      start = index + 1;
-    }
-  }
-  parts.push(source.slice(start));
-  return parts;
 }
 
 export function limitToolName(fullName: string): string {
