@@ -84,7 +84,7 @@ async function stopFixture(): Promise<void> {
     if (child.exitCode === null) child.kill("SIGKILL");
   }
   // Collect this run's isolated dist dir (see FIXTURE_DIST_DIR at spawn).
-  await rm(join(fixtureDir, `.next-actions-e2e-${process.pid}`), { recursive: true, force: true });
+  await rm(join(fixtureDir, ".next", "actions-e2e"), { recursive: true, force: true });
 }
 
 async function startFixture(): Promise<void> {
@@ -96,7 +96,9 @@ async function startFixture(): Promise<void> {
     // FIXTURE_DIST_DIR: host-app's next.config gives each concurrent consumer
     // its own dist dir (see the comment there); the previous default `.next`
     // shared a build cache with the other harnesses that boot this fixture.
-    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", FIXTURE_DIST_DIR: `.next-actions-e2e-${process.pid}` },
+    // House convention: a stable name INSIDE .next, so Next's tsconfig
+    // auto-include never accumulates per-run entries in the tracked file.
+    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", FIXTURE_DIST_DIR: ".next/actions-e2e" },
     stdio: ["pipe", "pipe", "pipe"],
   });
   child = fixtureChild;
