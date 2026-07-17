@@ -16,7 +16,8 @@ hosted Postgres database. Both use the same schema and migration path.
 
 The stable public tables are `vendo_meta`, `vendo_apps`, `vendo_records`,
 `vendo_blobs`, `vendo_state`, `vendo_threads`, `vendo_grants`,
-`vendo_approvals`, `vendo_audit`, `vendo_runs`, and `vendo_secrets`.
+`vendo_approvals`, `vendo_audit`, `vendo_runs`, `vendo_secrets`, and
+`vendo_sessions` (the anonymous-session registry the TTL sweep reads).
 
 All structured payloads use `jsonb`. App record refs are GIN-indexed and can be
 joined to host tables with containment queries. Collection names use

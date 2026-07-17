@@ -627,13 +627,20 @@ function createWireHandler(deps: {
   // Next.js gives no timer guarantee, so every request may trigger the sweep.
   // Awaited BEFORE the request is handled (evict-on-expiry): a request arriving
   // past the TTL gets a fresh, empty session rather than racing its own sweep.
+  // A sweep failure is caught and logged, never surfaced to the innocent
+  // request that triggered it (same posture as the background timer leg) — a
+  // failed sweep just means idle sessions live until the next interval.
   let lastSweepAt = deps.sessions.now();
   const maybeSweep = async (): Promise<void> => {
     if (deps.sessions.ttlMs <= 0) return;
     const now = deps.sessions.now();
     if (now - lastSweepAt < deps.sessions.sweepIntervalMs) return;
     lastSweepAt = now;
-    await deps.sweep();
+    try {
+      await deps.sweep();
+    } catch (error) {
+      console.warn(`[vendo] session sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`);
+    }
   };
   return async (request) => {
     await maybeSweep();
@@ -661,10 +668,6 @@ function createWireHandler(deps: {
         }
         anon.id = id;
         principal = ephemeralPrincipal(`anonymous_${id}`);
-        // 02-store §4 (kill-list B3): anonymous rows are ordinary disk rows;
-        // registering the subject (registration == touch) is what makes the
-        // session sweepable and keeps it alive while the visitor is active.
-        await registerEphemeralSubject(deps.store, principal.subject, deps.sessions.now());
         // 05-guard §2: session/task grants bind to ctx.sessionId. Anonymous
         // sessions bind per CLIENT (the cookie id), not per PROCESS, so one
         // visitor's session grant never authorizes another's calls. The explicit
@@ -721,9 +724,10 @@ function createWireHandler(deps: {
           }
         }
       }
-      // Touch the session (register == touch, 02 §4). Anonymous requests
-      // registered above; a host-resolved ephemeral principal registers here
-      // (re-touch of an anon subject is idempotent — same clock reading).
+      // 02-store §4 (kill-list B3): anonymous rows are ordinary disk rows;
+      // registering the subject (registration == touch) is what makes the
+      // session sweepable and keeps it alive while the visitor is active. One
+      // touch covers both anonymous and host-resolved ephemeral principals.
       if (principal.ephemeral === true) {
         await registerEphemeralSubject(deps.store, principal.subject, deps.sessions.now());
       }

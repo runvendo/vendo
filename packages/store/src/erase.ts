@@ -4,7 +4,9 @@ import { invalid } from "./validate.js";
 /** 02-store §5 — every table in §2's public map. The erase API cascades the
  *  matching data across all of them; `vendo_meta` holds schema metadata (schema
  *  version, boot id), never user data, so no selector ever matches it and its
- *  count stays 0 — listed so the report provably covers the whole map. */
+ *  count stays 0 — as does `vendo_secrets` (name-keyed host config, likewise
+ *  never matched by a subject or app selector). Listed so the report provably
+ *  covers the whole map. */
 export const ERASE_TABLES = [
   "vendo_meta",
   "vendo_apps",

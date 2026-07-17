@@ -37,15 +37,22 @@ export async function isEphemeralSubject(store: VendoStore, subject: string): Pr
 
 /** The TTL sweep: erase every registered session idle for at least `idleMs`
     (now - touched_at >= idleMs), cascading through the erase API (02 §5) so a
-    swept subject leaves zero rows anywhere — `vendo_sessions` included.
-    Returns the swept subjects so the caller can cascade further (the umbrella
-    forwards them to `agent.evictSubject`, 03 §1). */
+    swept subject leaves zero rows anywhere. Returns the swept subjects so the
+    caller can cascade further (the umbrella forwards them to
+    `agent.evictSubject`, 03 §1).
+
+    Claim-first serialization with adoption (helpers/subjects): the sweep owns
+    a subject only after winning `DELETE FROM vendo_sessions ... RETURNING` —
+    a subject whose session row an interleaved adopt already claimed is
+    SKIPPED, so the erase cascade can never chase app ids the adopt just moved
+    to the signed-in user. */
 export async function sweepEphemeralSubjects(
   store: VendoStore,
   opts: { idleMs: number; now?: number },
 ): Promise<string[]> {
+  const db = dbFor(store);
   const cutoff = new Date((opts.now ?? Date.now()) - opts.idleMs).toISOString();
-  const result = await dbFor(store).query(
+  const result = await db.query(
     "SELECT subject FROM vendo_sessions WHERE touched_at <= $1 ORDER BY touched_at ASC",
     [cutoff],
   );
@@ -53,6 +60,11 @@ export async function sweepEphemeralSubjects(
   const evicted: string[] = [];
   for (const row of result.rows) {
     const subject = String(row["subject"]);
+    const claimed = await db.query(
+      "DELETE FROM vendo_sessions WHERE subject = $1 RETURNING 1",
+      [subject],
+    );
+    if (claimed.rows[0] === undefined) continue; // adopted mid-sweep — not ours
     await erase.bySubject(subject);
     evicted.push(subject);
   }

@@ -8,7 +8,17 @@ import {
   type VendoRecord,
 } from "@vendoai/core";
 import type { Db } from "./db.js";
-import { appScopeId, decodeCursor, encodeCursor, iso, jsonParam, pageLimit, text } from "./helpers/utils.js";
+import {
+  appScopeId,
+  decodeCursor,
+  encodeCursor,
+  iso,
+  jsonParam,
+  pageLimit,
+  requireKnownApp,
+  text,
+  unknownAppError,
+} from "./helpers/utils.js";
 
 export type DedicatedRecordTable = "vendo_mcp_clients" | "vendo_mcp_grants";
 
@@ -62,15 +72,15 @@ export function createRecordStore(
   // no vendo_apps row — the app never existed, or its ephemeral session was
   // swept (kill-list B3: swept sessions are erased from disk, apps included).
   // Without this, a stale write would recreate rows no erase cascade could ever
-  // reach again. Reads need no guard: an unknown app has no rows, so they come
-  // back empty (a stale client sees an expired session, not an error storm).
-  const requireKnownApp = async (): Promise<void> => {
-    if (appId === undefined) return;
-    const result = await db.query("SELECT 1 FROM vendo_apps WHERE id = $1", [appId]);
-    if (result.rows[0] === undefined) {
-      throw new VendoError("not-found", `app ${appId} does not exist (its session may have expired)`);
-    }
-  };
+  // reach again. Row-CREATING statements carry the gate IN the statement
+  // (`appGate` below), so a sweep racing the write can never orphan a row —
+  // structural, not ordering care. Reads need no guard: an unknown app has no
+  // rows, so they come back empty (a stale client sees an expired session, not
+  // an error storm). Dedicated door tables are never app-scoped (appId is
+  // undefined there), so the gate is generic-path only.
+  const appGate = (param: number): string =>
+    appId === undefined ? "" : `WHERE EXISTS (SELECT 1 FROM vendo_apps WHERE id = $${param})`;
+  const appGateParams = appId === undefined ? [] : [appId];
 
   const getRecord = async (id: string): Promise<VendoRecord | null> => {
     const result = usesCollection
@@ -94,7 +104,8 @@ export function createRecordStore(
       throw new Error("Record comparison and replacement ids must match");
     }
     if (expected.kind === "revision") requireRevision(expected.revision);
-    await requireKnownApp();
+    // UPDATE/DELETE never create rows, so the pre-check is only the error signal.
+    await requireKnownApp(db, appId);
 
     const clauses: string[] = [];
     const params: unknown[] = [];
@@ -146,13 +157,17 @@ export function createRecordStore(
   const atomic: AtomicRecordStore = {
     async insertIfAbsent(record) {
       const now = new Date().toISOString();
-      await requireKnownApp();
+      // Pre-check for the clean error signal; the statement's own gate is the
+      // structural guarantee (a gate lost to a racing sweep returns null —
+      // "not inserted" — never an orphan).
+      await requireKnownApp(db, appId);
       const result = await db.query(
         `INSERT INTO vendo_records (collection, id, data, refs, created_at, updated_at, revision)
-         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $5, 1)
+         SELECT $1::text, $2::text, $3::jsonb, $4::jsonb, $5::timestamptz, $5::timestamptz, 1
+         ${appGate(6)}
          ON CONFLICT (collection, id) DO NOTHING
          RETURNING id, data, refs, created_at, updated_at, revision`,
-        [collection, record.id, jsonParam(record.data), record.refs === undefined ? null : jsonParam(record.refs), now],
+        [collection, record.id, jsonParam(record.data), record.refs === undefined ? null : jsonParam(record.refs), now, ...appGateParams],
       );
       return result.rows[0] ? recordFromRow(result.rows[0]) : null;
     },
@@ -168,16 +183,16 @@ export function createRecordStore(
     get: getRecord,
     async put(record) {
       const now = new Date().toISOString();
-      await requireKnownApp();
       const result = usesCollection
         ? await db.query(
           `INSERT INTO vendo_records (collection, id, data, refs, created_at, updated_at, revision)
-           VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $5, 1)
+           SELECT $1::text, $2::text, $3::jsonb, $4::jsonb, $5::timestamptz, $5::timestamptz, 1
+           ${appGate(6)}
            ON CONFLICT (collection, id) DO UPDATE
            SET data = EXCLUDED.data, refs = EXCLUDED.refs, updated_at = EXCLUDED.updated_at,
                revision = vendo_records.revision + 1
            RETURNING id, data, refs, created_at, updated_at, revision`,
-          [collection, record.id, jsonParam(record.data), record.refs === undefined ? null : jsonParam(record.refs), now],
+          [collection, record.id, jsonParam(record.data), record.refs === undefined ? null : jsonParam(record.refs), now, ...appGateParams],
         )
         : await db.query(
           `INSERT INTO ${table} (id, data, refs, created_at, updated_at)
@@ -187,7 +202,14 @@ export function createRecordStore(
            RETURNING id, data, refs, created_at, updated_at`,
           [record.id, jsonParam(record.data), record.refs === undefined ? null : jsonParam(record.refs), now],
         );
-      return recordFromRow(result.rows[0] as Record<string, unknown>);
+      const row = result.rows[0];
+      if (row === undefined) {
+        // The upsert always returns a row unless the app-existence gate
+        // refused it (only present when appId is defined).
+        if (appId !== undefined) throw unknownAppError(appId);
+        throw new Error("record upsert returned no row");
+      }
+      return recordFromRow(row);
     },
     async claim(expected, replacement) {
       const current = await getRecord(expected.id);
@@ -214,7 +236,8 @@ export function createRecordStore(
       return await compareAndMutate(expectation, next) !== null;
     },
     async delete(id) {
-      await requireKnownApp();
+      // DELETE never creates rows, so the pre-check is only the error signal.
+      await requireKnownApp(db, appId);
       if (usesCollection) {
         await db.query("DELETE FROM vendo_records WHERE collection = $1 AND id = $2", [collection, id]);
       } else {

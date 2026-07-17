@@ -1,4 +1,5 @@
 import { VendoError, isoDateTimeSchema, type IsoDateTime, type Json } from "@vendoai/core";
+import type { Db } from "../db.js";
 
 export function iso(value: unknown): IsoDateTime {
   if (!(typeof value === "string" || value instanceof Date)) {
@@ -66,4 +67,22 @@ const APP_SCOPE = /^app:([^:]+):/;
  *  undefined for non-app-scoped scopes. */
 export function appScopeId(scope: string): string | undefined {
   return APP_SCOPE.exec(scope)?.[1];
+}
+
+/** 02-store §4 (STORE-1): the fail-closed refusal for app-scoped writes whose
+ *  owning app has no `vendo_apps` row — never existed, or its ephemeral
+ *  session was swept. */
+export function unknownAppError(appId: string): VendoError {
+  return new VendoError("not-found", `app ${appId} does not exist (its session may have expired)`);
+}
+
+/** Pre-check for non-row-creating verbs (delete, guarded mutations): a clean
+ *  error signal, not the no-orphan guarantee. Row-CREATING statements embed
+ *  the same condition in the statement itself (`WHERE EXISTS (SELECT 1 FROM
+ *  vendo_apps WHERE id = ...)`) so a sweep racing the write can never leave an
+ *  orphaned row — the guarantee is structural, not ordering care. */
+export async function requireKnownApp(db: Db, appId: string | undefined): Promise<void> {
+  if (appId === undefined) return;
+  const result = await db.query("SELECT 1 FROM vendo_apps WHERE id = $1", [appId]);
+  if (result.rows[0] === undefined) throw unknownAppError(appId);
 }

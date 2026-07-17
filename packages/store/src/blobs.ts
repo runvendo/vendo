@@ -1,6 +1,6 @@
-import { VendoError, type BlobStore } from "@vendoai/core";
+import type { BlobStore } from "@vendoai/core";
 import type { Db } from "./db.js";
-import { appScopeId, text } from "./helpers/utils.js";
+import { appScopeId, requireKnownApp, text, unknownAppError } from "./helpers/utils.js";
 
 function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, "\\$&");
@@ -11,23 +11,21 @@ export function createBlobStore(db: Db, namespace: string): BlobStore {
   const appId = appScopeId(namespace);
   // STORE-1: mirrors records.ts — an app-scoped blob WRITE for an app with no
   // vendo_apps row (never existed / session swept) fails closed rather than
-  // recreating rows no erase cascade would reach; reads come back empty.
-  const requireKnownApp = async (): Promise<void> => {
-    if (appId === undefined) return;
-    const result = await db.query("SELECT 1 FROM vendo_apps WHERE id = $1", [appId]);
-    if (result.rows[0] === undefined) {
-      throw new VendoError("not-found", `app ${appId} does not exist (its session may have expired)`);
-    }
-  };
+  // recreating rows no erase cascade would reach; reads come back empty. The
+  // row-creating put carries the gate IN the statement (structural, not
+  // ordering care); delete keeps the pre-check as its error signal.
+  const appGate = appId === undefined ? "" : "WHERE EXISTS (SELECT 1 FROM vendo_apps WHERE id = $6)";
+  const appGateParams = appId === undefined ? [] : [appId];
 
   return {
     async put(key, bytes, meta) {
-      await requireKnownApp();
-      await db.query(
+      const result = await db.query(
         `INSERT INTO vendo_blobs (namespace, key, bytes, content_type, created_at)
-         VALUES ($1, $2, $3, $4, $5)
+         SELECT $1::text, $2::text, $3::bytea, $4::text, $5::timestamptz
+         ${appGate}
          ON CONFLICT (namespace, key) DO UPDATE
-         SET bytes = EXCLUDED.bytes, content_type = EXCLUDED.content_type`,
+         SET bytes = EXCLUDED.bytes, content_type = EXCLUDED.content_type
+         RETURNING key`,
         [
           namespace,
           key,
@@ -36,8 +34,11 @@ export function createBlobStore(db: Db, namespace: string): BlobStore {
           Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
           meta?.contentType ?? null,
           new Date().toISOString(),
+          ...appGateParams,
         ],
       );
+      // The upsert always returns a row unless the app-existence gate refused it.
+      if (result.rows[0] === undefined && appId !== undefined) throw unknownAppError(appId);
     },
     async get(key) {
       const result = await db.query(
@@ -57,7 +58,8 @@ export function createBlobStore(db: Db, namespace: string): BlobStore {
       };
     },
     async delete(key) {
-      await requireKnownApp();
+      // DELETE never creates rows, so the pre-check is only the error signal.
+      await requireKnownApp(db, appId);
       await db.query("DELETE FROM vendo_blobs WHERE namespace = $1 AND key = $2", [namespace, key]);
     },
     async list(prefix = "") {

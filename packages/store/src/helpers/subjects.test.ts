@@ -6,9 +6,11 @@ import {
   adoptEphemeralSubject,
   appStore,
   approvalStore,
+  createStore,
   grantStore,
   registerEphemeralSubject,
   stateStore,
+  sweepEphemeralSubjects,
   threadStore,
 } from "../index.js";
 
@@ -117,3 +119,56 @@ for (const backend of backends()) {
     });
   });
 }
+
+// Kill-list B3 review: the TTL sweep and adoption serialize on the session row
+// (claim-first — whoever DELETEs the vendo_sessions row owns the subject's
+// fate). Without it, a sweep that captured the subject's app ids could erase
+// data an interleaved adopt had just moved to the signed-in user. PGlite
+// serves queries FIFO, so Promise.all below is a DETERMINISTIC interleaving:
+// the sweep's stale SELECT captures the subject, the adopt claims the session
+// row first, and the sweep must then skip the erase.
+describe("adopt/sweep serialization on the session row (kill-list B3 review)", () => {
+  it("adopted data survives a sweep that captured the subject before the adopt claimed it", async () => {
+    const store = createStore({ dataDir: "memory://" });
+    await store.ensureSchema();
+    const RACER: Principal = { kind: "user", subject: "anonymous_racer", ephemeral: true };
+    await registerEphemeralSubject(store, RACER.subject, 0);
+    await appStore(store).put(RACER, appFixture("app_race", "Raced app"));
+    await store.records("app:app_race:notes").put({ id: "note_race", data: { keep: true } });
+    await stateStore(store).put(RACER, "app_race", { n: 1 });
+    await threadStore(store).put(RACER, { id: "thr_race", messages: [{ role: "user" }] });
+
+    // Interleaving (FIFO): sweep SELECTs the stale subject; adopt claims the
+    // session row; sweep's claim loses and it must skip the erase cascade.
+    const [report, swept] = await Promise.all([
+      adoptEphemeralSubject(store, RACER.subject, "user_winner"),
+      sweepEphemeralSubjects(store, { idleMs: 1, now: 10_000 }),
+    ]);
+
+    expect(report).toEqual({ apps: 1, threads: 1, states: 1, skipped: 0 });
+    expect(swept).toEqual([]); // the sweep lost the claim and skipped
+    // Everything the adopt moved is intact under the signed-in subject.
+    expect((await appStore(store).get("app_race"))?.subject).toBe("user_winner");
+    expect((await store.records("app:app_race:notes").get("note_race"))?.data).toEqual({ keep: true });
+    expect(await stateStore(store).get({ kind: "user", subject: "user_winner" }, "app_race")).toEqual({ n: 1 });
+    expect((await threadStore(store).list({ kind: "user", subject: "user_winner" })).map((row) => row.id))
+      .toContain("thr_race");
+    // The session row is gone either way; a replayed adopt is a no-op.
+    expect(await adoptEphemeralSubject(store, RACER.subject, "user_winner")).toBe(null);
+    await store.close();
+  });
+
+  it("a sweep that claimed the subject first makes a late adopt a no-op", async () => {
+    const store = createStore({ dataDir: "memory://" });
+    await store.ensureSchema();
+    const LOSER: Principal = { kind: "user", subject: "anonymous_late", ephemeral: true };
+    await registerEphemeralSubject(store, LOSER.subject, 0);
+    await appStore(store).put(LOSER, appFixture("app_late", "Late app"));
+
+    expect(await sweepEphemeralSubjects(store, { idleMs: 1, now: 10_000 })).toEqual([LOSER.subject]);
+    // The sweep owned the subject: its data is gone and the adopt finds nothing.
+    expect(await adoptEphemeralSubject(store, LOSER.subject, "user_too_late")).toBe(null);
+    expect(await appStore(store).get("app_late")).toBeNull();
+    await store.close();
+  });
+});

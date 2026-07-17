@@ -44,8 +44,17 @@ export async function adoptEphemeralSubject(
   if (await isEphemeralSubject(store, to)) {
     throw new VendoError("validation", "cannot merge an anonymous session into an ephemeral subject");
   }
-  if (!(await isEphemeralSubject(store, from))) return null;
   const db = dbFor(store);
+  // Claim-first serialization with the TTL sweep (sessions.ts): deleting the
+  // session row is the mutual-exclusion point. Losing the claim means the
+  // subject was never registered, was already merged, or a concurrent sweep
+  // owns it — in every case there is nothing for this merge to move. Winning
+  // it means no sweep can erase the subject's rows while they are moved.
+  const claimed = await db.query(
+    "DELETE FROM vendo_sessions WHERE subject = $1 RETURNING 1",
+    [from],
+  );
+  if (claimed.rows[0] === undefined) return null;
   const report: SubjectMergeReport = { apps: 0, threads: 0, states: 0, skipped: 0 };
 
   // Apps move by flipping the subject column. Ids are the vendo_apps PRIMARY
@@ -96,8 +105,5 @@ export async function adoptEphemeralSubject(
       [movedApps.rows.map((row) => String(row["id"]))],
     );
   }
-
-  // The merge retires the session registration (a replay finds nothing).
-  await db.query("DELETE FROM vendo_sessions WHERE subject = $1", [from]);
   return report;
 }
