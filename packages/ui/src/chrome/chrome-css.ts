@@ -1045,6 +1045,10 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
   color: var(--vendo-fg-muted); text-align: left; transition: border-color .14s, box-shadow .14s; }
 .fl-slot-ghost:hover { border-color: var(--vendo-border-strong); box-shadow: var(--vendo-shadow); }
+/* The empty-state ghost is a real button (ENG-223): strip the UA button chrome
+   so it reads exactly like the div variant, and give the CTA a visible focus ring. */
+.fl-slot-ghost-cta { font: inherit; appearance: none; -webkit-appearance: none; }
+.fl-slot-ghost-cta:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
 .fl-slot-skel { flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 118px;
   opacity: .5; filter: blur(.3px); -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent);
   mask-image: linear-gradient(180deg, #000 30%, transparent); }

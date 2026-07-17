@@ -1223,6 +1223,20 @@ function HumanizedThreadScenario() {
   );
 }
 
+/** ENG-223 — a pinned generated view (a vendo-genui/v1 tree) mounted in the slot
+ *  in place of the host's original hero, through the pin path + error boundary. */
+const pinnedViewTree: UIPayload = {
+  formatVersion: "vendo-genui/v1",
+  root: "root",
+  nodes: [
+    { id: "root", component: "Surface", children: ["stack"] },
+    { id: "stack", component: "Stack", props: { gap: 10 }, children: ["title", "amount", "sub"] },
+    { id: "title", component: "Text", props: { text: "Outstanding this week", variant: "heading" } },
+    { id: "amount", component: "Text", props: { text: "$18,420 across 6 clients" } },
+    { id: "sub", component: "Text", props: { text: "Pinned from a remix — refreshed every morning at 9am." } },
+  ],
+};
+
 function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme>; content: ReactNode; ownProvider?: boolean } {
   switch (pathname) {
     case "/thread": return { title: "Thread — dark theme", theme: darkTheme, content: <VendoThread threadId="thr_1" /> };
@@ -1260,6 +1274,9 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/format-drill-registered": return { title: "Format drill — registered", content: <FormatDrillScenario registered />, ownProvider: true };
     case "/format-drill-unregistered": return { title: "Format drill — unregistered", content: <FormatDrillScenario registered={false} />, ownProvider: true };
     case "/slot": return { title: "Inline app slot", content: <VendoSlot id="hero" appId="app_1"><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
+    case "/slot-empty": return { title: "Inline slot — empty CTA (Maple)", theme: mapleTheme, content: <><VendoSlot id="hero" /><VendoPalette /></> };
+    case "/slot-empty-dark": return { title: "Inline slot — empty CTA (dark)", theme: darkTheme, content: <><VendoSlot id="hero" /><VendoPalette /></> };
+    case "/slot-pinned": return { title: "Inline slot — pinned component", theme: mapleTheme, content: <VendoSlot id="hero" pin={{ payload: pinnedViewTree }}><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
     case "/slot-fallback": return { title: "Slot pin fallback", content: <SlotFallbackScenario />, ownProvider: true };
     case "/appframe": return { title: "App execution planes", content: <AppFrameScenario /> };
     default: return { title: "Unknown scenario", content: <p role="alert">Unknown browser scenario: {pathname}</p> };
