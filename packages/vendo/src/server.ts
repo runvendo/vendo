@@ -25,7 +25,6 @@ import {
   VendoError,
   approvalDecisionSchema,
   descriptorHash,
-  isReservedSubject,
   principalSchema,
   vendoThemeSchema,
   type ActAs,
@@ -40,16 +39,13 @@ import {
   type ToolDescriptor,
   type ToolOutcome,
   type ToolRegistry,
-  type VendoErrorCode,
   type VendoTheme,
 } from "@vendoai/core";
 import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import {
-  adoptEphemeralSubject,
   createStore,
   envSecrets,
-  registerEphemeralSubject,
   sweepEphemeralSubjects,
   type VendoStore,
 } from "@vendoai/store";
@@ -80,11 +76,31 @@ import {
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
 import { createConnections, type ConnectionsService } from "./connections.js";
-import { createRuntimeCapture, type RuntimeCaptureHandler } from "./runtime-capture.js";
+import { createRuntimeCapture } from "./runtime-capture.js";
 import { computeImpact } from "./sync-impact.js";
+import {
+  BASE_PATH,
+  VERSION,
+  constantTimeEqual,
+  createContextResolver,
+  dispatchRoutes,
+  environment,
+  errorResponse,
+  hex,
+  internalError,
+  json,
+  orgsCloudRequired,
+  requestJson,
+  routeSegments,
+  string,
+  withAnonCookie,
+  type AnonSession,
+  type SandboxVenue,
+  type WireContext,
+  type WireDeps,
+} from "./wire/shared.js";
+import { threadRoutes } from "./wire/threads.js";
 
-const VERSION = "0.3.0";
-const BASE_PATH = "/api/vendo";
 /** 10-mcp §5 — the door's canonical mount under the wire's own prefix. */
 const MCP_MOUNT = `${BASE_PATH}/mcp`;
 const DOCTOR_PRESENT_AUTHORIZATION = "Bearer vendo-doctor-present";
@@ -106,16 +122,6 @@ const doctorActAsTool: ExtractedTool = {
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
   risk: "read",
   binding: { kind: "route", method: "GET", path: `${BASE_PATH}/doctor/act-as/echo`, argsIn: "query" },
-};
-
-const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
-  validation: 400,
-  "not-found": 404,
-  blocked: 403,
-  conflict: 409,
-  "cloud-required": 402,
-  "sandbox-unavailable": 501,
-  "not-implemented": 501,
 };
 
 export interface Vendo {
@@ -233,8 +239,6 @@ function validateSessionsConfig(sessions: CreateVendoConfig["sessions"]): Resolv
     truncated to a preview instead of blowing the context window. Override via config.agent. */
 const DEFAULT_TOOL_OUTPUT_CAP = 32_000;
 
-type SandboxVenue = "e2b" | "modal" | "custom" | false;
-
 function selectSandbox(configured: SandboxAdapter | undefined): {
   adapter: SandboxAdapter | undefined;
   venue: SandboxVenue;
@@ -261,59 +265,9 @@ function selectSandbox(configured: SandboxAdapter | undefined): {
   return { adapter: undefined, venue: false };
 }
 
-function json(body: unknown, status = 200): Response {
-  return Response.json(body, { status });
-}
-
-function errorResponse(error: VendoError): Response {
-  return json({ error: { code: error.code, message: error.message } }, STATUS_BY_CODE[error.code]);
-}
-
-function internalError(): Response {
-  return errorResponse(new VendoError("not-implemented", "Internal Vendo error"));
-}
-
-/** Orgs are a Vendo Cloud capability, not an OSS one (kill-list A5): every
-    /orgs route and every org-scoped param on /approvals and /grants answers
-    this, unconditionally — there is no key-gated activation path left in the
-    OSS wire (contrast the old block-actions design §C org machinery, which
-    this seam replaces). */
-function orgsCloudRequired(): never {
-  throw new VendoError("cloud-required", "orgs are a Vendo Cloud capability");
-}
-
-function object(value: unknown, label: string): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new VendoError("validation", `${label} must be an object`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function string(value: unknown, label: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new VendoError("validation", `${label} must be a non-empty string`);
-  }
-  return value;
-}
-
-async function requestJson(request: Request): Promise<Record<string, unknown>> {
-  try {
-    return object(await request.json(), "request body");
-  } catch (error) {
-    if (error instanceof VendoError) throw error;
-    throw new VendoError("validation", "request body must be valid JSON");
-  }
-}
-
 function isJsonRequest(request: Request): boolean {
   return request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
     === "application/json";
-}
-
-function environment(name: string): string | undefined {
-  if (typeof process === "undefined") return undefined;
-  const value = process.env[name];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 /** 09 §4 — the .vendo/ files feeding the generation seat, read fail-soft (the
@@ -406,18 +360,6 @@ function isDoorPath(pathname: string): boolean {
   return DOOR_WELL_KNOWN_PATHS.has(pathname);
 }
 
-function routeSegments(path: string): string[] {
-  try {
-    return path.split("/").filter(Boolean).map(decodeURIComponent);
-  } catch {
-    throw new VendoError("validation", "route contains invalid URL encoding");
-  }
-}
-
-function requestHeaders(request: Request): Record<string, string> {
-  return Object.fromEntries(request.headers.entries());
-}
-
 function jsonMutationRequired(request: Request, path: string): boolean {
   if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return false;
   if (path === "/apps/import" || path === "/tick" || path.startsWith("/webhooks/")) return false;
@@ -459,115 +401,6 @@ async function tickAuthorized(request: Request): Promise<boolean> {
   return timingSafeEqual(request.headers.get("authorization") ?? "", `Bearer ${secret}`);
 }
 
-function ephemeralPrincipal(subject: string): Principal {
-  return { kind: "user", subject, ephemeral: true };
-}
-
-/** 00 overview ("no host principal resolver → an ephemeral session-scoped
-    principal"), 01-core §2, 02-store §4. When `principal(req)` returns null the
-    visitor is anonymous, and each CLIENT gets its OWN ephemeral principal —
-    carried by an opaque httpOnly cookie (a random 128-bit session id) so two
-    anonymous visitors never share threads, grants, approvals, or apps. The
-    cookie is just a pointer: the session's `vendo_sessions` row and its
-    ordinary disk rows are the authority (02-store §4, kill-list B3), so it
-    carries no signature — an invented id names its own empty session. */
-const ANON_COOKIE = "vendo_anon_session";
-/** Secure requests use the `__Host-` prefix against session fixation (cookie
-    tossing): a sibling subdomain could otherwise plant an attacker's own
-    session cookie via `Domain=` and read everything the victim's anonymous
-    session then accrues — browsers refuse `__Host-*` cookies that set Domain or
-    arrive from another host. `__Host-` REQUIRES Secure + Path=/ + no Domain. */
-const ANON_COOKIE_SECURE = `__Host-${ANON_COOKIE}`;
-
-function anonCookieName(secure: boolean): string {
-  return secure ? ANON_COOKIE_SECURE : ANON_COOKIE;
-}
-
-/** Whether a request counts as secure for cookie purposes: its own URL is
-    https, OR the operator-set VENDO_BASE_URL (the TRUSTED origin channel —
-    never x-forwarded-*) is https — i.e. TLS terminates at a proxy and the
-    request reaches this process as http. */
-function secureRequest(url: URL, trustedBaseIsHttps: boolean): boolean {
-  return url.protocol === "https:" || trustedBaseIsHttps;
-}
-
-function hex(bytes: ArrayBuffer | Uint8Array): string {
-  let out = "";
-  for (const b of bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)) out += b.toString(16).padStart(2, "0");
-  return out;
-}
-
-function randomId(): string {
-  const raw = new Uint8Array(16); // 128-bit session id
-  globalThis.crypto.getRandomValues(raw);
-  return hex(raw);
-}
-
-/** Length-independent-leak-free digest compare for timingSafeEqual's HMAC
-    digests (always equal-length hex; unequal lengths simply fail). */
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
-function readCookie(header: string | null, name: string): string | null {
-  if (header === null) return null;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq === -1) continue;
-    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
-  }
-  return null;
-}
-
-/** The shape of the opaque pointer we mint: 128-bit lowercase hex (randomId). */
-const ANON_ID_PATTERN = /^[0-9a-f]{32}$/;
-
-/** Read the anonymous-session pointer from the Cookie header; return the id
-    when it is a well-formed 128-bit hex pointer, else null (absent or
-    malformed → the caller mints a fresh session). There is nothing to verify
-    beyond shape: the session's `vendo_sessions` row is the authority, so an
-    invented id merely names its own EMPTY session — guessing a live one is a
-    2^128 search (kill-list B3; ids survive restarts and cross instances with
-    the disk rows). Looks up the name matching the CURRENT request's secure
-    determination — a client switching protocols just gets a fresh ephemeral
-    session. */
-function readAnonCookie(cookieHeader: string | null, secure: boolean): string | null {
-  const raw = readCookie(cookieHeader, anonCookieName(secure));
-  return raw !== null && ANON_ID_PATTERN.test(raw) ? raw : null;
-}
-
-/** The Set-Cookie for a freshly minted anonymous session. Secure requests get
-    the fixation-proof `__Host-` form (Secure + Path=/, per the prefix rules);
-    insecure (localhost http dev) keeps the plain name scoped to the wire base. */
-function buildAnonCookie(id: string, secure: boolean): string {
-  return secure
-    ? `${ANON_COOKIE_SECURE}=${id}; Path=/; HttpOnly; SameSite=Lax; Secure`
-    : `${ANON_COOKIE}=${id}; Path=${BASE_PATH}; HttpOnly; SameSite=Lax`;
-}
-
-/** The Set-Cookie that CLEARS the anonymous session (block-actions design §C:
-    the first authenticated request carrying a valid anon cookie merges the
-    session's data and retires the cookie). Same attributes as buildAnonCookie
-    so the browser matches the stored cookie; Max-Age=0 expires it. */
-function clearedAnonCookie(secure: boolean): string {
-  return secure
-    ? `${ANON_COOKIE_SECURE}=; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=0`
-    : `${ANON_COOKIE}=; Path=${BASE_PATH}; HttpOnly; SameSite=Lax; Max-Age=0`;
-}
-
-/** Append the minted Set-Cookie to the response. Stream/SSE responses carry
-    immutable headers, so re-wrap via `new Response(body, response)` (copies
-    status/statusText/headers into a fresh mutable Headers) before appending. */
-function withAnonCookie(response: Response, setCookie: string | undefined): Response {
-  if (setCookie === undefined) return response;
-  const rewrapped = new Response(response.body, response);
-  rewrapped.headers.append("set-cookie", setCookie);
-  return rewrapped;
-}
-
 function telemetryClient(enabled: boolean | undefined): Telemetry | undefined {
   if (enabled !== true) return undefined;
   try {
@@ -582,36 +415,7 @@ function doctorProbeOk(outcome: ToolOutcome): boolean {
   return "ok" in outcome.output && outcome.output.ok === true;
 }
 
-function createWireHandler(deps: {
-  principal: CreateVendoConfig["principal"];
-  ready: Promise<void>;
-  /** VENDO_BASE_URL is https → TLS terminates upstream; see secureRequest. */
-  trustedBaseIsHttps: boolean;
-  sessionId: string;
-  store: VendoStore;
-  telemetry?: Telemetry;
-  agent: VendoAgent;
-  guard: VendoGuard;
-  apps: AppsRuntime;
-  automations: AutomationsEngine;
-  connections: ConnectionsService;
-  sandbox: SandboxVenue;
-  doctor: {
-    present(ctx: RunContext): Promise<ToolOutcome>;
-    actAs(): Promise<ToolOutcome>;
-  };
-  mcp: boolean;
-  door?: McpDoor;
-  /** True only in a development composition — gates the local injection seams. */
-  development: boolean;
-  runtimeCapture?: RuntimeCaptureHandler;
-  onRequestOrigin?: (origin: string) => void;
-  /** 02-store §4 (kill-list B3) ephemeral-session policy. `now` reads the
-      (possibly injected) session clock; `sweep` runs the store TTL sweep and
-      cascades swept subjects into the agent. */
-  sessions: { ttlMs: number; sweepIntervalMs: number; now: () => number };
-  sweep: () => Promise<void>;
-}): (request: Request) => Promise<Response> {
+function createWireHandler(deps: WireDeps): (request: Request) => Promise<Response> {
   // Amortized on-request sweep bookkeeping — lives in the shared handler closure
   // (persists across requests), NOT per-invocation. The serverless-safe leg:
   // Next.js gives no timer guarantee, so every request may trigger the sweep.
@@ -634,99 +438,11 @@ function createWireHandler(deps: {
   };
   return async (request) => {
     await maybeSweep();
-    // Per-request anonymous-session state. This handler closure is shared across
-    // requests, so the minted-cookie state MUST live here (per-invocation) — a
-    // shared one would leak one visitor's session to the next. INVARIANT: one
-    // request resolves to at most ONE anonymous id — `anon.id` caches the first
-    // resolution so a route that calls context() twice on a cookie-less request
-    // can never mint a second id (which would silently split one request across
-    // two subjects and overwrite the Set-Cookie).
-    const anon: { id?: string; setCookie?: string } = {};
-    const context = async (req: Request, venue: RunContext["venue"]): Promise<RunContext> => {
-      const resolved = await deps.principal(req);
-      let principal: Principal;
-      // Host-resolved principals keep the process-wide fallback sessionId; only
-      // anonymous requests fall back to their per-client cookie id (below).
-      let sessionId = req.headers.get("x-vendo-session-id") ?? deps.sessionId;
-      if (resolved === null) {
-        const secure = secureRequest(new URL(req.url), deps.trustedBaseIsHttps);
-        let id = anon.id ?? readAnonCookie(req.headers.get("cookie"), secure);
-        if (id === null) {
-          id = randomId();
-          anon.setCookie = buildAnonCookie(id, secure);
-        }
-        anon.id = id;
-        principal = ephemeralPrincipal(`anonymous_${id}`);
-        // 05-guard §2: session/task grants bind to ctx.sessionId. Anonymous
-        // sessions bind per CLIENT (the cookie id), not per PROCESS, so one
-        // visitor's session grant never authorizes another's calls. The explicit
-        // x-vendo-session-id header still wins when the client sets it.
-        if (req.headers.get("x-vendo-session-id") === null) sessionId = `anon_${id}`;
-      } else {
-        const parsed = principalSchema.safeParse(resolved);
-        if (!parsed.success) {
-          throw new VendoError("validation", "principal resolver returned an invalid principal");
-        }
-        // Block-actions design §C: host resolvers mint USER principals only —
-        // org context is derived from membership, never resolved — and the
-        // `vendo:` namespace is reserved for runtime-minted subjects (webhook
-        // trigger principals, org subjects). Both rejections are LOUD: a
-        // resolver colliding with the reserved namespace could otherwise act
-        // as an org or a webhook principal.
-        if (parsed.data.kind !== "user") {
-          throw new VendoError("validation", "principal resolver must mint kind:\"user\" principals; org context is derived from org membership");
-        }
-        if (isReservedSubject(parsed.data.subject)) {
-          throw new VendoError("validation", "principal resolver produced a reserved subject (the vendo: namespace is runtime-minted only)");
-        }
-        principal = parsed.data;
-        // Anonymous→signed-in auto-merge (block-actions design §C): the FIRST
-        // authenticated request still carrying a valid anonymous-session
-        // cookie adopts that session's threads/apps/state into the signed-in
-        // subject (grants, approvals, and connected accounts deliberately do
-        // NOT transfer — consent doesn't change identities), then retires the
-        // cookie. Idempotent: a replay finds nothing to merge and just clears
-        // the cookie again. A merge failure must never take down the request:
-        // the cookie stays, and the next authenticated request retries.
-        if (principal.ephemeral !== true) {
-          const secure = secureRequest(new URL(req.url), deps.trustedBaseIsHttps);
-          const anonId = readAnonCookie(req.headers.get("cookie"), secure);
-          if (anonId !== null) {
-            try {
-              const merged = await adoptEphemeralSubject(deps.store, `anonymous_${anonId}`, principal.subject);
-              anon.setCookie = clearedAnonCookie(secure);
-              if (merged !== null) {
-                await deps.guard.report({
-                  id: `aud_${globalThis.crypto.randomUUID()}`,
-                  at: new Date().toISOString(),
-                  kind: "principal",
-                  principal,
-                  venue,
-                  presence: "present",
-                  detail: { event: "anon-merge", from: `anonymous_${anonId}`, ...merged },
-                });
-              }
-            } catch (error) {
-              console.warn(`[vendo] anonymous-session merge failed; will retry next request: ${error instanceof Error ? error.message : String(error)}`);
-            }
-          }
-        }
-      }
-      // 02-store §4 (kill-list B3): anonymous rows are ordinary disk rows;
-      // registering the subject (registration == touch) is what makes the
-      // session sweepable and keeps it alive while the visitor is active. One
-      // touch covers both anonymous and host-resolved ephemeral principals.
-      if (principal.ephemeral === true) {
-        await registerEphemeralSubject(deps.store, principal.subject, deps.sessions.now());
-      }
-      return {
-        principal,
-        venue,
-        presence: "present",
-        sessionId,
-        requestHeaders: requestHeaders(req),
-      };
-    };
+    // Per-request anonymous-session state + the one shared context-resolution
+    // pass (see wire/shared.ts). Both MUST be minted per-invocation — the
+    // handler closure is shared across requests.
+    const anon: AnonSession = {};
+    const context = createContextResolver(deps, anon);
 
     const respond = async (): Promise<Response> => {
     try {
@@ -753,6 +469,22 @@ function createWireHandler(deps: {
         throw new VendoError("validation", "content-type must be application/json");
       }
       await deps.ready;
+
+      // The per-request view the route table dispatches on (kill-list B4).
+      // Segments decode lazily so raw-matched pre-routes (proxy, webhooks,
+      // doctor) never decode — preserving the old chain's decode timing.
+      let segmentsCache: string[] | undefined;
+      const wire: WireContext = {
+        request,
+        url,
+        path,
+        get segments() {
+          return (segmentsCache ??= routeSegments(path));
+        },
+        params: {},
+        context: (venue) => context(request, venue),
+        deps,
+      };
 
       // This dispatch exists only in a development composition. Production
       // handlers receive no runtimeCapture dependency and fall through to the
@@ -875,38 +607,12 @@ function createWireHandler(deps: {
         return await deps.apps.proxy.handler(new Request(proxyUrl, request));
       }
 
-      const segments = routeSegments(path);
+      const segments = wire.segments;
       const head = segments[0];
 
-      if (request.method === "POST" && path === "/threads") {
-        const body = await requestJson(request);
-        const ctx = await context(request, "chat");
-        void deps.telemetry?.track("agent_run", {});
-        return await deps.agent.stream({
-          ...(body["threadId"] === undefined ? {} : { threadId: string(body["threadId"], "threadId") }),
-          message: body["message"] as never,
-          ctx,
-          // AGENT-3: client disconnect aborts the request, which cancels the
-          // agent loop — provider calls stop instead of running to completion
-          // for a reader that is gone.
-          signal: request.signal,
-        });
-      }
-      if (request.method === "GET" && path === "/threads") {
-        return json(await deps.agent.threads.list(await context(request, "chat")));
-      }
-      if (head === "threads" && segments.length === 2) {
-        const ctx = await context(request, "chat");
-        const id = string(segments[1], "thread id");
-        if (request.method === "GET") {
-          const thread = await deps.agent.threads.get(id, ctx);
-          if (thread === null) throw new VendoError("not-found", `thread not found: ${id}`);
-          return json(thread);
-        }
-        if (request.method === "DELETE") {
-          await deps.agent.threads.delete(id, ctx);
-          return json({});
-        }
+      {
+        const routed = await dispatchRoutes(threadRoutes, wire);
+        if (routed !== undefined) return routed;
       }
 
       // Org-scoped approvals (`?org=<id>`) were a Vendo Cloud capability
