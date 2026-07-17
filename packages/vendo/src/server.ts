@@ -865,7 +865,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     reaches `vendo.handler`, so dropping it would turn e.g. `PATCH
     /api/vendo/orgs/:id/members/:subject` into a framework 405 instead of
     the wire's own `cloud-required` seam (the org routes matched ANY
-    method — orgsCloudRequired() above). */
+    method — orgsRoutes in wire/misc.ts). */
 export function nextVendoHandler(vendo: Vendo): {
   GET(request: Request): Promise<Response>;
   POST(request: Request): Promise<Response>;
