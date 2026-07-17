@@ -152,6 +152,11 @@ operation name reads like a fetch; anything else falls back to the conservative
 default. Mutations default to `write`, and the destructive word list can lift
 them to `destructive` — the same rules that apply to route and tRPC tools.
 
+Tool identity keys on the endpoint, the operation kind, and the operation
+name. GraphQL lets a query and a mutation share one field name across the two
+root types, so those stay two distinct tools — address them independently in
+[overrides](#durable-overrides).
+
 Some surfaces are always emitted as `disabled` with a note so you can promote
 them explicitly through overrides:
 
