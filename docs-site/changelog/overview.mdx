@@ -3,6 +3,50 @@ title: "Vendo product changelog"
 description: "Weekly release notes covering new Vendo features, product updates, MCP door capabilities, and bug fixes shipped to the SDK and runtime."
 ---
 
+<Update label="July 17, 2026" description="Week of July 14 – July 20">
+
+## New features
+
+**Configurable palette keybinding.** `VendoPalette` now accepts an optional
+`hotkey` prop so hosts can retune or hand off the keyboard opener. Pass a
+chord (`{ key: "k", meta: true }`), a custom matcher `(e) => boolean`, or
+`false` to disable the built-in opener entirely and wire your own:
+
+```tsx
+import { VendoPalette } from "@vendoai/ui";
+
+// Rebind to Ctrl+/, leaving ⌘K for the host app.
+<VendoPalette hotkey={{ key: "/", ctrl: true }} />
+
+// Or turn the built-in opener off and drive it yourself.
+<VendoPalette hotkey={false} />
+```
+
+Under the hood, all mounted palettes now share a single `keydown` listener
+and deliver the keystroke to the most-recently-mounted palette, so mounting
+the palette in more than one place no longer double-toggles on one press.
+While the palette is closed, the shortcut is also ignored when focus is in
+a host `input`, `textarea`, `select`, or `contenteditable` — your app keeps
+its own ⌘K inside its own fields.
+
+## Fixes
+
+**Thread sidebar refreshes on new conversation.** `VendoPage`'s chat sidebar
+now surfaces and highlights a conversation started via **New conversation**
+as soon as the server mints its `thr_` id. `VendoThread` also gains an
+optional `onThreadId` callback that fires with the effective thread id, so
+headless hosts can mirror the same refresh into their own UI:
+
+```tsx
+<VendoThread onThreadId={(id) => console.log("active thread", id)} />
+```
+
+An explicit selection is now immune to the default-select effect, so the
+first turn after **New conversation** always posts against the newly minted
+thread instead of the previously selected one.
+
+</Update>
+
 <Update label="July 16, 2026" description="Week of July 14 – July 20">
 
 ## New features
