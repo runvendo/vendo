@@ -19,7 +19,6 @@ import { modalInstalled, modalSandbox } from "@vendoai/apps/modal";
 import {
   createAutomations,
   type AutomationsEngine,
-  type RunStatus,
 } from "@vendoai/automations";
 import {
   VendoError,
@@ -99,6 +98,7 @@ import {
 } from "./wire/shared.js";
 import { appRoutes } from "./wire/apps.js";
 import { approvalRoutes, grantRoutes } from "./wire/approvals.js";
+import { automationRoutes, runRoutes } from "./wire/automations.js";
 import { connectionRoutes } from "./wire/connections.js";
 import { threadRoutes } from "./wire/threads.js";
 
@@ -642,45 +642,14 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
         if (routed !== undefined) return routed;
       }
 
-      if (request.method === "GET" && path === "/automations") {
-        return json(await deps.automations.list(await context(request, "automation")));
-      }
-      if (head === "automations" && segments.length === 3 && request.method === "POST") {
-        const appId = string(segments[1], "app id");
-        const ctx = await context(request, "automation");
-        if (segments[2] === "enable") return json(await deps.automations.enable(appId, ctx));
-        if (segments[2] === "disable") {
-          await deps.automations.disable(appId, ctx);
-          return json({});
-        }
-        if (segments[2] === "dry-run") return json(await deps.automations.dryRun(appId, ctx));
+      {
+        const routed = await dispatchRoutes(automationRoutes, wire);
+        if (routed !== undefined) return routed;
       }
 
-      if (request.method === "GET" && path === "/runs") {
-        const status = url.searchParams.get("status") ?? undefined;
-        const allowed: RunStatus[] = ["running", "ok", "error", "stopped", "pending-approval"];
-        if (status !== undefined && !allowed.includes(status as RunStatus)) {
-          throw new VendoError("validation", "run status is invalid");
-        }
-        const filter = {
-          ...(url.searchParams.get("appId") === null ? {} : { appId: url.searchParams.get("appId")! }),
-          ...(status === undefined ? {} : { status: status as RunStatus }),
-          ...(url.searchParams.get("cursor") === null ? {} : { cursor: url.searchParams.get("cursor")! }),
-        };
-        return json(await deps.automations.runs.list(filter, await context(request, "automation")));
-      }
-      if (head === "runs" && segments.length >= 2) {
-        const ctx = await context(request, "automation");
-        const runId = string(segments[1], "run id");
-        if (request.method === "GET" && segments.length === 2) {
-          const run = await deps.automations.runs.get(runId, ctx);
-          if (run === null) throw new VendoError("not-found", `run not found: ${runId}`);
-          return json(run);
-        }
-        if (request.method === "POST" && segments[2] === "stop" && segments.length === 3) {
-          await deps.automations.runs.stop(runId, ctx);
-          return json({});
-        }
+      {
+        const routed = await dispatchRoutes(runRoutes, wire);
+        if (routed !== undefined) return routed;
       }
 
       if (request.method === "GET" && path === "/activity") {
