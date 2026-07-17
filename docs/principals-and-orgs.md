@@ -7,9 +7,11 @@ that seam.
 ## Anonymous sessions and sign-in
 
 When `principal(req)` returns `null`, the visitor gets a per-client ephemeral
-principal carried by a signed httpOnly cookie. Anonymous work is stored like
-any other — ordinary rows under the anonymous subject — plus one row in
-`vendo_sessions` recording the session's last activity.
+principal carried by an opaque httpOnly cookie — a random 128-bit session id.
+The cookie is just a pointer: the `vendo_sessions` row is the authority, so a
+forged or invented id merely names its own empty session. Anonymous work is
+stored like any other — ordinary rows under the anonymous subject — plus one
+row in `vendo_sessions` recording the session's last activity.
 
 **Sessions expire.** Every request touches the session; a sweep erases every
 session idle past `sessions.ttlMs` (default 30 minutes) — its rows (threads,

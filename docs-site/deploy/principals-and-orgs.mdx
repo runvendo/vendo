@@ -51,8 +51,10 @@ update them to match `vendo:webhook:<source>` instead of the bare
 ## Anonymous sessions
 
 When `principal(req)` returns `null`, Vendo mints an ephemeral session
-principal and carries it in a signed, `httpOnly` cookie scoped to the wire
-base path. Ephemeral principals write ordinary rows under their anonymous
+principal and carries it in an opaque `httpOnly` cookie — a random session
+id scoped to the wire base path. The cookie is just a pointer; the session
+row in the database is the authority, so a forged id merely names its own
+empty session. Ephemeral principals write ordinary rows under their anonymous
 subject; a TTL sweep erases sessions idle past `sessions.ttlMs` (default
 30 minutes), rows and all.
 

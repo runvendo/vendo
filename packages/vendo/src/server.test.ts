@@ -794,7 +794,7 @@ describe("00 overview / 01-core §2 — per-client anonymous sessions", () => {
     expect(setCookie(replayed)).toBeNull();    // no new cookie on a valid replay
   });
 
-  it("mints a fresh session when the cookie signature is tampered or garbage", async () => {
+  it("mints a fresh session when the cookie is not a well-formed session pointer", async () => {
     const seen: string[] = [];
     const resolver = vi.fn(async () => null);
     const { vendo } = await setup(resolver);
@@ -804,16 +804,37 @@ describe("00 overview / 01-core §2 — per-client anonymous sessions", () => {
     });
 
     const minted = await vendo.handler(request("GET", "/apps"));
-    const value = anonCookieValue(minted)!;
-    const id = value.split(".")[0];
+    const id = anonCookieValue(minted)!;
 
-    for (const bad of [`${id}.deadbeef`, "not-a-valid-cookie", `${id}.`]) {
+    // The legacy signed form (`<id>.<sig>`), garbage, truncated, and non-hex
+    // values are not pointers into vendo_sessions — each gets a fresh mint.
+    for (const bad of [`${id}.deadbeef`, "not-a-valid-cookie", id.slice(0, 8), "Z".repeat(32)]) {
       const response = await vendo.handler(request("GET", "/apps", undefined, { cookie: `__Host-vendo_anon_session=${bad}` }));
       expect(setCookie(response)).toContain("__Host-vendo_anon_session="); // fresh mint
     }
-    // Every tampered request got its own fresh subject, none equal to the original.
+    // Every malformed request got its own fresh subject, none equal to the original.
     const original = seen[0];
     for (const subject of seen.slice(1)) expect(subject).not.toBe(original);
+  });
+
+  it("treats any well-formed 128-bit id as the session pointer — the vendo_sessions row is the authority, not the cookie", async () => {
+    // Kill-list B3 server half: the cookie carries no signature. An id the
+    // server never minted (or one surviving a process restart) simply names
+    // its own — empty — session: nothing to steal, and no re-mint churn.
+    const seen: string[] = [];
+    const resolver = vi.fn(async () => null);
+    const { vendo } = await setup(resolver);
+    vi.spyOn(vendo.apps, "list").mockImplementation(async (ctx) => {
+      seen.push(ctx.principal.subject);
+      return [];
+    });
+
+    const foreign = "0123456789abcdef0123456789abcdef";
+    const response = await vendo.handler(request("GET", "/apps", undefined, {
+      cookie: `__Host-vendo_anon_session=${foreign}`,
+    }));
+    expect(seen[0]).toBe(`anonymous_${foreign}`); // the pointer is honored as-is
+    expect(setCookie(response)).toBeNull();        // no new cookie minted
   });
 
   it("uses Secure __Host- over https and the plain wire-scoped name over http", async () => {
@@ -899,7 +920,8 @@ describe("00 overview / 01-core §2 — per-client anonymous sessions", () => {
     responses.forEach((response, i) => {
       const header = setCookie(response) ?? "";
       expect(header.match(/vendo_anon_session=/g)).toHaveLength(1);
-      const cookieId = anonCookieValue(response)!.split(".")[0];
+      const cookieId = anonCookieValue(response)!;
+      expect(cookieId).toMatch(/^[0-9a-f]{32}$/); // opaque pointer, no signature suffix
       expect(seen[i]).toBe(`anonymous_${cookieId}`);
     });
   });

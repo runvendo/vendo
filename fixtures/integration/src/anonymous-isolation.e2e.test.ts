@@ -1,8 +1,8 @@
 /** J7 — ANONYMOUS-SESSION ISOLATION through the composed wire.
  *
  * When `principal(req)` returns null the visitor is anonymous (00 overview,
- * 01-core §2). The umbrella mints a PER-CLIENT ephemeral principal backed by a
- * signed httpOnly cookie — NOT one shared principal per process (the deferred
+ * 01-core §2). The umbrella mints a PER-CLIENT ephemeral principal backed by an
+ * opaque httpOnly cookie — NOT one shared principal per process (the deferred
  * cross-visitor leak from the composition PR). This journey drives TWO browser-
  * like anonymous clients (their own cookie jars) over real HTTP and proves:
  *
