@@ -1,0 +1,2383 @@
+{
+  "version": 1,
+  "theme": {
+    "background": "#ffffff",
+    "surface": "#f8fafc",
+    "accent": "#2563eb",
+    "text": "#0f172a",
+    "mutedText": "#64748b",
+    "radius": 8,
+    "fontFamily": "system-ui, sans-serif"
+  },
+  "tools": [
+    {
+      "name": "activateSkill",
+      "kind": "graphql",
+      "operation": "activateSkill",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "activateWorkflowVersion",
+      "kind": "graphql",
+      "operation": "activateWorkflowVersion",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "activateWorkspace",
+      "kind": "graphql",
+      "operation": "activateWorkspace",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "addAiProvider",
+      "kind": "graphql",
+      "operation": "addAiProvider",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "addModelToProvider",
+      "kind": "graphql",
+      "operation": "addModelToProvider",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "addQueryToEventStream",
+      "kind": "graphql",
+      "operation": "addQueryToEventStream",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "adminPanelRecentUsers",
+      "kind": "graphql",
+      "operation": "adminPanelRecentUsers",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "adminPanelTopWorkspaces",
+      "kind": "graphql",
+      "operation": "adminPanelTopWorkspaces",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "agentTurns",
+      "kind": "graphql",
+      "operation": "agentTurns",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "apiKey",
+      "kind": "graphql",
+      "operation": "apiKey",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "apiKeys",
+      "kind": "graphql",
+      "operation": "apiKeys",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "applicationConnectionProviders",
+      "kind": "graphql",
+      "operation": "applicationConnectionProviders",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "applicationRegistrationTarballUrl",
+      "kind": "graphql",
+      "operation": "applicationRegistrationTarballUrl",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "archiveChatThread",
+      "kind": "graphql",
+      "operation": "archiveChatThread",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "assignRoleToAgent",
+      "kind": "graphql",
+      "operation": "assignRoleToAgent",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "assignRoleToApiKey",
+      "kind": "graphql",
+      "operation": "assignRoleToApiKey",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "authorizeApp",
+      "kind": "graphql",
+      "operation": "authorizeApp",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "barChartData",
+      "kind": "graphql",
+      "operation": "barChartData",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "billingPortalSession",
+      "kind": "graphql",
+      "operation": "billingPortalSession",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "cancelSwitchBillingInterval",
+      "kind": "graphql",
+      "operation": "cancelSwitchBillingInterval",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "cancelSwitchBillingPlan",
+      "kind": "graphql",
+      "operation": "cancelSwitchBillingPlan",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "cancelSwitchResourceCreditPrice",
+      "kind": "graphql",
+      "operation": "cancelSwitchResourceCreditPrice",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "chatMessages",
+      "kind": "graphql",
+      "operation": "chatMessages",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "chatStreamCatchupChunks",
+      "kind": "graphql",
+      "operation": "chatStreamCatchupChunks",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "chatThread",
+      "kind": "graphql",
+      "operation": "chatThread",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "chatThreads",
+      "kind": "graphql",
+      "operation": "chatThreads",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "checkCustomDomainValidRecords",
+      "kind": "graphql",
+      "operation": "checkCustomDomainValidRecords",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "checkPublicDomainValidRecords",
+      "kind": "graphql",
+      "operation": "checkPublicDomainValidRecords",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "checkUserExists",
+      "kind": "graphql",
+      "operation": "checkUserExists",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "checkWorkspaceInviteHashIsValid",
+      "kind": "graphql",
+      "operation": "checkWorkspaceInviteHashIsValid",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "checkoutSession",
+      "kind": "graphql",
+      "operation": "checkoutSession",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "clearMaintenanceMode",
+      "kind": "graphql",
+      "operation": "clearMaintenanceMode",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "commandMenuItem",
+      "kind": "graphql",
+      "operation": "commandMenuItem",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "commandMenuItems",
+      "kind": "graphql",
+      "operation": "commandMenuItems",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "computeStepOutputSchema",
+      "kind": "graphql",
+      "operation": "computeStepOutputSchema",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createApiKey",
+      "kind": "graphql",
+      "operation": "createApiKey",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createApplicationRegistration",
+      "kind": "graphql",
+      "operation": "createApplicationRegistration",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createApplicationRegistrationVariable",
+      "kind": "graphql",
+      "operation": "createApplicationRegistrationVariable",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createApprovedAccessDomain",
+      "kind": "graphql",
+      "operation": "createApprovedAccessDomain",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createChatThread",
+      "kind": "graphql",
+      "operation": "createChatThread",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createCommandMenuItem",
+      "kind": "graphql",
+      "operation": "createCommandMenuItem",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createDatabaseConfigVariable",
+      "kind": "graphql",
+      "operation": "createDatabaseConfigVariable",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createDevelopmentApplication",
+      "kind": "graphql",
+      "operation": "createDevelopmentApplication",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createDraftFromWorkflowVersion",
+      "kind": "graphql",
+      "operation": "createDraftFromWorkflowVersion",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createEmailGroupChannel",
+      "kind": "graphql",
+      "operation": "createEmailGroupChannel",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createEmailingDomain",
+      "kind": "graphql",
+      "operation": "createEmailingDomain",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createFrontComponent",
+      "kind": "graphql",
+      "operation": "createFrontComponent",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createManyNavigationMenuItems",
+      "kind": "graphql",
+      "operation": "createManyNavigationMenuItems",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createManyViewFieldGroups",
+      "kind": "graphql",
+      "operation": "createManyViewFieldGroups",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createManyViewFields",
+      "kind": "graphql",
+      "operation": "createManyViewFields",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createManyViewGroups",
+      "kind": "graphql",
+      "operation": "createManyViewGroups",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createNavigationMenuItem",
+      "kind": "graphql",
+      "operation": "createNavigationMenuItem",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createOIDCIdentityProvider",
+      "kind": "graphql",
+      "operation": "createOIDCIdentityProvider",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createObjectEvent",
+      "kind": "graphql",
+      "operation": "createObjectEvent",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createOneAgent",
+      "kind": "graphql",
+      "operation": "createOneAgent",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createOneField",
+      "kind": "graphql",
+      "operation": "createOneField",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createOneIndex",
+      "kind": "graphql",
+      "operation": "createOneIndex",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createOneLogicFunction",
+      "kind": "graphql",
+      "operation": "createOneLogicFunction",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createOneObject",
+      "kind": "graphql",
+      "operation": "createOneObject",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createOneRole",
+      "kind": "graphql",
+      "operation": "createOneRole",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createPageLayout",
+      "kind": "graphql",
+      "operation": "createPageLayout",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createPageLayoutTab",
+      "kind": "graphql",
+      "operation": "createPageLayoutTab",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createPageLayoutWidget",
+      "kind": "graphql",
+      "operation": "createPageLayoutWidget",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createPublicDomain",
+      "kind": "graphql",
+      "operation": "createPublicDomain",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createSAMLIdentityProvider",
+      "kind": "graphql",
+      "operation": "createSAMLIdentityProvider",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createSkill",
+      "kind": "graphql",
+      "operation": "createSkill",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createView",
+      "kind": "graphql",
+      "operation": "createView",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createViewField",
+      "kind": "graphql",
+      "operation": "createViewField",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createViewFieldGroup",
+      "kind": "graphql",
+      "operation": "createViewFieldGroup",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createViewFilter",
+      "kind": "graphql",
+      "operation": "createViewFilter",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createViewFilterGroup",
+      "kind": "graphql",
+      "operation": "createViewFilterGroup",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createViewGroup",
+      "kind": "graphql",
+      "operation": "createViewGroup",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createViewSort",
+      "kind": "graphql",
+      "operation": "createViewSort",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createWebhook",
+      "kind": "graphql",
+      "operation": "createWebhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createWorkflowVersionEdge",
+      "kind": "graphql",
+      "operation": "createWorkflowVersionEdge",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "createWorkflowVersionStep",
+      "kind": "graphql",
+      "operation": "createWorkflowVersionStep",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "currentUser",
+      "kind": "graphql",
+      "operation": "currentUser",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "currentWorkspace",
+      "kind": "graphql",
+      "operation": "currentWorkspace",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deactivateSkill",
+      "kind": "graphql",
+      "operation": "deactivateSkill",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deactivateWorkflowVersion",
+      "kind": "graphql",
+      "operation": "deactivateWorkflowVersion",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteApplicationRegistration",
+      "kind": "graphql",
+      "operation": "deleteApplicationRegistration",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteApplicationRegistrationVariable",
+      "kind": "graphql",
+      "operation": "deleteApplicationRegistrationVariable",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteApprovedAccessDomain",
+      "kind": "graphql",
+      "operation": "deleteApprovedAccessDomain",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteChatThread",
+      "kind": "graphql",
+      "operation": "deleteChatThread",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteCommandMenuItem",
+      "kind": "graphql",
+      "operation": "deleteCommandMenuItem",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteConnectedAccount",
+      "kind": "graphql",
+      "operation": "deleteConnectedAccount",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteCurrentWorkspace",
+      "kind": "graphql",
+      "operation": "deleteCurrentWorkspace",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteDatabaseConfigVariable",
+      "kind": "graphql",
+      "operation": "deleteDatabaseConfigVariable",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteEmailGroupChannel",
+      "kind": "graphql",
+      "operation": "deleteEmailGroupChannel",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteEmailingDomain",
+      "kind": "graphql",
+      "operation": "deleteEmailingDomain",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteFrontComponent",
+      "kind": "graphql",
+      "operation": "deleteFrontComponent",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteJobs",
+      "kind": "graphql",
+      "operation": "deleteJobs",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteManyNavigationMenuItems",
+      "kind": "graphql",
+      "operation": "deleteManyNavigationMenuItems",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteNavigationMenuItem",
+      "kind": "graphql",
+      "operation": "deleteNavigationMenuItem",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteOneAgent",
+      "kind": "graphql",
+      "operation": "deleteOneAgent",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteOneField",
+      "kind": "graphql",
+      "operation": "deleteOneField",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteOneIndex",
+      "kind": "graphql",
+      "operation": "deleteOneIndex",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteOneLogicFunction",
+      "kind": "graphql",
+      "operation": "deleteOneLogicFunction",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteOneObject",
+      "kind": "graphql",
+      "operation": "deleteOneObject",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteOneRole",
+      "kind": "graphql",
+      "operation": "deleteOneRole",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deletePublicDomain",
+      "kind": "graphql",
+      "operation": "deletePublicDomain",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteQueuedChatMessage",
+      "kind": "graphql",
+      "operation": "deleteQueuedChatMessage",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteSSOIdentityProvider",
+      "kind": "graphql",
+      "operation": "deleteSSOIdentityProvider",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteSkill",
+      "kind": "graphql",
+      "operation": "deleteSkill",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTwoFactorAuthenticationMethod",
+      "kind": "graphql",
+      "operation": "deleteTwoFactorAuthenticationMethod",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteUser",
+      "kind": "graphql",
+      "operation": "deleteUser",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteUserFromWorkspace",
+      "kind": "graphql",
+      "operation": "deleteUserFromWorkspace",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteView",
+      "kind": "graphql",
+      "operation": "deleteView",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteViewField",
+      "kind": "graphql",
+      "operation": "deleteViewField",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteViewFieldGroup",
+      "kind": "graphql",
+      "operation": "deleteViewFieldGroup",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteViewFilter",
+      "kind": "graphql",
+      "operation": "deleteViewFilter",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteViewFilterGroup",
+      "kind": "graphql",
+      "operation": "deleteViewFilterGroup",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteViewGroup",
+      "kind": "graphql",
+      "operation": "deleteViewGroup",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteViewSort",
+      "kind": "graphql",
+      "operation": "deleteViewSort",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteWebhook",
+      "kind": "graphql",
+      "operation": "deleteWebhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteWorkflowVersionEdge",
+      "kind": "graphql",
+      "operation": "deleteWorkflowVersionEdge",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteWorkflowVersionStep",
+      "kind": "graphql",
+      "operation": "deleteWorkflowVersionStep",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteWorkspaceInvitation",
+      "kind": "graphql",
+      "operation": "deleteWorkspaceInvitation",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "destroyPageLayout",
+      "kind": "graphql",
+      "operation": "destroyPageLayout",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "destroyPageLayoutTab",
+      "kind": "graphql",
+      "operation": "destroyPageLayoutTab",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "destroyPageLayoutWidget",
+      "kind": "graphql",
+      "operation": "destroyPageLayoutWidget",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "destroyView",
+      "kind": "graphql",
+      "operation": "destroyView",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "destroyViewField",
+      "kind": "graphql",
+      "operation": "destroyViewField",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "destroyViewFieldGroup",
+      "kind": "graphql",
+      "operation": "destroyViewFieldGroup",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "destroyViewFilter",
+      "kind": "graphql",
+      "operation": "destroyViewFilter",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "destroyViewFilterGroup",
+      "kind": "graphql",
+      "operation": "destroyViewFilterGroup",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "destroyViewGroup",
+      "kind": "graphql",
+      "operation": "destroyViewGroup",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "destroyViewSort",
+      "kind": "graphql",
+      "operation": "destroyViewSort",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "dismissMaintenanceModeBanner",
+      "kind": "graphql",
+      "operation": "dismissMaintenanceModeBanner",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "dismissReconnectAccountBanner",
+      "kind": "graphql",
+      "operation": "dismissReconnectAccountBanner",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "duplicateDashboard",
+      "kind": "graphql",
+      "operation": "duplicateDashboard",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "duplicateWorkflow",
+      "kind": "graphql",
+      "operation": "duplicateWorkflow",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "duplicateWorkflowVersionStep",
+      "kind": "graphql",
+      "operation": "duplicateWorkflowVersionStep",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "editSSOIdentityProvider",
+      "kind": "graphql",
+      "operation": "editSSOIdentityProvider",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "emailPasswordResetLink",
+      "kind": "graphql",
+      "operation": "emailPasswordResetLink",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "endSubscriptionTrialPeriod",
+      "kind": "graphql",
+      "operation": "endSubscriptionTrialPeriod",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "enterpriseCheckoutSession",
+      "kind": "graphql",
+      "operation": "enterpriseCheckoutSession",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "enterprisePortalSession",
+      "kind": "graphql",
+      "operation": "enterprisePortalSession",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "enterpriseSubscriptionStatus",
+      "kind": "graphql",
+      "operation": "enterpriseSubscriptionStatus",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "evaluateAgentTurn",
+      "kind": "graphql",
+      "operation": "evaluateAgentTurn",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "eventLogs",
+      "kind": "graphql",
+      "operation": "eventLogs",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "executeOneLogicFunction",
+      "kind": "graphql",
+      "operation": "executeOneLogicFunction",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "findAdminApplicationRegistrationVariables",
+      "kind": "graphql",
+      "operation": "findAdminApplicationRegistrationVariables",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findAllApplicationRegistrations",
+      "kind": "graphql",
+      "operation": "findAllApplicationRegistrations",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findApplicationRegistrationByClientId",
+      "kind": "graphql",
+      "operation": "findApplicationRegistrationByClientId",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findApplicationRegistrationByUniversalIdentifier",
+      "kind": "graphql",
+      "operation": "findApplicationRegistrationByUniversalIdentifier",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findApplicationRegistrationStats",
+      "kind": "graphql",
+      "operation": "findApplicationRegistrationStats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findApplicationRegistrationVariables",
+      "kind": "graphql",
+      "operation": "findApplicationRegistrationVariables",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findManyAgents",
+      "kind": "graphql",
+      "operation": "findManyAgents",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findManyApplicationRegistrations",
+      "kind": "graphql",
+      "operation": "findManyApplicationRegistrations",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findManyApplications",
+      "kind": "graphql",
+      "operation": "findManyApplications",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findManyLogicFunctions",
+      "kind": "graphql",
+      "operation": "findManyLogicFunctions",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findManyMarketplaceApps",
+      "kind": "graphql",
+      "operation": "findManyMarketplaceApps",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findManyPublicDomains",
+      "kind": "graphql",
+      "operation": "findManyPublicDomains",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findMarketplaceAppDetail",
+      "kind": "graphql",
+      "operation": "findMarketplaceAppDetail",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findOneAdminApplicationRegistration",
+      "kind": "graphql",
+      "operation": "findOneAdminApplicationRegistration",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findOneAgent",
+      "kind": "graphql",
+      "operation": "findOneAgent",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findOneApplication",
+      "kind": "graphql",
+      "operation": "findOneApplication",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findOneApplicationRegistration",
+      "kind": "graphql",
+      "operation": "findOneApplicationRegistration",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findOneLogicFunction",
+      "kind": "graphql",
+      "operation": "findOneLogicFunction",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findWorkspaceAiStats",
+      "kind": "graphql",
+      "operation": "findWorkspaceAiStats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "findWorkspaceFromInviteHash",
+      "kind": "graphql",
+      "operation": "findWorkspaceFromInviteHash",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "findWorkspaceInvitations",
+      "kind": "graphql",
+      "operation": "findWorkspaceInvitations",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "frontComponent",
+      "kind": "graphql",
+      "operation": "frontComponent",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "frontComponents",
+      "kind": "graphql",
+      "operation": "frontComponents",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "generateApiKeyToken",
+      "kind": "graphql",
+      "operation": "generateApiKeyToken",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "generateApplicationToken",
+      "kind": "graphql",
+      "operation": "generateApplicationToken",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "generatePlaygroundToken",
+      "kind": "graphql",
+      "operation": "generatePlaygroundToken",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "generateTransientToken",
+      "kind": "graphql",
+      "operation": "generateTransientToken",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAddressDetails",
+      "kind": "graphql",
+      "operation": "getAddressDetails",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAdminAiModels",
+      "kind": "graphql",
+      "operation": "getAdminAiModels",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAdminAiUsageByWorkspace",
+      "kind": "graphql",
+      "operation": "getAdminAiUsageByWorkspace",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAdminChatThreadMessages",
+      "kind": "graphql",
+      "operation": "getAdminChatThreadMessages",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAdminWorkspaceChatThreads",
+      "kind": "graphql",
+      "operation": "getAdminWorkspaceChatThreads",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAiProviders",
+      "kind": "graphql",
+      "operation": "getAiProviders",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAiSystemPromptPreview",
+      "kind": "graphql",
+      "operation": "getAiSystemPromptPreview",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getApprovedAccessDomains",
+      "kind": "graphql",
+      "operation": "getApprovedAccessDomains",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAuthTokensFromLoginToken",
+      "kind": "graphql",
+      "operation": "getAuthTokensFromLoginToken",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAuthTokensFromOTP",
+      "kind": "graphql",
+      "operation": "getAuthTokensFromOTP",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAuthorizationUrlForSSO",
+      "kind": "graphql",
+      "operation": "getAuthorizationUrlForSSO",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAutoCompleteAddress",
+      "kind": "graphql",
+      "operation": "getAutoCompleteAddress",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAvailablePackages",
+      "kind": "graphql",
+      "operation": "getAvailablePackages",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getConfigVariablesGrouped",
+      "kind": "graphql",
+      "operation": "getConfigVariablesGrouped",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getConnectedImapSmtpCaldavAccount",
+      "kind": "graphql",
+      "operation": "getConnectedImapSmtpCaldavAccount",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getDatabaseConfigVariable",
+      "kind": "graphql",
+      "operation": "getDatabaseConfigVariable",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getEmailingDomains",
+      "kind": "graphql",
+      "operation": "getEmailingDomains",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getIndicatorHealthStatus",
+      "kind": "graphql",
+      "operation": "getIndicatorHealthStatus",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getInstanceAndAllWorkspacesUpgradeStatus",
+      "kind": "graphql",
+      "operation": "getInstanceAndAllWorkspacesUpgradeStatus",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getLogicFunctionSourceCode",
+      "kind": "graphql",
+      "operation": "getLogicFunctionSourceCode",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getLoginTokenFromCredentials",
+      "kind": "graphql",
+      "operation": "getLoginTokenFromCredentials",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getMaintenanceMode",
+      "kind": "graphql",
+      "operation": "getMaintenanceMode",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getModelsDevProviders",
+      "kind": "graphql",
+      "operation": "getModelsDevProviders",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getModelsDevSuggestions",
+      "kind": "graphql",
+      "operation": "getModelsDevSuggestions",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getPageLayout",
+      "kind": "graphql",
+      "operation": "getPageLayout",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getPageLayoutTab",
+      "kind": "graphql",
+      "operation": "getPageLayoutTab",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getPageLayoutTabs",
+      "kind": "graphql",
+      "operation": "getPageLayoutTabs",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getPageLayoutWidget",
+      "kind": "graphql",
+      "operation": "getPageLayoutWidget",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getPageLayoutWidgets",
+      "kind": "graphql",
+      "operation": "getPageLayoutWidgets",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getPageLayouts",
+      "kind": "graphql",
+      "operation": "getPageLayouts",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getPublicWorkspaceDataByDomain",
+      "kind": "graphql",
+      "operation": "getPublicWorkspaceDataByDomain",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getPublicWorkspaceDataById",
+      "kind": "graphql",
+      "operation": "getPublicWorkspaceDataById",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getQueueJobs",
+      "kind": "graphql",
+      "operation": "getQueueJobs",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getQueueMetrics",
+      "kind": "graphql",
+      "operation": "getQueueMetrics",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getResourceCreditUsage",
+      "kind": "graphql",
+      "operation": "getResourceCreditUsage",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getRoles",
+      "kind": "graphql",
+      "operation": "getRoles",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getSSOIdentityProviders",
+      "kind": "graphql",
+      "operation": "getSSOIdentityProviders",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getSigningKeys",
+      "kind": "graphql",
+      "operation": "getSigningKeys",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getSystemHealthStatus",
+      "kind": "graphql",
+      "operation": "getSystemHealthStatus",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTimelineCalendarEventsFromCompanyId",
+      "kind": "graphql",
+      "operation": "getTimelineCalendarEventsFromCompanyId",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTimelineCalendarEventsFromOpportunityId",
+      "kind": "graphql",
+      "operation": "getTimelineCalendarEventsFromOpportunityId",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTimelineCalendarEventsFromPersonId",
+      "kind": "graphql",
+      "operation": "getTimelineCalendarEventsFromPersonId",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTimelineThreadsFromCompanyId",
+      "kind": "graphql",
+      "operation": "getTimelineThreadsFromCompanyId",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTimelineThreadsFromOpportunityId",
+      "kind": "graphql",
+      "operation": "getTimelineThreadsFromOpportunityId",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTimelineThreadsFromPersonId",
+      "kind": "graphql",
+      "operation": "getTimelineThreadsFromPersonId",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getToolIndex",
+      "kind": "graphql",
+      "operation": "getToolIndex",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getToolInputSchema",
+      "kind": "graphql",
+      "operation": "getToolInputSchema",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getUpgradeStatus",
+      "kind": "graphql",
+      "operation": "getUpgradeStatus",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getUsageAnalytics",
+      "kind": "graphql",
+      "operation": "getUsageAnalytics",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getView",
+      "kind": "graphql",
+      "operation": "getView",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getViewField",
+      "kind": "graphql",
+      "operation": "getViewField",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getViewFieldGroup",
+      "kind": "graphql",
+      "operation": "getViewFieldGroup",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getViewFieldGroups",
+      "kind": "graphql",
+      "operation": "getViewFieldGroups",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getViewFields",
+      "kind": "graphql",
+      "operation": "getViewFields",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getViewFilter",
+      "kind": "graphql",
+      "operation": "getViewFilter",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getViewFilterGroup",
+      "kind": "graphql",
+      "operation": "getViewFilterGroup",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getViewFilterGroups",
+      "kind": "graphql",
+      "operation": "getViewFilterGroups",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getViewFilters",
+      "kind": "graphql",
+      "operation": "getViewFilters",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getViewGroup",
+      "kind": "graphql",
+      "operation": "getViewGroup",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getViewGroups",
+      "kind": "graphql",
+      "operation": "getViewGroups",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getViewSort",
+      "kind": "graphql",
+      "operation": "getViewSort",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getViewSorts",
+      "kind": "graphql",
+      "operation": "getViewSorts",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getViews",
+      "kind": "graphql",
+      "operation": "getViews",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "impersonate",
+      "kind": "graphql",
+      "operation": "impersonate",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "initiateOTPProvisioning",
+      "kind": "graphql",
+      "operation": "initiateOTPProvisioning",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "initiateOTPProvisioningForAuthenticatedUser",
+      "kind": "graphql",
+      "operation": "initiateOTPProvisioningForAuthenticatedUser",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "installApplication",
+      "kind": "graphql",
+      "operation": "installApplication",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "installMarketplaceApp",
+      "kind": "graphql",
+      "operation": "installMarketplaceApp",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "isMaintenanceModeBannerDismissed",
+      "kind": "graphql",
+      "operation": "isMaintenanceModeBannerDismissed",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "lineChartData",
+      "kind": "graphql",
+      "operation": "lineChartData",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "listPlans",
+      "kind": "graphql",
+      "operation": "listPlans",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "logicFunctionLogs",
+      "kind": "graphql",
+      "operation": "logicFunctionLogs",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "minimalMetadata",
+      "kind": "graphql",
+      "operation": "minimalMetadata",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "myCalendarChannels",
+      "kind": "graphql",
+      "operation": "myCalendarChannels",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "myConnectedAccounts",
+      "kind": "graphql",
+      "operation": "myConnectedAccounts",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "myMessageChannels",
+      "kind": "graphql",
+      "operation": "myMessageChannels",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "myMessageFolders",
+      "kind": "graphql",
+      "operation": "myMessageFolders",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "navigationMenuItem",
+      "kind": "graphql",
+      "operation": "navigationMenuItem",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "navigationMenuItems",
+      "kind": "graphql",
+      "operation": "navigationMenuItems",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "objectRecordCounts",
+      "kind": "graphql",
+      "operation": "objectRecordCounts",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "onAgentChatEvent",
+      "kind": "graphql",
+      "operation": "onAgentChatEvent",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "onEventSubscription",
+      "kind": "graphql",
+      "operation": "onEventSubscription",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "pieChartData",
+      "kind": "graphql",
+      "operation": "pieChartData",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "refreshEnterpriseValidityToken",
+      "kind": "graphql",
+      "operation": "refreshEnterpriseValidityToken",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "refreshUpgradeStatus",
+      "kind": "graphql",
+      "operation": "refreshUpgradeStatus",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "removeAiProvider",
+      "kind": "graphql",
+      "operation": "removeAiProvider",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "removeModelFromProvider",
+      "kind": "graphql",
+      "operation": "removeModelFromProvider",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "removeQueryFromEventStream",
+      "kind": "graphql",
+      "operation": "removeQueryFromEventStream",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "removeRoleFromAgent",
+      "kind": "graphql",
+      "operation": "removeRoleFromAgent",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "renameChatThread",
+      "kind": "graphql",
+      "operation": "renameChatThread",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "renewApplicationToken",
+      "kind": "graphql",
+      "operation": "renewApplicationToken",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "renewToken",
+      "kind": "graphql",
+      "operation": "renewToken",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "resendEmailVerificationToken",
+      "kind": "graphql",
+      "operation": "resendEmailVerificationToken",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "resendWorkspaceInvitation",
+      "kind": "graphql",
+      "operation": "resendWorkspaceInvitation",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "resetPageLayoutTabToDefault",
+      "kind": "graphql",
+      "operation": "resetPageLayoutTabToDefault",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "resetPageLayoutToDefault",
+      "kind": "graphql",
+      "operation": "resetPageLayoutToDefault",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "resetPageLayoutWidgetToDefault",
+      "kind": "graphql",
+      "operation": "resetPageLayoutWidgetToDefault",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "retryJobs",
+      "kind": "graphql",
+      "operation": "retryJobs",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "revokeApiKey",
+      "kind": "graphql",
+      "operation": "revokeApiKey",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "revokeSigningKey",
+      "kind": "graphql",
+      "operation": "revokeSigningKey",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "rotateApplicationRegistrationClientSecret",
+      "kind": "graphql",
+      "operation": "rotateApplicationRegistrationClientSecret",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "runEvaluationInput",
+      "kind": "graphql",
+      "operation": "runEvaluationInput",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "runWorkflowVersion",
+      "kind": "graphql",
+      "operation": "runWorkflowVersion",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "runWorkspaceMigration",
+      "kind": "graphql",
+      "operation": "runWorkspaceMigration",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "saveImapSmtpCaldavAccount",
+      "kind": "graphql",
+      "operation": "saveImapSmtpCaldavAccount",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "search",
+      "kind": "graphql",
+      "operation": "search",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "sendChatMessage",
+      "kind": "graphql",
+      "operation": "sendChatMessage",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "sendEmail",
+      "kind": "graphql",
+      "operation": "sendEmail",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "sendEmailViaEmailingDomain",
+      "kind": "graphql",
+      "operation": "sendEmailViaEmailingDomain",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "sendInvitations",
+      "kind": "graphql",
+      "operation": "sendInvitations",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "setAdminAiModelEnabled",
+      "kind": "graphql",
+      "operation": "setAdminAiModelEnabled",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "setAdminAiModelRecommended",
+      "kind": "graphql",
+      "operation": "setAdminAiModelRecommended",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "setAdminAiModelsEnabled",
+      "kind": "graphql",
+      "operation": "setAdminAiModelsEnabled",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "setAdminAiModelsRecommended",
+      "kind": "graphql",
+      "operation": "setAdminAiModelsRecommended",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "setAdminDefaultAiModel",
+      "kind": "graphql",
+      "operation": "setAdminDefaultAiModel",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "setEnterpriseKey",
+      "kind": "graphql",
+      "operation": "setEnterpriseKey",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "setMaintenanceMode",
+      "kind": "graphql",
+      "operation": "setMaintenanceMode",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "setResourceCreditSubscriptionPrice",
+      "kind": "graphql",
+      "operation": "setResourceCreditSubscriptionPrice",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "signIn",
+      "kind": "graphql",
+      "operation": "signIn",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "signUp",
+      "kind": "graphql",
+      "operation": "signUp",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "signUpInNewWorkspace",
+      "kind": "graphql",
+      "operation": "signUpInNewWorkspace",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "signUpInWorkspace",
+      "kind": "graphql",
+      "operation": "signUpInWorkspace",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "skill",
+      "kind": "graphql",
+      "operation": "skill",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "skills",
+      "kind": "graphql",
+      "operation": "skills",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "skipBookOnboardingStep",
+      "kind": "graphql",
+      "operation": "skipBookOnboardingStep",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "skipSyncEmailOnboardingStep",
+      "kind": "graphql",
+      "operation": "skipSyncEmailOnboardingStep",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "startChannelSync",
+      "kind": "graphql",
+      "operation": "startChannelSync",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "stopAgentChatStream",
+      "kind": "graphql",
+      "operation": "stopAgentChatStream",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "stopWorkflowRun",
+      "kind": "graphql",
+      "operation": "stopWorkflowRun",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "submitFormStep",
+      "kind": "graphql",
+      "operation": "submitFormStep",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "switchBillingPlan",
+      "kind": "graphql",
+      "operation": "switchBillingPlan",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "switchSubscriptionInterval",
+      "kind": "graphql",
+      "operation": "switchSubscriptionInterval",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "syncApplication",
+      "kind": "graphql",
+      "operation": "syncApplication",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "syncMarketplaceCatalog",
+      "kind": "graphql",
+      "operation": "syncMarketplaceCatalog",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "testHttpRequest",
+      "kind": "graphql",
+      "operation": "testHttpRequest",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "trackAnalytics",
+      "kind": "graphql",
+      "operation": "trackAnalytics",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "transferApplicationRegistrationOwnership",
+      "kind": "graphql",
+      "operation": "transferApplicationRegistrationOwnership",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "unarchiveChatThread",
+      "kind": "graphql",
+      "operation": "unarchiveChatThread",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "uninstallApplication",
+      "kind": "graphql",
+      "operation": "uninstallApplication",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateAdminApplicationRegistrationVariable",
+      "kind": "graphql",
+      "operation": "updateAdminApplicationRegistrationVariable",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateApiKey",
+      "kind": "graphql",
+      "operation": "updateApiKey",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateApplicationRegistration",
+      "kind": "graphql",
+      "operation": "updateApplicationRegistration",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateApplicationRegistrationVariable",
+      "kind": "graphql",
+      "operation": "updateApplicationRegistrationVariable",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateCalendarChannel",
+      "kind": "graphql",
+      "operation": "updateCalendarChannel",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateCommandMenuItem",
+      "kind": "graphql",
+      "operation": "updateCommandMenuItem",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateDatabaseConfigVariable",
+      "kind": "graphql",
+      "operation": "updateDatabaseConfigVariable",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateFrontComponent",
+      "kind": "graphql",
+      "operation": "updateFrontComponent",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateLabPublicFeatureFlag",
+      "kind": "graphql",
+      "operation": "updateLabPublicFeatureFlag",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateManyNavigationMenuItems",
+      "kind": "graphql",
+      "operation": "updateManyNavigationMenuItems",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateManyViewGroups",
+      "kind": "graphql",
+      "operation": "updateManyViewGroups",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateMessageChannel",
+      "kind": "graphql",
+      "operation": "updateMessageChannel",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateMessageFolder",
+      "kind": "graphql",
+      "operation": "updateMessageFolder",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateMessageFolders",
+      "kind": "graphql",
+      "operation": "updateMessageFolders",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateNavigationMenuItem",
+      "kind": "graphql",
+      "operation": "updateNavigationMenuItem",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateOneAgent",
+      "kind": "graphql",
+      "operation": "updateOneAgent",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateOneApplicationVariable",
+      "kind": "graphql",
+      "operation": "updateOneApplicationVariable",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateOneField",
+      "kind": "graphql",
+      "operation": "updateOneField",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateOneLogicFunction",
+      "kind": "graphql",
+      "operation": "updateOneLogicFunction",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateOneObject",
+      "kind": "graphql",
+      "operation": "updateOneObject",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateOneRole",
+      "kind": "graphql",
+      "operation": "updateOneRole",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updatePageLayout",
+      "kind": "graphql",
+      "operation": "updatePageLayout",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updatePageLayoutTab",
+      "kind": "graphql",
+      "operation": "updatePageLayoutTab",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updatePageLayoutWidget",
+      "kind": "graphql",
+      "operation": "updatePageLayoutWidget",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updatePageLayoutWithTabsAndWidgets",
+      "kind": "graphql",
+      "operation": "updatePageLayoutWithTabsAndWidgets",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updatePasswordViaResetToken",
+      "kind": "graphql",
+      "operation": "updatePasswordViaResetToken",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updatePublicDomain",
+      "kind": "graphql",
+      "operation": "updatePublicDomain",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateSkill",
+      "kind": "graphql",
+      "operation": "updateSkill",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateUserEmail",
+      "kind": "graphql",
+      "operation": "updateUserEmail",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateView",
+      "kind": "graphql",
+      "operation": "updateView",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateViewField",
+      "kind": "graphql",
+      "operation": "updateViewField",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateViewFieldGroup",
+      "kind": "graphql",
+      "operation": "updateViewFieldGroup",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateViewFilter",
+      "kind": "graphql",
+      "operation": "updateViewFilter",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateViewFilterGroup",
+      "kind": "graphql",
+      "operation": "updateViewFilterGroup",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateViewGroup",
+      "kind": "graphql",
+      "operation": "updateViewGroup",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateViewSort",
+      "kind": "graphql",
+      "operation": "updateViewSort",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateWebhook",
+      "kind": "graphql",
+      "operation": "updateWebhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateWorkflowRunStep",
+      "kind": "graphql",
+      "operation": "updateWorkflowRunStep",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateWorkflowVersionPositions",
+      "kind": "graphql",
+      "operation": "updateWorkflowVersionPositions",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateWorkflowVersionStep",
+      "kind": "graphql",
+      "operation": "updateWorkflowVersionStep",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateWorkspace",
+      "kind": "graphql",
+      "operation": "updateWorkspace",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateWorkspaceFeatureFlag",
+      "kind": "graphql",
+      "operation": "updateWorkspaceFeatureFlag",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateWorkspaceMemberRole",
+      "kind": "graphql",
+      "operation": "updateWorkspaceMemberRole",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "updateWorkspaceMemberSettings",
+      "kind": "graphql",
+      "operation": "updateWorkspaceMemberSettings",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "upgradeApplication",
+      "kind": "graphql",
+      "operation": "upgradeApplication",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "uploadAiChatFile",
+      "kind": "graphql",
+      "operation": "uploadAiChatFile",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "uploadAppTarball",
+      "kind": "graphql",
+      "operation": "uploadAppTarball",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "uploadApplicationFile",
+      "kind": "graphql",
+      "operation": "uploadApplicationFile",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "uploadEmailAttachmentFile",
+      "kind": "graphql",
+      "operation": "uploadEmailAttachmentFile",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "uploadFilesFieldFile",
+      "kind": "graphql",
+      "operation": "uploadFilesFieldFile",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "uploadFilesFieldFileByUniversalIdentifier",
+      "kind": "graphql",
+      "operation": "uploadFilesFieldFileByUniversalIdentifier",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "uploadWorkflowFile",
+      "kind": "graphql",
+      "operation": "uploadWorkflowFile",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "uploadWorkspaceLogo",
+      "kind": "graphql",
+      "operation": "uploadWorkspaceLogo",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "uploadWorkspaceMemberProfilePicture",
+      "kind": "graphql",
+      "operation": "uploadWorkspaceMemberProfilePicture",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "upsertFieldPermissions",
+      "kind": "graphql",
+      "operation": "upsertFieldPermissions",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "upsertFieldsWidget",
+      "kind": "graphql",
+      "operation": "upsertFieldsWidget",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "upsertObjectPermissions",
+      "kind": "graphql",
+      "operation": "upsertObjectPermissions",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "upsertPermissionFlags",
+      "kind": "graphql",
+      "operation": "upsertPermissionFlags",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "upsertRowLevelPermissionPredicates",
+      "kind": "graphql",
+      "operation": "upsertRowLevelPermissionPredicates",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "upsertViewWidget",
+      "kind": "graphql",
+      "operation": "upsertViewWidget",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "userLookupAdminPanel",
+      "kind": "graphql",
+      "operation": "userLookupAdminPanel",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "validateApprovedAccessDomain",
+      "kind": "graphql",
+      "operation": "validateApprovedAccessDomain",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "validatePasswordResetToken",
+      "kind": "graphql",
+      "operation": "validatePasswordResetToken",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "verifyEmailAndGetLoginToken",
+      "kind": "graphql",
+      "operation": "verifyEmailAndGetLoginToken",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "verifyEmailAndGetWorkspaceAgnosticToken",
+      "kind": "graphql",
+      "operation": "verifyEmailAndGetWorkspaceAgnosticToken",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "verifyEmailingDomain",
+      "kind": "graphql",
+      "operation": "verifyEmailingDomain",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "verifyTwoFactorAuthenticationMethodForAuthenticatedUser",
+      "kind": "graphql",
+      "operation": "verifyTwoFactorAuthenticationMethodForAuthenticatedUser",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "versionInfo",
+      "kind": "graphql",
+      "operation": "versionInfo",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "webhook",
+      "kind": "graphql",
+      "operation": "webhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "webhooks",
+      "kind": "graphql",
+      "operation": "webhooks",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "workflowStepConnectedAccountHandle",
+      "kind": "graphql",
+      "operation": "workflowStepConnectedAccountHandle",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "workspaceBillingAdminPanel",
+      "kind": "graphql",
+      "operation": "workspaceBillingAdminPanel",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "workspaceLookupAdminPanel",
+      "kind": "graphql",
+      "operation": "workspaceLookupAdminPanel",
+      "readOrWrite": "write"
+    }
+  ],
+  "annotations": [
+    {
+      "name": "apiKeys",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "apiKey",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "createApiKey",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "revokeApiKey",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getPageLayouts",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "destroyPageLayout",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getMaintenanceMode",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "currentUser",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteUser",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "sendEmail",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "createOneRole",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getViews",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "uploadApplicationFile",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getToolInputSchema",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "onEventSubscription",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "checkoutSession",
+      "mutating": true,
+      "dangerous": false
+    }
+  ],
+  "components": []
+}

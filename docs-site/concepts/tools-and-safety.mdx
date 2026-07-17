@@ -1,5 +1,5 @@
 ---
-title: "Tools and safety"
+title: "Tools and safety: guard.bind, policy, and away-run scopes"
 description: "How Vendo unifies host APIs and connectors under one ToolDescriptor shape, routes every call through guard.bind, and scopes authority for away runs."
 ---
 
@@ -29,6 +29,10 @@ chat, SSE, and the MCP door reach the same decision.
   destructive actions, or egress keeps the approval card. If an edit
   classified as tree-only unexpectedly emits server code, the runtime fails
   closed before the sandbox runs or the app is persisted.
+- `vendo_apps_rebase_pin` is `write`. It replays a remixed pin's recorded
+  edit trail onto a newly captured host baseline and produces one new app
+  version. Rebase is user- or host-invoked only; the agent never
+  auto-rebases. See [Host components](/connect/host-components#drift-and-rebase).
 
 Custom tools you register are unaffected; they continue to use their declared
 `ToolDescriptor.risk`.
@@ -41,5 +45,14 @@ descriptor hash, scope, and duration. Away execution additionally requires a
 standing grant bound to the running app. A chat grant or another app's grant
 never transfers.
 
-Every tool call, approval, policy decision, run, and app lifecycle event is
-audited with principal, venue, presence, and app context.
+When a tool's descriptor hash drifts from the hash a standing grant was bound
+to, guard invalidates the grant loudly. It parks a fresh approval request with
+an `invalidatedGrant` field carrying the prior grant's id and `grantedAt`
+timestamp. It also emits one `policy-decision` audit event with
+`reason: "grant-invalidated"`, the prior `grantIds`, the `staleHash`, and the
+`currentHash`. The approval card renders a "Previous permission invalidated"
+notice so users see why they are being asked again. The Activity panel lists
+the audit event.
+
+Vendo audits every tool call, approval, policy decision, run, and app lifecycle
+event with principal, venue, presence, and app context.

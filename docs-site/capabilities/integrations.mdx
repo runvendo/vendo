@@ -12,22 +12,46 @@ export interface Connector {
   execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome>;
 }
 
-export function composioConnector(config: { apiKey: string; entityId?: (ctx: RunContext) => string; apps?: string[] }): Connector;
-export function mcpConnector(config: { url: string; headers?: Record<string, string>; name?: string }): Connector;
+export function composioConnector(config: { apiKey: string; apps?: string[] }): Connector;
+export function mcpConnector(config: {
+  url: string;
+  headers?: Record<string, string> | ((ctx: { principal: Principal; presence: Presence; grant?: Grant }) => Promise<Record<string, string>>);
+  name?: string;
+}): Connector;
 ```
 
 Connector names normalize into the provider-safe tool charset, such as
-`gmail_send` and `mcp_server_tool`. Names longer than 64 characters are
-truncated and suffix-hashed.
+`gmail_send` and `mcp_server_tool`. Vendo truncates and suffix-hashes names
+longer than 64 characters.
 
-Connector annotations supply risk when available. Otherwise Vendo defaults to
-`write`. Overrides can change the reviewed risk. Connector authentication is
-provider-specific, but every call still crosses the same guard and approval
-path.
+## Composio: per-user connected accounts
+
+`composioConnector` binds every operation to the calling principal. Each
+signed-in user connects their own Composio account through the broker; every
+later call rides that connection. When a call needs a connection the user
+does not have yet, the connector returns a typed `connect-required` outcome
+and the shipped `VendoThread` renders an inline connect card. See
+[Connected accounts](/capabilities/connected-accounts) for setup, the
+Vendo Cloud broker path, the settings panel, and the connection endpoints.
+
+Composio tools carry a curated risk (destructive, read, or write) derived
+from metadata hints and slug patterns. `.vendo/overrides.json` still wins.
+
+## MCP: shared or per-principal headers
+
+`mcpConnector` calls a remote MCP server and adopts its tools. Pass a
+`headers` record for shared credentials, or a per-principal resolver when
+the server binds auth to the session so each user gets their own MCP
+session. See [Connected accounts](/capabilities/connected-accounts#mcp-connector-credentials)
+for the resolver signature.
+
+Every connector call still crosses the same guard and approval path, and
+every connector execution is audited with the connector, toolkit, and
+per-principal identity in the tool-call event's `detail`.
 
 This connector support is distinct from the MCP door, which runs the other
-direction: connectors pull remote MCP tools *into* your agent, while the door
-serves *your* host tools *out* to MCP clients like Claude and ChatGPT. Enable
+direction. Connectors pull remote MCP tools *into* your agent; the door serves
+*your* host tools *out* to MCP clients like Claude and ChatGPT. Enable
 the door with `createVendo({ mcp: true, oauth })`. Door tool calls authenticate
 over the same `actAs` seam away automations use, since MCP clients have no host
 browser session. See the quickstart for setup.

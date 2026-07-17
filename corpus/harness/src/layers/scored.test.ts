@@ -207,6 +207,137 @@ describe("runScoredLayer", () => {
     expect(improvement.baselineUpdate?.source).toContain('"generatedAt": "2026-07-06T12:00:00.000Z"');
   });
 
+  it("keys tRPC tools by procedure identity and applies mutation write-safety", async () => {
+    const { repoDir, expectationsRoot } = await makeFixture();
+    const trpcExpectations: RepoExpectations = {
+      ...baseExpectations,
+      tools: [
+        { name: "pollsList", kind: "trpc", procedure: "polls.list", readOrWrite: "read" },
+        { name: "pollsCreate", kind: "trpc", procedure: "polls.create", readOrWrite: "write" },
+      ],
+      annotations: [
+        { name: "pollsList", mutating: false, dangerous: false },
+        { name: "pollsCreate", mutating: true, dangerous: false },
+      ],
+    };
+    await writeExpected(expectationsRoot, "repo-one", trpcExpectations);
+    await mkdir(path.join(repoDir, ".vendo"), { recursive: true });
+    await writeInitOutput(repoDir); // writes theme.json + route tools.json; overwrite tools below
+    await writeFile(
+      path.join(repoDir, ".vendo/tools.json"),
+      JSON.stringify({
+        format: "vendo/tools@1",
+        tools: [
+          {
+            name: "host_polls_list",
+            description: "tRPC query polls.list",
+            inputSchema: { type: "object", properties: {} },
+            risk: "read",
+            binding: { kind: "trpc", procedure: "polls.list", type: "query", mount: "/api/trpc" },
+          },
+          {
+            name: "host_polls_create",
+            description: "tRPC mutation polls.create",
+            inputSchema: { type: "object", properties: {} },
+            risk: "write",
+            binding: { kind: "trpc", procedure: "polls.create", type: "mutation", mount: "/api/trpc" },
+          },
+        ],
+      }, null, 2) + "\n",
+    );
+
+    const result = await runScoredLayer({
+      repoName: "repo-one",
+      repoDir,
+      expectationsRoot,
+      now: () => new Date("2026-07-06T12:00:00.000Z"),
+    });
+    const checks = checkById(result.layer);
+    expect(checks["tools.precision"]).toMatchObject({ pass: true });
+    expect(checks["tools.recall"]).toMatchObject({ pass: true });
+    expect(checks["annotations.match"]).toMatchObject({ pass: true });
+    expect(checks["annotations.write-safety"]).toMatchObject({ pass: true });
+
+    // A read-labeled mutation is unsafe exactly like a read-labeled POST.
+    await writeFile(
+      path.join(repoDir, ".vendo/tools.json"),
+      JSON.stringify({
+        format: "vendo/tools@1",
+        tools: [
+          {
+            name: "host_polls_create",
+            description: "tRPC mutation polls.create",
+            inputSchema: { type: "object", properties: {} },
+            risk: "read",
+            binding: { kind: "trpc", procedure: "polls.create", type: "mutation", mount: "/api/trpc" },
+          },
+        ],
+      }, null, 2) + "\n",
+    );
+    const unsafe = await runScoredLayer({ repoName: "repo-one", repoDir, expectationsRoot });
+    expect(checkById(unsafe.layer)["annotations.write-safety"]).toMatchObject({ pass: false });
+    expect(unsafe.layer.hardFailure).toBe(true);
+  });
+
+  it("keys GraphQL tools by operation identity and applies mutation write-safety", async () => {
+    const { repoDir, expectationsRoot } = await makeFixture();
+    const graphqlExpectations: RepoExpectations = {
+      ...baseExpectations,
+      tools: [
+        { name: "apiKeys", kind: "graphql", operation: "apiKeys", readOrWrite: "read" },
+        { name: "createApiKey", kind: "graphql", operation: "createApiKey", readOrWrite: "write" },
+      ],
+      annotations: [
+        { name: "apiKeys", mutating: false, dangerous: false },
+        { name: "createApiKey", mutating: true, dangerous: false },
+      ],
+    };
+    await writeExpected(expectationsRoot, "repo-one", graphqlExpectations);
+    await mkdir(path.join(repoDir, ".vendo"), { recursive: true });
+    await writeInitOutput(repoDir); // writes theme.json + route tools.json; overwrite tools below
+    const graphqlTool = (name: string, operation: string, type: "query" | "mutation", risk: string) => ({
+      name,
+      description: `GraphQL ${type} ${operation}`,
+      inputSchema: { type: "object", properties: {} },
+      risk,
+      binding: { kind: "graphql", operation, type, endpoint: "/graphql", document: `${type} ${operation} { ${operation} }` },
+    });
+    await writeFile(
+      path.join(repoDir, ".vendo/tools.json"),
+      JSON.stringify({
+        format: "vendo/tools@1",
+        tools: [
+          graphqlTool("host_api_keys", "apiKeys", "query", "read"),
+          graphqlTool("host_create_api_key", "createApiKey", "mutation", "write"),
+        ],
+      }, null, 2) + "\n",
+    );
+
+    const result = await runScoredLayer({
+      repoName: "repo-one",
+      repoDir,
+      expectationsRoot,
+      now: () => new Date("2026-07-06T12:00:00.000Z"),
+    });
+    const checks = checkById(result.layer);
+    expect(checks["tools.precision"]).toMatchObject({ pass: true });
+    expect(checks["tools.recall"]).toMatchObject({ pass: true });
+    expect(checks["annotations.match"]).toMatchObject({ pass: true });
+    expect(checks["annotations.write-safety"]).toMatchObject({ pass: true });
+
+    // A read-labeled GraphQL mutation is unsafe exactly like a read-labeled POST.
+    await writeFile(
+      path.join(repoDir, ".vendo/tools.json"),
+      JSON.stringify({
+        format: "vendo/tools@1",
+        tools: [graphqlTool("host_create_api_key", "createApiKey", "mutation", "read")],
+      }, null, 2) + "\n",
+    );
+    const unsafe = await runScoredLayer({ repoName: "repo-one", repoDir, expectationsRoot });
+    expect(checkById(unsafe.layer)["annotations.write-safety"]).toMatchObject({ pass: false });
+    expect(unsafe.layer.hardFailure).toBe(true);
+  });
+
   it("skips repos that have not been labeled yet", async () => {
     const { repoDir, expectationsRoot } = await makeFixture();
     await writeInitOutput(repoDir);

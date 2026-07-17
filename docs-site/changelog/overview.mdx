@@ -3,9 +3,73 @@ title: "Vendo product changelog"
 description: "Weekly release notes covering new Vendo features, product updates, MCP door capabilities, and bug fixes shipped to the SDK and runtime."
 ---
 
+<Update label="July 16, 2026" description="Week of July 14 – July 20">
+
+## New features
+
+**Uniform headless hooks.** Every read hook in `@vendoai/ui` now returns
+`{ data, error, isLoading, refresh }` and accepts an optional `pollMs` for
+serialized background polling that pauses in hidden tabs. `useThreads`
+brings headless parity with `VendoOverlay`, and `useApps` gains
+`export(appId)` and `import(bytes)` for round-tripping an `AppDocument`
+through the wire. See [Headless hooks](/reference/hooks).
+
+</Update>
+
 <Update label="July 15, 2026" description="Week of July 14 – July 20">
 
 ## New features
+
+**Progressive app generation.** Create and open now stream the generated
+tree as the model produces it. Complete nodes paint as soon as they close,
+and embedded queries resolve concurrently with per-query error containment.
+Later partial updates reconcile into the same view under a single stable
+`data-vendo-view` part id, so the stock ai-SDK client replaces the payload
+in place instead of appending duplicates. Nodes whose generated source has
+not arrived yet render as skeletons and swap in when their source closes.
+You do not need to change your client. See
+[Generated UI and apps](/concepts/generated-ui#progressive-generation).
+
+**Pin drift detection and rebase.** When you update a host component and run
+`vendo sync`, user forks of that remixable slot are now marked drifted
+everywhere they surface: the tree renderer shows an in-surface notice, the
+`open()` payload carries a server-authoritative `pinDrift`, edit results
+include `driftedPins`, and the sync report names each drifted slot. The new
+`vendo_apps_rebase_pin` agent tool (risk `write`) and
+`POST /api/vendo/apps/:id/rebase-pin` route re-fork the pin from the new
+baseline and replay the recorded edit trail through the model, producing one
+new version. Rebase is all-or-nothing and requires an explicit user or host
+ask — nothing auto-rebases. The new version invalidates any in-client
+approval that was granted against the pre-rebase content. See
+[Host components](/connect/host-components#drift-and-rebase) and the
+[HTTP routes reference](/reference/http-routes).
+
+**Anonymous sessions carry into sign-in.** The first authenticated request
+with a valid anonymous cookie now adopts that session's threads, apps
+(with their records and blobs), and state into the signed-in user, then
+retires the cookie. Grants, approvals, connected accounts, and history
+are deliberately kept where they were. Nothing on the host side changes —
+as long as your `principal(req)` returns `null` before sign-in and a real
+principal after, Vendo does the merge. See
+[Principals and organizations](/deploy/principals-and-orgs).
+
+**Organization workspaces (Cloud-gated).** New `/orgs` routes let admins
+create an organization, invite members with `owner`, `admin`, or `member`
+roles, and transfer apps into shared ownership. Org-owned runs execute
+under `vendo:org:<orgId>` while `RunContext.actor` records the human that
+triggered the run. Approvals and grants accept `?org=<orgId>` to operate
+under the org's subject. The route family is gated on `VENDO_API_KEY`
+with the new `orgs` capability; without it, `/status` reports
+`blocks.orgs: false` and the chrome renders an upgrade state. See
+[Principals and organizations](/deploy/principals-and-orgs).
+
+**Reserved `vendo:` subject namespace.** Webhook deliveries now execute
+under `vendo:webhook:<source>` and organization workspaces under
+`vendo:org:<orgId>`. `principal(req)` resolvers that return a `vendo:*`
+subject or `kind: "org"` are rejected at the wire — those identities are
+Vendo-owned. Update audit readers that filter on the bare
+`webhook:<source>` form to match the new prefix. See
+[Principals and organizations](/deploy/principals-and-orgs).
 
 **Stop a running automation.** `POST /api/vendo/runs/:id/stop` cancels an
 in-flight run cooperatively — the current step finishes, outstanding tool
@@ -14,6 +78,34 @@ approvals attached to the run are dropped. Repeated stops are idempotent.
 See [Scheduler and webhooks](/deploy/scheduler-and-webhooks) and the
 [HTTP routes reference](/reference/http-routes).
 
+**actAs presets for common providers.** `@vendoai/actions/presets` ships
+one-line `actAs` wiring for Auth.js, Supabase, Clerk, Auth0, and any HS256
+JWT provider. Auth.js and Supabase mint provider-native sessions offline;
+Clerk and Auth0 sign a short-lived host-owned `VendoAway` token and ship a
+Next.js and Express verify middleware that swaps it for injected identity
+headers on your host API. All presets cache tokens until expiry with a
+safety margin, key cache entries by a secret fingerprint so rotation
+invalidates immediately, and route through the new impersonation guard —
+`grant.subject` mismatches with the current principal fail closed with an
+`act-as-subject-mismatch` outcome before any outbound call. See
+[actAs presets](/connect/act-as-presets).
+
+**Loud credential-forwarding traps.** Two silent misconfigurations now
+surface loudly. `vendo init` writes `VENDO_BASE_URL=http://localhost:3000`
+into `.env.example` with a note that present-mode credential forwarding is
+disabled without it. `vendo doctor` runs two live HTTP probes against the
+running dev server: `POST /doctor/present` verifies that `authorization`
+and `cookie` reached the host on a synthetic same-origin call, and
+`POST /doctor/act-as` verifies that `createVendo({ actAs })` mints material
+the host principal resolver accepts. Both echo booleans only — no
+credential values are printed or persisted — and the routes return 404 in
+production. When present auth exists but is not forwarded, the composition
+emits one structured `present-credentials-not-forwarded` audit event
+(reason `untrusted-host-origin` or `cross-origin-binding`) per boot; a
+failing audit sink never blocks the host call. See the
+[CLI reference](/reference/cli#vendo-doctor-dir) and
+[Troubleshooting](/deploy/troubleshooting).
+
 **Atomic claims on the store contract.** `store.claim({ key, owner, ttlMs })`
 and `store.release(claim)` let concurrent workers coordinate on a shared
 key without external locks, with TTL-based expiry so a crashed owner never
@@ -21,7 +113,61 @@ holds a key forever. The same compare-and-set machinery backs
 run-lifecycle transitions, so cancellations and scheduler ticks cannot
 race a run into a resurrected state. See [Persistence](/deploy/persistence).
 
+**Invisible graduation to rung 4.** Tree apps can now graduate to a
+machine-served HTTP app without a visible UI change. On graduation, the
+runtime writes a served-app scaffold that renders the identical kept tree,
+starts its static server, snapshots, then flips the document to
+`ui: "http"`. `fn:<name>` references become `POST /fn/<name>` on the
+graduated app's own server. Host-source components degrade to a contained
+"unknown component" notice on the served page; prewired and generated
+components render identically. If any step fails, the previous rung keeps
+serving and the document is untouched. See
+[Generated UI and apps](/concepts/generated-ui#invisible-graduation-to-rung-4).
+
+**Visible error surface and retry in the thread.** A failed send, a
+mid-stream network drop, or any other transport error in the conversation
+now renders a friendly banner with a Retry button in the shipped chrome,
+instead of surfacing only through the accessibility-only status region.
+Retry re-issues the failed turn from the preserved user message, so
+nothing is duplicated. Headless callers of `useVendoThread` get matching
+`regenerate()` and `clearError()` methods on the hook return, alongside
+the existing `error` field, so custom surfaces can wire the same recovery
+flow:
+
+```tsx
+import { useVendoThread } from "@vendoai/ui";
+
+function Composer() {
+  const thread = useVendoThread();
+  return thread.error ? (
+    <div role="alert">
+      <span>Something went wrong and the response didn’t finish.</span>
+      <button
+        onClick={() =>
+          thread.messages.length === 0 ? thread.clearError() : thread.regenerate()
+        }
+      >
+        Retry
+      </button>
+    </div>
+  ) : null;
+}
+```
+
 ## Updates
+
+**Raw-IP egress fails closed on the Modal adapter.** When an app has a
+domain egress policy, the Modal adapter now pins an empty CIDR allowlist
+so raw-IP requests are blocked, matching the E2B adapter and what the
+docs already promised. Apps with no egress policy remain unrestricted.
+See [Deploying Vendo](/deploy/deploying).
+
+**App servers must listen on `$PORT` and answer `/fn/<name>`.** The
+runtime now confirms the app's server is serving before it snapshots a
+rung 2 or rung 3 edit. Server code is booted from `/app/start.sh` when
+present, otherwise `/app/server.js`. If nothing listens, the edit fails
+and the previous rung keeps serving. See
+[Generated UI and apps](/concepts/generated-ui#invisible-graduation-to-rung-4).
 
 **Rung 1 UI creates and tree-only edits skip approval.** Guard now resolves
 the effective risk for `vendo_apps_create` and `vendo_apps_edit` at call
@@ -79,9 +225,8 @@ and the [quickstart](/quickstart) for setup.
 **Authenticated host tool calls from MCP.** MCP clients have no host
 browser session, so host tools now authenticate through the same `actAs`
 seam that powers automations. Grants are consent-keyed against the door's
-consent evidence, so tool calls made from a Claude or ChatGPT session run
-as the connected user without the door ever forwarding the inbound MCP
-bearer. Missing consent fails closed with a clean not-implemented tool
+consent evidence. Tool calls made from a Claude or ChatGPT session run as
+the connected user, and the door never forwards the inbound MCP bearer. Missing consent fails closed with a clean not-implemented tool
 error. See [Server API reference](/reference/server-api).
 
 ## Updates

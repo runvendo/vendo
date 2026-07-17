@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
+import { appStore } from "./index.js";
+import { appFixture, persistentPrincipal } from "./fixtures.test-util.js";
 
 for (const backend of backends()) {
   describe(backend.name, () => {
@@ -7,6 +9,10 @@ for (const backend of backends()) {
     beforeAll(async () => {
       made = await backend.make();
       await made.store.ensureSchema();
+      // ENG-237 (STORE-1): app-scoped collections need a durable owning app.
+      for (const id of ["app_hq", "app_plan", "app_other"]) {
+        await appStore(made.store).put(persistentPrincipal, appFixture(id));
+      }
       await made.sql("CREATE TABLE invoices(id text primary key, total int)");
       await made.sql("INSERT INTO invoices(id, total) VALUES ('inv_1', 100), ('inv_2', 250), ('inv_3', 999)");
     });

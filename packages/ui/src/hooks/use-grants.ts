@@ -1,16 +1,21 @@
 /** Permission grant transport (08-ui §3). */
 import type { GrantId, PermissionGrant } from "@vendoai/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import { useVendoContext } from "../context.js";
+import { type PollOptions, useResource } from "./use-resource.js";
 
-export function useGrants(): { grants: PermissionGrant[]; revoke(id: GrantId): Promise<void> } {
+export function useGrants(options?: PollOptions): {
+  /** Back-compat alias for `data` (contract §3). */
+  grants: PermissionGrant[];
+  data: PermissionGrant[];
+  error: Error | undefined;
+  isLoading: boolean;
+  refresh(): Promise<void>;
+  revoke(id: GrantId): Promise<void>;
+} {
   const { client } = useVendoContext();
-  const [grants, setGrants] = useState<PermissionGrant[]>([]);
-  const refresh = useCallback(async () => setGrants(await client.grants.list()), [client]);
-
-  useEffect(() => {
-    void refresh().catch(() => undefined);
-  }, [refresh]);
+  const list = useCallback(() => client.grants.list(), [client]);
+  const { data, error, isLoading, refresh } = useResource(list, [] as PermissionGrant[], options);
 
   const revoke = useCallback(
     async (id: GrantId) => {
@@ -20,5 +25,5 @@ export function useGrants(): { grants: PermissionGrant[]; revoke(id: GrantId): P
     [client, refresh],
   );
 
-  return { grants, revoke };
+  return { grants: data, data, error, isLoading, refresh, revoke };
 }

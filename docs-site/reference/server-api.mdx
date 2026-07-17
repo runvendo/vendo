@@ -1,6 +1,6 @@
 ---
-title: "Server API"
-description: "Server-side reference for @vendoai/vendo: the default composition, the Vendo interface, the fetch handler, the Next.js adapter, and the host-event seam."
+title: "Server API reference for @vendoai/vendo composition"
+description: "Server-side reference for @vendoai/vendo: the createVendo composition, Vendo interface, fetch handler, Next.js adapter, and host-event seam."
 ---
 
 Import the default composition from `@vendoai/vendo/server`.
@@ -14,12 +14,14 @@ import type { ActionsRegistry, Connector } from "@vendoai/actions";
 import type { VendoGuard, PolicyConfig, Judge } from "@vendoai/guard";
 import type { AppsRuntime, SandboxAdapter } from "@vendoai/apps";
 import type { AutomationsEngine } from "@vendoai/automations";
+import type { ComponentCatalog } from "@vendoai/core";
 
 export function createVendo(config: {
   model: LanguageModel;                       // the one required thing
   principal: (req: Request) => Promise<Principal | null>;   // host session → principal; null → ephemeral anonymous
   store?: VendoStore;                         // default: createStore() (PGlite, .vendo/data)
   sandbox?: SandboxAdapter;                   // e.g. vendoSandbox(), e2bSandbox({ apiKey }), modalSandbox({ ... }); absent → rung 1 only
+  catalog?: ComponentCatalog;                 // host components exposed to the generation prompt; see /connect/host-components
   connectors?: Connector[];
   actAs?: ActAs;
   policy?: PolicyConfig;
@@ -38,7 +40,7 @@ export function createVendo(config: {
 export interface Vendo {
   handler: (req: Request) => Promise<Response>;   // fetch-style; mount at /api/vendo/[...]
   emit(event: string, payload: Json, principal: Principal): Promise<RunId[]>;   // the host-event seam, re-exposed
-  agent: VendoAgent; guard: VendoGuard; apps: AppsRuntime; automations: AutomationsEngine; actions: ActionsRegistry; store: VendoStore;
+  agent: VendoAgent; guard: VendoGuard; apps: AppsRuntime; automations: AutomationsEngine; actions: ActionsRegistry; connections: ConnectionsService; store: VendoStore;
 }
 ```
 
@@ -55,3 +57,23 @@ different base URL.
 
 `emit(event, payload, principal)` is the host-event seam. It returns the ids of
 runs started for enabled automations owned by that principal.
+
+## `eraseStore`
+
+`@vendoai/vendo/server` re-exports `eraseStore(store, target)`, the sanctioned
+deletion path across every store table and the ephemeral overlay. It is the
+only supported way to delete rows from the append-only `vendo_audit` table.
+
+```ts
+import { eraseStore } from "@vendoai/vendo/server";
+
+await eraseStore(vendo.store, { bySubject: "user_123" });
+await eraseStore(vendo.store, { byApp: "app_abc" });
+await eraseStore(vendo.store, { byAge: { before: cutoff } });
+```
+
+Pass exactly one of `bySubject`, `byApp`, or `byAge`. The call returns a map
+of per-table deleted counts. `byAge` retains any row whose lifecycle extends
+past the cutoff (for example, an unexpired standing grant or a recently
+rotated secret). See [Persistence](/deploy/persistence#erasing-data) for the
+full semantics.

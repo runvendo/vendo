@@ -697,3 +697,150 @@ describe("host HTTP execution — away (ENG-263 away re-verification rides actAs
     expect(host.seen).toHaveLength(0);
   });
 });
+
+describe("host HTTP execution — trpc bindings (04 §1 tRPC HTTP envelope)", () => {
+  const trpcTool = (extras: Partial<ExtractedTool["binding"] & Record<string, unknown>> = {}): ExtractedTool => ({
+    name: "host_polls_list",
+    description: "tRPC query polls.list",
+    inputSchema: { type: "object", properties: {} },
+    risk: "read",
+    binding: { kind: "trpc", procedure: "polls.list", type: "query", mount: "/api/trpc", ...extras },
+  });
+
+  function capturingFetch(status: number, payload: unknown): { fetch: typeof fetch; seen: Array<{ url: string; method?: string; body?: unknown }> } {
+    const seen: Array<{ url: string; method?: string; body?: unknown }> = [];
+    const impl = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      seen.push({
+        url: String(input),
+        method: init?.method,
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    return { fetch: impl, seen };
+  }
+
+  it("executes a query as GET {mount}/{procedure} with a plain-JSON input param", async () => {
+    const { fetch, seen } = capturingFetch(200, { result: { data: [{ id: "p1" }] } });
+    const actions = createActions({ tools: [trpcTool()], baseUrl: "http://host.test", fetch });
+
+    const outcome = await actions.execute({ id: "1", tool: "host_polls_list", args: { status: "open" } }, ctx);
+    expect(outcome).toEqual({ status: "ok", output: [{ id: "p1" }] });
+    const url = new URL(seen[0]!.url);
+    expect(url.pathname).toBe("/api/trpc/polls.list");
+    expect(seen[0]!.method).toBe("GET");
+    expect(JSON.parse(url.searchParams.get("input")!)).toEqual({ status: "open" });
+  });
+
+  it("omits the input param when a query has no args", async () => {
+    const { fetch, seen } = capturingFetch(200, { result: { data: "ok" } });
+    const actions = createActions({ tools: [trpcTool()], baseUrl: "http://host.test", fetch });
+
+    await actions.execute({ id: "1", tool: "host_polls_list", args: {} }, ctx);
+    expect(new URL(seen[0]!.url).searchParams.get("input")).toBeNull();
+  });
+
+  it("wraps input and unwraps output through the superjson envelope", async () => {
+    const { fetch, seen } = capturingFetch(200, { result: { data: { json: { created: true } } } });
+    const tool: ExtractedTool = {
+      name: "host_polls_create",
+      description: "tRPC mutation polls.create",
+      inputSchema: { type: "object" },
+      risk: "write",
+      binding: { kind: "trpc", procedure: "polls.create", type: "mutation", mount: "/api/trpc", transformer: "superjson" },
+    };
+    const actions = createActions({ tools: [tool], baseUrl: "http://host.test", fetch });
+
+    const outcome = await actions.execute({ id: "1", tool: "host_polls_create", args: { title: "Standup" } }, ctx);
+    expect(outcome).toEqual({ status: "ok", output: { created: true } });
+    expect(seen[0]!.method).toBe("POST");
+    expect(new URL(seen[0]!.url).pathname).toBe("/api/trpc/polls.create");
+    expect(seen[0]!.body).toEqual({ json: { title: "Standup" } });
+  });
+
+  it("returns a validation outcome when no baseUrl is configured", async () => {
+    const actions = createActions({ tools: [trpcTool()] });
+    await expect(actions.execute({ id: "1", tool: "host_polls_list", args: {} }, ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "validation", message: expect.stringContaining("baseUrl") },
+    });
+  });
+
+  it("maps trpc error statuses to http-error outcomes", async () => {
+    const { fetch } = capturingFetch(400, { error: { message: "BAD_REQUEST" } });
+    const actions = createActions({ tools: [trpcTool()], baseUrl: "http://host.test", fetch });
+    await expect(actions.execute({ id: "1", tool: "host_polls_list", args: {} }, ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "http-error", message: expect.stringContaining("400") },
+    });
+  });
+});
+
+describe("host HTTP execution — graphql bindings (04 §1 GraphQL transport)", () => {
+  const document = "query pollGet($id: ID!) { pollGet(id: $id) { id title } }";
+  const graphqlTool = (extras: Partial<ExtractedTool["binding"] & Record<string, unknown>> = {}): ExtractedTool => ({
+    name: "host_poll_get",
+    description: "GraphQL query pollGet",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+    risk: "read",
+    binding: { kind: "graphql", operation: "pollGet", type: "query", endpoint: "/api/graphql", document, ...extras },
+  });
+
+  function capturingFetch(status: number, payload: unknown): { fetch: typeof fetch; seen: Array<{ url: string; method?: string; body?: unknown }> } {
+    const seen: Array<{ url: string; method?: string; body?: unknown }> = [];
+    const impl = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      seen.push({
+        url: String(input),
+        method: init?.method,
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    return { fetch: impl, seen };
+  }
+
+  it("executes as POST {endpoint} with the document and args as variables, unwrapping the root field", async () => {
+    const { fetch, seen } = capturingFetch(200, { data: { pollGet: { id: "p1", title: "Standup" } } });
+    const actions = createActions({ tools: [graphqlTool()], baseUrl: "http://host.test", fetch });
+
+    const outcome = await actions.execute({ id: "1", tool: "host_poll_get", args: { id: "p1" } }, ctx);
+    expect(outcome).toEqual({ status: "ok", output: { id: "p1", title: "Standup" } });
+    expect(new URL(seen[0]!.url).pathname).toBe("/api/graphql");
+    expect(seen[0]!.method).toBe("POST");
+    expect(seen[0]!.body).toEqual({ query: document, variables: { id: "p1" } });
+  });
+
+  it("surfaces a 200-with-errors GraphQL response as an http-error outcome", async () => {
+    const { fetch } = capturingFetch(200, { data: null, errors: [{ message: "Poll not found" }] });
+    const actions = createActions({ tools: [graphqlTool()], baseUrl: "http://host.test", fetch });
+    await expect(actions.execute({ id: "1", tool: "host_poll_get", args: { id: "p1" } }, ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "http-error", message: expect.stringContaining("Poll not found") },
+    });
+  });
+
+  it("returns a validation outcome when no baseUrl is configured", async () => {
+    const actions = createActions({ tools: [graphqlTool()] });
+    await expect(actions.execute({ id: "1", tool: "host_poll_get", args: { id: "p1" } }, ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "validation", message: expect.stringContaining("baseUrl") },
+    });
+  });
+
+  it("fails closed with a validation outcome when the binding carries no executable document", async () => {
+    const actions = createActions({ tools: [graphqlTool({ document: undefined })], baseUrl: "http://host.test" });
+    await expect(actions.execute({ id: "1", tool: "host_poll_get", args: { id: "p1" } }, ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "validation", message: expect.stringContaining("no executable document") },
+    });
+  });
+
+  it("maps non-2xx graphql responses to http-error outcomes", async () => {
+    const { fetch } = capturingFetch(500, { errors: [{ message: "boom" }] });
+    const actions = createActions({ tools: [graphqlTool()], baseUrl: "http://host.test", fetch });
+    await expect(actions.execute({ id: "1", tool: "host_poll_get", args: { id: "p1" } }, ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "http-error", message: expect.stringContaining("500") },
+    });
+  });
+});

@@ -171,8 +171,21 @@ export async function createWireServer() {
     importBytes: new Uint8Array(),
     statusErrorCode: undefined as string | undefined,
     failures: [] as Array<{ method: string; path: string; code: string; message: string; status: number }>,
+    // ENG-214 — how many upcoming /threads turns die MID-stream (a partial
+    // delta lands, then the stream errors the way a dropped connection
+    // surfaces client-side). A counter rather than a text marker so a retry
+    // of the SAME user message can succeed.
+    streamFailures: 0,
     posture: "rules" as "unconfigured" | "rules" | "judge" | "rules+judge",
     threadReplyGate: undefined as Promise<void> | undefined,
+    // ENG-217 — optional pacing gates for the canned turn so specs can observe
+    // exact streaming moments: before ANY chunk (generating skeleton), after
+    // text-start but before the first delta (lone caret on an empty streamed
+    // turn), and between deltas (trailing caret on flowing text). All default
+    // undefined: awaiting undefined is a no-op for every existing consumer.
+    turnStartGate: undefined as Promise<void> | undefined,
+    textStartGate: undefined as Promise<void> | undefined,
+    textMidGate: undefined as Promise<void> | undefined,
   };
   const requests: RecordedRequest[] = [];
   let closed = false;
@@ -218,6 +231,42 @@ export async function createWireServer() {
         const sentText = input.message.parts
           .map(part => (part.type === "text" ? part.text : ""))
           .join(" ");
+        if (state.streamFailures > 0) {
+          state.streamFailures -= 1;
+          const failingChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => `msg_assistant_fail${suffix}`,
+            execute: async ({ writer }) => {
+              writer.write({ type: "text-start", id: "text_fail" });
+              writer.write({ type: "text-delta", id: "text_fail", delta: "Starting an answer that will be cut" });
+              throw new Error("connection reset mid-stream");
+            },
+            onError: error => (error instanceof Error ? error.message : String(error)),
+          });
+          const failingResponse = createUIMessageStreamResponse({ stream: failingChunks });
+          failingResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(failingResponse, response);
+          return;
+        }
+        if (sentText.includes("[stream-hang]")) {
+          // ENG-215 — a turn that starts streaming then holds the connection
+          // open indefinitely, so a real-browser capture has unlimited time to
+          // observe the mid-stream composer (queued-send pill, Stop, live input).
+          // Never used by the deterministic suite; opt-in via the marker only.
+          const hangChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_hang",
+            execute: async ({ writer }) => {
+              writer.write({ type: "text-start", id: "text_hang" });
+              writer.write({ type: "text-delta", id: "text_hang", delta: "Working on the welcome flow" });
+              await new Promise<void>(() => undefined);
+            },
+          });
+          const hangResponse = createUIMessageStreamResponse({ stream: hangChunks });
+          hangResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(hangResponse, response);
+          return;
+        }
         if (sentText.includes("[stream-long]")) {
           const longChunks = createUIMessageStream<UIMessage>({
             originalMessages: [input.message],
@@ -247,6 +296,7 @@ export async function createWireServer() {
           originalMessages: [input.message],
           generateId: () => `msg_assistant${suffix}`,
           execute: async ({ writer }) => {
+            await state.turnStartGate;
             writer.write({
               type: "tool-input-available",
               toolCallId: `call_stream${suffix}`,
@@ -269,7 +319,10 @@ export async function createWireServer() {
             } as UIMessageChunk);
             await state.threadReplyGate;
             writer.write({ type: "text-start", id: "text_1" });
-            writer.write({ type: "text-delta", id: "text_1", delta: "Turn complete" });
+            await state.textStartGate;
+            writer.write({ type: "text-delta", id: "text_1", delta: "Turn " });
+            await state.textMidGate;
+            writer.write({ type: "text-delta", id: "text_1", delta: "complete" });
             writer.write({ type: "text-end", id: "text_1" });
           },
         });

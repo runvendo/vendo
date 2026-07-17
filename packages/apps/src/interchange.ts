@@ -9,10 +9,11 @@ import {
   type StoreAdapter,
 } from "@vendoai/core";
 import { unzipSync, zipSync, type Zippable } from "fflate";
+import type { MachineSessions } from "./machine.js";
 import { appRecordInput } from "./persistence.js";
 import { assertPinsExportable, type PinBaseline } from "./pins.js";
 import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
-import { FETCH_SHIM_PATH, FETCH_SHIM_SOURCE } from "./scaffold/fetch-shim.js";
+import { FETCH_SHIM_PATH } from "./scaffold/fetch-shim.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -206,6 +207,9 @@ export interface AppInterchangeDependencies {
   store: StoreAdapter;
   guard: Guard;
   sandbox?: SandboxAdapter;
+  /** Shared machine cache — import provisions its rebuilt snapshot through here
+   * so it inherits the create/edit §4.2 run environment (ENG-347). */
+  machines: MachineSessions;
   pinBaselines?: readonly PinBaseline[];
   requireOwned(appId: AppId, subject: string): Promise<AppDocument>;
 }
@@ -278,21 +282,18 @@ export const createAppInterchange = (
       let imported: AppDocument;
       let appDirectory: Json = "absent";
 
-      if (parsed.hasAppDirectory && dependencies.sandbox !== undefined) {
-        // A temporary non-authoritative ref lets core validate fn: surfaces before provisioning.
-        validateImportedDocument({ ...candidate, server: "import:pending" });
-        // The runtime-owned fetch shim is written LAST so the recipient's copy
-        // boots with the CURRENT shim, never one an archive smuggled in.
-        const machine = await dependencies.sandbox.create({
-          env: { PORT: "8080" },
-          files: { ...parsed.files, [FETCH_SHIM_PATH]: encoder.encode(FETCH_SHIM_SOURCE) },
-        });
-        try {
-          imported = validateImportedDocument({ ...candidate, server: await machine.snapshot() });
-          appDirectory = "rebuilt";
-        } finally {
-          await machine.stop().catch(() => undefined);
-        }
+      if (parsed.hasAppDirectory && dependencies.machines.available()) {
+        // A temporary non-authoritative ref lets core validate fn: surfaces before
+        // provisioning; the validated shape carries the secrets/egress the run
+        // environment needs (ENG-347).
+        const pending = validateImportedDocument({ ...candidate, server: "import:pending" });
+        // ENG-347 — provision through the shared machine cache so the rebuilt
+        // snapshot bakes in the SAME §4.2 run environment (proxy URL + run token
+        // + secret handles) the create/edit path injects; provisioning also
+        // writes the CURRENT runtime-owned fetch shim last.
+        const server = await dependencies.machines.provisionImport(pending, ctx, parsed.files);
+        imported = validateImportedDocument({ ...candidate, server });
+        appDirectory = "rebuilt";
       } else {
         imported = validateImportedDocument(candidate);
         if (parsed.hasAppDirectory) appDirectory = "contained-without-sandbox";

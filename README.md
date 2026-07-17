@@ -21,6 +21,14 @@ npm install @vendoai/vendo
 npx vendo init
 ```
 
+Or hand the install to your coding agent — paste this inside your app's repo:
+
+```text
+Install Vendo (the embedded product agent) in this repo.
+Fetch https://docs.vendo.run/install.md and follow it stage by stage.
+Finish by running `npx vendo doctor` against the dev server and iterating until it exits 0.
+```
+
 `@vendoai/vendo` is the default composition. The `vendoai` package is a thin
 alias. Install individual blocks when you want to compose Vendo yourself.
 
@@ -90,6 +98,13 @@ reviewable `.vendo/` directory and leaves the PGlite data directory ignored.
 
 Run `vendo doctor` to check wiring and probe `/status`. Run `vendo sync` in
 build and development flows to refresh extracted tools and remix baselines.
+
+Agents get the same journey machine-readable: the staged playbook at
+[docs.vendo.run/install.md](https://docs.vendo.run/install.md) (with
+[llms.txt](https://docs.vendo.run/llms.txt) indexing every docs page),
+`vendo init --agent` for a read-only JSON plan carrying extracted tools and
+risk recommendations, `vendo sync --json`, and a `vendo-setup` skill shipped
+inside the npm tarball that init offers to write into `.claude/skills/`.
 
 Read the [quickstart](https://docs.vendo.run/quickstart) for the complete
 composition and first-turn setup.

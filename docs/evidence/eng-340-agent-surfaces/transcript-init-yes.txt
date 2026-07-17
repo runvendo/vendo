@@ -1,0 +1,24 @@
+$ npx vendo init --yes --brief "Acme Billing: invoicing for small finance teams."
+
+Proposed code change:
+
+
+Proposed code change:
+
+
+Proposed code change:
+
+
+Proposed code change:
+
+
+Proposed code change:
+
+Wrote a starter model module: install its provider (`npm install ai@^6 @ai-sdk/anthropic@^3`) and set ANTHROPIC_API_KEY.
+Vendo initialized. Run `vendo doctor` to verify the live composition.
+
+$ cat .claude/skills/vendo-setup/SKILL.md | head -4
+---
+name: vendo-setup
+description: Install and configure Vendo (the embedded product agent) in a host repo. Use when asked to add Vendo to an app, run vendo init/doctor/sync, wire the Vendo handler or VendoRoot, or debug a Vendo install until doctor exits 0.
+---

@@ -35,17 +35,20 @@ describe("VendoThread and VendoOverlay exports", () => {
     fireEvent.keyDown(composer, { key: "Enter" });
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy());
-    expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).disabled).toBe(true);
+    // ENG-215 — typing is never blocked mid-turn (the composer stays enabled so
+    // it can queue a follow-up and never dumps focus to <body>).
+    expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).disabled).toBe(false);
     await act(async () => release());
     // The thread speaks in the product's voice: the tool call renders as a
-    // human beat; the raw name stays discoverable via data-vendo-tool. (The
-    // approval card below shares the humanized title, so scope to the beat.)
-    await screen.findAllByText(/Sending your email/);
+    // human BEAT whose label comes from the ENG-216 pipeline (host metadata,
+    // else the prettified id — "Email send", never the raw slug). The raw
+    // name stays discoverable via data-vendo-tool; risk rides the data attr.
+    await screen.findAllByText(/Email send/);
     const beat = document.querySelector("[data-vendo-tool='host_email_send']");
     expect(beat).toBeTruthy();
-    expect(beat?.textContent).toContain("Sending your email");
+    expect(beat?.textContent).toContain("Email send");
     expect(beat?.getAttribute("data-vendo-approval")).toBe("write");
-    const card = await screen.findByLabelText("Approval for host_email_send");
+    const card = await screen.findByLabelText("Approval for Email send");
     expect(card.textContent).toContain("a@example.com");
     expect(card.textContent).toContain(
       "This tool changed since you approved it on Jul 1, 2026 — your previous permission no longer applies.",

@@ -5,7 +5,7 @@ description: "A fetch handler you can mount in any Node-compatible runtime. vend
 
 Vendo's handler is framework-agnostic. It takes a standard `Request` and returns
 a standard `Response`, so it runs in Express, Fastify, Hono, Bun, or any
-Node-compatible runtime (the umbrella requires Node 20 or later).
+Node-compatible runtime. The umbrella requires Node 20 or later.
 
 ## Install and scaffold
 
@@ -92,9 +92,15 @@ standard `Request` and returns a standard `Response`. The Node adapter that
   present-mode same-origin tool calls.
 - Return multi-value `Set-Cookie` as a header array, not a joined string.
 
-Behind a TLS-terminating proxy, set `VENDO_BASE_URL` to your public origin. It is
-the trusted origin Vendo uses for same-origin tool calls and for marking the
-anonymous-session cookie `Secure`.
+Set `VENDO_BASE_URL` to your trusted host origin — `http://localhost:3000` in
+development, your public HTTPS origin in production. It does three jobs.
+It gates present-mode credential forwarding, so Vendo passes `authorization`
+and `cookie` only to same-origin routes matching this value. It marks the
+anonymous-session cookie `Secure` behind a TLS-terminating proxy. And it
+provides the base for extracted route tools. When it is unset, present tool
+calls run without inbound auth and the composition emits one
+`present-credentials-not-forwarded` audit event so the misconfiguration
+does not stay silent. `vendo init` writes it into `.env.example` for you.
 
 ## Verify
 
@@ -106,7 +112,10 @@ npx vendo doctor
 
 For an Express host it checks that the server composes `createVendo` from
 `@vendoai/vendo/server`, that the client mounts `<VendoRoot>`, and makes one live
-`/status` round trip. It reports broken until both wiring steps are done.
+`/status` round trip. It also runs live HTTP probes that confirm present-mode
+credentials reach the host and that `actAs` (if configured) mints material
+the host accepts. It reports broken until both wiring steps are done. See
+the [CLI reference](/reference/cli#vendo-doctor-dir) for the probe details.
 
 ## Persistence
 

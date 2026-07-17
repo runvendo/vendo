@@ -1,11 +1,14 @@
 ---
-title: "The .vendo directory"
+title: "The .vendo directory: tools, policy, theme, and data files"
 description: "Every path inside the .vendo directory, which tool writes it, and the exact format contract, from tools.json and policy.json to theme.json and data."
 ---
 
 | Path | Written by | Format |
 | --- | --- | --- |
 | `tools.json` | sync | `vendo/tools@1` (04) |
+| `catalog.json` | sync | `vendo/catalog@1` (04) |
+| `catalog.proposals.json` | sync (AI copy layer) | review-only proposal diff for `catalog.json` (04) |
+| `capabilities.json` | human | `vendo/capabilities@1` (04) |
 | `overrides.json` | init interview / human | `vendo/overrides@1` (04) |
 | `policy.json` | init / human | `vendo/policy@1` (05) |
 | `remixable/<slot>.json` | sync | `PinBaseline` (06 §8) |
@@ -13,6 +16,7 @@ description: "Every path inside the .vendo directory, which tool writes it, and 
 | `design-rules.md` | host, optional | generation-time design rules (06 §5) |
 | `theme.json` | init extraction | `VendoTheme` |
 | `data/` | store | PGlite files (gitignored; init writes the ignore) |
+| `data/misses.jsonl` | runtime | one `vendo/capability-miss@1` event per line ([Telemetry](/deploy/telemetry#capability-misses)) |
 
 This table is complete. Sync owns generated tool and remix baseline files.
 Human overrides remain separate so extraction never overwrites reviewed risk,

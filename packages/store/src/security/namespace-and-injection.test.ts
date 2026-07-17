@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../backends.test-util.js";
+import { appStore } from "../index.js";
+import { appFixture, persistentPrincipal } from "../fixtures.test-util.js";
 
 // Adversarial regression suite for record-collection isolation and SQL-injection
 // resistance (01-core §12 / 02-store §2). Collection names are opaque tags that
@@ -13,6 +15,12 @@ for (const backend of backends()) {
     beforeAll(async () => {
       made = await backend.make();
       await made.store.ensureSchema();
+      // ENG-237 (STORE-1): app-scoped collections need a durable owning app.
+      // Collection-string isolation and injection-inertness are unchanged on
+      // the durable path; these give the tags real owning apps.
+      for (const id of ["app_AAA", "app_BBB", "app_X", "app_Y"]) {
+        await appStore(made.store).put(persistentPrincipal, appFixture(id));
+      }
     });
     afterAll(async () => { if (made) await made.cleanup(); });
 

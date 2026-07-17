@@ -1,5 +1,6 @@
 import { canonicalJson, sha256Hex, type ApprovalDecision, type ApprovalRequest } from "@vendoai/core";
 import { useState } from "react";
+import { useVendoTools } from "../context.js";
 import { ContainedNotice } from "../tree/notice.js";
 import { toolPresentation } from "./build-beat.js";
 import { ChromeRoot } from "./chrome-root.js";
@@ -24,6 +25,7 @@ const VENUE_LABEL: Record<string, string> = {
   slot: "asked in a view",
   voice: "asked by voice",
   mcp: "asked over MCP",
+  app: "asked in an app",
   automation: "asked by an automation",
 };
 
@@ -37,6 +39,13 @@ export interface ApprovalCardProps {
    * (the real wire decision) keep it. Default true.
    */
   allowRemember?: boolean;
+  /**
+   * ENG-216 — show the `venue · presence · appId` context byline. Queue
+   * surfaces carry a real server `ctx` and keep it (default true); the
+   * in-thread card sets this false because the live conversation is already
+   * the context and the wire carries no ctx to display honestly.
+   */
+  showContext?: boolean;
 }
 
 function approvalDate(grantedAt: string): string {
@@ -46,14 +55,22 @@ function approvalDate(grantedAt: string): string {
 }
 
 /** 01-core §5; 08-ui §4 — the one consent surface, always showing real inputs. */
-export function ApprovalCard({ approval, onDecide, allowRemember = true }: ApprovalCardProps) {
+export function ApprovalCard({ approval, onDecide, allowRemember = true, showContext = true }: ApprovalCardProps) {
   const [remember, setRemember] = useState(false);
   const [scope, setScope] = useState<"exact" | "tool">("exact");
   const [duration, setDuration] = useState<"session" | "standing">("session");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const critical = approval.descriptor.risk === "destructive" || approval.descriptor.critical === true;
-  const presentation = toolPresentation(approval.descriptor.name, approval.call.args);
+  // ENG-216 humanization (host ToolMeta wins, else the prettified id — never
+  // the raw slug) layered with the consent presentation: toolkit mark,
+  // automation eyebrow, and a plain-language description synthesized from the
+  // REAL inputs when the host supplies none.
+  const meta = useVendoTools()[approval.descriptor.name];
+  const presentation = toolPresentation(approval.descriptor.name, approval.call.args, meta);
+  const title = presentation.title;
+  const description = (presentation.description ?? approval.descriptor.description).trim();
+  const showDescription = description.length > 0 && description !== title;
   const fields = flatFields(approval.call.args);
 
   const decide = async (approve: boolean) => {
@@ -83,7 +100,7 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true }: Appro
 
   return (
     <ChromeRoot>
-      <article className={`fl-approval fl-item-in${critical ? " fl-approval--ceremony" : ""}`} aria-label={`Approval for ${approval.descriptor.name}`}>
+      <article className={`fl-approval fl-item-in${critical ? " fl-approval--ceremony" : ""}`} aria-label={`Approval for ${title}`}>
         <div className="fl-approval-head">
           <span className="fl-approval-ic" aria-hidden="true">
             {presentation.logoUrl ? (
@@ -112,7 +129,8 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true }: Appro
           </span>
           <div className="fl-approval-heading">
             <div className="fl-approval-eyebrow">{critical ? "CRITICAL" : presentation.eyebrow}</div>
-            <div className="fl-approval-title">{presentation.title}</div>
+            <div className="fl-approval-title">{title}</div>
+            {showDescription ? <div className="fl-approval-desc">{description}</div> : null}
           </div>
           <span
             className="fl-chip"
@@ -123,9 +141,6 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true }: Appro
             {approval.descriptor.risk}
           </span>
         </div>
-        {presentation.description ? (
-          <p className="fl-approval-desc">{presentation.description}</p>
-        ) : null}
         {fields ? (
           <dl className="fl-approval-fields" aria-label="Real tool inputs" style={{ display: "grid", gap: "7px", margin: 0 }}>
             {fields.map(([key, value]) => (
@@ -144,10 +159,12 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true }: Appro
             {approval.inputPreview}
           </pre>
         )}
-        <div className="fl-approval-more" style={{ marginTop: "8px" }}>
-          Runs as you · {VENUE_LABEL[approval.ctx.venue] ?? approval.ctx.venue}
-          {approval.ctx.appId ? ` · ${approval.ctx.appId}` : ""}
-        </div>
+        {showContext ? (
+          <div className="fl-approval-more" style={{ marginTop: "8px" }}>
+            Runs as you · {VENUE_LABEL[approval.ctx.venue] ?? approval.ctx.venue}
+            {approval.ctx.appId ? ` · ${approval.ctx.appId}` : ""}
+          </div>
+        ) : null}
         {allowRemember ? (
           <details className="fl-auto-details">
             <summary>Remember this decision</summary>

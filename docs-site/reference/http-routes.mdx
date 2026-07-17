@@ -9,7 +9,7 @@ stream over SSE.
 
 | Route | Method | Body → Response |
 | --- | --- | --- |
-| `/threads` | POST | `{ threadId?, message }` → ai-SDK UI message stream (SSE), one conversational turn. The response carries `X-Vendo-Thread-Id: <thr_…>` — the effective requested or server-minted id — so hosts can persist the identity of a default thread without a follow-up round trip |
+| `/threads` | POST | `{ threadId?, message }` → AI SDK UI message stream (SSE), one conversational turn. The response carries `X-Vendo-Thread-Id: <thr_…>` — the effective requested or server-minted id — so hosts can persist the identity of a default thread without a follow-up round trip |
 | `/threads` · `/threads/:id` | GET · GET/DELETE | thread summaries · thread |
 | `/approvals` | GET | pending `ApprovalRequest[]` |
 | `/approvals/decide` | POST | `{ ids, decision }` → `{}` (batch-capable) |
@@ -17,12 +17,15 @@ stream over SSE.
 | `/apps` | GET · POST | list · `{ prompt }` → `AppDocument` |
 | `/apps/:id` | GET · DELETE | app · delete |
 | `/apps/:id/open` | GET | `OpenSurface` |
+| `/apps/:id/ship-diff` | GET | `ShipDiff` — the reviewable code diff against the last approved baseline, hash-pinned to the current version. Owner-scoped. See [In-client venue](/concepts/in-client-venue). |
 | `/apps/:id/call` | POST | `{ ref: "fn:<name>" \| "<tool>", args }` → `ToolOutcome` (tree actions + fn: calls) |
 | `/apps/:id/edit` | POST | `{ instruction }` → `EditResult` |
 | `/apps/:id/history` | GET · POST | versions · `{ op: "undo" }` |
 | `/apps/:id/export` | GET | `.vendoapp` bytes |
 | `/apps/import` | POST | bytes → `AppDocument` (fresh id minted) |
 | `/apps/:id/fork` | POST | → `AppDocument` |
+| `/apps/:id/pin-drift` | GET | `PinDrift[]` — pins whose captured baseline no longer matches |
+| `/apps/:id/rebase-pin` | POST | `{ slot }` → `PinRebaseResult` — re-fork from the new baseline and replay recorded intents, all-or-nothing |
 | `/automations` | GET | list |
 | `/automations/:id/enable` · `/disable` | POST | `{ enabled, missing }` · `{}` |
 | `/automations/:id/dry-run` | POST | `RunPlan` |
@@ -31,7 +34,24 @@ stream over SSE.
 | `/tick` | POST | scheduler tick (serverless cron target; requires `Authorization: Bearer <secret>`) |
 | `/webhooks/:source` | POST | trigger ingress (Composio, host, plain), verified as described below |
 | `/activity` | GET | `AuditEvent[]`, self-scoped with `guard.audit.query({ principal })` |
-| `/status` | GET | `{ posture, version, blocks: {...} }`, includes `blocks.mcp: true` when the door is open and `blocks.sandbox` reporting the execution venue (`"e2b"`, `"modal"`, `"custom"`, or `false` when none is wired) |
+| `/connections` | GET | connected accounts owned by the caller |
+| `/connections/initiate` | POST | `{ toolkit, connector?, callbackUrl? }` → `{ id, connector, redirectUrl }`; refused for ephemeral and synthetic (`webhook:` / `vendo:`) subjects |
+| `/connections/:id?connector=` | GET · DELETE | status (poll while connecting) · disconnect through the broker |
+| `/orgs` · `/orgs/:id` | GET · POST · DELETE | list · create · delete an organization (Cloud-gated) |
+| `/orgs/:id/members` · `/orgs/:id/members/:subject` | GET · POST · PATCH · DELETE | list members · invite · change role · remove |
+| `/orgs/:id/apps` | POST | transfer a user-owned app into the org |
+| `/status` | GET | `{ posture, version, blocks: {...} }`, includes `blocks.mcp: true` when the door is open, `blocks.orgs: true` when a Cloud key with the `orgs` capability is configured, `blocks.sandbox` reporting the execution venue (`"e2b"`, `"modal"`, `"custom"`, or `false` when none is wired), and `blocks.connections` reporting the connected-accounts broker posture (`"byo"`, `"cloud"`, or `false`) |
+| `/sync/impact` | POST | dev-only. `{ tools: string[] }` → per-tool reference counts across enabled apps, enabled automations, and active standing grants. Accepts up to 200 tool names per call and returns `404` in production |
+
+## Development routes
+
+These routes are only mounted in development compositions. Production
+deployments return `404` for each of them. They require a host-resolved
+principal — anonymous callers receive `401`.
+
+| Route | Method | Body → Response |
+| --- | --- | --- |
+| `/dev/inclient-approval` | POST | `{ appId }` → `{}`. Pins the app's *current* `versionHash` as an in-client approval for the resolved principal. The Cloud console mints approvals in production; this route is the documented stand-in for local demos. See [In-client venue and approvals](/concepts/in-client-venue). |
 
 ## MCP door
 
@@ -74,6 +94,16 @@ The accepted clock window is five minutes. Delivery ids are deduplicated.
 A verification failure returns 401, resolves no principal, starts no run, and
 writes one audit event. The secret never appears in a URL. No wire route is
 unauthenticated.
+
+## Organization context
+
+Approvals and grants take an optional `?org=<orgId>` query parameter (or
+`body.org` on POSTs) to operate under an organization's subject instead of
+the caller's user subject. Members of the org may list; admins and owners
+may decide, grant, or revoke. Non-members see `404`; members without the
+required role see `403`. Without an entitled `VENDO_API_KEY`, the entire
+`/orgs` route family and every `?org=` variant return `cloud-required`
+(`402`). See [Principals and organizations](/deploy/principals-and-orgs).
 
 ## Errors and CSRF
 

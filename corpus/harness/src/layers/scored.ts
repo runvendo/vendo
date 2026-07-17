@@ -8,12 +8,12 @@ import {
 import { toolsFileSchema, type ExtractedTool } from "@vendoai/actions";
 import {
   THEME_RUBRIC_DIMENSIONS,
+  expectedToolIdentity,
   loadRepoBaseline,
   loadRepoExpectations,
   repoBaselinePath,
   type ExpectedComponentAnnotation,
   type ExpectedToolAnnotation,
-  type ExpectedToolInventory,
   type RepoBaseline,
   type RepoExpectations,
   type ThemeRubricDimension,
@@ -102,40 +102,36 @@ function scoreTheme(expected: RepoExpectations, actual: VendoTheme): WeightedRes
   return { checks, points, total: THEME_RUBRIC_DIMENSIONS.length };
 }
 
-function actualInventory(tool: ExtractedTool): ExpectedToolInventory {
-  return {
-    name: tool.name,
-    method: tool.binding.method,
-    path: tool.binding.path,
-    readOrWrite: tool.risk === "read" ? "read" : "write",
-  };
+// A tool's IDENTITY for scoring is binding-kind-aware — the endpoint
+// (method + path) for HTTP-shaped bindings, the procedure dot-path for tRPC,
+// the operation name for GraphQL — plus its read/write classification, and
+// NOT its name. Tool names are a deterministic, contract-defined value
+// (01-core §15: provider-safe `host_<path>` slugs), while the checked-in
+// expectations carry the pre-freeze OpenAPI-operationId names
+// (`getAdminTeams`). Keying on the identity is the "adapted names" the v0
+// corpus requires, and still catches every real extraction defect: a missed
+// surface drops recall, a mis-classified read/write breaks the key.
+function actualToolIdentity(tool: ExtractedTool): string {
+  if (tool.binding.kind === "trpc") return `trpc\t${tool.binding.procedure}`;
+  if (tool.binding.kind === "graphql") return `graphql\t${tool.binding.operation}`;
+  return `${tool.binding.method}\t${tool.binding.path}`;
 }
 
-// A tool's IDENTITY for scoring is its endpoint (method + path) and its
-// read/write classification — NOT its name. Tool names are a deterministic,
-// contract-defined value (01-core §15: provider-safe `host_<path>` slugs),
-// while the checked-in expectations carry the pre-freeze OpenAPI-operationId
-// names (`getAdminTeams`). Keying on the endpoint is the "adapted names" the
-// v0 corpus requires, and still catches every real extraction defect: a missed
-// endpoint drops recall, a mis-classified read/write breaks the key.
-function inventoryKey(item: ExpectedToolInventory): string {
-  return `${item.method}\t${item.path}\t${item.readOrWrite}`;
+function actualInventoryKey(tool: ExtractedTool): string {
+  return `${actualToolIdentity(tool)}\t${tool.risk === "read" ? "read" : "write"}`;
 }
 
-/** The endpoint identity (method + path) used to join an expectation to the
-    actual tool independent of the renamed slug. */
-function endpointKey(method: string, path: string): string {
-  return `${method}\t${path}`;
+function expectedInventoryKey(item: RepoExpectations["tools"][number]): string {
+  return `${expectedToolIdentity(item)}\t${item.readOrWrite}`;
 }
 
 function scoreTools(expected: RepoExpectations, actualTools: readonly ExtractedTool[]): WeightedResult {
   const expectedInventories = expected.tools;
-  const expectedKeys = new Set(expectedInventories.map(inventoryKey));
-  const actualInventories = actualTools.map(actualInventory);
-  const actualKeys = actualInventories.map(inventoryKey);
+  const expectedKeys = new Set(expectedInventories.map(expectedInventoryKey));
+  const actualKeys = actualTools.map(actualInventoryKey);
   const actualMatches = actualKeys.filter((key) => expectedKeys.has(key)).length;
-  const expectedMatches = expectedInventories.filter((tool) => actualKeys.includes(inventoryKey(tool))).length;
-  const precision = actualInventories.length === 0 ? 1 : actualMatches / actualInventories.length;
+  const expectedMatches = expectedInventories.filter((tool) => actualKeys.includes(expectedInventoryKey(tool))).length;
+  const precision = actualTools.length === 0 ? 1 : actualMatches / actualTools.length;
   const recall = expected.tools.length === 0 ? 1 : expectedMatches / expected.tools.length;
 
   return {
@@ -145,7 +141,7 @@ function scoreTools(expected: RepoExpectations, actualTools: readonly ExtractedT
       {
         id: "tools.precision",
         pass: precision === 1,
-        detail: `${actualMatches}/${actualInventories.length} generated tools matched expected inventory; precision ${precision.toFixed(3)}`,
+        detail: `${actualMatches}/${actualTools.length} generated tools matched expected inventory; precision ${precision.toFixed(3)}`,
       },
       {
         id: "tools.recall",
@@ -162,22 +158,31 @@ function expectedAnnotationMatches(expected: ExpectedToolAnnotation, actual: Ext
   return actual.risk === expectedRisk;
 }
 
+/** A tRPC or GraphQL mutation is write-shaped exactly like a POST; a query
+ * like a GET. */
+function effectiveWriteMethod(tool: ExtractedTool): string {
+  if (tool.binding.kind === "trpc" || tool.binding.kind === "graphql") {
+    return tool.binding.type === "query" ? "GET" : "POST";
+  }
+  return tool.binding.method;
+}
+
 function isUnsafeAutoAllowed(tool: ExtractedTool): boolean {
-  const method = tool.binding.method;
+  const method = effectiveWriteMethod(tool);
   if (WRITE_METHODS.has(method) && tool.risk === "read") return true;
   if ((method === "DELETE" || DESTRUCTIVE_NAME.test(tool.name)) && tool.risk !== "destructive") return true;
   return false;
 }
 
 function scoreAnnotations(expected: RepoExpectations, actualTools: readonly ExtractedTool[]): WeightedResult {
-  // Names changed by contract (§15), so join by endpoint: the annotation's name
-  // resolves to an expected tool's (method,path) within the expectations, and
-  // that endpoint finds the actual tool.
+  // Names changed by contract (§15), so join by binding identity: the
+  // annotation's name resolves to an expected tool's identity within the
+  // expectations, and that identity finds the actual tool.
   const expectedByName = new Map(expected.tools.map((tool) => [tool.name, tool]));
-  const actualByEndpoint = new Map(actualTools.map((tool) => [endpointKey(tool.binding.method, tool.binding.path), tool]));
+  const actualByIdentity = new Map(actualTools.map((tool) => [actualToolIdentity(tool), tool]));
   const resolveActual = (annotationName: string): ExtractedTool | undefined => {
-    const endpoint = expectedByName.get(annotationName);
-    return endpoint ? actualByEndpoint.get(endpointKey(endpoint.method, endpoint.path)) : undefined;
+    const item = expectedByName.get(annotationName);
+    return item ? actualByIdentity.get(expectedToolIdentity(item)) : undefined;
   };
   const matched = expected.annotations.filter((annotation) => expectedAnnotationMatches(annotation, resolveActual(annotation.name))).length;
   const annotationScore = expected.annotations.length === 0 ? 1 : matched / expected.annotations.length;

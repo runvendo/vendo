@@ -18,7 +18,7 @@ import {
   scriptedLanguageModel,
   type ScriptedModelCall,
 } from "./testing/index.js";
-import { modelEngine } from "./engine.js";
+import { instructionRequiresServer, modelEngine } from "./engine.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_engine" },
@@ -428,6 +428,93 @@ describe("generation engine through createApps", () => {
       expect.objectContaining({ slot, intent: "Increase the displayed net worth" }),
     ]));
     expect(trails).toHaveLength(2);
+  });
+
+  it("forks a named-export host slot with a synthesized default export (ENG-348)", async () => {
+    const store = memoryStore();
+    const source = `export function MapleNetWorthCard() {
+  return <section><h2>Net worth</h2><strong>$1.2M</strong></section>;
+}`;
+    const slot = "net-worth-card";
+    const componentName = pinComponentName(slot);
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(JSON.stringify({
+        ops: [{ op: "fork-pin", slot, nodeId: "maple-net-worth", parentId: "root" }],
+      })),
+      pinBaselines: [{
+        slot,
+        source,
+        hash: "sha256:maple-base",
+        exportable: false,
+        capturedAt: "2026-07-14T12:00:00.000Z",
+      }],
+    });
+    const original: AppDocument = {
+      format: "vendo/app@1",
+      id: "app_maple_named_pin",
+      name: "Maple overview",
+      ui: "tree",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
+      },
+    };
+    await putApp(store, original);
+
+    const forked = await runtime.edit(original.id, "Remix the net worth card", ctx);
+    expect(forked.issues).toBeUndefined();
+    expect(forked.app.pins).toEqual([{ slot, base: "sha256:maple-base" }]);
+    // The jail entry renders only a default export; the fork ships the captured
+    // source plus the synthesized alias so the remix never crashes at render.
+    expect(forked.app.components?.[componentName])
+      .toBe(`${source}\nexport { MapleNetWorthCard as default };\n`);
+  });
+
+  it("refuses to fork a baseline with no detectable component export, loudly", async () => {
+    const store = memoryStore();
+    const slot = "net-worth-card";
+    const forkOps = JSON.stringify({
+      ops: [{ op: "fork-pin", slot, nodeId: "maple-net-worth", parentId: "root" }],
+    });
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(forkOps, forkOps),
+      pinBaselines: [{
+        slot,
+        source: "const NetWorthCard = () => null;",
+        hash: "sha256:maple-base",
+        exportable: false,
+        capturedAt: "2026-07-14T12:00:00.000Z",
+      }],
+    });
+    const original: AppDocument = {
+      format: "vendo/app@1",
+      id: "app_maple_unexported_pin",
+      name: "Maple overview",
+      ui: "tree",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
+      },
+    };
+    await putApp(store, original);
+
+    const result = await runtime.edit(original.id, "Remix the net worth card", ctx);
+    expect(result.app).toEqual(original);
+    expect(result.issues).toEqual(expect.arrayContaining([
+      expect.stringContaining("no default export"),
+    ]));
+    // The unrenderable fork was refused at fork time, never persisted.
+    expect(await runtime.get(original.id, ctx)).toEqual(original);
   });
 
   it("contains twice-broken tree ops and leaves the original document untouched", async () => {
@@ -855,6 +942,30 @@ describe("generation engine through createApps", () => {
     expect(result.app.tree).toEqual(original.tree);
   });
 
+  it("routes a UI ask that mentions the API to the tree dialect (ENG-349)", async () => {
+    // "API" and "function" are SERVER_INSTRUCTION words, but here they label
+    // visible elements; before the routing fix this edit took the code dialect
+    // and failed slowly (here: sandbox-unavailable, since no sandbox is wired).
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(
+        validCreate(),
+        JSON.stringify({ ops: [{ op: "set-prop", nodeId: "metric", prop: "label", value: "API status" }] }),
+      ),
+    });
+    const original = await runtime.create({ prompt: "Dashboard" }, ctx);
+
+    const result = await runtime.edit(original.id, "Make the API status card blue", ctx);
+
+    expect(result.issues).toBeUndefined();
+    expect(result.version.rung).toBe(1);
+    expect(result.app.tree).toMatchObject({ nodes: [{ props: { label: "API status" } }] });
+  });
+
   it("keeps the first graduated version on the scaffold and repairs reserved-file edits", async () => {
     const sandbox = fakeSandbox();
     const store = memoryStore();
@@ -1094,5 +1205,41 @@ describe("generation engine through createApps", () => {
     expect(result.app).toEqual(original);
     expect(result.issues).toContain("sandbox-unavailable: this edit requires server execution");
     expect(await runtime.history(original.id).list()).toEqual([]);
+  });
+});
+
+describe("instructionRequiresServer (ENG-349)", () => {
+  const app = (ui?: "tree" | "http"): AppDocument => ({
+    format: "vendo/app@1",
+    id: "app_router",
+    name: "Router fixture",
+    ...(ui === undefined ? {} : { ui }),
+  });
+
+  it.each([
+    "Make the API status card blue",
+    "Rename the function list header",
+    "Move the HTTP status badge next to the title",
+    "Update the External vendors table caption",
+    "Make the secret santa list festive",
+  ])("routes the UI ask %j to the tree dialect", (instruction) => {
+    expect(instructionRequiresServer(app(), instruction)).toBe(false);
+  });
+
+  it.each([
+    "Add a server function that calls the api and stores results",
+    "Call the external api and cache the results",
+    "Add a function that fetches live prices",
+    "Use my secret key to authenticate the request",
+    "Persist mutations in server state",
+    "Make the api card blue and call the api for fresh data",
+    "Make this a custom client over the data",
+    "Turn this into a full web app",
+  ])("routes the server ask %j to the code dialect", (instruction) => {
+    expect(instructionRequiresServer(app(), instruction)).toBe(true);
+  });
+
+  it("always routes an http app to the code dialect", () => {
+    expect(instructionRequiresServer(app("http"), "Make the heading blue")).toBe(true);
   });
 });

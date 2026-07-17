@@ -1,0 +1,53 @@
+$ npx vendo sync --json
+{
+  "ok": true,
+  "exitCode": 0,
+  "report": {
+    "tools": {
+      "added": [],
+      "removed": [],
+      "changed": []
+    },
+    "breaking": [],
+    "pins": {
+      "captured": [],
+      "drifted": []
+    },
+    "warnings": []
+  },
+  "impact": [],
+  "notes": []
+}
+exit=0
+
+# after removing DELETE /api/invoices/{id} from openapi.json:
+$ npx vendo sync --strict --json
+{
+  "ok": false,
+  "exitCode": 2,
+  "report": {
+    "tools": {
+      "added": [],
+      "removed": [
+        "host_deleteInvoice"
+      ],
+      "changed": []
+    },
+    "breaking": [
+      {
+        "tool": "host_deleteInvoice",
+        "change": "removed"
+      }
+    ],
+    "pins": {
+      "captured": [],
+      "drifted": []
+    },
+    "warnings": []
+  },
+  "impact": null,
+  "notes": [
+    "impact unknown — dev server not reachable at http://localhost:3000/api/vendo"
+  ]
+}
+exit=2

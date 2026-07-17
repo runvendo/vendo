@@ -1,0 +1,119 @@
+$ npx vendo init --agent
+{
+  "framework": "next",
+  "root": "/private/tmp/vendo-fixture-app",
+  "writes": [
+    ".vendo/tools.json",
+    ".vendo/overrides.json",
+    ".vendo/policy.json",
+    ".vendo/brief.md",
+    ".vendo/theme.json",
+    ".vendo/data/.gitignore"
+  ],
+  "codeChanges": [
+    {
+      "path": "app/api/vendo/[...vendo]/route.ts",
+      "diff": "--- a/app/api/vendo/[...vendo]/route.ts\n+++ b/app/api/vendo/[...vendo]/route.ts\n+import { model } from \"@/lib/ai\";\n+import { createVendo, nextVendoHandler } from \"@vendoai/vendo/server\";\n+\n+const vendo = createVendo({\n+  model,\n+  principal: async () => null,\n+});\n+\n+export const { GET, POST, DELETE } = nextVendoHandler(vendo);"
+    },
+    {
+      "path": "lib/ai.ts",
+      "diff": "--- a/lib/ai.ts\n+++ b/lib/ai.ts\n+import { createAnthropic } from \"@ai-sdk/anthropic\";\n+\n+// vendo init starter: swap for any ai-SDK provider (BYO-LLM, 09 §2).\n+const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });\n+export const model = anthropic(\"claude-sonnet-4-6\");"
+    },
+    {
+      "path": "app/layout.tsx",
+      "diff": "--- a/app/layout.tsx\n+++ b/app/layout.tsx\n-export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n+import { VendoRoot } from \"@vendoai/vendo/react\";\n+import theme from \"../.vendo/theme.json\";\n+import type { VendoTheme } from \"@vendoai/vendo\";\n+export default function Layout({ children }) { return <html><body><VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot></body></html>; }"
+    },
+    {
+      "path": "package.json",
+      "diff": "--- a/package.json\n+++ b/package.json\n-{\n-  \"name\": \"acme-billing\",\n-  \"private\": true,\n-  \"scripts\": { \"dev\": \"next dev\", \"build\": \"next build\" },\n-  \"dependencies\": { \"next\": \"16.0.0\", \"@vendoai/vendo\": \"0.3.0\" }\n-}\n+{\n+  \"name\": \"acme-billing\",\n+  \"private\": true,\n+  \"scripts\": {\n+    \"dev\": \"next dev\",\n+    \"build\": \"next build\",\n+    \"predev\": \"vendo sync\",\n+    \"prebuild\": \"vendo sync --strict\"\n+  },\n+  \"dependencies\": {\n+    \"next\": \"16.0.0\",\n+    \"@vendoai/vendo\": \"0.3.0\"\n+  }\n+}"
+    },
+    {
+      "path": ".claude/skills/vendo-setup/SKILL.md",
+      "diff": "--- a/.claude/skills/vendo-setup/SKILL.md\n+++ b/.claude/skills/vendo-setup/SKILL.md\n+---\n+name: vendo-setup\n+description: Install and configure Vendo (the embedded product agent) in a host repo. Use when asked to add Vendo to an app, run vendo init/doctor/sync, wire the Vendo handler or VendoRoot, or debug a Vendo install until doctor exits 0.\n+---\n+\n+# Vendo setup\n+\n+Vendo embeds an agent inside a host product: it extracts the host's API as\n+tools, renders generated UI in a sandboxed brand-native surface, and acts as\n+the signed-in user. This skill installs and verifies Vendo in a host repo.\n+\n+The canonical staged playbook lives at https://docs.vendo.run/install.md —\n+fetch it when you need more detail than this skill carries.\n+\n+## Stage 1 — base install\n+\n+1. Install the umbrella package (either name; `vendoai` is a thin alias):\n+\n+   ```bash\n+   npm install @vendoai/vendo\n+   ```\n+\n+2. Run init. As an agent, plan first, then apply:\n+\n+   ```bash\n+   npx vendo init --agent   # read-only JSON plan: framework, code diffs, questions, extracted tools, risk recommendations\n+   npx vendo init --yes --model-import \"@/lib/ai\" --brief \"<one-paragraph product brief>\"\n+   ```\n+\n+   `--agent` writes nothing. `--yes` approves every displayed diff, so read the\n+   plan's `codeChanges` before running it. Without `--yes`, init interviews the\n+   user (four questions) and asks per-diff consent — prefer that when a human\n+   is present.\n+\n+3. What init does (framework detected from `package.json`, `next` beats\n+   `express`; anything else is treated as Next):\n+   - Writes `.vendo/` — `tools.json` (extracted tools), `overrides.json`\n+     (your risk/critical edits, respected forever), `policy.json`,\n+     `brief.md`, `theme.json` (brand extracted from the host CSS), and a\n+     gitignored `.vendo/data/` for the PGlite store. Commit `.vendo/`,\n+     never `.vendo/data/`.\n+   - Next.js: proposes `app/api/vendo/[...vendo]/route.ts` (or under\n+     `src/app`), wraps the root layout in `<VendoRoot theme={...}>`, and\n+     scaffolds a starter model module when the import cannot resolve.\n+   - Express: proposes `vendo/server.ts` (`.mjs` without a tsconfig) plus a\n+     starter `vendo/ai.ts`; you must still mount\n+     `app.use(\"/api/vendo\", mountVendo())` and wrap the client in\n+     `<VendoRoot>` yourself.\n+   - Adds `predev`/`prebuild` sync hooks to `package.json` (consent-gated).\n+\n+4. Model credential: the starter model module uses\n+   `createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY })`. Install its\n+   pinned peers and set the key:\n+\n+   ```bash\n+   npm install ai@^6 @ai-sdk/anthropic@^3\n+   echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env.local\n+   ```\n+\n+   Never invent a key; ask the user for one if none is set. Any AI SDK\n+   provider works — point `--model-import` at the host's own model module\n+   when one exists.\n+\n+5. Verify. Start the dev server, then:\n+\n+   ```bash\n+   npx vendo doctor\n+   ```\n+\n+   Doctor checks wiring plus one live `/status` round-trip against\n+   `http://localhost:3000/api/vendo` (override with `--url` or `VENDO_URL`).\n+   Exit 0 = green; exit 1 prints each `broken:` line. Fix and re-run until 0.\n+   Common fixes: dev server not running (start it), missing `.vendo/*` file\n+   (re-run `npx vendo init`), layout not wrapped (apply the skipped diff by\n+   re-running init and approving it).\n+\n+## Stage 2 — review and keep extraction fresh\n+\n+- Re-extract after API changes: `npx vendo sync` (fail-soft). In CI use\n+  `npx vendo sync --strict` — exit 2 on breaking tool changes, 3 when saved\n+  apps/automations/grants are impacted. `--json` emits one machine-readable\n+  report object on stdout.\n+- Review `.vendo/tools.json`; put corrections in `.vendo/overrides.json`\n+  (`{\"tools\": {\"host_invoices_delete\": {\"critical\": true}}}`) — never edit\n+  `tools.json` by hand, sync regenerates it.\n+- Tighten `.vendo/policy.json` rules (`ask` for destructive, `run` for read)\n+  and write a real product brief in `.vendo/brief.md`.\n+\n+## Stage 3 — unlocks\n+\n+- **MCP door** (agents like Claude/ChatGPT use the product's tools): a host\n+  decision, never a default. Needs a `HostOAuthAdapter` and\n+  `createVendo({ mcp: true, oauth })`, then `npx vendo mcp server-json` and\n+  `npx vendo mcp verify-domain`. Doctor validates the discovery documents.\n+- **Sandbox / connectors / voice / persistence on Postgres**: doctor's final\n+  ladder line names what each remaining block unlocks; see\n+  https://docs.vendo.run for each capability.\n+- **Vendo Cloud**: sharing, org overlays, and hosted automations activate\n+  with `VENDO_API_KEY` (`npx vendo cloud login <email>`).\n+\n+## Rules\n+\n+- Show the user every proposed code diff before applying it unless they\n+  explicitly asked for unattended setup.\n+- Do not hand-edit generated files (`.vendo/tools.json`, theme regeneration);\n+  use `overrides.json` and re-run sync.\n+- Done means `npx vendo doctor` exits 0 against a running dev server, not\n+  merely that files exist."
+    }
+  ],
+  "questions": [
+    {
+      "id": "modelImport",
+      "question": "Where does your ai-SDK model export live?",
+      "recommendation": "@/lib/ai"
+    },
+    {
+      "id": "brief",
+      "question": "In one paragraph, what should the agent know about this product?",
+      "recommendation": "Describe the product, users, and the jobs they do."
+    },
+    {
+      "id": "risk",
+      "question": "Which extracted write actions need stricter review?",
+      "recommendation": "Mark destructive or irreversible tools critical in .vendo/overrides.json."
+    },
+    {
+      "id": "mcp",
+      "question": "Open the MCP door so agents (Claude, ChatGPT, Cursor) can use your product's tools?",
+      "recommendation": "No — opening it is a host decision and needs a HostOAuthAdapter (docs/contracts/10-mcp)."
+    }
+  ],
+  "extraction": {
+    "tools": [
+      {
+        "name": "host_createInvoice",
+        "description": "Create an invoice",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        },
+        "risk": "write",
+        "binding": {
+          "kind": "openapi",
+          "operationId": "createInvoice",
+          "method": "POST",
+          "path": "/api/invoices"
+        }
+      },
+      {
+        "name": "host_deleteInvoice",
+        "description": "Delete an invoice permanently",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        },
+        "risk": "destructive",
+        "binding": {
+          "kind": "openapi",
+          "operationId": "deleteInvoice",
+          "method": "DELETE",
+          "path": "/api/invoices/{id}"
+        }
+      },
+      {
+        "name": "host_listInvoices",
+        "description": "List invoices",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        },
+        "risk": "read",
+        "binding": {
+          "kind": "openapi",
+          "operationId": "listInvoices",
+          "method": "GET",
+          "path": "/api/invoices"
+        }
+      }
+    ],
+    "warnings": []
+  },
+  "riskRecommendations": [
+    {
+      "tool": "host_createInvoice",
+      "risk": "write",
+      "recommendation": "writes host data; review it and mark critical in .vendo/overrides.json when irreversible"
+    },
+    {
+      "tool": "host_deleteInvoice",
+      "risk": "destructive",
+      "recommendation": "irreversible; mark it critical in .vendo/overrides.json so policy asks first"
+    }
+  ]
+}

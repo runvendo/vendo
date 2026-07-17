@@ -13,13 +13,12 @@ import {
   type ToolsFile,
   type UnresolvedPin,
 } from "../formats.js";
-import { clearAliasCache, dedupKey, routeToolFullName, withUniqueNames } from "./common.js";
+import { bindingIdentity, clearAliasCache, routeToolFullName, withUniqueNames } from "./common.js";
 import { proposeCatalogCopy, type CatalogCopyGenerator } from "./catalog-ai.js";
 import { scanComponentCatalog } from "./catalog-scan.js";
 import { writeCatalog } from "./catalog.js";
-import { extractOpenApi } from "./openapi.js";
+import { runExtractors } from "./extractors.js";
 import { capturePins } from "./pins.js";
-import { scanRoutes } from "./route-scan.js";
 
 export type SyncReportWithWarnings = SyncReport & {
   warnings: string[];
@@ -83,35 +82,14 @@ async function readOverrides(file: string): Promise<OverridesFile | null> {
   }
 }
 
-async function firstOpenApiSpec(root: string): Promise<string | null> {
-  const candidates = [
-    "openapi.json",
-    "openapi.yaml",
-    "openapi.yml",
-    path.join("public", "openapi.json"),
-    path.join("docs", "openapi.json"),
-    path.join("docs", "openapi.yaml"),
-  ];
-  for (const relative of candidates) {
-    const candidate = path.join(root, relative);
-    try {
-      const stat = await fs.stat(candidate);
-      if (stat.isFile()) return candidate;
-    } catch {
-      // First existing file wins; absent candidates are expected.
-    }
-  }
-  return null;
-}
-
 function bindingKey(tool: ExtractedTool): string {
-  return dedupKey(tool.binding.method, tool.binding.path);
+  return bindingIdentity(tool.binding);
 }
 
-function unionExtracted(openApi: ExtractedTool[], routes: ExtractedTool[]): ExtractedTool[] {
+function unionExtracted(extracted: ExtractedTool[]): ExtractedTool[] {
   const seen = new Set<string>();
   const union: ExtractedTool[] = [];
-  for (const tool of [...openApi, ...routes]) {
+  for (const tool of extracted) {
     const key = bindingKey(tool);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -224,13 +202,11 @@ export async function vendoSync(options: {
   const previousFile = await readPrevious(toolsPath, warnings);
   const overrides = await readOverrides(path.join(out, "overrides.json"));
 
-  const specPath = await firstOpenApiSpec(root);
-  const openApiTools = specPath ? await extractOpenApi(specPath) : [];
-  const routeResult = await scanRoutes(root);
-  warnings.push(...routeResult.warnings);
+  const extraction = await runExtractors(root);
+  warnings.push(...extraction.warnings);
   const extracted = toolsFileSchema.parse({
     format: "vendo/tools@1",
-    tools: unionExtracted(openApiTools, routeResult.tools),
+    tools: unionExtracted(extraction.tools),
   });
   if (overrides) {
     const extractedNames = new Set(extracted.tools.map((tool) => tool.name));

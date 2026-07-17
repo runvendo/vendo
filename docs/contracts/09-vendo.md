@@ -10,7 +10,7 @@ Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a
 | `@vendoai/vendo` | root types re-exported from core (+ each block's primary types) |
 | `@vendoai/vendo/server` | `createVendo` — the composition + handler |
 | `@vendoai/vendo/react` | re-exports `@vendoai/ui` (+ `<VendoRoot>` = provider wired to defaults) |
-| bin `vendo` | `init`, `doctor`, `sync`, `cloud` |
+| bin `vendo` | `init`, `doctor`, `sync`, `refine`, `cloud` | <!-- amended 2026-07-15: `refine` added (ENG-250, §5) -->
 
 ## 2. The composition
 
@@ -38,8 +38,14 @@ export function createVendo(config: {
   telemetry?: boolean;                        // wires @vendoai/telemetry (out of campaign scope, "stays as-is") — the one consumer outside this set
   mcp?: boolean;                              // open the MCP door (10-mcp §1); off by default — opening it is a host decision
   oauth?: HostOAuthAdapter;                   // the door's identity + consent seam (10-mcp §3); REQUIRED when `mcp` is true — the door cannot mint principals without it
+  sessions?: {                                // anonymous (ephemeral) session lifecycle (02 §4, ENG-237)
+    ttlMs?: number;                           // idle timeout; default 30 min; 0 disables TTL eviction (cap-only)
+    sweepIntervalMs?: number;                 // amortized + timer sweep cadence; default 60 s
+    maxSessions?: number;                     // concurrent anonymous-session cap; default 10 000
+  };                                          // (internal `now` clock seam exists for tests only)
 }): Vendo;
 <!-- amended 2026-07-14: `mcp?`/`oauth?` added — MCP door landed (PR #139); original froze pre-door. Code: server.ts:56-75 (CreateVendoConfig.mcp/oauth), plus the runtime guard that throws when `mcp: true` without `oauth`. -->
+<!-- amended 2026-07-16: `sessions?` added — wave-4 session lifecycle landed (PR #301, ENG-237). Code: server.ts CreateVendoConfig.sessions + validateSessionsConfig (invalid values throw VendoError("validation") at compose time). Defaults Yousef-approved 2026-07-16. -->
 
 
 export interface Vendo {
@@ -51,6 +57,8 @@ export interface Vendo {
 ```
 
 Wiring (normative): `actions.add(apps.agentTools())`; every `ToolRegistry` handed to agent, apps, and automations is `guard.bind(...)`ed here — blocks never see an unbound registry. `nextVendoHandler(vendo)` adapts the fetch handler to a Next.js route module; the handler shape itself is framework-agnostic (page: framework-agnostic, any JS runtime).
+
+Session lifecycle wiring (normative, ENG-237): the umbrella touches the session on every ephemeral-principal request (register == touch, 02 §4) and brackets the request — streamed bodies included — against the store's inflight refcount. Sweeps run both amortized on-request (any request arriving `sweepIntervalMs` after the last sweep triggers one before it is handled — the serverless-safe leg) and on an unref'd background timer every `sweepIntervalMs`, torn down with `store.close()`. Every swept subject cascades store-first into `agent.evictSubject` (03 §1): a concurrent request fails closed at the store rather than finding agent threads without store state. `setSessionClock`/`setSessionCap` route the store's clock and default registry cap through the umbrella's session clock (wall time in production; the internal test-only seam noted above) and `sessions.maxSessions`, so door-side and mid-turn touches share one time source and one ceiling.
 
 ## 3. The wire (public contract — ui speaks exactly this)
 
@@ -122,6 +130,7 @@ Rung-4 app UI is **not** proxied through the wire: `OpenSurface.kind === "http"`
 - **`vendo doctor`** — wiring checks + one live round-trip against `/status`; green = working agent; ends with ladder hints (the one config line that unlocks each remaining block). Live probes (ENG-260): `POST /doctor/present` proves present credentials reach the host API (fail advises `VENDO_BASE_URL`); `POST /doctor/act-as` proves the actAs mint+verify round-trip (not configured → warn, not fail).
 - **`vendo sync`** — the build-step extraction, callable manually (04 §1). Queries `/sync/impact` when the dev server is reachable and prints per-tool blast radius; `--report` pushes the report to the Cloud console (requires `VENDO_API_KEY` or `--key`; push failure warns, never fails the build) (ENG-261).
 - **`vendo cloud <command>`** — talk to the public Vendo Cloud API (auth/session, keys, members, services, reads); the paid line's CLI surface (§6). <!-- amended 2026-07-14: `cloud` command landed post-freeze (cli.ts, cli/cloud/ tree); original froze with only init/doctor/sync. -->
+- **`vendo refine`** — the refine engine's CLI surface (04 §1/§6): one BYO-model pass over the extraction output, host source, the miss feed, and a dev interview proposes compound capabilities + briefs (`capabilities.json`), risk/curation/description corrections (`overrides.json`), and `brief.md` updates — probed against the running dev app (doctor's `/status` machinery; write-risk steps never executed), every file presented as a diff and applied only on approval. Also offered once at the end of `vendo init` (one engine, two surfaces). <!-- amended 2026-07-15: `refine` command landed (cli.ts, cli/refine.ts, refine.ts) per the approved extraction design (spec §3, ENG-250); extraction stays a build step — refine is a command by design (04 §1). -->
 
 Exit codes: doctor `0` green / `1` broken wiring; sync `0` (fail-soft warns) / with `--strict`: `2` on breaking changes, `3` when a breaking tool also has nonzero blast radius (impact-unknown stays `2`). `vendo init` also writes `VENDO_BASE_URL` into `.env`/`.env.example` (04 §4) and scaffolds the `predev` (`vendo sync`) / `prebuild` (`vendo sync --strict`) hooks into the host package.json — permission-prompted, like route wiring (ENG-260/261).
 
@@ -143,3 +152,10 @@ Exit codes: doctor `0` green / `1` broken wiring; sync `0` (fail-soft warns) / w
 - **Changed:** §3 adds the `/orgs` routes (list/create, get-one, members add/set-role/remove, app transfer), `?org=<id>` scoping on `/approvals` and `/grants`, and the `blocks.orgs` posture in `/status`.
 - **Why:** ENG-263 shipped the org wire surface (PR #277); the coordinated contracts amendment (#269) landed before these route rows were written. This completes the 09-vendo half of the block-actions amendment.
 - **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
+
+### 2026-07-16 — Ephemeral session policy knob and sweep wiring (ENG-237, wave 4)
+
+- **Changed:** §2 config adds `sessions?: { ttlMs?, sweepIntervalMs?, maxSessions? }` (plus the internal test-only `now` seam), validated at compose time; defaults 30 min / 60 s / 10 000, `ttlMs: 0` disables TTL eviction (cap-only).
+- **Changed:** §2 wiring adds the normative lifecycle paragraph: touch-on-request, inflight bracket held through streamed bodies, amortized on-request + unref'd timer sweeps (timer torn down with `store.close()`), store-first cascade into `agent.evictSubject`, and the `setSessionClock`/`setSessionCap` routing that keeps store-internal touches on the umbrella's clock and cap.
+- **Why:** Wave 4 (PR #301) shipped the umbrella's session policy surface and the cross-block eviction cascade; the umbrella is the only component that sees both store and agent, so the cascade ordering belongs in the composition contract.
+- **Approved by:** Yousef, 2026-07-16 (inventory: `docs/superpowers/specs/2026-07-16-wave4-contract-amendment-inventory.md`).

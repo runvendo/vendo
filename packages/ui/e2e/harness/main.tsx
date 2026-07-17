@@ -14,6 +14,7 @@ import {
   useVendoTheme,
   type OpenSurface,
   type Thread,
+  type ToolMetaMap,
   type VendoClient,
 } from "../../src/index.js";
 import {
@@ -189,6 +190,70 @@ const boundedThread: Thread = {
   ],
 };
 
+/** ENG-216 — host-supplied friendly tool metadata: labels, descriptions and a
+ *  custom arg summarizer. Chips and the approval card read this over the raw
+ *  slug / lifecycle string / raw JSON. */
+const humanizedTools: ToolMetaMap = {
+  host_send_email: { label: "Send email", description: "Send an email on the customer's behalf" },
+  host_list_client_documents: { label: "Look up client documents" },
+  host_transfer_funds: {
+    label: "Transfer funds",
+    description: "Move money between the customer's accounts",
+    summarize: args => {
+      const record = (args ?? {}) as { amount?: unknown; to?: unknown };
+      return typeof record.amount === "number" && typeof record.to === "string"
+        ? `$${record.amount.toLocaleString()} → ${record.to}`
+        : undefined;
+    },
+  },
+};
+
+/** ENG-216 — a turn that exercises every humanization behavior at once: a chip
+ *  with a host label + arg summary, a run of eight identical read chips that
+ *  collapse into one ×8 entry, and a pending destructive approval whose card
+ *  shows a friendly title/description and readable inputs (no fabricated ctx). */
+const humanizedThread: Thread = {
+  id: "thr_humanized",
+  subject: "browser-user",
+  createdAt: NOW,
+  updatedAt: NOW,
+  messages: [{
+    id: "msg_humanized",
+    role: "assistant",
+    parts: [
+      { type: "text", text: "I reviewed the client's documents and drafted the transfer for your approval." },
+      {
+        type: "dynamic-tool",
+        toolName: "host_send_email",
+        toolCallId: "call_email",
+        state: "output-available",
+        input: { to: "ada@maple.example", subject: "Your statement is ready" },
+        output: { ok: true },
+      },
+      ...Array.from({ length: 8 }, (_, index) => ({
+        type: "dynamic-tool" as const,
+        toolName: "host_list_client_documents",
+        toolCallId: `call_doc_${index}`,
+        state: "output-available" as const,
+        input: { scope: "all" },
+        output: { ok: true },
+      })),
+      {
+        type: "dynamic-tool",
+        toolName: "host_transfer_funds",
+        toolCallId: "call_transfer",
+        state: "approval-requested",
+        input: { amount: 4200, currency: "USD", to: "Savings ••1234" },
+        approval: { id: "apr_transfer" },
+      },
+      {
+        type: "data-vendo-approval",
+        data: { toolCallId: "call_transfer", risk: "destructive", approvalId: "apr_transfer" },
+      },
+    ],
+  }],
+};
+
 /** An in-thread app surface (VendoViewPart) whose payload carries a format no
  *  renderer is registered for — it must contain to a notice, never break the thread. */
 const unknownViewThread: Thread = {
@@ -214,11 +279,19 @@ const unknownViewThread: Thread = {
 };
 
 function threadClient(client: VendoClient, thread: Thread): VendoClient {
+  // A thread that get() serves must also appear in list(): useVendoThread only
+  // adopts a supplied threadId after confirming it exists in list() (the ENG-211
+  // stale-id graceful degradation guard). Stubbing get() alone would degrade the
+  // thread to the empty greeting state.
   return {
     ...client,
     threads: {
       ...client.threads,
       get: async id => id === thread.id ? thread : client.threads.get(id),
+      list: async () => {
+        const rest = (await client.threads.list()).filter(summary => summary.id !== thread.id);
+        return [{ id: thread.id, title: thread.subject, updatedAt: thread.updatedAt }, ...rest];
+      },
     },
   };
 }
@@ -984,11 +1057,79 @@ function BoundedThreadScenario() {
   );
 }
 
+/** ENG-215 — a clean two-turn thread (no tools/approvals) so the composer's
+ *  edit-last / regenerate / autogrow / queued-send behaviors read without the
+ *  approval clutter of the canned wire turn. */
+const composerThread: Thread = {
+  id: "thr_composer",
+  subject: "browser-user",
+  createdAt: NOW,
+  updatedAt: NOW,
+  messages: [
+    {
+      id: "cmp_u1",
+      role: "user",
+      parts: [{ type: "text", text: "Draft a friendly welcome email for new Maple customers." }],
+    },
+    {
+      id: "cmp_a1",
+      role: "assistant",
+      parts: [{
+        type: "text",
+        text: "Here's a warm welcome email you can send to new Maple customers. It opens with a "
+          + "greeting, points them at their first three actions, and closes with a human sign-off "
+          + "so it never reads like an autoresponder.",
+      }],
+    },
+  ],
+};
+
+/** Serves the clean composer thread by id and in list() so useVendoThread adopts it. */
+function composerThreadClient(client: VendoClient): VendoClient {
+  return {
+    ...client,
+    threads: {
+      ...client.threads,
+      get: async id => id === composerThread.id ? composerThread : client.threads.get(id),
+      list: async () => [{ id: composerThread.id, title: "Welcome email", updatedAt: composerThread.updatedAt }],
+    },
+  };
+}
+
+function ComposerScenario({ theme }: { theme: Partial<VendoTheme> }) {
+  return (
+    <VendoProvider client={composerThreadClient(baseClient)} components={components} theme={theme}>
+      <div style={{ height: 560, display: "flex", flexDirection: "column", overflow: "hidden",
+        border: "1px solid var(--vendo-border)", borderRadius: 12 }}>
+        <VendoThread threadId="thr_composer" />
+      </div>
+    </VendoProvider>
+  );
+}
+
+/** ENG-216 — the humanization showcase, in a Maple-brand host with host tool
+ *  metadata supplied via the VendoProvider `tools` seam. */
+function HumanizedThreadScenario() {
+  return (
+    <VendoProvider
+      client={threadClient(baseClient, humanizedThread)}
+      components={components}
+      theme={mapleTheme}
+      tools={humanizedTools}
+    >
+      <VendoThread threadId="thr_humanized" />
+    </VendoProvider>
+  );
+}
+
 function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme>; content: ReactNode; ownProvider?: boolean } {
   switch (pathname) {
     case "/thread": return { title: "Thread — dark theme", theme: darkTheme, content: <VendoThread threadId="thr_1" /> };
+    case "/composer": return { title: "Composer (Maple)", content: <ComposerScenario theme={mapleTheme} />, ownProvider: true };
+    case "/composer-dark": return { title: "Composer — dark", content: <ComposerScenario theme={darkTheme} />, ownProvider: true };
     case "/thread-bounded": return { title: "Thread — bounded host pane", content: <BoundedThreadScenario />, ownProvider: true };
     case "/thread-landing": return { title: "Landing (Maple host)", content: <LandingScenario />, ownProvider: true };
+    case "/thread-humanized": return { title: "Thread — humanized (host metadata)", content: <HumanizedThreadScenario />, ownProvider: true };
     case "/overlay": return { title: "Overlay", content: <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'><VendoOverlay /></AutoOpen> };
     case "/page": return { title: "Workspace — Apps tab", content: <AutoOpen selector='[role="tab"][aria-controls="vendo-panel-apps"]'><VendoPage /></AutoOpen> };
     case "/palette": return { title: "Command palette", content: <OpenPalette /> };

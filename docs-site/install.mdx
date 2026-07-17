@@ -1,0 +1,137 @@
+---
+title: "Install Vendo: staged playbook for humans and agents"
+description: "Canonical staged install playbook for Vendo: base install to a green doctor, review and remix, and block unlocks. Raw Markdown at /install.md."
+---
+
+This page is the one canonical install path. It works read top-to-bottom for a
+human and fetched as Markdown for an agent — append `.md` to this page's URL
+(`https://docs.vendo.run/install.md`) for the raw version.
+
+## Point an agent at it
+
+Paste this into your coding agent inside the app you want to install Vendo in:
+
+```text
+Install Vendo (the embedded product agent) in this repo.
+Fetch https://docs.vendo.run/install.md and follow it stage by stage.
+Finish by running `npx vendo doctor` against the dev server and iterating until it exits 0.
+```
+
+Agents get first-class surfaces along the way. `npx vendo init --agent`
+prints a read-only JSON plan: framework, code diffs, the four questions,
+extracted tools, and risk recommendations. `npx vendo sync --json` prints one
+machine-readable report object. Init also offers to write a `vendo-setup`
+skill into `.claude/skills/` when your repo uses skills.
+
+## Stage 1 — base install
+
+**Goal: a working, on-brand agent turn in your product, proven by `vendo doctor` exit 0.**
+
+<Steps>
+  <Step title="Install the package">
+    ```bash
+    npm install @vendoai/vendo
+    ```
+
+    `vendoai` is a thin alias of `@vendoai/vendo` — either name installs the
+    same composition and the same `vendo` bin.
+  </Step>
+  <Step title="Run init">
+    ```bash
+    npx vendo init
+    ```
+
+    Init detects your framework from `package.json` (`next` wins over
+    `express`; anything else is treated as Next), interviews you — model
+    import, product brief, critical-tool risk labels, MCP door — and proposes
+    every code change as a diff you approve one by one. It writes the
+    committed `.vendo/` contract: `tools.json` (extracted from your OpenAPI
+    spec and routes), `overrides.json`, `policy.json`, `brief.md`,
+    `theme.json` (your brand, extracted from your CSS), and a gitignored
+    `.vendo/data/` for the zero-config PGlite store.
+
+    Unattended (CI or agent-driven):
+
+    ```bash
+    npx vendo init --yes --model-import "@/lib/ai" --brief "One paragraph about your product."
+    ```
+  </Step>
+  <Step title="Give it a model">
+    Vendo runs on any AI SDK `LanguageModel`. If init scaffolded the starter
+    model module, install its pinned peers and set a key:
+
+    ```bash
+    npm install ai@^6 @ai-sdk/anthropic@^3
+    echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env.local
+    ```
+
+    If your app already exports a model, point init at it with
+    `--model-import` instead.
+  </Step>
+  <Step title="Finish Express wiring (Express only)">
+    Next.js apps are fully wired by init. Express apps get `vendo/server.ts`
+    plus two manual lines: mount `app.use("/api/vendo", mountVendo())` and
+    wrap the client entry in `<VendoRoot>`. See the
+    [Node quickstart](/quickstart-node).
+  </Step>
+  <Step title="Verify">
+    Start your dev server, then:
+
+    ```bash
+    npx vendo doctor
+    ```
+
+    Doctor checks the wiring and `.vendo/` files, then makes one live
+    `/status` round-trip (default `http://localhost:3000/api/vendo`; override
+    with `--url` or `VENDO_URL`). Exit 0 is green; exit 1 lists each
+    `broken:` line. Fix and re-run until it exits 0 — that is the definition
+    of installed.
+  </Step>
+</Steps>
+
+## Stage 2 — review and remix
+
+**Goal: extraction stays fresh and correct as your API and brand evolve.**
+
+- Init adds `predev`/`prebuild` hooks so `vendo sync` runs with your app. Run
+  it manually after API changes; in CI use `npx vendo sync --strict` — exit 2
+  on breaking tool changes, exit 3 when saved apps, automations, or grants
+  would break. `--json` emits the full report for scripts.
+- Review `.vendo/tools.json` and correct risk labels in
+  `.vendo/overrides.json` — overrides are yours forever; `tools.json` is
+  regenerated and never hand-edited. Mark irreversible actions
+  `{"critical": true}` so policy asks before running them.
+- Tune `.vendo/policy.json` (default: destructive asks, reads run) and write
+  a real `.vendo/brief.md` — it is the agent's product knowledge.
+- `theme.json` was extracted from your CSS so generated UI ships on-brand;
+  re-run `vendo sync` after brand changes. See [Theming](/connect/theming)
+  and [Host components](/connect/host-components) for remix baselines.
+
+## Stage 3 — block unlocks
+
+**Goal: turn on the rest of the platform deliberately, one block at a time.**
+
+| Unlock | What it adds | Where |
+| --- | --- | --- |
+| Persistence on Postgres | Same schema as the PGlite default, for production | [Persistence](/deploy/persistence) |
+| Sandbox | User apps that need a server escalate into a jail | [Architecture](/concepts/architecture) |
+| Connectors | External tools executed as the signed-in user | [Integrations](/capabilities/integrations) |
+| MCP door | Claude, ChatGPT, and Cursor use your product's tools — a host decision, never a default; needs a `HostOAuthAdapter` and `createVendo({ mcp: true, oauth })` | [MCP](/capabilities/mcp) |
+| Voice | Real-time voice surfaces over the same tools and policy | [Voice](/capabilities/voice) |
+| Vendo Cloud | Sharing, publishing, org overlays, hosted automations via `VENDO_API_KEY` | [Vendo Cloud](/deploy/vendo-cloud) |
+
+`vendo doctor` ends with a ladder line naming exactly what each remaining
+block unlocks for your install.
+
+## Agent surfaces reference
+
+| Surface | What it serves |
+| --- | --- |
+| `https://docs.vendo.run/install.md` | This page as raw Markdown (append `.md` to any docs page) |
+| `https://docs.vendo.run/llms.txt` | Index of every docs page for LLM ingestion (also at `/.well-known/llms.txt`) |
+| `https://docs.vendo.run/llms-full.txt` | The whole docs site as one file |
+| `npx vendo init --agent` | Read-only JSON plan: framework, diffs, questions, extracted tools, risk recommendations |
+| `npx vendo sync --json` | One machine-readable sync report object on stdout |
+| `.claude/skills/vendo-setup/` | Setup skill shipped in the npm tarball; init offers to install it when `.claude/` exists |
+
+See the [CLI reference](/reference/cli) for every flag and exit code.

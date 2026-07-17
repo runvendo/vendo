@@ -10,6 +10,17 @@ const requiredJsonValueSchema = z.unknown().refine(
 /** 01-core §4 */
 export const TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 
+/** 01-core §4/§16 — the app runtime's reserved agent-tool namespace. Tools
+ *  under this prefix are the only ones whose ok-outcome may carry an
+ *  OpenSurface onto the view channel; the agent bridge and the apps runtime
+ *  both read this constant so the seam is named once, here, instead of each
+ *  side string-matching the other. */
+export const VENDO_APPS_TOOL_PREFIX = "vendo_apps_";
+
+/** 01-core §16 — the one prefixed tool whose execution may also stream
+ *  partial views through the VENDO_VIEW_STREAM bridge seam (stream-parts). */
+export const VENDO_APPS_CREATE_TOOL = "vendo_apps_create";
+
 /** 01-core §4 */
 export type RiskLabel = "read" | "write" | "destructive";
 

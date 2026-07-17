@@ -1,0 +1,5 @@
+[wave6b] provider=openai model=gpt-4.1-mini
+✓ Ready in 671ms
+ GET /vendo 200 in 1501ms (next.js: 439ms, proxy.ts: 314ms, application-code: 747ms)
+ GET /vendo 200 in 241ms (next.js: 3ms, proxy.ts: 4ms, application-code: 234ms)
+ POST /api/vendo/threads 200 in 12.0s (next.js: 18ms, proxy.ts: 3ms, application-code: 12.0s)

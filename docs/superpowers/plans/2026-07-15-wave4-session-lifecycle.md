@@ -1,0 +1,207 @@
+# Wave 4 — Session Lifecycle for Ephemeral Principals Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Anonymous (ephemeral) principals get real session semantics — a TTL-based registry, touch-on-request, idle eviction, and cascading cleanup of the store's ephemeral overlay AND the agent's in-memory threads — with a hard guarantee that eviction can never re-route a session's writes onto disk (the STORE-1 leak), proven by a churn test that keeps memory flat.
+
+**EFFORT ESTIMATE: ~4.5–5 serialized engineering-days.** Under the ~1-week split threshold from the spec's locked decisions — RECOMMENDATION: execute as one wave/one PR in this session, no child Orca session. Per-task breakdown at the bottom.
+
+**Architecture:** The session registry lives in `packages/store/src/ephemeral.ts` — it already IS a per-subject registry (the ENG-251 bounded LRU `subjects` set); Wave 4 upgrades it from a bare `Set<string>` to a `Map<subject, { touchedAt, inflight }>` and adds cascading eviction. The umbrella (`packages/vendo`) orchestrates lifecycle because it is the only component that sees both the store and the agent: it touches the session on every request (it already calls `registerEphemeralSubject` in `context()`), runs an amortized on-request sweep (plus an optional unref'd timer, mirroring the automations `tick()`/`start()` pattern), and on eviction calls the store cascade and the agent's new thread eviction. The disk-leak constraint is closed structurally, not by ordering care: record/blob routing for `app:`-scoped collections fails CLOSED when the owning app row exists neither in the overlay nor in `vendo_apps`, so a write arriving after eviction becomes a visible `not_found` ("session expired") error instead of a silent durable row.
+
+**Tech Stack:** TypeScript, vitest (fake-timer/injected-clock tests), `backends()` dual-backend parameterization for the store legs. Source of truth: `docs/superpowers/specs/2026-07-14-block-foundations-design.md` (Wave 4 + findings STORE-1, STORE-9, AGENT-11) + amended `docs/contracts/02-store.md` §4 and `03-agent.md`. Linear: ENG-237.
+
+**Sequencing:** Branch `yousefh409/foundations-wave4` off main after Wave 3 (store hardening) merges. One PR. No hard code dependency on Wave 3, but the conformance suites (Wave 2) and the amended contract text (Wave 1) must be on main because new tests extend them.
+
+**Ground rules for the executor:**
+- DO NOT edit `docs/contracts/*`. This wave changes behavior the contracts describe (02 §4 overlay lifetime, agent surface); every needed amendment is inventoried in Task 7 and is **Yousef-gated** — escalate the proposed text, do not land it.
+- The fail-closed unknown-app rule (Task 3) is the load-bearing safety property. If any legitimate write path turns out to write app records BEFORE the app row exists (Task 3 Step 1 audit), stop and escalate before weakening the rule.
+- Defaults marked "RECOMMENDATION — needs sign-off" below are proposals: wire them as the code defaults but list them in the PR body for Yousef to confirm; do not present them as decided.
+- All eviction/cascade mutations must be synchronous (no `await` between first and last mutation) so a cascade can never be observed half-done.
+
+---
+
+## Design (read before executing)
+
+### What a "session" is
+
+One ephemeral session ≡ one ephemeral subject string — `anonymous_<cookieId>` for umbrella-minted anon principals (`packages/vendo/src/server.ts` ~409–415), or any host-resolved principal with `ephemeral: true` that the store helpers self-register (`helpers/apps.ts:24`, `helpers/state.ts`, `helpers/threads.ts:23`, etc.). The registry keys on the subject. The guard's `anon_<id>` sessionId maps 1:1 onto the subject and needs no separate registry entry (its session grants live in `overlay.grants`, which the cascade clears).
+
+### Registry (store-owned mechanics, umbrella-owned policy)
+
+`EphemeralOverlay.subjects: Set<string>` becomes `Map<string, { touchedAt: number; inflight: number }>`. `Map` preserves insertion order, so the existing delete+re-insert LRU recency trick and the 10k cap (`EPHEMERAL_SUBJECT_CAP`, ENG-251) carry over unchanged. New store exports:
+
+- `registerEphemeralSubject(store, subject, now?)` — unchanged signature plus optional clock; now also stamps `touchedAt` (touch).
+- `beginEphemeralRequest(store, subject)` / `endEphemeralRequest(store, subject)` — inflight refcount.
+- `evictEphemeralSubject(store, subject)` — the synchronous cascade (below).
+- `sweepEphemeralSubjects(store, { idleMs, now? }): string[]` — evicts every registered subject with `inflight === 0` and `now - touchedAt >= idleMs`; returns the evicted subjects so the caller can cascade into the agent.
+
+The store stays config-free: TTL and sweep interval are umbrella policy passed as arguments, matching how the store takes explicit args everywhere else.
+
+### Touch-on-request semantics
+
+Every request path that resolves an ephemeral principal touches the session, because touch = `registerEphemeralSubject`, which already runs:
+
+- Umbrella door: `context()` calls it for every anon request — chat stream, thread list/get/delete, apps, state, approvals, runs, emit — before any handler logic (`server.ts:415`).
+- Store-internal: helpers and routing self-register on ephemeral writes (`routing.ts:320,341`, all `helpers/*`), so even mid-turn writes refresh the clock.
+
+No new touch call sites are needed; the semantics change is that registration now also stamps time.
+
+### Idle eviction: sweep mechanism
+
+Amortized on-request sweep + optional timer (both, mirroring automations):
+
+- **On-request (always on):** at the top of the wire handler, if `now - lastSweepAt >= sweepIntervalMs`, run the sweep synchronously before handling. O(#sessions) map scan, cap 10k — microseconds. This is the serverless-safe leg (Next.js gives no timer guarantee).
+- **Timer (long-lived hosts):** `createVendo` also starts an unref'd `setInterval` for the same sweep (pattern: `automations/src/engine.ts:724-726` — never keeps the event loop alive). Torn down on `store.close()`/handler teardown.
+
+Configuration surface on `CreateVendoConfig`: `sessions?: { ttlMs?: number; sweepIntervalMs?: number; maxSessions?: number; now?: () => number }` (`maxSessions` parametrizes the ENG-251 cap; `now` is the test clock seam).
+
+- RECOMMENDATION — needs sign-off: default `ttlMs` = 30 minutes (typical web idle-session timeout; long enough that a slow reader never loses state mid-visit).
+- RECOMMENDATION — needs sign-off: default `sweepIntervalMs` = 60 seconds.
+- RECOMMENDATION — needs sign-off: keep `maxSessions` default at the existing 10,000.
+- RECOMMENDATION — needs sign-off: `ttlMs: 0` (or `false`) disables TTL eviction entirely (cap-only, today's behavior) as the escape hatch.
+
+### Eviction cascade (per subject S, all synchronous)
+
+1. Collect `appIds(S)` = every `overlay.apps` row with `row.subject === S`.
+2. Delete from every overlay map: `apps` (those rows), `states` (keys `stateKey(S, *)` — prefix `S\u0000`), `threads`/`grants`/`approvals`/`audit`/`runs` rows belonging to S (runs match via `appIds(S)` — run rows carry no subject, `ephemeral.ts:80-87`), `records` and `blobs` collections/namespaces whose parsed appId ∈ `appIds(S)` (collection grammar `app:<appId>:…`, `records.ts:63`; executor verifies the blob-namespace convention in Task 2).
+3. Delete S from the registry map. Done — no awaits anywhere, so no request can observe a half-evicted session.
+
+Then the umbrella cascades to the agent: `agent` gains an eviction entry point (new `ThreadRepository.evictSubject(subject)` → `#memory.delete(subject)`, `threads.ts:92,217-224` — AGENT-11), exposed through the `VendoAgent` object for the umbrella to call per evicted subject. Ordering store-first vs agent-first is immaterial (disjoint state), but do store-first so a concurrent request fails closed at the store rather than finding threads without store state.
+
+### Why eviction cannot orphan on-disk records (the STORE-1 constraint)
+
+The invariant: **while a subject is registered, none of its writes reach disk** — `registerEphemeralSubject` runs in `context()` before any handler logic, and every store-internal write path self-registers first. So at eviction time a session has **zero on-disk rows**; "a session's persisted-but-ephemeral rows" is the empty set by construction, and the cascade only touches memory. The leak the spec warns about is the *post*-eviction window:
+
+- **Leak mechanism (must not ship):** client still holds an appId/threadId from an evicted session → `overlay.apps` row gone AND subject unregistered → `isEphemeralApp` returns false (`ephemeral.ts:81-87`) → the write routes to the DURABLE store → a disk row for an app that no longer exists anywhere, never again recognized as ephemeral. This is also today's *documented* cap-overflow trade-off (`ephemeral.ts:53-63`) — Wave 4 removes it, it does not inherit it.
+- **Fix (structural, Task 3):** app-scoped record/blob routing fails closed on *unknown* apps. `isEphemeralApp` already queries `vendo_apps` for the subject when the overlay misses; widen it to a tri-state `"ephemeral" | "durable" | "unknown"` at zero extra query cost. `unknown` → `VendoError("not_found", "app does not exist (session may have expired)")` on writes. Durable apps always have a `vendo_apps` row, so the durable path is unaffected; evicted-session writes become visible errors and the client re-inits.
+- **Cap-overflow unification:** overflow eviction in `registerEphemeralSubject` switches from "drop the subject key only" to the full cascade, so the ENG-251 "later writes begin persisting" trade-off disappears along with its orphaned per-subject overlay data (which today is never cleaned at all).
+
+### Mid-request eviction (atomicity)
+
+Two independent guards, either alone would nearly suffice, together they close it:
+
+1. **Inflight refcount:** the umbrella brackets each ephemeral request with `begin/endEphemeralRequest` (finally-guaranteed); the sweep skips `inflight > 0`. A minutes-long streaming agent turn can therefore never have its session swept out from under it, regardless of TTL.
+2. **Fail-closed routing (above):** even if a stale request slips through (e.g. a crashed stream that never decremented — `end` in `finally` makes this pathological), its writes refuse rather than leak to disk. Worst case is an error surfaced to a dead client, never a durable orphan.
+
+The cascade itself is synchronous, so there is no "eviction runs between my `await isEphemeral()` and my map write" interleaving to reason about beyond these two guards; a post-eviction overlay write is impossible for registered-checked paths because the registration check and the map write happen in the same event-loop turn or are preceded by self-registration (which would simply re-create a fresh session — correct behavior).
+
+### Multi-instance behavior (documentation, not distributed sessions)
+
+The overlay is per-process (`WeakMap`, `ephemeral.ts:20`) — Wave 1 already recorded this constraint in 02's Amendments. Wave 4 adds the lifecycle corollary, as documentation only: each instance keeps its own registry and TTL clock; an anon cookie arriving at a different instance re-registers there and sees an empty session (correct and leak-free, because registration precedes any write on every instance); sticky sessions are required for anon-state continuity; distributed session registries are explicitly Cloud's problem. Also document: hosts must not reuse a subject string across ephemeral and durable principals (pre-existing durable rows become invisible behind the overlay — pre-existing constraint, now stated).
+
+---
+
+### Task 1: Read the inputs
+
+**Files:**
+- Read: `docs/superpowers/specs/2026-07-14-block-foundations-design.md` (Wave 4, STORE-1/9, AGENT-11), `docs/contracts/02-store.md` §4 + Amendments, `docs/contracts/03-agent.md` §5 + Amendments
+- Read: `packages/store/src/ephemeral.ts`, `store.ts`, `records.ts`, `blobs.ts`, `routing.ts`, `helpers/*.ts`
+- Read: `packages/vendo/src/server.ts` (context(), createWireHandler, createVendo composition)
+- Read: `packages/agent/src/threads.ts`, `agent.ts`
+- Read: `packages/automations/src/engine.ts` (unref'd timer pattern, ~line 724)
+
+- [ ] **Step 1:** Read all inputs; confirm Wave 1–3 are on main (02 shows the overlay-lifetime amendment; Wave 3's erase API exists — the eviction cascade is a memory-side sibling, not a caller, of erase).
+- [ ] **Step 2:** Verify the blob-namespace and run-row conventions the cascade filters on: how `blobs()` namespaces relate to appIds, and which field on `RunRow` carries the owning app (`helpers/types.ts`). Record findings in the PR body.
+
+### Task 2: Store — registry upgrade + cascading eviction
+
+**Files:**
+- Modify: `packages/store/src/ephemeral.ts`
+- Modify: `packages/store/src/index.ts` (export the new functions)
+- Create: eviction tests beside the existing store test layout (e.g. `packages/store/src/ephemeral-lifecycle.test.ts`)
+
+- [ ] **Step 1 (TDD):** Write failing tests first: registry touch refreshes `touchedAt` and LRU recency; `sweepEphemeralSubjects` evicts only idle+idle-long-enough+not-inflight subjects and returns them; `evictEphemeralSubject` empties EVERY overlay map of exactly that subject's data (apps, states by key prefix, threads, grants, approvals, audit, runs via owned appIds, records + blobs via appId-parsed collections) while a second registered subject's data is untouched; cap-overflow eviction now cascades (no orphaned per-subject overlay data after overflow).
+- [ ] **Step 2:** Convert `subjects` to `Map<string, { touchedAt, inflight }>`; keep `registerEphemeralSubject`/`isEphemeralSubject` signatures source-compatible (optional `now` param); implement `begin/endEphemeralRequest`, `evictEphemeralSubject`, `sweepEphemeralSubjects` per the Design section; route cap overflow through the cascade; parametrize the cap (arg with default `EPHEMERAL_SUBJECT_CAP`).
+- [ ] **Step 3:** Tests green; `pnpm --filter @vendoai/store test` green (both backends if `POSTGRES_URL` set locally).
+- [ ] **Step 4:** Commit.
+
+### Task 3: Store — fail-closed routing for unknown apps (the leak fix)
+
+**Files:**
+- Modify: `packages/store/src/ephemeral.ts` (`isEphemeralApp` → tri-state)
+- Modify: `packages/store/src/records.ts`, `packages/store/src/blobs.ts` (write paths refuse unknown apps)
+- Create/extend: disk-leak regression test in the store suite (dual-backend via `backends()`)
+
+- [ ] **Step 1 (audit, blocking):** Verify no legitimate flow writes app-scoped records/blobs before the `vendo_apps` row exists (check `packages/apps` runtime creation order and guard paths). If one exists, STOP and escalate — do not weaken the rule silently.
+- [ ] **Step 2 (TDD):** Failing regression test: register anon subject → create ephemeral app → write records + a blob → assert zero disk rows → evict → replay a write with the stale appId → expect `VendoError("not_found")` AND assert `vendo_records`/blob tables still have zero rows for that app on BOTH backends. This is the STORE-1 pin.
+- [ ] **Step 3:** Implement tri-state `appEphemerality(store, db, appId): "ephemeral" | "durable" | "unknown"` reusing the single existing `vendo_apps` query; keep `isEphemeralApp` as a thin wrapper if other call sites want the boolean. Writes (`put`, `delete`, `claim`, `atomic.*` in records; blob `put`/`delete`) refuse on `unknown`; reads on `unknown` return null/empty (stale readers see an expired session, not an error storm). Confirm read-vs-write split against how the guard surfaces errors — if refusing reads is cleaner for the client re-init story, note the deviation in the PR body.
+- [ ] **Step 4:** Full store suite green on both backends; commit.
+
+### Task 4: Agent — subject eviction
+
+**Files:**
+- Modify: `packages/agent/src/threads.ts` (`ThreadRepository.evictSubject`)
+- Modify: `packages/agent/src/agent.ts` (expose on the returned `VendoAgent`)
+- Modify: `packages/agent/src/index.ts` (types)
+- Create/extend: test beside existing agent thread tests
+
+- [ ] **Step 1 (TDD):** Failing test: two ephemeral subjects with in-memory threads; evicting one drops exactly its `#memory` entry (AGENT-11); durable-path threads unaffected.
+- [ ] **Step 2:** Implement `evictSubject(subject: string): void`; expose it on `VendoAgent` (naming: keep it clearly lifecycle-scoped, e.g. `evictSubject` at the top level or under `threads.` — match `agent.ts`'s existing surface style; the addition is inventoried as a Yousef-gated 03 amendment in Task 7). Note in code that standalone no-store agents (BYO) get eviction only if their host calls it — the umbrella composition is the contracted consumer.
+- [ ] **Step 3:** Agent suite green; commit.
+
+### Task 5: Umbrella — session policy wiring
+
+**Files:**
+- Modify: `packages/vendo/src/server.ts` (config surface, touch + inflight bracket in `context()`/handler, amortized on-request sweep, unref'd timer, cascade wiring store→agent)
+- Create/extend: umbrella integration test (existing server test layout)
+
+- [ ] **Step 1 (TDD):** Failing integration tests with an injected clock: (a) anon chat request creates a session; advancing past TTL + sweep evicts it — store overlay empty for that subject AND agent memory empty; (b) a request with the old cookie after eviction gets a working, fresh, empty session; (c) touch works — repeated requests inside TTL never evict; (d) a request in flight (hold the handler on a gate) is skipped by a concurrent sweep (inflight guard); (e) `ttlMs: 0` disables TTL eviction.
+- [ ] **Step 2:** Add `CreateVendoConfig.sessions` (`ttlMs`, `sweepIntervalMs`, `maxSessions`, internal `now` seam) with the RECOMMENDATION defaults; validate like the agent's `validateConfig` pattern. Wire: `context()` ephemeral branch does register(=touch) + `beginEphemeralRequest`; the wire handler's `finally` does `end`; handler top runs the amortized sweep; `createVendo` starts the unref'd interval (automations pattern) and tears it down with the store teardown path.
+- [ ] **Step 3:** On sweep: `sweepEphemeralSubjects(store, …)` first, then `agent.evictSubject(s)` for each returned subject (store-first per Design).
+- [ ] **Step 4:** Umbrella suite green; commit.
+
+### Task 6: Churn test — memory stays flat (feeds Wave 6 resilience demo)
+
+**Files:**
+- Create: churn test in the umbrella (or store, whichever harness boots cheapest — prefer umbrella so the full stack churns) — e.g. `packages/vendo/src/session-churn.test.ts`
+
+- [ ] **Step 1:** Structural churn test (the CI gate): loop N (≥1k) synthetic anon sessions × a few requests each (app create + record writes + a thread turn against the mock model), tiny TTL, clock-driven sweeps; assert after the final sweep that the registry is empty and EVERY overlay map size is 0 and the agent `#memory` is empty (expose sizes via a test seam or existing exports — no production debug API), and that `vendo_records` gained zero rows. Structural sizes, not RSS, are the assertion — RSS flakes in CI.
+- [ ] **Step 2:** Add a small scripted heap probe (not a CI assertion): same churn with `process.memoryUsage()` sampling, printed table — the artifact Wave 6's "memory stays flat under anonymous-session churn" GIF drives. Park it beside the test with a comment pointing at Wave 6.
+- [ ] **Step 3:** Commit.
+
+### Task 7: Contract-impact inventory + docs — Yousef-gated escalation
+
+**Files:**
+- Modify: `packages/store/README.md`, `packages/agent/README.md`, `docs/` integration docs wherever the anon-session behavior is described (executor greps for "ephemeral"/"anonymous" in docs/)
+- Do NOT modify: `docs/contracts/*`
+
+- [ ] **Step 1:** Write the amendment inventory into the PR body as a Yousef-gated escalation (proposed text, not landed): 02 §4 — overlay lifetime becomes "close() OR session eviction (TTL/cap)", the touch/TTL semantics, the fail-closed unknown-app routing rule, and the lifecycle corollary to the per-process multi-instance constraint; 03 — the `VendoAgent` eviction surface; 09-vendo — the `sessions` config knob and sweep behavior. Include the four RECOMMENDATION defaults for sign-off in the same escalation.
+- [ ] **Step 2:** Update package READMEs/docs (non-contract) to describe the lifecycle, the multi-instance sticky-session note, and the "don't reuse subject strings across ephemeral/durable" constraint.
+- [ ] **Step 3:** Commit.
+
+### Task 8: Verify and hand back
+
+- [ ] **Step 1:** `pnpm build && pnpm test && pnpm typecheck && pnpm lint` green locally, with AND without `POSTGRES_URL` (the leak regression must run the real-Postgres leg).
+- [ ] **Step 2:** Re-run the churn test 3× locally to shake out timing flake before CI sees it.
+- [ ] **Step 3:** Report back: cascade coverage table (overlay map → eviction test), the STORE-1 pin location, the amendment escalation text, the RECOMMENDATION list awaiting sign-off, and any deviations (Task 3 read-vs-write refusal call, blob-namespace findings). Do NOT merge.
+
+---
+
+## Effort breakdown (serialized)
+
+| Task | Estimate |
+|---|---|
+| 1 Read inputs + conventions audit | 0.25 d |
+| 2 Registry + cascade | 1 d |
+| 3 Fail-closed routing + leak regression | 1 d |
+| 4 Agent eviction | 0.5 d |
+| 5 Umbrella wiring | 1 d |
+| 6 Churn test + heap probe | 0.5 d |
+| 7 Docs + amendment escalation | 0.25 d |
+| 8 Verify | 0.25 d |
+| **Total** | **~4.75 d** |
+
+## Open judgment calls (RECOMMENDATION — needs sign-off)
+
+1. Default session TTL: 30 minutes.
+2. Default sweep interval: 60 seconds.
+3. `maxSessions` default stays at 10,000 (ENG-251 value).
+4. `ttlMs: 0` as the TTL-off escape hatch (cap-only behavior).
+5. Task 3 read behavior on unknown apps: reads return null/empty vs also refusing (plan recommends null/empty; executor confirms against guard error surfacing).
+6. `VendoAgent` eviction method placement/name (top-level `evictSubject` vs `threads.evictSubject`) — folded into the 03 amendment escalation.
+
+## Self-review (done at write time)
+
+- Spec coverage: TTL registry ✓ (store-owned mechanics, umbrella policy), touch-on-request ✓ (register==touch, all door + helper paths enumerated), idle eviction ✓ (on-request amortized + unref'd timer), cascade to overlay AND agent threads ✓, STORE-1 constraint addressed structurally with a dual-backend regression pin ✓, mid-request atomicity ✓ (inflight refcount + synchronous cascade + fail-closed backstop), multi-instance documented-not-solved ✓, contract impact inventoried and Yousef-gated ✓, churn test feeding Wave 6 ✓, effort estimate at top ✓.
+- The cap-overflow trade-off from ENG-251 (evicted subjects silently persisting) is removed, not inherited — called out explicitly so reviewers don't mistake it for pre-existing-behavior preservation.
+- No contract edits planned; no defaults baked in as decided; every judgment call parked with a recommendation.

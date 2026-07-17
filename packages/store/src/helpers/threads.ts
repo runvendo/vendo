@@ -33,6 +33,7 @@ export function threadStore(store: VendoStore): {
           messages: parsed.messages,
           createdAt: prior?.createdAt ?? now,
           updatedAt: now,
+          revision: String(BigInt(prior?.revision ?? "0") + 1n),
         };
         overlay.threads.set(thread.id, snapshot(row));
         return snapshot(row);
@@ -49,7 +50,7 @@ export function threadStore(store: VendoStore): {
         return row?.subject === principal.subject ? snapshot(row) : null;
       }
       const result = await db.query(
-        `SELECT id, subject, messages, created_at, updated_at FROM vendo_threads
+        `SELECT id, subject, messages, title, created_at, updated_at, revision FROM vendo_threads
          WHERE id = $1 AND subject = $2`,
         [id, principal.subject],
       );

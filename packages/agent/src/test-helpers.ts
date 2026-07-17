@@ -49,24 +49,29 @@ export function toolCallTurn(
 
 export type ScriptedModel = MockLanguageModelV3 & {
   prompts: LanguageModelV3Prompt[];
+  /** The tool names offered to the model on each call, in order — i.e. the
+   *  effective loadout after `activeTools`/`prepareStep` filtering (ENG-252). */
+  toolNamesPerCall: string[][];
 };
 
 export function scriptedModel(turns: LanguageModelV3StreamPart[][]): ScriptedModel {
   const remaining = turns.map((turn) => [...turn]);
   const prompts: LanguageModelV3Prompt[] = [];
-  const shift = (prompt: LanguageModelV3Prompt): LanguageModelV3StreamPart[] => {
-    prompts.push(structuredClone(prompt));
+  const toolNamesPerCall: string[][] = [];
+  const shift = (request: { prompt: LanguageModelV3Prompt; tools?: Array<{ name: string }> }): LanguageModelV3StreamPart[] => {
+    prompts.push(structuredClone(request.prompt));
+    toolNamesPerCall.push((request.tools ?? []).map((tool) => tool.name));
     const chunks = remaining.shift();
     if (chunks === undefined) throw new Error("scripted model exhausted");
     return chunks;
   };
   const model = new MockLanguageModelV3({
     doStream: async (request) => {
-      const chunks = shift(request.prompt);
+      const chunks = shift(request);
       return { stream: simulateReadableStream({ chunks }) };
     },
     doGenerate: async (request): Promise<LanguageModelV3GenerateResult> => {
-      const chunks = shift(request.prompt);
+      const chunks = shift(request);
       const finish = chunks.find((part) => part.type === "finish");
       const content: LanguageModelV3Content[] = [];
       const text = chunks
@@ -86,12 +91,15 @@ export function scriptedModel(turns: LanguageModelV3StreamPart[][]): ScriptedMod
     },
   }) as ScriptedModel;
   model.prompts = prompts;
+  model.toolNamesPerCall = toolNamesPerCall;
   return model;
 }
 
 export type TestGuard = Guard & {
   events: AuditEvent[];
   directionValues: string[];
+  /** AGENT-6: approval ids resolved through abandonApprovals, in call order. */
+  abandoned: ApprovalId[];
   decide(approvalId: ApprovalId, approved: boolean): void;
   pending(): ApprovalRequest[];
 };
@@ -117,6 +125,18 @@ export function testGuard(
   const guard: TestGuard = {
     events,
     directionValues,
+    abandoned: [],
+    // AGENT-6: mirror the real guard — abandoning denies each still-pending
+    // approval (idempotent; unknown/decided ids are no-ops) and notifies
+    // decision subscribers.
+    async abandonApprovals(ids) {
+      for (const id of ids) {
+        const known = [...approvalsByCall.values()].some((approval) => approval.id === id);
+        if (!known || decisions.has(id)) continue;
+        guard.abandoned.push(id);
+        guard.decide(id, false);
+      }
+    },
     async check(call, descriptor, runCtx): Promise<GuardDecision> {
       const action = policy[call.tool] ?? "run";
       if (action === "run") return { action: "run", decidedBy: "default" };

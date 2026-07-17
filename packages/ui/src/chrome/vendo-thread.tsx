@@ -1,6 +1,7 @@
 import type { ApprovalRequest, Json, RiskLabel, ToolOutcome, VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useVendoContext } from "../context.js";
 import { useVendoThread } from "../hooks/use-vendo-thread.js";
 import { PayloadView } from "../tree/renderer.js";
@@ -10,11 +11,19 @@ import { ChromeRoot } from "./chrome-root.js";
 import { MorphToast, type MorphToastProps } from "./morph-toast.js";
 import { ConnectCard } from "./connect-card.js";
 import { FluidThinking } from "./fluid-thinking.js";
+import { previewArgs, summarizeArgs, toolTitle } from "./humanize.js";
 import { Markdown } from "./markdown.js";
 
 function partData(part: UIMessage["parts"][number]): unknown {
   return "data" in part ? part.data : part;
 }
+
+// ENG-216 — a stable placeholder for the in-thread synthesized ApprovalRequest's
+// required `createdAt`. The wire approval part carries no timestamp; this value
+// is never displayed (the card hides the context byline in-thread) and a fixed
+// constant replaces the former per-render `new Date()` that churned on every
+// re-render and broke deterministic tests.
+const SYNTHESIZED_CREATED_AT = "1970-01-01T00:00:00.000Z";
 
 function riskByCall(messages: UIMessage[]): Map<string, RiskLabel> {
   const risks = new Map<string, RiskLabel>();
@@ -79,6 +88,42 @@ function appTitle(payload: unknown): string | undefined {
   return undefined;
 }
 
+/** A stable signature for a tool part — same tool + same input = the same call. */
+function toolSignature(part: Extract<UIMessage["parts"][number], { toolCallId: string }>): string {
+  const input = "input" in part ? part.input : undefined;
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(input);
+  } catch {
+    serialized = String(input);
+  }
+  return `${toolName(part)}::${serialized}`;
+}
+
+/** ENG-216 — collapse runs of consecutive identical tool chips (e.g. eight
+    `host_listClientDocuments` calls) into one entry carrying a count. The
+    latest part in the run is kept so the chip icon reflects the final state. */
+function collapseToolRuns(
+  parts: UIMessage["parts"],
+): { part: UIMessage["parts"][number]; index: number; count: number }[] {
+  const items: { part: UIMessage["parts"][number]; index: number; count: number }[] = [];
+  parts.forEach((part, index) => {
+    const previous = items.at(-1);
+    if (
+      isToolUIPart(part)
+      && previous !== undefined
+      && isToolUIPart(previous.part)
+      && toolSignature(previous.part) === toolSignature(part)
+    ) {
+      previous.count += 1;
+      previous.part = part;
+      return;
+    }
+    items.push({ part, index, count: 1 });
+  });
+  return items;
+}
+
 /** A picked File → an ai-SDK FileUIPart (data URL) so it can ride the turn. */
 function fileToPart(file: File): Promise<{ type: "file"; mediaType: string; filename: string; url: string }> {
   return new Promise((resolve, reject) => {
@@ -94,13 +139,20 @@ function fileToPart(file: File): Promise<{ type: "file"; mediaType: string; file
   });
 }
 
+/** The plain text a user turn carried, joined across its text parts — the seed
+    for "edit last message" (ENG-215). */
+function userText(message: UIMessage): string {
+  return message.parts
+    .filter((part): part is Extract<UIMessage["parts"][number], { type: "text" }> => part.type === "text")
+    .map(part => part.text)
+    .join("");
+}
+
+/** ENG-216 — the in-thread approval preview is built client-side (the wire part
+    carries no descriptor), so format args as readable `Label: value` lines
+    instead of the raw JSON with literal \n escapes end users were reading. */
 function preview(input: unknown): string {
-  if (typeof input === "string") return input;
-  try {
-    return JSON.stringify(input, null, 2);
-  } catch {
-    return String(input);
-  }
+  return previewArgs(input);
 }
 
 /** Within this many pixels of the end the reader counts as "at the bottom" —
@@ -117,7 +169,7 @@ const BOTTOM_SLACK_PX = 32;
     bottom on their own. Jump-to-latest: when new content lands while the
     reader is scrolled up, the stylesheet's .fl-jump affordance appears;
     activating it scrolls to the latest turn and re-sticks. */
-function useStickToBottom(messages: UIMessage[], threadKey?: string) {
+function useStickToBottom(messages: UIMessage[], threadKey?: string, contentRevision?: unknown) {
   const listRef = useRef<HTMLDivElement>(null);
   // The stick is a ref, not state: it flips inside scroll/effect timing and
   // must be readable synchronously without re-render races.
@@ -169,7 +221,10 @@ function useStickToBottom(messages: UIMessage[], threadKey?: string) {
     } else if (grew) {
       setUnseen(true);
     }
-  }, [messages]);
+    // contentRevision — ENG-215: turn-actions (Edit/Regenerate) mount below the
+    // last turn the instant a stream settles (busy→false), adding height AFTER
+    // the message-driven stick already ran. Re-run so the reader stays pinned.
+  }, [messages, contentRevision]);
 
   // A generated view mounts and grows AFTER the messages effect runs (the jail
   // renders async; logos/images load late). Without watching actual size, the
@@ -214,10 +269,13 @@ export function VendoThread({
   suggestions = [],
   onVoice,
 }: VendoThreadProps) {
-  const { client, components, theme, onPin } = useVendoContext();
+  const { client, components, theme, tools, onPin } = useVendoContext();
   const thread = useVendoThread(threadId);
+  const busy = thread.status === "submitted" || thread.status === "streaming";
+  // busy is a content-revision signal for the scroll hook: turn-actions mount
+  // below the last turn when a stream settles, which changes the list height.
+  const scroll = useStickToBottom(thread.messages, threadId, busy);
   const approvalCardRefs = useRef(new Map<string, HTMLDivElement | null>());
-  const scroll = useStickToBottom(thread.messages, threadId);
   const [morph, setMorph] = useState<Omit<MorphToastProps, "onDone"> | null>(null);
 
   // A build's approval lands below a tall generated view — off-screen — so it
@@ -234,7 +292,6 @@ export function VendoThread({
     const fresh = pending.find(id => !seenApprovalsRef.current.has(id));
     seenApprovalsRef.current = new Set(pending);
     if (fresh === undefined) return;
-    // Let the card mount, then bring it into view (and re-stick to bottom).
     const timer = setTimeout(() => {
       const card = approvalCardRefs.current.get(fresh)?.querySelector<HTMLElement>(".fl-approval");
       if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -244,23 +301,57 @@ export function VendoThread({
   }, [thread.messages, scroll]);
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [files, setFiles] = useState<File[]>([]);
+  // ENG-215 — a message the user sent DURING a turn: it parks here (visible as a
+  // pill) and auto-sends the instant the turn finishes. A single slot — a second
+  // send while one is parked replaces it — because there is only ever one "next"
+  // turn. Stop stays the explicit interrupt; queueing never cancels the stream.
+  const [queued, setQueued] = useState<{ text: string; files: File[] } | null>(null);
   const risks = useMemo(() => riskByCall(thread.messages), [thread.messages]);
   const guardApprovals = useMemo(() => approvalByCall(thread.messages), [thread.messages]);
-  const busy = thread.status === "submitted" || thread.status === "streaming";
   const landing = thread.messages.length === 0;
   const activeAssistant = thread.messages.at(-1)?.role === "assistant" ? thread.messages.at(-1) : undefined;
   const assistantHasVisibleText = activeAssistant?.parts.some(
     part => part.type === "text" && part.text.trim().length > 0,
   ) ?? false;
+  // ENG-217 — the three streaming moments each get exactly ONE affordance:
+  // before the first chunk the generating skeleton holds the floor; a streamed
+  // turn whose text is still empty shows the lone caret (renderPart); once
+  // text flows the trailing caret rides .fl-md--streaming. FluidThinking
+  // covers the remaining gap (tool phases with no text yet).
+  const awaitingFirstChunk = busy && (activeAssistant === undefined || activeAssistant.parts.length === 0);
+  const lastPart = activeAssistant?.parts.at(-1);
+  const caretShowing = busy && lastPart?.type === "text" && lastPart.state === "streaming"
+    && lastPart.text.trim().length === 0;
   // Once ANY build beat exists in the active turn, the checklist is the
-  // progress voice — the metaball thinking blob showing between beats (during
-  // the gap after one completes and before the next starts) reads as two
-  // indicators fighting. Show the blob only for pure pre-beat thinking.
+  // progress voice — the thinking indicator between beats reads as two
+  // indicators fighting.
   const hasBeats = activeAssistant?.parts.some(part => isToolUIPart(part)) ?? false;
-  const working = busy && !assistantHasVisibleText && !hasBeats;
+  const working = busy && !assistantHasVisibleText && !awaitingFirstChunk && !caretShowing && !hasBeats;
 
   const [attachError, setAttachError] = useState<string>();
+
+  // ENG-215 — commit a turn to the transport (reads any attachments first). Used
+  // both by an immediate send and by the deferred flush of a queued message.
+  const dispatch = (text: string, pending: File[]) => {
+    void (async () => {
+      let parts: Awaited<ReturnType<typeof fileToPart>>[];
+      try {
+        parts = await Promise.all(pending.map(fileToPart));
+      } catch (reason) {
+        // A file read failed — surface it and restore the message so it never
+        // vanishes silently.
+        setAttachError(reason instanceof Error ? reason.message : "Couldn't read an attachment.");
+        setDraft(current => current || text);
+        setFiles(current => (current.length > 0 ? current : pending));
+        return;
+      }
+      setAttachError(undefined);
+      void thread.sendMessage(parts.length > 0 ? { text, files: parts } : { text });
+    })();
+  };
+
   // Remix bridge: a host affordance (the hero card's "Remix") opens this
   // surface and hands it the request to type + send, so the whole build
   // happens here — the one conversational place (08-ui §4).
@@ -277,30 +368,114 @@ export function VendoThread({
   }, []);
   const send = (override?: string) => {
     const text = (override ?? draft).trim();
-    if ((!text && files.length === 0) || busy) return;
     const pending = files;
-    void (async () => {
-      let parts: Awaited<ReturnType<typeof fileToPart>>[];
-      try {
-        parts = await Promise.all(pending.map(fileToPart));
-      } catch (reason) {
-        // A file read failed — DON'T clear the draft/attachments, or the message
-        // would vanish silently. Surface the error and let the user retry.
-        setAttachError(reason instanceof Error ? reason.message : "Couldn't read an attachment.");
-        return;
-      }
-      // Only clear once the turn is committed.
-      setAttachError(undefined);
-      setDraft("");
-      setFiles([]);
-      if (fileRef.current) fileRef.current.value = "";
-      void thread.sendMessage(parts.length > 0 ? { text, files: parts } : { text });
-    })();
+    if (!text && pending.length === 0) return;
+    // The message leaves the input immediately (whether it sends now or parks).
+    setDraft("");
+    setFiles([]);
+    if (fileRef.current) fileRef.current.value = "";
+    if (busy) {
+      setQueued({ text, files: pending });
+      return;
+    }
+    dispatch(text, pending);
   };
+
+  // Flush the queued message the moment the active turn finishes. A ref-tracked
+  // busy edge keeps this from firing on unrelated re-renders.
+  const wasBusyRef = useRef(busy);
+  useEffect(() => {
+    if (wasBusyRef.current && !busy && queued) {
+      const pending = queued;
+      setQueued(null);
+      dispatch(pending.text, pending.files);
+    }
+    wasBusyRef.current = busy;
+    // dispatch is recreated each render but closes only over stable setters and
+    // thread.sendMessage; the busy edge + queued slot are the real triggers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, queued]);
+
+  // ENG-215 — autogrow: the textarea tracks its content height (CSS caps it at
+  // max-height and scrolls past that). Runs on every draft change, including the
+  // programmatic reset on send and the refill on edit.
+  useEffect(() => {
+    const node = textareaRef.current;
+    if (!node) return;
+    node.style.height = "auto";
+    node.style.height = `${node.scrollHeight}px`;
+  }, [draft]);
+
+  // ENG-215 — edit the last user turn: drop it (and anything after) from the
+  // transcript and refill the composer, so re-sending amends rather than
+  // duplicates. Only meaningful when idle.
+  const lastUserIndex = (() => {
+    for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
+      if (thread.messages[index]?.role === "user") return index;
+    }
+    return -1;
+  })();
+  const editLast = () => {
+    if (busy || lastUserIndex < 0) return;
+    const message = thread.messages[lastUserIndex];
+    if (!message) return;
+    thread.setMessages(thread.messages.slice(0, lastUserIndex));
+    setQueued(null);
+    setDraft(userText(message));
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  // ENG-215 — regenerate the last assistant turn (re-issues from the preserved
+  // user message; no duplication). Only when idle and an assistant turn exists.
+  const lastAssistantIndex = (() => {
+    for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
+      if (thread.messages[index]?.role === "assistant") return index;
+    }
+    return -1;
+  })();
+  const regenerateLast = () => {
+    if (busy || lastAssistantIndex < 0) return;
+    void thread.regenerate();
+  };
+
+  // ENG-214 — a broken turn (failed send, mid-stream drop, any thread.error)
+  // surfaces VISIBLY in the thread, not only through the hidden status span.
+  // The copy stays friendly — raw transport errors are announced to assistive
+  // tech below but never printed to end users. Retry regenerates the failed
+  // turn from the preserved user message (no duplication).
+  const errorBanner = thread.error ? (
+    <div className="fl-error">
+      <span>Something went wrong and the response didn&rsquo;t finish.</span>
+      <button
+        type="button"
+        className="fl-error-retry"
+        onClick={() => {
+          // Nothing to re-issue (sends append the user turn before any request
+          // fires, so this is a defensive rail): degrade to dismissing the
+          // error instead of letting regenerate() throw on an empty thread.
+          if (thread.messages.length === 0) {
+            thread.clearError();
+            return;
+          }
+          void thread.regenerate();
+        }}
+      >
+        Retry
+      </button>
+    </div>
+  ) : null;
 
   const composer = (
     <form className="fl-composer" aria-label="Message composer" onSubmit={event => { event.preventDefault(); send(); }}>
       {attachError ? <div className="fl-att-error" role="alert">{attachError}</div> : null}
+      {queued ? (
+        <div className="fl-queued" role="status" aria-live="polite">
+          <span className="fl-queued-tag">Queued</span>
+          <span className="fl-queued-text">{queued.text || `${queued.files.length} attachment(s)`}</span>
+          <span className="fl-queued-hint">sends when the reply finishes</span>
+          <button type="button" className="fl-att-rm fl-queued-rm" aria-label="Cancel queued message" onClick={() => setQueued(null)}>×</button>
+        </div>
+      ) : null}
       {files.length > 0 ? (
         <div className="fl-att-chips">
           {files.map((file, i) => (
@@ -323,13 +498,17 @@ export function VendoThread({
         <label style={{ display: "contents" }}>
           <span className="fl-sr-only">Message</span>
           <textarea
+            ref={textareaRef}
             aria-label="Message"
             placeholder="Ask anything"
             rows={1}
             value={draft}
-            disabled={busy}
+            // ENG-215 — never disabled: typing (and queueing) stays live through
+            // the whole turn, and the composer never dumps focus to <body>.
             onChange={event => setDraft(event.currentTarget.value)}
-            onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }}
+            onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+              if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); }
+            }}
           />
         </label>
         {onVoice ? (
@@ -339,19 +518,20 @@ export function VendoThread({
             </svg>
           </button>
         ) : null}
+        {/* ENG-215 — Stop is the explicit interrupt (only mid-turn); Send is
+            always available and, during a turn, queues the message instead. */}
         {busy ? (
-          <button className="fl-icon-btn" type="button" aria-label="Stop" onClick={() => void thread.stop()}>
+          <button className="fl-icon-btn fl-stop" type="button" aria-label="Stop" onClick={() => void thread.stop()}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5" /></svg>
             <span className="fl-sr-only">Stop</span>
           </button>
-        ) : (
-          <button className="fl-icon-btn fl-send" type="submit" aria-label="Send" disabled={!draft.trim() && files.length === 0}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 19V5" /><path d="m5 12 7-7 7 7" />
-            </svg>
-            <span className="fl-sr-only">Send</span>
-          </button>
-        )}
+        ) : null}
+        <button className="fl-icon-btn fl-send" type="submit" aria-label="Send" disabled={!draft.trim() && files.length === 0}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 19V5" /><path d="m5 12 7-7 7 7" />
+          </svg>
+          <span className="fl-sr-only">Send</span>
+        </button>
       </div>
       <span role="status" aria-live="polite" className="fl-sr-only">
         {thread.status === "error" && thread.error ? `error: ${thread.error.message}` : thread.status}
@@ -359,17 +539,24 @@ export function VendoThread({
     </form>
   );
 
-  const renderPart = (part: UIMessage["parts"][number], key: string, role: UIMessage["role"]) => {
+  const renderPart = (part: UIMessage["parts"][number], key: string, role: UIMessage["role"], count = 1) => {
     if (part.type === "text") {
-      return role === "user"
-        ? <div className="fl-usertext" key={key}>{part.text}</div>
-        : <Markdown key={key} text={part.text} streaming={part.state === "streaming"} />;
+      if (role === "user") return <div className="fl-usertext" key={key}>{part.text}</div>;
+      // ENG-217 — lone caret while the streamed turn is still empty (stable
+      // line box); once text flows, Markdown's .fl-md--streaming trailing
+      // caret takes over.
+      if (part.state === "streaming" && part.text.trim().length === 0) {
+        return <span className="fl-caret" aria-hidden="true" key={key} />;
+      }
+      return <Markdown key={key} text={part.text} streaming={part.state === "streaming"} />;
     }
     if (isToolUIPart(part)) {
-      // The in-thread presentation is a human build "beat" — the raw tool
-      // record (ids, inputs, outcomes) lives in the Activity panel (08-ui §6).
+      // The in-thread presentation is a human build "beat" (label from the
+      // ENG-216 pipeline: host metadata, else the prettified id — never the
+      // raw slug or lifecycle string). The mechanical record stays in the
+      // Activity panel. Collapsed runs carry their repeat count.
       const risk = risks.get(part.toolCallId) ?? "read";
-      return <BuildBeat key={key} part={part} risk={risk} />;
+      return <BuildBeat key={key} part={part} risk={risk} count={count} />;
     }
     if (part.type === "data-vendo-view") {
       const data = partData(part) as Partial<VendoViewPart>;
@@ -452,6 +639,7 @@ export function VendoThread({
         <div className="fl-thread" role="region" aria-label="Vendo conversation">
           <div className="fl-landing">
             <h1 className="fl-greet">{greeting}</h1>
+            {errorBanner}
             <div className="fl-landing-composer">{composer}</div>
             {suggestions.length > 0 ? (
               <div className="fl-chips">
@@ -481,53 +669,85 @@ export function VendoThread({
             ref={scroll.listRef}
             onScroll={scroll.onScroll}
           >
-            {thread.messages.map(message => (
+            {thread.messages.map((message, messageIndex) => (
               <article
                 className={message.role === "user" ? "fl-turn-user" : "fl-turn-assistant"}
                 data-role={message.role}
                 key={message.id}
                 aria-label={`${message.role} message`}
               >
-                {message.parts.map((part, index) =>
-                  renderPart(part, `${message.id}-${index}`, message.role),
-                )}
+                {collapseToolRuns(message.parts).map(({ part, index, count }) =>
+                  renderPart(part, `${message.id}-${index}`, message.role, count))}
+                {/* ENG-215 — edit the last user turn / regenerate the last
+                    assistant turn. Revealed on hover/focus (see chrome-css). */}
+                {!busy && messageIndex === lastUserIndex && message.role === "user" ? (
+                  <div className="fl-turn-actions">
+                    <button type="button" className="fl-turn-btn" aria-label="Edit message" onClick={editLast}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                      </svg>
+                      Edit
+                    </button>
+                  </div>
+                ) : null}
+                {!busy && messageIndex === lastAssistantIndex && message.role === "assistant" ? (
+                  <div className="fl-turn-actions">
+                    <button type="button" className="fl-turn-btn" aria-label="Regenerate" onClick={regenerateLast}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 21v-5h5" />
+                      </svg>
+                      Regenerate
+                    </button>
+                  </div>
+                ) : null}
               </article>
             ))}
             {approvals.map(part => {
               const risk = risks.get(part.toolCallId) ?? "read";
               const input = "input" in part ? part.input : undefined;
               const guardApproval = guardApprovals.get(part.toolCallId);
+              const name = toolName(part);
               const approval: ApprovalRequest = {
                 id: part.approval.id,
-                call: { id: part.toolCallId, tool: toolName(part), args: input as Json },
-                descriptor: { name: toolName(part), description: `Approve ${toolName(part)}`, inputSchema: {}, risk },
+                call: { id: part.toolCallId, tool: name, args: input as Json },
+                // The wire approval part carries no descriptor (01-core), so the
+                // name is the raw tool id (ApprovalCard humanizes it) and the
+                // description is left to host metadata — never a fabricated
+                // "Approve <tool>" sentence.
+                descriptor: { name, description: tools[name]?.description ?? "", inputSchema: {}, risk },
                 inputPreview: preview(input),
                 ...(guardApproval?.invalidatedGrant === undefined
                   ? {}
                   : { invalidatedGrant: guardApproval.invalidatedGrant }),
-                ctx: { principal: { kind: "user", subject: "current-user", ephemeral: true }, venue: "chat", presence: "present" },
-                createdAt: new Date().toISOString(),
+                // ENG-216 — the in-thread card renders inside the live conversation,
+                // which IS its context, and the wire carries no ctx: rather than
+                // invent a principal/venue/presence and stamp a per-render `new
+                // Date()`, we hide the context byline in-thread (showContext=false)
+                // and only structurally-true, stable values ride here (never shown).
+                ctx: { principal: { kind: "user", subject: "" }, venue: "chat", presence: "present" },
+                createdAt: SYNTHESIZED_CREATED_AT,
               };
               const guardApprovalId = guardApproval?.approvalId;
               return (
                 <div key={part.approval.id} ref={element => { approvalCardRefs.current.set(part.approval.id, element); }}>
                   <ApprovalCard
                     approval={approval}
+                    showContext={false}
                     allowRemember={guardApprovalId !== undefined}
                     onDecide={async decision => {
-                      // The approved card lifts into the top-bar notification
+                      // The approved card lifts into the top-right notification
                       // (ENG-205 morph) as the run resumes underneath it.
                       if (decision.approve) {
                         const card = approvalCardRefs.current.get(part.approval.id)?.querySelector<HTMLElement>(".fl-approval");
                         if (card) {
-                          const presentation = toolPresentation(toolName(part), input);
+                          const presentation = toolPresentation(name, input, tools[name]);
                           const rect = card.getBoundingClientRect();
                           card.style.transition = "opacity .22s ease";
                           card.style.opacity = "0";
                           setMorph({
                             startRect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
-                            title: "Slack automation is live",
-                            sub: "Posts to #team when a document arrives",
+                            title: `${presentation.title} — approved`,
+                            sub: presentation.sub ?? "Runs as you · recorded in Activity",
                             logoUrl: presentation.logoUrl,
                             theme,
                           });
@@ -560,6 +780,19 @@ export function VendoThread({
                 }}
               />
             ))}
+            {awaitingFirstChunk ? (
+              <>
+                <div className="fl-generating">
+                  <span className="fl-pulse" aria-hidden="true" />
+                  Generating&hellip;
+                </div>
+                <div className="fl-skeleton" aria-hidden="true">
+                  <div className="fl-skeleton-bar" />
+                  <div className="fl-skeleton-bar" />
+                  <div className="fl-skeleton-bar" />
+                </div>
+              </>
+            ) : null}
             {working ? <FluidThinking label="Working" /> : null}
           </div>
           {scroll.showJump ? (
@@ -570,6 +803,7 @@ export function VendoThread({
             </button>
           ) : null}
         </div>
+        {errorBanner}
         {composer}
       </div>
       {morph ? <MorphToast {...morph} onDone={() => setMorph(null)} /> : null}

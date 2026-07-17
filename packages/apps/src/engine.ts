@@ -1,10 +1,10 @@
 import {
   RESERVED_COMPONENT_NAMES,
-  TREE_MAX_COMPONENT_SOURCE_CHARS,
+  TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_NODES,
   TREE_MAX_QUERIES,
-  TREE_MAX_TOTAL_COMPONENT_CHARS,
+  TREE_MAX_TOTAL_COMPONENT_BYTES,
   VENDO_APP_FORMAT,
   VendoError,
   isPathBinding,
@@ -25,7 +25,7 @@ import {
   parseModelJson,
   type IncrementalGeneratedTree,
 } from "./incremental-tree.js";
-import { pinComponentName, type PinBaseline } from "./pins.js";
+import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "./pins.js";
 
 export interface GenerationDependencies {
   model: LanguageModel;
@@ -67,7 +67,11 @@ export interface GenerationEngine {
 
 const PASCAL_CASE = /^[A-Z][A-Za-z0-9]*$/;
 const SAFE_MACHINE_PATH = /^\/app\/[A-Za-z0-9._/-]+$/;
-const SERVER_INSTRUCTION = /\b(server|server-side|backend|api|database|persist|mutation|mutate|external|http|web app|function|secret|egress)\b/i;
+const SERVER_INSTRUCTION = /\b(server|server-side|backend|database|persist|mutation|mutate|egress)\b/i;
+// Words that signal server work only outside a visible-element label: "call the
+// api" needs code, "the API status card" is a tree edit (ENG-349).
+const AMBIGUOUS_SERVER_TERM = /\b(api|http|web app|function|external|secret)\b/gi;
+const VISIBLE_ELEMENT_LABEL = /^(?:\w+\s+)?(card|button|badge|chip|header|heading|title|label|caption|text|list|table|column|row|cell|section|panel|chart|graph|icon|field|tab|menu|toolbar|sidebar|footer|banner|tile|widget)s?\b/i;
 const SERVER_COMPUTED_INSTRUCTION = /\b(server-computed|computed (?:view|tree)|render(?:ed)? on the server)\b/i;
 const FULL_WEB_APP_INSTRUCTION = /\b(full web app|served web app|custom client|ui:? ?http)\b/i;
 const reserved = new Set<string>(RESERVED_COMPONENT_NAMES);
@@ -116,7 +120,7 @@ const generationPromptSections = (deps: GenerationDependencies): GenerationPromp
   content: `TREE CONTRACT:
 - At rest the app is {name, description?, tree, components?}; never emit id, server, secrets, egress, storage, or authority.
 - tree.formatVersion is "vendo-genui/v1" and tree contains root, nodes, optional data and queries.
-- Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} generated components, ${TREE_MAX_COMPONENT_SOURCE_CHARS} characters per generated component, ${TREE_MAX_TOTAL_COMPONENT_CHARS} total generated-component characters.
+- Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} generated components, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per generated component source, ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes of generated-component source in total.
 - Reserved prewired primitive names: ${RESERVED_COMPONENT_NAMES.join(", ")}.
 - Every node is exactly {id, component, source, props?, children?}. "component" is a REQUIRED non-empty string on EVERY node, including layout containers — use a prewired primitive (e.g. Stack, Row, Grid) as the component for containers; children is an array of node ids. Never emit a node without a component.
 - "nodes" is a FLAT array of every node; nesting is expressed only through "children" id references, never by inlining child objects. "root" is the id of the top node.
@@ -567,6 +571,14 @@ const applyTreeOps = (
         if (app.pins?.some(({ slot }) => slot === baseline.slot)) {
           return issue(index, operation, `pin slot "${baseline.slot}" is already forked`);
         }
+        // ENG-348 — a named-export capture forks with a synthesized default
+        // export (the jail entry renders only a default export). No detectable
+        // component export means the fork could never render: fail loudly here
+        // instead of crashing at render.
+        const forkSource = pinForkSource(baseline.source);
+        if (!hasDefaultExport(forkSource)) {
+          return issue(index, operation, `pin baseline "${baseline.slot}" has no default export and no detectable named component export; export the component from its module and re-run vendo sync`);
+        }
         const componentName = pinComponentName(baseline.slot);
         if (app.components?.[componentName] !== undefined) {
           return issue(index, operation, `generated component "${componentName}" already exists`);
@@ -588,7 +600,7 @@ const applyTreeOps = (
         };
         tree.nodes.push(node);
         insertChild(parent, node.id, operation.index);
-        app.components = { ...(app.components ?? {}), [componentName]: baseline.source };
+        app.components = { ...(app.components ?? {}), [componentName]: forkSource };
         app.pins = [...(app.pins ?? []), { slot: baseline.slot, base: baseline.hash }];
         break;
       }
@@ -695,7 +707,7 @@ const codePlanFrom = (
       continue;
     }
     if (!safeFilePath(file.path)) issues.push(`unsafe machine path "${file.path}"; paths must stay under /app`);
-    if (file.content.length > TREE_MAX_TOTAL_COMPONENT_CHARS) issues.push(`file "${file.path}" is too large`);
+    if (new TextEncoder().encode(file.content).length > TREE_MAX_TOTAL_COMPONENT_BYTES) issues.push(`file "${file.path}" is too large`);
     files.push({ path: file.path, content: file.content });
   }
   // Rung is the capability level actually reached, so either signal that indicates a
@@ -803,11 +815,16 @@ export const modelEngine: GenerationEngine = {
  * Every rung-4 phrase `codePlanFrom` recognizes must route here too, or a
  * graduation request (e.g. "custom client") would take the tree dialect and
  * never reach the scaffold (Greptile, PR #243).
+ * Ambiguous words like "api" or "function" count only when they are not
+ * labeling a visible element — "make the API status card blue" must stay on
+ * the cheap tree dialect instead of failing slowly through code (ENG-349).
  */
 export const instructionRequiresServer = (app: AppDocument, instruction: string): boolean =>
   SERVER_INSTRUCTION.test(instruction)
   || FULL_WEB_APP_INSTRUCTION.test(instruction)
-  || app.ui === "http";
+  || app.ui === "http"
+  || [...instruction.matchAll(AMBIGUOUS_SERVER_TERM)].some((match) =>
+    !VISIBLE_ELEMENT_LABEL.test(instruction.slice(match.index + match[0].length).trimStart()));
 
 /** 01-core §8 — generated component naming check exported for focused engine tests. */
 export const isGeneratedComponentName = (name: string): boolean =>

@@ -56,6 +56,20 @@ export interface MachineSessions {
   withMachine<T>(app: AppDocument, ctx: RunContext, fn: (run: MachineRun) => Promise<T>): Promise<T>;
   /** 06-apps §2 — isolated edit/graduation machine; never enters the live cache before validation. */
   withFork<T>(app: AppDocument, ctx: RunContext, fn: (run: MachineRun) => Promise<T>): Promise<T>;
+  /**
+   * 06-apps §7 — provision a fresh machine for an imported app directory and
+   * snapshot it. Seeds the archive's files and injects the SAME §4.2 run
+   * environment the create/edit path builds (PORT + proxy URL + a freshly
+   * minted run token + declared secret handles), so an imported rung-2/3 app
+   * reaches host tools and the egress endpoint without a subsequent re-edit
+   * (ENG-347). The runtime-owned fetch shim is always written last so the copy
+   * boots with the current shim, never one an archive smuggled in.
+   */
+  provisionImport(
+    app: AppDocument,
+    ctx: RunContext,
+    files: Record<string, Uint8Array>,
+  ): Promise<string>;
 }
 
 /** 06-apps §4.2 and block-plan decision 5. */
@@ -179,6 +193,25 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     return fn({ machine, ...run });
   };
 
+  const provisionImport = async (
+    app: AppDocument,
+    ctx: RunContext,
+    files: Record<string, Uint8Array>,
+  ): Promise<string> => {
+    const adapter = requireAdapter();
+    const run = await newRun(app, ctx);
+    const machine = await adapter.create({
+      env: environment(app, run.runToken),
+      files: { ...files, [FETCH_SHIM_PATH]: FETCH_SHIM_SOURCE },
+      egress: app.egress,
+    });
+    try {
+      return await machine.snapshot();
+    } finally {
+      await machine.stop().catch(() => undefined);
+    }
+  };
+
   const evict = async (appId: string): Promise<void> => {
     const pending = waking.get(appId);
     if (pending !== undefined) await pending.catch(() => undefined);
@@ -211,5 +244,6 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     withAuthorization,
     withMachine,
     withFork,
+    provisionImport,
   };
 };

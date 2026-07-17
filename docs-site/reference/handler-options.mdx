@@ -1,5 +1,5 @@
 ---
-title: "Handler options"
+title: "Handler options: createVendo config and fetch settings"
 description: "Every createVendo configuration option and fetch-handler setting, including base path, principal resolution, CSRF policy, and wire error behavior."
 ---
 
@@ -11,16 +11,17 @@ description: "Every createVendo configuration option and fetch-handler setting, 
 | `principal` | yes | resolves the host request to a principal; `null` creates an ephemeral session |
 | `store` | no | defaults to PGlite at `.vendo/data` |
 | `sandbox` | no | unlocks app rungs 2 through 4; absent means rung 1 only |
+| `catalog` | no | `ComponentCatalog` of host components exposed to the generation prompt; merged with any `.vendo/catalog.json` written by `vendo sync`, with explicit entries winning by name — see [Host components](/connect/host-components) |
 | `connectors` | no | adds external connector tool registries |
-| `actAs` | no | supplies scoped auth material for away host API execution |
+| `actAs` | no | supplies scoped auth material for away host API execution — see [actAs presets](/connect/act-as-presets) |
 | `policy` | no | policy file, rules, directions, and code escape hatch |
 | `judge` | no | contextual guard judge |
 | `secrets` | no | defaults to environment-backed secret lookup |
 | `telemetry` | no | wires build and development telemetry |
-| `mcp` | no | opens the [MCP door](/capabilities/mcp) so outside agents reach host tools through the guarded path; off by default |
-| `oauth` | conditional | `HostOAuthAdapter` used by the door for session lookup and principal resolution; required when `mcp` is `true`. The door renders consent when the adapter uses `session`, or hands off the whole page when it supplies `authorize` instead — see [MCP door](/capabilities/mcp) |
-| `remoteAs` | no | delegates MCP bearer authentication to an external ES256-signing authorization server (`{ issuer, audience, jwksUri? }`); disables the door's local OAuth endpoints — see [MCP door](/capabilities/mcp) |
-| `federation` | no | enables the `/api/vendo/mcp/federate` handshake so an external authorization server can borrow the host's login flow; takes a shared `{ secret }` — see [MCP door](/capabilities/mcp) |
+| `mcp` | no | opens the [MCP door](/capabilities/mcp) so outside agents reach host tools through the guarded path; `true` for defaults, or an object carrying `{ baseUrl?, remoteAs?, federation? }` when door-specific settings need to flow through the umbrella (see [Configure the door through the umbrella](/capabilities/mcp#configure-the-door-through-the-umbrella)); off by default |
+| `oauth` | conditional | `HostOAuthAdapter` used by the door for session lookup and principal resolution; required when `mcp` is enabled. The door renders consent when the adapter uses `session`, or hands off the whole page when it supplies `authorize` instead — see [MCP door](/capabilities/mcp) |
+| `remoteAs` | no | delegates MCP bearer authentication to an external ES256-signing authorization server (`{ issuer, audience, jwksUri? }`); disables the door's local OAuth endpoints. Also accepted under `mcp: { remoteAs }` — see [MCP door](/capabilities/mcp) |
+| `federation` | no | enables the `/api/vendo/mcp/federate` handshake so an external authorization server can borrow the host's login flow; takes a shared `{ secret }`. Also accepted under `mcp: { federation }` — see [MCP door](/capabilities/mcp) |
 | `agent` | no | chat context controls: `toolOutputCap`, `maxOutputTokens`, `historyWindow` (see [Agent context](#agent-context)) |
 
 ## Agent context
@@ -62,6 +63,16 @@ not proxied through this base.
 Every wire request passes through `principal(req)`. The returned
 `Principal.subject` scopes threads, apps, approvals, grants, activity, and
 runs. Ephemeral principals never write to disk.
+
+`principal(req)` must return `kind: "user"` (or `null`). Returning
+`kind: "org"` or a subject that starts with `vendo:` is rejected at the
+wire — those identities are Vendo-owned. See
+[Principals and organizations](/deploy/principals-and-orgs).
+
+When `principal(req)` returns `null`, Vendo issues an anonymous session
+cookie. The first authenticated request afterward merges the anonymous
+session's threads, apps, and state into the signed-in user; grants,
+approvals, connected accounts, and history stay put.
 
 ## CSRF floor
 

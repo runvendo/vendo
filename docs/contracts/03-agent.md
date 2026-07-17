@@ -34,6 +34,13 @@ export interface VendoAgent {
     delete(id: ThreadId, ctx: RunContext): Promise<void>;
   };
 
+  /** ENG-237 (AGENT-11): drop a subject's in-memory threads when its ephemeral
+   *  session is evicted. The umbrella calls this for every subject the store's
+   *  idle sweep returns (02 §4); store-backed ephemeral threads live in the
+   *  store overlay (cascaded there), so this only bites the no-store (BYO)
+   *  composition. */
+  evictSubject(subject: string): void;
+
   /** The AgentRunner seam implementation (core §13) — headless task execution for automations. */
   asRunner(): AgentRunner;
 }
@@ -62,7 +69,7 @@ export interface Thread { id: ThreadId; subject: string; messages: UIMessage[]; 
 export interface ThreadSummary { id: ThreadId; title: string; updatedAt: IsoDateTime; }
 ```
 
-Threads belong to a principal; `threads.*` never crosses subjects. Ephemeral principals' threads live in the store's per-process in-memory overlay (02 §4) — not a separate agent-owned map — so anon→signed-in migration (02 §4) can move them to the real subject through one seam.
+Threads belong to a principal; `threads.*` never crosses subjects. Ephemeral principals' threads live in the store's per-process in-memory overlay (02 §4) — not a separate agent-owned map — so anon→signed-in migration (02 §4) can move them to the real subject through one seam. When a session is evicted (02 §4 idle sweep / cap overflow), store-overlay threads go with the store cascade, and the umbrella additionally calls `evictSubject` so a no-store agent's in-memory threads are dropped in the same pass — no composition leaks threads past session eviction (ENG-237).
 
 ## Amendments
 
@@ -77,3 +84,10 @@ Threads belong to a principal; `threads.*` never crosses subjects. Ephemeral pri
 - **Changed:** §5 no longer says ephemeral principals get an agent-owned in-memory thread map; ephemeral threads live in the store's per-process overlay (02 §4), so anonymous→signed-in migration moves them through one seam.
 - **Why:** ENG-263's anon-merge relocated ephemeral-subject threads out of `packages/agent/src/threads.ts` into the store overlay; the frozen prose described the pre-merge path.
 - **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
+
+### 2026-07-16 — Thread eviction on session end (AGENT-11, ENG-237, wave 4)
+
+- **Changed:** §1 adds `VendoAgent.evictSubject(subject)` — drops a subject's in-memory (no-store/BYO composition) threads when its ephemeral session is evicted; the umbrella calls it per subject returned by the store's idle sweep (02 §4). A no-op in the composed store-backed default, where ephemeral threads live in the store overlay and are cascaded there.
+- **Changed:** §5 gains the eviction leg: session eviction removes ephemeral threads from every composition — store overlay via the store cascade, agent memory via `evictSubject` — in the same pass.
+- **Why:** Wave 4 (PR #301) shipped the eviction surface on this FROZEN interface; the frozen prose covered ephemeral threads' migration path but not their end of life.
+- **Approved by:** Yousef, 2026-07-16 (inventory: `docs/superpowers/specs/2026-07-16-wave4-contract-amendment-inventory.md`).

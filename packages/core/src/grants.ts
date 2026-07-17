@@ -10,7 +10,8 @@ import {
   type IsoDateTime,
 } from "./ids.js";
 import { principalSchema, type Principal } from "./principal.js";
-import { triggerRefSchema, type RunContext, type TriggerRef } from "./run-context.js";
+import type { RunContext } from "./run-context.js";
+import { triggerRefSchema, type TriggerRef } from "./triggers.js";
 import { toolCallSchema, toolDescriptorSchema, type ToolCall, type ToolDescriptor } from "./tools.js";
 
 /** 01-core §5 */

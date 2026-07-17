@@ -30,8 +30,36 @@ Every non-2xx response uses `{ "error": { "code", "message" } }`.
 ## Common checks
 
 - A rung 2 through 4 app requires a configured sandbox adapter.
-- Away host API calls require `actAs` and a matching app-bound grant.
+- Present-mode credential forwarding requires `VENDO_BASE_URL` to be set to
+  the trusted host origin. When it is unset or the route binding is
+  cross-origin, Vendo emits a single `present-credentials-not-forwarded`
+  audit event per composition (reason `untrusted-host-origin` or
+  `cross-origin-binding`) and same-origin tool calls run without inbound
+  auth. `vendo doctor` catches this before you ship — see below.
+- Away host API calls require `actAs` and an app-bound grant that was
+  captured while the user was present. See
+  [actAs presets](/connect/act-as-presets) for provider wiring. If `actAs`
+  returns `null` for a run, the step fails closed, the run terminates, and
+  nothing reaches the host API. Each attempt is audited with its disposition
+  (`minted`, `declined`, `mismatch`, or `error`); grants that don't match the
+  current principal fail closed with `act-as-subject-mismatch`.
 - Cookie-authenticated mutations require `Content-Type: application/json`.
 - `/tick` requires the configured bearer secret.
 - Webhook verification uses the raw body and delivery headers.
 - Unknown instant UI formats render a contained notice instead of breaking the page.
+
+## Doctor probes
+
+`vendo doctor` runs two live probes against the running dev server:
+
+- `POST /doctor/present` verifies that `authorization` and `cookie` headers
+  reach the host API on same-origin calls. Failure means `VENDO_BASE_URL` is
+  missing or wrong, the route binding is cross-origin, or the server is
+  down.
+- `POST /doctor/act-as` verifies that `createVendo({ actAs })` mints auth
+  material the host principal resolver accepts. Doctor warns (does not
+  fail) when `actAs` is not configured.
+
+Both probes report booleans only — no credential values are printed or
+persisted — and the synthetic `/doctor/*` routes return 404 in production.
+See the [CLI reference](/reference/cli#vendo-doctor-dir).

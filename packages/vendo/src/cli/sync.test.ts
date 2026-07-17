@@ -270,4 +270,131 @@ describe("vendo sync", () => {
     expect(await runSync({ targetDir: ".", output: { log: (line) => logs.push(line), error() {} }, sync: async () => report() })).toBe(0);
     expect(logs).toContain("catalog.json: 2 discovered, 1 registered");
   });
+
+  it("--json prints exactly one machine-readable object carrying report and impact", async () => {
+    const messages = captureOutput();
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      impact: [{ tool: "host_x", apps: [], automations: [{ id: "app_a", title: "A" }], grants: 0 }],
+    }), { status: 200 })) as typeof fetch;
+
+    const exit = await runSync({
+      targetDir: ".",
+      json: true,
+      output: messages.output,
+      fetchImpl,
+      sync: async () => report([{ tool: "host_x", change: "removed" }], ["host_x"]),
+    });
+
+    expect(exit).toBe(0);
+    expect(messages.logs).toHaveLength(1);
+    expect(messages.errors).toHaveLength(0);
+    expect(JSON.parse(messages.logs[0]!)).toEqual({
+      ok: true,
+      exitCode: 0,
+      report: report([{ tool: "host_x", change: "removed" }], ["host_x"]),
+      impact: [{ tool: "host_x", apps: [], automations: [{ id: "app_a", title: "A" }], grants: 0 }],
+      notes: [],
+    });
+  });
+
+  it("--json carries unresolved slots in the report, exits two, and keeps stdout to one object", async () => {
+    const messages = captureOutput();
+    const unresolved = {
+      ...report(),
+      unresolvedPins: [{
+        slot: "InlineCard",
+        component: "() => null",
+        reason: "inline-component" as const,
+        hint: "run the host in dev with Vendo mounted to runtime-capture it",
+      }],
+    };
+
+    expect(await runSync({ targetDir: ".", json: true, output: messages.output, sync: async () => unresolved })).toBe(2);
+
+    expect(messages.logs).toHaveLength(1);
+    expect(messages.errors).toHaveLength(0);
+    expect(JSON.parse(messages.logs[0]!)).toMatchObject({
+      ok: false,
+      exitCode: 2,
+      report: { unresolvedPins: [{ slot: "InlineCard", reason: "inline-component" }] },
+      notes: [],
+    });
+  });
+
+  it("--json keeps strict exit codes and surfaces unknown impact as null plus a note", async () => {
+    const messages = captureOutput();
+    const fetchImpl = vi.fn(async () => { throw new Error("offline"); }) as typeof fetch;
+
+    const exit = await runSync({
+      targetDir: ".",
+      strict: true,
+      json: true,
+      output: messages.output,
+      url: "http://offline.test/api/vendo",
+      fetchImpl,
+      sync: async () => report([{ tool: "host_x", change: "removed" }]),
+    });
+
+    expect(exit).toBe(2);
+    expect(messages.logs).toHaveLength(1);
+    expect(messages.errors).toHaveLength(0);
+    expect(JSON.parse(messages.logs[0]!)).toMatchObject({
+      ok: false,
+      exitCode: 2,
+      impact: null,
+      notes: ["impact unknown — dev server not reachable at http://offline.test/api/vendo"],
+    });
+  });
+
+  it("--json reports an empty impact when nothing changed and collects report-push notes", async () => {
+    vi.stubEnv("VENDO_API_KEY", "");
+    const messages = captureOutput();
+    const fetchImpl = vi.fn() as typeof fetch;
+
+    const exit = await runSync({
+      targetDir: ".",
+      json: true,
+      report: true,
+      output: messages.output,
+      fetchImpl,
+      sync: async () => report(),
+    });
+
+    expect(exit).toBe(0);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(messages.errors).toHaveLength(0);
+    expect(JSON.parse(messages.logs[0]!)).toMatchObject({
+      ok: true,
+      exitCode: 0,
+      impact: [],
+      notes: ["--report requires VENDO_API_KEY or --key"],
+    });
+  });
+
+  it("--json emits a parseable envelope when extraction itself fails soft", async () => {
+    const soft = captureOutput();
+    expect(await runSync({
+      targetDir: ".",
+      json: true,
+      output: soft.output,
+      sync: async () => { throw new Error("scan"); },
+    })).toBe(0);
+    expect(soft.errors).toHaveLength(0);
+    expect(JSON.parse(soft.logs[0]!)).toMatchObject({
+      ok: true,
+      exitCode: 0,
+      impact: null,
+      error: "sync failed soft: scan",
+    });
+
+    const strict = captureOutput();
+    expect(await runSync({
+      targetDir: ".",
+      strict: true,
+      json: true,
+      output: strict.output,
+      sync: async () => { throw new Error("scan"); },
+    })).toBe(2);
+    expect(JSON.parse(strict.logs[0]!)).toMatchObject({ ok: false, exitCode: 2, error: "sync failed soft: scan" });
+  });
 });

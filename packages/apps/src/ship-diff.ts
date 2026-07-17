@@ -1,6 +1,6 @@
 import type { AppDocument, AppId } from "@vendoai/core";
 import { appVersionHash } from "./version-hash.js";
-import { pinComponentName, type PinBaseline } from "./pins.js";
+import { pinComponentName, pinForkSource, type PinBaseline } from "./pins.js";
 import { unifiedDiff } from "./unified-diff.js";
 
 /**
@@ -63,7 +63,10 @@ export const computeShipDiff = (
       baseHash: pin.base,
       ...(baseline === undefined ? {} : { baselineHash: baseline.hash }),
       drifted: baseline?.hash !== pin.base,
-      diff: unifiedDiff(`${pin.slot}/${component}.tsx`, baseline?.source ?? "", shipped),
+      // Diff from the source the fork actually started as (`pinForkSource`):
+      // the synthesized default-export alias on a named-export capture is fork
+      // plumbing, not a host edit, so an unedited fork reads as an empty diff.
+      diff: unifiedDiff(`${pin.slot}/${component}.tsx`, baseline === undefined ? "" : pinForkSource(baseline.source), shipped),
     };
   });
   const pinnedComponents = new Set(pins.map((pin) => pin.component));

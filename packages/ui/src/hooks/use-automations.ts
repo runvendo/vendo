@@ -1,11 +1,17 @@
 /** Automation and run transport (08-ui §3, 07-automations §1). */
 import type { AppId, RunId } from "@vendoai/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import { useVendoContext } from "../context.js";
+import { type PollOptions, useResource } from "./use-resource.js";
 import type { AutomationEntry, EnableResult, RunPlan, RunRecord, RunStatus } from "../wire-types.js";
 
-export function useAutomations(): {
+export function useAutomations(options?: PollOptions): {
+  /** Back-compat alias for `data` (contract §3). */
   automations: AutomationEntry[];
+  data: AutomationEntry[];
+  error: Error | undefined;
+  isLoading: boolean;
+  refresh(): Promise<void>;
   enable(id: AppId): Promise<EnableResult>;
   disable(id: AppId): Promise<void>;
   runs(filter?: { appId?: AppId; status?: RunStatus; cursor?: string }): Promise<{ runs: RunRecord[]; cursor?: string }>;
@@ -13,12 +19,8 @@ export function useAutomations(): {
   stopRun(runId: RunId): Promise<void>;
 } {
   const { client } = useVendoContext();
-  const [automations, setAutomations] = useState<AutomationEntry[]>([]);
-  const refresh = useCallback(async () => setAutomations(await client.automations.list()), [client]);
-
-  useEffect(() => {
-    void refresh().catch(() => undefined);
-  }, [refresh]);
+  const list = useCallback(() => client.automations.list(), [client]);
+  const { data, error, isLoading, refresh } = useResource(list, [] as AutomationEntry[], options);
 
   const enable = useCallback(
     async (id: AppId) => {
@@ -37,7 +39,11 @@ export function useAutomations(): {
   );
 
   return {
-    automations,
+    automations: data,
+    data,
+    error,
+    isLoading,
+    refresh,
     enable,
     disable,
     runs: client.runs.list,

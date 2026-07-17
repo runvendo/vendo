@@ -2,9 +2,27 @@
 
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { VendoRoot as UmbrellaVendoRoot } from "@vendoai/vendo/react";
-import { ScriptedTransport, type DirectorScript } from "@vendoai/ui";
+import { ScriptedTransport, type DirectorScript, type ToolMetaMap } from "@vendoai/ui";
 import { cadenceHostComponents } from "@/vendo/host-components";
 import { cadenceTheme } from "@/vendo/theme";
+
+/**
+ * ENG-216 humanization seam: Cadence describes its own tools so build beats
+ * and approvals speak in the product's voice ("Reading your deadlines…"
+ * instead of a prettified slug). Additive — anything unlisted falls back to
+ * the chrome's formatting.
+ */
+const cadenceToolMeta: ToolMetaMap = {
+  host_listDeadlines: { label: "Reading your deadlines" },
+  host_listClients: { label: "Reading your clients" },
+  host_listActivity: { label: "Reading recent activity" },
+  host_sendClientMessage: { label: "Messaging your client" },
+  vendo_apps_create: { label: "Building your view" },
+  vendo_apps_edit: { label: "Refining your view" },
+  vendo_apps_fork: { label: "Remixing from Cadence" },
+  vendo_automations_enable: { label: "Wiring the schedule" },
+  slack_SLACK_SEND_MESSAGE: { label: "Post to #team in Slack" },
+};
 
 /**
  * Director mode (demo capture tooling, never a default): with
@@ -69,7 +87,7 @@ export function VendoRoot({
   if (directorEligible && director.enabled && !director.transport) return null;
   if (!directorEligible) {
     return (
-      <UmbrellaVendoRoot components={cadenceHostComponents} theme={cadenceTheme} onPin={onPin}>
+      <UmbrellaVendoRoot components={cadenceHostComponents} theme={cadenceTheme} tools={cadenceToolMeta} onPin={onPin}>
         {children}
       </UmbrellaVendoRoot>
     );
@@ -79,6 +97,7 @@ export function VendoRoot({
       key={director.transport ? "vendo-director" : "vendo-live"}
       components={cadenceHostComponents}
       theme={cadenceTheme}
+      tools={cadenceToolMeta}
       transport={director.transport}
       onPin={onPin}
     >

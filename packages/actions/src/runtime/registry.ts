@@ -23,30 +23,36 @@ import {
   type CapabilityBrief,
   type CompoundTool,
   type ExtractedTool,
+  type GraphqlBinding,
+  type HttpMethod,
   type OpenApiBinding,
   type OverridesFile,
   type RouteBinding,
+  type ToolBinding,
   type ToolOverride,
+  type TrpcBinding,
 } from "../formats.js";
 import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
 import { error, isArgsObject } from "./outcome.js";
+import { searchToolDescriptors, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
 
 export interface ActionsRegistry extends ToolRegistry {
   add(tools: ToolRegistry): void;
   /** Capability briefs carried by `.vendo/capabilities.json` (04 §1). Validated and exposed; consumed by later milestones. */
   briefs(): Promise<CapabilityBrief[]>;
+  /**
+   * Runtime tool search (ENG-252): rank the merged, enabled tool surface against
+   * a free-text intent. Disabled tools are excluded (they never enter the loaded
+   * descriptor set), so a hit is always a loadable, guard-bound tool.
+   */
+  search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]>;
 }
 
-/** Away calls carry the exact grant captured by the guard binding; venue="mcp"
- * calls carry the door's OAuth-consent projection (10-mcp §3) as `mcpConsent`,
- * attached by the door. `mcpConsent` is the STRUCTURAL twin of @vendoai/mcp's
- * `McpRunContext` — actions depends on core only (so the type can't be
- * imported); the door guarantees the shape, exactly as guard guarantees
- * `grant`. */
-export type ActionsRunContext = RunContext & {
-  grant?: PermissionGrant;
-  mcpConsent?: { clientId: string; scopes: string[] };
-};
+/** CORE-2 (wave 5): `grant` and `mcpConsent` are first-class optional fields
+ * on core's RunContext now — the structural twin this alias used to declare is
+ * gone. The alias survives for existing imports; new code can use RunContext
+ * directly. */
+export type ActionsRunContext = RunContext;
 
 interface RegistryConfig {
   dir?: string;
@@ -234,7 +240,7 @@ function absoluteHttpUrl(value: string | undefined): URL | undefined {
 }
 
 function mayForwardPresentHeaders(
-  binding: RouteBinding | OpenApiBinding,
+  binding: ToolBinding,
   requestUrl: URL,
   configuredBaseUrl: string | undefined,
   baseUrlTrusted: boolean,
@@ -335,27 +341,151 @@ function mcpConsentGrant(ctx: ActionsRunContext, call: ToolCall, tool: Extracted
   };
 }
 
+/** The tRPC HTTP envelope (04 §1): queries GET `{mount}/{procedure}?input=...`,
+ * mutations POST the input as the JSON body. Hosts whose tRPC root applies the
+ * superjson transformer expect the `{ json: ... }` wrapping — which is exactly
+ * `superjson.serialize(value)` for every value that can traverse the agent
+ * tool-call wire (plain JSON; no Date/Map/Set instances exist there, so no
+ * `meta` is ever needed). Known limitation: a host validator that demands a
+ * rich type (e.g. `z.date()`) rejects the ISO string visibly as a tRPC 400 —
+ * request-path date coercion via schema-informed `meta` is a follow-up. */
+function trpcRequest(binding: TrpcBinding, args: Record<string, unknown>, configuredBaseUrl?: string): {
+  url: URL;
+  method: HttpMethod;
+  body?: string;
+} {
+  if (!configuredBaseUrl) {
+    throw new VendoError(
+      "validation",
+      `Cannot execute trpc binding ${binding.procedure}; set createActions({ baseUrl }) for server-side trpc execution`,
+    );
+  }
+  let url: URL;
+  try {
+    url = joinedUrl(configuredBaseUrl, `${binding.mount.replace(/\/$/, "")}/${binding.procedure}`);
+  } catch {
+    throw new VendoError("validation", `Invalid baseUrl for trpc procedure ${binding.procedure}; set createActions({ baseUrl }) to a valid origin`);
+  }
+  const payload = Object.keys(args).length > 0
+    ? (binding.transformer === "superjson" ? { json: args } : args)
+    : undefined;
+  if (binding.type === "query") {
+    if (payload !== undefined) url.searchParams.set("input", JSON.stringify(payload));
+    return { url, method: "GET" };
+  }
+  return { url, method: "POST", ...(payload !== undefined ? { body: JSON.stringify(payload) } : {}) };
+}
+
+/** Unwrap the tRPC success envelope: `{ result: { data } }`, with superjson's
+ * `{ json }` wrapping inside `data` when the host applies the transformer.
+ * `meta` is intentionally ignored: rich types come back as their JSON
+ * projections (ISO strings etc.), the format the agent layer consumes. */
+function trpcOutput(binding: TrpcBinding, parsed: unknown): unknown {
+  const result = parsed !== null && typeof parsed === "object" && "result" in parsed
+    ? (parsed as { result: unknown }).result
+    : undefined;
+  const data = result !== null && typeof result === "object" && result !== undefined && "data" in result
+    ? (result as { data: unknown }).data
+    : parsed;
+  if (binding.transformer === "superjson" && data !== null && typeof data === "object" && "json" in (data as Record<string, unknown>)) {
+    return (data as { json: unknown }).json;
+  }
+  return data;
+}
+
+/** The GraphQL HTTP transport (04 §1): every operation — query or mutation —
+ * is a POST of `{ query: document, variables: args }` to the host endpoint.
+ * The binding's document declares each tool argument as a same-named variable,
+ * so the agent's args ride through unmodified. Auth semantics (present-forward,
+ * away/actAs, venue=mcp) are identical to route bindings. */
+function graphqlRequest(binding: GraphqlBinding, args: Record<string, unknown>, configuredBaseUrl?: string): {
+  url: URL;
+  method: HttpMethod;
+  body: string;
+} {
+  if (!binding.document) {
+    throw new VendoError(
+      "validation",
+      `Cannot execute graphql binding ${binding.operation}; extraction emitted no executable document for it (fail-closed); review the tool's note before enabling`,
+    );
+  }
+  if (!configuredBaseUrl) {
+    throw new VendoError(
+      "validation",
+      `Cannot execute graphql binding ${binding.operation}; set createActions({ baseUrl }) for server-side graphql execution`,
+    );
+  }
+  let url: URL;
+  try {
+    url = joinedUrl(configuredBaseUrl, binding.endpoint.length > 1 ? binding.endpoint.replace(/\/+$/, "") : binding.endpoint);
+  } catch {
+    throw new VendoError("validation", `Invalid baseUrl for graphql operation ${binding.operation}; set createActions({ baseUrl }) to a valid origin`);
+  }
+  return { url, method: "POST", body: JSON.stringify({ query: binding.document, variables: args }) };
+}
+
+/** Unwrap the GraphQL response envelope. GraphQL reports failures as a 200
+ * with an `errors` array — that is still a failed call and surfaces as an
+ * http-error outcome so the agent sees the server's message. On success the
+ * single root field's value (the document has exactly one) is the output. */
+function graphqlOutput(binding: GraphqlBinding, parsed: unknown): ToolOutcome {
+  const envelope = parsed !== null && typeof parsed === "object"
+    ? parsed as { data?: unknown; errors?: unknown }
+    : undefined;
+  const errors = envelope?.errors;
+  if (Array.isArray(errors) && errors.length > 0) {
+    const message = errors
+      .map((item) => item !== null && typeof item === "object" && typeof (item as { message?: unknown }).message === "string"
+        ? (item as { message: string }).message
+        : "GraphQL error")
+      .join("; ");
+    return error("http-error", `graphql ${binding.operation} → errors: ${message.slice(0, 200)}`);
+  }
+  const data = envelope && "data" in envelope ? envelope.data : parsed;
+  if (data !== null && typeof data === "object" && !Array.isArray(data)) {
+    const record = data as Record<string, unknown>;
+    if (Object.keys(record).length === 1 && binding.operation in record) {
+      return { status: "ok", output: record[binding.operation] };
+    }
+  }
+  return { status: "ok", output: data };
+}
+
 async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {
   if (!isArgsObject(call.args)) return error("validation", `Arguments for ${call.tool} must be an object`);
 
   let url: URL;
+  let method: HttpMethod;
   let body: string | undefined;
   try {
-    const substituted = withPathArgs(tool.binding.path, call.args);
-    url = resolveUrl({ ...tool.binding, path: substituted.path }, config.baseUrl);
-    if (tool.binding.kind === "route") {
-      if (tool.binding.argsIn === "query") {
-        for (const [key, value] of Object.entries(substituted.remaining)) appendQuery(url, key, value);
-      } else {
-        body = JSON.stringify(substituted.remaining);
-      }
+    if (tool.binding.kind === "trpc") {
+      const request = trpcRequest(tool.binding, call.args, config.baseUrl);
+      url = request.url;
+      method = request.method;
+      body = request.body;
+    } else if (tool.binding.kind === "graphql") {
+      const request = graphqlRequest(tool.binding, call.args, config.baseUrl);
+      url = request.url;
+      method = request.method;
+      body = request.body;
     } else {
-      const remaining = { ...substituted.remaining };
-      if (Object.prototype.hasOwnProperty.call(remaining, "body")) {
-        body = JSON.stringify(remaining.body);
-        delete remaining.body;
+      method = tool.binding.method;
+      const substituted = withPathArgs(tool.binding.path, call.args);
+      url = resolveUrl({ ...tool.binding, path: substituted.path }, config.baseUrl);
+      if (tool.binding.kind === "route") {
+        if (tool.binding.argsIn === "query") {
+          for (const [key, value] of Object.entries(substituted.remaining)) appendQuery(url, key, value);
+        } else {
+          body = JSON.stringify(substituted.remaining);
+        }
+      } else {
+        const remaining = { ...substituted.remaining };
+        if (Object.prototype.hasOwnProperty.call(remaining, "body")) {
+          body = JSON.stringify(remaining.body);
+          delete remaining.body;
+        }
+        for (const [key, value] of Object.entries(remaining)) appendQuery(url, key, value);
       }
-      for (const [key, value] of Object.entries(remaining)) appendQuery(url, key, value);
     }
   } catch (cause) {
     return error("validation", cause instanceof Error ? cause.message : `Invalid arguments for ${call.tool}`);
@@ -432,7 +562,7 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
     try {
       const request = config.fetch ?? globalThis.fetch;
       const response = await request(url, {
-        method: tool.binding.method,
+        method,
         headers,
         ...(body !== undefined ? { body } : {}),
       });
@@ -440,12 +570,17 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
       if (!response.ok) {
         return error(
           "http-error",
-          `${tool.binding.method} ${url.pathname} → ${response.status}: ${text.slice(0, 200)}`,
+          `${method} ${url.pathname} → ${response.status}: ${text.slice(0, 200)}`,
         );
       }
       if (text) {
         try {
-          return { status: "ok", output: JSON.parse(text) };
+          const parsed: unknown = JSON.parse(text);
+          if (tool.binding.kind === "graphql") return graphqlOutput(tool.binding, parsed);
+          return {
+            status: "ok",
+            output: tool.binding.kind === "trpc" ? trpcOutput(tool.binding, parsed) : parsed,
+          };
         } catch {
           // Successful non-JSON responses retain their HTTP status and text.
         }
@@ -644,6 +779,12 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
 
     async briefs(): Promise<CapabilityBrief[]> {
       return (await loadHost()).capabilities?.briefs ?? [];
+    },
+
+    async search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]> {
+      // load().descriptors is the post-override, enabled-only surface — disabled
+      // tools never reach it, so they can never be returned as loadable.
+      return searchToolDescriptors((await load()).descriptors, query, options);
     },
 
     async execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {

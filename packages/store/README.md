@@ -63,6 +63,20 @@ Ephemeral approvals and audit events route automatically from their embedded pri
 
 `auditStore.export()` reads only the durable audit log. Ephemeral session events appear in `query()` but are never included in exports, by design.
 
+## Ephemeral session lifecycle
+
+Registered ephemeral subjects form a TTL session registry. `registerEphemeralSubject(store, subject, now?, cap?)` both declares the subject ephemeral and stamps its touch time (registration == touch). The registry is a bounded LRU (default cap `EPHEMERAL_SUBJECT_CAP`, 10 000; `setSessionCap` changes the default the overlay enforces — the umbrella wires `sessions.maxSessions` there); over-cap registration evicts the oldest not-inflight subject through the full cascade below, never a key-only drop and never a session with a request mid-turn (if every other subject is inflight, the registry temporarily exceeds the cap instead).
+
+`sweepEphemeralSubjects(store, { idleMs })` evicts every registered subject idle for at least `idleMs` with no in-flight request and returns the evicted subjects so the caller can cascade further (the umbrella forwards them to `agent.evictSubject`). `beginEphemeralRequest`/`endEphemeralRequest` bracket a request so the sweep never evicts a session mid-turn, however long it streams. TTL policy is the caller's — the store stays config-free; `createVendo({ sessions })` owns the knobs and the sweep cadence.
+
+Eviction is a synchronous cascade: `evictEphemeralSubject(store, subject)` clears every overlay map of exactly that subject's data — apps, state, threads, grants, approvals, audit, runs, and app-scoped records/blobs via the owned app ids — with no awaits in between, so no concurrent request observes a half-evicted session. Nothing durable is touched: while a subject is registered none of its writes reach disk, so an evicted session has zero on-disk rows by construction.
+
+Writes after eviction fail closed. App-scoped (`app:<appId>:<name>`) record and blob operations resolve the owning app to ephemeral, durable, or unknown (`appEphemerality`); a write against an unknown app — one that never existed or whose session was evicted — throws `not-found` ("session may have expired") instead of quietly persisting a durable row. Reads on unknown apps return empty.
+
+The overlay, and therefore the registry, is per-process memory. Multi-instance deployments must pin an anonymous client to one instance (sticky sessions) or accept that each instance holds an independent session; there is no cross-process session state.
+
+`setSessionClock(store, clock)` points touch/TTL at an injected clock (the umbrella wires `sessions.now` here). `ephemeralOverlaySizes(store)` reports overlay map sizes — a test seam, not a production surface.
+
 ## Encryption
 
 `createStore({ encryption: { key } })` (base64 32-byte key) encrypts `vendo_secrets.ciphertext` with AES-256-GCM; everything else stays host-queryable plaintext by design. The composed default is on: `vendo init` provisions `VENDO_STORE_ENCRYPTION_KEY` into the host's `.env` and `createVendo` reads it when no store is passed. Ciphertext is bound to its secret name via AAD (`v2` envelope); rows written before the AAD amendment (`v1` envelope) keep decrypting and upgrade on their next write.

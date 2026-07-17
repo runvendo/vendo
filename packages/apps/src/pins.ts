@@ -69,6 +69,126 @@ export const pinComponentName = (slot: string): string => {
   return `Pinned${stem}${sha256Hex(slot).slice(0, 8)}`;
 };
 
+/**
+ * Blank comment and string/template contents (length-preserving) so export
+ * detection never matches commented-out or quoted code. Adapted from sync's
+ * `stripComments` (packages/actions/src/sync/common.ts — actions may not be
+ * imported here), extended to blank string contents too.
+ */
+const blankCommentsAndStrings = (source: string): string => {
+  let output = "";
+  let quote: "'" | "\"" | "`" | null = null;
+  let escaped = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index]!;
+    const next = source[index + 1];
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        output += " ";
+        continue;
+      }
+      if (character === "\\") {
+        escaped = true;
+        output += " ";
+        continue;
+      }
+      if (character === quote) {
+        quote = null;
+        output += character;
+        continue;
+      }
+      output += character === "\n" ? "\n" : " ";
+      continue;
+    }
+    if (character === "'" || character === "\"" || character === "`") {
+      quote = character;
+      output += character;
+      continue;
+    }
+    if (character === "/" && next === "/") {
+      while (index < source.length && source[index] !== "\n") {
+        output += " ";
+        index += 1;
+      }
+      if (index < source.length) output += "\n";
+      continue;
+    }
+    if (character === "/" && next === "*") {
+      output += "  ";
+      index += 2;
+      while (index < source.length && !(source[index] === "*" && source[index + 1] === "/")) {
+        output += source[index] === "\n" ? "\n" : " ";
+        index += 1;
+      }
+      if (index < source.length) output += "  ";
+      index += 1;
+      continue;
+    }
+    output += character;
+  }
+  return output;
+};
+
+const EXPORT_LIST = /\bexport\s*\{([^}]*)\}/gu;
+
+/** Whether the fork entry source exposes the default export the jail renders:
+    `export default …`, `export { X as default }`, or `export { default } from …`
+    — but NOT a renamed re-export like `export { default as X } from …`, which
+    exposes only the named binding. */
+export const hasDefaultExport = (rawSource: string): boolean => {
+  const source = blankCommentsAndStrings(rawSource);
+  // `export default interface …` (and any type-level default) is erased from
+  // the emitted JavaScript, so it is not a runtime default export.
+  if (/\bexport\s+default\b(?!\s+(?:interface|type)\b)/u.test(source)) return true;
+  for (const match of source.matchAll(EXPORT_LIST)) {
+    for (const entry of match[1]!.split(",")) {
+      const trimmed = entry.trim();
+      // A `type` entry is erased from the emitted JavaScript — no runtime default.
+      if (/^type\s/u.test(trimmed)) continue;
+      const [local, exported] = trimmed.split(/\s+as\s+/u).map((part) => part.trim());
+      if ((exported ?? local) === "default") return true;
+    }
+  }
+  return false;
+};
+
+/** Every named-export binding: the local name to alias plus the exported name. */
+const namedExportBindings = (source: string): Array<{ local: string; exported: string; at: number }> => {
+  const bindings: Array<{ local: string; exported: string; at: number }> = [];
+  const declaration = /\bexport\s+(?:async\s+)?(?:function\s*\*?|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gu;
+  for (const match of source.matchAll(declaration)) {
+    bindings.push({ local: match[1]!, exported: match[1]!, at: match.index ?? 0 });
+  }
+  // Local export lists only — a `from` re-export has no local binding to alias.
+  const list = /\bexport\s*\{([^}]*)\}(?!\s*from\b)/gu;
+  for (const match of source.matchAll(list)) {
+    for (const entry of match[1]!.split(",")) {
+      const [local, exported] = entry.trim().split(/\s+as\s+/u).map((part) => part.trim());
+      if (!local || !/^[A-Za-z_$][\w$]*$/u.test(local)) continue;
+      bindings.push({ local, exported: exported ?? local, at: match.index ?? 0 });
+    }
+  }
+  return bindings.sort((left, right) => left.at - right.at);
+};
+
+/**
+ * ENG-348 — the generated-component entry source a fork ships. The jail entry
+ * renders only a default export, but a host may register a NAMED export as
+ * remixable and sync captures its module verbatim; forking that capture as-is
+ * crashes at render ("must have a React default export"). Synthesize the
+ * default export by aliasing the captured component's named export. A source
+ * that already has a default export — or offers no component-cased export to
+ * alias — passes through verbatim.
+ */
+export const pinForkSource = (source: string): string => {
+  if (hasDefaultExport(source)) return source;
+  const component = namedExportBindings(blankCommentsAndStrings(source))
+    .find(({ exported }) => /^[A-Z]/u.test(exported));
+  if (component === undefined) return source;
+  return `${source}\nexport { ${component.local} as default };\n`;
+};
+
 /** 06-apps §8 — unified source diff proposed for host approval. */
 export interface PinShipRequest {
   appId: AppId;
