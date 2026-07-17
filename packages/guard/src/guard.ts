@@ -737,7 +737,7 @@ class GuardImplementation implements VendoGuard {
     if (atomic === undefined) {
       throw new VendoError(
         "not-implemented",
-        "approvals need a store with atomic record claims (02-store §4); this adapter omits the capability, so single-use approval transitions fail closed",
+        "approvals need a store with the atomic-revisions capability (RecordStore.atomic, 02-store §4); this adapter omits it, so single-use approval transitions fail closed",
       );
     }
     const receipt = await atomic.insertIfAbsent({

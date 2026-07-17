@@ -299,7 +299,7 @@ describe("approval park and resume over the real SQL mapping", () => {
     expect(tools.executions).toHaveLength(1);
   });
 
-  it("serializes concurrent approve+deny on one approval to a single decision", async () => {
+  it("resolves concurrent approve+deny on one approval to a single decision", async () => {
     const sqlStore = await store();
     const guard = createGuard(guardedConfig(sqlStore));
     const bound = guard.bind(new FixtureTools());
