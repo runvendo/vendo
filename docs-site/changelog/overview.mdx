@@ -22,12 +22,12 @@ import { VendoPalette } from "@vendoai/ui";
 <VendoPalette hotkey={false} />
 ```
 
-Under the hood, all mounted palettes now share a single `keydown` listener
-and deliver the keystroke to the most-recently-mounted palette, so mounting
-the palette in more than one place no longer double-toggles on one press.
-While the palette is closed, the shortcut is also ignored when focus is in
-a host `input`, `textarea`, `select`, or `contenteditable` — your app keeps
-its own ⌘K inside its own fields.
+All mounted palettes now share a single `keydown` listener, and the keystroke
+routes to the most-recently-mounted palette. Mounting the palette in more
+than one place no longer double-toggles on a single press. While the palette
+is closed, the shortcut is also ignored when focus is in a host `input`,
+`textarea`, `select`, or `contenteditable`, so your app keeps its own ⌘K
+inside its own fields.
 
 ## Fixes
 
