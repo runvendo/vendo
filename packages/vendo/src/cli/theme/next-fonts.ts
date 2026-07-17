@@ -1,26 +1,14 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { CssVarDecl } from "./css-vars.js";
+import { ENTRY_FILE_CANDIDATES } from "./entry-candidates.js";
 import { walk } from "./walk.js";
 
 const TAILWIND_SANS_FALLBACK = "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans, sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji";
+// next/font/local's document-level fallback (entryOwnsDocument, below) also
+// needs pages-router `_document` — app-router has no equivalent file.
 const ENTRY_LAYOUT_CANDIDATES = [
-  "app/layout.tsx",
-  "app/layout.jsx",
-  "app/layout.ts",
-  "app/layout.js",
-  "src/app/layout.tsx",
-  "src/app/layout.jsx",
-  "src/app/layout.ts",
-  "src/app/layout.js",
-  "pages/_app.tsx",
-  "pages/_app.jsx",
-  "pages/_app.ts",
-  "pages/_app.js",
-  "src/pages/_app.tsx",
-  "src/pages/_app.jsx",
-  "src/pages/_app.ts",
-  "src/pages/_app.js",
+  ...ENTRY_FILE_CANDIDATES,
   "pages/_document.tsx",
   "pages/_document.jsx",
   "pages/_document.ts",

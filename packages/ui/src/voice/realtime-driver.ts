@@ -1,3 +1,4 @@
+import { isPlainObject as isRecord } from "@vendoai/core";
 import type {
   VoiceDriver,
   VoiceDriverEvent,
@@ -264,10 +265,6 @@ function browserCapabilities(): {
   // `fetch` must keep `this === window`; called as `browser.fetch(...)` it would
   // throw "Illegal invocation". Bind it so the capability object is safe to call.
   return { mediaDevices: navigator.mediaDevices, PeerConnection: RTCPeerConnection, document, fetch: fetch.bind(globalThis) };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function stringValue(value: unknown, fallback = ""): string {

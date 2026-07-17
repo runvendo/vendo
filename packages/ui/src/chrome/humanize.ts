@@ -50,10 +50,6 @@ export function toolTitle(name: string, meta?: ToolMeta): string {
   return label ? label : humanizeToolName(name);
 }
 
-function humanizeKey(key: string): string {
-  return humanizeToolName(key);
-}
-
 function formatValue(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
@@ -72,7 +68,7 @@ function formatValue(value: unknown): string {
 export function argFields(args: unknown): { label: string; value: string }[] {
   if (args === null || typeof args !== "object" || Array.isArray(args)) return [];
   return Object.entries(args as Record<string, unknown>).map(([key, value]) => ({
-    label: humanizeKey(key),
+    label: humanizeToolName(key),
     value: formatValue(value),
   }));
 }
