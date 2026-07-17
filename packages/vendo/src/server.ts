@@ -23,12 +23,10 @@ import {
 } from "@vendoai/automations";
 import {
   VendoError,
-  approvalDecisionSchema,
   descriptorHash,
   principalSchema,
   vendoThemeSchema,
   type ActAs,
-  type ApprovalDecision,
   type ComponentCatalog,
   type Json,
   type PermissionGrant,
@@ -100,6 +98,7 @@ import {
   type WireDeps,
 } from "./wire/shared.js";
 import { appRoutes } from "./wire/apps.js";
+import { approvalRoutes, grantRoutes } from "./wire/approvals.js";
 import { threadRoutes } from "./wire/threads.js";
 
 /** 10-mcp §5 — the door's canonical mount under the wire's own prefix. */
@@ -616,25 +615,9 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
         if (routed !== undefined) return routed;
       }
 
-      // Org-scoped approvals (`?org=<id>`) were a Vendo Cloud capability
-      // (block-actions design §C); orgs are cut from OSS (kill-list A5), so a
-      // request carrying an org param here now gets the same cloud-required
-      // error the /orgs routes answer, rather than silently ignoring it.
-      if (request.method === "GET" && path === "/approvals") {
-        const ctx = await context(request, "chat");
-        if (url.searchParams.get("org") !== null) orgsCloudRequired();
-        return json(await deps.guard.approvals.pending(ctx.principal));
-      }
-      if (request.method === "POST" && path === "/approvals/decide") {
-        const body = await requestJson(request);
-        const ids = Array.isArray(body["ids"]) ? body["ids"].map((id) => string(id, "approval id")) : [];
-        if (ids.length === 0) throw new VendoError("validation", "ids must contain at least one approval id");
-        const decision = approvalDecisionSchema.safeParse(body["decision"]);
-        if (!decision.success) throw new VendoError("validation", "decision is invalid");
-        const ctx = await context(request, "chat");
-        if (body["org"] !== undefined) orgsCloudRequired();
-        await deps.guard.approvals.decide(ids, decision.data as ApprovalDecision, ctx.principal);
-        return json({});
+      {
+        const routed = await dispatchRoutes(approvalRoutes, wire);
+        if (routed !== undefined) return routed;
       }
 
       // 04-actions §3 (block-actions design §B) — per-principal connected
@@ -668,18 +651,9 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
         }
       }
 
-      // Same cloud-required `?org=` scoping as approvals: standing grants
-      // scoping to an org is a Vendo Cloud capability.
-      if (request.method === "GET" && path === "/grants") {
-        const ctx = await context(request, "chat");
-        if (url.searchParams.get("org") !== null) orgsCloudRequired();
-        return json(await deps.guard.grants.list(ctx.principal));
-      }
-      if (request.method === "DELETE" && head === "grants" && segments.length === 2) {
-        const ctx = await context(request, "chat");
-        if (url.searchParams.get("org") !== null) orgsCloudRequired();
-        await deps.guard.grants.revoke(string(segments[1], "grant id"), ctx.principal);
-        return json({});
+      {
+        const routed = await dispatchRoutes(grantRoutes, wire);
+        if (routed !== undefined) return routed;
       }
 
       // routeSegments splits on "/", so head is the whole first segment:
