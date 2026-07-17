@@ -62,10 +62,23 @@ export const expectedGraphqlToolInventorySchema = z
   })
   .strict();
 
+/** Binding-kind-aware tool identity: a server action is identified by its
+ * module path plus export name, never a method+path pair. */
+export const expectedServerActionToolInventorySchema = z
+  .object({
+    name: z.string().min(1),
+    kind: z.literal("server-action"),
+    module: z.string().min(1),
+    export: z.string().min(1),
+    readOrWrite: z.enum(["read", "write"]),
+  })
+  .strict();
+
 export const expectedToolInventorySchema = z.union([
   expectedHttpToolInventorySchema,
   expectedTrpcToolInventorySchema,
   expectedGraphqlToolInventorySchema,
+  expectedServerActionToolInventorySchema,
 ]);
 
 export const expectedToolAnnotationSchema = z
@@ -116,12 +129,13 @@ export type RepoExpectations = z.infer<typeof repoExpectationsSchema>;
 export type RepoBaseline = z.infer<typeof repoBaselineSchema>;
 
 /** The binding-kind-aware identity an expectation joins on: procedure for
- * tRPC entries, operation for GraphQL entries, method+path for HTTP-shaped
- * entries. Names stay out of the key (01-core §15 renames them
- * deterministically). */
+ * tRPC entries, operation for GraphQL entries, module#export for server-action
+ * entries, method+path for HTTP-shaped entries. Names stay out of the key
+ * (01-core §15 renames them deterministically). */
 export function expectedToolIdentity(item: ExpectedToolInventory): string {
   if ("procedure" in item) return `trpc\t${item.procedure}`;
   if ("operation" in item) return `graphql\t${item.operation}`;
+  if ("module" in item) return `server-action\t${item.module}#${item.export}`;
   return `${item.method}\t${item.path}`;
 }
 

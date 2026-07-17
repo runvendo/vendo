@@ -301,6 +301,89 @@ describe("vendo init", () => {
     expect(await tree(root)).toEqual(first);
   });
 
+  it("emits the server-action registration map and wires it into createVendo (ENG-248)", async () => {
+    const root = await fixture();
+    await mkdir(join(root, "app", "actions"), { recursive: true });
+    await writeFile(join(root, "app", "actions", "send-email.ts"),
+      '"use server";\n\nexport async function sendEmail(to: string) {\n  return { to };\n}\n\nexport async function archiveThread(threadId: string) {\n  return { threadId };\n}\n');
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+
+    const wiring = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "vendo-actions.ts"), "utf8");
+    expect(wiring).toContain('"app/actions/send-email.ts#sendEmail"');
+    expect(wiring).toContain('"app/actions/send-email.ts#archiveThread"');
+    // (asserted without the `from` keyword so the dependency guard's
+    // import-shaped-string scan does not read a test literal as a real import)
+    expect(wiring).toContain('"../../../actions/send-email"');
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain('import { serverActions } from "./vendo-actions"');
+    expect(route).toContain("serverActions,");
+
+    // The extracted tools carry matching server-action bindings.
+    const tools = JSON.parse(await readFile(join(root, ".vendo", "tools.json"), "utf8")) as {
+      tools: Array<{ binding: { kind: string; module?: string; exportName?: string } }>;
+    };
+    const bindings = tools.tools.filter((tool) => tool.binding.kind === "server-action");
+    expect(bindings.map((tool) => `${tool.binding.module}#${tool.binding.exportName}`).sort()).toEqual([
+      "app/actions/send-email.ts#archiveThread",
+      "app/actions/send-email.ts#sendEmail",
+    ]);
+
+    // Re-init stays idempotent.
+    const first = await tree(root);
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    expect(await tree(root)).toEqual(first);
+  });
+
+  it("regenerates the registration map when the detected action surface changes", async () => {
+    const root = await fixture();
+    await mkdir(join(root, "app", "actions"), { recursive: true });
+    await writeFile(join(root, "app", "actions", "send-email.ts"),
+      '"use server";\n\nexport async function sendEmail(to: string) {\n  return { to };\n}\n');
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+
+    await writeFile(join(root, "app", "actions", "tags.ts"),
+      '"use server";\n\nexport async function createTag(name: string) {\n  return { name };\n}\n');
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    const wiring = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "vendo-actions.ts"), "utf8");
+    expect(wiring).toContain('"app/actions/send-email.ts#sendEmail"');
+    expect(wiring).toContain('"app/actions/tags.ts#createTag"');
+  });
+
+  it("wires serverActions into a pre-existing route when actions appear on re-init (ENG-248 Greptile P1)", async () => {
+    const root = await fixture();
+    // First init with no server actions: route.ts is created without serverActions wiring.
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    const routePath = join(root, "app", "api", "vendo", "[...vendo]", "route.ts");
+    expect(await readFile(routePath, "utf8")).not.toContain("serverActions");
+
+    // A server action appears; re-init must wire it into the EXISTING route,
+    // not just emit vendo-actions.ts (else every call fails closed at runtime).
+    await mkdir(join(root, "app", "actions"), { recursive: true });
+    await writeFile(join(root, "app", "actions", "notify.ts"),
+      '"use server";\n\nexport async function notify(userId: string) {\n  return { userId };\n}\n');
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+
+    const route = await readFile(routePath, "utf8");
+    expect(route).toContain('import { serverActions } from "./vendo-actions"');
+    expect(route).toContain("serverActions,");
+    expect(route).toContain("createVendo(");
+    await readFile(join(root, "app", "api", "vendo", "[...vendo]", "vendo-actions.ts"), "utf8");
+
+    // Re-init over the now-wired route stays idempotent.
+    const wired = await tree(root);
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    expect(await tree(root)).toEqual(wired);
+  });
+
+  it("scaffolds no registration map for hosts without server actions", async () => {
+    const root = await fixture();
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "vendo-actions.ts"), "utf8"))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).not.toContain("serverActions");
+  });
+
   it("offers remix wrapping for capturable registrations and captures approved slots (ENG-288 M6)", async () => {
     const root = await fixture();
     await writeFile(join(root, "app", "card.tsx"),

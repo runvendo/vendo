@@ -566,17 +566,19 @@ export function dedupKey(method: HttpMethod, urlPath: string): string {
 /** The binding-kind-aware identity a tool is deduplicated and diffed by:
  * method+path for HTTP-shaped bindings, mount+procedure for tRPC (a host can
  * expose the same procedure name under two mounts — both tools must survive),
- * endpoint+operation for GraphQL. */
+ * endpoint+operation for GraphQL, module+export for server actions. */
 export function bindingIdentity(binding: PrimitiveToolBinding): string {
   if (binding.kind === "trpc") return `TRPC ${binding.mount.replace(/\/+$/g, "")} ${binding.procedure}`;
   // The operation kind joins the key: GraphQL allows a query and a mutation
   // to share one field name across the two root types.
   if (binding.kind === "graphql") return `GRAPHQL ${binding.endpoint.replace(/\/+$/g, "")} ${binding.type} ${binding.operation}`;
+  if (binding.kind === "server-action") return `SERVER-ACTION ${binding.module}#${binding.exportName}`;
   return dedupKey(binding.method, binding.path);
 }
 
 function uniqueNameFallback(binding: PrimitiveToolBinding): string {
   if (binding.kind === "trpc" || binding.kind === "graphql") return binding.type;
+  if (binding.kind === "server-action") return "action";
   return binding.method;
 }
 
@@ -637,4 +639,17 @@ export function graphqlRisk(type: "query" | "mutation", operation: string): Extr
 export function graphqlToolFullName(operation: string): string {
   const parts = words(operation);
   return `host_${parts.length > 0 ? parts.join("_") : "operation"}`;
+}
+
+/** Server-action risk labeling (04 §1, fail-closed): the destructive word list
+ * applies unchanged; everything else defaults to `write`. A read-shaped name
+ * never earns `read` — a server action is a POST-shaped mutation surface and
+ * static parsing cannot prove it reads only. */
+export function serverActionRisk(name: string): ExtractedTool["risk"] {
+  return containsWord(name, DESTRUCTIVE_WORDS) ? "destructive" : "write";
+}
+
+export function serverActionToolFullName(name: string): string {
+  const parts = words(name);
+  return `host_${parts.length > 0 ? parts.join("_") : "action"}`;
 }
