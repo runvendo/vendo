@@ -304,6 +304,22 @@
         "method": "POST",
         "path": "/api/demo/simulate/upload"
       }
+    },
+    {
+      "name": "host_voice_create",
+      "description": "POST /api/voice",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "route",
+        "method": "POST",
+        "path": "/api/voice",
+        "argsIn": "body"
+      }
     }
   ]
 }
