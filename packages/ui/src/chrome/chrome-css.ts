@@ -124,7 +124,11 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
    tool panels, approvals, connect cards, turns alike. Render-view slots are
    excluded: FluidReveal already morphs those. */
 @media (prefers-reduced-motion: no-preference) {
-  .fl-msglist > :not(.fl-reveal) { animation: fl-item-in .32s cubic-bezier(.22, 1, .36, 1) both; }
+  /* ENG-218 — entrance-animation gating on restore: turns present when a long
+     thread is reopened carry .fl-no-entrance (set in vendo-thread), so only
+     turns that ARRIVE after restore (streamed replies, sends) run the rise.
+     A reopened 200-turn thread no longer fires 200 animations on first paint. */
+  .fl-msglist > :not(.fl-reveal):not(.fl-no-entrance) { animation: fl-item-in .32s cubic-bezier(.22, 1, .36, 1) both; }
 }
 /* Opacity+transform only — blur would force per-element rasterization, and a
    reopened 200-item thread runs every entrance at once on first paint. */
@@ -132,6 +136,18 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: none; } }
 @keyframes fl-fade-in { from { opacity: 0; } to { opacity: 1; } }
+/* ENG-218 — "show N earlier messages": reveals the deferred head of a windowed
+   long thread. Sits at the top of the list, centered, quiet until hovered. */
+.fl-load-older { align-self: center; margin: 2px auto 4px; padding: 5px 12px; cursor: pointer;
+  font: inherit; font-size: .82em; color: var(--vendo-fg-muted); background: var(--vendo-glass);
+  border: 1px solid var(--vendo-border); border-radius: 999px; transition: color .12s, border-color .12s; }
+.fl-load-older:hover { color: var(--vendo-fg); border-color: var(--vendo-border-strong); }
+/* ENG-218 — expand/collapse control for a huge single message (assistant or
+   user). Reads as a quiet inline text button under the truncated body. */
+.fl-more { display: inline-block; margin-top: 6px; padding: 0; cursor: pointer; font: inherit;
+  font-size: .88em; font-weight: 550; color: var(--vendo-accent); background: none; border: 0;
+  text-decoration: underline; text-underline-offset: 2px; }
+.fl-turn-user .fl-more { color: inherit; opacity: .8; }
 /* Visually-hidden live region — announces only the settled assistant turn. */
 .fl-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

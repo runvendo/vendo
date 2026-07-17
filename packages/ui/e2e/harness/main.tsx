@@ -1074,6 +1074,90 @@ function BoundedThreadScenario() {
   );
 }
 
+/** ENG-218 — an EXTREME thread: 200 turns (400 messages), one enormous
+ *  markdown message, and an approval whose input arg is a huge blob. Proves the
+ *  thread stays solid — windowed DOM, gated entrance animation, truncated huge
+ *  bodies and bounded payload previews. */
+const HUGE_MARKDOWN = Array.from({ length: 400 }, (_, index) =>
+  `Paragraph ${index + 1}: this is a very long assistant response with **bold** spans, `
+  + "`inline code`, and enough prose to blow past the collapse cap several times over "
+  + "so the truncate/expand affordance and the markdown-cost bound both engage.").join("\n\n");
+const HUGE_ARG = JSON.stringify(
+  Array.from({ length: 4000 }, (_, index) => ({ row: index, note: `line ${index} of a dumped export` })),
+);
+const extremeThread: Thread = {
+  id: "thr_extreme",
+  subject: "browser-user",
+  createdAt: NOW,
+  updatedAt: NOW,
+  messages: [
+    ...Array.from({ length: 200 }, (_, index) => [
+      {
+        id: `x_u${index}`,
+        role: "user" as const,
+        parts: [{ type: "text" as const, text: `Question ${index + 1}: what happened this month?` }],
+      },
+      {
+        id: `x_a${index}`,
+        role: "assistant" as const,
+        parts: [{
+          type: "text" as const,
+          text: `Answer ${index + 1}: the largest categories were groceries, subscriptions and delivery.`,
+        }],
+      },
+    ]).flat(),
+    {
+      id: "x_huge",
+      role: "assistant",
+      parts: [{ type: "text", text: HUGE_MARKDOWN }],
+    },
+    {
+      id: "x_pending",
+      role: "assistant",
+      parts: [
+        { type: "text", text: "I prepared a bulk export and need your approval before sending." },
+        {
+          type: "dynamic-tool",
+          toolName: "host_email_send",
+          toolCallId: "call_extreme",
+          state: "approval-requested",
+          input: { to: "finance@example.com", subject: "Export", rows: HUGE_ARG },
+          approval: { id: "apr_extreme" },
+        },
+        {
+          type: "data-vendo-approval",
+          data: { toolCallId: "call_extreme", risk: "write", approvalId: "apr_extreme" },
+        },
+      ],
+    },
+  ],
+};
+
+function extremeThreadClient(client: VendoClient): VendoClient {
+  return {
+    ...client,
+    threads: {
+      ...client.threads,
+      get: async id => id === extremeThread.id ? extremeThread : client.threads.get(id),
+      list: async () => [{ id: extremeThread.id, title: "Extreme fixture thread", updatedAt: extremeThread.updatedAt }],
+    },
+  };
+}
+
+function ExtremeThreadScenario() {
+  return (
+    <VendoProvider client={extremeThreadClient(baseClient)} components={components}>
+      <div
+        data-testid="bounded-pane"
+        style={{ height: 560, display: "flex", flexDirection: "column", overflow: "hidden",
+          border: "1px solid #cad3e0", borderRadius: 12 }}
+      >
+        <VendoThread threadId={extremeThread.id} />
+      </div>
+    </VendoProvider>
+  );
+}
+
 /** ENG-215 — a clean two-turn thread (no tools/approvals) so the composer's
  *  edit-last / regenerate / autogrow / queued-send behaviors read without the
  *  approval clutter of the canned wire turn. */
@@ -1145,6 +1229,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/composer": return { title: "Composer (Maple)", content: <ComposerScenario theme={mapleTheme} />, ownProvider: true };
     case "/composer-dark": return { title: "Composer — dark", content: <ComposerScenario theme={darkTheme} />, ownProvider: true };
     case "/thread-bounded": return { title: "Thread — bounded host pane", content: <BoundedThreadScenario />, ownProvider: true };
+    case "/thread-extreme": return { title: "Thread — extreme content", content: <ExtremeThreadScenario />, ownProvider: true };
     case "/thread-landing": return { title: "Landing (Maple host)", content: <LandingScenario />, ownProvider: true };
     case "/thread-humanized": return { title: "Thread — humanized (host metadata)", content: <HumanizedThreadScenario />, ownProvider: true };
     case "/overlay": return { title: "Overlay", content: <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'><VendoOverlay /></AutoOpen> };
