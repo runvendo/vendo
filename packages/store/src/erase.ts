@@ -90,16 +90,19 @@ export function eraseStore(store: VendoStore): {
       const subjectRef = JSON.stringify({ subject });
 
       // The subject's apps drive the app-scoped cascade (records/blobs/state/runs
-      // carry the app id, not the subject).
+      // carry the app id, not the subject). The app ROWS are deleted FIRST:
+      // once they are gone, no new gated write (records/blobs WHERE EXISTS)
+      // can land, so the data deletes below collect any stragglers — the
+      // remaining race residue is a write statement already in flight.
       const owned = (await db.query("SELECT id FROM vendo_apps WHERE subject = $1", [subject])).rows
         .map((row) => String(row["id"]));
+      await del(report, "vendo_apps", "subject = $1", [subject]);
       for (const appId of owned) await eraseAppData(report, appId);
 
       // Ordering matters for accurate counts: the app cascade above already
       // removed the subject's own state/run rows, so the subject-level deletes
       // below only count rows the cascade did not reach (e.g. this subject's
       // state under ANOTHER owner's app).
-      await del(report, "vendo_apps", "subject = $1", [subject]);
       await del(report, "vendo_state", "subject = $1", [subject]);
       await del(report, "vendo_threads", "subject = $1", [subject]);
       await del(report, "vendo_grants", "subject = $1", [subject]);
@@ -121,8 +124,9 @@ export function eraseStore(store: VendoStore): {
       const report = emptyReport();
       const appRef = JSON.stringify({ app_id: appId });
 
-      await eraseAppData(report, appId);
+      // App row first (same gate-closing order as bySubject), then its data.
       await del(report, "vendo_apps", "id = $1", [appId]);
+      await eraseAppData(report, appId);
       await del(report, "vendo_grants", "app_id = $1", [appId]);
       await del(report, "vendo_audit", "app_id = $1", [appId]);
       await del(report, "vendo_records", "refs @> $1::jsonb", [appRef]);

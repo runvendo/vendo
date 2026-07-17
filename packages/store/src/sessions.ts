@@ -45,7 +45,10 @@ export async function isEphemeralSubject(store: VendoStore, subject: string): Pr
     a subject only after winning `DELETE FROM vendo_sessions ... RETURNING` —
     a subject whose session row an interleaved adopt already claimed is
     SKIPPED, so the erase cascade can never chase app ids the adopt just moved
-    to the signed-in user. */
+    to the signed-in user. The claim repeats the idleness predicate, so a
+    re-touch landing after the stale SELECT (the window is wide — a full erase
+    cascade runs between candidates) also defeats it: a live session is never
+    erased out from under its visitor. */
 export async function sweepEphemeralSubjects(
   store: VendoStore,
   opts: { idleMs: number; now?: number },
@@ -61,10 +64,10 @@ export async function sweepEphemeralSubjects(
   for (const row of result.rows) {
     const subject = String(row["subject"]);
     const claimed = await db.query(
-      "DELETE FROM vendo_sessions WHERE subject = $1 RETURNING 1",
-      [subject],
+      "DELETE FROM vendo_sessions WHERE subject = $1 AND touched_at <= $2 RETURNING 1",
+      [subject, cutoff],
     );
-    if (claimed.rows[0] === undefined) continue; // adopted mid-sweep — not ours
+    if (claimed.rows[0] === undefined) continue; // adopted or re-touched mid-sweep — not ours
     await erase.bySubject(subject);
     evicted.push(subject);
   }

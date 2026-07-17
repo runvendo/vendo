@@ -44,6 +44,38 @@ describe("ephemeral session registry (kill-list B3)", () => {
     expect(await sweepEphemeralSubjects(store, { idleMs: 100, now: 1300 })).toEqual(["revenant"]);
     await store.close();
   });
+
+  // Kill-list B3 review 2: the sweep's per-subject claim carries the idleness
+  // predicate, so a touch that lands AFTER the sweep captured its stale list
+  // (the claim window is wide — a 14-table cascade runs between candidates)
+  // defeats the claim and the live session survives. PGlite serves queries
+  // FIFO, so Promise.all below is a DETERMINISTIC interleaving: the sweep's
+  // stale SELECT captures the subject, the re-touch re-stamps it, and the
+  // sweep's claim must then lose.
+  it("a concurrent re-touch defeats the sweep's claim (live session never erased)", async () => {
+    const store = await memoryStore();
+    const LIVE: Principal = { kind: "user", subject: "sess_touchy", ephemeral: true };
+    await registerEphemeralSubject(store, LIVE.subject, 0);
+    await appStore(store).put(LIVE, appFixture("app_touchy", "Touchy"));
+    await store.records("app:app_touchy:notes").put({ id: "note_touchy", data: { keep: true } });
+
+    // Interleaving (FIFO): sweep SELECTs the stale subject (touched_at=0);
+    // the visitor's request touches it (touched_at=9_500 — inside the TTL at
+    // now=10_000, idleMs=1_000); the sweep's claim must fail its idleness
+    // predicate and skip the erase.
+    const [swept] = await Promise.all([
+      sweepEphemeralSubjects(store, { idleMs: 1_000, now: 10_000 }),
+      registerEphemeralSubject(store, LIVE.subject, 9_500),
+    ]);
+
+    expect(swept).toEqual([]); // the claim lost to the fresh touch
+    expect((await appStore(store).get("app_touchy"))?.subject).toBe(LIVE.subject);
+    expect((await store.records("app:app_touchy:notes").get("note_touchy"))?.data).toEqual({ keep: true });
+    // The session is still registered and expires normally once truly idle.
+    expect(await sweepEphemeralSubjects(store, { idleMs: 1_000, now: 20_000 })).toEqual([LIVE.subject]);
+    expect(await appStore(store).get("app_touchy")).toBeNull();
+    await store.close();
+  });
 });
 
 describe("the sweep erases every table for exactly the stale subject (kill-list B3)", () => {

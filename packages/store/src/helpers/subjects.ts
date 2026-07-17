@@ -48,8 +48,11 @@ export async function adoptEphemeralSubject(
   // Claim-first serialization with the TTL sweep (sessions.ts): deleting the
   // session row is the mutual-exclusion point. Losing the claim means the
   // subject was never registered, was already merged, or a concurrent sweep
-  // owns it — in every case there is nothing for this merge to move. Winning
-  // it means no sweep can erase the subject's rows while they are moved.
+  // owns it — this merge moves nothing. Winning it means no sweep can erase
+  // the subject's rows while they are moved. The trade: a transient failure
+  // MID-merge (after the claim) strands the unmoved remainder as unregistered
+  // rows a retry can no longer see — bounded by 02 §4's lingers-like-durable
+  // semantics (an explicit erase.bySubject still reaches them).
   const claimed = await db.query(
     "DELETE FROM vendo_sessions WHERE subject = $1 RETURNING 1",
     [from],
