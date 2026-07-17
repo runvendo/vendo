@@ -1,6 +1,8 @@
 import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { LanguageModel } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runInit } from "./init.js";
 import type { Output } from "./shared.js";
@@ -636,7 +638,7 @@ describe("vendo init", () => {
     });
   });
 
-  it("extracts light theme tokens through CSS imports and recovers next/font stacks", async () => {
+  it("extracts exact tokens through CSS imports and fills the rest via the model pass", async () => {
     const root = await fixture();
     await writeFile(join(root, "app", "layout.tsx"),
       'import "./global.css";\n' +
@@ -652,7 +654,26 @@ describe("vendo init", () => {
       '.dark { --background: #09090b; --card: #18181b; --foreground: #fafafa; ' +
       '--muted-foreground: #a1a1aa; --primary: #60a5fa; }\n');
 
-    await runInit({ targetDir: root, yes: true, output: output().output });
+    // next/font families are runtime-injected, invisible to CSS: exactly the
+    // gap the ONE model call fills. The mock stands in for the refine-seam
+    // model; the exact reads above must survive it untouched.
+    const sink = output();
+    await runInit({
+      targetDir: root,
+      yes: true,
+      output: sink.output,
+      themeModel: async () => new MockLanguageModelV3({
+        doGenerate: async () => ({
+          content: [{ type: "text", text: JSON.stringify({ slots: { fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif" } }) }],
+          finishReason: { unified: "stop", raw: undefined },
+          usage: {
+            inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+            outputTokens: { total: 0, text: 0, reasoning: 0 },
+          },
+          warnings: [],
+        }),
+      }) as LanguageModel,
+    });
 
     expect(JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"))).toMatchObject({
       colors: {
@@ -665,6 +686,53 @@ describe("vendo init", () => {
       typography: { fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif" },
       radius: { medium: "6px" },
     });
+    // One-glance confirm: init prints the extracted palette and points at
+    // the editable theme.json.
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Theme: accent #2b7fff");
+    expect(logs).toContain(".vendo/theme.json");
+  });
+
+  it("asks about the theme ONLY when the model reports uncertainty, and applies the answer", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "app", "layout.tsx"),
+      'import "./globals.css";\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n');
+    await writeFile(join(root, "app", "globals.css"),
+      ":root { --color-ink: #111111; --color-evergreen-600: #196b46; }\n");
+
+    const reviewed: string[] = [];
+    await runInit({
+      targetDir: root,
+      confirm: async () => true,
+      interview: async () => ({}),
+      offerRefine: async () => false,
+      output: output().output,
+      themeModel: async () => new MockLanguageModelV3({
+        doGenerate: async () => ({
+          content: [{ type: "text", text: JSON.stringify({
+            slots: { accent: "#196b46", text: "#111111" },
+            uncertain: [{ slot: "accent", note: "green may be data-only" }],
+          }) }],
+          finishReason: { unified: "stop", raw: undefined },
+          usage: {
+            inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+            outputTokens: { total: 0, text: 0, reasoning: 0 },
+          },
+          warnings: [],
+        }),
+      }) as LanguageModel,
+      themeReview: async (summary) => {
+        reviewed.push(...summary.uncertain.map((entry) => entry.slot));
+        return { accent: "#111111", danger: "chartreuse-ish" };
+      },
+    });
+
+    expect(reviewed).toEqual(["accent"]);
+    const theme = JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"));
+    // The human answer wins; the invalid one is ignored, not written.
+    expect(theme.colors.accent).toBe("#111111");
+    expect(theme.colors.danger).toBe("#dc2626");
+    expect(theme.colors.text).toBe("#111111");
   });
 
   it("wraps a layout that returns bare children (no JSX slot) with VendoRoot", async () => {

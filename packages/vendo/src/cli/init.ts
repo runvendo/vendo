@@ -17,6 +17,7 @@ import {
 } from "@vendoai/actions";
 import type { VendoTheme } from "@vendoai/core";
 import type { Telemetry } from "@vendoai/telemetry";
+import type { LanguageModel } from "ai";
 import { runCloudStep, type CloudStepOptions } from "./cloud-init.js";
 import {
   runDevModeStep,
@@ -25,7 +26,13 @@ import {
   type InitFinaleOptions,
 } from "./dev-mode.js";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
-import { extractTheme as extractThemeSlots } from "./theme/extract-theme.js";
+import { resolveRefineModel } from "./refine.js";
+import {
+  extractTheme as extractThemeSlots,
+  validateSlotValue,
+  type ThemeSlotValues,
+  type ThemeSummary,
+} from "./theme/extract-theme.js";
 import {
   consoleOutput,
   errorClass,
@@ -38,8 +45,7 @@ import {
 
 const DEFAULT_RADIUS = { small: "4px", large: "12px" } as const;
 
-async function extractTheme(root: string): Promise<VendoTheme> {
-  const { slots } = await extractThemeSlots(root);
+function toVendoTheme(slots: ThemeSlotValues): VendoTheme {
   const deriveRadius = (factor: number, fallback: string): string => {
     const value = slots.radius.match(/^(\d+(?:\.\d+)?)px$/)?.[1];
     return value === undefined ? fallback : `${Number(value) * factor}px`;
@@ -123,6 +129,78 @@ export interface InitOptions {
   finale?: Partial<Omit<InitFinaleOptions, "root" | "output" | "yes" | "framework" | "credential">> & { skip?: boolean };
   /** ENG-339 seam (tests): cloud-in-init step overrides. */
   cloud?: Partial<Omit<CloudStepOptions, "root" | "output" | "yes" | "credential">>;
+  /** Test seam: the theme LLM pass's model; default rides the refine seam. */
+  themeModel?: () => Promise<LanguageModel>;
+  /** Uncertain-slot review — asked ONLY when the model reports uncertainty. */
+  themeReview?: (summary: ThemeSummary) => Promise<Record<string, string>>;
+}
+
+/**
+ * Theme extraction's model comes from the SAME seam `vendo refine` uses
+ * (--model-import specifier, else the host's key + installed provider) — no
+ * theme-specific configuration exists. Vendo-hosted inference will swap in
+ * behind this same seam later. A dev-typed model-import that cannot load yet
+ * (fresh app, TS module) falls back to the env-key path; total failure is
+ * handled by extractTheme's graceful degradation to reported defaults.
+ */
+function themeModelResolver(root: string, modelImport: string | undefined): () => Promise<LanguageModel> {
+  return async () => {
+    try {
+      return await resolveRefineModel({ root, ...(modelImport === undefined ? {} : { modelImport }), env: process.env });
+    } catch (error) {
+      if (modelImport === undefined) throw error;
+      return await resolveRefineModel({ root, env: process.env });
+    }
+  };
+}
+
+const THEME_PALETTE_SLOTS = ["accent", "background", "surface", "text", "mutedText", "border", "danger"] as const;
+
+/** ANSI truecolor swatch when interactive; plain hex otherwise. */
+function swatch(hex: string): string {
+  const match = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!match || !stdout.isTTY) return "";
+  const [r, g, b] = [0, 2, 4].map((index) => parseInt(match[1]!.slice(index, index + 2), 16));
+  return `\u001b[48;2;${r};${g};${b}m  \u001b[0m `;
+}
+
+/** One-glance confirm (§B2): the extracted palette, where each slot came
+    from is visible in defaulted/errors, and theme.json stays the editable
+    source of truth. */
+function printThemeSummary(summary: ThemeSummary, output: Output): void {
+  const palette = THEME_PALETTE_SLOTS
+    .map((slot) => `${swatch(summary.slots[slot])}${slot} ${summary.slots[slot]}`)
+    .join(" · ");
+  output.log(`Theme: ${palette}`);
+  const headings = summary.slots.headingFamily === summary.slots.fontFamily
+    ? ""
+    : ` · headings ${summary.slots.headingFamily}`;
+  output.log(`Type: ${summary.slots.fontFamily}${headings} · radius ${summary.slots.radius}`);
+  const missing = summary.defaulted.filter((slot) =>
+    (THEME_PALETTE_SLOTS as readonly string[]).includes(slot) || slot === "fontFamily");
+  if (missing.length > 0) {
+    output.log(`No host evidence for ${missing.join(", ")} — neutral defaults used.`);
+  }
+  for (const error of summary.errors) output.error(`warning: ${error}`);
+  output.log("Theme lives in .vendo/theme.json — edit it anytime; it is the source of truth.");
+}
+
+/** Interactive review of model-flagged uncertain slots (the ONLY theme question). */
+async function defaultThemeReview(summary: ThemeSummary): Promise<Record<string, string>> {
+  if (!stdin.isTTY || !stdout.isTTY) return {};
+  const prompt = createInterface({ input: stdin, output: stdout });
+  const overrides: Record<string, string> = {};
+  try {
+    for (const { slot, note } of summary.uncertain) {
+      const answer = (await prompt.question(
+        `Theme ${slot} is uncertain (${note}); extracted ${summary.slots[slot]}. Replacement value, or Enter to keep: `,
+      )).trim();
+      if (answer !== "") overrides[slot] = answer;
+    }
+  } finally {
+    prompt.close();
+  }
+  return overrides;
 }
 
 /** Interactive y/N for the end-of-init `vendo refine` offer. */
@@ -950,7 +1028,29 @@ export async function runInit(options: InitOptions): Promise<number> {
       `${effective.brief?.trim() || "Describe this product, its users, and the jobs the agent should help them complete."}\n`,
       options.force === true,
     );
-    await writeIfMissing(join(root, ".vendo", "theme.json"), `${JSON.stringify(await extractTheme(root), null, 2)}\n`, options.force === true);
+    // Exact-or-model theme extraction (§B2). Skipped entirely when a
+    // theme.json already exists (it is the editable source of truth) so
+    // reruns never spend a model call or overwrite hand edits.
+    const themePath = join(root, ".vendo", "theme.json");
+    if (options.force === true || !(await exists(themePath))) {
+      const summary = await extractThemeSlots(root, {
+        resolveModel: options.themeModel ?? themeModelResolver(root, effective.modelImport),
+      });
+      if (summary.uncertain.length > 0 && options.yes !== true) {
+        const overrides = await (options.themeReview ?? defaultThemeReview)(summary);
+        for (const [slot, raw] of Object.entries(overrides)) {
+          const value = validateSlotValue(slot as keyof ThemeSlotValues, raw);
+          if (value === null) {
+            output.error(`ignored invalid theme ${slot} value ${JSON.stringify(raw)}`);
+          } else {
+            (summary.slots as unknown as Record<string, string>)[slot] = value;
+            summary.matched[slot] = "(you)";
+          }
+        }
+      }
+      await writeText(themePath, `${JSON.stringify(toVendoTheme(summary.slots), null, 2)}\n`);
+      printThemeSummary(summary, output);
+    }
     await writeIfMissing(join(root, ".vendo", "data", ".gitignore"), "*\n!.gitignore\n", options.force === true);
 
     const report = await vendoSync({ root, out: join(root, ".vendo") });

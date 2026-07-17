@@ -45,8 +45,34 @@
 
 ## Measurements
 
+### Ground-truth correction (Task 6 finding)
+The old test table's Cadence accent (#196b46 evergreen) was itself a silent
+wrong brand: the Porcelain Ledger sheet demotes green to "data only" and the
+app's primary Button is `bg-ink` — the true accent is the ink, #111111. Truth
+table corrected before scoring both pipelines.
+
 ### Baseline (before)
-(recorded by Task 1)
+Measured 2026-07-17 on the pre-B2 extractor with the seven-slot rubric
+(accent, background, surface, text, mutedText, border, fontFamily):
+
+- Maple (demo-bank): **7/7** (the fragment lists were tuned to this app).
+- Cadence (demo-accounting): **5/7** — accent silently wrong (#196b46
+  scale-accent green vs the app's ink #111111 CTAs) and mutedText silently
+  wrong (`--color-ink-soft` #46443f vs the dominant `--color-ink-faint`
+  #908c85, 59 vs 34 uses).
+- Outside the rubric, Maple `motion` was silently wrong: the extractor read
+  the app's `prefers-reduced-motion` accessibility override as a
+  reduced-motion brand — the app animates.
 
 ### After
-(recorded by Task 6)
+Measured 2026-07-17, exact-or-model pipeline through the real refine model
+seam (claude-sonnet-4-6), three consecutive live runs plus a plain-node run
+of the production seam:
+
+- Maple (demo-bank): **7/7** — allowlist exact-reads `--color-border`; the
+  model fills the rest, correctly treating the monochrome ink as the accent.
+- Cadence (demo-accounting): **7/7** — allowlist exact-reads `--color-card`;
+  the model correctly picks ink over the demoted green.
+- No silent misses: every model doubt surfaces in `uncertain` (1-2 targeted
+  questions on these non-conventional apps; conventional shadcn hosts are
+  zero-model, zero-question), and unfillable slots land in `defaulted`.
