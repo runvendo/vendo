@@ -168,10 +168,10 @@ export function createDb(config: StoreConfig = {}): Db {
 
 /** 02-store §4 */
 export async function withSchemaLock<T>(db: Db, work: (query: Query) => Promise<T>): Promise<T> {
-  return withAdvisoryLock(db, [ADVISORY_LOCK_KEY], work);
+  return withAdvisoryLock(db, ADVISORY_LOCK_KEY, work);
 }
 
-async function withAdvisoryLock<T>(db: Db, keys: [number], work: (query: Query) => Promise<T>): Promise<T> {
+async function withAdvisoryLock<T>(db: Db, key: number, work: (query: Query) => Promise<T>): Promise<T> {
   if (db.kind === "pglite") return work(db.query.bind(db));
 
   const url = pgUrls.get(db);
@@ -182,13 +182,12 @@ async function withAdvisoryLock<T>(db: Db, keys: [number], work: (query: Query) 
     const result = await client.query(text, params);
     return { rows: result.rows as Record<string, unknown>[] };
   };
-  const placeholders = keys.map((_, index) => `$${index + 1}`).join(", ");
   try {
-    await query(`SELECT pg_advisory_lock(${placeholders})`, keys);
+    await query("SELECT pg_advisory_lock($1)", [key]);
     try {
       return await work(query);
     } finally {
-      await query(`SELECT pg_advisory_unlock(${placeholders})`, keys);
+      await query("SELECT pg_advisory_unlock($1)", [key]);
     }
   } finally {
     await client.end();

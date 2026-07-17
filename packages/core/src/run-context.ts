@@ -19,10 +19,14 @@ export const mcpConsentSchema = z.object({
   scopes: z.array(z.string()),
 }).passthrough() satisfies z.ZodType<McpConsent>;
 
-/** 01-core §3. `actor` (block-actions design §C) carries the human principal
-    behind an org-context request: when the wire re-contextualizes a member's
-    request onto an org-owned row, `principal` becomes the org and `actor`
-    stays the signed-in user — audit enrichment records who actually acted.
+/** 01-core §3. `actor` (block-actions design §C) is a generic audit-enrichment
+    field: the human principal behind a request made under a different
+    `principal`, for whenever `principal` and the acting human diverge. Its
+    original motivating case — the wire re-contextualizing a member's request
+    onto an org-owned row (`principal` becomes the org, `actor` stays the
+    signed-in member) — was cut with the org storage layer (kill-list §A5);
+    the field itself stays, since it's a generic shape, not org-specific
+    machinery.
     CORE-2 (wave 5): `grant` and `mcpConsent` are promoted to first-class
     optional fields — the guard attaches the exact grant behind an away
     execution, the MCP door attaches its consent projection — replacing the

@@ -11,7 +11,9 @@ import { withSchemaLock } from "./db.js";
     additive-only, so dropping two CREATE TABLE statements needs no version
     bump. Existing dev databases that already have `vendo_orgs`/
     `vendo_org_members` keep those orphaned tables — erasing them is not
-    required and this migration does not attempt it. */
+    required and this migration does not attempt it. (Reverting the constant
+    below 3 is not an option either way: `migrate()` throws `conflict` the
+    moment a stamped `vendo_meta.schema_version` exceeds `SCHEMA_VERSION`.) */
 export const SCHEMA_VERSION = 3;
 
 /** 02-store §2 */

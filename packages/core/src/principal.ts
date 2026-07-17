@@ -21,10 +21,10 @@ export const principalSchema = z.object({
 }).passthrough() satisfies z.ZodType<Principal>;
 
 /** Block-actions design §C — the runtime-owned subject namespace. Subjects the
-    runtime mints for itself (webhook trigger principals, org principals) live
-    under `vendo:` so they can never collide with a host-resolved subject: host
-    principal resolvers are FORBIDDEN from producing reserved subjects (the wire
-    rejects them loudly, 09 §2), and reserved subjects can never hold connected
+    runtime mints for itself (webhook trigger principals) live under `vendo:`
+    so they can never collide with a host-resolved subject: host principal
+    resolvers are FORBIDDEN from producing reserved subjects (the wire rejects
+    them loudly, 09 §2), and reserved subjects can never hold connected
     accounts (04 §3). */
 export const RESERVED_SUBJECT_PREFIX = "vendo:";
 
@@ -34,15 +34,7 @@ export function isReservedSubject(subject: string): boolean {
 
 /** Webhook trigger principals: `vendo:webhook:<source>`. The pre-namespace
     `webhook:<source>` form is retired — nothing durable was ever keyed by it
-    (it only ever appeared on audit events for rejected deliveries).
-
-    Note: the reserved namespace also carries `vendo:org:<id>` subjects
-    (`isReservedSubject` rejects them the same as any other `vendo:`-prefixed
-    subject), but the org-specific minting/parsing helpers that used to live
-    here were removed with the org storage layer (kill-list §A5) — the
-    `kind: "org"` principal shape and the reserved namespace itself stay;
-    whether v2 core re-derives org-subject helpers is a contract decision, not
-    made here. */
+    (it only ever appeared on audit events for rejected deliveries). */
 export function webhookSubject(source: string): string {
   return `${RESERVED_SUBJECT_PREFIX}webhook:${source}`;
 }

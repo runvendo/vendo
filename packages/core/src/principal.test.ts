@@ -14,7 +14,7 @@ describe("principalSchema", () => {
     ).toMatchObject({ display: "Ada", ephemeral: true });
   });
 
-  it("accepts an org principal (block-actions design §C: kind:'org' is real)", () => {
+  it("accepts an org principal (kind:'org' is a reserved shape, 01-core §2)", () => {
     expect(principalSchema.safeParse({ kind: "org", subject: "vendo:org:org_1" }).success).toBe(true);
     expect(principalSchema.parse({ kind: "org", subject: "vendo:org:org_1", display: "Acme" }))
       .toMatchObject({ kind: "org", display: "Acme" });
