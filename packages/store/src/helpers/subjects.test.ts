@@ -1,8 +1,7 @@
-import type { Principal } from "@vendoai/core";
+import { VendoError, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../backends.test-util.js";
-import { appFixture, approvalFixture, at, grantFixture } from "../fixtures.test-util.js";
-import { overlayFor, stateKey } from "../ephemeral.js";
+import { appFixture, approvalFixture, grantFixture } from "../fixtures.test-util.js";
 import {
   adoptEphemeralSubject,
   appStore,
@@ -27,7 +26,7 @@ for (const backend of backends()) {
 
     it("moves threads, apps (+ app collections), and state to the signed-in subject; drops grants/approvals; is idempotent", async () => {
       const store = made.store;
-      registerEphemeralSubject(store, ANON.subject);
+      await registerEphemeralSubject(store, ANON.subject);
 
       // Anonymous session accrues: an app, its per-app records, a thread, state, a grant, an approval.
       const apps = appStore(store);
@@ -58,15 +57,18 @@ for (const backend of backends()) {
       expect(await grantStore(store).list(ADA)).toEqual([]);
       expect(await grantStore(store).list(ANON)).toEqual([]);
       expect(await approvalStore(store).pending(ADA)).toEqual([]);
+      expect(await approvalStore(store).pending(ANON)).toEqual([]);
       const grantRows = await made.sql("SELECT subject FROM vendo_grants");
       expect(grantRows).toEqual([]);
+      // The session registration is retired with the merge.
+      expect(await made.sql("SELECT subject FROM vendo_sessions WHERE subject = $1", [ANON.subject])).toEqual([]);
 
       // Idempotent: the same merge again is a no-op.
       expect(await adoptEphemeralSubject(store, ANON.subject, ADA.subject)).toBe(null);
       expect((await apps.list(ADA)).filter((row) => row.id === "app_anon_merge")).toHaveLength(1);
     });
 
-    it("never steals or overwrites existing durable rows (adversarial id collisions)", async () => {
+    it("never steals or overwrites existing durable rows", async () => {
       const store = made.store;
       const BOB: Principal = { kind: "user", subject: "user_bob" };
       const MALLORY: Principal = { kind: "user", subject: "anonymous_badc0de", ephemeral: true };
@@ -77,38 +79,35 @@ for (const backend of backends()) {
       await apps.put(BOB, appFixture("app_bobs_own", "Bob's app"));
       await threads.put(BOB, { id: "thr_bobs_own", messages: [{ role: "user", text: "bob" }] });
       await stateStore(store).put(BOB, "app_bobs_own", { bobs: true });
+      // The signed-in Mallory already has her own state for Bob's app.
+      await stateStore(store).put({ kind: "user", subject: "user_mallory" }, "app_bobs_own", { hers: true });
 
-      // Mallory's anonymous session plants rows with Bob's ids.
-      registerEphemeralSubject(store, MALLORY.subject);
-      const overlayApps = overlayFor(store);
-      overlayApps.apps.set("app_bobs_own", {
-        id: "app_bobs_own", subject: MALLORY.subject, enabled: true,
-        doc: appFixture("app_bobs_own", "EVIL"), createdAt: at(2), updatedAt: at(2),
-      });
-      overlayApps.threads.set("thr_bobs_own", {
-        id: "thr_bobs_own", subject: MALLORY.subject, messages: [{ role: "user", text: "evil" }],
-        createdAt: at(2), updatedAt: at(2),
-      });
-      overlayApps.states.set(stateKey(MALLORY.subject, "app_bobs_own"), {
-        appId: "app_bobs_own", subject: MALLORY.subject, data: { bobs: false },
-        createdAt: at(2), updatedAt: at(2),
-      });
+      // Mallory's anonymous session cannot even plant rows under Bob's ids — the
+      // write doors refuse the cross-subject flip outright (02 §2).
+      await registerEphemeralSubject(store, MALLORY.subject);
+      await expect(apps.put(MALLORY, appFixture("app_bobs_own", "EVIL")))
+        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+      await expect(threads.put(MALLORY, { id: "thr_bobs_own", messages: [{ role: "user", text: "evil" }] }))
+        .rejects.toMatchObject<VendoError>({ code: "conflict" });
+      // State is keyed (app_id, subject): her copy lands under HER subject only.
+      await stateStore(store).put(MALLORY, "app_bobs_own", { bobs: false });
 
-      // Mallory signs in as herself: nothing of Bob's flips, every collision is skipped…
+      // Mallory signs in: her state copy collides with the one user_mallory
+      // already owns — skipped, never overwritten — and Bob keeps everything.
       const report = await adoptEphemeralSubject(store, MALLORY.subject, "user_mallory");
-      expect(report).toEqual({ apps: 0, threads: 0, states: 1, skipped: 2 });
+      expect(report).toEqual({ apps: 0, threads: 0, states: 0, skipped: 1 });
       const bobApp = await apps.get("app_bobs_own");
       expect(bobApp?.subject).toBe(BOB.subject);
       expect(bobApp?.doc.name).toBe("Bob's app");
       expect((await threads.get(BOB, "thr_bobs_own"))?.subject).toBe(BOB.subject);
-      // …and Bob's state stays Bob's (Mallory's copy landed under HER subject only).
       expect(await stateStore(store).get(BOB, "app_bobs_own")).toEqual({ bobs: true });
+      expect(await stateStore(store).get({ kind: "user", subject: "user_mallory" }, "app_bobs_own")).toEqual({ hers: true });
     });
 
     it("refuses merging into reserved or ephemeral subjects and into itself", async () => {
       const store = made.store;
-      registerEphemeralSubject(store, "anonymous_feed");
-      registerEphemeralSubject(store, "anonymous_f00d");
+      await registerEphemeralSubject(store, "anonymous_feed");
+      await registerEphemeralSubject(store, "anonymous_f00d");
       await expect(adoptEphemeralSubject(store, "anonymous_feed", "vendo:org:org_1"))
         .rejects.toMatchObject({ code: "validation" });
       await expect(adoptEphemeralSubject(store, "anonymous_feed", "anonymous_f00d"))

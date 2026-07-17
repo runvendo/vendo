@@ -38,14 +38,14 @@ export function createVendo(config: {
   telemetry?: boolean;                        // wires @vendoai/telemetry (out of campaign scope, "stays as-is") — the one consumer outside this set
   mcp?: boolean;                              // open the MCP door (10-mcp §1); off by default — opening it is a host decision
   oauth?: HostOAuthAdapter;                   // the door's identity + consent seam (10-mcp §3); REQUIRED when `mcp` is true — the door cannot mint principals without it
-  sessions?: {                                // anonymous (ephemeral) session lifecycle (02 §4, ENG-237)
-    ttlMs?: number;                           // idle timeout; default 30 min; 0 disables TTL eviction (cap-only)
+  sessions?: {                                // anonymous (ephemeral) session lifecycle (02 §4, kill-list B3)
+    ttlMs?: number;                           // idle timeout; default 30 min; 0 disables TTL eviction
     sweepIntervalMs?: number;                 // amortized + timer sweep cadence; default 60 s
-    maxSessions?: number;                     // concurrent anonymous-session cap; default 10 000
   };                                          // (internal `now` clock seam exists for tests only)
 }): Vendo;
 <!-- amended 2026-07-14: `mcp?`/`oauth?` added — MCP door landed (PR #139); original froze pre-door. Code: server.ts:56-75 (CreateVendoConfig.mcp/oauth), plus the runtime guard that throws when `mcp: true` without `oauth`. -->
 <!-- amended 2026-07-16: `sessions?` added — wave-4 session lifecycle landed (PR #301, ENG-237). Code: server.ts CreateVendoConfig.sessions + validateSessionsConfig (invalid values throw VendoError("validation") at compose time). Defaults Yousef-approved 2026-07-16. -->
+<!-- amended 2026-07-17: `sessions.maxSessions` retired — the overlay's LRU cap died with the overlay (kill-list §B3; 02-store §4 is now disk rows + TTL sweep, and disk growth is bounded by the sweep). -->
 
 
 export interface Vendo {
@@ -58,7 +58,7 @@ export interface Vendo {
 
 Wiring (normative): `actions.add(apps.agentTools())`; every `ToolRegistry` handed to agent, apps, and automations is `guard.bind(...)`ed here — blocks never see an unbound registry. `nextVendoHandler(vendo)` adapts the fetch handler to a Next.js route module; the handler shape itself is framework-agnostic (page: framework-agnostic, any JS runtime).
 
-Session lifecycle wiring (normative, ENG-237): the umbrella touches the session on every ephemeral-principal request (register == touch, 02 §4) and brackets the request — streamed bodies included — against the store's inflight refcount. Sweeps run both amortized on-request (any request arriving `sweepIntervalMs` after the last sweep triggers one before it is handled — the serverless-safe leg) and on an unref'd background timer every `sweepIntervalMs`, torn down with `store.close()`. Every swept subject cascades store-first into `agent.evictSubject` (03 §1): a concurrent request fails closed at the store rather than finding agent threads without store state. `setSessionClock`/`setSessionCap` route the store's clock and default registry cap through the umbrella's session clock (wall time in production; the internal test-only seam noted above) and `sessions.maxSessions`, so door-side and mid-turn touches share one time source and one ceiling.
+Session lifecycle wiring (normative, 02 §4 / kill-list B3): the umbrella touches the session on every ephemeral-principal request (`registerEphemeralSubject` — register == touch, awaited before the route runs) with its own session clock passed as `now` (wall time in production; the internal test-only seam noted above). Sweeps run both amortized on-request (any request arriving `sweepIntervalMs` after the last sweep triggers one — awaited BEFORE the request is handled, the evict-on-expiry ordering and the serverless-safe leg) and on an unref'd background timer every `sweepIntervalMs`, torn down with `store.close()`. Every swept subject cascades store-first into `agent.evictSubject` (03 §1): a concurrent request fails closed at the store rather than finding agent threads without store state. The overlay-era inflight bracket and `setSessionClock`/`setSessionCap` wiring are retired with the overlay.
 
 ## 3. The wire (public contract — ui speaks exactly this)
 
@@ -163,3 +163,10 @@ Exit codes: doctor `0` green / `1` broken wiring; sync `0` (fail-soft warns) / w
 - **Changed:** §3's `/orgs` route family (list/create, get-one, members add/set-role/remove, app transfer) is removed; the entire path prefix now always answers `cloud-required`, unconditionally — not key-gated, not entitlement-gated. `?org=<id>` on `/approvals` and `/grants` gets the same unconditional `cloud-required` instead of admin-context scoping. `blocks.orgs` is removed from `/status`. §6's cloud-gated surface list drops `org` (share/publish/pinning remain entitlement-gated; orgs are never OSS-reachable at all).
 - **Why:** simplify-v2 kill-list A5 — the org wire surface (§3, ENG-263) was implemented against the host's local store, contradicting the 2026-07-16 data-residency decision (Cloud enabled = data stored with Vendo). Orgs move to Vendo Cloud entirely; this repo keeps only the posture seam so a caller gets a clear error instead of a 404.
 - **Authorized by:** the Yousef-approved simplify-v2 kill-list (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md`, §A5).
+
+### 2026-07-17 — Session wiring on the disk model; `sessions.maxSessions` retired (kill-list §B3)
+
+- **Changed:** §2's session-lifecycle wiring paragraph is rewritten to 02-store §4's disk model: the umbrella still touches on every ephemeral-principal request and runs the amortized + timer sweeps with the store-first `agent.evictSubject` cascade, but registration and the sweep are now awaited async store calls carrying the umbrella's clock as `now`; the inflight request bracket and the `setSessionClock`/`setSessionCap` wiring are retired with the overlay.
+- **Changed:** `sessions.maxSessions` is removed from `createVendo`'s config — it existed to bound the overlay's process memory; anonymous data now lives on disk and is bounded by the TTL sweep.
+- **Why:** kill-list §B3 replaced the store's in-memory ephemeral overlay with ordinary disk rows plus a `vendo_sessions` TTL sweep (02-store §4, same-date amendment); the umbrella wiring follows the store half's new seams.
+- **Authorized by:** the Yousef-approved kill-list spec (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md` §B3).

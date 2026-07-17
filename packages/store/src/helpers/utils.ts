@@ -57,3 +57,13 @@ export function pageLimit(value: number | undefined): number {
 export function jsonParam(value: unknown): string {
   return JSON.stringify(value);
 }
+
+/** app:<appId>:… is the collection/namespace grammar for app-scoped record and
+ *  blob stores (01-core §12). The appId segment is colon-free by construction. */
+const APP_SCOPE = /^app:([^:]+):/;
+
+/** The owning appId of an app-scoped record collection or blob namespace, or
+ *  undefined for non-app-scoped scopes. */
+export function appScopeId(scope: string): string | undefined {
+  return APP_SCOPE.exec(scope)?.[1];
+}

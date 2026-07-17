@@ -9,8 +9,9 @@
  *   - each cookieless client gets its OWN anonymous subject (distinct cookies),
  *   - a client keeps its subject across requests (cookie round-trip),
  *   - one client's threads / apps / approvals are invisible to the other, and
- *   - nothing an anonymous subject touches ever lands on disk (02-store §4):
- *     vendo_threads / vendo_apps / vendo_approvals stay empty.
+ *   - anonymous rows land on disk under the client's OWN anonymous subject
+ *     (02-store §4, kill-list B3: ordinary rows, erased by the TTL sweep) —
+ *     never under another client's subject or a durable one.
  *
  * The harness `wireFetch` always sets x-vendo-test-user (a resolved principal),
  * so this suite talks to the wire DIRECTLY, without that header, managing the
@@ -81,7 +82,7 @@ afterEach(async () => {
 });
 
 describe("J7: anonymous sessions are isolated per client through the composed wire", () => {
-  it("gives each client its own subject, hides threads/apps/approvals cross-client, and persists nothing", async () => {
+  it("gives each client its own subject, hides threads/apps/approvals cross-client, and scopes disk rows to the owning subject", async () => {
     await resetFixture();
     stack = await createStack({
       turns: [
@@ -147,10 +148,11 @@ describe("J7: anonymous sessions are isolated per client through the composed wi
     const twoApprovals = (await (await two.fetch("/approvals")).json()) as unknown[];
     expect(twoApprovals).toEqual([]);
 
-    // --- Ephemeral: nothing an anonymous subject touched hit disk (02 §4) --
-    for (const table of ["vendo_threads", "vendo_apps", "vendo_approvals"]) {
+    // --- Ephemeral rows are ordinary disk rows under client 1's subject (02 §4, B3) --
+    for (const [table, expected] of [["vendo_threads", 2], ["vendo_apps", 1], ["vendo_approvals", 1]] as const) {
       const rows = await stack.sql<{ subject: string }>(`SELECT subject FROM ${table}`);
-      expect(rows, table).toEqual([]);
+      expect(rows, table).toHaveLength(expected);
+      for (const row of rows) expect(row.subject, table).toBe(`anonymous_${oneId}`);
     }
   });
 });

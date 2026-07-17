@@ -3,17 +3,8 @@ export { createStore, type VendoStore } from "./store.js";
 export { eraseStore, type EraseReport, type EraseTable } from "./erase.js";
 export {
   registerEphemeralSubject,
-  beginEphemeralRequest,
-  endEphemeralRequest,
-  evictEphemeralSubject,
   sweepEphemeralSubjects,
-  setSessionClock,
-  setSessionCap,
-  ephemeralOverlaySizes,
-  EPHEMERAL_SUBJECT_CAP,
-  type EphemeralSession,
-  type AppEphemerality,
-} from "./ephemeral.js";
+} from "./sessions.js";
 export { envSecrets, secretStore, storeSecrets } from "./secrets.js";
 export { appStore, type AppRow } from "./helpers/apps.js";
 export { stateStore } from "./helpers/state.js";

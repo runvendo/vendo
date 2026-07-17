@@ -7,20 +7,19 @@ that seam.
 ## Anonymous sessions and sign-in
 
 When `principal(req)` returns `null`, the visitor gets a per-client ephemeral
-principal carried by a signed httpOnly cookie. Nothing an anonymous session
-touches lands on disk.
+principal carried by a signed httpOnly cookie. Anonymous work is stored like
+any other — ordinary rows under the anonymous subject — plus one row in
+`vendo_sessions` recording the session's last activity.
 
-**Sessions expire.** Every request touches the session; a session idle past
-`sessions.ttlMs` (default 30 minutes) is evicted — its in-memory data
-(threads, apps, state, grants, approvals) is discarded in one cascade. A
-request still in flight holds its session open, however long the turn streams.
-The cookie itself stays valid: the next request simply gets a fresh, empty
-session. A write that races an eviction fails closed with `not-found`
-("session may have expired") rather than landing on disk. Tune with
-`createVendo({ sessions: { ttlMs, sweepIntervalMs, maxSessions } })`;
-`ttlMs: 0` disables TTL eviction (the `maxSessions` cap still applies).
-Sessions are per-process: multi-instance deployments need sticky routing for
-anonymous traffic.
+**Sessions expire.** Every request touches the session; a sweep erases every
+session idle past `sessions.ttlMs` (default 30 minutes) — its rows (threads,
+apps, state, grants, approvals) are deleted in one cascade. The cookie itself
+stays valid: the next request simply gets a fresh, empty session. A stale
+app-scoped write after the sweep fails closed with `not-found` ("session may
+have expired") rather than recreating unreachable rows. Tune with
+`createVendo({ sessions: { ttlMs, sweepIntervalMs } })`; `ttlMs: 0` disables
+TTL eviction. Sessions live in the database, so they survive restarts and are
+shared across instances.
 
 **Auto-merge on sign-in.** The first authenticated request that still carries
 a valid anonymous-session cookie adopts that session's work into the signed-in

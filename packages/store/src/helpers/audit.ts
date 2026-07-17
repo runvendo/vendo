@@ -1,5 +1,4 @@
-import { VendoError, type AppId, type AuditEvent, type IsoDateTime, type Principal } from "@vendoai/core";
-import { overlayFor, registerEphemeralSubject, snapshot } from "../ephemeral.js";
+import type { AppId, AuditEvent, IsoDateTime, Principal } from "@vendoai/core";
 import { dbFor, type VendoStore } from "../store.js";
 import { putAuditRow } from "./rows.js";
 import { decodeCursor, encodeCursor, iso, pageLimit, text } from "./utils.js";
@@ -15,10 +14,6 @@ export interface AuditQuery {
   limit?: number;
 }
 
-function afterDescendingCursor(event: AuditEvent, cursor: { c: string; i: string }): boolean {
-  return event.at < cursor.c || (event.at === cursor.c && event.id < cursor.i);
-}
-
 /** 02-store §3 */
 export function auditStore(store: VendoStore): {
   append(event: AuditEvent): Promise<void>;
@@ -26,42 +21,13 @@ export function auditStore(store: VendoStore): {
   export(filter?: { from?: IsoDateTime; to?: IsoDateTime }): AsyncIterable<string>;
 } {
   const db = dbFor(store);
-  const overlay = overlayFor(store);
   return {
     async append(event) {
-      const parsedEvent = parseAuditEvent(event);
-      if (parsedEvent.principal.ephemeral === true) {
-        registerEphemeralSubject(store, parsedEvent.principal.subject);
-        // Same append-only refusal as the routed door and the SQL path (02 §2):
-        // an existing overlay event is never replaced.
-        if (overlay.audit.has(parsedEvent.id)) {
-          throw new VendoError("conflict", `audit event ${parsedEvent.id} already exists (vendo_audit is append-only)`);
-        }
-        overlay.audit.set(parsedEvent.id, snapshot(parsedEvent));
-        return;
-      }
-      await putAuditRow(db, parsedEvent);
+      // putAuditRow refuses to replace an existing row (append-only, 02 §2).
+      await putAuditRow(db, parseAuditEvent(event));
     },
     async query(filter) {
       const limit = pageLimit(filter.limit);
-      if (filter.principal?.ephemeral === true) {
-        const cursor = filter.cursor === undefined ? undefined : decodeCursor(filter.cursor);
-        const matching = [...overlay.audit.values()]
-          .filter((event) => event.principal.subject === filter.principal?.subject)
-          .filter((event) => filter.appId === undefined || event.appId === filter.appId)
-          .filter((event) => filter.kind === undefined || event.kind === filter.kind)
-          .filter((event) => filter.from === undefined || event.at >= filter.from)
-          .filter((event) => filter.to === undefined || event.at <= filter.to)
-          .filter((event) => cursor === undefined || afterDescendingCursor(event, cursor))
-          .sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
-        const events = matching.slice(0, limit).map(snapshot);
-        const last = events.at(-1);
-        return {
-          events,
-          ...(matching.length > limit && last ? { cursor: encodeCursor(last.at, last.id) } : {}),
-        };
-      }
-
       const params: unknown[] = [];
       const clauses: string[] = [];
       const add = (sql: string, value: unknown): void => {

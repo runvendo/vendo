@@ -3,106 +3,54 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
 import { appFixture, approvalFixture, at, auditFixture, grantFixture, persistentPrincipal } from "./fixtures.test-util.js";
 import {
-  appStore, approvalStore, auditStore, createStore, grantStore, runStore, stateStore, threadStore,
+  appStore, approvalStore, auditStore, createStore, grantStore, registerEphemeralSubject,
+  runStore, stateStore, sweepEphemeralSubjects, threadStore,
   type VendoStore,
 } from "./index.js";
-import {
-  appEphemerality,
-  beginEphemeralRequest,
-  endEphemeralRequest,
-  ephemeralOverlaySizes,
-  evictEphemeralSubject,
-  isEphemeralSubject,
-  overlayFor,
-  registerEphemeralSubject,
-  setSessionCap,
-  sweepEphemeralSubjects,
-} from "./ephemeral.js";
-import { dbFor } from "./store.js";
 
-const memoryStore = (): VendoStore => createStore({ dataDir: "memory://" });
+const memoryStore = async (): Promise<VendoStore> => {
+  const store = createStore({ dataDir: "memory://" });
+  await store.ensureSchema();
+  return store;
+};
 
-describe("ephemeral session registry (ENG-237)", () => {
-  it("registration stamps touchedAt and touch refreshes it + LRU recency", () => {
-    const store = memoryStore();
-    registerEphemeralSubject(store, "a", 1000);
-    registerEphemeralSubject(store, "b", 2000);
-    expect([...overlayFor(store).subjects.keys()]).toEqual(["a", "b"]);
-    expect(overlayFor(store).subjects.get("a")?.touchedAt).toBe(1000);
+// Kill-list B3: the session registry is a disk table (vendo_sessions). A
+// register is a touch (last-activity stamp); the sweep erases every subject
+// idle past the TTL through the erase cascade. The overlay-only mechanics
+// (LRU cap, inflight brackets, process-local eviction) are gone.
+describe("ephemeral session registry (kill-list B3)", () => {
+  it("registration stamps the touch time and re-registration refreshes it", async () => {
+    const store = await memoryStore();
+    await registerEphemeralSubject(store, "old", 0);
+    await registerEphemeralSubject(store, "fresh", 1000);
 
-    registerEphemeralSubject(store, "a", 3000); // touch a
-    expect(overlayFor(store).subjects.get("a")?.touchedAt).toBe(3000);
-    // a is now the most-recent (last) entry; b became the oldest.
-    expect([...overlayFor(store).subjects.keys()]).toEqual(["b", "a"]);
+    // old is 1000ms idle at now=1000 — swept; fresh is 0ms idle — kept.
+    expect(await sweepEphemeralSubjects(store, { idleMs: 500, now: 1000 })).toEqual(["old"]);
+
+    // A touch refreshes the clock: fresh re-registered at 1400 survives a sweep
+    // at 1800 (400ms idle), then falls to one at 2000 (600ms idle).
+    await registerEphemeralSubject(store, "fresh", 1400);
+    expect(await sweepEphemeralSubjects(store, { idleMs: 500, now: 1800 })).toEqual([]);
+    expect(await sweepEphemeralSubjects(store, { idleMs: 500, now: 2000 })).toEqual(["fresh"]);
+    await store.close();
   });
 
-  it("inflight refcount survives a re-touch and floors at zero", () => {
-    const store = memoryStore();
-    registerEphemeralSubject(store, "a", 1000);
-    beginEphemeralRequest(store, "a");
-    beginEphemeralRequest(store, "a");
-    registerEphemeralSubject(store, "a", 2000); // re-touch mid-flight
-    expect(overlayFor(store).subjects.get("a")?.inflight).toBe(2);
-    endEphemeralRequest(store, "a");
-    endEphemeralRequest(store, "a");
-    endEphemeralRequest(store, "a"); // extra end never goes negative
-    expect(overlayFor(store).subjects.get("a")?.inflight).toBe(0);
-  });
-
-  it("sweep evicts only idle, long-enough, not-inflight subjects and returns them", () => {
-    const store = memoryStore();
-    registerEphemeralSubject(store, "old", 0);
-    registerEphemeralSubject(store, "fresh", 1000);
-    registerEphemeralSubject(store, "busy", 0);
-    beginEphemeralRequest(store, "busy");
-
-    const evicted = sweepEphemeralSubjects(store, { idleMs: 500, now: 1000 });
-    expect(evicted).toEqual(["old"]); // 1000-0 >= 500, not inflight
-    expect(isEphemeralSubject(store, "old")).toBe(false);
-    expect(isEphemeralSubject(store, "fresh")).toBe(true); // 1000-1000 < 500
-    expect(isEphemeralSubject(store, "busy")).toBe(true); // idle but inflight
-
-    endEphemeralRequest(store, "busy");
-    expect(sweepEphemeralSubjects(store, { idleMs: 500, now: 1000 })).toEqual(["busy"]);
-  });
-
-  it("cap overflow skips inflight subjects (a mid-stream session is never evicted)", () => {
-    const store = memoryStore();
-    registerEphemeralSubject(store, "streaming", 0, 10);
-    beginEphemeralRequest(store, "streaming"); // oldest, but mid-turn
-    registerEphemeralSubject(store, "idle", 100, 10);
-    registerEphemeralSubject(store, "new", 200, 2); // over cap → evict oldest NOT-inflight
-    expect(isEphemeralSubject(store, "streaming")).toBe(true); // survived — inflight
-    expect(isEphemeralSubject(store, "idle")).toBe(false);
-    expect(isEphemeralSubject(store, "new")).toBe(true);
-
-    // If everything else is inflight, the registry exceeds the cap rather than
-    // evicting a live session; the next sweep/registration reclaims it.
-    beginEphemeralRequest(store, "new");
-    registerEphemeralSubject(store, "another", 300, 2);
-    expect(overlayFor(store).subjects.size).toBe(3); // streaming + new + another
-    expect(isEphemeralSubject(store, "streaming")).toBe(true);
-    endEphemeralRequest(store, "streaming");
-    registerEphemeralSubject(store, "another", 400, 2); // re-touch enforces the cap again
-    expect(isEphemeralSubject(store, "streaming")).toBe(false);
-    expect(overlayFor(store).subjects.size).toBe(2);
-  });
-
-  it("setSessionCap governs registrations that pass no explicit cap", () => {
-    const store = memoryStore();
-    setSessionCap(store, 2);
-    registerEphemeralSubject(store, "a", 0); // store-internal style: no cap arg
-    registerEphemeralSubject(store, "b", 100);
-    registerEphemeralSubject(store, "c", 200);
-    expect(isEphemeralSubject(store, "a")).toBe(false); // oldest evicted at cap 2
-    expect(overlayFor(store).subjects.size).toBe(2);
+  it("a swept subject that returns gets a fresh registration", async () => {
+    const store = await memoryStore();
+    await registerEphemeralSubject(store, "revenant", 0);
+    expect(await sweepEphemeralSubjects(store, { idleMs: 100, now: 1000 })).toEqual(["revenant"]);
+    await registerEphemeralSubject(store, "revenant", 1100);
+    expect(await sweepEphemeralSubjects(store, { idleMs: 100, now: 1150 })).toEqual([]);
+    expect(await sweepEphemeralSubjects(store, { idleMs: 100, now: 1300 })).toEqual(["revenant"]);
+    await store.close();
   });
 });
 
-describe("ephemeral cascade eviction empties every overlay map for exactly one subject (ENG-237)", () => {
-  const seed = async (store: VendoStore, tag: string): Promise<Principal> => {
+describe("the sweep erases every table for exactly the stale subject (kill-list B3)", () => {
+  const seed = async (store: VendoStore, tag: string, touchedAt: number): Promise<Principal> => {
     const subject = `sess_${tag}`;
     const principal: Principal = { kind: "user", subject, ephemeral: true };
+    await registerEphemeralSubject(store, subject, touchedAt);
     const appId = `app_${tag}`;
     const doc = appFixture(appId, tag);
     await appStore(store).put(principal, doc);
@@ -122,51 +70,36 @@ describe("ephemeral cascade eviction empties every overlay map for exactly one s
     return principal;
   };
 
-  it("clears S1's rows across all ten maps and leaves S2 untouched", async () => {
-    const store = memoryStore();
-    await store.ensureSchema();
-    const s1 = await seed(store, "s1");
-    await seed(store, "s2");
-    // Every map now holds one row per subject.
-    for (const [name, size] of Object.entries(ephemeralOverlaySizes(store))) {
-      expect(size, name).toBe(2);
-    }
+  it("clears S1's rows everywhere and leaves S2 untouched", async () => {
+    const store = await memoryStore();
+    const s1 = await seed(store, "s1", 0);
+    const s2 = await seed(store, "s2", 5000);
 
-    evictEphemeralSubject(store, s1.subject);
+    expect(await sweepEphemeralSubjects(store, { idleMs: 1000, now: 2000 })).toEqual([s1.subject]);
 
-    // Exactly S1's data is gone; S2's remains — every map back to one row.
-    for (const [name, size] of Object.entries(ephemeralOverlaySizes(store))) {
-      expect(size, name).toBe(1);
-    }
-    expect(isEphemeralSubject(store, s1.subject)).toBe(false);
-    expect(isEphemeralSubject(store, "sess_s2")).toBe(true);
-    expect(overlayFor(store).records.has("app:app_s1:notes")).toBe(false);
-    expect(overlayFor(store).records.has("app:app_s2:notes")).toBe(true);
-    expect(overlayFor(store).blobs.has("app:app_s1:files")).toBe(false);
-    expect(overlayFor(store).blobs.has("app:app_s2:files")).toBe(true);
-    // S2 still reads back through the normal ephemeral path.
+    // Exactly S1's data is gone…
+    expect(await appStore(store).get("app_s1")).toBeNull();
+    expect(await stateStore(store).get(s1, "app_s1")).toBeNull();
+    expect(await threadStore(store).get(s1, "thr_s1")).toBeNull();
+    expect(await grantStore(store).get("grt_s1")).toBeNull();
+    expect((await auditStore(store).query({ principal: s1 })).events).toEqual([]);
+    expect(await approvalStore(store).pending(s1)).toEqual([]);
+    expect(await runStore(store).get("run_s1")).toBeNull();
+    expect(await store.records("app:app_s1:notes").get("note_s1")).toBeNull();
+    expect(await store.blobs("app:app_s1:files").get("s1.txt")).toBeNull();
+    // …and S2 still reads back through every door.
+    expect((await appStore(store).get("app_s2"))?.subject).toBe(s2.subject);
     expect((await store.records("app:app_s2:notes").get("note_s2"))?.data).toEqual({ v: "s2" });
-  });
-
-  it("cap overflow runs the full cascade (no orphaned overlay data)", async () => {
-    const store = memoryStore();
-    await store.ensureSchema();
-    await seed(store, "over1");
-    expect(overlayFor(store).apps.has("app_over1")).toBe(true);
-    // Register a second subject with cap=1 so the oldest (over1) overflows.
-    registerEphemeralSubject(store, "sess_over2", 9999, 1);
-    expect(isEphemeralSubject(store, "sess_over1")).toBe(false);
-    // The cascade — not the old key-only drop — cleaned every overlay map.
-    expect(overlayFor(store).apps.has("app_over1")).toBe(false);
-    expect(overlayFor(store).records.has("app:app_over1:notes")).toBe(false);
-    expect(overlayFor(store).blobs.has("app:app_over1:files")).toBe(false);
-    expect(overlayFor(store).threads.has("thr_over1")).toBe(false);
+    expect(await store.blobs("app:app_s2:files").get("s2.txt")).not.toBeNull();
+    expect((await threadStore(store).get(s2, "thr_s2"))?.subject).toBe(s2.subject);
+    await store.close();
   });
 });
 
-// Task 3: the STORE-1 disk-leak pin — runs on BOTH backends (real Postgres when
-// POSTGRES_URL is set) so the fail-closed guarantee is proven on disk, not just
-// in the overlay.
+// The STORE-1 disk-orphan pin — runs on BOTH backends (real Postgres when
+// POSTGRES_URL is set): once a session is swept, its apps are GONE from
+// vendo_apps, so stale app-scoped writes fail closed instead of recreating
+// orphaned rows that no cascade would ever clean.
 for (const backend of backends()) {
   describe(`fail-closed unknown-app routing (${backend.name})`, () => {
     let made: MadeBackend;
@@ -183,22 +116,21 @@ for (const backend of backends()) {
       (await made.sql("SELECT COUNT(*)::int AS count FROM vendo_blobs WHERE namespace = $1", [namespace]))[0]?.["count"],
     );
 
-    it("evicted-session writes fail closed and leave zero disk rows; reads return empty", async () => {
+    it("post-sweep writes fail closed and leave zero orphaned rows; reads return empty", async () => {
       const principal: Principal = { kind: "user", subject: "sess_leak", ephemeral: true };
+      await registerEphemeralSubject(made.store, principal.subject, 0);
       await appStore(made.store).put(principal, appFixture("app_leak", "Leak"));
       const records = made.store.records("app:app_leak:notes");
       const blobs = made.store.blobs("app:app_leak:files");
       await records.put({ id: "n1", data: { text: "temp" } });
       await blobs.put("f.txt", new Uint8Array([1]));
-      expect(await diskRecords("app:app_leak:notes")).toBe(0);
-      expect(await diskBlobs("app:app_leak:files")).toBe(0);
-      expect(await appEphemerality(made.store, dbFor(made.store), "app_leak")).toBe("ephemeral");
+      expect(await diskRecords("app:app_leak:notes")).toBe(1);
+      expect(await diskBlobs("app:app_leak:files")).toBe(1);
 
       // Session expires.
-      evictEphemeralSubject(made.store, principal.subject);
-      expect(await appEphemerality(made.store, dbFor(made.store), "app_leak")).toBe("unknown");
+      expect(await sweepEphemeralSubjects(made.store, { idleMs: 1, now: 10_000 })).toEqual([principal.subject]);
 
-      // Stale writes refuse instead of routing to disk (the STORE-1 leak).
+      // Stale writes refuse instead of recreating rows for a dead app.
       await expect(records.put({ id: "n2", data: { text: "stale" } })).rejects.toThrow(/session may have expired/);
       await expect(records.delete("n1")).rejects.toThrow(/session may have expired/);
       await expect(blobs.put("g.txt", new Uint8Array([2]))).rejects.toThrow(/session may have expired/);
@@ -208,7 +140,7 @@ for (const backend of backends()) {
           .rejects.toThrow(/session may have expired/);
       }
 
-      // Nothing leaked to disk on either backend.
+      // Nothing survived or leaked on either backend.
       expect(await diskRecords("app:app_leak:notes")).toBe(0);
       expect(await diskBlobs("app:app_leak:files")).toBe(0);
 

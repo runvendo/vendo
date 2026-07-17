@@ -31,8 +31,8 @@ environment](/reference/environment-variables#app-machine-environment) for the
 `/data` and `/files` proxy routes.
 
 `encryption.key` encrypts secret values in `vendo_secrets` only. App records
-stay queryable. Ephemeral principals use an in-memory overlay and never write
-to disk.
+stay queryable. Ephemeral (anonymous) principals write ordinary rows under
+their subject; a TTL sweep erases idle sessions.
 
 ## Encryption is on by default
 
@@ -65,13 +65,13 @@ delete the row and re-seed it under the new subject.
 ## Erasing data
 
 `eraseStore(store)` is the sanctioned deletion path for `vendo_audit`,
-cascading across every store table plus the ephemeral overlay. Use it for
-right-to-erasure requests, tearing down a test app, or purging old runs.
+cascading across every store table. Use it for right-to-erasure requests,
+tearing down a test app, or purging old runs.
 
 ```ts
 import { eraseStore } from "@vendoai/vendo/server";
 
-// Full erasure for a subject across every store table and the overlay.
+// Full erasure for a subject across every store table.
 const bySubject = await eraseStore(vendo.store).bySubject(subjectId);
 
 // Erase everything owned by one app.

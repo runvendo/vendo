@@ -118,8 +118,10 @@ describe("ENG-263: anonymous→signed-in auto-merge", () => {
     const cookie = anon.cookie();
     expect(cookie).toBeDefined();
 
-    // Nothing on disk yet (ephemeral session).
-    expect(await stack.sql("SELECT id FROM vendo_threads")).toEqual([]);
+    // The anonymous work is on disk under the anon subject (02 §4, kill-list B3).
+    const anonThreadRows = await stack.sql<{ subject: string }>("SELECT subject FROM vendo_threads");
+    expect(anonThreadRows).toHaveLength(2);
+    for (const row of anonThreadRows) expect(row.subject).toMatch(/^anonymous_[0-9a-f]{32}$/);
 
     // --- First authenticated request carrying the anon cookie merges + clears.
     const merged = await signedInWithCookie(stack, "/threads", cookie!);

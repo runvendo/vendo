@@ -52,8 +52,9 @@ update them to match `vendo:webhook:<source>` instead of the bare
 
 When `principal(req)` returns `null`, Vendo mints an ephemeral session
 principal and carries it in a signed, `httpOnly` cookie scoped to the wire
-base path. Ephemeral principals never write to disk — threads, apps, and
-state live in an in-memory overlay for the life of the process.
+base path. Ephemeral principals write ordinary rows under their anonymous
+subject; a TTL sweep erases sessions idle past `sessions.ttlMs` (default
+30 minutes), rows and all.
 
 ### Auto-merge on sign-in
 

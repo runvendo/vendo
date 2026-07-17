@@ -1,4 +1,3 @@
-import { overlayFor } from "./ephemeral.js";
 import { dbFor, type VendoStore } from "./store.js";
 import { invalid } from "./validate.js";
 
@@ -20,11 +19,12 @@ export const ERASE_TABLES = [
   "vendo_secrets",
   "vendo_mcp_clients",
   "vendo_mcp_grants",
+  "vendo_sessions",
 ] as const;
 
 export type EraseTable = typeof ERASE_TABLES[number];
 
-/** Rows deleted per table (durable rows and ephemeral-overlay rows combined). */
+/** Rows deleted per table. */
 export type EraseReport = Record<EraseTable, number>;
 
 function emptyReport(): EraseReport {
@@ -37,16 +37,18 @@ function escapeLike(value: string): string {
 
 /**
  * 02-store §5 — the store-level erase API: by subject (full erasure) or by
- * app, cascading the matching data across all 13 tables of §2's map. It is
+ * app, cascading the matching data across all 14 tables of §2's map. It is
  * the ONLY sanctioned deletion path for `vendo_audit` rows — the routed door
  * refuses audit deletion (§2); this API reaches the tables directly.
- * Ephemeral-overlay rows are erased alongside their durable counterparts.
+ * Ephemeral subjects are erased the same way (their rows are ordinary disk
+ * rows — kill-list B3); the TTL sweep (sessions.ts) is built on this cascade.
  * Policy engines and schedulers stay out of scope: hosts call this from their
  * own jobs, and host SQL remains available for everything else.
  */
 export function eraseStore(store: VendoStore): {
   /** Full erasure of one subject: their apps (and each app's records, blobs,
-      state, and runs), plus every subject-keyed or subject-ref'd row. */
+      state, and runs), plus every subject-keyed or subject-ref'd row and the
+      subject's session registration (§4). */
   bySubject(subject: string): Promise<EraseReport>;
   /** Erase one app: its row, record collections, blob namespaces, state, runs,
       app-scoped grants and audit rows, and app-ref'd generic/door rows.
@@ -66,8 +68,8 @@ export function eraseStore(store: VendoStore): {
     report[table] += result.rows.length;
   };
 
-  /** App-scoped durable data shared by the subject and app cascades: the app's
-      record collections and blob namespaces (`app:<appId>:...` — §3's naming
+  /** App-scoped data shared by the subject and app cascades: the app's record
+      collections and blob namespaces (`app:<appId>:...` — §3's naming
       convention), its per-user state, and its run records. */
   const eraseAppData = async (report: EraseReport, appId: string): Promise<void> => {
     const prefix = `app:${escapeLike(appId)}:%`;
@@ -77,62 +79,24 @@ export function eraseStore(store: VendoStore): {
     await del(report, "vendo_runs", "app_id = $1", [appId]);
   };
 
-  /** The overlay mirror of eraseAppData (02 §4: ephemeral rows live in the
-      per-process overlay, not on disk — erased and counted all the same). */
-  const eraseOverlayAppData = (report: EraseReport, appId: string): void => {
-    const overlay = overlayFor(store);
-    const prefix = `app:${appId}:`;
-    for (const [collection, records] of overlay.records) {
-      if (collection.startsWith(prefix)) {
-        report.vendo_records += records.size;
-        overlay.records.delete(collection);
-      }
-    }
-    for (const [namespace, blobs] of overlay.blobs) {
-      if (namespace.startsWith(prefix)) {
-        report.vendo_blobs += blobs.size;
-        overlay.blobs.delete(namespace);
-      }
-    }
-    for (const [key, row] of overlay.states) {
-      if (row.appId === appId) {
-        overlay.states.delete(key);
-        report.vendo_state += 1;
-      }
-    }
-    for (const [id, row] of overlay.runs) {
-      if (row.appId === appId) {
-        overlay.runs.delete(id);
-        report.vendo_runs += 1;
-      }
-    }
-  };
-
   return {
     async bySubject(subject) {
       if (typeof subject !== "string" || subject === "") {
         invalid("erase subject must be a non-empty string");
       }
       const report = emptyReport();
-      const overlay = overlayFor(store);
       const subjectRef = JSON.stringify({ subject });
 
       // The subject's apps drive the app-scoped cascade (records/blobs/state/runs
       // carry the app id, not the subject).
-      const owned = new Set<string>(
-        (await db.query("SELECT id FROM vendo_apps WHERE subject = $1", [subject])).rows
-          .map((row) => String(row["id"])),
-      );
-      for (const [id, row] of overlay.apps) if (row.subject === subject) owned.add(id);
-      for (const appId of owned) {
-        await eraseAppData(report, appId);
-        eraseOverlayAppData(report, appId);
-      }
+      const owned = (await db.query("SELECT id FROM vendo_apps WHERE subject = $1", [subject])).rows
+        .map((row) => String(row["id"]));
+      for (const appId of owned) await eraseAppData(report, appId);
 
       // Ordering matters for accurate counts: the app cascade above already
       // removed the subject's own state/run rows, so the subject-level deletes
-      // and overlay sweeps below only count rows the cascade did not reach
-      // (e.g. this subject's state under ANOTHER owner's app).
+      // below only count rows the cascade did not reach (e.g. this subject's
+      // state under ANOTHER owner's app).
       await del(report, "vendo_apps", "subject = $1", [subject]);
       await del(report, "vendo_state", "subject = $1", [subject]);
       await del(report, "vendo_threads", "subject = $1", [subject]);
@@ -143,52 +107,8 @@ export function eraseStore(store: VendoStore): {
       await del(report, "vendo_records", "refs @> $1::jsonb", [subjectRef]);
       await del(report, "vendo_mcp_clients", "refs @> $1::jsonb", [subjectRef]);
       await del(report, "vendo_mcp_grants", "refs @> $1::jsonb", [subjectRef]);
-
-      for (const [id, row] of overlay.apps) {
-        if (row.subject === subject) {
-          overlay.apps.delete(id);
-          report.vendo_apps += 1;
-        }
-      }
-      for (const [key, row] of overlay.states) {
-        if (row.subject === subject) {
-          overlay.states.delete(key);
-          report.vendo_state += 1;
-        }
-      }
-      for (const [id, row] of overlay.threads) {
-        if (row.subject === subject) {
-          overlay.threads.delete(id);
-          report.vendo_threads += 1;
-        }
-      }
-      for (const [id, grant] of overlay.grants) {
-        if (grant.subject === subject) {
-          overlay.grants.delete(id);
-          report.vendo_grants += 1;
-        }
-      }
-      for (const [id, row] of overlay.approvals) {
-        if (row.subject === subject) {
-          overlay.approvals.delete(id);
-          report.vendo_approvals += 1;
-        }
-      }
-      for (const [id, event] of overlay.audit) {
-        if (event.principal.subject === subject) {
-          overlay.audit.delete(id);
-          report.vendo_audit += 1;
-        }
-      }
-      for (const records of overlay.records.values()) {
-        for (const [id, record] of records) {
-          if (record.refs?.["subject"] === subject) {
-            records.delete(id);
-            report.vendo_records += 1;
-          }
-        }
-      }
-      overlay.subjects.delete(subject);
+      // The session registration (if any) is retired with the data (§4).
+      await del(report, "vendo_sessions", "subject = $1", [subject]);
       return report;
     },
 
@@ -197,39 +117,15 @@ export function eraseStore(store: VendoStore): {
         invalid("erase appId must be a non-empty string");
       }
       const report = emptyReport();
-      const overlay = overlayFor(store);
       const appRef = JSON.stringify({ app_id: appId });
 
       await eraseAppData(report, appId);
-      eraseOverlayAppData(report, appId);
       await del(report, "vendo_apps", "id = $1", [appId]);
       await del(report, "vendo_grants", "app_id = $1", [appId]);
       await del(report, "vendo_audit", "app_id = $1", [appId]);
       await del(report, "vendo_records", "refs @> $1::jsonb", [appRef]);
       await del(report, "vendo_mcp_clients", "refs @> $1::jsonb", [appRef]);
       await del(report, "vendo_mcp_grants", "refs @> $1::jsonb", [appRef]);
-
-      if (overlay.apps.delete(appId)) report.vendo_apps += 1;
-      for (const [id, grant] of overlay.grants) {
-        if (grant.appId === appId) {
-          overlay.grants.delete(id);
-          report.vendo_grants += 1;
-        }
-      }
-      for (const [id, event] of overlay.audit) {
-        if (event.appId === appId) {
-          overlay.audit.delete(id);
-          report.vendo_audit += 1;
-        }
-      }
-      for (const records of overlay.records.values()) {
-        for (const [id, record] of records) {
-          if (record.refs?.["app_id"] === appId) {
-            records.delete(id);
-            report.vendo_records += 1;
-          }
-        }
-      }
       return report;
     },
   };

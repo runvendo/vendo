@@ -7,14 +7,14 @@ import { withSchemaLock } from "./db.js";
     Vendo-owned org tables (`vendo_orgs` + `vendo_org_members`); those tables
     are cut under the simplify-v2 kill-list (docs/superpowers/specs/2026-07-16
     -simplify-v2-kill-list-design.md §A5) — orgs live on the Vendo-hosted side
-    now. The version number stays at 3: the DDL list is idempotent and
-    additive-only, so dropping two CREATE TABLE statements needs no version
-    bump. Existing dev databases that already have `vendo_orgs`/
+    now. Existing dev databases that already have `vendo_orgs`/
     `vendo_org_members` keep those orphaned tables — erasing them is not
-    required and this migration does not attempt it. (Reverting the constant
-    below 3 is not an option either way: `migrate()` throws `conflict` the
-    moment a stamped `vendo_meta.schema_version` exceeds `SCHEMA_VERSION`.) */
-export const SCHEMA_VERSION = 3;
+    required and this migration does not attempt it.
+
+    v4 (kill-list §B3) adds `vendo_sessions`: the ephemeral in-memory overlay is
+    gone, anonymous rows are ordinary disk rows, and this table is the session
+    registry the TTL sweep reads (02 §4). */
+export const SCHEMA_VERSION = 4;
 
 /** 02-store §2 */
 export const DDL = [
@@ -80,6 +80,12 @@ export const DDL = [
     created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
   )`,
   "CREATE INDEX IF NOT EXISTS vendo_mcp_grants_refs_idx ON vendo_mcp_grants USING GIN (refs jsonb_path_ops)",
+  // 02-store §4 (kill-list B3): the ephemeral-session registry. One row per
+  // live anonymous session; touched_at is the last-activity stamp the TTL
+  // sweep compares against. Registration == touch (upsert).
+  `CREATE TABLE IF NOT EXISTS vendo_sessions (
+    subject text PRIMARY KEY, touched_at timestamptz NOT NULL
+  )`,
 ] as const;
 
 // Additive columns stay compatible with same-version development databases (02 §2

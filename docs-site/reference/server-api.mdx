@@ -61,8 +61,8 @@ runs started for enabled automations owned by that principal.
 ## `eraseStore`
 
 `@vendoai/vendo/server` re-exports `eraseStore(store)`, the sanctioned
-deletion path across every store table and the ephemeral overlay. It is the
-only supported way to delete rows from the append-only `vendo_audit` table.
+deletion path across every store table. It is the only supported way to
+delete rows from the append-only `vendo_audit` table.
 
 ```ts
 import { eraseStore } from "@vendoai/vendo/server";

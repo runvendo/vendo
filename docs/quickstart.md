@@ -42,7 +42,6 @@ export function createVendo(config: {
   sessions?: {                 // anonymous (ephemeral) session lifecycle
     ttlMs?: number;            // idle timeout, default 30 min; 0 disables TTL
     sweepIntervalMs?: number;  // sweep cadence, default 60 s
-    maxSessions?: number;      // concurrent anonymous-session cap, default 10 000
   };
 }): Vendo;
 

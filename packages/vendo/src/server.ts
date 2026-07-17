@@ -47,13 +47,9 @@ import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@ve
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import {
   adoptEphemeralSubject,
-  beginEphemeralRequest,
   createStore,
-  endEphemeralRequest,
   envSecrets,
   registerEphemeralSubject,
-  setSessionCap,
-  setSessionClock,
   sweepEphemeralSubjects,
   type VendoStore,
 } from "@vendoai/store";
@@ -191,21 +187,18 @@ export interface CreateVendoConfig {
         renderable `data-vendo-step-limit` part instead of ending silently. */
     maxSteps?: number;
   };
-  /** 02-store §4 / ENG-237 — ephemeral (anonymous) session lifecycle. Anonymous
-      visitors get a TTL-based session: every request touches it, an idle session
-      is swept and its overlay data + in-memory threads are cascaded away. All
-      optional.
-      - `ttlMs` idle timeout before a session is evicted (default 30 min). `0`
-        disables TTL eviction (cap-only — today's behavior).
+  /** 02-store §4 (kill-list B3) — ephemeral (anonymous) session lifecycle.
+      Anonymous visitors get a TTL-based session on disk: every request touches
+      it; an idle session is swept — its rows erased from the store and its
+      in-memory threads cascaded away. All optional.
+      - `ttlMs` idle timeout before a session is swept (default 30 min). `0`
+        disables TTL eviction.
       - `sweepIntervalMs` how often the amortized on-request sweep and the
         unref'd background timer run (default 60 s).
-      - `maxSessions` hard ceiling on concurrent anonymous sessions; the oldest
-        idle session is cascaded out over the cap (default 10 000).
       - `now` internal clock seam (tests only). */
   sessions?: {
     ttlMs?: number;
     sweepIntervalMs?: number;
-    maxSessions?: number;
     now?: () => number;
   };
 }
@@ -214,32 +207,25 @@ export interface CreateVendoConfig {
     09-vendo contract text). */
 const DEFAULT_SESSION_TTL_MS = 30 * 60_000;
 const DEFAULT_SESSION_SWEEP_INTERVAL_MS = 60_000;
-const DEFAULT_MAX_SESSIONS = 10_000;
 
 interface ResolvedSessions {
   ttlMs: number;
   sweepIntervalMs: number;
-  maxSessions: number;
   now?: () => number;
 }
 
 function validateSessionsConfig(sessions: CreateVendoConfig["sessions"]): ResolvedSessions {
   const ttlMs = sessions?.ttlMs ?? DEFAULT_SESSION_TTL_MS;
   const sweepIntervalMs = sessions?.sweepIntervalMs ?? DEFAULT_SESSION_SWEEP_INTERVAL_MS;
-  const maxSessions = sessions?.maxSessions ?? DEFAULT_MAX_SESSIONS;
-  // ttlMs 0 (or negative) is the documented off switch (cap-only). Any other
-  // value must be a non-negative integer; the sweep interval and cap must be
-  // positive integers.
+  // ttlMs 0 (or negative) is the documented off switch. Any other value must
+  // be a non-negative integer; the sweep interval must be a positive integer.
   if (!Number.isInteger(ttlMs) || ttlMs < 0) {
     throw new VendoError("validation", "sessions.ttlMs must be a non-negative integer (0 disables TTL eviction)");
   }
   if (!Number.isInteger(sweepIntervalMs) || sweepIntervalMs < 1) {
     throw new VendoError("validation", "sessions.sweepIntervalMs must be a positive integer");
   }
-  if (!Number.isInteger(maxSessions) || maxSessions < 1) {
-    throw new VendoError("validation", "sessions.maxSessions must be a positive integer");
-  }
-  return { ttlMs, sweepIntervalMs, maxSessions, ...(sessions?.now === undefined ? {} : { now: sessions.now }) };
+  return { ttlMs, sweepIntervalMs, ...(sessions?.now === undefined ? {} : { now: sessions.now }) };
 }
 
 /** Default char cap on a single tool result before it reaches the model (03-agent §2).
@@ -503,8 +489,8 @@ function secureRequest(url: URL, trustedBaseIsHttps: boolean): boolean {
     so this module keeps loading/bundling on edge/Worker targets (cf.
     dotVendoFile). Restart semantics: a new process mints a new key, which
     invalidates every outstanding cookie and resets all anonymous sessions —
-    acceptable because ephemeral sessions never persist past the process anyway
-    (00 overview; 02-store §4). */
+    acceptable: the orphaned sessions' disk rows are reclaimed by the TTL sweep
+    (02-store §4, kill-list B3). */
 function newAnonKey(): Promise<CryptoKey> {
   const raw = new Uint8Array(32);
   globalThis.crypto.getRandomValues(raw);
@@ -630,34 +616,27 @@ function createWireHandler(deps: {
   development: boolean;
   runtimeCapture?: RuntimeCaptureHandler;
   onRequestOrigin?: (origin: string) => void;
-  /** ENG-237 ephemeral-session policy. `now` reads the (possibly injected)
-      session clock; `sweep` runs the store idle sweep and cascades evicted
-      subjects into the agent. */
-  sessions: { ttlMs: number; sweepIntervalMs: number; maxSessions: number; now: () => number };
-  sweep: () => void;
+  /** 02-store §4 (kill-list B3) ephemeral-session policy. `now` reads the
+      (possibly injected) session clock; `sweep` runs the store TTL sweep and
+      cascades swept subjects into the agent. */
+  sessions: { ttlMs: number; sweepIntervalMs: number; now: () => number };
+  sweep: () => Promise<void>;
 }): (request: Request) => Promise<Response> {
   // Amortized on-request sweep bookkeeping — lives in the shared handler closure
   // (persists across requests), NOT per-invocation. The serverless-safe leg:
   // Next.js gives no timer guarantee, so every request may trigger the sweep.
+  // Awaited BEFORE the request is handled (evict-on-expiry): a request arriving
+  // past the TTL gets a fresh, empty session rather than racing its own sweep.
   let lastSweepAt = deps.sessions.now();
-  const maybeSweep = (): void => {
+  const maybeSweep = async (): Promise<void> => {
     if (deps.sessions.ttlMs <= 0) return;
     const now = deps.sessions.now();
     if (now - lastSweepAt < deps.sessions.sweepIntervalMs) return;
     lastSweepAt = now;
-    deps.sweep();
+    await deps.sweep();
   };
   return async (request) => {
-    maybeSweep();
-    // Per-request inflight bracket: begin once per ephemeral subject this request
-    // touches, end all in a finally so the idle sweep never evicts a session
-    // mid-turn (even a minutes-long stream).
-    const inflight = new Set<string>();
-    const trackInflight = (subject: string): void => {
-      if (inflight.has(subject)) return;
-      beginEphemeralRequest(deps.store, subject);
-      inflight.add(subject);
-    };
+    await maybeSweep();
     // Per-request anonymous-session state. This handler closure is shared across
     // requests, so the minted-cookie state MUST live here (per-invocation) — a
     // shared one would leak one visitor's session to the next. INVARIANT: one
@@ -682,12 +661,10 @@ function createWireHandler(deps: {
         }
         anon.id = id;
         principal = ephemeralPrincipal(`anonymous_${id}`);
-        // 02-store §4: ephemeral subjects never touch disk. Declare this session
-        // ephemeral to the store up front so EVERY subsequent write this turn
-        // routes to the in-memory overlay — including the raw records() paths
-        // (apps, state, app-data) that only self-register on the typed helpers,
-        // and which persist mid-turn before any helper has seen the subject.
-        registerEphemeralSubject(deps.store, principal.subject, deps.sessions.now(), deps.sessions.maxSessions);
+        // 02-store §4 (kill-list B3): anonymous rows are ordinary disk rows;
+        // registering the subject (registration == touch) is what makes the
+        // session sweepable and keeps it alive while the visitor is active.
+        await registerEphemeralSubject(deps.store, principal.subject, deps.sessions.now());
         // 05-guard §2: session/task grants bind to ctx.sessionId. Anonymous
         // sessions bind per CLIENT (the cookie id), not per PROCESS, so one
         // visitor's session grant never authorizes another's calls. The explicit
@@ -744,13 +721,11 @@ function createWireHandler(deps: {
           }
         }
       }
-      // ENG-237: touch the session (register == touch) and bracket the request
-      // so the idle sweep can never evict this subject mid-flight. Anonymous
-      // requests registered above; a host-resolved ephemeral principal registers
-      // here (re-touch of an anon subject is idempotent — same clock reading).
+      // Touch the session (register == touch, 02 §4). Anonymous requests
+      // registered above; a host-resolved ephemeral principal registers here
+      // (re-touch of an anon subject is idempotent — same clock reading).
       if (principal.ephemeral === true) {
-        registerEphemeralSubject(deps.store, principal.subject, deps.sessions.now(), deps.sessions.maxSessions);
-        trackInflight(principal.subject);
+        await registerEphemeralSubject(deps.store, principal.subject, deps.sessions.now());
       }
       return {
         principal,
@@ -1193,49 +1168,7 @@ function createWireHandler(deps: {
     };
     // Attach the anon Set-Cookie (if a session was minted this request) at the
     // single exit — covering JSON, error, and SSE/stream responses alike.
-    let released = false;
-    const release = (): void => {
-      if (released) return;
-      released = true;
-      for (const subject of inflight) endEphemeralRequest(deps.store, subject);
-    };
-    let response: Response;
-    try {
-      response = withAnonCookie(await respond(), anon.setCookie);
-    } catch (error) {
-      release();
-      throw error;
-    }
-    if (inflight.size === 0 || !response.body) {
-      release();
-      return response;
-    }
-    // A streamed chat turn keeps producing (and persists the thread in onFinish)
-    // AFTER the handler returns. Hold the inflight refcount until the body
-    // finishes or the client disconnects, so the idle sweep never evicts the
-    // session mid-stream and forces its final ephemeral thread-persist onto disk.
-    const reader = response.body.getReader();
-    const tracked = new ReadableStream<Uint8Array>({
-      async pull(controller) {
-        try {
-          const { done, value } = await reader.read();
-          if (done) {
-            release();
-            controller.close();
-            return;
-          }
-          controller.enqueue(value);
-        } catch (error) {
-          release();
-          controller.error(error);
-        }
-      },
-      cancel(reason) {
-        release();
-        return reader.cancel(reason);
-      },
-    });
-    return new Response(tracked, response);
+    return withAnonCookie(await respond(), anon.setCookie);
   };
 }
 
@@ -1248,16 +1181,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const encryptionKey = environment("VENDO_STORE_ENCRYPTION_KEY");
   const store = config.store
     ?? createStore(encryptionKey === undefined ? {} : { encryption: { key: encryptionKey } });
-  // 02-store §4 / ENG-237 — ephemeral session policy. Validated like the agent's
-  // context config; defaults are the recommended knobs (see PR body).
+  // 02-store §4 (kill-list B3) — ephemeral session policy. Validated like the
+  // agent's context config; defaults are the recommended knobs. The store takes
+  // the clock per call (register/sweep), so one time source needs no seam.
   const sessionsConfig = validateSessionsConfig(config.sessions);
   const sessionNow = sessionsConfig.now ?? Date.now;
-  // Route the store's session clock (touch/TTL) through the umbrella's clock so
-  // door-side and mid-turn touches share ONE time source (deterministic in tests),
-  // and its default registry cap through maxSessions so store-internal
-  // self-registrations enforce the same ceiling as the umbrella's own registers.
-  setSessionClock(store, sessionNow);
-  setSessionCap(store, sessionsConfig.maxSessions);
   const sandbox = selectSandbox(config.sandbox);
   const ready = store.ensureSchema();
   // Keep eager schema readiness for hosts that reach into composed blocks,
@@ -1430,13 +1358,13 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       ...(config.agent?.maxInitialTools === undefined ? {} : { maxInitialTools: config.agent.maxInitialTools }),
     },
   });
-  // ENG-237 idle sweep: evict every idle, not-inflight ephemeral session from the
-  // store overlay, then cascade each evicted subject into the agent's in-memory
+  // 02-store §4 (kill-list B3) TTL sweep: erase every idle ephemeral session's
+  // disk rows, then cascade each swept subject into the agent's in-memory
   // threads (store-first — a concurrent request then fails closed at the store
   // rather than finding threads without store state). Disabled when ttlMs is 0.
-  const runSweep = (): void => {
+  const runSweep = async (): Promise<void> => {
     if (sessionsConfig.ttlMs <= 0) return;
-    for (const subject of sweepEphemeralSubjects(store, { idleMs: sessionsConfig.ttlMs })) {
+    for (const subject of await sweepEphemeralSubjects(store, { idleMs: sessionsConfig.ttlMs, now: sessionNow() })) {
       agent.evictSubject(subject);
     }
   };
@@ -1444,7 +1372,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // engine pattern) so an idle process still reclaims sessions with no traffic;
   // unref'd means it never keeps the event loop alive. Torn down with the store.
   if (sessionsConfig.ttlMs > 0) {
-    const sweepTimer = setInterval(runSweep, sessionsConfig.sweepIntervalMs);
+    const sweepTimer = setInterval(() => {
+      runSweep().catch((error: unknown) => {
+        console.warn(`[vendo] session sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }, sessionsConfig.sweepIntervalMs);
     (sweepTimer as unknown as { unref?: () => void }).unref?.();
     const closeStore = store.close.bind(store);
     store.close = async (): Promise<void> => {
@@ -1562,7 +1494,6 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     sessions: {
       ttlMs: sessionsConfig.ttlMs,
       sweepIntervalMs: sessionsConfig.sweepIntervalMs,
-      maxSessions: sessionsConfig.maxSessions,
       now: sessionNow,
     },
     sweep: runSweep,

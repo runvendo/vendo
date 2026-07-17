@@ -4,10 +4,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
 import { ERASE_TABLES, eraseStore } from "./erase.js";
 import { appFixture, approvalFixture, auditFixture, grantFixture } from "./fixtures.test-util.js";
-import { appStore, grantStore } from "./index.js";
+import { appStore, grantStore, registerEphemeralSubject } from "./index.js";
 
 // 02-store §5: "A store-level erase API ... erases by subject (full erasure)
-// or by app, cascading the matching data across all 13 tables, and is
+// or by app, cascading the matching data across all 14 tables, and is
 // exposed on the umbrella. It is the only sanctioned deletion path for audit
 // rows."
 
@@ -18,7 +18,7 @@ describe("02-store §5 — erase cascade covers the contract's table map", () =>
       "utf8",
     );
     const documented = [...contract.matchAll(/^\| `(vendo_[a-z_]+)` \|/gm)].map((match) => match[1]);
-    expect(documented).toHaveLength(13);
+    expect(documented).toHaveLength(14);
     expect(documented).toEqual([...ERASE_TABLES]);
   });
 });
@@ -115,6 +115,7 @@ for (const backend of backends()) {
         vendo_secrets: 0,
         vendo_mcp_clients: 0,
         vendo_mcp_grants: 1,
+        vendo_sessions: 0, // durable subject — never registered as a session
       });
 
       // Gone through the doors...
@@ -137,9 +138,10 @@ for (const backend of backends()) {
       expect(await store.records("vendo_audit").get(bystanderEvent.id)).not.toBeNull();
     });
 
-    it("erases an ephemeral subject's overlay rows (02 §4) all the same", async () => {
+    it("erases an ephemeral subject's rows and its session registration (02 §4) all the same", async () => {
       const store = made.store;
       const anon: Principal = { kind: "user", subject: "anon_erase", ephemeral: true };
+      await registerEphemeralSubject(store, anon.subject);
       const doc = appFixture("app_erase_anon");
       await appStore(store).put(anon, doc);
       await store.records(`app:${doc.id}:notes`).put({ id: "note_anon", data: { body: "mine" } });
@@ -154,6 +156,7 @@ for (const backend of backends()) {
       expect(report.vendo_threads).toBe(1);
       expect(report.vendo_grants).toBe(1);
       expect(report.vendo_audit).toBe(1);
+      expect(report.vendo_sessions).toBe(1);
 
       expect(await appStore(store).get(doc.id)).toBeNull();
       expect(await store.records("vendo_threads").get("thr_erase_anon")).toBeNull();
