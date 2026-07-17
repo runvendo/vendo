@@ -39,7 +39,7 @@ const APPROVALS_COLLECTION = "vendo_approvals";
  *  `consumed:<id>` rows in a guard-owned generic collection, written only via
  *  the store's atomic `insertIfAbsent` (02-store §4) so exactly one caller —
  *  across processes — wins each transition. Rows carry `refs.subject`, so the
- *  §5 erase cascade collects them with the rest of the subject's data. */
+ *  02-store §5 erase cascade collects them with the rest of the subject's data. */
 const APPROVAL_CLAIMS_COLLECTION = "guard:approval-claims";
 const AUDIT_COLLECTION = "vendo_audit";
 const JUDGE_TIMEOUT_MS = 15_000;
