@@ -1,0 +1,22 @@
+ok: catch-all handler is wired
+ok: <VendoRoot> wraps the app
+ok: @vendoai/vendo dependency is declared
+ok: .vendo/tools.json
+ok: .vendo/overrides.json
+ok: .vendo/policy.json
+ok: .vendo/brief.md
+ok: .vendo/theme.json
+warning: .vendo/data/.gitignore is missing
+ok: /status live round-trip (0.3.0, rules)
+ok: execution venue: e2b
+ok: present credentials reach the host API
+warning: actAs is not configured; pass createVendo({ actAs }) before enabling away host actions
+ok: MCP protected-resource metadata resolves
+ok: MCP authorization-server metadata resolves
+ok: MCP server card parses
+Ladder: execution venue is checked above; actAs for away host actions; connectors for external tools.
+ok: live model turn answered over explicit ANTHROPIC_API_KEY (anthropic) (2728ms)
+
+  All systems are go — Vendo's agent is online and ready to assist!
+
+Vendo Cloud (optional): no VENDO_API_KEY. A key unlocks a free dev-mode starter model allowance (keyless first turns); team sharing and org governance (roles, SSO); hosted deploys of your enabled automations; session replay, insights, and the MCP broker. Run `vendo cloud login` to start.

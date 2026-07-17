@@ -20,6 +20,8 @@ export const LOCAL_VENDO_PACKAGE_NAMES = [
   "@vendoai/automations",
   "@vendoai/ui",
   "@vendoai/telemetry",
+  // ENG-338: the umbrella's dev-mode rider sessions (a workspace dep of @vendoai/vendo).
+  "@vendoai/dev-riders",
   "@vendoai/vendo",
   "vendoai",
 ] as const;

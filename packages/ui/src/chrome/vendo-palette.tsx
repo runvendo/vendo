@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { useApps } from "../hooks/use-apps.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { isEditableTarget, registerPaletteHotkey, resolveHotkeyMatcher, type PaletteHotkey } from "./palette-hotkey.js";
 import { TakeoverPortal } from "./takeover-portal.js";
 
 export interface VendoCommand {
@@ -13,8 +14,13 @@ export interface VendoCommand {
 
 const FOCUSABLE = "button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex='-1'])";
 
-/** 08-ui §4 — global keyboard command palette with an ARIA combobox. */
-export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand): void }) {
+/** 08-ui §4 — global keyboard command palette with an ARIA combobox.
+ *
+ * The keybinding is a host-collision-safe singleton (ENG-222): one shared
+ * document listener no matter how many palettes mount, a configurable/disable-
+ * able `hotkey` chord, and it never steals a keystroke from a focused host
+ * input while the palette is closed. */
+export function VendoPalette({ onCommand, hotkey }: { onCommand?(command: VendoCommand): void; hotkey?: PaletteHotkey }) {
   const { apps } = useApps();
   const takeover = useMobileTakeover();
   const [open, setOpen] = useState(false);
@@ -39,23 +45,30 @@ export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand):
     restoreFocus();
   }, [restoreFocus]);
 
+  // Read the live open state inside the (stable) shared-listener handler without
+  // re-subscribing on every toggle.
+  const openRef = useRef(open);
+  openRef.current = open;
+  const matcher = useMemo(() => resolveHotkeyMatcher(hotkey), [hotkey]);
   useEffect(() => {
-    const listener = (event: globalThis.KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setOpen(value => {
-          if (value) {
-            restoreFocus();
-            return false;
-          }
-          opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-          return true;
-        });
-      }
+    if (hotkey === false) return;
+    const handler = (event: globalThis.KeyboardEvent) => {
+      if (!matcher(event)) return;
+      // Host-collision safety: while closed, never steal a keystroke the host
+      // meant for its own focused input (its ⌘K, find-in-field, etc.).
+      if (!openRef.current && isEditableTarget(event.target)) return;
+      event.preventDefault();
+      setOpen(value => {
+        if (value) {
+          restoreFocus();
+          return false;
+        }
+        opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        return true;
+      });
     };
-    globalThis.addEventListener("keydown", listener);
-    return () => globalThis.removeEventListener("keydown", listener);
-  }, [restoreFocus]);
+    return registerPaletteHotkey(handler);
+  }, [matcher, hotkey, restoreFocus]);
 
   useEffect(() => {
     if (open) {

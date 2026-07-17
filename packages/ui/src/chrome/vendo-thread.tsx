@@ -1,6 +1,6 @@
 import type { ApprovalRequest, Json, RiskLabel, ToolOutcome, VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useVendoContext } from "../context.js";
 import { useVendoThread } from "../hooks/use-vendo-thread.js";
@@ -13,6 +13,7 @@ import { ConnectCard } from "./connect-card.js";
 import { FluidThinking } from "./fluid-thinking.js";
 import { previewArgs, summarizeArgs, toolTitle } from "./humanize.js";
 import { Markdown } from "./markdown.js";
+import { LONG_TEXT_CAP, truncateHead } from "./truncate.js";
 
 function partData(part: UIMessage["parts"][number]): unknown {
   return "data" in part ? part.data : part;
@@ -152,7 +153,82 @@ function userText(message: UIMessage): string {
     carries no descriptor), so format args as readable `Label: value` lines
     instead of the raw JSON with literal \n escapes end users were reading. */
 function preview(input: unknown): string {
-  return previewArgs(input);
+  // ENG-216 — readable `Label: value` lines instead of raw JSON. ENG-218 — then
+  // bound the result before it reaches the DOM: a huge argument blob (dumped
+  // rows, base64) otherwise renders unbounded inside the approval card's <pre>,
+  // blowing up layout and the node count.
+  const formatted = previewArgs(input);
+  return formatted.length > LONG_TEXT_CAP
+    ? `${truncateHead(formatted)}\n… (${(formatted.length / 1000).toFixed(0)}k chars, truncated)`
+    : formatted;
+}
+
+/** ENG-218 — a plain user turn (rendered verbatim, not markdown) collapses when
+    huge so a pasted log doesn't flood the thread with DOM. Assistant turns get
+    the same treatment inside <Markdown>. */
+function UserText({ text, restored }: { text: string; restored?: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const collapsible = restored === true && text.length > LONG_TEXT_CAP;
+  const shown = collapsible && !expanded ? truncateHead(text) : text;
+  return (
+    <div className="fl-usertext">
+      {shown}
+      {collapsible ? (
+        <button type="button" className="fl-more" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
+          {expanded ? "Show less" : `Show full message (${(text.length / 1000).toFixed(0)}k chars)`}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** ENG-218 — windowing for long threads. Rendering a reopened 200-turn thread
+    mounts every turn's DOM (and runs every entrance animation) at once. Instead
+    we render only a trailing window of the most recent messages and reveal older
+    ones in chunks when the reader scrolls to the top — the DOM stays bounded, so
+    scroll and paint stay smooth no matter how long the transcript is.
+
+    The trailing window is what stick-to-bottom and jump-to-latest already care
+    about (both operate at the end), so those behaviors are untouched. Only the
+    unseen head of a genuinely long thread is deferred. */
+const WINDOW_INITIAL = 60;
+const WINDOW_STEP = 40;
+const NEAR_TOP_PX = 200;
+
+function useMessageWindow(messages: UIMessage[], listRef: React.RefObject<HTMLDivElement | null>, threadKey?: string) {
+  // How many trailing messages to render. Grows (never shrinks the head back
+  // out from under the reader) as they scroll up; resets when the thread swaps.
+  const [count, setCount] = useState(WINDOW_INITIAL);
+  useEffect(() => { setCount(WINDOW_INITIAL); }, [threadKey]);
+
+  const start = Math.max(0, messages.length - count);
+  const windowed = start === 0 ? messages : messages.slice(start);
+  const hasOlder = start > 0;
+
+  // Anchor the viewport across a window growth: prepending older turns balloons
+  // scrollHeight, which would otherwise yank the reader. Capture distance-from-
+  // bottom at expand time and restore it after the new nodes lay out.
+  const anchorRef = useRef<number | null>(null);
+  const loadOlder = () => {
+    if (start === 0) return;
+    const node = listRef.current;
+    anchorRef.current = node ? node.scrollHeight - node.scrollTop : null;
+    setCount(current => current + WINDOW_STEP);
+  };
+  useLayoutEffect(() => {
+    const node = listRef.current;
+    if (anchorRef.current === null || !node) return;
+    node.scrollTop = node.scrollHeight - anchorRef.current;
+    anchorRef.current = null;
+  });
+
+  // Reveal more when the reader reaches the top of the rendered window.
+  const onNearTop = () => {
+    const node = listRef.current;
+    if (node && node.scrollTop <= NEAR_TOP_PX) loadOlder();
+  };
+
+  return { windowed, hasOlder, olderCount: start, loadOlder, onNearTop };
 }
 
 /** Within this many pixels of the end the reader counts as "at the bottom" —
@@ -260,6 +336,10 @@ export interface VendoThreadProps {
   suggestions?: string[];
   /** Show a mic affordance in the composer that launches the host's voice surface. */
   onVoice?: () => void;
+  /** ENG-222 — fires with the effective thread id once it is known, including
+   * the fresh `thr_` the server mints for a new conversation. Lets a host
+   * surface (e.g. VendoPage's sidebar) pull the new conversation into its list. */
+  onThreadId?: (threadId: string) => void;
 }
 
 /** 08-ui §4 — conversation chrome over the headless thread transport. */
@@ -268,9 +348,15 @@ export function VendoThread({
   greeting = "What can I help you build?",
   suggestions = [],
   onVoice,
+  onThreadId,
 }: VendoThreadProps) {
   const { client, components, theme, tools, onPin } = useVendoContext();
   const thread = useVendoThread(threadId);
+  // ENG-222 — surface the effective (possibly server-minted) thread id upward.
+  const reportedThreadId = thread.threadId;
+  useEffect(() => {
+    if (reportedThreadId !== undefined) onThreadId?.(reportedThreadId);
+  }, [reportedThreadId, onThreadId]);
   const busy = thread.status === "submitted" || thread.status === "streaming";
   // busy is a content-revision signal for the scroll hook: turn-actions mount
   // below the last turn when a stream settles, which changes the list height.
@@ -299,6 +385,23 @@ export function VendoThread({
     }, 80);
     return () => clearTimeout(timer);
   }, [thread.messages, scroll]);
+
+  const messageWindow = useMessageWindow(thread.messages, scroll.listRef, threadId);
+  // ENG-218 — entrance-animation gating on restore. The .fl-item-in rise runs
+  // when an article first mounts; a reopened long thread mounts them all at once
+  // → a stampede on first paint. We record every message id present when the
+  // thread is first shown (and after each switch) as "restored" and suppress
+  // the entrance on those; only turns that arrive AFTER restore (streamed
+  // replies, sends) animate. A ref, not state — read during render, no re-render.
+  const restoredIdsRef = useRef<{ key: string | undefined; ids: Set<string> }>({ key: undefined, ids: new Set() });
+  if (restoredIdsRef.current.key !== threadId) {
+    restoredIdsRef.current = { key: threadId, ids: new Set(thread.messages.map(message => message.id)) };
+  } else if (restoredIdsRef.current.ids.size === 0 && thread.messages.length > 0) {
+    // First non-empty render after an async history load (mount → list/get):
+    // that whole batch is a restore, not new arrivals.
+    restoredIdsRef.current.ids = new Set(thread.messages.map(message => message.id));
+  }
+  const isRestored = (id: string) => restoredIdsRef.current.ids.has(id);
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -415,6 +518,9 @@ export function VendoThread({
     }
     return -1;
   })();
+  // Turn actions attach by id, not list index: the map below renders a windowed
+  // slice (ENG-218), so positional indices no longer line up with thread.messages.
+  const lastUserId = lastUserIndex >= 0 ? thread.messages[lastUserIndex]?.id : undefined;
   const editLast = () => {
     if (busy || lastUserIndex < 0) return;
     const message = thread.messages[lastUserIndex];
@@ -433,6 +539,7 @@ export function VendoThread({
     }
     return -1;
   })();
+  const lastAssistantId = lastAssistantIndex >= 0 ? thread.messages[lastAssistantIndex]?.id : undefined;
   const regenerateLast = () => {
     if (busy || lastAssistantIndex < 0) return;
     void thread.regenerate();
@@ -539,16 +646,16 @@ export function VendoThread({
     </form>
   );
 
-  const renderPart = (part: UIMessage["parts"][number], key: string, role: UIMessage["role"], count = 1) => {
+  const renderPart = (part: UIMessage["parts"][number], key: string, role: UIMessage["role"], restored: boolean, count = 1) => {
     if (part.type === "text") {
-      if (role === "user") return <div className="fl-usertext" key={key}>{part.text}</div>;
+      if (role === "user") return <UserText key={key} text={part.text} restored={restored} />;
       // ENG-217 — lone caret while the streamed turn is still empty (stable
       // line box); once text flows, Markdown's .fl-md--streaming trailing
       // caret takes over.
       if (part.state === "streaming" && part.text.trim().length === 0) {
         return <span className="fl-caret" aria-hidden="true" key={key} />;
       }
-      return <Markdown key={key} text={part.text} streaming={part.state === "streaming"} />;
+      return <Markdown key={key} text={part.text} streaming={part.state === "streaming"} restored={restored} />;
     }
     if (isToolUIPart(part)) {
       // The in-thread presentation is a human build "beat" (label from the
@@ -667,20 +774,30 @@ export function VendoThread({
             aria-live="polite"
             aria-busy={busy}
             ref={scroll.listRef}
-            onScroll={scroll.onScroll}
+            onScroll={() => { scroll.onScroll(); messageWindow.onNearTop(); }}
           >
-            {thread.messages.map((message, messageIndex) => (
+            {messageWindow.hasOlder ? (
+              <button
+                type="button"
+                className="fl-load-older"
+                onClick={messageWindow.loadOlder}
+              >
+                Show {messageWindow.olderCount} earlier message{messageWindow.olderCount === 1 ? "" : "s"}
+              </button>
+            ) : null}
+            {messageWindow.windowed.map(message => (
               <article
-                className={message.role === "user" ? "fl-turn-user" : "fl-turn-assistant"}
+                className={`${message.role === "user" ? "fl-turn-user" : "fl-turn-assistant"}${
+                  isRestored(message.id) ? " fl-no-entrance" : ""}`}
                 data-role={message.role}
                 key={message.id}
                 aria-label={`${message.role} message`}
               >
                 {collapseToolRuns(message.parts).map(({ part, index, count }) =>
-                  renderPart(part, `${message.id}-${index}`, message.role, count))}
+                  renderPart(part, `${message.id}-${index}`, message.role, isRestored(message.id), count))}
                 {/* ENG-215 — edit the last user turn / regenerate the last
                     assistant turn. Revealed on hover/focus (see chrome-css). */}
-                {!busy && messageIndex === lastUserIndex && message.role === "user" ? (
+                {!busy && message.id === lastUserId && message.role === "user" ? (
                   <div className="fl-turn-actions">
                     <button type="button" className="fl-turn-btn" aria-label="Edit message" onClick={editLast}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -690,7 +807,7 @@ export function VendoThread({
                     </button>
                   </div>
                 ) : null}
-                {!busy && messageIndex === lastAssistantIndex && message.role === "assistant" ? (
+                {!busy && message.id === lastAssistantId && message.role === "assistant" ? (
                   <div className="fl-turn-actions">
                     <button type="button" className="fl-turn-btn" aria-label="Regenerate" onClick={regenerateLast}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

@@ -22,6 +22,11 @@ import {
   type UIMessage,
 } from "ai";
 import { assembleSystemPrompt } from "./prompt.js";
+import {
+  isApprovalResponseMessage,
+  RiderThreadBridge,
+  type RiderSessionProvider,
+} from "./rider.js";
 import { createRunner } from "./runner.js";
 import { ThreadRepository, type Thread, type ThreadSummary } from "./threads.js";
 import { buildAgentTools } from "./tools.js";
@@ -110,6 +115,12 @@ interface AgentConfig {
    *  rest through search; searched-in tools execute through the same guard-bound
    *  registry as any initially-enabled tool. */
   toolSearch?: ToolSearchConfig;
+  /** ENG-338 dev-mode rider seam: when the provider returns a session for a
+   *  thread, that persistent harness owns the model loop while tool execution
+   *  and consent stay on the SAME guard-bound path (rider.ts). Returning null
+   *  falls back to the native streamText loop. Additive and optional; absent
+   *  config behaves exactly as before. */
+  rider?: { session: RiderSessionProvider };
 }
 
 // Anthropic prompt-caching breakpoint. providerOptions.anthropic is ignored by every
@@ -351,6 +362,9 @@ export function createAgent(config: AgentConfig): VendoAgent {
     }
     return fresh;
   };
+  // ENG-338: one rider bridge per thread, held for the agent's lifetime so a
+  // parked approval survives across requests inside the persistent session.
+  const riderBridges = new Map<string, RiderThreadBridge>();
 
   return {
     async stream(input) {
@@ -380,6 +394,57 @@ export function createAgent(config: AgentConfig): VendoAgent {
         config.system,
         config.capabilityMiss !== undefined,
       );
+
+      // ENG-338 rider path: a dev-mode session harness owns the model loop for
+      // this thread; tools + consent still run the guard-bound path (rider.ts).
+      // The capability-miss reporter tool is native-loop only (rider sessions
+      // register the host tool surface at session start).
+      const riderSession = config.rider === undefined
+        ? null
+        : await config.rider.session({ threadId: thread.id });
+      if (riderSession !== null) {
+        // Rider sessions never get the capability-miss reporter tool, so their
+        // system prompt must not instruct calling it.
+        const riderSystem = config.capabilityMiss === undefined
+          ? system
+          : await assembleSystemPrompt(config.guard, input.ctx, config.system, false);
+        let bridge = riderBridges.get(thread.id);
+        if (bridge === undefined) {
+          bridge = new RiderThreadBridge(riderSession, {
+            registry: config.tools,
+            guard: config.guard,
+            ...(config.context?.toolOutputCap === undefined
+              ? {}
+              : { toolOutputCap: config.context.toolOutputCap }),
+          }, input.ctx);
+          riderBridges.set(thread.id, bridge);
+        }
+        const riderBridge = bridge;
+        const riderStream = createUIMessageStream<UIMessage>({
+          originalMessages: thread.messages,
+          execute: async ({ writer }) => {
+            const turn = { message: input.message, system: riderSystem, ctx: input.ctx, writer };
+            if (isApprovalResponseMessage(input.message)) {
+              await riderBridge.handleApprovalResponse(turn);
+            } else {
+              await riderBridge.handleUserTurn(turn);
+            }
+          },
+          onFinish: async ({ messages }) => {
+            await persistFinishedTurn(threads, thread, messages, input.ctx);
+          },
+          // The wire stays generic (same as the native loop), but a rider
+          // failure is dev-mode infrastructure — the operator's terminal gets
+          // the real cause (missing SDK, dead CLI process, protocol drift).
+          onError: (error) => {
+            console.error("[vendo] dev-mode rider turn failed:", error);
+            return "An error occurred while generating the response.";
+          },
+        });
+        const riderResponse = createUIMessageStreamResponse({ stream: riderStream });
+        riderResponse.headers.set(THREAD_ID_HEADER, thread.id);
+        return riderResponse;
+      }
 
       const stream = createUIMessageStream<UIMessage>({
         originalMessages: thread.messages,

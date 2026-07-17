@@ -17,6 +17,13 @@ import {
 } from "@vendoai/actions";
 import type { VendoTheme } from "@vendoai/core";
 import type { Telemetry } from "@vendoai/telemetry";
+import { runCloudStep, type CloudStepOptions } from "./cloud-init.js";
+import {
+  runDevModeStep,
+  runInitFinale,
+  type DevModeStepOptions,
+  type InitFinaleOptions,
+} from "./dev-mode.js";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
 import { extractTheme as extractThemeSlots } from "./theme/extract-theme.js";
 import {
@@ -111,6 +118,11 @@ export interface InitOptions {
   /** End-of-init refine offer (spec §3); injectable for tests. */
   offerRefine?: () => Promise<boolean>;
   runRefine?: (options: { targetDir: string; output?: Output; modelImport?: string }) => Promise<number>;
+  /** ENG-338 seams (tests): dev-mode ladder step + init finale overrides. */
+  devMode?: Partial<Omit<DevModeStepOptions, "root" | "output" | "yes">>;
+  finale?: Partial<Omit<InitFinaleOptions, "root" | "output" | "yes" | "framework" | "credential">> & { skip?: boolean };
+  /** ENG-339 seam (tests): cloud-in-init step overrides. */
+  cloud?: Partial<Omit<CloudStepOptions, "root" | "output" | "yes" | "credential">>;
 }
 
 /** Interactive y/N for the end-of-init `vendo refine` offer. */
@@ -318,15 +330,20 @@ function expressServerSource(modelImport: string, typescript: boolean): string {
 }
 
 function defaultModelSource(): string {
-  return `import { createAnthropic } from "@ai-sdk/anthropic";\n\n` +
-    `// vendo init starter: swap for any ai-SDK provider (BYO-LLM, 09 §2).\n` +
-    `const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });\n` +
-    `export const model = anthropic("claude-sonnet-4-6");\n`;
+  return `import { devModel } from "@vendoai/vendo/server";\n\n` +
+    `// vendo init starter — the dev-mode model ladder (resolved at runtime):\n` +
+    `//   env key (ANTHROPIC / OPENAI / GOOGLE) → your authed Claude Code session →\n` +
+    `//   your authed Codex session (dev only, with consent) → honest failure.\n` +
+    `// Swap for any ai-SDK provider to BYO-LLM (09 §2). Production always needs\n` +
+    `// a real key: set one in the environment and the ladder uses it first.\n` +
+    `export const model = devModel();\n`;
 }
 
 const VENDO_ENV_EXAMPLE =
   "# Trusted host origin for same-origin API calls; credential forwarding is disabled without it.\n" +
-  "VENDO_BASE_URL=http://localhost:3000\n";
+  "VENDO_BASE_URL=http://localhost:3000\n" +
+  "# Model key — REQUIRED in production; in dev the ladder can ride an authed Claude/Codex CLI login instead.\n" +
+  "# ANTHROPIC_API_KEY=\n";
 
 /** Resolve an `@/`-style model import to a candidate file the scaffold owns.
     Anything else (a package, a relative path) is the host's own module. */
@@ -1002,8 +1019,24 @@ export async function runInit(options: InitOptions): Promise<number> {
       // Majors pinned deliberately: @ai-sdk/anthropic@4 targets ai v7
       // (LanguageModelV4), incompatible with the umbrella's `ai >=6 <7` peer —
       // an unpinned install breaks `createVendo({ model })` on fresh hosts.
-      output.log("Wrote a starter model module: install its provider (`npm install ai@^6 @ai-sdk/anthropic@^3`) and set ANTHROPIC_API_KEY.");
+      output.log("Wrote a starter model module riding the dev-mode credential ladder. With an env key set, install its provider (`npm install ai@^6 @ai-sdk/anthropic@^3`, or the openai/google equivalent); production always needs a real key.");
     }
+    // ENG-338: state what the model ladder found; consent gates any CLI-session use.
+    const devCredential = await runDevModeStep({
+      root,
+      output,
+      yes: options.yes === true,
+      ...(options.devMode ?? {}),
+    });
+    // ENG-339: cloud in init — validate VENDO_API_KEY (state what it unlocks),
+    // else offer `vendo cloud login` + a starter allowance written to .env.local.
+    await runCloudStep({
+      root,
+      output,
+      yes: options.yes === true,
+      credential: devCredential,
+      ...(options.cloud ?? {}),
+    });
     // 10-mcp §2: the door never opens by default. When the host asks to open it,
     // point them at the one code change they make deliberately — a HostOAuthAdapter
     // (session + principal resolution) plus `mcp: true` on createVendo. init cannot scaffold the
@@ -1033,6 +1066,20 @@ export async function runInit(options: InitOptions): Promise<number> {
         ...(effective.modelImport === undefined ? {} : { modelImport: effective.modelImport }),
       });
       if (refineExit !== 0) output.error("vendo refine did not complete; run `vendo refine` again once your dev server and model key are ready.");
+    }
+
+    // ENG-338: init ends in the product — consent-gated dev-server start,
+    // browser on the host app, adaptive seeded first turn.
+    if (options.finale?.skip !== true) {
+      const { skip: _skip, ...finaleOverrides } = options.finale ?? {};
+      await runInitFinale({
+        root,
+        output,
+        framework: plan.framework,
+        credential: devCredential,
+        yes: options.yes === true,
+        ...finaleOverrides,
+      });
     }
     return 0;
   } catch (error) {

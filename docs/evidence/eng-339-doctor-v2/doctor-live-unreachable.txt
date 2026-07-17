@@ -1,0 +1,15 @@
+ok: catch-all handler is wired
+ok: <VendoRoot> wraps the app
+ok: @vendoai/vendo dependency is declared
+ok: .vendo/tools.json
+ok: .vendo/overrides.json
+ok: .vendo/policy.json
+ok: .vendo/brief.md
+ok: .vendo/theme.json
+warning: .vendo/data/.gitignore is missing
+broken: /status is unreachable at http://localhost:3999/api/vendo/status
+broken: present credential probe cannot run; start the dev server at http://localhost:3999/api/vendo and retry
+broken: cannot probe actAs; start the dev server at http://localhost:3999/api/vendo and retry
+Ladder: execution venue is checked above; actAs for away host actions; connectors for external tools.
+broken: live model turn cannot run; start the dev server at http://localhost:3999/api/vendo and retry
+Vendo Cloud (optional): no VENDO_API_KEY. A key unlocks a free dev-mode starter model allowance (keyless first turns); team sharing and org governance (roles, SSO); hosted deploys of your enabled automations; session replay, insights, and the MCP broker. Run `vendo cloud login` to start.
