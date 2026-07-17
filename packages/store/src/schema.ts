@@ -123,9 +123,8 @@ const ADDITIVE_DDL = [
   // can do guarded read-merge-write instead of last-write-wins. DEFAULT backfills
   // existing rows on ALTER; every write path bumps it.
   "ALTER TABLE vendo_threads ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1",
-  // Secret rewrites (rotation) must count as activity for the erase-by-age axis
-  // (02 §5): set() stamps it; NULL on legacy rows means created_at IS the last
-  // write, so byAge reads COALESCE(updated_at, created_at).
+  // Tracks the secret's last rewrite (rotation) separately from created_at;
+  // set() stamps it. NULL on legacy rows means created_at IS the last write.
   "ALTER TABLE vendo_secrets ADD COLUMN IF NOT EXISTS updated_at timestamptz",
 ] as const;
 

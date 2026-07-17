@@ -170,7 +170,7 @@ The choke point interface. guard implements it (05); every other block only cons
 export type GuardDecision =
   | { action: "run"; decidedBy: "grant" | "rule" | "judge" | "default"; grantId?: GrantId }
   | { action: "ask"; approval: ApprovalRequest; decidedBy: "critical" | "rule" | "judge" | "breaker" | "default" }
-  | { action: "block"; reason: string; decidedBy: "rule" | "judge" | "scanner" | "breaker" };
+  | { action: "block"; reason: string; decidedBy: "rule" | "judge" | "breaker" };
 
 export interface Guard {
   check(call: ToolCall, descriptor: ToolDescriptor, ctx: RunContext): Promise<GuardDecision>;
@@ -466,7 +466,7 @@ export class VendoError extends Error { code: VendoErrorCode; detail?: Json; }
 export function safeErrorMessage(error: unknown): string; // never throws, including for hostile error objects
 ```
 
-Forward compatibility (normative): clients treat an unknown error code as a generic error, and renderers/consumers ignore unknown stream-part types, unknown `OpenSurface` kinds, and unknown discriminated-union variants they don't recognize — new codes, parts, trigger kinds, and run models are additive within the version train.
+Forward compatibility (normative): renderers/consumers ignore unknown stream-part types and unknown `OpenSurface` kinds they don't recognize — those stay additive within the version train. Error codes, trigger kinds, and run models are **closed** enums as of the 2026-07-17 amendment (kill-list §A6): an unknown variant fails validation rather than parsing as a generic case.
 
 ## 16. Vendo stream parts
 
@@ -581,3 +581,15 @@ Persistence and transport are normative:
 - **Changed:** Removed the `GrantConstraint` interface, `grantConstraintSchema`, and the `{ kind: "constrained"; constraints: GrantConstraint[] }` variant of `GrantScope`. `GrantScope` is now `{ kind: "tool" } | { kind: "exact"; inputHash; inputPreview }` only; §5's prose now describes the grant machinery as "exact or tool-wide scopes."
 - **Why:** No product surface ever minted a `constrained` grant — the only mint path (`ApprovalDecision.remember`) is a caller-supplied shape guard validated but nothing in the shipped product offered a UI or code path to construct one. It carried a JSON-pointer resolver and a bespoke ReDoS guard in guard's match evaluator purely to support a scope variant with zero real callers.
 - **Authorized by:** the Yousef-approved kill-list spec (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md` §A4).
+
+### 2026-07-17 — Cut open-enum forward-compat casts (kill-list §A6)
+
+- **Changed:** Deleted `open-enum.ts` (`openEnum`/`openKindVariant`). `vendoErrorCodeSchema` (§15) is now a plain `z.enum` of the seven named codes; `triggerSourceSchema`, `runModelSchema`, and `triggerRefSchema`'s `kind` field (§11/§3) are now plain `z.enum`/plain discriminated unions with no open tail. §15's forward-compatibility paragraph is rewritten: error codes, trigger kinds, and run models are closed enums — an unknown variant now fails validation instead of parsing as a generic/tolerated case. Stream-part types and `OpenSurface` kinds are unaffected (they never went through `open-enum.ts`) and stay additive.
+- **Why:** Three call sites (`errors.ts`, `triggers.ts` ×2) carried a `z.ZodType<Value> as unknown as z.ZodType<Value>` cast to keep the TypeScript union closed while the runtime schema stayed open — solving a forward-compatibility problem the shipped product doesn't have (no external client parses these unions against an older contract version). Closing the schemas removes the casts and makes the runtime type match the static type exactly.
+- **Authorized by:** the Yousef-approved kill-list spec (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md` §A6).
+
+### 2026-07-17 — Cut dead `scanner` decidedBy member (kill-list §A6 follow-on)
+
+- **Changed:** Removed `"scanner"` from `GuardDecision`'s `block` variant and from `AuditEvent.decidedBy`'s zod enum (§6/§7). `decidedBy` on a block decision is now `"rule" | "judge" | "breaker"`.
+- **Why:** The scanner hook itself was already cut from guard (05 §5, 2026-07-17, kill-list §A6); this `decidedBy` value was the leftover vocabulary for a decision source guard has never produced (guard's decision pipeline has not called a scanner stage since commit `4b56fe5c`).
+- **Authorized by:** the Yousef-approved kill-list spec (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md` §A6).

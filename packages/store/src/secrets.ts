@@ -46,8 +46,7 @@ export function secretStore(store: VendoStore): {
   return {
     async set(name, value) {
       const ciphertext = encryptSecret(value, keyFor(store), name);
-      // updated_at marks the last write: a rotated secret is recent ACTIVITY for
-      // the erase-by-age axis (02 §5) even when created_at is old.
+      // updated_at marks the last write (rotation), distinct from created_at.
       await db.query(
         `INSERT INTO vendo_secrets (name, ciphertext, created_at, updated_at) VALUES ($1, $2, $3, $3)
          ON CONFLICT (name) DO UPDATE SET ciphertext = EXCLUDED.ciphertext, updated_at = EXCLUDED.updated_at`,

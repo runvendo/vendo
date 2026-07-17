@@ -149,8 +149,8 @@ describe("§3 — run context and trigger ref", () => {
   it("triggerRef requires a run_ id and a known trigger kind", () => {
     expect(triggerRefSchema.safeParse({ runId: "run_1", kind: "schedule" }).success).toBe(true);
     expect(triggerRefSchema.safeParse({ runId: "job_1", kind: "schedule" }).success).toBe(false);
-    // CORE-11 — §15: trigger kinds are additive; a future kind parses (the run id format still gates).
-    expect(triggerRefSchema.safeParse({ runId: "run_1", kind: "webhook" }).success).toBe(true);
+    // Trigger kinds are a closed enum: an unknown kind fails validation.
+    expect(triggerRefSchema.safeParse({ runId: "run_1", kind: "webhook" }).success).toBe(false);
     expect(triggerRefSchema.safeParse({ runId: "run_1", kind: "" }).success).toBe(false);
   });
 });
@@ -451,8 +451,8 @@ describe("§11 — trigger sources and run models", () => {
     expect(runModelSchema.safeParse({ kind: "agentic", prompt: "do it" }).success).toBe(true);
     expect(runModelSchema.safeParse({ kind: "agentic", prompt: "do it", budget: { maxToolCalls: 3 } }).success).toBe(true);
     expect(runModelSchema.safeParse({ kind: "steps", steps: [{ id: "s1", tool: "host_x" }] }).success).toBe(true);
-    // CORE-11 — §15: run models are additive; an unknown kind parses, a malformed known kind does not.
-    expect(runModelSchema.safeParse({ kind: "pipeline", steps: [] }).success).toBe(true);
+    // Run models are a closed union: an unknown kind fails, and a malformed known kind still fails.
+    expect(runModelSchema.safeParse({ kind: "pipeline", steps: [] }).success).toBe(false);
     expect(runModelSchema.safeParse({ kind: "steps", steps: "nope" }).success).toBe(false);
     expect(stepSchema.safeParse({ id: "s1", tool: "fn:x", if: "$exists(event)", forEach: "steps.load" }).success).toBe(true);
     expect(triggerSchema.safeParse({
@@ -502,7 +502,7 @@ describe("§12/§13/§14 — store, host-seam, and theme schemas", () => {
   });
 });
 
-describe("§15 — VendoErrorCode taxonomy and unknown-code forward compatibility", () => {
+describe("§15 — VendoErrorCode taxonomy is a closed enum", () => {
   it("vendoErrorCodeSchema accepts exactly the seven codes and rejects cut/unknown ones", () => {
     for (const code of [
       "validation", "blocked", "not-implemented", "sandbox-unavailable",
@@ -510,10 +510,10 @@ describe("§15 — VendoErrorCode taxonomy and unknown-code forward compatibilit
     ]) {
       expect(vendoErrorCodeSchema.safeParse(code).success).toBe(true);
     }
-    // CORE-11 — §15: unknown codes are additive within the train; clients render them generically.
-    // ("grant-required" was cut in round-4 as a NAMED code — as an unknown string it now parses.)
-    expect(vendoErrorCodeSchema.safeParse("grant-required").success).toBe(true);
-    expect(vendoErrorCodeSchema.safeParse("teapot").success).toBe(true);
+    // "grant-required" was cut in round-4 as a NAMED code and is not reinstated
+    // as a tolerated unknown string — the schema is a closed enum.
+    expect(vendoErrorCodeSchema.safeParse("grant-required").success).toBe(false);
+    expect(vendoErrorCodeSchema.safeParse("teapot").success).toBe(false);
     expect(vendoErrorCodeSchema.safeParse("").success).toBe(false);
   });
 

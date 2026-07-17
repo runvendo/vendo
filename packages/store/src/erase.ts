@@ -1,4 +1,3 @@
-import { isoDateTimeSchema, type IsoDateTime } from "@vendoai/core";
 import { overlayFor } from "./ephemeral.js";
 import { dbFor, type VendoStore } from "./store.js";
 import { invalid } from "./validate.js";
@@ -36,16 +35,11 @@ function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, "\\$&");
 }
 
-/** Latest of the defined ISO timestamps (all share the sortable ISO format). */
-function latest(...times: Array<string | undefined>): string {
-  return times.filter((time): time is string => time !== undefined).sort().at(-1) ?? "";
-}
-
 /**
- * 02-store §5 — the store-level erase API: by subject (full erasure), by app,
- * or by age, cascading the matching data across all 13 tables of §2's map.
- * It is the ONLY sanctioned deletion path for `vendo_audit` rows — the routed
- * door refuses audit deletion (§2); this API reaches the tables directly.
+ * 02-store §5 — the store-level erase API: by subject (full erasure) or by
+ * app, cascading the matching data across all 13 tables of §2's map. It is
+ * the ONLY sanctioned deletion path for `vendo_audit` rows — the routed door
+ * refuses audit deletion (§2); this API reaches the tables directly.
  * Ephemeral-overlay rows are erased alongside their durable counterparts.
  * Policy engines and schedulers stay out of scope: hosts call this from their
  * own jobs, and host SQL remains available for everything else.
@@ -56,16 +50,9 @@ export function eraseStore(store: VendoStore): {
   bySubject(subject: string): Promise<EraseReport>;
   /** Erase one app: its row, record collections, blob namespaces, state, runs,
       app-scoped grants and audit rows, and app-ref'd generic/door rows.
-      (Threads and approvals have no app axis in §2 — the subject and age
-      selectors cover them.) */
+      (Threads and approvals have no app axis in §2 — the subject selector
+      covers them.) */
   byApp(appId: string): Promise<EraseReport>;
-  /** Retention sweep: erase rows whose LAST ACTIVITY predates the cutoff —
-      `updated_at` where the table has one (for secrets, falling back to
-      `created_at` on legacy rows), otherwise the row's own lifecycle
-      timestamps (audit `at`; blobs `created_at`; the latest of
-      granted/revoked/expires for grants, created/decided/consumed for
-      approvals, started/finished for runs). */
-  byAge(olderThan: IsoDateTime): Promise<EraseReport>;
 } {
   const db = dbFor(store);
 
@@ -243,58 +230,6 @@ export function eraseStore(store: VendoStore): {
           }
         }
       }
-      return report;
-    },
-
-    async byAge(olderThan) {
-      const parsed = isoDateTimeSchema.safeParse(olderThan);
-      if (!parsed.success) invalid("erase olderThan must be an ISO date-time");
-      const cutoff = parsed.data;
-      const report = emptyReport();
-
-      await del(report, "vendo_apps", "updated_at < $1", [cutoff]);
-      await del(report, "vendo_records", "updated_at < $1", [cutoff]);
-      await del(report, "vendo_blobs", "created_at < $1", [cutoff]);
-      await del(report, "vendo_state", "updated_at < $1", [cutoff]);
-      await del(report, "vendo_threads", "updated_at < $1", [cutoff]);
-      // GREATEST ignores NULLs: a grant/approval/run is erased only when its
-      // ENTIRE lifecycle (including a set expiry or decision) predates the cutoff.
-      await del(report, "vendo_grants", "GREATEST(granted_at, revoked_at, expires_at) < $1", [cutoff]);
-      await del(report, "vendo_approvals", "GREATEST(created_at, decided_at, consumed_at) < $1", [cutoff]);
-      await del(report, "vendo_audit", "at < $1", [cutoff]);
-      await del(report, "vendo_runs", "GREATEST(started_at, finished_at) < $1", [cutoff]);
-      // A rotated secret is recent activity even when created_at is old;
-      // legacy rows (updated_at NULL) fall back to created_at.
-      await del(report, "vendo_secrets", "COALESCE(updated_at, created_at) < $1", [cutoff]);
-      await del(report, "vendo_mcp_clients", "updated_at < $1", [cutoff]);
-      await del(report, "vendo_mcp_grants", "updated_at < $1", [cutoff]);
-
-      const overlay = overlayFor(store);
-      const sweep = <T>(map: Map<string, T>, table: EraseTable, lastActivity: (row: T) => string): void => {
-        for (const [key, row] of map) {
-          if (lastActivity(row) < cutoff) {
-            map.delete(key);
-            report[table] += 1;
-          }
-        }
-      };
-      sweep(overlay.apps, "vendo_apps", (row) => row.updatedAt);
-      sweep(overlay.states, "vendo_state", (row) => row.updatedAt);
-      sweep(overlay.threads, "vendo_threads", (row) => row.updatedAt);
-      sweep(overlay.grants, "vendo_grants", (grant) => latest(grant.grantedAt, grant.revokedAt, grant.expiresAt));
-      sweep(overlay.approvals, "vendo_approvals", (row) => latest(row.createdAt, row.decidedAt, row.consumedAt));
-      sweep(overlay.audit, "vendo_audit", (event) => event.at);
-      sweep(overlay.runs, "vendo_runs", (row) => latest(row.startedAt, row.finishedAt));
-      for (const records of overlay.records.values()) {
-        for (const [id, record] of records) {
-          if (record.updatedAt < cutoff) {
-            records.delete(id);
-            report.vendo_records += 1;
-          }
-        }
-      }
-      // Overlay blobs carry no timestamps (02 §4): they never touch disk and die
-      // with close(), so the age axis applies to the durable table only.
       return report;
     },
   };

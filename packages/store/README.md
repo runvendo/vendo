@@ -79,8 +79,8 @@ The overlay, and therefore the registry, is per-process memory. Multi-instance d
 
 ## Encryption
 
-`createStore({ encryption: { key } })` (base64 32-byte key) encrypts `vendo_secrets.ciphertext` with AES-256-GCM; everything else stays host-queryable plaintext by design. The composed default is on: `vendo init` provisions `VENDO_STORE_ENCRYPTION_KEY` into the host's `.env` and `createVendo` reads it when no store is passed. Ciphertext is bound to its secret name via AAD (`v2` envelope); rows written before the AAD amendment (`v1` envelope) keep decrypting and upgrade on their next write.
+`createStore({ encryption: { key } })` (base64 32-byte key) encrypts `vendo_secrets.ciphertext` with AES-256-GCM; everything else stays host-queryable plaintext by design. The composed default is on: `vendo init` provisions `VENDO_STORE_ENCRYPTION_KEY` into the host's `.env` and `createVendo` reads it when no store is passed. Ciphertext is bound to its secret name via AAD (`v2` envelope).
 
 ## Retention and erasure
 
-`eraseStore(store)` is the store-level erase API — `bySubject(subject)` for full erasure, `byApp(appId)`, and `byAge(olderThanIso)` — cascading the matching rows (durable and ephemeral-overlay alike) across all 13 tables and returning per-table deleted counts. It is the only sanctioned deletion path for `vendo_audit` rows. It is also re-exported from `@vendoai/vendo/server`. Host SQL remains available for everything else.
+`eraseStore(store)` is the store-level erase API — `bySubject(subject)` for full erasure and `byApp(appId)` — cascading the matching rows (durable and ephemeral-overlay alike) across all 13 tables and returning per-table deleted counts. It is the only sanctioned deletion path for `vendo_audit` rows. It is also re-exported from `@vendoai/vendo/server`. Host SQL remains available for everything else.

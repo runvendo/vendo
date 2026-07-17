@@ -94,7 +94,7 @@ For non-reserved names, `records()` remains app data and collection names are ot
 
 ## 5. Retention and erasure
 
-A store-level erase API is contracted here and ships in Wave 3. It erases by subject (full erasure), by app, or by age, cascading the matching data across all 13 tables, and is exposed on the umbrella. It is the only sanctioned deletion path for audit rows. Policy engines and schedulers remain out of scope; host SQL remains available for everything else.
+A store-level erase API is contracted here and ships in Wave 3. It erases by subject (full erasure) or by app, cascading the matching data across all 13 tables, and is exposed on the umbrella. It is the only sanctioned deletion path for audit rows. Policy engines and schedulers remain out of scope; host SQL remains available for everything else.
 
 ## Amendments
 
@@ -147,3 +147,15 @@ A store-level erase API is contracted here and ships in Wave 3. It erases by sub
 - **Changed:** Removed `orgStore`, `ORG_ROLES`, `OrgRole`, `OrgRow`, `OrgMemberRow` (`helpers/orgs.ts`), `transferAppSubject` (`helpers/subjects.ts` — its only non-test caller was the now-removed `vendo/src/orgs.ts`), and `withOrgMembershipLock`/`lockKeyForId` (`db.ts`) from the package's exports and implementation.
 - **Why:** Orgs are Vendo-hosted, not an OSS storage concern (vendo-web console already owns members/roles/invites/keys/usage); the org data layer was built on the superseded doctrine that OSS should carry it.
 - **Authorized by:** the Yousef-approved kill-list spec (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md` §A5).
+
+### 2026-07-17 — Cut age-based erase (kill-list §A6)
+
+- **Changed:** Removed `byAge(olderThan)` from the store-level erase API (§5). `eraseStore(store)` now exposes only `bySubject(subject)` and `byApp(appId)`; §5's prose no longer describes a retention sweep. `bySubject` and `byApp` are unchanged.
+- **Why:** No shipped host called `byAge` — the contract already scopes retention policy and scheduling out of the store (§5: "policy engines and schedulers remain out of scope"), so the sweep was ~50 lines of erase-cascade logic (`GREATEST`/`COALESCE` lifecycle math across 11 tables, plus the overlay mirror) serving a feature no host uses. A host that needs age-based retention still has host SQL available, per §5's existing escape hatch.
+- **Authorized by:** the Yousef-approved kill-list spec (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md` §A6).
+
+### 2026-07-17 — Cut crypto v1 legacy decrypt and base64 canonicality check (kill-list §A7)
+
+- **Changed:** `decryptSecret` (§4) no longer accepts the `v1` (no-AAD) envelope — only `v2` decrypts; an envelope tagged `v1` (or any tag other than `v2`) now fails with the same generic "Stored secret could not be decrypted" error as any other malformed envelope. `validateEncryptionKey` no longer round-trips the decoded key back through base64 to check canonical encoding; it validates the base64 character set and the decoded byte length (32) only.
+- **Why:** v2 was the only envelope this OSS line ever shipped rows in — no v1 rows exist to decrypt, so the legacy branch was dead code carried "just in case" of a migration that never happened. The base64 canonicality round-trip protected against a non-canonical-but-valid-length encoding decoding to the "wrong" 32 bytes depending on stray padding bits — a theoretical concern with no product surface that constructs keys that way (`vendo init` writes canonical `randomBytes(32).toString("base64")`); the byte-length check is the guarantee that actually matters for AES-256-GCM.
+- **Authorized by:** the Yousef-approved kill-list spec (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md` §A7).
