@@ -11,6 +11,36 @@ The `vendoai` package is a thin alias. The scoped package is the canonical
 install. `vendo init` proposes two host changes: a catch-all handler and a
 `<VendoRoot>` wrapper. It shows each diff before writing it.
 
+## Dev-mode model ladder
+
+`vendo init` resolves a model credential for development, in this order:
+
+1. An explicit env key: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or
+   `GOOGLE_GENERATIVE_AI_API_KEY` (install the matching `@ai-sdk/*@^3`
+   provider). Explicit beats implicit; this rung also serves production.
+2. Your authed Claude Code CLI session. Dev only, used after you consent in
+   the wizard; needs `@anthropic-ai/claude-agent-sdk` in the app (init offers
+   the install).
+3. Your authed Codex CLI session. Dev only, used after you consent.
+4. Nothing available: chat fails honestly, with exact instructions in the
+   server log.
+
+The wizard states what it found. Consent for session rungs is recorded per
+machine in `.vendo/data/dev-credential.json` (gitignored);
+`VENDO_DEV_ALLOW_SESSIONS=1` is the non-interactive equivalent. Session rungs
+are refused outright when `NODE_ENV` is `production`: production deploys
+always need a real server-side key.
+
+On session rungs the CLI harness supplies the model while Vendo keeps owning
+tool execution and consent, so approvals, grants, and audit behave exactly as
+with a key. The scaffolded `lib/ai.ts` exports `devModel()`, which resolves
+this ladder at runtime; replace it with any ai-SDK model to take full control.
+
+Init ends in the product: with your consent it starts the dev server, opens
+the app in your browser, and seeds a first agent turn. The seed adapts to what
+setup found: extracted tools get a live tool demo, a theme-only app gets an
+on-brand UI generation, a blank app gets a tour.
+
 ## Create the server
 
 `createVendo` has this exact configuration surface:

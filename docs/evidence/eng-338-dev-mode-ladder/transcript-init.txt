@@ -1,0 +1,125 @@
+Generated VENDO_STORE_ENCRYPTION_KEY in .env — stored secrets are encrypted at rest.
+catalog.json: 0 discovered, 0 registered
+
+Proposed code change:
+--- a/app/api/vendo/[...vendo]/route.ts
++++ b/app/api/vendo/[...vendo]/route.ts
++import { model } from "@/lib/ai";
++import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
++
++const vendo = createVendo({
++  model,
++  principal: async () => null,
++});
++
++export const { GET, POST, DELETE } = nextVendoHandler(vendo);
+
+
+Proposed code change:
+--- a/lib/ai.ts
++++ b/lib/ai.ts
++import { devModel } from "@vendoai/vendo/server";
++
++// vendo init starter — the dev-mode model ladder (resolved at runtime):
++//   env key (ANTHROPIC / OPENAI / GOOGLE) → your authed Claude Code session →
++//   your authed Codex session (dev only, with consent) → honest failure.
++// Swap for any ai-SDK provider to BYO-LLM (09 §2). Production always needs
++// a real key: set one in the environment and the ladder uses it first.
++export const model = devModel();
+
+
+Proposed code change:
+--- a/app/layout.tsx
++++ b/app/layout.tsx
+-import type { ReactNode } from "react";
+-
+-export default function RootLayout({ children }: { children: ReactNode }) {
+-  return <html><body>{children}</body></html>;
+-}
++import { VendoRoot } from "@vendoai/vendo/react";
++import theme from "../.vendo/theme.json";
++import type { VendoTheme } from "@vendoai/vendo";
++import type { ReactNode } from "react";
++
++export default function RootLayout({ children }: { children: ReactNode }) {
++  return <html><body><VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot></body></html>;
++}
+
+
+Proposed code change:
+--- a/package.json
++++ b/package.json
+-{
+-  "name": "fresh-app",
+-  "version": "0.0.0",
+-  "private": true,
+-  "scripts": {
+-    "dev": "next dev",
+-    "build": "next build",
+-    "start": "next start"
+-  },
+-  "dependencies": {
+-    "@types/node": "^22.20.1",
+-    "@types/react": "^19.2.17",
+-    "@vendoai/actions": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-actions-0.3.0.tgz",
+-    "@vendoai/agent": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-agent-0.3.0.tgz",
+-    "@vendoai/apps": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-apps-0.3.0.tgz",
+-    "@vendoai/automations": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-automations-0.3.0.tgz",
+-    "@vendoai/core": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-core-0.3.0.tgz",
+-    "@vendoai/dev-riders": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-dev-riders-0.3.0.tgz",
+-    "@vendoai/guard": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-guard-0.3.0.tgz",
+-    "@vendoai/mcp": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-mcp-0.3.0.tgz",
+-    "@vendoai/store": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-store-0.3.0.tgz",
+-    "@vendoai/telemetry": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-telemetry-0.3.0.tgz",
+-    "@vendoai/ui": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-ui-0.3.0.tgz",
+-    "@vendoai/vendo": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-vendo-0.3.0.tgz",
+-    "ai": "^6.0.28",
+-    "next": "^16.2.9",
+-    "react": "^19.2.4",
+-    "react-dom": "^19.2.4",
+-    "typescript": "^5.9.3",
+-    "vendoai": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-0.3.0.tgz"
+-  }
+-}
++{
++  "name": "fresh-app",
++  "version": "0.0.0",
++  "private": true,
++  "scripts": {
++    "dev": "next dev",
++    "build": "next build",
++    "start": "next start",
++    "predev": "vendo sync",
++    "prebuild": "vendo sync --strict"
++  },
++  "dependencies": {
++    "@types/node": "^22.20.1",
++    "@types/react": "^19.2.17",
++    "@vendoai/actions": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-actions-0.3.0.tgz",
++    "@vendoai/agent": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-agent-0.3.0.tgz",
++    "@vendoai/apps": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-apps-0.3.0.tgz",
++    "@vendoai/automations": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-automations-0.3.0.tgz",
++    "@vendoai/core": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-core-0.3.0.tgz",
++    "@vendoai/dev-riders": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-dev-riders-0.3.0.tgz",
++    "@vendoai/guard": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-guard-0.3.0.tgz",
++    "@vendoai/mcp": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-mcp-0.3.0.tgz",
++    "@vendoai/store": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-store-0.3.0.tgz",
++    "@vendoai/telemetry": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-telemetry-0.3.0.tgz",
++    "@vendoai/ui": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-ui-0.3.0.tgz",
++    "@vendoai/vendo": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-vendo-0.3.0.tgz",
++    "ai": "^6.0.28",
++    "next": "^16.2.9",
++    "react": "^19.2.4",
++    "react-dom": "^19.2.4",
++    "typescript": "^5.9.3",
++    "vendoai": "file:../../../../tmp/eng338-e2e/tarballs/vendoai-0.3.0.tgz"
++  }
++}
+
+Wrote a starter model module riding the dev-mode credential ladder. With an env key set, install its provider (`npm install ai@^6 @ai-sdk/anthropic@^3`, or the openai/google equivalent); production always needs a real key.
+
+Model for dev mode: your authed Claude Code session (dev only).
+Not used without consent: re-run `vendo init` interactively (or set VENDO_DEV_ALLOW_SESSIONS=1) to ride it in dev mode. Production needs a real key.
+Vendo initialized. Run `vendo doctor` to verify the live composition.
+Next: with your dev server running, `vendo refine` proposes compound capabilities from your app's real surface.
+Next: start your dev server and open the app — the Vendo agent is live in your product. (Production needs a real model key.)

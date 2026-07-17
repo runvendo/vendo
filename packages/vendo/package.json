@@ -62,6 +62,7 @@
     "@vendoai/apps": "workspace:*",
     "@vendoai/automations": "workspace:*",
     "@vendoai/core": "workspace:*",
+    "@vendoai/dev-riders": "workspace:*",
     "@vendoai/guard": "workspace:*",
     "@vendoai/mcp": "workspace:*",
     "@vendoai/store": "workspace:*",
