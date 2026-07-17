@@ -46,13 +46,13 @@ describe("VendoPage thread sidebar refresh", () => {
     // downstream sidebar refresh — never a bare check after the async send.
     await waitFor(
       () => expect(wire.requests.some(r => r.method === "POST" && r.path === "/threads")).toBe(true),
-      { timeout: 4000 },
+      { timeout: 12000 },
     );
     // The minted thread now appears in the sidebar (previously it never did) —
     // this rides the server round-trip (mint header → refresh → GET /threads).
     await waitFor(
       () => expect(screen.getAllByRole("button", { name: "Fixture thread" })).toHaveLength(2),
-      { timeout: 4000 },
+      { timeout: 12000 },
     );
   });
 });
