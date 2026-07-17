@@ -14,7 +14,7 @@ Usage: vendo <command> [dir] [options]
 
 Commands:
   init [dir]      Scan, interview, write .vendo, and propose handler + VendoRoot wiring
-  doctor [dir]    Verify wiring, present credentials, and actAs over live HTTP
+  doctor [dir]    Verify wiring, present credentials, actAs, and one real model turn over live HTTP
   sync [dir]      Extract tools and remix baselines (use --strict for CI)
   refine [dir]    Propose compound capabilities, risk corrections, and brief updates as reviewable diffs
   mcp <command>   Generate MCP registry discovery and domain-verification files
@@ -22,14 +22,14 @@ Commands:
 
 Options:
   --agent                    Init only: print a read-only plan — four questions, code diffs, extracted tools, risk recommendations
-  --yes                      Init/refine: skip the interview and approve displayed changes
+  --yes                      Init/refine: skip the interview and approve displayed changes; doctor: auto-start the dev server for the probe
   --force                    Init/server-json: overwrite owned or generated files
   --model-import <specifier> Init/refine: module exporting the host's ai-SDK model
   --brief <text>             Init only: product brief used for non-interactive setup
   --ask <text>               Refine only: interview answer (repeatable) for non-interactive runs
   --url <url>                Doctor/refine/server-json: mounted wire base or public MCP URL
   --strict                   Sync only: exit 2 on breaking changes, 3 when saved references are impacted
-  --json                     Sync only: print one machine-readable report object
+  --json                     Sync/doctor: print one machine-readable report object
   --report                   Sync only: push the report to Vendo Cloud
   --key <key>                Sync/cloud: override VENDO_API_KEY
   --api-url <url>            Sync/cloud: override VENDO_CLOUD_URL
@@ -116,7 +116,12 @@ export async function main(argv: string[]): Promise<number> {
     });
   }
   if (command === "doctor") {
-    return runDoctor({ targetDir: target(args), url: option(args, "--url") });
+    return runDoctor({
+      targetDir: target(args),
+      url: option(args, "--url"),
+      json: args.includes("--json"),
+      yes: args.includes("--yes"),
+    });
   }
   if (command === "refine") {
     return runRefineCommand({

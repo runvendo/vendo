@@ -1,0 +1,104 @@
+{
+  "vendo": "doctor",
+  "version": "0.3.0",
+  "wired": true,
+  "exit": 0,
+  "checks": [
+    {
+      "status": "ok",
+      "message": "catch-all handler is wired"
+    },
+    {
+      "status": "ok",
+      "message": "<VendoRoot> wraps the app"
+    },
+    {
+      "status": "ok",
+      "message": "@vendoai/vendo dependency is declared"
+    },
+    {
+      "status": "ok",
+      "message": ".vendo/tools.json"
+    },
+    {
+      "status": "ok",
+      "message": ".vendo/overrides.json"
+    },
+    {
+      "status": "ok",
+      "message": ".vendo/policy.json"
+    },
+    {
+      "status": "ok",
+      "message": ".vendo/brief.md"
+    },
+    {
+      "status": "ok",
+      "message": ".vendo/theme.json"
+    },
+    {
+      "status": "warning",
+      "message": ".vendo/data/.gitignore is missing"
+    },
+    {
+      "status": "ok",
+      "message": "/status live round-trip (0.3.0, rules)"
+    },
+    {
+      "status": "ok",
+      "message": "execution venue: e2b"
+    },
+    {
+      "status": "ok",
+      "message": "present credentials reach the host API"
+    },
+    {
+      "status": "warning",
+      "message": "actAs is not configured; pass createVendo({ actAs }) before enabling away host actions"
+    },
+    {
+      "status": "ok",
+      "message": "MCP protected-resource metadata resolves"
+    },
+    {
+      "status": "ok",
+      "message": "MCP authorization-server metadata resolves"
+    },
+    {
+      "status": "ok",
+      "message": "MCP server card parses"
+    },
+    {
+      "status": "ok",
+      "message": "live model turn answered over explicit ANTHROPIC_API_KEY (anthropic) (4388ms)"
+    }
+  ],
+  "liveTurn": {
+    "attempted": true,
+    "rung": "env-key",
+    "credential": "explicit ANTHROPIC_API_KEY (anthropic)",
+    "elapsedMs": 4388,
+    "ok": true,
+    "reply": "All systems are healthy and I'm ready to assist you!"
+  },
+  "cloud": {
+    "present": false,
+    "ok": false,
+    "unlocks": [
+      "a free dev-mode starter model allowance (keyless first turns)",
+      "team sharing and org governance (roles, SSO)",
+      "hosted deploys of your enabled automations",
+      "session replay, insights, and the MCP broker"
+    ]
+  },
+  "codex": {
+    "installed": true,
+    "version": "0.144.4",
+    "tested": "0.144",
+    "drifted": false
+  },
+  "summary": {
+    "failures": 0,
+    "warnings": 2
+  }
+}

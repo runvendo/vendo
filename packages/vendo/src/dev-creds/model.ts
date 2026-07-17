@@ -218,9 +218,10 @@ export class DevModelController {
     }
 
     if (credential.rung === "vendo-cloud") {
-      const message = "VENDO_API_KEY is set, but Vendo Cloud dev-mode model keys are minted by `vendo cloud login` "
-        + "(landing with doctor v2). Until then set a provider key, or log in to the Claude Code / Codex CLI for dev mode.";
-      this.announce(credential, " — no model gateway yet");
+      const message = "VENDO_API_KEY is set, but the Vendo Cloud dev-mode model gateway is not live yet "
+        + "(console follow-up). `vendo init` writes a starter-allowance key to .env.local after `vendo cloud login`; "
+        + "until the gateway ships, set a provider key or log in to the Claude Code / Codex CLI for dev mode.";
+      this.announce(credential, " — model gateway not live yet");
       return { mode: "unavailable", credential, message };
     }
 

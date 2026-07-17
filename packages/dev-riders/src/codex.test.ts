@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CodexSessionRider } from "./codex.js";
+import {
+  CodexSessionRider,
+  TESTED_CODEX_MINOR,
+  codexVersionMatchesTested,
+  probeCodexVersion,
+} from "./codex.js";
 
 const stub = join(dirname(fileURLToPath(import.meta.url)), "..", "test-fixtures", "stub-codex.mjs");
 
@@ -96,5 +101,21 @@ describe("CodexSessionRider against a protocol stub", () => {
     await expect(
       rider.start({ system: "sys", tools: [], onToolCall: async () => ({ text: "", ok: true }) }),
     ).rejects.toThrow(/needs the `definitely-not-codex-binary` CLI/);
+  });
+});
+
+describe("codex version drift helpers", () => {
+  it("matches the tested minor line regardless of patch", () => {
+    expect(codexVersionMatchesTested(`${TESTED_CODEX_MINOR}.4`)).toBe(true);
+    expect(codexVersionMatchesTested(`${TESTED_CODEX_MINOR}.99`)).toBe(true);
+  });
+
+  it("flags a drifted minor line", () => {
+    expect(codexVersionMatchesTested("0.160.0")).toBe(false);
+    expect(codexVersionMatchesTested("1.0.0")).toBe(false);
+  });
+
+  it("returns null when codex is absent", async () => {
+    expect(await probeCodexVersion("definitely-not-codex-binary")).toBeNull();
   });
 });
