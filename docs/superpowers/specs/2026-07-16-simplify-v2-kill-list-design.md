@@ -122,14 +122,27 @@ and the code complies). The zod→JSON-Schema hand-interpreter
 `StaticValueParser` (~150) moves onto the same AST. The corpus harness remains
 the quality gate for all of it.
 
-### B2. Theme extraction: from guessing engine to questions (~1,400 → ~150 lines)
+### B2. Theme extraction: from guessing engine to exact-or-model (~1,400 → ~200 lines)
 `cli/theme/` today: hand-parsed CSS via brace-depth scanner, a hand-coded
 OKLab→sRGB matrix, brand-color guessing via name-fragment scoring lists tuned
 to specific apps, font regexes built out of interpolated source identifiers
 (`next-fonts.ts`), and an accent-color popularity contest over Tailwind
-utilities in up to 2,000 files. Replacement: read a fixed allowlist of
-conventional tokens (`--color-primary`, `--background`, `--font-sans`, …), ask
-one or two init questions, write an editable `theme.json`. Defaults otherwise.
+utilities in up to 2,000 files. Measured ceiling after a dedicated accuracy
+PR: 5/7 and 6/7 theme slots correct on our own demo apps — with silent wrong
+answers as the failure mode.
+
+Replacement (quality goes up, not down):
+1. **Allowlist fast-path** — read conventional tokens directly
+   (`--primary`, `--background`, `--font-sans`, shadcn/Tailwind conventions).
+   Exact, not guessed; covers the majority of modern Next.js hosts.
+2. **LLM pass otherwise** — Vendo-hosted inference is a locked v2 primitive:
+   at init, the model reads `globals.css` + Tailwind config + root layout and
+   fills `theme.json`. Beats fragment scoring on any design system, including
+   unseen ones.
+3. **Editable `theme.json` + one-glance confirm** — init shows the extracted
+   palette; a rare miss is a ten-second fix, never a silent wrong brand.
+Init questions only when the model is genuinely unsure; the common path stays
+zero-question.
 
 ### B3. Ephemeral anonymous sessions: overlay → disk (~850 → ~100 lines)
 The in-memory TTL/LRU overlay (`store/src/ephemeral.ts` plus the dual
