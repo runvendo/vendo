@@ -111,6 +111,17 @@ test("activity load-more is keyboard reachable and appends a page", async ({ pag
   await expect(rows).toHaveCount(3);
 });
 
+test("activity reaches an explicit end-of-list once history is exhausted", async ({ page }) => {
+  await openScenario(page, "activity");
+  const loadMore = page.getByRole("button", { name: "Load more" });
+  // First page appends aud_3; the second repeats seen rows → end of the list.
+  await loadMore.click();
+  await expect(page.locator('main[data-scenario="activity"] tbody tr')).toHaveCount(3);
+  await loadMore.click();
+  await expect(page.getByTestId("activity-end")).toBeVisible();
+  await expect(loadMore).toHaveCount(0);
+});
+
 test("a destructive approval can be denied entirely by keyboard", async ({ page }) => {
   await openScenario(page, "approval");
   await expect(page.getByLabel("Real tool inputs")).toContainText("permanent=true");

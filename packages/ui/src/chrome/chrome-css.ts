@@ -732,6 +732,27 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-act-denied { color: var(--vendo-fg-muted); }
 .fl-act-spin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
   border: 2px solid var(--vendo-border-strong); border-top-color: var(--vendo-fg-muted); animation: fl-spin .8s linear infinite; }
+.fl-act-table { border-collapse: collapse; display: block; width: 100%; }
+.fl-act-cap { display: block; width: 100%; padding: 9px 13px 3px; text-align: left;
+  color: var(--vendo-fg-muted); font-weight: 500; font-size: 11.5px; }
+.fl-act-thead, .fl-act-tbody { display: block; }
+.fl-act-grid { display: grid; grid-template-columns: 1.5fr 1.4fr 1fr 1.05fr; gap: 10px;
+  align-items: start; padding: 9px 13px; border-bottom: 1px solid var(--vendo-border); }
+.fl-act-tbody .fl-act-grid:last-child { border-bottom: 0; }
+.fl-act-th { text-align: left; font-weight: 600; font-size: 10.5px; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--vendo-fg-muted); }
+.fl-act-cell { min-width: 0; font-size: 12.5px; }
+.fl-act-kind { display: inline-block; margin-right: 7px; padding: 1px 7px; border-radius: 999px;
+  background: var(--vendo-accent-soft); border: 1px solid var(--vendo-border); color: var(--vendo-fg-muted);
+  font-size: 10px; font-weight: 600; letter-spacing: .02em; vertical-align: 1px; }
+.fl-act-action { font-weight: 550; }
+.fl-act-detail { color: var(--vendo-fg-muted); font-size: 11.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-act-when { color: var(--vendo-fg-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fl-act-outcome { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.fl-act-by { margin-top: 2px; color: var(--vendo-fg-muted); font-size: 10.5px; }
+.fl-act-foot { display: flex; align-items: center; padding: 10px 13px; }
+.fl-act-end { margin: 0; color: var(--vendo-fg-muted); font-size: 11.5px; }
 .fl-act-peek { margin: -2px 13px 9px 36px; border: 1px solid var(--vendo-border); border-radius: 9px; overflow: hidden; }
 .fl-act-peek-row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 10px; font-size: 11.5px;
   border-bottom: 1px solid var(--vendo-border); }
