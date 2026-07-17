@@ -721,6 +721,75 @@ class ScriptedBrowserVoiceDriver implements VoiceDriver {
   }
 }
 
+/** ENG-229 — a driver that replays an arbitrary event script, so every designed
+ *  stage moment (amplitude, views, reconnect, error) is capturable. */
+class ReplayVoiceDriver implements VoiceDriver {
+  constructor(private readonly script: VoiceDriverEvent[], private readonly mutable = true) {}
+  start(handlers: VoiceDriverHandlers): VoiceSessionHandle {
+    let active = true;
+    queueMicrotask(() => {
+      for (const event of this.script) {
+        if (active) handlers.onEvent(event);
+      }
+    });
+    return {
+      ...(this.mutable ? { setMuted: () => undefined } : {}),
+      stop: () => { active = false; },
+    };
+  }
+}
+
+function voiceViewPayload(id: string, heading: string, body: string): UIPayload {
+  return {
+    formatVersion: "vendo-genui/v1",
+    root: "root",
+    nodes: [
+      { id: "root", component: "Surface", children: ["stack"] },
+      { id: "stack", component: "Stack", props: { gap: 8 }, children: [`${id}-h`, `${id}-b`] },
+      { id: `${id}-h`, component: "Text", props: { text: heading, variant: "heading" } },
+      { id: `${id}-b`, component: "Text", props: { text: body } },
+    ],
+  };
+}
+
+const VOICE_SHOWCASE_SCRIPT: VoiceDriverEvent[] = [
+  { type: "state", state: "listening" },
+  { type: "amplitude", level: 0.6 },
+  { type: "transcript", entry: { id: "v-user", role: "user", text: "What's outstanding this week, and draft the reminders?", final: true } },
+  { type: "transcript", entry: { id: "v-agent", role: "assistant", text: "Six invoices are outstanding — here's the view, and I queued the reminders for your approval.", final: true } },
+  { type: "view", view: { id: "view-outstanding", appId: "app_1", payload: voiceViewPayload("v1", "Outstanding this week", "$18,420 across 6 clients") } },
+  { type: "view", view: { id: "view-reminders", appId: "app_1", payload: voiceViewPayload("v2", "Reminder drafts", "3 drafts ready — sending needs your approval") } },
+];
+
+/** A client whose approvals list is empty — for the drawer capture (the drawer
+ *  auto-yields to pending consent, so the wire fixture's apr_1 would close it). */
+function noApprovalsClient(client: VendoClient): VendoClient {
+  return { ...client, approvals: { ...client.approvals, pending: async () => [] } };
+}
+
+function VoiceShowcaseScenario({ script, approvals = true, theme }: {
+  script: VoiceDriverEvent[];
+  approvals?: boolean;
+  theme?: Partial<VendoTheme>;
+}) {
+  const driver = useMemo(() => new ReplayVoiceDriver(script), [script]);
+  return (
+    <VendoProvider
+      client={approvals ? baseClient : noApprovalsClient(baseClient)}
+      components={components}
+      theme={theme ?? mapleTheme}
+      voice={{ driver }}
+    >
+      <div style={{ height: 640, display: "flex", flexDirection: "column", overflow: "hidden",
+        border: "1px solid var(--vendo-border)", borderRadius: 12 }}>
+        <AutoOpen selector='button[aria-label="Start voice"], .fl-voice-foot button.fl-btn-primary'>
+          <VendoStage />
+        </AutoOpen>
+      </div>
+    </VendoProvider>
+  );
+}
+
 function AutoOpen({ selector, children }: { selector: string; children: ReactNode }) {
   useEffect(() => {
     queueMicrotask(() => document.querySelector<HTMLElement>(selector)?.click());
@@ -1354,6 +1423,19 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/notice": return { title: "Unconfigured policy", ownProvider: true, content: (<VendoProvider client={unconfiguredClient} components={components}><NoPolicyNotice /></VendoProvider>) };
     case "/stage": return { title: "Voice stage", content: <StageScenario />, ownProvider: true };
     case "/stage-live": return { title: "Voice stage (live)", content: <LiveStageScenario />, ownProvider: true };
+    case "/stage-full": return { title: "Voice stage — views + consent (Maple)", content: <VoiceShowcaseScenario script={VOICE_SHOWCASE_SCRIPT} />, ownProvider: true };
+    case "/stage-full-dark": return { title: "Voice stage — dark", content: <VoiceShowcaseScenario script={VOICE_SHOWCASE_SCRIPT} theme={darkTheme} />, ownProvider: true };
+    case "/stage-drawer": return { title: "Voice stage — transcript drawer", content: <VoiceShowcaseScenario script={VOICE_SHOWCASE_SCRIPT} approvals={false} />, ownProvider: true };
+    case "/stage-reconnecting": return {
+      title: "Voice stage — reconnecting",
+      content: <VoiceShowcaseScenario approvals={false} script={[{ type: "state", state: "listening" }, { type: "transcript", entry: { id: "v-user", role: "user", text: "Keep going with the reminders", final: true } }, { type: "state", state: "reconnecting" }]} />,
+      ownProvider: true,
+    };
+    case "/stage-error": return {
+      title: "Voice stage — error",
+      content: <VoiceShowcaseScenario approvals={false} script={[{ type: "error", error: { message: "Microphone permission was denied — allow the mic and retry." } }]} />,
+      ownProvider: true,
+    };
     case "/tree": return { title: "Tree containment", content: <TreeScenario /> };
     case "/tree-jail": return { title: "Generated component jail", content: <TreeScenario jail /> };
     case "/tree-inclient": return { title: "In-client venue (hash-pinned approval)", content: <InClientScenario /> };
