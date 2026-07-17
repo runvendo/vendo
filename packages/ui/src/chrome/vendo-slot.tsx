@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useVendoContext } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
+import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
 import { ChromeRoot } from "./chrome-root.js";
 
@@ -34,7 +35,10 @@ function MountedApp({ appId }: { appId: string }) {
   return <AppFrame key={appId} surface={surface} components={components} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
 
-/** 08-ui §4; 06-apps §8 — inline mount that never sacrifices host fallback content. */
+/** 08-ui §4; 06-apps §8 — inline mount that never sacrifices host fallback content.
+ *  Without an app the children render UNTOUCHED (no wrapper — hosts may inline
+ *  slots anywhere). When an app takes the slot, the swap morphs through the
+ *  ENG-205 render slot, using the host's own markup as the exit frame. */
 export function VendoSlot({ id, appId, children }: { id: string; appId?: string; children?: ReactNode }) {
   if (!appId) {
     if (children !== undefined) return <>{children}</>;
@@ -51,7 +55,9 @@ export function VendoSlot({ id, appId, children }: { id: string; appId?: string;
     <ChromeRoot>
       <div className="fl-slot" data-vendo-slot={id}>
         <div className="fl-slot-filled">
-          <PinMount slot={id} fallback={Fallback}><MountedApp appId={appId} /></PinMount>
+          <FluidReveal stateKey={`app:${appId}`} initialExit={children}>
+            <PinMount slot={id} fallback={Fallback}><MountedApp appId={appId} /></PinMount>
+          </FluidReveal>
         </div>
       </div>
     </ChromeRoot>

@@ -1,5 +1,6 @@
 /** VendoProvider + the internal context every hook and surface reads (08 §2). */
 import type { VendoTheme } from "@vendoai/core";
+import type { ChatTransport, UIMessage } from "ai";
 import { createContext, useContext, useMemo, type ComponentType, type ReactNode } from "react";
 import { createVendoClient, type VendoClient } from "./client.js";
 import { defaultVendoTheme, resolveTheme } from "./theme.js";
@@ -13,6 +14,17 @@ export interface VendoContextValue {
   theme: VendoTheme;
   /** Optional host-provided voice transport (08 §3). */
   voice?: { driver: VoiceDriver };
+  /**
+   * Optional chat-transport override (director/replay tooling). When absent,
+   * threads use the live wire transport — this is never a default.
+   */
+  transport?: ChatTransport<UIMessage>;
+  /**
+   * Optional host handler for pinning a previewed app into the product. When
+   * present, generated views show a "Pin to dashboard" action; nothing is
+   * saved to the host surface until the user invokes it.
+   */
+  onPin?(app: { appId: string; payload: unknown }): void;
 }
 
 const VendoContext = createContext<VendoContextValue | null>(null);
@@ -22,17 +34,21 @@ export function VendoProvider(props: {
   components?: Record<string, ComponentType>;
   theme?: Partial<VendoTheme>;
   voice?: { driver: VoiceDriver };
+  transport?: ChatTransport<UIMessage>;
+  onPin?(app: { appId: string; payload: unknown }): void;
   children: ReactNode;
 }): ReactNode {
-  const { client, components, theme, voice, children } = props;
+  const { client, components, theme, voice, transport, onPin, children } = props;
   const value = useMemo<VendoContextValue>(
     () => ({
       client: client ?? createVendoClient({}),
       components: components ?? {},
       theme: resolveTheme(defaultVendoTheme, theme),
       voice,
+      transport,
+      onPin,
     }),
-    [client, components, theme, voice],
+    [client, components, theme, voice, transport, onPin],
   );
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
 }

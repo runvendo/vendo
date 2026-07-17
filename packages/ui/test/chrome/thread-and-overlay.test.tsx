@@ -37,8 +37,14 @@ describe("VendoThread and VendoOverlay exports", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy());
     expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).disabled).toBe(true);
     await act(async () => release());
-    const receipt = await screen.findByText("Tool: host_email_send");
-    expect(receipt.parentElement?.getAttribute("data-vendo-approval")).toBe("write");
+    // The thread speaks in the product's voice: the tool call renders as a
+    // human beat; the raw name stays discoverable via data-vendo-tool. (The
+    // approval card below shares the humanized title, so scope to the beat.)
+    await screen.findAllByText(/Sending your email/);
+    const beat = document.querySelector("[data-vendo-tool='host_email_send']");
+    expect(beat).toBeTruthy();
+    expect(beat?.textContent).toContain("Sending your email");
+    expect(beat?.getAttribute("data-vendo-approval")).toBe("write");
     const card = await screen.findByLabelText("Approval for host_email_send");
     expect(card.textContent).toContain("a@example.com");
     expect(card.textContent).toContain(

@@ -1,7 +1,31 @@
 import { canonicalJson, sha256Hex, type ApprovalDecision, type ApprovalRequest } from "@vendoai/core";
 import { useState } from "react";
 import { ContainedNotice } from "../tree/notice.js";
+import { toolPresentation } from "./build-beat.js";
 import { ChromeRoot } from "./chrome-root.js";
+
+/** Flat, primitive-valued args render as aligned field rows; anything nested
+    falls back to the raw JSON preview (real inputs, always). */
+function flatFields(args: unknown): Array<[string, string]> | undefined {
+  if (typeof args !== "object" || args === null || Array.isArray(args)) return undefined;
+  const entries = Object.entries(args as Record<string, unknown>);
+  if (entries.length === 0 || entries.length > 8) return undefined;
+  const rows: Array<[string, string]> = [];
+  for (const [key, value] of entries) {
+    if (value !== null && typeof value === "object") return undefined;
+    rows.push([key, String(value)]);
+  }
+  return rows;
+}
+
+const VENUE_LABEL: Record<string, string> = {
+  chat: "asked here in chat",
+  page: "asked on the page",
+  slot: "asked in a view",
+  voice: "asked by voice",
+  mcp: "asked over MCP",
+  automation: "asked by an automation",
+};
 
 export interface ApprovalCardProps {
   approval: ApprovalRequest;
@@ -29,6 +53,8 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true }: Appro
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const critical = approval.descriptor.risk === "destructive" || approval.descriptor.critical === true;
+  const presentation = toolPresentation(approval.descriptor.name, approval.call.args);
+  const fields = flatFields(approval.call.args);
 
   const decide = async (approve: boolean) => {
     const decision: ApprovalDecision = { approve };
@@ -60,40 +86,66 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true }: Appro
       <article className={`fl-approval fl-item-in${critical ? " fl-approval--ceremony" : ""}`} aria-label={`Approval for ${approval.descriptor.name}`}>
         <div className="fl-approval-head">
           <span className="fl-approval-ic" aria-hidden="true">
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
-            </svg>
+            {presentation.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element -- chrome surface, plain img by design
+              <img
+                src={presentation.logoUrl}
+                alt=""
+                width={16}
+                height={16}
+                style={{ display: "block", objectFit: "contain" }}
+              />
+            ) : (
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+              </svg>
+            )}
           </span>
           <div className="fl-approval-heading">
-            <div className="fl-approval-eyebrow">{critical ? "CRITICAL" : "REQUESTED"}</div>
-            <div className="fl-approval-title">{approval.descriptor.name}</div>
+            <div className="fl-approval-eyebrow">{critical ? "CRITICAL" : presentation.eyebrow}</div>
+            <div className="fl-approval-title">{presentation.title}</div>
           </div>
           <span
             className="fl-chip"
             data-risk={approval.descriptor.risk}
+            title={approval.descriptor.name}
             style={{ marginLeft: "auto", padding: "2px 7px", fontSize: "10px", cursor: "default" }}
           >
             {approval.descriptor.risk}
           </span>
         </div>
-        <pre
-          className="fl-approval-fields"
-          aria-label="Real tool inputs"
-          style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-        >
-          {approval.inputPreview}
-        </pre>
+        {presentation.description ? (
+          <p className="fl-approval-desc">{presentation.description}</p>
+        ) : null}
+        {fields ? (
+          <dl className="fl-approval-fields" aria-label="Real tool inputs" style={{ display: "grid", gap: "7px", margin: 0 }}>
+            {fields.map(([key, value]) => (
+              <div className="fl-approval-field" key={key}>
+                <dt>{key}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <pre
+            className="fl-approval-fields"
+            aria-label="Real tool inputs"
+            style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+          >
+            {approval.inputPreview}
+          </pre>
+        )}
         <div className="fl-approval-more" style={{ marginTop: "8px" }}>
-          {approval.ctx.venue} · {approval.ctx.presence}
+          Runs as you · {VENUE_LABEL[approval.ctx.venue] ?? approval.ctx.venue}
           {approval.ctx.appId ? ` · ${approval.ctx.appId}` : ""}
         </div>
         {allowRemember ? (
