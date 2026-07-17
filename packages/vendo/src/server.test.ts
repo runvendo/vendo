@@ -1559,3 +1559,131 @@ describe("kill-list A5 — orgs are a Vendo Cloud capability, not an OSS wire ro
     expect((await vendo.handler(request("DELETE", "/grants/grant_1?org=org_x"))).status).toBe(402);
   });
 });
+
+describe("ENG-353 — turn liveness: heartbeat-armed idle abort for disconnects the runtime never surfaces", () => {
+  // Generous margins: CI runners under coverage load stall for hundreds of
+  // milliseconds, and a spurious idle-abort here would flake the suite.
+  const IDLE_MS = 1_000;
+
+  /** agent.stream stub whose SSE body stays open until the handed signal
+   *  aborts — a long-generating turn. */
+  function streamingTurnStub(vendo: Vendo, threadId = "thr_live"): { signals: AbortSignal[] } {
+    const signals: AbortSignal[] = [];
+    vi.spyOn(vendo.agent, "stream").mockImplementation(async (input: { signal?: AbortSignal }) => {
+      signals.push(input.signal!);
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("data: {\"type\":\"start\"}\n\n"));
+          input.signal?.addEventListener("abort", () => {
+            try {
+              controller.close();
+            } catch {
+              /* already closed */
+            }
+          }, { once: true });
+        },
+      });
+      const response = new Response(stream, {
+        headers: { "content-type": "text/event-stream", "x-vendo-thread-id": threadId },
+      });
+      return response;
+    });
+    return { signals };
+  }
+
+  const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+  const turnBody = { message: { id: "m_live", role: "user", parts: [] } };
+  const beat = (vendo: Vendo, id = "thr_live"): Promise<Response> =>
+    vendo.handler(request("POST", `/threads/${id}/heartbeat`, {}));
+
+  it("aborts a turn whose heartbeats stop; beats keep it alive; never-beating turns run to completion", async () => {
+    vi.stubEnv("VENDO_TURN_IDLE_ABORT_MS", String(IDLE_MS));
+    try {
+      const { vendo } = await setup();
+      const { signals } = streamingTurnStub(vendo);
+
+      await vendo.handler(request("POST", "/threads", turnBody));
+      const signal = signals[0]!;
+
+      // Beats keep the turn alive well past the idle window…
+      for (let i = 0; i < 4; i += 1) {
+        expect(await (await beat(vendo)).json()).toEqual({ active: true });
+        await wait(IDLE_MS / 2);
+        expect(signal.aborted).toBe(false);
+      }
+      // …then silence idle-aborts it.
+      await wait(IDLE_MS * 3);
+      expect(signal.aborted).toBe(true);
+      // A beat after the turn ended reports it inactive.
+      expect(await (await beat(vendo)).json()).toEqual({ active: false });
+
+      // Opt-in by construction: a turn whose client NEVER beats is untouched.
+      const second = await vendo.handler(request("POST", "/threads", turnBody));
+      expect(second.status).toBe(200);
+      await wait(IDLE_MS * 3);
+      expect(signals[1]!.aborted).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("a foreign principal's beat neither refreshes nor reveals another's turn", async () => {
+    vi.stubEnv("VENDO_TURN_IDLE_ABORT_MS", String(IDLE_MS));
+    try {
+      const resolver = vi.fn(async () => principal);
+      const { vendo } = await setup(resolver);
+      const { signals } = streamingTurnStub(vendo);
+
+      await vendo.handler(request("POST", "/threads", turnBody));
+      // Arm the watchdog as the owner.
+      expect(await (await beat(vendo)).json()).toEqual({ active: true });
+
+      // The attacker keeps beating the same thread id — as someone else.
+      resolver.mockResolvedValue({ kind: "user", subject: "user_mallory" });
+      const foreign = await (await beat(vendo)).json();
+      expect(foreign).toEqual({ active: false });
+      for (let i = 0; i < 3; i += 1) {
+        await wait(IDLE_MS / 2);
+        await beat(vendo);
+      }
+      // Foreign beats did NOT keep the owner's turn alive.
+      expect(signals[0]!.aborted).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("keeps the fast path: the request signal still aborts the turn immediately", async () => {
+    const { vendo } = await setup();
+    const { signals } = streamingTurnStub(vendo);
+    const controller = new AbortController();
+    const disconnectable = new Request("https://host.test/api/vendo/threads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(turnBody),
+      signal: controller.signal,
+    });
+    await vendo.handler(disconnectable);
+    expect(signals[0]!.aborted).toBe(false);
+    controller.abort();
+    expect(signals[0]!.aborted).toBe(true);
+  });
+
+  it("a completed turn unregisters: beats after the stream drained report inactive", async () => {
+    const { vendo } = await setup();
+    vi.spyOn(vendo.agent, "stream").mockResolvedValue(new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      }),
+      { headers: { "content-type": "text/event-stream", "x-vendo-thread-id": "thr_done" } },
+    ));
+    const response = await vendo.handler(request("POST", "/threads", turnBody));
+    expect(await (await beat(vendo, "thr_done")).json()).toEqual({ active: true });
+    const reader = response.body!.getReader();
+    while (!(await reader.read()).done) { /* drain */ }
+    expect(await (await beat(vendo, "thr_done")).json()).toEqual({ active: false });
+  });
+});

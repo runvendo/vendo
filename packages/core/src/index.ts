@@ -8,6 +8,7 @@ export * from "./errors.js";
 export * from "./formats.js";
 export * from "./grants.js";
 export * from "./guard.js";
+export * from "./heartbeat.js";
 export * from "./host-seams.js";
 export * from "./ids.js";
 export * from "./jcs.js";
