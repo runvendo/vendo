@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { execFile, spawn, type ChildProcessByStdio } from "node:child_process";
 import { copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,6 +32,34 @@ import type { RiderSession, RiderSessionStart } from "./types.js";
  */
 
 type Json = Record<string, unknown>;
+
+/**
+ * The codex-cli minor line this rider's app-server protocol shapes were
+ * verified against (spike ENG-337 REPORT.md). The `dynamicTools` surface is
+ * upstream-experimental AND feature-gated, and this rider reads tool calls by
+ * field name (`params.tool` / `params.arguments`); a codex upgrade that renames
+ * those fields degrades tool calls to "Unknown tool" silently. Doctor v2 warns
+ * (dev-only, informational) when the installed codex drifts off this line.
+ */
+export const TESTED_CODEX_MINOR = "0.144";
+
+/** Best-effort `codex --version` probe. Returns the parsed x.y.z string, or
+ *  null when codex is absent or unparseable. Never throws. */
+export function probeCodexVersion(command = "codex"): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(command, ["--version"], { timeout: 5_000 }, (error, stdout) => {
+      if (error !== null) return resolve(null);
+      const match = /(\d+\.\d+\.\d+)/.exec(stdout ?? "");
+      resolve(match ? match[1]! : null);
+    });
+  });
+}
+
+/** Whether an x.y.z version sits on the tested minor line (x.y match). */
+export function codexVersionMatchesTested(version: string): boolean {
+  const parts = version.split(".");
+  return parts.length >= 2 && `${parts[0]}.${parts[1]}` === TESTED_CODEX_MINOR;
+}
 
 export interface CodexRiderOptions {
   /** Binary to spawn; defaults to `codex` on PATH. Test seam: point at a stub. */

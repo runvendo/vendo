@@ -22,7 +22,10 @@ install. `vendo init` proposes two host changes: a catch-all handler and a
    the wizard; needs `@anthropic-ai/claude-agent-sdk` in the app (init offers
    the install).
 3. Your authed Codex CLI session. Dev only, used after you consent.
-4. Nothing available: chat fails honestly, with exact instructions in the
+4. A Vendo Cloud starter allowance. When no local credential is found, init
+   offers `vendo cloud login`; after login it mints a metered dev-mode key and
+   writes `VENDO_API_KEY` to `.env.local` for you. You never paste a key.
+5. Nothing available: chat fails honestly, with exact instructions in the
    server log.
 
 The wizard states what it found. Consent for session rungs is recorded per
@@ -40,6 +43,10 @@ Init ends in the product: with your consent it starts the dev server, opens
 the app in your browser, and seeds a first agent turn. The seed adapts to what
 setup found: extracted tools get a live tool demo, a theme-only app gets an
 on-brand UI generation, a blank app gets a tour.
+
+Vendo Cloud is optional. When `VENDO_API_KEY` is set, init validates it and
+states the plan and what it unlocks; when it is absent, init prints one calm
+line and, if a starter key would help the ladder, offers `vendo cloud login`.
 
 ## Create the server
 
@@ -242,13 +249,25 @@ export const POST = forward;
 
 ```bash
 npx vendo doctor
+npx vendo doctor --json
 npx vendo sync
 ```
 
 `doctor` checks wiring, makes a live `/status` probe, verifies that present
 credentials reach the host API, and exercises `actAs` minting through the
-host's verifier when configured. `sync` extracts the host API and remix
-baselines. In strict mode, breaking extraction changes exit with code 2.
+host's verifier when configured. It then runs one real model turn through the
+same wired route your app serves and prints the reply: exit 0 means a user
+would have gotten an answer, nonzero means the turn failed. It also validates
+`VENDO_API_KEY` when set (and shows what Cloud unlocks), and warns when the
+installed `codex` CLI drifts off the tested app-server protocol line.
+
+When nothing is listening on the dev port, `doctor` offers to start the dev
+server for the probe (or pass `--yes` to start it non-interactively). `--json`
+prints one machine-readable object — `checks`, `liveTurn`, `cloud`, `codex`,
+and the exit code — for scripts and agents.
+
+`sync` extracts the host API and remix baselines. In strict mode, breaking
+extraction changes exit with code 2.
 
 To make the deployed door discoverable through the official registry, follow
 [Publish to the MCP registry](publish-mcp-registry.md).
