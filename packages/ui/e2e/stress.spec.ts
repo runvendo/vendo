@@ -7,13 +7,17 @@ import { openScenario } from "./helpers.js";
  * kill UX, phone viewports, rapid overlay open/close, multi-turn persistence
  * (would have caught the P0), concurrent surfaces, and dark-brand rendering.
  *
- * The other solidity axes keep their own focused specs, all of which now run in
- * CI alongside this one via `pnpm --filter @vendoai/ui test:browser`:
+ * The other solidity axes keep their own focused specs; these run in the CI
+ * gate alongside this one (see ci.yml "UI solidity + stress suite"):
  *   - long threads / windowing → extreme-content.spec.ts
  *   - scroll / stick-to-bottom / jump-to-latest → scroll-management.spec.ts
  *   - token effectiveness / theme divergence → theme.spec.ts
  *   - bounded height chain → height-chain.spec.ts
- *   - keyboard completeness + focus → keyboard.spec.ts
+ *   - affordances + voice feature verification → verification-eng225/229.spec.ts
+ * The axe / keyboard / raw-interaction / screenshot specs stay the LOCAL pre-PR
+ * gate — headless CI mis-resolves :focus-visible outlines and light-dark(),
+ * which those specs assert directly. The full suite runs locally via
+ * `pnpm --filter @vendoai/ui test:browser`.
  */
 
 function send(page: import("@playwright/test").Page, text: string) {
