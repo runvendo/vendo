@@ -99,6 +99,7 @@ import {
 } from "./wire/shared.js";
 import { appRoutes } from "./wire/apps.js";
 import { approvalRoutes, grantRoutes } from "./wire/approvals.js";
+import { connectionRoutes } from "./wire/connections.js";
 import { threadRoutes } from "./wire/threads.js";
 
 /** 10-mcp §5 — the door's canonical mount under the wire's own prefix. */
@@ -620,35 +621,9 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
         if (routed !== undefined) return routed;
       }
 
-      // 04-actions §3 (block-actions design §B) — per-principal connected
-      // accounts. Subject scoping happens HERE: the wire passes exactly the
-      // resolved principal; no caller-supplied subject exists on this surface.
-      if (request.method === "GET" && path === "/connections") {
-        const ctx = await context(request, "chat");
-        return json({ connections: await deps.connections.list(ctx.principal) });
-      }
-      if (request.method === "POST" && path === "/connections/initiate") {
-        const body = await requestJson(request);
-        const ctx = await context(request, "chat");
-        return json(await deps.connections.initiate(ctx.principal, {
-          toolkit: string(body["toolkit"], "toolkit"),
-          ...(body["connector"] === undefined ? {} : { connector: string(body["connector"], "connector") }),
-          ...(body["callbackUrl"] === undefined ? {} : { callbackUrl: string(body["callbackUrl"], "callbackUrl") }),
-        }));
-      }
-      if (head === "connections" && segments.length === 2) {
-        const connectionId = string(segments[1], "connection id");
-        const connector = url.searchParams.get("connector") ?? "composio";
-        const ctx = await context(request, "chat");
-        if (request.method === "GET") {
-          const connection = await deps.connections.status(ctx.principal, connector, connectionId);
-          if (connection === null) throw new VendoError("not-found", `connection not found: ${connectionId}`);
-          return json(connection);
-        }
-        if (request.method === "DELETE") {
-          await deps.connections.disconnect(ctx.principal, connector, connectionId);
-          return json({});
-        }
+      {
+        const routed = await dispatchRoutes(connectionRoutes, wire);
+        if (routed !== undefined) return routed;
       }
 
       {
