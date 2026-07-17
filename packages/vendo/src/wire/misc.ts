@@ -1,8 +1,7 @@
-import { VendoError, principalSchema, type Principal, type ToolOutcome } from "@vendoai/core";
+import { VendoError } from "@vendoai/core";
 import { computeImpact } from "../sync-impact.js";
 import {
   VERSION,
-  constantTimeEqual,
   environment,
   hex,
   json,
@@ -13,15 +12,6 @@ import {
   string,
   type RouteEntry,
 } from "./shared.js";
-
-const DOCTOR_PRESENT_AUTHORIZATION = "Bearer vendo-doctor-present";
-const DOCTOR_PRESENT_COOKIE = "vendo_doctor_present=1";
-export const DOCTOR_ACT_AS_PRINCIPAL: Principal = { kind: "user", subject: "vendo_doctor_act_as" };
-
-function doctorProbeOk(outcome: ToolOutcome): boolean {
-  if (outcome.status !== "ok" || typeof outcome.output !== "object" || outcome.output === null) return false;
-  return "ok" in outcome.output && outcome.output.ok === true;
-}
 
 /** Lazily-minted random per-process HMAC key for constant-time secret compares
     (WebCrypto only — NO node:crypto — so the module keeps bundling for edge/
@@ -34,6 +24,15 @@ function compareKey(): Promise<CryptoKey> {
     return globalThis.crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   })();
   return compareKeyPromise;
+}
+
+/** Length-independent-leak-free digest compare for timingSafeEqual's HMAC
+    digests (always equal-length hex; unequal lengths simply fail). */
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 /** Constant-time string equality via WebCrypto, matching the webhook HMAC path
@@ -106,62 +105,6 @@ export const devRoutes: RouteEntry[] = [
   }),
 ];
 
-/** Doctor targets a running dev server. The prefix gate keeps its synthetic
-    mint/echo routes out of production entirely (and falls through in
-    development); the echo halves expose no credential material — booleans
-    only. */
-export const doctorRoutes: RouteEntry[] = [
-  prefixRoute("*", "/doctor/", async () => {
-    if (environment("NODE_ENV") === "production") {
-      throw new VendoError("not-found", "unknown Vendo route");
-    }
-    return undefined;
-  }),
-  route("GET", "/doctor/present/echo", async ({ request }) => {
-    return json({
-      ok: request.headers.get("authorization") === DOCTOR_PRESENT_AUTHORIZATION
-        && request.headers.get("cookie") === DOCTOR_PRESENT_COOKIE,
-    });
-  }),
-  route("GET", "/doctor/act-as/echo", async ({ request, deps }) => {
-    const resolved = await deps.principal(request);
-    const parsed = principalSchema.safeParse(resolved);
-    const accepted = parsed.success && parsed.data.subject === DOCTOR_ACT_AS_PRINCIPAL.subject;
-    return json({ ok: accepted }, accepted ? 200 : 401);
-  }),
-  route("POST", "/doctor/present", async ({ deps, context }) => {
-    const outcome = await deps.doctor.present(await context("chat"));
-    if (doctorProbeOk(outcome)) return json({ ok: true });
-    return json({
-      ok: false,
-      error: {
-        code: "present-credentials-not-forwarded",
-        message: "Present credentials did not reach the host API. Set VENDO_BASE_URL to the running host origin and restart the dev server.",
-      },
-    }, 409);
-  }),
-  route("POST", "/doctor/act-as", async ({ deps }) => {
-    const outcome = await deps.doctor.actAs();
-    if (doctorProbeOk(outcome)) return json({ ok: true });
-    if (outcome.status === "error" && outcome.error.code === "not-implemented") {
-      return json({
-        ok: false,
-        error: {
-          code: "act-as-not-configured",
-          message: "actAs is not configured; pass createVendo({ actAs }) before enabling away host actions.",
-        },
-      }, 501);
-    }
-    return json({
-      ok: false,
-      error: {
-        code: "act-as-verification-failed",
-        message: "actAs returned no usable AuthMaterial, or the host API did not accept it. Check the matching verifier middleware and principal resolver.",
-      },
-    }, 409);
-  }),
-];
-
 /** The machine-facing surfaces: webhook ingress, the authenticated scheduler
     tick, the dev-only sync impact probe, and the apps proxy mount. All match
     on the RAW path (prefix or exact) ahead of any segment decoding, exactly
@@ -219,6 +162,9 @@ export const activityRoutes: RouteEntry[] = [
     // envelope stays internal (the client pages by last event id).
     return json(activity.events);
   }),
+];
+
+export const statusRoutes: RouteEntry[] = [
   route("GET", "/status", async ({ deps, context }) => {
     await context("chat");
     return json({

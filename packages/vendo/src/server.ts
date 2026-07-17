@@ -3,7 +3,6 @@ import {
   type ActionsRegistry,
   type ActionsRunContext,
   type Connector,
-  type ExtractedTool,
   type ServerActionHandler,
 } from "@vendoai/actions";
 import { createAgent, type VendoAgent } from "@vendoai/agent";
@@ -76,14 +75,11 @@ import { createRuntimeCapture } from "./runtime-capture.js";
 import {
   BASE_PATH,
   VERSION,
-  createContextResolver,
   dispatchRoutes,
   environment,
   errorResponse,
   internalError,
   routeSegments,
-  withAnonCookie,
-  type AnonSession,
   type RouteEntry,
   type SandboxVenue,
   type WireContext,
@@ -94,35 +90,28 @@ import { approvalRoutes, grantRoutes } from "./wire/approvals.js";
 import { automationRoutes, runRoutes } from "./wire/automations.js";
 import { connectionRoutes } from "./wire/connections.js";
 import {
+  createContextResolver,
+  withAnonCookie,
+  type AnonSession,
+} from "./wire/context.js";
+import {
+  DOCTOR_ACT_AS_APP_ID,
   DOCTOR_ACT_AS_PRINCIPAL,
+  doctorActAsTool,
+  doctorPresentTool,
+  doctorRoutes,
+} from "./wire/doctor.js";
+import {
   activityRoutes,
   devRoutes,
-  doctorRoutes,
   orgsRoutes,
+  statusRoutes,
   systemRoutes,
 } from "./wire/misc.js";
 import { threadRoutes } from "./wire/threads.js";
 
 /** 10-mcp §5 — the door's canonical mount under the wire's own prefix. */
 const MCP_MOUNT = `${BASE_PATH}/mcp`;
-const DOCTOR_ACT_AS_APP_ID = "app_vendo_doctor" as const;
-
-const doctorPresentTool: ExtractedTool = {
-  name: "vendo_doctor_present",
-  description: "Vendo doctor present credential round-trip",
-  inputSchema: { type: "object", properties: {}, additionalProperties: false },
-  risk: "read",
-  binding: { kind: "route", method: "GET", path: `${BASE_PATH}/doctor/present/echo`, argsIn: "query" },
-};
-
-const doctorActAsTool: ExtractedTool = {
-  name: "vendo_doctor_act_as",
-  description: "Vendo doctor actAs mint and verification round-trip",
-  inputSchema: { type: "object", properties: {}, additionalProperties: false },
-  risk: "read",
-  binding: { kind: "route", method: "GET", path: `${BASE_PATH}/doctor/act-as/echo`, argsIn: "query" },
-};
-
 export interface Vendo {
   handler: (req: Request) => Promise<Response>;
   emit(event: string, payload: Json, principal: Principal): Promise<RunId[]>;
@@ -400,6 +389,7 @@ const wireRoutes: readonly RouteEntry[] = [
   ...automationRoutes,
   ...runRoutes,
   ...activityRoutes,
+  ...statusRoutes,
 ];
 
 function createWireHandler(deps: WireDeps): (request: Request) => Promise<Response> {

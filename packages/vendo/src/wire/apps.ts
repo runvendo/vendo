@@ -35,7 +35,7 @@ export const appRoutes: RouteEntry[] = [
     const { request, deps, params, segments } = wire;
     const appId = string(params["appId"], "app id");
     const ctx = await wire.context("app");
-    const operationName = segments[2];
+    const operation = segments[2];
     if (segments.length === 2) {
       if (request.method === "GET") {
         const app = await deps.apps.get(appId, ctx);
@@ -47,7 +47,6 @@ export const appRoutes: RouteEntry[] = [
         return json({});
       }
     }
-    const operation = operationName;
     if (request.method === "GET" && operation === "open" && segments.length === 3) {
       return json(await deps.apps.open(appId, ctx));
     }
