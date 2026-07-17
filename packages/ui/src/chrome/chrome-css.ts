@@ -333,6 +333,9 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-tool-label { color: var(--vendo-fg); }
 .fl-tool-detail { color: var(--vendo-fg-muted); font-weight: 400;
   max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-tool-count { margin-left: 2px; padding: 1px 6px; border-radius: 999px; flex-shrink: 0;
+  font: 600 10.5px/1.5 var(--vendo-font); color: var(--vendo-fg-muted);
+  background: var(--vendo-glass); border: 1px solid var(--vendo-border); }
 .fl-tool-icon { display: grid; place-items: center; width: 14px; height: 14px; font-size: 11px; flex-shrink: 0; }
 .fl-tool-done .fl-tool-icon { color: var(--vendo-ok); }
 .fl-tool-error { color: var(--vendo-danger); border-color: var(--vendo-danger-border); }
@@ -356,6 +359,7 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   text-transform: uppercase; color: var(--vendo-fg-muted); }
 .fl-approval-title { margin-top: 4px; font: 600 13.5px/1.3 var(--vendo-heading-font); color: var(--vendo-fg);
   letter-spacing: -.01em; }
+.fl-approval-desc { margin-top: 3px; font: 400 12px/1.4 var(--vendo-font); color: var(--vendo-fg-muted); }
 .fl-approval-fields { margin: 12px 0 0; padding: 10px 0 2px; border-top: 1px solid var(--vendo-border);
   display: flex; flex-direction: column; gap: 7px; }
 .fl-approval-field { display: grid; grid-template-columns: minmax(88px, auto) 1fr; gap: 12px;

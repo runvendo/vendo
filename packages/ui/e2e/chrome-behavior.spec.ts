@@ -3,11 +3,13 @@ import { openScenario } from "./helpers.js";
 
 test("thread sends a real streamed turn and renders the assistant delta", async ({ page }) => {
   await openScenario(page, "thread");
-  await expect(page.getByLabel("Approval for host_email_send")).toBeVisible();
+  await expect(page.getByLabel("Approval for Email send")).toBeVisible();
   await page.getByRole("textbox", { name: "Message" }).fill("Send the browser fixture email");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.getByText("Turn complete")).toBeVisible();
-  await expect(page.getByText("Tool: host_email_send").last()).toBeVisible();
+  // ENG-216 — humanized chip label (scoped to the chip class; the approval
+  // title also reads "Email send").
+  await expect(page.locator(".fl-tool-label").filter({ hasText: "Email send" }).first()).toBeVisible();
 });
 
 test("overlay traps focus, closes on Escape, and restores the launcher", async ({ page }) => {
@@ -55,5 +57,30 @@ test("destructive approval resolves with an approve decision", async ({ page }) 
   await expect(page.getByLabel("Real tool inputs")).toContainText("permanent=true");
   await page.getByRole("button", { name: "Approve" }).click();
   await expect(page.getByTestId("approval-recorder")).toHaveText('resolved: {"approve":true}');
-  await expect(page.getByLabel("Approval for host_delete_invoice")).toBeHidden();
+  await expect(page.getByLabel("Approval for Delete invoice")).toBeHidden();
+});
+
+test("ENG-216 humanizes tool chips, collapses repeats, and fixes fabricated approval ctx", async ({ page }) => {
+  await openScenario(page, "thread-humanized");
+
+  // Host metadata drives friendly chip labels + arg summaries.
+  await expect(page.locator(".fl-tool-label").filter({ hasText: "Send email" })).toBeVisible();
+  await expect(page.locator(".fl-tool-label").filter({ hasText: "Look up client documents" })).toBeVisible();
+
+  // Eight identical read calls collapse into one chip with a count.
+  await expect(page.locator(".fl-tool-label").filter({ hasText: "Look up client documents" })).toHaveCount(1);
+  await expect(page.locator(".fl-tool-count")).toHaveText("×8");
+
+  // No raw slug and no ai-SDK lifecycle string ever reaches the surface.
+  await expect(page.getByText(/host_list_client_documents/)).toHaveCount(0);
+  await expect(page.getByText("output-available")).toHaveCount(0);
+
+  // The approval card shows the friendly title + description and readable inputs.
+  const card = page.getByLabel("Approval for Transfer funds");
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("Move money between the customer's accounts");
+  await expect(card).toContainText("Amount: 4200");
+
+  // Fabricated in-thread ctx byline (venue · presence) is gone.
+  await expect(page.getByText("chat · present")).toHaveCount(0);
 });

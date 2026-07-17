@@ -66,7 +66,9 @@ test("J7: chat streams, destructive approval executes for real, useApps lists th
   await composer.fill(`Delete invoice ${INVOICE}`);
   await composer.press("Enter");
 
-  const approval = page.getByRole("article", { name: /Approval for host_invoices_delete/i });
+  // ENG-216 — the approval card aria-label carries the humanized title
+  // (humanizeToolName("host_invoices_delete") → "Invoices delete"), not the raw slug.
+  const approval = page.getByRole("article", { name: /Approval for Invoices delete/i });
   await expect(approval).toBeVisible();
   // The parked destructive call must NOT have executed yet.
   await expect
@@ -78,7 +80,8 @@ test("J7: chat streams, destructive approval executes for real, useApps lists th
 
   // UI reflects completion...
   await expect(page.getByText("Deleted the invoice.")).toBeVisible();
-  await expect(page.getByText(/Tool: host_invoices_delete/i)).toBeVisible();
+  // ENG-216 — chip shows the humanized tool label, never the raw slug / "Tool:" prefix.
+  await expect(page.getByText("Invoices delete").last()).toBeVisible({ timeout: 10_000 });
   // ...and the REAL side effect landed on the host app.
   await expect
     .poll(async () => (await (await request.get(`/__test/host/invoice/${INVOICE}`)).json()).exists, {
