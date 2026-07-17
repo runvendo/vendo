@@ -254,6 +254,7 @@ describe("§5 — grant scopes, durations, and mint sources", () => {
     expect(grantScopeSchema.safeParse({ kind: "exact", inputHash: "sha256:a", inputPreview: "p" }).success).toBe(true);
     expect(grantScopeSchema.safeParse({ kind: "exact", inputHash: "sha256:a" }).success).toBe(false);
     expect(grantScopeSchema.safeParse({ kind: "whole" }).success).toBe(false);
+    expect(grantScopeSchema.safeParse({ kind: "constrained", constraints: [] }).success).toBe(false);
   });
 
   it("accepts every grant duration and every mint source", () => {
