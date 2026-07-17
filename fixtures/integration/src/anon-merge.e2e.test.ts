@@ -8,7 +8,7 @@
  * Adversarial coverage:
  *   - an anonymous session cannot be used to STEAL another subject's rows
  *     (colliding ids are skipped, the durable row wins),
- *   - a forged (tampered) cookie merges nothing and is not honored,
+ *   - a garbage cookie (wrong shape) merges nothing and is not honored,
  *   - the merge is idempotent under cookie replay.
  */
 import { afterEach, describe, expect, it } from "vitest";
