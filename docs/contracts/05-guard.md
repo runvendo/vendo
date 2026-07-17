@@ -1,6 +1,6 @@
 # @vendoai/guard — policy, approvals, audit, safety
 
-Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a major. One job: the deterministic policy core at one choke point that binds every path equally — chat, apps, automations, and the future MCP door. Owns approvals, grants, the audit trail, Vendo Auto (the LLM judge), deterministic breakers, the scanner hook, and company directions. Depends on core only (judge takes an ai-SDK `LanguageModel` as config, type-imported).
+Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a major. One job: the deterministic policy core at one choke point that binds every path equally — chat, apps, automations, and the future MCP door. Owns approvals, grants, the audit trail, Vendo Auto (the LLM judge), deterministic breakers, and company directions. Depends on core only (judge takes an ai-SDK `LanguageModel` as config, type-imported).
 
 ## 1. Public API
 
@@ -16,7 +16,6 @@ export function createGuard(config: {
   policy?: PolicyConfig;                   // data file + optional code escape hatch; absent → default posture
   judge?: Judge;                           // Vendo Auto; absent → rules/defaults only
   breakers?: { maxCallsPerMinute?: number; maxWritesPerRun?: number };   // defaults: 60, 20
-  scanners?: Scanner[];
 }): VendoGuard;
 
 export interface VendoGuard extends Guard {
@@ -50,12 +49,11 @@ The one sanctioned path from a `ToolRegistry` to execution. `bind` wraps every `
 Decision pipeline (normative order):
 
 1. **Critical** — `descriptor.critical` → `ask`, unsuppressible by grant, rule, or judge.
-2. **Scanners (input)** — a `block` finding blocks with the finding recorded.
-3. **Grant match** — an unrevoked, unexpired grant with matching `descriptorHash` and scope → `run`. `session`/`task` grants match only when their `contextKey` equals the current `ctx.sessionId` (task grants: the task's id) — that binding is what the durations mean. Grants never match across subjects: `grant.subject === ctx.principal.subject` is asserted here and again at the actAs seam (04 §4). **Loud invalidation (ENG-261):** when descriptor drift is the only reason a grant fails to match, the resulting `ask` is never silent — the `ApprovalRequest` (and its stream part) carries `invalidatedGrant` (01 §5), and one `policy-decision` audit event fires with `detail: { reason: "grant-invalidated", grantIds, tool, staleHash, currentHash }`.
-4. **Policy rules** — first matching rule in the data file → its action.
-5. **Code escape hatch** — if configured, may override with a decision or pass.
-6. **Judge** — if configured, decides `run | ask | block` with rationale. Judge errors/timeouts fail closed to `ask`.
-7. **Default posture** — auto-run + audit everything (+ the loud "no policy" notice via `status()`).
+2. **Grant match** — an unrevoked, unexpired grant with matching `descriptorHash` and scope → `run`. `session`/`task` grants match only when their `contextKey` equals the current `ctx.sessionId` (task grants: the task's id) — that binding is what the durations mean. Grants never match across subjects: `grant.subject === ctx.principal.subject` is asserted here and again at the actAs seam (04 §4). **Loud invalidation (ENG-261):** when descriptor drift is the only reason a grant fails to match, the resulting `ask` is never silent — the `ApprovalRequest` (and its stream part) carries `invalidatedGrant` (01 §5), and one `policy-decision` audit event fires with `detail: { reason: "grant-invalidated", grantIds, tool, staleHash, currentHash }`.
+3. **Policy rules** — first matching rule in the data file → its action.
+4. **Code escape hatch** — if configured, may override with a decision or pass.
+5. **Judge** — if configured, decides `run | ask | block` with rationale. Judge errors/timeouts fail closed to `ask`.
+6. **Default posture** — auto-run + audit everything (+ the loud "no policy" notice via `status()`).
 
 Breakers wrap the pipeline: exceeding `maxCallsPerMinute` (per principal) or `maxWritesPerRun` (per run, `write`+`destructive` calls) turns would-be `run` into `ask` until the window clears. Deterministic, always on, the backstop under the judge.
 
@@ -107,18 +105,6 @@ export function vendoAutoJudge(config: { model: LanguageModel; instructions?: st
 
 The judge decides contextually instead of static rules or per-call prompts; rationale lands in the audit event (`decidedBy: "judge"`). Deterministic breakers and the critical tier stay above it — the judge can never unlock what they lock.
 
-## 5. Scanner hook — integrate, don't rebuild
-
-```ts
-export interface Scanner {
-  name: string;
-  on: "input" | "output";
-  scan(payload: { text: string; call?: ToolCall; ctx: RunContext }): Promise<{ verdict: "ok" | "flag" | "block"; findings?: string[] }>;
-}
-```
-
-Adapter surface for LLM Guard-style content scanners (prompt injection on inputs, PII on outputs). `flag` records an audit event and continues; `block` stops the call/response. Zero scanners ship in-box.
-
 ## 6. One-security-rule consequences (restated as guard requirements)
 
 - An approval shows the **real inputs** (`inputPreview`) at the moment of the call — a shared app's hidden or dormant calls can do nothing without the running user seeing them.
@@ -146,3 +132,9 @@ Adapter surface for LLM Guard-style content scanners (prompt injection on inputs
 - **Changed:** `scopeMatches` no longer evaluates a `constrained` scope's `eq`/`lte`/`gte`/`matches` constraint ops. Removed the JSON-pointer resolver (`resolvePointer`) and the ReDoS guard (`isUnsafeMatchPattern`) that protected the `matches` op's runtime `RegExp` construction, along with `#decideApprovals`'s mint-time validation of constrained scopes (empty-constraints rejection, unsafe-pattern rejection). `scopeMatches` now only distinguishes `tool` (always matches) and `exact` (canonical input-hash equality).
 - **Why:** 01-core §5 no longer defines a `constrained` `GrantScope` variant (kill-list A4) — no product surface ever minted one, so guard's matching, mint-time validation, and the regex-safety machinery built to protect it were dead code guarding a code path nothing reached.
 - **Authorized by:** the Yousef-approved kill-list spec (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md` §A4).
+
+### 2026-07-17 — Scanner hook removed (kill-list §A6)
+
+- **Changed:** Dropped the `Scanner` type, the `scanners?: Scanner[]` config field, and the input/output scanner stage from the decision pipeline (`#scanInput`, `#scanOutput`, `#reportScannerFinding`). §1's `createGuard` config and public API surface no longer take `scanners`; §2's decision pipeline no longer has a scanner stage — it now runs critical → grant match → policy rules → code escape hatch → judge → default posture. The former §5 ("Scanner hook — integrate, don't rebuild") is removed; §6 keeps its number for citation stability, so this contract now has no §5.
+- **Why:** kill-list A6 — the scanner hook was an adapter surface for LLM-Guard-style content scanners with zero in-box scanners and zero in-repo consumers; the contract itself already said "zero scanners ship in-box." Dead pluggability, not a feature anyone used.
+- **Authorized by:** the Yousef-approved kill-list spec (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md` §A6).

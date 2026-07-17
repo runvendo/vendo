@@ -30,7 +30,6 @@ import { PolicyResolver, ruleMatches } from "./policy.js";
 import type {
   CreateGuardConfig,
   Judge,
-  Scanner,
   VendoGuard,
 } from "./types.js";
 
@@ -236,7 +235,6 @@ class GuardImplementation implements VendoGuard {
   readonly #store: StoreAdapter;
   readonly #config: CreateGuardConfig;
   readonly #policy: PolicyResolver;
-  readonly #scanners: Scanner[];
   readonly #maxCallsPerMinute: number;
   readonly #maxWritesPerRun: number;
   readonly #callWindows = new Map<string, number[]>();
@@ -271,7 +269,6 @@ class GuardImplementation implements VendoGuard {
     this.#store = config.store;
     this.#config = config;
     this.#policy = new PolicyResolver(config.policy);
-    this.#scanners = config.scanners ?? [];
     this.#maxCallsPerMinute = config.breakers?.maxCallsPerMinute ?? 60;
     this.#maxWritesPerRun = config.breakers?.maxWritesPerRun ?? 20;
   }
@@ -381,10 +378,6 @@ class GuardImplementation implements VendoGuard {
                 message: errorMessage(error),
               },
             };
-          }
-
-          if (outcome.status === "ok") {
-            outcome = await this.#scanOutput(outcome, call, ctx);
           }
         }
 
@@ -599,9 +592,7 @@ class GuardImplementation implements VendoGuard {
     ctx: RunContext,
   ): Promise<DecisionMetadata> {
     // An exact approved replay answers a critical ask (05 §2 stays otherwise:
-    // grants/rules/judge never suppress critical) — but scanners still get the
-    // call below. If a scanner then blocks, the single-use approval is already
-    // consumed: burning it on a blocked call fails closed.
+    // grants/rules/judge never suppress critical).
     let consumedReplay = false;
     if (descriptor.critical === true) {
       consumedReplay = await this.#consumeApprovedCall(call, descriptor, ctx);
@@ -609,9 +600,6 @@ class GuardImplementation implements VendoGuard {
         return { decision: { action: "ask", decidedBy: "critical" } };
       }
     }
-
-    const scannerDecision = await this.#scanInput(call, ctx);
-    if (scannerDecision !== undefined) return scannerDecision;
 
     if (consumedReplay || await this.#consumeApprovedCall(call, descriptor, ctx)) {
       return { decision: { action: "run", decidedBy: "grant" } };
@@ -727,90 +715,6 @@ class GuardImplementation implements VendoGuard {
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
-  }
-
-  async #scanInput(call: ToolCall, ctx: RunContext): Promise<DecisionMetadata | undefined> {
-    const text = canonicalJson(call.args);
-    for (const scanner of this.#scanners) {
-      if (scanner.on !== "input") continue;
-      try {
-        const result = await scanner.scan({ text, call, ctx });
-        if (result.verdict === "ok") continue;
-        const findings = result.findings ?? [];
-        await this.#reportScannerFinding(scanner.name, findings, call, ctx, result.verdict);
-        if (result.verdict === "block") {
-          return {
-            decision: {
-              action: "block",
-              reason: findings.join("; ") || `${scanner.name} blocked input`,
-              decidedBy: "scanner",
-            },
-            blockAlreadyAudited: true,
-          };
-        }
-      } catch (error) {
-        await this.#reportScannerFinding(
-          scanner.name,
-          [errorMessage(error)],
-          call,
-          ctx,
-          "flag",
-        );
-      }
-    }
-    return undefined;
-  }
-
-  async #scanOutput(
-    original: Extract<ToolOutcome, { status: "ok" }>,
-    call: ToolCall,
-    ctx: RunContext,
-  ): Promise<ToolOutcome> {
-    if (!this.#scanners.some((scanner) => scanner.on === "output")) return original;
-    const text = canonicalJson(original.output);
-    for (const scanner of this.#scanners) {
-      if (scanner.on !== "output") continue;
-      try {
-        const result = await scanner.scan({ text, call, ctx });
-        if (result.verdict === "ok") continue;
-        const findings = result.findings ?? [];
-        await this.#reportScannerFinding(scanner.name, findings, call, ctx, result.verdict);
-        if (result.verdict === "block") {
-          return {
-            status: "blocked",
-            reason: findings.join("; ") || `${scanner.name} blocked output`,
-          };
-        }
-      } catch (error) {
-        await this.#reportScannerFinding(
-          scanner.name,
-          [errorMessage(error)],
-          call,
-          ctx,
-          "flag",
-        );
-      }
-    }
-    return original;
-  }
-
-  async #reportScannerFinding(
-    scanner: string,
-    findings: string[],
-    call: ToolCall,
-    ctx: RunContext,
-    verdict: "flag" | "block",
-  ): Promise<void> {
-    await this.report(
-      eventFromContext(ctx, {
-        kind: "policy-decision",
-        tool: call.tool,
-        inputPreview: inputPreview(call),
-        ...(verdict === "block" ? { outcome: "blocked" as const } : {}),
-        decidedBy: "scanner",
-        detail: { scanner, findings },
-      }),
-    );
   }
 
   /** The grant that authorized a "run", re-attached for executors that need it

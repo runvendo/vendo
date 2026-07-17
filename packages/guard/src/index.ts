@@ -9,6 +9,5 @@ export type {
   PolicyFn,
   PolicyRule,
   RiskResolver,
-  Scanner,
   VendoGuard,
 } from "./types.js";

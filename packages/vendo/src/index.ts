@@ -17,7 +17,6 @@ export type {
   PolicyFile,
   PolicyFn,
   PolicyRule,
-  Scanner,
   VendoGuard,
 } from "@vendoai/guard";
 export type {
