@@ -48,8 +48,7 @@ An explicitly configured store always wins. If you pass
 variable is ignored.
 
 Ciphertext is bound to the secret name with AES-GCM authenticated data, so a
-tampered or swapped row fails to decrypt. Rows written before this hardening
-keep decrypting and upgrade to the bound envelope on their next write.
+tampered or swapped row fails to decrypt.
 
 ## Audit is append-only
 
@@ -65,32 +64,22 @@ delete the row and re-seed it under the new subject.
 
 ## Erasing data
 
-`eraseStore(store)` is the sanctioned deletion path for `vendo_audit` and the
-one call that cascades across every store table plus the ephemeral overlay.
-Use it for right-to-erasure requests, tearing down a test app, or purging
-old runs.
+`eraseStore(store)` is the sanctioned deletion path for `vendo_audit`,
+cascading across every store table plus the ephemeral overlay. Use it for
+right-to-erasure requests, tearing down a test app, or purging old runs.
 
 ```ts
 import { eraseStore } from "@vendoai/vendo/server";
 
 // Full erasure for a subject across every store table and the overlay.
-const bySubject = await eraseStore(vendo.store, { bySubject: subjectId });
+const bySubject = await eraseStore(vendo.store).bySubject(subjectId);
 
 // Erase everything owned by one app.
-const byApp = await eraseStore(vendo.store, { byApp: appId });
-
-// Erase rows whose entire lifecycle predates a cutoff.
-const byAge = await eraseStore(vendo.store, {
-  byAge: { before: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) },
-});
+const byApp = await eraseStore(vendo.store).byApp(appId);
 ```
 
 Each call returns per-table deleted counts so you can log or verify the
-cascade. `byAge` treats a row as recent when any lifecycle timestamp
-(including `updated_at`) is at or after the cutoff — so a standing grant
-with a future `expires_at` and a rotated secret both survive an age sweep.
-Overlay blobs carry no timestamps and are exempt from the age axis; they
-end with the process.
+cascade.
 
 ## Atomic claims
 
