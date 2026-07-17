@@ -17,36 +17,34 @@
 
 ## Task 1: Module analysis in common.ts onto the TS AST
 **Files:** `packages/actions/src/sync/common.ts` (module lexing internals), `packages/actions/package.json` (drop `es-module-lexer`).
-- [ ] Add behavior-lock tests for import/re-export resolution shapes only exercised implicitly today (namespace member references, export-star chains, semicolon-free TSX) — green against the current implementation
-- [ ] Replace the es-module-lexer + `fallbackModuleStatements` path inside the module reader with TypeScript-AST statement walks (host-first compiler loading, same fail-closed posture as `static-ts.ts`)
-- [ ] Delete `fallbackModuleStatements`; grep-verify no consumer remains; drop the `es-module-lexer` dependency
-- [ ] Actions suite green; commit
+- [x] Add behavior-lock tests for import/re-export resolution shapes only exercised implicitly today (namespace member references, export-star chains, semicolon-free TSX) — green against the current implementation
+- [x] Replace the es-module-lexer + `fallbackModuleStatements` path inside the module reader with TypeScript-AST statement walks (host-first compiler loading, same fail-closed posture as `static-ts.ts`)
+- [x] Delete `fallbackModuleStatements`; grep-verify no consumer remains; drop the `es-module-lexer` dependency
+- [x] Actions suite green; commit
 
 ## Task 2: route-scan.ts onto the TS AST
 **Files:** `packages/actions/src/sync/route-scan.ts`.
-- [ ] Add a route-scan behavior-lock test file covering the currently untested evidence paths: destructured verb exports, `export { x as GET }`, verb-keyed `defaultHandler` objects, `"VERB /path"` route maps, `setHeader("Allow", ...)` lists, `NextAuth()` pages, re-export/delegate chains, and the pages-inference heuristics — green against the current implementation
-- [ ] Rewrite verb evidence gathering (exported verbs, route maps, method-key objects, re-export targets, page inference) as AST queries over the parsed route module; file-path→URL mapping (`cleanSegment`/`routePath`) stays — those regexes match path segments, not code
-- [ ] Remove the now-dead statement/brace helpers from route-scan and the `splitTopLevel`/`stripComments`/`topLevelObjectLiteral` imports
-- [ ] Actions suite green; commit
+- [x] Add a route-scan behavior-lock test file covering the currently untested evidence paths: destructured verb exports, `export { x as GET }`, verb-keyed `defaultHandler` objects, `"VERB /path"` route maps, `setHeader("Allow", ...)` lists, `NextAuth()` pages, re-export/delegate chains, and the pages-inference heuristics — green against the current implementation
+- [x] Rewrite verb evidence gathering (exported verbs, route maps, method-key objects, re-export targets, page inference) as AST queries over the parsed route module; file-path→URL mapping (`cleanSegment`/`routePath`) stays — those regexes match path segments, not code
+- [x] Remove the now-dead statement/brace helpers from route-scan and the `splitTopLevel`/`stripComments`/`topLevelObjectLiteral` imports
+- [x] Actions suite green; commit
 
 ## Task 3: pins.ts onto the TS AST
 **Files:** `packages/actions/src/sync/pins.ts`, then dead-helper cleanup in `common.ts`.
-- [ ] Registration discovery (`{ name, component }` object literals, `remixable(` helper marking, router-table `path` exclusion, literal offsets) becomes an AST walk
-- [ ] `StaticValueParser` is replaced by static AST evaluation of the sampleProps initializer with the same JSON-compatible acceptance rules (same invalid-sampleProps warnings)
-- [ ] `importSpecifiers` (static, re-export, dynamic import; type-only skipped) becomes an AST walk
-- [ ] Delete `splitTopLevel`, `topLevelObjectLiteral`, and `stripComments` from common.ts once grep shows zero consumers; tsconfig JSONC parsing moves to the compiler API's config-text parser
-- [ ] Actions suite green; commit
+- [x] Registration discovery (`{ name, component }` object literals, `remixable(` helper marking, router-table `path` exclusion, literal offsets) becomes an AST walk
+- [x] `StaticValueParser` is replaced by static AST evaluation of the sampleProps initializer with the same JSON-compatible acceptance rules (same invalid-sampleProps warnings)
+- [x] `importSpecifiers` (static, re-export, dynamic import; type-only skipped) becomes an AST walk
+- [x] Delete `splitTopLevel`, `topLevelObjectLiteral`, and `stripComments` from common.ts once grep shows zero consumers; tsconfig JSONC parsing moves to the compiler API's config-text parser
+- [x] Actions suite green; commit
 
 ## Task 4: Narrow the zod passthrough allowlist
 **Files:** `packages/actions/src/sync/static-ts.ts`.
-- [ ] Measure: grep the corpus checkouts (from the Task 0 clone) and the actions test suite for zod modifier methods actually chained in extracted input schemas
-- [ ] Shrink `ZOD_PASSTHROUGH_MODIFIERS` to that measured set; unlisted modifiers keep failing closed (permissive schema + note); adjust any test that asserted passthrough of a removed modifier to assert the fail-closed result instead
-- [ ] Actions suite green; commit
+- [x] Measure: grep the corpus checkouts (from the Task 0 clone) and the actions test suite for zod modifier methods actually chained in extracted input schemas
+- [x] Shrink `ZOD_PASSTHROUGH_MODIFIERS` to that measured set; unlisted modifiers keep failing closed (permissive schema + note); adjust any test that asserted passthrough of a removed modifier to assert the fail-closed result instead
+- [x] Actions suite green; commit
 
-## Task 5: Contract amendment
-**Files:** `docs/contracts/04-actions.md`.
-- [ ] Amend §1 prose: route-scan and pin capture are now compiler-API static analysis like tRPC/GraphQL/server-actions; dated changelog entry, authorized-by kill-list §B1
-- [ ] Commit
+## Task 5: Contract amendment — SKIPPED (doctrine change 2026-07-17)
+`docs/contracts/` is being retired (archived; the behavior contract is types + tests). Per coordinator instruction the 04-actions.md amendment was dropped from this branch; no docs/contracts/ file is touched.
 
 ## Task 6: Verification and PR
 - [ ] Re-run `pnpm corpus run --layer 2 --json` on the finished branch in the same clone; per-repo scores equal-or-better than the Task 0 baseline; fix any regression before proceeding
