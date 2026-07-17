@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useVendoContext } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useApps } from "../hooks/use-apps.js";
@@ -22,13 +22,32 @@ function title(tab: Tab): string {
 
 function ChatWorkspace() {
   const takeover = useMobileTakeover();
-  const { threads } = useThreads();
+  const { threads, refresh } = useThreads();
   const [selected, setSelected] = useState<string>();
-  // Default to the most recent conversation once the list loads; leave the
-  // caller's explicit selection (including the "New conversation" reset) alone.
+  // ENG-222 — the thr_ the server mints for a "New conversation" turn. Tracked
+  // separately from `selected` (which drives VendoThread's threadId prop) so a
+  // fresh mint highlights the sidebar without remounting the live conversation.
+  const [minted, setMinted] = useState<string>();
+  const activeId = selected ?? minted;
+  // Default to the most recent conversation until the user makes an explicit
+  // choice. `userChose` is set synchronously in the button handlers so that an
+  // explicit "New conversation" (selected → undefined) can never be clobbered by
+  // this effect — which, being passive, may flush AFTER the click and would
+  // otherwise resurrect the previous thread via `?? threads[0]` (ENG-222).
+  const userChose = useRef(false);
   useEffect(() => {
+    if (userChose.current || threads.length === 0) return;
     setSelected(current => current ?? threads[0]?.id);
   }, [threads]);
+  const onThreadId = useCallback((id: string) => setMinted(id), []);
+  // ENG-222 — a conversation started via "New conversation" mints a thr_ the
+  // sidebar list has never seen; refresh so it appears (and highlights). Once
+  // the refreshed list carries it the guard falls false, so this can't loop.
+  useEffect(() => {
+    if (minted !== undefined && !threads.some(thread => thread.id === minted)) {
+      void refresh();
+    }
+  }, [minted, threads, refresh]);
   return (
     <div
       className="fl-page-pane"
@@ -48,19 +67,19 @@ function ChatWorkspace() {
         aria-label="Conversations"
         style={{ alignSelf: "stretch", display: "flex", flexDirection: "column", gap: 8, maxHeight: "none", maxWidth: "none", padding: 12 }}
       >
-        <button type="button" className="fl-btn fl-btn-primary" onClick={() => setSelected(undefined)}>New conversation</button>
+        <button type="button" className="fl-btn fl-btn-primary" onClick={() => { userChose.current = true; setSelected(undefined); setMinted(undefined); }}>New conversation</button>
         {threads.map(thread => (
           <button
             type="button"
-            className={`fl-btn${selected === thread.id ? " fl-btn-primary" : ""}`}
-            aria-current={selected === thread.id ? "page" : undefined}
+            className={`fl-btn${activeId === thread.id ? " fl-btn-primary" : ""}`}
+            aria-current={activeId === thread.id ? "page" : undefined}
             key={thread.id}
-            onClick={() => setSelected(thread.id)}
+            onClick={() => { userChose.current = true; setSelected(thread.id); setMinted(undefined); }}
             style={{ justifyContent: "flex-start", textAlign: "left" }}
           >{thread.title}</button>
         ))}
       </nav>
-      <VendoThread threadId={selected} />
+      <VendoThread threadId={selected} onThreadId={onThreadId} />
     </div>
   );
 }

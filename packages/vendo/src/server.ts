@@ -4,8 +4,9 @@ import {
   type ActionsRunContext,
   type Connector,
   type ExtractedTool,
+  type ServerActionHandler,
 } from "@vendoai/actions";
-import { createAgent, type VendoAgent } from "@vendoai/agent";
+import { assembleSystemPrompt, createAgent, type VendoAgent } from "@vendoai/agent";
 import {
   createApps,
   pinBaselineSchema,
@@ -60,6 +61,11 @@ import {
 // 02-store §5: the erase API ships on the umbrella's runtime surface so hosts
 // reach it without installing @vendoai/store directly.
 export { eraseStore, type EraseReport, type EraseTable } from "@vendoai/store";
+// XCUT-3: the production-deploy path — createStore({ url }) plus the secrets
+// runtime — is reachable from the umbrella itself (docs/persistence-and-deploy
+// imports these from "@vendoai/vendo/server"); hosts never need to install
+// @vendoai/store directly.
+export { createStore, envSecrets, secretStore, storeSecrets } from "@vendoai/store";
 export {
   runRefine,
   type RefineChange,
@@ -77,7 +83,26 @@ import {
   capabilitySurfaceSnapshot,
   createCapabilityMissCapture,
 } from "./capability-misses.js";
-import { mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
+import { catalogThemeSummary, mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
+import { devModelController } from "./dev-creds/model.js";
+// ENG-338 — the dev-mode model-credential ladder: `devModel()` is what a fresh
+// `vendo init` scaffolds; the resolver is shared by init, doctor, and
+// extraction --deep (one credential story, install-dx design §2).
+export {
+  devModel,
+  DevModelController,
+  NO_CREDENTIAL_MESSAGE,
+  type DevModelOptions,
+} from "./dev-creds/model.js";
+export {
+  describeDevCredential,
+  hasSessionConsent,
+  readDevSessionConsent,
+  resolveDevCredential,
+  writeDevSessionConsent,
+  type DevCredential,
+  type ResolveDevCredentialOptions,
+} from "./dev-creds/resolve.js";
 import { createConnections, type ConnectionsService } from "./connections.js";
 import { createOrgs, type OrgsService } from "./orgs.js";
 import { createRuntimeCapture, type RuntimeCaptureHandler } from "./runtime-capture.js";
@@ -140,6 +165,10 @@ export interface CreateVendoConfig {
   sandbox?: SandboxAdapter;
   connectors?: Connector[];
   actAs?: ActAs;
+  /** 04-actions §1 (ENG-248): the server-action registration map emitted by the
+      generated wiring file, keyed `"<module>#<exportName>"`. Server-action tools
+      dispatch in-process through it; a missing key fails closed at execution. */
+  serverActions?: Record<string, ServerActionHandler>;
   policy?: PolicyConfig;
   judge?: Judge;
   secrets?: SecretsProvider;
@@ -180,6 +209,9 @@ export interface CreateVendoConfig {
         discoverable via `vendo_tools_search`. Defaults to the agent block's
         DEFAULT_MAX_INITIAL_TOOLS. */
     maxInitialTools?: number;
+    /** AGENT-7: agent-loop step cap per turn (default 20). Exhaustion streams a
+        renderable `data-vendo-step-limit` part instead of ending silently. */
+    maxSteps?: number;
   };
   /** 02-store §4 / ENG-237 — ephemeral (anonymous) session lifecycle. Anonymous
       visitors get a TTL-based session: every request touches it, an idle session
@@ -901,6 +933,10 @@ function createWireHandler(deps: {
           ...(body["threadId"] === undefined ? {} : { threadId: string(body["threadId"], "threadId") }),
           message: body["message"] as never,
           ctx,
+          // AGENT-3: client disconnect aborts the request, which cancels the
+          // agent loop — provider calls stop instead of running to completion
+          // for a reader that is gone.
+          signal: request.signal,
         });
       }
       if (request.method === "GET" && path === "/threads") {
@@ -1415,6 +1451,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     dir: string;
     connectors?: Connector[];
     actAs?: ActAs;
+    serverActions?: Record<string, ServerActionHandler>;
     baseUrl?: string;
     baseUrlTrusted?: boolean;
     onPresentCredentialsNotForwarded: typeof warnPresentCredentialsNotForwarded;
@@ -1423,6 +1460,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     dir: ".",
     ...(config.connectors === undefined ? {} : { connectors: config.connectors }),
     ...(config.actAs === undefined ? {} : { actAs: config.actAs }),
+    ...(config.serverActions === undefined ? {} : { serverActions: config.serverActions }),
     ...(configuredBaseUrl === undefined ? {} : { baseUrl: configuredBaseUrl, baseUrlTrusted: true }),
     onPresentCredentialsNotForwarded: warnPresentCredentialsNotForwarded,
   };
@@ -1488,15 +1526,37 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     .then(capabilitySurfaceSnapshot)
     .catch(() => capabilitySurfaceSnapshot([]));
   const missCapture = createCapabilityMissCapture({ surface: missSurface });
+  // AGENT-1/2 — 03 §3: the host product brief (init writes .vendo/brief.md)
+  // and the catalog+theme summary feed the system prompt; prompt.ts places
+  // them (brief = Product section; summary only where trees render).
+  const brief = dotVendoFile("brief.md")?.trim();
+  const promptCatalog = catalogThemeSummary(catalog, theme);
+  const system = brief || promptCatalog !== undefined
+    ? {
+        ...(brief ? { product: brief } : {}),
+        ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
+      }
+    : undefined;
+  // ENG-338 dev-mode ladder: when the host's model came from devModel(), wire
+  // its rider seam into the agent — session rungs (authed Claude/Codex CLI
+  // logins) own the model loop while tools + consent stay on the guard-bound
+  // path. Key rungs resolve to null and run the native loop unchanged. The
+  // controller refuses session rungs outright when NODE_ENV === "production".
+  const devController = devModelController(config.model);
   const agent = createAgent({
     model: config.model,
     tools: boundTools,
     guard,
+    ...(devController === null
+      ? {}
+      : { rider: { session: ({ threadId }: { threadId: string }) => devController.chatSession(threadId) } }),
     store,
+    ...(system === undefined ? {} : { system }),
     context: {
       toolOutputCap: config.agent?.toolOutputCap ?? DEFAULT_TOOL_OUTPUT_CAP,
       ...(config.agent?.maxOutputTokens === undefined ? {} : { maxOutputTokens: config.agent.maxOutputTokens }),
       ...(config.agent?.historyWindow === undefined ? {} : { historyWindow: config.agent.historyWindow }),
+      ...(config.agent?.maxSteps === undefined ? {} : { maxSteps: config.agent.maxSteps }),
     },
     capabilityMiss: {
       hostId: missCapture.hostId,
@@ -1626,6 +1686,27 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     || (config.development !== false && environment("NODE_ENV") === "development");
   const developmentPaths = typeof config.development === "object" ? config.development : {};
   const runtimeCapture = development ? createRuntimeCapture(developmentPaths) : null;
+  // ENG-338: pre-spawn the first Claude rider session at dev-server boot (its
+  // spawn+init costs ~12s; the user's first message must not pay it). The
+  // warmup system prompt approximates the loop's (synthetic dev principal);
+  // the adopting thread swaps in its live tool bridge. Fire-and-forget: any
+  // failure just means a cold start on the first message.
+  if (devController !== null && development) {
+    void (async () => {
+      // The warmed Claude session keeps this prompt (adoption never restarts
+      // it), so assemble the SAME brief/catalog system the loop would use.
+      const [descriptors, warmupSystem] = await Promise.all([
+        boundTools.descriptors(),
+        assembleSystemPrompt(guard, {
+          principal: { kind: "user", subject: "vendo_dev_warmup", ephemeral: true },
+          venue: "chat",
+          presence: "present",
+          sessionId: "session_vendo_dev_warmup",
+        }, system, false),
+      ]);
+      devController.warmup({ system: warmupSystem, tools: descriptors });
+    })().catch(() => undefined);
+  }
   const handler = createWireHandler({
     principal: config.principal,
     ready,

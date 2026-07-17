@@ -44,7 +44,7 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   --vendo-accent-soft: color-mix(in srgb, var(--vendo-accent) 8%, transparent);
   --vendo-border-strong: color-mix(in srgb, var(--vendo-fg) 16%, transparent);
   --vendo-shadow: 0 1px 2px color-mix(in srgb, var(--vendo-fg) 5%, transparent),
-    0 12px 40px color-mix(in srgb, var(--vendo-fg) 10%, transparent);
+    0 6px 18px color-mix(in srgb, var(--vendo-fg) 6%, transparent);
   --vendo-glass: color-mix(in srgb, var(--vendo-surface) 58%, transparent);
   --vendo-glass-strong: color-mix(in srgb, var(--vendo-surface) 82%, transparent);
   --vendo-blur: saturate(1.4) blur(40px);
@@ -124,7 +124,11 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
    tool panels, approvals, connect cards, turns alike. Render-view slots are
    excluded: FluidReveal already morphs those. */
 @media (prefers-reduced-motion: no-preference) {
-  .fl-msglist > :not(.fl-reveal) { animation: fl-item-in .32s cubic-bezier(.22, 1, .36, 1) both; }
+  /* ENG-218 — entrance-animation gating on restore: turns present when a long
+     thread is reopened carry .fl-no-entrance (set in vendo-thread), so only
+     turns that ARRIVE after restore (streamed replies, sends) run the rise.
+     A reopened 200-turn thread no longer fires 200 animations on first paint. */
+  .fl-msglist > :not(.fl-reveal):not(.fl-no-entrance) { animation: fl-item-in .32s cubic-bezier(.22, 1, .36, 1) both; }
 }
 /* Opacity+transform only — blur would force per-element rasterization, and a
    reopened 200-item thread runs every entrance at once on first paint. */
@@ -132,6 +136,18 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: none; } }
 @keyframes fl-fade-in { from { opacity: 0; } to { opacity: 1; } }
+/* ENG-218 — "show N earlier messages": reveals the deferred head of a windowed
+   long thread. Sits at the top of the list, centered, quiet until hovered. */
+.fl-load-older { align-self: center; margin: 2px auto 4px; padding: 5px 12px; cursor: pointer;
+  font: inherit; font-size: .82em; color: var(--vendo-fg-muted); background: var(--vendo-glass);
+  border: 1px solid var(--vendo-border); border-radius: 999px; transition: color .12s, border-color .12s; }
+.fl-load-older:hover { color: var(--vendo-fg); border-color: var(--vendo-border-strong); }
+/* ENG-218 — expand/collapse control for a huge single message (assistant or
+   user). Reads as a quiet inline text button under the truncated body. */
+.fl-more { display: inline-block; margin-top: 6px; padding: 0; cursor: pointer; font: inherit;
+  font-size: .88em; font-weight: 550; color: var(--vendo-accent); background: none; border: 0;
+  text-decoration: underline; text-underline-offset: 2px; }
+.fl-turn-user .fl-more { color: inherit; opacity: .8; }
 /* Visually-hidden live region — announces only the settled assistant turn. */
 .fl-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
@@ -186,7 +202,52 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 
 /* Host-component thread items (Connect card): same geometry as the render slot
    but no morph machinery — the shared item entrance is their only motion. */
-.fl-uihost { align-self: flex-start; width: 100%; }
+.fl-uihost { align-self: stretch; width: 100%; }
+/* A turn carrying a generated view must fill the column, not shrink-to-fit:
+   the assistant bubble is normally align-self:flex-start (sized to its text),
+   which makes a child view's width:100% resolve circularly to content width —
+   collapsing streaming skeletons to a sliver. Stretch the turn so the view
+   (and its forming skeletons) occupy the full width from the first frame. */
+.fl-turn-assistant:has(.fl-uihost) { align-self: stretch; max-width: 100%; width: 100%; }
+
+/* App boundary: the generated view sits inside a titled frame so it reads as a
+   discrete piece of software, cleanly separated from the surrounding chat. */
+.fl-appcard { border: 1px solid var(--vendo-border); border-radius: 14px; overflow: hidden;
+  background: var(--vendo-surface); box-shadow: var(--vendo-shadow); }
+.fl-appcard-bar { display: flex; align-items: center; gap: 8px; padding: 9px 13px;
+  border-bottom: 1px solid var(--vendo-border);
+  background: color-mix(in srgb, var(--vendo-surface) 92%, var(--vendo-fg) 8%); }
+.fl-appcard-dot { width: 8px; height: 8px; border-radius: 999px; flex: none;
+  background: var(--vendo-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--vendo-accent) 16%, transparent); }
+.fl-appcard-name { font: 600 12.5px/1 var(--vendo-font); color: var(--vendo-fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-appcard-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.fl-appcard-foot { display: flex; align-items: center; justify-content: flex-end; padding: 12px 16px;
+  border-top: 1px solid var(--vendo-border);
+  background: color-mix(in srgb, var(--vendo-surface) 94%, var(--vendo-fg) 6%); }
+.fl-appcard-pin { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Approval→notification morph: a solid-glass card (same material as the
+   overlay) that travels to the top-right on a GPU transform.
+   The layer must stay transparent — it carries .vendo-root (which paints a
+   surface bg) and is full-viewport, so a background here whites out the page. */
+.fl-morph-layer { position: fixed; inset: 0; z-index: 2147483003; pointer-events: none; background: none; }
+.fl-morph-card { display: flex; align-items: center; gap: 11px; box-sizing: border-box;
+  padding: 11px 15px; overflow: hidden; transform-origin: top left; will-change: transform, width, height, opacity;
+  border: 1px solid var(--vendo-border-strong); border-radius: 15px;
+  background: var(--vendo-glass-strong);
+  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  box-shadow: 0 20px 48px color-mix(in srgb, var(--vendo-fg) 22%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent); }
+.fl-morph-live { position: relative; width: 9px; height: 9px; flex: 0 0 9px; border-radius: 999px;
+  background: var(--vendo-accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--vendo-accent) 15%, transparent); }
+.fl-morph-copy { min-width: 0; flex: 1; }
+.fl-morph-title { overflow: hidden; color: var(--vendo-fg); font: 720 13px/1.2 var(--vendo-font);
+  text-overflow: ellipsis; white-space: nowrap; }
+.fl-morph-sub { overflow: hidden; margin-top: 3px; color: var(--vendo-fg-muted); font: 400 12px/1.2 var(--vendo-font);
+  text-overflow: ellipsis; white-space: nowrap; }
+.fl-morph-logo { display: inline-grid; width: 32px; height: 32px; flex: none; place-items: center;
+  border: 1px solid var(--vendo-border); border-radius: 10px; background: var(--vendo-surface); }
 
 /* Render slot (ENG-205): the persistent wrapper a skeleton and its replacing
    view share, so the reveal can morph. The column layout + 14px gap mirror the
@@ -197,6 +258,21 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-reveal-enter { display: flex; flex-direction: column; width: 100%; }
 .fl-reveal-exit { position: absolute; top: 0; left: 0; right: 0; pointer-events: none;
   display: flex; flex-direction: column; gap: 14px; }
+@media (prefers-reduced-motion: no-preference) {
+  /* Animate only genuine morphs (an exit layer is present) — first paint of a
+     slot's ordinary content must not perform an entrance. Transform + opacity
+     only (GPU-composited, smooth at any frame rate); the incoming component
+     rises with a soft spring while the placeholder settles out beneath it. */
+  .fl-reveal:has(.fl-reveal-exit) .fl-reveal-enter { animation: fl-reveal-in .55s cubic-bezier(.22, 1.15, .36, 1) both; }
+  .fl-reveal-exit { animation: fl-reveal-out .4s cubic-bezier(.4, 0, .5, 1) both; }
+}
+@keyframes fl-reveal-in {
+  0%   { opacity: 0; transform: translateY(8px) scale(.965); }
+  55%  { opacity: 1; }
+  100% { opacity: 1; transform: none; } }
+@keyframes fl-reveal-out {
+  0%   { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: scale(1.015); } }
 
 /* Working indicator — fluidkit metaball droplets (ENG-205); inherits the muted
    foreground as the flat-material fill. The .fl-typing dots below are its
@@ -217,6 +293,10 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   box-shadow: 0 1px 2px light-dark(rgba(20,21,26,.06), rgba(0,0,0,.28)); }
 .fl-usertext { white-space: pre-wrap; word-break: break-word; }
 .fl-turn-assistant { align-self: flex-start; max-width: 92%; line-height: 1.65; font-size: var(--vendo-text-body); letter-spacing: -.006em; }
+/* Space a turn's parts (beats, the app card, text) so the app boundary reads
+   as its own block instead of butting against the beat above and the line
+   below. Beats hug (their own 3px padding); the app card gets real air. */
+.fl-turn-assistant > .fl-appcard { margin: 10px 0; }
 /* Lone caret while a streamed turn is still empty (stable line box, no jitter). */
 .fl-caret { display: inline-block; width: 7px; min-height: 1.05em; height: 1.05em; background: var(--vendo-accent);
   vertical-align: -2px; margin-left: 2px; border-radius: 1px; animation: fl-blink 1s steps(1) infinite; }
@@ -325,6 +405,36 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 /* Integrations tray placeholder rows. */
 .fl-picker-loading .fl-glass-shimmer { height: 46px; border-radius: 11px; }
 
+/* ---------- build beats (the thread's human progress voice) ----------
+   One quiet line per tool call: pulsing orb while working, tick when done,
+   loud only on error. Completed beats yield the line to the newest one
+   (.fl-beat-superseded collapses) so a build narrates as one voice. The
+   mechanical record lives in the Activity panel. */
+/* Beats stack as one connected checklist: tight, even rhythm, no per-item
+   collapse. Consecutive beats hug (2px) so the group reads as a single block;
+   completed lines quiet to muted, the active one carries the pulsing orb. */
+.fl-beat { align-self: flex-start; display: flex; align-items: center; gap: 9px;
+  font: 500 13px/1.35 var(--vendo-font); color: var(--vendo-fg-muted); padding: 3px 2px; }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-beat { animation: fl-fade-in .24s ease both; }
+}
+.fl-beat-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-beat-orb { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  background: radial-gradient(circle at 35% 35%,
+    color-mix(in srgb, var(--vendo-accent) 55%, var(--vendo-surface) 45%), var(--vendo-accent)); }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-beat-orb { animation: fl-beat-orb 1.6s ease-in-out infinite; }
+}
+@keyframes fl-beat-orb { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.35); } }
+.fl-beat-ic { display: grid; place-items: center; width: 12px; height: 12px; flex-shrink: 0; }
+.fl-beat-done { color: var(--vendo-fg-muted); }
+.fl-beat-tick { color: var(--vendo-ok); }
+.fl-beat-error { color: var(--vendo-danger); }
+.fl-beat-x { color: var(--vendo-danger); }
+.fl-beat-count { margin-left: 2px; padding: 1px 6px; border-radius: 999px; flex-shrink: 0;
+  font: 600 10.5px/1.4 var(--vendo-font); color: var(--vendo-fg-muted);
+  border: 1px solid var(--vendo-border); background: var(--vendo-glass-strong); }
+
 /* ---------- tool chip (kept quiet; most are hidden in the thread) ---------- */
 .fl-tool { align-self: flex-start; display: flex; align-items: center; gap: 8px;
   font: 500 12px/1 var(--vendo-font); color: var(--vendo-fg-muted);
@@ -333,6 +443,9 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-tool-label { color: var(--vendo-fg); }
 .fl-tool-detail { color: var(--vendo-fg-muted); font-weight: 400;
   max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-tool-count { margin-left: 2px; padding: 1px 6px; border-radius: 999px; flex-shrink: 0;
+  font: 600 10.5px/1.5 var(--vendo-font); color: var(--vendo-fg-muted);
+  background: var(--vendo-glass); border: 1px solid var(--vendo-border); }
 .fl-tool-icon { display: grid; place-items: center; width: 14px; height: 14px; font-size: 11px; flex-shrink: 0; }
 .fl-tool-done .fl-tool-icon { color: var(--vendo-ok); }
 .fl-tool-error { color: var(--vendo-danger); border-color: var(--vendo-danger-border); }
@@ -356,6 +469,7 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   text-transform: uppercase; color: var(--vendo-fg-muted); }
 .fl-approval-title { margin-top: 4px; font: 600 13.5px/1.3 var(--vendo-heading-font); color: var(--vendo-fg);
   letter-spacing: -.01em; }
+.fl-approval-desc { margin-top: 3px; font: 400 12px/1.4 var(--vendo-font); color: var(--vendo-fg-muted); }
 .fl-approval-fields { margin: 12px 0 0; padding: 10px 0 2px; border-top: 1px solid var(--vendo-border);
   display: flex; flex-direction: column; gap: 7px; }
 .fl-approval-field { display: grid; grid-template-columns: minmax(88px, auto) 1fr; gap: 12px;
@@ -365,6 +479,7 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
    (field-rows.ts), one per line, instead of raw JSON. */
 .fl-approval-field dd { margin: 0; color: var(--vendo-fg); overflow-wrap: anywhere; white-space: pre-line; }
 .fl-approval-more { font-size: 11.5px; color: var(--vendo-fg-muted); }
+.fl-approval-desc { margin: 10px 0 0; font: 400 12.5px/1.5 var(--vendo-font); color: var(--vendo-fg-soft, var(--vendo-fg-muted)); }
 .fl-approval-actions { display: flex; gap: 8px; margin-top: 12px; }
 .fl-automation-approval { padding: 14px; }
 .fl-auto-approval-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
@@ -569,6 +684,18 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-att-rm-file { top: 50%; transform: translateY(-50%); background: var(--vendo-accent-soft); color: var(--vendo-fg); }
 .fl-att-error { font-size: 11.5px; color: var(--vendo-danger); padding: 0 2px; }
 
+/* queued-send pill (ENG-215): a message typed mid-turn parks here and auto-sends
+   when the turn completes. Reads as a pending chip, not a sent bubble. */
+.fl-queued { position: relative; display: flex; align-items: center; gap: 8px; padding: 7px 34px 7px 10px;
+  border: 1px dashed var(--vendo-border-strong); border-radius: var(--vendo-radius-sm);
+  background: var(--vendo-accent-soft); font-size: 12.5px; color: var(--vendo-fg); }
+.fl-queued-tag { flex-shrink: 0; font: 600 10px/1 var(--vendo-font); text-transform: uppercase; letter-spacing: .04em;
+  color: var(--vendo-accent); border: 1px solid color-mix(in srgb, var(--vendo-accent) 40%, transparent);
+  border-radius: 5px; padding: 3px 5px; }
+.fl-queued-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.fl-queued-hint { margin-left: auto; flex-shrink: 0; color: var(--vendo-fg-muted); font-size: 11px; }
+.fl-queued-rm { background: var(--vendo-accent-soft); color: var(--vendo-fg); }
+
 /* sent attachments (in transcript) */
 .fl-turn-user-att { align-self: flex-end; max-width: 82%; display: flex; flex-wrap: wrap; gap: 6px;
   align-items: flex-start; justify-content: flex-end; }
@@ -622,6 +749,11 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-turn-assistant:hover .fl-turn-actions,
 .fl-turn-assistant:focus-within .fl-turn-actions,
 .fl-turn-assistant:last-child .fl-turn-actions { opacity: 1; }
+/* ENG-215 — the last user turn carries an Edit action; reveal on hover/focus so
+   keyboard users reach it too (the button stays tabbable while faint). */
+.fl-turn-user .fl-turn-actions { justify-content: flex-end; }
+.fl-turn-user:hover .fl-turn-actions,
+.fl-turn-user:focus-within .fl-turn-actions { opacity: 1; }
 .fl-turn-btn { display: inline-flex; align-items: center; gap: 5px; height: 27px; min-width: 27px; padding: 0 6px;
   border: 0; border-radius: 7px; background: transparent; color: var(--vendo-fg-muted); cursor: pointer;
   font: 550 12px/1 var(--vendo-font); transition: background .12s, color .12s; }
@@ -1224,6 +1356,11 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 
 /* --- a11y hardening (design port): guaranteed focus ring + AA ceremony buttons --- */
 .vendo-root :focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
+/* Chromium applies :focus-visible to text inputs on ANY focus (including
+   clicks), so the global keyboard ring would draw a hard rectangle inside the
+   composer on every click. The composer container carries its own focus
+   treatment (.fl-composer:has(:focus-visible)); the inner textarea stays bare. */
+.vendo-root .fl-composer textarea:focus-visible { outline: none; }
 /* Amber ceremony/critical confirm buttons stay AA 4.5:1 in BOTH schemes: dark
    amber fill + white text in light (7.1:1); light amber fill + near-black text
    in dark (8.7:1, and the fill itself pops ~8:1 off the dark warn-bg) — flipping only the fill

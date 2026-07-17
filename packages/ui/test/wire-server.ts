@@ -222,7 +222,26 @@ export async function createWireServer() {
 
       if (method === "POST" && url.pathname === "/threads") {
         const input = parsedBody as { threadId?: string; message: UIMessage };
-        const threadId = input.threadId ?? "thr_minted";
+        let threadId = input.threadId ?? "thr_minted";
+        // ENG-222 — persist a freshly minted conversation so a subsequent
+        // GET /threads (the sidebar refresh) actually surfaces it. The first new
+        // conversation keeps the historical "thr_minted" id (single-turn specs
+        // rely on it); a second brand-new conversation in the same server gets a
+        // fresh unique id, so each "New conversation" truly adds a sidebar entry.
+        if (input.threadId === undefined) {
+          if (state.threads.has(threadId)) {
+            let index = 2;
+            while (state.threads.has(`thr_minted_${index}`)) index += 1;
+            threadId = `thr_minted_${index}`;
+          }
+          state.threads.set(threadId, {
+            id: threadId,
+            subject: "user_1",
+            messages: [input.message],
+            createdAt: NOW,
+            updatedAt: NOW,
+          });
+        }
         const suffix = ++turns === 1 ? "" : `_${turns}`;
         // ENG-213 — a paced long-form stream so real-browser specs can observe
         // scroll behavior MID-stream (stick-to-bottom, scroll-up release, the
@@ -246,6 +265,25 @@ export async function createWireServer() {
           const failingResponse = createUIMessageStreamResponse({ stream: failingChunks });
           failingResponse.headers.set("x-vendo-thread-id", threadId);
           await sendFetchResponse(failingResponse, response);
+          return;
+        }
+        if (sentText.includes("[stream-hang]")) {
+          // ENG-215 — a turn that starts streaming then holds the connection
+          // open indefinitely, so a real-browser capture has unlimited time to
+          // observe the mid-stream composer (queued-send pill, Stop, live input).
+          // Never used by the deterministic suite; opt-in via the marker only.
+          const hangChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_hang",
+            execute: async ({ writer }) => {
+              writer.write({ type: "text-start", id: "text_hang" });
+              writer.write({ type: "text-delta", id: "text_hang", delta: "Working on the welcome flow" });
+              await new Promise<void>(() => undefined);
+            },
+          });
+          const hangResponse = createUIMessageStreamResponse({ stream: hangChunks });
+          hangResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(hangResponse, response);
           return;
         }
         if (sentText.includes("[stream-long]")) {

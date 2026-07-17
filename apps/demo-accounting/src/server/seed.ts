@@ -62,7 +62,7 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
   const staff = STAFF.map(s => ({ ...s }))
 
   // 12 clients. The first 8 have at least one missing document (the dashboard's
-  // hero number); the last 4 are fully verified. Rivera and Chen sit INSIDE the
+  // hero number); the last 4 are fully verified. Blue Bottle and Linear sit INSIDE the
   // 3-day deadline window so deadline and document-chase views have urgent
   // examples; the rest stagger out to ~10 weeks.
   //
@@ -70,37 +70,37 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
   // ON PURPOSE: approval-gated Gmail sends must land in an inbox we own — never
   // at third-party domains.
   const clients: Client[] = [
-    { id: "cl_rivera", businessName: "Rivera Landscaping LLC", entityType: "s_corp",
+    { id: "cl_rivera", businessName: "Blue Bottle Coffee", entityType: "s_corp",
       contactName: "Marisol Rivera", contactEmail: "yousef+rivera@vendo.run",
       assigneeId: "st_maya", filingDeadline: deadline(anchor, 2) },
-    { id: "cl_chen", businessName: "Chen Consulting", entityType: "sole_prop",
+    { id: "cl_chen", businessName: "Linear", entityType: "sole_prop",
       contactName: "Wei Chen", contactEmail: "yousef+chen@vendo.run",
       assigneeId: "st_maya", filingDeadline: deadline(anchor, 3) },
-    { id: "cl_delgado", businessName: "Delgado Restaurant Group", entityType: "partnership",
+    { id: "cl_delgado", businessName: "Sweetgreen", entityType: "partnership",
       contactName: "Antonio Delgado", contactEmail: "yousef+delgado@vendo.run",
       assigneeId: "st_maya", filingDeadline: deadline(anchor, 21) },
-    { id: "cl_harborview", businessName: "Harborview Fitness", entityType: "s_corp",
+    { id: "cl_harborview", businessName: "Equinox", entityType: "s_corp",
       contactName: "Dana Kowalski", contactEmail: "yousef+harborview@vendo.run",
       assigneeId: "st_priya", filingDeadline: deadline(anchor, 25) },
-    { id: "cl_foster", businessName: "Foster Home Services", entityType: "sole_prop",
+    { id: "cl_foster", businessName: "TaskRabbit", entityType: "sole_prop",
       contactName: "Greg Foster", contactEmail: "yousef+foster@vendo.run",
       assigneeId: "st_tomas", filingDeadline: deadline(anchor, 29) },
     { id: "cl_patel", businessName: "Anjali Patel", entityType: "individual",
       contactName: "Anjali Patel", contactEmail: "yousef+patel@vendo.run",
       assigneeId: "st_maya", filingDeadline: deadline(anchor, 33) },
-    { id: "cl_kim", businessName: "Kim & Associates Realty", entityType: "partnership",
+    { id: "cl_kim", businessName: "Compass", entityType: "partnership",
       contactName: "Susan Kim", contactEmail: "yousef+kim@vendo.run",
       assigneeId: "st_priya", filingDeadline: deadline(anchor, 38) },
-    { id: "cl_cortez", businessName: "Cortez Auto Repair", entityType: "sole_prop",
+    { id: "cl_cortez", businessName: "Jiffy Lube", entityType: "sole_prop",
       contactName: "Luis Cortez", contactEmail: "yousef+cortez@vendo.run",
       assigneeId: "st_tomas", filingDeadline: deadline(anchor, 43) },
-    { id: "cl_lakeside", businessName: "Lakeside Veterinary Clinic", entityType: "c_corp",
+    { id: "cl_lakeside", businessName: "Banfield Pet Hospital", entityType: "c_corp",
       contactName: "Emily Rhodes", contactEmail: "yousef+lakeside@vendo.run",
       assigneeId: "st_priya", filingDeadline: deadline(anchor, 49) },
-    { id: "cl_whitfield", businessName: "Whitfield Design Studio", entityType: "sole_prop",
+    { id: "cl_whitfield", businessName: "Figma", entityType: "sole_prop",
       contactName: "Jonah Whitfield", contactEmail: "yousef+whitfield@vendo.run",
       assigneeId: "st_daniel", filingDeadline: deadline(anchor, 55) },
-    { id: "cl_mercer", businessName: "Mercer & Boyd Law", entityType: "partnership",
+    { id: "cl_mercer", businessName: "LegalZoom", entityType: "partnership",
       contactName: "Alice Mercer", contactEmail: "yousef+mercer@vendo.run",
       assigneeId: "st_daniel", filingDeadline: deadline(anchor, 62) },
     { id: "cl_ellison", businessName: "Grant Ellison", entityType: "individual",
@@ -126,9 +126,9 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
     })
   }
 
-  // Rivera Landscaping LLC — the demo hero: 3 of 6 received.
+  // Blue Bottle Coffee — the demo hero: 3 of 6 received.
   doc("doc_rivera_prior_return", "cl_rivera", "Prior-year return", "verified",
-    { name: "rivera-landscaping-2024-return.pdf", daysAgo: 21 })
+    { name: "bluebottle-2024-return.pdf", daysAgo: 21 })
   doc("doc_rivera_bank", "cl_rivera", "Bank statements (2025)", "received",
     { name: "boa-business-statements-jan-jun.pdf", daysAgo: 3 })
   doc("doc_rivera_payroll", "cl_rivera", "Payroll summary", "needs_review",
@@ -137,19 +137,19 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
   doc("doc_rivera_1099", "cl_rivera", "1099-NEC", "missing")
   doc("doc_rivera_receipts", "cl_rivera", "Receipts", "missing")
 
-  // Chen Consulting — 3 of 5.
+  // Linear — 3 of 5.
   doc("doc_chen_prior_return", "cl_chen", "Prior-year return", "verified",
-    { name: "chen-consulting-2024-return.pdf", daysAgo: 14 })
+    { name: "linear-2024-return.pdf", daysAgo: 14 })
   doc("doc_chen_1099", "cl_chen", "1099-NEC", "received",
-    { name: "chen-1099-nec-clients.pdf", daysAgo: 4 })
+    { name: "linear-1099-nec-clients.pdf", daysAgo: 4 })
   doc("doc_chen_mileage", "cl_chen", "Mileage log", "verified",
     { name: "chen-2025-mileage-log.xlsx", daysAgo: 10 })
   doc("doc_chen_bank", "cl_chen", "Bank statements (2025)", "missing")
   doc("doc_chen_receipts", "cl_chen", "Receipts", "missing")
 
-  // Delgado Restaurant Group — 4 of 6.
+  // Sweetgreen — 4 of 6.
   doc("doc_delgado_prior_return", "cl_delgado", "Prior-year return", "verified",
-    { name: "delgado-group-2024-1065.pdf", daysAgo: 18 })
+    { name: "sweetgreen-2024-1065.pdf", daysAgo: 18 })
   doc("doc_delgado_bank", "cl_delgado", "Bank statements (2025)", "verified",
     { name: "chase-business-statements-h1.pdf", daysAgo: 9 })
   doc("doc_delgado_payroll", "cl_delgado", "Payroll summary", "received",
@@ -159,19 +159,19 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
   doc("doc_delgado_1099", "cl_delgado", "1099-NEC", "missing")
   doc("doc_delgado_w2", "cl_delgado", "W-2", "missing")
 
-  // Harborview Fitness — 3 of 5.
+  // Equinox — 3 of 5.
   doc("doc_harborview_prior_return", "cl_harborview", "Prior-year return", "verified",
-    { name: "harborview-2024-1120s.pdf", daysAgo: 12 })
+    { name: "equinox-2024-1120s.pdf", daysAgo: 12 })
   doc("doc_harborview_payroll", "cl_harborview", "Payroll summary", "verified",
-    { name: "harborview-payroll-2025.pdf", daysAgo: 8 })
+    { name: "equinox-payroll-2025.pdf", daysAgo: 8 })
   doc("doc_harborview_receipts", "cl_harborview", "Receipts", "received",
     { name: "equipment-receipts-2025.pdf", daysAgo: 2 })
   doc("doc_harborview_bank", "cl_harborview", "Bank statements (2025)", "missing")
   doc("doc_harborview_w2", "cl_harborview", "W-2", "missing")
 
-  // Foster Home Services — 1 of 4, furthest behind.
+  // TaskRabbit — 1 of 4, furthest behind.
   doc("doc_foster_prior_return", "cl_foster", "Prior-year return", "received",
-    { name: "foster-2024-return-scan.pdf", daysAgo: 5 })
+    { name: "taskrabbit-2024-return-scan.pdf", daysAgo: 5 })
   doc("doc_foster_1099", "cl_foster", "1099-NEC", "missing")
   doc("doc_foster_bank", "cl_foster", "Bank statements (2025)", "missing")
   doc("doc_foster_receipts", "cl_foster", "Receipts", "missing")
@@ -184,16 +184,16 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
   doc("doc_patel_1099", "cl_patel", "1099-NEC", "missing")
   doc("doc_patel_receipts", "cl_patel", "Receipts", "missing")
 
-  // Kim & Associates Realty — 2 of 5.
+  // Compass — 2 of 5.
   doc("doc_kim_prior_return", "cl_kim", "Prior-year return", "verified",
-    { name: "kim-associates-2024-1065.pdf", daysAgo: 20 })
+    { name: "compass-2024-1065.pdf", daysAgo: 20 })
   doc("doc_kim_bank", "cl_kim", "Bank statements (2025)", "received",
     { name: "wells-fargo-statements-jan-jun.pdf", daysAgo: 6 })
   doc("doc_kim_payroll", "cl_kim", "Payroll summary", "missing")
   doc("doc_kim_1099", "cl_kim", "1099-NEC", "missing")
   doc("doc_kim_receipts", "cl_kim", "Receipts", "missing")
 
-  // Cortez Auto Repair — 1 of 5. Receipts were rejected once and re-uploaded.
+  // Jiffy Lube — 1 of 5. Receipts were rejected once and re-uploaded.
   doc("doc_cortez_receipts", "cl_cortez", "Receipts", "received",
     { name: "shop-receipts-2025-resubmitted.pdf", daysAgo: 4 })
   doc("doc_cortez_prior_return", "cl_cortez", "Prior-year return", "missing")
@@ -202,39 +202,39 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
   doc("doc_cortez_1099", "cl_cortez", "1099-NEC", "missing")
   doc("doc_cortez_payroll", "cl_cortez", "Payroll summary", "missing")
 
-  // Lakeside Veterinary Clinic — complete.
+  // Banfield Pet Hospital — complete.
   doc("doc_lakeside_prior_return", "cl_lakeside", "Prior-year return", "verified",
-    { name: "lakeside-vet-2024-1120.pdf", daysAgo: 35 })
+    { name: "banfield-2024-1120.pdf", daysAgo: 35 })
   doc("doc_lakeside_bank", "cl_lakeside", "Bank statements (2025)", "verified",
-    { name: "lakeside-usbank-statements-h1.pdf", daysAgo: 11 })
+    { name: "banfield-usbank-statements-h1.pdf", daysAgo: 11 })
   doc("doc_lakeside_payroll", "cl_lakeside", "Payroll summary", "verified",
-    { name: "lakeside-adp-payroll-2025.pdf", daysAgo: 11 })
+    { name: "banfield-adp-payroll-2025.pdf", daysAgo: 11 })
   doc("doc_lakeside_w2", "cl_lakeside", "W-2", "verified",
-    { name: "lakeside-w2-batch-2025.pdf", daysAgo: 13 })
+    { name: "banfield-w2-batch-2025.pdf", daysAgo: 13 })
   doc("doc_lakeside_1099", "cl_lakeside", "1099-NEC", "verified",
-    { name: "lakeside-1099-nec-contractors.pdf", daysAgo: 13 })
+    { name: "banfield-1099-nec-contractors.pdf", daysAgo: 13 })
   doc("doc_lakeside_receipts", "cl_lakeside", "Receipts", "verified",
-    { name: "lakeside-expense-receipts-2025.pdf", daysAgo: 10 })
+    { name: "banfield-expense-receipts-2025.pdf", daysAgo: 10 })
 
-  // Whitfield Design Studio — complete.
+  // Figma — complete.
   doc("doc_whitfield_prior_return", "cl_whitfield", "Prior-year return", "verified",
-    { name: "whitfield-2024-return.pdf", daysAgo: 28 })
+    { name: "figma-2024-return.pdf", daysAgo: 28 })
   doc("doc_whitfield_bank", "cl_whitfield", "Bank statements (2025)", "verified",
     { name: "mercury-statements-jan-jun.pdf", daysAgo: 17 })
   doc("doc_whitfield_1099", "cl_whitfield", "1099-NEC", "verified",
-    { name: "whitfield-1099s-2025.pdf", daysAgo: 17 })
+    { name: "figma-1099s-2025.pdf", daysAgo: 17 })
   doc("doc_whitfield_receipts", "cl_whitfield", "Receipts", "verified",
     { name: "studio-expense-receipts.pdf", daysAgo: 15 })
 
-  // Mercer & Boyd Law — complete.
+  // LegalZoom — complete.
   doc("doc_mercer_prior_return", "cl_mercer", "Prior-year return", "verified",
-    { name: "mercer-boyd-2024-1065.pdf", daysAgo: 30 })
+    { name: "legalzoom-2024-1065.pdf", daysAgo: 30 })
   doc("doc_mercer_bank", "cl_mercer", "Bank statements (2025)", "verified",
-    { name: "mercer-boyd-statements-h1.pdf", daysAgo: 19 })
+    { name: "legalzoom-statements-h1.pdf", daysAgo: 19 })
   doc("doc_mercer_payroll", "cl_mercer", "Payroll summary", "verified",
-    { name: "mercer-boyd-payroll-2025.pdf", daysAgo: 19 })
+    { name: "legalzoom-payroll-2025.pdf", daysAgo: 19 })
   doc("doc_mercer_w2", "cl_mercer", "W-2", "verified",
-    { name: "mercer-boyd-w2s.pdf", daysAgo: 22 })
+    { name: "legalzoom-w2s.pdf", daysAgo: 22 })
   doc("doc_mercer_receipts", "cl_mercer", "Receipts", "verified",
     { name: "firm-expense-receipts-2025.pdf", daysAgo: 18 })
 
@@ -362,7 +362,7 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
 
   const activity: ActivityEvent[] = [
     { id: "act_001", type: "deadline_approaching", clientId: "cl_rivera",
-      summary: "Rivera Landscaping LLC filing deadline is 2 days out with 3 documents missing",
+      summary: "Blue Bottle Coffee filing deadline is 2 days out with 3 documents missing",
       at: iso(hoursAgo(anchor, 1, 10)) },
     { id: "act_002", type: "upload_received", clientId: "cl_delgado",
       summary: "Antonio Delgado uploaded Payroll summary (adp-payroll-summary-q1-q2.pdf)",
@@ -380,16 +380,16 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
       summary: "Marisol Rivera uploaded Bank statements (boa-business-statements-jan-jun.pdf)",
       at: iso(daysAgo(anchor, 3, 14, 41)) },
     { id: "act_007", type: "document_verified", clientId: "cl_kim",
-      summary: "Prior-year return verified for Kim & Associates Realty",
+      summary: "Prior-year return verified for Compass",
       at: iso(daysAgo(anchor, 4, 9, 30)) },
     { id: "act_008", type: "upload_received", clientId: "cl_cortez",
       summary: "Luis Cortez re-uploaded Receipts (shop-receipts-2025-resubmitted.pdf)",
       at: iso(daysAgo(anchor, 4, 13, 15)) },
     { id: "act_009", type: "document_rejected", clientId: "cl_cortez",
-      summary: "Bank statements rejected for Cortez Auto Repair: personal account uploaded instead of business",
+      summary: "Bank statements rejected for Jiffy Lube: personal account uploaded instead of business",
       at: iso(daysAgo(anchor, 8, 11, 40)) },
     { id: "act_010", type: "document_verified", clientId: "cl_lakeside",
-      summary: "Final document verified for Lakeside Veterinary Clinic; checklist complete",
+      summary: "Final document verified for Banfield Pet Hospital; checklist complete",
       at: iso(daysAgo(anchor, 10, 15, 20)) },
   ]
   activity.sort((a, b) => +new Date(b.at) - +new Date(a.at))

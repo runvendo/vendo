@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { appIdSchema, isoDateTimeSchema, type AppId, type IsoDateTime, type Json } from "./ids.js";
 import { principalSchema, type Principal } from "./principal.js";
-import { triggerRefSchema, type RunContext, type TriggerRef } from "./run-context.js";
+import type { RunContext } from "./run-context.js";
+import { triggerRefSchema, type TriggerRef } from "./triggers.js";
 import type { GuardDecision } from "./guard.js";
 import type { ToolOutcome } from "./tools.js";
 

@@ -24,7 +24,7 @@ test.use({ reducedMotion: "reduce" });
 for (const scenario of chromeScenarios) {
   test(`${scenario} has zero WCAG 2.1 A/AA axe violations`, async ({ page }) => {
     await openScenario(page, scenario);
-    if (scenario === "thread") await expect(page.getByLabel("Approval for host_email_send")).toBeVisible();
+    if (scenario === "thread") await expect(page.getByLabel("Approval for Email send")).toBeVisible();
     if (scenario === "overlay") await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
     if (scenario === "page") await expect(page.getByRole("tab", { name: "Apps" })).toHaveAttribute("aria-selected", "true");
     if (scenario === "palette") await expect(page.getByRole("dialog", { name: "Vendo command palette" })).toBeVisible();

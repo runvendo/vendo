@@ -4,6 +4,7 @@ import type { ExtractedTool } from "../formats.js";
 import { detectGraphql, extractGraphql, graphqlEndpoints } from "./graphql.js";
 import { extractOpenApi } from "./openapi.js";
 import { scanRoutes } from "./route-scan.js";
+import { detectServerActions, extractServerActions } from "./server-actions.js";
 import { detectTrpc, extractTrpc, trpcMounts } from "./trpc.js";
 
 export interface ExtractorResult {
@@ -61,6 +62,12 @@ const graphqlExtractor: Extractor = {
   extract: extractGraphql,
 };
 
+const serverActionsExtractor: Extractor = {
+  name: "server-actions",
+  detect: detectServerActions,
+  extract: extractServerActions,
+};
+
 const routeScanExtractor: Extractor = {
   name: "route-scan",
   async detect() {
@@ -73,6 +80,7 @@ export const extractorRegistrations: readonly Extractor[] = [
   openApiExtractor,
   trpcExtractor,
   graphqlExtractor,
+  serverActionsExtractor,
   routeScanExtractor,
 ];
 

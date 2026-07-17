@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Search, Users } from "lucide-react"
 import useSWR from "swr"
+import { ClientMark } from "@/components/clients/client-marks"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -57,13 +58,16 @@ function ClientRow({ client }: { client: ClientSummary }) {
         <Link
           href={`/clients/${client.id}`}
           onClick={e => e.stopPropagation()}
-          className="block min-w-0 focus:outline-none focus-visible:text-evergreen-700"
+          className="flex min-w-0 items-center gap-3 focus:outline-none focus-visible:underline"
         >
-          <span className="block truncate text-[13.5px] font-medium transition-colors group-hover:text-evergreen-700">
-            {client.businessName}
-          </span>
-          <span className="mt-0.5 block truncate text-[12px] text-ink-faint">
-            {client.contactName} · {client.contactEmail}
+          <ClientMark clientId={client.id} name={client.businessName} size={32} />
+          <span className="min-w-0">
+            <span className="block truncate text-[13.5px] font-medium underline-offset-2 transition-colors group-hover:underline">
+              {client.businessName}
+            </span>
+            <span className="mt-0.5 block truncate text-[12px] text-ink-faint">
+              {client.contactName} · {client.contactEmail}
+            </span>
           </span>
         </Link>
       </td>
@@ -214,7 +218,7 @@ export function ClientTable() {
             onChange={e => setQuery(e.target.value)}
             placeholder="Search business or contact…"
             aria-label="Search clients"
-            className="h-8 w-full rounded-lg border border-line bg-surface pr-3 pl-8 text-[13px] text-ink placeholder:text-ink-faint focus:border-evergreen-400 focus:bg-card focus:ring-2 focus:ring-evergreen-100 focus:outline-none"
+            className="h-8 w-full rounded-lg border border-line bg-surface pr-3 pl-8 text-[13px] text-ink placeholder:text-ink-faint focus:border-line-strong focus:bg-card focus:ring-2 focus:ring-line focus:outline-none"
           />
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by status">
@@ -229,13 +233,13 @@ export function ClientTable() {
                 className={cn(
                   "flex h-7 items-center gap-1.5 rounded-full px-3 text-[12px] font-medium transition-colors",
                   active
-                    ? "bg-evergreen-800 text-white"
+                    ? "bg-ink text-white"
                     : "border border-line text-ink-soft hover:bg-surface hover:text-ink",
                 )}
               >
                 {f.label}
                 {counts && (
-                  <span className={cn("tabular-nums", active ? "text-evergreen-200" : "text-ink-faint")}>
+                  <span className={cn("tabular-nums", active ? "text-white/60" : "text-ink-faint")}>
                     {counts[f.value]}
                   </span>
                 )}

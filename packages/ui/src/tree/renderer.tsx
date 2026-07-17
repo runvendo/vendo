@@ -22,6 +22,7 @@ import { themeCssVariables } from "../theme.js";
 import type { InClientVenue, PinDrift } from "../wire-types.js";
 import { resolvePointer } from "./bindings.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
+import { FluidReveal } from "./fluid-reveal.js";
 import { InClientMount } from "./host-mount.js";
 import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
@@ -203,8 +204,8 @@ function NodeRenderer(props: NodeRendererProps) {
   const node = props.nodes.get(props.nodeId);
   if (!node) {
     return (
-      <span data-dangling-node={props.nodeId}>
-        <Skeleton />
+      <span data-dangling-node={props.nodeId} style={{ display: "block", width: "100%" }}>
+        <Skeleton height="72px" />
       </span>
     );
   }
@@ -224,10 +225,11 @@ function NodeRenderer(props: NodeRendererProps) {
   let content: ReactNode;
   if (node.source === "generated") {
     const source = props.generated[node.component];
+    const revealKey = source === undefined ? "forming" : "ready";
     if (source === undefined) {
       content = props.streaming ? (
-        <span data-streaming-component={node.component}>
-          <Skeleton />
+        <span data-streaming-component={node.component} style={{ display: "block", width: "100%" }}>
+          <Skeleton height="72px" />
         </span>
       ) : (
         <ContainedNotice label="Unknown generated component">
@@ -287,6 +289,9 @@ function NodeRenderer(props: NodeRendererProps) {
         </>
       );
     }
+    // ENG-205 render-slot morph: the streaming placeholder and the arrived
+    // component share this wrapper, so the swap morphs instead of popping.
+    content = <FluidReveal stateKey={revealKey}>{content}</FluidReveal>;
   } else {
     const primitive = PREWIRED_COMPONENTS[node.component];
     const host = props.components[node.component] as ComponentType<Record<string, unknown>> | undefined;

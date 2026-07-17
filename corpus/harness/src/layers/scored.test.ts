@@ -338,6 +338,78 @@ describe("runScoredLayer", () => {
     expect(unsafe.layer.hardFailure).toBe(true);
   });
 
+  it("keys server-action tools by module#export identity and applies write-safety", async () => {
+    const { repoDir, expectationsRoot } = await makeFixture();
+    const serverActionExpectations: RepoExpectations = {
+      ...baseExpectations,
+      tools: [
+        { name: "createInvoice", kind: "server-action", module: "app/actions/invoices.ts", export: "createInvoice", readOrWrite: "write" },
+        { name: "deleteInvoice", kind: "server-action", module: "app/actions/invoices.ts", export: "deleteInvoice", readOrWrite: "write" },
+      ],
+      annotations: [
+        { name: "createInvoice", mutating: true, dangerous: false },
+        { name: "deleteInvoice", mutating: true, dangerous: true },
+      ],
+    };
+    await writeExpected(expectationsRoot, "repo-one", serverActionExpectations);
+    await mkdir(path.join(repoDir, ".vendo"), { recursive: true });
+    await writeInitOutput(repoDir); // writes theme.json + route tools.json; overwrite tools below
+    await writeFile(
+      path.join(repoDir, ".vendo/tools.json"),
+      JSON.stringify({
+        format: "vendo/tools@1",
+        tools: [
+          {
+            name: "host_create_invoice",
+            description: "server action app/actions/invoices.ts#createInvoice",
+            inputSchema: { type: "object", properties: {} },
+            risk: "write",
+            binding: { kind: "server-action", module: "app/actions/invoices.ts", exportName: "createInvoice", params: ["input"] },
+          },
+          {
+            name: "host_delete_invoice",
+            description: "server action app/actions/invoices.ts#deleteInvoice",
+            inputSchema: { type: "object", properties: {} },
+            risk: "destructive",
+            binding: { kind: "server-action", module: "app/actions/invoices.ts", exportName: "deleteInvoice", params: ["id"] },
+          },
+        ],
+      }, null, 2) + "\n",
+    );
+
+    const result = await runScoredLayer({
+      repoName: "repo-one",
+      repoDir,
+      expectationsRoot,
+      now: () => new Date("2026-07-06T12:00:00.000Z"),
+    });
+    const checks = checkById(result.layer);
+    expect(checks["tools.precision"]).toMatchObject({ pass: true });
+    expect(checks["tools.recall"]).toMatchObject({ pass: true });
+    expect(checks["annotations.match"]).toMatchObject({ pass: true });
+    expect(checks["annotations.write-safety"]).toMatchObject({ pass: true });
+
+    // A read-labeled server action is unsafe exactly like a read-labeled POST.
+    await writeFile(
+      path.join(repoDir, ".vendo/tools.json"),
+      JSON.stringify({
+        format: "vendo/tools@1",
+        tools: [
+          {
+            name: "host_create_invoice",
+            description: "server action app/actions/invoices.ts#createInvoice",
+            inputSchema: { type: "object", properties: {} },
+            risk: "read",
+            binding: { kind: "server-action", module: "app/actions/invoices.ts", exportName: "createInvoice", params: ["input"] },
+          },
+        ],
+      }, null, 2) + "\n",
+    );
+    const unsafe = await runScoredLayer({ repoName: "repo-one", repoDir, expectationsRoot });
+    expect(checkById(unsafe.layer)["annotations.write-safety"]).toMatchObject({ pass: false });
+    expect(unsafe.layer.hardFailure).toBe(true);
+  });
+
   it("skips repos that have not been labeled yet", async () => {
     const { repoDir, expectationsRoot } = await makeFixture();
     await writeInitOutput(repoDir);

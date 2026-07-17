@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "seedNotes": "teable deep-tier flagship. The manifest E2E seed (`prisma-db-seed -- --e2e`) provisions the admin test@e2e.com / 12345678, a 'test space', and a 'test base' with its default grid table. These five tasks are the gnarly client-orchestrated flows the spec calls out (§6): each is something teable's own frontend does with client-side logic across several API calls, so NO single extracted primitive covers it. They pass only with the refine-produced compound tools and capability briefs in `.vendo/capabilities.json` in play (compound binding + `vendo refine`, 04-actions §6). Every task is a write, so a passing attempt must surface an approval card before the compound's steps execute (per-step approvals, 04-actions §6) and finish with no error toast. Assertions match by regex on the tool/compound name rather than an exact slug, so extraction/refine name changes do not falsely fail the suite.",
+  "k": 2,
+  "timeoutMs": 120000,
+  "threshold": 0.8,
+  "conversations": [
+    {
+      "id": "bulk-paste-range",
+      "description": "Paste a block of values across a cell range — a client-orchestrated multi-record update with no single primitive.",
+      "prompts": [
+        "In the test base's grid table, paste these three rows into the Name and Status columns starting at the first record: 'Launch, To Do' then 'Docs, In Progress' then 'Billing, Done'."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "paste|range|record|cell|row|field|update" } },
+        { "kind": "approval-card-shown" },
+        { "kind": "no-error-toast" }
+      ]
+    },
+    {
+      "id": "field-type-convert-backfill",
+      "description": "Convert a field's type and backfill existing records — teable does the conversion plus a per-record rewrite client-side.",
+      "prompts": [
+        "Convert the Status column in the test base grid table to a single-select field, keeping the existing values as options so the current rows are backfilled."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "field|column|convert|type|record|update|backfill" } },
+        { "kind": "approval-card-shown" },
+        { "kind": "no-error-toast" }
+      ]
+    },
+    {
+      "id": "view-reconfigure",
+      "description": "Reconfigure a view's filter, sort, and group in one ask — several view-mutation calls the frontend batches.",
+      "prompts": [
+        "In the grid view of the test base table, filter to rows where Status is Done, sort by Name ascending, and group by Status."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "view|filter|sort|group|order" } },
+        { "kind": "approval-card-shown" },
+        { "kind": "no-error-toast" }
+      ]
+    },
+    {
+      "id": "csv-import-field-creation",
+      "description": "Import CSV creating fields — teable inspects headers, creates a table + a field per column, then inserts rows.",
+      "prompts": [
+        "Import this CSV into a new table in the test base, creating a column for each header: 'Task,Owner,Done\\nLaunch,Ada,false\\nDocs,Lin,true'."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "import|csv|table|field|column|record|create" } },
+        { "kind": "approval-card-shown" },
+        { "kind": "no-error-toast" }
+      ]
+    },
+    {
+      "id": "kanban-drag",
+      "description": "Move a record between kanban stacks — a drag the frontend turns into a group-by-field update on that record.",
+      "prompts": [
+        "On the test base kanban board grouped by Status, move the 'Launch' record from the To Do stack into the In Progress stack."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "record|update|status|move|kanban|view|field" } },
+        { "kind": "approval-card-shown" },
+        { "kind": "no-error-toast" }
+      ]
+    }
+  ]
+}

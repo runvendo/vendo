@@ -1,16 +1,16 @@
 {
   "colors": {
-    "background": "#f7f5f1",
+    "background": "#fbfbfa",
     "surface": "#ffffff",
-    "text": "#221e19",
-    "muted": "#5c554b",
-    "accent": "#266755",
+    "text": "#111111",
+    "muted": "#46443f",
+    "accent": "#111111",
     "accentText": "#FFFFFF",
-    "danger": "#B42318",
-    "border": "#DED8CF"
+    "danger": "#B0473A",
+    "border": "#ECEBE8"
   },
   "typography": {
-    "fontFamily": "Hanken Grotesk, ui-sans-serif, system-ui, sans-serif",
+    "fontFamily": "Inter, ui-sans-serif, system-ui, sans-serif",
     "baseSize": "15px"
   },
   "radius": {

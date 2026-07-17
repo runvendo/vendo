@@ -1,0 +1,4 @@
+[proxy] OpenAI pass-through listening on http://127.0.0.1:8787 -> https://api.openai.com
+[proxy] #1 2026-07-16T11:33:51.276Z POST /v1/chat/completions model=gpt-4.1-mini -> 400
+[proxy] #2 2026-07-16T11:37:27.074Z POST /v1/responses model=gpt-4.1-mini -> 200
+[proxy] #3 2026-07-16T11:37:32.394Z POST /v1/responses model=gpt-4.1-mini -> 200

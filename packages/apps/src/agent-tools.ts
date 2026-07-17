@@ -1,4 +1,5 @@
 import {
+  VENDO_APPS_CREATE_TOOL,
   VENDO_VIEW_STREAM,
   VendoError,
   vendoViewStreamId,
@@ -19,7 +20,8 @@ const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
 
 const descriptors: ToolDescriptor[] = [
   {
-    name: "vendo_apps_create",
+    // The agent's streaming-view bridge keys on this exact core-defined name.
+    name: VENDO_APPS_CREATE_TOOL,
     description: "Create a Vendo app from a natural-language prompt.",
     inputSchema: {
       $schema: DRAFT_2020_12,

@@ -29,6 +29,14 @@ export async function expectKeyboardReachability(page: Page, scopeSelector = "bo
     const candidates = [...scope.querySelectorAll<HTMLElement>(selector)];
     return candidates.filter(element => {
       if (element.matches(":disabled") || element.tabIndex < 0) return false;
+      // `checkVisibility()` is the source of truth for reachability: it accounts
+      // for `content-visibility: hidden` subtrees (e.g. the controls inside a
+      // collapsed <details>), which modern Chromium keeps laid out with a
+      // non-zero box and `display` other than `none` — so the old
+      // offset/display heuristic counted them as tab targets even though the
+      // browser correctly skips them in the sequential focus order. The extra
+      // style/offset checks stay as a belt-and-braces guard for older engines.
+      if (!element.checkVisibility()) return false;
       const style = getComputedStyle(element);
       return style.visibility !== "hidden"
         && style.display !== "none"

@@ -18,7 +18,7 @@
 // exports that packages/ui/src dynamically imports (voice-blob.tsx,
 // fluid-thinking.tsx). The type-only import of the REAL prop types keeps these
 // stubs honest against fluidkit 0.5's contract.
-import type { VoiceBallProps, ThinkingProps } from "fluidkit";
+import type { VoiceBallProps, ThinkingProps, MorphSurfaceProps } from "fluidkit";
 
 export function VoiceBall({ size, mode }: VoiceBallProps) {
   return <span data-fluidkit-stub="voice-ball" data-mode={mode} style={{ width: size, height: size }} />;
@@ -26,4 +26,8 @@ export function VoiceBall({ size, mode }: VoiceBallProps) {
 
 export function Thinking({ label, size }: ThinkingProps) {
   return <span data-fluidkit-stub="thinking" aria-label={label} style={{ width: size, height: size }} />;
+}
+
+export function MorphSurface({ open, openContent, closedContent }: MorphSurfaceProps) {
+  return <div data-fluidkit-stub="morph-surface" data-open={open}>{open ? openContent : closedContent}</div>;
 }

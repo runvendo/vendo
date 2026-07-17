@@ -20,7 +20,7 @@ function Bubble({ message }: { message: Message }) {
         className={cn(
           "max-w-[80%] rounded-xl px-3.5 py-2.5 text-[13px] leading-relaxed",
           firm
-            ? "rounded-br-sm border border-evergreen-100 bg-evergreen-50"
+            ? "rounded-br-sm border border-line bg-line/60"
             : "rounded-bl-sm border border-line bg-surface",
         )}
       >
@@ -125,7 +125,7 @@ export function MessageThread({ clientId, contactName }: { clientId: string; con
                 }}
                 placeholder={contactName ? `Message ${contactName}…` : "Write a message…"}
                 aria-label="Message"
-                className="min-h-[60px] flex-1 resize-none rounded-lg border border-line bg-surface px-3 py-2 text-[13px] leading-relaxed text-ink placeholder:text-ink-faint focus:border-evergreen-400 focus:bg-card focus:ring-2 focus:ring-evergreen-100 focus:outline-none"
+                className="min-h-[60px] flex-1 resize-none rounded-lg border border-line bg-surface px-3 py-2 text-[13px] leading-relaxed text-ink placeholder:text-ink-faint focus:border-line-strong focus:bg-card focus:ring-2 focus:ring-line focus:outline-none"
               />
               <Button variant="primary" type="submit" disabled={!draft.trim() || sending} className="h-8 px-3">
                 <Send size={13} strokeWidth={1.75} />

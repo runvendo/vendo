@@ -69,7 +69,7 @@ export function ClientPanel({ client }: { client: ClientSummary }) {
             <p className="text-[13px] font-medium">{client.contactName}</p>
             <a
               href={`mailto:${client.contactEmail}`}
-              className="mt-0.5 inline-flex items-center gap-1.5 text-[12.5px] text-evergreen-600 transition-colors hover:text-evergreen-800"
+              className="mt-0.5 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-ink underline-offset-2 transition-colors hover:underline"
             >
               <Mail size={12} strokeWidth={1.75} />
               {client.contactEmail}

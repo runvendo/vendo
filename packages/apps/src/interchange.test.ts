@@ -247,7 +247,11 @@ describe(".vendoapp interchange through createApps", () => {
     });
   });
 
-  it("creates imported app directories with the conventional PORT environment", async () => {
+  it("provisions imported app directories with the full §4.2 run environment", async () => {
+    // ENG-347 — the rebuilt machine must carry the SAME run env the create/edit
+    // path injects (PORT + proxy URL + run token + declared secret handles), or
+    // the egress fetch shim declines to install and the imported rung-2/3 app
+    // cannot reach host tools or the egress endpoint until it is re-edited.
     const base = fakeSandbox();
     let createSpec: Parameters<SandboxAdapter["create"]>[0] | undefined;
     const sandbox: SandboxAdapter = {
@@ -258,9 +262,25 @@ describe(".vendoapp interchange through createApps", () => {
       resume: (ref) => base.resume(ref),
     };
     const runtime = createApps({
-      store: memoryStore(), guard: guardFixture(), tools, sandbox, catalog: [],
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog: [],
+      proxyUrl: "https://proxy.test",
     });
-    const { id: _id, ...exported } = document();
+    const { id: _id, ...exported } = document({
+      secrets: ["STRIPE_KEY"],
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{
+          id: "root",
+          component: "Button",
+          props: { onClick: { action: "fn:send_invoice" } },
+        }],
+      },
+    });
     const archive = zipSync({
       "app.json": encoder.encode(JSON.stringify(exported)),
       "app/server.js": encoder.encode("export const ready = true;"),
@@ -268,7 +288,49 @@ describe(".vendoapp interchange through createApps", () => {
 
     await runtime.importApp(archive, context("user_ada"));
 
-    expect(createSpec?.env).toEqual({ PORT: "8080" });
+    expect(createSpec?.env.PORT).toBe("8080");
+    expect(createSpec?.env.VENDO_PROXY_URL).toBe("https://proxy.test");
+    expect(createSpec?.env.VENDO_RUN_TOKEN).toMatch(/.+/);
+    // Declared secrets are injected as handles, never values (§4.3).
+    expect(createSpec?.env.STRIPE_KEY).toMatch(/^vendo-secret:STRIPE_KEY:/);
+  });
+
+  it("lets an imported rung-2/3 app reach tools/egress without a subsequent edit", async () => {
+    // ENG-347 — resuming the imported snapshot must yield a machine whose env
+    // still carries the proxy URL + run token the fetch shim needs, so the
+    // imported app can call the proxy without first being re-edited.
+    const sandbox = fakeSandbox();
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog: [],
+      proxyUrl: "https://proxy.test",
+    });
+    const { id: _id, ...exported } = document({
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{
+          id: "root",
+          component: "Button",
+          props: { onClick: { action: "fn:send_invoice" } },
+        }],
+      },
+    });
+    const archive = zipSync({
+      "app.json": encoder.encode(JSON.stringify(exported)),
+      "app/server.js": encoder.encode("export const ready = true;"),
+    });
+
+    const imported = await runtime.importApp(archive, context("user_ada"));
+    const outcome = await runtime.call(imported.id, "fn:send_invoice", {}, context("user_ada"));
+
+    expect(outcome.status).toBe("ok");
+    const resumed = [...sandbox.machines.values()].at(-1)!;
+    expect(resumed.env.VENDO_PROXY_URL).toBe("https://proxy.test");
+    expect(resumed.env.VENDO_RUN_TOKEN).toMatch(/.+/);
   });
 
   it("fails rather than stripping fn surfaces when app files cannot be rebuilt", async () => {

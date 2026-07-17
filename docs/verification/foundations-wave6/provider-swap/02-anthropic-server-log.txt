@@ -1,0 +1,3 @@
+✓ Ready in 530ms
+ GET /vendo 200 in 5.3s (next.js: 4.3s, proxy.ts: 71ms, application-code: 883ms)
+ POST /api/vendo/threads 200 in 7.3s (next.js: 88ms, proxy.ts: 14ms, application-code: 7.2s)

@@ -29,10 +29,12 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "require": "./dist/cjs/index.js",
       "default": "./dist/index.js"
     },
     "./conformance": {
       "types": "./dist/conformance/index.d.ts",
+      "require": "./dist/cjs/conformance/index.js",
       "default": "./dist/conformance/index.js"
     }
   },
@@ -41,7 +43,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node -e \"require('node:fs').writeFileSync('dist/cjs/package.json', JSON.stringify({ type: 'commonjs' }) + '\\n')\"",
     "conformance": "vitest run src/contract-coverage.e2e.test.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",

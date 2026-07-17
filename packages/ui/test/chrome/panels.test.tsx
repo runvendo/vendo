@@ -32,10 +32,10 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher" });
     expect(toggle.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(toggle);
-    expect(await screen.findByLabelText("Approval for host_email_send")).toBeTruthy();
+    expect(await screen.findByLabelText("Approval for Email send")).toBeTruthy();
     await waitFor(() => expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true"));
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    await waitFor(() => expect(screen.queryByLabelText("Approval for host_email_send")).toBeNull());
+    await waitFor(() => expect(screen.queryByLabelText("Approval for Email send")).toBeNull());
 
     fireEvent.click(screen.getByRole("button", { name: "Dry run" }));
     expect((await screen.findByLabelText("Dry run for Invoice watcher")).textContent).toContain("host_invoices_list — ready");

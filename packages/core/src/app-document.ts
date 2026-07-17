@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { componentMapError } from "./component-map.js";
 import { safeErrorMessage } from "./errors.js";
+import { FN_REFERENCE_PATTERN, collectActionReferences } from "./fn-references.js";
 import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT } from "./formats.js";
 import { appIdSchema, type AppId } from "./ids.js";
 import { TOOL_NAME_PATTERN } from "./tools.js";
@@ -80,7 +81,6 @@ type AppDocumentValidation =
   | { ok: true; app: AppDocument }
   | { ok: false; error: { code: string; message: string } };
 
-const FN_REFERENCE_PATTERN = /^fn:[A-Za-z_][A-Za-z0-9_-]*$/;
 const SERVER_REFERENCE_PATTERN = /^[a-z0-9][a-z0-9+.-]*:.+$/;
 const HOST_REFERENCE_PATTERN = /^host\.[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
 
@@ -88,19 +88,6 @@ const fail = (code: string, message: string): AppDocumentValidation => ({
   ok: false,
   error: { code, message },
 });
-
-const collectActionReferences = (value: unknown, references: string[]): void => {
-  if (Array.isArray(value)) {
-    for (const item of value) collectActionReferences(item, references);
-    return;
-  }
-  if (typeof value !== "object" || value === null) return;
-  const record = value as Record<string, unknown>;
-  if (typeof record.action === "string" && record.action.startsWith("fn:")) {
-    references.push(record.action);
-  }
-  for (const nested of Object.values(record)) collectActionReferences(nested, references);
-};
 
 const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {

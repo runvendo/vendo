@@ -4,8 +4,24 @@ import { useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Bell, Search } from "lucide-react"
 
-/** Signed-in chrome: global search, firm context, Maya's persona chip. */
-export function Topbar() {
+export interface TopbarUser {
+  display: string
+  avatarUrl?: string
+}
+
+function initials(display: string): string {
+  return display
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(w => w[0])
+    .join("")
+    .toUpperCase()
+}
+
+/** Signed-in chrome: global search, firm context, the session user's persona chip. */
+export function Topbar({ user }: { user?: TopbarUser }) {
+  const display = user?.display ?? "Maya Alvarez"
   const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -42,7 +58,7 @@ export function Topbar() {
           name="q"
           placeholder="Search clients, documents…"
           aria-label="Search"
-          className="h-8 w-full rounded-lg border border-line bg-surface pr-12 pl-8 text-[13px] text-ink placeholder:text-ink-faint focus:border-evergreen-400 focus:bg-card focus:ring-2 focus:ring-evergreen-100 focus:outline-none"
+          className="h-8 w-full rounded-lg border border-line bg-surface pr-12 pl-8 text-[13px] text-ink placeholder:text-ink-faint focus:border-line-strong focus:bg-card focus:ring-2 focus:ring-line focus:outline-none"
         />
         <kbd className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded border border-line bg-card px-1.5 py-px font-sans text-[10px] text-ink-faint">
           &#8984;K
@@ -66,10 +82,19 @@ export function Topbar() {
           type="button"
           className="flex items-center gap-2 rounded-full border border-line py-1 pr-3 pl-1 transition-colors hover:bg-surface"
         >
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-evergreen-700 text-[10px] font-semibold text-white">
-            MA
-          </span>
-          <span className="text-[13px] font-medium">Maya Alvarez</span>
+          {user?.avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={user.avatarUrl}
+              alt=""
+              className="h-6 w-6 rounded-full object-cover"
+            />
+          ) : (
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-ink text-[10px] font-semibold text-white">
+              {initials(display)}
+            </span>
+          )}
+          <span className="text-[13px] font-medium">{display}</span>
         </button>
       </div>
     </header>

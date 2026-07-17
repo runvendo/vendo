@@ -1,10 +1,10 @@
 import {
   RESERVED_COMPONENT_NAMES,
-  TREE_MAX_COMPONENT_SOURCE_CHARS,
+  TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_NODES,
   TREE_MAX_QUERIES,
-  TREE_MAX_TOTAL_COMPONENT_CHARS,
+  TREE_MAX_TOTAL_COMPONENT_BYTES,
   VENDO_APP_FORMAT,
   VendoError,
   isPathBinding,
@@ -120,7 +120,7 @@ const generationPromptSections = (deps: GenerationDependencies): GenerationPromp
   content: `TREE CONTRACT:
 - At rest the app is {name, description?, tree, components?}; never emit id, server, secrets, egress, storage, or authority.
 - tree.formatVersion is "vendo-genui/v1" and tree contains root, nodes, optional data and queries.
-- Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} generated components, ${TREE_MAX_COMPONENT_SOURCE_CHARS} characters per generated component, ${TREE_MAX_TOTAL_COMPONENT_CHARS} total generated-component characters.
+- Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} generated components, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per generated component source, ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes of generated-component source in total.
 - Reserved prewired primitive names: ${RESERVED_COMPONENT_NAMES.join(", ")}.
 - Every node is exactly {id, component, source, props?, children?}. "component" is a REQUIRED non-empty string on EVERY node, including layout containers — use a prewired primitive (e.g. Stack, Row, Grid) as the component for containers; children is an array of node ids. Never emit a node without a component.
 - "nodes" is a FLAT array of every node; nesting is expressed only through "children" id references, never by inlining child objects. "root" is the id of the top node.
@@ -707,7 +707,7 @@ const codePlanFrom = (
       continue;
     }
     if (!safeFilePath(file.path)) issues.push(`unsafe machine path "${file.path}"; paths must stay under /app`);
-    if (file.content.length > TREE_MAX_TOTAL_COMPONENT_CHARS) issues.push(`file "${file.path}" is too large`);
+    if (new TextEncoder().encode(file.content).length > TREE_MAX_TOTAL_COMPONENT_BYTES) issues.push(`file "${file.path}" is too large`);
     files.push({ path: file.path, content: file.content });
   }
   // Rung is the capability level actually reached, so either signal that indicates a

@@ -36,9 +36,9 @@ describe("opening invariants", () => {
 
   it("includes the three demo-script clients with correct entity types", () => {
     const byName = (name: string) => data.clients.find(c => c.businessName === name)
-    expect(byName("Rivera Landscaping LLC")?.entityType).toBe("s_corp")
-    expect(byName("Chen Consulting")?.entityType).toBe("sole_prop")
-    expect(byName("Delgado Restaurant Group")?.entityType).toBe("partnership")
+    expect(byName("Blue Bottle Coffee")?.entityType).toBe("s_corp")
+    expect(byName("Linear")?.entityType).toBe("sole_prop")
+    expect(byName("Sweetgreen")?.entityType).toBe("partnership")
   })
 
   it("gives every client 4 to 6 document requests", () => {
@@ -78,7 +78,7 @@ describe("opening invariants", () => {
     const days = data.clients
       .map(c => (+new Date(c.filingDeadline) - +anchor) / 86_400_000)
       .sort((a, b) => a - b)
-    // Rivera + Chen keep deadline and document-chase views meaningfully urgent.
+    // Blue Bottle + Linear keep deadline and document-chase views meaningfully urgent.
     expect(days.filter(d => d <= 3.5).length).toBeGreaterThanOrEqual(2)
     expect(days[0]).toBeGreaterThan(0)
     expect(days[days.length - 1]).toBeLessThanOrEqual(77)

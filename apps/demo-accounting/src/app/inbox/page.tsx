@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { fetcher, type ActivityEvent } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { relativeTime } from "@/lib/format"
+import { logoUrl, providerForFilename } from "@/lib/logos"
 
 /** "Marisol Rivera uploaded W-2 (rivera-w2.pdf) — flagged" -> mono file name. */
 function UploadSummary({ summary }: { summary: string }) {
@@ -32,14 +33,26 @@ function UploadRow({ event }: { event: ActivityEvent }) {
   const flagged = event.summary.includes("flagged for review")
   const row = (
     <>
-      <span
-        className={cn(
-          "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
-          flagged ? BADGE_VARIANTS.review : "bg-evergreen-50 text-evergreen-600",
-        )}
-      >
-        <FileUp size={13} strokeWidth={1.75} />
-      </span>
+      {providerForFilename(event.summary) ? (
+        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-line bg-white">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={logoUrl(providerForFilename(event.summary)!.domain, 64)}
+            alt={providerForFilename(event.summary)!.name}
+            loading="lazy"
+            className="h-4 w-4 object-contain"
+          />
+        </span>
+      ) : (
+        <span
+          className={cn(
+            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
+            flagged ? BADGE_VARIANTS.review : "bg-status-verified-bg text-status-verified",
+          )}
+        >
+          <FileUp size={13} strokeWidth={1.75} />
+        </span>
+      )}
       <div className="min-w-0 flex-1">
         <p className="text-[13px] leading-snug">
           <UploadSummary summary={event.summary} />

@@ -36,4 +36,10 @@ export interface Guard {
   report(event: AuditEvent): Promise<void>;
   directions(ctx: RunContext): Promise<string[]>;
   onApprovalDecision(cb: (id: ApprovalId, approved: boolean) => void): () => void;
+  /** AGENT-6 (wave 5, optional — 01 §6 amendment parked): resolve approvals
+   *  the conversation abandoned (a fresh user turn superseded an undecided
+   *  ask). Implementations deny them — subject-scoped to `ctx.principal`,
+   *  idempotent, never minting a grant — so the pending queue tracks the
+   *  thread instead of accreting forever. Callers feature-detect. */
+  abandonApprovals?(ids: ApprovalId[], ctx: RunContext): Promise<void>;
 }

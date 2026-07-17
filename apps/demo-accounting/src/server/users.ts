@@ -40,7 +40,7 @@ export function cadenceDemoUsers(): CadenceDemoUser[] {
 
 /** The primary demo user's email — login prefill and scripted flows. */
 export function cadenceDemoEmail(): string {
-  return SEEDED_USERS[0]!.email
+  return process.env.CADENCE_DEMO_EMAIL?.trim().toLowerCase() || SEEDED_USERS[0]!.email
 }
 
 /** Both seeded users share one password. It is baked into supabase/seed.sql

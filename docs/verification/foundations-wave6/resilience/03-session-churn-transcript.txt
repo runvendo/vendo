@@ -1,0 +1,44 @@
+== Wave 6b beat C: anonymous-session churn vs the ENG-237 session lifecycle ==
+server: pnpm --filter demo-bank dev (next dev / Turbopack), store on postgres://vendo@127.0.0.1:54331/vendo_maple
+sessions config (temp env-gated wire-up, see README): maxSessions=500 ttlMs=60000 sweepIntervalMs=5000
+every request below is cookie-less GET /api/vendo/threads -> mints a FRESH anonymous principal,
+registers it in the TTL/LRU registry, and returns a fresh vendo_anon_session Set-Cookie (asserted per request).
+
+[churn] target=http://localhost:3000 sessions=5000 concurrency=10
+[churn] server pid(s) on :3000: 29139
+[churn] columns: sessions_created  rss_mb
+       0     139.9  # before churn
+     250     480.8
+     500     554.7
+     750     564.6
+    1000     564.5
+    1250     562.7
+    1500     565.1
+    1750     564.6
+    2000     575.1
+    2250     575.6
+    2500     575.3
+    2750     573.1
+    3000     572.3
+    3250     580.4
+    3500     582.2
+    3750     577.7
+    4000     570.1
+    4250     565.7
+    4500     573.3
+    4750     575.2
+    5000     571.7
+    5000     571.7  # churn complete
+[churn] 5000 sessions in 45s, 0 failures, 0 responses without a fresh anon cookie
+[churn] settling 90s (TTL + sweep window), sampling every 15s...
+    5000     571.7  # settle +15s
+    5000     571.7  # settle +30s
+    5000     571.7  # settle +45s
+    5000     571.7  # settle +60s
+    5000     571.7  # settle +75s
+    5000     573.7  # settle +90s
+[churn] rss_mb before=139.9 peak=582.2 after-settle=573.7
+
+reading: RSS warms up to ~565 MB by session 750 (route compilation + V8 heap growth on first load),
+then stays flat (565-582 MB) for the remaining 4250 sessions — 10x the 500-session cap churned through
+one process with no unbounded growth. 0 failed requests, 0 requests without a fresh anon session.
