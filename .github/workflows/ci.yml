@@ -128,6 +128,20 @@ jobs:
       - run: pnpm --filter @vendoai/ui exec playwright install --with-deps chromium
       - name: MCP Apps shim semantic contract
         run: pnpm --filter @vendoai/ui test:mcp-shim
+      # ENG-231 — the permanent ui browser suite (over the localhost wire
+      # fixture): the solidity stress spec (mid-stream kill, phone viewports,
+      # rapid open/close, multi-turn persistence, concurrent surfaces,
+      # dark-brand) plus every existing e2e spec (extreme content, scroll,
+      # theme, keyboard, containment, height-chain, voice, verification). This
+      # is the "permanent Playwright stress suite in CI" gate.
+      - name: UI browser suite (solidity + stress)
+        run: pnpm --filter @vendoai/ui test:browser
+      - if: failure()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
+        with:
+          name: ui-browser-playwright-trace
+          path: packages/ui/e2e/test-results
+          retention-days: 7
 
   # Cadence's Supabase Auth suite (ENG-260): boots `supabase start` (Docker)
   # and runs demo-accounting's full test suite — the /login password grant

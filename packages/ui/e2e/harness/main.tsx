@@ -953,6 +953,26 @@ const MAPLE_SUGGESTIONS = [
   "Put me on blast in Slack when I order late-night delivery",
 ];
 
+/** ENG-231 — several shipped surfaces mounted on ONE page at once: the palette
+ *  keybinding must stay a singleton (never double-fire), the overlay must open,
+ *  and a filled slot + thread must coexist without style/DOM collisions. */
+function ConcurrentScenario() {
+  return (
+    <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
+      <div style={{ display: "grid", gap: 16, padding: 16 }}>
+        <VendoSlot id="concurrent-slot" pin={{ payload: pinnedViewTree }}>
+          <div>host fallback</div>
+        </VendoSlot>
+        <div style={{ height: 320, display: "flex", flexDirection: "column", border: "1px solid #cad3e0", borderRadius: 12, overflow: "hidden" }}>
+          <VendoThread threadId="thr_1" />
+        </div>
+        <VendoPalette />
+        <VendoOverlay />
+      </div>
+    </VendoProvider>
+  );
+}
+
 function LandingScenario() {
   return (
     <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
@@ -1405,6 +1425,8 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/thread-landing": return { title: "Landing (Maple host)", content: <LandingScenario />, ownProvider: true };
     case "/thread-humanized": return { title: "Thread — humanized (host metadata)", content: <HumanizedThreadScenario />, ownProvider: true };
     case "/overlay": return { title: "Overlay", content: <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'><VendoOverlay /></AutoOpen> };
+    case "/overlay-manual": return { title: "Overlay — manual launcher", content: <VendoOverlay /> };
+    case "/concurrent": return { title: "Concurrent surfaces", content: <ConcurrentScenario />, ownProvider: true };
     case "/page": return { title: "Workspace — Apps tab", content: <AutoOpen selector='[role="tab"][aria-controls="vendo-panel-apps"]'><VendoPage /></AutoOpen> };
     case "/page-chat": return { title: "Workspace — Chat (thread sidebar)", theme: mapleTheme, content: <VendoPage /> };
     case "/page-chat-dark": return { title: "Workspace — Chat (dark)", theme: darkTheme, content: <VendoPage /> };

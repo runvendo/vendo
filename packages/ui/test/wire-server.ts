@@ -239,7 +239,10 @@ export async function createWireServer() {
             subject: "user_1",
             messages: [input.message],
             createdAt: NOW,
-            updatedAt: NOW,
+            // A minted conversation is the newest: stamp it AFTER the seeded
+            // NOW so GET /threads (sorted newest-first) surfaces it at the top,
+            // where the workspace sidebar defaults its selection (ENG-231).
+            updatedAt: new Date(Date.parse(NOW) + state.threads.size * 1000).toISOString(),
           });
         }
         const suffix = ++turns === 1 ? "" : `_${turns}`;
@@ -265,6 +268,26 @@ export async function createWireServer() {
           const failingResponse = createUIMessageStreamResponse({ stream: failingChunks });
           failingResponse.headers.set("x-vendo-thread-id", threadId);
           await sendFetchResponse(failingResponse, response);
+          return;
+        }
+        if (sentText.includes("[stream-kill]")) {
+          // ENG-231 — a turn that streams a partial delta then drops the
+          // connection mid-stream, so a real-browser stress spec can drive the
+          // visible error banner + Retry (the ENG-214 recovery UX). Opt-in via
+          // the marker only; the deterministic suite is untouched.
+          const killChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_kill",
+            execute: async ({ writer }) => {
+              writer.write({ type: "text-start", id: "text_kill" });
+              writer.write({ type: "text-delta", id: "text_kill", delta: "Starting an answer that will be cut" });
+              throw new Error("connection reset mid-stream");
+            },
+            onError: error => (error instanceof Error ? error.message : String(error)),
+          });
+          const killResponse = createUIMessageStreamResponse({ stream: killChunks });
+          killResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(killResponse, response);
           return;
         }
         if (sentText.includes("[stream-hang]")) {
@@ -352,11 +375,12 @@ export async function createWireServer() {
       }
 
       if (method === "GET" && url.pathname === "/threads") {
-        const summaries: ThreadSummary[] = [...state.threads.values()].map(thread => ({
-          id: thread.id,
-          title: "Fixture thread",
-          updatedAt: thread.updatedAt,
-        }));
+        // Newest-first, as a real store returns them — the workspace sidebar
+        // defaults its selection to threads[0], so a just-minted conversation
+        // must sort to the top (ENG-231 persistence guard).
+        const summaries: ThreadSummary[] = [...state.threads.values()]
+          .map(thread => ({ id: thread.id, title: "Fixture thread", updatedAt: thread.updatedAt }))
+          .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
         json(response, summaries);
         return;
       }
