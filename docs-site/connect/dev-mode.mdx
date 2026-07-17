@@ -33,8 +33,11 @@ resolves. Explicit keys always beat implicit sessions.
     read-only and every approval is denied.
   </Step>
   <Step title="Vendo Cloud starter allowance">
-    `VENDO_API_KEY` is detected and reported. The starter-allowance model
-    gateway is not yet enabled — this rung acts as a signpost today.
+    `VENDO_API_KEY` is detected and reported. Init can also mint a metered
+    starter key inline through `vendo cloud login`. The Cloud model gateway
+    that turns this key into a working dev model is a follow-up — until it
+    ships, the rung reports itself as unavailable with next-step
+    instructions.
   </Step>
   <Step title="None">
     No credential resolves. The wire returns a generic error and the server
