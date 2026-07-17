@@ -148,16 +148,6 @@ export async function createWireServer() {
     connections: [
       { id: "ca_1", connector: "composio", toolkit: "gmail", status: "active" as const, createdAt: NOW },
     ],
-    // block-actions §C — org workspaces. `orgsGated` simulates the key-gated
-    // posture (no VENDO_API_KEY): every /orgs route returns cloud-required.
-    orgsGated: false,
-    orgs: [
-      { id: "org_1", name: "Acme Corp", createdAt: NOW, updatedAt: NOW },
-    ],
-    orgMembers: [
-      { orgId: "org_1", subject: "user_1", role: "owner" as "owner" | "admin" | "member", addedAt: NOW },
-      { orgId: "org_1", subject: "user_bob", role: "member" as "owner" | "admin" | "member", addedAt: NOW },
-    ],
     automations: [{ app: automationApp, enabled: false }] satisfies AutomationEntry[],
     runs: [run()],
     events: [audit("aud_1"), audit("aud_2"), audit("aud_3")],
@@ -385,63 +375,6 @@ export async function createWireServer() {
           if (!found) return wireError(response, "not-found", "Connection not found", 404);
           state.connections = state.connections.filter(item => item.id !== id);
           return json(response, {});
-        }
-      }
-      if (url.pathname === "/orgs" || url.pathname.startsWith("/orgs/")) {
-        // A client may force the key-gated posture via header (harness: the
-        // gated scenario renders the upgrade state, same trick as force-posture).
-        if (state.orgsGated || request.headers["x-vendo-force-orgs-gated"] === "1") {
-          return wireError(response, "cloud-required", "orgs are a Vendo Cloud capability: set VENDO_API_KEY (get one at vendo.run) to activate org workspaces", 402);
-        }
-        if (method === "GET" && url.pathname === "/orgs") {
-          return json(response, {
-            orgs: state.orgs.map(org => ({
-              ...org,
-              role: state.orgMembers.find(member => member.orgId === org.id && member.subject === "user_1")?.role ?? "member",
-            })),
-            posture: "cloud",
-          });
-        }
-        if (method === "POST" && url.pathname === "/orgs") {
-          const name = (parsedBody as { name: string }).name;
-          const org = { id: `org_${state.orgs.length + 1}`, name, createdAt: NOW, updatedAt: NOW };
-          state.orgs.push(org);
-          state.orgMembers.push({ orgId: org.id, subject: "user_1", role: "owner", addedAt: NOW });
-          return json(response, org);
-        }
-        const orgGet = url.pathname.match(/^\/orgs\/([^/]+)$/);
-        if (method === "GET" && orgGet) {
-          const org = state.orgs.find(item => item.id === decodeURIComponent(orgGet[1]!));
-          if (!org) return wireError(response, "not-found", "org not found", 404);
-          const members = state.orgMembers.filter(member => member.orgId === org.id);
-          const role = members.find(member => member.subject === "user_1")?.role ?? "member";
-          return json(response, { org, role, members });
-        }
-        const orgMembersMatch = url.pathname.match(/^\/orgs\/([^/]+)\/members$/);
-        if (method === "POST" && orgMembersMatch) {
-          const orgId = decodeURIComponent(orgMembersMatch[1]!);
-          const body = parsedBody as { subject: string; role?: "owner" | "admin" | "member" };
-          if (state.orgMembers.some(member => member.orgId === orgId && member.subject === body.subject)) {
-            return wireError(response, "conflict", "already a member", 409);
-          }
-          const member = { orgId, subject: body.subject, role: body.role ?? "member" as const, addedAt: NOW };
-          state.orgMembers.push(member);
-          return json(response, member);
-        }
-        const orgMemberMatch = url.pathname.match(/^\/orgs\/([^/]+)\/members\/([^/]+)$/);
-        if (orgMemberMatch) {
-          const orgId = decodeURIComponent(orgMemberMatch[1]!);
-          const subject = decodeURIComponent(orgMemberMatch[2]!);
-          const member = state.orgMembers.find(item => item.orgId === orgId && item.subject === subject);
-          if (!member) return wireError(response, "not-found", "not a member", 404);
-          if (method === "PATCH") {
-            member.role = (parsedBody as { role: "owner" | "admin" | "member" }).role;
-            return json(response, member);
-          }
-          if (method === "DELETE") {
-            state.orgMembers = state.orgMembers.filter(item => item !== member);
-            return json(response, {});
-          }
         }
       }
       if (method === "GET" && url.pathname === "/grants") return json(response, state.grants);

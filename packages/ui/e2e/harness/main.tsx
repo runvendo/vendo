@@ -22,7 +22,6 @@ import {
   ApprovalCard,
   AutomationsPanel,
   NoPolicyNotice,
-  OrgsPanel,
   VendoOverlay,
   VendoPage,
   VendoPalette,
@@ -806,7 +805,6 @@ function AppFrameScenario() {
 
 const baseClient = createVendoClient({ baseUrl: "/api/vendo" });
 const unconfiguredClient = createVendoClient({ baseUrl: "/api/vendo", headers: { "x-vendo-force-posture": "unconfigured" } });
-const orgsGatedClient = createVendoClient({ baseUrl: "/api/vendo", headers: { "x-vendo-force-orgs-gated": "1" } });
 
 // A Maple-brand host theme (graphite accent, warm cream canvas) — the same
 // brand the old shell adopted, so the landing reads like the real product.
@@ -1135,12 +1133,6 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/palette": return { title: "Command palette", content: <OpenPalette /> };
     case "/approval": return { title: "Destructive approval", content: <ApprovalScenario /> };
     case "/activity": return { title: "Activity", content: <ActivityPanel /> };
-    case "/orgs": return { title: "Organizations", content: <OrgsPanel /> };
-    case "/orgs-gated": return {
-      title: "Organizations (key-gated)",
-      ownProvider: true,
-      content: (<VendoProvider client={orgsGatedClient} components={components}><OrgsPanel /></VendoProvider>),
-    };
     case "/automations": return { title: "Automations", content: <AutomationsPanel /> };
     case "/notice": return { title: "Unconfigured policy", ownProvider: true, content: (<VendoProvider client={unconfiguredClient} components={components}><NoPolicyNotice /></VendoProvider>) };
     case "/stage": return { title: "Voice stage", content: <StageScenario />, ownProvider: true };
