@@ -33,7 +33,7 @@ Next steps:
   1. pnpm install    # link the new workspace app
   2. Research the prospect's brand:
        pnpm --filter @vendoai/bench demo:research -- --app ${appPath} --url ${prospectUrl ?? "<prospect site>"}
-  3. Follow bench/demo-creator/PLAYBOOK.md with ${appPath}/VERIFY.md — replace every "TODO(creator): " placeholder.
+  3. Follow ~/.claude/skills/demo-creator/PLAYBOOK.md with ${appPath}/VERIFY.md — replace every "TODO(creator): " placeholder.
   4. Verify the finished demo:
        pnpm --filter @vendoai/bench demo:capture -- demo-beats --host-config ${appPath}`;
 }

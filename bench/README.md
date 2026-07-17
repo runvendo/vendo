@@ -23,12 +23,13 @@ run is a separate explicit command.
 - `src/benches/*` — one file per suite; `src/run.ts` — the CLI.
 - `demo-capture/` — README and gitignored output for the four UI-generation
   demo GIF beats; the TypeScript capture driver lives in `src/demo-capture/`.
-- `demo-creator/PLAYBOOK.md` — the creator-agent contract for generating
-  per-prospect demos (`demo:create` / `demo:research` / `demo:deploy` /
-  `demo:reap`, implemented in `src/demo-creator/`; verified via
+- `src/demo-creator/` — the per-prospect demo tooling (`demo:create` /
+  `demo:research` / `demo:deploy` / `demo:reap`; verified via
   `demo:capture -- demo-beats`, hosted via `tools/demo-router` at
-  demos.vendo.run; the mac-mini GTM packaging lives in
-  `docs/gtm/demo-creator-skill/SKILL.md`).
+  demos.vendo.run). The creator-agent contract (PLAYBOOK) and the GTM
+  driver skill live in the `runvendo/vendo-skills` repo
+  (`shared/demo-creator/`, linked at `~/.claude/skills/demo-creator/`) —
+  agent-facing docs are skills, not repo code.
 - `budgets.json` — the permanent gate thresholds.
 - `RESULTS.md` — a full captured run (deterministic + live) from a real machine.
 
