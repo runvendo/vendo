@@ -16,7 +16,9 @@ hosted Postgres database. Both use the same schema and migration path.
 
 The stable public tables are `vendo_meta`, `vendo_apps`, `vendo_records`,
 `vendo_blobs`, `vendo_state`, `vendo_threads`, `vendo_grants`,
-`vendo_approvals`, `vendo_audit`, `vendo_runs`, and `vendo_secrets`.
+`vendo_approvals`, `vendo_audit`, `vendo_runs`, `vendo_secrets`, and
+`vendo_sessions` (the anonymous-session registry read by the TTL sweep;
+see [Anonymous sessions](/deploy/principals-and-orgs#session-lifecycle)).
 
 All structured payloads use `jsonb`. App record refs are GIN-indexed and can be
 joined to host tables with containment queries. Collection names use
@@ -31,11 +33,11 @@ environment](/reference/environment-variables#app-machine-environment) for the
 `/data` and `/files` proxy routes.
 
 `encryption.key` encrypts secret values in `vendo_secrets` only. App records
-stay queryable. Ephemeral principals use an in-memory overlay and never write
-to disk; the overlay is swept on idle-session eviction and torn down with
-`store.close()`. See
+stay queryable. Ephemeral (anonymous) principals write ordinary rows under
+their anonymous subject and record last-activity in `vendo_sessions`; a TTL
+sweep deletes every row for sessions idle past `sessions.ttlMs`. See
 [Anonymous sessions](/deploy/principals-and-orgs#session-lifecycle) to tune
-the TTL, sweep cadence, and concurrent-session cap.
+the TTL and sweep cadence.
 
 ## Encryption is on by default
 
@@ -69,31 +71,22 @@ delete the row and re-seed it under the new subject.
 ## Erasing data
 
 `eraseStore(store)` is the sanctioned deletion path for `vendo_audit` and the
-one call that cascades across every store table plus the ephemeral overlay.
-Use it for right-to-erasure requests, tearing down a test app, or purging
-old runs.
+one call that cascades across every store table. Use it for right-to-erasure
+requests or tearing down a test app.
 
 ```ts
 import { eraseStore } from "@vendoai/vendo/server";
 
-// Full erasure for a subject across every store table and the overlay.
+// Full erasure for a subject across every store table.
 const bySubject = await eraseStore(vendo.store, { bySubject: subjectId });
 
 // Erase everything owned by one app.
 const byApp = await eraseStore(vendo.store, { byApp: appId });
-
-// Erase rows whose entire lifecycle predates a cutoff.
-const byAge = await eraseStore(vendo.store, {
-  byAge: { before: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) },
-});
 ```
 
 Each call returns per-table deleted counts so you can log or verify the
-cascade. `byAge` treats a row as recent when any lifecycle timestamp
-(including `updated_at`) is at or after the cutoff — so a standing grant
-with a future `expires_at` and a rotated secret both survive an age sweep.
-Overlay blobs carry no timestamps and are exempt from the age axis; they
-end with the process.
+cascade. Retention policy is out of scope for the store — use host SQL
+against the public tables for age-based cleanup.
 
 ## Atomic claims
 

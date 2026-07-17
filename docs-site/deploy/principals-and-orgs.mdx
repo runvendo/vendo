@@ -1,19 +1,19 @@
 ---
 title: "Principals and organizations"
-description: "How Vendo scopes data to users and orgs, merges anonymous sessions on sign-in, reserves the vendo: namespace, and gates org APIs on a Cloud key."
+description: "How Vendo scopes data to users, persists anonymous sessions with TTL sweep, merges them on sign-in, and reserves the vendo: namespace."
 ---
 
 Every wire request resolves a `Principal` through the `principal(req)` seam
 you pass to `createVendo`. The returned `subject` scopes threads, apps,
 approvals, grants, activity, and runs. This page covers the identity model
 and the two behaviors that ride on it: **anonymous auto-merge** on first
-sign-in, and **organization workspaces** (Cloud-gated).
+sign-in, and **organization workspaces** (Vendo Cloud only).
 
 ## Principal kinds
 
 `Principal.kind` is `"user"` or `"org"`. Your `principal(req)` resolver may
-only return `kind: "user"`. Organization context is derived from membership
-inside Vendo and is never resolved directly by the host.
+only return `kind: "user"`. Organization principals are minted server-side
+by Vendo Cloud and are never resolved directly by the OSS host.
 
 ```ts
 principal: async (request) => {
@@ -32,7 +32,8 @@ Two are defined today:
 
 - `vendo:webhook:<source>` — webhook deliveries execute under this subject
   when no principal is otherwise attached to the request.
-- `vendo:org:<orgId>` — the subject for an organization workspace.
+- `vendo:org:<orgId>` — reserved for Vendo Cloud organization workspaces.
+  The OSS wire never mints this subject itself.
 
 A `principal(req)` resolver that returns a `vendo:*` subject, or a
 `kind: "org"` principal, is rejected at the wire with a `blocked` error.
@@ -45,24 +46,28 @@ update them to match `vendo:webhook:<source>` instead of the bare
 
 ## Anonymous sessions
 
-When `principal(req)` returns `null`, Vendo mints an ephemeral session
-principal and carries it in a signed, `httpOnly` cookie scoped to the wire
-base path. Ephemeral principals never write to disk — threads, apps, and
-state live in an in-memory overlay for the life of the process.
+When `principal(req)` returns `null`, Vendo mints an ephemeral session and
+carries it in an opaque, `httpOnly` cookie — a random 128-bit session id
+scoped to the wire base path. The cookie is a pointer, not a signed token:
+the `vendo_sessions` row is the authority, so a forged or invented id
+merely names an empty session.
+
+Anonymous work is stored like any other subject — ordinary rows under the
+anonymous subject — plus one `vendo_sessions` row recording the session's
+last activity. Sessions survive process restarts and are shared across
+instances, so no sticky routing is needed for anonymous traffic.
 
 ### Session lifecycle
 
-Every request touches its anonymous session. A session that stays idle past
-`sessions.ttlMs` (default 30 minutes) is evicted in one cascade: its
-in-memory threads, apps, per-app records and blobs, state, grants,
-approvals, audit rows, and runs are all discarded together. A request
-already in flight holds its session open for however long the turn streams,
-including long-lived UI message streams.
+Every request touches its session's `vendo_sessions` row. A session idle
+past `sessions.ttlMs` (default 30 minutes) is swept: the row is deleted
+along with every other row keyed to that anonymous subject — threads,
+apps, per-app records and blobs, state, grants, approvals, runs.
 
 The cookie itself stays valid. The next request from that client simply
-gets a fresh, empty session under the same cookie. A write that races an
-eviction fails closed with `not-found` ("session may have expired") rather
-than landing on disk.
+gets a fresh, empty session under the same cookie. An app-scoped write
+that races the sweep fails closed with `not-found` (`"session may have
+expired"`) rather than recreating unreachable rows.
 
 Sweeps run two ways so both long-lived and serverless hosts stay
 consistent:
@@ -83,24 +88,14 @@ const vendo = createVendo({
   model,
   principal,
   sessions: {
-    ttlMs: 30 * 60 * 1000,   // 30 min; 0 disables TTL eviction
+    ttlMs: 30 * 60 * 1000,   // 30 min; 0 disables TTL sweep
     sweepIntervalMs: 60_000, // 60 s
-    maxSessions: 10_000,     // hard cap on concurrent anonymous sessions
   },
 });
 ```
 
-Setting `ttlMs: 0` disables TTL eviction entirely; the `maxSessions` cap
-still applies and is enforced by evicting the least-recently-touched
-session that is not currently in flight.
-
-<Note>
-  Sessions are per process. Multi-instance deployments that terminate
-  anonymous traffic on more than one node need sticky routing (by the
-  anonymous cookie) so a visitor keeps hitting the same instance until
-  they sign in. After sign-in, requests are keyed by the durable subject
-  and can route anywhere.
-</Note>
+Setting `ttlMs: 0` disables the TTL sweep entirely; anonymous sessions
+then persist until they are adopted on sign-in or erased explicitly.
 
 ### Auto-merge on sign-in
 
@@ -108,7 +103,7 @@ The first authenticated request that arrives with a valid anonymous cookie
 **adopts** the session's data into the real user subject and then retires
 the cookie (`Max-Age=0`). Users keep the conversation they started, the
 apps they built, and the state those apps wrote. The merge is idempotent
-and emits a `kind: "principal"` audit event.
+and emits a `kind: "principal"` audit event (`detail.event: "anon-merge"`).
 
 What is adopted:
 
@@ -126,69 +121,24 @@ What is **not** adopted (consent doesn't transfer identities):
 
 Existing durable rows always win a collision. If the signed-in user
 already owns a thread or app with the same id, the anonymous copy is
-dropped rather than overwriting it. There is no configuration to turn
+skipped rather than overwriting it. There is no configuration to turn
 auto-merge off; it is the default behavior of the wire.
 
 Nothing on the host side has to change to opt in: as long as
 `principal(req)` returns `null` before the user signs in and a real
 `Principal` afterward, Vendo does the rest.
 
-## Organizations (Cloud-gated)
+## Organizations (Vendo Cloud)
 
-Organizations let members share apps, approvals, and grants under one
-subject. They are gated on `VENDO_API_KEY` plus the `orgs` capability on
-that key; without it, the org APIs return `cloud-required` (HTTP 402) and
-`/status` reports `blocks.orgs: false`. The chrome renders an honest
-upgrade state instead of a broken tab.
+Organization workspaces — shared apps, approvals, and grants under one org
+subject — are a [Vendo Cloud](/deploy/vendo-cloud) capability, not an OSS
+wire feature. The self-hosted wire always answers every `/api/vendo/orgs`
+route, and any `?org=<id>` parameter on `/api/vendo/approvals` or
+`/api/vendo/grants`, with a `cloud-required` posture error (HTTP 402) —
+unconditionally, regardless of whether `VENDO_API_KEY` is set.
+`GET /api/vendo/status` reports no `orgs` block.
 
-### Roles
-
-Every membership has a role:
-
-- **member** — reads and calls org-owned apps.
-- **admin** — everything a member can do, plus approves grants for the
-  org, manages apps (edit, delete, undo, rebase, enable, disable,
-  transfer), and invites or removes members.
-- **owner** — everything an admin can do, plus promotes and demotes
-  owners. The store refuses to remove the last owner of an org.
-
-### Wire surface
-
-Once the key carries the `orgs` capability, these routes come online (see
-the [HTTP routes reference](/reference/http-routes) for the full table):
-
-- `/orgs` — list, create, delete an organization.
-- `/orgs/:id/members` — invite, list, change role, remove.
-- `/orgs/:id/apps` — transfer an app your user owns into the org.
-
-Approvals and grants take an `?org=<orgId>` query parameter (or `body.org`
-on POSTs) to operate under the org's subject. Only admins and owners can
-approve on behalf of an org; a member trying to approve receives `403`.
-
-### Org-owned runs
-
-When a member opens or calls an org-owned app, the run executes under the
-org principal (`vendo:org:<orgId>`), but `RunContext.actor` carries the
-`Principal` of the human that initiated the run. Grants and approvals
-that the run parks are keyed to the org subject, so the next admin who
-sees them can approve on behalf of everyone.
-
-Audit events on org-context runs carry an extra `detail.org = { subject,
-actor }` block so you can tell which human triggered which org-scoped
-action.
-
-### Enable orgs
-
-1. Set `VENDO_API_KEY` in the host process.
-2. Confirm the key includes the `orgs` capability:
-
-   ```bash
-   vendo cloud validate --key $VENDO_API_KEY
-   ```
-
-3. Open the orgs tab in the chrome, or call `/orgs` directly, to create
-   the workspace and invite members.
-
-See [Vendo Cloud](/deploy/vendo-cloud) for key management and
-[Environment variables](/reference/environment-variables) for the full
-list of entitlements a Cloud key unlocks.
+Vendo Cloud manages its own accounts, members, and org-scoped keys
+server-side. See `vendo cloud whoami`, `vendo cloud members`, and the
+`--org` key scoping in the [CLI reference](/reference/cli) for the
+Cloud-side org model.

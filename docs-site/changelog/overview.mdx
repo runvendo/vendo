@@ -53,16 +53,6 @@ as long as your `principal(req)` returns `null` before sign-in and a real
 principal after, Vendo does the merge. See
 [Principals and organizations](/deploy/principals-and-orgs).
 
-**Organization workspaces (Cloud-gated).** New `/orgs` routes let admins
-create an organization, invite members with `owner`, `admin`, or `member`
-roles, and transfer apps into shared ownership. Org-owned runs execute
-under `vendo:org:<orgId>` while `RunContext.actor` records the human that
-triggered the run. Approvals and grants accept `?org=<orgId>` to operate
-under the org's subject. The route family is gated on `VENDO_API_KEY`
-with the new `orgs` capability; without it, `/status` reports
-`blocks.orgs: false` and the chrome renders an upgrade state. See
-[Principals and organizations](/deploy/principals-and-orgs).
-
 **Reserved `vendo:` subject namespace.** Webhook deliveries now execute
 under `vendo:webhook:<source>` and organization workspaces under
 `vendo:org:<orgId>`. `principal(req)` resolvers that return a `vendo:*`

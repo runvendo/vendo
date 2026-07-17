@@ -36,9 +36,8 @@ export function createVendo(config: {
     historyWindow?: number;                   // last N whole messages re-sent per turn
   };
   sessions?: {                                // anonymous-session lifecycle; see Principals and organizations
-    ttlMs?: number;                           // idle timeout, default 30 min; 0 disables TTL eviction
+    ttlMs?: number;                           // idle timeout, default 30 min; 0 disables TTL sweep
     sweepIntervalMs?: number;                 // sweep cadence, default 60 s
-    maxSessions?: number;                     // concurrent anonymous-session cap, default 10 000
   };
 }): Vendo;
 
@@ -50,10 +49,11 @@ export interface Vendo {
 ```
 
 When `principal(req)` resolves null, each client gets its own ephemeral session
-principal, carried by a signed httpOnly cookie scoped to the wire base. Sessions
-are per client, never persisted, and reset on process restart. Idle sessions are
-swept after `sessions.ttlMs` (default 30 minutes); tune the lifecycle with
-`sessions`. See [Anonymous sessions](/deploy/principals-and-orgs#anonymous-sessions).
+principal, carried by an opaque 128-bit httpOnly cookie scoped to the wire
+base. Anonymous work persists as ordinary rows under the anonymous subject
+and survives restarts across instances. A TTL sweep erases sessions idle past
+`sessions.ttlMs` (default 30 minutes); tune the lifecycle with `sessions`. See
+[Anonymous sessions](/deploy/principals-and-orgs#anonymous-sessions).
 
 The composition registers app capability tools in actions and guard-binds every
 tool registry passed to agent, apps, and automations.
@@ -68,19 +68,17 @@ runs started for enabled automations owned by that principal.
 ## `eraseStore`
 
 `@vendoai/vendo/server` re-exports `eraseStore(store, target)`, the sanctioned
-deletion path across every store table and the ephemeral overlay. It is the
-only supported way to delete rows from the append-only `vendo_audit` table.
+deletion path across every store table. It is the only supported way to
+delete rows from the append-only `vendo_audit` table.
 
 ```ts
 import { eraseStore } from "@vendoai/vendo/server";
 
 await eraseStore(vendo.store, { bySubject: "user_123" });
 await eraseStore(vendo.store, { byApp: "app_abc" });
-await eraseStore(vendo.store, { byAge: { before: cutoff } });
 ```
 
-Pass exactly one of `bySubject`, `byApp`, or `byAge`. The call returns a map
-of per-table deleted counts. `byAge` retains any row whose lifecycle extends
-past the cutoff (for example, an unexpired standing grant or a recently
-rotated secret). See [Persistence](/deploy/persistence#erasing-data) for the
+Pass exactly one of `bySubject` or `byApp`. The call returns a map of
+per-table deleted counts. For age-based retention, use host SQL against the
+public tables. See [Persistence](/deploy/persistence#erasing-data) for the
 full semantics.
