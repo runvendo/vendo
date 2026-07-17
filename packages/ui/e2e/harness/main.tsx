@@ -737,6 +737,23 @@ function OpenPalette() {
   return <><button type="button" data-testid="palette-opener" onClick={open}>Open command palette</button><VendoPalette onCommand={setCommand} /><output className="recorder" data-testid="command-recorder">{command ? JSON.stringify(command) : "No command selected"}</output></>;
 }
 
+/** ENG-222 — host-collision safety: a host input the host wires its own ⌘K to.
+ *  The spec focuses it and presses ⌘K; the palette must NOT hijack the keystroke. */
+function PaletteHostInputScenario() {
+  return (
+    <div style={{ display: "grid", gap: 12, padding: 20, maxWidth: 520 }}>
+      <label style={{ display: "grid", gap: 6, fontSize: 14 }}>
+        Host search field (owns ⌘K)
+        <input data-testid="host-input" aria-label="Host search" placeholder="Focus me, then press ⌘K" style={{ padding: "9px 11px", borderRadius: 8, border: "1px solid #cad3e0" }} />
+      </label>
+      <p style={{ fontSize: 13, color: "#5b5c63" }}>
+        With focus in the host field, ⌘K stays the host&rsquo;s own shortcut — the Vendo palette does not open.
+      </p>
+      <VendoPalette />
+    </div>
+  );
+}
+
 function ApprovalScenario() {
   const [decision, setDecision] = useState<ApprovalDecision>();
   const decide = async (next: ApprovalDecision) => setDecision(next);
@@ -1132,7 +1149,10 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/thread-humanized": return { title: "Thread — humanized (host metadata)", content: <HumanizedThreadScenario />, ownProvider: true };
     case "/overlay": return { title: "Overlay", content: <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'><VendoOverlay /></AutoOpen> };
     case "/page": return { title: "Workspace — Apps tab", content: <AutoOpen selector='[role="tab"][aria-controls="vendo-panel-apps"]'><VendoPage /></AutoOpen> };
+    case "/page-chat": return { title: "Workspace — Chat (thread sidebar)", theme: mapleTheme, content: <VendoPage /> };
+    case "/page-chat-dark": return { title: "Workspace — Chat (dark)", theme: darkTheme, content: <VendoPage /> };
     case "/palette": return { title: "Command palette", content: <OpenPalette /> };
+    case "/palette-host": return { title: "Palette — host input collision", content: <PaletteHostInputScenario /> };
     case "/approval": return { title: "Destructive approval", content: <ApprovalScenario /> };
     case "/activity": return { title: "Activity", content: <ActivityPanel /> };
     case "/orgs": return { title: "Organizations", content: <OrgsPanel /> };
