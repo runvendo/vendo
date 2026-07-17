@@ -762,8 +762,9 @@ const projectMemoryRecord = (
 };
 
 /**
- * Test double only: a pure in-memory StoreAdapter reference implementation for
- * unit tests. It is not intended as production persistence.
+ * Reference in-memory StoreAdapter: used by unit tests, and as createAgent's
+ * no-store default (03-agent §1, kill-list B5). Process-lifetime only — not
+ * durable persistence.
  *
  * Double-level behavior (NOT contract — the conformance suite does not assert
  * it): `list()` returns records newest-first by `createdAt`, most recently
