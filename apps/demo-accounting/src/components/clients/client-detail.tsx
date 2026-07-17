@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { ArrowLeft, SearchX } from "lucide-react"
 import useSWR from "swr"
+import { ClientMark } from "@/components/clients/client-marks"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -68,7 +69,7 @@ function NotFoundState({ id }: { id: string }) {
           action={
             <Link
               href="/clients"
-              className="inline-flex h-8 items-center rounded-md bg-evergreen-600 px-3 text-[12.5px] font-medium text-white transition-colors hover:bg-evergreen-700"
+              className="inline-flex h-8 items-center rounded-md bg-ink px-3 text-[12.5px] font-medium text-white transition-colors hover:bg-ink-soft"
             >
               Back to clients
             </Link>
@@ -105,17 +106,20 @@ export function ClientDetail({ id }: { id: string }) {
         <div className="space-y-3">
           <BackLink />
           <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="text-[22px] font-semibold tracking-tight">{client.businessName}</h1>
-                <Badge>{entityLabel(client.entityType)}</Badge>
-                <Badge variant={status.variant} dot>
-                  {status.label}
-                </Badge>
+            <div className="flex min-w-0 items-center gap-3.5">
+              <ClientMark clientId={client.id} name={client.businessName} size={44} />
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h1 className="text-[22px] font-semibold tracking-tight">{client.businessName}</h1>
+                  <Badge>{entityLabel(client.entityType)}</Badge>
+                  <Badge variant={status.variant} dot>
+                    {status.label}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-[13.5px] text-ink-soft">
+                  {client.contactName} · {client.contactEmail}
+                </p>
               </div>
-              <p className="mt-1 text-[13.5px] text-ink-soft">
-                {client.contactName} · {client.contactEmail}
-              </p>
             </div>
             <div className="flex shrink-0 items-center gap-8">
               <div>

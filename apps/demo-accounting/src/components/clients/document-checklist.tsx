@@ -43,7 +43,7 @@ function RejectForm({
         }}
         placeholder="Why is this going back? e.g. This is the personal account, not the business one"
         aria-label="Re-upload reason"
-        className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-card px-3 text-[12.5px] text-ink placeholder:text-ink-faint focus:border-evergreen-400 focus:ring-2 focus:ring-evergreen-100 focus:outline-none"
+        className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-card px-3 text-[12.5px] text-ink placeholder:text-ink-faint focus:border-line-strong focus:ring-2 focus:ring-line focus:outline-none"
       />
       <Button variant="primary" type="submit" disabled={busy || !reason.trim()}>
         Send request

@@ -34,7 +34,7 @@ async function post(url: string, body?: unknown): Promise<{ ok: boolean; json: u
 }
 
 const selectClass =
-  "h-8 w-full rounded-lg border border-line bg-card px-2.5 text-[12.5px] text-ink focus:border-evergreen-400 focus:ring-2 focus:ring-evergreen-100 focus:outline-none disabled:opacity-55"
+  "h-8 w-full rounded-lg border border-line bg-card px-2.5 text-[12.5px] text-ink focus:border-line-strong focus:ring-2 focus:ring-line focus:outline-none disabled:opacity-55"
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <span className="mb-1 block text-[11px] font-medium text-ink-faint">{children}</span>
@@ -204,7 +204,7 @@ function SimulateSection() {
                   onClick={() => setVariant(v)}
                   className={cn(
                     "h-7 flex-1 rounded-md text-[12px] font-medium transition-colors",
-                    variant === v ? "bg-evergreen-600 text-white" : "text-ink-soft hover:bg-surface",
+                    variant === v ? "bg-ink text-white" : "text-ink-soft hover:bg-surface",
                   )}
                 >
                   {v === "wrong" ? "Wrong document" : "Correct document"}
@@ -231,7 +231,7 @@ function SimulateSection() {
           {result?.ok && (
             <Link
               href={`/clients/${result.clientId}`}
-              className="inline-flex items-center gap-1 text-[12.5px] font-medium text-evergreen-600 transition-colors hover:text-evergreen-800"
+              className="inline-flex items-center gap-1 text-[12.5px] font-medium text-ink underline-offset-2 transition-colors hover:underline"
             >
               Open client detail
               <ArrowUpRight size={13} />
@@ -247,7 +247,7 @@ function SimulateSection() {
                 {result.ok ? "200 OK" : "Error"}
               </Badge>
             </div>
-            <pre className="max-h-64 overflow-auto rounded-lg bg-evergreen-950 px-4 py-3 font-mono text-[11px] leading-relaxed text-evergreen-100/90">
+            <pre className="max-h-64 overflow-auto rounded-lg bg-ink px-4 py-3 font-mono text-[11px] leading-relaxed text-white/85">
               {result.body}
             </pre>
           </div>

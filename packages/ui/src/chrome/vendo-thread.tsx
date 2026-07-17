@@ -6,7 +6,9 @@ import { useVendoContext } from "../context.js";
 import { useVendoThread } from "../hooks/use-vendo-thread.js";
 import { PayloadView } from "../tree/renderer.js";
 import { ApprovalCard } from "./approval-card.js";
+import { BuildBeat, toolPresentation } from "./build-beat.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { MorphToast, type MorphToastProps } from "./morph-toast.js";
 import { ConnectCard } from "./connect-card.js";
 import { FluidThinking } from "./fluid-thinking.js";
 import { previewArgs, summarizeArgs, toolTitle } from "./humanize.js";
@@ -70,6 +72,20 @@ function approvalByCall(messages: UIMessage[]): Map<string, {
 
 function toolName(part: Extract<UIMessage["parts"][number], { toolCallId: string }>): string {
   return part.type === "dynamic-tool" && "toolName" in part ? part.toolName : part.type.replace(/^tool-/, "");
+}
+
+/** The app-boundary title: the payload's `name`, else its first heading Text node. */
+function appTitle(payload: unknown): string | undefined {
+  const named = (payload as { name?: unknown }).name;
+  if (typeof named === "string" && named.trim()) return named;
+  const nodes = (payload as { nodes?: Array<{ component?: string; props?: Record<string, unknown> }> }).nodes;
+  if (!Array.isArray(nodes)) return undefined;
+  for (const node of nodes) {
+    if (node.component === "Text" && node.props?.variant === "heading" && typeof node.props.text === "string") {
+      return node.props.text;
+    }
+  }
+  return undefined;
 }
 
 /** A stable signature for a tool part — same tool + same input = the same call. */
@@ -210,6 +226,29 @@ function useStickToBottom(messages: UIMessage[], threadKey?: string, contentRevi
     // the message-driven stick already ran. Re-run so the reader stays pinned.
   }, [messages, contentRevision]);
 
+  // A generated view mounts and grows AFTER the messages effect runs (the jail
+  // renders async; logos/images load late). Without watching actual size, the
+  // stick fires before the growth and the newest content — the approval card,
+  // the closing line — lands below the fold. Observe the content box and
+  // re-stick whenever it grows while the reader is at the bottom.
+  useEffect(() => {
+    const node = listRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      lastScrollHeightRef.current = node.scrollHeight;
+      if (stuckRef.current) node.scrollTop = node.scrollHeight;
+    });
+    for (const child of Array.from(node.children)) observer.observe(child);
+    const mutation = new MutationObserver(() => {
+      for (const child of Array.from(node.children)) observer.observe(child);
+    });
+    mutation.observe(node, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      mutation.disconnect();
+    };
+  }, []);
+
   return { listRef, onScroll, jumpToLatest, showJump: unseen };
 }
 
@@ -230,12 +269,36 @@ export function VendoThread({
   suggestions = [],
   onVoice,
 }: VendoThreadProps) {
-  const { client, components, tools } = useVendoContext();
+  const { client, components, theme, tools, onPin } = useVendoContext();
   const thread = useVendoThread(threadId);
   const busy = thread.status === "submitted" || thread.status === "streaming";
   // busy is a content-revision signal for the scroll hook: turn-actions mount
   // below the last turn when a stream settles, which changes the list height.
   const scroll = useStickToBottom(thread.messages, threadId, busy);
+  const approvalCardRefs = useRef(new Map<string, HTMLDivElement | null>());
+  const [morph, setMorph] = useState<Omit<MorphToastProps, "onDone"> | null>(null);
+
+  // A build's approval lands below a tall generated view — off-screen — so it
+  // would sit unnoticed until the reader scrolls. When a NEW approval appears,
+  // bring it into view (and re-stick), so consent is never something you have
+  // to go hunting for.
+  const seenApprovalsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const pending = thread.messages
+      .flatMap(message => message.parts)
+      .filter(part => isToolUIPart(part) && part.state === "approval-requested")
+      .map(part => (part as { approval?: { id?: string } }).approval?.id)
+      .filter((id): id is string => typeof id === "string");
+    const fresh = pending.find(id => !seenApprovalsRef.current.has(id));
+    seenApprovalsRef.current = new Set(pending);
+    if (fresh === undefined) return;
+    const timer = setTimeout(() => {
+      const card = approvalCardRefs.current.get(fresh)?.querySelector<HTMLElement>(".fl-approval");
+      if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+      else scroll.jumpToLatest();
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [thread.messages, scroll]);
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -261,7 +324,11 @@ export function VendoThread({
   const lastPart = activeAssistant?.parts.at(-1);
   const caretShowing = busy && lastPart?.type === "text" && lastPart.state === "streaming"
     && lastPart.text.trim().length === 0;
-  const working = busy && !assistantHasVisibleText && !awaitingFirstChunk && !caretShowing;
+  // Once ANY build beat exists in the active turn, the checklist is the
+  // progress voice — the thinking indicator between beats reads as two
+  // indicators fighting.
+  const hasBeats = activeAssistant?.parts.some(part => isToolUIPart(part)) ?? false;
+  const working = busy && !assistantHasVisibleText && !awaitingFirstChunk && !caretShowing && !hasBeats;
 
   const [attachError, setAttachError] = useState<string>();
 
@@ -285,6 +352,20 @@ export function VendoThread({
     })();
   };
 
+  // Remix bridge: a host affordance (the hero card's "Remix") opens this
+  // surface and hands it the request to type + send, so the whole build
+  // happens here — the one conversational place (08-ui §4).
+  useEffect(() => {
+    const onPrefill = (event: Event) => {
+      const detail = (event as CustomEvent<{ prompt?: string; send?: boolean }>).detail;
+      if (typeof detail?.prompt !== "string") return;
+      setDraft(detail.prompt);
+      if (detail.send) queueMicrotask(() => send(detail.prompt));
+    };
+    window.addEventListener("vendo:prefill", onPrefill);
+    return () => window.removeEventListener("vendo:prefill", onPrefill);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- send closes over stable refs
+  }, []);
   const send = (override?: string) => {
     const text = (override ?? draft).trim();
     const pending = files;
@@ -470,40 +551,12 @@ export function VendoThread({
       return <Markdown key={key} text={part.text} streaming={part.state === "streaming"} />;
     }
     if (isToolUIPart(part)) {
+      // The in-thread presentation is a human build "beat" (label from the
+      // ENG-216 pipeline: host metadata, else the prettified id — never the
+      // raw slug or lifecycle string). The mechanical record stays in the
+      // Activity panel. Collapsed runs carry their repeat count.
       const risk = risks.get(part.toolCallId) ?? "read";
-      const error = part.state === "output-error";
-      const done = part.state === "output-available";
-      // ENG-216 — humanize: friendly label (host metadata, else prettified id)
-      // plus a readable arg summary; the lifecycle string (`output-available`)
-      // and raw slug are never shown — the icon carries state instead.
-      const name = toolName(part);
-      const label = toolTitle(name, tools[name]);
-      const input = "input" in part ? part.input : undefined;
-      const summary = tools[name]?.summarize?.(input as Json) ?? summarizeArgs(input);
-      return (
-        <div
-          className={`fl-tool ${error ? "fl-tool-error" : done ? "fl-tool-done" : "fl-tool-working"}`}
-          data-vendo-approval={risk}
-          key={key}
-        >
-          {error ? (
-            <span className="fl-tool-icon" aria-hidden="true">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                <path d="M18 6 6 18M6 6l12 12" />
-              </svg>
-            </span>
-          ) : done ? (
-            <span className="fl-tool-icon" aria-hidden="true">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="m5 12 4 4L19 6" />
-              </svg>
-            </span>
-          ) : <span className="fl-tool-spinner" aria-hidden="true" />}
-          <span className="fl-tool-label">{label}</span>
-          {summary ? <span className="fl-tool-detail">{summary}</span> : null}
-          {count > 1 ? <span className="fl-tool-count" aria-label={`repeated ${count} times`}>×{count}</span> : null}
-        </div>
-      );
+      return <BuildBeat key={key} part={part} risk={risk} count={count} />;
     }
     if (part.type === "data-vendo-view") {
       const data = partData(part) as Partial<VendoViewPart>;
@@ -517,13 +570,39 @@ export function VendoThread({
         pinDrift: _serverOnly,
         ...payload
       } = data.payload as typeof data.payload & { inClient?: unknown; pinDrift?: unknown };
+      const streaming = (payload as { streaming?: boolean }).streaming === true;
+      const appId = data.appId;
       return (
-        <PayloadView
-          key={`${key}-${data.appId}`}
-          payload={payload}
-          components={components}
-          onAction={({ action, payload }) => client.apps.call(data.appId!, action, payload ?? {})}
-        />
+        // The generated view lives inside a clear app boundary — a titled
+        // frame — so it reads as a distinct piece of software, not loose
+        // content bleeding into the surrounding chat text.
+        <div className="fl-uihost fl-appcard" key={`${key}-${appId}`}>
+          <div className="fl-appcard-bar">
+            <span className="fl-appcard-dot" aria-hidden="true" />
+            <span className="fl-appcard-name">{appTitle(payload) ?? "Your app"}</span>
+          </div>
+          <div className="fl-appcard-body">
+            <PayloadView
+              payload={payload}
+              components={components}
+              onAction={({ action, payload: actionPayload }) => client.apps.call(appId, action, actionPayload ?? {})}
+            />
+          </div>
+          {!streaming && onPin ? (
+            <div className="fl-appcard-foot">
+              <button
+                type="button"
+                className="fl-btn fl-btn-primary fl-appcard-pin"
+                onClick={() => onPin({ appId, payload })}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
+                </svg>
+                Pin to dashboard
+              </button>
+            </div>
+          ) : null}
+        </div>
       );
     }
     return null;
@@ -650,21 +729,40 @@ export function VendoThread({
               };
               const guardApprovalId = guardApproval?.approvalId;
               return (
-                <ApprovalCard
-                  key={part.approval.id}
-                  approval={approval}
-                  showContext={false}
-                  allowRemember={guardApprovalId !== undefined}
-                  onDecide={async decision => {
-                    // Decide the guard's approval record over the wire FIRST so the
-                    // resumed execution replays as approved (05 §1) — the native
-                    // response alone only tells the model loop to continue.
-                    if (guardApprovalId !== undefined) {
-                      await client.approvals.decide([guardApprovalId], decision);
-                    }
-                    thread.addToolApprovalResponse({ id: part.approval.id, approved: decision.approve });
-                  }}
-                />
+                <div key={part.approval.id} ref={element => { approvalCardRefs.current.set(part.approval.id, element); }}>
+                  <ApprovalCard
+                    approval={approval}
+                    showContext={false}
+                    allowRemember={guardApprovalId !== undefined}
+                    onDecide={async decision => {
+                      // The approved card lifts into the top-right notification
+                      // (ENG-205 morph) as the run resumes underneath it.
+                      if (decision.approve) {
+                        const card = approvalCardRefs.current.get(part.approval.id)?.querySelector<HTMLElement>(".fl-approval");
+                        if (card) {
+                          const presentation = toolPresentation(name, input, tools[name]);
+                          const rect = card.getBoundingClientRect();
+                          card.style.transition = "opacity .22s ease";
+                          card.style.opacity = "0";
+                          setMorph({
+                            startRect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
+                            title: `${presentation.title} — approved`,
+                            sub: presentation.sub ?? "Runs as you · recorded in Activity",
+                            logoUrl: presentation.logoUrl,
+                            theme,
+                          });
+                        }
+                      }
+                      // Decide the guard's approval record over the wire FIRST so the
+                      // resumed execution replays as approved (05 §1) — the native
+                      // response alone only tells the model loop to continue.
+                      if (guardApprovalId !== undefined) {
+                        await client.approvals.decide([guardApprovalId], decision);
+                      }
+                      thread.addToolApprovalResponse({ id: part.approval.id, approved: decision.approve });
+                    }}
+                  />
+                </div>
               );
             })}
             {connectRequests.map(({ part, connector, toolkit, message }) => (
@@ -708,6 +806,7 @@ export function VendoThread({
         {errorBanner}
         {composer}
       </div>
+      {morph ? <MorphToast {...morph} onDone={() => setMorph(null)} /> : null}
     </ChromeRoot>
   );
 }

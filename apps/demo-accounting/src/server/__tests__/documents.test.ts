@@ -109,9 +109,9 @@ describe("transitionDocument", () => {
 })
 
 describe("derived helpers", () => {
-  it("clientDocProgress reports Rivera Landscaping at 3 of 6 received", () => {
+  it("clientDocProgress reports Blue Bottle Coffee at 3 of 6 received", () => {
     const store = getStore()
-    const rivera = store.clients.find(c => c.businessName === "Rivera Landscaping LLC")!
+    const rivera = store.clients.find(c => c.businessName === "Blue Bottle Coffee")!
     expect(clientDocProgress(rivera.id)).toEqual({ received: 3, total: 6 })
   })
 
@@ -140,7 +140,7 @@ describe("derived helpers", () => {
 
   it("clientsMissingDocs drops by 1 after clearing one client's missing docs", () => {
     const store = getStore()
-    const rivera = store.clients.find(c => c.businessName === "Rivera Landscaping LLC")!
+    const rivera = store.clients.find(c => c.businessName === "Blue Bottle Coffee")!
     const missing = store.documents.filter(
       d => d.clientId === rivera.id && d.status === "missing",
     )

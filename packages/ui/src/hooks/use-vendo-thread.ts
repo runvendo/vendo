@@ -17,6 +17,46 @@ export type VendoThreadApproval = ToolUIPart | DynamicToolUIPart | VendoApproval
 const THREAD_ID_HEADER = "x-vendo-thread-id";
 const THREAD_ID_PATTERN = /^thr_.+$/;
 
+/**
+ * Director-mode recorder: when `globalThis.__vendoDirectorRecord` is truthy,
+ * tee every live stream's SSE `data:` payloads (with elapsed timestamps) into
+ * `globalThis.__vendoDirectorRecording`. Each entry converts 1:1 into a
+ * ScriptedTransport cue, so a real build replays verbatim. Inert otherwise.
+ */
+function recordStream(response: Response): void {
+  const globals = globalThis as {
+    __vendoDirectorRecord?: boolean;
+    __vendoDirectorRecording?: Array<{ at: number; chunk: unknown }>;
+  };
+  if (!globals.__vendoDirectorRecord || !response.body) return;
+  const recording = (globals.__vendoDirectorRecording ??= []);
+  const startedAt = Date.now();
+  const reader = response.clone().body!.getReader();
+  const decoder = new TextDecoder();
+  let buffered = "";
+  const pump = (): Promise<void> =>
+    reader.read().then(({ done, value }) => {
+      if (done) return;
+      buffered += decoder.decode(value, { stream: true });
+      const frames = buffered.split("\n\n");
+      buffered = frames.pop() ?? "";
+      for (const frame of frames) {
+        for (const line of frame.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6);
+          if (data === "[DONE]") continue;
+          try {
+            recording.push({ at: Date.now() - startedAt, chunk: JSON.parse(data) });
+          } catch {
+            // Malformed frame: skip — the recording is tooling, never load-bearing.
+          }
+        }
+      }
+      return pump();
+    });
+  void pump().catch(() => undefined);
+}
+
 function vendoApproval(part: UIMessage["parts"][number]): VendoApprovalPart | undefined {
   if (part.type !== "data-vendo-approval") return undefined;
   const value = "data" in part ? part.data : part;
@@ -39,7 +79,7 @@ function vendoApproval(part: UIMessage["parts"][number]): VendoApprovalPart | un
 
 /** 08-ui §3 */
 export function useVendoThread(threadId?: string) {
-  const { client } = useVendoContext();
+  const { client, transport: transportOverride } = useVendoContext();
   const suppliedThreadIdRef = useRef(threadId);
   const activeThreadIdRef = useRef(threadId);
   const [effectiveThreadId, setEffectiveThreadId] = useState(threadId);
@@ -52,7 +92,10 @@ export function useVendoThread(threadId?: string) {
   }
   const transport = useMemo(
     () =>
-      new DefaultChatTransport<UIMessage>({
+      // Director/replay tooling swaps in a scripted transport at the provider
+      // seam; everything downstream is unchanged (the thread is a pure
+      // function of the chunk stream).
+      transportOverride ?? new DefaultChatTransport<UIMessage>({
         api: `${client.baseUrl.replace(/\/$/, "")}/threads`,
         headers: client.headers,
         fetch: async (input, init) => {
@@ -62,6 +105,7 @@ export function useVendoThread(threadId?: string) {
             activeThreadIdRef.current = returnedThreadId;
             setEffectiveThreadId(returnedThreadId);
           }
+          recordStream(response);
           return response;
         },
         prepareSendMessagesRequest: ({ messages }) => {
@@ -77,7 +121,7 @@ export function useVendoThread(threadId?: string) {
           };
         },
       }),
-    [client],
+    [client, transportOverride],
   );
   const chat = useChat<UIMessage>({
     ...(threadId === undefined ? {} : { id: threadId }),

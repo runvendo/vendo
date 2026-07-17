@@ -39,11 +39,15 @@ describe("VendoThread and VendoOverlay exports", () => {
     // it can queue a follow-up and never dumps focus to <body>).
     expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).disabled).toBe(false);
     await act(async () => release());
-    // ENG-216 — the chip shows the humanized fallback label, not the raw slug
-    // or a lifecycle string; the risk still rides the container's data attr.
-    // Scope to the chip label class — the approval title also reads "Email send".
-    const receipt = await screen.findByText("Email send", { selector: ".fl-tool-label" });
-    expect(receipt.parentElement?.getAttribute("data-vendo-approval")).toBe("write");
+    // The thread speaks in the product's voice: the tool call renders as a
+    // human BEAT whose label comes from the ENG-216 pipeline (host metadata,
+    // else the prettified id — "Email send", never the raw slug). The raw
+    // name stays discoverable via data-vendo-tool; risk rides the data attr.
+    await screen.findAllByText(/Email send/);
+    const beat = document.querySelector("[data-vendo-tool='host_email_send']");
+    expect(beat).toBeTruthy();
+    expect(beat?.textContent).toContain("Email send");
+    expect(beat?.getAttribute("data-vendo-approval")).toBe("write");
     const card = await screen.findByLabelText("Approval for Email send");
     expect(card.textContent).toContain("a@example.com");
     expect(card.textContent).toContain(

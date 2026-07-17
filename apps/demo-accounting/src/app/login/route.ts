@@ -25,25 +25,28 @@ function loginPage(request: Request, message?: string, status = 401): Response {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign in to Cadence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@800&display=swap" rel="stylesheet">
   <style>
-    :root { color-scheme: light; font-family: "Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #221e19; background: #f7f5f1; }
+    :root { color-scheme: light; font-family: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #111111; background: #fbfbfa; }
     * { box-sizing: border-box; }
-    body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 80% 0%, rgb(38 103 85 / 9%), transparent 34rem), #f7f5f1; }
-    main { width: min(100%, 27rem); padding: 30px; border: 1px solid #ded8cf; border-radius: 12px; background: #fff; box-shadow: 0 22px 70px rgb(34 30 25 / 10%); }
-    .mark { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 11px; color: #fff; background: #266755; font-size: 20px; font-weight: 740; letter-spacing: -.05em; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 80% 0%, rgb(30 127 83 / 5%), transparent 34rem), #fbfbfa; }
+    main { width: min(100%, 27rem); padding: 30px; border: 1px solid #ecebe8; border-radius: 12px; background: #fff; box-shadow: 0 22px 70px rgb(17 17 17 / 8%); }
+    .mark { font-family: "Manrope", "Inter", ui-sans-serif, system-ui, sans-serif; font-size: 26px; font-weight: 800; letter-spacing: -.035em; color: #111111; }
+    .mark .dot { color: #1e7f53; }
     h1 { margin: 24px 0 8px; font-size: 28px; letter-spacing: -.03em; }
-    p { margin: 0 0 22px; color: #5c554b; line-height: 1.5; }
+    p { margin: 0 0 22px; color: #46443f; line-height: 1.5; }
     label { display: grid; gap: 7px; margin-top: 14px; font-size: 13px; font-weight: 650; }
-    input { width: 100%; min-height: 44px; border: 1px solid #ded8cf; border-radius: 8px; padding: 10px 12px; color: #221e19; background: #fff; font: inherit; }
-    input:focus { outline: 3px solid rgb(38 103 85 / 18%); border-color: #266755; }
-    button { width: 100%; min-height: 46px; margin-top: 22px; border: 0; border-radius: 8px; color: #fff; background: #266755; font: 660 15px/1 inherit; cursor: pointer; }
-    .error { margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; color: #b42318; background: #fbedeb; font-size: 13px; }
-    .fine { margin: 16px 0 0; font-size: 12px; text-align: center; color: #5c554b; }
+    input { width: 100%; min-height: 44px; border: 1px solid #ecebe8; border-radius: 8px; padding: 10px 12px; color: #111111; background: #fff; font: inherit; }
+    input:focus { outline: 3px solid rgb(17 17 17 / 10%); border-color: #dfddd8; }
+    button { width: 100%; min-height: 46px; margin-top: 22px; border: 0; border-radius: 8px; color: #fff; background: #111111; font: 660 15px/1 inherit; cursor: pointer; }
+    .error { margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; color: #b0473a; background: #fbede9; font-size: 13px; }
+    .fine { margin: 16px 0 0; font-size: 12px; text-align: center; color: #908c85; }
   </style>
 </head>
 <body>
   <main>
-    <div class="mark" aria-hidden="true">C</div>
+    <div class="mark" aria-hidden="true">cadence<span class="dot">.</span></div>
     <h1>Welcome back</h1>
     <p>Sign in to Cadence to keep your clients on schedule.</p>
     ${message ? `<div class="error" role="alert">${escapeHtml(message)}</div>` : ""}

@@ -18,29 +18,45 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { fetcher, type ActivityEvent } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { relativeTime } from "@/lib/format"
+import { logoUrl, providerForFilename } from "@/lib/logos"
 import type { ActivityType } from "@/server/types"
 
-// Status events reuse the Badge variant tints; message_sent is brand, not status.
+// Status events reuse the Badge variant tints; message_sent is neutral, not status.
 const EVENT_STYLE: Record<ActivityType, { icon: LucideIcon; chip: string }> = {
   upload_received: { icon: FileUp, chip: BADGE_VARIANTS.review },
   document_verified: { icon: FileCheck2, chip: BADGE_VARIANTS.verified },
   document_rejected: { icon: FileX2, chip: BADGE_VARIANTS.overdue },
-  message_sent: { icon: MessageSquare, chip: "bg-evergreen-50 text-evergreen-600" },
+  message_sent: { icon: MessageSquare, chip: "bg-line/60 text-ink-soft" },
   deadline_approaching: { icon: CalendarClock, chip: BADGE_VARIANTS.missing },
 }
 
 function ActivityRow({ event }: { event: ActivityEvent }) {
   const style = EVENT_STYLE[event.type]
+  // Uploads from a recognizable institution (payroll provider, bank) show the
+  // real logo — same favicon mechanism as Maple's merchant rows.
+  const provider = providerForFilename(event.summary)
   return (
     <li className="flex gap-3 px-5 py-3">
-      <span
-        className={cn(
-          "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
-          style.chip,
-        )}
-      >
-        <style.icon size={13} strokeWidth={1.75} />
-      </span>
+      {provider ? (
+        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-line bg-white">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={logoUrl(provider.domain, 64)}
+            alt={provider.name}
+            loading="lazy"
+            className="h-4 w-4 object-contain"
+          />
+        </span>
+      ) : (
+        <span
+          className={cn(
+            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
+            style.chip,
+          )}
+        >
+          <style.icon size={13} strokeWidth={1.75} />
+        </span>
+      )}
       <div className="min-w-0">
         <p className="text-[12.5px] leading-snug">{event.summary}</p>
         <p className="mt-0.5 text-[11px] text-ink-faint">{relativeTime(event.at)}</p>

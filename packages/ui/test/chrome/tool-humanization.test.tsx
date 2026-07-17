@@ -38,7 +38,7 @@ const doneTool = (toolCallId: string, input: unknown) => ({
   output: { ok: true },
 });
 
-describe("tool chip humanization", () => {
+describe("tool beat humanization", () => {
   let wire: Awaited<ReturnType<typeof createWireServer>>;
   let client: VendoClient;
 
@@ -58,11 +58,11 @@ describe("tool chip humanization", () => {
         <VendoThread threadId={thread.id} />
       </VendoProvider>,
     );
-    // Wait for the loaded thread's tool chips to render, independent of label text.
-    await waitFor(() => expect(document.querySelector(".fl-tool")).toBeTruthy(), { timeout: 15_000 });
+    // Wait for the loaded thread's build beats to render, independent of label text.
+    await waitFor(() => expect(document.querySelector(".fl-beat")).toBeTruthy(), { timeout: 15_000 });
   }
 
-  it("renders a humanized fallback label and no lifecycle string on the chip", { timeout: 20_000 }, async () => {
+  it("renders a humanized fallback label and no lifecycle string on the beat", { timeout: 20_000 }, async () => {
     await mount([doneTool("call_1", {})]);
     expect(screen.getByText("List client documents")).toBeTruthy();
     // The raw slug and the ai-SDK lifecycle string are never shown to end users.
@@ -79,7 +79,7 @@ describe("tool chip humanization", () => {
     expect(screen.queryByText("List client documents")).toBeNull();
   });
 
-  it("collapses consecutive identical tool chips into one with a count", { timeout: 20_000 }, async () => {
+  it("collapses consecutive identical tool beats into one with a count", { timeout: 20_000 }, async () => {
     await mount([
       doneTool("call_1", { clientId: "c1" }),
       doneTool("call_2", { clientId: "c1" }),
@@ -90,7 +90,7 @@ describe("tool chip humanization", () => {
     expect(screen.getByText("×3")).toBeTruthy();
   });
 
-  it("does not collapse tool chips whose args differ", { timeout: 20_000 }, async () => {
+  it("does not collapse tool beats whose args differ", { timeout: 20_000 }, async () => {
     await mount([
       doneTool("call_1", { clientId: "c1" }),
       doneTool("call_2", { clientId: "c2" }),
@@ -138,10 +138,10 @@ describe("ApprovalCard humanization", () => {
     expect(screen.getByLabelText("Approval for Remove invoice")).toBeTruthy();
   });
 
-  it("shows the context byline by default and hides it when showContext is false", () => {
+  it("shows the humanized context byline by default and hides it when showContext is false", () => {
     const view = render(<VendoProvider client={client}><ApprovalCard approval={approval} onDecide={() => undefined} /></VendoProvider>);
-    expect(screen.getByText(/app · present/)).toBeTruthy();
+    expect(screen.getByText(/Runs as you · asked in an app · app_1/)).toBeTruthy();
     view.rerender(<VendoProvider client={client}><ApprovalCard approval={approval} onDecide={() => undefined} showContext={false} /></VendoProvider>);
-    expect(screen.queryByText(/app · present/)).toBeNull();
+    expect(screen.queryByText(/Runs as you/)).toBeNull();
   });
 });

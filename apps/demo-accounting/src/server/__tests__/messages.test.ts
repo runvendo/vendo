@@ -52,7 +52,7 @@ describe("sendMessage", () => {
 describe("recordActivity", () => {
   it("prepends events with unique ids", () => {
     const a = recordActivity("deadline_approaching", "Filing deadline in 15 days", undefined)
-    const b = recordActivity("document_verified", "W-2 verified for Chen Consulting", "cl_chen")
+    const b = recordActivity("document_verified", "W-2 verified for Linear", "cl_chen")
     const activity = getStore().activity
     expect(activity[0].id).toBe(b.id)
     expect(activity[1].id).toBe(a.id)

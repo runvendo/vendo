@@ -21,7 +21,7 @@ export function VendoLayer({ children }: { children: ReactNode }) {
   // of DOM-poking the launcher; the launcher itself is the ui package's
   // default fixed bottom-right pill.
   const overlay = useVendoOverlay();
-  const { toggle, close } = overlay;
+  const { toggle, close, open } = overlay;
 
   // The overlay unmounts on /assistant (the page surface takes over) — drop
   // any open state with it so navigating back never re-shows the dialog
@@ -29,6 +29,20 @@ export function VendoLayer({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!floatingSurface) close();
   }, [floatingSurface, close]);
+
+  // Remix entry point: a host component's "Remix" affordance opens the Vendo
+  // overlay and hands the thread the request to type + build — the whole
+  // build happens in the one conversational surface.
+  useEffect(() => {
+    const onRemix = (event: Event) => {
+      const prompt = (event as CustomEvent<{ prompt?: string }>).detail?.prompt;
+      open();
+      // Wait for the overlay's thread to mount, then prefill + send.
+      setTimeout(() => window.dispatchEvent(new CustomEvent("vendo:prefill", { detail: { prompt, send: true } })), 260);
+    };
+    window.addEventListener("vendo:remix", onRemix);
+    return () => window.removeEventListener("vendo:remix", onRemix);
+  }, [open]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
