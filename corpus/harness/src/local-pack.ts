@@ -36,6 +36,10 @@ export interface LocalTarball {
 
 export interface LocalVendoInstallSummary {
   packageManager: LocalPackageManager;
+  /** Major of the pnpm version pinned via packageManager, when detection found
+   * one. null = no pin (the install runs whatever pnpm the harness environment
+   * provides — pnpm 11+, which no longer reads package.json pnpm.overrides). */
+  pnpmMajor?: number | null;
   installCommand: string;
   installDir?: string;
   packages: string[];
@@ -166,6 +170,12 @@ function packageManagerFromField(value: unknown): LocalPackageManager | null {
   return Number.isFinite(major) && major < 2 ? "yarn-classic" : "yarn-berry";
 }
 
+function pnpmMajorFromField(value: unknown): number | null {
+  if (typeof value !== "string" || !value.startsWith("pnpm@")) return null;
+  const major = Number.parseInt(value.slice("pnpm@".length).split(".")[0] ?? "", 10);
+  return Number.isFinite(major) ? major : null;
+}
+
 async function readOptional(file: string): Promise<string | null> {
   try {
     return await fs.readFile(file, "utf8");
@@ -212,29 +222,30 @@ async function detectPackageManager(
   targetDir: string,
   targetPkg: PackageJson,
   packageManagerRoot?: string,
-): Promise<{ packageManager: LocalPackageManager; installDir: string }> {
+): Promise<{ packageManager: LocalPackageManager; pnpmMajor: number | null; installDir: string }> {
   const target = path.resolve(targetDir);
   const dirs = await packageManagerSearchDirs(target, packageManagerRoot);
   const targetField = packageManagerFromField(targetPkg["packageManager"]);
-  if (targetField) return { packageManager: targetField, installDir: target };
+  if (targetField) return { packageManager: targetField, pnpmMajor: pnpmMajorFromField(targetPkg["packageManager"]), installDir: target };
   for (const dir of dirs) {
     if (dir === target) continue;
-    const manager = packageManagerFromField((await readOptionalPackageJson(dir))?.["packageManager"]);
-    if (manager) return { packageManager: manager, installDir: dir };
+    const field = (await readOptionalPackageJson(dir))?.["packageManager"];
+    const manager = packageManagerFromField(field);
+    if (manager) return { packageManager: manager, pnpmMajor: pnpmMajorFromField(field), installDir: dir };
   }
   for (const dir of dirs) {
     const yarnLock = await readOptional(path.join(dir, "yarn.lock"));
-    if (yarnLock) return { packageManager: yarnLock.includes("__metadata:") ? "yarn-berry" : "yarn-classic", installDir: dir };
+    if (yarnLock) return { packageManager: yarnLock.includes("__metadata:") ? "yarn-berry" : "yarn-classic", pnpmMajor: null, installDir: dir };
   }
   for (const dir of dirs) {
     if (await pathExists(path.join(dir, "package-lock.json")) || await pathExists(path.join(dir, "npm-shrinkwrap.json"))) {
-      return { packageManager: "npm", installDir: dir };
+      return { packageManager: "npm", pnpmMajor: null, installDir: dir };
     }
   }
   for (const dir of dirs) {
-    if (await pathExists(path.join(dir, "pnpm-lock.yaml"))) return { packageManager: "pnpm", installDir: dir };
+    if (await pathExists(path.join(dir, "pnpm-lock.yaml"))) return { packageManager: "pnpm", pnpmMajor: null, installDir: dir };
   }
-  return { packageManager: "pnpm", installDir: target };
+  return { packageManager: "pnpm", pnpmMajor: null, installDir: target };
 }
 
 // The umbrella's ai peer is >=6 <7 and init's starter provider is v6-era. A
@@ -392,6 +403,7 @@ export async function installLocalVendoPackages(
   if (rootRewritten) await fs.writeFile(rootPackageJsonPath, rootRewritten);
   return {
     packageManager: detected.packageManager,
+    pnpmMajor: detected.pnpmMajor,
     installCommand: detected.packageManager === "pnpm"
       ? "pnpm install"
       : detected.packageManager === "npm"

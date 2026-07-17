@@ -176,15 +176,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # npm permanently retired the legacy audit endpoints on 2026-07-15 (HTTP
-      # 410); `pnpm audit` only queries the replacement bulk-advisory endpoint
-      # from pnpm 11 (pnpm/pnpm#11265). The repo pins pnpm 9 via packageManager
-      # and pnpm 11 auto-delegates to that pin, so strip the field in this
-      # throwaway checkout before auditing. 11.10.0 is the newest release that
-      # clears the .npmrc minimumReleaseAge window. Remove this workaround when
-      # the repo itself moves to pnpm 11 (tracked in Linear).
-      - run: |
-          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));delete p.packageManager;fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
-          npx -y pnpm@11.10.0 audit --prod --audit-level high
+      # 410); `pnpm audit` queries the replacement bulk-advisory endpoint from
+      # pnpm 11 (pnpm/pnpm#11265), which the repo now pins via packageManager.
+      - run: pnpm audit --prod --audit-level high
 
   # Reminder that a user-facing change should ship a changeset. NON-BLOCKING by
   # design (the fleet auto-merges): this job is not a required check and its one
