@@ -93,9 +93,12 @@ management surface: members, roles, invites, keys, usage).
   retention out.
 - `core/src/open-enum.ts` (28): forward-compat casts, three call sites, solves
   a problem we don't have.
-- `actions/src/sync/common.ts:211-303` `fallbackModuleStatements` (~90): a
-  parser that runs only when `es-module-lexer` throws on valid code, which it
-  doesn't. Lexer failure now fails closed (warn + skip).
+- ~~`actions/src/sync/common.ts:211-303` `fallbackModuleStatements` (~90)~~
+  **CORRECTED during implementation (2026-07-17):** the audit premise was
+  wrong — `es-module-lexer` throws on real TSX/JSX component files, so this
+  "fallback" is the primary parser for pin-capture and route-scan on JSX.
+  Cutting it broke four real tests (verified on a clean baseline). It stays,
+  and dies naturally in B1 when route-scan/pins move onto the TypeScript AST.
 - `resolveRisk` hook (~25): its single consumer is the app-tool permission
   path already removed.
 
