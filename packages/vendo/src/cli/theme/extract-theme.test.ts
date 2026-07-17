@@ -95,7 +95,7 @@ describe("extractTheme allowlist fast-path", () => {
     expect(result.hasDarkVariant).toBe(true);
   });
 
-  it("accepts the Tailwind-v4 --color-* spellings and follows @import chains", async () => {
+  it("accepts the Tailwind-v4 --color-* spellings, !important noise, and @import chains", async () => {
     const root = await fixture({
       "package.json": "{}\n",
       "app/layout.tsx": 'import "./global.css";\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n',
@@ -104,7 +104,7 @@ describe("extractTheme allowlist fast-path", () => {
         @theme {
           --color-background: #ffffff;
           --color-foreground: #111827;
-          --color-primary: #2b7fff;
+          --color-primary: #2b7fff !important;
           --color-border: #e5e7eb;
         }
       `,

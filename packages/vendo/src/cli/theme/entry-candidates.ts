@@ -1,9 +1,7 @@
 /** Conventional Next.js entry-file paths (app-router layouts + pages-router
- *  `_app`), relative to a target repo's root. Shared by next-fonts.ts (font
- *  var recovery) and extract-theme.ts (CSS-import entry detection) — both walk
- *  the same small set of well-known locations before falling back to a wider
- *  tree scan. next-fonts.ts additionally checks `_document` variants; that
- *  extension lives there; this list stays scoped to what both callers need. */
+ *  `_app`), relative to a target repo's root. extract-theme.ts reads the
+ *  first hit as the root layout: the anchor for the CSS import graph and part
+ *  of the LLM pass's evidence (next/font imports live here). */
 export const ENTRY_FILE_CANDIDATES = [
   "app/layout.tsx",
   "app/layout.jsx",

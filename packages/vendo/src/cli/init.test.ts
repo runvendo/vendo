@@ -723,16 +723,19 @@ describe("vendo init", () => {
       }) as LanguageModel,
       themeReview: async (summary) => {
         reviewed.push(...summary.uncertain.map((entry) => entry.slot));
-        return { accent: "#111111", danger: "chartreuse-ish" };
+        return { accent: "#facc15", danger: "chartreuse-ish" };
       },
     });
 
     expect(reviewed).toEqual(["accent"]);
     const theme = JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"));
     // The human answer wins; the invalid one is ignored, not written.
-    expect(theme.colors.accent).toBe("#111111");
+    expect(theme.colors.accent).toBe("#facc15");
     expect(theme.colors.danger).toBe("#dc2626");
     expect(theme.colors.text).toBe("#111111");
+    // The contrast-derived accentText follows the replaced accent: white on
+    // the model's dark green would be wrong on the human's yellow.
+    expect(theme.colors.accentText).toBe("#000000");
   });
 
   it("wraps a layout that returns bare children (no JSX slot) with VendoRoot", async () => {

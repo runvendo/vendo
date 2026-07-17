@@ -130,9 +130,11 @@ function parseOklch(value: string): string | null {
   );
 }
 
-/** Any supported CSS color form to lowercase 6-digit hex; null when not one. */
+/** Any supported CSS color form to lowercase 6-digit hex; null when not one.
+ *  A trailing `!important` is declaration noise, not color — stripped. */
 export function normalizeColor(value: string): string | null {
-  return normalizeHex(value) ?? parseRgbTriplet(value) ?? parseHsl(value) ?? parseOklch(value);
+  const bare = value.replace(/\s*!important\s*$/i, "");
+  return normalizeHex(bare) ?? parseRgbTriplet(bare) ?? parseHsl(bare) ?? parseOklch(bare);
 }
 
 /**
@@ -154,7 +156,7 @@ export function resolveCssVarRefs(value: string, vars: CssVarDecl[], depth = 6):
 
 /** px/rem length to canonical px; null for any other unit or expression. */
 export function normalizeLength(value: string): string | null {
-  const trimmed = value.trim();
+  const trimmed = value.replace(/\s*!important\s*$/i, "").trim();
   const px = trimmed.match(/^((?:\d+|\d*\.\d+))px$/);
   if (px) return `${Number(px[1])}px`;
   const rem = trimmed.match(/^((?:\d+|\d*\.\d+))rem$/);

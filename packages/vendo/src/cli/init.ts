@@ -27,6 +27,7 @@ import {
 } from "./dev-mode.js";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
 import { resolveRefineModel } from "./refine.js";
+import { contrastingText } from "./theme/color.js";
 import {
   extractTheme as extractThemeSlots,
   validateSlotValue,
@@ -1046,6 +1047,12 @@ export async function runInit(options: InitOptions): Promise<number> {
             (summary.slots as unknown as Record<string, string>)[slot] = value;
             summary.matched[slot] = "(you)";
           }
+        }
+        // A replaced accent invalidates a contrast-derived accentText —
+        // re-derive it against the new accent (an explicit token or a direct
+        // human/model answer stays authoritative).
+        if (summary.matched["accent"] === "(you)" && summary.matched["accentText"] === "(contrast) accent") {
+          summary.slots.accentText = contrastingText(summary.slots.accent);
         }
       }
       await writeText(themePath, `${JSON.stringify(toVendoTheme(summary.slots), null, 2)}\n`);
