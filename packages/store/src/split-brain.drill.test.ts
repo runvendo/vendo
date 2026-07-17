@@ -43,7 +43,6 @@ describe("pglite", () => {
   afterAll(async () => {
     for (const dir of dirs) {
       await rm(dir, { recursive: true, force: true });
-      await rm(`${dir}.lock`, { force: true });
     }
   });
 

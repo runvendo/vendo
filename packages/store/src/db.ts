@@ -84,7 +84,7 @@ const errorMessage = (error: unknown): string => (error instanceof Error ? error
    - In-process: a globalThis registry shares ONE live driver across every
      handle (and every HMR copy of this module), refcounted so closing one
      handle never tears the driver out from under another.
-   - Cross-process: a sibling `<dataDir>.lock` pidfile taken BEFORE
+   - Cross-process: a `<dataDir>/.vendo-writer.lock` pidfile taken BEFORE
      PGlite.create. A second process WAITS (it never touches postgres files)
      and takes over only once the holder is provably gone — recorded pid dead,
      or the holder's mtime refresh stopped long ago (pid-reuse fallback). Lock
@@ -125,7 +125,7 @@ function lockIsStale(lockPath: string): boolean {
 }
 
 async function acquirePgliteDirLock(dataDir: string): Promise<DirLock> {
-  const lockPath = `${resolve(dataDir)}.lock`;
+  const lockPath = join(resolve(dataDir), ".vendo-writer.lock");
   const startedAt = Date.now();
   let warnedAt: number | undefined;
   for (;;) {

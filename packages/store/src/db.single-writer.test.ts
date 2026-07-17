@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // locking, so the second instance's startup writes tear the first one's WAL —
 // the dir reopens with a raw `Aborted()` and every recent turn is lost. The
 // store must enforce single-writer discipline itself: one live driver per dir
-// in-process, and a sibling lock file that makes a second process WAIT (not
+// in-process, and an in-dir lock file that makes a second process WAIT (not
 // corrupt) until the holder is gone. The wasm engine is mocked; the lock and
 // registry logic run against the real filesystem.
 const pgliteCreate = vi.fn();
@@ -32,7 +32,7 @@ const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(
 const settledWithin = (promise: Promise<unknown>, ms: number): Promise<unknown> =>
   Promise.race([promise.then(() => "settled", () => "settled"), wait(ms).then(() => "pending")]);
 
-const lockPathFor = (dir: string): string => `${dir}.lock`;
+const lockPathFor = (dir: string): string => join(dir, ".vendo-writer.lock");
 
 describe("PGlite single-writer discipline (ENG-351)", () => {
   let dir: string;
@@ -68,7 +68,7 @@ describe("PGlite single-writer discipline (ENG-351)", () => {
     await second.close();
   });
 
-  it("holds a sibling lock file while open and releases it on close", async () => {
+  it("holds a lock file inside the data dir while open and releases it on close", async () => {
     pgliteCreate.mockResolvedValue(fakePglite());
     const db = createDb({ dataDir: dir });
     await db.query("select 1");
