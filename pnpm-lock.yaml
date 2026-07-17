@@ -675,9 +675,6 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../core
-      es-module-lexer:
-        specifier: ^1.7.0
-        version: 1.7.0
       jsonata:
         specifier: ^2.0.5
         version: 2.2.1
