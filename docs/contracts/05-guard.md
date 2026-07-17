@@ -134,3 +134,9 @@ Adapter surface for LLM Guard-style content scanners (prompt injection on inputs
 - **Changed:** §2 contracts connector-account audit enrichment: `detail.connectorAccount` lifted at report time and stripped from the outcome (ENG-262, landed).
 - **Why:** Silent re-prompts hid policy-relevant drift, and guard console/insights need connector identity on every connector execution.
 - **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
+
+### 2026-07-17 — Org-principal audit enrichment removed
+
+- **Changed:** §2 drops the `ctx.principal.kind === "org"` branch that lifted `detail.org: { subject, actor }` into the audit event on org-owned executions. Guard no longer special-cases `kind: "org"` principals — every principal audits the same way.
+- **Why:** simplify-v2 kill-list A5 — orgs are a Vendo-Cloud-side feature; the OSS repo keeps no org-principal code paths.
+- **Authorized by:** the Yousef-approved simplify-v2 kill-list (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md`, §A5).

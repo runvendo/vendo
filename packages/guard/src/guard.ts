@@ -483,15 +483,6 @@ class GuardImplementation implements VendoGuard {
         if (connectorAccount !== undefined || actAs !== undefined) {
           outcome = cleaned as ToolOutcome;
         }
-        // Org context (block-actions design §C): org-owned executions carry the
-        // org principal; `actor` is the human member the wire re-contextualized.
-        if (ctx.principal.kind === "org") {
-          detail.org = {
-            subject: ctx.principal.subject,
-            ...(ctx.actor === undefined ? {} : { actor: ctx.actor.subject }),
-          };
-        }
-
         await this.report(
           eventFromContext(ctx, {
             kind: "tool-call",
