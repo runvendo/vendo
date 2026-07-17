@@ -81,6 +81,6 @@ export const vendo = createVendo({
   policy: { file: ".vendo/policy.json" },
   ...(judge ? { judge } : {}),
   connectors: composioApiKey
-    ? [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "googlecalendar"] })]
+    ? [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "googlecalendar", "slack"] })]
     : [],
 });

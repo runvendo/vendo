@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { ArrowUpRight, CalendarCheck2 } from "lucide-react"
 import useSWR from "swr"
+import { ClientMark } from "@/components/clients/client-marks"
 import { Badge, type BadgeVariant } from "@/components/ui/badge"
 import { Card, CardHeader } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -27,8 +28,9 @@ function DeadlineRow({ entry }: { entry: DeadlineEntry }) {
     <li>
       <Link
         href={`/clients/${entry.id}`}
-        className="group flex items-center gap-6 px-5 py-3.5 transition-colors hover:bg-surface/70"
+        className="group flex items-center gap-4 px-5 py-3.5 transition-colors hover:bg-surface/70"
       >
+        <ClientMark clientId={entry.id} name={entry.businessName} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate text-[13.5px] font-medium">{entry.businessName}</span>
@@ -81,7 +83,7 @@ export function DeadlineList({ className }: { className?: string }) {
         action={
           <Link
             href="/calendar"
-            className="text-[12px] font-medium text-evergreen-600 transition-colors hover:text-evergreen-800"
+            className="text-[12px] font-medium text-ink underline-offset-2 transition-colors hover:underline"
           >
             View calendar
           </Link>

@@ -4,7 +4,7 @@ import { Card } from "./card"
 
 /**
  * Dashboard metric tile. `iconClassName` sets the icon chip tint (defaults to
- * brand evergreen); status tints belong to document/deadline metrics only.
+ * neutral ink); status tints belong to document/deadline metrics only.
  */
 export function StatTile({
   label,
@@ -29,7 +29,7 @@ export function StatTile({
           <span
             className={cn(
               "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-              iconClassName ?? "bg-evergreen-50 text-evergreen-600",
+              iconClassName ?? "bg-line/50 text-ink-soft",
             )}
           >
             <Icon size={16} strokeWidth={1.75} />

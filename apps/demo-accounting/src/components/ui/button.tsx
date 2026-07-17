@@ -3,7 +3,7 @@ import { cn } from "@/lib/cn"
 export type ButtonVariant = "primary" | "subtle"
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary: "bg-evergreen-600 text-white hover:bg-evergreen-700",
+  primary: "bg-ink text-white hover:bg-ink-soft",
   subtle: "border border-line bg-card text-ink-soft hover:bg-surface hover:text-ink",
 }
 

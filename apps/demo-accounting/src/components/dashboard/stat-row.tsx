@@ -2,7 +2,7 @@
 
 import { CalendarClock, FileStack, FolderCheck } from "lucide-react"
 import useSWR from "swr"
-import { MissingDocsHero } from "@/components/dashboard/missing-docs-hero"
+import { HeroSlot } from "@/components/vendo/hero-slot"
 import { Card } from "@/components/ui/card"
 import { ErrorState } from "@/components/ui/error-state"
 import { ProgressBar } from "@/components/ui/progress"
@@ -75,7 +75,7 @@ export function StatRow() {
 
   return (
     <div className="grid grid-cols-4 gap-4">
-      <MissingDocsHero missingCount={data.clientsMissingDocs} clientCount={data.clientsTotal} />
+      <HeroSlot missingCount={data.clientsMissingDocs} clientCount={data.clientsTotal} />
       <StatTile
         label="Documents outstanding"
         value={data.documentsOutstanding}
