@@ -86,7 +86,9 @@ management surface: members, roles, invites, keys, usage).
 
 ### A6. Speculative sub-features with no consumer (~450 lines)
 - `actions/src/sync/catalog-ai.ts` (149): LLM catalog-copy seam; knob has no
-  caller; the refine engine in `vendo` owns this job.
+  caller. (Justification corrected 2026-07-17: `vendo refine` does NOT author
+  catalog copy — nothing does; the field is hand-edited today. The cut stands
+  on the no-caller ground alone.)
 - Scanner hook in guard (~85): adapter surface, zero in-repo consumers,
   contract itself says zero scanners ship in-box.
 - Age-based erase sweep (`store/src/erase.ts:260-310`, ~50): contract scopes
