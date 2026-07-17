@@ -57,8 +57,17 @@ skill into `.claude/skills/` when your repo uses skills.
     ```
   </Step>
   <Step title="Give it a model">
-    Vendo runs on any AI SDK `LanguageModel`. If init scaffolded the starter
-    model module, install its pinned peers and set a key:
+    Vendo runs on any AI SDK `LanguageModel`. The scaffolded `lib/ai.ts`
+    calls `devModel()`, which resolves a credential in this order in
+    development: an env key (`ANTHROPIC_API_KEY` → `OPENAI_API_KEY` →
+    `GOOGLE_GENERATIVE_AI_API_KEY`), a logged-in Claude Code CLI session, a
+    logged-in Codex CLI session, then `VENDO_API_KEY`. Session rungs need
+    consent (init asks once, or set `VENDO_DEV_ALLOW_SESSIONS=1`) and never
+    resolve when `NODE_ENV=production`. See
+    [Dev-mode credentials](/connect/dev-mode).
+
+    Production always needs a real key. Install the matching provider and
+    set it in your deployment environment:
 
     ```bash
     npm install ai@^6 @ai-sdk/anthropic@^3
