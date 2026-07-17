@@ -40,7 +40,7 @@
 
 ## Task 7: Gates and finish
 - [ ] `pnpm --filter @vendoai/vendo test` and `typecheck` green per task; full `pnpm build && pnpm test && pnpm typecheck && pnpm lint` at the end.
-- [ ] Contract check: `docs/contracts/09-vendo.md` already describes init as "deterministic + AI riding the dev's existing key" and does not encode the old heuristics — amend only if any wording contradicts the new pipeline.
+- [ ] ~~Contract check~~ SKIPPED per Yousef's mid-flight doctrine change (2026-07-17): docs/contracts/ is being retired — the behavior contract is the exported types + tests. No contract files edited (an early amendment was reverted in-branch).
 - [ ] Push branch, open PR (no merge) with before/after accuracy table and net line count.
 
 ## Measurements
