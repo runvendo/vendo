@@ -26,7 +26,6 @@ import {
   approvalDecisionSchema,
   descriptorHash,
   isReservedSubject,
-  orgPrincipal,
   principalSchema,
   vendoThemeSchema,
   type ActAs,
@@ -85,7 +84,6 @@ import {
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
 import { createConnections, type ConnectionsService } from "./connections.js";
-import { createOrgs, type OrgsService } from "./orgs.js";
 import { createRuntimeCapture, type RuntimeCaptureHandler } from "./runtime-capture.js";
 import { computeImpact } from "./sync-impact.js";
 
@@ -133,7 +131,6 @@ export interface Vendo {
   automations: AutomationsEngine;
   actions: ActionsRegistry;
   connections: ConnectionsService;
-  orgs: OrgsService;
   store: VendoStore;
 }
 
@@ -613,7 +610,6 @@ function createWireHandler(deps: {
   apps: AppsRuntime;
   automations: AutomationsEngine;
   connections: ConnectionsService;
-  orgs: OrgsService;
   sandbox: SandboxVenue;
   doctor: {
     present(ctx: RunContext): Promise<ToolOutcome>;
@@ -937,13 +933,16 @@ function createWireHandler(deps: {
         }
       }
 
-      // Block-actions design §C: `?org=<id>` / body.org switch the approvals
-      // surface to an org's queue — ADMIN-gated (members run; admins approve).
+      // Org-scoped approvals (`?org=<id>`) were a Vendo Cloud capability
+      // (block-actions design §C); orgs are cut from OSS (kill-list A5), so a
+      // request carrying an org param here now gets the same cloud-required
+      // error the /orgs routes answer, rather than silently ignoring it.
       if (request.method === "GET" && path === "/approvals") {
         const ctx = await context(request, "chat");
-        const org = url.searchParams.get("org");
-        const scoped = org === null ? ctx : await deps.orgs.adminContext(ctx, org);
-        return json(await deps.guard.approvals.pending(scoped.principal));
+        if (url.searchParams.get("org") !== null) {
+          throw new VendoError("cloud-required", "orgs are a Vendo Cloud capability");
+        }
+        return json(await deps.guard.approvals.pending(ctx.principal));
       }
       if (request.method === "POST" && path === "/approvals/decide") {
         const body = await requestJson(request);
@@ -951,9 +950,11 @@ function createWireHandler(deps: {
         if (ids.length === 0) throw new VendoError("validation", "ids must contain at least one approval id");
         const decision = approvalDecisionSchema.safeParse(body["decision"]);
         if (!decision.success) throw new VendoError("validation", "decision is invalid");
+        if (body["org"] !== undefined) {
+          throw new VendoError("cloud-required", "orgs are a Vendo Cloud capability");
+        }
         const ctx = await context(request, "chat");
-        const scoped = body["org"] === undefined ? ctx : await deps.orgs.adminContext(ctx, string(body["org"], "org"));
-        await deps.guard.approvals.decide(ids, decision.data as ApprovalDecision, scoped.principal);
+        await deps.guard.approvals.decide(ids, decision.data as ApprovalDecision, ctx.principal);
         return json({});
       }
 
@@ -988,129 +989,37 @@ function createWireHandler(deps: {
         }
       }
 
-      // Same admin-gated `?org=` scoping as approvals: admins manage the org's
-      // standing grants.
+      // Same cloud-required `?org=` scoping as approvals: standing grants
+      // scoping to an org is a Vendo Cloud capability.
       if (request.method === "GET" && path === "/grants") {
         const ctx = await context(request, "chat");
-        const org = url.searchParams.get("org");
-        const scoped = org === null ? ctx : await deps.orgs.adminContext(ctx, org);
-        return json(await deps.guard.grants.list(scoped.principal));
+        if (url.searchParams.get("org") !== null) {
+          throw new VendoError("cloud-required", "orgs are a Vendo Cloud capability");
+        }
+        return json(await deps.guard.grants.list(ctx.principal));
       }
       if (request.method === "DELETE" && head === "grants" && segments.length === 2) {
         const ctx = await context(request, "chat");
-        const org = url.searchParams.get("org");
-        const scoped = org === null ? ctx : await deps.orgs.adminContext(ctx, org);
-        await deps.guard.grants.revoke(string(segments[1], "grant id"), scoped.principal);
+        if (url.searchParams.get("org") !== null) {
+          throw new VendoError("cloud-required", "orgs are a Vendo Cloud capability");
+        }
+        await deps.guard.grants.revoke(string(segments[1], "grant id"), ctx.principal);
         return json({});
       }
 
-      // Block-actions design §C — org management (key-gated; every deps.orgs
-      // call posture-errors without an entitled VENDO_API_KEY).
-      if (path === "/orgs" && (request.method === "GET" || request.method === "POST")) {
-        const ctx = await context(request, "chat");
-        if (request.method === "GET") return json({ orgs: await deps.orgs.list(ctx.principal), posture: deps.orgs.posture });
-        const body = await requestJson(request);
-        const org = await deps.orgs.create(ctx.principal, string(body["name"], "org name"));
-        await deps.guard.report({
-          id: `aud_${globalThis.crypto.randomUUID()}`,
-          at: new Date().toISOString(),
-          kind: "principal",
-          principal: ctx.principal,
-          venue: ctx.venue,
-          presence: "present",
-          detail: { event: "org-created", org: org.id, name: org.name },
-        });
-        return json(org);
-      }
-      if (head === "orgs" && segments.length >= 2) {
-        const orgId = string(segments[1], "org id");
-        const ctx = await context(request, "chat");
-        if (request.method === "GET" && segments.length === 2) {
-          return json(await deps.orgs.get(ctx.principal, orgId));
-        }
-        if (request.method === "POST" && segments[2] === "members" && segments.length === 3) {
-          const body = await requestJson(request);
-          const member = await deps.orgs.addMember(
-            ctx.principal,
-            orgId,
-            string(body["subject"], "member subject"),
-            (body["role"] === undefined ? "member" : string(body["role"], "role")) as never,
-          );
-          await deps.guard.report({
-            id: `aud_${globalThis.crypto.randomUUID()}`,
-            at: new Date().toISOString(),
-            kind: "principal",
-            principal: ctx.principal,
-            venue: ctx.venue,
-            presence: "present",
-            detail: { event: "org-member-added", org: orgId, subject: member.subject, role: member.role },
-          });
-          return json(member);
-        }
-        if (segments[2] === "members" && segments.length === 4) {
-          const subject = string(segments[3], "member subject");
-          if (request.method === "PATCH") {
-            const body = await requestJson(request);
-            const member = await deps.orgs.setRole(ctx.principal, orgId, subject, string(body["role"], "role") as never);
-            await deps.guard.report({
-              id: `aud_${globalThis.crypto.randomUUID()}`,
-              at: new Date().toISOString(),
-              kind: "principal",
-              principal: ctx.principal,
-              venue: ctx.venue,
-              presence: "present",
-              detail: { event: "org-member-role", org: orgId, subject, role: member.role },
-            });
-            return json(member);
-          }
-          if (request.method === "DELETE") {
-            await deps.orgs.removeMember(ctx.principal, orgId, subject);
-            await deps.guard.report({
-              id: `aud_${globalThis.crypto.randomUUID()}`,
-              at: new Date().toISOString(),
-              kind: "principal",
-              principal: ctx.principal,
-              venue: ctx.venue,
-              presence: "present",
-              detail: { event: "org-member-removed", org: orgId, subject },
-            });
-            return json({});
-          }
-        }
-        if (request.method === "POST" && segments[2] === "apps" && segments.length === 3) {
-          const body = await requestJson(request);
-          const appId = string(body["appId"], "appId");
-          await deps.orgs.transferApp(ctx.principal, orgId, appId);
-          await deps.guard.report({
-            id: `aud_${globalThis.crypto.randomUUID()}`,
-            at: new Date().toISOString(),
-            kind: "principal",
-            principal: ctx.principal,
-            venue: ctx.venue,
-            presence: "present",
-            appId,
-            detail: { event: "org-app-transferred", org: orgId, appId },
-          });
-          return json({});
-        }
+      // Orgs are a Vendo Cloud capability, not an OSS one (kill-list A5): every
+      // /orgs-prefixed route answers the posture error unconditionally, for
+      // any method — there is no key-gated activation path left in the OSS
+      // wire (contrast the old block-actions design §C org machinery, which
+      // this replaces).
+      if (path === "/orgs" || (head === "orgs" && segments.length >= 2)) {
+        throw new VendoError("cloud-required", "orgs are a Vendo Cloud capability");
       }
 
       if (path === "/apps") {
         const ctx = await context(request, "app");
         if (request.method === "GET") {
-          // Org-owned apps the caller can run (block-actions design §C) join
-          // the personal listing; memberships() degrades to [] when orgs are
-          // unactivated (paid gate). Listings fan out in parallel.
-          const [own, memberships] = await Promise.all([
-            deps.apps.list(ctx),
-            deps.orgs.memberships(ctx.principal),
-          ]);
-          const orgApps = await Promise.all(memberships.map((membership) => deps.apps.list({
-            ...ctx,
-            principal: orgPrincipal(membership.id, membership.name),
-            actor: ctx.principal,
-          })));
-          return json([...own, ...orgApps.flat()]);
+          return json(await deps.apps.list(ctx));
         }
         if (request.method === "POST") {
           const body = await requestJson(request);
@@ -1130,17 +1039,8 @@ function createWireHandler(deps: {
       }
       if (head === "apps" && segments.length >= 2) {
         const appId = string(segments[1], "app id");
-        const baseCtx = await context(request, "app");
-        // Org-owned apps (block-actions design §C): re-contextualize a member's
-        // request onto the org principal (actor = the human, for audit). Reads
-        // and calls are member-level ("run"); every mutation needs an admin
-        // ("manage"). Non-org apps pass through unchanged.
+        const ctx = await context(request, "app");
         const operationName = segments[2];
-        const need: "run" | "manage" = request.method === "GET"
-          || (request.method === "POST" && operationName === "call")
-          ? "run"
-          : "manage";
-        const ctx = await deps.orgs.appContext(baseCtx, appId, need);
         if (segments.length === 2) {
           if (request.method === "GET") {
             const app = await deps.apps.get(appId, ctx);
@@ -1209,14 +1109,7 @@ function createWireHandler(deps: {
       }
       if (head === "automations" && segments.length === 3 && request.method === "POST") {
         const appId = string(segments[1], "app id");
-        // Org-owned automations: enabling/disabling is managing (admin-gated
-        // through the same org re-contextualization as app mutations, §C);
-        // dry-run is a read-only preview of a run — member-level, like running.
-        const ctx = await deps.orgs.appContext(
-          await context(request, "automation"),
-          appId,
-          segments[2] === "dry-run" ? "run" : "manage",
-        );
+        const ctx = await context(request, "automation");
         if (segments[2] === "enable") return json(await deps.automations.enable(appId, ctx));
         if (segments[2] === "disable") {
           await deps.automations.disable(appId, ctx);
@@ -1287,10 +1180,6 @@ function createWireHandler(deps: {
             // 04-actions §3 — how per-user connected accounts are brokered:
             // "byo" (host's own Composio key), "cloud" (VENDO_API_KEY), or off.
             connections: deps.connections.posture,
-            // Block-actions design §C — org workspaces are key-gated: "cloud"
-            // when VENDO_API_KEY is set (activation still requires the plan's
-            // `orgs` capability), false otherwise.
-            orgs: deps.orgs.posture,
           },
         });
       }
@@ -1576,9 +1465,6 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // connections capability wins (connections must live where its tools
   // execute); with none, VENDO_API_KEY routes to the Vendo Cloud broker.
   const connections = createConnections({ connectors: config.connectors ?? [] });
-  // Block-actions design §C — org workspaces: machinery is OSS, activation is
-  // key-gated via the console's /keys/validate (the `orgs` capability).
-  const orgs = createOrgs({ store });
   // 10-mcp §1 — construct the door from the parts already assembled: the SAME
   // guard-bound registry chat/apps/automations use, the guard (its core seam is
   // what the door holds for auth audit), the store (a StoreAdapter for the door's
@@ -1671,7 +1557,6 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     apps,
     automations,
     connections,
-    orgs,
     sandbox: sandbox.venue,
     doctor,
     mcp: mcpOptions !== undefined,
@@ -1708,13 +1593,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     automations,
     actions,
     connections,
-    orgs,
     store,
   };
 }
 
-/** 09-vendo §2 — adapt the fetch handler to a Next.js catch-all route module.
-    PATCH joined the wire with the org member role route (ENG-263). */
+/** 09-vendo §2 — adapt the fetch handler to a Next.js catch-all route module. */
 export function nextVendoHandler(vendo: Vendo): {
   GET(request: Request): Promise<Response>;
   POST(request: Request): Promise<Response>;

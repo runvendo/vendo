@@ -11,7 +11,6 @@ export type {
   SyncReport,
 } from "@vendoai/actions";
 export type { ConnectionsService, InitiatedConnection, InitiateOptions } from "./connections.js";
-export type { OrgsService } from "./orgs.js";
 export type {
   Judge,
   PolicyConfig,

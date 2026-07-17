@@ -68,9 +68,9 @@ Mounted under one base (default `/api/vendo`). Auth: every request passes throug
 | --- | --- | --- |
 | `/threads` | POST | `{ threadId?, message }` → ai-SDK UI message stream (SSE) — one conversational turn; response includes `X-Vendo-Thread-Id: ThreadId` (the effective requested or server-minted id) |
 | `/threads` · `/threads/:id` | GET · GET/DELETE | thread summaries · thread |
-| `/approvals` | GET | pending `ApprovalRequest[]`; `?org=<id>` scopes to an org the caller admins (ENG-263) |
-| `/approvals/decide` | POST | `{ ids, decision }` → `{}` (batch-capable) |
-| `/grants` · `/grants/:id` | GET · DELETE | grants · revoke; `?org=<id>` scopes to an org the caller admins (ENG-263) |
+| `/approvals` | GET | pending `ApprovalRequest[]`; an `?org=<id>` param always `cloud-required` (kill-list A5) |
+| `/approvals/decide` | POST | `{ ids, decision }` → `{}` (batch-capable); a `body.org` always `cloud-required` (kill-list A5) |
+| `/grants` · `/grants/:id` | GET · DELETE | grants · revoke; an `?org=<id>` param always `cloud-required` (kill-list A5) |
 | `/apps` | GET · POST | list · `{ prompt }` → `AppDocument` |
 | `/apps/:id` | GET · DELETE | app · delete |
 | `/apps/:id/open` | GET | `OpenSurface` |
@@ -88,10 +88,8 @@ Mounted under one base (default `/api/vendo`). Auth: every request passes throug
 | `/tick` | POST | scheduler tick (serverless cron target; requires `Authorization: Bearer <secret>` — what Vercel cron sends natively) |
 | `/webhooks/:source` | POST | trigger ingress (Composio, host, plain) — verified, see below |
 | `/activity` | GET | `AuditEvent[]` — `guard.audit.query({ principal })` self-scoped at this route |
-| `/status` | GET | `{ posture, version, blocks: {...} }` (doctor's live probe); `blocks.connections: "byo" \| "cloud" \| false` (04 §3.1) and `blocks.orgs: "cloud" \| false` (ENG-263) report per-block posture |
-| `/orgs` · `/orgs/:id` | GET/POST · GET | list caller's orgs (+ posture) / create · one org with role + members |
-| `/orgs/:id/members` · `/orgs/:id/members/:subject` | POST · PATCH/DELETE | add member · set role / remove — admin-gated; owners control owners (ENG-263) |
-| `/orgs/:id/apps` | POST | transfer a durable app/automation to the org subject (admin-gated) |
+| `/status` | GET | `{ posture, version, blocks: {...} }` (doctor's live probe); `blocks.connections: "byo" \| "cloud" \| false` (04 §3.1) reports per-block posture |
+| `/orgs` (+ every `/orgs/*` subpath) | ALL | always `cloud-required` — orgs are a Vendo Cloud capability, not an OSS wire route (kill-list A5) |
 | `/connections` | GET | the resolved principal's `ConnectorAccount[]` (04 §3) — subject is never caller-supplied |
 | `/connections/initiate` | POST | `{ toolkit, connector?, callbackUrl? }` → `{ id, redirectUrl }` (the broker's OAuth URL); ephemeral and synthetic (`webhook:`/`vendo:`) subjects refused |
 | `/connections/:id` | GET · DELETE | `?connector=` — poll status (404 = not this subject's account, no oracle) · disconnect |
@@ -136,7 +134,7 @@ Exit codes: doctor `0` green / `1` broken wiring; sync `0` (fail-soft warns) / w
 
 ## 6. Cloud enforcement
 
-`VENDO_API_KEY` present → cloud-gated surfaces (share/publish/org/pinning) verify entitlements against Cloud and light up; absent → those methods throw `VendoError("cloud-required")`. Paid code lives in the private cloud repo; this repo stays pure Apache-2.0.
+`VENDO_API_KEY` present → cloud-gated surfaces (share/publish/pinning) verify entitlements against Cloud and light up; absent → those methods throw `VendoError("cloud-required")`. Paid code lives in the private cloud repo; this repo stays pure Apache-2.0. Orgs are cloud-required unconditionally — no key or entitlement lights them up in this repo (kill-list A5, amended below).
 
 ## Amendments
 
@@ -152,6 +150,12 @@ Exit codes: doctor `0` green / `1` broken wiring; sync `0` (fail-soft warns) / w
 - **Changed:** §3 adds the `/orgs` routes (list/create, get-one, members add/set-role/remove, app transfer), `?org=<id>` scoping on `/approvals` and `/grants`, and the `blocks.orgs` posture in `/status`.
 - **Why:** ENG-263 shipped the org wire surface (PR #277); the coordinated contracts amendment (#269) landed before these route rows were written. This completes the 09-vendo half of the block-actions amendment.
 - **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
+
+### 2026-07-17 — Orgs server surface removed, `cloud-required` seam kept
+
+- **Changed:** §3's `/orgs` route family (list/create, get-one, members add/set-role/remove, app transfer) is removed; the entire path prefix now always answers `cloud-required`, unconditionally — not key-gated, not entitlement-gated. `?org=<id>` on `/approvals` and `/grants` gets the same unconditional `cloud-required` instead of admin-context scoping. `blocks.orgs` is removed from `/status`. §6's cloud-gated surface list drops `org` (share/publish/pinning remain entitlement-gated; orgs are never OSS-reachable at all).
+- **Why:** simplify-v2 kill-list A5 — the org wire surface (§3, ENG-263) was implemented against the host's local store, contradicting the 2026-07-16 data-residency decision (Cloud enabled = data stored with Vendo). Orgs move to Vendo Cloud entirely; this repo keeps only the posture seam so a caller gets a clear error instead of a 404.
+- **Authorized by:** the Yousef-approved simplify-v2 kill-list (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md`, §A5).
 
 ### 2026-07-16 — Ephemeral session policy knob and sweep wiring (ENG-237, wave 4)
 

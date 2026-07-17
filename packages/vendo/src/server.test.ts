@@ -325,8 +325,6 @@ describe("09 §3 public wire", () => {
         mcp: false,
         // 04-actions §3 — no BYO connector and no VENDO_API_KEY → no broker.
         connections: false,
-        // block-actions §C — orgs are key-gated; no VENDO_API_KEY → off.
-        orgs: false,
       },
     });
   });
@@ -397,9 +395,6 @@ describe("09 §3 public wire", () => {
   it("adapts the same fetch handler to Next route exports", async () => {
     const { vendo } = await setup();
     const next = nextVendoHandler(vendo);
-    // PATCH joined with the org member role route (ENG-263) — Next.js returns
-    // 405 for any method the module does not export, so its absence would make
-    // role changes fail before reaching the wire.
     for (const method of ["GET", "POST", "PATCH", "DELETE"] as const) expect(next[method]).toBeTypeOf("function");
     expect((await next.GET(request("GET", "/status"))).status).toBe(200);
   });
@@ -1493,19 +1488,29 @@ describe("01-core §2 — the wire rejects resolver-minted reserved/org principa
   });
 });
 
-describe("block-actions §C — key-gated org wire (posture errors without a key)", () => {
-  it("returns cloud-required posture errors on every org mutation and an inert list", async () => {
+describe("kill-list A5 — orgs are a Vendo Cloud capability, not an OSS wire route", () => {
+  it("returns cloud-required for every /orgs route, regardless of API key", async () => {
     const { vendo } = await setup();
     const list = await vendo.handler(request("GET", "/orgs"));
     expect(list.status).toBe(402);
+    const body = await list.json() as { error: { code: string } };
+    expect(body.error.code).toBe("cloud-required");
 
     const create = await vendo.handler(request("POST", "/orgs", { name: "Acme" }));
     expect(create.status).toBe(402);
-    const body = await create.json() as { error: { code: string } };
-    expect(body.error.code).toBe("cloud-required");
 
-    // The org-scoped approvals/grants surfaces posture-error too.
+    const get = await vendo.handler(request("GET", "/orgs/org_1"));
+    expect(get.status).toBe(402);
+
+    const addMember = await vendo.handler(request("POST", "/orgs/org_1/members", { subject: "user_1" }));
+    expect(addMember.status).toBe(402);
+  });
+
+  it("returns cloud-required for any request carrying an org param, regardless of API key", async () => {
+    const { vendo } = await setup();
     expect((await vendo.handler(request("GET", "/approvals?org=org_x"))).status).toBe(402);
+    expect((await vendo.handler(request("POST", "/approvals/decide", { ids: ["a"], decision: { approve: true }, org: "org_x" }))).status).toBe(402);
     expect((await vendo.handler(request("GET", "/grants?org=org_x"))).status).toBe(402);
+    expect((await vendo.handler(request("DELETE", "/grants/grant_1?org=org_x"))).status).toBe(402);
   });
 });

@@ -8,11 +8,6 @@ export const CAPABILITY_KEYS = [
   "insights",
   "mcp_broker",
   "sso_saml",
-  // ENG-263 (block-actions design §C): org machinery ships OSS, activation is
-  // key-gated. OSS defines the wire the console must serve; parseContractV2
-  // defaults a missing capability to false, so keys stay org-less until the
-  // console starts granting it.
-  "orgs",
 ] as const;
 
 export type CapabilityKey = typeof CAPABILITY_KEYS[number];
@@ -125,7 +120,6 @@ export function parseContractV2(value: unknown): ContractV2 | null {
       insights: capabilities.insights === true,
       mcp_broker: capabilities.mcp_broker === true,
       sso_saml: capabilities.sso_saml === true,
-      orgs: capabilities.orgs === true,
     },
     limits: {
       sandbox_minutes: meterUsage(limits.sandbox_minutes),
@@ -157,7 +151,6 @@ export const FREE_CONTRACT: ContractV2 = {
     insights: false,
     mcp_broker: false,
     sso_saml: false,
-    orgs: false,
   },
   limits: {
     sandbox_minutes: { ...DEFAULT_METER, exhausted: true },
