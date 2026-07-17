@@ -101,15 +101,11 @@ rather than hand-editing the file. A malformed `.vendo/catalog.json` fails
 sync loudly, and `createVendo` logs one actionable error naming the file and
 telling you to rerun `vendo sync`.
 
-### Review AI-authored copy
+### Catalog copy is hand-edited
 
-Sync can optionally draft descriptions and examples for scanned entries. Any
-proposed copy is written to `.vendo/catalog.proposals.json` as a before/after
-diff — nothing enters `.vendo/catalog.json` until you accept it through the
-explicit acceptance API. The runtime never reads the proposals file. Accepted
-copy is pinned to the deterministic basis (export path, prop schema, note)
-so a later rescan that changes the underlying component invalidates the
-accepted copy instead of applying it silently.
+No seam authors catalog copy today. Edit a scanned entry's `description` and
+`examples` directly in `.vendo/catalog.json` — a rescan preserves that copy on
+a still-scanned entry, keeping unchanged reruns byte-identical.
 
 The prewired primitives are `Stack`, `Row`, `Grid`, `Text`, `Skeleton`,
 `Surface`, `Divider`, `Card`, `Button`, `Input`, `Select`, `Table`, `Badge`,

@@ -103,9 +103,8 @@ still-scanned entry persist, keeping unchanged reruns byte-identical. Scanned
 entries carry no authored copy of their own — a human hand-edits
 `description`/`examples` directly in `catalog.json`, and rescans preserve that
 copy on a still-scanned entry. Registered copy lives in code and is
-regenerated from code on every sync. (Catalog copy authoring is the `vendo
-refine` engine's job, not sync's — see §1's build-step-versus-command note
-above.)
+regenerated from code on every sync. (No seam authors catalog copy today —
+`description`/`examples` are hand-edited, full stop.)
 
 `disabled` remains in the strict `catalog@1` entry schema for forward
 conformance, but is reserved for the extraction-M5 curation workflow and the
