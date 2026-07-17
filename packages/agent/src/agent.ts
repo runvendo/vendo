@@ -9,6 +9,7 @@ import {
   type ThreadId,
   type ToolRegistry,
 } from "@vendoai/core";
+import { memoryStoreAdapter } from "@vendoai/core/conformance";
 import {
   convertToModelMessages,
   createUIMessageStream,
@@ -59,7 +60,7 @@ async function persistFinishedTurn(
 ): Promise<void> {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      await threads.persist(thread, messages, ctx);
+      await threads.persist(thread, messages);
       return;
     } catch (error) {
       const delay = PERSIST_RETRY_DELAYS_MS[attempt];
@@ -322,7 +323,11 @@ function providerHistory(messages: UIMessage[]): UIMessage[] {
 /** 03-agent §1 */
 export function createAgent(config: AgentConfig): VendoAgent {
   validateConfig(config);
-  const threads = new ThreadRepository(config.store);
+  // kill-list B5: a host that omits `store` still gets thread persistence —
+  // core's in-memory reference StoreAdapter, scoped to this agent instance's
+  // process lifetime — through the exact same ThreadRepository code path a
+  // store-backed composition uses. No separate memory-only branch survives.
+  const threads = new ThreadRepository(config.store ?? memoryStoreAdapter());
   // ENG-252: per-thread set of tools loaded in via `vendo_tools_search`. It
   // persists across turns within a run so a discovered tool stays callable, and
   // is reclaimed on thread delete + session eviction. The LRU cap bounds memory
@@ -492,9 +497,22 @@ export function createAgent(config: AgentConfig): VendoAgent {
       },
     },
     evictSubject: (subject) => {
-      // Release each evicted thread's searched-in loadout so a reused id can't
-      // inherit stale tools, and so memory is reclaimed on session sweep.
-      for (const id of threads.evictSubject(subject)) loadedTools.delete(id);
+      // kill-list B5: eviction now goes through the store (threads.evictSubject
+      // is async — a list+delete against the store), so
+      // this stays fire-and-forget to keep the public signature synchronous
+      // (03-agent §1). Release each evicted thread's searched-in loadout so a
+      // reused id can't inherit stale tools, and so memory is reclaimed on
+      // session sweep.
+      threads.evictSubject(subject)
+        .then((ids) => {
+          for (const id of ids) loadedTools.delete(id);
+        })
+        .catch((error: unknown) => {
+          console.error("[vendo] agent: evictSubject failed", {
+            subject,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
     },
     asRunner: () => createRunner(config),
   };
