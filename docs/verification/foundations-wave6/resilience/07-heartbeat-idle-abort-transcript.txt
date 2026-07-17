@@ -1,0 +1,41 @@
+ENG-353 fix verification — heartbeat-armed idle abort (2026-07-17, next dev / Turbopack, Next 16.2.9)
+
+Setup: demo host under `next dev` with ANTHROPIC_BASE_URL pointed at a mock
+Anthropic Messages endpoint that streams a long canned completion and logs
+every request + mid-stream teardown ("CLIENT ABORTED"). No real tokens burned.
+
+1) Fallback (the ENG-353 gap): zombie connection — socket stays open and
+   reading, panel-style beats STOP after 5s. Only the idle watchdog can fire.
+   Cadence host, authenticated turn:
+
+   [mock] 2026-07-17T19:02:05.138Z #3 POST /messages
+   (beats -> 200 {"active":true} at +0s, +3s; then silence)
+   [vendo] turn on thread thr_04acadece46d4f6dadf45ebd484cac0e lost its client
+           heartbeat for 15000ms — aborting the abandoned turn.
+   [mock] 2026-07-17T19:02:23.154Z #3 CLIENT ABORTED mid-stream
+
+   → abandoned turn cancelled ~15s after the last beat, with the connection
+     still open — no socket-close signal involved.
+
+2) Real browser (the field case): browser-disconnect.mjs navigate-away on the
+   Maple UI. The panel's transport now beats the wire (immediate + every 5s):
+
+   POST /api/vendo/threads/thr_87eb…/heartbeat 200   (x2 before disconnect)
+   [browser-drill] 19:00:25.062Z DISCONNECTING (navigate-away) mid-generation
+   [mock]          19:00:25.145Z #2 CLIENT ABORTED mid-stream
+
+   → cancelled in 83ms. In this capture the runtime surfaced the disconnect
+     (fast path won the race); had it not, the armed watchdog above bounds the
+     burn at ~15-20s instead of the previously captured ~7min run-to-completion.
+
+3) Fast path unchanged: client-disconnect.mjs --mode abort
+   [drill] +2053ms fetch torn down after client disconnect (AbortError)
+   [mock] 19:02:41.117Z #1 POST /messages
+   [mock] 19:02:43.127Z #1 CLIENT ABORTED mid-stream
+   (settle window clean — no further provider lines)
+
+4) Non-beating clients unaffected: client-disconnect.mjs --mode control
+   [drill] +30160ms stream ended normally (turn completed)
+   [mock] #2 completed (100 deltas)
+   → a consumer that never beats keeps exact run-to-completion semantics;
+     the watchdog only ever arms on a first heartbeat.
