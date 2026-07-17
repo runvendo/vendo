@@ -320,6 +320,50 @@ describe("runDemoDeploy (dry run against a fixture app)", () => {
       });
     });
 
+    it("surfaces a router 409 as an actionable slug-taken error naming the owning prospect", async () => {
+      const { repoRoot } = await writeFixture();
+      const exec = happyExec();
+      const conflictBody = JSON.stringify({
+        error: "id taken",
+        existing: {
+          id: "linear",
+          prospect: "Linear Logistics GmbH",
+          url: "https://demo-linear-other.up.railway.app/",
+          expiresAt: "2026-09-01T00:00:00Z",
+        },
+      });
+      const fetchImpl = vi.fn().mockResolvedValue(new Response(conflictBody, { status: 409 }));
+      const error = await runDemoDeploy(liveArgs, {
+        repoRoot,
+        exec,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        env,
+        write: () => {},
+      }).catch((caught: unknown) => caught as Error);
+      expect(error).toBeInstanceOf(Error);
+      const message = (error as Error).message;
+      expect(message).toContain('slug "linear" is already taken');
+      expect(message).toContain("Linear Logistics GmbH");
+      expect(message).toMatch(/variant slug/);
+      expect(message).toContain("mercury-bank");
+      expect(message).toContain("demo:create");
+    });
+
+    it("still surfaces a 409 usably when the body is not the router's JSON shape", async () => {
+      const { repoRoot } = await writeFixture();
+      const fetchImpl = vi.fn().mockResolvedValue(new Response("nope", { status: 409 }));
+      const error = await runDemoDeploy(liveArgs, {
+        repoRoot,
+        exec: happyExec(),
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        env,
+        write: () => {},
+      }).catch((caught: unknown) => caught as Error);
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain('slug "linear" is already taken');
+      expect((error as Error).message).toContain("demo:create");
+    });
+
     it("scrubs the anthropic key out of echoed child output on failure", async () => {
       const { repoRoot } = await writeFixture();
       const exec = vi.fn().mockImplementation(async (command: string[]) => {

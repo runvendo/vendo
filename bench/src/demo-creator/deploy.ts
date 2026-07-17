@@ -411,11 +411,39 @@ export async function runDemoDeploy(args: DemoDeployArgs, io: DeployIo): Promise
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(registryPayload),
   });
+  if (response.status === 409) {
+    throw new Error(formatSlugConflict(config.id, await response.text()));
+  }
   if (!response.ok) {
     throw new Error(`Router registration failed: ${response.status} ${await response.text()}`);
   }
   write(`Registered: ${args.routerUrl.replace(/\/+$/, "")}/${config.id} -> ${registryPayload.url} (expires ${registryPayload.expiresAt})`);
   return { serviceName, appPath, dryRun: false, domain, registryPayload };
+}
+
+/** Turn the router's 409 body ({ error: "id taken", existing: {...} }) into an
+ * actionable operator error: name the prospect holding the slug and point at
+ * the fix (a semantic variant slug + a fresh demo:create). Robust to bodies
+ * that are not the expected JSON shape. */
+export function formatSlugConflict(id: string, responseBody: string): string {
+  let holder = "another demo";
+  try {
+    const parsed = JSON.parse(responseBody) as { existing?: { prospect?: unknown; url?: unknown; expiresAt?: unknown } };
+    const existing = parsed.existing;
+    if (existing !== undefined && typeof existing.prospect === "string") {
+      const detail = [
+        typeof existing.url === "string" ? existing.url : undefined,
+        typeof existing.expiresAt === "string" ? `expires ${existing.expiresAt}` : undefined,
+      ].filter((part) => part !== undefined).join(", ");
+      holder = `prospect "${existing.prospect}"${detail.length > 0 ? ` (${detail})` : ""}`;
+    }
+  } catch {
+    // body was not the router's JSON shape — the generic message still names the slug and the fix
+  }
+  return (
+    `Demo slug "${id}" is already taken by ${holder} — the router refused to overwrite it. `
+    + `Pick a variant slug (semantic, e.g. "mercury-bank" rather than a numbered suffix) and re-run demo:create with it.`
+  );
 }
 
 function firstLine(text: string): string | undefined {

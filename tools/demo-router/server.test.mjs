@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
@@ -37,7 +37,7 @@ async function boot({ adminToken = ADMIN_TOKEN, seed = [], corrupt = false } = {
       ...init,
       headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json", ...init.headers },
     });
-  return { base, registry, request, admin };
+  return { base, registry, request, admin, filePath };
 }
 
 describe("public routes", () => {
@@ -197,6 +197,63 @@ describe("admin CRUD", () => {
     assert.equal((await admin("/admin/demos/acme", { method: "DELETE" })).status, 204);
     assert.equal(registry.get("acme"), undefined);
     assert.equal((await admin("/admin/demos/acme", { method: "DELETE" })).status, 404);
+  });
+
+  it("POST 409s when the id is taken by a different prospect, leaving the registry byte-unchanged", async () => {
+    const { admin, filePath } = await boot({ seed: [liveRow] });
+    const before = readFileSync(filePath);
+    const response = await admin("/admin/demos", {
+      method: "POST",
+      body: JSON.stringify({ ...liveRow, prospect: "NotAcme", url: "https://other.example" }),
+    });
+    assert.equal(response.status, 409);
+    const body = await response.json();
+    assert.equal(body.error, "id taken");
+    assert.deepEqual(body.existing, {
+      id: "acme",
+      prospect: "Acme Widgets",
+      url: new URL(liveRow.url).href,
+      expiresAt: liveRow.expiresAt,
+    });
+    assert.ok(before.equals(readFileSync(filePath)), "conflicting POST must not touch the registry file");
+  });
+
+  it("POST 409s when prospect matches but the url differs (and vice versa)", async () => {
+    const { admin, registry } = await boot({ seed: [liveRow] });
+    const urlConflict = await admin("/admin/demos", {
+      method: "POST",
+      body: JSON.stringify({ ...liveRow, url: "https://demo-acme-v2.up.railway.app" }),
+    });
+    assert.equal(urlConflict.status, 409);
+    const prospectConflict = await admin("/admin/demos", {
+      method: "POST",
+      body: JSON.stringify({ ...liveRow, prospect: "Acme Rockets" }),
+    });
+    assert.equal(prospectConflict.status, 409);
+    assert.equal(registry.get("acme").prospect, "Acme Widgets");
+    assert.equal(registry.get("acme").url, new URL(liveRow.url).href);
+  });
+
+  it("POST with matching prospect AND url stays an upsert: a redeploy can extend expiresAt and un-kill", async () => {
+    const { admin, registry } = await boot({ seed: [{ ...liveRow, killed: true }] });
+    const response = await admin("/admin/demos", {
+      method: "POST",
+      body: JSON.stringify({ ...liveRow, expiresAt: "2100-01-01T00:00:00Z" }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(registry.get("acme").expiresAt, "2100-01-01T00:00:00Z");
+    assert.equal(registry.get("acme").killed, false);
+  });
+
+  it("POST with a brand-new id still creates alongside existing rows", async () => {
+    const { admin, registry } = await boot({ seed: [liveRow] });
+    const response = await admin("/admin/demos", {
+      method: "POST",
+      body: JSON.stringify({ ...liveRow, id: "globex", prospect: "Globex", url: "https://demo-globex.up.railway.app" }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(registry.get("globex").prospect, "Globex");
+    assert.equal(registry.get("acme").prospect, "Acme Widgets");
   });
 
   it("a corrupt registry surfaces as 500 on admin reads, and the file is never overwritten", async () => {

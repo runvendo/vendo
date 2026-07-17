@@ -224,6 +224,19 @@ export function createRouterServer({
           optional: ["killed"],
         });
         if (validated.error !== undefined) return respondJson(response, 400, { error: validated.error });
+        // Slug uniqueness: the same id may only be re-posted for the SAME demo
+        // (matching prospect + url — a legitimate redeploy that can extend
+        // expiresAt or un-kill). A different prospect or url means a new demo
+        // is colliding with a live one: 409, registry untouched. Compare
+        // against the WHATWG-normalized incoming url, since that is what the
+        // registry stores (upsert normalizes via new URL(...).href).
+        const existing = registry.get(body.id);
+        if (existing !== undefined && (existing.prospect !== body.prospect || existing.url !== new URL(body.url).href)) {
+          return respondJson(response, 409, {
+            error: "id taken",
+            existing: { id: existing.id, prospect: existing.prospect, url: existing.url, expiresAt: existing.expiresAt },
+          });
+        }
         return respondJson(response, 200, registry.upsert(body));
       }
 
