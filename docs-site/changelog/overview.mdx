@@ -3,6 +3,23 @@ title: "Vendo product changelog"
 description: "Weekly release notes covering new Vendo features, product updates, MCP door capabilities, and bug fixes shipped to the SDK and runtime."
 ---
 
+<Update label="July 17, 2026" description="Week of July 14 – July 20">
+
+## New features
+
+**Humanized tool chips and approval cards.** `@vendoai/ui` chrome now shows
+friendly labels and readable argument previews instead of raw tool slugs,
+ai-SDK lifecycle strings, or raw JSON. `VendoProvider` accepts an optional
+`tools` prop (`ToolMetaMap`) with per-tool `label`, `description`, and
+`summarize(args)`; the new `useVendoTools()` hook exposes the same map to
+custom surfaces. Chrome falls back to prettified ids and `Key: value`
+previews when no metadata is supplied, collapses consecutive identical
+chips into a single entry with an `×N` count, and no longer prints a
+fabricated context byline on the in-thread approval card. See
+[Tool labels](/connect/tool-labels).
+
+</Update>
+
 <Update label="July 16, 2026" description="Week of July 14 – July 20">
 
 ## New features

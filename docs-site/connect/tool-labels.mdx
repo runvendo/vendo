@@ -1,0 +1,91 @@
+---
+title: "Tool labels: humanize tool chips and approval cards"
+description: "Supply per-tool label, description, and summarize(args) metadata to VendoProvider so tool chips and approval cards read in human language."
+---
+
+Shipped chrome renders a tool chip every time the agent calls a tool, and an
+approval card whenever a call needs the user's sign-off. The wire only carries
+the raw tool id, the risk, and the arguments — no friendly name, description,
+or arg formatting reaches the client. Chrome humanizes at the render site so
+end users never read a raw slug, a lifecycle string, or raw JSON.
+
+## Default fallback
+
+Without any configuration, chrome prettifies the raw id and args:
+
+- `host_email_send` renders as "Email send".
+- `gmail_GMAIL_CREATE_EMAIL_DRAFT` renders as "Gmail create email draft".
+- Object arguments render as a `Key: value` preview in the approval card and a
+  compact `Key value · Key value` summary on the chip. Non-object args fall
+  back to the server-formatted input preview.
+- Consecutive identical chips (same tool, same args) collapse into one entry
+  with an `×N` count.
+- The chip's spinner, check, or error icon carries lifecycle state — no
+  `output-available` or `Tool:` text ever renders.
+- The in-thread approval card no longer prints a fabricated context byline.
+  Standalone and queue approval cards keep their real server-provided
+  principal, venue, and presence context.
+
+The fallback is enough for demos and internal tools. Pass friendly metadata
+when you want your own copy for user-facing surfaces.
+
+## Pass friendly metadata to VendoProvider
+
+`VendoProvider` accepts an optional `tools` prop keyed by tool name. Every
+field is optional; missing fields fall through to the default fallback.
+
+```tsx
+"use client";
+
+import { VendoProvider, type ToolMetaMap } from "@vendoai/ui";
+
+const tools: ToolMetaMap = {
+  host_email_send: {
+    label: "Send email",
+    description: "Send a message from your connected inbox.",
+    summarize: (args) => {
+      if (args && typeof args === "object" && "to" in args) {
+        return `To ${(args as { to: string }).to}`;
+      }
+      return undefined;
+    },
+  },
+  host_invoice_create: {
+    label: "Create invoice",
+    description: "Draft a new invoice for a customer.",
+  },
+};
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  return <VendoProvider tools={tools}>{children}</VendoProvider>;
+}
+```
+
+| Field | Purpose |
+| --- | --- |
+| `label` | Short display name shown on the tool chip and as the approval card title. |
+| `description` | One-line description shown under the approval card title. |
+| `summarize(args)` | Custom one-line summary shown on the tool chip. Return `undefined` to fall back to the default `Key value` summary. |
+
+`tools` is additive and UI-side. It does not change the wire, the tool
+descriptor, or guard behavior — a call still routes through the same policy,
+grant, and approval decision described in
+[Tools and safety](/concepts/tools-and-safety).
+
+## Read metadata from your own chrome
+
+`useVendoTools()` exposes the same `ToolMetaMap` for custom surfaces built on
+top of the [headless hooks](/reference/hooks). The hook is provider-optional
+and returns an empty map when called outside `VendoProvider`, so standalone
+components degrade to the formatting fallback.
+
+```tsx
+"use client";
+
+import { useVendoTools } from "@vendoai/ui";
+
+export function ToolLabel({ name }: { name: string }) {
+  const tools = useVendoTools();
+  return <span>{tools[name]?.label ?? name}</span>;
+}
+```
