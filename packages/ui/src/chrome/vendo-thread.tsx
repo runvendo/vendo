@@ -221,6 +221,10 @@ export interface VendoThreadProps {
   suggestions?: string[];
   /** Show a mic affordance in the composer that launches the host's voice surface. */
   onVoice?: () => void;
+  /** ENG-222 — fires with the effective thread id once it is known, including
+   * the fresh `thr_` the server mints for a new conversation. Lets a host
+   * surface (e.g. VendoPage's sidebar) pull the new conversation into its list. */
+  onThreadId?: (threadId: string) => void;
 }
 
 /** 08-ui §4 — conversation chrome over the headless thread transport. */
@@ -229,9 +233,15 @@ export function VendoThread({
   greeting = "What can I help you build?",
   suggestions = [],
   onVoice,
+  onThreadId,
 }: VendoThreadProps) {
   const { client, components, tools } = useVendoContext();
   const thread = useVendoThread(threadId);
+  // ENG-222 — surface the effective (possibly server-minted) thread id upward.
+  const reportedThreadId = thread.threadId;
+  useEffect(() => {
+    if (reportedThreadId !== undefined) onThreadId?.(reportedThreadId);
+  }, [reportedThreadId, onThreadId]);
   const busy = thread.status === "submitted" || thread.status === "streaming";
   // busy is a content-revision signal for the scroll hook: turn-actions mount
   // below the last turn when a stream settles, which changes the list height.
