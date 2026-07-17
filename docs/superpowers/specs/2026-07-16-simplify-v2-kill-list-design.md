@@ -4,6 +4,13 @@ Date: 2026-07-16
 Status: decided with Yousef in one sitting (simplify-v2 lane of the microapps v2 overhaul)
 Feeds: the v2 contract re-derivation (merge point with the format-gen-v2 lane)
 
+> **Reading notes** (added 2026-07-17 at review): package paths below are
+> relative to `packages/` (`apps/src/machine.ts` = `packages/apps/src/machine.ts`
+> — distinct from the repo-root `apps/` demo directory). Line counts are
+> audit-stage estimates that guided scoping; the measured actuals live in the
+> per-task commits and the PR #340 checkpoint reports, which supersede these
+> numbers where they differ.
+
 ## Context
 
 Microapps v2 is a from-first-principles rebuild. Contracts are unfrozen; breaking
