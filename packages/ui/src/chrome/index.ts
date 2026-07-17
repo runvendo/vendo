@@ -12,4 +12,6 @@ export { VendoPalette, type VendoCommand } from "./vendo-palette.js";
 export { type HotkeyChord, type PaletteHotkey } from "./palette-hotkey.js";
 export { VendoSlot } from "./vendo-slot.js";
 export { VendoThread } from "./vendo-thread.js";
+export { VendoToasts, vendoToast, dismissAllVendoToasts, type VendoToastsProps, type VendoToastInput, type VendoToastAction } from "./vendo-toasts.js";
+export { WaitingQueue, type WaitingQueueProps } from "./waiting-queue.js";
 export { VendoStage } from "../voice/stage.js";

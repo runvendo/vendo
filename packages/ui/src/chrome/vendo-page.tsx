@@ -12,6 +12,7 @@ import { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
 import { OrgsPanel } from "./orgs-panel.js";
 import { TakeoverPortal } from "./takeover-portal.js";
 import { VendoThread } from "./vendo-thread.js";
+import { WaitingQueue } from "./waiting-queue.js";
 
 const TABS = ["chat", "apps", "automations", "accounts", "orgs", "activity"] as const;
 type Tab = typeof TABS[number];
@@ -79,7 +80,14 @@ function ChatWorkspace() {
           >{thread.title}</button>
         ))}
       </nav>
-      <VendoThread threadId={selected} onThreadId={onThreadId} />
+      {/* ENG-225 — the waiting-on-you strip parks above the live conversation;
+          it renders nothing while no approvals are pending. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+        <WaitingQueue />
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          <VendoThread threadId={selected} onThreadId={onThreadId} />
+        </div>
+      </div>
     </div>
   );
 }

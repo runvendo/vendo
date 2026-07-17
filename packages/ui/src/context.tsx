@@ -29,6 +29,19 @@ export interface VendoContextValue {
   /** Optional host-supplied friendly tool metadata, keyed by tool name/id
       (ENG-216 humanization seam — additive, UI-side, no wire/contract change). */
   tools: ToolMetaMap;
+  /** ENG-225 — the connect dock's catalog: which toolkits this host's users can
+      connect (the wire only knows accounts that already exist, 04 §3). Empty
+      means no dock renders. Additive, UI-side. */
+  connectors: ConnectorOption[];
+}
+
+/** One connectable toolkit in the connect dock (ENG-225). */
+export interface ConnectorOption {
+  toolkit: string;
+  /** Broker connector id, when the host pins one (04 §3.1). */
+  connector?: string;
+  /** Display name; defaults to the capitalized toolkit. */
+  label?: string;
 }
 
 const VendoContext = createContext<VendoContextValue | null>(null);
@@ -41,9 +54,10 @@ export function VendoProvider(props: {
   transport?: ChatTransport<UIMessage>;
   onPin?(app: { appId: string; payload: unknown }): void;
   tools?: ToolMetaMap;
+  connectors?: ConnectorOption[];
   children: ReactNode;
 }): ReactNode {
-  const { client, components, theme, voice, transport, onPin, tools, children } = props;
+  const { client, components, theme, voice, transport, onPin, tools, connectors, children } = props;
   const value = useMemo<VendoContextValue>(
     () => ({
       client: client ?? createVendoClient({}),
@@ -53,8 +67,9 @@ export function VendoProvider(props: {
       transport,
       onPin,
       tools: tools ?? {},
+      connectors: connectors ?? [],
     }),
-    [client, components, theme, voice, transport, onPin, tools],
+    [client, components, theme, voice, transport, onPin, tools, connectors],
   );
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
 }

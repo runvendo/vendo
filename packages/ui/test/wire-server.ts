@@ -386,11 +386,20 @@ export async function createWireServer() {
       }
       if (method === "POST" && url.pathname === "/connections/initiate") {
         // The freshly initiated account is immediately pollable and flips
-        // active on first read (the shortest honest OAuth completion).
+        // active on first read (the shortest honest OAuth completion). Honors
+        // the requested toolkit so multi-connector surfaces (the ENG-225
+        // connect tray) see the account they asked for.
+        const initiateBody = parsedBody as { toolkit?: string; connector?: string };
         if (!state.connections.some(item => item.id === "ca_new")) {
-          state.connections.push({ id: "ca_new", connector: "composio", toolkit: "gmail", status: "active", createdAt: NOW });
+          state.connections.push({
+            id: "ca_new",
+            connector: initiateBody.connector ?? "composio",
+            toolkit: initiateBody.toolkit ?? "gmail",
+            status: "active",
+            createdAt: NOW,
+          });
         }
-        return json(response, { id: "ca_new", connector: "composio", redirectUrl: "https://connect.test/oauth/1" });
+        return json(response, { id: "ca_new", connector: initiateBody.connector ?? "composio", redirectUrl: "https://connect.test/oauth/1" });
       }
       const connectionMatch = url.pathname.match(/^\/connections\/([^/]+)$/);
       if (connectionMatch) {

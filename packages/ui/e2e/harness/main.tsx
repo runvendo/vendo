@@ -29,6 +29,9 @@ import {
   VendoSlot,
   VendoStage,
   VendoThread,
+  VendoToasts,
+  WaitingQueue,
+  vendoToast,
   type VendoCommand,
 } from "../../src/chrome/index.js";
 import { AppFrame, PayloadView, TreeView, registerTreeRenderer, type PayloadRendererProps } from "../../src/tree/index.js";
@@ -1223,6 +1226,92 @@ function HumanizedThreadScenario() {
   );
 }
 
+/** ENG-225 — a clean thread whose assistant turn carries a fenced code block, so
+ *  the copy affordances (turn copy + code copy) read together in one capture. */
+const affordancesThread: Thread = {
+  id: "thr_affordances",
+  subject: "browser-user",
+  createdAt: NOW,
+  updatedAt: NOW,
+  messages: [
+    {
+      id: "aff_u1",
+      role: "user",
+      parts: [{ type: "text", text: "Give me a snippet that fetches this month's invoices." }],
+    },
+    {
+      id: "aff_a1",
+      role: "assistant",
+      parts: [{
+        type: "text",
+        text: "Here's a snippet that pulls the current month's invoices:\n\n"
+          + "```ts\nconst invoices = await maple.invoices.list({\n  month: \"2026-07\",\n  status: \"outstanding\",\n});\n```\n\n"
+          + "Run it with your sandbox key first.",
+      }],
+    },
+  ],
+};
+
+function affordancesThreadClient(client: VendoClient): VendoClient {
+  return {
+    ...client,
+    threads: {
+      ...client.threads,
+      get: async id => id === affordancesThread.id ? affordancesThread : client.threads.get(id),
+      list: async () => [{ id: affordancesThread.id, title: "Invoice snippet", updatedAt: affordancesThread.updatedAt }],
+    },
+  };
+}
+
+/** ENG-225 — the affordance showcase: copy actions, code copy, drag-drop attach,
+ *  image previews and the connect dock/tray, in a bounded Maple-brand pane. */
+function AffordancesScenario({ theme }: { theme: Partial<VendoTheme> }) {
+  return (
+    <VendoProvider
+      client={affordancesThreadClient(baseClient)}
+      components={components}
+      theme={theme}
+      connectors={[
+        { toolkit: "gmail", label: "Gmail" },
+        { toolkit: "slack", label: "Slack" },
+        { toolkit: "quickbooks", label: "QuickBooks" },
+      ]}
+    >
+      <div style={{ height: 560, display: "flex", flexDirection: "column", overflow: "hidden",
+        border: "1px solid var(--vendo-border)", borderRadius: 12 }}>
+        <VendoThread threadId="thr_affordances" />
+      </div>
+    </VendoProvider>
+  );
+}
+
+/** ENG-225 — the waiting-on-you queue over the wire fixture's pending approval. */
+function WaitingScenario() {
+  return (
+    <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
+      <WaitingQueue pollMs={0} />
+    </VendoProvider>
+  );
+}
+
+/** ENG-225 — the toast stack: an automation delivery, an error, and a sticky
+ *  approval-required card with its in-place Approve. */
+function ToastsScenario() {
+  useEffect(() => {
+    vendoToast({ text: "Invoice watcher ran: 3 reminders drafted and queued for review.", durationMs: 0, actions: [{ label: "View", onAction: () => undefined }] });
+    vendoToast({ text: "Morning digest failed to send — the connected inbox returned an error.", state: "error", durationMs: 0 });
+    vendoToast({ kind: "approval-required", text: "Waiting on you: Send email to finance@example.com", hint: "recorded in Activity", actions: [{ label: "Approve", primary: true, onAction: () => undefined }] });
+  }, []);
+  return (
+    <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
+      <p style={{ fontFamily: "Inter, ui-sans-serif, sans-serif", fontSize: 14, color: "#5b5c63" }}>
+        Host page content — the toasts stack over it, bottom-right.
+      </p>
+      <VendoToasts />
+    </VendoProvider>
+  );
+}
+
 /** ENG-223 — a pinned generated view (a vendo-genui/v1 tree) mounted in the slot
  *  in place of the host's original hero, through the pin path + error boundary. */
 const pinnedViewTree: UIPayload = {
@@ -1280,6 +1369,10 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/slot-pinned": return { title: "Inline slot — pinned component", theme: mapleTheme, content: <VendoSlot id="hero" pin={{ payload: pinnedViewTree }}><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
     case "/slot-fallback": return { title: "Slot pin fallback", content: <SlotFallbackScenario />, ownProvider: true };
     case "/appframe": return { title: "App execution planes", content: <AppFrameScenario /> };
+    case "/affordances": return { title: "Affordances (Maple) — copy, attach, connect dock", content: <AffordancesScenario theme={mapleTheme} />, ownProvider: true };
+    case "/affordances-dark": return { title: "Affordances — dark", content: <AffordancesScenario theme={darkTheme} />, ownProvider: true };
+    case "/waiting": return { title: "Waiting on you", content: <WaitingScenario />, ownProvider: true };
+    case "/toasts": return { title: "Toasts", content: <ToastsScenario />, ownProvider: true };
     default: return { title: "Unknown scenario", content: <p role="alert">Unknown browser scenario: {pathname}</p> };
   }
 }
