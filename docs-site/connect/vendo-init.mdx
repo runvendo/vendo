@@ -104,12 +104,12 @@ npx vendo init [dir] --yes --model-import '@/lib/ai' --brief 'What the product d
 
 ## Model scaffold
 
-Init writes `lib/ai.ts` that exports `model = devModel()` — a
-[credential ladder](/connect/dev-mode) that boots without an API key by
-riding a logged-in Claude Code or Codex CLI, and falls through to a provider
-env key when one is set. Init asks for session-rung consent once and records
-the answer per machine in `.vendo/data/dev-credential.json`. If your app
-already exports a model, pass `--model-import <specifier>` and init leaves
+Init writes `lib/ai.ts` that exports `model = devModel()`. The
+[credential ladder](/connect/dev-mode) boots without an API key by riding a
+logged-in Claude Code or Codex CLI, and falls through to a provider env key
+when one is set. Init asks for session-rung consent once and records the
+answer per machine in `.vendo/data/dev-credential.json`. If your app already
+exports a model, pass `--model-import <specifier>` and init leaves
 `lib/ai.ts` alone.
 
 With consent, init also offers to install `@anthropic-ai/claude-agent-sdk`
