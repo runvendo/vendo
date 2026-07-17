@@ -120,7 +120,7 @@ export const systemRoutes: RouteEntry[] = [
     return json({ runIds: await deps.automations.tick() });
   }),
   route("POST", "/sync/impact", async ({ request, deps }) => {
-    if (process.env.NODE_ENV === "production") {
+    if (environment("NODE_ENV") === "production") {
       throw new VendoError("blocked", "sync impact is only available on a dev server");
     }
     const body = await requestJson(request);
