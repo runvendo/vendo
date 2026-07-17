@@ -119,7 +119,7 @@ Rung-4 app UI is **not** proxied through the wire: `OpenSurface.kind === "http"`
 | `remixable/<slot>.json` | sync | `PinBaseline` (06 §8) |
 | `brief.md` | init | product brief for the system prompt (03 §3) |
 | `design-rules.md` | host, optional | generation-time design rules (06 §5) |
-| `theme.json` | init extraction | `VendoTheme` | <!-- amended 2026-07-17 (kill-list B2): extraction is exact-or-model — allowlist reads of conventional shadcn/Tailwind tokens, else ONE model call through the same seam `vendo refine` resolves its model from; the heuristic scanners (fragment scoring, utility popularity, next/font source recovery) are gone. theme.json remains the editable source of truth; init shows the palette and asks only on model-flagged uncertainty. -->
+| `theme.json` | init extraction | `VendoTheme` |
 | `data/` | store | PGlite files (gitignored; init writes the ignore) |
 
 ## 5. The bin (DX, per the locked DX design)
