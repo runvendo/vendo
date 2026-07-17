@@ -1,5 +1,5 @@
 import type { Json, ToolOutcome, Tree, TreeQuery, UIPayload } from "@vendoai/core";
-import { VENDO_TREE_FORMAT } from "@vendoai/core";
+import { isPlainObject as isRecord, VENDO_TREE_FORMAT } from "@vendoai/core";
 
 export interface BridgeContentBlock {
   type: string;
@@ -37,10 +37,6 @@ export interface OpenInProductPayload {
   url: string;
   productName: string;
   appName?: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isPayload(value: unknown): value is UIPayload {

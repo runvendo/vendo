@@ -2,14 +2,14 @@
  *
  * vendo_threads is keyed by the bare id, so a naive upsert would let any caller
  * flip the row's subject. The store refuses the cross-subject flip ATOMICALLY at
- * the write door (03 §5): the guarded SQL upsert on the persistent path, and a
- * prior-owner check on the ephemeral overlay path. Same-subject re-puts still
+ * the write door (03 §5) via the guarded SQL upsert — one disk path for durable
+ * and ephemeral subjects alike (kill-list B3). Same-subject re-puts still
  * update in place.
  */
 import { VendoError, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
-import { registerEphemeralSubject, threadStore } from "./index.js";
+import { threadStore } from "./index.js";
 
 const u1: Principal = { kind: "user", subject: "user_one" };
 const u2: Principal = { kind: "user", subject: "user_two" };
@@ -51,21 +51,19 @@ for (const backend of backends()) {
         .toEqual([{ subject: "user_one" }]);
     });
 
-    it("refuses a cross-subject flip on the ephemeral overlay path", async () => {
+    it("refuses a cross-subject flip for ephemeral principals through the same disk path (kill-list B3)", async () => {
       const e1: Principal = { kind: "user", subject: "sess_one", ephemeral: true };
       const e2: Principal = { kind: "user", subject: "sess_two", ephemeral: true };
-      registerEphemeralSubject(made.store, e1.subject);
-      registerEphemeralSubject(made.store, e2.subject);
       const threads = threadStore(made.store);
-      await threads.put(e1, { id: "thr_overlay", messages: [{ role: "user", text: "mine" }] });
-      await expect(threads.put(e2, { id: "thr_overlay", messages: [] }))
+      await threads.put(e1, { id: "thr_anon_flip", messages: [{ role: "user", text: "mine" }] });
+      await expect(threads.put(e2, { id: "thr_anon_flip", messages: [] }))
         .rejects.toMatchObject<VendoError>({ code: "conflict" });
-      // Nothing hit disk for the ephemeral thread, and e1 still owns the overlay row.
-      expect(Number((await made.sql(
-        "SELECT COUNT(*)::int AS count FROM vendo_threads WHERE id = 'thr_overlay'",
-      ))[0]?.["count"])).toBe(0);
-      expect((await threads.get(e1, "thr_overlay"))?.subject).toBe("sess_one");
-      expect(await threads.get(e2, "thr_overlay")).toBeNull();
+      // The ephemeral thread is an ordinary disk row, and e1 still owns it.
+      expect(await made.sql(
+        "SELECT subject FROM vendo_threads WHERE id = 'thr_anon_flip'",
+      )).toEqual([{ subject: "sess_one" }]);
+      expect((await threads.get(e1, "thr_anon_flip"))?.subject).toBe("sess_one");
+      expect(await threads.get(e2, "thr_anon_flip")).toBeNull();
     });
   });
 
@@ -139,37 +137,36 @@ for (const backend of backends()) {
         .toEqual([{ subject: u1.subject, messages: [{ role: "user", text: "mine" }] }]);
     });
 
-    it("guards the ephemeral overlay path the same way", async () => {
+    it("guards ephemeral-subject threads through the same single disk path (kill-list B3)", async () => {
       const eSubject = "sess_cas";
-      registerEphemeralSubject(made.store, eSubject);
       const seam = made.store.records("vendo_threads");
 
       const inserted = await seam.atomic!.insertIfAbsent({
-        id: "thr_cas_overlay",
-        data: threadData(eSubject, "overlay one"),
+        id: "thr_cas_anon",
+        data: threadData(eSubject, "anon one"),
       });
       expect(inserted).not.toBeNull();
       expect(inserted!.revision).toBe("1");
       expect(await seam.atomic!.insertIfAbsent({
-        id: "thr_cas_overlay",
-        data: threadData(eSubject, "overlay dupe"),
+        id: "thr_cas_anon",
+        data: threadData(eSubject, "anon dupe"),
       })).toBeNull();
 
       const swapped = await seam.atomic!.compareAndSwap(
-        { id: "thr_cas_overlay", data: threadData(eSubject, "overlay two") },
+        { id: "thr_cas_anon", data: threadData(eSubject, "anon two") },
         "1",
       );
       expect(swapped).not.toBeNull();
       expect(swapped!.revision).toBe("2");
       expect(await seam.atomic!.compareAndSwap(
-        { id: "thr_cas_overlay", data: threadData(eSubject, "overlay stale") },
+        { id: "thr_cas_anon", data: threadData(eSubject, "anon stale") },
         "1",
       )).toBeNull();
 
-      // Nothing hit disk: the overlay owns the row.
-      expect(Number((await made.sql(
-        "SELECT COUNT(*)::int AS count FROM vendo_threads WHERE id = 'thr_cas_overlay'",
-      ))[0]?.["count"])).toBe(0);
+      // One disk row, owned by the ephemeral subject like any other.
+      expect(await made.sql(
+        "SELECT subject FROM vendo_threads WHERE id = 'thr_cas_anon'",
+      )).toEqual([{ subject: eSubject }]);
     });
   });
 }

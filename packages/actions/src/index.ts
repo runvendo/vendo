@@ -19,9 +19,3 @@ export {
 export { scanRemixRegistrations, type RemixRegistrationSite } from "./sync/pins.js";
 export { scanComponentCatalog, type CatalogScanResult } from "./sync/catalog-scan.js";
 export { mergeCatalogEntries, readCatalogFile, writeCatalog } from "./sync/catalog.js";
-export {
-  acceptCatalogProposals,
-  proposeCatalogCopy,
-  type CatalogCopyGenerator,
-  type CatalogCopyRequest,
-} from "./sync/catalog-ai.js";

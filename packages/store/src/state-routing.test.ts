@@ -2,7 +2,7 @@ import { VendoError, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
 import { appFixture, persistentPrincipal } from "./fixtures.test-util.js";
-import { appStore, createStore, registerEphemeralSubject, stateStore } from "./index.js";
+import { appStore, createStore, stateStore } from "./index.js";
 
 for (const backend of backends()) {
   describe(`${backend.name} vendo_state routing`, () => {
@@ -269,42 +269,40 @@ for (const backend of backends()) {
     });
     afterAll(async () => { if (made) await made.cleanup(); });
 
-    it("keeps routed state for an ephemeral subject off disk, then drops it on reopen", async () => {
-      // Creating the app registers the subject as ephemeral (as apps' lifecycle does).
+    it("routes ephemeral-subject state to the dedicated table and keeps it across reopen (kill-list B3)", async () => {
       await appStore(made.store).put(ephemeral, appFixture("app_ghost", "Ghost"));
       const seam = made.store.records("vendo_state");
       await seam.put({ id: "app_ghost:sess_state", data: { secret: 1 } });
 
-      // Readable in-session...
+      // Readable through both doors...
       expect((await seam.get("app_ghost:sess_state"))?.data).toEqual({ secret: 1 });
       expect(await stateStore(made.store).get(ephemeral, "app_ghost")).toEqual({ secret: 1 });
-      // ...but nothing hit the table.
+      // ...and on disk like any other subject.
       expect(Number((await made.sql(
         "SELECT COUNT(*)::int AS count FROM vendo_state WHERE subject = $1",
         [ephemeral.subject],
-      ))[0]?.["count"])).toBe(0);
+      ))[0]?.["count"])).toBe(1);
 
-      // Gone after reopen (overlay dropped, no disk row).
+      // A restart loses nothing — lifetime is the TTL sweep, not process memory.
       await made.store.close();
       made.store = createStore({ url: made.url, dataDir: made.dataDir });
       await made.store.ensureSchema();
-      expect(await made.store.records("vendo_state").get("app_ghost:sess_state")).toBeNull();
+      expect((await made.store.records("vendo_state").get("app_ghost:sess_state"))?.data)
+        .toEqual({ secret: 1 });
     });
 
-    it("registers the subject on stateStore.put so a later seam write cannot leak to disk (B2)", async () => {
-      // The split-brain / disk-leak case: an ephemeral principal's FIRST write goes
-      // through stateStore.put (not appStore.put), then the apps runtime writes the
-      // same subject through the records seam. Both must stay in the overlay — zero
-      // disk rows (02 §4: ephemeral principals never touch disk).
+    it("keeps the helper and seam doors on one write path for ephemeral subjects (B2)", async () => {
+      // Split-brain pin: an ephemeral principal's FIRST write goes through
+      // stateStore.put, then the apps runtime writes the same singleton through
+      // the records seam. Both land on the SAME disk row.
       const solo: Principal = { kind: "user", subject: "sess_b2", ephemeral: true };
       await stateStore(made.store).put(solo, "app_b2", { first: "helper" });
-      // The seam write for the same subject now correctly sees it as ephemeral.
       await made.store.records("vendo_state").put({ id: "app_b2:sess_b2", data: { second: "seam" } });
 
       expect(Number((await made.sql(
         "SELECT COUNT(*)::int AS count FROM vendo_state WHERE subject = 'sess_b2'",
-      ))[0]?.["count"])).toBe(0);
-      // Both doors read the SAME overlay value (no split-brain).
+      ))[0]?.["count"])).toBe(1);
+      // Both doors read the SAME value (no split-brain).
       expect(await stateStore(made.store).get(solo, "app_b2")).toEqual({ second: "seam" });
       expect((await made.store.records("vendo_state").get("app_b2:sess_b2"))?.data)
         .toEqual({ second: "seam" });
@@ -340,7 +338,7 @@ for (const backend of backends()) {
 
       // The v1 -> v3 upgrade performs the (v2) backfill on the way through.
       await made.store.ensureSchema();
-      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(3);
+      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(4);
 
       expect(await made.sql(
         "SELECT app_id, subject, data FROM vendo_state WHERE app_id = 'app_legacy'",

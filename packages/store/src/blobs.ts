@@ -1,52 +1,31 @@
-import { VendoError, type BlobStore } from "@vendoai/core";
+import type { BlobStore } from "@vendoai/core";
 import type { Db } from "./db.js";
-import { appEphemerality, appScopeId, overlayFor, snapshot, type AppEphemerality } from "./ephemeral.js";
-import { text } from "./helpers/utils.js";
-import type { VendoStore } from "./store.js";
+import { appScopeId, requireKnownApp, text, unknownAppError } from "./helpers/utils.js";
 
 function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, "\\$&");
 }
 
 /** 01-core §12 */
-export function createBlobStore(store: VendoStore, db: Db, namespace: string): BlobStore {
+export function createBlobStore(db: Db, namespace: string): BlobStore {
   const appId = appScopeId(namespace);
-  const ephemeralBlobs = (): Map<string, { bytes: Uint8Array; contentType?: string }> => {
-    const blobs = overlayFor(store).blobs;
-    let namespaceBlobs = blobs.get(namespace);
-    if (!namespaceBlobs) {
-      namespaceBlobs = new Map();
-      blobs.set(namespace, namespaceBlobs);
-    }
-    return namespaceBlobs;
-  };
-  // ENG-237 (STORE-1): mirrors records.ts — an app-scoped blob write to an
-  // "unknown" app (never existed / session evicted) fails closed rather than
-  // orphaning a durable row; reads on "unknown" return empty.
-  const ephemerality = async (): Promise<AppEphemerality> =>
-    appId === undefined ? "durable" : await appEphemerality(store, db, appId);
-  const requireKnownApp = (state: AppEphemerality): void => {
-    if (state === "unknown") {
-      throw new VendoError("not-found", `app ${appId} does not exist (its session may have expired)`);
-    }
-  };
+  // STORE-1: mirrors records.ts — an app-scoped blob WRITE for an app with no
+  // vendo_apps row (never existed / session swept) fails closed rather than
+  // recreating rows no erase cascade would reach; reads come back empty. The
+  // row-creating put carries the gate IN the statement (structural, not
+  // ordering care); delete keeps the pre-check as its error signal.
+  const appGate = appId === undefined ? "" : "WHERE EXISTS (SELECT 1 FROM vendo_apps WHERE id = $6)";
+  const appGateParams = appId === undefined ? [] : [appId];
 
   return {
     async put(key, bytes, meta) {
-      const state = await ephemerality();
-      requireKnownApp(state);
-      if (state === "ephemeral") {
-        ephemeralBlobs().set(key, snapshot({
-          bytes,
-          ...(meta?.contentType === undefined ? {} : { contentType: meta.contentType }),
-        }));
-        return;
-      }
-      await db.query(
+      const result = await db.query(
         `INSERT INTO vendo_blobs (namespace, key, bytes, content_type, created_at)
-         VALUES ($1, $2, $3, $4, $5)
+         SELECT $1::text, $2::text, $3::bytea, $4::text, $5::timestamptz
+         ${appGate}
          ON CONFLICT (namespace, key) DO UPDATE
-         SET bytes = EXCLUDED.bytes, content_type = EXCLUDED.content_type`,
+         SET bytes = EXCLUDED.bytes, content_type = EXCLUDED.content_type
+         RETURNING key`,
         [
           namespace,
           key,
@@ -55,16 +34,13 @@ export function createBlobStore(store: VendoStore, db: Db, namespace: string): B
           Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
           meta?.contentType ?? null,
           new Date().toISOString(),
+          ...appGateParams,
         ],
       );
+      // The upsert always returns a row unless the app-existence gate refused it.
+      if (result.rows[0] === undefined && appId !== undefined) throw unknownAppError(appId);
     },
     async get(key) {
-      const state = await ephemerality();
-      if (state === "unknown") return null;
-      if (state === "ephemeral") {
-        const found = overlayFor(store).blobs.get(namespace)?.get(key);
-        return found ? snapshot(found) : null;
-      }
       const result = await db.query(
         "SELECT bytes, content_type FROM vendo_blobs WHERE namespace = $1 AND key = $2",
         [namespace, key],
@@ -82,22 +58,11 @@ export function createBlobStore(store: VendoStore, db: Db, namespace: string): B
       };
     },
     async delete(key) {
-      const state = await ephemerality();
-      requireKnownApp(state);
-      if (state === "ephemeral") {
-        overlayFor(store).blobs.get(namespace)?.delete(key);
-        return;
-      }
+      // DELETE never creates rows, so the pre-check is only the error signal.
+      await requireKnownApp(db, appId);
       await db.query("DELETE FROM vendo_blobs WHERE namespace = $1 AND key = $2", [namespace, key]);
     },
     async list(prefix = "") {
-      const state = await ephemerality();
-      if (state === "unknown") return [];
-      if (state === "ephemeral") {
-        return [...(overlayFor(store).blobs.get(namespace)?.keys() ?? [])]
-          .filter((key) => key.startsWith(prefix))
-          .sort();
-      }
       const result = await db.query(
         "SELECT key FROM vendo_blobs WHERE namespace = $1 AND key LIKE $2 ESCAPE '\\'",
         [namespace, `${escapeLike(prefix)}%`],

@@ -8,9 +8,9 @@ Names match `/^[a-zA-Z0-9_-]{1,64}$/`; underscore is the namespace separator.
 Risk is `read`, `write`, or `destructive`.
 
 `guard.bind(tools)` is the only sanctioned execution path. Its decision order
-is critical flag, input scanners, grant match, policy rules, policy code,
-judge, then the default posture. Critical tools always ask. Breakers can turn a
-run decision into an ask.
+is critical flag, grant match, policy rules, policy code, judge, then the
+default posture. Critical tools always ask. Breakers can turn a run decision
+into an ask.
 
 ## Effective risk resolution
 

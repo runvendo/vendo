@@ -102,11 +102,12 @@ registrations are merged by name and win over scanned entries.
 The catalog and every entry use strict Zod validation so stale or misspelled
 fields fail sync loudly. Rescans replace all deterministic fields and all
 tool-owned fields; only previously accepted `description`/`examples` on a
-still-scanned entry persist, keeping unchanged reruns byte-identical. The LLM
-may propose only `description`/`examples`, written as before/after records in
-`.vendo/catalog.proposals.json`; runtime never reads that artifact, and catalog
-copy changes only through an explicit acceptance operation. Registered copy
-lives in code and is regenerated from code on every sync.
+still-scanned entry persist, keeping unchanged reruns byte-identical. Scanned
+entries carry no authored copy of their own — a human hand-edits
+`description`/`examples` directly in `catalog.json`, and rescans preserve that
+copy on a still-scanned entry. Registered copy lives in code and is
+regenerated from code on every sync. (No seam authors catalog copy today —
+`description`/`examples` are hand-edited, full stop.)
 
 `disabled` remains in the strict `catalog@1` entry schema for forward
 conformance, but is reserved for the extraction-M5 curation workflow and the
@@ -277,7 +278,7 @@ A connector call failing on a missing per-user connection produces the typed `co
 
 A `compound` binding contains ordered steps that reuse core §11 `Step`. Its expressions see `{ args, steps, item }`, where `args` is the compound call's arguments. The compound descriptor's risk MUST equal the maximum risk of its steps after overrides are merged.
 
-Steps reference primitive host or connector tools only: no `fn:` references, compounds, or capability tools. Execution routes every step through the guard-bound registry via the umbrella-wired `invokeTool` seam. Grants, approvals, breakers, scanners, and audit see every real call. There is no second execution path. When the seam is absent, execution returns `not-implemented` and performs no work.
+Steps reference primitive host or connector tools only: no `fn:` references, compounds, or capability tools. Execution routes every step through the guard-bound registry via the umbrella-wired `invokeTool` seam. Grants, approvals, breakers, and audit see every real call. There is no second execution path. When the seam is absent, execution returns `not-implemented` and performs no work.
 
 Approvals are per-step in v1. A step's parked outcome becomes the compound's outcome; re-executing the same logical call resumes without re-running completed steps. Batch approval is an explicit follow-up.
 
@@ -292,3 +293,9 @@ Approvals are per-step in v1. A step's parked outcome becomes the compound's out
 - **Changed:** §5 makes org principals real with key-gated activation. **Ships with ENG-263 — merge of this amendment waits for that PR.**
 - **Why:** The actions block now implements its vision beyond extraction; the frozen text described the pre-wave world. All changes are additive within the version train.
 - **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
+
+### 2026-07-17 — Catalog-copy LLM seam removed (kill-list §A6)
+
+- **Changed:** §1 drops the catalog-copy-AI seam — `proposeCatalogCopy`, `acceptCatalogProposals`, the injected `CatalogCopyGenerator` request/response types, and `vendoSync`'s `catalogCopyGenerator` knob. `vendo/catalog-proposals@1` (`CatalogProposalsFile`, `catalogProposalsFileSchema`) and the copy-fields types it depended on are gone from the format surface; `catalog.json` and the deterministic scan/registration flow it wraps are unaffected.
+- **Why:** kill-list A6 — the knob had no caller; the refine engine in `vendo` owns catalog copy authoring, so this was a speculative sub-feature with zero in-repo consumers.
+- **Authorized by:** the Yousef-approved simplify-v2 kill-list (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md`, §A6).

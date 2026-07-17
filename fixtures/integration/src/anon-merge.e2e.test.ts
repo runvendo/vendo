@@ -8,7 +8,7 @@
  * Adversarial coverage:
  *   - an anonymous session cannot be used to STEAL another subject's rows
  *     (colliding ids are skipped, the durable row wins),
- *   - a forged (tampered) cookie merges nothing and is not honored,
+ *   - a garbage cookie (wrong shape) merges nothing and is not honored,
  *   - the merge is idempotent under cookie replay.
  */
 import { afterEach, describe, expect, it } from "vitest";
@@ -118,8 +118,10 @@ describe("ENG-263: anonymous→signed-in auto-merge", () => {
     const cookie = anon.cookie();
     expect(cookie).toBeDefined();
 
-    // Nothing on disk yet (ephemeral session).
-    expect(await stack.sql("SELECT id FROM vendo_threads")).toEqual([]);
+    // The anonymous work is on disk under the anon subject (02 §4, kill-list B3).
+    const anonThreadRows = await stack.sql<{ subject: string }>("SELECT subject FROM vendo_threads");
+    expect(anonThreadRows).toHaveLength(2);
+    for (const row of anonThreadRows) expect(row.subject).toMatch(/^anonymous_[0-9a-f]{32}$/);
 
     // --- First authenticated request carrying the anon cookie merges + clears.
     const merged = await signedInWithCookie(stack, "/threads", cookie!);
@@ -200,8 +202,8 @@ describe("ENG-263: anonymous→signed-in auto-merge", () => {
     expect(await stack.sql("SELECT subject FROM vendo_threads WHERE id = 'thr_bobs'"))
       .toEqual([{ subject: "user_bob" }]); // unmoved
 
-    // A forged cookie (valid shape, wrong signature) merges nothing and is NOT
-    // cleared — no new merge audit event appears.
+    // A garbage cookie (wrong shape — rejected by the pointer grammar) merges
+    // nothing and is NOT cleared — no new merge audit event appears.
     const before = (await stack.sql("SELECT id FROM vendo_audit WHERE kind = 'principal'")).length;
     const forged = `${"a".repeat(32)}.${"b".repeat(64)}`;
     const response = await signedInWithCookie(stack, "/threads", forged);

@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { parseCssVars, type CssVarDecl } from "./css-vars.js";
+import { ENTRY_FILE_CANDIDATES } from "./entry-candidates.js";
 import { collectNextFontVars, collectNextLayoutVars, TAILWIND_NEUTRAL_COLORS } from "./next-fonts.js";
 import {
   mapVarsToBrand,
@@ -23,24 +24,6 @@ const CSS_IMPORT_RE = /\bimport\s+(?:[^"']+\s+from\s+)?["']([^"']+\.css)["']/g;
 const CSS_REQUIRE_RE = /\brequire\(\s*["']([^"']+\.css)["']\s*\)/g;
 const CSS_AT_IMPORT_RE = /@import\s+(url\(\s*)?(?:"([^"]+)"|'([^']+)'|([^"')\s;]+))\s*\)?/g;
 const ENTRY_SOURCE_FILE = /(^|\/)(app\/(?:[^/]+\/)*layout|src\/app\/(?:[^/]+\/)*layout|pages\/_app|src\/pages\/_app)\.(tsx|jsx|ts|js|mjs)$/;
-const ENTRY_SOURCE_CANDIDATES = [
-  "app/layout.tsx",
-  "app/layout.jsx",
-  "app/layout.ts",
-  "app/layout.js",
-  "src/app/layout.tsx",
-  "src/app/layout.jsx",
-  "src/app/layout.ts",
-  "src/app/layout.js",
-  "pages/_app.tsx",
-  "pages/_app.jsx",
-  "pages/_app.ts",
-  "pages/_app.js",
-  "src/pages/_app.tsx",
-  "src/pages/_app.jsx",
-  "src/pages/_app.ts",
-  "src/pages/_app.js",
-];
 const CSS_GRAPH_MAX_FILES = 200;
 const CSS_GRAPH_MAX_DEPTH = 12;
 
@@ -123,7 +106,7 @@ async function collectCssFiles(targetDir: string): Promise<{ selected: string[];
   const sourceFiles = await walk(targetDir, (rel) => SOURCE_WITH_CSS_IMPORTS.test(rel), 2_000);
   const detectedCssFiles = await walk(targetDir, (rel) => rel.endsWith(".css"), 2_000);
   const directEntryFiles = await Promise.all(
-    ENTRY_SOURCE_CANDIDATES.map(async (candidate) => {
+    ENTRY_FILE_CANDIDATES.map(async (candidate) => {
       const file = path.join(targetDir, candidate);
       return await exists(file) ? file : null;
     }),

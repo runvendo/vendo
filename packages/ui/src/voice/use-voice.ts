@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isPlainObject as isRecord } from "@vendoai/core";
 import { useVendoContext } from "../context.js";
 import type {
   VoiceDriverEvent,
@@ -130,10 +131,6 @@ function isTranscriptEvent(
     typeof entry.text === "string" &&
     typeof entry.final === "boolean"
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function updateTranscript(

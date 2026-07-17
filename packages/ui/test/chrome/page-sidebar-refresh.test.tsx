@@ -26,8 +26,13 @@ describe("VendoPage thread sidebar refresh", () => {
   it("surfaces a newly started conversation in the sidebar after its first turn", async () => {
     render(<VendoProvider client={client}><VendoPage /></VendoProvider>);
 
-    // The existing fixture conversation loads into the sidebar first.
-    await waitFor(() => expect(screen.getAllByRole("button", { name: "Fixture thread" })).toHaveLength(1));
+    // The existing fixture conversation loads into the sidebar first. Same
+    // 4s allowance as the later network-riding assertions — the default 1s
+    // misses the initial render+fetch under coverage-instrumented CI runners.
+    await waitFor(
+      () => expect(screen.getAllByRole("button", { name: "Fixture thread" })).toHaveLength(1),
+      { timeout: 4000 },
+    );
 
     // Start a fresh conversation; the landing greeting confirms we're on a new
     // (empty) thread and the auto-select won't snap us back to the fixture one.

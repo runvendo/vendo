@@ -83,3 +83,11 @@ export interface RunPlan { steps: Array<{ id: string; tool: string; wouldAsk: bo
 ```
 
 Users can see, preview, and stop what runs as them: `runs.list` + `dryRun` + `runs.stop` are the OSS surface (backing ui's automations views, 08 §4). Digest emails and rate caps: deferred by the page ("details deferred") — not contracted in v0.
+
+## Amendments
+
+### 2026-07-17 — Org-owned automations removed
+
+- **Changed:** the run models' (§4) `runContext` no longer branches on `isOrgSubject(subject)`; every run's principal is `{ kind: "user", subject }`. Org-owned automations (org principal, admin approval) never shipped a store/wire surface in OSS and are gone.
+- **Why:** simplify-v2 kill-list A5 — orgs are a Vendo-Cloud-side feature; the OSS repo keeps no org-principal code paths.
+- **Authorized by:** the Yousef-approved simplify-v2 kill-list (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md`, §A5).

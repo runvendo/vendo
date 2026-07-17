@@ -1,10 +1,10 @@
 /** Scenario 5 — EPHEMERAL PRINCIPAL.
  *
  * An ephemeral principal runs a full turn including an approval decided in the
- * same session — everything works — but NOTHING touches disk (02 §4: ephemeral
- * principals get an adapter-level in-memory overlay). The turn is proven live
- * (the tool ran, the thread is readable), while every vendo_* table shows zero
- * rows for the subject.
+ * same session — everything works through the SAME disk path as any durable
+ * subject (02 §4, kill-list B3: no overlay). The turn is proven live (the tool
+ * ran, the thread is readable), and the subject's rows are ordinary vendo_*
+ * rows a TTL sweep or erase cascade reclaims later.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -36,7 +36,7 @@ afterEach(async () => {
 });
 
 describe("scenario 5: ephemeral principal", () => {
-  it("runs a full approval turn in-session while writing zero rows to disk", async () => {
+  it("runs a full approval turn in-session through the single disk path", async () => {
     env = await createEnv({ policy: { rules: [{ match: { tool: TOOL }, action: "ask" }] } });
     const registry = new SpyRegistry([write], { [TOOL]: { wrote: true } });
     const model = scriptedModel([
@@ -46,14 +46,14 @@ describe("scenario 5: ephemeral principal", () => {
     const agent = env.agentFor(registry, model);
     const ctx = ephemeralCtx(SUBJECT);
 
-    // Turn 1: parks. The approval is queryable (from the overlay) but not on disk.
+    // Turn 1: parks. The approval is queryable and on disk like any other.
     const paused = await readSse(
       await agent.stream({ threadId: THREAD, message: userMessage("u1", "Save a note"), ctx }),
     );
     const approvalId = vendoApprovalId(paused);
     const pending = await env.guard.approvals.pending(ctx.principal);
     expect(pending.map((request) => request.id)).toEqual([approvalId]);
-    expect(await env.count("vendo_approvals")).toBe(0); // overlay only — nothing on disk
+    expect(await env.count("vendo_approvals")).toBe(1); // an ordinary disk row (B3)
 
     // Decide (remember standing) and resume in-session.
     await env.guard.approvals.decide(
@@ -80,13 +80,13 @@ describe("scenario 5: ephemeral principal", () => {
     expect(thread).not.toBeNull();
     expect(thread!.subject).toBe(SUBJECT);
 
-    // 02 §4: NOTHING for this subject ever touched disk — threads, approvals,
-    // grants, and audit all stayed in the in-memory overlay.
-    expect(await env.count("vendo_threads", "subject = $1", [SUBJECT])).toBe(0);
-    expect(await env.count("vendo_approvals", "subject = $1", [SUBJECT])).toBe(0);
-    expect(await env.count("vendo_grants", "subject = $1", [SUBJECT])).toBe(0);
-    expect(await env.count("vendo_audit", "subject = $1", [SUBJECT])).toBe(0);
-    // The grant still exists in-session (proves it was minted, just not on disk).
+    // 02 §4 (kill-list B3): everything the subject touched is an ordinary disk
+    // row under its subject — threads, approvals, grants, and audit alike.
+    expect(await env.count("vendo_threads", "subject = $1", [SUBJECT])).toBe(1);
+    expect(await env.count("vendo_approvals", "subject = $1", [SUBJECT])).toBe(1);
+    expect(await env.count("vendo_grants", "subject = $1", [SUBJECT])).toBe(1);
+    expect(await env.count("vendo_audit", "subject = $1", [SUBJECT])).toBeGreaterThan(0);
+    // The remembered grant is queryable in-session.
     expect(await env.guard.grants.list(ctx.principal)).toHaveLength(1);
   });
 });

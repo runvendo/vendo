@@ -3,17 +3,8 @@ export { createStore, type VendoStore } from "./store.js";
 export { eraseStore, type EraseReport, type EraseTable } from "./erase.js";
 export {
   registerEphemeralSubject,
-  beginEphemeralRequest,
-  endEphemeralRequest,
-  evictEphemeralSubject,
   sweepEphemeralSubjects,
-  setSessionClock,
-  setSessionCap,
-  ephemeralOverlaySizes,
-  EPHEMERAL_SUBJECT_CAP,
-  type EphemeralSession,
-  type AppEphemerality,
-} from "./ephemeral.js";
+} from "./sessions.js";
 export { envSecrets, secretStore, storeSecrets } from "./secrets.js";
 export { appStore, type AppRow } from "./helpers/apps.js";
 export { stateStore } from "./helpers/state.js";
@@ -22,9 +13,7 @@ export { grantStore } from "./helpers/grants.js";
 export { approvalStore, type ApprovalRow } from "./helpers/approvals.js";
 export { auditStore, type AuditQuery } from "./helpers/audit.js";
 export { runStore, type RunRow } from "./helpers/runs.js";
-export { orgStore, ORG_ROLES, type OrgRole, type OrgRow, type OrgMemberRow } from "./helpers/orgs.js";
 export {
   adoptEphemeralSubject,
-  transferAppSubject,
   type SubjectMergeReport,
 } from "./helpers/subjects.js";

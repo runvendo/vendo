@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { isoDateTimeSchema, runIdSchema, type IsoDateTime, type RunId } from "./ids.js";
-import { openEnum, openKindVariant } from "./open-enum.js";
 
 /** 01-core §11 */
 export type TriggerSource =
@@ -18,8 +17,7 @@ export interface TriggerRef {
 /** 01-core §3 */
 export const triggerRefSchema = z.object({
   runId: runIdSchema,
-  // CORE-11: trigger kinds are §15-additive — a future kind must not brick refs.
-  kind: openEnum<TriggerSource["kind"]>(["schedule", "host-event", "external"]),
+  kind: z.enum(["schedule", "host-event", "external"]),
 }).passthrough() satisfies z.ZodType<TriggerRef>;
 
 /** 01-core §11 */
@@ -44,8 +42,7 @@ export const triggerSourceSchema = z.discriminatedUnion("kind", [
   (source) => source.kind !== "schedule"
     || [source.cron, source.every, source.at].filter((value) => value !== undefined).length === 1,
   { message: "schedule must specify exactly one of cron, every, or at" },
-  // CORE-11 — §15: unknown trigger kinds are additive; known kinds stay strict.
-).or(openKindVariant(["schedule", "host-event", "external"])) satisfies z.ZodType<TriggerSource>;
+) satisfies z.ZodType<TriggerSource>;
 
 /** 01-core §11 */
 export interface Step {
@@ -81,8 +78,7 @@ export const runModelSchema = z.discriminatedUnion("kind", [
     kind: z.literal("steps"),
     steps: z.array(stepSchema),
   }).passthrough(),
-  // CORE-11 — §15: run models are additive; known kinds stay strict.
-]).or(openKindVariant(["agentic", "steps"])) satisfies z.ZodType<RunModel>;
+]) satisfies z.ZodType<RunModel>;
 
 /** 01-core §11 */
 export interface Trigger {

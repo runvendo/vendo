@@ -9,7 +9,7 @@ import type { ToolCall, ToolDescriptor } from "./tools.js";
 export type GuardDecision =
   | { action: "run"; decidedBy: "grant" | "rule" | "judge" | "default"; grantId?: GrantId }
   | { action: "ask"; approval: ApprovalRequest; decidedBy: "critical" | "rule" | "judge" | "breaker" | "default" }
-  | { action: "block"; reason: string; decidedBy: "rule" | "judge" | "scanner" | "breaker" };
+  | { action: "block"; reason: string; decidedBy: "rule" | "judge" | "breaker" };
 
 /** 01-core §6 */
 export const guardDecisionSchema = z.discriminatedUnion("action", [
@@ -26,7 +26,7 @@ export const guardDecisionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("block"),
     reason: z.string(),
-    decidedBy: z.enum(["rule", "judge", "scanner", "breaker"]),
+    decidedBy: z.enum(["rule", "judge", "breaker"]),
   }).passthrough(),
 ]) satisfies z.ZodType<GuardDecision>;
 
