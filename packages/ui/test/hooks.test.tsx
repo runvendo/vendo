@@ -186,6 +186,23 @@ describe("headless hooks", () => {
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "GET", path: "/activity?cursor=eyJjIjoiMjAyNi0wNy0xMVQxMjowMDowMC4wMDBaIiwiaSI6ImF1ZF8yIn0" }));
   });
 
+  it("signals the end of the list once a page adds no new events", async () => {
+    const { result } = renderHook(() => useActivity(), { wrapper });
+    await waitFor(() => expect(result.current.events).toHaveLength(2));
+    // A first page arrived — there may still be more behind the cursor.
+    expect(result.current.hasMore).toBe(true);
+
+    await act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.events).toHaveLength(3));
+    expect(result.current.hasMore).toBe(true);
+
+    // The next page repeats already-seen rows (nothing older remains), so the
+    // hook resolves to the end of the list and the panel can retire "Load more".
+    await act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.hasMore).toBe(false));
+    expect(result.current.events).toHaveLength(3);
+  });
+
   it("loads posture and transitions to disconnected after the server is killed", async () => {
     let latest: ReturnType<typeof useVendoStatus> | undefined;
     function Probe({ value }: { value: VendoClient }) {

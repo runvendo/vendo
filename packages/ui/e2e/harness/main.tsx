@@ -1254,6 +1254,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/palette-host": return { title: "Palette — host input collision", content: <PaletteHostInputScenario /> };
     case "/approval": return { title: "Destructive approval", content: <ApprovalScenario /> };
     case "/activity": return { title: "Activity", content: <ActivityPanel /> };
+    case "/activity-dark": return { title: "Activity — dark", theme: darkTheme, content: <ActivityPanel /> };
     case "/orgs": return { title: "Organizations", content: <OrgsPanel /> };
     case "/orgs-gated": return {
       title: "Organizations (key-gated)",
@@ -1302,7 +1303,7 @@ function Harness() {
     return <div data-scenario="thread-landing" style={{ position: "fixed", inset: 0 }}>{content}</div>;
   }
   return (
-    <main className={`harness-shell${globalThis.location.pathname === "/thread" ? " harness-dark" : ""}`} data-scenario={globalThis.location.pathname.slice(1)}>
+    <main className={`harness-shell${globalThis.location.pathname === "/thread" || globalThis.location.pathname === "/activity-dark" ? " harness-dark" : ""}`} data-scenario={globalThis.location.pathname.slice(1)}>
       <h1 className="harness-heading">{current.title}</h1>
       <div className="harness-surface">{content}</div>
     </main>

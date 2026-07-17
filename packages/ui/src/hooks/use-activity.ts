@@ -32,6 +32,10 @@ export function useActivity(options?: PollOptions): {
   data: AuditEvent[];
   error: Error | undefined;
   isLoading: boolean;
+  /** Whether another page may still exist. Flips to `false` once a fetched page
+      is empty or repeats only already-seen rows, so the panel can show a proper
+      end-of-list state instead of a "Load more" that fetches nothing new. */
+  hasMore: boolean;
   loadMore(): Promise<void>;
   refresh(): Promise<void>;
 } {
@@ -39,6 +43,7 @@ export function useActivity(options?: PollOptions): {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [error, setError] = useState<Error>();
   const [isLoading, setIsLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(true);
   const generationRef = useRef(0);
   const loadedRef = useRef(false);
   const pollMs = options?.pollMs;
@@ -52,6 +57,9 @@ export function useActivity(options?: PollOptions): {
       // A refresh reloads the first page rather than appending — pagination
       // continues from the reset head via loadMore.
       setEvents(dedupe(firstPage));
+      // An empty first page is already the end; a full one may have more behind
+      // the cursor, proven (or disproven) by the next loadMore.
+      setHasMore(firstPage.length > 0);
       setError(undefined);
       loadedRef.current = true;
     } catch (reason) {
@@ -89,8 +97,13 @@ export function useActivity(options?: PollOptions): {
   const loadMore = useCallback(async () => {
     const cursor = pageCursor(events.at(-1));
     const next = await client.activity.list(cursor === undefined ? undefined : { cursor });
-    setEvents(current => dedupe([...current, ...next]));
+    const known = new Set(events.map(event => event.id));
+    const added = next.filter(event => !known.has(event.id));
+    setEvents(current => dedupe([...current, ...added]));
+    // No page, or a page that surfaced nothing new, means there is nothing
+    // older left to fetch — we have reached the end of the audit history.
+    setHasMore(added.length > 0);
   }, [client, events]);
 
-  return { events, data: events, error, isLoading, loadMore, refresh };
+  return { events, data: events, error, isLoading, hasMore, loadMore, refresh };
 }
