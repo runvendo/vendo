@@ -118,15 +118,12 @@ Execution discipline (normative): nothing calls `ToolRegistry.execute` directly 
 
 ## 5. Grants and approvals
 
-The grant machinery the app-format spec pins ("exact or constrained scopes, critical tools always ask"). A grant records that this principal said yes to this kind of action within these bounds. Grants and app data belong to each user's **own app**, never to the artifact (§10); approvals never transfer between users.
+The grant machinery the app-format spec pins ("exact or tool-wide scopes, critical tools always ask"). A grant records that this principal said yes to this kind of action within these bounds. Grants and app data belong to each user's **own app**, never to the artifact (§10); approvals never transfer between users.
 
 ```ts
-export interface GrantConstraint { path: string; op: "eq" | "lte" | "gte" | "matches"; value: string | number | boolean; }
-
 export type GrantScope =
   | { kind: "tool" }                                             // the whole tool
-  | { kind: "exact"; inputHash: string; inputPreview: string }   // these args only; inputHash = `sha256:${sha256Hex(canonicalJson(args))}`
-  | { kind: "constrained"; constraints: GrantConstraint[] };     // bounded args
+  | { kind: "exact"; inputHash: string; inputPreview: string };  // these args only; inputHash = `sha256:${sha256Hex(canonicalJson(args))}`
 
 export type GrantDuration = "standing" | "session" | "task";
 
@@ -578,3 +575,9 @@ Persistence and transport are normative:
 - **Kept, deliberately:** `kind: "org"` in the `Principal` type and `principalSchema`, and the `vendo:` reserved-namespace mechanism (`RESERVED_SUBJECT_PREFIX`, `isReservedSubject`) — collision-proofing the namespace against host resolvers has a live consumer (`vendo/src/server.ts`'s principal-resolver validation) independent of whether org principals are ever re-derived; that decision is explicitly deferred to the v2 contract re-derivation, not made by this cut.
 - **Why:** The org storage layer that made org principals real was a Cloud-residency mistake (data layer in OSS for a Vendo-hosted feature); removing its now-dead core-side vocabulary follows the same cut without touching the still-open principal-shape question.
 - **Authorized by:** the Yousef-approved kill-list spec (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md` §A5).
+
+### 2026-07-17 — Cut constrained grant scopes (kill-list §A4)
+
+- **Changed:** Removed the `GrantConstraint` interface, `grantConstraintSchema`, and the `{ kind: "constrained"; constraints: GrantConstraint[] }` variant of `GrantScope`. `GrantScope` is now `{ kind: "tool" } | { kind: "exact"; inputHash; inputPreview }` only; §5's prose now describes the grant machinery as "exact or tool-wide scopes."
+- **Why:** No product surface ever minted a `constrained` grant — the only mint path (`ApprovalDecision.remember`) is a caller-supplied shape guard validated but nothing in the shipped product offered a UI or code path to construct one. It carried a JSON-pointer resolver and a bespoke ReDoS guard in guard's match evaluator purely to support a scope variant with zero real callers.
+- **Authorized by:** the Yousef-approved kill-list spec (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md` §A4).

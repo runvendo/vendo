@@ -48,7 +48,6 @@ describe("tool, grant, and approval schemas", () => {
     for (const scope of [
       { kind: "tool" },
       { kind: "exact", inputHash: "sha256:abc", inputPreview: "limit 10" },
-      { kind: "constrained", constraints: [{ path: "/limit", op: "lte", value: 10 }] },
     ]) expect(grantScopeSchema.safeParse(scope).success).toBe(true);
 
     expect(permissionGrantSchema.safeParse({

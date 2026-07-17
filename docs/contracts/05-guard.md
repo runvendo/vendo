@@ -140,3 +140,9 @@ Adapter surface for LLM Guard-style content scanners (prompt injection on inputs
 - **Changed:** §2 drops the `ctx.principal.kind === "org"` branch that lifted `detail.org: { subject, actor }` into the audit event on org-owned executions. Guard no longer special-cases `kind: "org"` principals — every principal audits the same way.
 - **Why:** simplify-v2 kill-list A5 — orgs are a Vendo-Cloud-side feature; the OSS repo keeps no org-principal code paths.
 - **Authorized by:** the Yousef-approved simplify-v2 kill-list (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md`, §A5).
+
+### 2026-07-17 — Constrained grant scope matching removed (kill-list §A4)
+
+- **Changed:** `scopeMatches` no longer evaluates a `constrained` scope's `eq`/`lte`/`gte`/`matches` constraint ops. Removed the JSON-pointer resolver (`resolvePointer`) and the ReDoS guard (`isUnsafeMatchPattern`) that protected the `matches` op's runtime `RegExp` construction, along with `#decideApprovals`'s mint-time validation of constrained scopes (empty-constraints rejection, unsafe-pattern rejection). `scopeMatches` now only distinguishes `tool` (always matches) and `exact` (canonical input-hash equality).
+- **Why:** 01-core §5 no longer defines a `constrained` `GrantScope` variant (kill-list A4) — no product surface ever minted one, so guard's matching, mint-time validation, and the regex-safety machinery built to protect it were dead code guarding a code path nothing reached.
+- **Authorized by:** the Yousef-approved kill-list spec (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md` §A4).

@@ -358,33 +358,6 @@ describe("approval park and resume over the real SQL mapping", () => {
     expect(grants.rows.length).toBe(rows.rows[0]?.status === "approved" ? 1 : 0);
   });
 
-  it("refuses to mint grants whose matches constraints are unsafe regexes", async () => {
-    const sqlStore = await store();
-    const guard = createGuard(guardedConfig(sqlStore));
-    const bound = guard.bind(new FixtureTools());
-    const parked = await bound.execute(call("host_destructive", { memo: "x" }, "call_unsafe"), context());
-    if (parked.status !== "pending-approval") throw new Error("expected parked call");
-
-    await expect(
-      guard.approvals.decide(
-        parked.approvalId,
-        {
-          approve: true,
-          remember: {
-            scope: {
-              kind: "constrained",
-              constraints: [{ path: "/memo", op: "matches", value: "^(a+)+$" }],
-            },
-            duration: "standing",
-          },
-        },
-        alice,
-      ),
-    ).rejects.toMatchObject({ code: "validation" });
-    const grants = await sqlStore.query<{ id: string }>("SELECT id FROM vendo_grants");
-    expect(grants.rows).toEqual([]);
-  });
-
   it("denials notify false, do not resume, and another subject cannot decide", async () => {
     const sqlStore = await store();
     const guard = createGuard(guardedConfig(sqlStore));

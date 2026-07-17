@@ -38,7 +38,6 @@ import {
   toolDescriptorSchema,
   toolCallSchema,
   toolOutcomeSchema,
-  grantConstraintSchema,
   grantScopeSchema,
   grantDurationSchema,
   permissionGrantSchema,
@@ -249,24 +248,11 @@ describe("§4 — the committed vectors reproduce under the independent oracle",
   });
 });
 
-describe("§5 — grant constraints, scopes, durations, and mint sources", () => {
-  it("accepts every constraint op and value type, rejects unknown op / non-primitive value", () => {
-    for (const op of ["eq", "lte", "gte", "matches"] as const) {
-      expect(grantConstraintSchema.safeParse({ path: "/x", op, value: "v" }).success).toBe(true);
-    }
-    for (const value of ["s", 10, true]) {
-      expect(grantConstraintSchema.safeParse({ path: "/x", op: "eq", value }).success).toBe(true);
-    }
-    expect(grantConstraintSchema.safeParse({ path: "/x", op: "ne", value: 1 }).success).toBe(false);
-    expect(grantConstraintSchema.safeParse({ path: "/x", op: "eq", value: { nested: true } }).success).toBe(false);
-  });
-
-  it("distinguishes the three grant scope variants and enforces their fields", () => {
+describe("§5 — grant scopes, durations, and mint sources", () => {
+  it("distinguishes the two grant scope variants and enforces their fields", () => {
     expect(grantScopeSchema.safeParse({ kind: "tool" }).success).toBe(true);
     expect(grantScopeSchema.safeParse({ kind: "exact", inputHash: "sha256:a", inputPreview: "p" }).success).toBe(true);
     expect(grantScopeSchema.safeParse({ kind: "exact", inputHash: "sha256:a" }).success).toBe(false);
-    expect(grantScopeSchema.safeParse({ kind: "constrained", constraints: [] }).success).toBe(true);
-    expect(grantScopeSchema.safeParse({ kind: "constrained" }).success).toBe(false);
     expect(grantScopeSchema.safeParse({ kind: "whole" }).success).toBe(false);
   });
 
@@ -545,7 +531,7 @@ describe("public export surface — every contracted camelCaseName schema is pre
   it("exposes all expected <name>Schema exports as zod schemas", () => {
     const expected = [
       "principalSchema", "runContextSchema", "triggerRefSchema", "riskLabelSchema",
-      "toolDescriptorSchema", "toolCallSchema", "toolOutcomeSchema", "grantConstraintSchema",
+      "toolDescriptorSchema", "toolCallSchema", "toolOutcomeSchema",
       "grantScopeSchema", "grantDurationSchema", "permissionGrantSchema", "approvalRequestSchema",
       "approvalDecisionSchema", "guardDecisionSchema", "auditEventSchema", "uiPayloadSchema",
       "treeSchema", "treeNodeSchema", "treeQuerySchema", "appDocumentSchema", "storageDeclSchema",

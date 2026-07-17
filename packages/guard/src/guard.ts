@@ -179,83 +179,9 @@ function auditData(record: VendoRecord): AuditEvent {
   return record.data as AuditEvent;
 }
 
-/**
- * Rejects `matches` constraint patterns that can backtrack catastrophically:
- * oversize patterns, backreferences, and a quantifier applied to a group that
- * itself contains a quantifier (the classic exponential shape). The check is
- * deliberately fail-safe — odd-but-safe patterns may be rejected; rewrite them.
- * Enforced at grant-mint time (loud validation error) AND match time (fails
- * the constraint) so pre-existing stored grants can't smuggle one in.
- */
-function isUnsafeMatchPattern(pattern: string): boolean {
-  if (pattern.length > 256) return true;
-  if (/\\[1-9]/.test(pattern)) return true;
-  return /\((?:[^()\\]|\\.)*(?:[*+]|\{\d+(?:,\d*)?\})(?:[^()\\]|\\.)*\)(?:[*+?]|\{\d+(?:,\d*)?\})/.test(
-    pattern,
-  );
-}
-
-function resolvePointer(value: unknown, pointer: string): { found: boolean; value?: unknown } {
-  if (pointer === "") return { found: true, value };
-  if (!pointer.startsWith("/")) return { found: false };
-
-  let current = value;
-  for (const encoded of pointer.slice(1).split("/")) {
-    if (/~(?:[^01]|$)/.test(encoded)) return { found: false };
-    const token = encoded.replace(/~1/g, "/").replace(/~0/g, "~");
-    if (typeof current !== "object" || current === null) return { found: false };
-    if (!Object.prototype.hasOwnProperty.call(current, token)) return { found: false };
-    current = (current as Record<string, unknown>)[token];
-  }
-  return { found: true, value: current };
-}
-
 function scopeMatches(scope: GrantScope, args: unknown): boolean {
   if (scope.kind === "tool") return true;
-  if (scope.kind === "exact") return scope.inputHash === exactInputHash(args);
-
-  // Fail closed on an empty constraints array: `every` over nothing is `true`,
-  // which would silently authorize ANY args — a tool-wide wildcard wearing a
-  // "constrained" label the preview implies is narrow. Mint-time validation
-  // rejects this shape too (#decideApprovals), but a pre-existing or injected
-  // stored grant must never authorize on the strength of zero constraints.
-  if (scope.constraints.length === 0) return false;
-
-  return scope.constraints.every((constraint) => {
-    const resolved = resolvePointer(args, constraint.path);
-    if (!resolved.found) return false;
-
-    switch (constraint.op) {
-      case "eq":
-        return resolved.value === constraint.value;
-      case "lte":
-        return (
-          typeof resolved.value === "number" &&
-          typeof constraint.value === "number" &&
-          resolved.value <= constraint.value
-        );
-      case "gte":
-        return (
-          typeof resolved.value === "number" &&
-          typeof constraint.value === "number" &&
-          resolved.value >= constraint.value
-        );
-      case "matches":
-        if (typeof resolved.value !== "string" || typeof constraint.value !== "string") {
-          return false;
-        }
-        // ReDoS bounds: an adversarial pattern or oversized input fails the
-        // constraint instead of stalling the guard process. Length caps alone
-        // don't stop catastrophic backtracking ("^(a+)+$" is 8 chars), so
-        // exponential-blowup shapes are rejected outright.
-        if (isUnsafeMatchPattern(constraint.value) || resolved.value.length > 1024) return false;
-        try {
-          return new RegExp(constraint.value).test(resolved.value);
-        } catch {
-          return false;
-        }
-    }
-  });
+  return scope.inputHash === exactInputHash(args);
 }
 
 function durationMatches(grant: PermissionGrant, ctx: RunContext): boolean {
@@ -1063,31 +989,6 @@ class GuardImplementation implements VendoGuard {
         if (data.status !== "pending") {
           throw new VendoError("conflict", `Approval ${id} has already been decided`);
         }
-        if (decision.approve && decision.remember?.scope.kind === "constrained") {
-          // Validate BEFORE any state changes: a rejected remember must not leave
-          // the approval half-decided.
-          if (decision.remember.scope.constraints.length === 0) {
-            // An empty constraints array makes `scopeMatches` an
-            // every()-over-nothing → true: a tool-wide wildcard masquerading as
-            // the narrow "constrained" grant the preview implies. Reject it.
-            throw new VendoError(
-              "validation",
-              "A constrained grant must declare at least one constraint",
-            );
-          }
-          for (const constraint of decision.remember.scope.constraints) {
-            if (
-              constraint.op === "matches" &&
-              (typeof constraint.value !== "string" || isUnsafeMatchPattern(constraint.value))
-            ) {
-              throw new VendoError(
-                "validation",
-                `Grant constraint pattern for ${constraint.path} is not a safe regular expression`,
-              );
-            }
-          }
-        }
-
         const decidedAt = now();
         const status = decision.approve ? "approved" : "denied";
         await store.put({
