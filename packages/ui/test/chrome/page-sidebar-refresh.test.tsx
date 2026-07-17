@@ -26,20 +26,26 @@ describe("VendoPage thread sidebar refresh", () => {
   it("surfaces a newly started conversation in the sidebar after its first turn", async () => {
     render(<VendoProvider client={client}><VendoPage /></VendoProvider>);
 
-    // The existing fixture conversation loads into the sidebar first.
-    await waitFor(() => expect(screen.getAllByRole("button", { name: "Fixture thread" })).toHaveLength(1));
+    // The existing fixture conversation loads into the sidebar first. Explicit
+    // 12s timeout (not the 1s default): under CI coverage instrumentation the
+    // initial threads-list fetch + render can exceed a second (pre-existing
+    // turbo-parallel/coverage-load flake).
+    await waitFor(
+      () => expect(screen.getAllByRole("button", { name: "Fixture thread" })).toHaveLength(1),
+      { timeout: 12000 },
+    );
 
     // Start a fresh conversation; the landing greeting confirms we're on a new
     // (empty) thread and the auto-select won't snap us back to the fixture one.
     fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
-    expect(await screen.findByRole("heading", { name: "What can I help you build?" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "What can I help you build?" }, { timeout: 12000 })).toBeTruthy();
 
     // Send the first turn via the Send button once it enables, so the turn can't
     // be dropped by a not-yet-flushed draft on the keydown path.
     const composer = screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
     fireEvent.change(composer, { target: { value: "Kick off a new conversation" } });
     const send = screen.getByRole("button", { name: "Send" });
-    await waitFor(() => expect((send as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect((send as HTMLButtonElement).disabled).toBe(false), { timeout: 12000 });
     fireEvent.click(send);
 
     // Confirm the turn actually posted (mints the thr_) before asserting the
