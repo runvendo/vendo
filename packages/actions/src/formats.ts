@@ -13,7 +13,6 @@ import {
 } from "@vendoai/core";
 
 export const VENDO_CATALOG_FORMAT = "vendo/catalog@1" as const;
-export const VENDO_CATALOG_PROPOSALS_FORMAT = "vendo/catalog-proposals@1" as const;
 
 /** A deterministic or explicitly registered host-component catalog entry. */
 export interface CatalogEntry {
@@ -60,58 +59,6 @@ export const catalogFileSchema = z.object({
     names.add(entry.name);
   }
 }) satisfies z.ZodType<CatalogFile>;
-
-export interface CatalogCopyFields {
-  description: string;
-  examples?: string[];
-}
-
-export const catalogCopyFieldsSchema = z.object({
-  description: z.string(),
-  examples: z.array(z.string().min(1)).optional(),
-}).strict() satisfies z.ZodType<CatalogCopyFields>;
-
-const proposedCatalogCopyFieldsSchema = catalogCopyFieldsSchema.extend({
-  description: z.string().min(1),
-}).strict();
-
-export interface CatalogCopyProposal {
-  name: string;
-  /** Deterministic scanner context the proposal was authored against. */
-  basis: {
-    exportPath: string;
-    propsSchema: JsonSchema;
-    note?: string;
-  };
-  before: CatalogCopyFields;
-  after: CatalogCopyFields;
-}
-
-const catalogCopyProposalBasisSchema = z.object({
-  exportPath: z.string().min(1),
-  propsSchema: jsonSchemaSchema,
-  note: z.string().min(1).optional(),
-}).strict();
-
-export const catalogCopyProposalSchema = z.object({
-  name: z.string().regex(/^[A-Z][A-Za-z0-9_$]*$/),
-  basis: catalogCopyProposalBasisSchema,
-  before: catalogCopyFieldsSchema,
-  after: proposedCatalogCopyFieldsSchema,
-}).strict() satisfies z.ZodType<CatalogCopyProposal>;
-
-/** Review-only copy proposals. Runtime never reads this artifact. */
-export interface CatalogProposalsFile {
-  format: typeof VENDO_CATALOG_PROPOSALS_FORMAT;
-  catalogFormat: typeof VENDO_CATALOG_FORMAT;
-  proposals: CatalogCopyProposal[];
-}
-
-export const catalogProposalsFileSchema = z.object({
-  format: z.literal(VENDO_CATALOG_PROPOSALS_FORMAT),
-  catalogFormat: z.literal(VENDO_CATALOG_FORMAT),
-  proposals: z.array(catalogCopyProposalSchema),
-}).strict() satisfies z.ZodType<CatalogProposalsFile>;
 
 /** 04-actions §1: the http methods a binding can carry. */
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";

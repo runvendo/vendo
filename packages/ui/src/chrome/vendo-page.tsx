@@ -9,12 +9,11 @@ import { ActivityPanel } from "./activity-panel.js";
 import { AutomationsPanel } from "./automations-panel.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
-import { OrgsPanel } from "./orgs-panel.js";
 import { TakeoverPortal } from "./takeover-portal.js";
 import { VendoThread } from "./vendo-thread.js";
 import { WaitingQueue } from "./waiting-queue.js";
 
-const TABS = ["chat", "apps", "automations", "accounts", "orgs", "activity"] as const;
+const TABS = ["chat", "apps", "automations", "accounts", "activity"] as const;
 type Tab = typeof TABS[number];
 
 function title(tab: Tab): string {
@@ -225,7 +224,6 @@ export function VendoPage() {
             {tab === "apps" ? <AppsWorkspace /> : null}
             {tab === "automations" ? <AutomationsPanel /> : null}
             {tab === "accounts" ? <ConnectedAccountsPanel /> : null}
-            {tab === "orgs" ? <OrgsPanel /> : null}
             {tab === "activity" ? <ActivityPanel /> : null}
           </section>
         </div>

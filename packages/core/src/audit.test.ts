@@ -42,6 +42,6 @@ describe("auditEventSchema", () => {
     expect(auditEventSchema.safeParse({ ...base, decidedBy: "human" }).success).toBe(false);
     // Valid boundary values from the enums.
     expect(auditEventSchema.safeParse({ ...base, kind: "door-auth", venue: "mcp" }).success).toBe(true);
-    expect(auditEventSchema.safeParse({ ...base, decidedBy: "scanner", outcome: "pending-approval" }).success).toBe(true);
+    expect(auditEventSchema.safeParse({ ...base, decidedBy: "breaker", outcome: "pending-approval" }).success).toBe(true);
   });
 });

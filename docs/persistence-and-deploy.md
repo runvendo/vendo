@@ -69,7 +69,7 @@ JOIN vendo_records r
   ON r.refs @> jsonb_build_object('invoice_id', i.id)
 ```
 
-`subject` is the only partition axis. Ephemeral principals never touch disk.
+`subject` is the only partition axis. Ephemeral (anonymous) principals write ordinary rows under their subject; a TTL sweep erases sessions idle past `sessions.ttlMs`.
 
 ## Long-lived hosts
 

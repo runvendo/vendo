@@ -63,7 +63,6 @@ const HOST_FACING_TYPES = [
   "PolicyFile",
   "PolicyFn",
   "PolicyRule",
-  "Scanner",
   "VendoGuard",
   // apps
   "AppsRuntime",

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isPlainObject as isRecord } from "@vendoai/core";
 import { useVendoContext } from "../context.js";
 import type {
   VoiceDriverEvent,
@@ -192,10 +193,6 @@ function isViewEvent(event: VoiceDriverEvent): event is { type: "view"; view: Vo
 function voiceErrorMessage(event: VoiceDriverEvent): string {
   if (event.type !== "error" || !("error" in event) || !isRecord(event.error)) return "Voice session failed";
   return typeof event.error.message === "string" ? event.error.message : "Voice session failed";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function updateTranscript(

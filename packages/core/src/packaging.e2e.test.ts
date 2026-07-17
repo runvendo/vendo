@@ -22,7 +22,7 @@ const RUNTIME_EXPORTS = [
   "TREE_MAX_COMPONENT_SOURCE_CHARS", "TREE_MAX_TOTAL_COMPONENT_CHARS", "RESERVED_COMPONENT_NAMES",
   "isPathBinding", "isStateBinding",
   "principalSchema", "runContextSchema", "triggerRefSchema", "riskLabelSchema",
-  "toolDescriptorSchema", "toolCallSchema", "toolOutcomeSchema", "grantConstraintSchema",
+  "toolDescriptorSchema", "toolCallSchema", "toolOutcomeSchema",
   "grantScopeSchema", "grantDurationSchema", "permissionGrantSchema", "approvalRequestSchema",
   "approvalDecisionSchema", "guardDecisionSchema", "auditEventSchema", "uiPayloadSchema",
   "treeSchema", "treeNodeSchema", "treeQuerySchema", "appDocumentSchema", "storageDeclSchema",

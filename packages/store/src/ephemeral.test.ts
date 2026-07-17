@@ -2,8 +2,22 @@ import { auditEventSchema, permissionGrantSchema, type Principal } from "@vendoa
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
 import { appFixture, approvalFixture, at, auditFixture, grantFixture, persistentPrincipal } from "./fixtures.test-util.js";
-import { appStore, approvalStore, auditStore, createStore, grantStore, runStore, stateStore, threadStore } from "./index.js";
+import {
+  appStore,
+  approvalStore,
+  auditStore,
+  createStore,
+  grantStore,
+  registerEphemeralSubject,
+  runStore,
+  stateStore,
+  sweepEphemeralSubjects,
+  threadStore,
+} from "./index.js";
 
+// Kill-list B3: ephemeral (anonymous) principals write ORDINARY disk rows under
+// their subject — the in-memory overlay is gone. Lifetime is the TTL sweep
+// (sweepEphemeralSubjects) or adoption, not process memory.
 for (const backend of backends()) {
   describe(backend.name, () => {
     let made: MadeBackend;
@@ -15,7 +29,10 @@ for (const backend of backends()) {
     });
     afterAll(async () => { if (made) await made.cleanup(); });
 
-    it("serves ephemeral app, state, thread, grant, and audit writes from memory", async () => {
+    it("serves ephemeral app, state, thread, grant, and audit writes through the single disk path", async () => {
+      // The caller (the umbrella, per request) registers the session; data
+      // writes do not depend on it, the sweep does.
+      await registerEphemeralSubject(made.store, ephemeral.subject);
       const doc = appFixture("app_ephemeral", "Ephemeral");
       const grant = grantFixture("grt_ephemeral", { subject: ephemeral.subject, appId: doc.id });
       const event = auditFixture("aud_ephemeral", { principal: ephemeral, appId: doc.id });
@@ -28,7 +45,6 @@ for (const backend of backends()) {
         ctx: { principal: ephemeral, venue: "chat", presence: "present", appId: doc.id },
       });
       await approvalStore(made.store).create(approval);
-      // Runs carry no subject column — they inherit ephemerality from their (ephemeral) owning app.
       await runStore(made.store).put({
         id: "run_ephemeral",
         appId: doc.id,
@@ -52,6 +68,7 @@ for (const backend of backends()) {
       expect((await approvalStore(made.store).pending(ephemeral)).map((request) => request.id)).toEqual(["apr_ephemeral"]);
       expect(await runStore(made.store).get("run_ephemeral")).toMatchObject({ appId: doc.id, status: "running" });
       expect((await records.get("note_a"))?.data).toEqual({ text: "temporary a" });
+      // Returned objects are the caller's copies: mutating them never corrupts the store.
       const fetchedRecord = await records.get("note_a");
       (fetchedRecord?.data as { text: string }).text = "mutated after get";
       expect((await records.get("note_a"))?.data).toEqual({ text: "temporary a" });
@@ -86,26 +103,31 @@ for (const backend of backends()) {
       expect((await routedGrants.get(routedGrant.id))?.data).toEqual(routedGrant);
     });
 
-    it("writes no ephemeral subject rows to any corresponding SQL table", async () => {
+    it("writes ephemeral subject rows to the SQL tables like any durable subject (kill-list B3)", async () => {
       for (const table of ["vendo_apps", "vendo_state", "vendo_threads", "vendo_grants", "vendo_audit", "vendo_approvals"]) {
         const rows = await made.sql(`SELECT COUNT(*)::int AS count FROM ${table} WHERE subject = $1`, [ephemeral.subject]);
-        expect(Number(rows[0]?.count), table).toBe(0);
+        expect(Number(rows[0]?.count), table).toBeGreaterThan(0);
       }
       const runs = await made.sql(
         "SELECT COUNT(*)::int AS count FROM vendo_runs WHERE app_id = $1",
         ["app_ephemeral"],
       );
-      expect(Number(runs[0]?.count), "vendo_runs").toBe(0);
+      expect(Number(runs[0]?.count), "vendo_runs").toBe(1);
       const records = await made.sql(
         "SELECT COUNT(*)::int AS count FROM vendo_records WHERE collection = $1",
         ["app:app_ephemeral:notes"],
       );
-      expect(Number(records[0]?.count), "vendo_records").toBe(0);
+      expect(Number(records[0]?.count), "vendo_records").toBe(2);
       const blobs = await made.sql(
         "SELECT COUNT(*)::int AS count FROM vendo_blobs WHERE namespace = $1",
         ["app:app_ephemeral:files"],
       );
-      expect(Number(blobs[0]?.count), "vendo_blobs").toBe(0);
+      expect(Number(blobs[0]?.count), "vendo_blobs").toBe(2);
+      const session = await made.sql(
+        "SELECT COUNT(*)::int AS count FROM vendo_sessions WHERE subject = $1",
+        [ephemeral.subject],
+      );
+      expect(Number(session[0]?.count), "vendo_sessions").toBe(1);
     });
 
     it("does not disturb persistent rows", async () => {
@@ -117,10 +139,18 @@ for (const backend of backends()) {
       expect((await grantStore(made.store).get(grant.id))?.id).toBe(grant.id);
     });
 
-    it("drops the overlay after close while preserving disk rows across reopen", async () => {
+    it("keeps ephemeral rows across close/reopen until the TTL sweep erases them", async () => {
+      // The session and its rows are disk state now: a restart loses nothing.
       await made.store.close();
       made.store = createStore({ url: made.url, dataDir: made.dataDir });
       await made.store.ensureSchema();
+      expect((await appStore(made.store).get("app_ephemeral"))?.subject).toBe(ephemeral.subject);
+      expect((await grantStore(made.store).get("grt_ephemeral"))?.id).toBe("grt_ephemeral");
+      expect((await threadStore(made.store).get(ephemeral, "thr_ephemeral"))?.subject).toBe(ephemeral.subject);
+
+      // The sweep is what ends the session: every row of the idle subject goes.
+      const evicted = await sweepEphemeralSubjects(made.store, { idleMs: 1, now: Date.now() + 60_000 });
+      expect(evicted).toEqual([ephemeral.subject]);
       expect(await appStore(made.store).get("app_ephemeral")).toBeNull();
       expect(await grantStore(made.store).get("grt_ephemeral")).toBeNull();
       expect(await threadStore(made.store).get(ephemeral, "thr_ephemeral")).toBeNull();
@@ -128,6 +158,7 @@ for (const backend of backends()) {
       expect(await made.store.blobs("app:app_ephemeral:files").get("z-last.txt")).toBeNull();
       expect(await runStore(made.store).get("run_ephemeral")).toBeNull();
       expect(await approvalStore(made.store).get("apr_ephemeral")).toBeNull();
+      // Durable subjects are untouched by the sweep.
       expect(await appStore(made.store).get("app_persistent")).not.toBeNull();
       expect(await grantStore(made.store).get("grt_persistent")).not.toBeNull();
     });

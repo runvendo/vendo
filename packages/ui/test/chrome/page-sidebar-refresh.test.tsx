@@ -29,7 +29,8 @@ describe("VendoPage thread sidebar refresh", () => {
     // The existing fixture conversation loads into the sidebar first. Explicit
     // 12s timeout (not the 1s default): under CI coverage instrumentation the
     // initial threads-list fetch + render can exceed a second (pre-existing
-    // turbo-parallel/coverage-load flake).
+    // turbo-parallel/coverage-load flake). 12s (not main's 4s) because a 4s
+    // window still flaked in this branch's CI runs.
     await waitFor(
       () => expect(screen.getAllByRole("button", { name: "Fixture thread" })).toHaveLength(1),
       { timeout: 12000 },

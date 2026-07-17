@@ -1,3 +1,4 @@
+import { isPlainObject as isRecord } from "@vendoai/core";
 import type {
   VoiceDriver,
   VoiceDriverEvent,
@@ -624,10 +625,6 @@ function microphoneError(cause: unknown): VoiceConnectionError {
 
 function causeMessage(cause: unknown): string {
   return cause instanceof Error && cause.message ? cause.message : "Voice connection failed";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function stringValue(value: unknown, fallback = ""): string {

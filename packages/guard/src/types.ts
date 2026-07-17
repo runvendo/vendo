@@ -92,16 +92,6 @@ export interface Judge {
   }): Promise<{ action: "run" | "ask" | "block"; rationale: string }>;
 }
 
-export interface Scanner {
-  name: string;
-  on: "input" | "output";
-  scan(payload: {
-    text: string;
-    call?: ToolCall;
-    ctx: RunContext;
-  }): Promise<{ verdict: "ok" | "flag" | "block"; findings?: string[] }>;
-}
-
 export interface VendoGuard extends Guard {
   bind(tools: ToolRegistry): ToolRegistry;
 
@@ -149,5 +139,4 @@ export interface CreateGuardConfig {
     maxCallsPerMinute?: number;
     maxWritesPerRun?: number;
   };
-  scanners?: Scanner[];
 }

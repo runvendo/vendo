@@ -87,9 +87,10 @@ function toPlainJson(messages: UIMessage[]): UIMessage[] {
   return JSON.parse(JSON.stringify(messages)) as UIMessage[];
 }
 
-// ENG-310: how many times persist re-reads and re-merges after losing a write
-// race. Each retry starts from the freshly-read row, so a loss only recurs
-// while OTHER writers keep landing between our read and our guarded write.
+// ENG-310 / kill-list B5: how many times persist re-reads and re-merges after
+// losing a CAS race. Each retry starts from the freshly-read row, so a loss
+// only recurs while OTHER writers keep landing between our read and our
+// guarded write.
 const MAX_PERSIST_ATTEMPTS = 5;
 
 /** ENG-310: fold this turn's messages into the CURRENT persisted history —
@@ -108,30 +109,27 @@ function mergeMessages(current: UIMessage[], turn: UIMessage[]): UIMessage[] {
 
 /** 03-agent §5 */
 export class ThreadRepository {
-  readonly #memory = new Map<string, Map<ThreadId, Thread>>();
-
-  constructor(private readonly store?: StoreAdapter) {}
+  // kill-list B5: threads live ONLY in the store — a caller that omits
+  // `createAgent({ store })` still gets one; `createAgent` (agent.ts) passes
+  // core's in-memory `memoryStoreAdapter` (@vendoai/core/conformance) as that
+  // default, so every composition — BYO or store-backed — resolves, lists,
+  // persists, and evicts threads through this SAME code path. There is no
+  // separate in-memory branch here to keep behavior-parity with.
+  constructor(private readonly store: StoreAdapter) {}
 
   async resolve(id: ThreadId | undefined, ctx: RunContext): Promise<Thread> {
     if (id === undefined) return this.create(ctx);
     if (!THREAD_ID_PATTERN.test(id)) {
       throw new VendoError("validation", "threadId is malformed");
     }
-    // The memory path (no store at all) uses per-subject maps, so ids are private
-    // and no takeover is possible — resolve straight from this subject's map.
-    // Ephemeral subjects go THROUGH the store: its overlay routing (02-store §4)
-    // keeps them off disk with the same cross-subject guards, and it is what the
-    // anonymous→signed-in merge (ENG-263) drains — a private map here would
-    // silently lose an anonymous visitor's threads on sign-in.
-    if (this.usesMemory(ctx)) {
-      return this.subjectMemory(ctx.principal.subject).get(id) ?? this.create(ctx, id);
-    }
     // ONE ownership-blind read is the friendly fast-path (03 §5). vendo_threads is
     // keyed by the bare id, so a foreign row reads as non-null here; reusing the id
     // would let persist() take it over. Free id → create; ours → return; anyone
     // else's (or unparseable) → conflict. The store's guarded upsert is the real,
     // atomic guarantee — this only surfaces the conflict early with a clear error.
-    const record = await this.store!.records(THREAD_COLLECTION).get(id);
+    // Ephemeral principals resolve through this exact path too (02-store §4: no
+    // overlay, ordinary rows under their subject) — nothing here is BYO-specific.
+    const record = await this.store.records(THREAD_COLLECTION).get(id);
     if (record === null) return this.create(ctx, id);
     const thread = threadFromRecord(record);
     if (thread !== null && thread.subject === ctx.principal.subject) return thread;
@@ -140,13 +138,10 @@ export class ThreadRepository {
 
   async get(id: ThreadId, ctx: RunContext): Promise<Thread | null> {
     if (!THREAD_ID_PATTERN.test(id)) return null;
-    if (this.usesMemory(ctx)) {
-      return this.subjectMemory(ctx.principal.subject).get(id) ?? null;
-    }
     // Reserved vendo_threads rows are keyed by the bare thread id (02 §2:
     // `id` is the thread id). Subject scoping is enforced here, on read, by
     // checking the row's subject — never returning another subject's thread.
-    const record = await this.store!.records(THREAD_COLLECTION).get(id);
+    const record = await this.store.records(THREAD_COLLECTION).get(id);
     if (!record) return null;
     const thread = threadFromRecord(record);
     if (!thread || thread.subject !== ctx.principal.subject) return null;
@@ -154,27 +149,10 @@ export class ThreadRepository {
   }
 
   async list(ctx: RunContext): Promise<ThreadSummary[]> {
-    let threads: Thread[];
-    if (this.usesMemory(ctx)) {
-      threads = [...this.subjectMemory(ctx.principal.subject).values()];
-    } else {
-      // Follow the cursor to exhaustion (the store pages at 100) — otherwise a
-      // subject's >100th thread, possibly their most recently active, vanishes
-      // (list orders by created_at, we re-sort by updatedAt below).
-      const records: VendoRecord[] = [];
-      let cursor: string | undefined;
-      do {
-        const result = await this.store!.records(THREAD_COLLECTION).list({
-          refs: { subject: ctx.principal.subject },
-          ...(cursor === undefined ? {} : { cursor }),
-        });
-        records.push(...result.records);
-        cursor = result.cursor;
-      } while (cursor !== undefined);
-      threads = records
-        .map(threadFromRecord)
-        .filter((thread): thread is Thread => thread !== null && thread.subject === ctx.principal.subject);
-    }
+    const records = await this.listRecords({ subject: ctx.principal.subject });
+    const threads = records
+      .map(threadFromRecord)
+      .filter((thread): thread is Thread => thread !== null && thread.subject === ctx.principal.subject);
     return threads
       .map(toSummary)
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
@@ -182,40 +160,37 @@ export class ThreadRepository {
 
   async delete(id: ThreadId, ctx: RunContext): Promise<void> {
     if (!THREAD_ID_PATTERN.test(id)) return;
-    if (this.usesMemory(ctx)) {
-      this.subjectMemory(ctx.principal.subject).delete(id);
-      return;
-    }
     // The bare id is shared across subjects; delete only after confirming the
     // row belongs to this subject (get() returns null otherwise), so one
     // subject can never delete another's thread (03 §5).
     const existing = await this.get(id, ctx);
     if (existing === null) return;
-    await this.store!.records(THREAD_COLLECTION).delete(id);
+    await this.store.records(THREAD_COLLECTION).delete(id);
   }
 
-  async persist(thread: Thread, messages: UIMessage[], ctx: RunContext): Promise<void> {
+  async persist(thread: Thread, messages: UIMessage[]): Promise<void> {
     // ai-SDK UIMessages carry explicit `undefined`-valued optional props on
     // tool parts (e.g. an approval-requested part with no output yet). The
     // store seam is typed `Json` and rejects `undefined` values, so serialize
     // to plain JSON — dropping absent-anyway keys — before it crosses.
     const turnMessages = toPlainJson(messages);
-    // ENG-310 (AGENT-9): persist is read-modify-write, never a blind overwrite.
-    // Two overlapping turns on one thread each finish with their OWN copy of the
-    // history; a bare put made the last writer clobber the other turn's messages.
-    // Every write below first merges this turn into the CURRENT stored history.
-    if (this.usesMemory(ctx)) {
-      // The read+merge+set below is synchronous — atomic in JS — so the memory
-      // path needs no further guard.
-      const threads = this.subjectMemory(ctx.principal.subject);
-      const current = threads.get(thread.id);
-      threads.set(thread.id, this.updatedThread(
-        thread,
-        current === undefined ? turnMessages : mergeMessages(current.messages, turnMessages),
-      ));
-      return;
+    const records = this.store.records(THREAD_COLLECTION);
+    // Guarded write via the store's atomic capability (01 §12 / 02-store §4):
+    // insert-if-absent for a first turn, revision CAS for an existing row —
+    // exactly one concurrent writer lands per attempt; the loser re-reads and
+    // re-merges (ENG-310 / AGENT-9: two overlapping turns on one thread each
+    // finish with their OWN copy of the history, so persist is read-merge-write,
+    // never a blind overwrite). No fallback: v2 has no adapter or row that
+    // predates the capability (kill-list B5 — same reasoning as the crypto v1
+    // cut), so an adapter that omits `atomic` fails closed rather than risking
+    // a lost update under concurrent writers.
+    const atomic = records.atomic;
+    if (atomic === undefined) {
+      throw new VendoError(
+        "not-implemented",
+        "thread persistence needs a store with atomic record claims (02-store §4); this adapter omits the capability",
+      );
     }
-    const records = this.store!.records(THREAD_COLLECTION);
     for (let attempt = 0; attempt < MAX_PERSIST_ATTEMPTS; attempt += 1) {
       const record = await records.get(thread.id);
       const current = record === null ? null : threadFromRecord(record);
@@ -228,19 +203,9 @@ export class ThreadRepository {
         current === null ? turnMessages : mergeMessages(current.messages, turnMessages),
       );
       const input = { id: updated.id, data: updated, refs: { subject: updated.subject } };
-      // Guarded write when the adapter has the optional atomic capability (01
-      // §12): insert-if-absent for a first turn, revision CAS for an existing
-      // row — exactly one concurrent writer lands; the loser re-reads and
-      // re-merges. Without atomic (or on a legacy pre-revision row) the merged
-      // put still shrinks the race window from a whole streaming turn to one
-      // read-write, and the door's subject guard keeps refusing takeovers.
-      if (records.atomic === undefined || (record !== null && record.revision === undefined)) {
-        await records.put(input);
-        return;
-      }
       const written = record === null
-        ? await records.atomic.insertIfAbsent(input)
-        : await records.atomic.compareAndSwap(input, record.revision!);
+        ? await atomic.insertIfAbsent(input)
+        : await atomic.compareAndSwap(input, record.revision!);
       if (written !== null) return;
     }
     throw new VendoError(
@@ -261,44 +226,50 @@ export class ThreadRepository {
     };
   }
 
+  // create() never writes: it hands back a fresh, not-yet-persisted Thread.
+  // The first persist() call is what puts the row in the store — same for
+  // every composition, so a get()/list() before that first persist correctly
+  // sees nothing yet, exactly as a store-backed agent always has.
   private create(ctx: RunContext, requestedId?: ThreadId): Thread {
     const now = new Date().toISOString();
-    const thread: Thread = {
+    return {
       id: requestedId ?? mintThreadId(),
       subject: ctx.principal.subject,
       messages: [],
       createdAt: now,
       updatedAt: now,
     };
-    if (this.usesMemory(ctx)) {
-      this.subjectMemory(ctx.principal.subject).set(thread.id, thread);
-    }
-    return thread;
   }
 
-  /** AGENT-11 / ENG-237: drop a subject's in-memory threads on session
-   *  eviction. Only the no-store (BYO) composition keeps threads here; a
-   *  store-backed agent holds them in the store overlay (cascaded there), so
-   *  this is a no-op then. The umbrella calls it per swept ephemeral subject.
+  /** AGENT-11 / ENG-237: drop a subject's threads from the store on session
+   *  eviction. Store-backed: a no-op — the store's own TTL sweep already erased
+   *  the rows (02-store §4 erase cascade) before the umbrella calls this, so the
+   *  list below simply finds none. Internal-default (no `store` configured):
+   *  the ONLY place those rows get reclaimed, since nothing else sweeps them.
    *  Returns the evicted thread ids so callers can release any per-thread state
    *  keyed by id (ENG-252 loadouts) — otherwise a reused `thr_*` id would inherit
    *  the evicted thread's searched-in tools. */
-  evictSubject(subject: string): ThreadId[] {
-    const evicted = [...(this.#memory.get(subject)?.keys() ?? [])];
-    this.#memory.delete(subject);
-    return evicted;
+  async evictSubject(subject: string): Promise<ThreadId[]> {
+    const records = await this.listRecords({ subject });
+    const ids = records.map((record) => record.id as ThreadId);
+    await Promise.all(ids.map((id) => this.store.records(THREAD_COLLECTION).delete(id)));
+    return ids;
   }
 
-  private usesMemory(_ctx: RunContext): boolean {
-    return this.store === undefined;
-  }
-
-  private subjectMemory(subject: string): Map<ThreadId, Thread> {
-    let threads = this.#memory.get(subject);
-    if (!threads) {
-      threads = new Map();
-      this.#memory.set(subject, threads);
-    }
-    return threads;
+  /** Follows the store's pagination cursor to exhaustion (it pages at 100) —
+   *  otherwise a subject's >100th thread, possibly their most recently active,
+   *  would silently vanish from `list`/`evictSubject`. */
+  private async listRecords(refs: Record<string, string>): Promise<VendoRecord[]> {
+    const records: VendoRecord[] = [];
+    let cursor: string | undefined;
+    do {
+      const result = await this.store.records(THREAD_COLLECTION).list({
+        refs,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      records.push(...result.records);
+      cursor = result.cursor;
+    } while (cursor !== undefined);
+    return records;
   }
 }
