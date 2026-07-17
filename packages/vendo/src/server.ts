@@ -287,6 +287,15 @@ function internalError(): Response {
   return errorResponse(new VendoError("not-implemented", "Internal Vendo error"));
 }
 
+/** Orgs are a Vendo Cloud capability, not an OSS one (kill-list A5): every
+    /orgs route and every org-scoped param on /approvals and /grants answers
+    this, unconditionally — there is no key-gated activation path left in the
+    OSS wire (contrast the old block-actions design §C org machinery, which
+    this seam replaces). */
+function orgsCloudRequired(): never {
+  throw new VendoError("cloud-required", "orgs are a Vendo Cloud capability");
+}
+
 function object(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new VendoError("validation", `${label} must be an object`);
@@ -939,9 +948,7 @@ function createWireHandler(deps: {
       // error the /orgs routes answer, rather than silently ignoring it.
       if (request.method === "GET" && path === "/approvals") {
         const ctx = await context(request, "chat");
-        if (url.searchParams.get("org") !== null) {
-          throw new VendoError("cloud-required", "orgs are a Vendo Cloud capability");
-        }
+        if (url.searchParams.get("org") !== null) orgsCloudRequired();
         return json(await deps.guard.approvals.pending(ctx.principal));
       }
       if (request.method === "POST" && path === "/approvals/decide") {
@@ -950,10 +957,8 @@ function createWireHandler(deps: {
         if (ids.length === 0) throw new VendoError("validation", "ids must contain at least one approval id");
         const decision = approvalDecisionSchema.safeParse(body["decision"]);
         if (!decision.success) throw new VendoError("validation", "decision is invalid");
-        if (body["org"] !== undefined) {
-          throw new VendoError("cloud-required", "orgs are a Vendo Cloud capability");
-        }
         const ctx = await context(request, "chat");
+        if (body["org"] !== undefined) orgsCloudRequired();
         await deps.guard.approvals.decide(ids, decision.data as ApprovalDecision, ctx.principal);
         return json({});
       }
@@ -993,28 +998,21 @@ function createWireHandler(deps: {
       // scoping to an org is a Vendo Cloud capability.
       if (request.method === "GET" && path === "/grants") {
         const ctx = await context(request, "chat");
-        if (url.searchParams.get("org") !== null) {
-          throw new VendoError("cloud-required", "orgs are a Vendo Cloud capability");
-        }
+        if (url.searchParams.get("org") !== null) orgsCloudRequired();
         return json(await deps.guard.grants.list(ctx.principal));
       }
       if (request.method === "DELETE" && head === "grants" && segments.length === 2) {
         const ctx = await context(request, "chat");
-        if (url.searchParams.get("org") !== null) {
-          throw new VendoError("cloud-required", "orgs are a Vendo Cloud capability");
-        }
+        if (url.searchParams.get("org") !== null) orgsCloudRequired();
         await deps.guard.grants.revoke(string(segments[1], "grant id"), ctx.principal);
         return json({});
       }
 
-      // Orgs are a Vendo Cloud capability, not an OSS one (kill-list A5): every
-      // /orgs-prefixed route answers the posture error unconditionally, for
-      // any method — there is no key-gated activation path left in the OSS
-      // wire (contrast the old block-actions design §C org machinery, which
-      // this replaces).
-      if (path === "/orgs" || (head === "orgs" && segments.length >= 2)) {
-        throw new VendoError("cloud-required", "orgs are a Vendo Cloud capability");
-      }
+      // routeSegments splits on "/", so head is the whole first segment:
+      // "orgs" matches only /orgs and /orgs/*, never a lookalike like
+      // /organizations. Matching on `head` alone (not `path === "/orgs"` plus
+      // a segments-length check) also covers a trailing-slash `/orgs/`.
+      if (head === "orgs") orgsCloudRequired();
 
       if (path === "/apps") {
         const ctx = await context(request, "app");
@@ -1597,7 +1595,13 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   };
 }
 
-/** 09-vendo §2 — adapt the fetch handler to a Next.js catch-all route module. */
+/** 09-vendo §2 — adapt the fetch handler to a Next.js catch-all route module.
+    PATCH stays exported even with no PATCH-only wire route left: Next.js
+    405s any method the module does not export before the request ever
+    reaches `vendo.handler`, so dropping it would turn e.g. `PATCH
+    /api/vendo/orgs/:id/members/:subject` into a framework 405 instead of
+    the wire's own `cloud-required` seam (the org routes matched ANY
+    method — orgsCloudRequired() above). */
 export function nextVendoHandler(vendo: Vendo): {
   GET(request: Request): Promise<Response>;
   POST(request: Request): Promise<Response>;

@@ -91,8 +91,8 @@ Nothing on the host side has to change to opt in: as long as
 Sharing apps, approvals, and grants under one org subject is not an OSS
 wire feature. The self-hosted wire always answers every `/orgs` route —
 and any `/approvals` or `/grants` request carrying an `org` param — with
-`cloud-required` (HTTP 402), regardless of `VENDO_API_KEY`. `/status` no
-longer reports an `orgs` block.
+`cloud-required` (HTTP 402), regardless of `VENDO_API_KEY`. `/status`
+reports no `orgs` block.
 
 Organization workspaces live in [Vendo Cloud](/deploy/vendo-cloud), which
 manages its own accounts, members, and keys server-side. See that page for

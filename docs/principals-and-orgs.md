@@ -71,8 +71,7 @@ subject — are a [Vendo Cloud](https://vendo.run) capability, not an OSS wire
 feature. The self-hosted wire always answers every `/api/vendo/orgs` route,
 and any `?org=<id>` param on `/api/vendo/approvals` or `/api/vendo/grants`,
 with a `cloud-required` posture error (`402`) — unconditionally, regardless
-of `VENDO_API_KEY`. `GET /api/vendo/status` no longer reports an `orgs`
-block.
+of `VENDO_API_KEY`. `GET /api/vendo/status` reports no `orgs` block.
 
 Vendo Cloud manages its own accounts, members, and org-scoped keys
 server-side; see `vendo cloud whoami`, `vendo cloud members`, and `--org`

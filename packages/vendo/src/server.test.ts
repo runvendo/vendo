@@ -397,6 +397,10 @@ describe("09 §3 public wire", () => {
     const next = nextVendoHandler(vendo);
     for (const method of ["GET", "POST", "PATCH", "DELETE"] as const) expect(next[method]).toBeTypeOf("function");
     expect((await next.GET(request("GET", "/status"))).status).toBe(200);
+    // PATCH is load-bearing even with no PATCH-only wire route left: without
+    // this export Next.js would 405 a PATCH before it ever reached the wire's
+    // own cloud-required seam (the /orgs routes match ANY method).
+    expect((await next.PATCH(request("PATCH", "/orgs/org_1/members/user_1", { role: "admin" }))).status).toBe(402);
   });
 });
 
@@ -1489,7 +1493,11 @@ describe("01-core §2 — the wire rejects resolver-minted reserved/org principa
 });
 
 describe("kill-list A5 — orgs are a Vendo Cloud capability, not an OSS wire route", () => {
-  it("returns cloud-required for every /orgs route, regardless of API key", async () => {
+  it.each([
+    ["without a VENDO_API_KEY", undefined],
+    ["with a VENDO_API_KEY set", `vnd_${"f".repeat(40)}`],
+  ])("returns cloud-required for every /orgs route, %s", async (_label, key) => {
+    if (key !== undefined) vi.stubEnv("VENDO_API_KEY", key);
     const { vendo } = await setup();
     const list = await vendo.handler(request("GET", "/orgs"));
     expect(list.status).toBe(402);
@@ -1504,9 +1512,24 @@ describe("kill-list A5 — orgs are a Vendo Cloud capability, not an OSS wire ro
 
     const addMember = await vendo.handler(request("POST", "/orgs/org_1/members", { subject: "user_1" }));
     expect(addMember.status).toBe(402);
+
+    // A trailing slash still lands on the "orgs" head segment (routeSegments
+    // filters empty parts), so it gets the same seam instead of falling
+    // through to the generic 404.
+    const trailingSlash = await vendo.handler(request("GET", "/orgs/"));
+    expect(trailingSlash.status).toBe(402);
+
+    // No shadowing: matching on the whole first path segment means a
+    // lookalike route is untouched by the seam.
+    const lookalike = await vendo.handler(request("GET", "/organizations"));
+    expect(lookalike.status).toBe(404);
   });
 
-  it("returns cloud-required for any request carrying an org param, regardless of API key", async () => {
+  it.each([
+    ["without a VENDO_API_KEY", undefined],
+    ["with a VENDO_API_KEY set", `vnd_${"f".repeat(40)}`],
+  ])("returns cloud-required for any request carrying an org param, %s", async (_label, key) => {
+    if (key !== undefined) vi.stubEnv("VENDO_API_KEY", key);
     const { vendo } = await setup();
     expect((await vendo.handler(request("GET", "/approvals?org=org_x"))).status).toBe(402);
     expect((await vendo.handler(request("POST", "/approvals/decide", { ids: ["a"], decision: { approve: true }, org: "org_x" }))).status).toBe(402);
