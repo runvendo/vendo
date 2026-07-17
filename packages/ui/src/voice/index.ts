@@ -9,8 +9,12 @@ export {
   type VoiceSessionState,
   type VoiceSessionView,
   type VoiceState,
+  type VoiceToolBridge,
+  type VoiceToolCall,
+  type VoiceActSession,
   type VoiceTranscriptEntry,
 } from "./driver.js";
+export { createVoiceActBridge, type VoiceActBridgeOptions } from "./voice-act.js";
 export {
   mapRealtimeServerEvent,
   realtimeVoiceDriver,

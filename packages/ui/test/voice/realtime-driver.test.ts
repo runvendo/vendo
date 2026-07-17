@@ -44,6 +44,20 @@ describe("realtime voice driver pure seams", () => {
     expect(mapRealtimeServerEvent({ type: "future.event", payload: true })).toEqual([]);
   });
 
+  it("maps a completed function_call item to a function-call event (ENG-319)", () => {
+    expect(mapRealtimeServerEvent({
+      type: "response.output_item.done",
+      item: { type: "function_call", call_id: "call_1", name: "vendo_act", arguments: '{"request":"show revenue"}' },
+    })).toEqual([
+      { type: "function-call", callId: "call_1", name: "vendo_act", argsJson: '{"request":"show revenue"}' },
+    ]);
+    // A non-function output item is ignored.
+    expect(mapRealtimeServerEvent({
+      type: "response.output_item.done",
+      item: { type: "message", role: "assistant" },
+    })).toEqual([]);
+  });
+
   it("surfaces missing browser capabilities as an error event without throwing", async () => {
     const events: unknown[] = [];
     const driver = realtimeVoiceDriver({

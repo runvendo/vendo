@@ -47,6 +47,27 @@ export interface VoiceDriverHandlers {
   onEvent(event: VoiceDriverEvent): void;
 }
 
+/** ENG-319 — one realtime function call, as the driver hands it to the bridge. */
+export interface VoiceToolCall {
+  callId: string;
+  name: string;
+  args: unknown;
+}
+
+/** ENG-319 — what a tool-call handler can do back into the live session. */
+export interface VoiceActSession {
+  /** Land a rendered view in the stage's session feed. */
+  emitView(view: VoiceSessionView): void;
+}
+
+/** ENG-319 — the realtime tool-call bridge seam: `tools` ride the provider
+    session config; every model function call funnels through `onToolCall`,
+    whose resolved value returns to the model as the function output. */
+export interface VoiceToolBridge {
+  tools: Array<Record<string, unknown>>;
+  onToolCall(call: VoiceToolCall, session: VoiceActSession): Promise<unknown>;
+}
+
 export interface VoiceSessionHandle {
   setMuted?(muted: boolean): void;
   stop(): void;

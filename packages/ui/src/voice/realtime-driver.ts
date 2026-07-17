@@ -3,6 +3,7 @@ import type {
   VoiceDriverEvent,
   VoiceSessionHandle,
   VoiceSessionState,
+  VoiceToolBridge,
   VoiceTranscriptEntry,
 } from "./driver.js";
 
@@ -11,6 +12,10 @@ export interface RealtimeVoiceDriverOptions {
   callsUrl?: string;
   instructions?: string;
   connectTimeoutMs?: number;
+  /** ENG-319 — the tool-call bridge: its `tools` ride session.update and its
+      `onToolCall` handles every model function call (the resolved value is
+      sent back as the function output and a fresh response is requested). */
+  act?: VoiceToolBridge;
   /** @internal Browser/retry capability seam for deterministic tests. */
   __internal?: {
     browserCapabilities?(): BrowserCapabilities;
@@ -22,6 +27,7 @@ export type RealtimeMappedEvent =
   | { type: "state"; state: VoiceSessionState }
   | { type: "transcript-delta"; id: string; role: VoiceTranscriptEntry["role"]; delta: string }
   | { type: "transcript-final"; id: string; role: VoiceTranscriptEntry["role"]; text: string }
+  | { type: "function-call"; callId: string; name: string; argsJson: string }
   | { type: "error"; message: string };
 
 const DEFAULT_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
@@ -78,6 +84,20 @@ export function mapRealtimeServerEvent(input: unknown): RealtimeMappedEvent[] {
       role: "assistant",
       text: stringValue(input.transcript),
     }];
+  }
+
+  // ENG-319 — a completed function-call item carries the full name + arguments.
+  if (type === "response.output_item.done") {
+    const item = isRecord(input.item) ? input.item : undefined;
+    if (item?.type === "function_call" && typeof item.name === "string") {
+      return [{
+        type: "function-call",
+        callId: stringValue(item.call_id, ""),
+        name: item.name,
+        argsJson: stringValue(item.arguments, "{}"),
+      }];
+    }
+    return [];
   }
 
   if (type === "response.done") return [{ type: "state", state: "listening" }];
@@ -269,6 +289,42 @@ export function realtimeVoiceDriver(options: RealtimeVoiceDriverOptions): VoiceD
         }
       };
 
+      // ENG-319 — run a model function call through the bridge and hand the
+      // result back over the data channel. Bridge failures return as an error
+      // output (the model apologizes and carries on) — they never end the call.
+      const handleFunctionCall = (call: { callId: string; name: string; argsJson: string }) => {
+        const bridge = options.act;
+        if (!bridge || call.callId.length === 0) return;
+        let args: unknown;
+        try {
+          args = JSON.parse(call.argsJson) as unknown;
+        } catch {
+          args = {};
+        }
+        void (async () => {
+          let output: unknown;
+          try {
+            output = await bridge.onToolCall(
+              { callId: call.callId, name: call.name, args },
+              { emitView: (view) => emit({ type: "view", view }) },
+            );
+          } catch (cause) {
+            output = { error: causeMessage(cause) };
+          }
+          if (!alive || channel?.readyState !== "open") return;
+          try {
+            channel.send(JSON.stringify({
+              type: "conversation.item.create",
+              item: { type: "function_call_output", call_id: call.callId, output: JSON.stringify(output ?? null) },
+            }));
+            channel.send(JSON.stringify({ type: "response.create" }));
+          } catch {
+            // The channel died between resolve and send — the reconnect path
+            // owns recovery; the outcome is already durably recorded server-side.
+          }
+        })();
+      };
+
       const acceptServerEvent = (raw: unknown) => {
         let parsed: unknown = raw;
         if (typeof raw === "string") {
@@ -282,6 +338,8 @@ export function realtimeVoiceDriver(options: RealtimeVoiceDriverOptions): VoiceD
         for (const event of mapRealtimeServerEvent(parsed)) {
           if (event.type === "state") {
             setSessionState(event.state);
+          } else if (event.type === "function-call") {
+            handleFunctionCall(event);
           } else if (event.type === "transcript-delta") {
             const text = (accumulated.get(event.id) ?? "") + event.delta;
             accumulated.set(event.id, text);
@@ -423,10 +481,16 @@ export function realtimeVoiceDriver(options: RealtimeVoiceDriverOptions): VoiceD
           channel.onopen = () => {
             if (!alive || channel !== currentChannel || currentChannel.readyState !== "open") return;
             try {
-              if (options.instructions) {
+              if (options.instructions !== undefined || options.act !== undefined) {
                 currentChannel.send(JSON.stringify({
                   type: "session.update",
-                  session: { type: "realtime", instructions: options.instructions },
+                  session: {
+                    type: "realtime",
+                    ...(options.instructions !== undefined ? { instructions: options.instructions } : {}),
+                    // ENG-319 — the bridge's tools ride the session so the live
+                    // model can act through Vendo mid-call.
+                    ...(options.act !== undefined ? { tools: options.act.tools, tool_choice: "auto" } : {}),
+                  },
                 }));
               }
             } catch (cause) {
