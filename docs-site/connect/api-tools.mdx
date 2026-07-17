@@ -1,6 +1,6 @@
 ---
 title: "Tools from your API"
-description: "How vendo sync extracts OpenAPI operations, tRPC procedures, Next.js server actions, and host routes into .vendo/tools.json and runs them as the signed-in user under guard."
+description: "How vendo sync extracts OpenAPI operations, tRPC procedures, Next.js server actions, and host routes into tools and runs them under guard."
 ---
 
 Vendo sync extracts OpenAPI operations, tRPC procedures, Next.js server
@@ -178,8 +178,8 @@ cases:
 
 `vendo init` generates an actions registration map beside your handler route
 and wires it into `createVendo({ serverActions })`. The map imports every
-detected action module keyed by `"<module>#<exportName>"`, so `executeHost`
-can dispatch through the map at runtime. The map regenerates deterministically
+detected action module keyed by `"<module>#<exportName>"`, so Vendo can
+dispatch calls through the map at runtime. The map regenerates deterministically
 when the detected surface changes; re-running `vendo init` on an unchanged
 surface leaves an empty diff. If the last action disappears, the map is
 emptied — never deleted — so your route keeps compiling.
