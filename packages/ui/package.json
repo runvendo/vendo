@@ -59,6 +59,7 @@
     "pretest:coverage": "pnpm run build:jail",
     "pretypecheck": "pnpm run build:jail",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest:browser": "pnpm run build:jail",
     "test:browser": "playwright test",
     "test:mcp-shim": "playwright test --config e2e/mcp-shim.config.ts",
     "build:mcp-shim": "node scripts/build-mcp-app-shim.mjs",

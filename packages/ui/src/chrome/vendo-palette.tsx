@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { useApps } from "../hooks/use-apps.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { isEditableTarget, registerPaletteHotkey, resolveHotkeyMatcher, type PaletteHotkey } from "./palette-hotkey.js";
+import { isEditableTarget, registerPaletteHotkey, registerPaletteOpener, resolveHotkeyMatcher, type PaletteHotkey } from "./palette-hotkey.js";
 import { TakeoverPortal } from "./takeover-portal.js";
 
 export interface VendoCommand {
@@ -44,6 +44,17 @@ export function VendoPalette({ onCommand, hotkey }: { onCommand?(command: VendoC
     setOpen(false);
     restoreFocus();
   }, [restoreFocus]);
+
+  // ENG-223: programmatic open (the VendoSlot CTA seam). Captures the invoking
+  // element first so Escape/close restores focus exactly as the keybinding does.
+  const openPalette = useCallback(() => {
+    setOpen(value => {
+      if (value) return value;
+      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      return true;
+    });
+  }, []);
+  useEffect(() => registerPaletteOpener(openPalette), [openPalette]);
 
   // Read the live open state inside the (stable) shared-listener handler without
   // re-subscribing on every toggle.

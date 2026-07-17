@@ -2,11 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
+import type { UIPayload } from "@vendoai/core";
 import { createVendoClient } from "@vendoai/ui";
 import { VendoSlot } from "@vendoai/ui/chrome";
-import { AppFrame } from "@vendoai/ui/tree";
 import { MissingDocsHero } from "@/components/dashboard/missing-docs-hero";
-import { cadenceHostComponents } from "@/vendo/host-components";
 import { VendoRoot } from "./VendoRoot";
 
 /** The capture slot the dashboard hero was registered under (vendo sync). */
@@ -81,11 +80,12 @@ export function HeroSlot({
         style={{ ["--fl-slot-min-h" as string]: "0px" }}
       >
         {!expanded ? <RemixButton /> : null}
+        {/* A pinned remix (director surface or user pin) mounts as a pinned
+            COMPONENT in the slot (ENG-223) — through the tree renderer + pin
+            error boundary, so a broken remix falls back to the original hero
+            rather than blanking the cell; otherwise the whole app takes over. */}
         {directorSurface ? (
-          <AppFrame
-            surface={{ kind: "tree", payload: directorSurface.tree as never }}
-            components={cadenceHostComponents}
-          />
+          <VendoSlot id={HERO_SLOT} pin={{ payload: directorSurface.tree as UIPayload }}>{original}</VendoSlot>
         ) : (
           <VendoSlot id={HERO_SLOT} appId={appId ?? undefined}>{original}</VendoSlot>
         )}

@@ -12,8 +12,103 @@ describe("useVoice", () => {
     const { result } = renderHook(() => useVoice(), { wrapper: ProviderWithoutVoice });
 
     expect(result.current.state).toBe("unavailable");
+    expect(result.current.error).toBeNull();
+    expect(result.current.muted).toBe(false);
+    expect(result.current.amplitude).toBe(0);
+    expect(result.current.views).toEqual([]);
     act(() => result.current.start());
+    act(() => result.current.setMuted(true));
     expect(result.current.state).toBe("unavailable");
+    expect(result.current.muted).toBe(false);
+  });
+
+  it("preserves transcript entries while the driver reconnects", () => {
+    const driver = new ScriptedVoiceDriver();
+    const { result } = renderHook(() => useVoice(), { wrapper: providerWith(driver) });
+
+    act(() => result.current.start());
+    act(() => {
+      driver.emit({
+        type: "transcript",
+        entry: { id: "line-1", role: "user", text: "Keep this", final: true },
+      });
+      driver.emit({ type: "state", state: "reconnecting" });
+    });
+
+    expect(result.current.state).toBe("reconnecting");
+    expect(result.current.transcript).toEqual([
+      { id: "line-1", role: "user", text: "Keep this", final: true },
+    ]);
+
+    act(() => driver.emit({ type: "state", state: "listening" }));
+    expect(result.current.state).toBe("listening");
+    expect(result.current.transcript).toHaveLength(1);
+  });
+
+  it("forwards mute to a live session and resets it on a new start", () => {
+    const driver = new ScriptedVoiceDriver();
+    const { result } = renderHook(() => useVoice(), { wrapper: providerWith(driver) });
+
+    act(() => result.current.setMuted(true));
+    expect(result.current.muted).toBe(false);
+
+    act(() => result.current.start());
+    act(() => result.current.setMuted(true));
+    expect(result.current.muted).toBe(true);
+    expect(driver.muted).toEqual([true]);
+
+    act(() => result.current.stop());
+    act(() => result.current.start());
+    expect(result.current.muted).toBe(false);
+  });
+
+  it("exposes amplitude events and resets the level on stop and error", () => {
+    const driver = new ScriptedVoiceDriver();
+    const { result } = renderHook(() => useVoice(), { wrapper: providerWith(driver) });
+
+    act(() => result.current.start());
+    act(() => driver.emit({ type: "amplitude", level: 0.62 }));
+    expect(result.current.amplitude).toBe(0.62);
+
+    act(() => result.current.stop());
+    expect(result.current.amplitude).toBe(0);
+
+    act(() => result.current.start());
+    act(() => driver.emit({ type: "amplitude", level: 0.48 }));
+    act(() => driver.emit({ type: "error", error: { message: "connection lost" } }));
+    expect(result.current.amplitude).toBe(0);
+  });
+
+  it("deduplicates session views by id and replaces an existing payload", () => {
+    const driver = new ScriptedVoiceDriver();
+    const { result } = renderHook(() => useVoice(), { wrapper: providerWith(driver) });
+
+    act(() => result.current.start());
+    act(() => {
+      driver.emit({
+        type: "view",
+        view: { id: "view-1", appId: "app_1", payload: { formatVersion: "vendo-genui/v1", title: "First" } },
+      });
+      driver.emit({
+        type: "view",
+        view: { id: "view-2", appId: "app_2", payload: { formatVersion: "vendo-genui/v1", title: "Second" } },
+      });
+      driver.emit({
+        type: "view",
+        view: { id: "view-1", appId: "app_1", payload: { formatVersion: "vendo-genui/v1", title: "Updated" } },
+      });
+    });
+
+    expect(result.current.views).toEqual([
+      { id: "view-1", appId: "app_1", payload: { formatVersion: "vendo-genui/v1", title: "Updated" } },
+      { id: "view-2", appId: "app_2", payload: { formatVersion: "vendo-genui/v1", title: "Second" } },
+    ]);
+
+    act(() => driver.emit({ type: "state", state: "reconnecting" }));
+    expect(result.current.views).toHaveLength(2);
+    act(() => result.current.stop());
+    act(() => result.current.start());
+    expect(result.current.views).toEqual([]);
   });
 
   it("tracks state and updates transcript entries in place", () => {
@@ -80,7 +175,12 @@ describe("useVoice", () => {
     act(() => driver.emit({ type: "error", error: { message: "microphone denied" } }));
 
     expect(result.current.state).toBe("error");
+    expect(result.current.error).toEqual({ message: "microphone denied" });
     expect(driver.stops).toBe(1);
+
+    act(() => result.current.start());
+    expect(result.current.state).toBe("connecting");
+    expect(result.current.error).toBeNull();
   });
 });
 

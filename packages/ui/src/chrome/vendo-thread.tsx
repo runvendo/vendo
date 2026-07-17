@@ -1,6 +1,6 @@
 import type { ApprovalRequest, Json, RiskLabel, ToolOutcome, VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useVendoContext } from "../context.js";
 import { useVendoThread } from "../hooks/use-vendo-thread.js";
@@ -8,6 +8,8 @@ import { PayloadView } from "../tree/renderer.js";
 import { ApprovalCard } from "./approval-card.js";
 import { BuildBeat, toolPresentation } from "./build-beat.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { useCopyFeedback } from "./clipboard.js";
+import { ConnectDockButton, ConnectTray } from "./connect-dock.js";
 import { MorphToast, type MorphToastProps } from "./morph-toast.js";
 import { ConnectCard } from "./connect-card.js";
 import { FluidThinking } from "./fluid-thinking.js";
@@ -147,6 +149,68 @@ function userText(message: UIMessage): string {
     .filter((part): part is Extract<UIMessage["parts"][number], { type: "text" }> => part.type === "text")
     .map(part => part.text)
     .join("");
+}
+
+/** What "copy this turn" yields for an assistant message: its text parts (the
+    markdown source), blank-line separated — tool beats and views don't copy. */
+function assistantText(message: UIMessage): string {
+  return message.parts
+    .filter((part): part is Extract<UIMessage["parts"][number], { type: "text" }> => part.type === "text")
+    .map(part => part.text)
+    .join("\n\n");
+}
+
+/** ENG-225 — the copy turn action (.fl-turn-actions design). */
+function CopyTurnButton({ text }: { text: string }) {
+  const [copied, copy] = useCopyFeedback();
+  return (
+    <button type="button" className="fl-turn-btn" aria-label="Copy message" onClick={() => copy(text)}>
+      {copied ? (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M20 6 9 17l-5-5" />
+        </svg>
+      ) : (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect width="13" height="13" x="9" y="9" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      )}
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
+/** The `.fl-att-ext` badge text — the filename's extension, bounded so a long
+    or missing one still reads as a badge. */
+function fileExt(name: string | undefined): string {
+  const ext = name?.match(/\.([a-z0-9]+)$/i)?.[1];
+  return (ext ?? "file").slice(0, 4).toUpperCase();
+}
+
+function formatBytes(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(0)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+type FilePart = Extract<UIMessage["parts"][number], { type: "file" }>;
+
+/** ENG-225 — a sent attachment in the transcript: images render as the designed
+    `.fl-msg-img` thumbnail, anything else as a `.fl-msg-file` download pill. */
+function SentAttachment({ part }: { part: FilePart }) {
+  const name = part.filename ?? "attachment";
+  if (part.mediaType?.startsWith("image/") === true) {
+    return (
+      <span className="fl-msg-img">
+        <img src={part.url} alt={name} />
+      </span>
+    );
+  }
+  return (
+    <a className="fl-msg-file" href={part.url} download={name}>
+      <span className="fl-att-ext" aria-hidden="true">{fileExt(part.filename)}</span>
+      <span className="fl-att-name">{name}</span>
+    </a>
+  );
 }
 
 /** ENG-216 — the in-thread approval preview is built client-side (the wire part
@@ -406,6 +470,39 @@ export function VendoThread({
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [files, setFiles] = useState<File[]>([]);
+  // ENG-225 — drag-drop attach. A depth counter, not a boolean: dragging over
+  // the composer's children fires enter/leave pairs for every element crossed.
+  const [dragDepth, setDragDepth] = useState(0);
+  // ENG-225 — object-URL thumbnails for image attachments in the chip strip.
+  // Keyed by File identity; a URL is minted once per file and revoked only when
+  // that file leaves the set — never recreated for files still shown (which
+  // would briefly point a mounted <img> at a revoked URL, Devin review). The
+  // ref mirrors the state so the unmount cleanup revokes the final set.
+  const [attachmentPreviews, setAttachmentPreviews] = useState<Map<File, string>>(new Map());
+  const previewsRef = useRef(attachmentPreviews);
+  previewsRef.current = attachmentPreviews;
+  useEffect(() => {
+    if (typeof URL.createObjectURL !== "function") return;
+    setAttachmentPreviews(prev => {
+      const next = new Map<File, string>();
+      for (const file of files) {
+        if (!file.type.startsWith("image/")) continue;
+        next.set(file, prev.get(file) ?? URL.createObjectURL(file));
+      }
+      // Revoke only URLs for files that are no longer attached.
+      for (const [file, url] of prev) {
+        if (!next.has(file)) URL.revokeObjectURL(url);
+      }
+      return next;
+    });
+  }, [files]);
+  // Final cleanup on unmount: revoke whatever is still live.
+  useEffect(() => () => {
+    for (const url of previewsRef.current.values()) URL.revokeObjectURL(url);
+  }, []);
+  // ENG-225 — the connect dock's liquid tray, anchored over the composer.
+  const [dockOpen, setDockOpen] = useState(false);
+  const dockButtonRef = useRef<HTMLButtonElement>(null);
   // ENG-215 — a message the user sent DURING a turn: it parks here (visible as a
   // pill) and auto-sends the instant the turn finishes. A single slot — a second
   // send while one is parked replaces it — because there is only ever one "next"
@@ -572,8 +669,46 @@ export function VendoThread({
     </div>
   ) : null;
 
+  // ENG-225 — drag-drop attach: only reacts to drags that actually carry files
+  // (text selections dragged across the composer must not flash the drop zone).
+  const dragHasFiles = (event: React.DragEvent) =>
+    Array.from(event.dataTransfer?.types ?? []).includes("Files");
+
   const composer = (
-    <form className="fl-composer" aria-label="Message composer" onSubmit={event => { event.preventDefault(); send(); }}>
+    <div className="fl-dock-anchor">
+      {dockOpen ? (
+        <ConnectTray
+          anchorRef={dockButtonRef}
+          onClose={() => {
+            setDockOpen(false);
+            queueMicrotask(() => dockButtonRef.current?.focus());
+          }}
+        />
+      ) : null}
+    <form
+      className={`fl-composer${dragDepth > 0 ? " fl-composer-drag" : ""}`}
+      aria-label="Message composer"
+      onSubmit={event => { event.preventDefault(); send(); }}
+      onDragEnter={event => {
+        if (!dragHasFiles(event)) return;
+        event.preventDefault();
+        setDragDepth(depth => depth + 1);
+      }}
+      onDragOver={event => {
+        if (dragHasFiles(event)) event.preventDefault();
+      }}
+      onDragLeave={event => {
+        if (dragHasFiles(event)) setDragDepth(depth => Math.max(0, depth - 1));
+      }}
+      onDrop={event => {
+        if (!dragHasFiles(event)) return;
+        event.preventDefault();
+        setDragDepth(0);
+        const dropped = Array.from(event.dataTransfer.files);
+        if (dropped.length > 0) setFiles(current => [...current, ...dropped]);
+      }}
+    >
+      {dragDepth > 0 ? <div className="fl-drop">Drop files to attach</div> : null}
       {attachError ? <div className="fl-att-error" role="alert">{attachError}</div> : null}
       {queued ? (
         <div className="fl-queued" role="status" aria-live="polite">
@@ -585,18 +720,39 @@ export function VendoThread({
       ) : null}
       {files.length > 0 ? (
         <div className="fl-att-chips">
-          {files.map((file, i) => (
-            <span className="fl-att-file" key={`${file.name}-${i}`}>
-              <span className="fl-att-name">{file.name}</span>
-              <button type="button" className="fl-att-rm fl-att-rm-file" aria-label={`Remove ${file.name}`}
+          {files.map((file, i) => {
+            const preview = attachmentPreviews.get(file);
+            const remove = (
+              <button type="button" className={`fl-att-rm${preview === undefined ? " fl-att-rm-file" : ""}`} aria-label={`Remove ${file.name}`}
                 onClick={() => setFiles(current => current.filter((_, j) => j !== i))}>×</button>
-            </span>
-          ))}
+            );
+            // ENG-225 — images preview as the designed thumbnail chip; other
+            // files carry an extension badge plus name and size.
+            if (preview !== undefined) {
+              return (
+                <span className="fl-att-img" key={`${file.name}-${i}`}>
+                  <img src={preview} alt={file.name} />
+                  {remove}
+                </span>
+              );
+            }
+            return (
+              <span className="fl-att-file" key={`${file.name}-${i}`}>
+                <span className="fl-att-ext" aria-hidden="true">{fileExt(file.name)}</span>
+                <span className="fl-att-meta">
+                  <span className="fl-att-name">{file.name}</span>
+                  <small>{formatBytes(file.size)}</small>
+                </span>
+                {remove}
+              </span>
+            );
+          })}
         </div>
       ) : null}
       <div className="fl-composer-row">
         <input ref={fileRef} type="file" multiple hidden aria-hidden="true"
           onChange={event => { if (event.target.files) setFiles(current => [...current, ...Array.from(event.target.files!)]); }} />
+        <ConnectDockButton ref={dockButtonRef} open={dockOpen} onToggle={() => setDockOpen(value => !value)} />
         <button type="button" className="fl-icon-btn fl-attach" aria-label="Attach files" onClick={() => fileRef.current?.click()}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
@@ -644,6 +800,7 @@ export function VendoThread({
         {thread.status === "error" && thread.error ? `error: ${thread.error.message}` : thread.status}
       </span>
     </form>
+    </div>
   );
 
   const renderPart = (part: UIMessage["parts"][number], key: string, role: UIMessage["role"], restored: boolean, count = 1) => {
@@ -656,6 +813,12 @@ export function VendoThread({
         return <span className="fl-caret" aria-hidden="true" key={key} />;
       }
       return <Markdown key={key} text={part.text} streaming={part.state === "streaming"} restored={restored} />;
+    }
+    if (part.type === "file") {
+      // ENG-225 — user attachments render beside the bubble (see the message
+      // map); an assistant-authored file lands inline in the turn.
+      if (role === "user") return null;
+      return <SentAttachment key={key} part={part} />;
     }
     if (isToolUIPart(part)) {
       // The in-thread presentation is a human build "beat" (label from the
@@ -785,40 +948,66 @@ export function VendoThread({
                 Show {messageWindow.olderCount} earlier message{messageWindow.olderCount === 1 ? "" : "s"}
               </button>
             ) : null}
-            {messageWindow.windowed.map(message => (
-              <article
-                className={`${message.role === "user" ? "fl-turn-user" : "fl-turn-assistant"}${
-                  isRestored(message.id) ? " fl-no-entrance" : ""}`}
-                data-role={message.role}
-                key={message.id}
-                aria-label={`${message.role} message`}
-              >
-                {collapseToolRuns(message.parts).map(({ part, index, count }) =>
-                  renderPart(part, `${message.id}-${index}`, message.role, isRestored(message.id), count))}
-                {/* ENG-215 — edit the last user turn / regenerate the last
-                    assistant turn. Revealed on hover/focus (see chrome-css). */}
-                {!busy && message.id === lastUserId && message.role === "user" ? (
-                  <div className="fl-turn-actions">
-                    <button type="button" className="fl-turn-btn" aria-label="Edit message" onClick={editLast}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                      </svg>
-                      Edit
-                    </button>
-                  </div>
-                ) : null}
-                {!busy && message.id === lastAssistantId && message.role === "assistant" ? (
-                  <div className="fl-turn-actions">
-                    <button type="button" className="fl-turn-btn" aria-label="Regenerate" onClick={regenerateLast}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 21v-5h5" />
-                      </svg>
-                      Regenerate
-                    </button>
-                  </div>
-                ) : null}
-              </article>
-            ))}
+            {messageWindow.windowed.map(message => {
+              // ENG-225 — a user turn's attachments render BESIDE the bubble
+              // (the designed .fl-turn-user-att block), not inside it; a
+              // files-only send has no bubble at all.
+              const sentFiles = message.role === "user"
+                ? message.parts.filter((part): part is FilePart => part.type === "file")
+                : [];
+              const bubbleText = message.role === "user" ? userText(message) : assistantText(message);
+              const skipBubble = message.role === "user" && bubbleText.length === 0
+                && message.parts.every(part => part.type === "file");
+              // ENG-225 — every settled turn carries a Copy action (hover-
+              // revealed, see chrome-css); Edit stays on the last user turn and
+              // Regenerate on the last assistant turn (ENG-215). The actively
+              // streaming turn gets no actions — its text is still arriving.
+              const streamingTurn = busy && message.role === "assistant" && message.id === activeAssistant?.id;
+              const showEdit = !busy && message.role === "user" && message.id === lastUserId;
+              const showRegenerate = !busy && message.role === "assistant" && message.id === lastAssistantId;
+              const showActions = !streamingTurn && (bubbleText.length > 0 || showEdit || showRegenerate);
+              return (
+                <Fragment key={message.id}>
+                  {sentFiles.length > 0 ? (
+                    <div className={`fl-turn-user-att${isRestored(message.id) ? " fl-no-entrance" : ""}`}>
+                      {sentFiles.map((part, index) => <SentAttachment key={index} part={part} />)}
+                    </div>
+                  ) : null}
+                  {skipBubble ? null : (
+                    <article
+                      className={`${message.role === "user" ? "fl-turn-user" : "fl-turn-assistant"}${
+                        isRestored(message.id) ? " fl-no-entrance" : ""}`}
+                      data-role={message.role}
+                      aria-label={`${message.role} message`}
+                    >
+                      {collapseToolRuns(message.parts).map(({ part, index, count }) =>
+                        renderPart(part, `${message.id}-${index}`, message.role, isRestored(message.id), count))}
+                      {showActions ? (
+                        <div className="fl-turn-actions">
+                          {bubbleText.length > 0 ? <CopyTurnButton text={bubbleText} /> : null}
+                          {showEdit ? (
+                            <button type="button" className="fl-turn-btn" aria-label="Edit message" onClick={editLast}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                              </svg>
+                              Edit
+                            </button>
+                          ) : null}
+                          {showRegenerate ? (
+                            <button type="button" className="fl-turn-btn" aria-label="Regenerate" onClick={regenerateLast}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 21v-5h5" />
+                              </svg>
+                              Regenerate
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </article>
+                  )}
+                </Fragment>
+              );
+            })}
             {approvals.map(part => {
               const risk = risks.get(part.toolCallId) ?? "read";
               const input = "input" in part ? part.input : undefined;
