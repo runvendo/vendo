@@ -295,6 +295,12 @@ export function realtimeVoiceDriver(options: RealtimeVoiceDriverOptions): VoiceD
       const handleFunctionCall = (call: { callId: string; name: string; argsJson: string }) => {
         const bridge = options.act;
         if (!bridge || call.callId.length === 0) return;
+        // Bind the result to THIS connection: if the channel drops and a
+        // reconnect re-dials a fresh session while onToolCall is still awaiting
+        // Vendo/approval work, the stale call_id must NOT be posted into the new
+        // session (it never issued this call) — Greptile review.
+        const callVersion = connectionVersion;
+        const callChannel = channel;
         let args: unknown;
         try {
           args = JSON.parse(call.argsJson) as unknown;
@@ -306,18 +312,19 @@ export function realtimeVoiceDriver(options: RealtimeVoiceDriverOptions): VoiceD
           try {
             output = await bridge.onToolCall(
               { callId: call.callId, name: call.name, args },
-              { emitView: (view) => emit({ type: "view", view }) },
+              { emitView: (view) => { if (alive && connectionVersion === callVersion) emit({ type: "view", view }); } },
             );
           } catch (cause) {
             output = { error: causeMessage(cause) };
           }
-          if (!alive || channel?.readyState !== "open") return;
+          // Same connection still, and its channel still open, or drop it.
+          if (!alive || connectionVersion !== callVersion || channel !== callChannel || callChannel?.readyState !== "open") return;
           try {
-            channel.send(JSON.stringify({
+            callChannel.send(JSON.stringify({
               type: "conversation.item.create",
               item: { type: "function_call_output", call_id: call.callId, output: JSON.stringify(output ?? null) },
             }));
-            channel.send(JSON.stringify({ type: "response.create" }));
+            callChannel.send(JSON.stringify({ type: "response.create" }));
           } catch {
             // The channel died between resolve and send — the reconnect path
             // owns recovery; the outcome is already durably recorded server-side.

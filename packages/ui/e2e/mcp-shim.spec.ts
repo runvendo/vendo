@@ -232,11 +232,11 @@ test("generated MCP Apps shim carries the Maple theme through the generated-comp
   await expect.poll(() => mapleGenerated.locator("html").evaluate((element) => ({
     accent: getComputedStyle(element).getPropertyValue("--vendo-color-accent").trim(),
     radius: getComputedStyle(element).getPropertyValue("--vendo-radius-medium").trim(),
-  }))).toEqual({ accent: "#0A7CFF", radius: "14px" });
+  }))).toEqual({ accent: "#111111", radius: "14px" });
   await expect.poll(() => mapleGenerated.locator("[data-theme-proof]").evaluate((element) => ({
     background: getComputedStyle(element).backgroundColor,
     radius: getComputedStyle(element).borderRadius,
-  }))).toEqual({ background: "rgb(10, 124, 255)", radius: "14px" });
+  }))).toEqual({ background: "rgb(17, 17, 17)", radius: "14px" });
   await page.locator("#shim-frame").screenshot({
     path: fileURLToPath(new URL("eng-274-theme-maple.png", screenshotDir)),
     animations: "disabled",

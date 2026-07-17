@@ -474,19 +474,32 @@ export function VendoThread({
   // the composer's children fires enter/leave pairs for every element crossed.
   const [dragDepth, setDragDepth] = useState(0);
   // ENG-225 — object-URL thumbnails for image attachments in the chip strip.
-  // Keyed by the File identity; URLs are revoked whenever the set changes.
+  // Keyed by File identity; a URL is minted once per file and revoked only when
+  // that file leaves the set — never recreated for files still shown (which
+  // would briefly point a mounted <img> at a revoked URL, Devin review). The
+  // ref mirrors the state so the unmount cleanup revokes the final set.
   const [attachmentPreviews, setAttachmentPreviews] = useState<Map<File, string>>(new Map());
+  const previewsRef = useRef(attachmentPreviews);
+  previewsRef.current = attachmentPreviews;
   useEffect(() => {
     if (typeof URL.createObjectURL !== "function") return;
-    const next = new Map<File, string>();
-    for (const file of files) {
-      if (file.type.startsWith("image/")) next.set(file, URL.createObjectURL(file));
-    }
-    setAttachmentPreviews(next);
-    return () => {
-      for (const url of next.values()) URL.revokeObjectURL(url);
-    };
+    setAttachmentPreviews(prev => {
+      const next = new Map<File, string>();
+      for (const file of files) {
+        if (!file.type.startsWith("image/")) continue;
+        next.set(file, prev.get(file) ?? URL.createObjectURL(file));
+      }
+      // Revoke only URLs for files that are no longer attached.
+      for (const [file, url] of prev) {
+        if (!next.has(file)) URL.revokeObjectURL(url);
+      }
+      return next;
+    });
   }, [files]);
+  // Final cleanup on unmount: revoke whatever is still live.
+  useEffect(() => () => {
+    for (const url of previewsRef.current.values()) URL.revokeObjectURL(url);
+  }, []);
   // ENG-225 — the connect dock's liquid tray, anchored over the composer.
   const [dockOpen, setDockOpen] = useState(false);
   const dockButtonRef = useRef<HTMLButtonElement>(null);
@@ -665,6 +678,7 @@ export function VendoThread({
     <div className="fl-dock-anchor">
       {dockOpen ? (
         <ConnectTray
+          anchorRef={dockButtonRef}
           onClose={() => {
             setDockOpen(false);
             queueMicrotask(() => dockButtonRef.current?.focus());

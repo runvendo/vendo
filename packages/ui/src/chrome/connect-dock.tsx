@@ -59,7 +59,11 @@ function DockButtonInner({ open, onToggle, buttonRef }: {
   onToggle(): void;
   buttonRef: React.ForwardedRef<HTMLButtonElement>;
 }) {
-  const { connections } = useConnections();
+  // Devin/ENG-225 review: the badge and the tray hold separate useConnections
+  // instances (useResource is per-hook), so a connect made in the tray never
+  // reached the badge. Poll so the count converges after a connect — the same
+  // cross-instance freshness pattern the approvals surfaces use (ENG-219).
+  const { connections } = useConnections({ pollMs: 3_000 });
   const active = connections.filter(account => account.status === "active").length;
   return (
       <span className="fl-dock">
@@ -91,8 +95,13 @@ interface TrayRow {
 }
 
 /** The liquid tray: rendered by VendoThread inside `.fl-dock-anchor`, above the
-    composer it docks onto. */
-export function ConnectTray({ onClose }: { onClose(): void }) {
+    composer it docks onto. `anchorRef` is the dock button that opened it — an
+    outside-press on THAT button must not close (the button's own click toggles;
+    closing here first would let the toggle reopen it, Devin/Greptile review). */
+export function ConnectTray({ onClose, anchorRef }: {
+  onClose(): void;
+  anchorRef?: React.RefObject<HTMLButtonElement | null>;
+}) {
   const { client, connectors } = useVendoContext();
   const { connections, refresh } = useConnections();
   const [query, setQuery] = useState("");
@@ -127,7 +136,11 @@ export function ConnectTray({ onClose }: { onClose(): void }) {
     };
     const onPress = (event: MouseEvent) => {
       const tray = trayRef.current;
-      if (tray && event.target instanceof Node && !tray.contains(event.target)) onClose();
+      if (!tray || !(event.target instanceof Node)) return;
+      if (tray.contains(event.target)) return;
+      // The dock button owns its own toggle; let it close the tray itself.
+      if (anchorRef?.current?.contains(event.target)) return;
+      onClose();
     };
     document.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onPress);
@@ -135,7 +148,7 @@ export function ConnectTray({ onClose }: { onClose(): void }) {
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onPress);
     };
-  }, [onClose]);
+  }, [onClose, anchorRef]);
 
   const rows = useMemo<{ connected: TrayRow[]; available: TrayRow[] }>(() => {
     const activeByToolkit = new Map<string, ConnectionAccount>();

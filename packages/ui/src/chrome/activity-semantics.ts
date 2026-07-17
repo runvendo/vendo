@@ -86,7 +86,9 @@ function actionPhrase(kind: AuditEvent["kind"], tool: string | undefined): strin
     case "run":
       return "Automation run";
     case "policy-decision":
-      return "Policy decision";
+      // A policy decision is ABOUT a tool call — name it so the row isn't a
+      // mystery (and so a reader can tell which action was gated).
+      return tool ? `Policy decision: ${tool}` : "Policy decision";
     case "app-lifecycle":
       return "App updated";
     case "share":
