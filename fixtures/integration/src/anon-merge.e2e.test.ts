@@ -202,8 +202,8 @@ describe("ENG-263: anonymous→signed-in auto-merge", () => {
     expect(await stack.sql("SELECT subject FROM vendo_threads WHERE id = 'thr_bobs'"))
       .toEqual([{ subject: "user_bob" }]); // unmoved
 
-    // A forged cookie (valid shape, wrong signature) merges nothing and is NOT
-    // cleared — no new merge audit event appears.
+    // A garbage cookie (wrong shape — rejected by the pointer grammar) merges
+    // nothing and is NOT cleared — no new merge audit event appears.
     const before = (await stack.sql("SELECT id FROM vendo_audit WHERE kind = 'principal'")).length;
     const forged = `${"a".repeat(32)}.${"b".repeat(64)}`;
     const response = await signedInWithCookie(stack, "/threads", forged);
