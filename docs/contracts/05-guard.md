@@ -105,6 +105,8 @@ export function vendoAutoJudge(config: { model: LanguageModel; instructions?: st
 
 The judge decides contextually instead of static rules or per-call prompts; rationale lands in the audit event (`decidedBy: "judge"`). Deterministic breakers and the critical tier stay above it — the judge can never unlock what they lock.
 
+## 5. *(removed 2026-07-17 — scanner hook, kill-list §A6; §6 keeps its number for citation stability. See Amendments.)*
+
 ## 6. One-security-rule consequences (restated as guard requirements)
 
 - An approval shows the **real inputs** (`inputPreview`) at the moment of the call — a shared app's hidden or dormant calls can do nothing without the running user seeing them.
