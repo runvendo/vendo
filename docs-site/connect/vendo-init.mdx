@@ -121,11 +121,11 @@ Right after the model scaffold, init runs a Vendo Cloud step. When
 `VENDO_API_KEY` is already set, init validates it against
 [Vendo Cloud](/deploy/vendo-cloud) and prints the plan and unlocked
 capabilities. When it is unset and a starter key would help the credential
-ladder, init offers `vendo cloud login` inline (email OTP), then mints a
-metered starter allowance and appends `VENDO_API_KEY` to `.env.local`
-without touching your other keys. Init never fails on Cloud errors — a
-missing or unreachable endpoint degrades to guidance and leaves your exit
-code unchanged.
+ladder, init offers `vendo cloud login` inline (email OTP). On success, it
+mints a metered starter allowance and appends `VENDO_API_KEY` to
+`.env.local` without touching your other keys. Init never fails on Cloud
+errors — a missing or unreachable endpoint degrades to guidance and leaves
+your exit code unchanged.
 
 ## Init finale
 
