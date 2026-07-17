@@ -23,7 +23,6 @@ import {
 import {
   VendoError,
   descriptorHash,
-  principalSchema,
   vendoThemeSchema,
   type ActAs,
   type ComponentCatalog,
@@ -74,24 +73,18 @@ import {
 import { catalogThemeSummary, mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
 import { createConnections, type ConnectionsService } from "./connections.js";
 import { createRuntimeCapture } from "./runtime-capture.js";
-import { computeImpact } from "./sync-impact.js";
 import {
   BASE_PATH,
   VERSION,
-  constantTimeEqual,
   createContextResolver,
   dispatchRoutes,
   environment,
   errorResponse,
-  hex,
   internalError,
-  json,
-  orgsCloudRequired,
-  requestJson,
   routeSegments,
-  string,
   withAnonCookie,
   type AnonSession,
+  type RouteEntry,
   type SandboxVenue,
   type WireContext,
   type WireDeps,
@@ -100,13 +93,18 @@ import { appRoutes } from "./wire/apps.js";
 import { approvalRoutes, grantRoutes } from "./wire/approvals.js";
 import { automationRoutes, runRoutes } from "./wire/automations.js";
 import { connectionRoutes } from "./wire/connections.js";
+import {
+  DOCTOR_ACT_AS_PRINCIPAL,
+  activityRoutes,
+  devRoutes,
+  doctorRoutes,
+  orgsRoutes,
+  systemRoutes,
+} from "./wire/misc.js";
 import { threadRoutes } from "./wire/threads.js";
 
 /** 10-mcp §5 — the door's canonical mount under the wire's own prefix. */
 const MCP_MOUNT = `${BASE_PATH}/mcp`;
-const DOCTOR_PRESENT_AUTHORIZATION = "Bearer vendo-doctor-present";
-const DOCTOR_PRESENT_COOKIE = "vendo_doctor_present=1";
-const DOCTOR_ACT_AS_PRINCIPAL: Principal = { kind: "user", subject: "vendo_doctor_act_as" };
 const DOCTOR_ACT_AS_APP_ID = "app_vendo_doctor" as const;
 
 const doctorPresentTool: ExtractedTool = {
@@ -367,41 +365,6 @@ function jsonMutationRequired(request: Request, path: string): boolean {
   return true;
 }
 
-/** Lazily-minted random per-process HMAC key for constant-time secret compares
-    (WebCrypto only — NO node:crypto — so the module keeps bundling for edge/
-    Worker targets; cf. dotVendoFile). */
-let compareKeyPromise: Promise<CryptoKey> | undefined;
-function compareKey(): Promise<CryptoKey> {
-  compareKeyPromise ??= (() => {
-    const raw = new Uint8Array(32);
-    globalThis.crypto.getRandomValues(raw);
-    return globalThis.crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  })();
-  return compareKeyPromise;
-}
-
-/** Constant-time string equality via WebCrypto, matching the webhook HMAC path
-    (which leans on crypto.subtle.verify for the same guarantee). HMACs both
-    inputs under a random per-process key so the digests are equal-length 32-byte
-    values regardless of input length — equal digests iff equal inputs (SHA-256
-    collision resistance) — and the byte compare leaks neither length nor content
-    through timing. Replaces the `===` bearer compare, a classic timing oracle. */
-async function timingSafeEqual(a: string, b: string): Promise<boolean> {
-  const key = await compareKey();
-  const encoder = new TextEncoder();
-  const [da, db] = await Promise.all([
-    globalThis.crypto.subtle.sign("HMAC", key, encoder.encode(a)),
-    globalThis.crypto.subtle.sign("HMAC", key, encoder.encode(b)),
-  ]);
-  return constantTimeEqual(hex(da), hex(db));
-}
-
-async function tickAuthorized(request: Request): Promise<boolean> {
-  const secret = environment("VENDO_TICK_SECRET");
-  if (secret === undefined) return false;
-  return timingSafeEqual(request.headers.get("authorization") ?? "", `Bearer ${secret}`);
-}
-
 function telemetryClient(enabled: boolean | undefined): Telemetry | undefined {
   if (enabled !== true) return undefined;
   try {
@@ -411,10 +374,33 @@ function telemetryClient(enabled: boolean | undefined): Telemetry | undefined {
   }
 }
 
-function doctorProbeOk(outcome: ToolOutcome): boolean {
-  if (outcome.status !== "ok" || typeof outcome.output !== "object" || outcome.output === null) return false;
-  return "ok" in outcome.output && outcome.output.ok === true;
-}
+/** The wire route TABLE (kill-list B4): every route as (method, pattern,
+    handler), assembled from the per-area modules under src/wire/. Entries are
+    matched IN ORDER, preserving the old if-chain's precedence exactly:
+    1. the dev-only injection seams (fall through in production),
+    2. the doctor production gate + doctor probe routes,
+    3. the machine surfaces — webhooks, tick, sync impact, the apps proxy —
+       all raw-path matches ahead of any segment decoding,
+    4. the user surfaces: threads → approvals → connections → grants →
+       the orgs cloud-required seam → apps → automations → runs →
+       activity/status.
+    A handler returning undefined falls through to later entries (grouped
+    handlers keep the old chain's method/operation fall-out), and no match at
+    all answers not-found. */
+const wireRoutes: readonly RouteEntry[] = [
+  ...devRoutes,
+  ...doctorRoutes,
+  ...systemRoutes,
+  ...threadRoutes,
+  ...approvalRoutes,
+  ...connectionRoutes,
+  ...grantRoutes,
+  ...orgsRoutes,
+  ...appRoutes,
+  ...automationRoutes,
+  ...runRoutes,
+  ...activityRoutes,
+];
 
 function createWireHandler(deps: WireDeps): (request: Request) => Promise<Response> {
   // Amortized on-request sweep bookkeeping — lives in the shared handler closure
@@ -437,6 +423,22 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
       console.warn(`[vendo] session sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
+  // LOAD-BEARING per-request ordering relative to routing (kill-list B4 kept
+  // it byte-identical to the old chain):
+  //   1. maybeSweep — awaited BEFORE anything (evict-on-expiry, above);
+  //   2. the MCP door's paths — before relativePath's not-found AND the CSRF
+  //      json-mutation gate (see the comment at the check);
+  //   3. relativePath → not-found for non-wire paths;
+  //   4. onRequestOrigin — a validated wire route teaches the same-origin
+  //      baseUrl default;
+  //   5. the CSRF json-mutation gate — before ANY route handler runs;
+  //   6. await ready — schema before the first store touch;
+  //   7. the route table (wireRoutes above; tick auth and the orgs seam are
+  //      ordinary entries at their old chain positions; the anon-session
+  //      touch happens inside each handler's context() call);
+  //   8. no match → not-found;
+  //   9. withAnonCookie at the single exit — the minted Set-Cookie rides
+  //      every response shape (JSON, error, SSE/stream).
   return async (request) => {
     await maybeSweep();
     // Per-request anonymous-session state + the one shared context-resolution
@@ -487,209 +489,8 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
         deps,
       };
 
-      // This dispatch exists only in a development composition. Production
-      // handlers receive no runtimeCapture dependency and fall through to the
-      // ordinary 404, so there is no guarded-but-mounted production endpoint.
-      if (deps.runtimeCapture !== undefined && request.method === "POST" && path === "/dev/remixable-source") {
-        const body = await requestJson(request);
-        // Capture writes .vendo/remixable baselines on the developer's disk, so
-        // it requires a HOST-resolved principal — an anonymous visitor's minted
-        // ephemeral session is not enough, even in a development composition.
-        const captureContext = await context(request, "app");
-        if (captureContext.principal.ephemeral === true) {
-          return json({ error: { code: "blocked", message: "runtime capture requires a host-resolved principal" } }, 401);
-        }
-        if (typeof body["exportable"] !== "boolean") {
-          throw new VendoError("validation", "exportable must be a boolean");
-        }
-        return json(await deps.runtimeCapture.capture({
-          slot: string(body["slot"], "slot"),
-          source: string(body["source"], "source"),
-          exportable: body["exportable"],
-        }));
-      }
-
-      // 06-apps §9 — the documented LOCAL injection seam for in-client approval
-      // records (demos and dev; Cloud's review console mints these in
-      // production). Development compositions only: production handlers fall
-      // through to the ordinary 404, exactly like /dev/remixable-source, so no
-      // production surface can self-approve an app into the host page.
-      if (deps.development && request.method === "POST" && path === "/dev/inclient-approval") {
-        const body = await requestJson(request);
-        // Approving a host-page mount is a HOST trust decision — an anonymous
-        // visitor's minted ephemeral session is not enough, even in dev.
-        const approvalContext = await context(request, "app");
-        if (approvalContext.principal.ephemeral === true) {
-          return json({ error: { code: "blocked", message: "in-client approval injection requires a host-resolved principal" } }, 401);
-        }
-        const approvedBy = body["approvedBy"] === undefined
-          ? "local-dev"
-          : string(body["approvedBy"], "approvedBy");
-        return json(await deps.apps.inClient.approve({
-          appId: string(body["appId"], "appId"),
-          approvedBy,
-        }, approvalContext));
-      }
-
-      // Doctor targets a running dev server. Keep its synthetic mint/echo routes
-      // out of production entirely; in development they expose no credential
-      // material (the echo halves return booleans only).
-      if (path.startsWith("/doctor/") && environment("NODE_ENV") === "production") {
-        throw new VendoError("not-found", "unknown Vendo route");
-      }
-      if (request.method === "GET" && path === "/doctor/present/echo") {
-        return json({
-          ok: request.headers.get("authorization") === DOCTOR_PRESENT_AUTHORIZATION
-            && request.headers.get("cookie") === DOCTOR_PRESENT_COOKIE,
-        });
-      }
-      if (request.method === "GET" && path === "/doctor/act-as/echo") {
-        const resolved = await deps.principal(request);
-        const parsed = principalSchema.safeParse(resolved);
-        const accepted = parsed.success && parsed.data.subject === DOCTOR_ACT_AS_PRINCIPAL.subject;
-        return json({ ok: accepted }, accepted ? 200 : 401);
-      }
-      if (request.method === "POST" && path === "/doctor/present") {
-        const outcome = await deps.doctor.present(await context(request, "chat"));
-        if (doctorProbeOk(outcome)) return json({ ok: true });
-        return json({
-          ok: false,
-          error: {
-            code: "present-credentials-not-forwarded",
-            message: "Present credentials did not reach the host API. Set VENDO_BASE_URL to the running host origin and restart the dev server.",
-          },
-        }, 409);
-      }
-      if (request.method === "POST" && path === "/doctor/act-as") {
-        const outcome = await deps.doctor.actAs();
-        if (doctorProbeOk(outcome)) return json({ ok: true });
-        if (outcome.status === "error" && outcome.error.code === "not-implemented") {
-          return json({
-            ok: false,
-            error: {
-              code: "act-as-not-configured",
-              message: "actAs is not configured; pass createVendo({ actAs }) before enabling away host actions.",
-            },
-          }, 501);
-        }
-        return json({
-          ok: false,
-          error: {
-            code: "act-as-verification-failed",
-            message: "actAs returned no usable AuthMaterial, or the host API did not accept it. Check the matching verifier middleware and principal resolver.",
-          },
-        }, 409);
-      }
-
-      if (request.method === "POST" && path.startsWith("/webhooks/")) {
-        return await deps.automations.webhook(request);
-      }
-      if (request.method === "POST" && path === "/tick") {
-        if (!await tickAuthorized(request)) {
-          return json({ error: { code: "blocked", message: "invalid tick credential" } }, 401);
-        }
-        return json({ runIds: await deps.automations.tick() });
-      }
-      if (request.method === "POST" && path === "/sync/impact") {
-        if (process.env.NODE_ENV === "production") {
-          throw new VendoError("blocked", "sync impact is only available on a dev server");
-        }
-        const body = await requestJson(request);
-        const tools = body["tools"];
-        if (!Array.isArray(tools) || tools.length > 200 || tools.some((tool) => typeof tool !== "string")) {
-          throw new VendoError("validation", "tools must be an array of at most 200 strings");
-        }
-        return json({ impact: await computeImpact(deps.store, tools) });
-      }
-      if (path.startsWith("/proxy/")) {
-        const proxyPath = path.slice("/proxy".length);
-        const proxyUrl = new URL(request.url);
-        proxyUrl.pathname = proxyPath;
-        return await deps.apps.proxy.handler(new Request(proxyUrl, request));
-      }
-
-      const segments = wire.segments;
-      const head = segments[0];
-
-      {
-        const routed = await dispatchRoutes(threadRoutes, wire);
-        if (routed !== undefined) return routed;
-      }
-
-      {
-        const routed = await dispatchRoutes(approvalRoutes, wire);
-        if (routed !== undefined) return routed;
-      }
-
-      {
-        const routed = await dispatchRoutes(connectionRoutes, wire);
-        if (routed !== undefined) return routed;
-      }
-
-      {
-        const routed = await dispatchRoutes(grantRoutes, wire);
-        if (routed !== undefined) return routed;
-      }
-
-      // routeSegments splits on "/", so head is the whole first segment:
-      // "orgs" matches only /orgs and /orgs/*, never a lookalike like
-      // /organizations. Matching on `head` alone (not `path === "/orgs"` plus
-      // a segments-length check) also covers a trailing-slash `/orgs/`.
-      if (head === "orgs") orgsCloudRequired();
-
-      {
-        const routed = await dispatchRoutes(appRoutes, wire);
-        if (routed !== undefined) return routed;
-      }
-
-      {
-        const routed = await dispatchRoutes(automationRoutes, wire);
-        if (routed !== undefined) return routed;
-      }
-
-      {
-        const routed = await dispatchRoutes(runRoutes, wire);
-        if (routed !== undefined) return routed;
-      }
-
-      if (request.method === "GET" && path === "/activity") {
-        const ctx = await context(request, "chat");
-        const limitValue = url.searchParams.get("limit");
-        const limit = limitValue === null ? undefined : Number(limitValue);
-        if (limit !== undefined && (!Number.isInteger(limit) || limit <= 0)) {
-          throw new VendoError("validation", "activity limit must be a positive integer");
-        }
-        const activity = await deps.guard.audit.query({
-          principal: ctx.principal,
-          ...(url.searchParams.get("cursor") === null ? {} : { cursor: url.searchParams.get("cursor")! }),
-          ...(limit === undefined ? {} : { limit }),
-        });
-        // 09 §3: the wire returns AuditEvent[] — the block's {events,cursor}
-        // envelope stays internal (the client pages by last event id).
-        return json(activity.events);
-      }
-      if (request.method === "GET" && path === "/status") {
-        await context(request, "chat");
-        return json({
-          posture: deps.guard.status().posture,
-          version: VERSION,
-          blocks: {
-            store: true,
-            agent: true,
-            actions: true,
-            guard: true,
-            apps: true,
-            automations: true,
-            sandbox: deps.sandbox,
-            // 10-mcp §1 — the door is off by default; true only when
-            // createVendo({ mcp: true }) opened it.
-            mcp: deps.mcp,
-            // 04-actions §3 — how per-user connected accounts are brokered:
-            // "byo" (host's own Composio key), "cloud" (VENDO_API_KEY), or off.
-            connections: deps.connections.posture,
-          },
-        });
-      }
+      const routed = await dispatchRoutes(wireRoutes, wire);
+      if (routed !== undefined) return routed;
 
       throw new VendoError("not-found", "unknown Vendo route");
     } catch (error) {
