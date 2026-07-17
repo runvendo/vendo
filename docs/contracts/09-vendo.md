@@ -151,15 +151,15 @@ Exit codes: doctor `0` green / `1` broken wiring; sync `0` (fail-soft warns) / w
 - **Why:** ENG-263 shipped the org wire surface (PR #277); the coordinated contracts amendment (#269) landed before these route rows were written. This completes the 09-vendo half of the block-actions amendment.
 - **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
 
-### 2026-07-17 — Orgs server surface removed, `cloud-required` seam kept
-
-- **Changed:** §3's `/orgs` route family (list/create, get-one, members add/set-role/remove, app transfer) is removed; the entire path prefix now always answers `cloud-required`, unconditionally — not key-gated, not entitlement-gated. `?org=<id>` on `/approvals` and `/grants` gets the same unconditional `cloud-required` instead of admin-context scoping. `blocks.orgs` is removed from `/status`. §6's cloud-gated surface list drops `org` (share/publish/pinning remain entitlement-gated; orgs are never OSS-reachable at all).
-- **Why:** simplify-v2 kill-list A5 — the org wire surface (§3, ENG-263) was implemented against the host's local store, contradicting the 2026-07-16 data-residency decision (Cloud enabled = data stored with Vendo). Orgs move to Vendo Cloud entirely; this repo keeps only the posture seam so a caller gets a clear error instead of a 404.
-- **Authorized by:** the Yousef-approved simplify-v2 kill-list (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md`, §A5).
-
 ### 2026-07-16 — Ephemeral session policy knob and sweep wiring (ENG-237, wave 4)
 
 - **Changed:** §2 config adds `sessions?: { ttlMs?, sweepIntervalMs?, maxSessions? }` (plus the internal test-only `now` seam), validated at compose time; defaults 30 min / 60 s / 10 000, `ttlMs: 0` disables TTL eviction (cap-only).
 - **Changed:** §2 wiring adds the normative lifecycle paragraph: touch-on-request, inflight bracket held through streamed bodies, amortized on-request + unref'd timer sweeps (timer torn down with `store.close()`), store-first cascade into `agent.evictSubject`, and the `setSessionClock`/`setSessionCap` routing that keeps store-internal touches on the umbrella's clock and cap.
 - **Why:** Wave 4 (PR #301) shipped the umbrella's session policy surface and the cross-block eviction cascade; the umbrella is the only component that sees both store and agent, so the cascade ordering belongs in the composition contract.
 - **Approved by:** Yousef, 2026-07-16 (inventory: `docs/superpowers/specs/2026-07-16-wave4-contract-amendment-inventory.md`).
+
+### 2026-07-17 — Orgs server surface removed, `cloud-required` seam kept
+
+- **Changed:** §3's `/orgs` route family (list/create, get-one, members add/set-role/remove, app transfer) is removed; the entire path prefix now always answers `cloud-required`, unconditionally — not key-gated, not entitlement-gated. `?org=<id>` on `/approvals` and `/grants` gets the same unconditional `cloud-required` instead of admin-context scoping. `blocks.orgs` is removed from `/status`. §6's cloud-gated surface list drops `org` (share/publish/pinning remain entitlement-gated; orgs are never OSS-reachable at all).
+- **Why:** simplify-v2 kill-list A5 — the org wire surface (§3, ENG-263) was implemented against the host's local store, contradicting the 2026-07-16 data-residency decision (Cloud enabled = data stored with Vendo). Orgs move to Vendo Cloud entirely; this repo keeps only the posture seam so a caller gets a clear error instead of a 404.
+- **Authorized by:** the Yousef-approved simplify-v2 kill-list (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md`, §A5).

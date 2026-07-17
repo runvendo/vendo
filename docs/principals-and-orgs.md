@@ -57,36 +57,23 @@ configure. Every actAs-authenticated call audits its disposition in
 Subjects starting with `vendo:` are runtime-minted only:
 
 - webhook trigger principals are `vendo:webhook:<source>`,
-- org principals are `vendo:org:<orgId>`.
+- `vendo:org:<orgId>` is reserved for Vendo Cloud organization workspaces
+  (see below) — the OSS wire never mints this subject itself.
 
 Host principal resolvers are forbidden from producing reserved subjects (and
-from minting `kind: "org"` principals — org context is derived from
-membership); the wire rejects both loudly. Reserved subjects can never hold
-connected accounts or org membership.
+from minting `kind: "org"` principals); the wire rejects both loudly.
+Reserved subjects can never hold connected accounts.
 
 ## Orgs (Vendo Cloud)
 
-Full org semantics ship in the OSS packages — `vendo_orgs` +
-`vendo_org_members` tables, `kind: "org"` principals, org-owned apps and
-automations, management chrome — but **activation is key-gated**: set
-`VENDO_API_KEY` for a plan with the `orgs` capability (validated through the
-console's `/keys/validate`). Without it, every org API returns a
-`cloud-required` posture error, and `GET /api/vendo/status` reports
-`blocks.orgs: false`.
+Organization workspaces — shared apps, approvals, and grants under one org
+subject — are a [Vendo Cloud](https://vendo.run) capability, not an OSS wire
+feature. The self-hosted wire always answers every `/api/vendo/orgs` route,
+and any `?org=<id>` param on `/api/vendo/approvals` or `/api/vendo/grants`,
+with a `cloud-required` posture error (`402`) — unconditionally, regardless
+of `VENDO_API_KEY`. `GET /api/vendo/status` no longer reports an `orgs`
+block.
 
-Roles: **members run, admins approve and manage, owners control the owner
-set.** An org can never lose its last owner (except through the store erase
-API, where full erasure wins).
-
-- `POST /api/vendo/orgs` — create (caller becomes owner)
-- `GET /api/vendo/orgs` · `GET /api/vendo/orgs/:id` — list / members
-- `POST /api/vendo/orgs/:id/members` · `PATCH|DELETE /api/vendo/orgs/:id/members/:subject`
-- `POST /api/vendo/orgs/:id/apps` — transfer one of your apps to the org
-
-An org-owned app runs with the org principal; the human behind the request
-rides along as `actor` and lands in the audit trail (`detail.org`). Grants and
-approvals for org apps live under the org subject — org approvals are decided
-on the admin-gated surfaces (`GET /api/vendo/approvals?org=<id>`,
-`POST /api/vendo/approvals/decide` with `org`), and standing grants are
-managed the same way (`/api/vendo/grants?org=<id>`). Transferring an app does
-not transfer grants: the org re-approves as itself.
+Vendo Cloud manages its own accounts, members, and org-scoped keys
+server-side; see `vendo cloud whoami`, `vendo cloud members`, and `--org`
+key scoping in the CLI reference for the Cloud-side org model.
