@@ -28,9 +28,9 @@ export type JsonSchema = Record<string, unknown>; // JSON Schema draft 2020-12
 
 ## 2. Principals
 
-Who the agent is acting as. Host-minted for users; the host resolves its own session to a principal (09 §2). `kind: "org"` principals are real (ENG-263, block-actions spec §C): the full org machinery ships OSS, activation is key-gated per the Cloud line (00 conventions) — without `VENDO_API_KEY` entitlement, org surfaces return `cloud-required`. Org principals are minted only by Vendo's own org machinery over the org tables (02 §2); host principal resolvers mint `kind: "user"` only.
+Who the agent is acting as. Host-minted for users; the host resolves its own session to a principal (09 §2). `kind: "org"` is kept as a reserved principal shape — the OSS org storage layer (membership roles, minting/parsing helpers, `02 §2`'s org tables) that made it real under ENG-263 was cut under the simplify-v2 kill-list (§A5): orgs live on the Vendo-hosted side, where vendo-web already owns the full management surface (members, roles, invites, keys, usage). Whether and how v2 core re-derives org principals is an open contract decision, not settled here; until then, host principal resolvers mint `kind: "user"` only.
 
-**Reserved subjects (normative, ENG-263):** the `vendo:` subject prefix belongs to Vendo-synthetic principals — webhook firings run as `vendo:webhook:<source>`, org principals as `vendo:org:<id>` — and a host principal resolver returning a `vendo:`-prefixed subject is a validation error, never honored. This closes the collision between synthetic subjects and real users.
+**Reserved subjects (normative, ENG-263):** the `vendo:` subject prefix belongs to Vendo-synthetic principals — webhook firings run as `vendo:webhook:<source>`, and the namespace remains reserved for org principals (`vendo:org:<id>`) should v2 re-derive them — and a host principal resolver returning a `vendo:`-prefixed subject is a validation error, never honored. This closes the collision between synthetic subjects and real users.
 
 ```ts
 export interface Principal {
@@ -570,3 +570,11 @@ Persistence and transport are normative:
 - **Changed:** §2 makes `kind: "org"` principals real (subjects `vendo:org:<id>`, key-gated activation, Vendo-minted only) and reserves the `vendo:` subject namespace against host resolvers; §3 adds optional `RunContext.actor` (the human member behind an org request); §7 adds `AuditEvent.kind: "principal"` (anon-migration + membership-change lifecycle events); the anonymous→signed-in migration note points at 02 §4. **Ships with ENG-263 (PR #277) — merge of this amendment waits for that PR.**
 - **Why:** The block-actions project implements execute-as-the-user beyond extraction: per-user connected accounts, loud invalidation, real principals. All additive within the version train (discriminated unions, optional fields — §15).
 - **Authorized by:** the Yousef-approved block-actions design spec (`docs/superpowers/specs/2026-07-14-block-actions-design.md`).
+
+### 2026-07-17 — Cut org-subject core helpers (kill-list §A5)
+
+- **Changed:** Removed `orgSubject`, `isOrgSubject`, `orgIdFromSubject`, `orgPrincipal`, and `ORG_SUBJECT_PREFIX` from `principal.ts` — their only consumers repo-wide were core's own tests, and every other org-related consumer (the store's org tables/helpers, the wire's org routes, the org-principal branches in guard and automations) was already cut in the same kill-list wave. §2's prose no longer claims the full org machinery "ships OSS"; it now describes `kind: "org"` as a reserved-but-inert principal shape pending a v2 contract decision.
+- **Changed:** §2's normative reserved-subjects paragraph keeps the `vendo:` prefix reserved for `vendo:org:<id>` should v2 re-derive org principals, but no longer implies the minting/parsing helpers exist today.
+- **Kept, deliberately:** `kind: "org"` in the `Principal` type and `principalSchema`, and the `vendo:` reserved-namespace mechanism (`RESERVED_SUBJECT_PREFIX`, `isReservedSubject`) — collision-proofing the namespace against host resolvers has a live consumer (`vendo/src/server.ts`'s principal-resolver validation) independent of whether org principals are ever re-derived; that decision is explicitly deferred to the v2 contract re-derivation, not made by this cut.
+- **Why:** The org storage layer that made org principals real was a Cloud-residency mistake (data layer in OSS for a Vendo-hosted feature); removing its now-dead core-side vocabulary follows the same cut without touching the still-open principal-shape question.
+- **Authorized by:** the Yousef-approved kill-list spec (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md` §A5).

@@ -1,8 +1,10 @@
 import { z } from "zod";
 
-/** 01-core §2 (block-actions design §C: `kind:"org"` principals are real —
-    an org principal owns rows exactly like a user principal does; members act
-    through it per the org-membership roles in @vendoai/store). */
+/** 01-core §2. `kind: "org"` is kept as a reserved principal shape (the org
+    storage layer that made it real — membership roles, minting/parsing
+    helpers — was cut under kill-list §A5; orgs live on the Vendo-hosted side
+    now). Whether v2 re-derives org principals is a contract decision, deferred
+    rather than made here. */
 export interface Principal {
   kind: "user" | "org";
   subject: string;
@@ -32,29 +34,15 @@ export function isReservedSubject(subject: string): boolean {
 
 /** Webhook trigger principals: `vendo:webhook:<source>`. The pre-namespace
     `webhook:<source>` form is retired — nothing durable was ever keyed by it
-    (it only ever appeared on audit events for rejected deliveries). */
+    (it only ever appeared on audit events for rejected deliveries).
+
+    Note: the reserved namespace also carries `vendo:org:<id>` subjects
+    (`isReservedSubject` rejects them the same as any other `vendo:`-prefixed
+    subject), but the org-specific minting/parsing helpers that used to live
+    here were removed with the org storage layer (kill-list §A5) — the
+    `kind: "org"` principal shape and the reserved namespace itself stay;
+    whether v2 core re-derives org-subject helpers is a contract decision, not
+    made here. */
 export function webhookSubject(source: string): string {
   return `${RESERVED_SUBJECT_PREFIX}webhook:${source}`;
-}
-
-/** Org principals: `vendo:org:<orgId>`. Derived from the Vendo-owned org id,
-    inside the reserved namespace, so an org subject is collision-proof against
-    anything a host resolver can mint. */
-export const ORG_SUBJECT_PREFIX = `${RESERVED_SUBJECT_PREFIX}org:`;
-
-export function orgSubject(orgId: string): string {
-  return `${ORG_SUBJECT_PREFIX}${orgId}`;
-}
-
-export function isOrgSubject(subject: string): boolean {
-  return subject.startsWith(ORG_SUBJECT_PREFIX);
-}
-
-export function orgIdFromSubject(subject: string): string | null {
-  const id = isOrgSubject(subject) ? subject.slice(ORG_SUBJECT_PREFIX.length) : "";
-  return id.length > 0 ? id : null;
-}
-
-export function orgPrincipal(orgId: string, display?: string): Principal {
-  return { kind: "org", subject: orgSubject(orgId), ...(display === undefined ? {} : { display }) };
 }

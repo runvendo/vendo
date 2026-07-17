@@ -147,30 +147,3 @@ export async function adoptEphemeralSubject(
   overlay.subjects.delete(from);
   return report;
 }
-
-/** Block-actions design §C — the other sanctioned subject-move door: transfer
-    a durable app (and its trigger, if any — automations are apps) to an org
-    subject. Atomic: the UPDATE applies only while the app still belongs to
-    `from`, so a concurrent transfer or foreign app refuses without a TOCTOU
-    window. Grants and approvals do NOT follow the app (consent does not
-    transfer identities): standing grants stay with the original subject and
-    the org re-approves as itself. */
-export async function transferAppSubject(
-  store: VendoStore,
-  appId: string,
-  from: string,
-  to: string,
-): Promise<void> {
-  if (overlayFor(store).apps.has(appId)) {
-    throw new VendoError("validation", "an ephemeral session's app cannot be transferred; sign in first");
-  }
-  const db = dbFor(store);
-  const result = await db.query(
-    `UPDATE vendo_apps SET subject = $3, updated_at = $4
-     WHERE id = $1 AND subject = $2 RETURNING id`,
-    [appId, from, to, new Date().toISOString()],
-  );
-  if (result.rows[0] === undefined) {
-    throw new VendoError("conflict", `app ${appId} does not belong to the transferring subject`);
-  }
-}

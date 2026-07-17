@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  isOrgSubject,
   isReservedSubject,
-  orgIdFromSubject,
-  orgPrincipal,
-  orgSubject,
   principalSchema,
   webhookSubject,
 } from "./principal.js";
@@ -46,15 +42,5 @@ describe("reserved subject namespace", () => {
 
   it("mints webhook subjects inside the namespace", () => {
     expect(webhookSubject("stripe")).toBe("vendo:webhook:stripe");
-  });
-
-  it("round-trips org subjects", () => {
-    expect(orgSubject("org_1")).toBe("vendo:org:org_1");
-    expect(isOrgSubject("vendo:org:org_1")).toBe(true);
-    expect(isOrgSubject("vendo:webhook:stripe")).toBe(false);
-    expect(orgIdFromSubject("vendo:org:org_1")).toBe("org_1");
-    expect(orgIdFromSubject("vendo:org:")).toBe(null);
-    expect(orgIdFromSubject("user_ada")).toBe(null);
-    expect(orgPrincipal("org_1", "Acme")).toEqual({ kind: "org", subject: "vendo:org:org_1", display: "Acme" });
   });
 });

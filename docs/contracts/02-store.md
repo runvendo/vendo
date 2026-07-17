@@ -53,10 +53,6 @@ The page makes this public: "everything lives in the host's own DB under a `vend
 | `vendo_secrets` | `name, ciphertext, created_at` | optional encrypted secret values (`storeSecrets`) |
 | `vendo_mcp_clients` | `id, data, refs, created_at, updated_at` | MCP client state (wave 6, additive — door-owned, shapes block-internal to `@vendoai/mcp`) |
 | `vendo_mcp_grants` | `id, data, refs, created_at, updated_at` | MCP grant state (wave 6, additive — door-owned, shapes block-internal to `@vendoai/mcp`) |
-| `vendo_orgs` | `id, name, created_at, updated_at` | orgs (v3, ENG-263): Vendo-owned org rows; the org's subject is `vendo:org:<id>` (01-core §2) |
-| `vendo_org_members` | `org_id, subject, role, added_at` | org membership (v3, ENG-263): roles `owner`/`admin`/`member`; the store enforces role validity and never orphans an org of its last owner |
-
-The two org tables — `vendo_orgs` (organizations, real `kind:"org"` principals, 01 §2) and `vendo_org_members` (membership, roles `owner`/`admin`/`member` — members run, admins approve and manage) — are added to the map by the ENG-263 implementation (PR #277) together with their key columns and the erase-cascade coverage the map is conformance-tested against (§5). This PR carries the surrounding prose only; PR #277 owns the map rows and the §5 count so the conformance test and the doc land atomically.
 
 Host-entity refs are the join surface: `SELECT ... FROM invoices i JOIN vendo_records r ON r.refs @> jsonb_build_object('invoice_id', i.id)` (containment, so the GIN index is actually used).
 
@@ -98,7 +94,7 @@ For non-reserved names, `records()` remains app data and collection names are ot
 
 ## 5. Retention and erasure
 
-A store-level erase API is contracted here and ships in Wave 3. It erases by subject (full erasure), by app, or by age, cascading the matching data across all 15 tables, and is exposed on the umbrella. (Erase-by-subject removes the subject's org memberships; erasing an org subject removes the org and all its memberships. Full erasure wins over the last-owner storage invariant — an erased owner may leave an org ownerless.) It is the only sanctioned deletion path for audit rows. Policy engines and schedulers remain out of scope; host SQL remains available for everything else.
+A store-level erase API is contracted here and ships in Wave 3. It erases by subject (full erasure), by app, or by age, cascading the matching data across all 13 tables, and is exposed on the umbrella. It is the only sanctioned deletion path for audit rows. Policy engines and schedulers remain out of scope; host SQL remains available for everything else.
 
 ## Amendments
 
@@ -144,3 +140,10 @@ A store-level erase API is contracted here and ships in Wave 3. It erases by sub
 - **Changed:** §4 contracts synchronous cascading eviction (`evictEphemeralSubject` clears every overlay map for exactly one subject, no awaits; cap overflow cascades and never evicts an inflight subject) and fail-closed unknown-app routing (`appEphemerality` tri-state: unknown-app writes throw `not-found`, reads return empty — the structural STORE-1 no-leak guarantee).
 - **Why:** Wave 4 (PR #301) shipped the session lifecycle this section reserved; the frozen text still described the pre-lifecycle overlay. Defaults approved with the amendment: 30 min TTL, 60 s sweep interval, 10 000 session cap, evict-on-expiry ordering.
 - **Approved by:** Yousef, 2026-07-16 (inventory: `docs/superpowers/specs/2026-07-16-wave4-contract-amendment-inventory.md`).
+
+### 2026-07-17 — Cut orgs-in-OSS (kill-list §A5)
+
+- **Changed:** Removed `vendo_orgs` and `vendo_org_members` from the §2 table map (the ENG-263 rows) and their indexes; the §5 erase-cascade count reverts from 15 to 13 tables, and the org-specific erase-by-subject carve-outs (subject's org memberships; erasing an org subject drops the org) are gone with them. `SCHEMA_VERSION` stays at 3 — the DDL list is idempotent and additive-only, so dropping two `CREATE TABLE` statements needs no version bump; pre-existing dev databases keep the two tables as unused orphans, which this change does not attempt to clean up.
+- **Changed:** Removed `orgStore`, `ORG_ROLES`, `OrgRole`, `OrgRow`, `OrgMemberRow` (`helpers/orgs.ts`), `transferAppSubject` (`helpers/subjects.ts` — its only non-test caller was the now-removed `vendo/src/orgs.ts`), and `withOrgMembershipLock`/`lockKeyForId` (`db.ts`) from the package's exports and implementation.
+- **Why:** Orgs are Vendo-hosted, not an OSS storage concern (vendo-web console already owns members/roles/invites/keys/usage); the org data layer was built on the superseded doctrine that OSS should carry it.
+- **Authorized by:** the Yousef-approved kill-list spec (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md` §A5).

@@ -171,35 +171,7 @@ export async function withSchemaLock<T>(db: Db, work: (query: Query) => Promise<
   return withAdvisoryLock(db, [ADVISORY_LOCK_KEY], work);
 }
 
-/** ENG-263 — the classroom of the org-membership lock. A session-scoped Postgres
-    advisory lock, taken on a dedicated pinned client so the whole `work` runs
-    against the connection that holds it (the shared pool would scatter the
-    lock/work/unlock across connections). PGlite serializes every query on one
-    connection, so the lock is a no-op there. Keyed per resource so unrelated
-    resources never block each other. */
-const ORG_MEMBERSHIP_LOCK_NAMESPACE = 7_461_002;
-
-/** Stable 31-bit hash of a resource id → the second int4 of a two-key advisory
-    lock (the first is a namespace so org locks never collide with other lock
-    users). Same id → same lock; collisions only cost extra serialization. */
-function lockKeyForId(id: string): number {
-  let hash = 0;
-  for (let index = 0; index < id.length; index += 1) {
-    hash = (Math.imul(31, hash) + id.charCodeAt(index)) | 0;
-  }
-  return hash & 0x7fffffff;
-}
-
-/** Serialize owner-set mutations for ONE org (03-store): demote/remove check
-    the owner count then write, which races under READ COMMITTED (two owners
-    each see the other and both commit → zero owners). Under this lock the two
-    paths run one at a time per org, so the count the guard reads is the count
-    the write sees. */
-export async function withOrgMembershipLock<T>(db: Db, orgId: string, work: (query: Query) => Promise<T>): Promise<T> {
-  return withAdvisoryLock(db, [ORG_MEMBERSHIP_LOCK_NAMESPACE, lockKeyForId(orgId)], work);
-}
-
-async function withAdvisoryLock<T>(db: Db, keys: [number] | [number, number], work: (query: Query) => Promise<T>): Promise<T> {
+async function withAdvisoryLock<T>(db: Db, keys: [number], work: (query: Query) => Promise<T>): Promise<T> {
   if (db.kind === "pglite") return work(db.query.bind(db));
 
   const url = pgUrls.get(db);

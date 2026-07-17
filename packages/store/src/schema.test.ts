@@ -20,8 +20,6 @@ const CONTRACT_COLUMNS: Record<string, string[]> = {
   vendo_secrets: ["name", "ciphertext", "created_at"],
   vendo_mcp_clients: ["id", "data", "refs", "created_at", "updated_at"],
   vendo_mcp_grants: ["id", "data", "refs", "created_at", "updated_at"],
-  vendo_orgs: ["id", "name", "created_at", "updated_at"],
-  vendo_org_members: ["org_id", "subject", "role", "added_at"],
 };
 
 for (const backend of backends()) {
@@ -84,10 +82,9 @@ for (const backend of backends()) {
       ]);
     });
 
-    it("migrates a version 2 database to the v3 org tables without re-running the v2 backfill", async () => {
+    it("migrates a version 2 database to version 3 without re-running the v2 backfill", async () => {
       // A v2 database may hold a LIVE vendo_records row that happens to match the
       // v2 backfill predicate; the 2→3 upgrade must not relocate/DELETE it again.
-      await made.sql("DROP TABLE vendo_orgs, vendo_org_members");
       await made.sql("UPDATE vendo_meta SET value = '2'::jsonb WHERE key = 'schema_version'");
       await made.sql(
         `INSERT INTO vendo_records (collection, id, data, created_at, updated_at)
@@ -98,12 +95,6 @@ for (const backend of backends()) {
       await made.store.ensureSchema();
 
       expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(3);
-      const tables = await made.sql(
-        `SELECT table_name FROM information_schema.tables
-         WHERE table_schema = 'public' AND table_name IN ('vendo_orgs', 'vendo_org_members')
-         ORDER BY table_name`,
-      );
-      expect(tables).toEqual([{ table_name: "vendo_org_members" }, { table_name: "vendo_orgs" }]);
       const survivor = await made.sql(
         "SELECT id FROM vendo_records WHERE collection = 'vendo_state' AND id = 'app_live:subject_live'",
       );
@@ -111,7 +102,7 @@ for (const backend of backends()) {
       await made.sql("DELETE FROM vendo_records WHERE collection = 'vendo_state' AND id = 'app_live:subject_live'");
     });
 
-    it("creates all 15 contract tables with every contracted key column", async () => {
+    it("creates all 13 contract tables with every contracted key column", async () => {
       const rows = await made.sql(
         "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name LIKE 'vendo_%'",
       );
@@ -122,7 +113,7 @@ for (const backend of backends()) {
         columns.add(String(row.column_name));
         actual.set(table, columns);
       }
-      expect(actual.size).toBe(15);
+      expect(actual.size).toBe(13);
       for (const [table, columns] of Object.entries(CONTRACT_COLUMNS)) {
         expect(actual.has(table), table).toBe(true);
         for (const column of columns) expect(actual.get(table)?.has(column), `${table}.${column}`).toBe(true);

@@ -21,8 +21,6 @@ export const ERASE_TABLES = [
   "vendo_secrets",
   "vendo_mcp_clients",
   "vendo_mcp_grants",
-  "vendo_orgs",
-  "vendo_org_members",
 ] as const;
 
 export type EraseTable = typeof ERASE_TABLES[number];
@@ -158,15 +156,6 @@ export function eraseStore(store: VendoStore): {
       await del(report, "vendo_records", "refs @> $1::jsonb", [subjectRef]);
       await del(report, "vendo_mcp_clients", "refs @> $1::jsonb", [subjectRef]);
       await del(report, "vendo_mcp_grants", "refs @> $1::jsonb", [subjectRef]);
-      // Org memberships are subject-keyed (v3); erasure may leave an org
-      // ownerless — full erasure wins over the last-owner storage invariant.
-      await del(report, "vendo_org_members", "subject = $1", [subject]);
-      // Erasing an ORG subject (`vendo:org:<id>`) erases the org itself.
-      if (subject.startsWith("vendo:org:")) {
-        const orgId = subject.slice("vendo:org:".length);
-        await del(report, "vendo_org_members", "org_id = $1", [orgId]);
-        await del(report, "vendo_orgs", "id = $1", [orgId]);
-      }
 
       for (const [id, row] of overlay.apps) {
         if (row.subject === subject) {
