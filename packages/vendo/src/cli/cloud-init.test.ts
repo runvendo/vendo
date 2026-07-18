@@ -219,6 +219,25 @@ describe("runCloudStep", () => {
     expect(messages.errors.some((l) => l.includes("does not serve the dev-mode starter allowance"))).toBe(true);
   });
 
+  it("surfaces a mint failure (e.g. the console's starter-key cap) without throwing out of init", async () => {
+    const messages = output();
+    const result = await runCloudStep({
+      root: await tempRoot(),
+      output: messages.sink,
+      yes: false,
+      credential: noKey,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      confirm: async () => true,
+      promptEmail: async () => "dev@example.com",
+      login: async () => 0,
+      mint: async () => {
+        throw new Error("This organization already has 10 active dev-mode starter keys.");
+      },
+    });
+    expect(result).toEqual({ keyPresent: false, keyValid: false, wroteEnvLocal: false });
+    expect(messages.errors.some((l) => l.includes("10 active dev-mode starter keys"))).toBe(true);
+  });
+
   it("does not offer login when the ladder already has a key rung", async () => {
     const confirm = vi.fn(async () => true);
     const messages = output();

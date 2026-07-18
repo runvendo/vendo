@@ -158,12 +158,22 @@ export async function runCloudStep(options: CloudStepOptions): Promise<CloudStep
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
   }
 
-  const key = await (options.mint ?? (() => mintStarterAllowance({
-    env,
-    ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
-    ...(options.home === undefined ? {} : { home: options.home }),
-    ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
-  })))();
+  // mintStarterAllowance propagates real errors (auth, network, the console's
+  // per-org starter-key cap) so callers can show them; THIS caller's contract
+  // is "never changes init's exit code", so they land as one clear line here.
+  let key: string | null;
+  try {
+    key = await (options.mint ?? (() => mintStarterAllowance({
+      env,
+      ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
+      ...(options.home === undefined ? {} : { home: options.home }),
+      ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+    })))();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    output.error(`Vendo Cloud starter-allowance minting failed: ${message} Set a provider key or retry \`vendo init\` later; init continues.`);
+    return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
+  }
   if (key === null) {
     output.error("Logged in, but this console does not serve the dev-mode starter allowance yet (older console). Set a provider key or ride your Claude/Codex CLI for now.");
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
