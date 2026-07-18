@@ -1,6 +1,6 @@
 ---
-title: "actAs presets for Auth.js, Supabase, Clerk, Auth0"
-description: "Wire Auth.js, Supabase, Clerk, Auth0, or a generic HS256 JWT into Vendo's actAs seam so away automations and MCP calls act as the signed-in user."
+title: "Auth presets: Auth.js, Supabase, Clerk, Auth0"
+description: "Fill Vendo's principal, actAs, and door OAuth seams from one auth preset, or wire Auth.js, Supabase, Clerk, Auth0, or a generic HS256 JWT into the actAs seam by hand."
 ---
 
 Away automations, scheduled runs, and MCP door calls all reach host APIs
@@ -8,7 +8,57 @@ through the `actAs` seam because none of them carry a browser session. Presets
 in `@vendoai/actions/presets` mint the right auth material for common
 providers so you don't have to hand-roll `actAs` for each one.
 
-## When to use a preset
+## `auth` — one identity story, three seams
+
+Start here. Pass a named preset as `auth` and it fills `principal`, `actAs`,
+and the door's `oauth` seam from one config key:
+
+```ts
+import { authJs, createVendo } from "@vendoai/vendo/server";
+
+export const vendo = createVendo({ model, auth: authJs() });
+```
+
+Every preset is zero-argument in the standard case — it reads its own
+provider's env variable and derives the principal's `display` from
+name/email session-token claims:
+
+| Preset | Session secret (env) |
+| --- | --- |
+| `authJs()` | `AUTH_SECRET` |
+| `clerk()` | `CLERK_SECRET_KEY` |
+| `supabase()` | `SUPABASE_JWT_SECRET` |
+| `auth0()` | `AUTH0_DOMAIN` / `AUTH0_ISSUER_BASE_URL` |
+| `jwt({ secret })` | none — a host-owned scheme has no vendor env, so `secret` is required |
+
+Both options are shared across every preset: `secret` overrides the
+provider's env-read secret, and `user(subject, claims)` swaps in custom
+subject→user resolution instead of the provider's claims defaults (returning
+`null` means "subject unknown to host" — the principal resolves to anonymous
+and away/MCP minting for that subject declines).
+
+```ts
+export const vendo = createVendo({
+  model,
+  auth: authJs({
+    secret: () => process.env.AUTH_SECRET,
+    user: async (subject) => {
+      const user = await db.user.findUnique({ where: { id: subject } });
+      if (!user || user.disabled) return null;
+      return { display: user.name, email: user.email };
+    },
+  }),
+});
+```
+
+`auth` is mutually exclusive with the per-seam trio below — supplying `auth`
+together with any of `principal`, `actAs`, or `oauth` throws
+`VendoError("validation")` at compose time. Each preset's `actAs` half IS the
+matching preset documented below; the `oauth` half implements the door's
+identity seam. Reach for the per-seam presets directly when no shipped `auth`
+preset matches your setup, or when you are composing the three seams by hand.
+
+## When to use a per-seam preset
 
 - You already sign users in with Auth.js, Supabase, Clerk, or Auth0.
 - You want scheduled automations, webhooks, or MCP door calls to hit your
