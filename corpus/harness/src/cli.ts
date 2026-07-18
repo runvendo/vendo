@@ -74,6 +74,18 @@ import {
   type ScorecardLayerInput,
   type ScorecardRepoInput,
 } from "./scorecard.js";
+import { discoverAiConfiguredRepoNames as defaultDiscoverAiConfiguredRepoNames } from "./ai/expectations.js";
+import {
+  DEFAULT_MODEL_LABEL,
+  buildAiScoreboard,
+  corpusExtractionHarness,
+  renderAiScoreboardMarkdown,
+  runAiRepoMatrix as defaultRunAiRepoMatrix,
+  writeAiScoreboardArtifacts,
+  type AiRepoResult,
+  type RunAiRepoMatrixOptions,
+} from "./ai/matrix.js";
+import type { ExtractionHarness } from "@vendoai/vendo/extract";
 
 const usage = `Usage:
   pnpm corpus --help
@@ -82,6 +94,7 @@ const usage = `Usage:
   pnpm corpus run [repo...] --layer <1|2|3> [--json] [--strict]
   pnpm corpus boot <repo> [--timeout-ms <ms>]
   pnpm corpus gallery [repo...]
+  pnpm corpus ai [repo...] [--model <id>]... [--json] [--strict]
 
 Commands:
   validate  Load and validate corpus/manifest.json.
@@ -89,6 +102,8 @@ Commands:
   run       Clone, bootstrap, inject local Vendo, run init, and execute selected layers.
   boot      Clone, bootstrap, inject local Vendo, run init, boot one deep-tier app, and wait for Ctrl-C.
   gallery   Boot configured deep-tier repos and capture native/generated screenshots, GIFs, and timings.
+  ai        Run the AI extraction matrix (repo × model) and score against ai-expected.json labels.
+            Needs a real model credential (ANTHROPIC_API_KEY or a Claude Code login); never part of pnpm test.
 `;
 
 const defaultWorkspaceRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
@@ -119,6 +134,9 @@ export interface CorpusCliDependencies {
   captureGalleryRepo?: (options: CaptureGalleryRepoOptions) => Promise<GalleryRepoResult>;
   writeGalleryHtml?: (options: WriteGalleryHtmlOptions) => Promise<string>;
   commandRunner?: StructuralCommandRunner;
+  discoverAiConfiguredRepoNames?: (expectationsRoot: string) => Promise<string[]>;
+  createExtractionHarness?: () => ExtractionHarness;
+  runAiRepoMatrix?: (options: RunAiRepoMatrixOptions) => Promise<AiRepoResult>;
 }
 
 interface ResolvedDeps {
@@ -144,6 +162,9 @@ interface ResolvedDeps {
   captureGalleryRepo: (options: CaptureGalleryRepoOptions) => Promise<GalleryRepoResult>;
   writeGalleryHtml: (options: WriteGalleryHtmlOptions) => Promise<string>;
   commandRunner: StructuralCommandRunner;
+  discoverAiConfiguredRepoNames: (expectationsRoot: string) => Promise<string[]>;
+  createExtractionHarness: () => ExtractionHarness;
+  runAiRepoMatrix: (options: RunAiRepoMatrixOptions) => Promise<AiRepoResult>;
 }
 
 interface RunCommandOptions {
@@ -191,6 +212,9 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
     captureGalleryRepo: deps.captureGalleryRepo ?? defaultCaptureGalleryRepo,
     writeGalleryHtml: deps.writeGalleryHtml ?? defaultWriteGalleryHtml,
     commandRunner: deps.commandRunner ?? runShellCommand,
+    discoverAiConfiguredRepoNames: deps.discoverAiConfiguredRepoNames ?? defaultDiscoverAiConfiguredRepoNames,
+    createExtractionHarness: deps.createExtractionHarness ?? corpusExtractionHarness,
+    runAiRepoMatrix: deps.runAiRepoMatrix ?? defaultRunAiRepoMatrix,
   };
 }
 
@@ -263,6 +287,51 @@ function parseBootArgs(args: readonly string[]): BootCommandOptions {
   }
 
   return { repoName: repoNames[0] ?? "", timeoutMs };
+}
+
+interface AiCommandOptions {
+  repoNames: string[];
+  models: string[];
+  json: boolean;
+  strict: boolean;
+}
+
+function parseAiArgs(args: readonly string[]): AiCommandOptions {
+  const repoNames: string[] = [];
+  const models: string[] = [];
+  let json = false;
+  let strict = false;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg) continue;
+    if (arg === "--model" || arg === "--models") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("-")) throw new Error(`${arg} needs a model id`);
+      models.push(...value.split(",").map((part) => part.trim()).filter((part) => part.length > 0));
+      index += 1;
+    } else if (arg.startsWith("--model=") || arg.startsWith("--models=")) {
+      const value = arg.slice(arg.indexOf("=") + 1);
+      models.push(...value.split(",").map((part) => part.trim()).filter((part) => part.length > 0));
+    } else if (arg === "--json") {
+      json = true;
+    } else if (arg === "--strict") {
+      strict = true;
+    } else if (arg === "--help" || arg === "-h") {
+      throw new Error(usage);
+    } else if (arg.startsWith("-")) {
+      throw new Error(`Unknown ai option: ${arg}`);
+    } else {
+      repoNames.push(arg);
+    }
+  }
+
+  return {
+    repoNames,
+    models: models.length > 0 ? models : [DEFAULT_MODEL_LABEL],
+    json,
+    strict,
+  };
 }
 
 function parseGalleryArgs(args: readonly string[]): GalleryCommandOptions {
@@ -786,6 +855,80 @@ async function runGalleryCommand(options: GalleryCommandOptions, deps: ResolvedD
   return results.some((result) => result.error) ? 1 : 0;
 }
 
+async function runAiCommand(options: AiCommandOptions, deps: ResolvedDeps): Promise<number> {
+  const manifest = await deps.loadManifest();
+  const context = deps.createContext();
+  const expectationsRoot = path.join(context.corpusRoot, "expectations");
+  const env = (deps.env ?? process.env) as Record<string, string | undefined>;
+
+  const repoNames = options.repoNames.length > 0
+    ? options.repoNames
+    : await deps.discoverAiConfiguredRepoNames(expectationsRoot);
+  if (repoNames.length === 0) {
+    throw new Error("No AI-labeled corpus repos found. Add corpus/expectations/<repo>/ai-expected.json or pass repo names explicitly.");
+  }
+  const repos = selectedRepos(manifest, repoNames);
+
+  // Fail fast, never hang: the matrix runs a real model and is useless
+  // without a credential.
+  const harness = deps.createExtractionHarness();
+  const credential = await harness.availability({ root: deps.workspaceRoot ?? defaultWorkspaceRoot, env });
+  if (credential === null) {
+    deps.stderr("The AI extraction matrix needs a real model credential and cannot run without one.");
+    deps.stderr("Set ANTHROPIC_API_KEY in the environment or log into Claude Code (`claude login`), then re-run `pnpm corpus ai`.");
+    deps.stderr("(The Claude Agent SDK ships as a corpus-harness devDependency; run `pnpm install` if it is missing.)");
+    return 1;
+  }
+  const progress = options.json ? deps.stderr : deps.stdout;
+  progress(`AI extraction matrix: ${repos.length} repo(s) × ${options.models.length} model(s), credential: ${credential}.`);
+
+  const injector = deps.createInjector({ context, workspaceRoot: deps.workspaceRoot });
+  const results: AiRepoResult[] = [];
+  for (const repo of repos) {
+    try {
+      const checkoutDir = await deps.ensureRepoCheckout(repo, { context, workspaceRoot: deps.workspaceRoot });
+      const appRoot = resolveAppRoot(repo, checkoutDir);
+      await deps.bootstrapRepo(repo, { context, env: deps.env });
+      await injector.inject(repo);
+      const init = await deps.runInit(repo, { context, env: deps.env, artifactPrefix: "ai.init" });
+      if (init.exitCode !== 0) {
+        throw new Error(`vendo init failed for ${repo.name}; see ${init.artifacts.log}`);
+      }
+      results.push(await deps.runAiRepoMatrix({
+        repoName: repo.name,
+        appRoot,
+        expectationsRoot,
+        models: options.models,
+        aiLogsDir: path.join(context.logsDir(repo.name), "ai"),
+        env,
+        harness,
+        onProgress: progress,
+      }));
+    } catch (error) {
+      deps.stderr(`AI matrix failed for ${repo.name}: ${errorMessage(error)}`);
+      results.push({ repo: repo.name, failure: errorMessage(error), labeled: false, models: [] });
+    }
+  }
+
+  const scoreboard = buildAiScoreboard({
+    generatedAt: deps.now().toISOString(),
+    models: options.models,
+    repos: results,
+  });
+  const artifacts = await writeAiScoreboardArtifacts(scoreboard, {
+    logsRoot: path.join(context.reposDir, ".logs"),
+  });
+
+  if (options.json) {
+    deps.stdout(JSON.stringify(scoreboard, null, 2));
+  } else {
+    deps.stdout(renderAiScoreboardMarkdown(scoreboard));
+    deps.stdout(`Scoreboard: ${artifacts.markdown}`);
+  }
+
+  return options.strict && scoreboard.summary.failedRuns > 0 ? 1 : 0;
+}
+
 function waitForBootShutdownSignal(): Promise<void> {
   return new Promise((resolve) => {
     const cleanup = () => {
@@ -835,6 +978,10 @@ export async function runCli(args = process.argv.slice(2), providedDeps: CorpusC
 
     if (command === "gallery") {
       return await runGalleryCommand(parseGalleryArgs(args.slice(1)), deps);
+    }
+
+    if (command === "ai") {
+      return await runAiCommand(parseAiArgs(args.slice(1)), deps);
     }
 
     deps.stderr(`Unknown corpus command: ${command}`);

@@ -16,6 +16,7 @@ import type {
   GalleryRepoResult,
   WriteGalleryHtmlOptions,
 } from "./gallery.js";
+import type { RunAiRepoMatrixOptions } from "./ai/matrix.js";
 
 const tempRoots: string[] = [];
 const validSha = "0123456789abcdef0123456789abcdef01234567";
@@ -952,5 +953,171 @@ describe("runCli gallery", () => {
 
     expect(exitCode).toBe(0);
     expect(events).toEqual([]);
+  });
+});
+
+describe("runCli ai", () => {
+  function aiDeps(overrides: CorpusCliDependencies): CorpusCliDependencies {
+    return {
+      now: () => new Date("2026-07-18T12:00:00.000Z"),
+      stderr: () => {},
+      ...overrides,
+    };
+  }
+
+  it("preps each labeled repo once and runs the matrix over the model list", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repo = manifestEntry("repo-ai");
+    const events: string[] = [];
+    const stdout: string[] = [];
+    const matrixOptions: RunAiRepoMatrixOptions[] = [];
+
+    const exitCode = await runCli(["ai", "--model", "claude-sonnet-5,claude-haiku-4-5"], aiDeps({
+      stdout: (line) => { stdout.push(line); },
+      loadManifest: async () => [repo],
+      createContext: () => context,
+      discoverAiConfiguredRepoNames: async (expectationsRoot) => {
+        events.push("discover");
+        expect(expectationsRoot).toBe(path.join(corpusRoot, "expectations"));
+        return [repo.name];
+      },
+      createExtractionHarness: () => ({
+        id: "stub",
+        availability: async () => "stub credential",
+        run: async () => "unused",
+      }),
+      ensureRepoCheckout: async (entry) => {
+        events.push(`clone:${entry.name}`);
+        await writeHostPackage(context.repoDir(entry.name));
+        return context.repoDir(entry.name);
+      },
+      bootstrapRepo: async (entry) => {
+        events.push(`bootstrap:${entry.name}`);
+        return {
+          repoDir: context.repoDir(entry.name),
+          envPath: path.join(context.repoDir(entry.name), ".env"),
+          logs: { stdout: "bootstrap.stdout.log", stderr: "bootstrap.stderr.log" },
+        };
+      },
+      createInjector: () => ({
+        async inject(entry) {
+          events.push(`inject:${entry.name}`);
+          return {
+            repoDir: context.repoDir(entry.name),
+            packageManager: "pnpm",
+            packages: [],
+            vendorDir: path.join(context.repoDir(entry.name), "vendor"),
+            installCommand: "pnpm install",
+          };
+        },
+      }),
+      runInit: async (entry, options) => {
+        events.push(`init:${entry.name}:${options?.artifactPrefix}`);
+        return makeInitResult(context.repoDir(entry.name), "ai.init.log", "ai.init.diff");
+      },
+      runAiRepoMatrix: async (options) => {
+        events.push(`matrix:${options.repoName}`);
+        matrixOptions.push(options);
+        return {
+          repo: options.repoName,
+          labeled: true,
+          models: options.models.map((model) => ({
+            model,
+            score: { passed: 8, total: 8, value: 1 },
+            dimensions: {},
+            checks: [],
+            hardFailure: false,
+            artifactsDir: path.join(options.aiLogsDir, model),
+          })),
+        };
+      },
+    }));
+
+    expect(exitCode).toBe(0);
+    expect(events).toEqual([
+      "discover",
+      "clone:repo-ai",
+      "bootstrap:repo-ai",
+      "inject:repo-ai",
+      "init:repo-ai:ai.init",
+      "matrix:repo-ai",
+    ]);
+    expect(matrixOptions[0]?.models).toEqual(["claude-sonnet-5", "claude-haiku-4-5"]);
+    expect(matrixOptions[0]?.aiLogsDir).toBe(path.join(context.logsDir("repo-ai"), "ai"));
+    const output = stdout.join("\n");
+    expect(output).toContain("# AI extraction scoreboard");
+    expect(output).toContain("repo-ai | claude-sonnet-5");
+    const scoreboardJson = await readFile(path.join(context.reposDir, ".logs", "ai-scoreboard.json"), "utf8");
+    expect(JSON.parse(scoreboardJson)).toMatchObject({ version: 1, models: ["claude-sonnet-5", "claude-haiku-4-5"] });
+  });
+
+  it("fails fast with a clear message when no model credential is available", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repo = manifestEntry("repo-ai");
+    const stderr: string[] = [];
+    const events: string[] = [];
+
+    const exitCode = await runCli(["ai", "repo-ai"], aiDeps({
+      stdout: () => {},
+      stderr: (line) => { stderr.push(line); },
+      loadManifest: async () => [repo],
+      createContext: () => context,
+      createExtractionHarness: () => ({
+        id: "stub",
+        availability: async () => null,
+        run: async () => { throw new Error("must not run"); },
+      }),
+      ensureRepoCheckout: async () => {
+        events.push("clone");
+        return context.repoDir(repo.name);
+      },
+      runAiRepoMatrix: async () => { throw new Error("must not run"); },
+    }));
+
+    expect(exitCode).toBe(1);
+    expect(events).toEqual([]);
+    expect(stderr.join("\n")).toContain("ANTHROPIC_API_KEY");
+  });
+
+  it("records a repo prep failure and keeps going, failing only under --strict", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const stdout: string[] = [];
+
+    const deps = (sink: string[]): CorpusCliDependencies => aiDeps({
+      stdout: (line) => { sink.push(line); },
+      loadManifest: async () => [manifestEntry("repo-broken")],
+      createContext: () => context,
+      createExtractionHarness: () => ({
+        id: "stub",
+        availability: async () => "stub credential",
+        run: async () => "unused",
+      }),
+      ensureRepoCheckout: async () => { throw new Error("clone exploded"); },
+      runAiRepoMatrix: async () => { throw new Error("must not run"); },
+    });
+
+    expect(await runCli(["ai", "repo-broken"], deps(stdout))).toBe(0);
+    expect(stdout.join("\n")).toContain("clone exploded");
+    expect(await runCli(["ai", "repo-broken", "--strict"], deps([]))).toBe(1);
+  });
+
+  it("errors when no repo carries ai-expected.json labels", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const stderr: string[] = [];
+
+    const exitCode = await runCli(["ai"], aiDeps({
+      stdout: () => {},
+      stderr: (line) => { stderr.push(line); },
+      loadManifest: async () => [manifestEntry("repo-ai")],
+      createContext: () => context,
+      discoverAiConfiguredRepoNames: async () => [],
+    }));
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join("\n")).toContain("ai-expected.json");
   });
 });
