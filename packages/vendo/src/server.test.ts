@@ -1622,19 +1622,7 @@ describe("09 §2 apps composition", () => {
   it("accepts the name-keyed registry catalog form and ignores component references", { timeout: 120_000 }, async () => {
     const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
     const store = await tempStore("vendo-registry-catalog-");
-    const generated = JSON.stringify({
-      name: "Registry app",
-      tree: {
-        formatVersion: VENDO_TREE_FORMAT,
-        root: "metric",
-        nodes: [{
-          id: "metric",
-          component: "MetricCard",
-          source: "host",
-          props: { label: "Revenue" },
-        }],
-      },
-    });
+    const generated = '<App name="Registry app"><MetricCard label="Revenue"/></App>';
     const model = new MockLanguageModelV3({
       doStream: async () => ({
         stream: simulateReadableStream({ chunks: [
@@ -1671,7 +1659,11 @@ describe("09 §2 apps composition", () => {
     await store.ensureSchema();
 
     await expect(vendo.apps.create({ prompt: "Show revenue" }, ctx)).resolves.toMatchObject({
-      tree: { nodes: [{ component: "MetricCard", source: "host" }] },
+      tree: {
+        nodes: expect.arrayContaining([
+          expect.objectContaining({ component: "MetricCard", source: "host" }),
+        ]),
+      },
     });
   });
 
@@ -1746,20 +1738,17 @@ describe("09 §2 apps composition", () => {
     }));
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
-    const treeWith = (props: unknown): string => JSON.stringify({
-      name: "Disk binding app",
-      tree: {
-        formatVersion: VENDO_TREE_FORMAT,
-        root: "metric",
-        nodes: [{ id: "metric", component: "DiskMetric", source: "host", props }],
-      },
-    });
+    // v2 JSX wire: `value={metrics.value}` compiles to the runtime binding
+    // { $path: "/metrics/value" } (a ghost binding renders as absent data —
+    // wire-v2/compile.ts); the bad case is a plain string attribute.
+    const bound = '<App name="Disk binding app"><Query id="metrics" tool="metrics.read"/><DiskMetric value={metrics.value}/></App>';
+    const bad = '<App name="Disk binding app"><DiskMetric value="not a number"/></App>';
     const outputs = [
-      treeWith({ value: { $path: "/metrics/value" } }),
+      bound,
       // The second bad output feeds the engine's 2-attempt repair loop so the
       // second create fails on both attempts.
-      treeWith({ value: "not a number" }),
-      treeWith({ value: "not a number" }),
+      bad,
+      bad,
     ];
     const model = new MockLanguageModelV3({
       doStream: async () => ({
@@ -1791,7 +1780,15 @@ describe("09 §2 apps composition", () => {
 
     // A binding where the schema wants a number is exempt: create succeeds.
     await expect(vendo.apps.create({ prompt: "Show the bound metric" }, ctx)).resolves.toMatchObject({
-      tree: { nodes: [{ component: "DiskMetric", source: "host", props: { value: { $path: "/metrics/value" } } }] },
+      tree: {
+        nodes: expect.arrayContaining([
+          expect.objectContaining({
+            component: "DiskMetric",
+            source: "host",
+            props: { value: { $path: "/metrics/value" } },
+          }),
+        ]),
+      },
     });
     // A genuine type violation against the same disk schema still fails.
     await expect(vendo.apps.create({ prompt: "Show the broken metric" }, ctx)).rejects.toMatchObject({
