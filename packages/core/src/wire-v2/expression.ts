@@ -17,14 +17,103 @@ import type { Json } from "../ids.js";
 import type { PathBinding, StateBinding } from "../tree.js";
 import { isWellFormedUtf16 } from "./state.js";
 
-/** v2 spec §2 — one compiler-visible issue. Codes are stable kebab-case
- *  (`unknown-reference`, `state-depth-unsupported`, `reshape-unsupported`,
- *  `malformed-expression`); the markup compiler reuses this shape. `index`
- *  is a best-effort source position: the markup compiler records its cursor
- *  when the position is at hand; expression-layer issues omit it (their
- *  indices are relative to the attribute's inner text, not the wire). */
+/**
+ * v2 spec §2 — the closed registry of stable issue codes across all six
+ * wire-v2 modules. This is the renderer / wave-3-repair contract: a typo'd
+ * code fails compile, and adding a code means adding it here first.
+ */
+export const WIRE_ISSUE_CODES = [
+  // — expression layer (this module; no index, positions are attribute-relative)
+  /** Expression text violates the literal/binding grammar; attribute dropped. */
+  "malformed-expression",
+  /** Bare identifier names no declared `<Query>` or `state`; attribute dropped. */
+  "unknown-reference",
+  /** `state.<a>.<b>` — state bindings take exactly one key; attribute dropped. */
+  "state-depth-unsupported",
+  /** `|` reshape pipe parsed but not executed in wave 1; pipe stripped. */
+  "reshape-unsupported",
+  // — attribute layer (attributes.ts)
+  /** Attribute syntax error (bad char, single-quoted string, missing value, ill-formed UTF-16); attribute dropped or char skipped. */
+  "malformed-attribute",
+  /** Same attribute name twice in one tag; the last one wins. */
+  "duplicate-attribute",
+  /** Wire-supplied `id` on a non-declaration element ignored (ids are compiler-owned). */
+  "wire-id-ignored",
+  /** Action names neither a host tool nor a valid fn: reference (string form), or an invalid fn: action hides anywhere in an expression value; attribute dropped. */
+  "invalid-action",
+  // — document shape (compile.ts)
+  /** Input is not a single `<App ...>...</App>` element; empty tree emitted. */
+  "missing-app",
+  /** `<App>` cannot nest; the inner App and its subtree skipped. */
+  "nested-app",
+  /** Non-whitespace content after `</App>` dropped; marks incomplete. */
+  "trailing-content",
+  /** Close tag matches no open element; ignored. */
+  "stray-close-tag",
+  /** Non-PascalCase/unknown tag; the element and its subtree skipped. */
+  "unknown-element",
+  /** Junk inside a close tag (close tags take no attributes); ignored, still closes. */
+  "malformed-close-tag",
+  /** Text child contains a lone surrogate (ill-formed UTF-16); text skipped. */
+  "malformed-text",
+  // — truncation & closing (compile.ts, scan.ts)
+  /** Mismatched close tag implicitly closed the elements above its match. */
+  "unclosed-element",
+  /** Element (or App) still open at EOF was auto-closed; marks incomplete. */
+  "eof-unclosed",
+  /** Open tag truncated at EOF (incl. a lone trailing `<`); element dropped. */
+  "truncated-tag",
+  /** Skipped/raw element (unknown subtree, Island content) unterminated at EOF. */
+  "unclosed-skipped",
+  // — queries (compile.ts)
+  /** `<Query>` below App level; the query was still hoisted. */
+  "nested-query",
+  /** Paired `<Query>` content is not allowed; content skipped, query kept. */
+  "query-content",
+  /** `<Query>` id missing/not an identifier/reserved "state"; query dropped. */
+  "invalid-query-name",
+  /** `<Query>` tool missing/empty/bad fn: grammar; query dropped. */
+  "invalid-query-tool",
+  /** `<Query>` input is not an object expression; input dropped, query kept. */
+  "invalid-query-input",
+  /** Duplicate query name; the first one wins. */
+  "duplicate-query",
+  // — islands (compile.ts)
+  /** `<Island>` name missing/not PascalCase/reserved; island skipped. */
+  "invalid-island-name",
+  /** Duplicate island name; the first one wins. */
+  "duplicate-island",
+  /** Self-closing `<Island/>` has no source; island skipped. */
+  "island-no-content",
+  // — §8 limits & hygiene (limits.ts, state.ts)
+  /** TREE_MAX_NODES reached; further elements parse but produce no nodes (once). */
+  "node-limit",
+  /** TREE_MAX_QUERIES hoisted; further queries dropped (once). */
+  "query-limit",
+  /** TREE_MAX_GENERATED_COMPONENTS admitted; further islands dropped (once). */
+  "component-limit",
+  /** Island source over the per-source or total UTF-8 byte cap; island dropped. */
+  "component-size-limit",
+  /** Island raw TSX contains a lone surrogate (ill-formed UTF-16); island dropped. */
+  "malformed-island",
+  /** Issue list capped at WIRE_MAX_ISSUES; always the final entry when present. */
+  "issues-truncated",
+  // — totality (compile.ts)
+  /** compileWireV2Unsafe threw; degraded to the empty valid tree. Never expected. */
+  "compile-failed",
+] as const;
+
+/** v2 spec §2 — a stable wire issue code (see {@link WIRE_ISSUE_CODES}). */
+export type WireIssueCode = (typeof WIRE_ISSUE_CODES)[number];
+
+/** v2 spec §2 — one compiler-visible issue. Codes are stable kebab-case from
+ *  the closed {@link WIRE_ISSUE_CODES} registry; the markup compiler reuses
+ *  this shape. `index` is a best-effort source position: the markup compiler
+ *  records its cursor when the position is at hand; expression-layer issues
+ *  omit it (their indices are relative to the attribute's inner text, not
+ *  the wire). */
 export interface WireIssue {
-  code: string;
+  code: WireIssueCode;
   message: string;
   index?: number;
 }
@@ -64,7 +153,7 @@ const skipWhitespace = (state: ParserState): void => {
   }
 };
 
-const fail = (state: ParserState, code: string, message: string): Failed => {
+const fail = (state: ParserState, code: WireIssueCode, message: string): Failed => {
   state.issues.push({ code, message });
   return FAILED;
 };

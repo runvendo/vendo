@@ -62,11 +62,7 @@ const parseMarkupString = (state: CompileState, name: string): string | Dropped 
     if (char === "\\") {
       const escaped = state.source[state.index + 1];
       if (escaped === undefined) {
-        // Invariant: FAILED means EOF truncation, and every FAILED producer
-        // leaves the cursor AT EOF — otherwise the caller resumes mid-tag
-        // and mints the tail as phantom text (the D6 roundtrip property
-        // sweep caught a dangling backslash doing exactly that).
-        state.index = state.source.length;
+        state.index = state.source.length; // FAILED ⇒ cursor at EOF (see state.ts FAILED)
         break;
       }
       text += escaped === '"' || escaped === "\\" ? escaped : `\\${escaped}`;

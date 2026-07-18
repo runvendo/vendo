@@ -717,10 +717,10 @@ describe("compileWireV2 behavior pins (review)", () => {
     });
   });
 
-  it("records close-tag junk as malformed-attribute but still closes", () => {
+  it("records close-tag junk as malformed-close-tag but still closes", () => {
     const result = compile("<App><Card></Card junk></App>");
     expect(result.tree.nodes[1]).toStrictEqual({ id: "card-1", component: "Card", source: "prewired" });
-    expect(codes(result)).toEqual(["malformed-attribute"]);
+    expect(codes(result)).toEqual(["malformed-close-tag"]);
     expect(result.complete).toBe(true);
   });
 

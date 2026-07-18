@@ -252,24 +252,33 @@ const compileOpenTag = (state: CompileState, frames: Frame[], name: string): voi
     issue(state, "truncated-tag", `<${name}> tag was truncated at end of input; the element was dropped`);
     return;
   }
-  if (!claimNodeSlot(state)) {
-    // §8 — beyond TREE_MAX_NODES the element still parses for document
-    // structure (attribute cursor movement above, close-tag balancing via
-    // this frame), but no node is appended and no child id is recorded, so
-    // children only ever reference emitted nodes. The frame's node is a
-    // placeholder that can never be emitted or mutated: once the cap is hit
-    // no descendant claims a slot either.
-    if (!attrs.selfClosing) frames.push({ tag: name, node: { id: name, component: name } });
-    return;
-  }
   const node: TreeNode = { id: mintId(state, name), component: name };
   const source = resolveSource(state, name);
   if (source !== undefined) node.source = source;
   if (attrs.props !== undefined) node.props = attrs.props;
+  if (!emitNode(state, frames, node)) {
+    // §8 — beyond TREE_MAX_NODES the element still parses for document
+    // structure (attribute cursor movement above, close-tag balancing via
+    // this frame), but no node is appended and no child id is recorded, so
+    // children only ever reference emitted nodes. The placeholder's empty
+    // id would fail validateTreeV2 if it ever leaked into the tree; it also
+    // cannot be mutated, since once the cap is hit no descendant claims a
+    // slot either.
+    if (!attrs.selfClosing) frames.push({ tag: name, node: { id: "", component: name } });
+    return;
+  }
+  if (!attrs.selfClosing) frames.push({ tag: name, node });
+};
+
+/** §8 claim → push → parent-link, shared by element and text children:
+ *  claims a node slot, appends the node, and links it as a child of the
+ *  innermost open frame. False when the node cap refused the slot. */
+const emitNode = (state: CompileState, frames: Frame[], node: TreeNode): boolean => {
+  if (!claimNodeSlot(state)) return false;
   state.nodes.push(node);
   const parent = frames[frames.length - 1] as Frame;
   (parent.node.children ??= []).push(node.id);
-  if (!attrs.selfClosing) frames.push({ tag: name, node });
+  return true;
 };
 
 /** Shared skip path for elements that compile to nothing. */
@@ -306,15 +315,13 @@ const closeTag = (state: CompileState, frames: Frame[], name: string): void => {
 const appendTextChild = (state: CompileState, frames: Frame[], raw: string): void => {
   const text = raw.trim();
   if (text.length === 0) return; // whitespace-only runs are ignored silently
-  if (!claimNodeSlot(state)) return; // §8 — beyond the cap, text produces no node
   if (!isWellFormedUtf16(text)) {
     issue(state, "malformed-text", "text child contains a lone surrogate (ill-formed UTF-16); the text was skipped");
     return;
   }
-  const node: TreeNode = { id: mintId(state, "Text"), component: "Text", source: "prewired", props: { text } };
-  state.nodes.push(node);
-  const parent = frames[frames.length - 1] as Frame;
-  (parent.node.children ??= []).push(node.id);
+  // §8 — beyond the node cap, malformed-text still reports above but the
+  // text produces no node (emitNode refuses the slot).
+  emitNode(state, frames, { id: mintId(state, "Text"), component: "Text", source: "prewired", props: { text } });
 };
 
 /** Iterative child loop over an explicit frame stack (no recursion, so
@@ -335,7 +342,7 @@ const parseChildren = (state: CompileState, frames: Frame[]): void => {
       if (state.index >= state.source.length) break; // truncated close tag
       state.index += 1;
       if (junk) {
-        issue(state, "malformed-attribute", `unexpected content in close tag </${name}> was ignored`);
+        issue(state, "malformed-close-tag", `unexpected content in close tag </${name}> was ignored`);
       }
       closeTag(state, frames, name);
       if (state.appClosed) return;

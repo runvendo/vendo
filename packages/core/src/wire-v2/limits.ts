@@ -10,6 +10,9 @@
  * issue-COUNT cap lives in state.ts's issue() so every call site is covered.
  */
 
+// CORE-6: the contract pins the byte caps in kilobytes, so island sources
+// are measured with component-map.ts's shared UTF-8 byte counter.
+import { utf8ByteLength } from "../component-map.js";
 import {
   TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
@@ -18,14 +21,6 @@ import {
   TREE_MAX_TOTAL_COMPONENT_BYTES,
 } from "../tree-limits.js";
 import { issue, isWellFormedUtf16, type CompileState } from "./state.js";
-
-// CORE-6 house idiom (component-map.ts): the contract pins the caps in
-// kilobytes, so measure encoded UTF-8, not UTF-16 code units; pure-ASCII
-// sources (bytes === chars) skip encoding.
-const utf8 = new TextEncoder();
-const NON_ASCII_PATTERN = /[\u0080-\uffff]/;
-const utf8ByteLength = (source: string): number =>
-  NON_ASCII_PATTERN.test(source) ? utf8.encode(source).length : source.length;
 
 /** §8 TREE_MAX_NODES — true when another node may be appended. Beyond the
  *  cap, elements are still parsed for document structure/recovery, but no

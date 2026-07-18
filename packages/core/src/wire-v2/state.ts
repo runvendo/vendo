@@ -8,10 +8,13 @@
 
 import type { TreeNode } from "../tree.js";
 import type { TreeQueryV2 } from "../tree-v2.js";
-import type { WireIssue } from "./expression.js";
+import type { WireIssue, WireIssueCode } from "./expression.js";
 
 /** Internal EOF-truncation sentinel — flows up instead of a throw so every
- *  caller unwinds cleanly (same idiom as expression.ts's FAILED). */
+ *  caller unwinds cleanly (same idiom as expression.ts's FAILED).
+ *  Invariant: FAILED means EOF truncation, and every producer returning it
+ *  leaves the cursor AT EOF — otherwise the caller resumes mid-tag and
+ *  mints the tail as phantom text (breaks D6 node-count monotonicity). */
 export const FAILED: unique symbol = Symbol("wire-truncated");
 export type Failed = typeof FAILED;
 
@@ -87,7 +90,7 @@ const pushCapped = (state: CompileState, entry: WireIssue): void => {
 /** Records a compile issue with the current cursor as its best-effort source
  *  position (expression-layer issues, merged via {@link mergeIssues}, carry
  *  no index). The ONLY write paths into state.issues — both capped. */
-export const issue = (state: CompileState, code: string, message: string): void => {
+export const issue = (state: CompileState, code: WireIssueCode, message: string): void => {
   pushCapped(state, { code, message, index: state.index });
 };
 
