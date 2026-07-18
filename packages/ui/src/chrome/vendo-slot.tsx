@@ -2,6 +2,7 @@ import type { Json, ToolOutcome, UIPayload } from "@vendoai/core";
 import type { ReactNode } from "react";
 import { useVendoContext } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
+import { useSlotApp } from "../hooks/use-slot-app.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
 import { ChromeRoot } from "./chrome-root.js";
@@ -71,7 +72,7 @@ export interface VendoSlotPin {
  *  the original `children` as the visible recovery path (06-apps §8). Without any
  *  of the three, the children render UNTOUCHED (no wrapper — hosts may inline
  *  slots anywhere). */
-export function VendoSlot({ id, appId, pin, onAuthor, children }: {
+export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, children }: {
   id: string;
   appId?: string;
   pin?: VendoSlotPin;
@@ -81,6 +82,10 @@ export function VendoSlot({ id, appId, pin, onAuthor, children }: {
   children?: ReactNode;
 }) {
   const { components } = useVendoContext();
+  // Self-discovery (ui-usage-dx §2): with no explicit `appId`/`pin`, the slot
+  // resolves its own pinned app — hosts never write the polling dance.
+  const discovery = useSlotApp(id, { enabled: appIdProp === undefined && pin === undefined });
+  const appId = appIdProp ?? (pin === undefined ? discovery.appId : undefined);
 
   const author = () => {
     if (onAuthor) {

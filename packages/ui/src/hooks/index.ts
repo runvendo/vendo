@@ -7,6 +7,7 @@ export { useAutomations } from "./use-automations.js";
 export { useConnections } from "./use-connections.js";
 export { useGrants } from "./use-grants.js";
 export { type PollOptions } from "./use-resource.js";
+export { useSlotApp } from "./use-slot-app.js";
 export { useThreads } from "./use-threads.js";
 export { useVendoOverlay, type VendoOverlayController } from "./use-vendo-overlay.js";
 export { useVendoStatus } from "./use-vendo-status.js";

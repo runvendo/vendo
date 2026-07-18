@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import useSWR from "swr";
+import { useEffect, useState } from "react";
 import type { UIPayload } from "@vendoai/core";
-import { createVendoClient } from "@vendoai/ui";
+import { useSlotApp } from "@vendoai/ui";
 import { VendoSlot } from "@vendoai/ui/chrome";
 import { MissingDocsHero } from "@/components/dashboard/missing-docs-hero";
 import { VendoRoot } from "./VendoRoot";
@@ -37,25 +36,20 @@ function RemixButton() {
  * director mode the scripted build's final view swaps in here directly (no
  * wire round-trip) so the demo lands on the real dashboard.
  */
-export function HeroSlot({
+function HeroSlotBody({
   missingCount,
   clientCount,
 }: {
   missingCount: number;
   clientCount: number;
 }) {
-  const client = useMemo(() => createVendoClient({ baseUrl: "/api/vendo" }), []);
   const [directorSurface, setDirectorSurface] = useState<{ tree: unknown } | null>(null);
 
-  const { data: appId } = useSWR(
-    "vendo-slot:" + HERO_SLOT,
-    async () => {
-      const apps = await client.apps.list();
-      const pinned = apps.filter(app => app.pins?.some(pin => pin.slot === HERO_SLOT));
-      return pinned.at(-1)?.id;
-    },
-    { refreshInterval: 5000, revalidateOnFocus: true },
-  );
+  // One-liner replacement for the old SWR polling dance: the shared hook
+  // resolves the app pinned to this slot. Read here for the expand-to-full-row
+  // layout decision and passed down so the slot doesn't start a second poll
+  // (a bare <VendoSlot id> would discover the pin itself).
+  const { appId } = useSlotApp(HERO_SLOT);
 
   // The remixed app lands here ONLY when the user pins it — the preview in the
   // overlay saves nothing to the dashboard until then.
@@ -74,22 +68,28 @@ export function HeroSlot({
   const expanded = directorSurface !== null || Boolean(appId);
 
   return (
+    <div
+      className={`group/hero relative h-full${expanded ? " col-span-4" : ""}`}
+      style={{ ["--fl-slot-min-h" as string]: "0px" }}
+    >
+      {!expanded ? <RemixButton /> : null}
+      {/* A pinned remix (director surface or user pin) mounts as a pinned
+          COMPONENT in the slot (ENG-223) — through the tree renderer + pin
+          error boundary, so a broken remix falls back to the original hero
+          rather than blanking the cell; otherwise the whole app takes over. */}
+      {directorSurface ? (
+        <VendoSlot id={HERO_SLOT} pin={{ payload: directorSurface.tree as UIPayload }}>{original}</VendoSlot>
+      ) : (
+        <VendoSlot id={HERO_SLOT} appId={appId ?? undefined}>{original}</VendoSlot>
+      )}
+    </div>
+  );
+}
+
+export function HeroSlot(props: { missingCount: number; clientCount: number }) {
+  return (
     <VendoRoot director={false}>
-      <div
-        className={`group/hero relative h-full${expanded ? " col-span-4" : ""}`}
-        style={{ ["--fl-slot-min-h" as string]: "0px" }}
-      >
-        {!expanded ? <RemixButton /> : null}
-        {/* A pinned remix (director surface or user pin) mounts as a pinned
-            COMPONENT in the slot (ENG-223) — through the tree renderer + pin
-            error boundary, so a broken remix falls back to the original hero
-            rather than blanking the cell; otherwise the whole app takes over. */}
-        {directorSurface ? (
-          <VendoSlot id={HERO_SLOT} pin={{ payload: directorSurface.tree as UIPayload }}>{original}</VendoSlot>
-        ) : (
-          <VendoSlot id={HERO_SLOT} appId={appId ?? undefined}>{original}</VendoSlot>
-        )}
-      </div>
+      <HeroSlotBody {...props} />
     </VendoRoot>
   );
 }
