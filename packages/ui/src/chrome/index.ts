@@ -8,6 +8,7 @@ export { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
 export { NoPolicyNotice } from "./no-policy-notice.js";
 export { VendoOverlay, type VendoOverlayProps } from "./vendo-overlay.js";
 export { openVendoConversation, type OpenConversationOptions } from "./overlay-registry.js";
+export { VendoTrigger, type VendoTriggerProps } from "./vendo-trigger.js";
 export { VendoPage } from "./vendo-page.js";
 export { VendoPalette, type VendoCommand } from "./vendo-palette.js";
 export { type HotkeyChord, type PaletteHotkey } from "./palette-hotkey.js";
