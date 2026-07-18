@@ -18,7 +18,7 @@ const COMPONENT_NAME_PATTERN = /^[A-Z][A-Za-z0-9]*$/;
 // render hot path -- and pure-ASCII sources (bytes === chars) skip encoding.
 const utf8 = new TextEncoder();
 const NON_ASCII_PATTERN = /[\u0080-\uffff]/;
-const utf8ByteLength = (source: string): number =>
+export const utf8ByteLength = (source: string): number =>
   NON_ASCII_PATTERN.test(source) ? utf8.encode(source).length : source.length;
 
 /** Returns an error message, or null when the map honors every pinned limit. */
