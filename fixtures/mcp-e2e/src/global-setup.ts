@@ -27,13 +27,41 @@ async function freePort(): Promise<number> {
   return port;
 }
 
+/** Next dev compiles API routes lazily; under parallel-suite CPU load a first
+ *  request to an uncompiled dynamic route can 404/500 before the route module
+ *  finishes compiling (see packages/actions/src/runtime/fixture.e2e.test.ts).
+ *  Touch each route family once (any status counts — we only need the
+ *  compile) and retry transient dev-compile failures so tests — including
+ *  resetFixture()'s POST /fixture/reset — assert against a warm server. */
+async function warmRoutes(baseUrl: string, deadline: number): Promise<void> {
+  const paths = ["/api/login", "/api/invoices", "/api/invoices/inv_warmup", "/api/customers", "/fixture/reset", "/fixture/echo"];
+  for (const path of paths) {
+    while (Date.now() < deadline) {
+      try {
+        const response = await fetch(`${baseUrl}${path}`);
+        // 404/500 with an HTML body is the dev compiler mid-flight; anything
+        // else (2xx/4xx JSON) means the route module is compiled and serving.
+        if (response.status !== 404 && response.status !== 500) break;
+        const body = await response.text();
+        if (!body.startsWith("<!DOCTYPE")) break;
+      } catch {
+        // Server hiccup while compiling — retry below.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+}
+
 async function waitForFixture(baseUrl: string): Promise<void> {
   const deadline = Date.now() + 180_000;
   while (Date.now() < deadline) {
     if (child?.exitCode !== null) throw new Error(`Fixture exited early (${child?.exitCode})\n${serverOutput}`);
     try {
       const response = await fetch(baseUrl);
-      if (response.ok) return;
+      if (response.ok) {
+        await warmRoutes(baseUrl, deadline);
+        return;
+      }
     } catch {
       // Next is still compiling.
     }

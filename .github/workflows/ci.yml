@@ -37,8 +37,11 @@ jobs:
       # ratcheted line-coverage floor (coverage.thresholds.lines in its vitest
       # config); a drop below the floor fails the build. This is the required
       # coverage gate — it supersedes a bare `pnpm test`.
+      # --concurrency=4 bounds turbo's cross-package parallelism: unbounded
+      # parallelism oversubscribes the runner's CPUs and flakes the
+      # live-Next-server suites (see PR #340).
       - name: Test with coverage (PGlite + PostgreSQL)
-        run: pnpm test:coverage
+        run: pnpm exec turbo run test:coverage --concurrency=4
         env:
           POSTGRES_URL: postgres://vendo:vendo@localhost:5432/vendo_test
       - run: pnpm typecheck
