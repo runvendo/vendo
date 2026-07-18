@@ -682,7 +682,7 @@ importers:
         specifier: ^2.6.0
         version: 2.9.0
       zod:
-        specifier: ^3.24.0
+        specifier: ^3.25.0
         version: 3.25.76
     devDependencies:
       '@auth/core':
@@ -744,7 +744,7 @@ importers:
         specifier: ^0.8.2
         version: 0.8.3
       zod:
-        specifier: ^3.24.0
+        specifier: ^3.25.0
         version: 3.25.76
     devDependencies:
       '@ai-sdk/anthropic':
@@ -787,7 +787,7 @@ importers:
         specifier: ^2.0.5
         version: 2.2.1
       zod:
-        specifier: ^3.24.0
+        specifier: ^3.25.0
         version: 3.25.76
     devDependencies:
       '@types/node':
@@ -803,7 +803,7 @@ importers:
   packages/core:
     dependencies:
       zod:
-        specifier: ^3.24.0
+        specifier: ^3.25.0
         version: 3.25.76
     devDependencies:
       '@types/node':
@@ -834,7 +834,7 @@ importers:
         specifier: workspace:*
         version: link:../core
       zod:
-        specifier: ^3.24.0
+        specifier: ^3.25.0
         version: 3.25.76
     devDependencies:
       '@ai-sdk/anthropic':
@@ -1015,7 +1015,7 @@ importers:
         specifier: ^3.0.1
         version: 3.0.1(ajv@8.20.0)
       zod:
-        specifier: ^3.24.0
+        specifier: ^3.25.0
         version: 3.25.76
     devDependencies:
       '@types/node':
