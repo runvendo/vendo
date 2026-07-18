@@ -131,18 +131,45 @@ zero when an env key exists.
 - The corpus harness: repurposed as the AI extractor's eval benchmark.
 - Static extractors: as hints and the fast path for self-describing surfaces.
 
-## Open questions
+## How the AI extraction works (brainstormed 2026-07-18)
 
-- Verification ordering inside init: drafted tools are probed against the dev
-  server, but the server starts at step 4. Likely draft (3), launch (4),
-  verify against the live server, then first turn (5). Needs design.
-- Cost and latency budget for the AI extraction pass at init time (who pays:
-  starter-key meter vs the dev's key vs the dev's Claude session; how long is
-  acceptable before the first turn).
-- Drift-redraft UX: what predev prints when it detects drift but re-drafting
-  needs a model call (build steps must stay AI-free).
+Base first: v1 implements the simplest correct version; the standing goal is
+to keep improving the AI quality after. Do not overbuild v1.
+
+- **Harness: existing agent machinery, provider-agnostic.** No bespoke loop
+  and no external framework. The ai-SDK's agent primitives on the
+  LanguageModel seam, reusing @vendoai/agent's loop machinery with an
+  extraction toolset (read file, grep, probe endpoint, emit draft). Any
+  provider plugs in; this matches Vendo's BYO-LLM identity. Claude Agent SDK
+  and other provider-locked or competitor frameworks rejected.
+- **Credential (init-time only, decoupled from runtime):** Claude Code /
+  Codex session adapters (ephemeral init help, nothing installed into the
+  host app), any BYO key, starter key through the gateway as the floor. The
+  runtime agent's key is a separate concern.
+- **Verification:** reads are fully exercised against the running dev server;
+  writes are shape-verified (invalid payload in, proper validation error out
+  proves route + schema without mutating). Verification level is an
+  adaptable per-tool policy, not hardcoded. Nothing enters tools.json
+  unverified; failures ship disabled with the model's explanation.
+- **No time budget.** Quality first; the extraction narrates progress live
+  (the discovered-surfaces tree is the loading state). Once-ever setup cost;
+  the v2 <10s bar applies to runtime generation, not this.
+- **Privacy:** on session/BYO paths, source goes to the dev's own provider
+  account. One honest line up front plus a secrets filter (PostHog posture).
+- **Pipeline:** v1 = draft + verify, kept inspectable. The staged shape
+  (survey, draft per surface, cross-check, verify, brief+seed) is the
+  documented improvement path, scored per stage on the corpus harness, not a
+  v1 requirement.
+- **Sync/drift: deferred entirely.** v1 story for changed code is "run
+  vendo init again" (idempotent). Drift triage, fail-closed rules, and CI
+  strictness get designed when the base works.
+
+## Open questions (remaining)
+
+- Verification ordering inside init: drafting can start before the dev server
+  is up, but verification needs it. Likely draft (3), launch (4), verify,
+  then first turn (5). Spec-phase detail.
 - Express hosts: the install agent should eventually close the "two manual
   steps remain" gap; deferred, not designed here.
-- Whether v1 of the new init ships with the full AI extraction or lands the
-  simplified deterministic flow first while the extraction agent is built to
-  corpus quality (sequencing call for the coordinator/spec phase).
+- Exact v1 cut of the extraction agent (how much of the staged pipeline lands
+  first) — sequencing call for the coordinator/spec phase, biased simple.
