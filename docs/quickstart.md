@@ -37,6 +37,10 @@ Vendo Cloud is optional. When `VENDO_API_KEY` is set, init validates it and
 states the plan and what it unlocks; when it is absent, init prints one calm
 line and offers `vendo cloud login` only when a starter key would help.
 
+To see every Vendo surface and state (streaming, approvals, slots, the
+workspace page) against scripted data first — no model key, no wiring — run
+`npx vendo playground`.
+
 ## AI polish (extraction judgment)
 
 Static extraction gets the facts; a coding agent adds the judgment. During an

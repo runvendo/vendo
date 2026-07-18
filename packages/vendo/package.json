@@ -51,9 +51,14 @@
     "README.md"
   ],
   "scripts": {
+    "build:playground": "node scripts/build-playground.mjs",
+    "prebuild": "pnpm run build:playground",
     "build": "tsc -p tsconfig.json",
+    "pretest": "pnpm run build:playground",
     "test": "vitest run",
+    "pretypecheck": "pnpm run build:playground",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest:coverage": "pnpm run build:playground",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
@@ -80,10 +85,12 @@
     "@ai-sdk/anthropic": "3.0.12",
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
     "ai": "6.0.28",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "^5.6.0",
+    "vite": "^6.0.0",
     "vitest": "^2.1.0"
   }
 }
