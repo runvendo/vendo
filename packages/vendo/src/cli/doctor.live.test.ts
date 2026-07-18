@@ -119,7 +119,6 @@ describe("vendo doctor MCP discovery live", () => {
       interactive: false,
       liveTurn: async () => ({ attempted: true, ok: true, rung: "env-key", credential: "stub", reply: "ok", elapsedMs: 1 }),
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
-      codexDriftProbe: async () => ({ installed: false, tested: "0.144", drifted: false }),
     })).toBe(0);
     expect(errors).toEqual([]);
     expect(logs).toContain("ok: server.json remote agrees with the live MCP door");

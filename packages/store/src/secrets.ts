@@ -17,6 +17,19 @@ export function envSecrets(prefix = ""): SecretsProvider {
  *  rows written before it. */
 const PLAINTEXT_PREFIX = "plain@1:";
 
+/** One loud line the first time a plaintext secret is actually stored — the
+ *  guard against a deploy that forgot both NODE_ENV=production and the key
+ *  (Devin review on the NODE_ENV-only gate). */
+let plaintextWarned = false;
+function warnPlaintextOnce(): void {
+  if (plaintextWarned) return;
+  plaintextWarned = true;
+  console.warn(
+    "[vendo] Storing secrets UNENCRYPTED (dev mode). If this is a real deployment, set NODE_ENV=production "
+      + "and VENDO_STORE_ENCRYPTION_KEY (base64 32-byte) — production refuses plaintext secrets.",
+  );
+}
+
 /** The key when configured; null when plaintext is allowed (dev mode);
  *  fail-closed otherwise — production stores secrets encrypted or not at all. */
 function keyFor(store: VendoStore): Buffer | null {
@@ -61,6 +74,7 @@ export function secretStore(store: VendoStore): {
   return {
     async set(name, value) {
       const key = keyFor(store);
+      if (key === null) warnPlaintextOnce();
       const ciphertext = key === null
         ? `${PLAINTEXT_PREFIX}${Buffer.from(value, "utf8").toString("base64")}`
         : encryptSecret(value, key, name);
