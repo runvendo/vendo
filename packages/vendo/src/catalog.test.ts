@@ -1,4 +1,6 @@
+import { parseModule, zodFromExpression, type StaticExtraction } from "@vendoai/actions";
 import type { ComponentCatalog, ComponentRegistry, NormalizedCatalog } from "@vendoai/core";
+import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromJson } from "./catalog.js";
@@ -183,5 +185,49 @@ describe("normalizeCatalogConfig (01 §14 registry form + derivation)", () => {
 
   it("returns an empty catalog for undefined config", () => {
     expect(normalizeCatalogConfig(undefined)).toEqual([]);
+  });
+
+  it("derives the SAME JSON Schema statically (sync/disk) and at runtime (live registration)", async () => {
+    // Behaviorally load-bearing parity: sync's static interpretation of the
+    // registration source feeds the ajv-compiled DISK validator, while the
+    // runtime derivation from the live zod object feeds prompt + validation
+    // for explicit registrations. The two paths already drifted once
+    // (.describe() was dropped statically) — pin them together on one
+    // representative schema: nested object/array, enum, .optional(),
+    // .default(), .describe().
+    const schemaSource = `const schema = z.object({
+      slices: z.array(z.object({
+        category: z.enum(["dining", "groceries"]),
+        amount: z.number().describe("Amount in dollars"),
+      })),
+      size: z.number().optional(),
+      mode: z.enum(["compact", "wide"]).default("compact"),
+    });`;
+    const liveSchema = z.object({
+      slices: z.array(z.object({
+        category: z.enum(["dining", "groceries"]),
+        amount: z.number().describe("Amount in dollars"),
+      })),
+      size: z.number().optional(),
+      mode: z.enum(["compact", "wide"]).default("compact"),
+    });
+
+    const extraction: StaticExtraction = { ts, root: "/virtual", modules: new Map() };
+    const module = parseModule(extraction, "/virtual/schema.ts", schemaSource);
+    const statement = module.sf.statements[0];
+    if (statement === undefined || !ts.isVariableStatement(statement)) throw new Error("fixture must be a variable statement");
+    const initializer = statement.declarationList.declarations[0]?.initializer;
+    if (initializer === undefined) throw new Error("fixture must have an initializer");
+    const statically = await zodFromExpression(extraction, module, initializer, 0);
+    expect(statically.recognized).toBe(true);
+    expect(statically.reason).toBeUndefined();
+
+    const runtime = normalizeCatalogConfig([{
+      name: "ParityCard",
+      description: "Parity fixture.",
+      propsSchema: liveSchema,
+    }])[0]?.propsJsonSchema;
+
+    expect(runtime).toEqual(statically.schema);
   });
 });

@@ -1563,6 +1563,8 @@ describe("09 §2 apps composition", () => {
     });
     const outputs = [
       treeWith({ value: { $path: "/metrics/value" } }),
+      // The second bad output feeds the engine's 2-attempt repair loop so the
+      // second create fails on both attempts.
       treeWith({ value: "not a number" }),
       treeWith({ value: "not a number" }),
     ];
