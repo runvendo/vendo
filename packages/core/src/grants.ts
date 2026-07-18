@@ -15,24 +15,9 @@ import { triggerRefSchema, type TriggerRef } from "./triggers.js";
 import { toolCallSchema, toolDescriptorSchema, type ToolCall, type ToolDescriptor } from "./tools.js";
 
 /** 01-core §5 */
-export interface GrantConstraint {
-  path: string;
-  op: "eq" | "lte" | "gte" | "matches";
-  value: string | number | boolean;
-}
-
-/** 01-core §5 */
-export const grantConstraintSchema = z.object({
-  path: z.string(),
-  op: z.enum(["eq", "lte", "gte", "matches"]),
-  value: z.union([z.string(), z.number(), z.boolean()]),
-}).passthrough() satisfies z.ZodType<GrantConstraint>;
-
-/** 01-core §5 */
 export type GrantScope =
   | { kind: "tool" }
-  | { kind: "exact"; inputHash: string; inputPreview: string }
-  | { kind: "constrained"; constraints: GrantConstraint[] };
+  | { kind: "exact"; inputHash: string; inputPreview: string };
 
 /** 01-core §5 */
 export const grantScopeSchema = z.discriminatedUnion("kind", [
@@ -41,10 +26,6 @@ export const grantScopeSchema = z.discriminatedUnion("kind", [
     kind: z.literal("exact"),
     inputHash: z.string(),
     inputPreview: z.string(),
-  }).passthrough(),
-  z.object({
-    kind: z.literal("constrained"),
-    constraints: z.array(grantConstraintSchema),
   }).passthrough(),
 ]) satisfies z.ZodType<GrantScope>;
 

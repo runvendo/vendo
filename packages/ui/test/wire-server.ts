@@ -148,16 +148,6 @@ export async function createWireServer() {
     connections: [
       { id: "ca_1", connector: "composio", toolkit: "gmail", status: "active" as const, createdAt: NOW },
     ],
-    // block-actions §C — org workspaces. `orgsGated` simulates the key-gated
-    // posture (no VENDO_API_KEY): every /orgs route returns cloud-required.
-    orgsGated: false,
-    orgs: [
-      { id: "org_1", name: "Acme Corp", createdAt: NOW, updatedAt: NOW },
-    ],
-    orgMembers: [
-      { orgId: "org_1", subject: "user_1", role: "owner" as "owner" | "admin" | "member", addedAt: NOW },
-      { orgId: "org_1", subject: "user_bob", role: "member" as "owner" | "admin" | "member", addedAt: NOW },
-    ],
     automations: [{ app: automationApp, enabled: false }] satisfies AutomationEntry[],
     runs: [run()],
     events: [audit("aud_1"), audit("aud_2"), audit("aud_3")],
@@ -239,7 +229,10 @@ export async function createWireServer() {
             subject: "user_1",
             messages: [input.message],
             createdAt: NOW,
-            updatedAt: NOW,
+            // A minted conversation is the newest: stamp it AFTER the seeded
+            // NOW so GET /threads (sorted newest-first) surfaces it at the top,
+            // where the workspace sidebar defaults its selection (ENG-231).
+            updatedAt: new Date(Date.parse(NOW) + state.threads.size * 1000).toISOString(),
           });
         }
         const suffix = ++turns === 1 ? "" : `_${turns}`;
@@ -265,6 +258,26 @@ export async function createWireServer() {
           const failingResponse = createUIMessageStreamResponse({ stream: failingChunks });
           failingResponse.headers.set("x-vendo-thread-id", threadId);
           await sendFetchResponse(failingResponse, response);
+          return;
+        }
+        if (sentText.includes("[stream-kill]")) {
+          // ENG-231 — a turn that streams a partial delta then drops the
+          // connection mid-stream, so a real-browser stress spec can drive the
+          // visible error banner + Retry (the ENG-214 recovery UX). Opt-in via
+          // the marker only; the deterministic suite is untouched.
+          const killChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_kill",
+            execute: async ({ writer }) => {
+              writer.write({ type: "text-start", id: "text_kill" });
+              writer.write({ type: "text-delta", id: "text_kill", delta: "Starting an answer that will be cut" });
+              throw new Error("connection reset mid-stream");
+            },
+            onError: error => (error instanceof Error ? error.message : String(error)),
+          });
+          const killResponse = createUIMessageStreamResponse({ stream: killChunks });
+          killResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(killResponse, response);
           return;
         }
         if (sentText.includes("[stream-hang]")) {
@@ -352,11 +365,12 @@ export async function createWireServer() {
       }
 
       if (method === "GET" && url.pathname === "/threads") {
-        const summaries: ThreadSummary[] = [...state.threads.values()].map(thread => ({
-          id: thread.id,
-          title: "Fixture thread",
-          updatedAt: thread.updatedAt,
-        }));
+        // Newest-first, as a real store returns them — the workspace sidebar
+        // defaults its selection to threads[0], so a just-minted conversation
+        // must sort to the top (ENG-231 persistence guard).
+        const summaries: ThreadSummary[] = [...state.threads.values()]
+          .map(thread => ({ id: thread.id, title: "Fixture thread", updatedAt: thread.updatedAt }))
+          .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
         json(response, summaries);
         return;
       }
@@ -386,11 +400,20 @@ export async function createWireServer() {
       }
       if (method === "POST" && url.pathname === "/connections/initiate") {
         // The freshly initiated account is immediately pollable and flips
-        // active on first read (the shortest honest OAuth completion).
+        // active on first read (the shortest honest OAuth completion). Honors
+        // the requested toolkit so multi-connector surfaces (the ENG-225
+        // connect tray) see the account they asked for.
+        const initiateBody = parsedBody as { toolkit?: string; connector?: string };
         if (!state.connections.some(item => item.id === "ca_new")) {
-          state.connections.push({ id: "ca_new", connector: "composio", toolkit: "gmail", status: "active", createdAt: NOW });
+          state.connections.push({
+            id: "ca_new",
+            connector: initiateBody.connector ?? "composio",
+            toolkit: initiateBody.toolkit ?? "gmail",
+            status: "active",
+            createdAt: NOW,
+          });
         }
-        return json(response, { id: "ca_new", connector: "composio", redirectUrl: "https://connect.test/oauth/1" });
+        return json(response, { id: "ca_new", connector: initiateBody.connector ?? "composio", redirectUrl: "https://connect.test/oauth/1" });
       }
       const connectionMatch = url.pathname.match(/^\/connections\/([^/]+)$/);
       if (connectionMatch) {
@@ -404,63 +427,6 @@ export async function createWireServer() {
           if (!found) return wireError(response, "not-found", "Connection not found", 404);
           state.connections = state.connections.filter(item => item.id !== id);
           return json(response, {});
-        }
-      }
-      if (url.pathname === "/orgs" || url.pathname.startsWith("/orgs/")) {
-        // A client may force the key-gated posture via header (harness: the
-        // gated scenario renders the upgrade state, same trick as force-posture).
-        if (state.orgsGated || request.headers["x-vendo-force-orgs-gated"] === "1") {
-          return wireError(response, "cloud-required", "orgs are a Vendo Cloud capability: set VENDO_API_KEY (get one at vendo.run) to activate org workspaces", 402);
-        }
-        if (method === "GET" && url.pathname === "/orgs") {
-          return json(response, {
-            orgs: state.orgs.map(org => ({
-              ...org,
-              role: state.orgMembers.find(member => member.orgId === org.id && member.subject === "user_1")?.role ?? "member",
-            })),
-            posture: "cloud",
-          });
-        }
-        if (method === "POST" && url.pathname === "/orgs") {
-          const name = (parsedBody as { name: string }).name;
-          const org = { id: `org_${state.orgs.length + 1}`, name, createdAt: NOW, updatedAt: NOW };
-          state.orgs.push(org);
-          state.orgMembers.push({ orgId: org.id, subject: "user_1", role: "owner", addedAt: NOW });
-          return json(response, org);
-        }
-        const orgGet = url.pathname.match(/^\/orgs\/([^/]+)$/);
-        if (method === "GET" && orgGet) {
-          const org = state.orgs.find(item => item.id === decodeURIComponent(orgGet[1]!));
-          if (!org) return wireError(response, "not-found", "org not found", 404);
-          const members = state.orgMembers.filter(member => member.orgId === org.id);
-          const role = members.find(member => member.subject === "user_1")?.role ?? "member";
-          return json(response, { org, role, members });
-        }
-        const orgMembersMatch = url.pathname.match(/^\/orgs\/([^/]+)\/members$/);
-        if (method === "POST" && orgMembersMatch) {
-          const orgId = decodeURIComponent(orgMembersMatch[1]!);
-          const body = parsedBody as { subject: string; role?: "owner" | "admin" | "member" };
-          if (state.orgMembers.some(member => member.orgId === orgId && member.subject === body.subject)) {
-            return wireError(response, "conflict", "already a member", 409);
-          }
-          const member = { orgId, subject: body.subject, role: body.role ?? "member" as const, addedAt: NOW };
-          state.orgMembers.push(member);
-          return json(response, member);
-        }
-        const orgMemberMatch = url.pathname.match(/^\/orgs\/([^/]+)\/members\/([^/]+)$/);
-        if (orgMemberMatch) {
-          const orgId = decodeURIComponent(orgMemberMatch[1]!);
-          const subject = decodeURIComponent(orgMemberMatch[2]!);
-          const member = state.orgMembers.find(item => item.orgId === orgId && item.subject === subject);
-          if (!member) return wireError(response, "not-found", "not a member", 404);
-          if (method === "PATCH") {
-            member.role = (parsedBody as { role: "owner" | "admin" | "member" }).role;
-            return json(response, member);
-          }
-          if (method === "DELETE") {
-            state.orgMembers = state.orgMembers.filter(item => item !== member);
-            return json(response, {});
-          }
         }
       }
       if (method === "GET" && url.pathname === "/grants") return json(response, state.grants);

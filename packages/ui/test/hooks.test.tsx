@@ -12,7 +12,6 @@ import {
   useAutomations,
   useConnections,
   useGrants,
-  useOrgs,
   useThreads,
   useVendoStatus,
   useVendoThread,
@@ -184,6 +183,23 @@ describe("headless hooks", () => {
     await act(() => result.current.loadMore());
     expect(result.current.events.map(event => event.id)).toEqual(["aud_1", "aud_2", "aud_3"]);
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "GET", path: "/activity?cursor=eyJjIjoiMjAyNi0wNy0xMVQxMjowMDowMC4wMDBaIiwiaSI6ImF1ZF8yIn0" }));
+  });
+
+  it("signals the end of the list once a page adds no new events", async () => {
+    const { result } = renderHook(() => useActivity(), { wrapper });
+    await waitFor(() => expect(result.current.events).toHaveLength(2));
+    // A first page arrived — there may still be more behind the cursor.
+    expect(result.current.hasMore).toBe(true);
+
+    await act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.events).toHaveLength(3));
+    expect(result.current.hasMore).toBe(true);
+
+    // The next page repeats already-seen rows (nothing older remains), so the
+    // hook resolves to the end of the list and the panel can retire "Load more".
+    await act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.hasMore).toBe(false));
+    expect(result.current.events).toHaveLength(3);
   });
 
   it("loads posture and transitions to disconnected after the server is killed", async () => {
@@ -358,7 +374,6 @@ describe("ENG-219 — consistent { data, error, isLoading, refresh } + polling +
       () => useGrants(),
       () => useActivity(),
       () => useConnections(),
-      () => useOrgs(),
       () => useAutomations(),
       () => useApp("app_1"),
       () => useThreads(),

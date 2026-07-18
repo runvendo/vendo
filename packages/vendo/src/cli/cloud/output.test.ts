@@ -17,7 +17,6 @@ const contract: ContractV2 = {
     insights: false,
     mcp_broker: false,
     sso_saml: false,
-    orgs: false,
   },
   limits: {
     sandbox_minutes: { included: 5000, used: 1234, remaining: 3766, exhausted: false },
@@ -37,7 +36,6 @@ Capabilities
   ✓ sharing        ✓ registry       ✓ guard_basic
   ✗ pinning        ✗ guard_full     ✗ session_replay
   ✗ insights       ✗ mcp_broker     ✗ sso_saml
-  ✗ orgs
 
 Quota (this billing period)
   sandbox_minutes  [█████░░░░░░░░░░░░░░░]  1,234 / 5,000  (3,766 left)

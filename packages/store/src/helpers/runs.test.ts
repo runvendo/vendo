@@ -137,7 +137,7 @@ for (const backend of backends()) {
       expect(seen).toEqual(["run_page_4", "run_page_3", "run_page_2", "run_page_1", "run_page_0"]);
     });
 
-    it("serves ephemeral-app runs from memory and never writes them to vendo_runs", async () => {
+    it("writes ephemeral-app runs to vendo_runs like any other (kill-list B3)", async () => {
       const ephemeral: Principal = { kind: "user", subject: "sess_runs", ephemeral: true };
       const doc = appFixture("app_runs_ephemeral", "Ephemeral runs");
       await appStore(made.store).put(ephemeral, doc);
@@ -147,34 +147,7 @@ for (const backend of backends()) {
       expect(await runs.get("run_ephemeral")).toMatchObject({ appId: doc.id, record: { transient: true } });
       expect((await runs.list({ appId: doc.id })).runs.map((run) => run.id)).toEqual(["run_ephemeral"]);
       const rows = await made.sql("SELECT COUNT(*)::int AS count FROM vendo_runs WHERE app_id = $1", [doc.id]);
-      expect(Number(rows[0]?.["count"])).toBe(0);
-    });
-
-    it("merges persisted and ephemeral runs in list(), de-duplicating by id when a run moves from disk to memory", async () => {
-      const runs = runStore(made.store);
-      // Written while the owning app is still ordinary -- lands on disk.
-      await runs.put(runFixture({
-        id: "run_dual", appId: "app_dual", startedAt: at(50), status: "running", record: { from: "disk" },
-      }));
-      const onDisk = await made.sql("SELECT status FROM vendo_runs WHERE id = $1", ["run_dual"]);
-      expect(onDisk).toEqual([{ status: "running" }]);
-
-      // The owning app becomes ephemeral after the fact.
-      const ephemeral: Principal = { kind: "user", subject: "sess_dual", ephemeral: true };
-      await appStore(made.store).put(ephemeral, appFixture("app_dual", "Now ephemeral"));
-
-      // A later put for the same run id is now routed to memory instead of disk.
-      await runs.put(runFixture({
-        id: "run_dual", appId: "app_dual", startedAt: at(50), status: "ok", record: { from: "memory" },
-      }));
-
-      expect(await runs.get("run_dual")).toMatchObject({ status: "ok", record: { from: "memory" } });
-      const listed = await runs.list({ appId: "app_dual" });
-      expect(listed.runs.map((run) => run.id)).toEqual(["run_dual"]);
-      expect(listed.runs[0]).toMatchObject({ status: "ok", record: { from: "memory" } });
-      // The stale on-disk row is still there underneath, but list() never surfaces it twice.
-      const staleOnDisk = await made.sql("SELECT status FROM vendo_runs WHERE id = $1", ["run_dual"]);
-      expect(staleOnDisk).toEqual([{ status: "running" }]);
+      expect(Number(rows[0]?.["count"])).toBe(1);
     });
 
     it("rejects malformed run data before storing anything, for each invalid field", async () => {

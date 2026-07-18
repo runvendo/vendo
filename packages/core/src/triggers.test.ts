@@ -43,9 +43,8 @@ describe("triggerSourceSchema", () => {
   it("rejects host-event without an event and external without a connector", () => {
     expect(triggerSourceSchema.safeParse({ kind: "host-event" }).success).toBe(false);
     expect(triggerSourceSchema.safeParse({ kind: "external", event: "x" }).success).toBe(false);
-    // CORE-11 — §15: an UNKNOWN kind is additive and tolerated; only known
-    // kinds are held to their declared shapes (and kind must be a string).
-    expect(triggerSourceSchema.safeParse({ kind: "unknown" }).success).toBe(true);
+    // Trigger kinds are a closed enum: an unknown kind fails validation.
+    expect(triggerSourceSchema.safeParse({ kind: "unknown" }).success).toBe(false);
     expect(triggerSourceSchema.safeParse({ kind: 7 }).success).toBe(false);
     expect(triggerSourceSchema.safeParse({}).success).toBe(false);
   });

@@ -48,7 +48,6 @@ describe("tool, grant, and approval schemas", () => {
     for (const scope of [
       { kind: "tool" },
       { kind: "exact", inputHash: "sha256:abc", inputPreview: "limit 10" },
-      { kind: "constrained", constraints: [{ path: "/limit", op: "lte", value: 10 }] },
     ]) expect(grantScopeSchema.safeParse(scope).success).toBe(true);
 
     expect(permissionGrantSchema.safeParse({
@@ -114,8 +113,8 @@ describe("outcome, guard, and audit schemas", () => {
   it("enforces decidedBy sets on each guard action", () => {
     expect(guardDecisionSchema.safeParse({ action: "run", decidedBy: "grant", grantId: "grt_1" }).success).toBe(true);
     expect(guardDecisionSchema.safeParse({ action: "ask", decidedBy: "critical", approval }).success).toBe(true);
-    expect(guardDecisionSchema.safeParse({ action: "block", decidedBy: "scanner", reason: "Unsafe" }).success).toBe(true);
-    expect(guardDecisionSchema.safeParse({ action: "run", decidedBy: "scanner" }).success).toBe(false);
+    expect(guardDecisionSchema.safeParse({ action: "block", decidedBy: "rule", reason: "Unsafe" }).success).toBe(true);
+    expect(guardDecisionSchema.safeParse({ action: "run", decidedBy: "breaker" }).success).toBe(false);
     expect(guardDecisionSchema.safeParse({ action: "block", decidedBy: "grant", reason: "No" }).success).toBe(false);
   });
 
@@ -129,7 +128,7 @@ describe("outcome, guard, and audit schemas", () => {
       presence: "away",
       outcome: "pending-approval",
     };
-    for (const decidedBy of ["grant", "rule", "judge", "default", "critical", "breaker", "scanner"]) {
+    for (const decidedBy of ["grant", "rule", "judge", "default", "critical", "breaker"]) {
       expect(auditEventSchema.safeParse({ ...base, decidedBy }).success).toBe(true);
     }
     expect(auditEventSchema.safeParse({ ...base, id: "event_1" }).success).toBe(false);
@@ -150,19 +149,19 @@ describe("context, triggers, host reports, theme, and stream schemas", () => {
     expect(triggerSourceSchema.safeParse({ kind: "schedule", cron: "* * * * *", every: "1h" }).success).toBe(false);
   });
 
-  it("CORE-11 — §15 forward-compat: unknown additive variants parse; known variants stay strict", () => {
-    // Error codes: a future code is a generic error, not a parse failure.
-    expect(vendoErrorCodeSchema.safeParse("rate-limited").success).toBe(true);
+  it("error codes, trigger kinds, and run models are closed enums: unknown variants fail validation", () => {
+    // Error codes: an unrecognized code is a parse failure, not a generic error.
+    expect(vendoErrorCodeSchema.safeParse("rate-limited").success).toBe(false);
     expect(vendoErrorCodeSchema.safeParse("").success).toBe(false);
     expect(vendoErrorCodeSchema.safeParse(42).success).toBe(false);
-    // Trigger kinds are additive; known kinds still validate their shape.
-    expect(triggerSourceSchema.safeParse({ kind: "geo-fence", region: "EU" }).success).toBe(true);
+    // Trigger kinds: an unknown kind fails; known kinds still validate their shape.
+    expect(triggerSourceSchema.safeParse({ kind: "geo-fence", region: "EU" }).success).toBe(false);
     expect(triggerSourceSchema.safeParse({ kind: "host-event" }).success).toBe(false);
-    // Run models are additive; a malformed KNOWN model still fails.
-    expect(runModelSchema.safeParse({ kind: "workflow", graph: [] }).success).toBe(true);
+    // Run models: an unknown kind fails; a malformed KNOWN model still fails.
+    expect(runModelSchema.safeParse({ kind: "workflow", graph: [] }).success).toBe(false);
     expect(runModelSchema.safeParse({ kind: "steps", steps: "nope" }).success).toBe(false);
-    // TriggerRef tolerates a future kind while still requiring a run id.
-    expect(triggerRefSchema.safeParse({ runId: "run_1", kind: "geo-fence" }).success).toBe(true);
+    // TriggerRef rejects an unknown kind while still requiring a run id.
+    expect(triggerRefSchema.safeParse({ runId: "run_1", kind: "geo-fence" }).success).toBe(false);
     expect(triggerRefSchema.safeParse({ runId: "job_1", kind: "geo-fence" }).success).toBe(false);
   });
 

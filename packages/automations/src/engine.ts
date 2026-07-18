@@ -3,7 +3,6 @@ import {
   approvalRequestSchema,
   appDocumentSchema,
   descriptorHash,
-  isOrgSubject,
   permissionGrantSchema,
   triggerSchema,
   webhookSubject,
@@ -466,10 +465,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   };
 
   const runContext = (run: InternalRunRecord, subject: string): RunContext => ({
-    // Org-owned automations run as the org principal (block-actions design §C):
-    // grants and approvals for the run live under the org subject, so admins
-    // approve and any member's session can never be impersonated by the run.
-    principal: isOrgSubject(subject) ? { kind: "org", subject } : { kind: "user", subject },
+    principal: { kind: "user", subject },
     venue: "automation",
     presence: "away",
     sessionId: `sess_${run.id}`,

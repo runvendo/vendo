@@ -325,8 +325,6 @@ describe("09 §3 public wire", () => {
         mcp: false,
         // 04-actions §3 — no BYO connector and no VENDO_API_KEY → no broker.
         connections: false,
-        // block-actions §C — orgs are key-gated; no VENDO_API_KEY → off.
-        orgs: false,
       },
     });
   });
@@ -397,11 +395,12 @@ describe("09 §3 public wire", () => {
   it("adapts the same fetch handler to Next route exports", async () => {
     const { vendo } = await setup();
     const next = nextVendoHandler(vendo);
-    // PATCH joined with the org member role route (ENG-263) — Next.js returns
-    // 405 for any method the module does not export, so its absence would make
-    // role changes fail before reaching the wire.
     for (const method of ["GET", "POST", "PATCH", "DELETE"] as const) expect(next[method]).toBeTypeOf("function");
     expect((await next.GET(request("GET", "/status"))).status).toBe(200);
+    // PATCH is load-bearing even with no PATCH-only wire route left: without
+    // this export Next.js would 405 a PATCH before it ever reached the wire's
+    // own cloud-required seam (the /orgs routes match ANY method).
+    expect((await next.PATCH(request("PATCH", "/orgs/org_1/members/user_1", { role: "admin" }))).status).toBe(402);
   });
 });
 
@@ -795,7 +794,7 @@ describe("00 overview / 01-core §2 — per-client anonymous sessions", () => {
     expect(setCookie(replayed)).toBeNull();    // no new cookie on a valid replay
   });
 
-  it("mints a fresh session when the cookie signature is tampered or garbage", async () => {
+  it("mints a fresh session when the cookie is not a well-formed session pointer", async () => {
     const seen: string[] = [];
     const resolver = vi.fn(async () => null);
     const { vendo } = await setup(resolver);
@@ -805,16 +804,37 @@ describe("00 overview / 01-core §2 — per-client anonymous sessions", () => {
     });
 
     const minted = await vendo.handler(request("GET", "/apps"));
-    const value = anonCookieValue(minted)!;
-    const id = value.split(".")[0];
+    const id = anonCookieValue(minted)!;
 
-    for (const bad of [`${id}.deadbeef`, "not-a-valid-cookie", `${id}.`]) {
+    // The legacy signed form (`<id>.<sig>`), garbage, truncated, and non-hex
+    // values are not pointers into vendo_sessions — each gets a fresh mint.
+    for (const bad of [`${id}.deadbeef`, "not-a-valid-cookie", id.slice(0, 8), "Z".repeat(32)]) {
       const response = await vendo.handler(request("GET", "/apps", undefined, { cookie: `__Host-vendo_anon_session=${bad}` }));
       expect(setCookie(response)).toContain("__Host-vendo_anon_session="); // fresh mint
     }
-    // Every tampered request got its own fresh subject, none equal to the original.
+    // Every malformed request got its own fresh subject, none equal to the original.
     const original = seen[0];
     for (const subject of seen.slice(1)) expect(subject).not.toBe(original);
+  });
+
+  it("treats any well-formed 128-bit id as the session pointer — the vendo_sessions row is the authority, not the cookie", async () => {
+    // Kill-list B3 server half: the cookie carries no signature. An id the
+    // server never minted (or one surviving a process restart) simply names
+    // its own — empty — session: nothing to steal, and no re-mint churn.
+    const seen: string[] = [];
+    const resolver = vi.fn(async () => null);
+    const { vendo } = await setup(resolver);
+    vi.spyOn(vendo.apps, "list").mockImplementation(async (ctx) => {
+      seen.push(ctx.principal.subject);
+      return [];
+    });
+
+    const foreign = "0123456789abcdef0123456789abcdef";
+    const response = await vendo.handler(request("GET", "/apps", undefined, {
+      cookie: `__Host-vendo_anon_session=${foreign}`,
+    }));
+    expect(seen[0]).toBe(`anonymous_${foreign}`); // the pointer is honored as-is
+    expect(setCookie(response)).toBeNull();        // no new cookie minted
   });
 
   it("uses Secure __Host- over https and the plain wire-scoped name over http", async () => {
@@ -900,7 +920,8 @@ describe("00 overview / 01-core §2 — per-client anonymous sessions", () => {
     responses.forEach((response, i) => {
       const header = setCookie(response) ?? "";
       expect(header.match(/vendo_anon_session=/g)).toHaveLength(1);
-      const cookieId = anonCookieValue(response)!.split(".")[0];
+      const cookieId = anonCookieValue(response)!;
+      expect(cookieId).toMatch(/^[0-9a-f]{32}$/); // opaque pointer, no signature suffix
       expect(seen[i]).toBe(`anonymous_${cookieId}`);
     });
   });
@@ -1493,19 +1514,176 @@ describe("01-core §2 — the wire rejects resolver-minted reserved/org principa
   });
 });
 
-describe("block-actions §C — key-gated org wire (posture errors without a key)", () => {
-  it("returns cloud-required posture errors on every org mutation and an inert list", async () => {
+describe("kill-list A5 — orgs are a Vendo Cloud capability, not an OSS wire route", () => {
+  it.each([
+    ["without a VENDO_API_KEY", undefined],
+    ["with a VENDO_API_KEY set", `vnd_${"f".repeat(40)}`],
+  ])("returns cloud-required for every /orgs route, %s", async (_label, key) => {
+    if (key !== undefined) vi.stubEnv("VENDO_API_KEY", key);
     const { vendo } = await setup();
     const list = await vendo.handler(request("GET", "/orgs"));
     expect(list.status).toBe(402);
+    const body = await list.json() as { error: { code: string } };
+    expect(body.error.code).toBe("cloud-required");
 
     const create = await vendo.handler(request("POST", "/orgs", { name: "Acme" }));
     expect(create.status).toBe(402);
-    const body = await create.json() as { error: { code: string } };
-    expect(body.error.code).toBe("cloud-required");
 
-    // The org-scoped approvals/grants surfaces posture-error too.
+    const get = await vendo.handler(request("GET", "/orgs/org_1"));
+    expect(get.status).toBe(402);
+
+    const addMember = await vendo.handler(request("POST", "/orgs/org_1/members", { subject: "user_1" }));
+    expect(addMember.status).toBe(402);
+
+    // A trailing slash still lands on the "orgs" head segment (routeSegments
+    // filters empty parts), so it gets the same seam instead of falling
+    // through to the generic 404.
+    const trailingSlash = await vendo.handler(request("GET", "/orgs/"));
+    expect(trailingSlash.status).toBe(402);
+
+    // No shadowing: matching on the whole first path segment means a
+    // lookalike route is untouched by the seam.
+    const lookalike = await vendo.handler(request("GET", "/organizations"));
+    expect(lookalike.status).toBe(404);
+  });
+
+  it.each([
+    ["without a VENDO_API_KEY", undefined],
+    ["with a VENDO_API_KEY set", `vnd_${"f".repeat(40)}`],
+  ])("returns cloud-required for any request carrying an org param, %s", async (_label, key) => {
+    if (key !== undefined) vi.stubEnv("VENDO_API_KEY", key);
+    const { vendo } = await setup();
     expect((await vendo.handler(request("GET", "/approvals?org=org_x"))).status).toBe(402);
+    expect((await vendo.handler(request("POST", "/approvals/decide", { ids: ["a"], decision: { approve: true }, org: "org_x" }))).status).toBe(402);
     expect((await vendo.handler(request("GET", "/grants?org=org_x"))).status).toBe(402);
+    expect((await vendo.handler(request("DELETE", "/grants/grant_1?org=org_x"))).status).toBe(402);
+  });
+});
+
+describe("ENG-353 — turn liveness: heartbeat-armed idle abort for disconnects the runtime never surfaces", () => {
+  // Generous margins: CI runners under coverage load stall for hundreds of
+  // milliseconds, and a spurious idle-abort here would flake the suite.
+  const IDLE_MS = 1_000;
+
+  /** agent.stream stub whose SSE body stays open until the handed signal
+   *  aborts — a long-generating turn. */
+  function streamingTurnStub(vendo: Vendo, threadId = "thr_live"): { signals: AbortSignal[] } {
+    const signals: AbortSignal[] = [];
+    vi.spyOn(vendo.agent, "stream").mockImplementation(async (input: { signal?: AbortSignal }) => {
+      signals.push(input.signal!);
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("data: {\"type\":\"start\"}\n\n"));
+          input.signal?.addEventListener("abort", () => {
+            try {
+              controller.close();
+            } catch {
+              /* already closed */
+            }
+          }, { once: true });
+        },
+      });
+      const response = new Response(stream, {
+        headers: { "content-type": "text/event-stream", "x-vendo-thread-id": threadId },
+      });
+      return response;
+    });
+    return { signals };
+  }
+
+  const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+  const turnBody = { message: { id: "m_live", role: "user", parts: [] } };
+  const beat = (vendo: Vendo, id = "thr_live"): Promise<Response> =>
+    vendo.handler(request("POST", `/threads/${id}/heartbeat`, {}));
+
+  it("aborts a turn whose heartbeats stop; beats keep it alive; never-beating turns run to completion", async () => {
+    vi.stubEnv("VENDO_TURN_IDLE_ABORT_MS", String(IDLE_MS));
+    try {
+      const { vendo } = await setup();
+      const { signals } = streamingTurnStub(vendo);
+
+      await vendo.handler(request("POST", "/threads", turnBody));
+      const signal = signals[0]!;
+
+      // Beats keep the turn alive well past the idle window…
+      for (let i = 0; i < 4; i += 1) {
+        expect(await (await beat(vendo)).json()).toEqual({ active: true });
+        await wait(IDLE_MS / 2);
+        expect(signal.aborted).toBe(false);
+      }
+      // …then silence idle-aborts it.
+      await wait(IDLE_MS * 3);
+      expect(signal.aborted).toBe(true);
+      // A beat after the turn ended reports it inactive.
+      expect(await (await beat(vendo)).json()).toEqual({ active: false });
+
+      // Opt-in by construction: a turn whose client NEVER beats is untouched.
+      const second = await vendo.handler(request("POST", "/threads", turnBody));
+      expect(second.status).toBe(200);
+      await wait(IDLE_MS * 3);
+      expect(signals[1]!.aborted).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("a foreign principal's beat neither refreshes nor reveals another's turn", async () => {
+    vi.stubEnv("VENDO_TURN_IDLE_ABORT_MS", String(IDLE_MS));
+    try {
+      const resolver = vi.fn(async () => principal);
+      const { vendo } = await setup(resolver);
+      const { signals } = streamingTurnStub(vendo);
+
+      await vendo.handler(request("POST", "/threads", turnBody));
+      // Arm the watchdog as the owner.
+      expect(await (await beat(vendo)).json()).toEqual({ active: true });
+
+      // The attacker keeps beating the same thread id — as someone else.
+      resolver.mockResolvedValue({ kind: "user", subject: "user_mallory" });
+      const foreign = await (await beat(vendo)).json();
+      expect(foreign).toEqual({ active: false });
+      for (let i = 0; i < 3; i += 1) {
+        await wait(IDLE_MS / 2);
+        await beat(vendo);
+      }
+      // Foreign beats did NOT keep the owner's turn alive.
+      expect(signals[0]!.aborted).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("keeps the fast path: the request signal still aborts the turn immediately", async () => {
+    const { vendo } = await setup();
+    const { signals } = streamingTurnStub(vendo);
+    const controller = new AbortController();
+    const disconnectable = new Request("https://host.test/api/vendo/threads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(turnBody),
+      signal: controller.signal,
+    });
+    await vendo.handler(disconnectable);
+    expect(signals[0]!.aborted).toBe(false);
+    controller.abort();
+    expect(signals[0]!.aborted).toBe(true);
+  });
+
+  it("a completed turn unregisters: beats after the stream drained report inactive", async () => {
+    const { vendo } = await setup();
+    vi.spyOn(vendo.agent, "stream").mockResolvedValue(new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      }),
+      { headers: { "content-type": "text/event-stream", "x-vendo-thread-id": "thr_done" } },
+    ));
+    const response = await vendo.handler(request("POST", "/threads", turnBody));
+    expect(await (await beat(vendo, "thr_done")).json()).toEqual({ active: true });
+    const reader = response.body!.getReader();
+    while (!(await reader.read()).done) { /* drain */ }
+    expect(await (await beat(vendo, "thr_done")).json()).toEqual({ active: false });
   });
 });

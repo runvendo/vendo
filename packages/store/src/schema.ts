@@ -3,11 +3,18 @@ import { randomUUID } from "node:crypto";
 import type { Db } from "./db.js";
 import { withSchemaLock } from "./db.js";
 
-/** 02-store §4. v3 (block-actions design §C, ENG-263) adds the Vendo-owned org
-    tables: `vendo_orgs` + `vendo_org_members`. The version bump makes existing
-    v2 databases re-run the (idempotent, IF NOT EXISTS) DDL so the new tables
-    appear; no data moves. */
-export const SCHEMA_VERSION = 3;
+/** 02-store §4. v3 (block-actions design §C, ENG-263) historically added the
+    Vendo-owned org tables (`vendo_orgs` + `vendo_org_members`); those tables
+    are cut under the simplify-v2 kill-list (docs/superpowers/specs/2026-07-16
+    -simplify-v2-kill-list-design.md §A5) — orgs live on the Vendo-hosted side
+    now. Existing dev databases that already have `vendo_orgs`/
+    `vendo_org_members` keep those orphaned tables — erasing them is not
+    required and this migration does not attempt it.
+
+    v4 (kill-list §B3) adds `vendo_sessions`: the ephemeral in-memory overlay is
+    gone, anonymous rows are ordinary disk rows, and this table is the session
+    registry the TTL sweep reads (02 §4). */
+export const SCHEMA_VERSION = 4;
 
 /** 02-store §2 */
 export const DDL = [
@@ -73,18 +80,12 @@ export const DDL = [
     created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
   )`,
   "CREATE INDEX IF NOT EXISTS vendo_mcp_grants_refs_idx ON vendo_mcp_grants USING GIN (refs jsonb_path_ops)",
-  // v3 (block-actions design §C): full org semantics, Vendo-owned tables. Org
-  // subjects are `vendo:org:<id>` (reserved namespace, 01-core §2); membership
-  // roles are owner | admin | member — members run, admins approve and manage.
-  `CREATE TABLE IF NOT EXISTS vendo_orgs (
-    id text PRIMARY KEY, name text NOT NULL,
-    created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
+  // 02-store §4 (kill-list B3): the ephemeral-session registry. One row per
+  // live anonymous session; touched_at is the last-activity stamp the TTL
+  // sweep compares against. Registration == touch (upsert).
+  `CREATE TABLE IF NOT EXISTS vendo_sessions (
+    subject text PRIMARY KEY, touched_at timestamptz NOT NULL
   )`,
-  `CREATE TABLE IF NOT EXISTS vendo_org_members (
-    org_id text NOT NULL, subject text NOT NULL, role text NOT NULL,
-    added_at timestamptz NOT NULL, PRIMARY KEY (org_id, subject)
-  )`,
-  "CREATE INDEX IF NOT EXISTS vendo_org_members_subject_idx ON vendo_org_members (subject)",
 ] as const;
 
 // Additive columns stay compatible with same-version development databases (02 §2
@@ -128,9 +129,8 @@ const ADDITIVE_DDL = [
   // can do guarded read-merge-write instead of last-write-wins. DEFAULT backfills
   // existing rows on ALTER; every write path bumps it.
   "ALTER TABLE vendo_threads ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1",
-  // Secret rewrites (rotation) must count as activity for the erase-by-age axis
-  // (02 §5): set() stamps it; NULL on legacy rows means created_at IS the last
-  // write, so byAge reads COALESCE(updated_at, created_at).
+  // Tracks the secret's last rewrite (rotation) separately from created_at;
+  // set() stamps it. NULL on legacy rows means created_at IS the last write.
   "ALTER TABLE vendo_secrets ADD COLUMN IF NOT EXISTS updated_at timestamptz",
 ] as const;
 

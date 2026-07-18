@@ -1,5 +1,5 @@
 /** ai-SDK v6-compatible conversation transport (08-ui §3, 03-agent §4). */
-import type { VendoApprovalPart } from "@vendoai/core";
+import { withTurnHeartbeat, type VendoApprovalPart } from "@vendoai/core";
 import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
@@ -106,7 +106,13 @@ export function useVendoThread(threadId?: string) {
             setEffectiveThreadId(returnedThreadId);
           }
           recordStream(response);
-          return response;
+          // ENG-353: beat /threads/:id/heartbeat while this turn streams so
+          // the server can idle-abort the turn if this tab closes on a
+          // runtime that never surfaces the disconnect (`next dev`).
+          return withTurnHeartbeat(response, {
+            baseUrl: client.baseUrl.replace(/\/$/, ""),
+            headers: client.headers,
+          });
         },
         prepareSendMessagesRequest: ({ messages }) => {
           const message = messages.at(-1);

@@ -6,7 +6,7 @@ import {
   type PermissionGrant,
 } from "@vendoai/core";
 import type { Db } from "../db.js";
-import type { AppRow, ApprovalRow, EphemeralStateRow, RunRow, ThreadRow } from "./types.js";
+import type { AppRow, ApprovalRow, RunRow, StateRow, ThreadRow } from "./types.js";
 import { iso, optionalIso, text } from "./utils.js";
 
 export function appFromRow(row: Record<string, unknown>): AppRow {
@@ -90,7 +90,7 @@ export async function putThreadRow(
   return threadFromRow(row as Record<string, unknown>);
 }
 
-export function stateRowFromRow(row: Record<string, unknown>): EphemeralStateRow {
+export function stateRowFromRow(row: Record<string, unknown>): StateRow {
   return {
     appId: text(row["app_id"]),
     subject: text(row["subject"]),
@@ -109,7 +109,7 @@ export async function putStateRow(
   db: Db,
   input: { appId: string; subject: string; data: Json },
   now = new Date().toISOString(),
-): Promise<EphemeralStateRow> {
+): Promise<StateRow> {
   const result = await db.query(
     `INSERT INTO vendo_state (app_id, subject, data, updated_at, created_at)
      VALUES ($1, $2, $3::jsonb, $4, $4)
@@ -139,27 +139,27 @@ export function grantFromRow(row: Record<string, unknown>): PermissionGrant {
   };
 }
 
-export async function putGrantRow(db: Db, grant: PermissionGrant, upsert = true): Promise<void> {
+export async function putGrantRow(db: Db, grant: PermissionGrant): Promise<void> {
   // Grants never cross subjects either (02 §2). The upsert carries the same
   // atomic guard as putThreadRow/putAppRow: on conflict it updates ONLY when
   // the existing row already belongs to EXCLUDED.subject; an empty RETURNING
-  // on the upsert path means a foreign row holds the id — refuse the flip.
+  // means a foreign row holds the id — refuse the flip.
   const result = await db.query(
     `INSERT INTO vendo_grants
      (id, subject, tool, descriptor_hash, scope, duration, context_key, app_id, source, granted_at, expires_at, revoked_at)
      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12)
-     ${upsert ? `ON CONFLICT (id) DO UPDATE SET tool = EXCLUDED.tool,
+     ON CONFLICT (id) DO UPDATE SET tool = EXCLUDED.tool,
        descriptor_hash = EXCLUDED.descriptor_hash, scope = EXCLUDED.scope,
        duration = EXCLUDED.duration, context_key = EXCLUDED.context_key,
        app_id = EXCLUDED.app_id, source = EXCLUDED.source, granted_at = EXCLUDED.granted_at,
        expires_at = EXCLUDED.expires_at, revoked_at = EXCLUDED.revoked_at
-       WHERE vendo_grants.subject = EXCLUDED.subject` : ""}
+       WHERE vendo_grants.subject = EXCLUDED.subject
      RETURNING id`,
     [grant.id, grant.subject, grant.tool, grant.descriptorHash, JSON.stringify(grant.scope), grant.duration,
       grant.contextKey ?? null, grant.appId ?? null, grant.source, grant.grantedAt,
       grant.expiresAt ?? null, grant.revokedAt ?? null],
   );
-  if (upsert && result.rows[0] === undefined) {
+  if (result.rows[0] === undefined) {
     throw new VendoError("conflict", `grant ${grant.id} belongs to another subject`);
   }
 }

@@ -5,6 +5,7 @@ import { VendoRoot as UmbrellaVendoRoot } from "@vendoai/vendo/react";
 import { ScriptedTransport, type DirectorScript, type ToolMetaMap } from "@vendoai/ui";
 import { cadenceHostComponents } from "@/vendo/host-components";
 import { cadenceTheme } from "@/vendo/theme";
+import { cadenceRealtimeVoiceDriver } from "./voice-realtime";
 
 /**
  * ENG-216 humanization seam: Cadence describes its own tools so build beats
@@ -87,7 +88,7 @@ export function VendoRoot({
   if (directorEligible && director.enabled && !director.transport) return null;
   if (!directorEligible) {
     return (
-      <UmbrellaVendoRoot components={cadenceHostComponents} theme={cadenceTheme} tools={cadenceToolMeta} onPin={onPin}>
+      <UmbrellaVendoRoot components={cadenceHostComponents} theme={cadenceTheme} tools={cadenceToolMeta} voice={{ driver: cadenceRealtimeVoiceDriver }} onPin={onPin}>
         {children}
       </UmbrellaVendoRoot>
     );
@@ -98,6 +99,7 @@ export function VendoRoot({
       components={cadenceHostComponents}
       theme={cadenceTheme}
       tools={cadenceToolMeta}
+      voice={{ driver: cadenceRealtimeVoiceDriver }}
       transport={director.transport}
       onPin={onPin}
     >

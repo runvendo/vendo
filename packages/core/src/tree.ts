@@ -113,7 +113,10 @@ type TreeValidation =
   | { ok: true; tree: Tree }
   | { ok: false; error: { code: "version" | "provision"; message: string } };
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+/** The one canonical non-null, non-array object guard (kill-list B6) — every
+ *  package already depends on core, so a per-file redefinition is duplication,
+ *  not a layering workaround. */
+export const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const fail = (code: "version" | "provision", message: string): TreeValidation => ({

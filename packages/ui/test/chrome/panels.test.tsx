@@ -19,12 +19,27 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     await wire.close();
   });
 
-  it("renders activity fixture rows and appends the next page", async () => {
+  it("renders humanized activity rows and appends the next page", async () => {
     render(<VendoProvider client={client}><ActivityPanel /></VendoProvider>);
-    await waitFor(() => expect(screen.getAllByText("host_invoices_list")).toHaveLength(2));
+    // The raw slug host_invoices_list is humanized at the render site (ENG-216/224).
+    await waitFor(() => expect(screen.getAllByText("Invoices list")).toHaveLength(2));
+    // Formatted, human timestamp rather than a raw ISO instant.
+    expect(screen.getAllByText("Jul 11, 2026, 12:00 PM").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
-    await waitFor(() => expect(screen.getAllByText("host_invoices_list")).toHaveLength(3));
+    await waitFor(() => expect(screen.getAllByText("Invoices list")).toHaveLength(3));
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "GET", path: "/activity?cursor=eyJjIjoiMjAyNi0wNy0xMVQxMjowMDowMC4wMDBaIiwiaSI6ImF1ZF8yIn0" }));
+  });
+
+  it("retires Load more and shows an end-of-list marker once the history is exhausted", async () => {
+    render(<VendoProvider client={client}><ActivityPanel /></VendoProvider>);
+    await waitFor(() => expect(screen.getAllByText("Invoices list")).toHaveLength(2));
+    // First page more: appends aud_3 — still more to come.
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    await waitFor(() => expect(screen.getAllByText("Invoices list")).toHaveLength(3));
+    // Next page repeats seen rows: the panel resolves to the end of the list.
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    await waitFor(() => expect(screen.getByTestId("activity-end")).toBeTruthy());
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
   it("toggles, captures missing approvals, previews, expands runs, and stops a running run", async () => {
@@ -55,7 +70,7 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     const unhandled = vi.fn();
     window.addEventListener("unhandledrejection", unhandled);
     render(<VendoProvider client={client}><ActivityPanel /></VendoProvider>);
-    await waitFor(() => expect(screen.getAllByText("host_invoices_list")).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByText("Invoices list")).toHaveLength(2));
     wire.state.failures.push({
       method: "GET",
       path: "/activity",
