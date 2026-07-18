@@ -1,14 +1,70 @@
 import { supabasePreset } from "@vendoai/actions/presets";
 import type { PermissionGrant } from "@vendoai/core";
+import { SignJWT } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
 // Imported through the same entry hosts use, pinning the re-export.
 import { hostAuthPresetConformance, supabase } from "./index.js";
 
+/** Hermetic GoTrue: jose is real (ES256 sign + verify run locally); ONLY the
+    network-touching JWKS fetch is mocked at the lazy-import seam, resolving
+    keys from our in-memory GoTrue JWKS instead of the wire (auth0's pattern). */
+const jwksState = vi.hoisted(() => ({
+  jwks: undefined as unknown,
+  url: undefined as string | undefined,
+}));
+vi.mock("jose", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("jose")>();
+  return {
+    ...actual,
+    createRemoteJWKSet: (url: URL) => {
+      jwksState.url = url.toString();
+      return actual.createLocalJWKSet(jwksState.jwks as never);
+    },
+  };
+});
+
+const gotrueKeys = (async () => {
+  const { generateKeyPair, exportJWK } = await vi.importActual<typeof import("jose")>("jose");
+  const { publicKey, privateKey } = await generateKeyPair("ES256", { extractable: true });
+  const jwk = await exportJWK(publicKey);
+  jwksState.jwks = { keys: [{ ...jwk, alg: "ES256", kid: "vendo-supabase-test-kid", use: "sig" }] };
+  return { privateKey };
+})();
+
 afterEach(() => {
+  jwksState.url = undefined;
   vi.unstubAllEnvs();
 });
 
 const secret = "supabase-project-jwt-secret-at-least-32-bytes";
+const projectUrl = "https://testref.supabase.co";
+const jwksUrl = `${projectUrl}/auth/v1/.well-known/jwks.json`;
+
+interface Es256Overrides {
+  claims?: Record<string, unknown>;
+  audience?: string | false;
+  expiresIn?: string;
+  key?: CryptoKey;
+}
+
+/** Mint a GoTrue-shaped ES256 login token — what `supabase start` ≥ v2.71 and
+    hosted projects on the new key system sign interactive logins with. */
+async function es256Token(subject: string, overrides: Es256Overrides = {}): Promise<string> {
+  const { privateKey } = await gotrueKeys;
+  const jwt = new SignJWT({ role: "authenticated", ...overrides.claims })
+    .setProtectedHeader({ alg: "ES256", typ: "JWT", kid: "vendo-supabase-test-kid" })
+    .setSubject(subject)
+    .setIssuedAt()
+    .setExpirationTime(overrides.expiresIn ?? "5m");
+  if (overrides.audience !== false) jwt.setAudience(overrides.audience ?? "authenticated");
+  return jwt.sign(overrides.key ?? (privateKey as CryptoKey));
+}
+
+function withBearer(token: string): Request {
+  return new Request("https://host.test/api/vendo/threads", {
+    headers: { authorization: `Bearer ${token}` },
+  });
+}
 
 /** The host-side user table a subject→user resolver fronts (demo-bank idiom). */
 const users: Record<string, { display: string; email: string }> = {
@@ -72,12 +128,87 @@ describe("supabase() zero-argument standard case", () => {
       .resolves.toEqual({ kind: "user", subject: "user_env" });
   });
 
-  it("throws an actionable error naming SUPABASE_JWT_SECRET when no secret is configured", async () => {
+  it("reads SUPABASE_URL from the environment and verifies ES256 logins against GoTrue's JWKS", async () => {
     vi.stubEnv("SUPABASE_JWT_SECRET", "");
+    vi.stubEnv("SUPABASE_URL", projectUrl);
+    const preset = supabase();
+    await expect(preset.principal(withBearer(await es256Token("user_es256_env"))))
+      .resolves.toEqual({ kind: "user", subject: "user_es256_env" });
+    expect(jwksState.url).toBe(jwksUrl);
+  });
+
+  it("throws an actionable error naming BOTH SUPABASE_JWT_SECRET and SUPABASE_URL when neither is configured", async () => {
+    vi.stubEnv("SUPABASE_JWT_SECRET", "");
+    vi.stubEnv("SUPABASE_URL", "");
     const preset = supabase();
     await expect(preset.principal(await sessionRequest("user_env")))
-      .rejects.toThrow(/SUPABASE_JWT_SECRET/);
+      .rejects.toThrow(/SUPABASE_JWT_SECRET.*SUPABASE_URL|SUPABASE_URL.*SUPABASE_JWT_SECRET/s);
   });
+});
+
+describe("supabase() hybrid ES256/JWKS verification (Supabase's newer signing keys)", () => {
+  it("resolves an ES256 login token to a principal with claims-derived display", async () => {
+    const preset = supabase({ jwks: jwksUrl });
+    await expect(preset.principal(withBearer(await es256Token("user_es256", {
+      claims: { email: "ada@supa.test", user_metadata: { name: "Ada Lovelace" } },
+    })))).resolves.toEqual({ kind: "user", subject: "user_es256", display: "Ada Lovelace" });
+    await expect(preset.principal(withBearer(await es256Token("user_es256_mail", {
+      claims: { email: "ada@supa.test" },
+    })))).resolves.toEqual({ kind: "user", subject: "user_es256_mail", display: "ada@supa.test" });
+  });
+
+  it("accepts the ES256 login token off the @supabase/ssr cookie too (lazy jwks thunk)", async () => {
+    // The thunk form resolves per call, so a host can derive the URL from env
+    // without racing env loading at composition (the SecretSource pattern).
+    const preset = supabase({ jwks: () => jwksUrl });
+    const cookie = `sb-testref-auth-token=${ssrCookieValue(await es256Token("user_es256_cookie"))}`;
+    await expect(preset.principal(withCookie(cookie)))
+      .resolves.toEqual({ kind: "user", subject: "user_es256_cookie" });
+  });
+
+  it("verifies HS256 sessions OFFLINE first — the JWKS is never touched for them", async () => {
+    vi.stubEnv("SUPABASE_URL", projectUrl);
+    const preset = supabase({ secret });
+    await expect(preset.principal(await sessionRequest("user_hybrid_hs")))
+      .resolves.toEqual({ kind: "user", subject: "user_hybrid_hs" });
+    expect(jwksState.url).toBeUndefined();
+  });
+
+  it("resolves forged (wrong-key), expired, and wrong-audience ES256 tokens to null", async () => {
+    const { generateKeyPair } = await vi.importActual<typeof import("jose")>("jose");
+    const { privateKey: strangerKey } = await generateKeyPair("ES256");
+    const preset = supabase({ secret, jwks: jwksUrl });
+    await expect(preset.principal(withBearer(await es256Token("user_forged", { key: strangerKey as CryptoKey }))))
+      .resolves.toBeNull();
+    await expect(preset.principal(withBearer(await es256Token("user_expired", { expiresIn: "-5m" }))))
+      .resolves.toBeNull();
+    await expect(preset.principal(withBearer(await es256Token("user_noaud", { audience: false }))))
+      .resolves.toBeNull();
+    await expect(preset.principal(withBearer(await es256Token("user_wrongaud", { audience: "anon" }))))
+      .resolves.toBeNull();
+  });
+
+  it("resolves an ES256 token to null when only the HS256 secret is configured (no JWKS source)", async () => {
+    vi.stubEnv("SUPABASE_URL", "");
+    const preset = supabase({ secret });
+    await expect(preset.principal(withBearer(await es256Token("user_no_jwks")))).resolves.toBeNull();
+  });
+});
+
+describe("supabase() hybrid three-seam conformance (ES256 sessions, HS256 actAs mints)", () => {
+  // The Cadence shape: interactive logins arrive ES256-signed (verified via
+  // JWKS), while the actAs half keeps minting offline HS256 tokens with the
+  // project secret — one preset serves both halves.
+  const suite = hostAuthPresetConformance({
+    preset: supabase({ secret, jwks: jwksUrl, user: userResolver }),
+    sessionRequest: async (subject) => withBearer(await es256Token(subject)),
+    knownSubject: "supa_yousef",
+    unknownSubject: "intruder",
+    expectedDisplay: "Yousef Helal",
+  });
+  for (const conformanceCase of suite.cases) {
+    it(conformanceCase.name, conformanceCase.run);
+  }
 });
 
 describe("supabase() session resolution — Supabase's own formats", () => {
@@ -104,6 +235,12 @@ describe("supabase() session resolution — Supabase's own formats", () => {
     await expect(preset.principal(withCookie(objectCookie))).resolves.toEqual({ kind: "user", subject: "user_legacy" });
     const arrayCookie = `sb-testref-auth-token=${encodeURIComponent(JSON.stringify([token, "refresh"]))}`;
     await expect(preset.principal(withCookie(arrayCookie))).resolves.toEqual({ kind: "user", subject: "user_legacy" });
+  });
+
+  it("reads a raw access token as the cookie value (hand-rolled hosts, legacy auth-helpers)", async () => {
+    const preset = supabase({ secret });
+    const cookie = `sb-cadence-auth-token=${await accessToken("user_raw")}`;
+    await expect(preset.principal(withCookie(cookie))).resolves.toEqual({ kind: "user", subject: "user_raw" });
   });
 
   it("resolves a cookie-less request to null and an unverifiable token to null", async () => {

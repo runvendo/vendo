@@ -5,7 +5,7 @@ export { auth0 } from "./auth0.js";
 export { authJs } from "./auth-js.js";
 export { clerk } from "./clerk.js";
 export { jwt } from "./jwt.js";
-export { supabase } from "./supabase.js";
+export { supabase, type SupabaseHostAuthPresetOptions } from "./supabase.js";
 // The three-seam conformance kit ships publicly (the @vendoai/core
 // "./conformance" precedent): the named presets above and host-custom presets
 // are its consumers.
