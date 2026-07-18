@@ -1,9 +1,11 @@
 import {
+  applyReshape,
   isPathBinding,
   isStateBinding,
   validateTree,
   VENDO_TREE_FORMAT,
   type Json,
+  type PathBinding,
   type ToolOutcome,
   type Tree,
   type TreeNode,
@@ -89,31 +91,81 @@ export function isActionBinding(value: unknown): value is ActionBinding {
 
 type BoundMode = "host" | "jail";
 
+/** v2 spec §3 — apply a binding's `$reshape` chain to the resolved value.
+ *  `applyReshape` is total: absent data passes through (loading is not a
+ *  mismatch); a real mismatch reports through `onMismatch` and binds
+ *  `undefined`, and the node renders the contained data-shape notice. */
+function resolveReshaped(
+  resolved: Json | undefined,
+  steps: PathBinding["$reshape"],
+  onMismatch?: (reason: string) => void,
+): unknown {
+  if (steps === undefined) return resolved;
+  const reshaped = applyReshape(resolved, steps);
+  if (!reshaped.ok) {
+    onMismatch?.(reshaped.reason);
+    return undefined;
+  }
+  return reshaped.value;
+}
+
 function bindValue(
   value: unknown,
   mode: BoundMode,
   data: Record<string, Json>,
   state: Record<string, Json>,
   action: (name: string, payload?: Json) => Promise<ToolOutcome>,
+  onMismatch?: (reason: string) => void,
 ): unknown {
-  if (isPathBinding(value)) return resolvePointer(data, value.$path);
-  if (isStateBinding(value)) return state[value.$state];
+  if (isPathBinding(value)) return resolveReshaped(resolvePointer(data, value.$path), value.$reshape, onMismatch);
+  if (isStateBinding(value)) return resolveReshaped(state[value.$state] as Json | undefined, value.$reshape, onMismatch);
   if (isActionBinding(value)) {
-    const payload = bindValue(value.payload, mode, data, state, action) as Json;
+    const payload = bindValue(value.payload, mode, data, state, action, onMismatch) as Json;
     if (mode === "jail") {
       return { $action: value.$action, ...(value.payload === undefined ? {} : { payload }) };
     }
     return () => action(value.$action, value.payload === undefined ? undefined : payload);
   }
-  if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action));
+  if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action, onMismatch));
   if (typeof value === "object" && value !== null) {
     return Object.fromEntries(Object.entries(value).map(([key, child]) => [
       key,
-      bindValue(child, mode, data, state, action),
+      bindValue(child, mode, data, state, action, onMismatch),
     ]));
   }
   return value;
 }
+
+/** Binds a node's props, reporting the first reshape mismatch with its prop
+ *  name (v2 spec §3 — the region shows one contained notice, not a broken
+ *  component). */
+function bindProps(
+  props: Record<string, Json> | undefined,
+  mode: BoundMode,
+  data: Record<string, Json>,
+  state: Record<string, Json>,
+  action: (name: string, payload?: Json) => Promise<ToolOutcome>,
+): { bound: Record<string, unknown> | undefined; mismatch: string | null } {
+  if (props === undefined) return { bound: undefined, mismatch: null };
+  let mismatch: string | null = null;
+  let currentProp = "";
+  const onMismatch = (reason: string): void => {
+    if (mismatch === null) mismatch = `prop "${currentProp}": ${reason}`;
+  };
+  const bound = Object.fromEntries(Object.entries(props).map(([key, child]) => {
+    currentProp = key;
+    return [key, bindValue(child, mode, data, state, action, onMismatch)];
+  }));
+  return { bound, mismatch };
+}
+
+/** v2 spec §3 — the contained data-shape notice: the region says the data
+ *  didn't match instead of mounting the component with garbage props. */
+const dataShapeNotice = (mismatch: string): ReactNode => (
+  <ContainedNotice label="Data shape">
+    {`The data didn't match this component's binding — ${mismatch}.`}
+  </ContainedNotice>
+);
 
 function outcomeNotice(outcome: ToolOutcome | undefined): ReactNode {
   if (!outcome || outcome.status === "ok") return null;
@@ -240,41 +292,41 @@ function NodeRenderer(props: NodeRendererProps) {
       // 06-apps §9 — the approved venue: this exact version's content hash
       // matched a stored approval, so generated code mounts in the host page.
       // The jail element stays wired as the drop-back for any mount failure.
-      const bound = node.props === undefined
-        ? undefined
-        : bindValue(node.props, "host", props.data, props.state, invoke) as Record<string, unknown>;
-      const jailFallback = (
-        <JailedComponent
-          name={node.component}
-          source={source}
-          props={node.props === undefined
-            ? undefined
-            : bindValue(node.props, "jail", props.data, props.state, invoke) as Record<string, unknown>}
-          furnishing={props.furnishings[node.component]}
-          themeVars={props.themeVars}
-          onAction={invoke}
-          onStateSet={props.setViewState}
-        />
-      );
-      content = (
-        <>
-          <InClientMount
+      const hostBind = bindProps(node.props, "host", props.data, props.state, invoke);
+      const jailBind = bindProps(node.props, "jail", props.data, props.state, invoke);
+      const mismatch = hostBind.mismatch ?? jailBind.mismatch;
+      if (mismatch !== null) {
+        content = <>{dataShapeNotice(mismatch)}{children}</>;
+      } else {
+        const jailFallback = (
+          <JailedComponent
             name={node.component}
             source={source}
-            props={bound}
+            props={jailBind.bound}
             furnishing={props.furnishings[node.component]}
-            fallback={jailFallback}
+            themeVars={props.themeVars}
             onAction={invoke}
             onStateSet={props.setViewState}
           />
-          {children}
-        </>
-      );
+        );
+        content = (
+          <>
+            <InClientMount
+              name={node.component}
+              source={source}
+              props={hostBind.bound}
+              furnishing={props.furnishings[node.component]}
+              fallback={jailFallback}
+              onAction={invoke}
+              onStateSet={props.setViewState}
+            />
+            {children}
+          </>
+        );
+      }
     } else {
-      const bound = node.props === undefined
-        ? undefined
-        : bindValue(node.props, "jail", props.data, props.state, invoke) as Record<string, unknown>;
-      content = (
+      const { bound, mismatch } = bindProps(node.props, "jail", props.data, props.state, invoke);
+      content = mismatch !== null ? <>{dataShapeNotice(mismatch)}{children}</> : (
         <>
           <JailedComponent
             name={node.component}
@@ -306,8 +358,10 @@ function NodeRenderer(props: NodeRendererProps) {
         </ContainedNotice>
       );
     } else {
-      const bound = bindValue(node.props ?? {}, "host", props.data, props.state, invoke) as Record<string, unknown>;
-      content = <Implementation {...bound}>{children}</Implementation>;
+      const { bound, mismatch } = bindProps(node.props ?? {}, "host", props.data, props.state, invoke);
+      content = mismatch !== null
+        ? dataShapeNotice(mismatch)
+        : <Implementation {...bound}>{children}</Implementation>;
     }
   }
 
