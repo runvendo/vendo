@@ -1366,3 +1366,21 @@ describe("tier0-wired create (two lanes)", () => {
     expect(mainPrompts).toHaveLength(1);
   });
 });
+
+describe("wire extraction tolerance", () => {
+  it("compiles a wire wrapped in a markdown fence or prose preamble", async () => {
+    const fenced = "Here is the app:\n```xml\n" + validCreate("Fenced board") + "\n```\nDone!";
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(fenced),
+    });
+
+    const app = await runtime.create({ prompt: "Build a fenced board" }, ctx);
+
+    expect(app.name).toBe("Fenced board");
+    expect(app.tree).toMatchObject({ formatVersion: "vendo-genui/v2" });
+  });
+});

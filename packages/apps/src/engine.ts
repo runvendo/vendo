@@ -214,6 +214,19 @@ PAINT PASS (tier-0): emit a complete, minimal, fully-wired GENERIC app for the r
 const layoutHeader = (compiled: WireCompileResult): string =>
   compiled.tree.nodes.map((node) => `${node.id}:${node.component}`).join(" ");
 
+/** Models wrap output in prose or a markdown fence despite instructions
+ *  (the v1 JSON path had the same tolerance in parseModelJson). The wire is
+ *  everything from the first `<App` through the last `</App>` (or stream
+ *  end while it is still open) — deterministic, so prefix compiles stay
+ *  valid-while-partial. */
+const extractWire = (text: string): string => {
+  const start = text.indexOf("<App");
+  if (start === -1) return text;
+  const closeTag = "</App>";
+  const close = text.lastIndexOf(closeTag);
+  return close === -1 ? text.slice(start) : text.slice(start, close + closeTag.length);
+};
+
 /** Stream the wire, compiling each accumulated prefix (throttled) into a
  *  valid-while-partial tree for the onPartial seam. */
 const streamWire = async (
@@ -229,7 +242,7 @@ const streamWire = async (
   const flush = (): void => {
     if (deps.onPartial === undefined) return;
     lastFlushAt = Date.now();
-    const compiled = compileWireV2(text, { hostComponents });
+    const compiled = compileWireV2(extractWire(text), { hostComponents });
     const partial: GeneratedPartial = {
       tree: compiled.tree,
       ...(compiled.name === undefined ? {} : { name: compiled.name }),
@@ -275,7 +288,7 @@ const streamWire = async (
       schedule();
     }
     await finishPartials();
-    return { compiled: compileWireV2(text, { hostComponents }), issues: [] };
+    return { compiled: compileWireV2(extractWire(text), { hostComponents }), issues: [] };
   } catch (error) {
     await finishPartials();
     return { issues: [`model generation failed: ${error instanceof Error ? error.message : "unknown error"}`] };

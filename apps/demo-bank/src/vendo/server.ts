@@ -110,6 +110,8 @@ const catalog: ComponentCatalog = [
 
 export const vendo = createVendo({
   model,
+  // v2 spec §4 — the tier-0 paint lane runs on a fast no-think model.
+  paint: { model: anthropic(process.env.VENDO_DEMO_PAINT_MODEL ?? "claude-haiku-4-5") },
   store,
   principal: resolveDemoPrincipal,
   actAs: actAsMapleUser,
