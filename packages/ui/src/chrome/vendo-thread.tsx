@@ -1,31 +1,19 @@
-import type { ApprovalRequest, Json, VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { useVendoContext } from "../context.js";
 import { useVendoThread } from "../hooks/use-vendo-thread.js";
-import { PayloadView } from "../tree/renderer.js";
-import { ApprovalCard } from "./approval-card.js";
-import { BuildBeat, toolPresentation } from "./build-beat.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { useCopyFeedback } from "./clipboard.js";
 import { MorphToast, type MorphToastProps } from "./morph-toast.js";
-import { ConnectCard } from "./connect-card.js";
 import { FluidThinking } from "./fluid-thinking.js";
-import { Markdown } from "./markdown.js";
-import { LONG_TEXT_CAP, truncateHead } from "./truncate.js";
 import { SentAttachment, type FilePart } from "./thread/attachments.js";
 import { Composer, useComposer } from "./thread/composer.js";
+import { ThreadApprovals, ThreadConnectRequests, ThreadPart } from "./thread/parts.js";
 import { useMessageWindow, useStickToBottom } from "./thread/scrolling.js";
 import {
-  appTitle,
   approvalByCall,
   assistantText,
   collapseToolRuns,
-  partData,
-  preview,
   riskByCall,
-  SYNTHESIZED_CREATED_AT,
-  toolName,
   userText,
 } from "./thread/message-data.js";
 
@@ -45,25 +33,6 @@ function CopyTurnButton({ text }: { text: string }) {
       )}
       {copied ? "Copied" : "Copy"}
     </button>
-  );
-}
-
-/** ENG-218 — a plain user turn (rendered verbatim, not markdown) collapses when
-    huge so a pasted log doesn't flood the thread with DOM. Assistant turns get
-    the same treatment inside <Markdown>. */
-function UserText({ text, restored }: { text: string; restored?: boolean }) {
-  const [expanded, setExpanded] = useState(false);
-  const collapsible = restored === true && text.length > LONG_TEXT_CAP;
-  const shown = collapsible && !expanded ? truncateHead(text) : text;
-  return (
-    <div className="fl-usertext">
-      {shown}
-      {collapsible ? (
-        <button type="button" className="fl-more" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
-          {expanded ? "Show less" : `Show full message (${(text.length / 1000).toFixed(0)}k chars)`}
-        </button>
-      ) : null}
-    </div>
   );
 }
 
@@ -89,7 +58,6 @@ export function VendoThread({
   onVoice,
   onThreadId,
 }: VendoThreadProps) {
-  const { client, components, theme, tools, onPin } = useVendoContext();
   const thread = useVendoThread(threadId);
   // ENG-222 — surface the effective (possibly server-minted) thread id upward.
   const reportedThreadId = thread.threadId;
@@ -247,105 +215,7 @@ export function VendoThread({
     />
   );
 
-  const renderPart = (part: UIMessage["parts"][number], key: string, role: UIMessage["role"], restored: boolean, count = 1) => {
-    if (part.type === "text") {
-      if (role === "user") return <UserText key={key} text={part.text} restored={restored} />;
-      // ENG-217 — lone caret while the streamed turn is still empty (stable
-      // line box); once text flows, Markdown's .fl-md--streaming trailing
-      // caret takes over.
-      if (part.state === "streaming" && part.text.trim().length === 0) {
-        return <span className="fl-caret" aria-hidden="true" key={key} />;
-      }
-      return <Markdown key={key} text={part.text} streaming={part.state === "streaming"} restored={restored} />;
-    }
-    if (part.type === "file") {
-      // ENG-225 — user attachments render beside the bubble (see the message
-      // map); an assistant-authored file lands inline in the turn.
-      if (role === "user") return null;
-      return <SentAttachment key={key} part={part} />;
-    }
-    if (isToolUIPart(part)) {
-      // The in-thread presentation is a human build "beat" (label from the
-      // ENG-216 pipeline: host metadata, else the prettified id — never the
-      // raw slug or lifecycle string). The mechanical record stays in the
-      // Activity panel. Collapsed runs carry their repeat count.
-      const risk = risks.get(part.toolCallId) ?? "read";
-      return <BuildBeat key={key} part={part} risk={risk} count={count} />;
-    }
-    if (part.type === "data-vendo-view") {
-      const data = partData(part) as Partial<VendoViewPart>;
-      if (typeof data.appId !== "string" || !data.payload) return null;
-      // 06-apps §§8–9 — in-thread surfaces are conversational previews, never
-      // the approved in-client venue and never a drift report: both fields are
-      // server-authoritative, so whatever the stream carried, render jailed
-      // and notice-free.
-      const {
-        inClient: _neverInThread,
-        pinDrift: _serverOnly,
-        ...payload
-      } = data.payload as typeof data.payload & { inClient?: unknown; pinDrift?: unknown };
-      const streaming = (payload as { streaming?: boolean }).streaming === true;
-      const appId = data.appId;
-      return (
-        // The generated view lives inside a clear app boundary — a titled
-        // frame — so it reads as a distinct piece of software, not loose
-        // content bleeding into the surrounding chat text.
-        <div className="fl-uihost fl-appcard" key={`${key}-${appId}`}>
-          <div className="fl-appcard-bar">
-            <span className="fl-appcard-dot" aria-hidden="true" />
-            <span className="fl-appcard-name">{appTitle(payload) ?? "Your app"}</span>
-          </div>
-          <div className="fl-appcard-body">
-            <PayloadView
-              payload={payload}
-              components={components}
-              onAction={({ action, payload: actionPayload }) => client.apps.call(appId, action, actionPayload ?? {})}
-            />
-          </div>
-          {!streaming && onPin ? (
-            <div className="fl-appcard-foot">
-              <button
-                type="button"
-                className="fl-btn fl-btn-primary fl-appcard-pin"
-                onClick={() => onPin({ appId, payload })}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
-                </svg>
-                Pin to dashboard
-              </button>
-            </div>
-          ) : null}
-        </div>
-      );
-    }
-    return null;
-  };
-
   const approvals = thread.messages.flatMap(message => message.parts).filter(isToolUIPart).filter(part => part.state === "approval-requested");
-
-  // 04-actions §3 — connector calls that ended `connect-required`, from the
-  // LAST assistant message only: a stale turn must not re-offer a connect
-  // (the persistent panel covers standing management). The typed outcome on
-  // the native tool part is the source of truth; the data-vendo-connect part
-  // mirrors it for streaming consumers, matching the approvals pattern.
-  const lastMessage = thread.messages.at(-1);
-  const connectRequests = (lastMessage?.role === "assistant" ? lastMessage.parts : [])
-    .filter(isToolUIPart)
-    .flatMap(part => {
-      if (part.state !== "output-available") return [];
-      const output = part.output as { status?: unknown; connect?: unknown } | undefined;
-      const connect = output?.status === "connect-required"
-        ? output.connect as { connector?: unknown; toolkit?: unknown; message?: unknown } | undefined
-        : undefined;
-      if (typeof connect?.connector !== "string" || typeof connect.toolkit !== "string") return [];
-      return [{
-        part,
-        connector: connect.connector,
-        toolkit: connect.toolkit,
-        message: typeof connect.message === "string" ? connect.message : `Connect ${connect.toolkit} to continue.`,
-      }];
-    });
 
   if (landing) {
     return (
@@ -424,8 +294,17 @@ export function VendoThread({
                       data-role={message.role}
                       aria-label={`${message.role} message`}
                     >
-                      {collapseToolRuns(message.parts).map(({ part, index, count }) =>
-                        renderPart(part, `${message.id}-${index}`, message.role, isRestored(message.id), count))}
+                      {collapseToolRuns(message.parts).map(({ part, index, count }) => (
+                        <ThreadPart
+                          key={`${message.id}-${index}`}
+                          part={part}
+                          partKey={`${message.id}-${index}`}
+                          role={message.role}
+                          restored={isRestored(message.id)}
+                          count={count}
+                          risks={risks}
+                        />
+                      ))}
                       {showActions ? (
                         <div className="fl-turn-actions">
                           {bubbleText.length > 0 ? <CopyTurnButton text={bubbleText} /> : null}
@@ -452,84 +331,18 @@ export function VendoThread({
                 </Fragment>
               );
             })}
-            {approvals.map(part => {
-              const risk = risks.get(part.toolCallId) ?? "read";
-              const input = "input" in part ? part.input : undefined;
-              const guardApproval = guardApprovals.get(part.toolCallId);
-              const name = toolName(part);
-              const approval: ApprovalRequest = {
-                id: part.approval.id,
-                call: { id: part.toolCallId, tool: name, args: input as Json },
-                // The wire approval part carries no descriptor (01-core), so the
-                // name is the raw tool id (ApprovalCard humanizes it) and the
-                // description is left to host metadata — never a fabricated
-                // "Approve <tool>" sentence.
-                descriptor: { name, description: tools[name]?.description ?? "", inputSchema: {}, risk },
-                inputPreview: preview(input),
-                ...(guardApproval?.invalidatedGrant === undefined
-                  ? {}
-                  : { invalidatedGrant: guardApproval.invalidatedGrant }),
-                // ENG-216 — the in-thread card renders inside the live conversation,
-                // which IS its context, and the wire carries no ctx: rather than
-                // invent a principal/venue/presence and stamp a per-render `new
-                // Date()`, we hide the context byline in-thread (showContext=false)
-                // and only structurally-true, stable values ride here (never shown).
-                ctx: { principal: { kind: "user", subject: "" }, venue: "chat", presence: "present" },
-                createdAt: SYNTHESIZED_CREATED_AT,
-              };
-              const guardApprovalId = guardApproval?.approvalId;
-              return (
-                <div key={part.approval.id} ref={element => { approvalCardRefs.current.set(part.approval.id, element); }}>
-                  <ApprovalCard
-                    approval={approval}
-                    showContext={false}
-                    allowRemember={guardApprovalId !== undefined}
-                    onDecide={async decision => {
-                      // The approved card lifts into the top-right notification
-                      // (ENG-205 morph) as the run resumes underneath it.
-                      if (decision.approve) {
-                        const card = approvalCardRefs.current.get(part.approval.id)?.querySelector<HTMLElement>(".fl-approval");
-                        if (card) {
-                          const presentation = toolPresentation(name, input, tools[name]);
-                          const rect = card.getBoundingClientRect();
-                          card.style.transition = "opacity .22s ease";
-                          card.style.opacity = "0";
-                          setMorph({
-                            startRect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
-                            title: `${presentation.title} — approved`,
-                            sub: presentation.sub ?? "Runs as you · recorded in Activity",
-                            logoUrl: presentation.logoUrl,
-                            theme,
-                          });
-                        }
-                      }
-                      // Decide the guard's approval record over the wire FIRST so the
-                      // resumed execution replays as approved (05 §1) — the native
-                      // response alone only tells the model loop to continue.
-                      if (guardApprovalId !== undefined) {
-                        await client.approvals.decide([guardApprovalId], decision);
-                      }
-                      thread.addToolApprovalResponse({ id: part.approval.id, approved: decision.approve });
-                    }}
-                  />
-                </div>
-              );
-            })}
-            {connectRequests.map(({ part, connector, toolkit, message }) => (
-              <ConnectCard
-                key={`connect-${part.toolCallId}`}
-                connector={connector}
-                toolkit={toolkit}
-                message={message}
-                onConnected={() => {
-                  // The retry: the account is live, so continue the turn — the
-                  // model re-issues the call, which now executes.
-                  void thread.sendMessage({
-                    text: `I connected my ${toolkit} account — retry ${toolName(part)}.`,
-                  });
-                }}
-              />
-            ))}
+            <ThreadApprovals
+              approvals={approvals}
+              risks={risks}
+              guardApprovals={guardApprovals}
+              cardRefs={approvalCardRefs}
+              respond={response => thread.addToolApprovalResponse(response)}
+              onMorph={setMorph}
+            />
+            <ThreadConnectRequests
+              messages={thread.messages}
+              sendMessage={message => thread.sendMessage(message)}
+            />
             {awaitingFirstChunk ? (
               <>
                 <div className="fl-generating">
