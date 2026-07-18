@@ -97,23 +97,33 @@ export function VendoOverlay({
   const takeover = useMobileTakeover();
   const providerDial = useVendoDiscoverability();
   const dial = discoverability ?? providerDial;
-  // ui-usage-dx §6 — the whisper: on a user's first eligible visit the pill
-  // pulses once and a small caption says the app can be reshaped, then never
-  // again (fire-once store). Quiet dial and launcher="none" visits are NOT
-  // eligible (no orphan caption, and the flag is not burned — a host that
-  // later turns the whisper on still gets exactly one showing).
+  // ui-usage-dx §6 — the whisper: the first time a user actually faces the
+  // pill, it pulses once and a small caption says the app can be reshaped,
+  // then never again (fire-once store). Arming is REACTIVE, not mount-frozen
+  // (PR #365 review): quiet dial, launcher="none", and overlay-already-open
+  // states are not eligible and do not burn the flag — the moment the pill
+  // becomes genuinely visible (dial flipped, launcher enabled, overlay
+  // closed) is the first showing, and only that showing burns it.
   const [whisperActive, setWhisperActive] = useState(false);
   useEffect(() => {
-    if (launcher === "none" || dial === "quiet" || hasSeen("whisper")) return;
-    // Seen is recorded on first RENDER, not on dismiss: a reload mid-animation
-    // must never replay the whisper.
+    if (whisperActive || open || launcher === "none" || dial === "quiet") return;
+    if (hasSeen("whisper")) return;
+    // Seen is recorded on first SHOWING, not on dismiss: a reload
+    // mid-animation must never replay the whisper.
     markSeen("whisper");
     setWhisperActive(true);
+  }, [whisperActive, open, launcher, dial]);
+  // The whisper ends after ~6s — or the instant the overlay opens, because
+  // the user has found the entry point it exists to point at.
+  useEffect(() => {
+    if (!whisperActive) return;
+    if (open) {
+      setWhisperActive(false);
+      return;
+    }
     const timer = window.setTimeout(() => setWhisperActive(false), WHISPER_MS);
     return () => window.clearTimeout(timer);
-    // Eligibility is decided once per page load — the mount is the "visit".
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [whisperActive, open]);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
   const portalRoot = useRef<HTMLDivElement>(null);

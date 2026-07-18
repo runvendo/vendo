@@ -223,10 +223,13 @@ Two elements teach end users the app is moldable, both on by default and both
 hard-capped at one showing per user per deployment, ever (a persistent flag;
 environments where storage is unavailable never show them):
 
-- **Whisper** — on the first visit with a visible launcher pill, the pill
-  pulses once and a small ~6s caption says the app can be reshaped. Under
-  `prefers-reduced-motion` the caption shows without the pulse.
-  `launcher="none"` hosts simply never see it (no orphan caption).
+- **Whisper** — the first time the user actually faces a visible launcher
+  pill, it pulses once and a small ~6s caption says the app can be reshaped.
+  Under `prefers-reduced-motion` the caption shows without the pulse.
+  Ineligible states never consume the showing: `launcher="none"` hosts simply
+  never see it (no orphan caption), and mounting with the overlay already
+  open waits for the close — the one showing only burns when it is genuinely
+  visible.
 - **Greeting-as-tutorial** — the first-ever fresh conversation opens with an
   agent-voiced intro plus 2–3 tappable starter prompts. Chips prefill the
   composer (never auto-send), and the greeting is presentation-only: it is

@@ -77,6 +77,36 @@ describe("whisper launcher (ui-usage-dx §6 — ambient discoverability)", () =>
     expect(hasSeen("whisper")).toBe(false);
   });
 
+  it("does not burn the flag while the overlay is open at mount; arms on close (Devin PR#365)", () => {
+    renderOverlay(<VendoOverlay defaultOpen />);
+    // Hidden behind the open overlay = never shown = must not be consumed.
+    expect(caption()).toBeNull();
+    expect(hasSeen("whisper")).toBe(false);
+    act(() => {
+      screen.getByRole("button", { name: "Close Vendo" }).click();
+    });
+    // The launcher is visible again — NOW the first showing happens.
+    expect(caption()).toBeTruthy();
+    expect(hasSeen("whisper")).toBe(true);
+  });
+
+  it("arms when a quiet dial flips to default in the same session (Greptile PR#365)", () => {
+    const { rerender } = renderOverlay(<VendoOverlay discoverability="quiet" />);
+    expect(caption()).toBeNull();
+    expect(hasSeen("whisper")).toBe(false);
+    rerender(<VendoProvider client={client}><VendoOverlay discoverability="default" /></VendoProvider>);
+    expect(caption()).toBeTruthy();
+    expect(hasSeen("whisper")).toBe(true);
+  });
+
+  it("arms when launcher=\"none\" flips to a visible pill in the same session", () => {
+    const { rerender } = renderOverlay(<VendoOverlay launcher="none" />);
+    expect(caption()).toBeNull();
+    rerender(<VendoProvider client={client}><VendoOverlay launcher="bottom-right" /></VendoProvider>);
+    expect(caption()).toBeTruthy();
+    expect(hasSeen("whisper")).toBe(true);
+  });
+
   it("hides the caption once the overlay opens", () => {
     renderOverlay();
     expect(caption()).toBeTruthy();
