@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { LanguageModel } from "ai";
-import { cloudModel } from "../model.js";
+import { resolveCloudBaseUrl } from "../cli/cloud/client.js";
 import {
   describeDevCredential,
   resolveDevCredential,
@@ -18,8 +18,10 @@ import {
  *
  * - env-key rungs delegate to the host-installed @ai-sdk provider (^3, spec
  *   v3) with full native tool calling — works in production too.
- * - VENDO_API_KEY delegates to Vendo Cloud managed inference (cloudModel —
- *   the console's inference proxy; cloud program lane 1).
+ * - VENDO_API_KEY delegates to the Vendo Cloud model gateway: the
+ *   host-installed @ai-sdk/anthropic pointed at `<console>/api/v1`, whose
+ *   Anthropic-compatible /messages endpoint serves the metered dev-mode
+ *   allowance.
  * - nothing available → every call fails with the exact instructions.
  */
 
@@ -29,8 +31,6 @@ export interface DevModelOptions {
   env?: Record<string, string | undefined>;
   /** Test seam for host-module resolution (providers). */
   importModule?: (root: string, specifier: string) => Promise<Record<string, unknown>>;
-  /** Test seam for the vendo-cloud rung's managed-inference client. */
-  fetchImpl?: typeof fetch;
 }
 
 interface LanguageModelV3Like {
@@ -72,9 +72,8 @@ const DEFAULT_MODELS: Record<string, { module: string; factory: string; model: s
 
 export const NO_CREDENTIAL_MESSAGE =
   "Vendo found no model key. Set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY "
-  + "in .env.local (with the matching @ai-sdk provider installed), or set VENDO_API_KEY for Vendo "
-  + "Cloud managed inference (`vendo cloud login` mints a free dev key). Production always needs a "
-  + "real server-side key.";
+  + "in .env.local (with the matching @ai-sdk provider installed), or run `vendo cloud login` for a "
+  + "free dev key. Production always needs a real server-side key.";
 
 /** Bundler-proof dynamic import: this module runs inside the host's dev server
  *  bundle (Next/webpack/turbopack), where a computed `import(...)` becomes a
@@ -106,7 +105,6 @@ export class DevModelController {
   private readonly root: string;
   private readonly env: Record<string, string | undefined>;
   private readonly importModule: (root: string, specifier: string) => Promise<Record<string, unknown>>;
-  private readonly fetchImpl: typeof fetch | undefined;
   private resolution: Promise<Resolution> | null = null;
   private announced = false;
 
@@ -114,7 +112,6 @@ export class DevModelController {
     this.root = options.root ?? process.cwd();
     this.env = options.env ?? process.env;
     this.importModule = options.importModule ?? importHostModule;
-    this.fetchImpl = options.fetchImpl;
   }
 
   /** Resolve the credential once per process; state it on the server log once.
@@ -157,17 +154,25 @@ export class DevModelController {
     }
 
     if (credential.rung === "vendo-cloud") {
-      // Managed inference is live (cloud program lane 1): the rung delegates
-      // to cloudModel, the thin client for the console's inference proxy.
-      // Reading env HERE is the resolver's job at the seam; the cloudModel
-      // adapter itself only sees constructor arguments (adapter rule).
-      const baseUrl = this.env["VENDO_CLOUD_URL"];
-      const model = cloudModel({
-        apiKey: this.env["VENDO_API_KEY"]!,
-        ...(baseUrl === undefined ? {} : { baseUrl }),
-        ...(this.fetchImpl === undefined ? {} : { fetch: this.fetchImpl }),
-      }) as unknown as LanguageModelV3Like;
-      this.announce(credential, " → Vendo Cloud managed inference");
+      // The gateway speaks the Anthropic Messages wire, so the anthropic
+      // provider serves it — pointed at the console instead of Anthropic.
+      const spec = DEFAULT_MODELS["anthropic"]!;
+      let loaded: Record<string, unknown>;
+      try {
+        loaded = await this.importModule(this.root, spec.module);
+      } catch {
+        const message = `VENDO_API_KEY is set but ${spec.module} is not installed in this app; install it (\`${spec.install}\`).`;
+        this.announce(credential, ` — but ${spec.module} is missing`);
+        return { mode: "unavailable", credential, message };
+      }
+      const factory = loaded[spec.factory] as (
+        config: { apiKey: string; baseURL: string },
+      ) => (model: string) => LanguageModelV3Like;
+      const base = resolveCloudBaseUrl({ env: this.env });
+      const baseURL = base.endsWith("/api/v1") ? base : `${base}/api/v1`;
+      const modelId = this.env[spec.modelEnv] ?? spec.model;
+      const model = factory({ apiKey: this.env["VENDO_API_KEY"]!, baseURL })(modelId);
+      this.announce(credential, ` → ${modelId} via the Cloud gateway`);
       return { mode: "delegate", credential, model };
     }
 

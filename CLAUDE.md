@@ -35,6 +35,10 @@ generated UI in a sandboxed, brand-native surface.
 - Gating is valid key + meter, nothing else: no capability booleans, no
   entitlement protocol, no validate endpoint, no client-side checks. Key
   problems surface on the first real service call.
+- Managed inference rides the console's Anthropic-compatible model gateway
+  through the stock `@ai-sdk/anthropic` provider, so inference traffic does
+  not carry the deployment-identity headers and does not feed the deployment
+  inventory (known, accepted).
 
 ## Rules
 

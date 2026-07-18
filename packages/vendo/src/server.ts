@@ -89,7 +89,6 @@ export {
   type DevCredential,
   type ResolveDevCredentialOptions,
 } from "./dev-creds/resolve.js";
-import { ENV_KEY_VARS } from "./dev-creds/resolve.js";
 import {
   byoConnections,
   cloudConnections,
@@ -116,11 +115,6 @@ import { hostedStore, type HostedStore } from "./hosted-store.js";
 // adapters: a host can pass it explicitly via createVendo({ store }) with its
 // own options instead of relying on the VENDO_API_KEY default.
 export { hostedStore, type HostedStore, type HostedStoreOptions } from "./hosted-store.js";
-import { cloudModel, unconfiguredModel } from "./model.js";
-// The shipped inference adapters ride the server surface so a host can read
-// the wire contract and pass one explicitly via createVendo({ model }) — see
-// selectModel.
-export { cloudModel, unconfiguredModel, type CloudModelOptions } from "./model.js";
 import { createRuntimeCapture } from "./runtime-capture.js";
 import {
   BASE_PATH,
@@ -357,35 +351,21 @@ function selectConnections(
 /** ADAPTER RULE, inference seam (cloned from selectConnections): the agent and
     apps blocks consume one ai-SDK LanguageModel; which implementation composes
     is decided HERE. Precedence, top to bottom:
-      1. an explicitly passed model always wins (BYO-LLM — any ai-SDK model,
-         including devModel() itself);
-      2. a provider key in the environment (ANTHROPIC / OPENAI / GOOGLE)
-         composes devModel's env ladder (install-dx v1: real keys only, lazy
-         resolution, honest per-rung failure messages);
-      3. VENDO_API_KEY makes Cloud managed inference the default for the seam
-         the host left unfilled (VENDO_CLOUD_URL overrides the console base);
-      4. the unconfigured fallback, which fails closed on first use naming
-         both fixes (a provider key or VENDO_API_KEY).
-    The adapters themselves never read the environment; devModel is the one
-    seam-sanctioned lazy env resolver and applies this same order internally
-    (resolveDevCredential) when a host passes it explicitly. */
+      1. an explicitly passed model always wins (BYO-LLM — any ai-SDK model);
+      2. otherwise devModel()'s env ladder composes as the default, and the
+         remaining rungs live INSIDE it (resolveDevCredential): a provider key
+         (ANTHROPIC / OPENAI / GOOGLE) via the host-installed @ai-sdk provider,
+         then VENDO_API_KEY via @ai-sdk/anthropic pointed at the Cloud model
+         gateway (`<console>/api/v1` — Anthropic-compatible /messages), then
+         the honest keyless failure with exact instructions on first use.
+    devModel is the one seam-sanctioned lazy env resolver; every other adapter
+    still never reads the environment. */
 function selectModel(configured: LanguageModel | undefined): {
   model: LanguageModel;
   venue: ModelVenue;
 } {
   if (configured !== undefined) return { model: configured, venue: "custom" };
-  if (ENV_KEY_VARS.some(({ envVar }) => environment(envVar) !== undefined)) {
-    return { model: devModel(), venue: "env-key" };
-  }
-  const apiKey = environment("VENDO_API_KEY");
-  if (apiKey !== undefined) {
-    const baseUrl = environment("VENDO_CLOUD_URL");
-    return {
-      model: cloudModel({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) }),
-      venue: "cloud",
-    };
-  }
-  return { model: unconfiguredModel(), venue: false };
+  return { model: devModel(), venue: "ladder" };
 }
 
 /** The ephemeral-session operations bound to the composed store (02-store §4):

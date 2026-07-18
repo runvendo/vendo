@@ -26,10 +26,11 @@ export const BASE_PATH = "/api/vendo";
 
 export type SandboxVenue = "e2b" | "modal" | "cloud" | "custom" | false;
 
-/** How inference is served: "custom" (a host-passed model), "env-key" (a
-    provider key in the environment → devModel's ladder), "cloud"
-    (VENDO_API_KEY → Vendo Cloud managed inference), or off. */
-export type ModelVenue = "custom" | "env-key" | "cloud" | false;
+/** How inference is served: "custom" (a host-passed model) or "ladder" (the
+    composed devModel default — provider env key, then VENDO_API_KEY via the
+    Cloud model gateway, then the honest keyless failure; the ladder resolves
+    lazily, so /status cannot name the rung without forcing a resolution). */
+export type ModelVenue = "custom" | "ladder";
 
 const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   validation: 400,

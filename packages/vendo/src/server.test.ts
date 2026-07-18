@@ -482,12 +482,10 @@ describe("09 §3 public wire", () => {
 
   it("selects the inference adapter with the adapter-rule precedence", async () => {
     // Adapter rule (2026-07-17 cloud definition) unified with install-dx v1's
-    // model-optional createVendo: explicit model → provider env key (devModel's
-    // ladder) → VENDO_API_KEY managed inference → unconfigured.
+    // model-optional createVendo: explicit model → the composed devModel
+    // ladder (provider env key, then VENDO_API_KEY via the Cloud model
+    // gateway, then honest failure — all resolved lazily INSIDE the ladder).
     vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
-    vi.stubEnv("ANTHROPIC_API_KEY", "sk-provider");
-    vi.stubEnv("OPENAI_API_KEY", "");
-    vi.stubEnv("GOOGLE_GENERATIVE_AI_API_KEY", "");
     const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-model-"));
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
@@ -504,16 +502,11 @@ describe("09 §3 public wire", () => {
     // An explicitly passed model wins over every env credential.
     expect(await modelVenue({ model: {} as LanguageModel })).toBe("custom");
 
-    // A provider key beats the Vendo key: devModel's env ladder serves.
-    expect(await modelVenue({})).toBe("env-key");
-
-    // The Vendo key alone defaults Cloud managed inference for the seam.
-    vi.stubEnv("ANTHROPIC_API_KEY", "");
-    expect(await modelVenue({})).toBe("cloud");
-
-    // Neither → the unconfigured fallback (fails closed on first use).
+    // Otherwise the devModel ladder composes — with or without any key set
+    // (rung resolution is lazy; the honest failure happens on first call).
+    expect(await modelVenue({})).toBe("ladder");
     vi.stubEnv("VENDO_API_KEY", "");
-    expect(await modelVenue({})).toBe(false);
+    expect(await modelVenue({})).toBe("ladder");
   });
 
   it("selects the store with the adapter-rule precedence", async () => {

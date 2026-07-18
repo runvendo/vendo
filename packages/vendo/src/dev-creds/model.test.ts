@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { DevModelController, devModel, NO_CREDENTIAL_MESSAGE } from "./model.js";
 
 describe("devModel (env-resolving default model)", () => {
@@ -23,48 +23,79 @@ describe("devModel (env-resolving default model)", () => {
     await expect(record.doStream({ prompt: [] })).rejects.toThrow(NO_CREDENTIAL_MESSAGE);
   });
 
-  it("delegates the vendo-cloud rung to managed inference through the console endpoint", async () => {
-    const requests: Array<{ url: string; authorization: string | null; body: unknown }> = [];
-    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = new Request(input, init);
-      requests.push({
-        url: request.url,
-        authorization: request.headers.get("authorization"),
-        body: await request.json(),
-      });
-      return Response.json({ content: [{ type: "text", text: "ok" }], finishReason: { unified: "stop", raw: null }, usage: {}, warnings: [] });
-    }) as unknown as typeof fetch;
+  it("serves the vendo-cloud rung through @ai-sdk/anthropic pointed at the Cloud gateway", async () => {
+    const seen: Array<{ apiKey: string; baseURL: string }> = [];
     const controller = new DevModelController({
-      env: { VENDO_API_KEY: `vnd_${"a".repeat(40)}`, VENDO_CLOUD_URL: "https://cloud.test" },
-      fetchImpl,
+      env: { VENDO_API_KEY: "vnd_x" },
+      importModule: async (_root, specifier) => {
+        expect(specifier).toBe("@ai-sdk/anthropic");
+        return {
+          createAnthropic: (config: { apiKey: string; baseURL: string }) => {
+            seen.push(config);
+            return (modelId: string) => ({
+              specificationVersion: "v3",
+              provider: "anthropic",
+              modelId,
+              supportedUrls: {},
+              doGenerate: async (options: unknown) => ({ delegated: "generate", modelId, options }),
+              doStream: async (options: unknown) => ({ delegated: "stream", modelId, options }),
+            });
+          },
+        };
+      },
     });
-    const result = await controller.doGenerate({ prompt: [] }) as { content: unknown[] };
-    expect(result.content).toEqual([{ type: "text", text: "ok" }]);
-    expect(requests[0]).toMatchObject({
-      url: "https://cloud.test/api/v1/inference",
-      authorization: `Bearer vnd_${"a".repeat(40)}`,
-      body: { mode: "generate", options: { prompt: [] } },
+    const callOptions = { prompt: [] };
+    expect(await controller.doGenerate(callOptions)).toEqual({
+      delegated: "generate",
+      modelId: "claude-sonnet-4-6",
+      options: callOptions,
     });
+    expect(await controller.doStream(callOptions)).toEqual({
+      delegated: "stream",
+      modelId: "claude-sonnet-4-6",
+      options: callOptions,
+    });
+    // The key rides as the provider apiKey; the base is the production
+    // console's /api/v1, where the Anthropic-shaped /messages endpoint lives.
+    expect(seen).toEqual([
+      { apiKey: "vnd_x", baseURL: "https://console.vendo.run/api/v1" },
+    ]);
   });
 
-  it("prefers a provider env key over VENDO_API_KEY (explicit beats managed)", async () => {
-    const cloudFetch = vi.fn();
+  it("honors VENDO_CLOUD_URL and the anthropic model override on the vendo-cloud rung", async () => {
+    const seen: Array<{ baseURL: string }> = [];
     const controller = new DevModelController({
-      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_API_KEY: `vnd_${"a".repeat(40)}` },
-      fetchImpl: cloudFetch as unknown as typeof fetch,
+      env: {
+        VENDO_API_KEY: "vnd_x",
+        VENDO_CLOUD_URL: "http://localhost:3001/",
+        VENDO_DEV_ANTHROPIC_MODEL: "claude-opus-4-8",
+      },
       importModule: async () => ({
-        createAnthropic: () => (modelId: string) => ({
-          specificationVersion: "v3",
-          provider: "anthropic",
-          modelId,
-          supportedUrls: {},
-          doGenerate: async () => ({ via: "provider" }),
-          doStream: async () => ({ via: "provider" }),
-        }),
+        createAnthropic: (config: { apiKey: string; baseURL: string }) => {
+          seen.push({ baseURL: config.baseURL });
+          return (modelId: string) => ({
+            specificationVersion: "v3",
+            provider: "anthropic",
+            modelId,
+            supportedUrls: {},
+            doGenerate: async () => ({ modelId }),
+            doStream: async () => ({ modelId }),
+          });
+        },
       }),
     });
-    expect(await controller.doGenerate({ prompt: [] })).toEqual({ via: "provider" });
-    expect(cloudFetch).not.toHaveBeenCalled();
+    expect(await controller.doGenerate({ prompt: [] })).toEqual({ modelId: "claude-opus-4-8" });
+    expect(seen).toEqual([{ baseURL: "http://localhost:3001/api/v1" }]);
+  });
+
+  it("names the missing anthropic install when the vendo-cloud rung lacks the provider", async () => {
+    const controller = new DevModelController({
+      env: { VENDO_API_KEY: "vnd_x" },
+      importModule: async (_root, specifier) => {
+        throw new Error(`Cannot find module '${specifier}'`);
+      },
+    });
+    await expect(controller.doGenerate({ prompt: [] })).rejects.toThrow(/@ai-sdk\/anthropic@\^3/);
   });
 
   it("names the missing provider install for an env-key rung without the package", async () => {
