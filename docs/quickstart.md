@@ -99,6 +99,11 @@ export const vendo = createVendo({
 });
 ```
 
+The example pins an explicit provider. A fresh `vendo init` scaffolds
+`lib/ai.ts` and wires `model: devModel()` here instead — the dev-mode ladder
+above — so the first turn works before you have picked a key; swap in any
+AI SDK model whenever you want full control.
+
 `authJs()` is zero-argument in the standard case: it reads `AUTH_SECRET`
 (mirroring Auth.js itself) and derives the principal's display name and email
 from the session-token claims. `auth` is one preset that fills all three
