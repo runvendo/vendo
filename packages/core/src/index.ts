@@ -29,4 +29,8 @@ export * from "./triggers.js";
 // checker) stay internal.
 export { compileWireV2, type WireCompileOptions, type WireCompileResult } from "./wire-v2/compile.js";
 export { WIRE_ISSUE_CODES, type WireIssue, type WireIssueCode } from "./wire-v2/expression.js";
+// v2 spec §5 — the one-dialect edit surface: print the app as id-anchored
+// wire (the model's edit context), apply the model's <Edit> patch.
+export { compileWirePatchV2, type WirePatchBase, type WirePatchResult } from "./wire-v2/patch.js";
+export { printWireV2, type WirePrintInput, type WirePrintOptions } from "./wire-v2/print.js";
 export type { BindingShapeError } from "./wire-v2/shape-check.js";
