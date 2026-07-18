@@ -71,20 +71,31 @@ Implemented behind the existing `GenerationEngine` seam in `@vendoai/apps` (the 
 ## 5. Edit flow (one dialect)
 Edits operate on the JSX-like wire against the compiler-stamped ids (the model sees the markup with id anchors; emits a small patch in the same grammar). No second JSON-ops dialect. The compiler applies deterministically and re-validates (including shape-checks). Undo/version via the existing history machinery.
 
-## 6. Coexistence + migration (reuse the existing seam)
-- Register `vendo-genui/v2` behind the `formatVersion` dispatch in `packages/core/src/app-document.ts` / `tree.ts`. The v1 renderer/validator stay registered forever; stored v1 apps keep working (the forward-compat tests already prove unknown-format tolerance).
-- The engine emits v2 for new creates once the runtime advertises the v2 renderer; v1 apps transpile to v2 on first edit (v1 tree → v2 tree is mechanical and total).
-- No breaking change to `AppDocument` envelope, `fn:`, grants, storage, or the rung ladder — only the tree payload format is new.
+## 6. Replacement — v1 is removed (mandate 2026-07-18)
+**v2 REPLACES v1 outright. There is no coexistence and no migration.** The
+original coexistence/transpile plan is superseded by orchestrator mandate:
+- The `vendo-genui/v1` format tag (`VENDO_TREE_FORMAT`), its validator, the
+  v1-specific engine edit dialects (tree-ops / code-edit), the v1-only tests,
+  and the coexistence/format-drill handling are all DELETED.
+- Deletion is staged so every wave's PR stays green: Wave 1 removes the
+  coexistence drills; Wave 2 removes the v1 emission + v1-specific dialects as
+  the engine is replaced; Wave 4 finishes with a full sweep (nothing in the
+  repo may reference `vendo-genui/v1` when it closes).
+- Only the shared render mechanics the v2 renderer reuses (the tree walk,
+  jail, bindings, `$state`, outcome containment) survive — the v1 format
+  surface around them goes.
+- `AppDocument` envelope, `fn:`, grants, storage, and the rung ladder are
+  still unchanged — only the tree payload format is v2-only now.
 
 ## 7. Out of scope for this build (named, not forgotten)
 - **Owned serving** (prefill set-heads, zero-think KV-fork, host LoRA, diffusion AST, custom tokenizer) — the sub-second moat; each has a falsifiable offline experiment in the genui-bench report. Separate initiative.
 - **Rung-4 / server sandbox generation** — unchanged; a future benchmark track.
 
 ## 8. Implementation roadmap (waves — (b) plans each with writing-plans)
-1. **Wave 1 — format + compiler + renderer.** `vendo-genui/v2` canonical tree in core; the JSX-like wire grammar + deterministic compiler (ids, bindings, islands, `fn:`); the v2 renderer in ui (reusing the v1 render path). Gate: round-trip wire→tree→render of a hand-written example, v1 coexistence green.
+1. **Wave 1 — format + compiler + renderer.** `vendo-genui/v2` canonical tree in core; the JSX-like wire grammar + deterministic compiler (ids, bindings, islands, `fn:`); the v2 renderer in ui (reusing the shared render mechanics); coexistence/format-drill artifacts deleted. Gate: round-trip wire→tree→render of a hand-written example in a real browser.
 2. **Wave 2 — tier0-wired engine.** The two-lane engine behind `GenerationEngine` in apps (tier-0 instant + tier-2 hot-swap + no-think switch). Gate: a real generation paints wired in <~3.5s and upgrades in place, verified in a browser.
 3. **Wave 3 — shape-aware binding.** Shape cards from `vendo sync`/samples; the bounded reshape vocabulary; compiler type-check + per-binding repair. Gate: the chart-bug class fails at compile and repairs; measured coverage up vs. Wave 2.
-4. **Wave 4 — edit dialect + retrieval cache + migration.** One-dialect edits; optional repeat-cache; v1→v2 transpile. Gate: edit locality + v1 apps still render.
+4. **Wave 4 — edit dialect + retrieval cache + v1 removal.** One-dialect edits; optional repeat-cache; **remove all remaining v1 code** (no transpile — v1 is discarded). Gate: edit locality + zero references to `vendo-genui/v1` anywhere in the repo.
 Each wave: `pnpm build && pnpm test && pnpm typecheck && pnpm lint` green; UI-affecting changes verified in a real browser with screenshots; branch + PR (never commit to main).
 
 ## 9. Verification bar

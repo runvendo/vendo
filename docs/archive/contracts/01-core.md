@@ -1,5 +1,8 @@
 # @vendoai/core — the shapes everything speaks
 
+> **v2 re-derivation (2026-07-18): `vendo-genui/v1` is REMOVED.** The tree payload format is `vendo-genui/v2` only (JSX-wire compiled to the canonical v2 tree; see docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md). No coexistence, no migration: the v1 format tag, validator, and v1-specific edit dialects are deleted across the v2 waves. Sections below describing `vendo-genui/v1` are historical.
+
+
 Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a major. One job: contracts only — types, zod schemas, format constants, pure validators and hash helpers. No I/O, no behavior. Dependencies: `zod` only. Runs in any JS runtime.
 
 Everything below is exported from the package root unless noted. Core has one additional entry point: `@vendoai/core/conformance`, which exports the contract-conformance kits and `memoryStoreAdapter` for tests. That subpath is explicitly test-infrastructure behavior and is exempt from the root's "no behavior" rule; the package root remains governed by it. Every type ships a matching zod schema (`<camelCaseName>Schema`) unless marked *type-only*.

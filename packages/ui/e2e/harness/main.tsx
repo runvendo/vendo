@@ -34,7 +34,7 @@ import {
   vendoToast,
   type VendoCommand,
 } from "../../src/chrome/index.js";
-import { AppFrame, PayloadView, TreeView, registerTreeRenderer, type PayloadRendererProps } from "../../src/tree/index.js";
+import { AppFrame, PayloadView, TreeView } from "../../src/tree/index.js";
 import { browserTreeFixture } from "../fixtures/tree.js";
 import {
   realtimeVoiceDriver,
@@ -1062,41 +1062,8 @@ function SlotFallbackScenario() {
   );
 }
 
-/**
- * FORMAT-EVOLUTION FIRE DRILL (08-ui §5; 01-core §8). A throwaway second UI
- * format, registered ONLY in this test harness — never in product source. It
- * proves the renderer registry's evolution seam opens in a real browser: a
- * registered drill renderer renders; an unregistered drill tag contains to a
- * notice while v1 trees on the same page keep rendering; and a stored v0 tree
- * renders identically whether or not the drill format is registered.
- */
-const DRILL_FORMAT = "vendo/tree@2-drill";
-
-interface DrillBlock { heading: string; body: string }
-
-const drillPayload = {
-  formatVersion: DRILL_FORMAT,
-  // Deliberately non-tree-shaped (no root/nodes): a future format owns its body.
-  blocks: [
-    { heading: "Quarterly revenue", body: "$4,200 across 3 invoices" },
-    { heading: "Next step", body: "Send the reminder" },
-  ] satisfies DrillBlock[],
-};
-
-/** A throwaway renderer for the drill format's block-list shape. */
-function DrillRenderer({ payload }: PayloadRendererProps) {
-  const blocks = (payload as { blocks?: DrillBlock[] }).blocks ?? [];
-  return (
-    <section aria-label="Drill format surface">
-      {blocks.map((block, index) => (
-        <article key={index}><h3>{block.heading}</h3><p>{block.body}</p></article>
-      ))}
-    </section>
-  );
-}
-
-/** A stable v0 tree used as the "stored old-format record" across both drill
- *  scenarios — its rendering must be byte-for-byte the same registered or not. */
+/** A stored v1 tree rendered beside the v2 surface while v1 is being removed
+ *  (v2 replaces v1; the remaining v1 surface is deleted across waves 2–4). */
 const storedV1Tree: Tree = {
   formatVersion: "vendo-genui/v1",
   root: "root",
@@ -1107,26 +1074,6 @@ const storedV1Tree: Tree = {
     { id: "amount", component: "Text", props: { text: { $path: "/invoice/total" } } },
   ],
 };
-
-function FormatDrillScenario({ registered }: { registered: boolean }) {
-  const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
-  // Registration is a real-browser side effect on the module-level registry;
-  // each page load is a fresh module, so `registered` fully controls the seam.
-  if (registered) registerTreeRenderer(DRILL_FORMAT, DrillRenderer);
-  return (
-    <div className="format-drill-grid">
-      <section aria-label="Drill payload">
-        <h2>Drill format payload</h2>
-        <PayloadView payload={drillPayload} components={components} onAction={noop} />
-      </section>
-      <section aria-label="Stored v0 tree">
-        <h2>Stored v0 record</h2>
-        <PayloadView payload={storedV1Tree as unknown as UIPayload} components={components} onAction={noop} />
-      </section>
-      <p>Host content after the drill surfaces survived.</p>
-    </div>
-  );
-}
 
 /**
  * WAVE 1 GATE (v2 spec §8, docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md):
@@ -1547,8 +1494,6 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
     case "/tree-v2": return { title: "vendo-genui/v2 — wire compile + v1 coexistence", content: <TreeV2Scenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
-    case "/format-drill-registered": return { title: "Format drill — registered", content: <FormatDrillScenario registered />, ownProvider: true };
-    case "/format-drill-unregistered": return { title: "Format drill — unregistered", content: <FormatDrillScenario registered={false} />, ownProvider: true };
     case "/slot": return { title: "Inline app slot", content: <VendoSlot id="hero" appId="app_1"><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
     case "/slot-empty": return { title: "Inline slot — empty CTA (Maple)", theme: mapleTheme, content: <><VendoSlot id="hero" /><VendoPalette /></> };
     case "/slot-empty-dark": return { title: "Inline slot — empty CTA (dark)", theme: darkTheme, content: <><VendoSlot id="hero" /><VendoPalette /></> };
