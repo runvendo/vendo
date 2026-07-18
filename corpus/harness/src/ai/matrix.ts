@@ -1,12 +1,13 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { overridesFileSchema, toolsFileSchema } from "@vendoai/actions";
 import {
   applyDraft,
   claudeHarness,
-  composeInstructions,
-  parseDraft,
+  runStagedExtraction,
+  type ExtractionDraft,
   type ExtractionHarness,
+  type StaticTool,
 } from "@vendoai/vendo/extract";
 import { actualToolIdentity } from "../layers/scored.js";
 import type { ScorecardCheck, ScorecardScore } from "../scorecard.js";
@@ -15,28 +16,19 @@ import { scoreAiExtraction, type AiScoredStaticTool } from "./score.js";
 
 /**
  * The AI extraction eval matrix (install-dx lane 3): repo × model → score.
- * Each cell runs the REAL extraction flow — composeInstructions over the
- * repo's static `.vendo/tools.json`, the ExtractionHarness (Claude Agent SDK,
- * model picked via VENDO_EXTRACTION_MODEL), parseDraft, then applyDraft's
- * deterministic guards into a clean scratch root — and scores the result with
- * the pure rubric in score.ts. On-demand only: never part of `pnpm test`.
+ * Each cell runs the REAL extraction flow — the staged pipeline
+ * (survey → draft-per-surface → cross-check → brief) over the repo's static
+ * `.vendo/tools.json` through the ExtractionHarness (Claude Agent SDK, model
+ * picked via VENDO_EXTRACTION_MODEL), then applyDraft's deterministic guards
+ * into a clean per-model scratch root — and scores the result with the pure
+ * rubric in score.ts. On-demand only: never part of `pnpm test`.
  */
 
 /** Model label used when the harness default is exercised (no override). */
 export const DEFAULT_MODEL_LABEL = "default";
 
-/** The static-tool shape composeInstructions/applyDraft consume. */
-interface StaticToolInput {
-  name: string;
-  description?: string;
-  risk?: "read" | "write" | "destructive";
-  disabled?: boolean;
-  method?: string;
-  path?: string;
-}
-
 export interface AiRepoStaticContext {
-  forPipeline: StaticToolInput[];
+  forPipeline: StaticTool[];
   forScoring: AiScoredStaticTool[];
   appName: string;
 }
@@ -45,6 +37,9 @@ export interface AiModelRunResult {
   model: string;
   /** A run that produced no scoreable draft records why here. */
   failure?: string;
+  /** Honest degradation notes from the staged pipeline (skipped surfaces,
+   * failed cross-check, …). */
+  notes: string[];
   score: ScorecardScore;
   dimensions: Record<string, ScorecardScore>;
   checks: ScorecardCheck[];
@@ -80,7 +75,7 @@ export async function readRepoStaticContext(appRoot: string): Promise<AiRepoStat
   const raw = await readFile(path.join(appRoot, ".vendo", "tools.json"), "utf8");
   const parsed = toolsFileSchema.parse(JSON.parse(raw));
 
-  const forPipeline: StaticToolInput[] = [];
+  const forPipeline: StaticTool[] = [];
   const forScoring: AiScoredStaticTool[] = [];
   for (const tool of parsed.tools) {
     const binding = tool.binding as { method?: string; path?: string };
@@ -117,8 +112,10 @@ export function modelDirName(model: string): string {
   return slug.length > 0 ? slug : "model";
 }
 
-export interface EvaluateAgentTextOptions {
-  text: string;
+export interface EvaluateDraftOptions {
+  /** null = the staged pipeline produced nothing usable. */
+  draft: ExtractionDraft | null;
+  draftError?: string;
   statics: AiRepoStaticContext;
   expected: RepoAiExpectations | null;
   /** Clean directory applyDraft treats as the app root; its `.vendo/`
@@ -126,40 +123,29 @@ export interface EvaluateAgentTextOptions {
   scratchRoot: string;
 }
 
-/** Deterministic tail of one matrix cell: parse, guard-apply, score. Also the
+/** Deterministic tail of one matrix cell: guard-apply + score. Also the
  * canned-draft test seam — no model involved. */
-export async function evaluateAgentText(options: EvaluateAgentTextOptions): Promise<{
-  score: ReturnType<typeof scoreAiExtraction>;
-  draftJson?: string;
-}> {
-  let draft: ReturnType<typeof parseDraft>;
-  try {
-    draft = parseDraft(options.text);
-  } catch (error) {
-    return {
-      score: scoreAiExtraction({
-        staticTools: options.statics.forScoring,
-        draft: null,
-        draftError: error instanceof Error ? error.message : String(error),
-        overrides: {},
-        expected: options.expected,
-      }),
-    };
+export async function evaluateDraft(options: EvaluateDraftOptions): Promise<ReturnType<typeof scoreAiExtraction>> {
+  if (options.draft === null) {
+    return scoreAiExtraction({
+      staticTools: options.statics.forScoring,
+      draft: null,
+      draftError: options.draftError ?? "staged extraction produced no draft",
+      overrides: {},
+      expected: options.expected,
+    });
   }
 
-  await applyDraft({ root: options.scratchRoot, draft, tools: options.statics.forPipeline });
+  await applyDraft({ root: options.scratchRoot, draft: options.draft, tools: options.statics.forPipeline });
   const overridesRaw = await readFile(path.join(options.scratchRoot, ".vendo", "overrides.json"), "utf8");
   const overrides = overridesFileSchema.parse(JSON.parse(overridesRaw)).tools;
 
-  return {
-    score: scoreAiExtraction({
-      staticTools: options.statics.forScoring,
-      draft,
-      overrides,
-      expected: options.expected,
-    }),
-    draftJson: JSON.stringify(draft, null, 2),
-  };
+  return scoreAiExtraction({
+    staticTools: options.statics.forScoring,
+    draft: options.draft,
+    overrides,
+    expected: options.expected,
+  });
 }
 
 export interface RunAiRepoMatrixOptions {
@@ -197,64 +183,60 @@ export async function runAiRepoMatrix(options: RunAiRepoMatrixOptions): Promise<
   const harness = options.harness ?? corpusExtractionHarness();
   const statics = await readRepoStaticContext(options.appRoot);
   const expected = await loadRepoAiExpectations(options.expectationsRoot, options.repoName);
-  const instructions = composeInstructions(statics.forPipeline, statics.appName);
   await mkdir(options.aiLogsDir, { recursive: true });
-  await writeFile(path.join(options.aiLogsDir, "instructions.txt"), `${instructions}\n`);
 
   const models: AiModelRunResult[] = [];
   for (const model of options.models) {
     const artifactsDir = path.join(options.aiLogsDir, modelDirName(model));
+    await rm(artifactsDir, { recursive: true, force: true });
     await mkdir(artifactsDir, { recursive: true });
     const env = model === DEFAULT_MODEL_LABEL
       ? { ...options.env }
       : { ...options.env, VENDO_EXTRACTION_MODEL: model };
 
-    let text: string;
+    let draft: ExtractionDraft | null = null;
+    let failure: string | undefined;
+    let notes: string[] = [];
     try {
-      options.onProgress?.(`${options.repoName} × ${model}: extraction agent reading the codebase…`);
-      text = await harness.run({
+      options.onProgress?.(`${options.repoName} × ${model}: staged extraction over the codebase…`);
+      const staged = await runStagedExtraction({
         root: options.appRoot,
         env,
-        instructions,
+        harness,
+        tools: statics.forPipeline,
+        appName: statics.appName,
         onProgress: (line) => options.onProgress?.(`  ${line}`),
       });
+      draft = staged.draft;
+      notes = staged.notes;
     } catch (error) {
-      const failure = `harness run failed: ${error instanceof Error ? error.message : String(error)}`;
+      failure = `staged extraction failed: ${error instanceof Error ? error.message : String(error)}`;
       await writeFile(path.join(artifactsDir, "error.txt"), `${failure}\n`);
-      const score = scoreAiExtraction({
-        staticTools: statics.forScoring,
-        draft: null,
-        draftError: failure,
-        overrides: {},
-        expected,
-      });
-      models.push({
-        model,
-        failure,
-        score: score.score,
-        dimensions: score.dimensions,
-        checks: score.checks,
-        hardFailure: true,
-        artifactsDir,
-      });
-      continue;
     }
 
-    await writeFile(path.join(artifactsDir, "agent-output.txt"), text);
-    const { score, draftJson } = await evaluateAgentText({
-      text,
+    // Preserve the per-stage artifacts the pipeline wrote into the repo's
+    // `.vendo/data/extract/` — the next model's run clears that directory.
+    const stageDir = path.join(options.appRoot, ".vendo", "data", "extract");
+    await cp(stageDir, path.join(artifactsDir, "stages"), { recursive: true, force: true }).catch(() => {});
+    if (notes.length > 0) {
+      await writeFile(path.join(artifactsDir, "notes.txt"), `${notes.join("\n")}\n`);
+    }
+
+    const score = await evaluateDraft({
+      draft,
+      ...(failure === undefined ? {} : { draftError: failure }),
       statics,
       expected,
       scratchRoot: artifactsDir,
     });
-    if (draftJson !== undefined) await writeFile(path.join(artifactsDir, "draft.json"), `${draftJson}\n`);
     await writeFile(
       path.join(artifactsDir, "checks.json"),
-      `${JSON.stringify({ score: score.score, dimensions: score.dimensions, checks: score.checks }, null, 2)}\n`,
+      `${JSON.stringify({ score: score.score, dimensions: score.dimensions, checks: score.checks, notes }, null, 2)}\n`,
     );
     models.push({
       model,
-      ...(score.hardFailure ? { failure: "agent output did not parse into a valid draft" } : {}),
+      ...(failure === undefined ? {} : { failure }),
+      notes,
       score: score.score,
       dimensions: score.dimensions,
       checks: score.checks,
@@ -315,6 +297,7 @@ export function renderAiScoreboardMarkdown(doc: AiScoreboardDocument): string {
       const notes = [
         ...(run.failure ? [run.failure] : []),
         ...(repo.labeled ? [] : ["no ai-expected.json labels"]),
+        ...(run.notes.length > 0 ? [`${run.notes.length} degradation note${run.notes.length === 1 ? "" : "s"}`] : []),
         ...run.checks.filter((check) => !check.pass).map((check) => check.id),
       ];
       lines.push([

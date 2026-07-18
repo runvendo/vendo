@@ -1024,6 +1024,7 @@ describe("runCli ai", () => {
           labeled: true,
           models: options.models.map((model) => ({
             model,
+            notes: [],
             score: { passed: 8, total: 8, value: 1 },
             dimensions: {},
             checks: [],

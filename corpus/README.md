@@ -98,11 +98,12 @@ per-repo logs as the `corpus-scorecard` artifact (30-day retention).
 drafts tool descriptions, risk grades, wakes, and the product brief) per repo
 and per model. For each selected repo it runs the normal checkout, bootstrap,
 local-package injection, and `vendo init` (producing the static
-`.vendo/tools.json`), then for each model runs the real extraction flow —
-composed instructions, the Claude Agent SDK harness, draft parsing, and the
-deterministic applyDraft guards into a clean per-model scratch root — and
-scores the result against `corpus/expectations/<repo>/ai-expected.json`
-(format documented in `corpus/expectations/README.md`).
+`.vendo/tools.json`), then for each model runs the real extraction flow — the
+staged pipeline (survey → draft-per-surface → cross-check → brief) through the
+Claude Agent SDK harness, then the deterministic applyDraft guards into a
+clean per-model scratch root — and scores the result against
+`corpus/expectations/<repo>/ai-expected.json` (format documented in
+`corpus/expectations/README.md`).
 
 - Repos default to every one with an `ai-expected.json`; pass names to filter.
 - Models: repeat `--model <id>` (or comma-separate) to build the matrix; each
@@ -124,9 +125,10 @@ Notes lists failing check ids (details live in each run's `checks.json`). A row
 whose draft never parsed (or whose harness errored) is floored at 0 with the
 same check set, so model columns stay comparable. Guard "false refusals" —
 model downgrades the guards blocked but the labels agree with — are surfaced
-in check details as a pipeline signal without failing the run. Per-cell
-artifacts (instructions, raw agent output, parsed draft, resulting
-overrides.json/brief.md, checks) land under
+in check details as a pipeline signal without failing the run. Staged-pipeline
+degradations (skipped surfaces, failed cross-check) surface as notes, not
+failures. Per-cell artifacts (per-stage outputs under `stages/`, degradation
+notes, resulting overrides.json/brief.md, checks) land under
 `corpus/.repos/.logs/<repo>/ai/<model>/`. Without `--strict` the sweep reports
 failures and exits 0; `--strict` returns nonzero when any run failed.
 

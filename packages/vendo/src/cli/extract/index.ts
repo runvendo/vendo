@@ -13,4 +13,11 @@ export {
   type ExtractionRunInput,
 } from "./harness.js";
 export { applyDraft, composeInstructions } from "./extraction.js";
+export {
+  runStagedExtraction,
+  staticToolSchema,
+  type StagedExtractionInput,
+  type StagedExtractionResult,
+  type StaticTool,
+} from "./stages.js";
 export { claudeHarness, type ClaudeHarnessOptions } from "./claude-harness.js";
