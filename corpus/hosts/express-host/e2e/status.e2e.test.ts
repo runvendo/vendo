@@ -19,6 +19,8 @@ describe("Relay Vendo status over Express", () => {
           automations: true,
           mcp: false,
           sandbox: false,
+          // The harness passes an explicit scripted model → "custom" venue.
+          model: "custom",
           // 04-actions §3 — no BYO connector and no VENDO_API_KEY → no broker.
           connections: false,
         },

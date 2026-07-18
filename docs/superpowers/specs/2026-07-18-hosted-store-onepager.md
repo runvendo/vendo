@@ -39,6 +39,17 @@ Blobs — `/api/v1/store/blobs/:namespace/:key`:
 Erase — `POST /api/v1/store/erase` (subject cascade, 02-store §5 semantics —
 the ephemeral-session TTL sweep still runs host-side and calls this).
 
+Sessions — `POST /api/v1/store/sessions/register|adopt|stale|claim`
+(amendment, 2026-07-18 fix round): the ephemeral registry doors (02-store §4).
+`register` == touch on every ephemeral request; `adopt` runs the
+anonymous→signed-in merge server-side (the engine's adoptEphemeralSubject);
+`stale` + `claim` are the list and mutual-exclusion legs of the HOST-driven
+TTL sweep, which finishes each claimed subject through the erase endpoint
+above. Registry writes are never gated on the storage quota.
+
+Bodies are capped server-side: 8 MB for record JSON and blob bytes, 64 KB for
+erase/session bodies; larger payloads answer the standard validation envelope.
+
 `ensureSchema()` is a client-side no-op; the service owns its migrations.
 Reserved-collection semantics (`vendo_audit` append-only, `vendo_state` id
 grammar, `vendo_threads` revisions) are enforced server-side, same rules as
@@ -75,18 +86,53 @@ grammar, `vendo_threads` revisions) are enforced server-side, same rules as
 
 ## Seam split
 
-- **OSS (this repo):** `hostedStore(config)` in `packages/store` — a
-  fetch-backed `StoreAdapter` (~one file plus tests), reusing the
-  `cloudSandbox` error-mapping table and the shared deployment-identity
-  headers. Umbrella composition via a `selectStore` seam cloned from
-  `selectConnections`: explicit store wins, else key → `hostedStore`, else
-  `createStore`. Conformance: the existing store adapter conformance suite
-  runs against it via an in-memory fake of the HTTP API.
+- **OSS (this repo):** `hostedStore(config)` in `packages/vendo` (amendment,
+  2026-07-18: placed beside the other Cloud adapters rather than
+  `packages/store` — it shares their deployment-identity headers and error
+  table, and `packages/store` sits below `packages/vendo` in the layering, so
+  the store package only exports its reserved-collection lists for the
+  capability mirror). A fetch-backed `StoreAdapter` plus the erase and
+  session doors, reusing the `cloudSandbox` error-mapping table. Umbrella
+  composition via a `selectStore` seam cloned from `selectConnections`:
+  explicit store wins, else key → `hostedStore`, else `createStore`; the
+  ephemeral-session operations travel with the selected store (SQL registry
+  locally, the session doors when hosted). Conformance: the existing store
+  adapter conformance suite runs against it via an in-memory fake of the
+  HTTP API.
 - **vendo-web (private):** the service — Postgres schema (org-scoped mirror of
   `packages/store/src/schema.ts`), the routes above beside the existing
   broker/key-introspection code, metering, migrations. Gated by valid key +
   `storage_gb` quota — no entitlement flag (2026-07-17 decision: no capability
   booleans anywhere).
+
+## Pre-GA follow-ups (2026-07-18 quality round — recorded, not yet built)
+
+Every record RPC currently pays a fixed stack: key-hash lookup + three
+deferred usage writes, a `hosted_instances` query, a credential decrypt, and
+a FRESH pg pool per call (Workers forbid cross-invocation pools). Fine for
+v1 traffic; before GA:
+
+1. **Pooling/caching** — route the hosted Postgres through Hyperdrive (or
+   pgbouncer) so per-call pools stop paying TCP+TLS setup, and add a
+   short-TTL in-memory key→instance cache (key hash → org, schema, decrypted
+   role URL) so steady-state RPCs skip the registry query and decrypt. TTL
+   seconds, never persisted — key rotation semantics stay "next call".
+2. **Retry posture** — idempotent reads (records get/list, blob get/list)
+   should retry once on transient network failure in `hostedStore`; writes
+   stay single-shot (put is upsert-idempotent but claim/atomic are not).
+3. **Shared golden wire fixtures** — the OSS in-memory fake and the console
+   handlers are verified against each other only by discipline today; a
+   shared fixture set (request/response pairs both sides must satisfy) would
+   pin the wire against drift.
+4. **Vendored-tarball naming** — future console vendor bumps should suffix
+   the tarball (e.g. `vendoai-store-0.3.0-r2.tgz`) instead of replacing the
+   file in place, so a lockfile integrity mismatch can never resolve stale.
+5. **isHostedStore duck-typing caveat** — the composition recognizes an
+   explicitly passed hosted store by its `sessions`/`erase` surface; a host
+   WRAPPING a hosted store (decorator that forwards records/blobs but not
+   the session doors) silently gets local session ops and the loud dbFor
+   failure. Document or export a branded check if wrapping becomes a
+   pattern.
 
 ## Decisions (Yousef, 2026-07-17)
 

@@ -1,8 +1,8 @@
 /** kill-list A5 — orgs are a Vendo Cloud capability, never an OSS wire route.
  *
  * The org lifecycle (create/membership/role ladder/app transfer) used to be
- * OSS machinery gated on the console's /api/v1/keys/validate `orgs`
- * capability (ENG-263). It moved to Vendo Cloud entirely (data-residency,
+ * OSS machinery gated on a console-side org check (ENG-263; that validate
+ * endpoint no longer exists). It moved to Vendo Cloud entirely (data-residency,
  * 2026-07-16); the OSS wire keeps only the posture seam: every `/orgs` route
  * — list, create, and deep member/app subpaths alike — answers
  * `cloud-required` unconditionally, whether or not `VENDO_API_KEY` is set.

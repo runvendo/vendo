@@ -6,8 +6,10 @@ import {
   appStore,
   approvalStore,
   auditStore,
+  claimEphemeralSubject,
   createStore,
   grantStore,
+  listStaleEphemeralSubjects,
   registerEphemeralSubject,
   runStore,
   stateStore,
@@ -161,6 +163,26 @@ for (const backend of backends()) {
       // Durable subjects are untouched by the sweep.
       expect(await appStore(made.store).get("app_persistent")).not.toBeNull();
       expect(await grantStore(made.store).get("grt_persistent")).not.toBeNull();
+    });
+
+    it("lists and claims stale sessions for a host-driven sweep (hosted-store seam)", async () => {
+      const base = Date.parse("2026-01-01T00:00:00Z");
+      const opts = { idleMs: 30_000, now: base + 60_000 };
+      await registerEphemeralSubject(made.store, "sess_stale", base);
+      await registerEphemeralSubject(made.store, "sess_live", base + 60_000);
+      const stale = await listStaleEphemeralSubjects(made.store, opts);
+      expect(stale).toContain("sess_stale");
+      expect(stale).not.toContain("sess_live");
+
+      // A re-touch after the stale listing defeats the claim: a live session
+      // is never erased out from under its visitor.
+      await registerEphemeralSubject(made.store, "sess_stale", base + 60_000);
+      expect(await claimEphemeralSubject(made.store, "sess_stale", opts)).toBe(false);
+
+      // Back to idle: the claim wins exactly once (mutual exclusion point).
+      await registerEphemeralSubject(made.store, "sess_stale", base);
+      expect(await claimEphemeralSubject(made.store, "sess_stale", opts)).toBe(true);
+      expect(await claimEphemeralSubject(made.store, "sess_stale", opts)).toBe(false);
     });
   });
 }
