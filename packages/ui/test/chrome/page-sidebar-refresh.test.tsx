@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { VendoPage } from "../../src/chrome/index.js";
+import { markSeen } from "../../src/chrome/discoverability.js";
 import { createWireServer } from "../wire-server.js";
 
 // ENG-222 — the page's thread sidebar never refreshed, so a conversation
@@ -15,6 +16,10 @@ describe("VendoPage thread sidebar refresh", () => {
   beforeEach(async () => {
     wire = await createWireServer();
     client = createVendoClient({ baseUrl: wire.url });
+    // This test asserts the RETURNING-user landing heading after "New
+    // conversation"; a first-ever fresh conversation would show the one-time
+    // greeting-as-tutorial instead (discoverability §6), so mark it seen.
+    markSeen("greeting");
   });
 
   afterEach(async () => {

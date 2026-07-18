@@ -1,7 +1,9 @@
 import { isToolUIPart } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useVendoDiscoverability, useVendoGreeting } from "../../context.js";
 import { useVendoThread } from "../../hooks/use-vendo-thread.js";
 import { ChromeRoot } from "../chrome-root.js";
+import { defaultVendoGreeting, hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "../discoverability.js";
 import { MorphToast, type MorphToastProps } from "../morph-toast.js";
 import { Composer, useComposer } from "./composer.js";
 import { MessageList } from "./message-list.js";
@@ -20,6 +22,13 @@ export interface VendoThreadProps {
    * the fresh `thr_` the server mints for a new conversation. Lets a host
    * surface (e.g. VendoPage's sidebar) pull the new conversation into its list. */
   onThreadId?: (threadId: string) => void;
+  /** The discoverability dial (ui-usage-dx §6), overriding the provider's:
+   * `"quiet"` disables the fire-once greeting-as-tutorial below. */
+  discoverability?: VendoDiscoverability;
+  /** Greeting-as-tutorial content (intro + prompt chips) overriding the
+   * provider's `greeting`. Distinct from `greeting` above (the returning-user
+   * landing headline) — this one renders once per user, ever. */
+  firstRunGreeting?: VendoGreeting;
 }
 
 /** 08-ui §4 — conversation chrome over the headless thread transport. */
@@ -29,8 +38,38 @@ export function VendoThread({
   suggestions = [],
   onVoice,
   onThreadId,
+  discoverability,
+  firstRunGreeting,
 }: VendoThreadProps) {
   const thread = useVendoThread(threadId);
+  // ui-usage-dx §6 — greeting-as-tutorial: the user's FIRST-ever conversation
+  // open (fresh thread only — an adopted thread with history is not a first
+  // open and does not burn the flag) renders the agent-voiced intro + starter
+  // chips locally. Presentation-only: nothing here touches the transport or
+  // the transcript; chips prefill the composer and never send.
+  const providerDial = useVendoDiscoverability();
+  const dial = discoverability ?? providerDial;
+  const contextGreeting = useVendoGreeting();
+  const tutorial = firstRunGreeting ?? contextGreeting ?? defaultVendoGreeting;
+  const [tutorialActive, setTutorialActive] = useState(false);
+  // Arming is REACTIVE, not mount-only: surfaces that don't remount their
+  // thread (VendoPage flips threadId props on one instance) become eligible
+  // later — e.g. when the page's dial gate opens on an explicit "New
+  // conversation". Burned on first showing (not on interaction) — a reload
+  // mid-look never replays it, per the once-per-user-ever rule.
+  const messageCount = thread.messages.length;
+  useEffect(() => {
+    if (tutorialActive || dial === "quiet" || threadId !== undefined) return;
+    if (messageCount > 0 || hasSeen("greeting")) return;
+    markSeen("greeting");
+    setTutorialActive(true);
+  }, [tutorialActive, dial, threadId, messageCount]);
+  // Once the landing is left (a turn exists, or the surface switches to a
+  // stored thread), the tutorial is done for good on this instance too — the
+  // burned flag keeps every later landing plain.
+  useEffect(() => {
+    if (tutorialActive && (messageCount > 0 || threadId !== undefined)) setTutorialActive(false);
+  }, [tutorialActive, messageCount, threadId]);
   // ENG-222 — surface the effective (possibly server-minted) thread id upward.
   const reportedThreadId = thread.threadId;
   useEffect(() => {
@@ -194,10 +233,34 @@ export function VendoThread({
       <ChromeRoot>
         <div className="fl-thread" role="region" aria-label="Vendo conversation">
           <div className="fl-landing">
-            <h1 className="fl-greet">{greeting}</h1>
+            {tutorialActive ? (
+              // The one-time tutorial replaces the headline (and the host's
+              // send-on-tap suggestion chips — two chip rows with different
+              // behaviors would read as one). Chips PREFILL, never send.
+              <div className="fl-greeting" role="group" aria-label="Getting started">
+                <p className="fl-greeting-intro">{tutorial.intro}</p>
+                <div className="fl-chips fl-greeting-chips">
+                  {tutorial.prompts.slice(0, 3).map((text, i) => (
+                    <button
+                      type="button"
+                      className="fl-chip"
+                      key={`${i}-${text}`}
+                      onClick={() => {
+                        setDraft(text);
+                        requestAnimationFrame(() => textareaRef.current?.focus());
+                      }}
+                    >
+                      {text}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <h1 className="fl-greet">{greeting}</h1>
+            )}
             {errorBanner}
             <div className="fl-landing-composer">{composer}</div>
-            {suggestions.length > 0 ? (
+            {!tutorialActive && suggestions.length > 0 ? (
               <div className="fl-chips">
                 {suggestions.map((text, i) => (
                   <button type="button" className="fl-chip" key={`${i}-${text}`} onClick={() => send(text)}>{text}</button>

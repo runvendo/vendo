@@ -806,6 +806,13 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-landing { display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 16px; flex: 1; padding: 30px; text-align: center; }
 .fl-greet { margin: 0; font-family: var(--vendo-heading-font); font-size: calc(var(--vendo-base-size) * 1.533); font-weight: 600; letter-spacing: -.022em; }
+/* Greeting-as-tutorial (ui-usage-dx §6): the one-time first message reads as
+   the agent speaking — left-aligned assistant typography with its prompt chips
+   beneath — inside the otherwise-centered landing. */
+.fl-greeting { display: flex; flex-direction: column; gap: 14px; align-self: stretch;
+  max-width: 560px; margin: 0 auto; text-align: left; }
+.fl-greeting-intro { margin: 0; line-height: 1.65; font-size: var(--vendo-text-body); letter-spacing: -.006em; }
+.fl-greeting .fl-chips { justify-content: flex-start; }
 .fl-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .fl-chip { border: 1px solid var(--vendo-border); background: var(--vendo-glass-strong);
   -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
@@ -1021,6 +1028,31 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 2147482999; }
 .fl-launcher[data-vendo-launcher="bottom-right"] { right: calc(20px + env(safe-area-inset-right, 0px)); }
 .fl-launcher[data-vendo-launcher="bottom-left"] { left: calc(20px + env(safe-area-inset-left, 0px)); }
+
+/* The whisper (ui-usage-dx §6): first eligible visit only — one gentle pulse
+   on the pill plus a small ~6s caption. The pulse is motion-gated (reduced
+   motion keeps the caption, drops the pulse); fire-once is enforced in JS. */
+@media (prefers-reduced-motion: no-preference) {
+  .fl-launcher[data-vendo-whisper] { animation: fl-whisper-pulse 1.8s ease-out .5s 1 both; }
+  .fl-whisper { animation: fl-whisper-in .4s ease-out both; }
+}
+@keyframes fl-whisper-pulse {
+  0% { box-shadow: var(--vendo-shadow), 0 0 0 0 color-mix(in srgb, var(--vendo-accent) 45%, transparent); }
+  70% { box-shadow: var(--vendo-shadow), 0 0 0 14px color-mix(in srgb, var(--vendo-accent) 0%, transparent); }
+  100% { box-shadow: var(--vendo-shadow), 0 0 0 0 transparent; }
+}
+@keyframes fl-whisper-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.fl-whisper { display: flex; flex-direction: column; gap: 3px; max-width: 250px; padding: 11px 14px;
+  border: 1px solid var(--vendo-border); border-radius: 14px; background: var(--vendo-glass-strong);
+  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  box-shadow: var(--vendo-shadow); font-size: 12.5px; line-height: 1.45; }
+.fl-whisper strong { font-weight: 600; font-size: 13px; color: var(--vendo-fg); }
+.fl-whisper span { color: var(--vendo-fg-muted); }
+/* Fixed variants sit just above the pill, matching its corner. */
+.fl-whisper[data-vendo-launcher="bottom-right"], .fl-whisper[data-vendo-launcher="bottom-left"] {
+  position: fixed; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); z-index: 2147482999; }
+.fl-whisper[data-vendo-launcher="bottom-right"] { right: calc(20px + env(safe-area-inset-right, 0px)); }
+.fl-whisper[data-vendo-launcher="bottom-left"] { left: calc(20px + env(safe-area-inset-left, 0px)); }
 
 /* ---------- page + tabs + slot ---------- */
 /* The Page surface is ingrained: the chat IS the page (no card-in-card). Tabs are
