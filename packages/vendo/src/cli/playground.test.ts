@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { runPlayground, startPlaygroundServer } from "./playground.js";
+import { browserOpenCommand, runPlayground, startPlaygroundServer } from "./playground.js";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -46,6 +46,20 @@ describe("startPlaygroundServer", () => {
     const server = await startPlaygroundServer({ port });
     cleanup.push(() => server.close());
     expect(new URL(server.url).port).toBe(String(port));
+  });
+});
+
+describe("browserOpenCommand", () => {
+  it("goes through cmd /c on Windows — start is a shell built-in, not an executable", () => {
+    expect(browserOpenCommand("win32", "http://127.0.0.1:4123")).toEqual({
+      command: "cmd",
+      args: ["/c", "start", "", "http://127.0.0.1:4123"],
+    });
+  });
+
+  it("uses open on macOS and xdg-open elsewhere", () => {
+    expect(browserOpenCommand("darwin", "u")).toEqual({ command: "open", args: ["u"] });
+    expect(browserOpenCommand("linux", "u")).toEqual({ command: "xdg-open", args: ["u"] });
   });
 });
 

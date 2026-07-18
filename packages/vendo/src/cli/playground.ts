@@ -16,8 +16,9 @@ export interface PlaygroundServer {
 }
 
 function pageHtml(): string {
-  // Content-keyed script URL: a rebuilt bundle can never be served stale out
-  // of the browser cache.
+  // Cache-busting is belt and braces: no-store headers do the real work, and
+  // the length-keyed ?v= keeps even a heuristically-cached HTML copy from
+  // pairing with a mismatched bundle after most rebuilds.
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -59,7 +60,12 @@ export async function startPlaygroundServer(options: { port?: number }): Promise
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(options.port ?? 0, "127.0.0.1", () => resolve());
+    server.listen(options.port ?? 0, "127.0.0.1", () => {
+      // Detach the bind-failure handler so a later runtime error is not
+      // swallowed by rejecting an already-settled promise.
+      server.removeListener("error", reject);
+      resolve();
+    });
   });
 
   const { port } = server.address() as AddressInfo;
@@ -84,9 +90,18 @@ export interface PlaygroundOptions {
   wait?: boolean;
 }
 
+/** Windows' `start` is a cmd built-in, not an executable — execFile can only
+ *  reach it through `cmd /c start "" <url>` (the empty string is the window
+ *  title, so a URL is never mistaken for one). */
+export function browserOpenCommand(platform: NodeJS.Platform, url: string): { command: string; args: string[] } {
+  if (platform === "darwin") return { command: "open", args: [url] };
+  if (platform === "win32") return { command: "cmd", args: ["/c", "start", "", url] };
+  return { command: "xdg-open", args: [url] };
+}
+
 function defaultOpenBrowser(url: string): void {
-  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-  execFile(command, [url], () => undefined);
+  const { command, args } = browserOpenCommand(process.platform, url);
+  execFile(command, args, () => undefined);
 }
 
 export async function runPlayground(options: PlaygroundOptions = {}): Promise<number> {

@@ -42,6 +42,7 @@ function useAutoSend(scenario: PlaygroundScenario): void {
     const prompt = scenario.autoSend;
     if (!prompt) return;
     let tries = 0;
+    let submitTimer: ReturnType<typeof setTimeout> | undefined;
     const timer = setInterval(() => {
       const textarea = document.querySelector<HTMLTextAreaElement>("form.fl-composer textarea");
       const form = textarea?.closest("form");
@@ -51,12 +52,15 @@ function useAutoSend(scenario: PlaygroundScenario): void {
         setter?.call(textarea, prompt);
         textarea.dispatchEvent(new Event("input", { bubbles: true }));
         // Let React commit the draft before the submit reads it.
-        setTimeout(() => form.requestSubmit(), 120);
+        submitTimer = setTimeout(() => form.requestSubmit(), 120);
       } else if ((tries += 1) > 50) {
         clearInterval(timer);
       }
     }, 100);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(submitTimer);
+    };
   }, [scenario]);
 }
 
