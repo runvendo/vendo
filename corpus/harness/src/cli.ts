@@ -77,8 +77,10 @@ import {
 import { discoverAiConfiguredRepoNames as defaultDiscoverAiConfiguredRepoNames } from "./ai/expectations.js";
 import {
   DEFAULT_MODEL_LABEL,
+  agentSdkDir,
   buildAiScoreboard,
   corpusExtractionHarness,
+  ensureAgentSdk as defaultEnsureAgentSdk,
   renderAiScoreboardMarkdown,
   runAiRepoMatrix as defaultRunAiRepoMatrix,
   writeAiScoreboardArtifacts,
@@ -135,7 +137,8 @@ export interface CorpusCliDependencies {
   writeGalleryHtml?: (options: WriteGalleryHtmlOptions) => Promise<string>;
   commandRunner?: StructuralCommandRunner;
   discoverAiConfiguredRepoNames?: (expectationsRoot: string) => Promise<string[]>;
-  createExtractionHarness?: () => ExtractionHarness;
+  ensureAgentSdk?: (sdkDir: string) => Promise<void>;
+  createExtractionHarness?: (sdkDir: string) => ExtractionHarness;
   runAiRepoMatrix?: (options: RunAiRepoMatrixOptions) => Promise<AiRepoResult>;
 }
 
@@ -163,7 +166,8 @@ interface ResolvedDeps {
   writeGalleryHtml: (options: WriteGalleryHtmlOptions) => Promise<string>;
   commandRunner: StructuralCommandRunner;
   discoverAiConfiguredRepoNames: (expectationsRoot: string) => Promise<string[]>;
-  createExtractionHarness: () => ExtractionHarness;
+  ensureAgentSdk: (sdkDir: string) => Promise<void>;
+  createExtractionHarness: (sdkDir: string) => ExtractionHarness;
   runAiRepoMatrix: (options: RunAiRepoMatrixOptions) => Promise<AiRepoResult>;
 }
 
@@ -213,6 +217,7 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
     writeGalleryHtml: deps.writeGalleryHtml ?? defaultWriteGalleryHtml,
     commandRunner: deps.commandRunner ?? runShellCommand,
     discoverAiConfiguredRepoNames: deps.discoverAiConfiguredRepoNames ?? defaultDiscoverAiConfiguredRepoNames,
+    ensureAgentSdk: deps.ensureAgentSdk ?? defaultEnsureAgentSdk,
     createExtractionHarness: deps.createExtractionHarness ?? corpusExtractionHarness,
     runAiRepoMatrix: deps.runAiRepoMatrix ?? defaultRunAiRepoMatrix,
   };
@@ -870,13 +875,15 @@ async function runAiCommand(options: AiCommandOptions, deps: ResolvedDeps): Prom
   const repos = selectedRepos(manifest, repoNames);
 
   // Fail fast, never hang: the matrix runs a real model and is useless
-  // without a credential.
-  const harness = deps.createExtractionHarness();
+  // without the SDK and a credential. The SDK lives in a gitignored cache,
+  // never in the workspace (the dev-riders host-only resolution doctrine).
+  const sdkDir = agentSdkDir(context.reposDir);
+  await deps.ensureAgentSdk(sdkDir);
+  const harness = deps.createExtractionHarness(sdkDir);
   const credential = await harness.availability({ root: deps.workspaceRoot ?? defaultWorkspaceRoot, env });
   if (credential === null) {
     deps.stderr("The AI extraction matrix needs a real model credential and cannot run without one.");
     deps.stderr("Set ANTHROPIC_API_KEY in the environment or log into Claude Code (`claude login`), then re-run `pnpm corpus ai`.");
-    deps.stderr("(The Claude Agent SDK ships as a corpus-harness devDependency; run `pnpm install` if it is missing.)");
     return 1;
   }
   const progress = options.json ? deps.stderr : deps.stdout;

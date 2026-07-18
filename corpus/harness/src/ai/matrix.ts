@@ -1,5 +1,8 @@
+import { spawn } from "node:child_process";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { overridesFileSchema, toolsFileSchema } from "@vendoai/actions";
 import {
   applyDraft,
@@ -155,7 +158,7 @@ export interface RunAiRepoMatrixOptions {
   models: readonly string[];
   aiLogsDir: string;
   env: Record<string, string | undefined>;
-  harness?: ExtractionHarness;
+  harness: ExtractionHarness;
   onProgress?: (line: string) => void;
 }
 
@@ -164,23 +167,87 @@ interface LoadedSdk {
   query(params: { prompt: string; options: Record<string, unknown> }): AsyncIterable<Record<string, unknown>>;
 }
 
-/** Resolve the SDK from the corpus harness's own devDependencies — corpus
- * host apps never carry it, and the workspace packages must not either. */
-async function loadSdkFromCorpusHarness(): Promise<LoadedSdk | null> {
+/**
+ * The Claude Agent SDK deliberately exists NOWHERE in the workspace: the
+ * dev-riders doctrine (and its missing-install test) is that the SDK resolves
+ * from a HOST app only — and pnpm's hidden hoist plus NODE_PATH would make a
+ * workspace copy resolvable from anywhere under test runners. The matrix
+ * therefore provisions its own pinned copy into a gitignored cache under
+ * `corpus/.repos/` on first use.
+ */
+export const AGENT_SDK_PACKAGE = "@anthropic-ai/claude-agent-sdk";
+/** Pinned ≥7 days behind latest so machines with a release-age
+ * (`before`/minimumReleaseAge) supply-chain policy can install it. */
+export const AGENT_SDK_VERSION = "0.3.207";
+
+export function agentSdkDir(reposDir: string): string {
+  return path.join(reposDir, ".agent-sdk");
+}
+
+function resolveAgentSdk(sdkDir: string): string | null {
   try {
-    return await import("@anthropic-ai/claude-agent-sdk") as unknown as LoadedSdk;
+    return createRequire(path.join(sdkDir, "package.json")).resolve(AGENT_SDK_PACKAGE);
   } catch {
     return null;
   }
 }
 
-export function corpusExtractionHarness(): ExtractionHarness {
-  return claudeHarness({ loadSdk: loadSdkFromCorpusHarness });
+function npmInstallAgentSdk(sdkDir: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("npm", ["install", "--no-audit", "--no-fund", `${AGENT_SDK_PACKAGE}@${AGENT_SDK_VERSION}`], {
+      cwd: sdkDir,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`npm install exited ${code ?? "by signal"}${stderr ? `:\n${stderr.trim()}` : ""}`));
+    });
+  });
+}
+
+/** Provision the pinned SDK into the cache (network on first run only).
+ * Throws with a clear message when it cannot; never hangs waiting for input. */
+export async function ensureAgentSdk(
+  sdkDir: string,
+  install: (dir: string) => Promise<void> = npmInstallAgentSdk,
+): Promise<void> {
+  if (resolveAgentSdk(sdkDir) !== null) return;
+  await mkdir(sdkDir, { recursive: true });
+  await writeFile(
+    path.join(sdkDir, "package.json"),
+    `${JSON.stringify({ name: "vendo-corpus-agent-sdk-cache", private: true }, null, 2)}\n`,
+  );
+  try {
+    await install(sdkDir);
+  } catch (error) {
+    throw new Error(
+      `Could not provision ${AGENT_SDK_PACKAGE}@${AGENT_SDK_VERSION} into ${sdkDir} `
+        + `(${error instanceof Error ? error.message : String(error)}). `
+        + "The AI matrix installs the SDK there on first run and needs npm + network access.",
+    );
+  }
+  if (resolveAgentSdk(sdkDir) === null) {
+    throw new Error(`${AGENT_SDK_PACKAGE} still does not resolve from ${sdkDir} after install.`);
+  }
+}
+
+async function loadSdkFromCache(sdkDir: string): Promise<LoadedSdk | null> {
+  const resolved = resolveAgentSdk(sdkDir);
+  if (resolved === null) return null;
+  return await import(pathToFileURL(resolved).href) as unknown as LoadedSdk;
+}
+
+export function corpusExtractionHarness(sdkDir: string): ExtractionHarness {
+  return claudeHarness({ loadSdk: () => loadSdkFromCache(sdkDir) });
 }
 
 /** Run every requested model over one prepared (init-complete) repo. */
 export async function runAiRepoMatrix(options: RunAiRepoMatrixOptions): Promise<AiRepoResult> {
-  const harness = options.harness ?? corpusExtractionHarness();
+  const harness = options.harness;
   const statics = await readRepoStaticContext(options.appRoot);
   const expected = await loadRepoAiExpectations(options.expectationsRoot, options.repoName);
   await mkdir(options.aiLogsDir, { recursive: true });

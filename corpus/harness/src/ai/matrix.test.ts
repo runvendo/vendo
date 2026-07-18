@@ -6,6 +6,7 @@ import type { ExtractionHarness } from "@vendoai/vendo/extract";
 import {
   DEFAULT_MODEL_LABEL,
   buildAiScoreboard,
+  ensureAgentSdk,
   evaluateDraft,
   modelDirName,
   readRepoStaticContext,
@@ -266,6 +267,46 @@ describe("runAiRepoMatrix", () => {
     expect(result.models[0]?.score.value).toBe(1);
     expect(result.models[1]?.score.value).toBeLessThan(1);
     expect(result.models[1]?.checks.find((check) => check.id === "ai.risk.accuracy")?.pass).toBe(false);
+  });
+});
+
+describe("ensureAgentSdk", () => {
+  async function fakeInstall(dir: string): Promise<void> {
+    const packageDir = path.join(dir, "node_modules", "@anthropic-ai", "claude-agent-sdk");
+    await mkdir(packageDir, { recursive: true });
+    await writeFile(path.join(packageDir, "package.json"), JSON.stringify({
+      name: "@anthropic-ai/claude-agent-sdk",
+      version: "0.0.0-fake",
+      main: "index.cjs",
+    }));
+    await writeFile(path.join(packageDir, "index.cjs"), "module.exports = { query() {} };\n");
+  }
+
+  it("installs the pinned SDK into the cache once and is a no-op after", async () => {
+    const sdkDir = path.join(await makeTempDir("vendo-corpus-ai-sdk-"), ".agent-sdk");
+    const installs: string[] = [];
+
+    await ensureAgentSdk(sdkDir, async (dir) => {
+      installs.push(dir);
+      await fakeInstall(dir);
+    });
+    await ensureAgentSdk(sdkDir, async (dir) => {
+      installs.push(dir);
+    });
+
+    expect(installs).toEqual([sdkDir]);
+  });
+
+  it("fails with a clear provisioning message instead of hanging", async () => {
+    const sdkDir = path.join(await makeTempDir("vendo-corpus-ai-sdk-"), ".agent-sdk");
+    await expect(ensureAgentSdk(sdkDir, async () => {
+      throw new Error("npm install exited 1: network down");
+    })).rejects.toThrow(/Could not provision @anthropic-ai\/claude-agent-sdk.*network down/s);
+  });
+
+  it("fails loudly when the install completes but the SDK still does not resolve", async () => {
+    const sdkDir = path.join(await makeTempDir("vendo-corpus-ai-sdk-"), ".agent-sdk");
+    await expect(ensureAgentSdk(sdkDir, async () => {})).rejects.toThrow(/still does not resolve/);
   });
 });
 

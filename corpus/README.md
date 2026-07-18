@@ -112,7 +112,10 @@ clean per-model scratch root — and scores the result against
   `VENDO_EXTRACTION_MODEL` already present in the environment).
 - Credential: the run needs `ANTHROPIC_API_KEY` or a Claude Code login and
   fails fast with a clear message when neither is available. The Claude Agent
-  SDK is a corpus-harness devDependency; the corpus host apps never carry it.
+  SDK deliberately exists nowhere in the workspace (host-only resolution
+  doctrine, enforced by the dev-riders missing-install test); the matrix
+  provisions a pinned copy into the gitignored `corpus/.repos/.agent-sdk/`
+  cache on first run (needs npm + network once).
 - CI posture: like the other live layers, the AI matrix is never part of
   `pnpm test` — unit tests cover the scoring rubric with canned drafts, and
   the matrix itself runs on demand only.

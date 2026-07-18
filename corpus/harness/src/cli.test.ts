@@ -961,6 +961,7 @@ describe("runCli ai", () => {
     return {
       now: () => new Date("2026-07-18T12:00:00.000Z"),
       stderr: () => {},
+      ensureAgentSdk: async () => {},
       ...overrides,
     };
   }
