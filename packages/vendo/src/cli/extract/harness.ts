@@ -79,13 +79,13 @@ function* balancedObjectSpans(text: string): Generator<string> {
   }
 }
 
-/** Extract the draft JSON from an agent's final text: prefer a fenced block,
- *  else try each balanced object span until one validates. Throws on
- *  unparseable output. */
-export function parseDraft(text: string): ExtractionDraft {
+/** Extract a stage artifact from an agent's final text: prefer a fenced
+ *  block, else try each balanced object span until one validates against the
+ *  stage's schema. Throws on unparseable output. */
+export function parseArtifact<Schema extends z.ZodTypeAny>(text: string, schema: Schema): z.infer<Schema> {
   const fenced = text.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
   if (fenced?.[1] !== undefined) {
-    return extractionDraftSchema.parse(JSON.parse(fenced[1]));
+    return schema.parse(JSON.parse(fenced[1]));
   }
   let firstError: unknown = new Error("no JSON object found in the agent's output");
   let attempts = 0;
@@ -93,10 +93,14 @@ export function parseDraft(text: string): ExtractionDraft {
     if (attempts >= 20) break;
     attempts += 1;
     try {
-      return extractionDraftSchema.parse(JSON.parse(span));
+      return schema.parse(JSON.parse(span));
     } catch (error) {
       if (attempts === 1) firstError = error;
     }
   }
   throw firstError;
+}
+
+export function parseDraft(text: string): ExtractionDraft {
+  return parseArtifact(text, extractionDraftSchema);
 }

@@ -177,10 +177,13 @@ to keep improving the AI quality after. Do not overbuild v1.
   the v2 <10s bar applies to runtime generation, not this.
 - **Privacy:** on session/BYO paths, source goes to the dev's own provider
   account. One honest line up front plus a secrets filter (PostHog posture).
-- **Pipeline:** v1 = draft + verify, kept inspectable. The staged shape
-  (survey, draft per surface, cross-check, verify, brief+seed) is the
-  documented improvement path, scored per stage on the corpus harness, not a
-  v1 requirement.
+- **Pipeline:** now staged (shipped after the v1 draft+verify cut): survey
+  maps the repo and groups tools into surfaces, one focused pass drafts each
+  surface, a cross-check amends the combined draft, and the brief is drafted
+  from what the stages learned. Every stage emits an inspectable artifact
+  (`.vendo/data/extract/<stage>.json`), failures degrade per stage, and the
+  combined output still feeds the same deterministic guards. Per-stage
+  scoring on the corpus harness remains the improvement path.
 - **Sync/drift: deferred entirely.** v1 story for changed code is "run
   vendo init again" (idempotent). Drift triage, fail-closed rules, and CI
   strictness get designed when the base works.

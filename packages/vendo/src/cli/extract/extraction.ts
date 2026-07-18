@@ -3,14 +3,19 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { z } from "zod";
 import { claudeHarness } from "./claude-harness.js";
-import { parseDraft, type DraftTool, type ExtractionHarness } from "./harness.js";
+import { parseDraft, type ExtractionHarness } from "./harness.js";
+import { BRIEF_TEMPLATE, runStagedExtraction, staticToolSchema, type StaticTool } from "./stages.js";
 import { readOptional, writeText, type Output } from "../shared.js";
 
+export { composeInstructions } from "./stages.js";
+
 /**
- * The AI extraction pass (install-dx v1: draft + deterministic verification).
- * The agent reads the codebase and drafts judgment on top of the static
- * facts: task-oriented tool descriptions, risk corrections, critical marks,
- * waking unclassifiable tools, and the product brief.
+ * The AI extraction pass (install-dx: staged pipeline + deterministic
+ * verification — see stages.ts for the survey / draft-per-surface /
+ * cross-check / brief orchestration). The agent reads the codebase and
+ * drafts judgment on top of the static facts: task-oriented tool
+ * descriptions, risk corrections, critical marks, waking unclassifiable
+ * tools, and the product brief.
  *
  * Output rides the channels that SURVIVE `vendo sync` regeneration:
  * `.vendo/overrides.json` (per-tool description/risk/critical/disabled — the
@@ -25,20 +30,7 @@ import { readOptional, writeText, type Output } from "../shared.js";
  *   a hand-written brief is never replaced (only the init template is).
  */
 
-const BRIEF_TEMPLATE =
-  "Describe this product, its users, and the jobs the agent should help them complete.";
-
 const RISK_ORDER = { read: 0, write: 1, destructive: 2 } as const;
-
-const staticToolSchema = z.object({
-  name: z.string(),
-  description: z.string().optional(),
-  risk: z.enum(["read", "write", "destructive"]).optional(),
-  disabled: z.boolean().optional(),
-  method: z.string().optional(),
-  path: z.string().optional(),
-});
-type StaticTool = z.infer<typeof staticToolSchema>;
 
 const overridesSchema = z.object({
   format: z.literal("vendo/overrides@1"),
@@ -50,33 +42,6 @@ const overridesSchema = z.object({
   }).passthrough()),
 }).passthrough();
 type Overrides = z.infer<typeof overridesSchema>;
-
-export function composeInstructions(tools: StaticTool[], appName: string): string {
-  return [
-    "You are Vendo's extraction agent. Read this codebase (Read/Glob/Grep only) and return",
-    "judgment on the API tools a static extractor already found, plus a product brief.",
-    "",
-    `Product/package name: ${appName}`,
-    "Statically extracted tools (name, method+path when known, current risk, disabled state):",
-    JSON.stringify(tools.map((tool) => ({
-      name: tool.name,
-      ...(tool.method === undefined ? {} : { method: tool.method }),
-      ...(tool.path === undefined ? {} : { path: tool.path }),
-      risk: tool.risk,
-      ...(tool.disabled === true ? { disabled: true } : {}),
-      description: tool.description,
-    })), null, 2),
-    "",
-    "Rules:",
-    "- Reply with ONLY one fenced json block matching:",
-    '  { "brief": string, "tools": [{ "name", "description", "risk"?, "critical"?, "disabled"?, "reasoning"? }], "missedSurfaces"?: string[] }',
-    "- brief: one paragraph — what the product does, who uses it, the jobs the agent should help with. Written from the actual code, no marketing fluff.",
-    "- tools: include ONLY names from the list above. Rewrite each description so an agent choosing tools understands what it actually does (read the handler source). <= 200 chars each.",
-    "- risk: you may RAISE risk (read->write->destructive) when the handler is more dangerous than labeled; never lower it. Mark irreversible operations critical: true.",
-    "- A tool listed as disabled was statically unclassifiable. If you can read its handler and grade it, set disabled: false WITH a risk and one-line reasoning. Leave it out otherwise.",
-    "- missedSurfaces: API surfaces you found that the list is missing (path + one line). Do not invent tools for them.",
-  ].join("\n");
-}
 
 interface AppliedSummary {
   described: number;
@@ -239,27 +204,29 @@ export async function runAiExtraction(options: AiExtractionOptions): Promise<{ r
 
   output.log(`\nReading your product (${chosen.credential})…`);
   try {
-    const text = await chosen.harness.run({
+    const staged = await runStagedExtraction({
       root,
       env,
-      instructions: composeInstructions(tools, appName),
+      harness: chosen.harness,
+      tools,
+      appName,
       onProgress: (line) => output.log(`  ${line}`),
     });
-    const draft = parseDraft(text);
-    const applied = await applyDraft({ root, draft, tools, ...(options.force === undefined ? {} : { force: options.force }) });
+    const applied = await applyDraft({ root, draft: staged.draft, tools, ...(options.force === undefined ? {} : { force: options.force }) });
     const parts = [
       `${applied.described} descriptions`,
       ...(applied.riskRaised > 0 ? [`${applied.riskRaised} risk raises`] : []),
       ...(applied.critical > 0 ? [`${applied.critical} critical marks`] : []),
       ...(applied.woken > 0 ? [`${applied.woken} tools woken`] : []),
-      ...(applied.briefWritten ? ["brief drafted"] : []),
+      ...(applied.briefWritten && staged.briefFromStage ? ["brief drafted"] : []),
     ];
-    output.log(`AI polish applied: ${parts.join(" · ")} → .vendo/overrides.json, .vendo/brief.md`);
+    output.log(`AI polish applied: ${parts.join(" · ")} → .vendo/overrides.json, .vendo/brief.md (stage artifacts: .vendo/data/extract/)`);
+    for (const note of staged.notes) output.error(`  ${note}`);
     for (const refused of applied.refused) output.error(`  refused: ${refused}`);
     for (const missed of applied.missedSurfaces) output.log(`  missed surface (not extracted yet): ${missed}`);
     return { ran: true };
   } catch (error) {
-    output.error(`AI polish did not complete (${error instanceof Error ? error.message : "unknown error"}); extractor defaults stand. Re-run \`vendo init\` to retry.`);
+    output.error(`AI polish did not complete (${error instanceof Error ? error.message : "unknown error"}); extractor defaults stand. Re-run \`vendo init\` to retry — stage artifacts in .vendo/data/extract/ show how far it got.`);
     return { ran: false };
   }
 }
