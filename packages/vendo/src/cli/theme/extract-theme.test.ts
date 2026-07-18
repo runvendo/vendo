@@ -124,6 +124,35 @@ describe("extractTheme allowlist fast-path", () => {
     expect(result.usedModel).toBe(false);
   });
 
+  it("derives accentText without a model call when every other core token is exact", async () => {
+    const root = await fixture({
+      "package.json": "{}\n",
+      "app/layout.tsx": 'import "./globals.css";\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n',
+      // Everything brand-defining except --primary-foreground: accentText is
+      // a derivation, never a reason to spend a model call.
+      "app/globals.css": `
+        :root {
+          --background: #ffffff;
+          --foreground: #111827;
+          --card: #f9fafb;
+          --primary: #1d4ed8;
+          --muted-foreground: #6b7280;
+          --border: #e5e7eb;
+          --destructive: #b91c1c;
+          --radius: 8px;
+          --font-sans: Inter, sans-serif;
+        }
+      `,
+    });
+    const resolveModel = vi.fn(async () => themeModel({ slots: {} }));
+
+    const result = await extractTheme(root, { resolveModel });
+
+    expect(resolveModel).not.toHaveBeenCalled();
+    expect(result.slots.accentText).toBe("#ffffff");
+    expect(result.matched["accentText"]).toBe("(contrast) accent");
+  });
+
   it("never claims a non-conventional token: unknown names go to defaults, reported", async () => {
     const root = await fixture({
       "package.json": "{}\n",

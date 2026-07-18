@@ -1040,12 +1040,18 @@ export async function runInit(options: InitOptions): Promise<number> {
       if (summary.uncertain.length > 0 && options.yes !== true) {
         const overrides = await (options.themeReview ?? defaultThemeReview)(summary);
         for (const [slot, raw] of Object.entries(overrides)) {
+          if (!Object.hasOwn(summary.slots, slot)) {
+            output.error(`ignored unknown theme slot ${JSON.stringify(slot)}`);
+            continue;
+          }
           const value = validateSlotValue(slot as keyof ThemeSlotValues, raw);
           if (value === null) {
             output.error(`ignored invalid theme ${slot} value ${JSON.stringify(raw)}`);
           } else {
             (summary.slots as unknown as Record<string, string>)[slot] = value;
             summary.matched[slot] = "(you)";
+            // The slot no longer defaulted — the human just set it.
+            summary.defaulted = summary.defaulted.filter((name) => name !== slot);
           }
         }
         // A replaced accent invalidates a contrast-derived accentText —

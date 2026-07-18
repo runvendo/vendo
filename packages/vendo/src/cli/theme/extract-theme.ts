@@ -290,10 +290,11 @@ function readExact(vars: CssVarDecl[]): ExactReads {
 
 /** Brand-defining slots: any of these missing after the exact pass means the
  *  fast path was insufficient and the model is consulted. The remaining slots
- *  (headingFamily/baseSize/density/motion) have safe brand-neutral defaults
- *  and alone never trigger a model call. */
+ *  never trigger a call on their own: accentText derives from the accent by
+ *  WCAG contrast, headingFamily inherits fontFamily, and baseSize/density/
+ *  motion have safe brand-neutral defaults. */
 const CORE_SLOTS: readonly SlotKey[] = [
-  "accent", "accentText", "background", "surface", "text", "mutedText",
+  "accent", "background", "surface", "text", "mutedText",
   "border", "danger", "radius", "fontFamily",
 ];
 

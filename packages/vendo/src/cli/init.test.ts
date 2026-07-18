@@ -701,12 +701,13 @@ describe("vendo init", () => {
       ":root { --color-ink: #111111; --color-evergreen-600: #196b46; }\n");
 
     const reviewed: string[] = [];
+    const sink = output();
     await runInit({
       targetDir: root,
       confirm: async () => true,
       interview: async () => ({}),
       offerRefine: async () => false,
-      output: output().output,
+      output: sink.output,
       themeModel: async () => new MockLanguageModelV3({
         doGenerate: async () => ({
           content: [{ type: "text", text: JSON.stringify({
@@ -723,19 +724,27 @@ describe("vendo init", () => {
       }) as LanguageModel,
       themeReview: async (summary) => {
         reviewed.push(...summary.uncertain.map((entry) => entry.slot));
-        return { accent: "#facc15", danger: "chartreuse-ish" };
+        return { accent: "#facc15", border: "#ecebe8", danger: "chartreuse-ish", sparkle: "#123456" };
       },
     });
 
     expect(reviewed).toEqual(["accent"]);
     const theme = JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"));
-    // The human answer wins; the invalid one is ignored, not written.
+    // The human answer wins; invalid values and unknown slots are ignored.
     expect(theme.colors.accent).toBe("#facc15");
+    expect(theme.colors.border).toBe("#ecebe8");
     expect(theme.colors.danger).toBe("#dc2626");
     expect(theme.colors.text).toBe("#111111");
+    expect(sink.errors.join("\n")).toContain('unknown theme slot "sparkle"');
     // The contrast-derived accentText follows the replaced accent: white on
     // the model's dark green would be wrong on the human's yellow.
     expect(theme.colors.accentText).toBe("#000000");
+    // A slot the human just set is no longer reported as defaulted; the
+    // still-missing ones are.
+    const evidence = sink.logs.find((line) => line.startsWith("No host evidence for"));
+    expect(evidence).toBeDefined();
+    expect(evidence).not.toContain("border");
+    expect(evidence).toContain("danger");
   });
 
   it("wraps a layout that returns bare children (no JSX slot) with VendoRoot", async () => {
