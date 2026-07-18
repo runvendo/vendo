@@ -27,6 +27,9 @@ this order:
 2. `VENDO_API_KEY` — a Vendo Cloud dev key. When init finds no key, it offers
    `vendo cloud login`: after the browser login it mints a metered dev-mode
    starter key and writes it to `.env.local` for you. You never paste a key.
+   Model calls go through the Vendo Cloud model gateway (Anthropic models,
+   served via the installed `@ai-sdk/anthropic`) and meter your dev-mode
+   runs allowance.
 3. Nothing available: chat fails honestly, with exact instructions in the
    server log.
 
