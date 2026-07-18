@@ -1,4 +1,4 @@
-import { VENDO_TREE_FORMAT, type AppDocument, type PermissionGrant, type VendoRecord } from "@vendoai/core";
+import { VENDO_TREE_FORMAT_V2, type AppDocument, type PermissionGrant, type VendoRecord } from "@vendoai/core";
 import type { VendoStore } from "@vendoai/store";
 
 export interface ToolImpact {
@@ -40,7 +40,7 @@ function collectActions(value: unknown, tools: Set<string>): void {
 
 function referencedTools(doc: AppDocument): Set<string> {
   const tools = new Set<string>();
-  if (doc.tree?.formatVersion === VENDO_TREE_FORMAT) {
+  if (doc.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
     const tree = doc.tree as {
       queries?: Array<{ tool?: unknown }>;
       nodes?: Array<{ props?: unknown }>;

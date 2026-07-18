@@ -356,7 +356,7 @@ async function demoHostJourney(store: VendoStore): Promise<void> {
     name: "Budget",
     ui: "tree" as const,
     tree: {
-      formatVersion: "vendo-genui/v1",
+      formatVersion: "vendo-genui/v2",
       root: "root",
       nodes: [{ id: "root", component: "Text", props: { value: "Track spend" } }],
     },

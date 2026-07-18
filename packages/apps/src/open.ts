@@ -1,16 +1,13 @@
 import {
-  VENDO_TREE_FORMAT,
   VENDO_TREE_FORMAT_V2,
   VendoError,
-  validateTree,
   validateTreeV2,
   type AppDocument,
   type Json,
   type RunContext,
   type StoreAdapter,
-  type Tree,
-  type TreeQuery,
   type TreeQueryV2,
+  type TreeV2,
   type UIPayload,
 } from "@vendoai/core";
 import type { AppCaller } from "./call.js";
@@ -93,23 +90,19 @@ const bytesToDataUri = (bytes: Uint8Array, contentType = "image/png"): string =>
   return `data:${contentType};base64,${globalThis.btoa(binary)}`;
 };
 
-type AnyTreeQuery = TreeQuery | TreeQueryV2;
-
-/** v1 queries carry an explicit JSON Pointer path; a v2 query's result lives
- *  at `"/" + name` by definition (v2 spec §2). */
-const queryPointer = (query: AnyTreeQuery): string =>
-  "path" in query && typeof query.path === "string" ? query.path : `/${(query as TreeQueryV2).name}`;
+/** A v2 query's result lives at `"/" + name` by definition (v2 spec §2). */
+const queryPointer = (query: TreeQueryV2): string => `/${query.name}`;
 
 interface QueryState {
   key: string;
-  query: AnyTreeQuery;
+  query: TreeQueryV2;
   settled: boolean;
   result?: Awaited<ReturnType<AppCaller["callQuery"]>>;
   error?: unknown;
 }
 
 export interface ProgressiveQueryResolver {
-  update(tree: Tree): void;
+  update(tree: TreeV2): void;
   complete(): Promise<Record<string, Json>>;
 }
 
@@ -146,7 +139,7 @@ export const createProgressiveQueryResolver = (
     if (notify) onData?.(structuredClone(data));
   };
 
-  const start = (query: NonNullable<Tree["queries"]>[number], index: number): void => {
+  const start = (query: TreeQueryV2, index: number): void => {
     const key = JSON.stringify(query);
     const state: QueryState = { key, query: structuredClone(query), settled: false };
     states[index] = state;
@@ -204,10 +197,9 @@ const stripForgedServerFields = <T extends object>(payload: T): T => {
 };
 
 /** 06-apps §8 — jail furnishing for forked pins rides inside the tagged tree
- *  payload (UIPayload is forward-compatible); shared by the v1 and v2 open
- *  branches. */
+ *  payload (UIPayload is forward-compatible). */
 const attachPinFurnishings = (
-  tree: Tree,
+  tree: TreeV2,
   app: AppDocument,
   pinBaselines: readonly PinBaseline[],
 ): void => {
@@ -222,7 +214,7 @@ const attachPinFurnishings = (
     }]];
   }));
   if (Object.keys(furnishings).length > 0) {
-    (tree as Tree & { furnishings: typeof furnishings }).furnishings = furnishings;
+    (tree as TreeV2 & { furnishings: typeof furnishings }).furnishings = furnishings;
   }
 };
 
@@ -264,14 +256,14 @@ export const createAppOpener = (
   if (app.tree.formatVersion === VENDO_TREE_FORMAT_V2) {
     const validation = validateTreeV2(app.tree);
     if (!validation.ok) throw new VendoError("validation", validation.error.message);
-    const tree = stripForgedServerFields(structuredClone(validation.tree)) as unknown as Tree;
+    const tree = stripForgedServerFields(structuredClone(validation.tree));
     const inClient = await inClientVenue?.(app);
     if (inClient !== undefined) {
-      (tree as Tree & { inClient: InClientVenueState }).inClient = inClient;
+      (tree as TreeV2 & { inClient: InClientVenueState }).inClient = inClient;
     }
     const pinDrift = detectPinDrift(app, pinBaselines);
     if (pinDrift.length > 0) {
-      (tree as Tree & { pinDrift: PinDrift[] }).pinDrift = pinDrift;
+      (tree as TreeV2 & { pinDrift: PinDrift[] }).pinDrift = pinDrift;
     }
     attachPinFurnishings(tree, app, pinBaselines);
     const queries = createProgressiveQueryResolver(machines, caller, app, ctx, undefined, authorization);
@@ -285,42 +277,11 @@ export const createAppOpener = (
       ? { kind: "tree", payload }
       : { kind: "tree", payload, components: structuredClone(app.components) };
   }
-  // 01-core §8 — an unregistered format tag is a contained failure: the payload passes
-  // through untouched (no query resolution) and the renderer shows the notice.
-  if (app.tree.formatVersion !== VENDO_TREE_FORMAT) {
-    const payload = stripForgedServerFields(structuredClone(app.tree));
-    return app.components === undefined
-      ? { kind: "tree", payload }
-      : { kind: "tree", payload, components: structuredClone(app.components) };
-  }
-  const validation = validateTree({ ...app.tree, components: app.components });
-  if (!validation.ok) throw new VendoError("validation", validation.error.message);
-  // Keep components INSIDE the wire payload: Tree.components is the wire-level
-  // field (01 §8, "lifted to the app document at rest") and the renderer compiles
-  // generated components from payload.components. The OpenSurface sibling stays
-  // for 06 §1 shape fidelity.
-  const tree: Tree = stripForgedServerFields(structuredClone(validation.tree));
-  // Attach the venue verdict ONLY from the runtime's own hash-pin verification.
-  const inClient = await inClientVenue?.(app);
-  if (inClient !== undefined) {
-    (tree as Tree & { inClient: InClientVenueState }).inClient = inClient;
-  }
-  // 06-apps §8 — "a host update to the component marks the pin drifted": the
-  // drift report rides every open() of a stale fork so the surface can say so
-  // loudly, not only sync output and the ship-diff. Server-computed only.
-  const pinDrift = detectPinDrift(app, pinBaselines);
-  if (pinDrift.length > 0) {
-    (tree as Tree & { pinDrift: PinDrift[] }).pinDrift = pinDrift;
-  }
-  attachPinFurnishings(tree, app, pinBaselines);
-  const queries = createProgressiveQueryResolver(machines, caller, app, ctx, undefined, authorization);
-  queries.update(tree);
-  tree.data = await queries.complete();
+  // 01-core §8 — an unregistered format tag is a contained failure: the payload
+  // passes through untouched (no query resolution) and the renderer shows the
+  // notice. v2 is the only registered tree format (v1 is discarded).
+  const payload = stripForgedServerFields(structuredClone(app.tree));
   return app.components === undefined
-    ? { kind: "tree", payload: tree as unknown as UIPayload }
-    : {
-      kind: "tree",
-      payload: tree as unknown as UIPayload,
-      components: structuredClone(app.components),
-    };
+    ? { kind: "tree", payload }
+    : { kind: "tree", payload, components: structuredClone(app.components) };
 };

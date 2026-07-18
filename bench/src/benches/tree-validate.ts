@@ -1,9 +1,9 @@
-import { validateTree } from "@vendoai/core";
+import { validateTreeV2 } from "@vendoai/core";
 import { measure, summarize } from "../stats.js";
 import { syntheticTree, TREE_SIZES } from "../trees.js";
 import type { Suite, SuiteResult } from "../types.js";
 
-/** @vendoai/core validateTree over synthetic trees at 10 / 100 / 1000 / 5000 nodes. */
+/** @vendoai/core validateTreeV2 over synthetic trees at 10 / 100 / 1000 / 5000 nodes. */
 export const treeValidateSuite: Suite = {
   name: "tree-validate",
   kind: "deterministic",
@@ -15,8 +15,8 @@ export const treeValidateSuite: Suite = {
         warmup: size >= 1000 ? 3 : 20,
         iterations: size >= 1000 ? 40 : 200,
         fn: () => {
-          const result = validateTree(tree);
-          if (!result.ok) throw new Error(`validateTree failed at ${size}: ${result.error.message}`);
+          const result = validateTreeV2(tree);
+          if (!result.ok) throw new Error(`validateTreeV2 failed at ${size}: ${result.error.message}`);
         },
       });
       cases.push(summarize(`nodes-${size}`, durations));

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   TREE_MAX_NODES,
   TREE_MAX_QUERIES,
-  VENDO_TREE_FORMAT,
   VENDO_TREE_FORMAT_V2,
   validateTreeV2,
   type TreeV2,
@@ -35,9 +34,9 @@ describe("validateTreeV2 compatibility", () => {
     for (const input of [null, undefined, 42, "x", true]) expectProvision(input);
   });
 
-  it("classifies wrong and absent formatVersion as version errors — v1 tag included", () => {
+  it("classifies wrong and absent formatVersion as version errors — the retired v1 tag included", () => {
     for (const input of [
-      { ...minimal(), formatVersion: VENDO_TREE_FORMAT },
+      { ...minimal(), formatVersion: "vendo-genui/v1" },
       { ...minimal(), formatVersion: "vendo-genui/v3" },
       { root: "n1", nodes: [{ id: "n1", component: "Text" }] },
     ]) {

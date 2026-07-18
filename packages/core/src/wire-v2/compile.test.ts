@@ -1081,3 +1081,24 @@ describe("compileWireV2 shape check (v2 spec §3)", () => {
     expect(codes(result)).toEqual(["shape-mismatch"]);
   });
 });
+
+describe("compileWireV2 shape check pointer misses", () => {
+  it("a non-index segment into an array and a pointer past a scalar report shaped messages", () => {
+    const shapes: WireCompileOptions = {
+      toolShapes: {
+        t: {
+          kind: "object",
+          fields: {
+            rows: { kind: "array", items: { kind: "object", fields: { n: { kind: "number" } } } },
+            total: { kind: "number" },
+          },
+        },
+      },
+    };
+    const wire = (binding: string): string => `<App><Query id="q" tool="t"/><Card v={${binding}}/></App>`;
+    const nonIndex = compileWireV2(wire("q.rows.month"), shapes);
+    expect(nonIndex.bindingErrors[0]?.message).toContain("indexes into an array");
+    const pastScalar = compileWireV2(wire("q.total.deep"), shapes);
+    expect(pastScalar.bindingErrors[0]?.message).toContain("goes past");
+  });
+});

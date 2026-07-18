@@ -142,9 +142,7 @@ export const hostCatalog = [{
       prompt = call.prompt.map((message) => typeof message.content === "string"
         ? message.content
         : message.content.map((part) => part.text ?? "").join("")).join("\n");
-      return JSON.stringify({
-        ops: [{ op: "fork-pin", slot: "net-worth-card", nodeId: "maple-net-worth", parentId: "root" }],
-      });
+      return '<Edit><ForkPin slot="net-worth-card" into="root"/></Edit>';
     });
     const dataDir = join(root, ".data");
     const store = createStore({ dataDir });
@@ -183,7 +181,7 @@ export const hostCatalog = [{
     expect(pinnedSource).toBe(componentSource);
     expect(edited.app.tree).toMatchObject({
       nodes: expect.arrayContaining([expect.objectContaining({
-        id: "maple-net-worth",
+        id: `${String(componentName).toLowerCase()}-1`,
         component: componentName,
         source: "generated",
       })]),
@@ -227,9 +225,7 @@ export const hostCatalog = [{
 
     const synced = await vendoSync({ root, out: join(root, ".vendo") });
     expect(synced.pins).toEqual({ captured: ["net-worth-card"], drifted: [] });
-    const model = scriptedModel(() => JSON.stringify({
-      ops: [{ op: "fork-pin", slot: "net-worth-card", nodeId: "maple-net-worth", parentId: "root" }],
-    }));
+    const model = scriptedModel(() => '<Edit><ForkPin slot="net-worth-card" into="root"/></Edit>');
     const store = createStore({ dataDir: join(root, ".data") });
     cleanups.push(async () => store.close());
     await store.ensureSchema();

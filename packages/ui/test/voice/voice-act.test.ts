@@ -48,7 +48,7 @@ function scriptedWire(turns: Array<(w: { write(c: UIMessageChunk): void }) => vo
   };
 }
 
-const VIEW_PAYLOAD = { formatVersion: "vendo-genui/v1", root: "r", nodes: [{ id: "r", component: "Text", props: { text: "Outstanding: $18,420" } }] };
+const VIEW_PAYLOAD = { formatVersion: "vendo-genui/v2", root: "r", nodes: [{ id: "r", component: "Text", props: { text: "Outstanding: $18,420" } }] };
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -92,7 +92,7 @@ describe("voice act bridge (ENG-319)", () => {
     ) as { viewsShown: number };
     expect(result.viewsShown).toBe(1);
     expect(views[0]?.appId).toBe("app_1");
-    expect(views[0]?.payload).toMatchObject({ formatVersion: "vendo-genui/v1" });
+    expect(views[0]?.payload).toMatchObject({ formatVersion: "vendo-genui/v2" });
   });
 
   it("parks an approval, waits for the consent bar to decide, then resumes", async () => {

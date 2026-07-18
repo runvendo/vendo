@@ -1,14 +1,15 @@
 import {
+  RESERVED_COMPONENT_NAMES,
+  TREE_MAX_COMPONENT_SOURCE_CHARS,
+  TREE_MAX_GENERATED_COMPONENTS,
+  TREE_MAX_TOTAL_COMPONENT_CHARS,
   applyReshape,
   isPathBinding,
   isStateBinding,
-  validateTree,
-  VENDO_TREE_FORMAT,
   VENDO_TREE_FORMAT_V2,
   type Json,
   type PathBinding,
   type ToolOutcome,
-  type Tree,
   type TreeNode,
   type UIPayload,
 } from "@vendoai/core";
@@ -33,7 +34,7 @@ import { ContainedNotice } from "./notice.js";
 import { PREWIRED_COMPONENTS, Skeleton } from "./primitives.js";
 
 export interface TreeViewProps {
-  tree: Tree;
+  tree: WalkTree;
   components: Record<string, ComponentType>;
   data?: Record<string, Json>;
   onAction(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
@@ -60,11 +61,84 @@ export function registerTreeRenderer(formatVersion: string, component: PayloadRe
   rendererRegistry.set(formatVersion, component);
 }
 
-function VendoTreeRenderer({ payload, ...props }: PayloadRendererProps) {
-  return <TreeView tree={payload as unknown as Tree} {...props} />;
+/**
+ * v2 spec §6 — the walk's input: the SHARED render mechanics' tree shape
+ * (nodes, path-keyed resolved queries, grafted components, payload extras).
+ * The v1 format surface around it is gone; renderer-v2 converts the
+ * canonical v2 tree into this shape (named queries → "/" + name pointers).
+ */
+export interface WalkTree {
+  root: string;
+  nodes: TreeNode[];
+  data?: Record<string, Json>;
+  queries?: Array<{ path: string; tool: string; input?: Record<string, Json> }>;
+  components?: Record<string, string>;
 }
 
-registerTreeRenderer(VENDO_TREE_FORMAT, VendoTreeRenderer);
+type WalkValidation =
+  | { ok: true; tree: WalkTree }
+  | { ok: false; error: { code: "provision"; message: string } };
+
+const walkFail = (message: string): WalkValidation => ({ ok: false, error: { code: "provision", message } });
+
+const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** The structural render-gate the v1 validator used to provide (per-render
+ *  hot path): ids unique and rooted, node shapes sane, generated components
+ *  present. Format-tag checks live one layer up (PayloadView dispatch +
+ *  validateTreeV2 in renderer-v2). */
+const validateWalkTree = (input: WalkTree): WalkValidation => {
+  const ids = new Set<string>();
+  if (!Array.isArray(input.nodes)) return walkFail("nodes must be an array");
+  for (const node of input.nodes) {
+    if (!isPlainRecord(node)) return walkFail("each node must be an object");
+    if (typeof node.id !== "string" || node.id.length === 0) return walkFail("each node must have a non-empty string id");
+    if (typeof node.component !== "string") return walkFail(`node "${node.id}" must have a string component`);
+    if (node.source !== undefined && !["prewired", "host", "generated"].includes(node.source as string)) {
+      return walkFail(`node "${node.id}" has an invalid source`);
+    }
+    if (node.children !== undefined
+      && (!Array.isArray(node.children) || !node.children.every((child) => typeof child === "string"))) {
+      return walkFail(`node "${node.id}" children must be an array of strings`);
+    }
+    if (node.props !== undefined && !isPlainRecord(node.props)) return walkFail(`node "${node.id}" props must be a plain object`);
+    if (ids.has(node.id)) return walkFail(`duplicate node id "${node.id}"`);
+    ids.add(node.id);
+  }
+  const components = input.components ?? {};
+  // The jail-compile bounds the v1 walk enforced per render survive here:
+  // reserved names can never be shadowed and the §8 component caps hold even
+  // for payloads that bypassed document validation (direct TreeView input).
+  const names = Object.keys(components);
+  if (names.length > TREE_MAX_GENERATED_COMPONENTS) {
+    return walkFail(`too many generated components (max ${TREE_MAX_GENERATED_COMPONENTS})`);
+  }
+  let totalChars = 0;
+  for (const name of names) {
+    if ((RESERVED_COMPONENT_NAMES as readonly string[]).includes(name)) {
+      return walkFail(`generated component "${name}" shadows a reserved primitive name`);
+    }
+    const source = components[name];
+    if (typeof source !== "string") return walkFail(`generated component "${name}" source must be a string`);
+    if (source.length > TREE_MAX_COMPONENT_SOURCE_CHARS) {
+      return walkFail(`generated component "${name}" source is too large`);
+    }
+    totalChars += source.length;
+  }
+  if (totalChars > TREE_MAX_TOTAL_COMPONENT_CHARS) {
+    return walkFail("generated component sources exceed the total size cap");
+  }
+  for (const node of input.nodes) {
+    if (node.source === "generated" && !Object.prototype.hasOwnProperty.call(components, node.component)) {
+      return walkFail(`node "${node.id}" references generated component "${node.component}" with no definition in components`);
+    }
+  }
+  if (typeof input.root !== "string" || !ids.has(input.root)) {
+    return walkFail(`root "${String(input.root)}" does not match any node id`);
+  }
+  return { ok: true, tree: input };
+};
 
 /** v2 spec §1 — a validated v2 payload converts to the v1 tree shape and
  *  walks the SAME TreeView (renderer-v2.tsx documents the mapping). The
@@ -250,7 +324,7 @@ interface NodeRendererProps {
 
 const EMPTY_LAYOUT_COMPONENTS = new Set(["Stack", "Row", "Grid"]);
 
-const hasRenderableTreeContent = (tree: Tree): boolean => {
+const hasRenderableTreeContent = (tree: WalkTree): boolean => {
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
   const pending = [tree.root];
   const visited = new Set<string>();
@@ -399,7 +473,7 @@ function NodeRenderer(props: NodeRendererProps) {
 }
 
 /**
- * 08-ui §5 — render a validated `vendo-genui/v1` tree.
+ * 08-ui §5 — render a validated walk tree (the shared render mechanics, v2 spec §6).
  *
  * `$state` is local to this TreeView. Generated code can write through its
  * in-jail `vendo.setState(key, value)` bridge; `onStateChange`, when supplied,
@@ -414,12 +488,12 @@ function StatefulTreeView({
 }: TreeViewProps) {
   const theme = useVendoThemeOrDefault();
   const themeVars = useMemo(() => themeCssVariables(theme), [theme]);
-  const streaming = (tree as Tree & { streaming?: unknown }).streaming === true;
-  const furnishings = (tree as Tree & { furnishings?: Record<string, JailFurnishing> }).furnishings ?? {};
-  const inClient = (tree as Tree & { inClient?: InClientVenue }).inClient;
+  const streaming = (tree as WalkTree & { streaming?: unknown }).streaming === true;
+  const furnishings = (tree as WalkTree & { furnishings?: Record<string, JailFurnishing> }).furnishings ?? {};
+  const inClient = (tree as WalkTree & { inClient?: InClientVenue }).inClient;
   // Tolerate a malformed field (like every other payload extra): only an
   // array of well-formed entries renders the notice.
-  const pinDriftRaw = (tree as Tree & { pinDrift?: unknown }).pinDrift;
+  const pinDriftRaw = (tree as WalkTree & { pinDrift?: unknown }).pinDrift;
   const pinDrift = (Array.isArray(pinDriftRaw) ? pinDriftRaw : [])
     .filter((entry): entry is PinDrift =>
       typeof entry === "object" && entry !== null && typeof (entry as PinDrift).slot === "string");
@@ -429,7 +503,7 @@ function StatefulTreeView({
   // A partial stream may close a generated node before its top-level source
   // string closes. Supply validator-only placeholders, then keep the real map
   // empty so NodeRenderer paints a skeleton until the source arrives.
-  const validation = validateTree(streaming ? {
+  const validation = validateWalkTree(streaming ? {
     ...tree,
     components: Object.fromEntries([
       ...Object.entries(tree.components ?? {}),

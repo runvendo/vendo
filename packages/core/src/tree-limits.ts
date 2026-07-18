@@ -1,4 +1,4 @@
-/** 01-core §8 — the pinned vendo-genui/v1 limits and reserved names. */
+/** 01-core §8 — the pinned vendo-genui tree limits and reserved names. */
 
 /** 01-core §8 */
 export const TREE_MAX_NODES = 5_000;

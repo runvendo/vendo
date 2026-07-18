@@ -1,4 +1,4 @@
-import type { Json, ToolOutcome, Tree, UIPayload } from "@vendoai/core";
+import type { Json, ToolOutcome, UIPayload } from "@vendoai/core";
 import { createRoot } from "react-dom/client";
 import { PayloadView } from "../renderer.js";
 
@@ -72,7 +72,7 @@ const mount = async (): Promise<void> => {
   if (!treeResponse.ok || !componentsResponse.ok) {
     throw new Error("The served-app tree scaffold is incomplete");
   }
-  const tree = await treeResponse.json() as Tree;
+  const tree = await treeResponse.json() as UIPayload;
   const components = await componentsResponse.json() as Record<string, string>;
   const payload = (Object.keys(components).length === 0
     ? tree

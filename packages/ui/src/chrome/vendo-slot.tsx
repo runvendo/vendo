@@ -48,11 +48,11 @@ function MountedApp({ appId }: { appId: string }) {
 }
 
 /** A generated view pinned into a slot (08-ui §4 — "or a pinned component").
- *  Unlike an app (a whole document), a pin is a single `vendo-genui/v1` tree the
+ *  Unlike an app (a whole document), a pin is a single `vendo-genui/v2` tree the
  *  user authored and pinned in place; it mounts through the same tree renderer +
  *  error boundary, falling back to the host's original markup if it throws. */
 export interface VendoSlotPin {
-  /** The pinned generated view (a `vendo-genui/v1` tree payload). */
+  /** The pinned generated view (a `vendo-genui/v2` tree payload). */
   payload: UIPayload;
   /** Live data overriding the tree's embedded data model (08-ui §5). */
   data?: Record<string, Json>;
@@ -67,7 +67,7 @@ export interface VendoSlotPin {
  *  - empty: no `appId`, no `pin`, no `children` → the ghost with a REAL CTA button
  *    that opens the authoring surface (`onAuthor`, else the mounted ⌘K palette);
  *  - app: `appId` → the whole app document mounts (via the single-app transport);
- *  - pinned component: `pin` → the authored `vendo-genui/v1` view mounts in place.
+ *  - pinned component: `pin` → the authored `vendo-genui/v2` view mounts in place.
  *
  *  In both filled states the swap morphs through the ENG-205 render slot, using
  *  the host's own markup as the exit frame, and the PinMount error boundary keeps
