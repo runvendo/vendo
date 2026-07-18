@@ -43,7 +43,7 @@ async function askText(question: string): Promise<string> {
 
 /**
  * Console hand-off contract (parked follow-up in vendo-web):
- *   POST /api/v1/dev/starter-key      auth: user session (Bearer access token)
+ *   POST /api/v1/keys                 auth: user session (Bearer access token)
  *   request  { purpose: "dev-mode" }
  *   response { key: "vnd_<40 hex>", meter: { runs: { included, remaining } } }
  * The key is a metered dev-mode API key scoped to the caller's default org.
@@ -54,7 +54,10 @@ export async function mintStarterAllowance(
   options: Pick<CloudFetchOptions, "apiUrl" | "env" | "fetchImpl" | "home"> = {},
 ): Promise<string | null> {
   try {
-    const result = await cloudFetch("/api/v1/dev/starter-key", {
+    // One key-mint path for everyone (Yousef 2026-07-18): the generic keys
+    // resource beside /api/v1/keys/validate; the dev-mode meter comes from the
+    // purpose in the body, not a special path.
+    const result = await cloudFetch("/api/v1/keys", {
       ...options,
       auth: "user",
       method: "POST",
