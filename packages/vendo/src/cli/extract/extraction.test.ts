@@ -53,6 +53,12 @@ describe("parseDraft", () => {
     expect(() => parseDraft("no json here")).toThrow();
     expect(() => parseDraft('{"brief":""}')).toThrow();
   });
+
+  it("survives stray braces in surrounding prose (Greptile P2)", () => {
+    const draft = { brief: "A bank.", tools: [{ name: "t", description: 'has "quotes" and {braces}' }] };
+    const noisy = `Checked {src/api} — handler is write-only.\n${JSON.stringify(draft)}\nNote: {unbalanced`;
+    expect(parseDraft(noisy)).toEqual(draft);
+  });
 });
 
 describe("composeInstructions", () => {
@@ -107,6 +113,60 @@ describe("applyDraft (deterministic verification)", () => {
     expect(overrides.tools["invented_tool"]).toBeUndefined();
     expect(overrides.tools["host_invoices_create"]?.risk).toBeUndefined();
     expect(overrides.tools["host_admin_unclassified"]?.disabled).toBeUndefined();
+  });
+
+  it("a reasoned wake carries the model's grade without a false downgrade refusal (Greptile P1)", async () => {
+    const root = await fixture();
+    const summary = await applyDraft({
+      root,
+      tools: TOOLS,
+      draft: {
+        brief: "b",
+        tools: [{
+          name: "host_admin_unclassified", description: "Lists admin settings.",
+          disabled: false, risk: "read", reasoning: "handler only reads config rows",
+        }],
+      },
+    });
+    // The static "destructive" was a fail-closed placeholder, not evidence:
+    // the wake applies the model's grade with NO contradictory refusal line.
+    expect(summary).toMatchObject({ woken: 1, refused: [] });
+    const overrides = await readOverrides(root);
+    expect(overrides.tools["host_admin_unclassified"]).toMatchObject({ disabled: false, risk: "read" });
+  });
+
+  it("a wake never replaces a human-set risk or reverses a human disable decision", async () => {
+    const root = await fixture({
+      format: "vendo/overrides@1",
+      tools: {
+        host_admin_unclassified: { risk: "destructive" },
+      },
+    });
+    const woken = await applyDraft({
+      root,
+      tools: TOOLS,
+      draft: {
+        brief: "b",
+        tools: [{ name: "host_admin_unclassified", description: "d", disabled: false, risk: "read", reasoning: "r" }],
+      },
+    });
+    expect(woken.woken).toBe(1);
+    expect((await readOverrides(root)).tools["host_admin_unclassified"]).toMatchObject({ disabled: false, risk: "destructive" });
+
+    const humanDisabled = await fixture({
+      format: "vendo/overrides@1",
+      tools: { host_admin_unclassified: { disabled: true } },
+    });
+    const kept = await applyDraft({
+      root: humanDisabled,
+      tools: TOOLS,
+      draft: {
+        brief: "b",
+        tools: [{ name: "host_admin_unclassified", description: "d", disabled: false, risk: "read", reasoning: "r" }],
+      },
+    });
+    expect(kept.woken).toBe(0);
+    expect((await readOverrides(humanDisabled)).tools["host_admin_unclassified"]?.disabled).toBe(true);
   });
 
   it("never overwrites human decisions: existing override fields and a hand-written brief win", async () => {

@@ -101,6 +101,9 @@ export function claudeHarness(options: ClaudeHarnessOptions = {}): ExtractionHar
           ],
           permissionMode: "default",
           maxTurns: 40,
+          // Forward the caller's env so a key present only in the passed map
+          // (not process.env) still authenticates the SDK subprocess.
+          env: { ...process.env, ...input.env },
           ...(model === undefined ? {} : { model }),
         },
       });

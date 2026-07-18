@@ -121,7 +121,23 @@ export async function applyDraft(input: {
       next.description = entry.description;
       summary.described += 1;
     }
-    if (entry.risk !== undefined && existing.risk === undefined) {
+    // Waking a statically-unclassifiable tool is its own path: the static
+    // "destructive, disabled" grade is a fail-closed PLACEHOLDER, not
+    // evidence, so a reasoned wake carries the model's grade without tripping
+    // the downgrade guard (Greptile P1 / Devin on #363). A human-set risk or
+    // disabled decision always wins.
+    const isWake = entry.disabled === false && fact.disabled === true;
+    if (isWake && existing.disabled === undefined) {
+      if (entry.reasoning === undefined || entry.risk === undefined) {
+        summary.refused.push(`${entry.name}: waking a disabled tool needs reasoning and a risk grade`);
+      } else {
+        next.disabled = false;
+        if (existing.risk === undefined) next.risk = entry.risk;
+        summary.woken += 1;
+      }
+    } else if (
+      entry.risk !== undefined && existing.risk === undefined && fact.disabled !== true
+    ) {
       const current = fact.risk ?? "destructive";
       if (RISK_ORDER[entry.risk] > RISK_ORDER[current]) {
         next.risk = entry.risk;
@@ -133,15 +149,6 @@ export async function applyDraft(input: {
     if (entry.critical === true && existing.critical === undefined) {
       next.critical = true;
       summary.critical += 1;
-    }
-    if (entry.disabled === false && fact.disabled === true && existing.disabled === undefined) {
-      if (entry.reasoning === undefined || entry.risk === undefined) {
-        summary.refused.push(`${entry.name}: waking a disabled tool needs reasoning and a risk grade`);
-      } else {
-        next.disabled = false;
-        next.risk = entry.risk;
-        summary.woken += 1;
-      }
     }
     if (JSON.stringify(next) !== JSON.stringify(existing)) overrides.tools[entry.name] = next;
   }

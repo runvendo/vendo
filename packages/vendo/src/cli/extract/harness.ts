@@ -52,10 +52,51 @@ export interface ExtractionHarness {
   run(input: ExtractionRunInput): Promise<string>;
 }
 
+/** Walk balanced `{…}` spans (string-aware) starting at each `{`, returning
+ *  each complete candidate — so prose containing stray braces around the real
+ *  JSON object cannot poison the parse (Greptile P2 on #363). */
+function* balancedObjectSpans(text: string): Generator<string> {
+  for (let start = text.indexOf("{"); start !== -1; start = text.indexOf("{", start + 1)) {
+    let depth = 0;
+    let inString = false;
+    for (let index = start; index < text.length; index += 1) {
+      const char = text[index];
+      if (inString) {
+        if (char === "\\") index += 1;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') inString = true;
+      else if (char === "{") depth += 1;
+      else if (char === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          yield text.slice(start, index + 1);
+          break;
+        }
+      }
+    }
+  }
+}
+
 /** Extract the draft JSON from an agent's final text: prefer a fenced block,
- *  fall back to the widest braces span. Throws on unparseable output. */
+ *  else try each balanced object span until one validates. Throws on
+ *  unparseable output. */
 export function parseDraft(text: string): ExtractionDraft {
   const fenced = text.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
-  const candidate = fenced?.[1] ?? text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
-  return extractionDraftSchema.parse(JSON.parse(candidate));
+  if (fenced?.[1] !== undefined) {
+    return extractionDraftSchema.parse(JSON.parse(fenced[1]));
+  }
+  let firstError: unknown = new Error("no JSON object found in the agent's output");
+  let attempts = 0;
+  for (const span of balancedObjectSpans(text)) {
+    if (attempts >= 20) break;
+    attempts += 1;
+    try {
+      return extractionDraftSchema.parse(JSON.parse(span));
+    } catch (error) {
+      if (attempts === 1) firstError = error;
+    }
+  }
+  throw firstError;
 }
