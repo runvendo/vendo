@@ -310,6 +310,13 @@ export interface PlaygroundFixtures {
   runs: RunRecord[];
 }
 
+/** The Activities empty state: a workspace where the agent has not acted yet —
+ *  no pending approvals, no audit trail. Everything else stays populated so
+ *  the surface sits in a realistic host page. */
+export function emptyActivitiesFixtures(): PlaygroundFixtures {
+  return { ...playgroundFixtures(), approvals: [], activity: [] };
+}
+
 function textTurn(id: string, role: "user" | "assistant", text: string): Thread["messages"][number] {
   return { id, role, parts: [{ type: "text", text }] };
 }

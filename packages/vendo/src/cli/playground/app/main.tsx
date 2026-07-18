@@ -65,7 +65,7 @@ function useAutoSend(scenario: PlaygroundScenario): void {
 }
 
 function ScenarioMount({ scenario }: { scenario: PlaygroundScenario }) {
-  const client = useMemo(() => createFakeClient(playgroundFixtures()), []);
+  const client = useMemo(() => createFakeClient((scenario.fixtures ?? playgroundFixtures)()), [scenario]);
   const transport = useMemo(
     () => (scenario.script ? new ScriptedTransport(scenario.script, { speed: scenario.speed ?? 1 }) : undefined),
     [scenario],
