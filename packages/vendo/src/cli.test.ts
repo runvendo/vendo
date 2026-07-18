@@ -94,6 +94,7 @@ describe("vendo CLI commands", () => {
     cleanup.push(root);
     expect(await main(["eject", "--list", root])).toBe(0);
     expect(log.mock.calls.flat().join("\n")).toContain("thread");
+    expect(log.mock.calls.flat().join("\n")).toContain("activities");
 
     expect(await main(["eject", "nope", root])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain('unknown surface "nope"');

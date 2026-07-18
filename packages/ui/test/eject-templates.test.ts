@@ -55,6 +55,30 @@ describe("eject template assembly", () => {
     expect(written.surfaces.thread.files).toEqual(files);
   });
 
+  it("ships the activities surface: the single VendoActivities file as index.tsx", async () => {
+    const { assembleEjectTemplates } = await lib();
+    const manifest = await assembleEjectTemplates(PACKAGE_DIR);
+
+    const activities = manifest.surfaces.activities;
+    expect(activities.files).toEqual(["index.tsx"]);
+    expect(activities.component).toBe("VendoActivities");
+    // The CLI resolves this surface's relative imports against chrome/, so a
+    // "./activity-semantics.js" sibling import rewrites to @vendoai/ui/chrome.
+    expect(activities.sourceBase).toBe("chrome");
+    expect(activities.sourceDir).toBeUndefined();
+    // thread keeps its own directory: intra-surface imports stay relative.
+    expect(manifest.surfaces.thread.sourceBase).toBe("chrome/thread");
+    expect(manifest.surfaces.thread.sourceDir).toBe("chrome/thread");
+    expect(manifest.surfaces.thread.component).toBe("VendoThread");
+
+    const source = readFileSync(
+      join(PACKAGE_DIR, "dist", "eject-templates", "activities", "index.tsx"),
+      "utf8",
+    );
+    expect(source).toContain("yours to edit");
+    expect(source).toContain("export function VendoActivities");
+  });
+
   it("rejects a template importing a package internal that is not publicly exported", async () => {
     const { checkTemplateSource, publicSurfaces } = await lib();
     const surfaces = await publicSurfaces(PACKAGE_DIR);
@@ -62,6 +86,7 @@ describe("eject template assembly", () => {
       "thread/evil.tsx",
       'import { definitelyNotExported } from "../dev-mode.js";\n',
       surfaces,
+      { sourceBase: "chrome/thread", sourceDir: "chrome/thread" },
     );
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("definitelyNotExported");
@@ -82,8 +107,30 @@ describe("eject template assembly", () => {
         "",
       ].join("\n"),
       surfaces,
+      { sourceBase: "chrome/thread", sourceDir: "chrome/thread" },
     );
     expect(errors).toEqual([]);
+  });
+
+  it("resolves a chrome-root surface's sibling imports against the chrome surface", async () => {
+    const { checkTemplateSource, publicSurfaces } = await lib();
+    const surfaces = await publicSurfaces(PACKAGE_DIR);
+    // For a single-file surface living in chrome/ itself, "./sibling.js" is a
+    // chrome-internal import (must be publicly exported), and "../hooks/…" is
+    // a root import — different from the thread's directory-relative shape.
+    const errors = checkTemplateSource(
+      "activities/index.tsx",
+      [
+        'import { ApprovalCard } from "./approval-card.js";',
+        'import { useActivity } from "../hooks/use-activity.js";',
+        'import { secretInternal } from "./dev-mode.js";',
+        "",
+      ].join("\n"),
+      surfaces,
+      { sourceBase: "chrome" },
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("secretInternal");
   });
 });
 

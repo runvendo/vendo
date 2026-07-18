@@ -22,6 +22,7 @@ export { VendoStage } from "../voice/stage.js";
     (scripts/eject-templates-lib.mjs enforces this list at build). Exported
     deliberately — ejected chrome keeps data/wire logic as a package
     dependency and only forks pixels (§4 customization ladder). */
+export { describeActivity, formatAuditTime, outcomeLabel, type OutcomeTone } from "./activity-semantics.js";
 export { BuildBeat, toolPresentation } from "./build-beat.js";
 export { ChromeRoot } from "./chrome-root.js";
 export { useCopyFeedback } from "./clipboard.js";

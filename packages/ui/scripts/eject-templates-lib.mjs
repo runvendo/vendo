@@ -5,20 +5,35 @@
  * published package: verbatim .tsx/.ts files under dist/eject-templates/
  * plus a templates.json manifest the CLI reads. Assembly enforces the eject
  * contract at build time: a template may import only
- *   - its own surface directory ("./…"),
+ *   - its own surface directory (thread's "./…" siblings),
  *   - bare package specifiers (react, ai, @vendoai/core), or
  *   - package internals whose every imported name is publicly exported from
  *     @vendoai/ui, @vendoai/ui/chrome, or @vendoai/ui/tree — because the CLI
  *     rewrites those relative imports to the public subpaths on eject.
+ *
+ * Each surface records `sourceBase` — the src/ directory its relative imports
+ * resolve against — so a single-file surface living in chrome/ itself
+ * (activities) classifies "./sibling.js" as a chrome-internal import while
+ * the thread directory keeps "./composer.js" intra-surface.
  */
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { dirname, join, posix, resolve } from "node:path";
+import { dirname, join, posix } from "node:path";
 import ts from "typescript";
 
 export const SURFACES = {
   thread: {
-    sourceDir: "src/chrome/thread",
     description: "The conversation thread: composer, message list, parts, scrolling.",
+    component: "VendoThread",
+    sourceBase: "chrome/thread",
+    // Has its own directory — sibling imports stay relative in the ejected copy.
+    sourceDir: "chrome/thread",
+  },
+  activities: {
+    description: "The placeable activity piece: approvals queue + recent-runs feed.",
+    component: "VendoActivities",
+    sourceBase: "chrome",
+    // Single file, shipped as the surface's index.tsx.
+    files: { "index.tsx": "src/chrome/vendo-activities.tsx" },
   },
 };
 
@@ -36,7 +51,7 @@ function parse(fileName, source) {
 }
 
 async function resolveModuleFile(fromFile, specifier) {
-  const base = resolve(dirname(fromFile), specifier.replace(/\.js$/, ""));
+  const base = join(dirname(fromFile), specifier.replace(/\.js$/, ""));
   for (const candidate of [`${base}.ts`, `${base}.tsx`, join(base, "index.ts"), join(base, "index.tsx")]) {
     try {
       await readFile(candidate, "utf8");
@@ -87,21 +102,26 @@ export async function publicSurfaces(packageDir) {
   return surfaces;
 }
 
-/** Which public surface a template's escaping relative import must resolve from. */
-function surfaceForSpecifier(specifier) {
-  const normalized = posix.normalize(specifier);
-  if (!normalized.startsWith("../")) return null; // intra-surface
-  if (normalized.startsWith("../../")) {
-    return normalized.startsWith("../../tree/") ? "tree" : "root";
+/**
+ * Which public surface a template's relative import must resolve from, given
+ * the surface's src/-relative sourceBase. Returns null for intra-surface
+ * imports (they stay relative in the ejected copy).
+ */
+export function classifySpecifier(specifier, { sourceBase, sourceDir }) {
+  const resolved = posix.normalize(posix.join(sourceBase, specifier)).replace(/\.js$/, "");
+  if (sourceDir !== undefined && (resolved === sourceDir || resolved.startsWith(`${sourceDir}/`))) {
+    return null;
   }
-  return "chrome";
+  if (resolved.startsWith("tree/")) return "tree";
+  if (resolved.startsWith("chrome/")) return "chrome";
+  return "root";
 }
 
 /**
  * Returns human-readable errors for every import in `source` that escapes the
- * surface directory but names a symbol the public surfaces don't export.
+ * surface but names a symbol the public surfaces don't export.
  */
-export function checkTemplateSource(relPath, source, surfaces) {
+export function checkTemplateSource(relPath, source, surfaces, shape) {
   const errors = [];
   const sourceFile = parse(relPath, source);
   for (const statement of sourceFile.statements) {
@@ -132,7 +152,7 @@ export function checkTemplateSource(relPath, source, surfaces) {
       continue;
     }
     if (!specifier.startsWith(".")) continue; // bare package specifier — host dependency
-    const surface = surfaceForSpecifier(specifier);
+    const surface = classifySpecifier(specifier, shape);
     if (surface === null) continue; // intra-surface relative import stays relative on eject
     for (const name of imported) {
       if (name === "*" || name === "default") {
@@ -160,6 +180,16 @@ function header(version) {
   ].join("\n");
 }
 
+/** [templateFileName, absoluteSourcePath] pairs for one surface. */
+async function surfaceFiles(packageDir, surface) {
+  if (surface.sourceDir !== undefined) {
+    const dir = join(packageDir, "src", surface.sourceDir);
+    const names = (await readdir(dir)).filter((name) => TEMPLATE_FILE.test(name)).sort();
+    return names.map((name) => [name, join(dir, name)]);
+  }
+  return Object.entries(surface.files).map(([name, source]) => [name, join(packageDir, source)]);
+}
+
 /**
  * Assembles dist/eject-templates/<surface>/ + templates.json. Throws when any
  * template imports package internals that are not publicly exported.
@@ -172,15 +202,21 @@ export async function assembleEjectTemplates(packageDir) {
   const errors = [];
   const outputs = [];
 
-  for (const [surface, { sourceDir, description }] of Object.entries(SURFACES)) {
-    const dir = join(packageDir, sourceDir);
-    const files = (await readdir(dir)).filter((name) => TEMPLATE_FILE.test(name)).sort();
-    for (const file of files) {
-      const source = await readFile(join(dir, file), "utf8");
-      errors.push(...checkTemplateSource(`${surface}/${file}`, source, surfaces));
-      outputs.push({ path: join(outRoot, surface, file), content: header(version) + source });
+  for (const [name, surface] of Object.entries(SURFACES)) {
+    const files = await surfaceFiles(packageDir, surface);
+    const shape = { sourceBase: surface.sourceBase, sourceDir: surface.sourceDir };
+    for (const [file, sourcePath] of files) {
+      const source = await readFile(sourcePath, "utf8");
+      errors.push(...checkTemplateSource(`${name}/${file}`, source, surfaces, shape));
+      outputs.push({ path: join(outRoot, name, file), content: header(version) + source });
     }
-    manifest.surfaces[surface] = { description, files };
+    manifest.surfaces[name] = {
+      description: surface.description,
+      component: surface.component,
+      sourceBase: surface.sourceBase,
+      ...(surface.sourceDir === undefined ? {} : { sourceDir: surface.sourceDir }),
+      files: files.map(([file]) => file),
+    };
   }
 
   if (errors.length > 0) {

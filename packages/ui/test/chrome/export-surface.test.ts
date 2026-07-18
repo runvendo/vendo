@@ -38,6 +38,9 @@ const VALUE_EXPORTS = [
   // The eject surface (§4 customization ladder): internals the ejected
   // thread compiles against, exported deliberately so ejected chrome keeps
   // data/wire logic as a package dependency and only forks pixels.
+  "describeActivity",
+  "formatAuditTime",
+  "outcomeLabel",
   "BuildBeat",
   "toolPresentation",
   "ChromeRoot",
@@ -71,6 +74,7 @@ const TYPE_EXPORTS = [
   // Eject surface types.
   "VendoThreadProps",
   "MorphToastProps",
+  "OutcomeTone",
 ];
 
 // vitest's jsdom environment rewrites import.meta.url to a non-file scheme,
