@@ -1,30 +1,11 @@
-import type { PermissionGrant } from "@vendoai/core";
 import { encode } from "next-auth/jwt";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  actAsMapleUser,
-  resolveMapleSession,
-  resolveMaplePrincipal,
-  safeReturnTo,
-} from "./auth";
+import { resolveMapleSession, safeReturnTo } from "./auth";
 
 afterEach(() => vi.unstubAllEnvs());
 
 const DEV_SECRET = "maple-local-development-auth-secret";
 const COOKIE = "authjs.session-token";
-
-function grantFor(subject: string): PermissionGrant {
-  return {
-    id: "grt_test",
-    subject,
-    tool: "host_transferMoney",
-    descriptorHash: "sha256:test",
-    scope: { kind: "tool" },
-    duration: "standing",
-    source: "automation",
-    grantedAt: "2026-07-15T00:00:00.000Z",
-  };
-}
 
 async function sessionCookie(sub: string): Promise<string> {
   const token = await encode({ token: { sub }, secret: DEV_SECRET, salt: COOKIE, maxAge: 300 });
@@ -37,9 +18,6 @@ describe("Maple Auth.js sessions", () => {
     await expect(resolveMapleSession(new Request("http://localhost:3000/", {
       headers: { cookie },
     }))).resolves.toMatchObject({ subject: "vendo-demo", display: "Yousef Helal" });
-    await expect(resolveMaplePrincipal(new Request("http://localhost:3000/", {
-      headers: { cookie },
-    }))).resolves.toEqual({ kind: "user", subject: "vendo-demo", display: "Yousef Helal" });
   });
 
   it("rejects tampered cookies, unknown subjects, and missing sessions", async () => {
@@ -52,30 +30,6 @@ describe("Maple Auth.js sessions", () => {
     }))).resolves.toBeNull();
     await expect(resolveMapleSession(new Request("http://localhost:3000/")))
       .resolves.toBeNull();
-    await expect(resolveMaplePrincipal(new Request("http://localhost:3000/")))
-      .resolves.toBeNull();
-  });
-});
-
-describe("actAsMapleUser (Auth.js preset)", () => {
-  it("mints an away session Maple's own session reads accept", async () => {
-    // Cross-version proof: the preset encodes with @vendoai/actions' @auth/core
-    // while resolveMapleSession decodes with next-auth's bundled @auth/core.
-    const material = await actAsMapleUser(
-      { kind: "user", subject: "maple-mia", display: "Mia Nakamura" },
-      grantFor("maple-mia"),
-    );
-    expect(material?.headers.cookie).toMatch(/^authjs\.session-token=/);
-    await expect(resolveMapleSession(new Request("http://localhost:3000/api/transfers", {
-      headers: material!.headers,
-    }))).resolves.toMatchObject({ subject: "maple-mia", email: "mia@maple.com" });
-  });
-
-  it("declines subjects Maple never issued", async () => {
-    await expect(actAsMapleUser(
-      { kind: "user", subject: "user_stranger" },
-      grantFor("user_stranger"),
-    )).resolves.toBeNull();
   });
 });
 

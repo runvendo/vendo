@@ -2,12 +2,10 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { composioConnector } from "@vendoai/actions";
 import type { ComponentCatalog } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
-import { createVendo } from "@vendoai/vendo/server";
+import { authJs, createVendo } from "@vendoai/vendo/server";
 import { z } from "zod";
-import { actAsMapleUser } from "./auth";
+import { authSecret, resolveMapleSubject } from "@/server/users";
 import { mapleMcpConfig } from "./mcp-config";
-import { mapleOAuthAdapter } from "./oauth";
-import { resolveDemoPrincipal } from "./principal";
 
 const model = anthropic(process.env.VENDO_DEMO_MODEL ?? "claude-sonnet-4-6");
 const composioApiKey = process.env.COMPOSIO_API_KEY;
@@ -111,12 +109,16 @@ const catalog: ComponentCatalog = [
 export const vendo = createVendo({
   model,
   store,
-  principal: resolveDemoPrincipal,
-  actAs: actAsMapleUser,
+  auth: authJs({
+    secret: authSecret,
+    user: (subject) => {
+      const user = resolveMapleSubject(subject);
+      return user ? { display: user.display, email: user.email } : null;
+    },
+  }),
   catalog,
   policy: { file: ".vendo/policy.json" },
   mcp: mapleMcpConfig(),
-  oauth: mapleOAuthAdapter,
   connectors: composioApiKey
     ? [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "slack"] })]
     : [],
