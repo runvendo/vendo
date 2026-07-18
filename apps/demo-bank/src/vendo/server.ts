@@ -109,6 +109,11 @@ const catalog: ComponentCatalog = [
 export const vendo = createVendo({
   model,
   store,
+  // One preset fills all three identity seams (09-vendo §2.1): the
+  // request→Principal resolver, the away/MCP actAs seam, and the door's
+  // OAuth adapter. `user` maps an Auth.js subject to the seeded Maple
+  // identity; returning null means "not a Maple user" — the principal
+  // resolves to anonymous and away/MCP minting for that subject declines.
   auth: authJs({
     secret: authSecret,
     user: (subject) => {
