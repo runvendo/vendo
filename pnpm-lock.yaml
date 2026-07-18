@@ -952,8 +952,8 @@ importers:
         specifier: ^19.2.0
         version: 19.2.3(@types/react@19.2.17)
       ai:
-        specifier: ^6.0.28
-        version: 6.0.224(zod@3.25.76)
+        specifier: 6.0.28
+        version: 6.0.28(zod@3.25.76)
       jsdom:
         specifier: ^25.0.0
         version: 25.0.1
