@@ -46,10 +46,13 @@ Engineering doctrine (both proof points say this is the hard part):
 
 Five steps, zero questions on the happy path:
 
-1. **Wire.** Apply the bounded change set: agent route handler, starter model
-   module, one-line VendoRoot layout wrap, package.json hooks. No gates, no
-   per-file y/N, no git ceremony: apply and list the files changed (field
-   norm: create-next-app, shadcn; nobody does per-diff approvals).
+1. **Wire.** Init writes exactly one file (the catch-all agent route) and adds
+   two package.json script hooks. It never edits user-authored code: the
+   one-line VendoRoot layout wrap is the user's to paste, guided at the finale
+   (init prints the line, watches for the hot reload, then opens the browser).
+   No lib/ai.ts scaffold: createVendo's `model` becomes optional and resolves
+   the env/starter key itself; a model module is a documented escape hatch for
+   BYO-LLM only. No gates, no per-file y/N, no git ceremony.
 2. **Get a key.** Env key if present (one line, done). Otherwise offer the
    cloud starter key: browser login, Vendo Cloud mints a metered dev key and
    writes it to .env.local. The dev never pastes a key. This is the only
@@ -58,9 +61,11 @@ Five steps, zero questions on the happy path:
    brief.md (see above). Replaces both the old interview and the old
    refine-as-separate-command for the first-run case.
 4. **Launch.** Start the host dev server, open the browser.
-5. **First turn.** Seed one turn; the reply streams in the terminal while the
-   same thread is open in the browser. Better than before for free: the agent
-   introduces itself from a model-written toolbox and brief.
+5. **First turn.** Seed one turn; the reply streams in the terminal (API-side,
+   works before the layout line). Then the guided layout paste: init prints
+   the VendoRoot one-liner, watches for the hot reload, and opens the browser
+   on the same thread. The agent introduces itself from a model-written
+   toolbox and brief.
 
 Total interaction: one keypress (yes to the starter key) plus a browser login;
 zero when an env key exists.
@@ -102,6 +107,9 @@ zero when an env key exists.
   codex drift probe in doctor.
 - Interview: remove the 4-question flow and --brief/--ask surface tied to it.
 - Per-diff confirm flow: remove; replace with the changed-files summary.
+- Remove the layout codemod (wireLayout) and the lib/ai.ts scaffold; make
+  createVendo's `model` optional with env/starter-key resolution as default;
+  build the finale's paste-and-watch step for the layout line.
 - Refine offer and finale ordering: finale is the guaranteed ending; no
   pre-finale refine offer.
 - Build the Cloud starter-key minting endpoint (was already a parked follow-up;
