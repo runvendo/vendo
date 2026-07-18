@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentType, type CSSProperties, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { useVendoTheme } from "../context.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { themeCssVariables } from "../theme.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { VendoThread } from "./thread/index.js";
+import { VendoThread, type VendoThreadProps } from "./thread/index.js";
 
 const FOCUSABLE = "button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex='-1'])";
 
@@ -28,6 +28,15 @@ export interface VendoOverlayProps {
    * built-in new-conversation button works with or without this prop.
    */
   conversationKey?: string | number;
+  /**
+   * The one sanctioned component-injection point (the eject seam): a thread
+   * component the panel renders in place of the built-in `VendoThread`. The
+   * overlay stays the positioning shell — portal, scrim, focus, mobile sheet —
+   * while an ejected (or fully custom) thread supplies the conversation
+   * pixels. It receives `VendoThreadProps` (all optional), so a plain
+   * zero-prop component works too.
+   */
+  thread?: ComponentType<VendoThreadProps>;
 }
 
 /** display:none/visibility:hidden elements silently swallow focus() — skip them. */
@@ -47,6 +56,7 @@ export function VendoOverlay({
   onOpenChange,
   launcher = "bottom-right",
   conversationKey,
+  thread: Thread = VendoThread,
 }: VendoOverlayProps = {}) {
   const controlled = openProp !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
@@ -226,7 +236,7 @@ export function VendoOverlay({
           </svg>
           <span className="fl-sr-only">Close</span>
         </button>
-        <VendoThread key={`${conversationKey ?? 0}:${conversationEpoch}`} />
+        <Thread key={`${conversationKey ?? 0}:${conversationEpoch}`} />
       </div>
     </div>,
     document.body,
