@@ -12,6 +12,8 @@ import {
   type RunContext,
 } from "@vendoai/core";
 import type { SandboxAdapter } from "@vendoai/apps";
+import type { Connector } from "@vendoai/actions";
+import type { ConnectionsService } from "./connections.js";
 import { createStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
 import { createHmac, randomBytes } from "node:crypto";
 import type { LanguageModel } from "ai";
@@ -359,6 +361,58 @@ describe("09 §3 public wire", () => {
     expect(await statusFor({ ...allKeys, E2B_API_KEY: "", MODAL_TOKEN_SECRET: "" })).toBe(false);
     expect(custom.create).not.toHaveBeenCalled();
     expect(custom.resume).not.toHaveBeenCalled();
+  });
+
+  it("selects the connections adapter with the adapter-rule precedence", async () => {
+    // Adapter rule (2026-07-17 cloud definition): explicit adapter → BYO
+    // brokers → VENDO_API_KEY defaults the Cloud adapter → unconfigured.
+    vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-connections-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    // Each composition is settled through one /status request (awaits that
+    // vendo's schema readiness) so teardown never races an in-flight migration.
+    const compose = async (config: Partial<CreateVendoConfig>): Promise<Vendo> => {
+      const vendo = createVendo({
+        model: {} as LanguageModel,
+        principal: vi.fn(async () => principal),
+        store,
+        ...config,
+      });
+      await vendo.handler(request("GET", "/status"));
+      return vendo;
+    };
+
+    // An explicitly passed adapter wins even with the key set.
+    const explicit: ConnectionsService = {
+      posture: "byo",
+      list: async () => [],
+      initiate: async () => { throw new Error("unused"); },
+      status: async () => null,
+      disconnect: async () => {},
+    };
+    expect((await compose({ connections: explicit })).connections).toBe(explicit);
+
+    // A BYO connector's connections capability beats the key.
+    const broker: Connector = {
+      name: "composio",
+      descriptors: async () => [],
+      execute: async () => ({ status: "ok", output: {} }),
+      connections: {
+        list: async () => [],
+        initiate: async () => ({ id: "ca_x", redirectUrl: "https://connect.test/x" }),
+        status: async () => null,
+        disconnect: async () => {},
+      },
+    };
+    expect((await compose({ connectors: [broker] })).connections.posture).toBe("byo");
+
+    // The key alone defaults the Cloud adapter for the unfilled seam.
+    expect((await compose({})).connections.posture).toBe("cloud");
+
+    // Neither → the unconfigured fallback.
+    vi.stubEnv("VENDO_API_KEY", "");
+    expect((await compose({})).connections.posture).toBe(false);
   });
 
   it("serves sync impact on dev servers and blocks it in production", async () => {

@@ -89,7 +89,22 @@ export {
   type DevCredential,
   type ResolveDevCredentialOptions,
 } from "./dev-creds/resolve.js";
-import { createConnections, type ConnectionsService } from "./connections.js";
+import {
+  byoConnections,
+  cloudConnections,
+  unconfiguredConnections,
+  type ConnectionsService,
+} from "./connections.js";
+// Adapter rule (2026-07-17 cloud definition): the shipped connections adapters
+// ride the server surface so a host can construct one and pass it explicitly
+// via createVendo({ connections }) — Cloud is just another implementation.
+export {
+  byoConnections,
+  cloudConnections,
+  unconfiguredConnections,
+  type CloudConnectionsOptions,
+  type ConnectionsService,
+} from "./connections.js";
 import { createRuntimeCapture } from "./runtime-capture.js";
 import {
   BASE_PATH,
@@ -151,6 +166,11 @@ export interface CreateVendoConfig {
   store?: VendoStore;
   sandbox?: SandboxAdapter;
   connectors?: Connector[];
+  /** 04-actions §3 — an explicit connections adapter. Adapter rule: when set it
+      wins over every default (BYO brokers, the VENDO_API_KEY cloud default);
+      byoConnections / cloudConnections / unconfiguredConnections are the
+      shipped implementations, re-exported from this module. */
+  connections?: ConnectionsService;
   actAs?: ActAs;
   /** 04-actions §1 (ENG-248): the server-action registration map emitted by the
       generated wiring file, keyed `"<module>#<exportName>"`. Server-action tools
@@ -270,6 +290,34 @@ function selectSandbox(configured: SandboxAdapter | undefined): {
   }
 
   return { adapter: undefined, venue: false };
+}
+
+/** ADAPTER RULE (docs/superpowers/specs/2026-07-17-vendo-cloud-definition-design.md):
+    an infrastructure-backed block defines one adapter interface; which
+    implementation composes is decided HERE, at the seam where createVendo
+    wires blocks together — never by a hidden key-conditional inside the block.
+    Precedence, top to bottom:
+      1. an explicitly passed adapter always wins;
+      2. BYO — a connector's own connections capability (connections must live
+         where the connector executes);
+      3. VENDO_API_KEY makes the Cloud adapter the default for the seam the
+         host left unfilled (VENDO_CLOUD_URL overrides the console base URL);
+      4. the unconfigured fallback, which fails closed with setup guidance.
+    The adapters themselves never read the environment. */
+function selectConnections(
+  configured: ConnectionsService | undefined,
+  connectors: Connector[],
+): ConnectionsService {
+  if (configured !== undefined) return configured;
+  if (connectors.some((connector) => connector.connections !== undefined)) {
+    return byoConnections(connectors);
+  }
+  const apiKey = environment("VENDO_API_KEY");
+  if (apiKey !== undefined) {
+    const baseUrl = environment("VENDO_CLOUD_URL");
+    return cloudConnections({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) });
+  }
+  return unconfiguredConnections();
 }
 
 function isJsonRequest(request: Request): boolean {
@@ -744,10 +792,9 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     store,
     runner: agent.asRunner(),
   });
-  // 04-actions §3 — per-principal connected accounts. A BYO connector's own
-  // connections capability wins (connections must live where its tools
-  // execute); with none, VENDO_API_KEY routes to the Vendo Cloud broker.
-  const connections = createConnections({ connectors: config.connectors ?? [] });
+  // 04-actions §3 — per-principal connected accounts, selected by the adapter
+  // rule at this composition seam (selectConnections above).
+  const connections = selectConnections(config.connections, config.connectors ?? []);
   // 10-mcp §1 — construct the door from the parts already assembled: the SAME
   // guard-bound registry chat/apps/automations use, the guard (its core seam is
   // what the door holds for auth audit), the store (a StoreAdapter for the door's
