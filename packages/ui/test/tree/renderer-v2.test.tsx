@@ -295,6 +295,27 @@ describe("v2 reshape bindings at render", () => {
     expect(document.querySelector('[data-primitive="Text"]')).toBeNull();
   });
 
+  it("a mis-bound container's notice replaces the component only, never its valid children", () => {
+    render(
+      <PayloadView
+        payload={treeV2([
+          { id: "root", component: "Stack", children: ["card-1"] },
+          {
+            id: "card-1",
+            component: "Card",
+            props: { title: { $path: "/revenue/rows", $reshape: [{ op: "asPoints", args: ["period", "value"] }] } },
+            children: ["text-1"],
+          },
+          { id: "text-1", component: "Text", props: { text: "child survives" } },
+        ], { data: revenueData })}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+    expect(screen.getByRole("note", { name: "Data shape" })).toBeTruthy();
+    expect(screen.getByText("child survives")).toBeTruthy();
+  });
+
   it("absent data is loading, not a mismatch: no notice, component renders empty", () => {
     render(
       <PayloadView

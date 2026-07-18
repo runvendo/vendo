@@ -290,9 +290,8 @@ const applyStep = (value: Json, step: ReshapeStep): ReshapeResult => {
  */
 export function applyReshape(value: Json | undefined, steps: readonly ReshapeStep[]): ReshapeResult {
   try {
-    if (findInvalidReshapeSteps(steps) !== null) {
-      return mismatch(findInvalidReshapeSteps(steps) as string);
-    }
+    const violation = findInvalidReshapeSteps(steps);
+    if (violation !== null) return mismatch(violation);
     if (value === undefined) return { ok: true, value: undefined };
     let current: Json = value;
     for (const step of steps) {

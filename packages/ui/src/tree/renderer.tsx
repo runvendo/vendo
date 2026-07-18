@@ -359,8 +359,11 @@ function NodeRenderer(props: NodeRendererProps) {
       );
     } else {
       const { bound, mismatch } = bindProps(node.props ?? {}, "host", props.data, props.state, invoke);
+      // The notice replaces only the mis-bound component, never its subtree —
+      // a container (Stack/Grid) with one bad prop must not swallow its valid
+      // children (same containment scope as the generated paths above).
       content = mismatch !== null
-        ? dataShapeNotice(mismatch)
+        ? <>{dataShapeNotice(mismatch)}{children}</>
         : <Implementation {...bound}>{children}</Implementation>;
     }
   }
