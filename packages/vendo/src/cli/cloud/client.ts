@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { hostname } from "node:os";
+import { basename, join } from "node:path";
 import {
   isSessionExpired,
   readCloudSession,
@@ -7,6 +10,10 @@ import {
 import { CLI_VERSION } from "../shared.js";
 
 const DEFAULT_CLOUD_URL = "https://console.vendo.run";
+
+export function isVendoKey(key: string): boolean {
+  return /^vnd_[0-9a-f]{40}$/.test(key);
+}
 
 export class CloudError extends Error {
   readonly code: string;
@@ -85,6 +92,24 @@ function defaultSessionStore(home: string | undefined): SessionStore {
   };
 }
 
+/** The console's shared auth middleware upserts deployment inventory and
+ *  meters usage from these headers on real service calls — there is no
+ *  heartbeat. Name is the nearest project identity: the cwd package name. */
+let deploymentName: Promise<string> | null = null;
+
+function resolveDeploymentName(): Promise<string> {
+  deploymentName ??= (async () => {
+    try {
+      const manifest = JSON.parse(await readFile(join(process.cwd(), "package.json"), "utf8")) as { name?: unknown };
+      if (typeof manifest.name === "string" && manifest.name.length > 0) return manifest.name;
+    } catch {
+      // no manifest — fall through to the directory name
+    }
+    return basename(process.cwd());
+  })();
+  return deploymentName;
+}
+
 function sessionFrom(value: unknown): CloudSession {
   if (typeof value !== "object" || value === null || typeof (value as Partial<CloudSession>).access_token !== "string") {
     throw new CloudError("invalid-session", "Vendo Cloud returned an invalid session", 500);
@@ -127,6 +152,10 @@ async function send(
   };
   if (options.body !== undefined) headers["content-type"] = "application/json";
   if (token !== undefined) headers.authorization = `Bearer ${token}`;
+  if (options.auth === "key") {
+    headers["x-vendo-deployment-host"] = hostname();
+    headers["x-vendo-deployment-name"] = await resolveDeploymentName();
+  }
   const response = await (options.fetchImpl ?? fetch)(requestUrl(path, options), {
     method: options.method ?? (options.body === undefined ? "GET" : "POST"),
     headers,

@@ -1,5 +1,6 @@
+import { hostname } from "node:os";
 import { describe, expect, it, vi } from "vitest";
-import { CloudError, cloudFetch, resolveCloudBaseUrl } from "./client.js";
+import { CloudError, cloudFetch, isVendoKey, resolveCloudBaseUrl } from "./client.js";
 import { CLI_VERSION } from "../shared.js";
 
 describe("cloud client", () => {
@@ -17,7 +18,7 @@ describe("cloud client", () => {
       error: { code: "cloud-required", message: "Upgrade required" },
     }, { status: 402 }));
 
-    await expect(cloudFetch("/api/v1/keys/validate", {
+    await expect(cloudFetch("/api/v1/apps/share", {
       auth: "key",
       apiKey: "vnd_test",
       fetchImpl,
@@ -30,6 +31,38 @@ describe("cloud client", () => {
     expect(fetchImpl).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
       headers: expect.objectContaining({ "user-agent": `vendo-cli/${CLI_VERSION}` }),
     }));
+  });
+
+  it("attaches the deployment-identity headers to every key-authed request", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(Response.json({ ok: true }));
+
+    await cloudFetch("/api/v1/apps/share", { auth: "key", apiKey: "vnd_test", fetchImpl });
+    expect(fetchImpl).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      headers: expect.objectContaining({
+        "x-vendo-deployment-host": hostname(),
+        "x-vendo-deployment-name": "@vendoai/vendo",
+      }),
+    }));
+  });
+
+  it("omits the deployment-identity headers on user-authed requests", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(Response.json([]));
+
+    await cloudFetch("/api/v1/orgs", { auth: "user", accessToken: "jwt", fetchImpl });
+    const headers = (fetchImpl.mock.calls[0]?.[1] as { headers: Record<string, string> }).headers;
+    expect(headers).not.toHaveProperty("x-vendo-deployment-host");
+    expect(headers).not.toHaveProperty("x-vendo-deployment-name");
+  });
+
+  it.each([
+    [`vnd_${"0a".repeat(20)}`, true],
+    [`vnd_${"f".repeat(40)}`, true],
+    ["vnd_test", false],
+    [`vnd_${"A".repeat(40)}`, false],
+    [`vnd_${"a".repeat(39)}`, false],
+    [`xvnd_${"a".repeat(40)}`, false],
+  ])("checks API key format for %s", (key, valid) => {
+    expect(isVendoKey(key)).toBe(valid);
   });
 
   it("refreshes a user session once after a 401 and retries the request", async () => {
