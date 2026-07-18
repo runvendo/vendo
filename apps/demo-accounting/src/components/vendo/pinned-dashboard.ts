@@ -1,11 +1,11 @@
 import type { UIPayload } from "@vendoai/core";
 
-/** ENG-230 — the Cadence home slot's pinned dashboard: a `vendo-genui/v1` tree
+/** ENG-230 — the Cadence home slot's pinned dashboard: a `vendo-genui/v2` tree
  *  mounted in place through the ENG-223 pin path (no server round trip), so the
  *  slot's FILLED state is reachable in the demo. Uses Cadence's own catalog
  *  components (CadenceMissingDocsHero, CadenceDocProgress, CadenceStatusBadge). */
 export const cadencePinnedDashboard: UIPayload = {
-  formatVersion: "vendo-genui/v1",
+  formatVersion: "vendo-genui/v2",
   root: "root",
   nodes: [
     { id: "root", component: "Surface", children: ["stack"] },

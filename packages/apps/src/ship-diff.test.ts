@@ -20,7 +20,7 @@ const app = (overrides: Partial<AppDocument> = {}): AppDocument => ({
   name: "Ship diff",
   ui: "tree",
   tree: {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [{ id: "root", component: "Stack", source: "prewired" }],
   },

@@ -7,7 +7,7 @@
  * a visible notice instead of a blank page.
  */
 import { render, waitFor } from "@testing-library/react";
-import { VENDO_TREE_FORMAT, type ToolOutcome, type Tree, type UIPayload } from "@vendoai/core";
+import { VENDO_TREE_FORMAT_V2, type ToolOutcome, type UIPayload } from "@vendoai/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PayloadView } from "../../src/tree/index.js";
 
@@ -53,8 +53,8 @@ const installFetchStub = (): void => {
   }));
 };
 
-const keptTree = (): Tree => ({
-  formatVersion: VENDO_TREE_FORMAT,
+const keptTree = (): UIPayload => ({
+  formatVersion: VENDO_TREE_FORMAT_V2,
   root: "root",
   nodes: [
     { id: "root", component: "Stack", source: "prewired", children: ["title", "refresh"] },
@@ -118,7 +118,7 @@ describe("served-app tree renderer entry", () => {
   it("merges served components.json into the payload exactly like the host open() wire shape", async () => {
     routes["/tree.json"] = {
       body: {
-        formatVersion: VENDO_TREE_FORMAT,
+        formatVersion: VENDO_TREE_FORMAT_V2,
         root: "root",
         nodes: [{ id: "root", component: "Gauge", source: "generated" }],
       } satisfies Tree,

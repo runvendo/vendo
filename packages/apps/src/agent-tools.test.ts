@@ -163,9 +163,7 @@ describe("apps agent tools", () => {
   });
 
   it("surfaces a structured retryable edit failure instead of implying the app changed", async () => {
-    const broken = JSON.stringify({
-      ops: [{ op: "set-prop", nodeId: "missing", prop: "value", value: 1 }],
-    });
+    const broken = '<Edit><Set id="missing" value={1}/></Edit>';
     const runtime = createApps({
       store: memoryStore(),
       guard: guardFixture(),

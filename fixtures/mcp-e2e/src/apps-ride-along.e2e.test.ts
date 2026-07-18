@@ -24,7 +24,7 @@ describe("saved apps ride along as MCP Apps", () => {
         });
         expect(opened.isError).not.toBe(true);
         expect(opened.structuredContent).toMatchObject({
-          formatVersion: "vendo-genui/v1",
+          formatVersion: "vendo-genui/v2",
           data: { fixture: true },
         });
 

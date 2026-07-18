@@ -228,7 +228,7 @@ describe("v1 walk regression", () => {
     render(
       <TreeView
         tree={{
-          formatVersion: "vendo-genui/v1",
+          formatVersion: "vendo-genui/v2",
           root: "root",
           nodes: [{ id: "root", component: "Card", props: { title: "still primitive" } }],
         }}

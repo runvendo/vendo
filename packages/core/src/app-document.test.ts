@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT,
   VENDO_TREE_FORMAT_V2,
   WIRE_ISSUE_CODES,
   appDocumentSchema,
@@ -15,7 +14,7 @@ const minimal = () => ({
   name: "Support Chat",
   ui: "tree" as const,
   tree: {
-    formatVersion: VENDO_TREE_FORMAT,
+    formatVersion: VENDO_TREE_FORMAT_V2,
     root: "root",
     nodes: [{ id: "root", component: "Text", props: { value: "How can I help?" } }],
   },
@@ -28,7 +27,7 @@ const invoiceChaser = () => ({
   description: "Follows up on overdue invoices every Monday.",
   ui: "tree" as const,
   tree: {
-    formatVersion: VENDO_TREE_FORMAT,
+    formatVersion: VENDO_TREE_FORMAT_V2,
     root: "root",
     nodes: [
       { id: "root", component: "Stack", children: ["summary", "send"] },
@@ -41,7 +40,7 @@ const invoiceChaser = () => ({
       },
     ],
     data: { overdue: [] },
-    queries: [{ path: "/overdue", tool: "fn:list_overdue", input: { days: 30 } }],
+    queries: [{ name: "overdue", tool: "fn:list_overdue", input: { days: 30 } }],
   },
   components: { InvoiceSummary: "export default function InvoiceSummary(){ return null; }" },
   storage: {
@@ -114,7 +113,7 @@ describe("appDocumentSchema and validateAppDocument", () => {
   it("requires a server for fn: query, prop action, and step references", () => {
     const query = {
       ...minimal(),
-      tree: { ...minimal().tree, queries: [{ path: "", tool: "fn:load" }] },
+      tree: { ...minimal().tree, queries: [{ name: "load", tool: "fn:load" }] },
     };
     const action = {
       ...minimal(),

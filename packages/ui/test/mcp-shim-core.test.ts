@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   callApp,
   createShimRuntime,
-  decodePointer,
   resolveQueries,
   setQueryData,
   type BridgeCallResult,
@@ -77,128 +76,27 @@ describe("MCP Apps shim call mapping", () => {
 });
 
 describe("MCP Apps shim query data", () => {
-  const query = (path: string, tool = "host_lookup") => ({ path, tool });
+  const query = (name: string, tool = "host_lookup") => ({ name, tool });
 
-  it("decodes the root and JSON Pointer escapes while rejecting unsafe keys", () => {
-    expect(decodePointer("")).toEqual([]);
-    expect(decodePointer("/a~1b/~0key")).toEqual(["a/b", "~key"]);
-    expect(decodePointer("relative")).toBeUndefined();
-    for (const key of ["__proto__", "prototype", "constructor"]) {
-      expect(decodePointer(`/safe/${key}/value`)).toBeUndefined();
-    }
-  });
-
-  it("requires an object at the root path and does not mutate prior data", () => {
+  it("writes the result at the query's name without mutating prior data (v2 spec §2)", () => {
     const prior = { keep: { nested: true } } satisfies Record<string, Json>;
-    const rejected = setQueryData(prior, query(""), [1, 2]);
-    expect(rejected).toEqual({
-      data: prior,
-      error: 'Query "host_lookup" did not return an object for the root data path.',
-    });
-    expect(prior).toEqual({ keep: { nested: true } });
-
-    const accepted = setQueryData(prior, query(""), { replacement: 1 });
-    expect(accepted).toEqual({ data: { replacement: 1 } });
-    expect(accepted.data).not.toBe(prior);
-    expect(prior).toEqual({ keep: { nested: true } });
-  });
-
-  it("creates nested object and array containers based on the next segment", () => {
-    const prior = { untouched: true } satisfies Record<string, Json>;
-    const updated = setQueryData(prior, query("/groups/0/items/1"), "second");
-
-    expect(updated).toEqual({
-      data: {
-        untouched: true,
-        groups: [{ items: [undefined, "second"] }],
-      },
-    });
+    const updated = setQueryData(prior, query("answer"), { n: 42 });
+    expect(updated).toEqual({ data: { keep: { nested: true }, answer: { n: 42 } } });
     expect(updated.data).not.toBe(prior);
-    expect(prior).toEqual({ untouched: true });
+    expect(prior).toEqual({ keep: { nested: true } });
   });
 
-  it("uses decoded pointer segments as object keys", () => {
-    expect(setQueryData({}, query("/a~1b/~0key"), 7)).toEqual({
-      data: { "a/b": { "~key": 7 } },
-    });
-  });
-
-  it("rejects non-numeric array path segments", () => {
-    const prior = { rows: [] } satisfies Record<string, Json>;
-    expect(setQueryData(prior, query("/rows/not-a-number"), 1)).toEqual({
-      data: prior,
-      error: 'Query "host_lookup" has a non-numeric array path segment.',
-    });
-    expect(prior).toEqual({ rows: [] });
-  });
-});
-
-describe("MCP Apps shim query resolution", () => {
-  const payload = (queries: Tree["queries"]): UIPayload => ({
-    formatVersion: "vendo-genui/v1",
-    root: "root",
-    nodes: [{ id: "root", component: "Text" }],
-    data: { initial: true },
-    queries,
-  }) as UIPayload;
-
-  it("fans outcomes back into their query paths and renders all failure notices", async () => {
-    const calls: string[] = [];
-    const outcomes: Record<string, ToolOutcome> = {
-      host_ok: { status: "ok", output: 42 },
-      host_error: { status: "error", error: { code: "upstream", message: "service unavailable" } },
-      host_blocked: { status: "blocked", reason: "policy denied" },
-      host_pending: { status: "pending-approval", approvalId: "apr_12345678" },
-    };
-    const renderPayload = vi.fn();
-    await resolveQueries("app_1", payload([
-      { path: "/answer", tool: "host_ok", input: { q: 1 } },
-      { path: "/error", tool: "host_error" },
-      { path: "/blocked", tool: "host_blocked" },
-      { path: "/pending", tool: "host_pending" },
-    ]), 1, {
-      call: async (_id, ref) => {
-        calls.push(ref);
-        return outcomes[ref]!;
-      },
-      currentVersion: () => 1,
-      renderPayload,
-    });
-
-    expect(calls).toEqual(["host_ok", "host_error", "host_blocked", "host_pending"]);
-    expect(renderPayload).toHaveBeenCalledWith(
-      "app_1",
-      expect.anything(),
-      { initial: true, answer: 42 },
-      [
-        'Query "host_error" failed: service unavailable',
-        'Query "host_blocked" failed: policy denied',
-        'Query "host_pending" failed: waiting for approval apr_12345678',
-      ],
-    );
-  });
-
-  it("discards an older resolution after a newer render starts", async () => {
-    let release!: (outcome: ToolOutcome) => void;
-    const pending = new Promise<ToolOutcome>((resolve) => { release = resolve; });
-    let currentVersion = 1;
-    const renderPayload = vi.fn();
-    const resolving = resolveQueries("app_old", payload([{ path: "/answer", tool: "host_slow" }]), 1, {
-      call: async () => pending,
-      currentVersion: () => currentVersion,
-      renderPayload,
-    });
-
-    currentVersion = 2;
-    release({ status: "ok", output: "stale" });
-    await resolving;
-    expect(renderPayload).not.toHaveBeenCalled();
+  it("a hostile grammar-legal name becomes own data, never the prototype", () => {
+    const updated = setQueryData({}, query("__proto__"), { polluted: true });
+    expect(Object.getPrototypeOf(updated.data)).toBe(Object.prototype);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(Object.getOwnPropertyDescriptor(updated.data, "__proto__")?.value).toEqual({ polluted: true });
   });
 });
 
 describe("MCP Apps shim open-result flush", () => {
   const openPayload: UIPayload = {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [{ id: "root", component: "Text" }],
   };

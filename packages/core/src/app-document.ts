@@ -2,12 +2,12 @@ import { z } from "zod";
 import { componentMapError } from "./component-map.js";
 import { safeErrorMessage } from "./errors.js";
 import { FN_REFERENCE_PATTERN, collectActionReferences } from "./fn-references.js";
-import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT, VENDO_TREE_FORMAT_V2 } from "./formats.js";
+import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT_V2 } from "./formats.js";
 import { appIdSchema, type AppId } from "./ids.js";
 import { TOOL_NAME_PATTERN } from "./tools.js";
 import { validateTreeV2 } from "./tree-v2.js";
 import { triggerSchema, type Trigger } from "./triggers.js";
-import { uiPayloadSchema, validateTree, type TreeNode, type UIPayload } from "./tree.js";
+import { uiPayloadSchema, type TreeNode, type UIPayload } from "./tree.js";
 
 /** 01-core §9 */
 export interface StorageDecl {
@@ -123,16 +123,7 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
   }
 
   const fnReferences: string[] = [];
-  if (app.tree?.formatVersion === VENDO_TREE_FORMAT) {
-    if (Object.prototype.hasOwnProperty.call(app.tree, "components")) {
-      return fail("validation", "v1 tree components must live at the app document level");
-    }
-    const treeResult = validateTree({ ...app.tree, components: app.components });
-    if (!treeResult.ok) {
-      return fail("validation", treeResult.error.message);
-    }
-    collectTreeFnReferences(treeResult.tree, fnReferences);
-  } else if (app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
+  if (app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
     // No grafting: v2 trees never carry components (validateTreeV2 rejects a
     // tree-level `components` member itself), so the tree validates AS-IS and
     // the document-level map is validated beside it.

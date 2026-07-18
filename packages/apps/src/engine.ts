@@ -8,7 +8,9 @@ import {
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT_V2,
   VendoError,
+  compileWirePatchV2,
   compileWireV2,
+  printWireV2,
   isPathBinding,
   isStateBinding,
   validateAppDocument,
@@ -16,7 +18,7 @@ import {
   type AppDocument,
   type ComponentCatalog,
   type Json,
-  type Tree,
+  type ShapeType,
   type TreeNode,
   type TreeQueryV2,
   type TreeV2,
@@ -24,7 +26,7 @@ import {
   type WireCompileResult,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
-import { parseModelJson } from "./incremental-tree.js";
+import { parseModelJson } from "./model-json.js";
 import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "./pins.js";
 
 /** v2 spec §§1,4 — a compiled prefix of the streaming wire: always a
@@ -42,6 +44,9 @@ export interface GenerationDependencies {
   theme?: VendoTheme;
   designRules?: string;
   pinBaselines?: readonly PinBaseline[];
+  /** v2 spec §3 — shape-card outputs keyed by tool; when present, create and
+   *  edit compiles type-check bindings and surface shape-mismatch repair. */
+  toolShapes?: Readonly<Record<string, ShapeType>>;
   /** 06-apps §5 — additive, optional partial-tree streaming seam. */
   onPartial?: (partial: GeneratedPartial) => void | Promise<void>;
   /**
@@ -169,8 +174,8 @@ const generationPromptSections = (deps: GenerationDependencies): GenerationPromp
   id: "remixable-slots",
   content: `REMIXABLE HOST SLOTS:
 ${pinBaselinesPrompt(deps.pinBaselines)}
-- A remixable slot is captured host source. To start editing it, emit fork-pin with its exact slot, a new nodeId, and an optional parentId/index. The engine copies the trusted captured source into the named generated component, renders that component, and records the baseline pin.
-- After a slot is forked, edit its named generated component with add-component while preserving the pin. Never reproduce or alter a baseline hash yourself.`,
+- A remixable slot is captured host source. To start editing it, emit <ForkPin slot="exact slot" into="parent-id" at={index} props={{...}}/> — the engine copies the trusted captured source into the named generated component (componentName above), renders it, and records the baseline pin. into/at/props are optional.
+- After a slot is forked, edit its named generated component by re-declaring <Island name="componentName">...full source...</Island> while preserving the pin. Never reproduce or alter a baseline hash yourself.`,
 }];
 
 const formatContract = (deps: GenerationDependencies): string =>
@@ -307,8 +312,8 @@ const validateCompiledCreate = async (
   const name = compiled.name?.trim() ?? "";
   if (name === "") issues.push('App must carry a non-empty name="..." attribute');
   const components = Object.keys(compiled.components).length === 0 ? undefined : compiled.components;
-  issues.push(...await catalogIssues(compiled.tree as unknown as Tree, components, deps.catalog));
-  issues.push(...rootedRenderIssues(compiled.tree as unknown as Tree));
+  issues.push(...await catalogIssues(compiled.tree, components, deps.catalog));
+  issues.push(...rootedRenderIssues(compiled.tree));
   if (issues.length > 0) return { issues };
   const document: GeneratedAppDocument = {
     format: VENDO_APP_FORMAT,
@@ -409,7 +414,7 @@ const hostPropsIssues = async (
 };
 
 const catalogIssues = async (
-  tree: Tree,
+  tree: TreeV2,
   components: Record<string, string> | undefined,
   catalog: ComponentCatalog,
 ): Promise<string[]> => {
@@ -439,17 +444,9 @@ const catalogIssues = async (
   return issues;
 };
 
-type TreeOp = Record<string, unknown> & { op: string };
-
 const distinctIssues = (current: string[], next: string[]): string[] => [
   ...new Set([...current, ...next]),
 ];
-
-const removeChildReference = (tree: TreeV2, nodeId: string): void => {
-  for (const node of tree.nodes) {
-    if (node.children !== undefined) node.children = node.children.filter((child) => child !== nodeId);
-  }
-};
 
 const insertChild = (parent: TreeNode, nodeId: string, index: unknown): void => {
   const children = parent.children ?? [];
@@ -460,240 +457,7 @@ const insertChild = (parent: TreeNode, nodeId: string, index: unknown): void => 
   parent.children = children;
 };
 
-const validOptionalIndex = (value: unknown): boolean => value === undefined
-  || (typeof value === "number" && Number.isInteger(value) && value >= 0);
-
-const reachesNode = (tree: TreeV2, startId: string, targetId: string): boolean => {
-  const pending = [startId];
-  const visited = new Set<string>();
-  while (pending.length > 0) {
-    const current = pending.pop();
-    if (current === undefined || visited.has(current)) continue;
-    if (current === targetId) return true;
-    visited.add(current);
-    const node = tree.nodes.find(({ id }) => id === current);
-    if (node !== undefined) pending.push(...(node.children ?? []));
-  }
-  return false;
-};
-
-const applyTreeOps = (
-  source: AppDocument,
-  ops: TreeOp[],
-  deps: GenerationDependencies,
-): { app?: AppDocument; issues: string[] } => {
-  const app = structuredClone(source);
-  if (app.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) {
-    return { issues: ["tree ops require a vendo-genui/v2 app"] };
-  }
-  const tree = app.tree as unknown as TreeV2;
-  const issue = (index: number, operation: TreeOp, message: string): { issues: string[] } => ({
-    issues: [`tree op[${index}] ${operation.op} failed: ${message}`],
-  });
-  const unsupportedFields = (
-    index: number,
-    operation: TreeOp,
-    allowed: string[],
-  ): { issues: string[] } | undefined => {
-    const unexpected = Object.keys(operation).filter((key) => !allowed.includes(key));
-    if (unexpected.length === 0) return undefined;
-    return issue(
-      index,
-      operation,
-      `unsupported ${unexpected.length === 1 ? "field" : "fields"} ${unexpected.map((key) => `"${key}"`).join(", ")}; allowed fields are ${allowed.map((key) => `"${key}"`).join(", ")}`,
-    );
-  };
-  for (const [index, operation] of ops.entries()) {
-    switch (operation.op) {
-      case "set-prop": {
-        if (typeof operation.nodeId !== "string" || typeof operation.prop !== "string") {
-          return issue(index, operation, `requires nodeId and prop strings; received fields: ${Object.keys(operation).join(", ")}`);
-        }
-        const unsupported = unsupportedFields(index, operation, ["op", "nodeId", "prop", "value"]);
-        if (unsupported !== undefined) return unsupported;
-        const node = tree.nodes.find(({ id }) => id === operation.nodeId);
-        if (node === undefined) return issue(index, operation, `node "${operation.nodeId}" does not exist`);
-        node.props = { ...(node.props ?? {}), [operation.prop]: asJson(operation.value) };
-        break;
-      }
-      case "add-node": {
-        if (!isRecord(operation.node)) return issue(index, operation, "requires a node object");
-        const unsupported = unsupportedFields(index, operation, ["op", "node", "parentId", "index"]);
-        if (unsupported !== undefined) return unsupported;
-        const nodeFields = ["id", "component", "source", "props", "children"];
-        const unexpectedNodeFields = Object.keys(operation.node).filter((key) => !nodeFields.includes(key));
-        if (unexpectedNodeFields.length > 0) {
-          return issue(
-            index,
-            operation,
-            `node has unsupported ${unexpectedNodeFields.length === 1 ? "field" : "fields"} ${unexpectedNodeFields.map((key) => `"${key}"`).join(", ")}; allowed node fields are ${nodeFields.map((key) => `"${key}"`).join(", ")}; place parentId and index on the add-node operation`,
-          );
-        }
-        const node = structuredClone(operation.node) as unknown as TreeNode;
-        if (typeof node.id !== "string" || node.id.trim() === "") {
-          return issue(index, operation, "node requires a non-empty string id");
-        }
-        if (typeof node.component !== "string" || node.component.trim() === "") {
-          return issue(index, operation, "node requires a non-empty string component");
-        }
-        if (node.source !== undefined && !["prewired", "host", "generated"].includes(node.source)) {
-          return issue(index, operation, 'node source must be "prewired", "host", or "generated" when present');
-        }
-        if (node.props !== undefined && !isRecord(node.props)) {
-          return issue(index, operation, "node props must be an object when present");
-        }
-        if (node.children !== undefined
-          && (!Array.isArray(node.children) || !node.children.every((child) => typeof child === "string"))) {
-          return issue(index, operation, "node children must be an array of node-id strings when present");
-        }
-        if (!validOptionalIndex(operation.index)) return issue(index, operation, "index must be a non-negative integer when present");
-        if (tree.nodes.some(({ id }) => id === node.id)) return issue(index, operation, `node "${node.id}" already exists`);
-        if (typeof operation.parentId !== "string" || operation.parentId.trim() === "") {
-          return issue(index, operation, "requires a non-empty parentId string so the added node is attached to the rooted view");
-        }
-        const parent = tree.nodes.find(({ id }) => id === operation.parentId);
-        if (parent === undefined) return issue(index, operation, `parent "${operation.parentId}" does not exist`);
-        const childCount = parent.children?.length ?? 0;
-        if (typeof operation.index === "number" && operation.index > childCount) {
-          return issue(index, operation, `index ${operation.index} leaves a gap in parent "${operation.parentId}" children (length ${childCount})`);
-        }
-        tree.nodes.push(node);
-        insertChild(parent, node.id, operation.index);
-        break;
-      }
-      case "remove-node": {
-        if (typeof operation.nodeId !== "string") return issue(index, operation, "requires nodeId");
-        const unsupported = unsupportedFields(index, operation, ["op", "nodeId"]);
-        if (unsupported !== undefined) return unsupported;
-        if (operation.nodeId === tree.root) return issue(index, operation, "cannot remove the tree root");
-        const nodeIndex = tree.nodes.findIndex(({ id }) => id === operation.nodeId);
-        if (nodeIndex === -1) return issue(index, operation, `node "${operation.nodeId}" does not exist`);
-        tree.nodes.splice(nodeIndex, 1);
-        removeChildReference(tree, operation.nodeId);
-        break;
-      }
-      case "move-node": {
-        if (typeof operation.nodeId !== "string" || typeof operation.parentId !== "string") {
-          return issue(index, operation, `requires nodeId and parentId strings; use "nodeId" (not "id") and optional integer "index" (not "position" or "beforeId")`);
-        }
-        const unsupported = unsupportedFields(index, operation, ["op", "nodeId", "parentId", "index"]);
-        if (unsupported !== undefined) return unsupported;
-        if (!validOptionalIndex(operation.index)) return issue(index, operation, "index must be a non-negative integer when present");
-        if (!tree.nodes.some(({ id }) => id === operation.nodeId)) {
-          return issue(index, operation, `node "${operation.nodeId}" does not exist`);
-        }
-        const parent = tree.nodes.find(({ id }) => id === operation.parentId);
-        if (parent === undefined) return issue(index, operation, `parent "${operation.parentId}" does not exist`);
-        if (operation.parentId === operation.nodeId
-          || reachesNode(tree, operation.nodeId, operation.parentId)) {
-          return issue(index, operation, `cannot move "${operation.nodeId}" under itself or its descendant`);
-        }
-        const targetChildren = (parent.children ?? []).filter((child) => child !== operation.nodeId);
-        if (typeof operation.index === "number" && operation.index > targetChildren.length) {
-          return issue(index, operation, `index ${operation.index} leaves a gap in parent "${operation.parentId}" children (length ${targetChildren.length})`);
-        }
-        removeChildReference(tree, operation.nodeId);
-        insertChild(parent, operation.nodeId, operation.index);
-        break;
-      }
-      case "set-query": {
-        if (typeof operation.index !== "number" || !Number.isInteger(operation.index) || operation.index < 0) {
-          return issue(index, operation, "requires a non-negative integer index");
-        }
-        const unsupported = unsupportedFields(index, operation, ["op", "index", "query"]);
-        if (unsupported !== undefined) return unsupported;
-        const queries = tree.queries ?? [];
-        if (operation.query === null) {
-          if (operation.index >= queries.length) return issue(index, operation, `query index ${operation.index} does not exist`);
-          queries.splice(operation.index, 1);
-        } else if (isRecord(operation.query)) {
-          if (operation.index > queries.length) return issue(index, operation, `query index ${operation.index} leaves a gap`);
-          queries[operation.index] = structuredClone(operation.query) as unknown as TreeQueryV2;
-        } else {
-          return issue(index, operation, "requires a query object or null");
-        }
-        tree.queries = queries;
-        break;
-      }
-      case "add-component": {
-        if (typeof operation.name !== "string" || typeof operation.source !== "string") {
-          return issue(index, operation, `requires name and source strings; received fields: ${Object.keys(operation).join(", ")}`);
-        }
-        const unsupported = unsupportedFields(index, operation, ["op", "name", "source"]);
-        if (unsupported !== undefined) return unsupported;
-        app.components = { ...(app.components ?? {}), [operation.name]: operation.source };
-        break;
-      }
-      case "fork-pin": {
-        if (typeof operation.slot !== "string" || operation.slot.length === 0
-          || typeof operation.nodeId !== "string" || operation.nodeId.length === 0) {
-          return issue(index, operation, "requires non-empty slot and nodeId strings");
-        }
-        const unsupported = unsupportedFields(index, operation, ["op", "slot", "nodeId", "parentId", "index", "props"]);
-        if (unsupported !== undefined) return unsupported;
-        if (!validOptionalIndex(operation.index)) return issue(index, operation, "index must be a non-negative integer when present");
-        const baseline = deps.pinBaselines?.find(({ slot }) => slot === operation.slot);
-        if (baseline === undefined) return issue(index, operation, `pin baseline "${operation.slot}" is unavailable`);
-        if (app.pins?.some(({ slot }) => slot === baseline.slot)) {
-          return issue(index, operation, `pin slot "${baseline.slot}" is already forked`);
-        }
-        // ENG-348 — a named-export capture forks with a synthesized default
-        // export (the jail entry renders only a default export). No detectable
-        // component export means the fork could never render: fail loudly here
-        // instead of crashing at render.
-        const forkSource = pinForkSource(baseline.source);
-        if (!hasDefaultExport(forkSource)) {
-          return issue(index, operation, `pin baseline "${baseline.slot}" has no default export and no detectable named component export; export the component from its module and re-run vendo sync`);
-        }
-        const componentName = pinComponentName(baseline.slot);
-        if (app.components?.[componentName] !== undefined) {
-          return issue(index, operation, `generated component "${componentName}" already exists`);
-        }
-        if (tree.nodes.some(({ id }) => id === operation.nodeId)) {
-          return issue(index, operation, `node "${operation.nodeId}" already exists`);
-        }
-        const parentId = operation.parentId === undefined ? tree.root : operation.parentId;
-        if (typeof parentId !== "string") return issue(index, operation, "parentId must be a string when present");
-        const parent = tree.nodes.find(({ id }) => id === parentId);
-        if (parent === undefined) return issue(index, operation, `parent "${parentId}" does not exist`);
-        const node: TreeNode = {
-          id: operation.nodeId,
-          component: componentName,
-          source: "generated",
-          ...(isRecord(operation.props)
-            ? { props: structuredClone(operation.props) as TreeNode["props"] }
-            : {}),
-        };
-        tree.nodes.push(node);
-        insertChild(parent, node.id, operation.index);
-        app.components = { ...(app.components ?? {}), [componentName]: forkSource };
-        app.pins = [...(app.pins ?? []), { slot: baseline.slot, base: baseline.hash }];
-        break;
-      }
-      case "set-name": {
-        if (typeof operation.name !== "string" || operation.name.trim() === "") {
-          return issue(index, operation, "requires a non-empty name");
-        }
-        const unsupported = unsupportedFields(index, operation, ["op", "name"]);
-        if (unsupported !== undefined) return unsupported;
-        app.name = operation.name.trim();
-        break;
-      }
-      case "set-description": {
-        if (typeof operation.description !== "string") return issue(index, operation, "requires a string");
-        const unsupported = unsupportedFields(index, operation, ["op", "description"]);
-        if (unsupported !== undefined) return unsupported;
-        app.description = operation.description;
-        break;
-      }
-      default:
-        return issue(index, operation, "unsupported tree operation");
-    }
-  }
-  return { app, issues: [] };
-};
-
-const rootedRenderIssues = (tree: Tree): string[] => {
+const rootedRenderIssues = (tree: TreeV2): string[] => {
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
   const pending = [tree.root];
   const visited = new Set<string>();
@@ -736,21 +500,12 @@ const validateEditedApp = async (
   if (!treeValidation.ok) return [treeValidation.error.message];
   const sourceTreeValidation = validateTreeV2(source.tree);
   const sourceRenderIssues = sourceTreeValidation.ok
-    ? new Set(rootedRenderIssues(sourceTreeValidation.tree as unknown as Tree))
+    ? new Set(rootedRenderIssues(sourceTreeValidation.tree))
     : new Set<string>();
   return [
-    ...rootedRenderIssues(treeValidation.tree as unknown as Tree).filter((issue) => !sourceRenderIssues.has(issue)),
-    ...await catalogIssues(treeValidation.tree as unknown as Tree, app.components, deps.catalog),
+    ...rootedRenderIssues(treeValidation.tree).filter((issue) => !sourceRenderIssues.has(issue)),
+    ...await catalogIssues(treeValidation.tree, app.components, deps.catalog),
   ];
-};
-
-const treeOpsFrom = (value: unknown): { ops?: TreeOp[]; issues: string[] } => {
-  if (!isRecord(value) || !Array.isArray(value.ops)) return { issues: ["tree edit output must be {ops:[...]}" ] };
-  if (value.ops.length === 0) return { issues: ["tree edit must include at least one op"] };
-  if (!value.ops.every((op): op is TreeOp => isRecord(op) && typeof op.op === "string")) {
-    return { issues: ["every tree edit op must be an object with an op string"] };
-  }
-  return { ops: value.ops, issues: [] };
 };
 
 const safeFilePath = (path: string): boolean =>
@@ -796,31 +551,182 @@ const codePlanFrom = (
 const repairPrompt = (issues: string[]): string =>
   issues.length === 0 ? "" : `\nREPAIR_THESE_ISSUES: ${JSON.stringify(issues)}`;
 
+/** v2 spec §5 — the one-dialect edit contract: the model sees the app as
+ *  id-anchored wire markup and emits ONE <Edit> patch in the same grammar.
+ *  The JSON ops dialect is gone. */
+const editContract = (deps: GenerationDependencies): string => composePromptSections([{
+  id: "role",
+  content: "You are the Vendo app edit engine. Return ONLY one vendo-genui/v2 <Edit>...</Edit> patch document. No prose, no markdown fences, no JSON.",
+}, {
+  id: "tree-contract",
+  content: `EDIT DIALECT (vendo-genui/v2): patch the CURRENT_APP wire below against its id="..." anchors; never regenerate the whole app and never invent ids.
+Ops (attribute-only elements unless noted):
+- <Set id="node-id" attr=.../> merges attributes into the node's props. Same value forms as create: "string", {expr}, bare attribute for true, on*="host_tool"|"fn:name" actions, bindings {queryName.path | reshape(...)}.
+- <Unset id="node-id" propName otherProp/> removes the named props.
+- <Insert into="parent-id" at={index}>...new elements in the create grammar...</Insert> — omit at to append; the compiler mints ids for inserted nodes.
+- <Remove id="node-id"/> removes the node and its subtree. The root cannot be removed.
+- <Move id="node-id" into="parent-id" at={index}/> reparents/reorders.
+- <Query id="name" tool="tool_name" input={{...}}/> adds or replaces a query; <RemoveQuery id="name"/> deletes it.
+- <Island name="PascalName">raw TSX with a default export</Island> adds or replaces a generated component; <RemoveIsland name="PascalName"/> deletes it.
+- <SetName name="..."/> renames the app; <SetDescription text="..."/> sets its description.
+- <ForkPin slot="exact remixable slot" into="parent-id" at={index} props={{...}}/> forks a remixable host slot (see REMIXABLE HOST SLOTS).
+Emit at least one op. Keep patches minimal and local to the instruction.`,
+}, ...generationPromptSections(deps).filter(({ id }) =>
+  id === "component-styling" || id === "catalog" || id === "theme" || id === "design-rules" || id === "remixable-slots")]);
+
+/** Same fence tolerance as {@link extractWire}, for <Edit> documents. */
+const extractEdit = (text: string): string => {
+  const start = text.indexOf("<Edit");
+  if (start === -1) return text;
+  const closeTag = "</Edit>";
+  const close = text.lastIndexOf(closeTag);
+  return close === -1 ? text.slice(start) : text.slice(start, close + closeTag.length);
+};
+
+/** Raw-text model call for the edit dialect (no streaming seam: edits are
+ *  small and apply atomically). */
+const generateWireText = async (
+  deps: GenerationDependencies,
+  system: string,
+  prompt: string,
+): Promise<{ text?: string; issues: string[] }> => {
+  try {
+    const { streamText } = await import("ai");
+    const result = streamText({
+      model: deps.model,
+      system,
+      prompt,
+      temperature: 0,
+      maxRetries: 0,
+    });
+    let text = "";
+    for await (const delta of result.textStream) {
+      text += delta;
+    }
+    return { text, issues: [] };
+  } catch (error) {
+    return { issues: [`model generation failed: ${error instanceof Error ? error.message : "unknown error"}`] };
+  }
+};
+
+/** The engine-policy half of <ForkPin> (v2 spec §5 extension op): copies the
+ *  TRUSTED captured baseline into the named generated component, mints and
+ *  attaches the node, and records the pin — the model never retypes source. */
+const applyForkPin = (
+  app: AppDocument,
+  props: Record<string, unknown>,
+  deps: GenerationDependencies,
+): string[] => {
+  const fail = (message: string): string[] => [`<ForkPin> failed: ${message}`];
+  const slot = props.slot;
+  if (typeof slot !== "string" || slot.length === 0) return fail("requires a non-empty slot attribute");
+  const baseline = deps.pinBaselines?.find((candidate) => candidate.slot === slot);
+  if (baseline === undefined) return fail(`pin baseline "${slot}" is unavailable`);
+  if (app.pins?.some((pin) => pin.slot === baseline.slot)) return fail(`pin slot "${baseline.slot}" is already forked`);
+  // ENG-348 — a named-export capture forks with a synthesized default export.
+  const forkSource = pinForkSource(baseline.source);
+  if (!hasDefaultExport(forkSource)) {
+    return fail(`pin baseline "${slot}" has no default export and no detectable named component export; export the component from its module and re-run vendo sync`);
+  }
+  const componentName = pinComponentName(baseline.slot);
+  if (app.components?.[componentName] !== undefined) return fail(`generated component "${componentName}" already exists`);
+  const tree = app.tree as unknown as TreeV2;
+  const parentId = props.into === undefined ? tree.root : props.into;
+  if (typeof parentId !== "string") return fail("into must be a string node id when present");
+  const parent = tree.nodes.find(({ id }) => id === parentId);
+  if (parent === undefined) return fail(`parent "${parentId}" does not exist`);
+  if (props.at !== undefined && (typeof props.at !== "number" || !Number.isInteger(props.at) || props.at < 0)) {
+    return fail("at must be a non-negative integer when present");
+  }
+  // Compiler-owned id discipline: mint past the existing ordinals, exactly
+  // like an <Insert> would.
+  const key = componentName.toLowerCase();
+  let ordinal = 0;
+  for (const { id } of tree.nodes) {
+    const match = /^([a-z][a-z0-9]*)-([1-9]\d*)$/.exec(id);
+    if (match !== null && match[1] === key) ordinal = Math.max(ordinal, Number(match[2]));
+  }
+  const node: TreeNode = {
+    id: `${key}-${ordinal + 1}`,
+    component: componentName,
+    source: "generated",
+    ...(isRecord(props.props) ? { props: structuredClone(props.props) as TreeNode["props"] } : {}),
+  };
+  tree.nodes.push(node);
+  insertChild(parent, node.id, props.at);
+  app.components = { ...(app.components ?? {}), [componentName]: forkSource };
+  app.pins = [...(app.pins ?? []), { slot: baseline.slot, base: baseline.hash }];
+  return [];
+};
+
 const editTree = async (
   input: GenerationEditInput,
   deps: GenerationDependencies,
 ): Promise<GenerationEditResult> => {
+  if (input.app.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) {
+    return { kind: "failure", issues: ["tree edits require a vendo-genui/v2 app"] };
+  }
+  const hostComponents = deps.catalog.map(({ name }) => name);
+  const base = {
+    tree: input.app.tree as unknown as TreeV2,
+    components: input.app.components ?? {},
+    name: input.app.name,
+  };
+  const context = printWireV2(base, { includeIds: true });
   let issues = [...(input.repairIssues ?? [])];
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const output = await generateJson(
+    const output = await generateWireText(
       deps,
-      `${formatContract(deps)}\n\nTREE EDIT DIALECT: emit {"ops":[...]}. Patch the supplied app; do not regenerate it.\nExact op shapes:\n- {"op":"set-prop","nodeId":"...","prop":"...","value":...}\n- {"op":"add-node","node":{"id":"...","component":"...","source":"prewired|host|generated","props":{},"children":[]},"parentId":"...","index":0}\n- {"op":"remove-node","nodeId":"..."}\n- {"op":"move-node","nodeId":"...","parentId":"...","index":0}\n- {"op":"set-query","index":0,"query":{"name":"identifier","tool":"...","input":{}}|null}\n- {"op":"add-component","name":"PascalCaseName","source":"complete ESM React source"}\n- {"op":"fork-pin","slot":"exact remixable slot","nodeId":"newNodeId","parentId":"...","index":0,"props":{}}\n- {"op":"set-name","name":"..."}\n- {"op":"set-description","description":"..."}\nUse nodeId, never id, for existing nodes. Use index, never position or beforeId. Attach every added visible node with parentId, never add the existing root again, preserve all component sources not intentionally replaced, and never leave the rooted view empty.`,
-      `TASK: EDIT_TREE\nINSTRUCTION: ${input.instruction}\nCURRENT_APP: ${JSON.stringify(input.app)}${repairPrompt(issues)}`,
+      editContract(deps),
+      `TASK: EDIT_TREE\nINSTRUCTION: ${input.instruction}\nCURRENT_APP (wire markup; id attributes are your anchors):\n${context}\nAPP_META: ${JSON.stringify({ name: input.app.name, description: input.app.description ?? null, pins: input.app.pins ?? [] })}${repairPrompt(issues)}`,
     );
     issues = distinctIssues(issues, output.issues);
-    if (output.value !== undefined) {
-      const parsed = treeOpsFrom(output.value);
-      issues = distinctIssues(issues, parsed.issues);
-      if (parsed.ops !== undefined) {
-        const applied = applyTreeOps(input.app, parsed.ops, deps);
-        issues = distinctIssues(issues, applied.issues);
-        if (applied.app !== undefined) {
-          const validationIssues = await validateEditedApp(applied.app, deps, input.app);
+    if (output.text !== undefined) {
+      const patched = compileWirePatchV2(extractEdit(output.text), base, {
+        hostComponents,
+        ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
+        extensionOps: ["ForkPin", "SetDescription"],
+      });
+      const patchIssues = [
+        ...(patched.complete ? [] : ["wire did not parse to a complete <Edit> document"]),
+        ...patched.issues.map(({ code, message }) => `wire ${code}: ${message}`),
+      ];
+      if (patchIssues.length === 0) {
+        const app: AppDocument = {
+          ...structuredClone(input.app),
+          ...(patched.name === undefined ? {} : { name: patched.name }),
+          tree: structuredClone(patched.tree) as unknown as NonNullable<AppDocument["tree"]>,
+        };
+        if (Object.keys(patched.components).length === 0) {
+          delete app.components;
+        } else {
+          app.components = structuredClone(patched.components);
+        }
+        const extensionIssues: string[] = [];
+        const changed = patched.appliedOps > 0 || patched.extensionOps.length > 0;
+        for (const extension of patched.extensionOps) {
+          if (extension.op === "SetDescription") {
+            if (typeof extension.props.text !== "string") {
+              extensionIssues.push("<SetDescription> needs a string text attribute");
+            } else {
+              app.description = extension.props.text;
+            }
+            continue;
+          }
+          extensionIssues.push(...applyForkPin(app, extension.props, deps));
+        }
+        if (!changed) extensionIssues.push("the patch contained no effective ops; emit at least one op for the instruction");
+        if (extensionIssues.length === 0) {
+          const validationIssues = await validateEditedApp(app, deps, input.app);
           if (validationIssues.length === 0) {
-            return { kind: "document", document: withoutId(applied.app), rung: 1 };
+            return { kind: "document", document: withoutId(app), rung: 1 };
           }
           issues = distinctIssues(issues, validationIssues);
+        } else {
+          issues = distinctIssues(issues, extensionIssues);
         }
+      } else {
+        issues = distinctIssues(issues, patchIssues);
       }
     }
   }

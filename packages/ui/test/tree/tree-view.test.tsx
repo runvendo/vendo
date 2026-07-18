@@ -2,8 +2,8 @@
 import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { VENDO_TREE_FORMAT, type Json, type Tree, type ToolOutcome } from "@vendoai/core";
-import { PayloadView, TreeView, registerTreeRenderer } from "../../src/tree/index.js";
+import { VENDO_TREE_FORMAT_V2, type Json, type ToolOutcome } from "@vendoai/core";
+import { PayloadView, TreeView, registerTreeRenderer, type WalkTree } from "../../src/tree/index.js";
 
 afterEach(() => {
   cleanup();
@@ -12,8 +12,8 @@ afterEach(() => {
 
 const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
-function tree(nodes: Tree["nodes"], root = nodes[0]?.id ?? "root", components?: Record<string, string>): Tree {
-  return { formatVersion: VENDO_TREE_FORMAT, root, nodes, components };
+function tree(nodes: WalkTree["nodes"], root = nodes[0]?.id ?? "root", components?: Record<string, string>): WalkTree {
+  return { formatVersion: VENDO_TREE_FORMAT_V2, root, nodes, components };
 }
 
 describe("TreeView public surface", () => {
@@ -74,7 +74,7 @@ describe("TreeView public surface", () => {
     const partial = {
       ...tree([{ id: "root", component: "RevenueCard", source: "generated" }]),
       streaming: true,
-    } as Tree;
+    } as WalkTree;
 
     render(<TreeView tree={partial} components={{}} onAction={ok} />);
 
@@ -145,11 +145,11 @@ describe("TreeView public surface", () => {
 
   it("contains core validation failures before rendering", () => {
     const invalid = {
-      formatVersion: VENDO_TREE_FORMAT,
+      formatVersion: VENDO_TREE_FORMAT_V2,
       root: "root",
       nodes: [{ id: "root", component: "Stack" }],
       components: { Stack: "export default function Stack() { return null }" },
-    } as unknown as Tree;
+    } as unknown as WalkTree;
 
     render(<TreeView tree={invalid} components={{}} onAction={ok} />);
 

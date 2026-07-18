@@ -165,9 +165,7 @@ describe("runtime in-client surface", () => {
       tools,
       catalog: [],
       pinBaselines: [baseline],
-      model: scriptedLanguageModel(JSON.stringify({
-        ops: [{ op: "set-name", name: "Edited name" }],
-      })),
+      model: scriptedLanguageModel('<Edit><SetName name="Edited name"/></Edit>'),
     });
     return { store, guard, runtime };
   };

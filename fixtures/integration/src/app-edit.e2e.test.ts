@@ -1,7 +1,7 @@
 /** J3 — APP EDIT + HISTORY through the composed wire.
  *
  * Create an app (POST /apps drives the generation engine's CREATE dialect), then
- * edit it (POST /apps/:id/edit drives the EDIT-TREE dialect — a {ops:[...]} patch
+ * edit it (POST /apps/:id/edit drives the EDIT dialect — an <Edit> wire patch
  * the composed engine applies and re-validates). The wire returns an EditResult;
  * history surfaces the prior version; undo restores it.
  *
@@ -29,11 +29,9 @@ interface AppDoc {
 
 const CREATE_DIALECT = '<App name="Greeting"><Text text="Hello"/></App>';
 
-// EDIT-TREE dialect: patch the greeting text. The instruction avoids the
+// EDIT dialect: patch the greeting text. The instruction avoids the
 // engine's server-keyword heuristic so it routes to the tree (not code) dialect.
-const EDIT_DIALECT = {
-  ops: [{ op: "set-prop", nodeId: "text-1", prop: "text", value: "Goodbye" }],
-};
+const EDIT_DIALECT = '<Edit><Set id="text-1" text="Goodbye"/></Edit>';
 
 const greetingText = (doc: AppDoc): string | undefined =>
   doc.tree.nodes.find((node) => node.id === "text-1")?.props?.text;
