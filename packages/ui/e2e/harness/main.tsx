@@ -1,11 +1,12 @@
-import type {
-  ApprovalDecision,
-  ApprovalRequest,
-  Json,
-  ToolOutcome,
-  Tree,
-  UIPayload,
-  VendoTheme,
+import {
+  compileWireV2,
+  type ApprovalDecision,
+  type ApprovalRequest,
+  type Json,
+  type ToolOutcome,
+  type Tree,
+  type UIPayload,
+  type VendoTheme,
 } from "@vendoai/core";
 import {
   VendoProvider,
@@ -1127,6 +1128,74 @@ function FormatDrillScenario({ registered }: { registered: boolean }) {
   );
 }
 
+/**
+ * WAVE 1 GATE (v2 spec §8, docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md):
+ * a hand-written JSX wire compiles IN THE PAGE with the real compiler and
+ * renders through the same PayloadView dispatch as every stored payload —
+ * side-by-side with a stored v1 tree to prove coexistence. Covers queries →
+ * `$path` bindings, host-brand-wins resolution, a jailed generated island,
+ * and a compiler-emitted action dispatching through onAction.
+ */
+const V2_WIRE = `<App name="Cash overview">
+  <Query id="invoice" tool="billing_invoice"/>
+  <Query id="customer" tool="crm_customer"/>
+  <Stack gap={14}>
+    <Text text="Cash overview (compiled from the v2 JSX wire)" variant="heading"/>
+    <HostCard title={customer.name} total={invoice.total}/>
+    <Grid columns={2}>
+      <Card title="Why this renders">
+        <Text text="Wire -> compiler -> vendo-genui/v2 tree -> the shared v1 walk."/>
+      </Card>
+      <RevenueNote/>
+    </Grid>
+    <Button label="Send reminder" onClick="fn:send_reminder"/>
+  </Stack>
+  <Island name="RevenueNote">
+export default function RevenueNote() {
+  return <p>Generated island: reminder drafts are ready.</p>;
+}
+  </Island>
+</App>`;
+
+function TreeV2Scenario() {
+  const [action, setAction] = useState<{ nodeId: string; action: string; payload?: Json }>();
+  const compiled = useMemo(() => compileWireV2(V2_WIRE, { hostComponents: ["HostCard"] }), []);
+  const payload = useMemo(
+    () => ({ ...compiled.tree, components: compiled.components }) as unknown as UIPayload,
+    [compiled],
+  );
+  const onAction = async (request: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome> => {
+    setAction(request);
+    return { status: "ok", output: { recorded: true } };
+  };
+  const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
+  return (
+    <TreeThemeBoundary>
+      <div className="format-drill-grid">
+        <section aria-label="v2 wire surface">
+          <h2>vendo-genui/v2 — compiled from the wire</h2>
+          <PayloadView
+            payload={payload}
+            components={components}
+            data={{ invoice: { total: 4200 }, customer: { name: "Ada Lovelace" } }}
+            onAction={onAction}
+          />
+          <output className="recorder" data-testid="v2-compile-recorder">
+            {`compile: complete=${compiled.complete} issues=${compiled.issues.length}`}
+          </output>
+          <output className="recorder" data-testid="v2-action-recorder">
+            {action ? JSON.stringify(action) : "No action recorded"}
+          </output>
+        </section>
+        <section aria-label="Stored v1 tree">
+          <h2>vendo-genui/v1 — stored app (coexistence)</h2>
+          <PayloadView payload={storedV1Tree as unknown as UIPayload} components={components} onAction={noop} />
+        </section>
+      </div>
+    </TreeThemeBoundary>
+  );
+}
+
 /** A second long conversation for the thread-SWITCH scenario (ENG-213): both
  *  ids ride the wire list() via the client override below. */
 const boundedThreadB: Thread = {
@@ -1476,6 +1545,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree-drift": return { title: "Pin drift (host component updated)", content: <PinDriftScenario /> };
     case "/tree-themed": return { title: "Tree — loud host theme", theme: loudTheme, content: <TreeScenario /> };
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
+    case "/tree-v2": return { title: "vendo-genui/v2 — wire compile + v1 coexistence", content: <TreeV2Scenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
     case "/format-drill-registered": return { title: "Format drill — registered", content: <FormatDrillScenario registered />, ownProvider: true };
     case "/format-drill-unregistered": return { title: "Format drill — unregistered", content: <FormatDrillScenario registered={false} />, ownProvider: true };
