@@ -1,17 +1,20 @@
 # Hosted store — one-pager
 
 Date: 2026-07-18
-Status: DRAFT for Yousef's review (write-once decision doc, not living law)
+Status: ACCEPTED 2026-07-17 (Yousef, via the cloud-definition brainstorm; Q1/Q2
+as recommended, Q3 amended — see Decisions). Amended to match the realignment
+lane: the entitlement protocol and validate endpoint no longer exist.
 
 ## What it is
 
 A multi-tenant Postgres behind an HTTP API that the OSS `hostedStore` adapter
-speaks. With `VENDO_API_KEY` set and the `hosted-storage` entitlement present,
-the umbrella composes `hostedStore()` instead of `createStore()` — Vendo data
-(apps, threads, runs, grants, approvals, audit, state, sessions) lives with
-Vendo. Tenant = the key's org, resolved through the existing key-validation +
-entitlements path (`/api/v1/keys/validate`, entitlements contract v2, cached
-TTL). BYO-Postgres (`createStore`) remains, single-player only.
+speaks. With `VENDO_API_KEY` set and no explicit
+store passed, the umbrella composes `hostedStore()` instead of `createStore()`
+(adapter rule: the key fills only unset slots; an explicitly passed store
+always wins) — Vendo data (apps, threads, runs, grants, approvals, audit,
+state, sessions) lives with Vendo. Tenant = the key's org, resolved
+server-side on every call, never from the request body. BYO-Postgres
+(`createStore`) remains forever (hard BYO rule).
 
 From OSS's perspective the hosted backend is just another `StoreAdapter`
 (`packages/core/src/store.ts`). The service is dumb storage: it persists rows
@@ -59,7 +62,8 @@ grammar, `vendo_threads` revisions) are enforced server-side, same rules as
 ## Tenancy, limits, residency
 
 - Every row carries `org_id`; the org comes from the API key, never the
-  request body. Key rotation re-resolves via the cached entitlements lookup.
+  request body. Key rotation takes effect on the next call — there is no
+  client-side entitlement cache.
 - Orgs re-home here eventually (kill-list A5 cut them from OSS); v1 needs only
   tenant = key's org — no membership model yet.
 - Soft quotas per org at launch (rows, blob bytes, requests/s); 402 with
@@ -72,23 +76,26 @@ grammar, `vendo_threads` revisions) are enforced server-side, same rules as
 ## Seam split
 
 - **OSS (this repo):** `hostedStore(config)` in `packages/store` — a
-  fetch-backed `StoreAdapter` (~one file plus tests), reusing the cloud.ts
-  error mapping. Umbrella composition: key present + entitlement →
-  `hostedStore`, else `createStore`. Conformance: the existing store adapter
-  conformance suite runs against it via an in-memory fake of the HTTP API.
+  fetch-backed `StoreAdapter` (~one file plus tests), reusing the
+  `cloudSandbox` error-mapping table and the shared deployment-identity
+  headers. Umbrella composition via a `selectStore` seam cloned from
+  `selectConnections`: explicit store wins, else key → `hostedStore`, else
+  `createStore`. Conformance: the existing store adapter conformance suite
+  runs against it via an in-memory fake of the HTTP API.
 - **vendo-web (private):** the service — Postgres schema (org-scoped mirror of
   `packages/store/src/schema.ts`), the routes above beside the existing
-  broker/key-validation code, metering, migrations. Ships behind the
-  `hosted-storage` entitlement flag.
+  broker/key-introspection code, metering, migrations. Gated by valid key +
+  `storage_gb` quota — no entitlement flag (2026-07-17 decision: no capability
+  booleans anywhere).
 
-## Open questions
+## Decisions (Yousef, 2026-07-17)
 
-1. **Postgres substrate.** The broker runs on Cloudflare Workers, which can't
-   embed Postgres. Recommendation: managed Postgres (Neon or similar) reached
-   via Hyperdrive from the existing broker — no new deploy target.
-2. **Blob transport.** Raw bytes through the API vs presigned object-storage
-   URLs. Recommendation: raw bytes now (blobs today are app docs and small
-   artifacts); revisit presigned R2 URLs only when size or egress cost says so.
-3. **Entitlement granularity.** Single `hosted-storage` boolean vs metered
-   tiers at launch. Recommendation: boolean + soft quotas; wire metering into
-   pricing tiers only after real usage exists.
+1. **Postgres substrate — accepted as recommended.** Managed Postgres (Neon or
+   similar) reached via Hyperdrive from the existing broker — no new deploy
+   target.
+2. **Blob transport — accepted as recommended.** Raw bytes through the API
+   now; revisit presigned R2 URLs only when size or egress cost says so.
+3. **Gating — amended.** No `hosted-storage` boolean, no entitlement flag of
+   any kind. A valid key gets the hosted store; `storage_gb` soft quotas do
+   the limiting, with the standard quota-exhausted error past caps. Metered
+   pricing tiers wire in only after real usage exists.
