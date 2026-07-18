@@ -141,6 +141,21 @@ overlay's `thread` prop: the overlay stays the positioning shell and renders
 your (ejected or custom) thread component in place of the built-in
 `VendoThread`.
 
+Two shelf pieces are placeable anywhere in host pages:
+
+- **`VendoActivities`** — drop-in feed of what the agent did plus pending
+  approvals, placeable in any host page. Pending approvals render on top as
+  actionable `ApprovalCard`s (polled, so approvals raised elsewhere appear on
+  their own); recent activity renders humanized below. Props: `pollMs`
+  (default 5000, `0` disables) and `maxItems` (default 8). Shows a quiet
+  one-line empty state when nothing has happened yet.
+- **`VendoTrigger`** — a button that opens the chat preloaded with a prompt
+  and context. Props: `prompt` (required), `context` (appended to the prompt),
+  children as the label. The prompt is prefilled into the composer, never
+  auto-sent. Hosts using their own element call `openVendoConversation(prompt)`
+  directly — it opens the most recently mounted `VendoOverlay` and returns
+  `false` (with a dev-mode console hint) when none is mounted.
+
 Chrome derives all styling from `VendoTheme` tokens. The required bar is WCAG
 2.1 AA, complete keyboard access, screen-reader testing, and mobile web.
 Every piece is mobile-friendly by requirement; the overlay becomes a
