@@ -31,7 +31,11 @@ export interface CloudModelOptions {
 
 /** The wire carries the v3 call options verbatim minus the per-call plumbing
  * that cannot cross a process boundary: the abort signal (threaded into fetch
- * instead) and per-call provider headers (the console owns its provider). */
+ * instead) and per-call provider headers (the console owns its provider).
+ * KNOWN LIMITATION — the frame is plain JSON, so binary/handle prompt parts
+ * (Uint8Array file/image data, URL objects) are not carried; managed
+ * inference serves text + tool calls today. Extending the wire to binary
+ * parts is a deliberate follow-up, not an accident of serialization. */
 function wireOptions(callOptions: unknown): { options: Record<string, unknown>; signal: AbortSignal | undefined } {
   const { abortSignal, headers, ...options } = (callOptions ?? {}) as Record<string, unknown> & {
     abortSignal?: AbortSignal;
@@ -52,36 +56,60 @@ async function errorFrom(response: Response): Promise<VendoError> {
   const message = typeof error?.message === "string"
     ? error.message
     : `Vendo Cloud inference request failed with ${response.status}`;
-  return new VendoError(response.status === 402 ? "cloud-required" : "validation", message);
+  // 402 (meter exhausted) and 401 (bad/revoked key) are both "fix your Cloud
+  // account" conditions → cloud-required; everything else is validation.
+  const code = response.status === 402 || response.status === 401 ? "cloud-required" : "validation";
+  return new VendoError(code, message);
 }
 
 /** Split an NDJSON byte stream into parsed parts, forwarding each part the
  * moment its line is complete — never buffering past a line boundary, so
- * generation latency is exactly the console's latency. */
+ * generation latency is exactly the console's latency.
+ * Two invariants keep it correct under arbitrary network chunking:
+ *   - pull() only returns after it enqueued at least one part (a chunk of
+ *     blank keep-alive lines must not satisfy a pull, or the runtime never
+ *     re-pulls and the stream deadlocks);
+ *   - decode(…, { stream: true }) carries multi-byte UTF-8 sequences split
+ *     across chunk boundaries. */
 function ndjsonParts(body: ReadableStream<Uint8Array>): ReadableStream<unknown> {
   const decoder = new TextDecoder();
   let buffered = "";
   const reader = body.getReader();
+
+  async function parseFrame(line: string): Promise<unknown> {
+    try {
+      return JSON.parse(line) as unknown;
+    } catch {
+      // A malformed frame is a broken transport: release the body reader and
+      // surface a typed error instead of a raw SyntaxError.
+      await reader.cancel().catch(() => undefined);
+      throw new VendoError("validation", "Vendo Cloud inference stream sent a malformed NDJSON frame");
+    }
+  }
+
   return new ReadableStream<unknown>({
     async pull(controller) {
       for (;;) {
         const { done, value } = await reader.read();
         if (done) {
           const tail = buffered.trim();
-          if (tail.length > 0) controller.enqueue(JSON.parse(tail) as unknown);
+          if (tail.length > 0) controller.enqueue(await parseFrame(tail));
           controller.close();
           return;
         }
         buffered += decoder.decode(value, { stream: true });
+        let enqueued = 0;
         let newline = buffered.indexOf("\n");
-        if (newline === -1) continue;
         while (newline !== -1) {
           const line = buffered.slice(0, newline).trim();
           buffered = buffered.slice(newline + 1);
-          if (line.length > 0) controller.enqueue(JSON.parse(line) as unknown);
+          if (line.length > 0) {
+            controller.enqueue(await parseFrame(line));
+            enqueued += 1;
+          }
           newline = buffered.indexOf("\n");
         }
-        return;
+        if (enqueued > 0) return;
       }
     },
     async cancel(reason) {

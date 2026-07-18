@@ -148,6 +148,99 @@ describe("cloudModel", () => {
     ]);
   });
 
+  it("keeps pulling through blank keep-alive lines instead of deadlocking", async () => {
+    const encoder = new TextEncoder();
+    let releaseReal: () => void = () => {};
+    const realReleased = new Promise<void>((resolve) => { releaseReal = resolve; });
+    const body = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        // A chunk whose complete lines are ALL blank must not satisfy a pull:
+        // the parser has to keep reading until a real part arrives.
+        controller.enqueue(encoder.encode("\n\n"));
+        controller.enqueue(encoder.encode("\n"));
+        controller.enqueue(encoder.encode(`${JSON.stringify({ type: "text-start", id: "text_1" })}\n\n`));
+        await realReleased;
+        controller.enqueue(encoder.encode(`${JSON.stringify({ type: "text-end", id: "text_1" })}\n`));
+        controller.close();
+      },
+    });
+    const cloudFetch = vi.fn(async () => new Response(body, { status: 200 }));
+    const model = asV3(cloudModel({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: cloudFetch as unknown as typeof fetch }));
+    const { stream } = await model.doStream(promptOptions);
+    const reader = stream.getReader();
+    // Deadlocks right here if a blank-only chunk completes a pull.
+    expect((await reader.read()).value).toEqual({ type: "text-start", id: "text_1" });
+    releaseReal();
+    expect((await reader.read()).value).toEqual({ type: "text-end", id: "text_1" });
+    expect((await reader.read()).done).toBe(true);
+  });
+
+  it("reassembles multi-byte UTF-8 split at every possible byte boundary", async () => {
+    // "héllo 🌍" carries 2-byte and 4-byte sequences; splitting the encoded
+    // frame at EVERY offset must always decode to the same part.
+    const part = { type: "text-delta", id: "text_1", delta: "héllo 🌍" };
+    const bytes = new TextEncoder().encode(`${JSON.stringify(part)}\n`);
+    for (let split = 1; split < bytes.length; split += 1) {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(bytes.slice(0, split));
+          controller.enqueue(bytes.slice(split));
+          controller.close();
+        },
+      });
+      const cloudFetch = vi.fn(async () => new Response(body, { status: 200 }));
+      const model = asV3(cloudModel({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: cloudFetch as unknown as typeof fetch }));
+      const { stream } = await model.doStream(promptOptions);
+      expect(await collect(stream), `split at byte ${split}`).toEqual([part]);
+    }
+  });
+
+  it("surfaces a malformed frame as a typed error and releases the body reader", async () => {
+    const encoder = new TextEncoder();
+    const cancelled = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("{not json}\n"));
+        // Never closed: only an explicit reader.cancel() releases the source.
+      },
+      cancel: cancelled,
+    });
+    const cloudFetch = vi.fn(async () => new Response(body, { status: 200 }));
+    const model = asV3(cloudModel({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: cloudFetch as unknown as typeof fetch }));
+    const { stream } = await model.doStream(promptOptions);
+    await expect(stream.getReader().read()).rejects.toThrow(/malformed NDJSON frame/);
+    expect(cancelled).toHaveBeenCalledOnce();
+  });
+
+  it("cancelling the part stream cancels the underlying body reader", async () => {
+    const encoder = new TextEncoder();
+    const cancelled = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(`${JSON.stringify({ type: "text-start", id: "text_1" })}\n`));
+        // Held open: the consumer walks away mid-generation.
+      },
+      cancel: cancelled,
+    });
+    const cloudFetch = vi.fn(async () => new Response(body, { status: 200 }));
+    const model = asV3(cloudModel({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: cloudFetch as unknown as typeof fetch }));
+    const { stream } = await model.doStream(promptOptions);
+    const reader = stream.getReader();
+    expect((await reader.read()).value).toEqual({ type: "text-start", id: "text_1" });
+    await reader.cancel("done early");
+    expect(cancelled).toHaveBeenCalledOnce();
+  });
+
+  it("maps an invalid key to the cloud-required error with the server message", async () => {
+    const cloudFetch = vi.fn(async () =>
+      Response.json({ error: { code: "unauthorized", message: "Valid API key required." } }, { status: 401 }));
+    const model = asV3(cloudModel({ apiKey: "vnd_revoked", baseUrl: "https://cloud.test", fetch: cloudFetch as unknown as typeof fetch }));
+    await expect(model.doGenerate(promptOptions)).rejects.toMatchObject({
+      code: "cloud-required",
+      message: "Valid API key required.",
+    });
+  });
+
   it("maps an exhausted meter to the clear cloud-required error on the call", async () => {
     const cloudFetch = vi.fn(async () =>
       Response.json({ error: { code: "quota-exhausted", message: "Quota exhausted: upgrade or wait for period reset." } }, { status: 402 }));
