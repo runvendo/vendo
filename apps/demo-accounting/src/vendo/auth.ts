@@ -1,15 +1,24 @@
-import { supabasePreset } from "@vendoai/actions/presets"
-import type { ActAs, Principal } from "@vendoai/vendo"
-import { resolveCadenceSession } from "@/server/session"
-import { resolveCadenceSubject, supabaseJwtSecret } from "@/server/users"
+import { supabase } from "@vendoai/vendo/server"
+import { resolveCadenceSubject, supabaseJwtSecret, supabaseUrl } from "@/server/users"
 
-/** Session-backed principal: the Supabase user id is the Vendo subject.
- * Requests without a valid session resolve to null and ride the umbrella's
- * per-client anonymous principal. */
-export async function resolveCadencePrincipal(request: Request): Promise<Principal | null> {
-  const session = await resolveCadenceSession(request)
-  return session ? { kind: "user", subject: session.subject, display: session.display } : null
-}
+/** One preset fills all three identity seams (09-vendo §2.1): the
+ * request→Principal resolver, the away/MCP actAs seam, and the door's OAuth
+ * adapter. Sessions verify the same hybrid way `src/server/session.ts` does —
+ * HS256 offline against the project JWT secret (also what away execution
+ * mints with), ES256 login tokens (`supabase start` ≥ v2.71) against GoTrue's
+ * JWKS. `user` maps a Supabase user id to the seeded Cadence identity;
+ * returning null means "not a Cadence user" — the principal resolves to
+ * anonymous and away/MCP minting for that subject declines. */
+export const cadenceAuth = supabase({
+  secret: () => supabaseJwtSecret(),
+  // Lazy: supabaseUrl() defaults to the `supabase start` stack when
+  // SUPABASE_URL is unset, keeping local dev zero-config.
+  jwks: () => new URL("/auth/v1/.well-known/jwks.json", supabaseUrl()),
+  user: (subject) => {
+    const user = resolveCadenceSubject(subject)
+    return user ? { display: user.display, email: user.email } : null
+  },
+})
 
 /** The operator-set public origin (VENDO_BASE_URL) or, failing that, the
  * request's own origin. */
@@ -33,17 +42,3 @@ export function safeReturnTo(candidate: string | null | undefined, base: URL = p
 export function cadencePublicUrl(request: Request, path: string): URL {
   return new URL(path, publicOrigin(request))
 }
-
-/** Away + MCP execution: mint a REAL Supabase access token for the grant's
- * subject with the project's own JWT secret, via the shipped Supabase preset.
- * Subjects Cadence never seeded are declined through the claims resolver
- * (null → the seam surfaces "host declined"). The secret resolves per mint
- * and minted tokens live only inside the preset's in-memory cache — never
- * logged, never persisted. */
-export const actAsCadenceUser: ActAs = supabasePreset({
-  secret: () => supabaseJwtSecret(),
-  claims: (principal) => {
-    const user = resolveCadenceSubject(principal.subject)
-    return user ? { email: user.email, user_metadata: { name: user.display } } : null
-  },
-})

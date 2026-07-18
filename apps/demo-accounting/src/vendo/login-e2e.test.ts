@@ -12,6 +12,7 @@
  * cadence-supabase-auth job.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { SESSION_COOKIE } from "../server/session"
 import { cadenceDemoEmail, cadenceDemoPassword, cadenceDemoUsers, supabaseUrl } from "../server/users"
 import { appFetch, bootCadence, BOOT_MS, type CadenceApp } from "./e2e-harness"
 
@@ -42,8 +43,8 @@ async function login(email: string, password: string): Promise<Response> {
 
 function sessionCookieFrom(response: Response): string {
   const setCookie = response.headers.get("set-cookie") ?? ""
-  const session = setCookie.split(",").find((part) => part.trim().startsWith("cadence-session="))
-  expect(session, `expected a cadence-session cookie in: ${setCookie}`).toBeDefined()
+  const session = setCookie.split(",").find((part) => part.trim().startsWith(`${SESSION_COOKIE}=`))
+  expect(session, `expected a ${SESSION_COOKIE} cookie in: ${setCookie}`).toBeDefined()
   return session!.split(";")[0]!.trim()
 }
 
@@ -78,7 +79,7 @@ describe.skipIf(!supabaseRunning)("Cadence Supabase login (ENG-260)", () => {
     expect(dashboard.status).toBe(200)
 
     // Sanity: the token in the cookie is a Supabase JWT for the seeded user.
-    const token = cookie.slice("cadence-session=".length)
+    const token = cookie.slice(`${SESSION_COOKIE}=`.length)
     const payload = JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString()) as {
       sub: string
       role: string
@@ -100,6 +101,6 @@ describe.skipIf(!supabaseRunning)("Cadence Supabase login (ENG-260)", () => {
     const [, daniel] = cadenceDemoUsers()
     const response = await login(daniel!.email, cadenceDemoPassword())
     expect(response.status).toBe(303)
-    expect(sessionCookieFrom(response)).toContain("cadence-session=")
+    expect(sessionCookieFrom(response)).toContain(`${SESSION_COOKIE}=`)
   })
 })

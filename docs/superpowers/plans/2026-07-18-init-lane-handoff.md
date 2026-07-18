@@ -95,17 +95,15 @@ and is now the old surface — every demo and the docs have moved past it.
 
 ## Known gaps for the init lane to be aware of
 
-- **`supabase()` preset can't verify ES256 sessions.** The shipped preset
-  (`packages/vendo/src/auth-presets/supabase.ts`) verifies only HS256 sessions
-  against the project's legacy JWT secret. Supabase projects using JWT signing
-  keys (`supabase start` >= v2.71) issue ES256-signed login sessions verified
-  through GoTrue's JWKS — the preset has no JWKS support. `apps/demo-accounting`
-  hits this for real (see its `src/server/session.ts` hybrid HS256+JWKS
-  verifier) and was deliberately NOT migrated to `auth: supabase()` this wave;
-  its `vendo/server.ts` keeps the hand-wired `principal`/`actAs` trio with a
-  comment citing this gap. If init auto-detects `@supabase/*` and offers
-  `auth: supabase()`, it should say out loud that this only covers the legacy
-  HS256 JWT-secret project setting, not the newer JWKS-signed one.
+- **`supabase()` preset verifies sessions hybrid (CLOSED — was: HS256-only).**
+  The shipped preset (`packages/vendo/src/auth-presets/supabase.ts`) now
+  verifies HS256 sessions offline against the project's legacy JWT secret AND
+  ES256 login sessions (`supabase start` >= v2.71, hosted projects on JWT
+  signing keys) against GoTrue's JWKS (SUPABASE_URL-derived, `jwks` option
+  override, lazy jose). `apps/demo-accounting` is migrated to
+  `auth: supabase()` (`cadenceAuth` in its `src/vendo/auth.ts`); its own
+  `src/server/session.ts` keeps the same hybrid for non-vendo routes. Init can
+  offer `auth: supabase()` for both project key setups.
 - **`@vendoai/actions`' `authJsPreset`'s dynamic `@auth/core/jwt` import
   caches a rejection permanently.** `packages/actions/src/presets/auth-js.ts`
   line ~42-46:
