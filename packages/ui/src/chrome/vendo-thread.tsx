@@ -1,40 +1,12 @@
-import { isToolUIPart, type UIMessage } from "ai";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { isToolUIPart } from "ai";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useVendoThread } from "../hooks/use-vendo-thread.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { useCopyFeedback } from "./clipboard.js";
 import { MorphToast, type MorphToastProps } from "./morph-toast.js";
-import { FluidThinking } from "./fluid-thinking.js";
-import { SentAttachment, type FilePart } from "./thread/attachments.js";
 import { Composer, useComposer } from "./thread/composer.js";
-import { ThreadApprovals, ThreadConnectRequests, ThreadPart } from "./thread/parts.js";
+import { MessageList } from "./thread/message-list.js";
 import { useMessageWindow, useStickToBottom } from "./thread/scrolling.js";
-import {
-  approvalByCall,
-  assistantText,
-  collapseToolRuns,
-  riskByCall,
-  userText,
-} from "./thread/message-data.js";
-
-/** ENG-225 — the copy turn action (.fl-turn-actions design). */
-function CopyTurnButton({ text }: { text: string }) {
-  const [copied, copy] = useCopyFeedback();
-  return (
-    <button type="button" className="fl-turn-btn" aria-label="Copy message" onClick={() => copy(text)}>
-      {copied ? (
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M20 6 9 17l-5-5" />
-        </svg>
-      ) : (
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <rect width="13" height="13" x="9" y="9" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-        </svg>
-      )}
-      {copied ? "Copied" : "Copy"}
-    </button>
-  );
-}
+import { approvalByCall, riskByCall, userText } from "./thread/message-data.js";
 
 export interface VendoThreadProps {
   threadId?: string;
@@ -241,131 +213,27 @@ export function VendoThread({
   return (
     <ChromeRoot>
       <div className="fl-thread" role="region" aria-label="Vendo conversation">
-        {/* role="log" — aria-label is prohibited on a roleless div (WCAG 4.1.2), and a
-            streaming message list is exactly what "log" names. */}
-        <div className="fl-msglist-wrap">
-          <div
-            className="fl-msglist"
-            role="log"
-            aria-label="Conversation messages"
-            aria-live="polite"
-            aria-busy={busy}
-            ref={scroll.listRef}
-            onScroll={() => { scroll.onScroll(); messageWindow.onNearTop(); }}
-          >
-            {messageWindow.hasOlder ? (
-              <button
-                type="button"
-                className="fl-load-older"
-                onClick={messageWindow.loadOlder}
-              >
-                Show {messageWindow.olderCount} earlier message{messageWindow.olderCount === 1 ? "" : "s"}
-              </button>
-            ) : null}
-            {messageWindow.windowed.map(message => {
-              // ENG-225 — a user turn's attachments render BESIDE the bubble
-              // (the designed .fl-turn-user-att block), not inside it; a
-              // files-only send has no bubble at all.
-              const sentFiles = message.role === "user"
-                ? message.parts.filter((part): part is FilePart => part.type === "file")
-                : [];
-              const bubbleText = message.role === "user" ? userText(message) : assistantText(message);
-              const skipBubble = message.role === "user" && bubbleText.length === 0
-                && message.parts.every(part => part.type === "file");
-              // ENG-225 — every settled turn carries a Copy action (hover-
-              // revealed, see chrome-css); Edit stays on the last user turn and
-              // Regenerate on the last assistant turn (ENG-215). The actively
-              // streaming turn gets no actions — its text is still arriving.
-              const streamingTurn = busy && message.role === "assistant" && message.id === activeAssistant?.id;
-              const showEdit = !busy && message.role === "user" && message.id === lastUserId;
-              const showRegenerate = !busy && message.role === "assistant" && message.id === lastAssistantId;
-              const showActions = !streamingTurn && (bubbleText.length > 0 || showEdit || showRegenerate);
-              return (
-                <Fragment key={message.id}>
-                  {sentFiles.length > 0 ? (
-                    <div className={`fl-turn-user-att${isRestored(message.id) ? " fl-no-entrance" : ""}`}>
-                      {sentFiles.map((part, index) => <SentAttachment key={index} part={part} />)}
-                    </div>
-                  ) : null}
-                  {skipBubble ? null : (
-                    <article
-                      className={`${message.role === "user" ? "fl-turn-user" : "fl-turn-assistant"}${
-                        isRestored(message.id) ? " fl-no-entrance" : ""}`}
-                      data-role={message.role}
-                      aria-label={`${message.role} message`}
-                    >
-                      {collapseToolRuns(message.parts).map(({ part, index, count }) => (
-                        <ThreadPart
-                          key={`${message.id}-${index}`}
-                          part={part}
-                          partKey={`${message.id}-${index}`}
-                          role={message.role}
-                          restored={isRestored(message.id)}
-                          count={count}
-                          risks={risks}
-                        />
-                      ))}
-                      {showActions ? (
-                        <div className="fl-turn-actions">
-                          {bubbleText.length > 0 ? <CopyTurnButton text={bubbleText} /> : null}
-                          {showEdit ? (
-                            <button type="button" className="fl-turn-btn" aria-label="Edit message" onClick={editLast}>
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                              </svg>
-                              Edit
-                            </button>
-                          ) : null}
-                          {showRegenerate ? (
-                            <button type="button" className="fl-turn-btn" aria-label="Regenerate" onClick={regenerateLast}>
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                <path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 21v-5h5" />
-                              </svg>
-                              Regenerate
-                            </button>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </article>
-                  )}
-                </Fragment>
-              );
-            })}
-            <ThreadApprovals
-              approvals={approvals}
-              risks={risks}
-              guardApprovals={guardApprovals}
-              cardRefs={approvalCardRefs}
-              respond={response => thread.addToolApprovalResponse(response)}
-              onMorph={setMorph}
-            />
-            <ThreadConnectRequests
-              messages={thread.messages}
-              sendMessage={message => thread.sendMessage(message)}
-            />
-            {awaitingFirstChunk ? (
-              <>
-                <div className="fl-generating">
-                  <span className="fl-pulse" aria-hidden="true" />
-                  Generating&hellip;
-                </div>
-                <div className="fl-skeleton" aria-hidden="true">
-                  <div className="fl-skeleton-bar" />
-                  <div className="fl-skeleton-bar" />
-                  <div className="fl-skeleton-bar" />
-                </div>
-              </>
-            ) : null}
-            {working ? <FluidThinking label="Working" /> : null}
-          </div>
-          {scroll.showJump ? (
-            <button type="button" className="fl-jump" aria-label="Jump to latest" onClick={scroll.jumpToLatest}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M12 5v14" /><path d="m19 12-7 7-7-7" />
-              </svg>
-            </button>
-          ) : null}
-        </div>
+        <MessageList
+          scroll={scroll}
+          messageWindow={messageWindow}
+          busy={busy}
+          risks={risks}
+          isRestored={isRestored}
+          activeAssistantId={activeAssistant?.id}
+          lastUserId={lastUserId}
+          lastAssistantId={lastAssistantId}
+          onEditLast={editLast}
+          onRegenerateLast={regenerateLast}
+          approvals={approvals}
+          guardApprovals={guardApprovals}
+          cardRefs={approvalCardRefs}
+          respond={response => thread.addToolApprovalResponse(response)}
+          onMorph={setMorph}
+          messages={thread.messages}
+          sendMessage={message => thread.sendMessage(message)}
+          awaitingFirstChunk={awaitingFirstChunk}
+          working={working}
+        />
         {errorBanner}
         {composer}
       </div>
