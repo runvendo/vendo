@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
 import { VendoError, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
 import { ERASE_TABLES, eraseStore } from "./erase.js";
+import { DDL } from "./schema.js";
 import { appFixture, approvalFixture, auditFixture, grantFixture } from "./fixtures.test-util.js";
 import { appStore, grantStore, registerEphemeralSubject } from "./index.js";
 
@@ -11,15 +11,15 @@ import { appStore, grantStore, registerEphemeralSubject } from "./index.js";
 // exposed on the umbrella. It is the only sanctioned deletion path for audit
 // rows."
 
-describe("02-store §5 — erase cascade covers the contract's table map", () => {
-  it("keeps the erase table list identical to the §2 table map", () => {
-    const contract = readFileSync(
-      new URL("../../../docs/contracts/02-store.md", import.meta.url),
-      "utf8",
-    );
-    const documented = [...contract.matchAll(/^\| `(vendo_[a-z_]+)` \|/gm)].map((match) => match[1]);
-    expect(documented).toHaveLength(14);
-    expect(documented).toEqual([...ERASE_TABLES]);
+describe("erase cascade covers the whole schema", () => {
+  it("keeps ERASE_TABLES identical to the tables the schema actually creates", () => {
+    // Code-to-code invariant (the retired contract doc used to proxy this):
+    // every vendo_ table the DDL creates — plus vendo_meta, created in
+    // migrate() — must be reachable by the erase cascade.
+    const created = DDL
+      .map((statement) => statement.match(/CREATE TABLE IF NOT EXISTS (vendo_[a-z_]+)/)?.[1])
+      .filter((name): name is string => name !== undefined);
+    expect(new Set(ERASE_TABLES)).toEqual(new Set(["vendo_meta", ...created]));
   });
 });
 
