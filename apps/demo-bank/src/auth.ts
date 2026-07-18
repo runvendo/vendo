@@ -5,8 +5,8 @@ import { authenticateMapleUser, authSecret, isSecureDeployment } from "@/server/
 /**
  * Maple's real Auth.js setup: the credentials provider over the seeded demo
  * users, JWT sessions. The session cookie is a real Auth.js JWE minted with
- * `AUTH_SECRET` — the same secret `actAsMapleUser` uses to mint away-execution
- * sessions through `@vendoai/actions/presets`.
+ * `AUTH_SECRET` — the same secret vendo/server.ts's `auth: authJs({ secret:
+ * authSecret, ... })` uses for the principal/actAs/oauth seams.
  */
 export const { handlers, auth, signIn, signOut } = NextAuth(() => ({
   // Lazy config: the secret is resolved per request, not at import, so

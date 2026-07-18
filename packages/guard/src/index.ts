@@ -5,8 +5,10 @@ export { policyFileSchema, policyRuleSchema } from "./types.js";
 export type {
   Judge,
   PolicyConfig,
+  PolicyConfigObject,
   PolicyFile,
   PolicyFn,
+  PolicyPresetName,
   PolicyRule,
   RiskResolver,
   VendoGuard,

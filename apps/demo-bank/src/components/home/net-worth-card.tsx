@@ -7,7 +7,7 @@ import { NetWorthView } from "./net-worth-view"
 /**
  * Data container for the home net-worth card. The visual card itself is the
  * presentational `NetWorthView`, which Vendo captures as a remixable slot
- * (src/vendo/host-components.tsx) — this wrapper only fetches and sums.
+ * (src/vendo/registry.tsx) — this wrapper only fetches and sums.
  */
 export function NetWorthCard() {
   const { data: profile, isLoading: pl } = useProfile()

@@ -16,7 +16,10 @@
 import { createRemoteJWKSet, decodeProtectedHeader, jwtVerify, type JWTVerifyResult } from "jose"
 import { isSecureDeployment, supabaseJwtSecret, supabaseUrl } from "./users"
 
-export const SESSION_COOKIE = "cadence-session"
+/** Supabase's own `sb-<project-ref>-auth-token` cookie shape (ref "cadence"),
+ * holding the raw access token — so the shipped `auth: supabase()` preset
+ * (src/vendo/server.ts) reads the same session this module verifies. */
+export const SESSION_COOKIE = "sb-cadence-auth-token"
 
 export interface CadenceSession {
   /** The Supabase user id (JWT `sub`) — the Vendo principal subject. */

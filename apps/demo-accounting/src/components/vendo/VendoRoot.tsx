@@ -3,7 +3,7 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { VendoRoot as UmbrellaVendoRoot } from "@vendoai/vendo/react";
 import { ScriptedTransport, type DirectorScript, type ToolMetaMap } from "@vendoai/ui";
-import { cadenceHostComponents } from "@/vendo/host-components";
+import { cadenceRegistry } from "@/vendo/registry";
 import { cadenceTheme } from "@/vendo/theme";
 import { cadenceRealtimeVoiceDriver } from "./voice-realtime";
 // The greeting-as-tutorial seeds (ui-usage-dx §6): catalog-flavored starter
@@ -92,7 +92,7 @@ export function VendoRoot({
   if (directorEligible && director.enabled && !director.transport) return null;
   if (!directorEligible) {
     return (
-      <UmbrellaVendoRoot components={cadenceHostComponents} theme={cadenceTheme} tools={cadenceToolMeta} voice={{ driver: cadenceRealtimeVoiceDriver }} greeting={cadenceGreeting} onPin={onPin}>
+      <UmbrellaVendoRoot components={cadenceRegistry} theme={cadenceTheme} tools={cadenceToolMeta} voice={{ driver: cadenceRealtimeVoiceDriver }} greeting={cadenceGreeting} onPin={onPin}>
         {children}
       </UmbrellaVendoRoot>
     );
@@ -100,7 +100,7 @@ export function VendoRoot({
   return (
     <UmbrellaVendoRoot
       key={director.transport ? "vendo-director" : "vendo-live"}
-      components={cadenceHostComponents}
+      components={cadenceRegistry}
       theme={cadenceTheme}
       tools={cadenceToolMeta}
       voice={{ driver: cadenceRealtimeVoiceDriver }}

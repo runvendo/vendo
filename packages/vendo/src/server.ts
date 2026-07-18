@@ -26,6 +26,7 @@ import {
   vendoThemeSchema,
   type ActAs,
   type ComponentCatalog,
+  type ComponentRegistry,
   type Json,
   type PermissionGrant,
   type Principal,
@@ -67,13 +68,30 @@ export {
   type RefineResult,
   type RefineTranscript,
 } from "./refine.js";
+// 09-vendo §2.1 — host-identity presets, shipped on the server entry: one
+// `auth` key fills the principal, actAs, and oauth seams from one config.
+export {
+  auth0,
+  authJs,
+  clerk,
+  hostAuthPresetConformance,
+  jwt,
+  supabase,
+  type HostAuthPreset,
+  type HostAuthPresetConformanceOptions,
+  type HostAuthPresetOptions,
+  type HostAuthPresetUser,
+  type HostAuthPresetUserResolver,
+  type SupabaseHostAuthPresetOptions,
+} from "./auth-presets/index.js";
+import type { HostAuthPreset } from "./auth-presets/index.js";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
 import {
   capabilitySurfaceSnapshot,
   createCapabilityMissCapture,
 } from "./capability-misses.js";
-import { catalogThemeSummary, mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
+import { catalogThemeSummary, mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromJson } from "./catalog.js";
 import { devModel } from "./dev-creds/model.js";
 // install-dx v1 — `devModel()` is the env-resolving model createVendo composes
 // when the host passes none; the resolver is shared by init and doctor (one
@@ -182,9 +200,19 @@ export interface CreateVendoConfig {
       no-think switch (a thinking-disabled model instance for the instant
       paint); `disabled` forces single-lane generation. */
   paint?: AppsConfig["paint"];
-  principal: (req: Request) => Promise<Principal | null>;
-  /** Host components available to generated apps; entry names must mirror the client-side components map 1:1. */
-  catalog?: ComponentCatalog;
+  /** 09-vendo §2.1 — ONE host-identity preset filling the principal, actAs, and
+      oauth seams from one config key. Mutually exclusive with all three:
+      mixing throws VendoError("validation") at compose time. */
+  auth?: HostAuthPreset;
+  /** Per-seam escape hatch: host session → principal; null → the per-client
+      ephemeral anonymous principal. With neither `auth` nor `principal`, every
+      session is anonymous (the null path is the default resolver — 09 §2). */
+  principal?: (req: Request) => Promise<Principal | null>;
+  /** Host components available to generated apps: the name-keyed registry
+      object (01 §14 — the same object serves <VendoRoot>; the server ignores
+      each entry's `component` reference) or the array form. Entry names must
+      mirror the client-side components map 1:1. */
+  catalog?: ComponentCatalog | ComponentRegistry;
   store?: VendoStore;
   sandbox?: SandboxAdapter;
   connectors?: Connector[];
@@ -741,6 +769,25 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
 
 /** 09-vendo §2 — compose every live block around the guard choke point. */
 export function createVendo(config: CreateVendoConfig): Vendo {
+  // 09-vendo §2.1 — one preset or the per-seam trio, never mixed. Checked
+  // before anything is constructed so a miswired config leaks no resources.
+  if (config.auth !== undefined) {
+    const mixed = (["principal", "actAs", "oauth"] as const)
+      .filter((key) => config[key] !== undefined);
+    if (mixed.length > 0) {
+      throw new VendoError(
+        "validation",
+        `createVendo({ auth }) already fills the principal, actAs, and oauth seams from one preset (09-vendo §2.1); remove ${mixed.map((key) => `\`${key}\``).join(", ")} or drop \`auth\` — one preset or the per-seam trio, never mixed.`,
+      );
+    }
+  }
+  // The three seams the identity story fills: from the preset, from the
+  // per-seam trio, or — with neither `auth` nor `principal` — the anonymous
+  // default resolver (every session ephemeral, 00 conventions "identity
+  // optional" / 02-store §4). Absent preset halves leave their seams unset.
+  const resolvePrincipal = config.auth?.principal ?? config.principal ?? (async () => null);
+  const actAsSeam = config.auth === undefined ? config.actAs : config.auth.actAs;
+  const oauthSeam = config.auth === undefined ? config.oauth : config.auth.oauth;
   // 02-store §4 (kill-list B3) — ephemeral session policy. Validated like the
   // agent's context config; defaults are the recommended knobs. The store takes
   // the clock per call (register/sweep), so one time source needs no seam.
@@ -832,6 +879,27 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // that learned origin is UNTRUSTED (baseUrlTrusted:false), so a spoofed Host
   // can never turn it into a credential-exfiltration target (04 §4).
   const configuredBaseUrl = environment("VENDO_BASE_URL");
+  // 09-vendo §2 (install-dx wave 1.1 — design decision 5): a literal
+  // NODE_ENV check, deliberately independent of the broader `development`
+  // flag below (which also honors an explicit config.development escape
+  // hatch for source capture — unrelated to credential trust).
+  const nodeEnv = environment("NODE_ENV");
+  const isDevelopmentEnv = nodeEnv === "development";
+  const isProductionEnv = nodeEnv === "production";
+  // One condition arms BOTH the boot warning and the per-call fail-closed
+  // policy below, so the console.error tests pin exactly what arms refusal.
+  const baseUrlMissingInProduction = configuredBaseUrl === undefined && isProductionEnv;
+  if (baseUrlMissingInProduction) {
+    // Loud, once, at composition — never throws (a host that never makes a
+    // present-mode host tool call must keep booting). The actual refusal
+    // happens per-call below via untrustedOriginPolicy: "fail".
+    console.error(
+      "[vendo] VENDO_BASE_URL is not set in production. Present-mode host tool "
+        + "calls that need to forward the caller's credentials will fail instead "
+        + "of running unauthenticated. Set VENDO_BASE_URL to this deployment's "
+        + "public origin and restart the server.",
+    );
+  }
   const actionsConfig: {
     dir: string;
     connectors?: Connector[];
@@ -840,14 +908,20 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     baseUrl?: string;
     baseUrlTrusted?: boolean;
     onPresentCredentialsNotForwarded: typeof warnPresentCredentialsNotForwarded;
+    untrustedOriginPolicy?: "warn" | "fail";
     invokeTool?: ToolRegistry["execute"];
   } = {
     dir: ".",
     ...(config.connectors === undefined ? {} : { connectors: config.connectors }),
-    ...(config.actAs === undefined ? {} : { actAs: config.actAs }),
+    ...(actAsSeam === undefined ? {} : { actAs: actAsSeam }),
     ...(config.serverActions === undefined ? {} : { serverActions: config.serverActions }),
     ...(configuredBaseUrl === undefined ? {} : { baseUrl: configuredBaseUrl, baseUrlTrusted: true }),
     onPresentCredentialsNotForwarded: warnPresentCredentialsNotForwarded,
+    // 09-vendo §2 install-dx wave 1.1: production refuses a present-mode call
+    // it can't authenticate rather than quietly dropping the caller's
+    // credentials. Dev/test keep today's warn-and-continue (dev never reaches
+    // "untrusted-host-origin" at all — see onRequestOrigin below).
+    ...(baseUrlMissingInProduction ? { untrustedOriginPolicy: "fail" as const } : {}),
   };
   const actions = createActions(actionsConfig);
   const doctor = {
@@ -890,7 +964,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const pinBaselines = dotVendoPinBaselines();
   const catalog = mergeRuntimeCatalog(
     runtimeCatalogFromJson(dotVendoFile("catalog.json")),
-    config.catalog,
+    normalizeCatalogConfig(config.catalog),
   );
   const apps = createApps({
     store,
@@ -997,10 +1071,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       : undefined;
   let door: McpDoor | undefined;
   if (mcpOptions !== undefined) {
-    if (config.oauth === undefined) {
+    if (oauthSeam === undefined) {
       throw new VendoError(
         "validation",
-        "createVendo({ mcp: true }) requires an `oauth` HostOAuthAdapter (10-mcp §3): the door mints door principals through it and cannot open without one.",
+        "createVendo({ mcp: true }) requires a HostOAuthAdapter (10-mcp §3) — from `oauth` or an `auth` preset carrying one: the door mints door principals through it and cannot open without one.",
       );
     }
     // AppsRuntime.open adds a "resuming" variant AppsPort (tree | http) does not
@@ -1033,7 +1107,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       tools: boundTools,
       guard,
       store,
-      oauth: config.oauth,
+      oauth: oauthSeam,
       apps: appsPort,
       mount: MCP_MOUNT,
       ...(doorBaseUrl === undefined ? {} : { baseUrl: doorBaseUrl }),
@@ -1063,7 +1137,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const developmentPaths = typeof config.development === "object" ? config.development : {};
   const runtimeCapture = development ? createRuntimeCapture(developmentPaths) : null;
   const handler = createWireHandler({
-    principal: config.principal,
+    principal: resolvePrincipal,
     ready,
     trustedBaseIsHttps,
     sessionId,
@@ -1091,10 +1165,16 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     onRequestOrigin: (origin) => {
       // Same-origin default for route-binding execution (04): no VENDO_BASE_URL
       // → the wire's own origin, learned from the first VALIDATED request and
-      // then fixed. Marked untrusted so credentials never forward to it.
+      // then fixed.
       if (actionsConfig.baseUrl === undefined) {
         actionsConfig.baseUrl = origin;
-        actionsConfig.baseUrlTrusted = false;
+        // 09-vendo §2 install-dx wave 1.1: NODE_ENV=development trusts its own
+        // learned origin — credentials forward to the wire's own route
+        // bindings with zero config. Every other environment (including
+        // NODE_ENV=test) keeps the learned origin UNTRUSTED exactly as
+        // before, so a spoofed Host on any early request can never turn it
+        // into a credential-exfiltration target (04 §4).
+        actionsConfig.baseUrlTrusted = isDevelopmentEnv;
       }
     },
   });
@@ -1130,4 +1210,33 @@ export function nextVendoHandler(vendo: Vendo): {
 } {
   const handle = (request: Request): Promise<Response> => vendo.handler(request);
   return { GET: handle, POST: handle, PATCH: handle, DELETE: handle };
+}
+
+/** 10-mcp §5 — adapt the fetch handler to a Next.js `app/.well-known/[...vendo]/
+    route.ts` module. The four discovery documents the door serves (RFC 9728/
+    8414 metadata for its fixed mount, plus the SEP-2127 server card) live at
+    ORIGIN-ROOT paths, outside BASE_PATH — a host's `/api/vendo` catch-all route
+    never sees them, because Next.js dispatches by directory structure, not by
+    the wire's own routing. This file exists so that directory gets a handler
+    too, one that shares DOOR_WELL_KNOWN_PATHS with the wire itself (the SAME
+    set `isDoorPath` matches) instead of a hand-copied allowlist that can drift
+    from it. A request whose pathname is exactly one of those four paths
+    forwards to `vendo.handler` (which independently confirms it's a door path
+    and, if `mcp` is configured, serves it — the check here is only about
+    which requests reach the wire at all); anything else answers 404 with an
+    empty body, mirroring the hand-written route this replaces. With `mcp` left
+    unconfigured, `vendo.handler` still recognizes these four paths but has no
+    door to serve them, so the request falls through to the wire's ordinary
+    not-found response — never a 500. */
+export function wellKnownVendoHandler(vendo: Vendo): {
+  GET(request: Request): Promise<Response>;
+  POST(request: Request): Promise<Response>;
+} {
+  const handle = (request: Request): Promise<Response> => {
+    const { pathname } = new URL(request.url);
+    return DOOR_WELL_KNOWN_PATHS.has(pathname)
+      ? vendo.handler(request)
+      : Promise.resolve(new Response(null, { status: 404 }));
+  };
+  return { GET: handle, POST: handle };
 }

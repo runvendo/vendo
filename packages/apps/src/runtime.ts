@@ -4,10 +4,10 @@ import {
   validateAppDocument,
   type AppDocument,
   type AppId,
-  type ComponentCatalog,
   type Guard,
   type IsoDateTime,
   type Json,
+  type NormalizedCatalog,
   type RunContext,
   type ApprovalId,
   type RiskLabel,
@@ -69,7 +69,8 @@ export interface AppsConfig {
    *  `model` is the no-think switch (a thinking-disabled model instance);
    *  `disabled` forces single-lane generation. */
   paint?: GenerationDependencies["paint"];
-  catalog: ComponentCatalog;
+  /** The composition-normalized catalog (01 §14): derived schemas included. */
+  catalog: NormalizedCatalog;
   theme?: VendoTheme;
   secrets?: SecretsProvider;
   designRules?: string;

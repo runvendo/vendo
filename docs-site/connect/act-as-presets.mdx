@@ -1,6 +1,6 @@
 ---
-title: "actAs presets for Auth.js, Supabase, Clerk, Auth0"
-description: "Wire Auth.js, Supabase, Clerk, Auth0, or a generic HS256 JWT into Vendo's actAs seam so away automations and MCP calls act as the signed-in user."
+title: "Auth presets: Auth.js, Supabase, Clerk, Auth0"
+description: "Fill Vendo's principal, actAs, and door OAuth seams from one auth preset, or wire Auth.js, Supabase, Clerk, Auth0, or a generic HS256 JWT into the actAs seam by hand."
 ---
 
 Away automations, scheduled runs, and MCP door calls all reach host APIs
@@ -8,7 +8,57 @@ through the `actAs` seam because none of them carry a browser session. Presets
 in `@vendoai/actions/presets` mint the right auth material for common
 providers so you don't have to hand-roll `actAs` for each one.
 
-## When to use a preset
+## `auth` — one identity story, three seams
+
+Start here. Pass a named preset as `auth` and it fills `principal`, `actAs`,
+and the door's `oauth` seam from one config key:
+
+```ts
+import { authJs, createVendo } from "@vendoai/vendo/server";
+
+export const vendo = createVendo({ model, auth: authJs() });
+```
+
+Every preset is zero-argument in the standard case — it reads its own
+provider's env variable and derives the principal's `display` from
+name/email session-token claims:
+
+| Preset | Session secret (env) |
+| --- | --- |
+| `authJs()` | `AUTH_SECRET` |
+| `clerk()` | `CLERK_SECRET_KEY` |
+| `supabase()` | `SUPABASE_JWT_SECRET` (HS256, offline) and/or `SUPABASE_URL` (ES256 logins via GoTrue's JWKS) |
+| `auth0()` | `AUTH0_DOMAIN` / `AUTH0_ISSUER_BASE_URL` |
+| `jwt({ secret })` | none — a host-owned scheme has no vendor env, so `secret` is required |
+
+Both options are shared across every preset: `secret` overrides the
+provider's env-read secret, and `user(subject, claims)` swaps in custom
+subject→user resolution instead of the provider's claims defaults (returning
+`null` means "subject unknown to host" — the principal resolves to anonymous
+and away/MCP minting for that subject declines).
+
+```ts
+export const vendo = createVendo({
+  model,
+  auth: authJs({
+    secret: () => process.env.AUTH_SECRET,
+    user: async (subject) => {
+      const user = await db.user.findUnique({ where: { id: subject } });
+      if (!user || user.disabled) return null;
+      return { display: user.name, email: user.email };
+    },
+  }),
+});
+```
+
+`auth` is mutually exclusive with the per-seam trio below — supplying `auth`
+together with any of `principal`, `actAs`, or `oauth` throws
+`VendoError("validation")` at compose time. Each preset's `actAs` half IS the
+matching preset documented below; the `oauth` half implements the door's
+identity seam. Reach for the per-seam presets directly when no shipped `auth`
+preset matches your setup, or when you are composing the three seams by hand.
+
+## When to use a per-seam preset
 
 - You already sign users in with Auth.js, Supabase, Clerk, or Auth0.
 - You want scheduled automations, webhooks, or MCP door calls to hit your
@@ -51,7 +101,8 @@ configurable claims and header shape.
 Import the preset you want and hand it to `createVendo` as `actAs`. Each
 preset closes over a secret you provision (session secret, project JWT
 secret, or a host-generated away secret) and returns the `ActAs` function
-Vendo calls before every away tool call.
+Vendo calls before every away tool call. Clerk and Auth0 return a preset
+object instead — pass its `actAs` half.
 
 ```ts
 import { createVendo } from "@vendoai/vendo/server";
@@ -76,7 +127,7 @@ should stamp on each minted token:
 import { supabasePreset } from "@vendoai/actions/presets";
 
 actAs: supabasePreset({
-  jwtSecret: process.env.SUPABASE_JWT_SECRET!,
+  secret: process.env.SUPABASE_JWT_SECRET!,
   role: "authenticated",
   audience: "authenticated",
 });
@@ -88,23 +139,24 @@ share with the verify middleware in the next section:
 ```ts
 import { clerkPreset } from "@vendoai/actions/presets";
 
-actAs: clerkPreset({
-  awaySecret: process.env.VENDO_AWAY_SECRET!,
+const clerk = clerkPreset({
+  secret: process.env.VENDO_AWAY_TOKEN_SECRET!,
 });
+
+// in createVendo:
+actAs: clerk.actAs,
 ```
 
-The generic preset covers anything else. Configure the claims map, header
-name, and prefix your host API expects:
+The generic preset covers anything else. Configure the claims map and the
+headers your host API expects (the default is `Authorization: Bearer`):
 
 ```ts
 import { genericJwtPreset } from "@vendoai/actions/presets";
 
 actAs: genericJwtPreset({
   secret: process.env.HOST_JWT_SECRET!,
-  header: "authorization",
-  prefix: "Bearer ",
+  headers: (token) => ({ authorization: `Bearer ${token}` }),
   claims: (principal) => ({
-    sub: principal.subject,
     scope: "api:call",
   }),
 });
@@ -121,9 +173,11 @@ middleware and an Express middleware — mount the one that fits your app.
 // middleware.ts (Next.js)
 import { clerkPreset } from "@vendoai/actions/presets";
 
-export const middleware = clerkPreset.nextMiddleware({
-  awaySecret: process.env.VENDO_AWAY_SECRET!,
+const clerk = clerkPreset({
+  secret: process.env.VENDO_AWAY_TOKEN_SECRET!,
 });
+
+export const middleware = clerk.nextMiddleware;
 
 export const config = { matcher: "/api/:path*" };
 ```
@@ -133,10 +187,12 @@ export const config = { matcher: "/api/:path*" };
 import express from "express";
 import { auth0Preset } from "@vendoai/actions/presets";
 
+const auth0 = auth0Preset({
+  secret: process.env.VENDO_AWAY_TOKEN_SECRET!,
+});
+
 const app = express();
-app.use(auth0Preset.expressMiddleware({
-  awaySecret: process.env.VENDO_AWAY_SECRET!,
-}));
+app.use(auth0.expressMiddleware);
 ```
 
 Middleware does three things on every request:
@@ -149,8 +205,9 @@ Middleware does three things on every request:
 - Rejects forged, expired, or wrong-audience tokens before your handler
   runs.
 
-The `awaySecret` you pass to the preset and the middleware must match. Store
-it as an environment variable and rotate by redeploying both halves.
+The `secret` the producer and the middleware constructions read must match
+(both default to the `VENDO_AWAY_TOKEN_SECRET` env variable). Store it as an
+environment variable and rotate by redeploying both halves.
 
 ## Impersonation guard
 
@@ -163,7 +220,7 @@ preset — you don't wire it separately.
 ## Token caching and rotation
 
 Every preset caches minted tokens in memory until just before expiry (default
-300 s safety margin, 30 s for the short-lived away tokens). Cache keys
+300 s token lifetime, refreshed 30 s before expiry). Cache keys
 include a fingerprint of the signing secret, so rotating the secret
 invalidates the cache immediately — the next away call mints against the new
 secret. Expired entries are dropped on write, so the cache size stays bounded

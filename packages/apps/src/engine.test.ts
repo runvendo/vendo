@@ -2,7 +2,7 @@ import {
   validateTree,
   validateTreeV2,
   type AppDocument,
-  type ComponentCatalog,
+  type NormalizedCatalog,
   type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
@@ -33,7 +33,9 @@ const tools: ToolRegistry = {
   async execute() { return { status: "error", error: { code: "not-found", message: "missing" } }; },
 };
 
-const catalog: ComponentCatalog = [{
+// The engine consumes the composition-normalized catalog (01 §14): the
+// propsJsonSchema below is the DERIVED document, never host-authored.
+const catalog: NormalizedCatalog = [{
   name: "MetricCard",
   description: "Use for a single important metric with a short label and display value.",
   propsSchema: z.object({
@@ -180,6 +182,40 @@ describe("generation engine through createApps", () => {
         expect.stringMatching(/node "metriccard-1" props.*MetricCard.*value.*Expected string/i),
       ]),
     });
+  });
+
+  it("validates schema-less catalog entries permissively and prompts description-only (01 §14)", async () => {
+    const schemaless: NormalizedCatalog = [{
+      name: "PlainCard",
+      description: "The model infers props for this card.",
+    }];
+    let capturedPrompt = "";
+    const model = scriptedLanguageModel((call: ScriptedModelCall) => {
+      capturedPrompt = call.prompt.map((message) => {
+        if (typeof message.content === "string") return message.content;
+        return message.content.map((part) => part.text ?? "").join("");
+      }).join("\n");
+      // v2 JSX wire (format-gen-v2): arbitrary props on a schema-less host
+      // entry must pass the permissive validator.
+      return '<App name="Plain app"><PlainCard goes={42}/></App>';
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog: schemaless,
+      model,
+    });
+
+    await expect(runtime.create({ prompt: "Build a plain card" }, ctx)).resolves.toMatchObject({
+      tree: {
+        nodes: expect.arrayContaining([
+          expect.objectContaining({ component: "PlainCard", source: "host" }),
+        ]),
+      },
+    });
+    expect(capturedPrompt).toContain('"whenToUse": "The model infers props for this card."');
+    expect(capturedPrompt).toContain('"propsJsonSchema": null');
   });
 
   it("exempts path, state, and action bindings while validating the remaining host props", async () => {

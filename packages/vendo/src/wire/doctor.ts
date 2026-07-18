@@ -36,8 +36,28 @@ function doctorProbeOk(outcome: ToolOutcome): boolean {
 /** Doctor targets a running dev server. The prefix gate keeps its synthetic
     mint/echo routes out of production entirely (and falls through in
     development); the echo halves expose no credential material — booleans
-    only. */
+    only.
+
+    `/doctor/base-url` (09-vendo §2 install-dx wave 1.1) is listed BEFORE that
+    gate on purpose: unlike the synthetic credential round-trips, it reports a
+    static composition fact (is VENDO_BASE_URL set?) that reveals no secret
+    material, and it is exactly the environment — production — the gate
+    otherwise silences. Placing it first lets it win the route-table scan in
+    every environment, gate included. */
 export const doctorRoutes: RouteEntry[] = [
+  route("GET", "/doctor/base-url", async () => {
+    const missingInProduction = environment("NODE_ENV") === "production" && environment("VENDO_BASE_URL") === undefined;
+    if (missingInProduction) {
+      return json({
+        ok: false,
+        error: {
+          code: "base-url-not-set-in-production",
+          message: "VENDO_BASE_URL is not set in production. Present-mode host tool calls that need to forward the caller's credentials fail closed instead of running unauthenticated. Set VENDO_BASE_URL to this deployment's public origin and restart the server.",
+        },
+      }, 409);
+    }
+    return json({ ok: true });
+  }),
   prefixRoute("*", "/doctor/", async () => {
     if (environment("NODE_ENV") === "production") {
       throw new VendoError("not-found", "unknown Vendo route");

@@ -30,6 +30,13 @@ export interface AuthJsPresetOptions {
   cacheSafetySeconds?: number;
 }
 
+/** `@auth/core` is an optional peerDependency loaded lazily on first mint — a
+    host wiring this preset already runs Auth.js, so it is present next to their
+    auth setup. The failure is an actionable install instruction, not a bare
+    module-not-found. */
+const MISSING_AUTH_CORE_MESSAGE =
+  "authJsPreset() mints Auth.js sessions through @auth/core, which is not installed. Install it alongside your Auth.js setup: npm install @auth/core";
+
 /** Mint an Auth.js v5 encrypted session JWE using @auth/core's own encoder. */
 export function authJsPreset(options: AuthJsPresetOptions = {}): ActAs {
   const expiresInSeconds = options.expiresInSeconds ?? 300;
@@ -40,8 +47,13 @@ export function authJsPreset(options: AuthJsPresetOptions = {}): ActAs {
   const cache = new TokenCache();
   let encodePromise: Promise<AuthJsEncode> | undefined;
   const loadEncode = (): Promise<AuthJsEncode> => {
-    encodePromise ??= import("@auth/core/jwt")
-      .then((module) => module.encode as unknown as AuthJsEncode);
+    encodePromise ??= import("@auth/core/jwt").then(
+      (module) => module.encode as unknown as AuthJsEncode,
+      (cause) => {
+        encodePromise = undefined; // let a later call retry after an install
+        throw new Error(MISSING_AUTH_CORE_MESSAGE, { cause: cause as Error });
+      },
+    );
     return encodePromise;
   };
 

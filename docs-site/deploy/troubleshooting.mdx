@@ -30,12 +30,17 @@ Every non-2xx response uses `{ "error": { "code", "message" } }`.
 ## Common checks
 
 - A rung 2 through 4 app requires a configured sandbox adapter.
-- Present-mode credential forwarding requires `VENDO_BASE_URL` to be set to
-  the trusted host origin. When it is unset or the route binding is
-  cross-origin, Vendo emits a single `present-credentials-not-forwarded`
-  audit event per composition (reason `untrusted-host-origin` or
-  `cross-origin-binding`) and same-origin tool calls run without inbound
-  auth. `vendo doctor` catches this before you ship — see below.
+- Present-mode credential forwarding requires the wire to trust its own
+  origin. In development it learns and trusts that origin automatically from
+  the first request — no `VENDO_BASE_URL` needed. Every other environment
+  (including `NODE_ENV=test`) keeps the learned origin untrusted by default.
+  In production, an untrusted origin (reason `untrusted-host-origin`, from a
+  missing `VENDO_BASE_URL`) fails the present-mode call closed instead of
+  running it unauthenticated; a cross-origin route binding (reason
+  `cross-origin-binding`) always stays refused, in every environment. Vendo
+  emits one `present-credentials-not-forwarded` audit event per composition
+  either way. `vendo doctor` catches a missing `VENDO_BASE_URL` before you
+  ship — see below.
 - Away host API calls require `actAs` and an app-bound grant that was
   captured while the user was present. See
   [actAs presets](/connect/act-as-presets) for provider wiring. If `actAs`
