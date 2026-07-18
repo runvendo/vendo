@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { VendoRoot as UmbrellaVendoRoot } from "@vendoai/vendo/react";
-import { mapleHostComponents } from "@/vendo/host-components";
+import { mapleRegistry } from "@/vendo/registry";
 import { mapleTheme } from "@/vendo/theme";
 import { mapleRealtimeVoiceDriver } from "./voice-realtime";
 
@@ -14,7 +14,7 @@ export function VendoRoot({
 }) {
   return (
     <UmbrellaVendoRoot
-      components={mapleHostComponents}
+      components={mapleRegistry}
       theme={mapleTheme}
       voice={{ driver: mapleRealtimeVoiceDriver }}
     >

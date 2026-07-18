@@ -3,7 +3,7 @@
   "entries": [
     {
       "name": "MapleNetWorthCard",
-      "exportPath": "./src/vendo/host-components.tsx#mapleHostComponents.MapleNetWorthCard",
+      "exportPath": "./src/vendo/registry.tsx#mapleRegistry.MapleNetWorthCard",
       "propsSchema": {
         "type": "object",
         "properties": {
@@ -49,7 +49,7 @@
     },
     {
       "name": "MapleSparkline",
-      "exportPath": "./src/vendo/host-components.tsx#mapleHostComponents.MapleSparkline",
+      "exportPath": "./src/vendo/registry.tsx#mapleRegistry.MapleSparkline",
       "propsSchema": {
         "type": "object",
         "properties": {
@@ -76,7 +76,7 @@
     },
     {
       "name": "MapleSpendingDonut",
-      "exportPath": "./src/vendo/host-components.tsx#mapleHostComponents.MapleSpendingDonut",
+      "exportPath": "./src/vendo/registry.tsx#mapleRegistry.MapleSpendingDonut",
       "propsSchema": {
         "type": "object",
         "properties": {
