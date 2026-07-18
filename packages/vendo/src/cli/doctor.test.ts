@@ -593,6 +593,26 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     expect(warning).toContain("warning");
   });
 
+  it("skips the drift check quietly when the installed @vendoai/ui package.json is malformed", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "components", "vendo", "thread"), { recursive: true });
+    await writeFile(
+      join(root, "components", "vendo", "thread", ".vendo-eject.json"),
+      JSON.stringify({ surface: "thread", package: "@vendoai/ui", version: "0.2.0" }),
+    );
+    await mkdir(join(root, "node_modules", "@vendoai", "ui"), { recursive: true });
+    await writeFile(join(root, "node_modules", "@vendoai", "ui", "package.json"), "{not json");
+    const messages = output();
+    const code = await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    });
+    expect(code).toBe(0);
+    expect([...messages.logs, ...messages.errors].some((line) => line.includes("ejected"))).toBe(false);
+  });
+
   it("passes the drift check when the ejected surface matches the installed @vendoai/ui", async () => {
     const root = await healthy();
     await mkdir(join(root, "src", "components", "vendo", "thread"), { recursive: true });

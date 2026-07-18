@@ -72,24 +72,38 @@ export function rewriteTemplateSource(
   source: string,
   shape: { sourceBase: string; sourceDir?: string },
 ): string {
-  return source.replace(/(\bfrom\s*)(["'])([^"']+)\2/g, (whole, from: string, quote: string, specifier: string) => {
-    if (!specifier.startsWith(".")) return whole;
-    const resolved = posix.normalize(posix.join(shape.sourceBase, specifier)).replace(/\.js$/, "");
-    let rewritten: string;
-    if (shape.sourceDir !== undefined && resolved.startsWith(`${shape.sourceDir}/`)) {
-      rewritten = specifier.replace(/\.js$/, "");
-    } else if (resolved.startsWith("tree/")) rewritten = "@vendoai/ui/tree";
-    else if (resolved.startsWith("chrome/")) rewritten = "@vendoai/ui/chrome";
-    else rewritten = "@vendoai/ui";
-    return `${from}${quote}${rewritten}${quote}`;
-  });
+  // from-clauses, side-effect imports, and dynamic import() all carry
+  // specifiers; the quote never follows "import" directly in a from-clause,
+  // so the alternation cannot double-match.
+  return source.replace(
+    /(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(["'])([^"']+)\2/g,
+    (whole, lead: string, quote: string, specifier: string) => {
+      if (!specifier.startsWith(".")) return whole;
+      const resolved = posix.normalize(posix.join(shape.sourceBase, specifier)).replace(/\.js$/, "");
+      let rewritten: string;
+      if (
+        shape.sourceDir !== undefined &&
+        (resolved === shape.sourceDir || resolved.startsWith(`${shape.sourceDir}/`))
+      ) {
+        rewritten = specifier.replace(/\.js$/, "");
+      } else if (resolved.startsWith("tree/")) rewritten = "@vendoai/ui/tree";
+      else if (resolved.startsWith("chrome/")) rewritten = "@vendoai/ui/chrome";
+      else rewritten = "@vendoai/ui";
+      return `${lead}${quote}${rewritten}${quote}`;
+    },
+  );
 }
 
 /** components/vendo/<surface>, under src/ when the host keeps its app there
-    (same layout probe as init's appDirectory). */
-async function destinationDir(root: string, surface: string): Promise<string> {
-  const base = (await exists(join(root, "src", "app"))) ? join(root, "src") : root;
-  return join(base, "components", "vendo", surface);
+    (same layout probe as init's appDirectory). `srcLayout` also picks the
+    swap hint's import form: src hosts import via their @/ alias. */
+async function destinationDir(
+  root: string,
+  surface: string,
+): Promise<{ destination: string; srcLayout: boolean }> {
+  const srcLayout = await exists(join(root, "src", "app"));
+  const base = srcLayout ? join(root, "src") : root;
+  return { destination: join(base, "components", "vendo", surface), srcLayout };
 }
 
 export async function runEject(options: EjectOptions): Promise<number> {
@@ -126,7 +140,7 @@ export async function runEject(options: EjectOptions): Promise<number> {
     return 1;
   }
 
-  const destination = await destinationDir(root, surface);
+  const { destination, srcLayout } = await destinationDir(root, surface);
   if (await exists(destination)) {
     if (options.force !== true) {
       output.error(
@@ -148,10 +162,13 @@ export async function runEject(options: EjectOptions): Promise<number> {
 
   const relDir = relative(root, destination);
   const componentName = entry.component;
+  // src hosts import through their @/ alias; "./src/…" would mislead (Devin
+  // ANALYSIS_0001 — an importer under src/ never writes the src/ segment).
+  const importHint = srcLayout ? `@/components/vendo/${surface}` : `./components/vendo/${surface}`;
   output.log(`Ejected ${surface} → ${relDir} (${entry.files.length} files, @vendoai/ui v${manifest.version})`);
   output.log("");
   output.log("Swap it in:");
-  output.log(`  import { ${componentName} } from "./${relDir}";`);
+  output.log(`  import { ${componentName} } from "${importHint}";`);
   output.log(surface === "thread"
     ? `  <VendoOverlay thread={${componentName}} />`
     : `  <${componentName} />  (in place of the @vendoai/ui/chrome import)`);

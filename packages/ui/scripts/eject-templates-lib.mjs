@@ -124,11 +124,29 @@ export function classifySpecifier(specifier, { sourceBase, sourceDir }) {
 export function checkTemplateSource(relPath, source, surfaces, shape) {
   const errors = [];
   const sourceFile = parse(relPath, source);
+  // Side-effect and dynamic imports carry no named bindings, so an escaping
+  // one can be neither verified against public exports nor rewritten to a
+  // meaningful subpath import — reject them at build (Devin ANALYSIS_0004).
+  for (const match of source.matchAll(/\bimport\s*\(\s*["'](\.[^"']*)["']/g)) {
+    if (classifySpecifier(match[1], shape) !== null) {
+      errors.push(
+        `${relPath}: dynamic import("${match[1]}") escapes the surface and cannot be rewritten — import the module statically or keep it inside the surface`,
+      );
+    }
+  }
   for (const statement of sourceFile.statements) {
     let specifier;
     const imported = [];
     if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
       specifier = statement.moduleSpecifier.text;
+      if (statement.importClause === undefined) {
+        if (specifier.startsWith(".") && classifySpecifier(specifier, shape) !== null) {
+          errors.push(
+            `${relPath}: side-effect import "${specifier}" escapes the surface and cannot be rewritten — keep it inside the surface or drop it`,
+          );
+        }
+        continue;
+      }
       const clause = statement.importClause;
       if (clause?.name !== undefined) imported.push("default");
       if (clause?.namedBindings !== undefined) {

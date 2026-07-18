@@ -147,9 +147,12 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   // host's code, so a version gap is awareness (warn), never breakage (fail):
   // the hooks/wire dependency keeps working; only new presentation is missed.
   const installedUi = await readOptional(join(root, "node_modules", "@vendoai", "ui", "package.json"));
-  const uiVersion = installedUi === null
-    ? null
-    : (JSON.parse(installedUi) as { version?: string }).version ?? null;
+  let uiVersion: string | null = null;
+  try {
+    if (installedUi !== null) uiVersion = (JSON.parse(installedUi) as { version?: string }).version ?? null;
+  } catch {
+    // Malformed install metadata — skip the drift check rather than fail doctor.
+  }
   if (uiVersion !== null) {
     for (const manifestPath of await walk(root, (rel) => rel.endsWith(EJECT_MANIFEST_FILE))) {
       let ejected: EjectedManifest;

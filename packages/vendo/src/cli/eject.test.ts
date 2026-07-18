@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { exists, type Output } from "./shared.js";
-import { runEject } from "./eject.js";
+import { rewriteTemplateSource, runEject } from "./eject.js";
 
 function sink(): { output: Output; logs: string[]; errors: string[] } {
   const logs: string[] = [];
@@ -127,12 +127,31 @@ describe("runEject", () => {
     expect(manifest.version).toBe("0.9.9");
   });
 
-  it("honors a src/ layout the way init does", async () => {
+  it("honors a src/ layout the way init does, and hints the @/ alias import", async () => {
     await makeHost({ srcApp: true });
-    const { output } = sink();
+    const { output, logs } = sink();
     expect(await runEject({ targetDir: root, surface: "thread", output })).toBe(0);
     expect(await exists(join(root, "src", "components", "vendo", "thread", "index.tsx"))).toBe(true);
     expect(await exists(join(root, "components"))).toBe(false);
+    // A src-layout host imports via its @/ alias, not "./src/…" from the root.
+    expect(logs.join("\n")).toContain('from "@/components/vendo/thread"');
+    expect(logs.join("\n")).not.toContain("./src/");
+  });
+
+  it("keeps an import resolving to exactly the surface directory relative (barrel import)", () => {
+    // Devin review BUG_0001: the equality case must match the build-time
+    // classifier — "." from inside the surface is intra, not @vendoai/ui/chrome.
+    const shape = { sourceBase: "chrome/thread", sourceDir: "chrome/thread" };
+    expect(rewriteTemplateSource('import { VendoThread } from ".";\n', shape))
+      .toBe('import { VendoThread } from ".";\n');
+  });
+
+  it("rewrites side-effect and dynamic imports the same as from-clauses", () => {
+    const shape = { sourceBase: "chrome/thread", sourceDir: "chrome/thread" };
+    expect(rewriteTemplateSource('import "./chrome-effects.js";\n', shape))
+      .toBe('import "./chrome-effects";\n');
+    expect(rewriteTemplateSource('const parts = await import("./parts.js");\n', shape))
+      .toBe('const parts = await import("./parts");\n');
   });
 
   it("rewrites package-internal imports to public subpaths and keeps intra-surface imports relative", async () => {

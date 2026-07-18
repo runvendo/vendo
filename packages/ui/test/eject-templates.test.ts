@@ -115,6 +115,35 @@ describe("eject template assembly", () => {
     expect(errors).toEqual([]);
   });
 
+  it("rejects escaping side-effect and dynamic imports (unverifiable, unrewritable)", async () => {
+    const { checkTemplateSource, publicSurfaces } = await lib();
+    const surfaces = await publicSurfaces(PACKAGE_DIR);
+    const shape = { sourceBase: "chrome/thread", sourceDir: "chrome/thread" };
+    const sideEffect = checkTemplateSource(
+      "thread/evil.tsx",
+      'import ' + '"../chrome-css.js";\n',
+      surfaces,
+      shape,
+    );
+    expect(sideEffect).toHaveLength(1);
+    expect(sideEffect[0]).toContain("side-effect");
+    const dynamic = checkTemplateSource(
+      "thread/evil.tsx",
+      'const x = await import(' + '"../build-beat.js");\n',
+      surfaces,
+      shape,
+    );
+    expect(dynamic).toHaveLength(1);
+    expect(dynamic[0]).toContain("dynamic");
+    // Intra-surface forms of both stay allowed.
+    expect(checkTemplateSource(
+      "thread/fine.tsx",
+      'import "./chrome-effects.js";\nconst p = await import("./parts.js");\n',
+      surfaces,
+      shape,
+    )).toEqual([]);
+  });
+
   it("resolves a chrome-root surface's sibling imports against the chrome surface", async () => {
     const { checkTemplateSource, publicSurfaces } = await lib();
     const surfaces = await publicSurfaces(PACKAGE_DIR);
