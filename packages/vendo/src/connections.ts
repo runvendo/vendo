@@ -20,11 +20,9 @@ export interface InitiatedConnection {
 }
 
 /** 04-actions §3 (block-actions design §B) — the umbrella's per-principal
- * connected-accounts surface, and the adapter interface of the ADAPTER RULE
- * (2026-07-17 cloud definition): this block only defines the interface and its
- * implementations (byoConnections, cloudConnections, unconfiguredConnections);
- * WHICH one composes is decided at the createVendo seam, never in here — no
- * adapter reads the environment. Composio is the sole broker; two postures:
+ * connected-accounts surface. Which implementation composes is decided at the
+ * seam, never in here (adapter rule — see selectConnections in server.ts).
+ * Composio is the sole broker; two postures:
  *   - "byo": the host's own connector (its Composio key) carries connections;
  *   - "cloud": connections ride the Vendo Cloud broker endpoint using Vendo's
  *     Composio credentials — cloud users bring zero keys.
@@ -60,13 +58,20 @@ function guardCallbackUrl(callbackUrl: string | undefined): void {
   }
 }
 
+/** The BYO capability predicate — the same test the composition seam selects
+ * on and byoConnections builds brokers from. */
+export function hasConnections(
+  connector: Connector,
+): connector is Connector & { connections: ConnectorConnections } {
+  return connector.connections !== undefined;
+}
+
 /** The BYO adapter: connections live on the host's own connector(s), because
  * they must live where the connector executes. Built from every passed
  * connector that carries a connections capability. */
 export function byoConnections(connectors: Connector[]): ConnectionsService {
   const brokers = connectors
-    .filter((connector): connector is Connector & { connections: ConnectorConnections } =>
-      connector.connections !== undefined)
+    .filter(hasConnections)
     .map((connector) => ({ name: connector.name, connections: connector.connections }));
   if (brokers.length === 0) {
     throw new VendoError("validation", "byoConnections requires at least one connector with a connections capability");

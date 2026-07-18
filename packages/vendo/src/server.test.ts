@@ -383,17 +383,6 @@ describe("09 §3 public wire", () => {
       return vendo;
     };
 
-    // An explicitly passed adapter wins even with the key set.
-    const explicit: ConnectionsService = {
-      posture: "byo",
-      list: async () => [],
-      initiate: async () => { throw new Error("unused"); },
-      status: async () => null,
-      disconnect: async () => {},
-    };
-    expect((await compose({ connections: explicit })).connections).toBe(explicit);
-
-    // A BYO connector's connections capability beats the key.
     const broker: Connector = {
       name: "composio",
       descriptors: async () => [],
@@ -405,6 +394,19 @@ describe("09 §3 public wire", () => {
         disconnect: async () => {},
       },
     };
+
+    // An explicitly passed adapter wins over BOTH lower rungs at once: the
+    // composition also carries a BYO broker and the key is set.
+    const explicit: ConnectionsService = {
+      posture: "byo",
+      list: async () => [],
+      initiate: async () => { throw new Error("unused"); },
+      status: async () => null,
+      disconnect: async () => {},
+    };
+    expect((await compose({ connections: explicit, connectors: [broker] })).connections).toBe(explicit);
+
+    // A BYO connector's connections capability beats the key.
     expect((await compose({ connectors: [broker] })).connections.posture).toBe("byo");
 
     // The key alone defaults the Cloud adapter for the unfilled seam.

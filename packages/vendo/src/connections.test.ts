@@ -144,6 +144,11 @@ describe("unconfiguredConnections", () => {
 });
 
 describe("adapter rule", () => {
+  // Env prefixes an adapter could be tempted to sniff. Lanes cloning this test
+  // for their block must widen the list to that block's vars (e.g. E2B_ /
+  // MODAL_ for sandbox, model-key vars for inference).
+  const WATCHED_ENV_PREFIXES = ["VENDO_"];
+
   it("no adapter reads the environment: behavior comes only from constructor arguments", async () => {
     // The adapter rule bans hidden key-conditional branches: prove it by
     // recording every process.env read while all three adapters construct and
@@ -168,7 +173,7 @@ describe("adapter rule", () => {
       const dark = unconfiguredConnections();
       await expect(dark.initiate(ada, { toolkit: "gmail" })).rejects.toThrow(/connected accounts/i);
 
-      expect(reads.filter((key) => key.startsWith("VENDO_"))).toEqual([]);
+      expect(reads.filter((key) => WATCHED_ENV_PREFIXES.some((prefix) => key.startsWith(prefix)))).toEqual([]);
     } finally {
       process.env = realEnv;
     }

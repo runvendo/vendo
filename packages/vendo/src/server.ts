@@ -92,12 +92,12 @@ export {
 import {
   byoConnections,
   cloudConnections,
+  hasConnections,
   unconfiguredConnections,
   type ConnectionsService,
 } from "./connections.js";
-// Adapter rule (2026-07-17 cloud definition): the shipped connections adapters
-// ride the server surface so a host can construct one and pass it explicitly
-// via createVendo({ connections }) — Cloud is just another implementation.
+// The shipped connections adapters ride the server surface so a host can pass
+// one explicitly via createVendo({ connections }) — see selectConnections.
 export {
   byoConnections,
   cloudConnections,
@@ -166,10 +166,8 @@ export interface CreateVendoConfig {
   store?: VendoStore;
   sandbox?: SandboxAdapter;
   connectors?: Connector[];
-  /** 04-actions §3 — an explicit connections adapter. Adapter rule: when set it
-      wins over every default (BYO brokers, the VENDO_API_KEY cloud default);
-      byoConnections / cloudConnections / unconfiguredConnections are the
-      shipped implementations, re-exported from this module. */
+  /** 04-actions §3 — an explicit connections adapter; always wins over the
+      defaults (precedence: selectConnections). */
   connections?: ConnectionsService;
   actAs?: ActAs;
   /** 04-actions §1 (ENG-248): the server-action registration map emitted by the
@@ -309,9 +307,7 @@ function selectConnections(
   connectors: Connector[],
 ): ConnectionsService {
   if (configured !== undefined) return configured;
-  if (connectors.some((connector) => connector.connections !== undefined)) {
-    return byoConnections(connectors);
-  }
+  if (connectors.some(hasConnections)) return byoConnections(connectors);
   const apiKey = environment("VENDO_API_KEY");
   if (apiKey !== undefined) {
     const baseUrl = environment("VENDO_CLOUD_URL");
