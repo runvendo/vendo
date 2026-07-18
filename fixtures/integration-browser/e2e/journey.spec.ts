@@ -18,18 +18,7 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
 const INVOICE = "inv_0003"; // ADA's seeded draft invoice
-const CREATE_DIALECT = {
-  name: "Ada's Greeting",
-  description: "A tiny greeting card",
-  tree: {
-    formatVersion: "vendo-genui/v1",
-    root: "root",
-    nodes: [
-      { id: "root", component: "Stack", source: "prewired", children: ["greeting"] },
-      { id: "greeting", component: "Text", source: "prewired", props: { text: "Hello Ada" } },
-    ],
-  },
-};
+const CREATE_DIALECT = `<App name="Ada's Greeting"><Text text="Hello Ada"/></App>`;
 
 async function script(request: APIRequestContext): Promise<void> {
   await expect(async () => {
@@ -42,7 +31,9 @@ async function script(request: APIRequestContext): Promise<void> {
         { kind: "text", text: "Hi Ada, I'm ready to help.", id: "t_greet" },
         { kind: "tool", name: "host_invoices_delete", input: { id: INVOICE }, toolCallId: "call_del" },
         { kind: "text", text: "Deleted the invoice.", id: "t_done" },
+        // Two-lane create (v2 spec §4): paint + full lane each consume a turn.
         { kind: "generate", dialect: CREATE_DIALECT },
+        { kind: "generate", dialect: CREATE_DIALECT, id: "gen_2" },
       ],
     },
   });
