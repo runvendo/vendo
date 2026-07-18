@@ -47,6 +47,6 @@
 `docs/contracts/` is being retired (archived; the behavior contract is types + tests). Per coordinator instruction the 04-actions.md amendment was dropped from this branch; no docs/contracts/ file is touched.
 
 ## Task 6: Verification and PR
-- [ ] Re-run `pnpm corpus run --layer 2 --json` on the finished branch in the same clone; per-repo scores equal-or-better than the Task 0 baseline; fix any regression before proceeding
-- [ ] `pnpm build && pnpm exec turbo run test --concurrency=4 && pnpm typecheck && pnpm lint` green (actions fixture.e2e re-run once if sole failure)
-- [ ] Push branch, open PR "B1: extraction on the TypeScript AST (kill-list B1)" with before/after line counts, the corpus baseline-vs-after table, and the deletion inventory; do not merge
+- [x] Re-run `pnpm corpus run --layer 2 --json` on the finished branch in the same clone; per-repo scores equal-or-better than the Task 0 baseline — first branch sweep caught a real regression (rallly post-init host build: `zod ^3.24.0` floor let a stale host zod@3.24.0 poison @ai-sdk peer resolution); fixed by raising the floor to `^3.25.0`, full re-sweep clean: all 16 repos identical scores, zero regressions
+- [x] `pnpm build && pnpm exec turbo run test --concurrency=4 && pnpm typecheck && pnpm lint` green (run in a space-free checkout; core packaging.e2e cannot execute under a spaces path — pre-existing Vite %20 limitation)
+- [x] Push branch, open PR "B1: extraction on the TypeScript AST (kill-list B1)" with before/after line counts, the corpus baseline-vs-after table, and the deletion inventory; do not merge
