@@ -70,7 +70,7 @@ describe("cloudDoctor", () => {
     expect(result.error).toContain("malformed");
   });
 
-  it("accepts a well-formed key without a network call", async () => {
+  it("accepts a well-formed key", async () => {
     const result = await cloudDoctor({ env: { VENDO_API_KEY: `vnd_${"a".repeat(40)}` } });
     expect(result).toEqual({ present: true, ok: true, unlocks: CLOUD_UNLOCKS });
   });

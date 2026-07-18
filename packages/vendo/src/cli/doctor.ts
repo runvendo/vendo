@@ -355,7 +355,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   if (cloud.present && cloud.ok) {
     pass("Vendo Cloud key present and well-formed");
   } else if (cloud.present) {
-    warn(`VENDO_API_KEY is set but not usable: ${cloud.error ?? "validation failed"}`);
+    warn(`VENDO_API_KEY is set but not usable: ${cloud.error ?? "malformed"}`);
   } else {
     note(`Vendo Cloud (optional): no VENDO_API_KEY. A key unlocks ${cloud.unlocks.join("; ")}. Run \`vendo cloud login\` to start.`);
   }
