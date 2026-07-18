@@ -10,9 +10,12 @@ npm install @vendoai/vendo
 npx vendo init
 ```
 
-The init interview scans the app, recommends risk labels, extracts theme and
-remix candidates, and proposes the handler and `<VendoRoot>` edits. It shows
-each code diff before writing it.
+`vendo init` asks nothing on the happy path. It writes two code files — an
+empty `vendo/registry.tsx` and the catch-all handler wired to it, with your
+auth preset detected silently from package.json — plus two package.json
+script hooks, extracts your tools and brand theme into `.vendo/`, resolves a
+model key, and prints the one `<VendoRoot components={registry}>` line that
+is yours to paste. It never edits code you wrote.
 
 ## The two files you own
 
