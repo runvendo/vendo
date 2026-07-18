@@ -195,19 +195,9 @@ describe("generation engine through createApps", () => {
         if (typeof message.content === "string") return message.content;
         return message.content.map((part) => part.text ?? "").join("");
       }).join("\n");
-      return JSON.stringify({
-        name: "Plain app",
-        tree: {
-          formatVersion: "vendo-genui/v1",
-          root: "card",
-          nodes: [{
-            id: "card",
-            component: "PlainCard",
-            source: "host",
-            props: { anything: { nested: true }, goes: 42 },
-          }],
-        },
-      });
+      // v2 JSX wire (format-gen-v2): arbitrary props on a schema-less host
+      // entry must pass the permissive validator.
+      return '<App name="Plain app"><PlainCard goes={42}/></App>';
     });
     const runtime = createApps({
       store: memoryStore(),
@@ -218,7 +208,11 @@ describe("generation engine through createApps", () => {
     });
 
     await expect(runtime.create({ prompt: "Build a plain card" }, ctx)).resolves.toMatchObject({
-      tree: { nodes: [{ component: "PlainCard", source: "host" }] },
+      tree: {
+        nodes: expect.arrayContaining([
+          expect.objectContaining({ component: "PlainCard", source: "host" }),
+        ]),
+      },
     });
     expect(capturedPrompt).toContain('"whenToUse": "The model infers props for this card."');
     expect(capturedPrompt).toContain('"propsJsonSchema": null');
