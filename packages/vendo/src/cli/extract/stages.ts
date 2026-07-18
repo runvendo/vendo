@@ -329,8 +329,15 @@ export async function runStagedExtraction(input: StagedExtractionInput): Promise
         surfaceDraftSchema,
         env,
       );
+      // A focused pass may only draft its own surface's tools — an
+      // out-of-surface entry would defeat the containment story (a skipped
+      // surface must actually keep extractor defaults).
+      const members = new Set(surface.tools.map((tool) => tool.name));
       for (const entry of artifact.tools) {
-        if (drafted.has(entry.name)) continue;
+        if (!members.has(entry.name)) {
+          notes.push(`surface "${surface.name}": draft for out-of-surface tool "${entry.name}" ignored`);
+          continue;
+        }
         drafted.set(entry.name, entry);
       }
       missedSurfaces.push(...(artifact.missedSurfaces ?? []));
@@ -356,11 +363,14 @@ export async function runStagedExtraction(input: StagedExtractionInput): Promise
         env,
       );
       for (const amendment of artifact.tools) {
-        if (!drafted.has(amendment.name)) {
+        const existing = drafted.get(amendment.name);
+        if (existing === undefined) {
           notes.push(`cross-check: amendment for undrafted tool "${amendment.name}" ignored`);
           continue;
         }
-        drafted.set(amendment.name, amendment);
+        // Merge, never replace: a description-only amendment must not drop
+        // the risk/critical/wake judgment the focused pass produced.
+        drafted.set(amendment.name, { ...existing, ...amendment });
       }
     } catch (error) {
       notes.push(`cross-check stage failed (${message(error)}) — using the uncross-checked drafts`);

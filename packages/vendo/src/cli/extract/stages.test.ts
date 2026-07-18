@@ -170,6 +170,52 @@ describe("runStagedExtraction", () => {
     expect(result.notes).toEqual(['cross-check: amendment for undrafted tool "invented_tool" ignored']);
   });
 
+  it("a description-only amendment merges onto the surface draft, keeping its risk/critical/wake judgment", async () => {
+    const root = await fixture();
+    const { harness } = scriptedHarness((stage, input) => {
+      if (stage === "survey") return SURVEY;
+      if (stage === "draft" && input.instructions.includes("host_admin_reset")) {
+        return { tools: [{
+          name: "host_admin_reset", description: "Reset all demo data.",
+          risk: "destructive" as const, critical: true, disabled: false, reasoning: "handler truncates tables",
+        }] };
+      }
+      if (stage === "draft") return draftFor(input.instructions);
+      if (stage === "cross-check") return { tools: [{ name: "host_admin_reset", description: "amended: reset demo data" }] };
+      return { brief: "b" };
+    });
+    const result = await runStagedExtraction({ root, env: {}, harness, tools: TOOLS, appName: "maple" });
+    expect(result.draft.tools.find((tool) => tool.name === "host_admin_reset")).toEqual({
+      name: "host_admin_reset",
+      description: "amended: reset demo data",
+      risk: "destructive",
+      critical: true,
+      disabled: false,
+      reasoning: "handler truncates tables",
+    });
+  });
+
+  it("a surface pass drafting another surface's tool is ignored, keeping containment honest", async () => {
+    const root = await fixture();
+    const { harness } = scriptedHarness((stage, input) => {
+      if (stage === "survey") return SURVEY;
+      if (stage === "draft" && input.instructions.includes("host_admin_reset")) return new Error("rate limited");
+      if (stage === "draft") {
+        return { tools: [
+          ...draftFor(input.instructions).tools,
+          { name: "host_admin_reset", description: "poached from another surface" },
+        ] };
+      }
+      if (stage === "cross-check") return { tools: [] };
+      return { brief: "b" };
+    });
+    const result = await runStagedExtraction({ root, env: {}, harness, tools: TOOLS, appName: "maple" });
+    // The admin surface failed, so its tool keeps extractor defaults — the
+    // invoices pass cannot smuggle in a draft for it.
+    expect(result.draft.tools.map((tool) => tool.name).sort()).toEqual(["host_invoices_create", "host_invoices_list"]);
+    expect(result.notes).toContain('surface "Invoices": draft for out-of-surface tool "host_admin_reset" ignored');
+  });
+
   it("a failed survey degrades to drafting everything as one surface", async () => {
     const root = await fixture();
     const { harness, runs } = scriptedHarness((stage, input) => {
