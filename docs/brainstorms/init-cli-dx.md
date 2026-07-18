@@ -4,9 +4,10 @@ Status: CONVERGED (Yousef + init-cli lane, 2026-07-18)
 
 ## Goal
 
-One command, about a minute, zero questions on the happy path: `npx vendo init`
-ends with the dev's own product answering a first agent turn in their browser.
-Everything that is not required to reach that moment leaves init.
+One command, minimal questions, no ceremony. North star: `npx vendo init` ends
+with the dev's own product answering a first agent turn in their browser. V1
+scope: init wires, gets a key, and AI-drafts the toolbox — then hands off
+(paste one line, start your dev server). Everything else leaves init.
 
 ## The foundational decision: extraction is AI-native
 
@@ -60,13 +61,18 @@ Five steps, zero questions on the happy path:
 3. **AI extraction.** The agent reads the product and drafts tools.json plus
    brief.md (see above). Replaces both the old interview and the old
    refine-as-separate-command for the first-run case.
-4. **Launch.** Start the host dev server, open the browser.
-5. **First turn — in the browser.** Guided layout paste (init prints the
-   VendoRoot one-liner, watches for the hot reload), then the browser opens
-   with a pre-seeded thread already answering: the agent introduces itself
-   inside the product, in the host brand, from a model-written toolbox. The
-   terminal just points at it. Seed stays adaptive (tools demo / on-brand UI /
-   tour). Decided; details deferred until the core works.
+4. **Done — hand off, don't manage.** V1 init ends with a summary and two
+   next steps: paste the VendoRoot line into the layout (printed), and start
+   your dev server. No server spawning, no browser opening, no file watching,
+   no seeded turn in v1 — that whole finale ceremony is DEFERRED. When the
+   dev opens their app, the agent is there; `vendo doctor` verifies and can
+   run the live turn on demand.
+
+Verification placement follows: if a dev server is already running when init
+extracts, tools verify live during init; otherwise drafts land and doctor
+verifies (doctor already knows how to boot the server for probes). The
+browser-first-turn finale remains the north-star ending and comes back after
+the core is great.
 
 Total interaction: one keypress (yes to the starter key) plus a browser login;
 zero when an env key exists.
@@ -123,8 +129,9 @@ zero when an env key exists.
 
 ## What stays
 
-- The finale (dev server, browser, seeded adaptive first turn): best-in-class,
-  now the guaranteed ending of init.
+- The finale concept (dev server, browser, seeded adaptive first turn): the
+  north-star ending, deferred out of v1 — no server spawning/browser opening/
+  file watching in v1; doctor runs the live turn on demand.
 - doctor: the health verb, plus the new home for ongoing AI suggestions.
 - --agent mode: stays first-class (PostHog validates agent-driven installs);
   gets simpler because it prints the plan the AI pass would execute.
