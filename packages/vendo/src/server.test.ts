@@ -1533,6 +1533,80 @@ describe("09 §2 apps composition", () => {
     });
   });
 
+  it("exempts runtime bindings from a disk entry's ajv-backed schema while still rejecting real violations", { timeout: 120_000 }, async () => {
+    // 04 §1 gap closure end-to-end: ajvIssuePath → standardIssuePath →
+    // pathTargetsRuntimeBinding. The disk schema says value must be a number;
+    // a {$path} binding at that prop must be exempted, a plain wrong type not.
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+    const root = await mkdtemp(join(tmpdir(), "vendo-disk-catalog-binding-"));
+    const dataDir = join(root, "data");
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "catalog.json"), JSON.stringify({
+      format: "vendo/catalog@1",
+      entries: [{
+        name: "DiskMetric",
+        exportPath: "./src/disk-metric.tsx#DiskMetric",
+        propsSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"], additionalProperties: false },
+        description: "Use for a metric loaded from the generated catalog.",
+        source: "scanned",
+      }],
+    }));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
+    const treeWith = (props: unknown): string => JSON.stringify({
+      name: "Disk binding app",
+      tree: {
+        formatVersion: VENDO_TREE_FORMAT,
+        root: "metric",
+        nodes: [{ id: "metric", component: "DiskMetric", source: "host", props }],
+      },
+    });
+    const outputs = [
+      treeWith({ value: { $path: "/metrics/value" } }),
+      treeWith({ value: "not a number" }),
+      treeWith({ value: "not a number" }),
+    ];
+    const model = new MockLanguageModelV3({
+      doStream: async () => ({
+        stream: simulateReadableStream({ chunks: [
+          { type: "text-start", id: "generation" },
+          { type: "text-delta", id: "generation", delta: outputs.shift() ?? "" },
+          { type: "text-end", id: "generation" },
+          {
+            type: "finish",
+            usage: {
+              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+              outputTokens: { total: 0, text: 0, reasoning: 0 },
+            },
+            finishReason: { unified: "stop", raw: undefined },
+          },
+        ] }),
+      }),
+    });
+    const previousCwd = process.cwd();
+    const vendo = (() => {
+      try {
+        process.chdir(root);
+        return createVendo({ model, principal: async () => principal, store });
+      } finally {
+        process.chdir(previousCwd);
+      }
+    })();
+    await store.ensureSchema();
+
+    // A binding where the schema wants a number is exempt: create succeeds.
+    await expect(vendo.apps.create({ prompt: "Show the bound metric" }, ctx)).resolves.toMatchObject({
+      tree: { nodes: [{ component: "DiskMetric", source: "host", props: { value: { $path: "/metrics/value" } } }] },
+    });
+    // A genuine type violation against the same disk schema still fails.
+    await expect(vendo.apps.create({ prompt: "Show the broken metric" }, ctx)).rejects.toMatchObject({
+      code: "validation",
+      detail: expect.arrayContaining([
+        expect.stringContaining('props invalid for host component "DiskMetric"'),
+      ]),
+    });
+  });
+
   it("warns loudly when createVendo finds a malformed .vendo/catalog.json", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-malformed-disk-catalog-"));
     const dataDir = join(root, "data");

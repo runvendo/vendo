@@ -125,7 +125,7 @@ catalog entries by this field; do not use it as a curation control.
 Runtime validation (amended 2026-07-18, server-wiring DX): a schema-bearing
 entry's JSON Schema is executable, not just prompt guidance. For code
 registrations the composition derives it from the entry's ONE standard-schema
-(zod v4 native conversion — the hand-written `propsJsonSchema` is gone from
+(derived internally — the hand-written `propsJsonSchema` is gone from
 01 §14); for disk-loaded entries it is `propsSchema` verbatim. Either way the
 same document drives both the generation prompt and generated-props
 validation — the old gap where disk-loaded entries ran a pass-through
