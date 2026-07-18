@@ -246,6 +246,18 @@ describe("hostedStore error mapping", () => {
     ).rejects.toMatchObject({ code: "not-found" });
   });
 
+  it("treats only the ENVELOPED not-found as a missing blob; a bare 404 fails loudly", async () => {
+    // The console's uniform missing-blob answer → null at the seam.
+    const enveloped = vi.fn(async () =>
+      Response.json({ error: { code: "not-found", message: "Blob not found." } }, { status: 404 }));
+    await expect(adapterFor(enveloped).blobs("files").get("absent.bin")).resolves.toBeNull();
+    // A bare 404 (no envelope) is some other server — a misdeployed base URL
+    // must not read as an empty blob store forever.
+    const bare = vi.fn(async () => new Response("<html>not here</html>", { status: 404 }));
+    await expect(adapterFor(bare).blobs("files").get("absent.bin"))
+      .rejects.toThrow(/bare 404/);
+  });
+
   it("carries unknown codes on a plain error and survives non-JSON bodies", async () => {
     await expect(
       adapterFor(respond("weird-code", "strange", 500)).records("invoices").get("r"),

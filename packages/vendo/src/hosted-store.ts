@@ -255,9 +255,25 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
           },
           signal: AbortSignal.timeout(timeoutMs),
         });
-        // A missing blob is null at the seam (01-core §12); the console's 404
-        // is deliberately uniform, so it never becomes a thrown error here.
-        if (response.status === 404) return null;
+        // A missing blob is null at the seam (01-core §12) — but ONLY the
+        // console's enveloped not-found says "missing blob". A bare 404 (no
+        // envelope) is some other server answering — a misdeployed base URL
+        // must fail loudly, not read as an empty blob store forever.
+        if (response.status === 404) {
+          let payload: unknown;
+          try {
+            payload = JSON.parse(await response.text());
+          } catch {
+            payload = undefined;
+          }
+          const code = typeof payload === "object" && payload !== null && "error" in payload
+            ? (payload as { error?: { code?: unknown } }).error?.code
+            : undefined;
+          if (code === "not-found") return null;
+          throw new Error(
+            "Vendo Cloud store request failed with a bare 404 (no error envelope) — is the base URL a Vendo console?",
+          );
+        }
         if (!response.ok) await raiseCloudError(response);
         const contentType = response.headers.get("content-type");
         return {
