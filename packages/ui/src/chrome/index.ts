@@ -13,7 +13,22 @@ export { VendoPage } from "./vendo-page.js";
 export { VendoPalette, type VendoCommand } from "./vendo-palette.js";
 export { type HotkeyChord, type PaletteHotkey } from "./palette-hotkey.js";
 export { VendoSlot } from "./vendo-slot.js";
-export { VendoThread } from "./thread/index.js";
+export { VendoThread, type VendoThreadProps } from "./thread/index.js";
 export { VendoToasts, vendoToast, dismissAllVendoToasts, type VendoToastsProps, type VendoToastInput, type VendoToastAction } from "./vendo-toasts.js";
 export { WaitingQueue, type WaitingQueueProps } from "./waiting-queue.js";
 export { VendoStage } from "../voice/stage.js";
+
+/** The eject surface: internals the ejected thread compiles against
+    (scripts/eject-templates-lib.mjs enforces this list at build). Exported
+    deliberately — ejected chrome keeps data/wire logic as a package
+    dependency and only forks pixels (§4 customization ladder). */
+export { BuildBeat, toolPresentation } from "./build-beat.js";
+export { ChromeRoot } from "./chrome-root.js";
+export { useCopyFeedback } from "./clipboard.js";
+export { ConnectDockButton, ConnectTray } from "./connect-dock.js";
+export { FluidThinking } from "./fluid-thinking.js";
+export { previewArgs } from "./humanize.js";
+export { Markdown } from "./markdown.js";
+export { MorphToast, type MorphToastProps } from "./morph-toast.js";
+export { PrefillScopeContext, registerPrefillConsumer } from "./overlay-registry.js";
+export { LONG_TEXT_CAP, truncateHead } from "./truncate.js";

@@ -54,6 +54,7 @@
     "build:served-renderer": "node scripts/build-served-app-renderer.mjs",
     "prebuild": "pnpm run build:jail",
     "build": "tsc -p tsconfig.json",
+    "postbuild": "node scripts/build-eject-templates.mjs",
     "pretest": "pnpm run build:jail",
     "test": "vitest run",
     "pretest:coverage": "pnpm run build:jail",
