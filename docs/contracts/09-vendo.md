@@ -90,6 +90,7 @@ export interface HostAuthPresetOptions {
 
 `HostAuthPresetOptions` also accepts an optional `secret` (or system-equivalent — e.g. the away-token secret for clerk/auth0) override for the preset's env-read secret. <!-- amended 2026-07-18: additive widening, 2a spec review -->
 The `user` resolver returns `{ display?, email? }` — `email` feeds actAs session claims only (a Principal carries no email). <!-- amended 2026-07-18: additive widening, 2a spec review -->
+`jwt()` is not zero-argument like the vendor presets: a host-generic HS256 scheme has no vendor-owned env variable to read, so it requires `jwt({ secret })`. <!-- amended 2026-07-18: server-wiring DX migration, apps/demo-bank -->
 
 Normative: supplying `auth` together with ANY of `principal`, `actAs`, or `oauth` throws `VendoError("validation")` at compose time — one preset or the per-seam trio, never mixed; the trio remains the escape hatch for hosts without a preset. The presets' actAs halves are `@vendoai/actions/presets`' shipped implementations for the same providers (04 §2.1; clerk/auth0 keep their away-token producer+verify split — the verify middleware is still host-mounted); the oauth half implements 10-mcp §3.
 
