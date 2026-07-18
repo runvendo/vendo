@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "getMonitorHealthcheck",
+      "method": "GET",
+      "path": "/api/_monitor/healthcheck",
+      "risk": "read"
+    },
+    {
+      "name": "getMonitorSentry",
+      "method": "GET",
+      "path": "/api/_monitor/sentry",
+      "risk": "read"
+    }
+  ]
+}
