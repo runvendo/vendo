@@ -45,9 +45,26 @@ import { FAILED, issue, mergeIssues, type CompileState, type Frame } from "./sta
 /** v2 spec §5 — the patch input: a prior compile (or patch) result. */
 export type WirePatchBase = Pick<WireCompileResult, "tree" | "components" | "name">;
 
+/** v2 spec §5 — patch options: the create compiler's plus the extension-op
+ *  declarations. Extension ops keep the dialect singular for CALLER-POLICY
+ *  operations (the engine's ForkPin/SetDescription): a declared, self-closing
+ *  op element parses in the same grammar and is handed back untouched in
+ *  {@link WirePatchResult.extensionOps} instead of erroring — core stays
+ *  policy-free, the model still speaks one grammar. */
+export interface WirePatchOptions extends WireCompileOptions {
+  extensionOps?: readonly string[];
+}
+
+/** v2 spec §5 — one collected extension op (document order). */
+export interface PatchExtensionOp {
+  op: string;
+  props: Record<string, Json>;
+}
+
 /** v2 spec §5 — mirrors {@link WireCompileResult}: the patched document plus
- *  ordered issues, the wave-3 repair contract, and streaming completeness. */
-export type WirePatchResult = WireCompileResult;
+ *  ordered issues, the wave-3 repair contract, streaming completeness, and
+ *  the caller's collected extension ops. */
+export type WirePatchResult = WireCompileResult & { extensionOps: PatchExtensionOp[] };
 
 const MINTED_ID_PATTERN = /^([a-z][a-z0-9]*)-([1-9]\d*)$/;
 
@@ -176,7 +193,7 @@ const skipOpContent = (state: CompileState, selfClosing: boolean, op: string): v
 const compileWirePatchV2Unsafe = (
   wire: string,
   base: WirePatchBase,
-  options: WireCompileOptions | undefined,
+  options: WirePatchOptions | undefined,
 ): WirePatchResult => {
   const failResult = (issues: WireIssue[]): WirePatchResult => ({
     tree: base.tree,
@@ -184,8 +201,11 @@ const compileWirePatchV2Unsafe = (
     ...(base.name === undefined ? {} : { name: base.name }),
     issues,
     bindingErrors: [],
+    extensionOps: [],
     complete: false,
   });
+  const declaredExtensions = new Set(options?.extensionOps ?? []);
+  const extensionOps: PatchExtensionOp[] = [];
 
   // Forward references: bindings and source resolution see base declarations
   // plus everything this patch declares anywhere (the wave-1 cap-blind
@@ -296,6 +316,13 @@ const compileWirePatchV2Unsafe = (
       break;
     }
     if (!ATTRIBUTE_OPS.has(op)) {
+      if (declaredExtensions.has(op)) {
+        // A caller-declared extension op: collected verbatim, never applied
+        // here. Content is skipped like every attribute-only op's.
+        extensionOps.push({ op, props: attrs.props ?? {} });
+        skipOpContent(state, attrs.selfClosing, op);
+        continue;
+      }
       // Unknown op (nested App/Edit included): skip the element and subtree.
       issue(state, "invalid-patch-op", `<${op}> is not an edit op; the element was skipped`);
       if (!attrs.selfClosing) skipElement(state, op);
@@ -518,6 +545,7 @@ const compileWirePatchV2Unsafe = (
     components,
     issues: state.issues,
     bindingErrors,
+    extensionOps,
     complete: editClosed && !state.eofTruncated && !state.droppedTrailing,
   };
   if (name !== undefined) result.name = name;
@@ -533,7 +561,7 @@ const compileWirePatchV2Unsafe = (
 export function compileWirePatchV2(
   wire: string,
   base: WirePatchBase,
-  options?: WireCompileOptions,
+  options?: WirePatchOptions,
 ): WirePatchResult {
   try {
     return compileWirePatchV2Unsafe(wire, base, options);
@@ -544,6 +572,7 @@ export function compileWirePatchV2(
       ...(base.name === undefined ? {} : { name: base.name }),
       issues: [{ code: "compile-failed", message: `wire patch failed: ${safeErrorMessage(error)}` }],
       bindingErrors: [],
+      extensionOps: [],
       complete: false,
     };
   }

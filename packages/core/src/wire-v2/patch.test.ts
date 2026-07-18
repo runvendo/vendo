@@ -219,3 +219,33 @@ describe("compileWirePatchV2 unknown paired ops", () => {
     expect(node(result, "card-1")).toBeUndefined();
   });
 });
+
+describe("compileWirePatchV2 extension ops", () => {
+  it("collects declared extension ops (parsed attrs, document order) without issues or application", () => {
+    const result = patch(
+      '<Edit><ForkPin slot="cards/Revenue" props={{ tone: "bold" }}/><Set id="pageheader-1" title="New"/><SetDescription text="d"/></Edit>',
+      base(),
+      { ...OPTIONS, extensionOps: ["ForkPin", "SetDescription"] },
+    );
+    expect(result.issues).toEqual([]);
+    expect(result.extensionOps).toEqual([
+      { op: "ForkPin", props: { slot: "cards/Revenue", props: { tone: "bold" } } },
+      { op: "SetDescription", props: { text: "d" } },
+    ]);
+    expect(node(result, "pageheader-1")?.props?.title).toBe("New");
+  });
+
+  it("undeclared ops still fail as invalid-patch-op; declared paired ops skip their content", () => {
+    const undeclared = patch('<Edit><ForkPin slot="s"/></Edit>');
+    expect(codes(undeclared)).toEqual(["invalid-patch-op"]);
+    expect(undeclared.extensionOps).toEqual([]);
+    const paired = patch(
+      '<Edit><ForkPin slot="s"><Card/></ForkPin></Edit>',
+      base(),
+      { ...OPTIONS, extensionOps: ["ForkPin"] },
+    );
+    expect(codes(paired)).toEqual(["invalid-patch-op"]);
+    expect(paired.extensionOps).toEqual([{ op: "ForkPin", props: { slot: "s" } }]);
+    expect(node(paired, "card-1")).toBeUndefined();
+  });
+});
