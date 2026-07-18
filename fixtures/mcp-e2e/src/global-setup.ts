@@ -36,19 +36,26 @@ async function freePort(): Promise<number> {
 async function warmRoutes(baseUrl: string, deadline: number): Promise<void> {
   const paths = ["/api/login", "/api/invoices", "/api/invoices/inv_warmup", "/api/customers", "/fixture/reset", "/fixture/echo"];
   for (const path of paths) {
+    let warm = false;
     while (Date.now() < deadline) {
       try {
         const response = await fetch(`${baseUrl}${path}`);
         // 404/500 with an HTML body is the dev compiler mid-flight; anything
         // else (2xx/4xx JSON) means the route module is compiled and serving.
-        if (response.status !== 404 && response.status !== 500) break;
+        if (response.status !== 404 && response.status !== 500) { warm = true; break; }
         const body = await response.text();
-        if (!body.startsWith("<!DOCTYPE")) break;
+        if (!body.startsWith("<!DOCTYPE")) { warm = true; break; }
       } catch {
         // Server hiccup while compiling — retry below.
       }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
+    // The shared deadline expiring mid-warmup must fail loudly, not fall
+    // through silently: a still-cold route here means setup would otherwise
+    // publish fixtureBaseUrl anyway, and the first test hits the exact
+    // cold-route 404/500 this warmup exists to prevent. Same posture as
+    // waitForFixture's own timeout below.
+    if (!warm) throw new Error(`Fixture route ${path} did not warm up in time\n${serverOutput}`);
   }
 }
 
