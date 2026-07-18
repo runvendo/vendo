@@ -1,5 +1,6 @@
 import {
   compileWireV2,
+  deriveShapeCard,
   type ApprovalDecision,
   type ApprovalRequest,
   type Json,
@@ -1143,6 +1144,72 @@ function TreeV2Scenario() {
   );
 }
 
+/** v2 spec §3 (wave 3) — shape-aware binding: reshape pipes adapt the tool's
+ *  rows without a code island; a mislabeled field is caught at compile when
+ *  shape cards are supplied, and contained at render when they are not. */
+const SHAPE_DATA: Record<string, Json> = {
+  revenue: {
+    rows: [
+      { month: "Jan", revenue: 1240 },
+      { month: "Feb", revenue: 980 },
+      { month: "Mar", revenue: 1495.5 },
+    ],
+  },
+};
+
+const SHAPE_WIRE = `<App name="Revenue by month">
+  <Query id="revenue" tool="metrics_revenue"/>
+  <Stack gap={14}>
+    <Text text="Shape-aware binding: reshape pipes, no code island" variant="heading"/>
+    <Stat label="Total revenue" value={revenue.rows | sum(revenue) | format(currency)}/>
+    <Table caption="Monthly revenue" rows={revenue.rows | format(revenue, currency) | rename(month, Month, revenue, Revenue)}/>
+  </Stack>
+</App>`;
+
+/** The broken-chart class: the model guessed field names ("period"/"amount")
+ *  that the tool's rows don't carry. */
+const SHAPE_WIRE_BROKEN = `<App name="Revenue by month (mis-bound)">
+  <Query id="revenue" tool="metrics_revenue"/>
+  <Stack gap={14}>
+    <Text text="Mis-bound reshape: contained at render, compile error with shape cards" variant="heading"/>
+    <Table caption="Broken binding" rows={revenue.rows | asPoints(period, amount)}/>
+  </Stack>
+</App>`;
+
+function TreeV2ShapeScenario() {
+  const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
+  // The shape card comes straight from the scripted sample — the same
+  // deriveShapeCard path `vendo sync`/the engine uses on recorded responses.
+  const toolShapes = useMemo(
+    () => ({ metrics_revenue: deriveShapeCard("metrics_revenue", [SHAPE_DATA.revenue]).output }),
+    [],
+  );
+  const happy = useMemo(() => compileWireV2(SHAPE_WIRE, { toolShapes }), [toolShapes]);
+  const broken = useMemo(() => compileWireV2(SHAPE_WIRE_BROKEN, { toolShapes }), [toolShapes]);
+  const happyPayload = useMemo(() => happy.tree as unknown as UIPayload, [happy]);
+  const brokenPayload = useMemo(() => broken.tree as unknown as UIPayload, [broken]);
+  return (
+    <TreeThemeBoundary>
+      <div className="format-drill-grid">
+        <section aria-label="Reshaped bindings">
+          <h2>Reshape pipes against the tool shape — wired, no island</h2>
+          <PayloadView payload={happyPayload} components={components} data={SHAPE_DATA} onAction={noop} />
+          <output className="recorder" data-testid="shape-happy-recorder">
+            {`compile: complete=${happy.complete} issues=${happy.issues.length} bindingErrors=${happy.bindingErrors.length}`}
+          </output>
+        </section>
+        <section aria-label="Mis-bound reshape">
+          <h2>Mis-bound fields — compile error + contained notice</h2>
+          <PayloadView payload={brokenPayload} components={components} data={SHAPE_DATA} onAction={noop} />
+          <output className="recorder" data-testid="shape-error-recorder">
+            {JSON.stringify(broken.bindingErrors, null, 1)}
+          </output>
+        </section>
+      </div>
+    </TreeThemeBoundary>
+  );
+}
+
 /** A second long conversation for the thread-SWITCH scenario (ENG-213): both
  *  ids ride the wire list() via the client override below. */
 const boundedThreadB: Thread = {
@@ -1493,6 +1560,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree-themed": return { title: "Tree — loud host theme", theme: loudTheme, content: <TreeScenario /> };
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
     case "/tree-v2": return { title: "vendo-genui/v2 — wire compile + v1 coexistence", content: <TreeV2Scenario /> };
+    case "/tree-v2-shape": return { title: "vendo-genui/v2 — shape-aware binding (wave 3)", content: <TreeV2ShapeScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
     case "/slot": return { title: "Inline app slot", content: <VendoSlot id="hero" appId="app_1"><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
     case "/slot-empty": return { title: "Inline slot — empty CTA (Maple)", theme: mapleTheme, content: <><VendoSlot id="hero" /><VendoPalette /></> };
