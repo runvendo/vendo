@@ -52,7 +52,15 @@ async function setup(
 ): Promise<{ vendo: Vendo; resolver: typeof resolver }> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-"));
   const store = createStore({ dataDir });
-  cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+  // Await schema readiness before closing: boot-only tests (compose, assert,
+  // never touch the wire) must not close the store while createVendo's
+  // fire-and-forget ensureSchema() is in flight — closing PGlite mid-query
+  // hangs the process.
+  cleanups.push(async () => {
+    await store.ensureSchema().catch(() => undefined);
+    await store.close();
+    await rm(dataDir, { recursive: true, force: true });
+  });
   const vendo = createVendo({
     model: {} as LanguageModel,
     principal: resolver,
@@ -336,7 +344,15 @@ describe("09 §3 public wire", () => {
     };
     const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-custom-"));
     const store = createStore({ dataDir });
-    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    // Await schema readiness before closing: boot-only tests (compose, assert,
+  // never touch the wire) must not close the store while createVendo's
+  // fire-and-forget ensureSchema() is in flight — closing PGlite mid-query
+  // hangs the process.
+  cleanups.push(async () => {
+    await store.ensureSchema().catch(() => undefined);
+    await store.close();
+    await rm(dataDir, { recursive: true, force: true });
+  });
     const statusFor = async (
       env: { E2B_API_KEY: string; MODAL_TOKEN_ID: string; MODAL_TOKEN_SECRET: string },
       sandbox?: SandboxAdapter,
@@ -633,6 +649,88 @@ describe("09 §2 composition", () => {
         },
       },
     });
+  });
+
+  it("09-vendo §2 install-dx wave 1.1: NODE_ENV=development trusts its own learned origin — present credentials forward with zero VENDO_BASE_URL", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("VENDO_BASE_URL", "");
+    const { vendo } = await setup();
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const target = input instanceof Request ? input : new Request(input, init);
+      return vendo.handler(target);
+    }));
+
+    // Teach the zero-config route origin, then run the real present-forward
+    // branch: unlike the untrusted-origin case above, the credentials MUST
+    // reach the doctor's own echo route.
+    expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
+    const probe = await vendo.handler(request("POST", "/doctor/present", {}, {
+      authorization: "Bearer vendo-doctor-present",
+      cookie: "vendo_doctor_present=1",
+    }));
+    expect(await probe.json()).toEqual({ ok: true });
+
+    // No warning fires — nothing was dropped, so there is nothing to audit.
+    const events = await vendo.guard.audit.query({ principal });
+    const warnings = events.events.filter((event) =>
+      event.detail !== undefined
+      && typeof event.detail === "object"
+      && event.detail !== null
+      && "warning" in event.detail);
+    expect(warnings).toHaveLength(0);
+  });
+
+  it("09-vendo §2 install-dx wave 1.1: logs one loud console.error at composition when NODE_ENV=production and VENDO_BASE_URL is unset", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VENDO_BASE_URL", "");
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await setup();
+    expect(error).toHaveBeenCalledOnce();
+    expect(error.mock.calls[0]?.[0]).toContain("VENDO_BASE_URL");
+    expect(error.mock.calls[0]?.[0]).toContain("production");
+  });
+
+  it("09-vendo §2 install-dx wave 1.1: no boot console.error when NODE_ENV=production and VENDO_BASE_URL is set", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VENDO_BASE_URL", "https://app.example.com");
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await setup();
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it("09-vendo §2 install-dx wave 1.1: no boot console.error outside production, VENDO_BASE_URL unset", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("VENDO_BASE_URL", "");
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await setup();
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it("09-vendo §2 install-dx wave 1.1: /doctor/base-url reports a failing check when NODE_ENV=production and VENDO_BASE_URL is unset", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VENDO_BASE_URL", "");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { vendo } = await setup();
+
+    const response = await vendo.handler(request("GET", "/doctor/base-url"));
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.ok).toBe(false);
+    expect(body.error.message).toContain("VENDO_BASE_URL");
+  });
+
+  it.each([
+    ["NODE_ENV=production with VENDO_BASE_URL set", "production", "https://app.example.com"],
+    ["NODE_ENV=development, unset", "development", ""],
+    ["NODE_ENV=test, unset", "test", ""],
+  ])("09-vendo §2 install-dx wave 1.1: /doctor/base-url reports ok — %s", async (_label, nodeEnv, baseUrl) => {
+    vi.stubEnv("NODE_ENV", nodeEnv);
+    vi.stubEnv("VENDO_BASE_URL", baseUrl);
+    const { vendo } = await setup();
+
+    const response = await vendo.handler(request("GET", "/doctor/base-url"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
   });
 
   it("adds app capability tools and executes them only through the guard binding", async () => {
@@ -1021,7 +1119,15 @@ describe("09 §3 conversational turn against the real composed store", () => {
     const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
     const dataDir = await mkdtemp(join(tmpdir(), "vendo-turn-"));
     const store = createStore({ dataDir });
-    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    // Await schema readiness before closing: boot-only tests (compose, assert,
+  // never touch the wire) must not close the store while createVendo's
+  // fire-and-forget ensureSchema() is in flight — closing PGlite mid-query
+  // hangs the process.
+  cleanups.push(async () => {
+    await store.ensureSchema().catch(() => undefined);
+    await store.close();
+    await rm(dataDir, { recursive: true, force: true });
+  });
     const model = new MockLanguageModelV3({
       doStream: async () => ({
         stream: simulateReadableStream({
@@ -1137,7 +1243,15 @@ describe("09 §3 conversational turn against the real composed store", () => {
     });
     const dataDir = await mkdtemp(join(tmpdir(), "vendo-stream-turn-"));
     const store = createStore({ dataDir });
-    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    // Await schema readiness before closing: boot-only tests (compose, assert,
+  // never touch the wire) must not close the store while createVendo's
+  // fire-and-forget ensureSchema() is in flight — closing PGlite mid-query
+  // hangs the process.
+  cleanups.push(async () => {
+    await store.ensureSchema().catch(() => undefined);
+    await store.close();
+    await rm(dataDir, { recursive: true, force: true });
+  });
     const vendo = createVendo({
       model: model as unknown as LanguageModel,
       principal: async () => principal,
@@ -1172,7 +1286,15 @@ describe("09 §2 apps composition", () => {
     const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
     const dataDir = await mkdtemp(join(tmpdir(), "vendo-catalog-"));
     const store = createStore({ dataDir });
-    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    // Await schema readiness before closing: boot-only tests (compose, assert,
+  // never touch the wire) must not close the store while createVendo's
+  // fire-and-forget ensureSchema() is in flight — closing PGlite mid-query
+  // hangs the process.
+  cleanups.push(async () => {
+    await store.ensureSchema().catch(() => undefined);
+    await store.close();
+    await rm(dataDir, { recursive: true, force: true });
+  });
     const generated = JSON.stringify({
       name: "Catalog app",
       tree: {
@@ -1311,7 +1433,15 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
   async function mcpVendo(mcp: CreateVendoConfig["mcp"] = true): Promise<Vendo> {
     const dataDir = await mkdtemp(join(tmpdir(), "vendo-door-"));
     const store = createStore({ dataDir });
-    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    // Await schema readiness before closing: boot-only tests (compose, assert,
+  // never touch the wire) must not close the store while createVendo's
+  // fire-and-forget ensureSchema() is in flight — closing PGlite mid-query
+  // hangs the process.
+  cleanups.push(async () => {
+    await store.ensureSchema().catch(() => undefined);
+    await store.close();
+    await rm(dataDir, { recursive: true, force: true });
+  });
     const vendo = createVendo({
       model: {} as LanguageModel,
       principal: async () => null,

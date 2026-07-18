@@ -587,6 +587,24 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // that learned origin is UNTRUSTED (baseUrlTrusted:false), so a spoofed Host
   // can never turn it into a credential-exfiltration target (04 §4).
   const configuredBaseUrl = environment("VENDO_BASE_URL");
+  // 09-vendo §2 (install-dx wave 1.1 — design decision 5): a literal
+  // NODE_ENV check, deliberately independent of the broader `development`
+  // flag below (which also honors an explicit config.development escape
+  // hatch for source capture — unrelated to credential trust).
+  const nodeEnv = environment("NODE_ENV");
+  const isDevelopmentEnv = nodeEnv === "development";
+  const isProductionEnv = nodeEnv === "production";
+  if (configuredBaseUrl === undefined && isProductionEnv) {
+    // Loud, once, at composition — never throws (a host that never makes a
+    // present-mode host tool call must keep booting). The actual refusal
+    // happens per-call below via untrustedOriginPolicy: "fail".
+    console.error(
+      "[vendo] VENDO_BASE_URL is not set in production. Present-mode host tool "
+        + "calls that need to forward the caller's credentials will fail instead "
+        + "of running unauthenticated. Set VENDO_BASE_URL to this deployment's "
+        + "public origin and restart the server.",
+    );
+  }
   const actionsConfig: {
     dir: string;
     connectors?: Connector[];
@@ -595,6 +613,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     baseUrl?: string;
     baseUrlTrusted?: boolean;
     onPresentCredentialsNotForwarded: typeof warnPresentCredentialsNotForwarded;
+    untrustedOriginPolicy?: "warn" | "fail";
     invokeTool?: ToolRegistry["execute"];
   } = {
     dir: ".",
@@ -603,6 +622,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(config.serverActions === undefined ? {} : { serverActions: config.serverActions }),
     ...(configuredBaseUrl === undefined ? {} : { baseUrl: configuredBaseUrl, baseUrlTrusted: true }),
     onPresentCredentialsNotForwarded: warnPresentCredentialsNotForwarded,
+    // 09-vendo §2 install-dx wave 1.1: production refuses a present-mode call
+    // it can't authenticate rather than quietly dropping the caller's
+    // credentials. Dev/test keep today's warn-and-continue (dev never reaches
+    // "untrusted-host-origin" at all — see onRequestOrigin below).
+    ...(configuredBaseUrl === undefined && isProductionEnv ? { untrustedOriginPolicy: "fail" as const } : {}),
   };
   const actions = createActions(actionsConfig);
   const doctor = {
@@ -874,10 +898,16 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     onRequestOrigin: (origin) => {
       // Same-origin default for route-binding execution (04): no VENDO_BASE_URL
       // → the wire's own origin, learned from the first VALIDATED request and
-      // then fixed. Marked untrusted so credentials never forward to it.
+      // then fixed.
       if (actionsConfig.baseUrl === undefined) {
         actionsConfig.baseUrl = origin;
-        actionsConfig.baseUrlTrusted = false;
+        // 09-vendo §2 install-dx wave 1.1: NODE_ENV=development trusts its own
+        // learned origin — credentials forward to the wire's own route
+        // bindings with zero config. Every other environment (including
+        // NODE_ENV=test) keeps the learned origin UNTRUSTED exactly as
+        // before, so a spoofed Host on any early request can never turn it
+        // into a credential-exfiltration target (04 §4).
+        actionsConfig.baseUrlTrusted = isDevelopmentEnv;
       }
     },
   });
