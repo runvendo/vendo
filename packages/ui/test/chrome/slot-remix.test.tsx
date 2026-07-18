@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { VendoOverlay, VendoSlot } from "../../src/chrome/index.js";
-import { openVendoOverlay } from "../../src/chrome/overlay-registry.js";
+import { openVendoConversation } from "../../src/chrome/overlay-registry.js";
 import { createWireServer } from "../wire-server.js";
 
 describe("VendoSlot remix flag + overlay registry", () => {
@@ -99,7 +99,7 @@ describe("VendoSlot remix flag + overlay registry", () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("VendoOverlay"));
   });
 
-  it("openVendoOverlay reports false with no overlay mounted (registry parity)", () => {
-    expect(openVendoOverlay({ prompt: "anything" })).toBe(false);
+  it("openVendoConversation reports false with no overlay mounted (registry parity)", () => {
+    expect(openVendoConversation({ prompt: "anything" })).toBe(false);
   });
 });

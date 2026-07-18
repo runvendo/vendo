@@ -31,7 +31,7 @@ const VALUE_EXPORTS = [
   "VendoStage",
   // Shelf Task 4 — the conversation-opening registry seam (slot remix,
   // triggers, palette defaults all route through it).
-  "openVendoOverlay",
+  "openVendoConversation",
 ] as const;
 
 const TYPE_EXPORTS = [

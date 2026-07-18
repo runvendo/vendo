@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { ConnectDockButton, ConnectTray } from "../connect-dock.js";
-import { registerPrefillConsumer } from "../overlay-registry.js";
+import { PrefillScopeContext, registerPrefillConsumer } from "../overlay-registry.js";
 import { fileExt, fileToPart, formatBytes } from "./attachments.js";
 
 /** The message shape the composer commits — mirrors useVendoThread.sendMessage. */
@@ -98,11 +98,14 @@ export function useComposer({ busy, sendMessage }: {
     dispatch(text, pending);
   };
 
+  // The enclosing overlay's prefill scope (null for embedded threads/pages):
+  // registry-delivered prompts are directed at one overlay's composer.
+  const prefillScope = useContext(PrefillScopeContext);
   // Remix bridge: a host affordance (slot remix, a trigger button, the legacy
   // `vendo:prefill` event) opens this surface and hands it the request to
   // type + send, so the whole build happens here — the one conversational
   // place (08-ui §4). The registry consumer also drains a prompt parked while
-  // this composer was still mounting (overlay first open).
+  // this composer was still mounting (overlay first open / fresh conversation).
   useEffect(() => {
     const prefill = (prompt: string, sendNow: boolean) => {
       setDraft(prompt);
@@ -114,7 +117,7 @@ export function useComposer({ busy, sendMessage }: {
       prefill(detail.prompt, detail.send === true);
     };
     window.addEventListener("vendo:prefill", onPrefill);
-    const unregister = registerPrefillConsumer(parked => prefill(parked.prompt, parked.send));
+    const unregister = registerPrefillConsumer(parked => prefill(parked.prompt, parked.send), prefillScope);
     return () => {
       window.removeEventListener("vendo:prefill", onPrefill);
       unregister();

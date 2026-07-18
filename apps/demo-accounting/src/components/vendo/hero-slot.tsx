@@ -30,8 +30,8 @@ function HeroSlotBody({
 
   // One-liner replacement for the old SWR polling dance: the shared hook
   // resolves the app pinned to this slot. Read here for the expand-to-full-row
-  // layout decision and passed down so the slot doesn't start a second poll
-  // (a bare <VendoSlot id> would discover the pin itself).
+  // layout decision; the slot gets discover={false} so it never starts a
+  // second poll (a bare <VendoSlot id> would discover the pin itself).
   const { appId } = useSlotApp(HERO_SLOT);
 
   // The remixed app lands here ONLY when the user pins it — the preview in the
@@ -64,7 +64,7 @@ function HeroSlotBody({
       {directorSurface ? (
         <VendoSlot id={HERO_SLOT} pin={{ payload: directorSurface.tree as UIPayload }}>{original}</VendoSlot>
       ) : (
-        <VendoSlot id={HERO_SLOT} appId={appId ?? undefined} remix remixPrompt={REMIX_PROMPT}>{original}</VendoSlot>
+        <VendoSlot id={HERO_SLOT} appId={appId ?? undefined} discover={false} remix remixPrompt={REMIX_PROMPT}>{original}</VendoSlot>
       )}
     </div>
   );

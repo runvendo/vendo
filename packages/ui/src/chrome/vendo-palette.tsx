@@ -3,7 +3,7 @@ import { useApps } from "../hooks/use-apps.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { developmentMode } from "./dev-mode.js";
-import { openVendoOverlay } from "./overlay-registry.js";
+import { openVendoConversation } from "./overlay-registry.js";
 import { isEditableTarget, registerPaletteHotkey, registerPaletteOpener, resolveHotkeyMatcher, type PaletteHotkey } from "./palette-hotkey.js";
 import { TakeoverPortal } from "./takeover-portal.js";
 
@@ -105,7 +105,7 @@ export function VendoPalette({ onCommand, hotkey }: { onCommand?(command: VendoC
     // conversation commands open the mounted overlay via the registry; the
     // rest need host routing and say so in dev instead of dying silently.
     if (command.kind === "new-conversation") {
-      const opened = openVendoOverlay({ newConversation: true });
+      const opened = openVendoConversation({ newConversation: true });
       if (!opened && developmentMode()) {
         console.warn("[vendo] VendoPalette: \"New conversation\" opens the conversation surface — mount a VendoOverlay for it to land in (or supply onCommand).");
       }

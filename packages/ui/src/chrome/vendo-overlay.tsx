@@ -4,7 +4,7 @@ import { useVendoTheme } from "../context.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { themeCssVariables } from "../theme.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { deliverPrefill, registerOverlayOpener } from "./overlay-registry.js";
+import { deliverPrefill, PrefillScopeContext, registerOverlayOpener } from "./overlay-registry.js";
 import { VendoThread, type VendoThreadProps } from "./thread/index.js";
 
 const FOCUSABLE = "button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex='-1'])";
@@ -160,16 +160,28 @@ export function VendoOverlay({
 
   const close = () => setOpen(false);
 
+  // The prefill scope: this overlay's composer registers under it, so a
+  // delivered prompt reaches THIS overlay's thread — not an embedded
+  // VendoThread/VendoPage composer that happened to register later.
+  const prefillScope = useRef(Symbol("vendo-overlay-prefill"));
+
   // Registry opener (ui-usage-dx §2): lets slot remix / trigger / palette
   // affordances open this overlay — optionally preloading a prompt or starting
-  // fresh — without a ref. The prompt goes through the registry's prefill
-  // hand-off, which parks it until the thread's composer mounts (first open)
-  // or delivers immediately (already mounted, even while hidden).
+  // fresh — without a ref. The prompt goes through the registry's scoped
+  // prefill hand-off, which parks it until the thread's composer mounts
+  // (first open) or delivers immediately (already mounted, even while
+  // hidden). newConversation defers delivery past the outgoing composer:
+  // the epoch bump remounts the thread, and only the fresh composer may
+  // drain the prompt (a live delivery would hand it to the one unmounting).
   useEffect(() => registerOverlayOpener(options => {
     setOpen(true);
-    if (options?.newConversation === true) setConversationEpoch(epoch => epoch + 1);
+    const fresh = options?.newConversation === true;
+    if (fresh) setConversationEpoch(epoch => epoch + 1);
     if (typeof options?.prompt === "string" && options.prompt.length > 0) {
-      deliverPrefill({ prompt: options.prompt, send: options.send === true });
+      deliverPrefill(
+        { prompt: options.prompt, send: options.send === true },
+        { scope: prefillScope.current, defer: fresh },
+      );
     }
   }), [setOpen]);
 
@@ -250,7 +262,9 @@ export function VendoOverlay({
           </svg>
           <span className="fl-sr-only">Close</span>
         </button>
-        <Thread key={`${conversationKey ?? 0}:${conversationEpoch}`} />
+        <PrefillScopeContext.Provider value={prefillScope.current}>
+          <Thread key={`${conversationKey ?? 0}:${conversationEpoch}`} />
+        </PrefillScopeContext.Provider>
       </div>
     </div>,
     document.body,

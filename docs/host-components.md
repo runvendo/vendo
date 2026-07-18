@@ -169,10 +169,12 @@ starts a fresh thread; `newConversation()` on the hook does the same, and
 hosts managing their own state can bump the `conversationKey` prop.
 
 Any affordance can open the mounted overlay without a ref through the
-registry: `openVendoOverlay({ prompt, send, newConversation })` opens the
-most recently mounted overlay, optionally preloading (and sending) a prompt
-into its composer. The slot remix flag and the palette defaults route through
-it; it returns `false` when no overlay is mounted so callers can fall back.
+registry: `openVendoConversation({ prompt, send, newConversation })` opens
+the most recently mounted overlay, optionally preloading (and sending) a
+prompt into its composer — always the opened overlay's own composer, never
+an embedded thread's. The slot remix flag and the palette defaults route
+through it; it returns `false` when no overlay is mounted so callers can
+fall back.
 
 ### Slot placement
 

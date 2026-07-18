@@ -7,7 +7,7 @@ import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { developmentMode } from "./dev-mode.js";
-import { openVendoOverlay } from "./overlay-registry.js";
+import { openVendoConversation } from "./overlay-registry.js";
 import { openVendoPalette } from "./palette-hotkey.js";
 
 /** The faint skeleton behind the ghost/empty states — decorative only. */
@@ -74,13 +74,17 @@ export interface VendoSlotPin {
  *  the original `children` as the visible recovery path (06-apps §8). Without any
  *  of the three, the children render UNTOUCHED (no wrapper — hosts may inline
  *  slots anywhere). */
-export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, remixPrompt, children }: {
+export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, remixPrompt, discover = true, children }: {
   id: string;
   appId?: string;
   pin?: VendoSlotPin;
   /** Invoked when the empty-state CTA is activated — the seam to open a thread
    *  or palette to author the view. Defaults to opening a mounted VendoPalette. */
   onAuthor?(slotId: string): void;
+  /** Pass `false` to stand pin self-discovery down even with no `appId`/`pin`
+   *  prop — for hosts that resolve the pin themselves (e.g. via useSlotApp
+   *  for a layout decision) and must not start a second poll. */
+  discover?: boolean;
   /** Remix folds into Slot as a flag (ui-usage-dx §2): show the hover Remix
    *  affordance on the slot's content; activating it opens the mounted overlay
    *  preloaded with the remix prompt. The slot id should match a registered
@@ -95,7 +99,7 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
   const { components } = useVendoContext();
   // Self-discovery (ui-usage-dx §2): with no explicit `appId`/`pin`, the slot
   // resolves its own pinned app — hosts never write the polling dance.
-  const discovery = useSlotApp(id, { enabled: appIdProp === undefined && pin === undefined });
+  const discovery = useSlotApp(id, { enabled: discover && appIdProp === undefined && pin === undefined });
   const appId = appIdProp ?? (pin === undefined ? discovery.appId : undefined);
 
   // Dev rail: the remix flow forks the component captured under this slot's
@@ -119,7 +123,7 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
   const startRemix = () => {
     const prompt = remixPrompt
       ?? `Remix the ${id} component — I want to make this view my own.`;
-    const opened = openVendoOverlay({ prompt, send: true });
+    const opened = openVendoConversation({ prompt, send: true });
     if (!opened && developmentMode()) {
       console.warn(`[vendo] VendoSlot "${id}": remix opens the conversation surface — mount a VendoOverlay for it to land in.`);
     }

@@ -96,6 +96,18 @@ describe("Slot pin self-discovery (useSlotApp + VendoSlot)", () => {
     expect(screen.queryByText("Invoices app surface")).toBeNull();
   });
 
+  it("discover={false} stands discovery down even with no appId/pin (host polls itself)", async () => {
+    const list = vi.spyOn(client.apps, "list");
+    render(
+      <VendoProvider client={client}>
+        <VendoSlot id="hero" discover={false}><span>Original hero</span></VendoSlot>
+      </VendoProvider>,
+    );
+    expect(screen.getByText("Original hero")).toBeTruthy();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(list).not.toHaveBeenCalled();
+  });
+
   it("an explicit appId prop wins over discovery (no polling dance started)", async () => {
     const list = vi.spyOn(client.apps, "list");
     render(
