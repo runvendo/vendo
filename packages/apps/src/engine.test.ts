@@ -1,5 +1,6 @@
 import {
   validateTree,
+  validateTreeV2,
   type AppDocument,
   type ComponentCatalog,
   type RunContext,
@@ -1241,5 +1242,160 @@ describe("instructionRequiresServer (ENG-349)", () => {
 
   it("always routes an http app to the code dialect", () => {
     expect(instructionRequiresServer(app("http"), "Make the heading blue")).toBe(true);
+  });
+});
+
+describe("v2 wire create", () => {
+  const wireCreate = (name = "Revenue dashboard") =>
+    `<App name="${name}"><MetricCard label="Revenue" value="$42k"/></App>`;
+
+  it("creates a validated v2 document from the wire dialect", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(wireCreate()),
+    });
+
+    const app = await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+
+    expect(app.name).toBe("Revenue dashboard");
+    expect(app.server).toBeUndefined();
+    expect(app.components).toBeUndefined();
+    expect(app.tree).toMatchObject({
+      formatVersion: "vendo-genui/v2",
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "prewired" },
+        { id: "metriccard-1", component: "MetricCard", source: "host", props: { label: "Revenue", value: "$42k" } },
+      ],
+    });
+    expect(validateTreeV2(app.tree).ok).toBe(true);
+  });
+
+  it("sends the wire dialect with the catalog and no v1 JSON contract", async () => {
+    let capturedPrompt = "";
+    const model = scriptedLanguageModel((call) => {
+      capturedPrompt = promptText(call);
+      return wireCreate();
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model,
+    });
+
+    await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+
+    expect(capturedPrompt).toContain("WIRE DIALECT (vendo-genui/v2)");
+    expect(capturedPrompt).toContain('"whenToUse": "Use for a single important metric');
+    expect(capturedPrompt).not.toContain('formatVersion is "vendo-genui/v1"');
+    expect(capturedPrompt).not.toContain("CREATE DIALECT: emit exactly");
+  });
+
+  it("carries islands to document-level components, never on the tree", async () => {
+    const wire = [
+      '<App name="Noted"><RevenueNote/>',
+      '<Island name="RevenueNote">export default function RevenueNote() { return <p>note</p>; }</Island></App>',
+    ].join("");
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(wire),
+    });
+
+    const app = await runtime.create({ prompt: "Build a note" }, ctx);
+
+    expect(app.components).toStrictEqual({
+      RevenueNote: "export default function RevenueNote() { return <p>note</p>; }",
+    });
+    expect(app.tree).not.toHaveProperty("components");
+    expect(app.tree).toMatchObject({
+      formatVersion: "vendo-genui/v2",
+      nodes: [{ id: "root" }, { id: "revenuenote-1", component: "RevenueNote", source: "generated" }],
+    });
+  });
+
+  it("streams valid-while-partial v2 payloads and finishes with resolved query data", async () => {
+    const streamed = [
+      '<App name="Streaming dashboard"><Query id="metric" tool="host_metric"/>',
+      '<Stack gap={8}><Text text="Revenue"/>',
+      '<MetricCard label="Revenue" value={metric}/></Stack></App>',
+    ];
+    const queryTools: ToolRegistry = {
+      async descriptors() { return []; },
+      async execute(call) {
+        return call.tool === "host_metric"
+          ? { status: "ok", output: "$42k" }
+          : { status: "error", error: { code: "not-found", message: "missing" } };
+      },
+    };
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools: queryTools,
+      catalog,
+      model: scriptedLanguageModel(streamed),
+    });
+    const views: Array<{ appId: string; payload: Record<string, unknown> }> = [];
+
+    const app = await runtime.create({
+      prompt: "Build a streaming dashboard",
+      onView: (part) => views.push(part as unknown as typeof views[number]),
+    }, ctx);
+    const opened = await runtime.open(app.id, ctx);
+
+    expect(views.length).toBeGreaterThanOrEqual(2);
+    expect(views.every((view) => view.appId === app.id)).toBe(true);
+    expect(views.every((view) => view.payload.formatVersion === "vendo-genui/v2")).toBe(true);
+    expect(views[0]?.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }] });
+    expect(views.some((view) => (view.payload.data as { metric?: string } | undefined)?.metric === "$42k")).toBe(true);
+    expect(views.at(-1)?.payload).not.toHaveProperty("streaming");
+    expect(opened).toMatchObject({ kind: "tree" });
+    if (opened.kind !== "tree") throw new Error("Expected a tree surface");
+    expect((opened.payload as { data?: { metric?: string } }).data?.metric).toBe("$42k");
+    expect(views.at(-1)?.payload).toEqual(opened.payload);
+  });
+
+  it("repairs one invalid wire with issue feedback and rejects two invalid attempts", async () => {
+    const invalidWire = '<App name="Broken"><MetricCard/></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? invalidWire : wireCreate("Repaired");
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model,
+    });
+
+    const app = await runtime.create({ prompt: "Build a metric" }, ctx);
+
+    expect(app.name).toBe("Repaired");
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("REPAIR_THESE_ISSUES");
+    expect(prompts[1]).toContain("MetricCard");
+
+    const rejectingStore = memoryStore();
+    const rejecting = createApps({
+      store: rejectingStore,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(invalidWire, invalidWire),
+    });
+    await expect(rejecting.create({ prompt: "Build a metric" }, ctx)).rejects.toMatchObject({
+      code: "validation",
+    });
+    expect(await rejecting.list(ctx)).toEqual([]);
   });
 });

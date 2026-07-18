@@ -7,6 +7,7 @@ import {
   TREE_MAX_TOTAL_COMPONENT_BYTES,
   VENDO_APP_FORMAT,
   VendoError,
+  compileWireV2,
   isPathBinding,
   isStateBinding,
   validateAppDocument,
@@ -17,15 +18,22 @@ import {
   type Tree,
   type TreeNode,
   type TreeQuery,
+  type TreeV2,
   type VendoTheme,
+  type WireCompileResult,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
-import {
-  IncrementalTreeParser,
-  parseModelJson,
-  type IncrementalGeneratedTree,
-} from "./incremental-tree.js";
+import { parseModelJson } from "./incremental-tree.js";
 import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "./pins.js";
+
+/** v2 spec §§1,4 — a compiled prefix of the streaming wire: always a
+ *  validateTreeV2-passing tree (valid-while-partial) plus the islands
+ *  admitted so far. */
+export interface GeneratedPartial {
+  name?: string;
+  tree: TreeV2;
+  components?: Record<string, string>;
+}
 
 export interface GenerationDependencies {
   model: LanguageModel;
@@ -34,7 +42,7 @@ export interface GenerationDependencies {
   designRules?: string;
   pinBaselines?: readonly PinBaseline[];
   /** 06-apps §5 — additive, optional partial-tree streaming seam. */
-  onPartial?: (partial: IncrementalGeneratedTree) => void | Promise<void>;
+  onPartial?: (partial: GeneratedPartial) => void | Promise<void>;
 }
 
 export interface GenerationCreateInput {
@@ -157,25 +165,53 @@ ${pinBaselinesPrompt(deps.pinBaselines)}
 const formatContract = (deps: GenerationDependencies): string =>
   composePromptSections(generationPromptSections(deps));
 
-const generateJson = async (
+/** v2 spec §2 — the JSX-wire create contract. The model emits markup, never
+ *  JSON; the deterministic compiler owns ids, bindings, and validation. */
+const wireContractSections = (deps: GenerationDependencies): GenerationPromptSection[] => [{
+  id: "role",
+  content: "You are the Vendo app generation engine. Return ONLY vendo-genui/v2 wire markup: a single <App> element. No prose, no markdown fences, no JSON.",
+}, {
+  id: "tree-contract",
+  content: `WIRE DIALECT (vendo-genui/v2):
+- Emit exactly one <App name="..."> element containing the whole app. Positional nesting expresses the tree; NEVER emit id attributes — the compiler mints stable ids.
+- <Query id="queryName" tool="tool_name" input={{...}}/> declarations come FIRST inside <App>, before layout, so data fetching starts while the rest streams. A query result lives at the query's name; bind it into props with expressions like value={queryName} or value={queryName.field.path}.
+- Attribute values: "string", {42}, {true}, bare attribute for true, {{...}} objects, {[...]} arrays, and query bindings {queryName.path.segments}.
+- Components resolve host catalog -> prewired primitives -> your <Island> components; the host brand wins a name collision. Prewired primitives: ${RESERVED_COMPONENT_NAMES.join(", ")}, Card, Button, Input, Select, Table, Badge, Stat, Tabs.
+- Prefer a host catalog component whenever it covers the need, with its exact name and props schema. Matching the host brand is a hard goal.
+- Actions are on* attributes naming a host tool or fn:<name> (name matches [A-Za-z_][A-Za-z0-9_-]*), e.g. onClick="host_tool" or onRun="fn:submit". A rung-1 app has no server, so never use fn: on create.
+- Generated components are top-level <Island name="PascalName">raw TSX with a default export</Island>, referenced as <PascalName/>. No JSON escaping — write plain TSX.
+- Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} islands, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per island, ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes of island source total.`,
+}, ...generationPromptSections(deps).filter(({ id }) =>
+  id === "component-styling" || id === "catalog" || id === "theme" || id === "design-rules")];
+
+const wireContract = (deps: GenerationDependencies): string =>
+  composePromptSections(wireContractSections(deps));
+
+/** Stream the wire, compiling each accumulated prefix (throttled) into a
+ *  valid-while-partial tree for the onPartial seam. */
+const streamWire = async (
   deps: GenerationDependencies,
   system: string,
   prompt: string,
-): Promise<{ value?: unknown; issues: string[] }> => {
-  const parser = deps.onPartial === undefined ? undefined : new IncrementalTreeParser();
-  let latest: IncrementalGeneratedTree | undefined;
-  let lastFlushAt = 0;
+  hostComponents: readonly string[],
+): Promise<{ compiled?: WireCompileResult; issues: string[] }> => {
+  let text = "";
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let lastFlushAt = 0;
   const pending: Promise<void>[] = [];
   const flush = (): void => {
-    if (latest === undefined || deps.onPartial === undefined) return;
-    const partial = latest;
-    latest = undefined;
+    if (deps.onPartial === undefined) return;
     lastFlushAt = Date.now();
+    const compiled = compileWireV2(text, { hostComponents });
+    const partial: GeneratedPartial = {
+      tree: compiled.tree,
+      ...(compiled.name === undefined ? {} : { name: compiled.name }),
+      ...(Object.keys(compiled.components).length === 0 ? {} : { components: compiled.components }),
+    };
     pending.push(Promise.resolve(deps.onPartial(partial)).catch(() => undefined));
   };
-  const schedule = (partial: IncrementalGeneratedTree): void => {
-    latest = partial;
+  const schedule = (): void => {
+    if (deps.onPartial === undefined) return;
     const remaining = Math.max(0, 100 - (Date.now() - lastFlushAt));
     if (lastFlushAt === 0 || remaining === 0) {
       if (timer !== undefined) clearTimeout(timer);
@@ -191,9 +227,64 @@ const generateJson = async (
   const finishPartials = async (): Promise<void> => {
     if (timer !== undefined) clearTimeout(timer);
     timer = undefined;
-    flush();
     await Promise.all(pending);
   };
+  try {
+    const { streamText } = await import("ai");
+    const result = streamText({
+      model: deps.model,
+      system,
+      prompt,
+      temperature: 0,
+      maxRetries: 0,
+    });
+    for await (const delta of result.textStream) {
+      text += delta;
+      schedule();
+    }
+    await finishPartials();
+    return { compiled: compileWireV2(text, { hostComponents }), issues: [] };
+  } catch (error) {
+    await finishPartials();
+    return { issues: [`model generation failed: ${error instanceof Error ? error.message : "unknown error"}`] };
+  }
+};
+
+/** v2 create validation: the compile must be complete and clean, the tree
+ *  catalog-consistent and renderable, and the assembled document valid. */
+const validateCompiledCreate = async (
+  compiled: WireCompileResult,
+  deps: GenerationDependencies,
+): Promise<{ document?: GeneratedAppDocument; issues: string[] }> => {
+  const issues: string[] = [];
+  if (!compiled.complete) issues.push("wire did not parse to a complete <App> document");
+  issues.push(...compiled.issues.map(({ code, message }) => `wire ${code}: ${message}`));
+  const name = compiled.name?.trim() ?? "";
+  if (name === "") issues.push('App must carry a non-empty name="..." attribute');
+  const components = Object.keys(compiled.components).length === 0 ? undefined : compiled.components;
+  issues.push(...await catalogIssues(compiled.tree as unknown as Tree, components, deps.catalog));
+  issues.push(...rootedRenderIssues(compiled.tree as unknown as Tree));
+  if (issues.length > 0) return { issues };
+  const document: GeneratedAppDocument = {
+    format: VENDO_APP_FORMAT,
+    name,
+    ui: "tree",
+    tree: structuredClone(compiled.tree) as unknown as NonNullable<AppDocument["tree"]>,
+    ...(components === undefined ? {} : { components: structuredClone(components) }),
+  };
+  const appValidation = validateAppDocument({ ...document, id: "app_generation_validation" });
+  if (!appValidation.ok) return { issues: [appValidation.error.message] };
+  return { document, issues: [] };
+};
+
+/** Edit-dialect model call: accumulate the stream and parse it as JSON.
+ *  (The v1 create-streaming parser is gone — v2 creates stream through the
+ *  wire compiler in {@link streamWire}.) */
+const generateJson = async (
+  deps: GenerationDependencies,
+  system: string,
+  prompt: string,
+): Promise<{ value?: unknown; issues: string[] }> => {
   try {
     const { streamText } = await import("ai");
     const result = streamText({
@@ -206,13 +297,9 @@ const generateJson = async (
     let text = "";
     for await (const delta of result.textStream) {
       text += delta;
-      const partial = parser?.push(delta);
-      if (partial !== undefined) schedule(partial);
     }
-    await finishPartials();
     return parseModelJson(text);
   } catch (error) {
-    await finishPartials();
     return { issues: [`model generation failed: ${error instanceof Error ? error.message : "unknown error"}`] };
   }
 };
@@ -306,72 +393,6 @@ const catalogIssues = async (
   }
   return issues;
 };
-
-interface GeneratedShape {
-  name: string;
-  description?: string;
-  tree: Tree;
-  components?: Record<string, string>;
-}
-
-const validateGenerated = async (
-  value: unknown,
-  deps: GenerationDependencies,
-): Promise<{ shape?: GeneratedShape; issues: string[] }> => {
-  if (!isRecord(value)) return { issues: ["model output must be an object"] };
-  const issues: string[] = [];
-  if (typeof value.name !== "string" || value.name.trim().length === 0) {
-    issues.push("name must be a non-empty string");
-  }
-  if (value.description !== undefined && typeof value.description !== "string") {
-    issues.push("description must be a string when present");
-  }
-  if (value.components !== undefined && !isRecord(value.components)) {
-    issues.push("components must be an object when present");
-  }
-  const components = isRecord(value.components)
-    ? Object.fromEntries(Object.entries(value.components).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
-    : undefined;
-  if (isRecord(value.components) && Object.keys(components ?? {}).length !== Object.keys(value.components).length) {
-    issues.push("every generated component source must be a string");
-  }
-  const validation = validateTree(
-    isRecord(value.tree) ? { ...value.tree, components } : value.tree,
-  );
-  if (!validation.ok) {
-    issues.push(validation.error.message);
-  } else {
-    issues.push(...await catalogIssues(validation.tree, components, deps.catalog));
-  }
-  if (issues.length > 0 || !validation.ok || typeof value.name !== "string") return { issues };
-  const tree = structuredClone(validation.tree);
-  delete tree.components;
-  const shape: GeneratedShape = {
-    name: value.name.trim(),
-    tree,
-    ...(typeof value.description === "string" && value.description.trim() !== ""
-      ? { description: value.description.trim() }
-      : {}),
-    ...(components === undefined ? {} : { components }),
-  };
-  const appValidation = validateAppDocument({
-    format: VENDO_APP_FORMAT,
-    id: "app_generation_validation",
-    ui: "tree",
-    ...shape,
-  });
-  if (!appValidation.ok) return { issues: [appValidation.error.message] };
-  return { shape, issues: [] };
-};
-
-const createDocument = (shape: GeneratedShape): GeneratedAppDocument => ({
-  format: VENDO_APP_FORMAT,
-  name: shape.name,
-  ...(shape.description === undefined ? {} : { description: shape.description }),
-  ui: "tree",
-  tree: shape.tree as unknown as NonNullable<AppDocument["tree"]>,
-  ...(shape.components === undefined ? {} : { components: shape.components }),
-});
 
 type TreeOp = Record<string, unknown> & { op: string };
 
@@ -784,21 +805,24 @@ const editCode = async (
   return { kind: "failure", issues: issues.length === 0 ? ["code edit failed validation"] : issues };
 };
 
-/** 06-apps §§2,5 — model-backed rung-1 generation and two-dialect edit planning. */
+/** 06-apps §§2,5; v2 spec §§2,4 — wire-backed rung-1 generation and
+ *  two-dialect edit planning. */
 export const modelEngine: GenerationEngine = {
   async create(input, deps) {
+    const hostComponents = deps.catalog.map(({ name }) => name);
     let issues: string[] = [];
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const output = await generateJson(
+      const output = await streamWire(
         deps,
-        `${formatContract(deps)}\n\nCREATE DIALECT: emit exactly {"name":"...","description":"...","tree":{...},"components":{...}?}. Start and finish at rung 1.`,
+        wireContract(deps),
         `TASK: CREATE_APP\nUSER_REQUEST: ${input.prompt}${repairPrompt(issues)}`,
+        hostComponents,
       );
-      issues = output.issues;
-      if (output.value !== undefined) {
-        const validated = await validateGenerated(output.value, deps);
-        issues = validated.issues;
-        if (validated.shape !== undefined) return createDocument(validated.shape);
+      issues = distinctIssues(issues, output.issues);
+      if (output.compiled !== undefined) {
+        const validated = await validateCompiledCreate(output.compiled, deps);
+        issues = distinctIssues(issues, validated.issues);
+        if (validated.document !== undefined) return validated.document;
       }
     }
     throw new VendoError("validation", "model could not produce a valid app", issues);

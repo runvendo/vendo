@@ -1,13 +1,16 @@
 import {
   VENDO_TREE_FORMAT,
+  VENDO_TREE_FORMAT_V2,
   VendoError,
   validateTree,
+  validateTreeV2,
   type AppDocument,
   type Json,
   type RunContext,
   type StoreAdapter,
   type Tree,
   type TreeQuery,
+  type TreeQueryV2,
   type UIPayload,
 } from "@vendoai/core";
 import type { AppCaller } from "./call.js";
@@ -90,9 +93,16 @@ const bytesToDataUri = (bytes: Uint8Array, contentType = "image/png"): string =>
   return `data:${contentType};base64,${globalThis.btoa(binary)}`;
 };
 
+type AnyTreeQuery = TreeQuery | TreeQueryV2;
+
+/** v1 queries carry an explicit JSON Pointer path; a v2 query's result lives
+ *  at `"/" + name` by definition (v2 spec §2). */
+const queryPointer = (query: AnyTreeQuery): string =>
+  "path" in query && typeof query.path === "string" ? query.path : `/${(query as TreeQueryV2).name}`;
+
 interface QueryState {
   key: string;
-  query: TreeQuery;
+  query: AnyTreeQuery;
   settled: boolean;
   result?: Awaited<ReturnType<AppCaller["callQuery"]>>;
   error?: unknown;
@@ -130,7 +140,7 @@ export const createProgressiveQueryResolver = (
       if (!state.settled || state.result === undefined) continue;
       const { outcome, uiEnvelope } = state.result;
       if (outcome.status !== "ok" || uiEnvelope) continue;
-      setQueryData(data, state.query.path, outcome.output);
+      setQueryData(data, queryPointer(state.query), outcome.output);
     }
     resolvedData = data;
     if (notify) onData?.(structuredClone(data));
@@ -224,6 +234,32 @@ export const createAppOpener = (
 
   if (app.tree === undefined) {
     throw new VendoError("validation", "tree app has no ui payload");
+  }
+  // v2 spec §§1–2 — the canonical vendo-genui/v2 tree: validate, resolve
+  // queries (results at "/" + name), and serve with document components at
+  // payload level (the v2 renderer lifts them into the shared walk).
+  if (app.tree.formatVersion === VENDO_TREE_FORMAT_V2) {
+    const validation = validateTreeV2(app.tree);
+    if (!validation.ok) throw new VendoError("validation", validation.error.message);
+    const tree = stripForgedServerFields(structuredClone(validation.tree)) as unknown as Tree;
+    const inClient = await inClientVenue?.(app);
+    if (inClient !== undefined) {
+      (tree as Tree & { inClient: InClientVenueState }).inClient = inClient;
+    }
+    const pinDrift = detectPinDrift(app, pinBaselines);
+    if (pinDrift.length > 0) {
+      (tree as Tree & { pinDrift: PinDrift[] }).pinDrift = pinDrift;
+    }
+    const queries = createProgressiveQueryResolver(machines, caller, app, ctx, undefined, authorization);
+    queries.update(tree);
+    tree.data = await queries.complete();
+    const payload = {
+      ...tree,
+      ...(app.components === undefined ? {} : { components: structuredClone(app.components) }),
+    } as unknown as UIPayload;
+    return app.components === undefined
+      ? { kind: "tree", payload }
+      : { kind: "tree", payload, components: structuredClone(app.components) };
   }
   // 01-core §8 — an unregistered format tag is a contained failure: the payload passes
   // through untouched (no query resolution) and the renderer shows the notice.
