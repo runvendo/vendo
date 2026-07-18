@@ -149,15 +149,25 @@ VendoRoot components prop, auth-library detection for the line it writes).
 
 - Files: docs/quickstart.md, door docs, apps/demo-accounting,
   corpus/hosts/express-host.
-- [ ] Write the init-lane handoff note (the scaffold targets above) and pass
-  it via the coordinator / worktree comment.
-- [ ] Rewrite docs/quickstart.md around the new surface (registry +
+- [x] Write the init-lane handoff note (the scaffold targets above) and pass
+  it via the coordinator / worktree comment. (File:
+  docs/superpowers/plans/2026-07-18-init-lane-handoff.md.)
+- [x] Rewrite docs/quickstart.md around the new surface (registry +
   auth preset; two files the dev owns). Move MCP-door content off the main
   quickstart path, marked experimental until the live client matrix
   (Claude/ChatGPT/Cursor) is green — record that criterion in the door doc.
-- [ ] Migrate demo-accounting and the Express corpus host to the new
+  (Door content lives at docs-site/capabilities/mcp.mdx, which already
+  carried the full guide; added the graduation-criterion callout and swapped
+  its hand-written well-known allowlist for `wellKnownVendoHandler`.)
+- [x] Migrate demo-accounting and the Express corpus host to the new
   surface (Express keeps its manual mount; broader Express polish is
-  explicitly out of scope per the brainstorm).
+  explicitly out of scope per the brainstorm). demo-accounting: one
+  vendo/registry.tsx now serves both createVendo's `catalog` and
+  `<VendoRoot>`'s `components` (host-components.tsx deleted); auth stays the
+  hand-wired trio, NOT `auth: supabase()` — the shipped preset can't verify
+  Cadence's ES256 GoTrue sessions (commented in server.ts). Express host
+  registers no catalog components and its README made no claims the waves
+  falsified — left untouched.
 - [ ] Run vendo doctor + one real model turn against migrated demo-bank;
   screenshots of the seeded first turn for the PR.
 - [ ] Wave gate: full green quad, PR opened.
