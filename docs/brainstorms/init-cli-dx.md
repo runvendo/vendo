@@ -136,16 +136,28 @@ zero when an env key exists.
 Base first: v1 implements the simplest correct version; the standing goal is
 to keep improving the AI quality after. Do not overbuild v1.
 
-- **Harness: existing agent machinery, provider-agnostic.** No bespoke loop
-  and no external framework. The ai-SDK's agent primitives on the
-  LanguageModel seam, reusing @vendoai/agent's loop machinery with an
-  extraction toolset (read file, grep, probe endpoint, emit draft). Any
-  provider plugs in; this matches Vendo's BYO-LLM identity. Claude Agent SDK
-  and other provider-locked or competitor frameworks rejected.
-- **Credential (init-time only, decoupled from runtime):** Claude Code /
-  Codex session adapters (ephemeral init help, nothing installed into the
-  host app), any BYO key, starter key through the gateway as the floor. The
-  runtime agent's key is a separate concern.
+- **Harness: world-class coding agents behind a swappable seam.** Reading a
+  codebase well is what coding agents are world-class at; we do not rebuild
+  that (and @vendoai/agent is a product conversation loop, not a code
+  navigator — rejected for this). Vendo's IP is the layer above: the staged
+  extraction instructions, the deterministic verification tools, and the
+  artifact contract (tools.json, brief.md). Any competent agent executes it.
+  - Best-available delegation: a coding agent already on the dev's machine
+    (Claude Code driven headless, Codex) runs the extraction.
+  - Floor: the CLI bundles an agent harness as its own dependency (never the
+    host app's) running on the starter key via the gateway or a BYO key.
+    Claude Agent SDK is the v1 floor choice.
+  - **Adaptability is a requirement:** all harnesses sit behind one thin
+    ExtractionHarness seam (run staged instructions + tools, return
+    artifacts). Swapping the floor to a different vendor or model in the
+    future is a config change, not an architecture change. Nothing above the
+    seam may assume Claude.
+  - This unifies --agent mode and interactive init: the vendo-setup skill,
+    Cursor, etc. are just more harnesses executing the same contract.
+- **Credential (init-time only, decoupled from runtime):** the delegated
+  agent brings its own (dev's Claude/Codex login — ephemeral init help,
+  nothing installed into the host app); the floor uses the starter key or a
+  BYO key. The runtime agent's key is a separate concern.
 - **Verification:** reads are fully exercised against the running dev server;
   writes are shape-verified (invalid payload in, proper validation error out
   proves route + schema without mutating). Verification level is an
