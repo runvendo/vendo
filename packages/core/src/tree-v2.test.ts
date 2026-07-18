@@ -110,6 +110,11 @@ describe("validateTreeV2 components rejection", () => {
     });
   });
 
+  it("tolerates unknown top-level keys other than components", () => {
+    // The rejection is components-specific: any other stray key passes through.
+    expect(validateTreeV2({ ...minimal(), extra: 1 }).ok).toBe(true);
+  });
+
   it("accepts a generated-source node without a document-level component", () => {
     // The presence rule is the app-document layer's to enforce, not the tree's.
     expect(validateTreeV2({

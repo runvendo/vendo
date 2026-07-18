@@ -87,6 +87,9 @@ const validateTreeV2Unsafe = (input: unknown): TreeV2Validation => {
   if (input.data !== undefined && !isPlainObject(input.data)) {
     return fail("provision", "data must be a plain object");
   }
+  if (input.components !== undefined) {
+    return fail("provision", "v2 trees must not carry components (they live at the app-document level)");
+  }
 
   if (input.queries !== undefined) {
     if (!Array.isArray(input.queries)) {
@@ -159,9 +162,6 @@ const validateTreeV2Unsafe = (input: unknown): TreeV2Validation => {
     ids.add(node.id);
   }
 
-  if (input.components !== undefined) {
-    return fail("provision", "v2 trees must not carry components (they live at the app-document level)");
-  }
   if (!ids.has(root)) {
     return fail("provision", `root "${root}" does not match any node id`);
   }
