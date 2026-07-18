@@ -132,14 +132,18 @@ Four independent tasks; each is test-first and separately committed.
   demo-bank; screenshot for the PR.
 - [ ] Wave gate: full green quad, PR opened.
 
-## Wave 4 — Init, docs, demos (one PR)
+## Wave 4 — Docs and demos (one PR)
 
-- Files: the init scaffolder templates (packages/cli or wherever init
-  templates live — locate before starting), docs/quickstart.md, door docs,
-  apps/demo-accounting, corpus/hosts/express-host.
-- [ ] init scaffolds the new shape: server.ts with model + auth + catalog,
-  empty vendo/registry.tsx, VendoRoot components prop; detects Auth.js/Clerk
-  for the auth line it writes.
+**Init is OUT OF SCOPE for this lane** — another lane owns `vendo init`. Do
+not touch the init scaffolder or its templates. Instead, when waves 2–3
+merge, hand the init lane a written summary of the new surface it should
+scaffold (server.ts with model + auth + catalog, empty vendo/registry.tsx,
+VendoRoot components prop, auth-library detection for the line it writes).
+
+- Files: docs/quickstart.md, door docs, apps/demo-accounting,
+  corpus/hosts/express-host.
+- [ ] Write the init-lane handoff note (the scaffold targets above) and pass
+  it via the coordinator / worktree comment.
 - [ ] Rewrite docs/quickstart.md around the new surface (registry +
   auth preset; two files the dev owns). Move MCP-door content off the main
   quickstart path, marked experimental until the live client matrix
