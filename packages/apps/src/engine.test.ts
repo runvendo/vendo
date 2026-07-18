@@ -252,6 +252,10 @@ describe("generation engine through createApps", () => {
           source: source.replace("$1.2M", "$1.4M"),
         }],
       }),
+      // Props-only edit to the pinned node: no source change, no base change —
+      // the SUBTREE comparison alone must mark the slot touched (Devin, PR #375:
+      // the v1-gated pinnedSubtree made this dead for v2 apps).
+      JSON.stringify({ ops: [{ op: "set-prop", nodeId: "maple-net-worth", prop: "tone", value: "bold" }] }),
       JSON.stringify({ ops: [{ op: "set-name", name: "Maple overview" }] }),
     );
     const runtime = createApps({
@@ -294,6 +298,7 @@ describe("generation engine through createApps", () => {
     });
 
     await runtime.edit(original.id, "Increase the displayed net worth", ctx);
+    await runtime.edit(original.id, "Make the card bold", ctx);
     await runtime.edit(original.id, "Rename the app", ctx);
 
     const rows = await store.records(`vendo:app-pin-intents:${original.id}`).list();
@@ -301,8 +306,9 @@ describe("generation engine through createApps", () => {
     expect(trails).toEqual(expect.arrayContaining([
       expect.objectContaining({ slot, intent: "Remix the net worth card" }),
       expect.objectContaining({ slot, intent: "Increase the displayed net worth" }),
+      expect.objectContaining({ slot, intent: "Make the card bold" }),
     ]));
-    expect(trails).toHaveLength(2);
+    expect(trails).toHaveLength(3);
   });
 
   it("forks a named-export host slot with a synthesized default export (ENG-348)", async () => {

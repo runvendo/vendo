@@ -339,7 +339,7 @@ const stripServerAuthoritativeFields = (payload: object): void => {
 };
 
 const pinnedSubtree = (app: AppDocument, componentName: string): unknown[] => {
-  if (app.tree?.formatVersion !== "vendo-genui/v1") return [];
+  if (app.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) return [];
   const tree = app.tree as unknown as Tree;
   const included = new Set(tree.nodes.filter((node) => node.component === componentName).map((node) => node.id));
   const pending = [...included];
