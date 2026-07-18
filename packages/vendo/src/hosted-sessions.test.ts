@@ -28,13 +28,20 @@ interface Harness {
   wireCalls: (suffix: string) => RecordedRequest[];
 }
 
+type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
 /** The demo-accounting-shaped composition: VENDO_API_KEY set, no explicit
- * store, host principal resolver returns null (anonymous visitors). */
-function harness(sessions?: CreateVendoConfig["sessions"]): Harness {
+ * store, host principal resolver returns null (anonymous visitors).
+ * `wrapFetch` must be applied HERE — the adapter captures globalThis.fetch at
+ * construction, so a later re-stub never reaches it. */
+function harness(
+  sessions?: CreateVendoConfig["sessions"],
+  wrapFetch: (inner: FetchLike) => FetchLike = (inner) => inner,
+): Harness {
   vi.stubEnv("VENDO_API_KEY", "vnd_hosted_key");
   vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-sessions.test");
   const console_ = fakeConsole();
-  vi.stubGlobal("fetch", console_.handler as unknown as typeof fetch);
+  vi.stubGlobal("fetch", wrapFetch(console_.handler) as unknown as typeof fetch);
   let now = 0;
   let current: Principal | null = null;
   const vendo = createVendo({
@@ -80,11 +87,87 @@ describe("hosted store: ephemeral sessions over the wire", () => {
     expect(registered[0]!.authorization).toBe("Bearer vnd_hosted_key");
     expect(h.console_.sessions.has(body.subject)).toBe(true);
 
-    // Touch on every request: a second request re-registers the same subject.
+    // A second request inside the debounce window costs ZERO extra wire
+    // round-trips — the in-process touch cache absorbs it.
     const again = await h.vendo.handler(listThreads(cookieOf(response)));
     expect(again.status).toBe(200);
+    expect(h.wireCalls("/sessions/register")).toHaveLength(1);
+  });
+
+  it("debounces re-touches in-process: one wire register per debounce window", async () => {
+    // sweepIntervalMs 1000 → debounce window 500 (sweepIntervalMs/2).
+    const h = harness({ ttlMs: 3_600_000, sweepIntervalMs: 1_000 });
+    h.setNow(0);
+    const first = await h.vendo.handler(listThreads());
+    expect(first.status).toBe(200);
+    const cookie = cookieOf(first);
+    const subject = (h.wireCalls("/sessions/register")[0]!.json as { subject: string }).subject;
+
+    // N requests inside the window → still exactly one wire register.
+    h.setNow(100);
+    await h.vendo.handler(listThreads(cookie));
+    h.setNow(400);
+    await h.vendo.handler(listThreads(cookie));
+    expect(h.wireCalls("/sessions/register")).toHaveLength(1);
+
+    // Past the window the touch rides the wire again with the fresh clock.
+    h.setNow(600);
+    await h.vendo.handler(listThreads(cookie));
+    const registers = h.wireCalls("/sessions/register");
+    expect(registers).toHaveLength(2);
+    expect(registers[1]!.json).toEqual({ subject, now: 600 });
+    expect(h.console_.sessions.get(subject)).toBe(600);
+  });
+
+  it("fails closed on FIRST registration, open (with a warn) on later touches", async () => {
+    // INVARIANT under test: registered ⇒ sweepable. A subject whose first
+    // registration never landed must not get rows on the hosted store; a
+    // subject already registered survives console blips on later touches.
+    let failRegister = false;
+    const h = harness({ ttlMs: 3_600_000, sweepIntervalMs: 1_000 }, (inner) =>
+      async (input, init) => {
+        const url = new URL(new Request(input, init).url);
+        if (failRegister && url.pathname.endsWith("/sessions/register")) {
+          return Response.json(
+            { error: { code: "unavailable", message: "console blip" } },
+            { status: 503 },
+          );
+        }
+        return inner(input, init);
+      });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    // First registration succeeds — the subject is sweepable.
+    h.setNow(0);
+    const first = await h.vendo.handler(listThreads());
+    expect(first.status).toBe(200);
+    const cookie = cookieOf(first);
+
+    // A console blip on a LATER touch (past the debounce window) fails open.
+    failRegister = true;
+    h.setNow(600);
+    const touched = await h.vendo.handler(listThreads(cookie));
+    expect(touched.status).toBe(200);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("hosted session touch failed"));
+
+    // The failed touch was not recorded: once the console recovers, the very
+    // next request past the window retries and lands.
+    failRegister = false;
+    h.setNow(700);
+    await h.vendo.handler(listThreads(cookie));
     expect(h.wireCalls("/sessions/register")).toHaveLength(2);
-    expect((h.wireCalls("/sessions/register")[1]!.json as { subject: string }).subject).toBe(body.subject);
+    expect((h.wireCalls("/sessions/register")[1]!.json as { now: number }).now).toBe(700);
+
+    // A NEW visitor during the blip fails closed — no rows can land under a
+    // subject the sweep could never reach. (The wire's generic internal-error
+    // envelope; the cause stays on the server log.)
+    failRegister = true;
+    h.setNow(800);
+    const denied = await h.vendo.handler(listThreads());
+    expect(denied.status).toBeGreaterThanOrEqual(500);
+    expect(await denied.json()).toEqual({
+      error: { code: "not-implemented", message: "Internal Vendo error" },
+    });
   });
 
   it("adopts the anonymous session on sign-in through the wire door and retires the cookie", async () => {
