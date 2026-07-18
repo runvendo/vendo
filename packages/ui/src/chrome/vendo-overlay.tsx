@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ComponentType, type CSSProperties, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { useVendoTheme } from "../context.js";
+import { useVendoDiscoverability, useVendoTheme } from "../context.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { themeCssVariables } from "../theme.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { hasSeen, markSeen, type VendoDiscoverability } from "./discoverability.js";
 import { deliverPrefill, PrefillScopeContext, registerOverlayOpener } from "./overlay-registry.js";
 import { VendoThread, type VendoThreadProps } from "./thread/index.js";
 
@@ -38,7 +39,19 @@ export interface VendoOverlayProps {
    * zero-prop component works too.
    */
   thread?: ComponentType<VendoThreadProps>;
+  /**
+   * The discoverability dial (ui-usage-dx §6), overriding the provider's.
+   * `"default"` keeps the fire-once whisper on the launcher pill (and the
+   * thread's greeting-as-tutorial); `"quiet"` turns both off. Nothing here
+   * ever fires twice for the same user — the whisper marks itself seen the
+   * moment it first renders.
+   */
+  discoverability?: VendoDiscoverability;
 }
+
+/** Whisper caption duration — long enough to read two short lines, short
+ *  enough to stay ambient (~6s per the §6 decision). */
+const WHISPER_MS = 6000;
 
 /** display:none/visibility:hidden elements silently swallow focus() — skip them. */
 function canReceiveFocus(element: HTMLElement | null): element is HTMLElement {
@@ -58,6 +71,7 @@ export function VendoOverlay({
   launcher = "bottom-right",
   conversationKey,
   thread: Thread = VendoThread,
+  discoverability,
 }: VendoOverlayProps = {}) {
   const controlled = openProp !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
@@ -74,6 +88,25 @@ export function VendoOverlay({
   const [conversationEpoch, setConversationEpoch] = useState(0);
   const theme = useVendoTheme();
   const takeover = useMobileTakeover();
+  const providerDial = useVendoDiscoverability();
+  const dial = discoverability ?? providerDial;
+  // ui-usage-dx §6 — the whisper: on a user's first eligible visit the pill
+  // pulses once and a small caption says the app can be reshaped, then never
+  // again (fire-once store). Quiet dial and launcher="none" visits are NOT
+  // eligible (no orphan caption, and the flag is not burned — a host that
+  // later turns the whisper on still gets exactly one showing).
+  const [whisperActive, setWhisperActive] = useState(false);
+  useEffect(() => {
+    if (launcher === "none" || dial === "quiet" || hasSeen("whisper")) return;
+    // Seen is recorded on first RENDER, not on dismiss: a reload mid-animation
+    // must never replay the whisper.
+    markSeen("whisper");
+    setWhisperActive(true);
+    const timer = window.setTimeout(() => setWhisperActive(false), WHISPER_MS);
+    return () => window.clearTimeout(timer);
+    // Eligibility is decided once per page load — the mount is the "visit".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
   const portalRoot = useRef<HTMLDivElement>(null);
@@ -277,6 +310,9 @@ export function VendoOverlay({
           ref={launcherRef}
           className="fl-launcher"
           data-vendo-launcher={launcher}
+          // Present only while the whisper is live: keys the one-time pulse
+          // (suppressed under prefers-reduced-motion — the caption still shows).
+          {...(whisperActive && !open ? { "data-vendo-whisper": "" } : {})}
           type="button"
           aria-expanded={open}
           aria-controls="vendo-overlay-dialog"
@@ -289,6 +325,15 @@ export function VendoOverlay({
           Vendo
         </button>
       )}
+      {/* The whisper caption rides above the pill and auto-dismisses; opening
+          the overlay ends it early (it has done its job). role="status" keeps
+          it polite for assistive tech. */}
+      {launcher !== "none" && whisperActive && !open ? (
+        <div className="fl-whisper" data-vendo-launcher={launcher} role="status">
+          <strong>You can reshape this app</strong>
+          <span>Ask Vendo to build the view you need.</span>
+        </div>
+      ) : null}
       {portal}
     </ChromeRoot>
   );

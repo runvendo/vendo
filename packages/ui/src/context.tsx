@@ -3,6 +3,7 @@ import type { VendoTheme } from "@vendoai/core";
 import type { ChatTransport, UIMessage } from "ai";
 import { createContext, useContext, useMemo, type ComponentType, type ReactNode } from "react";
 import { createVendoClient, type VendoClient } from "./client.js";
+import type { VendoDiscoverability } from "./chrome/discoverability.js";
 import type { ToolMetaMap } from "./chrome/humanize.js";
 import { defaultVendoTheme, resolveTheme } from "./theme.js";
 import type { VoiceDriver } from "./voice/driver.js";
@@ -33,6 +34,9 @@ export interface VendoContextValue {
       connect (the wire only knows accounts that already exist, 04 §3). Empty
       means no dock renders. Additive, UI-side. */
   connectors: ConnectorOption[];
+  /** The discoverability dial (ui-usage-dx §6): quiet | default. Default keeps
+      the fire-once whisper + greeting; surfaces may override via their own prop. */
+  discoverability: VendoDiscoverability;
 }
 
 /** One connectable toolkit in the connect dock (ENG-225). */
@@ -55,9 +59,10 @@ export function VendoProvider(props: {
   onPin?(app: { appId: string; payload: unknown }): void;
   tools?: ToolMetaMap;
   connectors?: ConnectorOption[];
+  discoverability?: VendoDiscoverability;
   children: ReactNode;
 }): ReactNode {
-  const { client, components, theme, voice, transport, onPin, tools, connectors, children } = props;
+  const { client, components, theme, voice, transport, onPin, tools, connectors, discoverability, children } = props;
   const value = useMemo<VendoContextValue>(
     () => ({
       client: client ?? createVendoClient({}),
@@ -68,8 +73,9 @@ export function VendoProvider(props: {
       onPin,
       tools: tools ?? {},
       connectors: connectors ?? [],
+      discoverability: discoverability ?? "default",
     }),
-    [client, components, theme, voice, transport, onPin, tools, connectors],
+    [client, components, theme, voice, transport, onPin, tools, connectors, discoverability],
   );
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
 }
@@ -95,4 +101,9 @@ export function useVendoTools(): ToolMetaMap {
     (TreeView) fall back to the default brand tokens. */
 export function useVendoThemeOrDefault(): VendoTheme {
   return useContext(VendoContext)?.theme ?? defaultVendoTheme;
+}
+
+/** The discoverability dial, provider-optional (standalone surfaces default on). */
+export function useVendoDiscoverability(): VendoDiscoverability {
+  return useContext(VendoContext)?.discoverability ?? "default";
 }

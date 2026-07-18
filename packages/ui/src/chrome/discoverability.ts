@@ -5,6 +5,12 @@
  *  source of truth, and any degraded environment (SSR, sandboxed iframe,
  *  blocked or full storage) reads as already-seen so it never nags. */
 
+/** The one host-facing discoverability dial (ui-usage-dx §6): `"default"`
+ *  keeps the fire-once whisper + greeting-as-tutorial; `"quiet"` disables
+ *  both. Contextual affordances (slot ghosts, remix hover, triggers) are
+ *  host-placed and untouched by the dial. */
+export type VendoDiscoverability = "quiet" | "default";
+
 const PREFIX = "vendo:discoverability:";
 
 function storage(): Storage | null {
