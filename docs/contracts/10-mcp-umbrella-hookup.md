@@ -10,6 +10,7 @@ This wave wires it in. The normative content lives in `10-mcp` (auth model in
 - **One flag + one seam.** `createVendo({ mcp: true, oauth })` (10-mcp §1). `mcp`
   is an additive boolean; `oauth` is a top-level `HostOAuthAdapter` (10-mcp §3),
   REQUIRED when `mcp` is true — the door cannot mint principals without it.
+  <!-- amended 2026-07-18: the adapter may now also arrive as the oauth half of the umbrella's unified `auth` preset (server-wiring DX, 09 §2.1) — `mcp: true` with no adapter from either channel still throws (10-mcp §1). -->
 - **Door construction.** When `config.mcp` is true, the umbrella builds
   `createMcpDoor` from parts it already assembled: the SAME guard-bound registry
   chat/apps/automations use, the `VendoGuard`, the store, `config.oauth`, and an
