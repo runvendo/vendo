@@ -1,5 +1,6 @@
 /** @vendoai/ui/chrome — the shipped, theme-adopting surfaces (08-ui §4). */
 export { ActivityPanel } from "./activity-panel.js";
+export { VendoActivities, type VendoActivitiesProps } from "./vendo-activities.js";
 export { ApprovalCard, type ApprovalCardProps } from "./approval-card.js";
 export { AutomationsPanel } from "./automations-panel.js";
 export { ConnectCard, type ConnectCardProps } from "./connect-card.js";
