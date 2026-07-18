@@ -240,13 +240,17 @@ async function reExportTarget(source: string, exportedName: string, fileName?: s
   if (!parsed) return { direct: false, stars: [] };
   const { ts, sf } = parsed;
   const stars: string[] = [];
+  let namespaceDeclared = false;
   for (const statement of sf.statements) {
     if (!ts.isExportDeclaration(statement) || !statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
     const specifier = statement.moduleSpecifier.text;
     const clause = statement.exportClause;
     if (!clause || ts.isNamespaceExport(clause)) {
-      // `export * from` and `export * as ns from` both surface the target
-      // module for name-by-name probing, matching the lexer-era behavior.
+      // `export * as X from "./y"` declares X on this module itself — the
+      // barrel is the owning module (checked before any star chase, matching
+      // the lexer era, which listed X in the barrel's exports). Both forms
+      // also surface the target module for name-by-name probing.
+      if (clause && clause.name.text === exportedName) namespaceDeclared = true;
       stars.push(specifier);
       continue;
     }
@@ -259,7 +263,7 @@ async function reExportTarget(source: string, exportedName: string, fileName?: s
       };
     }
   }
-  return { direct: declaresExport(ts, sf, exportedName), stars };
+  return { direct: namespaceDeclared || declaresExport(ts, sf, exportedName), stars };
 }
 
 async function importBases(importer: string, specifier: string, root: string): Promise<string[]> {

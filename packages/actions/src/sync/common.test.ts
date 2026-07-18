@@ -79,6 +79,19 @@ describe("resolveImportSource", () => {
     expect(resolved?.file).toBe(await fs.realpath(path.join(root, "src/barrel/cards.tsx")));
   });
 
+  it("resolves a namespace re-export (`export * as X`) to the barrel that declares it", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/entry.ts", `import { Icons } from "./barrel";`);
+    await write(root, "src/barrel/index.ts", `export * as Icons from "./icons";\n`);
+    await write(root, "src/barrel/icons.tsx", `export const Check = () => <svg />;\n`);
+
+    // `export * as Icons` declares Icons on the barrel itself — the member
+    // module has no `Icons` export to chase (lexer-era parity: the barrel is
+    // the owning module).
+    const resolved = await resolveImportSource(path.join(root, "src/entry.ts"), "./barrel", root, "Icons");
+    expect(resolved?.file).toBe(await fs.realpath(path.join(root, "src/barrel/index.ts")));
+  });
+
   it("returns null when a named re-export chain dead-ends", async () => {
     const root = await temporaryRoot();
     await write(root, "src/entry.ts", `import { Card } from "./barrel";`);
