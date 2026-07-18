@@ -10,7 +10,9 @@ import {
   type CloudDoctorResult,
   type LiveTurnResult,
 } from "./doctor-live.js";
+import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { detectFramework, detectVendoWiring } from "./framework.js";
+import { walk } from "./theme/walk.js";
 import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
 import { CLI_VERSION, consoleOutput, exists, readOptional, toolingTelemetry, type Output } from "./shared.js";
 
@@ -140,6 +142,29 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     else fail(`missing .vendo/${file}`);
   }
   if (!await exists(join(root, ".vendo", "data", ".gitignore"))) warn(".vendo/data/.gitignore is missing");
+
+  // §4 customization ladder — ejected chrome drift. The ejected pixels are the
+  // host's code, so a version gap is awareness (warn), never breakage (fail):
+  // the hooks/wire dependency keeps working; only new presentation is missed.
+  const installedUi = await readOptional(join(root, "node_modules", "@vendoai", "ui", "package.json"));
+  const uiVersion = installedUi === null
+    ? null
+    : (JSON.parse(installedUi) as { version?: string }).version ?? null;
+  if (uiVersion !== null) {
+    for (const manifestPath of await walk(root, (rel) => rel.endsWith(EJECT_MANIFEST_FILE))) {
+      let ejected: EjectedManifest;
+      try {
+        ejected = JSON.parse(await readFile(manifestPath, "utf8")) as EjectedManifest;
+      } catch {
+        continue;
+      }
+      if (ejected.version === uiVersion) {
+        pass(`ejected ${ejected.surface} matches @vendoai/ui v${uiVersion}`);
+      } else {
+        warn(`ejected ${ejected.surface} came from @vendoai/ui v${ejected.version} but v${uiVersion} is installed — review the changelog (https://github.com/runvendo/vendo/releases) and \`vendo eject ${ejected.surface} --force\` if you want the new presentation`);
+      }
+    }
+  }
 
   const statusUrl = options.url
     ?? env.VENDO_URL?.replace(/\/$/, "")
