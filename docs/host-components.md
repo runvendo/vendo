@@ -134,14 +134,38 @@ development until you supply `onCommand`. `ApprovalCard`, `ActivityPanel`,
 `AutomationsPanel`, and `NoPolicyNotice` cover trust and operations. Voice is
 a mode of the chat, not a separate piece.
 
-Customization is a ladder, not a cliff: theme tokens first, then the small
-behavioral props below, then ejecting a surface's presentation source into
-your repo (the chrome internals live as small per-piece files under
-`chrome/thread/` for exactly this), then raw hooks. There is deliberately no
-render-prop API. The one sanctioned component-injection point is the
-overlay's `thread` prop: the overlay stays the positioning shell and renders
-your (ejected or custom) thread component in place of the built-in
-`VendoThread`.
+Customization is a ladder, not a cliff — four rungs, no cliff between them:
+
+1. **Theme tokens** — brand via `VendoTheme`; most hosts stop here.
+2. **Props** — the small behavioral options on each piece (launcher
+   placement, remix flag, trigger prompt). Deliberately no render-prop API.
+3. **Eject** — `npx vendo eject <surface>` copies a surface's presentation
+   source into your repo as files you own. See below.
+4. **Raw hooks** — full custom UI on the headless hooks.
+
+### Ejecting a surface
+
+`npx vendo eject --list` shows the ejectable surfaces (`thread`,
+`activities`). `npx vendo eject thread` copies the shipped thread's per-piece
+sources into `components/vendo/thread/` (under `src/` when your app lives
+there) and prints the two-line swap:
+
+```tsx
+import { VendoThread } from "./components/vendo/thread";
+<VendoOverlay thread={VendoThread} />
+```
+
+The copy is presentation only: its imports are rewritten to keep resolving
+data and wire logic from `@vendoai/ui`, so protocol updates keep flowing —
+only the pixels are forked. A `.vendo-eject.json` manifest in the ejected
+directory records the surface and package version; `vendo doctor` warns
+(never fails) when the installed `@vendoai/ui` moves past it, pointing at the
+changelog. `vendo eject <surface> --force` re-copies the current presentation
+over your edits; without `--force` an existing directory is never touched.
+
+The one sanctioned component-injection point is the overlay's `thread` prop:
+the overlay stays the positioning shell and renders your (ejected or custom)
+thread component in place of the built-in `VendoThread`.
 
 Two shelf pieces are placeable anywhere in host pages:
 
