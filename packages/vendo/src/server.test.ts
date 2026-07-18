@@ -508,6 +508,70 @@ describe("09 §3 public wire", () => {
     expect(await modelVenue({})).toBe(false);
   });
 
+  it("selects the store with the adapter-rule precedence", async () => {
+    // Adapter rule (2026-07-17 cloud definition), store seam (hosted-store
+    // one-pager): explicit store → VENDO_API_KEY defaults the hosted store →
+    // the local createStore default, byte-identical to pre-seam behavior.
+    vi.stubEnv("VENDO_API_KEY", "vnd_store_key");
+    vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-store.test");
+    const consoleCalls: Array<{ url: string; authorization: string | null }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const sent = new Request(input, init);
+      consoleCalls.push({ url: sent.url, authorization: sent.headers.get("authorization") });
+      return Response.json({ record: null });
+    }));
+    const compose = (config: Partial<CreateVendoConfig>): Vendo => createVendo({
+      model: {} as LanguageModel,
+      principal: vi.fn(async () => principal),
+      ...config,
+    });
+
+    // An explicitly passed store wins over the key — the hard BYO rule.
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-store-"));
+    const explicit = createStore({ dataDir });
+    cleanups.push(async () => { await explicit.close(); await rm(dataDir, { recursive: true, force: true }); });
+    const custom = compose({ store: explicit });
+    await custom.handler(request("GET", "/status"));
+    expect(custom.store).toBe(explicit);
+    expect(consoleCalls).toHaveLength(0);
+
+    // The key alone defaults the hosted store for the unfilled seam: a LIVE
+    // console-bound adapter (VENDO_CLOUD_URL base, Bearer key), whose
+    // ensureSchema is a client no-op — the service owns its migrations.
+    const hosted = compose({});
+    cleanups.push(async () => { await hosted.store.close(); });
+    expect(await hosted.store.records("invoices").get("inv_1")).toBeNull();
+    expect(consoleCalls).toEqual([{
+      url: "https://cloud-store.test/api/v1/store/records/invoices/get",
+      authorization: "Bearer vnd_store_key",
+    }]);
+    expect(() => hosted.store.raw()).toThrow(/no local database/);
+
+    // No key → the local default engine, untouched: rows land on disk, raw()
+    // hands back the live driver, and the console never hears about it.
+    vi.stubEnv("VENDO_API_KEY", "");
+    const localDir = await mkdtemp(join(tmpdir(), "vendo-wire-store-local-"));
+    // The default engine roots its PGlite data dir in the cwd (.vendo/data) —
+    // compose AND settle the first queries inside the temp dir so the test
+    // never writes into the repo tree (vitest's fork pool keeps chdir local
+    // to this worker process).
+    const cwd = process.cwd();
+    process.chdir(localDir);
+    try {
+      const local = compose({});
+      cleanups.push(async () => { await local.store.close(); await rm(localDir, { recursive: true, force: true }); });
+      // Settle the composition through /status (awaits schema readiness) so
+      // the direct store access below never races the migration.
+      await local.handler(request("GET", "/status"));
+      await local.store.records("invoices").put({ id: "inv_local", data: { total: 3 } });
+      expect((await local.store.records("invoices").get("inv_local"))?.data).toEqual({ total: 3 });
+      expect(local.store.raw()).toBeDefined();
+      expect(consoleCalls).toHaveLength(1);
+    } finally {
+      process.chdir(cwd);
+    }
+  });
+
   it("serves sync impact on dev servers and blocks it in production", async () => {
     vi.stubEnv("NODE_ENV", "development");
     const { vendo } = await setup();

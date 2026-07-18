@@ -110,6 +110,11 @@ import { cloudSandbox } from "./sandbox.js";
 // adapters: a host can pass it explicitly via createVendo({ sandbox }) with
 // its own options instead of relying on the VENDO_API_KEY default.
 export { cloudSandbox, type CloudSandboxOptions } from "./sandbox.js";
+import { hostedStore } from "./hosted-store.js";
+// The hosted-store adapter rides the server surface like the other Cloud
+// adapters: a host can pass it explicitly via createVendo({ store }) with its
+// own options instead of relying on the VENDO_API_KEY default.
+export { hostedStore, type HostedStore, type HostedStoreOptions } from "./hosted-store.js";
 import { cloudModel, unconfiguredModel } from "./model.js";
 // The shipped inference adapters ride the server surface so a host can read
 // the wire contract and pass one explicitly via createVendo({ model }) — see
@@ -371,6 +376,30 @@ function selectModel(configured: LanguageModel | undefined): {
   return { model: unconfiguredModel(), venue: false };
 }
 
+/** ADAPTER RULE, store seam (cloned from selectConnections): persistence is
+    one VendoStore; which implementation composes is decided HERE. Precedence,
+    top to bottom:
+      1. an explicitly passed store always wins (BYO — the host's own Postgres
+         or PGlite via createStore, the hard BYO rule);
+      2. VENDO_API_KEY makes the Cloud hosted store the default for the seam
+         the host left unfilled (VENDO_CLOUD_URL overrides the console base) —
+         Vendo data lives with Vendo, tenant = the key's org, resolved
+         server-side on every call;
+      3. the local createStore default, byte-identical to the pre-seam
+         behavior: 02-store §4 default-on encryption picks up
+         VENDO_STORE_ENCRYPTION_KEY (provisioned into .env by `vendo init`).
+    The adapters themselves never read the environment. */
+function selectStore(configured: VendoStore | undefined): VendoStore {
+  if (configured !== undefined) return configured;
+  const apiKey = environment("VENDO_API_KEY");
+  if (apiKey !== undefined) {
+    const baseUrl = environment("VENDO_CLOUD_URL");
+    return hostedStore({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) });
+  }
+  const encryptionKey = environment("VENDO_STORE_ENCRYPTION_KEY");
+  return createStore(encryptionKey === undefined ? {} : { encryption: { key: encryptionKey } });
+}
+
 function isJsonRequest(request: Request): boolean {
   return request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
     === "application/json";
@@ -617,13 +646,11 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
 
 /** 09-vendo §2 — compose every live block around the guard choke point. */
 export function createVendo(config: CreateVendoConfig): Vendo {
-  // 02-store §4 default-on encryption: when the host doesn't hand us a store,
-  // the composed default picks up VENDO_STORE_ENCRYPTION_KEY (provisioned into
-  // .env by `vendo init`) so stored secrets are encrypted with zero extra
-  // wiring. An explicitly configured store always wins as-is.
-  const encryptionKey = environment("VENDO_STORE_ENCRYPTION_KEY");
-  const store = config.store
-    ?? createStore(encryptionKey === undefined ? {} : { encryption: { key: encryptionKey } });
+  // Persistence, selected by the adapter rule at this composition seam
+  // (selectStore above): explicit store → VENDO_API_KEY hosted store → the
+  // local createStore default (unchanged, including 02-store §4 default-on
+  // encryption via VENDO_STORE_ENCRYPTION_KEY).
+  const store = selectStore(config.store);
   // 02-store §4 (kill-list B3) — ephemeral session policy. Validated like the
   // agent's context config; defaults are the recommended knobs. The store takes
   // the clock per call (register/sweep), so one time source needs no seam.
