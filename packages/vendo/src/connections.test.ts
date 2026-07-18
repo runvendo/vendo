@@ -131,7 +131,7 @@ describe("createConnections over the cloud broker", () => {
     expect(requests[2]!.url).toContain("/v1/connections/ca_cloud?subject=user_ada&connector=composio");
   });
 
-  it("maps a cloud entitlement rejection to a cloud-required error", async () => {
+  it("maps a cloud plan rejection to a cloud-required error", async () => {
     const cloudFetch = vi.fn(async () =>
       Response.json({ error: { code: "cloud-required", message: "plan does not include connections" } }, { status: 402 }));
     const service = createConnections({

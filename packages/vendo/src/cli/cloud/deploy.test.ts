@@ -1,5 +1,6 @@
 import type { AppDocument, PermissionGrant, Principal } from "@vendoai/core";
 import { appStore, createStore, grantStore } from "@vendoai/store";
+import { hostname } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import { CloudError, cloudFetch } from "./client.js";
 import { readLocalProject, runDeploy } from "./deploy.js";
@@ -106,6 +107,8 @@ describe("cloud deploy", () => {
         "user-agent": "vendo-cli/0.3.0",
         "content-type": "application/json",
         authorization: "Bearer vnd_test",
+        "x-vendo-deployment-host": hostname(),
+        "x-vendo-deployment-name": "@vendoai/vendo",
       },
       body: JSON.stringify({
         apps: [{ doc: enabled, enabled: true }],

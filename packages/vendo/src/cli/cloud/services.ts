@@ -1,18 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { option, positionals } from "./args.js";
-import { CloudError, cloudFetch, resolveCloudBaseUrl, type CloudFetchOptions } from "./client.js";
+import { CloudError, cloudFetch, isVendoKey, type CloudFetchOptions } from "./client.js";
 import {
   commandContext,
   type CloudCommandContext,
   type CloudCommandOptions,
 } from "./command.js";
-import { errorMessage, printJson, renderContract } from "./output.js";
-import {
-  entitlementsCacheKey,
-  resolveEntitlements,
-  type EntitlementResolution,
-} from "./entitlements-cache.js";
-import { isVendoKey, parseContractV2, type ContractV2 } from "./entitlements.js";
+import { errorMessage, printJson } from "./output.js";
 
 export function pushSyncReport(
   payload: unknown,
@@ -78,55 +72,6 @@ async function appRequestBody(args: string[]): Promise<{ appId: string; doc: unk
   const appId = option(args, "--app") ?? (typeof documentId === "string" ? documentId : undefined);
   if (!appId) throw new Error("App document must have a string id or pass --app <id>");
   return { appId, doc };
-}
-
-function validateResolution(
-  fetchContract: () => Promise<ContractV2>,
-  cacheKey: string,
-  context: CloudCommandContext,
-): Promise<EntitlementResolution> {
-  return resolveEntitlements(fetchContract, {
-    cacheKey,
-    home: context.home,
-    now: context.now,
-    forceRefresh: true,
-  });
-}
-
-export async function runValidate(args: string[], options: CloudCommandOptions = {}): Promise<number> {
-  const context = commandContext(options);
-  try {
-    const fetchOptions = { ...machineOptions(args, context), method: "POST" };
-    const cacheKey = entitlementsCacheKey(resolveCloudBaseUrl(fetchOptions), fetchOptions.apiKey!);
-    let raw: unknown;
-    try {
-      raw = await context.fetcher("/api/v1/keys/validate", fetchOptions);
-    } catch (error) {
-      const resolution = await validateResolution(async () => { throw error; }, cacheKey, context);
-      if (args.includes("--json")) {
-        printJson(context.output, resolution.contract);
-      } else {
-        context.output.log(renderContract(resolution.contract, resolution));
-      }
-      return resolution.state === "degraded" ? 1 : 0;
-    }
-
-    const contract = parseContractV2(raw);
-    if (!contract) {
-      printJson(context.output, raw);
-      return 0;
-    }
-    const resolution = await validateResolution(async () => contract, cacheKey, context);
-    if (args.includes("--json")) {
-      printJson(context.output, raw);
-    } else {
-      context.output.log(renderContract(resolution.contract, resolution));
-    }
-    return 0;
-  } catch (error) {
-    printServiceError(context, error);
-    return 1;
-  }
 }
 
 export function runShare(args: string[], options: CloudCommandOptions = {}): Promise<number> {
