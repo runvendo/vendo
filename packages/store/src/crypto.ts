@@ -23,6 +23,19 @@ export function getEncryptionKey(store: object): Buffer | undefined {
 
 export function dropEncryptionKey(store: object): void {
   keys.delete(store);
+  plaintextAllowed.delete(store);
+}
+
+/** 02-store §4 — dev-mode plaintext secrets. Tracked per store handle like the
+ *  key itself; production composition never sets this. */
+const plaintextAllowed = new WeakSet<object>();
+
+export function setPlaintextSecretsAllowed(store: object, allowed: boolean): void {
+  if (allowed) plaintextAllowed.add(store);
+}
+
+export function plaintextSecretsAllowed(store: object): boolean {
+  return plaintextAllowed.has(store);
 }
 
 /** 02-store §4 — envelope version `v2`: AES-256-GCM with the secret NAME
