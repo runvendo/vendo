@@ -35,6 +35,26 @@ const VALUE_EXPORTS = [
   // Shelf Lane B — the two placeable pieces (ui-usage-dx §2).
   "VendoActivities",
   "VendoTrigger",
+  // The eject surface (§4 customization ladder): internals the ejected
+  // thread compiles against, exported deliberately so ejected chrome keeps
+  // data/wire logic as a package dependency and only forks pixels.
+  "describeActivity",
+  "formatAuditTime",
+  "outcomeLabel",
+  "BuildBeat",
+  "toolPresentation",
+  "ChromeRoot",
+  "useCopyFeedback",
+  "ConnectDockButton",
+  "ConnectTray",
+  "FluidThinking",
+  "previewArgs",
+  "Markdown",
+  "MorphToast",
+  "PrefillScopeContext",
+  "registerPrefillConsumer",
+  "LONG_TEXT_CAP",
+  "truncateHead",
 ] as const;
 
 const TYPE_EXPORTS = [
@@ -51,6 +71,10 @@ const TYPE_EXPORTS = [
   "OpenConversationOptions",
   "VendoActivitiesProps",
   "VendoTriggerProps",
+  // Eject surface types.
+  "VendoThreadProps",
+  "MorphToastProps",
+  "OutcomeTone",
 ];
 
 // vitest's jsdom environment rewrites import.meta.url to a non-file scheme,

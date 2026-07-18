@@ -563,6 +563,78 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     expect(stop).toHaveBeenCalledOnce();
   });
 
+  // §4 customization ladder — ejected chrome is the host's code; doctor only
+  // raises awareness when it predates the installed @vendoai/ui. Warn, never fail.
+  it("warns — never fails — when an ejected surface predates the installed @vendoai/ui", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "components", "vendo", "thread"), { recursive: true });
+    await writeFile(
+      join(root, "components", "vendo", "thread", ".vendo-eject.json"),
+      JSON.stringify({ surface: "thread", package: "@vendoai/ui", version: "0.2.0" }),
+    );
+    await mkdir(join(root, "node_modules", "@vendoai", "ui"), { recursive: true });
+    await writeFile(
+      join(root, "node_modules", "@vendoai", "ui", "package.json"),
+      JSON.stringify({ name: "@vendoai/ui", version: "0.3.0" }),
+    );
+    const messages = output();
+    const code = await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    });
+    expect(code).toBe(0);
+    const warning = messages.errors.find((line) => line.includes("ejected thread"));
+    expect(warning).toBeDefined();
+    expect(warning).toContain("v0.2.0");
+    expect(warning).toContain("v0.3.0");
+    expect(warning).toContain("changelog");
+    expect(warning).toContain("warning");
+  });
+
+  it("skips the drift check quietly when the installed @vendoai/ui package.json is malformed", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "components", "vendo", "thread"), { recursive: true });
+    await writeFile(
+      join(root, "components", "vendo", "thread", ".vendo-eject.json"),
+      JSON.stringify({ surface: "thread", package: "@vendoai/ui", version: "0.2.0" }),
+    );
+    await mkdir(join(root, "node_modules", "@vendoai", "ui"), { recursive: true });
+    await writeFile(join(root, "node_modules", "@vendoai", "ui", "package.json"), "{not json");
+    const messages = output();
+    const code = await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    });
+    expect(code).toBe(0);
+    expect([...messages.logs, ...messages.errors].some((line) => line.includes("ejected"))).toBe(false);
+  });
+
+  it("passes the drift check when the ejected surface matches the installed @vendoai/ui", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "src", "components", "vendo", "thread"), { recursive: true });
+    await writeFile(
+      join(root, "src", "components", "vendo", "thread", ".vendo-eject.json"),
+      JSON.stringify({ surface: "thread", package: "@vendoai/ui", version: "0.3.0" }),
+    );
+    await mkdir(join(root, "node_modules", "@vendoai", "ui"), { recursive: true });
+    await writeFile(
+      join(root, "node_modules", "@vendoai", "ui", "package.json"),
+      JSON.stringify({ name: "@vendoai/ui", version: "0.3.0" }),
+    );
+    const messages = output();
+    await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    });
+    expect(messages.logs.some((line) => line.includes("ejected thread matches @vendoai/ui v0.3.0"))).toBe(true);
+    expect(messages.errors.some((line) => line.includes("ejected"))).toBe(false);
+  });
 });
 
 function discoveryFetch(challenge?: string): typeof fetch {

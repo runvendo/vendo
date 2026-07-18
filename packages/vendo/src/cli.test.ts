@@ -81,4 +81,31 @@ describe("vendo CLI commands", () => {
     expect(log.mock.calls.flat().join("\n")).toContain("vendo mcp server-json");
     log.mockRestore();
   });
+
+  it("wires eject: --list routes, surface + dir + --force parse, help documents it", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(await main(["--help"])).toBe(0);
+    expect(log.mock.calls.flat().join("\n")).toContain("eject");
+
+    // Routing runs against the workspace @vendoai/ui (built templates).
+    const root = await mkdtemp(join(tmpdir(), "vendo-cli-eject-"));
+    cleanup.push(root);
+    expect(await main(["eject", "--list", root])).toBe(0);
+    expect(log.mock.calls.flat().join("\n")).toContain("thread");
+    expect(log.mock.calls.flat().join("\n")).toContain("activities");
+
+    expect(await main(["eject", "nope", root])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain('unknown surface "nope"');
+
+    // surface + dir + --force all reach runEject: a second forced eject
+    // over an existing directory succeeds instead of refusing.
+    expect(await main(["eject", "thread", root])).toBe(0);
+    expect(await main(["eject", "thread", root])).toBe(1);
+    expect(await main(["eject", "thread", root, "--force"])).toBe(0);
+
+    log.mockRestore();
+    error.mockRestore();
+  });
 });
