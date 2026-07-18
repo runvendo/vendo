@@ -19,4 +19,5 @@ export * from "./store.js";
 export * from "./stream-parts.js";
 export * from "./tools.js";
 export * from "./tree.js";
+export * from "./tree-v2.js";
 export * from "./triggers.js";
