@@ -295,7 +295,10 @@ function NodeRenderer(props: NodeRendererProps) {
   } else {
     const primitive = PREWIRED_COMPONENTS[node.component];
     const host = props.components[node.component] as ComponentType<Record<string, unknown>> | undefined;
-    const Implementation = primitive ?? host;
+    // v2 spec §2 — an explicit `source: "host"` resolution means the host
+    // brand won the name; only an undefined source keeps the historical
+    // primitive-first order.
+    const Implementation = node.source === "host" ? host ?? primitive : primitive ?? host;
     if (!Implementation) {
       content = (
         <ContainedNotice label="Unknown component">
