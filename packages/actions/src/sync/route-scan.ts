@@ -1,17 +1,18 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type TS from "typescript";
 import type { ExtractedTool, HttpMethod } from "../formats.js";
 import {
   allocateToolName,
   extractedRisk,
   importReferenceFor,
+  parseModuleSource,
   resolveImportSource,
   routeToolFullName,
-  splitTopLevel,
-  stripComments,
-  topLevelObjectLiteral,
   unclassifiedToolFullName,
+  visitNodes,
   walk,
+  type ParsedModule,
 } from "./common.js";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -96,144 +97,235 @@ function addMethod(methods: Set<HttpMethod>, value: string | undefined): void {
   if (method && HTTP_METHOD_SET.has(method)) methods.add(method as HttpMethod);
 }
 
-function addMethodsFromList(methods: Set<HttpMethod>, value: string): void {
-  for (const match of value.matchAll(/["'](GET|POST|PUT|PATCH|DELETE)["']/g)) addMethod(methods, match[1]);
-  for (const part of value.split(",")) addMethod(methods, part.trim());
+function calleeSimpleName(ts: typeof TS, expression: TS.CallExpression): string | null {
+  const callee = expression.expression;
+  if (ts.isIdentifier(callee)) return callee.text;
+  if (ts.isPropertyAccessExpression(callee)) return callee.name.text;
+  return null;
 }
 
-function statementEnd(source: string, start: number): number {
-  let depth = 0;
-  let quote: "'" | "\"" | "`" | null = null;
-  let escaped = false;
-  for (let index = start; index < source.length; index += 1) {
-    const character = source[index]!;
-    if (quote) {
-      if (escaped) escaped = false;
-      else if (character === "\\") escaped = true;
-      else if (character === quote) quote = null;
-      continue;
+function isStringLike(ts: typeof TS, node: TS.Node): node is TS.StringLiteral | TS.NoSubstitutionTemplateLiteral {
+  return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
+}
+
+function hasModifier(ts: typeof TS, statement: TS.Statement, kind: TS.SyntaxKind): boolean {
+  return ts.canHaveModifiers(statement) === true
+    && (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === kind);
+}
+
+function bindingNames(ts: typeof TS, name: TS.BindingName): string[] {
+  if (ts.isIdentifier(name)) return [name.text];
+  return name.elements.flatMap((element) =>
+    ts.isOmittedExpression(element) ? [] : bindingNames(ts, element.name));
+}
+
+function isReqMethodAccess(ts: typeof TS, node: TS.Node): boolean {
+  return ts.isPropertyAccessExpression(node)
+    && node.name.text === "method"
+    && ts.isIdentifier(node.expression)
+    && node.expression.text === "req";
+}
+
+function allowHeaderVerbs(ts: typeof TS, methods: Set<HttpMethod>, call: TS.CallExpression): void {
+  if (calleeSimpleName(ts, call) !== "setHeader") return;
+  const [header, value] = call.arguments;
+  if (!header || !value || !isStringLike(ts, header) || header.text.toLowerCase() !== "allow") return;
+  if (isStringLike(ts, value)) {
+    for (const part of value.text.split(",")) addMethod(methods, part.trim());
+  } else if (ts.isArrayLiteralExpression(value)) {
+    for (const element of value.elements) {
+      if (isStringLike(ts, element)) addMethod(methods, element.text);
     }
-    if (character === "'" || character === "\"" || character === "`") {
-      quote = character;
-      continue;
-    }
-    if (character === "(" || character === "[" || character === "{") depth += 1;
-    else if (character === ")" || character === "]" || character === "}") depth = Math.max(0, depth - 1);
-    else if (character === ";" && depth === 0) return index;
-    else if (character === "\n" && depth === 0 && /^(?:export|import|const|let|var|function|class)\b/.test(source.slice(index + 1).trimStart())) return index;
   }
-  return source.length;
 }
 
-function exportedVerbs(source: string, kind: RouteSource["kind"]): Set<HttpMethod> {
+function exportedVerbs(module: ParsedModule, kind: RouteSource["kind"]): Set<HttpMethod> {
+  const { ts, sf } = module;
   const methods = new Set<HttpMethod>();
-  for (const match of source.matchAll(/export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE)\b/g)) {
-    addMethod(methods, match[1]);
-  }
-  for (const match of source.matchAll(/export\s+(?:const|let|var)\s+/g)) {
-    const start = (match.index ?? 0) + match[0].length;
-    for (const declaration of splitTopLevel(source.slice(start, statementEnd(source, start)))) {
-      addMethod(methods, declaration.trim().match(/^([A-Za-z_$][\w$]*)\b/)?.[1]);
+  for (const statement of sf.statements) {
+    if (ts.isFunctionDeclaration(statement) && hasModifier(ts, statement, ts.SyntaxKind.ExportKeyword)) {
+      addMethod(methods, statement.name?.text);
+      continue;
     }
-  }
-  for (const match of source.matchAll(/export\s+(?:const|let|var)\s*\{([^}]+)\}\s*=/g)) {
-    addMethodsFromList(methods, match[1] ?? "");
-  }
-  for (const match of source.matchAll(/export\s*\{([^}]+)\}(?!\s*from\b)/g)) {
-    for (const part of (match[1] ?? "").split(",")) {
-      const trimmed = part.trim();
-      addMethod(methods, trimmed.match(/\bas\s+(GET|POST|PUT|PATCH|DELETE)\b/)?.[1] ?? trimmed);
+    if (ts.isVariableStatement(statement) && hasModifier(ts, statement, ts.SyntaxKind.ExportKeyword)) {
+      for (const declaration of statement.declarationList.declarations) {
+        for (const name of bindingNames(ts, declaration.name)) addMethod(methods, name);
+      }
+      continue;
+    }
+    // Local export lists: `export { handler as PATCH }` (re-export lists from
+    // other modules are handled by reExportTargets).
+    if (ts.isExportDeclaration(statement) && !statement.moduleSpecifier
+      && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+      for (const element of statement.exportClause.elements) addMethod(methods, element.name.text);
     }
   }
   if (kind === "pages") {
-    for (const match of source.matchAll(/\breq\.method\s*(?:={2,3}|!={1,2})\s*["'](GET|POST|PUT|PATCH|DELETE)["']/g)) {
-      addMethod(methods, match[1]);
-    }
-    for (const match of source.matchAll(/\bcase\s+["'](GET|POST|PUT|PATCH|DELETE)["']/g)) addMethod(methods, match[1]);
-    for (const match of source.matchAll(/setHeader\(\s*["']Allow["']\s*,\s*\[([^\]]+)\]/g)) addMethodsFromList(methods, match[1] ?? "");
-    for (const match of source.matchAll(/setHeader\(\s*["']Allow["']\s*,\s*["']([^"']+)["']/g)) addMethodsFromList(methods, match[1] ?? "");
-    if (/\bNextAuth\s*\(/.test(source)) {
-      methods.add("GET");
-      methods.add("POST");
-    }
+    visitNodes(ts, sf, (node) => {
+      if (ts.isBinaryExpression(node)
+        && [ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.EqualsEqualsEqualsToken,
+          ts.SyntaxKind.ExclamationEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken,
+        ].includes(node.operatorToken.kind)
+        && isReqMethodAccess(ts, node.left)
+        && isStringLike(ts, node.right)) {
+        addMethod(methods, node.right.text);
+      }
+      if (ts.isCaseClause(node) && isStringLike(ts, node.expression)) addMethod(methods, node.expression.text);
+      if (ts.isCallExpression(node)) {
+        allowHeaderVerbs(ts, methods, node);
+        if (calleeSimpleName(ts, node) === "NextAuth") {
+          methods.add("GET");
+          methods.add("POST");
+        }
+      }
+    });
   }
   return methods;
 }
 
-function firstObjectArgument(source: string, callee: RegExp): string | null {
-  for (const match of source.matchAll(callee)) {
-    let index = (match.index ?? 0) + match[0].length;
-    while (/\s/.test(source[index] ?? "")) index += 1;
-    if (source[index] !== "(") continue;
-    index += 1;
-    while (/\s/.test(source[index] ?? "")) index += 1;
-    if (source[index] === "{") return topLevelObjectLiteral(source, index);
-  }
-  return null;
-}
-
-function methodKeyObjectVerbs(source: string): Set<HttpMethod> | null {
-  const body = firstObjectArgument(source, /\bdefaultHandler\s*/g);
-  if (!body) return null;
+function verbKeyedProperties(ts: typeof TS, literal: TS.ObjectLiteralExpression): Set<HttpMethod> {
   const methods = new Set<HttpMethod>();
-  for (const entry of splitTopLevel(body)) {
-    const key = entry.trim().match(/^(?:(["'])(GET|POST|PUT|PATCH|DELETE)\1|(GET|POST|PUT|PATCH|DELETE))\s*:/);
-    addMethod(methods, key?.[2] ?? key?.[3]);
+  for (const property of literal.properties) {
+    if (!ts.isPropertyAssignment(property)) continue;
+    const name = property.name;
+    if (ts.isIdentifier(name) || ts.isStringLiteral(name)) addMethod(methods, name.text);
   }
-  return methods.size > 0 ? methods : null;
+  return methods;
 }
 
-function routeMapVerbs(source: string, route: RouteSource): Set<HttpMethod> | null {
-  const entries = [...source.matchAll(/["'](GET|POST|PUT|PATCH|DELETE)\s+([^"']+)["']\s*:/g)];
+function methodKeyObjectVerbs(module: ParsedModule): Set<HttpMethod> | null {
+  const { ts, sf } = module;
+  let found: Set<HttpMethod> | null = null;
+  visitNodes(ts, sf, (node) => {
+    if (found || !ts.isCallExpression(node) || calleeSimpleName(ts, node) !== "defaultHandler") return;
+    const argument = node.arguments[0];
+    if (!argument || !ts.isObjectLiteralExpression(argument)) return;
+    const methods = verbKeyedProperties(ts, argument);
+    if (methods.size > 0) found = methods;
+  });
+  return found;
+}
+
+function routeMapVerbs(module: ParsedModule, route: RouteSource): Set<HttpMethod> | null {
+  const { ts, sf } = module;
+  const entries: Array<{ method: string; entryPath: string }> = [];
+  visitNodes(ts, sf, (node) => {
+    if (!ts.isPropertyAssignment(node) || !ts.isStringLiteral(node.name)) return;
+    const match = node.name.text.match(/^(GET|POST|PUT|PATCH|DELETE)\s+(\S.*)$/);
+    if (match) entries.push({ method: match[1]!, entryPath: match[2]! });
+  });
   if (entries.length === 0) return null;
   const methods = new Set<HttpMethod>();
   const itemRoute = /\/\{[^}]+\}$/.test(route.urlPath);
   for (const entry of entries) {
-    const rootEntry = (entry[2] ?? "/") === "/";
-    if (route.catchAll || (itemRoute ? !rootEntry : rootEntry)) addMethod(methods, entry[1]);
+    const rootEntry = entry.entryPath === "/";
+    if (route.catchAll || (itemRoute ? !rootEntry : rootEntry)) addMethod(methods, entry.method);
   }
   return methods;
 }
 
-async function reExportTargets(source: string): Promise<ReExportTarget[]> {
-  const targets: ReExportTarget[] = [];
-  for (const match of source.matchAll(/export\s+\*\s+from\s+["']([^"']+)["']/g)) {
-    if (match[1]) targets.push({ specifier: match[1], assumeDefaultExport: false });
+function defaultImportSpecifier(ts: typeof TS, sf: TS.SourceFile, localName: string): string | null {
+  for (const statement of sf.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    if (statement.importClause?.name?.text === localName) return statement.moduleSpecifier.text;
   }
-  for (const match of source.matchAll(/export\s*\{([^}]+)\}\s*from\s+["']([^"']+)["']/g)) {
-    const specifier = match[2];
-    if (!specifier) continue;
-    for (const part of (match[1] ?? "").split(",")) {
-      const names = part.trim().split(/\s+as\s+/).map((name) => name.trim());
-      if ((names[1] ?? names[0]) === "default") targets.push({ specifier, assumeDefaultExport: true });
-      else if (HTTP_METHOD_SET.has(names[1] ?? names[0] ?? "")) {
+  return null;
+}
+
+function delegateCallName(ts: typeof TS, sf: TS.SourceFile): string | null {
+  let found: string | null = null;
+  visitNodes(ts, sf, (node) => {
+    if (found || !ts.isReturnStatement(node) || !node.expression) return;
+    const returned = ts.isAwaitExpression(node.expression) ? node.expression.expression : node.expression;
+    if (!ts.isCallExpression(returned) || !ts.isIdentifier(returned.expression)) return;
+    const [first, second] = returned.arguments;
+    if (first && second && ts.isIdentifier(first) && first.text === "req" && ts.isIdentifier(second) && second.text === "res") {
+      found = returned.expression.text;
+    }
+  });
+  return found;
+}
+
+async function reExportTargets(module: ParsedModule, source: string): Promise<ReExportTarget[]> {
+  const { ts, sf } = module;
+  const targets: ReExportTarget[] = [];
+  for (const statement of sf.statements) {
+    if (ts.isExportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
+      const specifier = statement.moduleSpecifier.text;
+      const clause = statement.exportClause;
+      if (!clause) {
         targets.push({ specifier, assumeDefaultExport: false });
+        continue;
       }
+      if (!ts.isNamedExports(clause)) continue;
+      for (const element of clause.elements) {
+        if (element.name.text === "default") targets.push({ specifier, assumeDefaultExport: true });
+        else if (HTTP_METHOD_SET.has(element.name.text)) targets.push({ specifier, assumeDefaultExport: false });
+      }
+      continue;
+    }
+    if (ts.isExportAssignment(statement) && !statement.isExportEquals && ts.isIdentifier(statement.expression)) {
+      const specifier = defaultImportSpecifier(ts, sf, statement.expression.text);
+      if (specifier) targets.push({ specifier, assumeDefaultExport: true });
     }
   }
-  const importedDefault = source.match(/import\s+([A-Za-z_$][\w$]*)\s+from\s+["']([^"']+)["'][\s\S]*?export\s+default\s+\1\b/);
-  if (importedDefault?.[2]) targets.push({ specifier: importedDefault[2], assumeDefaultExport: true });
-  const delegate = source.match(/return\s+(?:await\s+)?([A-Za-z_$][\w$]*)\s*\(\s*req\s*,\s*res\b/);
-  const delegateReference = delegate?.[1] ? await importReferenceFor(source, delegate[1]) : undefined;
+  const delegate = delegateCallName(ts, sf);
+  const delegateReference = delegate ? await importReferenceFor(source, delegate) : undefined;
   if (delegateReference) targets.push({ specifier: delegateReference.specifier, assumeDefaultExport: true });
   return targets;
 }
 
-function hasDefaultHandler(source: string, assumed: boolean): boolean {
-  return assumed || /\bexport\s+default\b/.test(source) || /export\s*\{[^}]+(?:\bas\s+default\b|\bdefault\b)[^}]*\}\s*from\b/.test(source);
+function hasDefaultHandler(module: ParsedModule, assumed: boolean): boolean {
+  if (assumed) return true;
+  const { ts, sf } = module;
+  return sf.statements.some((statement) =>
+    ts.isExportAssignment(statement)
+    || hasModifier(ts, statement, ts.SyntaxKind.DefaultKeyword)
+    || (ts.isExportDeclaration(statement) && Boolean(statement.moduleSpecifier)
+      && statement.exportClause !== undefined && ts.isNamedExports(statement.exportClause)
+      && statement.exportClause.elements.some((element) => element.name.text === "default")));
 }
 
-function inferredPageVerbs(source: string, route: RouteSource, assumed = false): Set<HttpMethod> {
+function inferredPageVerbs(module: ParsedModule, route: RouteSource, assumed = false): Set<HttpMethod> {
+  const { ts, sf } = module;
   const methods = new Set<HttpMethod>();
-  if (route.kind !== "pages" || !hasDefaultHandler(source, assumed) || /\breq\.method\b/.test(source)) return methods;
-  if (/\bcreateNextApiHandler\s*\(/.test(source)) {
+  if (route.kind !== "pages" || !hasDefaultHandler(module, assumed)) return methods;
+
+  let reqMethod = false;
+  let reqBody = false;
+  let handlerMap = false;
+  let apiHandlers = false;
+  let createNextApiHandlerCall = false;
+  let handleUploadCall = false;
+  let bodyParserDisabled = false;
+  visitNodes(ts, sf, (node) => {
+    if (isReqMethodAccess(ts, node)) reqMethod = true;
+    if (ts.isPropertyAccessExpression(node) && node.name.text === "body"
+      && ts.isIdentifier(node.expression) && node.expression.text === "req") reqBody = true;
+    if (ts.isIdentifier(node)) {
+      if (node.text === "handlerMap") handlerMap = true;
+      if (node.text === "apiHandlers") apiHandlers = true;
+    }
+    if (ts.isCallExpression(node)) {
+      const name = calleeSimpleName(ts, node);
+      if (name === "createNextApiHandler") createNextApiHandlerCall = true;
+      if (name === "handleUpload") handleUploadCall = true;
+    }
+    if (ts.isPropertyAssignment(node) && (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name))
+      && node.name.text === "bodyParser" && node.initializer.kind === ts.SyntaxKind.FalseKeyword) {
+      bodyParserDisabled = true;
+    }
+  });
+
+  if (reqMethod) return methods;
+  if (createNextApiHandlerCall) {
     methods.add("GET");
     methods.add("POST");
-  } else if (/\bhandlerMap\b/.test(source) && /\bapiHandlers\b/.test(source) && route.catchAll) {
+  } else if (handlerMap && apiHandlers && route.catchAll) {
     methods.add("POST");
-  } else if (/\bhandleUpload\s*\(/.test(source) || /\breq\.body\b/.test(source)) {
+  } else if (handleUploadCall || reqBody) {
     methods.add("POST");
-  } else if (/\bbodyParser\s*:\s*false\b/.test(source) || route.urlPath.endsWith("/webhook")) {
+  } else if (bodyParserDisabled || route.urlPath.endsWith("/webhook")) {
     methods.add("POST");
   }
   return methods;
@@ -251,16 +343,17 @@ async function verbsFromSource(
   const key = `${file}\t${assumeDefaultExport ? "default" : "named"}`;
   if (visited.has(key)) return new Set();
   visited.add(key);
-  const evidenceSource = stripComments(source);
-  const direct = exportedVerbs(evidenceSource, route.kind);
+  const module = parseModuleSource(source, file);
+  if (!module) return new Set();
+  const direct = exportedVerbs(module, route.kind);
   if (direct.size > 0) return direct;
-  const mapped = routeMapVerbs(evidenceSource, route);
+  const mapped = routeMapVerbs(module, route);
   if (mapped) return mapped;
-  const objectMethods = methodKeyObjectVerbs(evidenceSource);
+  const objectMethods = methodKeyObjectVerbs(module);
   if (objectMethods) return objectMethods;
   if (depth < MAX_REEXPORT_DEPTH) {
     const resolvedMethods = new Set<HttpMethod>();
-    for (const target of await reExportTargets(evidenceSource)) {
+    for (const target of await reExportTargets(module, source)) {
       const resolved = await resolveImportSource(file, target.specifier, root);
       if (!resolved) continue;
       const nested = await verbsFromSource(
@@ -276,7 +369,7 @@ async function verbsFromSource(
     }
     if (resolvedMethods.size > 0) return resolvedMethods;
   }
-  return inferredPageVerbs(evidenceSource, route, assumeDefaultExport);
+  return inferredPageVerbs(module, route, assumeDefaultExport);
 }
 
 function routeInputSchema(urlPath: string): Record<string, unknown> {
