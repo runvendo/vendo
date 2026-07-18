@@ -6,18 +6,19 @@ import {
   TREE_MAX_QUERIES,
   TREE_MAX_TOTAL_COMPONENT_BYTES,
   VENDO_APP_FORMAT,
+  VENDO_TREE_FORMAT_V2,
   VendoError,
   compileWireV2,
   isPathBinding,
   isStateBinding,
   validateAppDocument,
-  validateTree,
+  validateTreeV2,
   type AppDocument,
   type ComponentCatalog,
   type Json,
   type Tree,
   type TreeNode,
-  type TreeQuery,
+  type TreeQueryV2,
   type TreeV2,
   type VendoTheme,
   type WireCompileResult,
@@ -125,18 +126,17 @@ const generationPromptSections = (deps: GenerationDependencies): GenerationPromp
   content: "You are the Vendo app generation engine. Return JSON only, with no markdown.",
 }, {
   id: "tree-contract",
-  content: `TREE CONTRACT:
+  content: `TREE CONTRACT (vendo-genui/v2):
 - At rest the app is {name, description?, tree, components?}; never emit id, server, secrets, egress, storage, or authority.
-- tree.formatVersion is "vendo-genui/v1" and tree contains root, nodes, optional data and queries.
+- tree.formatVersion is "vendo-genui/v2" and tree contains root, nodes, optional data and queries. Generated component sources live at the DOCUMENT level in components — the tree itself never carries them.
 - Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} generated components, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per generated component source, ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes of generated-component source in total.
 - Reserved prewired primitive names: ${RESERVED_COMPONENT_NAMES.join(", ")}.
-- Every node is exactly {id, component, source, props?, children?}. "component" is a REQUIRED non-empty string on EVERY node, including layout containers — use a prewired primitive (e.g. Stack, Row, Grid) as the component for containers; children is an array of node ids. Never emit a node without a component.
+- Every node is exactly {id, component, source?, props?, children?}. "component" is a REQUIRED non-empty string on EVERY node, including layout containers — use a prewired primitive (e.g. Stack, Row, Grid) as the component for containers; children is an array of node ids. Never emit a node without a component.
 - "nodes" is a FLAT array of every node; nesting is expressed only through "children" id references, never by inlining child objects. "root" is the id of the top node.
-- A node source is "prewired", "host", or "generated". Generated names are PascalCase, non-reserved, and require a top-level components[name] ESM React source.
-- Minimal valid shape: {"name":"X","tree":{"formatVersion":"vendo-genui/v1","root":"r","nodes":[{"id":"r","component":"Stack","source":"prewired","children":["t"]},{"id":"t","component":"Text","source":"prewired","props":{"text":"Hi"}}]}}.
+- A node source is "prewired", "host", or "generated". Generated names are PascalCase, non-reserved, and require a document components[name] ESM React source.
 - Prefer a host component whenever it covers the need. Matching the host brand is a hard goal.
-- Prop bindings are exactly {"$path":"/json/pointer"} and {"$state":"clientStateKey"}.
-- Queries are {path, tool, input?}; path is an RFC 6901 JSON Pointer. Actions embedded in props are {action,payload?}.
+- Prop bindings are exactly {"$path":"/json/pointer"} and {"$state":"clientStateKey"}. A query's result lives at "/" + its name.
+- Queries are {name, tool, input?}; name is a bare identifier. Actions embedded in props are {action,payload?}.
 - Query tools and action names are host tool names, or fn:<name> where name matches [A-Za-z_][A-Za-z0-9_-]*. A rung-1 tree cannot use fn: because it has no server.
 `,
 }, {
@@ -400,7 +400,7 @@ const distinctIssues = (current: string[], next: string[]): string[] => [
   ...new Set([...current, ...next]),
 ];
 
-const removeChildReference = (tree: Tree, nodeId: string): void => {
+const removeChildReference = (tree: TreeV2, nodeId: string): void => {
   for (const node of tree.nodes) {
     if (node.children !== undefined) node.children = node.children.filter((child) => child !== nodeId);
   }
@@ -418,7 +418,7 @@ const insertChild = (parent: TreeNode, nodeId: string, index: unknown): void => 
 const validOptionalIndex = (value: unknown): boolean => value === undefined
   || (typeof value === "number" && Number.isInteger(value) && value >= 0);
 
-const reachesNode = (tree: Tree, startId: string, targetId: string): boolean => {
+const reachesNode = (tree: TreeV2, startId: string, targetId: string): boolean => {
   const pending = [startId];
   const visited = new Set<string>();
   while (pending.length > 0) {
@@ -438,10 +438,10 @@ const applyTreeOps = (
   deps: GenerationDependencies,
 ): { app?: AppDocument; issues: string[] } => {
   const app = structuredClone(source);
-  if (app.tree?.formatVersion !== "vendo-genui/v1") {
-    return { issues: ["tree ops require a vendo-genui/v1 app"] };
+  if (app.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) {
+    return { issues: ["tree ops require a vendo-genui/v2 app"] };
   }
-  const tree = app.tree as unknown as Tree;
+  const tree = app.tree as unknown as TreeV2;
   const issue = (index: number, operation: TreeOp, message: string): { issues: string[] } => ({
     issues: [`tree op[${index}] ${operation.op} failed: ${message}`],
   });
@@ -563,7 +563,7 @@ const applyTreeOps = (
           queries.splice(operation.index, 1);
         } else if (isRecord(operation.query)) {
           if (operation.index > queries.length) return issue(index, operation, `query index ${operation.index} leaves a gap`);
-          queries[operation.index] = structuredClone(operation.query) as unknown as TreeQuery;
+          queries[operation.index] = structuredClone(operation.query) as unknown as TreeQueryV2;
         } else {
           return issue(index, operation, "requires a query object or null");
         }
@@ -686,16 +686,16 @@ const validateEditedApp = async (
 ): Promise<string[]> => {
   const validation = validateAppDocument(app);
   if (!validation.ok) return [validation.error.message];
-  if (app.tree?.formatVersion !== "vendo-genui/v1") return ["tree edit produced an unsupported format"];
-  const treeValidation = validateTree({ ...app.tree, components: app.components });
+  if (app.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) return ["tree edit produced an unsupported format"];
+  const treeValidation = validateTreeV2(app.tree);
   if (!treeValidation.ok) return [treeValidation.error.message];
-  const sourceTreeValidation = validateTree({ ...source.tree, components: source.components });
+  const sourceTreeValidation = validateTreeV2(source.tree);
   const sourceRenderIssues = sourceTreeValidation.ok
-    ? new Set(rootedRenderIssues(sourceTreeValidation.tree))
+    ? new Set(rootedRenderIssues(sourceTreeValidation.tree as unknown as Tree))
     : new Set<string>();
   return [
-    ...rootedRenderIssues(treeValidation.tree).filter((issue) => !sourceRenderIssues.has(issue)),
-    ...await catalogIssues(treeValidation.tree, app.components, deps.catalog),
+    ...rootedRenderIssues(treeValidation.tree as unknown as Tree).filter((issue) => !sourceRenderIssues.has(issue)),
+    ...await catalogIssues(treeValidation.tree as unknown as Tree, app.components, deps.catalog),
   ];
 };
 
@@ -759,7 +759,7 @@ const editTree = async (
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const output = await generateJson(
       deps,
-      `${formatContract(deps)}\n\nTREE EDIT DIALECT: emit {"ops":[...]}. Patch the supplied app; do not regenerate it.\nExact op shapes:\n- {"op":"set-prop","nodeId":"...","prop":"...","value":...}\n- {"op":"add-node","node":{"id":"...","component":"...","source":"prewired|host|generated","props":{},"children":[]},"parentId":"...","index":0}\n- {"op":"remove-node","nodeId":"..."}\n- {"op":"move-node","nodeId":"...","parentId":"...","index":0}\n- {"op":"set-query","index":0,"query":{...}|null}\n- {"op":"add-component","name":"PascalCaseName","source":"complete ESM React source"}\n- {"op":"fork-pin","slot":"exact remixable slot","nodeId":"newNodeId","parentId":"...","index":0,"props":{}}\n- {"op":"set-name","name":"..."}\n- {"op":"set-description","description":"..."}\nUse nodeId, never id, for existing nodes. Use index, never position or beforeId. Attach every added visible node with parentId, never add the existing root again, preserve all component sources not intentionally replaced, and never leave the rooted view empty.`,
+      `${formatContract(deps)}\n\nTREE EDIT DIALECT: emit {"ops":[...]}. Patch the supplied app; do not regenerate it.\nExact op shapes:\n- {"op":"set-prop","nodeId":"...","prop":"...","value":...}\n- {"op":"add-node","node":{"id":"...","component":"...","source":"prewired|host|generated","props":{},"children":[]},"parentId":"...","index":0}\n- {"op":"remove-node","nodeId":"..."}\n- {"op":"move-node","nodeId":"...","parentId":"...","index":0}\n- {"op":"set-query","index":0,"query":{"name":"identifier","tool":"...","input":{}}|null}\n- {"op":"add-component","name":"PascalCaseName","source":"complete ESM React source"}\n- {"op":"fork-pin","slot":"exact remixable slot","nodeId":"newNodeId","parentId":"...","index":0,"props":{}}\n- {"op":"set-name","name":"..."}\n- {"op":"set-description","description":"..."}\nUse nodeId, never id, for existing nodes. Use index, never position or beforeId. Attach every added visible node with parentId, never add the existing root again, preserve all component sources not intentionally replaced, and never leave the rooted view empty.`,
       `TASK: EDIT_TREE\nINSTRUCTION: ${input.instruction}\nCURRENT_APP: ${JSON.stringify(input.app)}${repairPrompt(issues)}`,
     );
     issues = distinctIssues(issues, output.issues);

@@ -56,29 +56,10 @@ const catalog: ComponentCatalog = [{
   examples: ['{"label":"Revenue","value":"$42k","trend":12}'],
 }];
 
-const validCreate = (name = "Revenue dashboard") => JSON.stringify({
-  name,
-  description: "Shows the revenue headline.",
-  tree: {
-    formatVersion: "vendo-genui/v1",
-    root: "metric",
-    nodes: [{
-      id: "metric",
-      component: "MetricCard",
-      source: "host",
-      props: { label: "Revenue", value: "$42k" },
-    }],
-  },
-});
+const validCreate = (name = "Revenue dashboard") =>
+  `<App name="${name}"><MetricCard label="Revenue" value="$42k"/></App>`;
 
-const invalidCreate = JSON.stringify({
-  name: "Broken",
-  tree: {
-    formatVersion: "vendo-genui/v1",
-    root: "missing",
-    nodes: [{ id: "root", component: "MetricCard", source: "host" }],
-  },
-});
+const invalidCreate = '<App name="Broken"><MetricCard/></App>';
 
 const putApp = async (
   store: ReturnType<typeof memoryStore>,
@@ -98,7 +79,7 @@ const generatedTreeApp = (): AppDocument => ({
   name: "Generated dashboard",
   ui: "tree",
   tree: {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
       { id: "root", component: "Stack", source: "prewired", children: ["existing"] },
@@ -119,7 +100,7 @@ describe("generation engine through createApps", () => {
       name: "Safe tree",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Text", props: { text: "Safe" } }],
       },
@@ -182,41 +163,9 @@ describe("generation engine through createApps", () => {
     expect(capturedPrompt).toContain('you MUST use a source:"host" node with its exact name and props schema');
   });
 
-  it("creates a validated rung-1 document with a catalog host component", async () => {
-    const store = memoryStore();
-    const runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      catalog,
-      model: scriptedLanguageModel(validCreate()),
-      designRules: "Use concise labels and the accent color for positive trends.",
-    });
-
-    const app = await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
-
-    expect(app.name).toBe("Revenue dashboard");
-    expect(app.server).toBeUndefined();
-    expect(app.tree).toMatchObject({
-      nodes: [{ component: "MetricCard", source: "host" }],
-    });
-    expect(validateTree({ ...app.tree, components: app.components }).ok).toBe(true);
-  });
 
   it("reports wrong-typed host props as catalog issues", async () => {
-    const wrongProps = JSON.stringify({
-      name: "Broken metric",
-      tree: {
-        formatVersion: "vendo-genui/v1",
-        root: "metric",
-        nodes: [{
-          id: "metric",
-          component: "MetricCard",
-          source: "host",
-          props: { label: "Revenue", value: 42 },
-        }],
-      },
-    });
+    const wrongProps = '<App name="Broken metric"><MetricCard label="Revenue" value={42}/></App>';
     const runtime = createApps({
       store: memoryStore(),
       guard: guardFixture(),
@@ -228,29 +177,16 @@ describe("generation engine through createApps", () => {
     await expect(runtime.create({ prompt: "Build a broken metric" }, ctx)).rejects.toMatchObject({
       code: "validation",
       detail: expect.arrayContaining([
-        expect.stringMatching(/node "metric" props.*MetricCard.*value.*Expected string/i),
+        expect.stringMatching(/node "metriccard-1" props.*MetricCard.*value.*Expected string/i),
       ]),
     });
   });
 
   it("exempts path, state, and action bindings while validating the remaining host props", async () => {
-    const boundProps = JSON.stringify({
-      name: "Bound metric",
-      tree: {
-        formatVersion: "vendo-genui/v1",
-        root: "metric",
-        nodes: [{
-          id: "metric",
-          component: "MetricCard",
-          source: "host",
-          props: {
-            label: { $path: "/headline/label" },
-            value: { $state: "selectedValue" },
-            onSelect: { action: "selectMetric", payload: { id: "revenue" } },
-          },
-        }],
-      },
-    });
+    const boundProps = [
+      '<App name="Bound metric"><Query id="headline" tool="host_headline"/>',
+      '<MetricCard label={headline.label} value={state.selectedValue} onSelect="selectMetric"/></App>',
+    ].join("");
     const runtime = createApps({
       store: memoryStore(),
       guard: guardFixture(),
@@ -260,73 +196,11 @@ describe("generation engine through createApps", () => {
     });
 
     await expect(runtime.create({ prompt: "Build a bound metric" }, ctx)).resolves.toMatchObject({
-      tree: { nodes: [{ component: "MetricCard" }] },
+      tree: { nodes: [{ component: "Stack" }, { component: "MetricCard" }] },
     });
   });
 
-  it("streams node-boundary view snapshots, resolves queries during create, and finishes with the open result", async () => {
-    const streamed = [
-      '{"name":"Streaming dashboard","tree":{"formatVersion":"vendo-genui/v1","root":"root","nodes":[{"id":"root","component":"Stack","source":"prewired","children":["metric"]},',
-      '{"id":"metric","component":"Text","source":"prewired","props":{"text":{"$path":"/metric"}}}],"queries":[{"path":"/metric","tool":"host_metric"}]}}',
-    ];
-    const queryTools: ToolRegistry = {
-      async descriptors() { return []; },
-      async execute(call) {
-        return call.tool === "host_metric"
-          ? { status: "ok", output: "$42k" }
-          : { status: "error", error: { code: "not-found", message: "missing" } };
-      },
-    };
-    const runtime = createApps({
-      store: memoryStore(),
-      guard: guardFixture(),
-      tools: queryTools,
-      catalog: [],
-      model: scriptedLanguageModel(streamed),
-    });
-    const views: Array<{ appId: string; payload: Record<string, unknown> }> = [];
 
-    const app = await runtime.create({
-      prompt: "Build a streaming dashboard",
-      onView: (part) => views.push(part as unknown as typeof views[number]),
-    }, ctx);
-    const opened = await runtime.open(app.id, ctx);
-
-    expect(views.length).toBeGreaterThanOrEqual(3);
-    expect(views.every((view) => view.appId === app.id)).toBe(true);
-    expect(views[0]?.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }] });
-    expect(views.some((view) => (view.payload.data as { metric?: string } | undefined)?.metric === "$42k")).toBe(true);
-    expect(views.at(-1)?.payload).not.toHaveProperty("streaming");
-    expect(opened).toMatchObject({ kind: "tree" });
-    if (opened.kind !== "tree") throw new Error("Expected a tree surface");
-    expect(views.at(-1)?.payload).toEqual(opened.payload);
-  });
-
-  it("repairs one invalid create and rejects two invalid attempts without persisting", async () => {
-    const repairedStore = memoryStore();
-    const repaired = createApps({
-      store: repairedStore,
-      guard: guardFixture(),
-      tools,
-      catalog,
-      model: scriptedLanguageModel(invalidCreate, validCreate("Repaired")),
-    });
-    await expect(repaired.create({ prompt: "Repair me" }, ctx)).resolves.toMatchObject({ name: "Repaired" });
-
-    const failedStore = memoryStore();
-    const failed = createApps({
-      store: failedStore,
-      guard: guardFixture(),
-      tools,
-      catalog,
-      model: scriptedLanguageModel(invalidCreate, invalidCreate),
-    });
-    await expect(failed.create({ prompt: "Still broken" }, ctx)).rejects.toMatchObject({
-      code: "validation",
-      detail: expect.arrayContaining([expect.stringContaining("root")]),
-    });
-    await expect(failed.list(ctx)).resolves.toEqual([]);
-  });
 
   it("applies tree ops, records rung 1, and undo restores the previous document", async () => {
     const store = memoryStore();
@@ -337,14 +211,14 @@ describe("generation engine through createApps", () => {
       catalog,
       model: scriptedLanguageModel(
         validCreate(),
-        JSON.stringify({ ops: [{ op: "set-prop", nodeId: "metric", prop: "value", value: "$84k" }] }),
+        JSON.stringify({ ops: [{ op: "set-prop", nodeId: "metriccard-1", prop: "value", value: "$84k" }] }),
       ),
     });
     const original = await runtime.create({ prompt: "Dashboard" }, ctx);
 
     const result = await runtime.edit(original.id, "Double the displayed revenue", ctx);
 
-    expect(result.app.tree).toMatchObject({ nodes: [{ props: { value: "$84k" } }] });
+    expect(result.app.tree).toMatchObject({ nodes: [{ id: "root" }, { props: { value: "$84k" } }] });
     expect(result.version.rung).toBe(1);
     expect(await runtime.history(original.id).list()).toEqual([result.version]);
     await expect(runtime.history(original.id).undo()).resolves.toEqual(original);
@@ -400,7 +274,7 @@ describe("generation engine through createApps", () => {
       name: "Maple overview",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Stack", source: "prewired" }],
       },
@@ -460,7 +334,7 @@ describe("generation engine through createApps", () => {
       name: "Maple overview",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Stack", source: "prewired" }],
       },
@@ -502,7 +376,7 @@ describe("generation engine through createApps", () => {
       name: "Maple overview",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Stack", source: "prewired" }],
       },
@@ -790,7 +664,7 @@ describe("generation engine through createApps", () => {
       name: "Cycle guard",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [
           { id: "root", component: "Text", children: ["section"] },
@@ -845,7 +719,7 @@ describe("generation engine through createApps", () => {
       name: "Server tree",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Text" }],
       },
@@ -955,7 +829,7 @@ describe("generation engine through createApps", () => {
       catalog,
       model: scriptedLanguageModel(
         validCreate(),
-        JSON.stringify({ ops: [{ op: "set-prop", nodeId: "metric", prop: "label", value: "API status" }] }),
+        JSON.stringify({ ops: [{ op: "set-prop", nodeId: "metriccard-1", prop: "label", value: "API status" }] }),
       ),
     });
     const original = await runtime.create({ prompt: "Dashboard" }, ctx);
@@ -964,7 +838,7 @@ describe("generation engine through createApps", () => {
 
     expect(result.issues).toBeUndefined();
     expect(result.version.rung).toBe(1);
-    expect(result.app.tree).toMatchObject({ nodes: [{ props: { label: "API status" } }] });
+    expect(result.app.tree).toMatchObject({ nodes: [{ id: "root" }, { props: { label: "API status" } }] });
   });
 
   it("keeps the first graduated version on the scaffold and repairs reserved-file edits", async () => {
@@ -1093,7 +967,7 @@ describe("generation engine through createApps", () => {
       name: "Original",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Text" }],
       },

@@ -52,15 +52,7 @@ const instructionOf = (text: string): string => /INSTRUCTION:\s*(.*)/.exec(text)
 const ladderModel = () => scriptedLanguageModel((call) => {
   const text = promptText(call);
   if (text.includes("TASK: CREATE_APP")) {
-    return JSON.stringify({
-      name: "Ladder app",
-      description: "climbs the ladder",
-      tree: {
-        formatVersion: "vendo-genui/v1",
-        root: "root",
-        nodes: [{ id: "root", component: "Text", source: "prewired", props: { text: "Rung 1" } }],
-      },
-    });
+    return '<App name="Ladder app"><Text text="Rung 1"/></App>';
   }
   // TASK: EDIT_CODE — branch on the human instruction (the system prompt itself
   // always mentions "server-computed", so we must read the INSTRUCTION line only).
@@ -90,17 +82,8 @@ describe("ladder rung transitions (e2e)", () => {
       tools,
       catalog: [],
       model: scriptedLanguageModel(
-        JSON.stringify({
-          name: "Editable dashboard",
-          tree: {
-            formatVersion: "vendo-genui/v1",
-            root: "root",
-            nodes: [
-              { id: "root", component: "Stack", source: "prewired", children: ["title"] },
-              { id: "title", component: "Text", source: "prewired", props: { text: "Spending" } },
-            ],
-          },
-        }),
+        '<App name="Editable dashboard"><Text text="Spending"/></App>',
+
         JSON.stringify({
           ops: [
             {
@@ -147,7 +130,7 @@ describe("ladder rung transitions (e2e)", () => {
     const created = await runtime.create({ prompt: "Show a greeting" }, ada);
     expect(created.ui).toBe("tree");
     expect(created.server).toBeUndefined();
-    expect(await runtime.open(created.id, ada)).toMatchObject({ kind: "tree", payload: { formatVersion: "vendo-genui/v1" } });
+    expect(await runtime.open(created.id, ada)).toMatchObject({ kind: "tree", payload: { formatVersion: "vendo-genui/v2" } });
     expect(await storedServer(store, created.id)).toBeUndefined();
 
     // Rung 2 — tree + server. UI stays the instant path; a fn: ref now reaches the machine.
@@ -235,7 +218,7 @@ describe("ladder rung transitions (e2e)", () => {
       name: "Serving",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Text", source: "prewired", props: { text: "Serving" } }],
       },
