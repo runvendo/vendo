@@ -431,14 +431,26 @@ export interface StandardSchema { "~standard": { validate(value: unknown): unkno
 export interface RegisteredComponent {
   name: string;                    // PascalCase, unique
   description: string;             // what the generator reads
-  propsSchema: StandardSchema;     // type-only (not zod-serializable)
-  propsJsonSchema?: JsonSchema;    // prompt-safe JSON Schema 2020-12; maps to catalog@1 propsSchema
+  propsSchema?: StandardSchema;    // the ONE optional props schema (standard-schema; in practice zod) — the derived JSON Schema (below) maps to catalog@1 propsSchema  <!-- amended 2026-07-18: optional; propsJsonSchema removed — server-wiring DX -->
   examples?: string[];             // usage snippets shown to the generator; maps to catalog@1 examples
   remixable?: boolean;             // opt-in: source captured at sync, eligible for pins
 }
 // the catalog holds host registrations; prewired primitives are the fixed reserved-name set (§8), not entries
 
 export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
+
+/** Name-keyed registry form (2026-07-18 amendment) — the same object serves both sides:
+ *  the server reads the data fields, <VendoRoot> reads the component references (08 §2).
+ *  Accepted anywhere the array form is (09 §2); the composition normalizes registry →
+ *  catalog by name. The array form remains valid. */
+export interface ComponentRegistryEntry {
+  component: unknown;              // host component reference — the SERVER MUST IGNORE this field (React types stay out of core); it exists so one object serves the client too
+  description: string;             // what the generator reads
+  props?: StandardSchema;          // the ONE optional props schema, as above
+  examples?: string[];
+  remixable?: boolean;
+}
+export type ComponentRegistry = Record<string, ComponentRegistryEntry>;   // keys are component names
 
 /** Brand tokens. Flat map of CSS-variable-ready values; the enumerated keys are the contract. */
 export interface VendoTheme {
@@ -449,6 +461,8 @@ export interface VendoTheme {
   motion: "full" | "reduced";
 }
 ```
+
+**Props schemas (normative, 2026-07-18 amendment):** a component entry carries at most ONE props schema. The model-facing JSON Schema 2020-12 is DERIVED internally by the composition (zod v4's native conversion) — never hand-written; `propsJsonSchema` is removed from this contract, and `catalog@1`'s disk `propsSchema` field carries the derived output (04 §1). Schema-less entries are legal: name + description only — the model infers props, and generated-props validation is permissive for those entries. For schema-bearing entries the derived JSON Schema is the one document driving both the generation prompt and generated-props validation — which also closes the old disk-catalog permissive-validation gap (04 §1's former "known runtime limit"): a `propsSchema` loaded from disk validates the same way a derived one does.
 
 ## 15. Errors
 
@@ -593,3 +607,10 @@ Persistence and transport are normative:
 - **Changed:** Removed `"scanner"` from `GuardDecision`'s `block` variant and from `AuditEvent.decidedBy`'s zod enum (§6/§7). `decidedBy` on a block decision is now `"rule" | "judge" | "breaker"`.
 - **Why:** The scanner hook itself was already cut from guard (05 §5, 2026-07-17, kill-list §A6); this `decidedBy` value was the leftover vocabulary for a decision source guard has never produced (guard's decision pipeline has not called a scanner stage since commit `4b56fe5c`).
 - **Authorized by:** the Yousef-approved kill-list spec (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md` §A6).
+
+### 2026-07-18 — One props schema per component entry; name-keyed registry form (server-wiring DX)
+
+- **Changed:** §14's `RegisteredComponent.propsSchema` becomes optional and is the entry's ONE schema (standard-schema; in practice zod); `propsJsonSchema` is removed — the model-facing JSON Schema 2020-12 is derived internally by the composition (zod v4 native conversion), and `catalog@1`'s disk `propsSchema` field carries that derived output (04 §1). Schema-less entries are legal (name + description only; the model infers props; validation is permissive for them).
+- **Changed:** §14 adds the name-keyed `ComponentRegistry` form (`ComponentRegistryEntry`): keys are component names; each value holds `component` (a host component reference the server MUST IGNORE — it exists so the same object serves the client), `description`, optional `props` (the single schema), optional `examples`, optional `remixable`. Accepted anywhere the array form is (09 §2); the array form remains valid.
+- **Why:** the server-wiring DX brainstorm (decision 2): `propsJsonSchema` was one schema hand-expressed twice, and name-keying kills the mirror-two-maps catalog discipline. Deriving one JSON Schema that drives both the prompt and generated-props validation also closes 04 §1's disk-catalog permissive-validation gap for schema-bearing entries.
+- **Approved by:** Yousef, 2026-07-18 (server-wiring DX brainstorm, `docs/brainstorms/server-wiring-dx.md`, converged).

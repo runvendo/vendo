@@ -86,7 +86,9 @@ discoverable only with exported-map registration evidence from a
 module/export path, and a representable props type. Unrepresentable exotic prop
 types produce a permissive schema plus a tool-authored explanatory `note`, or
 the entry is omitted. Statically serializable `createVendo({ catalog })` code
-registrations are merged by name and win over scanned entries.
+registrations (array or name-keyed registry form, 01 §14) are merged by name
+and win over scanned entries; a registry entry's `component` reference is
+ignored by sync and the server alike.
 
 ```jsonc
 {
@@ -120,11 +122,15 @@ install-DX correction-path design. Until that human-owned persistence exists,
 sync does not preserve hand-authored disabled flags and runtime does not filter
 catalog entries by this field; do not use it as a curation control.
 
-Known runtime limit: `propsSchema` from disk is JSON Schema prompt guidance,
-not an executable validator. Disk-loaded entries use a pass-through
-`StandardSchema` at runtime, while explicit code registrations retain their
-real `StandardSchema` validators. Strong runtime prop validation therefore
-requires code registration until a JSON-Schema validation seam is added.
+Runtime validation (amended 2026-07-18, server-wiring DX): a schema-bearing
+entry's JSON Schema is executable, not just prompt guidance. For code
+registrations the composition derives it from the entry's ONE standard-schema
+(zod v4 native conversion — the hand-written `propsJsonSchema` is gone from
+01 §14); for disk-loaded entries it is `propsSchema` verbatim. Either way the
+same document drives both the generation prompt and generated-props
+validation — the old gap where disk-loaded entries ran a pass-through
+`StandardSchema` is closed. Schema-less entries validate permissively by
+design (the model infers props).
 
 ### `.vendo/overrides.json` (human-written, respected forever)
 
@@ -306,3 +312,9 @@ Approvals are per-step in v1. A step's parked outcome becomes the compound's out
 - **Changed:** §1 drops the catalog-copy-AI seam — `proposeCatalogCopy`, `acceptCatalogProposals`, the injected `CatalogCopyGenerator` request/response types, and `vendoSync`'s `catalogCopyGenerator` knob. `vendo/catalog-proposals@1` (`CatalogProposalsFile`, `catalogProposalsFileSchema`) and the copy-fields types it depended on are gone from the format surface; `catalog.json` and the deterministic scan/registration flow it wraps are unaffected.
 - **Why:** kill-list A6 — the knob had no caller; the refine engine in `vendo` owns catalog copy authoring, so this was a speculative sub-feature with zero in-repo consumers.
 - **Authorized by:** the Yousef-approved simplify-v2 kill-list (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md`, §A6).
+
+### 2026-07-18 — Derived props schemas close the disk-validation gap (server-wiring DX)
+
+- **Changed:** §1's catalog-extraction notes: `createVendo({ catalog })` accepts 01 §14's name-keyed registry form (merged by name as before; `component` references ignored), and the "known runtime limit" paragraph is replaced — the JSON Schema of every schema-bearing entry (derived from the registration's single standard-schema, or `propsSchema` verbatim from disk) now drives generated-props validation as well as the prompt, closing the disk-catalog pass-through gap. `catalog@1` on disk is unchanged: its `propsSchema` field now carries the derived output instead of a hand-written `propsJsonSchema` (removed from 01 §14, same-date amendment).
+- **Why:** the server-wiring DX brainstorm (decision 2) — one schema authored once; deriving the model-facing JSON Schema internally kills the hand-duplication and makes the same document the validator.
+- **Approved by:** Yousef, 2026-07-18 (server-wiring DX brainstorm, `docs/brainstorms/server-wiring-dx.md`, converged).

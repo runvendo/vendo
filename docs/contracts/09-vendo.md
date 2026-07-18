@@ -15,7 +15,7 @@ Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a
 ## 2. The composition
 
 ```ts
-import type { Principal, ActAs, SecretsProvider, Json, RunId } from "@vendoai/core";
+import type { Principal, ActAs, SecretsProvider, Json, RunId, ComponentCatalog, ComponentRegistry } from "@vendoai/core";
 import type { LanguageModel } from "ai";                      // peerDependency (00 conventions)
 import type { VendoStore } from "@vendoai/store";
 import type { VendoAgent } from "@vendoai/agent";
@@ -27,17 +27,19 @@ import type { HostOAuthAdapter } from "@vendoai/mcp";       // the door's identi
 
 export function createVendo(config: {
   model: LanguageModel;                       // the one required thing
-  principal: (req: Request) => Promise<Principal | null>;   // host session → principal; null → ephemeral anonymous
+  auth?: HostAuthPreset;                      // ONE host-identity preset filling principal + actAs + oauth (§2.1); mutually exclusive with all three — mixing throws VendoError("validation") at compose time
+  principal?: (req: Request) => Promise<Principal | null>;   // per-seam escape hatch: host session → principal; null → ephemeral anonymous. Neither `auth` nor `principal` → anonymous ephemeral sessions only (the null path is the default resolver)
   store?: VendoStore;                         // default: createStore() (PGlite, .vendo/data)
+  catalog?: ComponentCatalog | ComponentRegistry;   // host components (01 §14); registry object form: the server reads data fields only and MUST IGNORE each entry's `component` — normalized to ComponentCatalog before wiring apps (06 §1)
   sandbox?: SandboxAdapter;                   // e.g. e2bSandbox({ apiKey }); absent → rung 1 only
   connectors?: Connector[];
-  actAs?: ActAs;
+  actAs?: ActAs;                              // per-seam escape hatch (01 §13)
   policy?: PolicyConfig;
   judge?: Judge;                              // e.g. vendoAutoJudge({ model }) — one import, no shorthand union
   secrets?: SecretsProvider;                  // default envSecrets()
   telemetry?: boolean;                        // wires @vendoai/telemetry (out of campaign scope, "stays as-is") — the one consumer outside this set
   mcp?: boolean;                              // open the MCP door (10-mcp §1); off by default — opening it is a host decision
-  oauth?: HostOAuthAdapter;                   // the door's identity + consent seam (10-mcp §3); REQUIRED when `mcp` is true — the door cannot mint principals without it
+  oauth?: HostOAuthAdapter;                   // per-seam escape hatch — the door's identity + consent seam (10-mcp §3); `mcp: true` REQUIRES an adapter, from here or from `auth` — the door cannot mint principals without one
   sessions?: {                                // anonymous (ephemeral) session lifecycle (02 §4, kill-list B3)
     ttlMs?: number;                           // idle timeout; default 30 min; 0 disables TTL eviction
     sweepIntervalMs?: number;                 // amortized + timer sweep cadence; default 60 s
@@ -46,6 +48,7 @@ export function createVendo(config: {
 <!-- amended 2026-07-14: `mcp?`/`oauth?` added — MCP door landed (PR #139); original froze pre-door. Code: server.ts:56-75 (CreateVendoConfig.mcp/oauth), plus the runtime guard that throws when `mcp: true` without `oauth`. -->
 <!-- amended 2026-07-16: `sessions?` added — wave-4 session lifecycle landed (PR #301, ENG-237). Code: server.ts CreateVendoConfig.sessions + validateSessionsConfig (invalid values throw VendoError("validation") at compose time). Defaults Yousef-approved 2026-07-16. -->
 <!-- amended 2026-07-17: `sessions.maxSessions` retired — the overlay's LRU cap died with the overlay (kill-list §B3; 02-store §4 is now disk rows + TTL sweep, and disk growth is bounded by the sweep). -->
+<!-- amended 2026-07-18: `auth?` + `catalog?` added, `principal` optional — server-wiring DX (docs/brainstorms/server-wiring-dx.md, decisions 1/2/6). `auth` with any of principal/actAs/oauth throws VendoError("validation") at compose time; neither `auth` nor `principal` boots with anonymous ephemeral sessions only (00 conventions "identity optional"; 02 §4); `model` stays the one required key. -->
 
 
 export interface Vendo {
@@ -60,9 +63,36 @@ Wiring (normative): `actions.add(apps.agentTools())`; every `ToolRegistry` hande
 
 Session lifecycle wiring (normative, 02 §4 / kill-list B3): the umbrella touches the session on every ephemeral-principal request (`registerEphemeralSubject` — register == touch, awaited before the route runs) with its own session clock passed as `now` (wall time in production; the internal test-only seam noted above). Sweeps run both amortized on-request (any request arriving `sweepIntervalMs` after the last sweep triggers one — awaited BEFORE the request is handled, the evict-on-expiry ordering and the serverless-safe leg) and on an unref'd background timer every `sweepIntervalMs`, torn down with `store.close()`. Every swept subject cascades store-first into `agent.evictSubject` (03 §1): a concurrent request fails closed at the store rather than finding agent threads without store state. The overlay-era inflight bracket and `setSessionClock`/`setSessionCap` wiring are retired with the overlay.
 
+## 2.1 Host-identity presets — `auth` (2026-07-18 amendment)
+
+One identity story, three seams. A `HostAuthPreset` fills the request→Principal resolver, the away/MCP `actAs` seam, and the door's `HostOAuthAdapter` from one config key — the host expresses its identity once instead of three times (demo-bank's pre-amendment version was ~115 lines of glue deriving all three seams from the same two lookups).
+
+```ts
+export interface HostAuthPreset {
+  principal: (req: Request) => Promise<Principal | null>;
+  actAs?: ActAs;                    // absent → away/MCP execution cleanly unavailable, as ever (01 §13)
+  oauth?: HostOAuthAdapter;         // absent → the door cannot open (`mcp: true` still requires an adapter, §2)
+}
+
+/** Named presets, shipped on the umbrella's server entry. Zero-argument in the standard
+ *  case: each reads its own env (e.g. AUTH_SECRET — mirroring Auth.js itself) and derives
+ *  the principal's `display` (name/email) from session-token claims. */
+export function authJs(options?: HostAuthPresetOptions): HostAuthPreset;
+export function clerk(options?: HostAuthPresetOptions): HostAuthPreset;
+export function supabase(options?: HostAuthPresetOptions): HostAuthPreset;
+export function auth0(options?: HostAuthPresetOptions): HostAuthPreset;
+export function jwt(options?: HostAuthPresetOptions): HostAuthPreset;      // generic JWT
+
+export interface HostAuthPresetOptions {
+  user?: (subject: string, claims: Record<string, unknown>) => Promise<Pick<Principal, "display"> | null>;   // optional subject→user resolver for custom logic; null declines the session → ephemeral anonymous
+}
+```
+
+Normative: supplying `auth` together with ANY of `principal`, `actAs`, or `oauth` throws `VendoError("validation")` at compose time — one preset or the per-seam trio, never mixed; the trio remains the escape hatch for hosts without a preset. The presets' actAs halves are `@vendoai/actions/presets`' shipped implementations for the same providers (04 §2.1; clerk/auth0 keep their away-token producer+verify split — the verify middleware is still host-mounted); the oauth half implements 10-mcp §3.
+
 ## 3. The wire (public contract — ui speaks exactly this)
 
-Mounted under one base (default `/api/vendo`). Auth: every request passes through `principal(req)`; payload types are core types, JSON-encoded; streams are SSE.
+Mounted under one base (default `/api/vendo`). Auth: every request passes through the composed principal resolver (`auth` preset or `principal`, §2.1; the anonymous default when neither is configured); payload types are core types, JSON-encoded; streams are SSE.
 
 | Route | Method | Body → Response |
 | --- | --- | --- |
@@ -95,17 +125,17 @@ Mounted under one base (default `/api/vendo`). Auth: every request passes throug
 | `/connections/:id` | GET · DELETE | `?connector=` — poll status (404 = not this subject's account, no oracle) · disconnect |
 | `/sync/impact` | POST | `{ tools: string[] }` (≤200) → `{ impact: ToolImpact[] }` — blast radius per tool (apps, automations, grants); **dev-only**: production → `blocked` (04 §1) |
 | `/doctor/present` · `/doctor/act-as` | POST | doctor's live probes (04 §4): present credentials actually reach the host API · actAs mint+verify round-trips (each with a `GET …/echo` loopback route) |
-| `/mcp` (+ subpaths) | ALL | MCP door mount (only when `createVendo({ mcp: true, oauth })`); the door owns these paths and authenticates every request through `oauth.principal` — NOT a wire route |
+| `/mcp` (+ subpaths) | ALL | MCP door mount (only when `mcp: true` with an oauth adapter — the `oauth` key or the `auth` preset's oauth half, §2.1); the door owns these paths and authenticates every request through the adapter's `principal` — NOT a wire route |
 
 <!-- amended 2026-07-14: MCP door landed (PR #139); original froze pre-door. The door mounts at `/api/vendo/mcp` (server.ts:33 `MCP_MOUNT`) and is handed its own paths BEFORE any wire machinery — ahead of the CSRF json-mutation gate — because it mints its own principals via `oauth.principal` and bypasses the wire's principal/CSRF machinery (server.ts:394-405). It also serves four origin-root discovery documents pre-auth (server.ts:158-169): `/.well-known/oauth-protected-resource/api/vendo/mcp`, `/.well-known/oauth-authorization-server/api/vendo/mcp` (RFC 9728/8414 path-inserted metadata for the mount), `/.well-known/mcp/server-card.json`, and `/.well-known/mcp-server-card` (SEP-2127 server card). Only these exact four are matched, not the whole `/.well-known/oauth-*` prefix, so a host serving its own OAuth/OIDC metadata at the same origin is not shadowed. -->
 **Webhook verification (normative)**: `/webhooks/:source` never dispatches unverified deliveries. Each source registers a verification at wiring time: the connector's own signature scheme (e.g. Composio's signed headers), or — for self-minted subscriptions — the industry-standard signing scheme (Stripe/Svix/GitHub school): HMAC-SHA256 over `id.timestamp.rawBody` with the secret minted at enable, delivered as signature + timestamp + delivery-id headers, verified within a ±5-minute window. **The secret itself never travels in a URL** (URLs leak via logs and proxies). Deliveries are deduped by delivery id, so at-least-once retries never double-fire an automation. Verification failure → `401`, no principal resolution, no run, one audit event.
 
 <!-- amended 2026-07-14: the following claim was true pre-door; the MCP door (PR #139) now serves OAuth/MCP well-known discovery documents pre-auth, ahead of the CSRF gate. Corrected below. -->
-The unauthenticated surface of the wire proper is still exactly nothing: every route in the table above passes through `principal(req)`. When the door is open (`mcp: true`), the door adds its own pre-auth surface — the four origin-root discovery documents noted above — served ahead of the wire's principal/CSRF machinery by design (public OAuth/MCP discovery metadata carries no authority; the door authenticates the actual `/api/vendo/mcp` tool calls through `oauth.principal`, guard-bound identically to chat).
+The unauthenticated surface of the wire proper is still exactly nothing: every route in the table above passes through the composed principal resolver. When the door is open (`mcp: true`), the door adds its own pre-auth surface — the four origin-root discovery documents noted above — served ahead of the wire's principal/CSRF machinery by design (public OAuth/MCP discovery metadata carries no authority; the door authenticates the actual `/api/vendo/mcp` tool calls through `oauth.principal`, guard-bound identically to chat).
 
 **Errors (normative)**: every non-2xx wire response is the one envelope the set already has (06 §4.1): `{ "error": { "code": VendoErrorCode, "message": string } }`, with the fixed status map `validation`→400, `not-found`→404, `blocked`→403, `conflict`→409, `cloud-required`→402, `sandbox-unavailable`/`not-implemented`→501.
 
-**CSRF (normative)**: the wire is cookie-authenticated (`principal(req)` reads the host session), so the handler rejects state-changing requests whose `Content-Type` is not `application/json` (forcing a CORS preflight cross-origin) — the OWASP-recommended minimum for embedded surfaces where hosts relax `SameSite`. Exceptions, listed exhaustively: `/apps/import` (binary body) and `/webhooks/:source` / `/tick` (non-cookie auth above).
+**CSRF (normative)**: the wire is cookie-authenticated (the principal resolver reads the host session), so the handler rejects state-changing requests whose `Content-Type` is not `application/json` (forcing a CORS preflight cross-origin) — the OWASP-recommended minimum for embedded surfaces where hosts relax `SameSite`. Exceptions, listed exhaustively: `/apps/import` (binary body) and `/webhooks/:source` / `/tick` (non-cookie auth above).
 
 Rung-4 app UI is **not** proxied through the wire: `OpenSurface.kind === "http"` carries the sandbox provider's URL directly; the iframe talks to the machine, the machine talks back only through `VENDO_PROXY_URL` (06 §4.4).
 
@@ -170,3 +200,12 @@ Exit codes: doctor `0` green / `1` broken wiring; sync `0` (fail-soft warns) / w
 - **Changed:** `sessions.maxSessions` is removed from `createVendo`'s config — it existed to bound the overlay's process memory; anonymous data now lives on disk and is bounded by the TTL sweep.
 - **Why:** kill-list §B3 replaced the store's in-memory ephemeral overlay with ordinary disk rows plus a `vendo_sessions` TTL sweep (02-store §4, same-date amendment); the umbrella wiring follows the store half's new seams.
 - **Authorized by:** the Yousef-approved kill-list spec (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md` §B3).
+
+### 2026-07-18 — Server-wiring DX: unified `auth` key, optional identity, registry catalog
+
+- **Changed:** §2 config adds `auth?: HostAuthPreset` — one host-identity preset `{ principal, actAs, oauth }` fills the request→Principal resolver, the away/MCP actAs seam, and the door's `HostOAuthAdapter` from one identity story (§2.1). Named presets (`authJs`, `clerk`, `supabase`, `auth0`, `jwt`) ship on the umbrella's server entry, zero-argument in the standard case (they read their own env, e.g. `AUTH_SECRET`, and derive `display` from session-token claims; an optional subject→user resolver covers custom logic). Supplying `auth` together with ANY of `principal`/`actAs`/`oauth` throws `VendoError("validation")` at compose time; the trio survives as the per-seam escape hatch.
+- **Changed:** identity becomes optional overall: `principal` is no longer required, and a config with neither `auth` nor `principal` boots with anonymous ephemeral sessions only — the existing null-principal path is the default resolver (00 conventions "identity optional"; 02 §4). `model` stays the one required key.
+- **Changed:** §2 config records `catalog?: ComponentCatalog | ComponentRegistry` — the name-keyed registry form (01 §14, same-date amendment) is accepted alongside the array form; the server reads only the data fields and MUST IGNORE each entry's `component` reference.
+- **Changed:** §3's auth line, the `/mcp` row, and the pre-auth/CSRF paragraphs read "the composed principal resolver"; the door mounts when `mcp: true` has an oauth adapter from either channel (10-mcp §1 cross-reference updated in step).
+- **Why:** the server-wiring DX brainstorm (decisions 1, 2, 6): demo-bank derived all three identity seams from the same two lookups (~115 lines of glue for one identity story); bare `createVendo()` legitimately boots; `model` + `auth` is the real quickstart rung.
+- **Approved by:** Yousef, 2026-07-18 (server-wiring DX brainstorm, `docs/brainstorms/server-wiring-dx.md`, converged).
