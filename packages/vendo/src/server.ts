@@ -947,3 +947,32 @@ export function nextVendoHandler(vendo: Vendo): {
   const handle = (request: Request): Promise<Response> => vendo.handler(request);
   return { GET: handle, POST: handle, PATCH: handle, DELETE: handle };
 }
+
+/** 10-mcp §5 — adapt the fetch handler to a Next.js `app/.well-known/[...vendo]/
+    route.ts` module. The four discovery documents the door serves (RFC 9728/
+    8414 metadata for its fixed mount, plus the SEP-2127 server card) live at
+    ORIGIN-ROOT paths, outside BASE_PATH — a host's `/api/vendo` catch-all route
+    never sees them, because Next.js dispatches by directory structure, not by
+    the wire's own routing. This file exists so that directory gets a handler
+    too, one that shares DOOR_WELL_KNOWN_PATHS with the wire itself (the SAME
+    set `isDoorPath` matches) instead of a hand-copied allowlist that can drift
+    from it. A request whose pathname is exactly one of those four paths
+    forwards to `vendo.handler` (which independently confirms it's a door path
+    and, if `mcp` is configured, serves it — the check here is only about
+    which requests reach the wire at all); anything else answers 404 with an
+    empty body, mirroring the hand-written route this replaces. With `mcp` left
+    unconfigured, `vendo.handler` still recognizes these four paths but has no
+    door to serve them, so the request falls through to the wire's ordinary
+    not-found response — never a 500. */
+export function wellKnownVendoHandler(vendo: Vendo): {
+  GET(request: Request): Promise<Response>;
+  POST(request: Request): Promise<Response>;
+} {
+  const handle = (request: Request): Promise<Response> => {
+    const { pathname } = new URL(request.url);
+    return DOOR_WELL_KNOWN_PATHS.has(pathname)
+      ? vendo.handler(request)
+      : Promise.resolve(new Response(null, { status: 404 }));
+  };
+  return { GET: handle, POST: handle };
+}

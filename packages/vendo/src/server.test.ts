@@ -16,7 +16,7 @@ import { createStore, secretStore, storeSecrets, type VendoStore } from "@vendoa
 import { createHmac, randomBytes } from "node:crypto";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createVendo, nextVendoHandler, type CreateVendoConfig, type Vendo } from "./server.js";
+import { createVendo, nextVendoHandler, wellKnownVendoHandler, type CreateVendoConfig, type Vendo } from "./server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -1515,6 +1515,70 @@ describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H
       expect(body.resource, path).toBeUndefined();
       expect(body.issuer, path).toBeUndefined();
     }
+  });
+});
+
+describe("10-mcp §5 — wellKnownVendoHandler (the Next.js app/.well-known/[...vendo]/route.ts adapter)", () => {
+  async function mcpVendo(mcp: CreateVendoConfig["mcp"] = true): Promise<Vendo> {
+    const store = await tempStore("vendo-well-known-");
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => null,
+      store,
+      mcp,
+      oauth: {
+        async authorize() { return { subject: "user_door" }; },
+        async principal(subject) { return { kind: "user", subject }; },
+      },
+    });
+    // See the identical comment on the door describe block above: a test
+    // whose requests all resolve before `await ready` would otherwise close
+    // the store mid-schema-creation (the known PGlite close-race hang).
+    await store.ensureSchema();
+    return vendo;
+  }
+  const root = (path: string): Request => new Request(`https://host.test${path}`);
+
+  it("forwards each of the door's four exact well-known paths to vendo.handler", async () => {
+    const vendo = await mcpVendo();
+    const route = wellKnownVendoHandler(vendo);
+    for (const method of ["GET", "POST"] as const) expect(route[method]).toBeTypeOf("function");
+
+    const prm = await route.GET(root("/.well-known/oauth-protected-resource/api/vendo/mcp"));
+    expect(prm.status).toBe(200);
+    expect((await prm.json() as { resource?: string }).resource).toBe("https://host.test/api/vendo/mcp");
+
+    const as = await route.GET(root("/.well-known/oauth-authorization-server/api/vendo/mcp"));
+    expect(as.status).toBe(200);
+    expect((await as.json() as { issuer?: string }).issuer).toBe("https://host.test/api/vendo/mcp");
+
+    const card = await route.GET(root("/.well-known/mcp/server-card.json"));
+    expect(card.status).toBe(200);
+
+    const alias = await route.GET(root("/.well-known/mcp-server-card"));
+    expect(alias.status).toBe(200);
+  });
+
+  it("404s empty-body on a well-known path outside the door's four (mirrors the hand-written route it replaces)", async () => {
+    const vendo = await mcpVendo();
+    const route = wellKnownVendoHandler(vendo);
+    const res = await route.GET(root("/.well-known/openid-configuration"));
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe("");
+  });
+
+  it("does NOT 500 on the door's four paths when mcp is left unconfigured — falls through to the wire's ordinary not-found", async () => {
+    // wellKnownVendoHandler's own path check only decides which requests
+    // reach vendo.handler at all; with no `door` composed, vendo.handler's
+    // isDoorPath branch never fires (it also requires deps.door), so the
+    // request falls through to relativePath (which returns null for an
+    // origin-root path) and the wire answers its ordinary not-found — a JSON
+    // 404, not a crash.
+    const vendo = await mcpVendo(false);
+    const route = wellKnownVendoHandler(vendo);
+    const res = await route.GET(root("/.well-known/oauth-protected-resource/api/vendo/mcp"));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({ error: { code: "not-found" } });
   });
 });
 

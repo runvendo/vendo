@@ -1,16 +1,14 @@
-import { GET as handleVendo } from "../../api/vendo/[...vendo]/route";
+// 10-mcp §5: the door's four discovery documents live at origin-root paths,
+// outside /api/vendo, so the /api/vendo catch-all never sees them — this
+// directory exists only to give Next.js a route to dispatch them to. The
+// allowlist itself lives in the package (wellKnownVendoHandler), not here, so
+// it can't drift from the door's real path set.
+//
+// No publicVendoRequest wrapping here (contrast the api/vendo route): the
+// door already rebases discovery URLs onto VENDO_BASE_URL internally from its
+// own configured baseUrl (10-mcp §5, ENG-333) before it ever looks at the
+// request's origin, so re-deriving a "public" request here would be redundant.
+import { wellKnownVendoHandler } from "@vendoai/vendo/server";
+import { vendo } from "@/vendo/server";
 
-const DOOR_PATHS = new Set([
-  "/.well-known/oauth-protected-resource/api/vendo/mcp",
-  "/.well-known/oauth-authorization-server/api/vendo/mcp",
-  "/.well-known/mcp/server-card.json",
-  "/.well-known/mcp-server-card",
-]);
-
-const forward = (request: Request) =>
-  DOOR_PATHS.has(new URL(request.url).pathname)
-    ? handleVendo(request)
-    : new Response(null, { status: 404 });
-
-export const GET = forward;
-export const POST = forward;
+export const { GET, POST } = wellKnownVendoHandler(vendo);
