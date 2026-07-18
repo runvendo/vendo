@@ -56,4 +56,13 @@ describe("VendoTrigger", () => {
     mount(<VendoTrigger prompt="Do something" />);
     expect(screen.getByRole("button", { name: "Ask Vendo" })).toBeTruthy();
   });
+
+  it("never renders the no-policy banner beside itself on an unconfigured host", async () => {
+    wire.state.posture = "unconfigured";
+    mount(<VendoTrigger prompt="Do something">Nudge with AI</VendoTrigger>);
+    expect(screen.getByRole("button", { name: "Nudge with AI" })).toBeTruthy();
+    // Give the status probe time to resolve — the banner must still not mount.
+    await new Promise(resolve => globalThis.setTimeout(resolve, 50));
+    expect(screen.queryByText("Vendo is running without a policy")).toBeNull();
+  });
 });
