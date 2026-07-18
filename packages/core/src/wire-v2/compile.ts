@@ -474,6 +474,17 @@ const determineComplete = (state: CompileState): boolean =>
   state.appClosed && !state.eofTruncated && !state.droppedTrailing;
 
 const finishResult = (state: CompileState, name: string | undefined): WireCompileResult => {
+  // Dangling-generated reconciliation: the pre-scan marks nodes "generated"
+  // cap-blind, but admitIslandSource may then drop the island (§8 size/count
+  // caps, malformed UTF-16). A generated node with no components entry fails
+  // the DOCUMENT validator wholesale, so a dropped island's nodes degrade to
+  // sourceless instead (one contained unknown-component notice) — the same
+  // harmless-degradation stance the over-cap query path takes.
+  for (const node of state.nodes) {
+    if (node.source === "generated" && state.components[node.component] === undefined) {
+      delete node.source;
+    }
+  }
   const tree: TreeV2 = {
     formatVersion: VENDO_TREE_FORMAT_V2,
     root: "root",

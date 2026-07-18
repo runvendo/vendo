@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { validateAppDocument } from "../app-document.js";
 import { componentMapError } from "../component-map.js";
-import { VENDO_TREE_FORMAT_V2 } from "../formats.js";
+import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT_V2 } from "../formats.js";
 import {
   TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
@@ -922,5 +923,59 @@ describe("compileWireV2 §8 limits", () => {
     expect(result.issues.slice(0, 256).every((entry) => entry.code === "stray-close-tag")).toBe(true);
     expect(result.issues[256]?.code).toBe("issues-truncated");
     expect(result.complete).toBe(true);
+  });
+});
+
+describe("compileWireV2 dangling-generated reconciliation", () => {
+  /** A node pointing at a DROPPED island must not stay source:"generated" —
+   *  the document validator requires a components entry for every generated
+   *  node, so a dangling one turns a one-island problem into a whole-app
+   *  save/render failure (Devin, PR #369). Dropped-island nodes degrade to
+   *  sourceless (one contained unknown-component notice), like over-cap
+   *  queries degrade to absent data. */
+  const documentValidation = (result: WireCompileResult) => validateAppDocument({
+    format: VENDO_APP_FORMAT,
+    id: "app_wire_reconcile",
+    name: "Reconcile",
+    ui: "tree",
+    tree: result.tree as unknown as Record<string, unknown>,
+    ...(Object.keys(result.components).length === 0 ? {} : { components: result.components }),
+  } as unknown as Parameters<typeof validateAppDocument>[0]);
+
+  it("clears source on a node whose island was dropped for size", () => {
+    const big = "x".repeat(TREE_MAX_COMPONENT_SOURCE_BYTES + 1);
+    const result = compile(`<App><Huge/><Island name="Huge">${big}</Island></App>`);
+    expect(result.components).toStrictEqual({});
+    expect(result.tree.nodes.find(({ id }) => id === "huge-1")?.source).toBeUndefined();
+    expect(documentValidation(result).ok).toBe(true);
+  });
+
+  it("clears source only on nodes whose islands fell past the count cap", () => {
+    const islands = Array.from(
+      { length: TREE_MAX_GENERATED_COMPONENTS + 1 },
+      (_, i) => `<Island name="I${i}">src${i}</Island>`,
+    ).join("");
+    const over = TREE_MAX_GENERATED_COMPONENTS;
+    const result = compile(`<App><I0/><I${over}/>${islands}</App>`);
+    expect(result.tree.nodes.find(({ id }) => id === "i0-1")?.source).toBe("generated");
+    expect(result.tree.nodes.find(({ id }) => id === `i${over}-1`)?.source).toBeUndefined();
+    expect(documentValidation(result).ok).toBe(true);
+  });
+
+  it("clears source on a node whose island was dropped as malformed UTF-16", () => {
+    const result = compile('<App><Bad/><Island name="Bad">export \uD800 default</Island></App>');
+    expect(result.components).toStrictEqual({});
+    expect(result.tree.nodes.find(({ id }) => id === "bad-1")?.source).toBeUndefined();
+    expect(documentValidation(result).ok).toBe(true);
+  });
+
+  it("clears source on a truncated prefix whose island never arrived, then restores it at full parse", () => {
+    const wire = '<App><Note/><Island name="Note">export default function Note() {}</Island></App>';
+    const prefix = compileWireV2(wire.slice(0, wire.indexOf("<Island") + 10), undefined);
+    expect(prefix.tree.nodes.find(({ id }) => id === "note-1")?.source).toBeUndefined();
+    expect(documentValidation(prefix).ok).toBe(true);
+    const full = compile(wire);
+    expect(full.tree.nodes.find(({ id }) => id === "note-1")?.source).toBe("generated");
+    expect(full.components.Note).toBe("export default function Note() {}");
   });
 });
