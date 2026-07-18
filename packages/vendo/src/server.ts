@@ -25,6 +25,7 @@ import {
   vendoThemeSchema,
   type ActAs,
   type ComponentCatalog,
+  type ComponentRegistry,
   type Json,
   type PermissionGrant,
   type Principal,
@@ -85,7 +86,7 @@ import {
   capabilitySurfaceSnapshot,
   createCapabilityMissCapture,
 } from "./capability-misses.js";
-import { catalogThemeSummary, mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
+import { catalogThemeSummary, mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromJson } from "./catalog.js";
 import { devModelController } from "./dev-creds/model.js";
 // ENG-338 — the dev-mode model-credential ladder: `devModel()` is what a fresh
 // `vendo init` scaffolds; the resolver is shared by init, doctor, and
@@ -169,8 +170,11 @@ export interface CreateVendoConfig {
       ephemeral anonymous principal. With neither `auth` nor `principal`, every
       session is anonymous (the null path is the default resolver — 09 §2). */
   principal?: (req: Request) => Promise<Principal | null>;
-  /** Host components available to generated apps; entry names must mirror the client-side components map 1:1. */
-  catalog?: ComponentCatalog;
+  /** Host components available to generated apps: the name-keyed registry
+      object (01 §14 — the same object serves <VendoRoot>; the server ignores
+      each entry's `component` reference) or the array form. Entry names must
+      mirror the client-side components map 1:1. */
+  catalog?: ComponentCatalog | ComponentRegistry;
   store?: VendoStore;
   sandbox?: SandboxAdapter;
   connectors?: Connector[];
@@ -714,7 +718,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const pinBaselines = dotVendoPinBaselines();
   const catalog = mergeRuntimeCatalog(
     runtimeCatalogFromJson(dotVendoFile("catalog.json")),
-    config.catalog,
+    normalizeCatalogConfig(config.catalog),
   );
   const apps = createApps({
     store,

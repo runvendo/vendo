@@ -8,6 +8,7 @@ import {
   VendoError,
   type AppDocument,
   type ComponentCatalog,
+  type ComponentRegistry,
   type Principal,
   type RunContext,
 } from "@vendoai/core";
@@ -1410,6 +1411,62 @@ describe("09 §2 apps composition", () => {
       principal: async () => principal,
       store,
       catalog,
+    });
+    await store.ensureSchema();
+
+    await expect(vendo.apps.create({ prompt: "Show revenue" }, ctx)).resolves.toMatchObject({
+      tree: { nodes: [{ component: "MetricCard", source: "host" }] },
+    });
+  });
+
+  it("accepts the name-keyed registry catalog form and ignores component references", { timeout: 120_000 }, async () => {
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+    const store = await tempStore("vendo-registry-catalog-");
+    const generated = JSON.stringify({
+      name: "Registry app",
+      tree: {
+        formatVersion: VENDO_TREE_FORMAT,
+        root: "metric",
+        nodes: [{
+          id: "metric",
+          component: "MetricCard",
+          source: "host",
+          props: { label: "Revenue" },
+        }],
+      },
+    });
+    const model = new MockLanguageModelV3({
+      doStream: async () => ({
+        stream: simulateReadableStream({ chunks: [
+          { type: "text-start", id: "generation" },
+          { type: "text-delta", id: "generation", delta: generated },
+          { type: "text-end", id: "generation" },
+          {
+            type: "finish",
+            usage: {
+              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+              outputTokens: { total: 0, text: 0, reasoning: 0 },
+            },
+            finishReason: { unified: "stop", raw: undefined },
+          },
+        ] }),
+      }),
+    });
+    // 01 §14: the server MUST IGNORE the component reference — a trap proves
+    // it is never touched or executed.
+    const registry: ComponentRegistry = {
+      MetricCard: {
+        get component(): unknown {
+          throw new Error("the server must never read component references");
+        },
+        description: "Use for a single headline metric.",
+      },
+    };
+    const vendo = createVendo({
+      model,
+      principal: async () => principal,
+      store,
+      catalog: registry,
     });
     await store.ensureSchema();
 
