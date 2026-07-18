@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "postInvoiceExport",
+      "method": "POST",
+      "path": "/api/invoice/export",
+      "risk": "write"
+    },
+    {
+      "name": "postInvoiceGenerate",
+      "method": "POST",
+      "path": "/api/invoice/generate",
+      "risk": "write"
+    },
+    {
+      "name": "postInvoiceSend",
+      "method": "POST",
+      "path": "/api/invoice/send",
+      "risk": "destructive"
+    }
+  ]
+}
