@@ -470,6 +470,29 @@ describe("compileWireV2 forward references", () => {
     expect(codes(result)).toEqual(["unknown-reference", "unknown-element"]);
   });
 
+  it("moves through single-quoted attributes exactly like the main pass (no phantom declarations)", () => {
+    // The single-quoted run swallows the fake Island and Query on BOTH
+    // passes: the pre-scan must not collect what the main pass never parses.
+    const result = compile(
+      "<App><Widget a='> <Island name=\"Fake\">body</Island> <Query id=\"ghost\" tool=\"t\"/> '/>"
+      + "<Chart y={ghost.total}/><Fake/></App>",
+    );
+    expect(result.components).toStrictEqual({});
+    expect(result.tree.queries).toBeUndefined();
+    // Fake must not become a phantom island-backed component...
+    expect(result.tree.nodes.find((node) => node.id === "fake-1")).toStrictEqual({
+      id: "fake-1",
+      component: "Fake",
+    });
+    // ...and ghost must not resolve: the binding drops as unknown-reference.
+    expect(result.tree.nodes.find((node) => node.id === "chart-1")).toStrictEqual({
+      id: "chart-1",
+      component: "Chart",
+    });
+    expect(codes(result)).toEqual(["malformed-attribute", "unknown-reference"]);
+    expect(result.complete).toBe(true);
+  });
+
   it("resolves a name whose duplicate declaration was dropped (same name)", () => {
     const result = compile(
       '<App><Query id="a" tool="t1"/><Query id="a" tool="t2"/><Card x={a}/></App>',

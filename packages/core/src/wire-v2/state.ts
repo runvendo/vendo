@@ -38,6 +38,10 @@ export interface CompileState {
   readonly hostComponents: ReadonlySet<string>;
   /** D3 — hoisted `<Query>` declarations in document order. */
   readonly queries: TreeQueryV2[];
+  /** The hoisted queries' names, kept beside {@link queries} so the
+   *  duplicate check stays O(1) per query (a linear scan is quadratic over
+   *  large wires). */
+  readonly hoistedQueryNames: Set<string>;
   /** D3 — captured `<Island>` raw-TSX sources by name. */
   readonly components: Record<string, string>;
   /** True once `</App>` (or `<App/>`) properly closed the document. */

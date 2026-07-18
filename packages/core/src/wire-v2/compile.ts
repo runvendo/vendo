@@ -87,6 +87,7 @@ const makeState = (
   islandNames,
   hostComponents,
   queries: [],
+  hoistedQueryNames: new Set(),
   components: {},
   appClosed: false,
   eofTruncated: false,
@@ -152,7 +153,7 @@ const compileQuery = (state: CompileState, frames: Frame[]): void => {
     );
     return;
   }
-  if (state.queries.some((query) => query.name === name)) {
+  if (state.hoistedQueryNames.has(name)) {
     issue(state, "duplicate-query", `duplicate query name "${name}" (the first one wins; this one was dropped)`);
     return;
   }
@@ -166,6 +167,7 @@ const compileQuery = (state: CompileState, frames: Frame[]): void => {
     }
   }
   state.queries.push(query);
+  state.hoistedQueryNames.add(name);
 };
 
 /** D3 — `<Island name>raw TSX</Island>` captures everything between the open
@@ -403,7 +405,12 @@ const prescanDeclarations = (wire: string): { queryNames: Set<string>; islandNam
       if (!end.selfClosing) skipElement(state, name);
       continue;
     }
-    if (scanTagEnd(state) === FAILED) break;
+    // Component open tags move through parseAttributes, NOT scanTagEnd: the
+    // main pass parses them, and only identical cursor movement (by
+    // construction) keeps declarations inside attribute values — e.g. a
+    // single-quoted run hiding a fake <Island>/<Query> — invisible to both
+    // passes alike (scanTagEnd is single-quote-blind at the markup layer).
+    if (parseAttributes(state, "component") === FAILED) break;
   }
   return { queryNames, islandNames };
 };
