@@ -1,6 +1,6 @@
 # Vendo quickstart
 
-Install the default composition and run the setup interview:
+Install the default composition and run setup:
 
 ```bash
 npm install @vendoai/vendo
@@ -8,45 +8,56 @@ npx vendo init
 ```
 
 The `vendoai` package is a thin alias. The scoped package is the canonical
-install. `vendo init` proposes two host changes: a catch-all handler and a
-`<VendoRoot>` wrapper. It shows each diff before writing it.
+install. `vendo init` asks nothing on the happy path. It writes one code file
+(the catch-all handler) and two package.json script hooks, extracts your tools
+and brand theme into `.vendo/`, resolves a model key, and prints the one line
+that is yours to paste: the `<VendoRoot>` wrap in your layout. It never edits
+code you wrote. Then start your dev server — the agent is live in your app —
+and run `npx vendo doctor` to verify everything with one real model turn.
 
-## Dev-mode model ladder
+## Model keys
 
-`vendo init` resolves a model credential for development, in this order:
+The agent needs an LLM. `createVendo`'s `model` is optional: when you don't
+pass one, the composed default resolves a real key from the environment, in
+this order:
 
 1. An explicit env key: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or
    `GOOGLE_GENERATIVE_AI_API_KEY` (install the matching `@ai-sdk/*@^3`
-   provider). Explicit beats implicit; this rung also serves production.
-2. Your authed Claude Code CLI session. Dev only, used after you consent in
-   the wizard; needs `@anthropic-ai/claude-agent-sdk` in the app (init offers
-   the install).
-3. Your authed Codex CLI session. Dev only, used after you consent.
-4. A Vendo Cloud starter allowance. When no local credential is found, init
-   offers `vendo cloud login`; after login it mints a metered dev-mode key and
-   writes `VENDO_API_KEY` to `.env.local` for you. You never paste a key.
-5. Nothing available: chat fails honestly, with exact instructions in the
+   provider). This same rung serves production.
+2. `VENDO_API_KEY` — a Vendo Cloud dev key. When init finds no key, it offers
+   `vendo cloud login`: after the browser login it mints a metered dev-mode
+   starter key and writes it to `.env.local` for you. You never paste a key.
+3. Nothing available: chat fails honestly, with exact instructions in the
    server log.
 
-The wizard states what it found. Consent for session rungs is recorded per
-machine in `.vendo/data/dev-credential.json` (gitignored);
-`VENDO_DEV_ALLOW_SESSIONS=1` is the non-interactive equivalent. Session rungs
-are refused outright when `NODE_ENV` is `production`: production deploys
-always need a real server-side key.
-
-On session rungs the CLI harness supplies the model while Vendo keeps owning
-tool execution and consent, so approvals, grants, and audit behave exactly as
-with a key. The scaffolded `lib/ai.ts` exports `devModel()`, which resolves
-this ladder at runtime; replace it with any ai-SDK model to take full control.
-
-Init ends in the product: with your consent it starts the dev server, opens
-the app in your browser, and seeds a first agent turn. The seed adapts to what
-setup found: extracted tools get a live tool demo, a theme-only app gets an
-on-brand UI generation, a blank app gets a tour.
+Production deploys always need a real server-side key. To take full control
+of the model (BYO-LLM), pass any ai-SDK model to `createVendo({ model })`.
 
 Vendo Cloud is optional. When `VENDO_API_KEY` is set, init validates it and
 states the plan and what it unlocks; when it is absent, init prints one calm
-line and, if a starter key would help the ladder, offers `vendo cloud login`.
+line and offers `vendo cloud login` only when a starter key would help.
+
+To see every Vendo surface and state (streaming, approvals, slots, the
+workspace page) against scripted data first — no model key, no wiring — run
+`npx vendo playground`.
+
+## AI polish (extraction judgment)
+
+Static extraction gets the facts; a coding agent adds the judgment. During an
+interactive `vendo init`, when `@anthropic-ai/claude-agent-sdk` is resolvable
+and a Claude Code login or `ANTHROPIC_API_KEY` exists, init asks once for
+consent and lets the agent read your codebase (read-only: Read/Glob/Grep;
+source goes to your model provider under your own account). It drafts
+task-oriented tool descriptions, reviews risk grades, wakes statically
+unclassifiable tools with reasoning, and writes the product brief.
+
+Everything it proposes passes deterministic guards before applying: only
+extracted tool names are accepted, risk can be raised but never lowered,
+waking a disabled tool requires reasoning plus an explicit grade, and human
+decisions always win (existing `.vendo/overrides.json` fields and a
+hand-written `brief.md` are never overwritten). The output lands in the
+override channel, so `vendo sync` regeneration keeps it. Skipped silently in
+non-interactive runs; re-run `vendo init` any time to add it.
 
 ## Create the server
 
@@ -64,7 +75,7 @@ import type { AutomationsEngine } from "@vendoai/automations";
 import type { HostOAuthAdapter } from "@vendoai/mcp";
 
 export function createVendo(config: {
-  model: LanguageModel;
+  model?: LanguageModel;         // absent → env-resolved key (see Model keys above)
   principal: (req: Request) => Promise<Principal | null>;
   store?: VendoStore;
   sandbox?: SandboxAdapter;
@@ -89,15 +100,15 @@ export interface Vendo {
 }
 ```
 
-The model and principal resolver are the only required configuration. Returning
-`null` from `principal` creates an ephemeral session-scoped principal. That
-session works normally but does not persist.
+The principal resolver is the only required configuration (`model` resolves
+from the environment when absent). Returning `null` from `principal` creates
+an ephemeral session-scoped principal. That session works normally but does
+not persist.
 
 ```ts
 import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
 
 const vendo = createVendo({
-  model,
   principal: async (request) => {
     const user = await resolveSession(request);
     return user ? { kind: "user", subject: user.id, display: user.name } : null;
@@ -166,7 +177,6 @@ MCP client. Enable it with one flag and one seam:
 
 ```ts
 const vendo = createVendo({
-  model,
   principal,
   actAs,          // see below
   mcp: true,
@@ -215,15 +225,14 @@ not, host tool calls over the door degrade cleanly with a not-implemented tool
 error, exactly like away execution on a host that never wired the seam.
 
 Policy posture: the shipped policy example blocks `venue: "mcp"`. Opening the
-door is a host decision, never a default. `vendo init` asks before opening it.
+door is a host decision, never a default — it happens here, deliberately,
+after setup; `vendo init` never asks about it.
 
 The door also serves discovery documents at the origin root, which the
-`/api/vendo/[...]` catch-all cannot see. When you opt into MCP during `vendo init`
-in a Next.js host, init generates `app/.well-known/[...vendo]/route.ts` (under
-`src/app` when that layout is present) and forwards through the same handler.
-The generated route allows only the door's four exact paths and 404s everything
-else, so it never shadows host OAuth/OIDC metadata. If you wire Vendo without
-init, add the equivalent route manually:
+`/api/vendo/[...]` catch-all cannot see. In a Next.js host, add this route
+(under `src/app` when that layout is present); it allows only the door's four
+exact paths and 404s everything else, so it never shadows host OAuth/OIDC
+metadata:
 
 ```ts
 // app/.well-known/[...vendo]/route.ts
@@ -257,13 +266,12 @@ credentials reach the host API, and exercises `actAs` minting through the
 host's verifier when configured. It then runs one real model turn through the
 same wired route your app serves and prints the reply: exit 0 means a user
 would have gotten an answer, nonzero means the turn failed. It also validates
-`VENDO_API_KEY` when set (and shows what Cloud unlocks), and warns when the
-installed `codex` CLI drifts off the tested app-server protocol line.
+`VENDO_API_KEY` when set (and shows what Cloud unlocks).
 
 When nothing is listening on the dev port, `doctor` offers to start the dev
 server for the probe (or pass `--yes` to start it non-interactively). `--json`
-prints one machine-readable object — `checks`, `liveTurn`, `cloud`, `codex`,
-and the exit code — for scripts and agents.
+prints one machine-readable object — `checks`, `liveTurn`, `cloud`, and the
+exit code — for scripts and agents.
 
 `sync` extracts the host API and remix baselines. In strict mode, breaking
 extraction changes exit with code 2.

@@ -20,7 +20,7 @@ afterEach(async () => {
 /** Existing checks are about static wiring + the HTTP probes, not the new
  *  live-turn/cloud/dev-server-probe surface (those get dedicated tests below).
  *  This wrapper stubs the new seams so the legacy assertions stay focused:
- *  a canned successful live turn, no cloud key, no codex, non-interactive. */
+ *  a canned successful live turn, no cloud key, non-interactive. */
 async function doctor(options: Parameters<typeof runDoctor>[0]): Promise<number> {
   return runDoctor({
     env: {},
@@ -34,7 +34,6 @@ async function doctor(options: Parameters<typeof runDoctor>[0]): Promise<number>
       elapsedMs: 1,
     }),
     cloudProbe: async () => ({ present: false, ok: false, unlocks: ["a starter allowance"] }),
-    codexDriftProbe: async () => ({ installed: false, tested: "0.144", drifted: false }),
     ...options,
   });
 }
@@ -423,7 +422,6 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       env: { ANTHROPIC_API_KEY: "sk-test" },
       interactive: false,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
-      codexDriftProbe: async () => ({ installed: false, tested: "0.144", drifted: false }),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -441,7 +439,6 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       env: { ANTHROPIC_API_KEY: "sk-test" },
       interactive: false,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
-      codexDriftProbe: async () => ({ installed: false, tested: "0.144", drifted: false }),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(1);
@@ -556,7 +553,6 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       confirm,
       startDevServer,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
-      codexDriftProbe: async () => ({ installed: false, tested: "0.144", drifted: false }),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -566,16 +562,77 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     expect(stop).toHaveBeenCalledOnce();
   });
 
-  it("warns on codex app-server protocol drift", async () => {
+  // §4 customization ladder — ejected chrome is the host's code; doctor only
+  // raises awareness when it predates the installed @vendoai/ui. Warn, never fail.
+  it("warns — never fails — when an ejected surface predates the installed @vendoai/ui", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "components", "vendo", "thread"), { recursive: true });
+    await writeFile(
+      join(root, "components", "vendo", "thread", ".vendo-eject.json"),
+      JSON.stringify({ surface: "thread", package: "@vendoai/ui", version: "0.2.0" }),
+    );
+    await mkdir(join(root, "node_modules", "@vendoai", "ui"), { recursive: true });
+    await writeFile(
+      join(root, "node_modules", "@vendoai", "ui", "package.json"),
+      JSON.stringify({ name: "@vendoai/ui", version: "0.3.0" }),
+    );
     const messages = output();
-    await doctor({
-      targetDir: await healthy(),
+    const code = await doctor({
+      targetDir: root,
       fetchImpl: successfulProbeFetch(),
-      codexDriftProbe: async () => ({ installed: true, version: "0.160.0", tested: "0.144", drifted: true }),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     });
-    expect(messages.errors.some((l) => l.includes("codex 0.160.0 is off the tested 0.144.x line"))).toBe(true);
+    expect(code).toBe(0);
+    const warning = messages.errors.find((line) => line.includes("ejected thread"));
+    expect(warning).toBeDefined();
+    expect(warning).toContain("v0.2.0");
+    expect(warning).toContain("v0.3.0");
+    expect(warning).toContain("changelog");
+    expect(warning).toContain("warning");
+  });
+
+  it("skips the drift check quietly when the installed @vendoai/ui package.json is malformed", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "components", "vendo", "thread"), { recursive: true });
+    await writeFile(
+      join(root, "components", "vendo", "thread", ".vendo-eject.json"),
+      JSON.stringify({ surface: "thread", package: "@vendoai/ui", version: "0.2.0" }),
+    );
+    await mkdir(join(root, "node_modules", "@vendoai", "ui"), { recursive: true });
+    await writeFile(join(root, "node_modules", "@vendoai", "ui", "package.json"), "{not json");
+    const messages = output();
+    const code = await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    });
+    expect(code).toBe(0);
+    expect([...messages.logs, ...messages.errors].some((line) => line.includes("ejected"))).toBe(false);
+  });
+
+  it("passes the drift check when the ejected surface matches the installed @vendoai/ui", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "src", "components", "vendo", "thread"), { recursive: true });
+    await writeFile(
+      join(root, "src", "components", "vendo", "thread", ".vendo-eject.json"),
+      JSON.stringify({ surface: "thread", package: "@vendoai/ui", version: "0.3.0" }),
+    );
+    await mkdir(join(root, "node_modules", "@vendoai", "ui"), { recursive: true });
+    await writeFile(
+      join(root, "node_modules", "@vendoai", "ui", "package.json"),
+      JSON.stringify({ name: "@vendoai/ui", version: "0.3.0" }),
+    );
+    const messages = output();
+    await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    });
+    expect(messages.logs.some((line) => line.includes("ejected thread matches @vendoai/ui v0.3.0"))).toBe(true);
+    expect(messages.errors.some((line) => line.includes("ejected"))).toBe(false);
   });
 });
 

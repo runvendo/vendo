@@ -26,9 +26,10 @@ export const BASE_PATH = "/api/vendo";
 
 export type SandboxVenue = "e2b" | "modal" | "cloud" | "custom" | false;
 
-/** How inference is served: "custom" (a host-passed model — BYO provider or
-    devModel), "cloud" (VENDO_API_KEY → Vendo Cloud managed inference), or off. */
-export type ModelVenue = "custom" | "cloud" | false;
+/** How inference is served: "custom" (a host-passed model), "env-key" (a
+    provider key in the environment → devModel's ladder), "cloud"
+    (VENDO_API_KEY → Vendo Cloud managed inference), or off. */
+export type ModelVenue = "custom" | "env-key" | "cloud" | false;
 
 const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   validation: 400,

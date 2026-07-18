@@ -1,5 +1,5 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 
 export const CLI_VERSION = "0.3.0";
@@ -61,4 +61,12 @@ export function toolingTelemetry(options: {
 export function errorClass(error: unknown): string {
   if (error instanceof Error && error.name) return error.name.slice(0, 64);
   return "unknown";
+}
+
+/** Lockfile-derived package manager for `run dev` (doctor's probe starter). */
+export async function detectPackageManager(root: string): Promise<"pnpm" | "yarn" | "bun" | "npm"> {
+  if (await exists(join(root, "pnpm-lock.yaml"))) return "pnpm";
+  if (await exists(join(root, "yarn.lock"))) return "yarn";
+  if (await exists(join(root, "bun.lockb")) || await exists(join(root, "bun.lock"))) return "bun";
+  return "npm";
 }

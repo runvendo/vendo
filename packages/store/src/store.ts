@@ -1,6 +1,6 @@
 import type { BlobStore, RecordStore, StoreAdapter } from "@vendoai/core";
 import { createBlobStore } from "./blobs.js";
-import { dropEncryptionKey, setEncryptionKey, validateEncryptionKey } from "./crypto.js";
+import { dropEncryptionKey, setEncryptionKey, setPlaintextSecretsAllowed, validateEncryptionKey } from "./crypto.js";
 import { createDb, type Db, type StoreConfig } from "./db.js";
 import { createRecordStore } from "./records.js";
 import { createReservedRecordStore } from "./routing.js";
@@ -46,5 +46,6 @@ export function createStore(config: StoreConfig = {}): VendoStore {
   };
   databases.set(store, db);
   setEncryptionKey(store, encryptionKey);
+  setPlaintextSecretsAllowed(store, encryptionKey === undefined && config.allowUnencryptedSecrets === true);
   return store;
 }

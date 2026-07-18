@@ -175,7 +175,7 @@ export async function runCloudStep(options: CloudStepOptions): Promise<CloudStep
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
   }
   if (key === null) {
-    output.error("Logged in, but this console does not serve the dev-mode starter allowance yet (older console). Set a provider key or ride your Claude/Codex CLI for now.");
+    output.error("Logged in, but this console does not serve the dev-mode starter allowance yet (older console). Set a provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY) for now.");
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
   }
   await upsertEnvLocal(root, "VENDO_API_KEY", key);

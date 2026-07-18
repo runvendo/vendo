@@ -173,7 +173,7 @@ export function unconfiguredModel(): LanguageModel {
   const refuse = (): never => {
     throw new VendoError(
       "not-implemented",
-      "no model configured: pass createVendo({ model }) — e.g. devModel() or your own ai-SDK model — or set VENDO_API_KEY for Vendo Cloud managed inference",
+      "no model configured: set a provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY), set VENDO_API_KEY for Vendo Cloud managed inference, or pass your own ai-SDK model to createVendo({ model })",
     );
   };
   const model: LanguageModelV3Like = {

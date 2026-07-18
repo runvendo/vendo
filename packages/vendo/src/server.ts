@@ -5,7 +5,7 @@ import {
   type Connector,
   type ServerActionHandler,
 } from "@vendoai/actions";
-import { assembleSystemPrompt, createAgent, type VendoAgent } from "@vendoai/agent";
+import { createAgent, type VendoAgent } from "@vendoai/agent";
 import {
   createApps,
   pinBaselineSchema,
@@ -73,10 +73,10 @@ import {
   createCapabilityMissCapture,
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
-import { devModelController } from "./dev-creds/model.js";
-// ENG-338 — the dev-mode model-credential ladder: `devModel()` is what a fresh
-// `vendo init` scaffolds; the resolver is shared by init, doctor, and
-// extraction --deep (one credential story, install-dx design §2).
+import { devModel } from "./dev-creds/model.js";
+// install-dx v1 — `devModel()` is the env-resolving model createVendo composes
+// when the host passes none; the resolver is shared by init and doctor (one
+// credential story, real keys only).
 export {
   devModel,
   DevModelController,
@@ -85,13 +85,11 @@ export {
 } from "./dev-creds/model.js";
 export {
   describeDevCredential,
-  hasSessionConsent,
-  readDevSessionConsent,
   resolveDevCredential,
-  writeDevSessionConsent,
   type DevCredential,
   type ResolveDevCredentialOptions,
 } from "./dev-creds/resolve.js";
+import { ENV_KEY_VARS } from "./dev-creds/resolve.js";
 import {
   byoConnections,
   cloudConnections,
@@ -178,10 +176,12 @@ export interface Vendo {
 }
 
 export interface CreateVendoConfig {
-  /** The inference adapter (03-agent §1): any ai-SDK LanguageModel — your own
-      provider model (BYO, today's default) or devModel()'s ladder. An
-      explicitly passed model always wins; when unset, VENDO_API_KEY selects
-      Vendo Cloud managed inference (precedence: selectModel). */
+  /** The agent's LLM — the inference adapter seam (03-agent §1): any ai-SDK
+      LanguageModel. Optional since install-dx v1: an explicitly passed model
+      always wins (BYO-LLM); when absent the seam resolves a real key from the
+      environment — provider keys via devModel's ladder, then VENDO_API_KEY →
+      Vendo Cloud managed inference — and fails honestly with instructions
+      when none exists (precedence: selectModel). */
   model?: LanguageModel;
   principal: (req: Request) => Promise<Principal | null>;
   /** Host components available to generated apps; entry names must mirror the client-side components map 1:1. */
@@ -357,17 +357,26 @@ function selectConnections(
 /** ADAPTER RULE, inference seam (cloned from selectConnections): the agent and
     apps blocks consume one ai-SDK LanguageModel; which implementation composes
     is decided HERE. Precedence, top to bottom:
-      1. an explicitly passed model always wins (BYO — the host's own provider
-         model or devModel()'s ladder);
-      2. VENDO_API_KEY makes Cloud managed inference the default for the seam
+      1. an explicitly passed model always wins (BYO-LLM — any ai-SDK model,
+         including devModel() itself);
+      2. a provider key in the environment (ANTHROPIC / OPENAI / GOOGLE)
+         composes devModel's env ladder (install-dx v1: real keys only, lazy
+         resolution, honest per-rung failure messages);
+      3. VENDO_API_KEY makes Cloud managed inference the default for the seam
          the host left unfilled (VENDO_CLOUD_URL overrides the console base);
-      3. the unconfigured fallback, which fails closed with setup guidance.
-    The adapters themselves never read the environment. */
+      4. the unconfigured fallback, which fails closed on first use naming
+         both fixes (a provider key or VENDO_API_KEY).
+    The adapters themselves never read the environment; devModel is the one
+    seam-sanctioned lazy env resolver and applies this same order internally
+    (resolveDevCredential) when a host passes it explicitly. */
 function selectModel(configured: LanguageModel | undefined): {
   model: LanguageModel;
   venue: ModelVenue;
 } {
   if (configured !== undefined) return { model: configured, venue: "custom" };
+  if (ENV_KEY_VARS.some(({ envVar }) => environment(envVar) !== undefined)) {
+    return { model: devModel(), venue: "env-key" };
+  }
   const apiKey = environment("VENDO_API_KEY");
   if (apiKey !== undefined) {
     const baseUrl = environment("VENDO_CLOUD_URL");
@@ -470,9 +479,11 @@ function isHostedStore(store: VendoStore): store is HostedStore {
          the host left unfilled (VENDO_CLOUD_URL overrides the console base) —
          Vendo data lives with Vendo, tenant = the key's org, resolved
          server-side on every call;
-      3. the local createStore default, byte-identical to the pre-seam
-         behavior: 02-store §4 default-on encryption picks up
-         VENDO_STORE_ENCRYPTION_KEY (provisioned into .env by `vendo init`).
+      3. the local createStore default (02-store §4 re-derived: encryption is
+         a production-owned concern — with VENDO_STORE_ENCRYPTION_KEY set,
+         stored secrets encrypt at rest; without it, dev mode stores locally
+         unencrypted (the data dir is gitignored) while production secret
+         writes fail closed with instructions).
     The adapters themselves never read the environment. */
 function selectStore(configured: VendoStore | undefined, touchDebounceMs: number): {
   store: VendoStore;
@@ -493,7 +504,9 @@ function selectStore(configured: VendoStore | undefined, touchDebounceMs: number
     return { store: hosted, sessions: hostedSessionOps(hosted, touchDebounceMs) };
   }
   const encryptionKey = environment("VENDO_STORE_ENCRYPTION_KEY");
-  const local = createStore(encryptionKey === undefined ? {} : { encryption: { key: encryptionKey } });
+  const local = createStore(encryptionKey === undefined
+    ? { allowUnencryptedSecrets: environment("NODE_ENV") !== "production" }
+    : { encryption: { key: encryptionKey } });
   return { store: local, sessions: localSessionOps(local) };
 }
 
@@ -752,9 +765,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const sessionNow = sessionsConfig.now ?? Date.now;
   // Persistence, selected by the adapter rule at this composition seam
   // (selectStore above): explicit store → VENDO_API_KEY hosted store → the
-  // local createStore default (unchanged, including 02-store §4 default-on
-  // encryption via VENDO_STORE_ENCRYPTION_KEY). The session doors travel
-  // with the store: SQL registry locally, the store wire when hosted.
+  // local createStore default (02-store §4 re-derived: encryption is
+  // production-owned — VENDO_STORE_ENCRYPTION_KEY encrypts at rest; without
+  // it dev stores locally unencrypted while production secret writes fail
+  // closed). The session doors travel with the store: SQL registry locally,
+  // the store wire when hosted.
   // Touch-debounce window, clamped by BOTH knobs. INVARIANT: the window must
   // sit well inside the TTL, so continuous traffic always refreshes
   // touched_at before the sweep cutoff — with sweepIntervalMs/2 alone, a
@@ -922,19 +937,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
         ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
       }
     : undefined;
-  // ENG-338 dev-mode ladder: when the host's model came from devModel(), wire
-  // its rider seam into the agent — session rungs (authed Claude/Codex CLI
-  // logins) own the model loop while tools + consent stay on the guard-bound
-  // path. Key rungs resolve to null and run the native loop unchanged. The
-  // controller refuses session rungs outright when NODE_ENV === "production".
-  const devController = devModelController(inference.model);
   const agent = createAgent({
     model: inference.model,
     tools: boundTools,
     guard,
-    ...(devController === null
-      ? {}
-      : { rider: { session: ({ threadId }: { threadId: string }) => devController.chatSession(threadId) } }),
     store,
     ...(system === undefined ? {} : { system }),
     context: {
@@ -1070,27 +1076,6 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     || (config.development !== false && environment("NODE_ENV") === "development");
   const developmentPaths = typeof config.development === "object" ? config.development : {};
   const runtimeCapture = development ? createRuntimeCapture(developmentPaths) : null;
-  // ENG-338: pre-spawn the first Claude rider session at dev-server boot (its
-  // spawn+init costs ~12s; the user's first message must not pay it). The
-  // warmup system prompt approximates the loop's (synthetic dev principal);
-  // the adopting thread swaps in its live tool bridge. Fire-and-forget: any
-  // failure just means a cold start on the first message.
-  if (devController !== null && development) {
-    void (async () => {
-      // The warmed Claude session keeps this prompt (adoption never restarts
-      // it), so assemble the SAME brief/catalog system the loop would use.
-      const [descriptors, warmupSystem] = await Promise.all([
-        boundTools.descriptors(),
-        assembleSystemPrompt(guard, {
-          principal: { kind: "user", subject: "vendo_dev_warmup", ephemeral: true },
-          venue: "chat",
-          presence: "present",
-          sessionId: "session_vendo_dev_warmup",
-        }, system, false),
-      ]);
-      devController.warmup({ system: warmupSystem, tools: descriptors });
-    })().catch(() => undefined);
-  }
   const handler = createWireHandler({
     principal: config.principal,
     ready,

@@ -54,6 +54,7 @@
     "build:served-renderer": "node scripts/build-served-app-renderer.mjs",
     "prebuild": "pnpm run build:jail",
     "build": "tsc -p tsconfig.json",
+    "postbuild": "node scripts/build-eject-templates.mjs",
     "pretest": "pnpm run build:jail",
     "test": "vitest run",
     "pretest:coverage": "pnpm run build:jail",
@@ -66,7 +67,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@ai-sdk/react": "^3.0.30",
+    "@ai-sdk/react": "3.0.30",
     "@vendoai/core": "workspace:*",
     "fluidkit": "^0.5.0",
     "motion": "^11.11.0",
@@ -87,7 +88,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "ai": "^6.0.28",
+    "ai": "6.0.28",
     "jsdom": "^25.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

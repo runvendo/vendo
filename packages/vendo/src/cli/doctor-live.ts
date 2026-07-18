@@ -1,25 +1,20 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { stdout } from "node:process";
 import {
-  codexVersionMatchesTested,
-  probeCodexVersion,
-  TESTED_CODEX_MINOR,
-} from "@vendoai/dev-riders";
-import {
   describeDevCredential,
   resolveDevCredential,
   type DevCredential,
   type ResolveDevCredentialOptions,
 } from "../dev-creds/resolve.js";
 import { isVendoKey } from "./cloud/client.js";
-import { detectPackageManager } from "./dev-mode.js";
+import { detectPackageManager } from "./shared.js";
 
 /**
- * ENG-339 (install-dx design §5-6) — doctor v2's live surface: one real model
+ * ENG-339 (install-dx design §5-6) — doctor's live surface: one real model
  * turn through the wired HTTP route, a local VENDO_API_KEY shape check with
- * what Cloud unlocks, a consent-gated dev-server starter for the probe, and a
- * codex app-server protocol-drift warning. All seam-driven so doctor stays
- * testable without live keys or a running server.
+ * what Cloud unlocks, and a consent-gated dev-server starter for the probe.
+ * All seam-driven so doctor stays testable without live keys or a running
+ * server.
  */
 
 /* ------------------------------------------------------------------------ *
@@ -43,7 +38,6 @@ export interface LiveTurnOptions {
   base: string;
   fetchImpl?: typeof fetch;
   env?: Record<string, string | undefined>;
-  probes?: ResolveDevCredentialOptions["probes"];
   /** Stream the reply to the terminal as it arrives. */
   onDelta?: (delta: string) => void;
   timeoutMs?: number;
@@ -61,10 +55,7 @@ export async function liveModelTurn(options: LiveTurnOptions): Promise<LiveTurnR
   const fetchImpl = options.fetchImpl ?? fetch;
   const env = options.env ?? process.env;
   const resolve = options.resolveCredential ?? resolveDevCredential;
-  const credential = await resolve({
-    env,
-    ...(options.probes === undefined ? {} : { probes: options.probes }),
-  });
+  const credential = await resolve({ env });
   const rung = credential.rung;
   const label = describeDevCredential(credential);
   const started = Date.now();
@@ -236,32 +227,6 @@ export async function startDevServerForProbe(options: StartDevServerOptions): Pr
   const up = await waitForStatus(options.statusUrl, fetchImpl, options.timeoutMs ?? 120_000);
   if (!up) stop();
   return { ok: up, stop, log };
-}
-
-/* ------------------------------------------------------------------------ *
- * Codex app-server protocol-drift warning (dev-only, informational).
- * ------------------------------------------------------------------------ */
-
-export interface CodexDriftResult {
-  installed: boolean;
-  version?: string;
-  tested: string;
-  drifted: boolean;
-}
-
-/** Warn when the installed codex minor line differs from the one the rider's
- *  app-server protocol shapes were verified against (spike ENG-337). */
-export async function codexDrift(
-  probe: (command?: string) => Promise<string | null> = probeCodexVersion,
-): Promise<CodexDriftResult> {
-  const version = await probe();
-  if (version === null) return { installed: false, tested: TESTED_CODEX_MINOR, drifted: false };
-  return {
-    installed: true,
-    version,
-    tested: TESTED_CODEX_MINOR,
-    drifted: !codexVersionMatchesTested(version),
-  };
 }
 
 /** Stream a delta to the terminal (default onDelta for the live turn). */

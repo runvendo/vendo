@@ -74,7 +74,7 @@ Because the registry is a table in the same database, sessions survive restarts 
 
 ## Encryption
 
-`createStore({ encryption: { key } })` (base64 32-byte key) encrypts `vendo_secrets.ciphertext` with AES-256-GCM; everything else stays host-queryable plaintext by design. The composed default is on: `vendo init` provisions `VENDO_STORE_ENCRYPTION_KEY` into the host's `.env` and `createVendo` reads it when no store is passed. Ciphertext is bound to its secret name via AAD (`v2` envelope).
+`createStore({ encryption: { key } })` (base64 32-byte key) encrypts `vendo_secrets.ciphertext` with AES-256-GCM; everything else stays host-queryable plaintext by design. Encryption is production-owned: set `VENDO_STORE_ENCRYPTION_KEY` in the deploy environment and `createVendo` reads it when no store is passed; without a key, dev mode stores secrets unencrypted (`allowUnencryptedSecrets`, `plain@1:` envelope) and production secret writes fail closed. Ciphertext is bound to its secret name via AAD (`v2` envelope).
 
 ## Retention and erasure
 
