@@ -54,6 +54,15 @@ source goes to your model provider under your own account). It drafts
 task-oriented tool descriptions, reviews risk grades, wakes statically
 unclassifiable tools with reasoning, and writes the product brief.
 
+The pass runs as a staged pipeline, not one shot: a cheap survey maps the
+repo and groups tools into surfaces (`VENDO_EXTRACTION_SURVEY_MODEL` can
+point it at a faster model), one focused pass drafts each surface, a
+cross-check reviews the combined draft for consistency, and the brief is
+drafted last from what the stages learned. Each stage writes its artifact to
+`.vendo/data/extract/<stage>.json` (gitignored) for inspection, and failures
+degrade per stage — a failed surface is skipped with a note instead of
+aborting the run.
+
 Everything it proposes passes deterministic guards before applying: only
 extracted tool names are accepted, risk can be raised but never lowered,
 waking a disabled tool requires reasoning plus an explicit grade, and human

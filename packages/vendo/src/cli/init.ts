@@ -815,8 +815,9 @@ export async function runInit(options: InitOptions): Promise<number> {
       output.log("No model key yet: set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY in .env.local, or run `vendo cloud login` for a free dev key.");
     }
 
-    // AI extraction (install-dx v1): a coding agent reads the codebase and
-    // drafts descriptions/risk/brief into the override channel; deterministic
+    // AI extraction (install-dx, staged): a coding agent surveys the repo,
+    // drafts each surface in a focused pass, cross-checks the combined draft,
+    // and drafts the brief — all into the override channel; deterministic
     // guards decide what applies. Consent-gated; skipped silently when
     // non-interactive or credential-less. A successful pass re-syncs so
     // tools.json reflects the polish immediately.
