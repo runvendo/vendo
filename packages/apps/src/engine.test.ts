@@ -1384,3 +1384,36 @@ describe("wire extraction tolerance", () => {
     expect(app.tree).toMatchObject({ formatVersion: "vendo-genui/v2" });
   });
 });
+
+describe("tier-2 hot-swap never regresses the resident paint", () => {
+  it("suppresses full-lane partials smaller than the resident tier-0 tree", async () => {
+    const tier0 = '<App name="Instant"><MetricCard label="Revenue" value="--"/><Text text="Loading detail"/></App>';
+    const tier2Chunks = [
+      '<App name="Full">',
+      '<MetricCard label="Revenue" value="$42k"/>',
+      '<Text text="Detail"/><Text text="More"/></App>',
+    ];
+    let calls = 0;
+    const model = scriptedLanguageModel(() => {
+      calls += 1;
+      return calls === 1 ? tier0 : tier2Chunks;
+    });
+    const partials: number[] = [];
+
+    const document = await modelEngine.create(
+      { prompt: "Build it" },
+      {
+        model,
+        catalog,
+        onPartial: (partial: { tree: { nodes: unknown[] } }) => { partials.push(partial.tree.nodes.length); },
+      } as unknown as Parameters<typeof modelEngine.create>[1],
+    );
+
+    expect(document.name).toBe("Full");
+    // Tier-0 painted 3 nodes (root + card + text). Once resident, no later
+    // partial may show fewer nodes than the resident paint.
+    const residentSize = 3;
+    const afterResident = partials.slice(partials.indexOf(residentSize) + 1);
+    expect(afterResident.every((count) => count >= residentSize)).toBe(true);
+  });
+});

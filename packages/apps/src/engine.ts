@@ -872,10 +872,24 @@ export const modelEngine: GenerationEngine = {
         }
       }
     }
+    // The upgrade must never regress the painted surface: while the resident
+    // tier-0 app is on screen, full-lane prefixes smaller than the resident
+    // stay suppressed — the paint holds until the upgrade can replace it
+    // whole (ids stay stable via the TIER0_LAYOUT conditioning).
+    const residentNodes = resident === undefined
+      ? 0
+      : (resident.tree as unknown as TreeV2).nodes.length;
+    const forward = deps.onPartial;
+    const fullLaneDeps: GenerationDependencies = forward === undefined || residentNodes === 0
+      ? deps
+      : {
+        ...deps,
+        onPartial: (partial) => partial.tree.nodes.length < residentNodes ? undefined : forward(partial),
+      };
     let issues: string[] = [];
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const output = await streamWire(
-        deps,
+        fullLaneDeps,
         wireContract(deps),
         `${basePrompt}${residentLayout === undefined
           ? ""
