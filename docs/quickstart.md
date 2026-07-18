@@ -37,6 +37,24 @@ Vendo Cloud is optional. When `VENDO_API_KEY` is set, init validates it and
 states the plan and what it unlocks; when it is absent, init prints one calm
 line and offers `vendo cloud login` only when a starter key would help.
 
+## AI polish (extraction judgment)
+
+Static extraction gets the facts; a coding agent adds the judgment. During an
+interactive `vendo init`, when `@anthropic-ai/claude-agent-sdk` is resolvable
+and a Claude Code login or `ANTHROPIC_API_KEY` exists, init asks once for
+consent and lets the agent read your codebase (read-only: Read/Glob/Grep;
+source goes to your model provider under your own account). It drafts
+task-oriented tool descriptions, reviews risk grades, wakes statically
+unclassifiable tools with reasoning, and writes the product brief.
+
+Everything it proposes passes deterministic guards before applying: only
+extracted tool names are accepted, risk can be raised but never lowered,
+waking a disabled tool requires reasoning plus an explicit grade, and human
+decisions always win (existing `.vendo/overrides.json` fields and a
+hand-written `brief.md` are never overwritten). The output lands in the
+override channel, so `vendo sync` regeneration keeps it. Skipped silently in
+non-interactive runs; re-run `vendo init` any time to add it.
+
 ## Create the server
 
 `createVendo` has this exact configuration surface:

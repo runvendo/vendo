@@ -16,6 +16,7 @@ import type { VendoTheme } from "@vendoai/core";
 import type { Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
 import { runCloudStep, type CloudStepOptions } from "./cloud-init.js";
+import { runAiExtraction, type AiExtractionOptions } from "./extract/extraction.js";
 import { resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
 import { resolveRefineModel } from "./refine.js";
@@ -119,6 +120,8 @@ export interface InitOptions {
   resolveCredential?: (options: { env: Record<string, string | undefined> }) => Promise<DevCredential>;
   /** Test seam (ENG-339): cloud-in-init step overrides. */
   cloud?: Partial<Omit<CloudStepOptions, "root" | "output" | "yes" | "credential">>;
+  /** Test seam: AI extraction step overrides (harnesses, consent). */
+  extract?: Partial<Omit<AiExtractionOptions, "root" | "output" | "yes" | "env">>;
   /** Test seam: the theme LLM pass's model; default rides the refine seam. */
   themeModel?: () => Promise<LanguageModel>;
   /** Uncertain-slot review — asked ONLY when the model reports uncertainty. */
@@ -810,6 +813,24 @@ export async function runInit(options: InitOptions): Promise<number> {
     });
     if (credential.rung === "none") {
       output.log("No model key yet: set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY in .env.local, or run `vendo cloud login` for a free dev key.");
+    }
+
+    // AI extraction (install-dx v1): a coding agent reads the codebase and
+    // drafts descriptions/risk/brief into the override channel; deterministic
+    // guards decide what applies. Consent-gated; skipped silently when
+    // non-interactive or credential-less. A successful pass re-syncs so
+    // tools.json reflects the polish immediately.
+    const polish = await runAiExtraction({
+      root,
+      output,
+      env,
+      yes: options.yes === true,
+      ...(options.force === true ? { force: true } : {}),
+      ...(options.extract ?? {}),
+    });
+    if (polish.ran) {
+      const resynced = await vendoSync({ root, out: join(root, ".vendo") });
+      for (const warning of resynced.warnings) output.error(`warning: ${warning}`);
     }
 
     await telemetry.track("init_completed", {
