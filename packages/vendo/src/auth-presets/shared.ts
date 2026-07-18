@@ -32,9 +32,11 @@ export type HostAuthPresetUserResolver = (
 ) => HostAuthPresetUser | null | Promise<HostAuthPresetUser | null>;
 
 export interface HostAuthPresetOptions {
-  /** The session secret. Default: the provider's own env variable
-      (AUTH_SECRET for Auth.js — mirroring Auth.js itself), resolved lazily
-      per call so composition order never races env loading. */
+  /** The preset's shared session secret (or system-equivalent). Default: the
+      provider's own env variable — AUTH_SECRET for Auth.js, SUPABASE_JWT_SECRET
+      for Supabase, VENDO_AWAY_TOKEN_SECRET (the away-token secret) for
+      Clerk/Auth0 — resolved lazily per call so composition order never races
+      env loading. jwt() has no vendor env to read: its secret is required. */
   secret?: SecretSource;
   user?: HostAuthPresetUserResolver;
 }

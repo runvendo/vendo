@@ -66,8 +66,12 @@ export {
 // 09-vendo §2.1 — host-identity presets, shipped on the server entry: one
 // `auth` key fills the principal, actAs, and oauth seams from one config.
 export {
+  auth0,
   authJs,
+  clerk,
   hostAuthPresetConformance,
+  jwt,
+  supabase,
   type HostAuthPreset,
   type HostAuthPresetConformanceOptions,
   type HostAuthPresetOptions,

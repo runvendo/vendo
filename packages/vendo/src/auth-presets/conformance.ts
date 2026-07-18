@@ -1,4 +1,4 @@
-import { authMaterialSchema, principalSchema, type PermissionGrant, type Principal } from "@vendoai/core";
+import { authMaterialSchema, principalSchema, type AuthMaterial, type PermissionGrant, type Principal } from "@vendoai/core";
 import type { ConformanceSuite } from "@vendoai/core/conformance";
 import type { HostAuthPreset } from "./shared.js";
 
@@ -29,6 +29,14 @@ export interface HostAuthPresetConformanceOptions {
   /** The grant actAs minting is exercised with. Default: a standing tool grant
       for the subject under test. */
   grant?(subject: string): PermissionGrant;
+  /** Out-of-band verification for the actAs round-trip case. Cookie-minting
+      presets (authJs, supabase, jwt) mint AuthMaterial their own `principal`
+      resolver accepts, so the default round-trips through it — but
+      producer/verify-split systems (clerk/auth0, 04 §2.1) mint away-tokens whose
+      verifier is host-mounted middleware, not the preset. Supply the split
+      system's verify half here; return the verified subject, or null when
+      verification rejects the material. */
+  verifyActAs?(material: AuthMaterial): Promise<string | null> | string | null;
 }
 
 const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
@@ -117,7 +125,7 @@ export function hostAuthPresetConformance(opts: HostAuthPresetConformanceOptions
         },
       },
       {
-        name: "01-core §13 — actAs mints AuthMaterial the preset's own principal resolver accepts (round-trip)",
+        name: "01-core §13 — actAs mints AuthMaterial the preset's verification accepts (round-trip)",
         async run(): Promise<void> {
           const material = await requireActAs()(
             { kind: "user", subject: opts.knownSubject },
@@ -126,6 +134,17 @@ export function hostAuthPresetConformance(opts: HostAuthPresetConformanceOptions
           assert(material !== null, "actAs declined the known subject");
           const parsed = authMaterialSchema.safeParse(material);
           assert(parsed.success, "actAs returned invalid AuthMaterial");
+          if (opts.verifyActAs !== undefined) {
+            // Producer/verify-split systems (clerk/auth0): the mint is real iff
+            // the host-mounted verify half accepts it and yields the subject.
+            const subject = await opts.verifyActAs(parsed.data);
+            assert(subject !== null, "actAs round-trip verification rejected the minted material");
+            assert(
+              subject === opts.knownSubject,
+              `actAs round-trip verified the wrong subject: ${subject}`,
+            );
+            return;
+          }
           // The mint is real iff the preset's own session lookup accepts it —
           // the same round-trip the doctor actAs probe drives over the wire.
           const authed = new Request("https://host.conformance.test/api/vendo/doctor/act-as/echo", {
