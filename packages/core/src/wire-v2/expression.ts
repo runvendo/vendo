@@ -15,7 +15,8 @@
 
 import { safeErrorMessage } from "../errors.js";
 import type { Json } from "../ids.js";
-import type { PathBinding, StateBinding } from "../tree.js";
+import { findInvalidReshapeSteps, type ReshapeStep } from "../reshape.js";
+import { isPathBinding, isStateBinding, type PathBinding, type StateBinding } from "../tree.js";
 import { isWellFormedUtf16 } from "./state.js";
 
 /**
@@ -31,8 +32,9 @@ export const WIRE_ISSUE_CODES = [
   "unknown-reference",
   /** `state.<a>.<b>` — state bindings take exactly one key; attribute dropped. */
   "state-depth-unsupported",
-  /** `|` reshape pipe parsed but not executed in wave 1; pipe stripped. */
-  "reshape-unsupported",
+  /** `|` reshape pipe violates the bounded vocabulary (unknown op, arity,
+   *  arg kind, chain cap, malformed call syntax); attribute dropped. */
+  "invalid-reshape",
   // — attribute layer (attributes.ts)
   /** Attribute syntax error (bad char, single-quoted string, missing value, ill-formed UTF-16); attribute dropped or char skipped. */
   "malformed-attribute",
@@ -279,6 +281,93 @@ const parseReference = (state: ParserState): Json | Failed => {
   );
 };
 
+/** v2 spec §3 — one `op(arg, ...)` pipe segment. Args are bare identifiers
+ *  or quoted strings; trailing commas are tolerated (same as arrays). All
+ *  syntax failures are `invalid-reshape` (the attribute drops). */
+const parsePipeStep = (state: ParserState): ReshapeStep | Failed => {
+  skipWhitespace(state);
+  if (state.index >= state.source.length || !IDENTIFIER_START.test(state.source[state.index] as string)) {
+    return fail(state, "invalid-reshape", `expected a reshape op after "|" at index ${state.index}`);
+  }
+  const op = parseIdentifier(state);
+  if (op === FAILED) return FAILED;
+  skipWhitespace(state);
+  if (state.source[state.index] !== "(") {
+    return fail(state, "invalid-reshape", `reshape op "${op}" needs an argument list: ${op}(...)`);
+  }
+  state.index += 1;
+  const args: string[] = [];
+  for (;;) {
+    skipWhitespace(state);
+    if (state.index >= state.source.length) {
+      return fail(state, "invalid-reshape", `unterminated reshape call "${op}(" (expected ')')`);
+    }
+    const char = state.source[state.index] as string;
+    if (char === ")") {
+      state.index += 1;
+      break;
+    }
+    if (char === '"' || char === "'") {
+      const text = parseString(state);
+      if (text === FAILED) return FAILED;
+      args.push(text);
+    } else if (IDENTIFIER_START.test(char)) {
+      const identifier = parseIdentifier(state);
+      if (identifier === FAILED) return FAILED;
+      args.push(identifier);
+    } else {
+      return fail(state, "invalid-reshape", `unexpected character "${char}" in reshape args at index ${state.index}`);
+    }
+    skipWhitespace(state);
+    const next = state.source[state.index];
+    if (next === ",") {
+      state.index += 1;
+      continue;
+    }
+    if (next === ")") {
+      state.index += 1;
+      break;
+    }
+    return fail(state, "invalid-reshape", `expected ',' or ')' in reshape args at index ${state.index}`);
+  }
+  // The step's op is validated as a chain by findInvalidReshapeSteps at the
+  // pipe-chain level; the cast just carries the parsed surface form there.
+  return { op, args } as ReshapeStep;
+};
+
+/**
+ * v2 spec §3 — an optional `| op(...) | op2(...)` chain after a reference.
+ * Legal only on query/state bindings (a pipe after a literal is malformed);
+ * the parsed chain is validated against the closed vocabulary
+ * (findInvalidReshapeSteps — unknown op, arity, format kinds, chain cap) and
+ * compiles onto the binding as canonical `$reshape` steps.
+ */
+const parsePipes = (state: ParserState, base: Json): Json | Failed => {
+  const beforePipe = state.index;
+  skipWhitespace(state);
+  if (state.source[state.index] !== "|") {
+    state.index = beforePipe;
+    return base;
+  }
+  if (!isPathBinding(base) && !isStateBinding(base)) {
+    return malformed(state, `reshape pipes apply to query/state bindings only (at index ${state.index})`);
+  }
+  const steps: ReshapeStep[] = [];
+  while (state.source[state.index] === "|") {
+    state.index += 1;
+    const step = parsePipeStep(state);
+    if (step === FAILED) return FAILED;
+    steps.push(step);
+    skipWhitespace(state);
+  }
+  const violation = findInvalidReshapeSteps(steps);
+  if (violation !== null) {
+    return fail(state, "invalid-reshape", violation);
+  }
+  (base as PathBinding | StateBinding).$reshape = steps;
+  return base;
+};
+
 const parseArray = (state: ParserState): Json[] | Failed => {
   state.index += 1; // consume "["
   const items: Json[] = [];
@@ -362,7 +451,11 @@ const parseValue = (state: ParserState): Json | Failed => {
   if (char === "[") return parseArray(state);
   if (char === "{") return parseObject(state);
   if (char === "-" || (char >= "0" && char <= "9")) return parseNumber(state);
-  if (IDENTIFIER_START.test(char)) return parseReference(state);
+  if (IDENTIFIER_START.test(char)) {
+    const reference = parseReference(state);
+    if (reference === FAILED) return FAILED;
+    return parsePipes(state, reference);
+  }
   return malformed(state, `unexpected character "${char}" at index ${state.index}`);
 };
 
@@ -374,21 +467,11 @@ const parseExpressionUnsafe = (source: string, context: ExpressionContext): Expr
   }
   skipWhitespace(state);
   if (state.index < source.length) {
-    if (source[state.index] === "|") {
-      // Reshape pipe: compile the base value as-is and swallow the rest —
-      // the reshape vocabulary lands in a later wave. Top level only by
-      // design: a pipe nested inside an array/object falls to
-      // malformed-expression in wave 1; wave 3 revisits when the reshape
-      // vocabulary lands.
-      state.index = source.length;
-      state.issues.push({
-        code: "reshape-unsupported",
-        message: "reshape pipes are not supported yet (the reshape vocabulary lands in a later wave); the base value was used as-is",
-      });
-    } else {
-      malformed(state, `unexpected trailing content at index ${state.index}`);
-      return { dropped: true, issues: state.issues };
-    }
+    // A pipe reaching here followed a non-reference value (parsePipes handles
+    // pipes after references, nested included); it is malformed like any
+    // other trailing content.
+    malformed(state, `unexpected trailing content at index ${state.index}`);
+    return { dropped: true, issues: state.issues };
   }
   return { value, dropped: false, issues: state.issues };
 };

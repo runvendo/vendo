@@ -810,10 +810,15 @@ describe("compileWireV2 full-spec-example gate (spec §2)", () => {
     expect(result.issues).toEqual([]);
   });
 
-  it("compiles the spec example WITH the pipe: reshape-unsupported is the sole issue", () => {
+  it("compiles the spec example WITH the pipe to a $reshape binding, zero issues (v2 spec §3)", () => {
     const result = compile(specWire("revenue | asPoints(month, revenue)"));
-    expectSpecTree(result);
-    expect(codes(result)).toEqual(["reshape-unsupported"]);
+    expect(result.issues).toEqual([]);
+    const chart = result.tree.nodes.find((node) => node.id === "linechart-1");
+    expect(chart?.props?.points).toEqual({
+      $path: "/revenue",
+      $reshape: [{ op: "asPoints", args: ["month", "revenue"] }],
+    });
+    expect(result.complete).toBe(true);
   });
 });
 

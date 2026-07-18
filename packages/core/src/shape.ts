@@ -116,7 +116,7 @@ const mergeShapesAt = (a: ShapeType, b: ShapeType, depth: number): ShapeType => 
     }
     return optional.length > 0 ? { kind: "object", fields, optional } : { kind: "object", fields };
   }
-  if (a.kind === b.kind) return { kind: a.kind };
+  if (a.kind === b.kind && a.kind !== "object" && a.kind !== "array") return { kind: a.kind };
   return JSON_SHAPE;
 };
 
