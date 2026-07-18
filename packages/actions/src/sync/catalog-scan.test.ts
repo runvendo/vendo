@@ -84,18 +84,16 @@ describe("deterministic component catalog scan", () => {
     expect(entry?.note).toContain("property render");
   });
 
-  it("lets a statically serializable createVendo catalog registration win", async () => {
+  it("lets a createVendo catalog registration win, deriving its disk schema from the single zod props schema", async () => {
     const root = await host(`
       type ComponentType = (props: unknown) => unknown;
       function MetricCard({ value, tone }: { value: number; tone?: "up" | "down" }) { return <strong>{value}{tone}</strong>; }
       export const hostComponents: Record<string, ComponentType> = { MetricCard: MetricCard as ComponentType };
       export function CatalogRoot() { return <VendoRoot components={hostComponents} />; }
-      const toneSchema = z.enum(["up", "down"]);
       const catalog = [{
         name: "MetricCard",
         description: "Use for one headline metric.",
-        propsSchema: {},
-        propsJsonSchema: { type: "object", properties: { value: { type: "number" }, tone: { enum: toneSchema.options } }, required: ["value"], additionalProperties: false },
+        propsSchema: z.object({ value: z.number(), tone: z.enum(["up", "down"]).optional() }),
         examples: ["<MetricCard value={42} />"],
       }];
       createVendo({ catalog });
@@ -109,11 +107,39 @@ describe("deterministic component catalog scan", () => {
       description: "Use for one headline metric.",
       examples: ["<MetricCard value={42} />"],
       exportPath: "./src/components.tsx#hostComponents.MetricCard",
-      propsSchema: { type: "object", properties: { value: { type: "number" }, tone: { enum: ["up", "down"] } }, required: ["value"], additionalProperties: false },
+      propsSchema: { type: "object", properties: { value: { type: "number" }, tone: { type: "string", enum: ["up", "down"] } }, required: ["value"], additionalProperties: false },
     })]);
   });
 
-  it("omits a registration without propsJsonSchema instead of misusing the entry as its schema", async () => {
+  it("accepts the name-keyed registry form: key is the name, props derive the schema, component is ignored", async () => {
+    const root = await host(`
+      type ComponentType = (props: unknown) => unknown;
+      function MetricCard({ value }: { value: number }) { return <strong>{value}</strong>; }
+      export const hostComponents: Record<string, ComponentType> = { MetricCard: MetricCard as ComponentType };
+      export function CatalogRoot() { return <VendoRoot components={hostComponents} />; }
+      createVendo({ catalog: {
+        MetricCard: {
+          component: hostComponents.MetricCard,
+          description: "Use for one headline metric.",
+          props: z.object({ value: z.number().describe("Value in dollars") }),
+          examples: ["<MetricCard value={42} />"],
+        },
+      } });
+    `);
+
+    const result = await scanComponentCatalog(root);
+    expect(result).toMatchObject({ discovered: 1, registered: 1 });
+    expect(result.entries).toEqual([expect.objectContaining({
+      name: "MetricCard",
+      source: "registered",
+      description: "Use for one headline metric.",
+      examples: ["<MetricCard value={42} />"],
+      exportPath: "./src/components.tsx#hostComponents.MetricCard",
+      propsSchema: { type: "object", properties: { value: { type: "number", description: "Value in dollars" } }, required: ["value"], additionalProperties: false },
+    })]);
+  });
+
+  it("syncs a schema-less registration with the permissive placeholder (01 §14: schema-less entries are legal)", async () => {
     const root = await host(`
       type ComponentType = (props: unknown) => unknown;
       function MetricCard({ value }: { value: number }) { return <strong>{value}</strong>; }
@@ -122,6 +148,53 @@ describe("deterministic component catalog scan", () => {
       const catalog = [{
         name: "MetricCard",
         description: "Use for one headline metric.",
+      }];
+      createVendo({ catalog });
+    `);
+
+    const result = await scanComponentCatalog(root);
+    expect(result).toMatchObject({ discovered: 1, registered: 1 });
+    expect(result.entries).toEqual([expect.objectContaining({
+      name: "MetricCard",
+      source: "registered",
+      description: "Use for one headline metric.",
+      propsSchema: {},
+    })]);
+  });
+
+  it("falls back to a permissive schema with a note when a registration's zod schema is not statically interpretable", async () => {
+    const root = await host(`
+      type ComponentType = (props: unknown) => unknown;
+      function MetricCard({ value }: { value: number }) { return <strong>{value}</strong>; }
+      export const hostComponents: Record<string, ComponentType> = { MetricCard: MetricCard as ComponentType };
+      export function CatalogRoot() { return <VendoRoot components={hostComponents} />; }
+      const catalog = [{
+        name: "MetricCard",
+        description: "Use for one headline metric.",
+        propsSchema: makeDynamicSchema(),
+      }];
+      createVendo({ catalog });
+    `);
+
+    const result = await scanComponentCatalog(root);
+    expect(result).toMatchObject({ discovered: 1, registered: 1 });
+    expect(result.entries).toEqual([expect.objectContaining({
+      name: "MetricCard",
+      source: "registered",
+      propsSchema: {},
+      note: expect.stringContaining("statically"),
+    })]);
+  });
+
+  it("keeps rejecting registrations whose copy is not statically serializable", async () => {
+    const root = await host(`
+      type ComponentType = (props: unknown) => unknown;
+      function MetricCard({ value }: { value: number }) { return <strong>{value}</strong>; }
+      export const hostComponents: Record<string, ComponentType> = { MetricCard: MetricCard as ComponentType };
+      export function CatalogRoot() { return <VendoRoot components={hostComponents} />; }
+      const catalog = [{
+        name: "MetricCard",
+        description: buildDescription(),
       }];
       createVendo({ catalog });
     `);

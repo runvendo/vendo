@@ -4,6 +4,7 @@ import type { JsonSchema } from "@vendoai/core";
 import type tsTypes from "typescript";
 import type { CatalogEntry } from "../formats.js";
 import { walk } from "./common.js";
+import { parseModule, zodFromExpression, type FileModule, type StaticExtraction } from "./static-ts.js";
 
 let ts: typeof tsTypes;
 
@@ -232,6 +233,22 @@ function localConstantJson(constants: Map<string, tsTypes.Expression>, expressio
   return undefined;
 }
 
+interface RegistrationCandidate {
+  name: unknown;
+  description: unknown;
+  examples: unknown;
+  /** The entry's single props schema expression (01 §14: `propsSchema` in the
+   * array form, `props` in the registry form) — a zod expression to interpret
+   * statically; absent for schema-less entries. */
+  schemaExpression: tsTypes.Expression | undefined;
+  module: FileModule;
+  modulePath: string;
+}
+
+/** 04 §1: `catalog@1`'s `propsSchema` field carries the DERIVED JSON Schema.
+ * Sync derives it statically from the registration's single zod schema; the
+ * hand-written `propsJsonSchema` field is gone (01 §14, 2026-07-18). A
+ * schema-less or uninterpretable entry syncs with the permissive placeholder. */
 async function registeredCatalogEntries(
   registrationFiles: string[],
   root: string,
@@ -240,6 +257,7 @@ async function registeredCatalogEntries(
 ): Promise<CatalogEntry[]> {
   const entries: CatalogEntry[] = [];
   const seen = new Set<string>();
+  const extraction: StaticExtraction = { ts, root, modules: new Map() };
   for (const file of registrationFiles) {
     let source: string;
     try {
@@ -247,10 +265,39 @@ async function registeredCatalogEntries(
     } catch {
       continue;
     }
-    const kind = file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-    const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind);
-    const constants = localConstants(sourceFile);
+    const module = parseModule(extraction, file, source);
+    const constants = localConstants(module.sf);
     const modulePath = relativeModulePath(root, file);
+    const candidates: RegistrationCandidate[] = [];
+    const collectArrayEntry = (element: tsTypes.Expression): void => {
+      const rawEntry = resolvedLocalExpression(constants, element);
+      if (!ts.isObjectLiteralExpression(rawEntry)) return;
+      candidates.push({
+        name: localConstantJson(constants, objectField(rawEntry, "name") ?? rawEntry) as unknown,
+        description: localConstantJson(constants, objectField(rawEntry, "description") ?? rawEntry) as unknown,
+        examples: readExamples(constants, rawEntry),
+        schemaExpression: objectField(rawEntry, "propsSchema"),
+        module,
+        modulePath,
+      });
+    };
+    const collectRegistryEntry = (name: string, value: tsTypes.Expression): void => {
+      const rawEntry = resolvedLocalExpression(constants, value);
+      if (!ts.isObjectLiteralExpression(rawEntry)) {
+        candidates.push({ name, description: undefined, examples: undefined, schemaExpression: undefined, module, modulePath });
+        return;
+      }
+      // 01 §14: the registry entry's `component` reference is IGNORED by sync
+      // (and the server) — it exists so the same object serves the client.
+      candidates.push({
+        name,
+        description: localConstantJson(constants, objectField(rawEntry, "description") ?? rawEntry) as unknown,
+        examples: readExamples(constants, rawEntry),
+        schemaExpression: objectField(rawEntry, "props"),
+        module,
+        modulePath,
+      });
+    };
     const visit = (node: tsTypes.Node): void => {
       if (!ts.isCallExpression(node)
         || !ts.isIdentifier(node.expression)
@@ -264,49 +311,65 @@ async function registeredCatalogEntries(
       const catalogExpression = objectField(config, "catalog");
       if (catalogExpression === undefined) return;
       const catalog = resolvedLocalExpression(constants, catalogExpression);
-      if (!ts.isArrayLiteralExpression(catalog)) {
-        warnings.push(`registered component catalog in ${modulePath} is not a statically resolvable array; scanned entries remain authoritative`);
-        return;
-      }
-      for (const element of catalog.elements) {
-        if (ts.isSpreadElement(element)) continue;
-        const rawEntry = resolvedLocalExpression(constants, element);
-        if (!ts.isObjectLiteralExpression(rawEntry)) continue;
-        const name = localConstantJson(constants, objectField(rawEntry, "name") ?? rawEntry) as unknown;
-        const description = localConstantJson(constants, objectField(rawEntry, "description") ?? rawEntry) as unknown;
-        const propsJsonSchemaField = objectField(rawEntry, "propsJsonSchema");
-        const propsJsonSchema = propsJsonSchemaField === undefined
-          ? undefined
-          : localConstantJson(constants, propsJsonSchemaField) as unknown;
-        const rawExamples = objectField(rawEntry, "examples");
-        const examples = rawExamples === undefined ? undefined : localConstantJson(constants, rawExamples);
-        if (typeof name !== "string" || !PASCAL_CASE.test(name)
-          || typeof description !== "string"
-          || propsJsonSchema === null
-          || typeof propsJsonSchema !== "object"
-          || Array.isArray(propsJsonSchema)
-          || (examples !== undefined && (!Array.isArray(examples) || examples.some((example) => typeof example !== "string")))) {
-          warnings.push(`registered component in ${modulePath} could not be serialized deterministically and was omitted`);
-          continue;
+      if (ts.isArrayLiteralExpression(catalog)) {
+        for (const element of catalog.elements) {
+          if (!ts.isSpreadElement(element)) collectArrayEntry(element);
         }
-        if (seen.has(name)) {
-          warnings.push(`registered component ${name} appears more than once; kept the first registration`);
-          continue;
+      } else if (ts.isObjectLiteralExpression(catalog)) {
+        for (const property of catalog.properties) {
+          if (ts.isPropertyAssignment(property)) {
+            const name = propertyName(property.name);
+            if (name !== undefined) collectRegistryEntry(name, property.initializer);
+          }
         }
-        seen.add(name);
-        entries.push({
-          name,
-          exportPath: scanned.get(name)?.exportPath ?? `${modulePath}#catalog.${name}`,
-          propsSchema: propsJsonSchema as Record<string, unknown>,
-          description,
-          ...(examples === undefined ? {} : { examples: examples as string[] }),
-          source: "registered",
-        });
+      } else {
+        warnings.push(`registered component catalog in ${modulePath} is not a statically resolvable array or registry object; scanned entries remain authoritative`);
       }
     };
-    visit(sourceFile);
+    visit(module.sf);
+    for (const candidate of candidates) {
+      const { name, description, examples } = candidate;
+      if (typeof name !== "string" || !PASCAL_CASE.test(name)
+        || typeof description !== "string"
+        || (examples !== undefined && (!Array.isArray(examples) || examples.some((example) => typeof example !== "string")))) {
+        warnings.push(`registered component in ${modulePath} could not be serialized deterministically and was omitted`);
+        continue;
+      }
+      if (seen.has(name)) {
+        warnings.push(`registered component ${name} appears more than once; kept the first registration`);
+        continue;
+      }
+      seen.add(name);
+      let propsSchema: Record<string, unknown> = {};
+      let note: string | undefined;
+      if (candidate.schemaExpression !== undefined) {
+        const interpreted = await zodFromExpression(extraction, candidate.module, candidate.schemaExpression, 0);
+        if (interpreted.recognized) {
+          propsSchema = interpreted.schema;
+          if (interpreted.reason !== undefined) {
+            note = `Props schema is partially permissive because parts could not be statically interpreted: ${interpreted.reason}.`;
+          }
+        } else {
+          note = `Props schema is permissive because the registration's schema could not be statically interpreted: ${interpreted.reason ?? "unrecognized schema expression"}. The runtime derives the real schema from the live registration.`;
+        }
+      }
+      entries.push({
+        name,
+        exportPath: scanned.get(name)?.exportPath ?? `${modulePath}#catalog.${name}`,
+        propsSchema,
+        description,
+        ...(examples === undefined ? {} : { examples: examples as string[] }),
+        source: "registered",
+        ...(note === undefined ? {} : { note }),
+      });
+    }
   }
   return entries.sort((left, right) => compareText(left.name, right.name));
+}
+
+function readExamples(constants: Map<string, tsTypes.Expression>, entry: tsTypes.ObjectLiteralExpression): unknown {
+  const raw = objectField(entry, "examples");
+  return raw === undefined ? undefined : localConstantJson(constants, raw);
 }
 
 function exportedObjectCandidates(

@@ -227,7 +227,7 @@ export function unrecognized(reason: string): ZodSchemaResult {
 }
 
 const ZOD_PASSTHROUGH_MODIFIERS = new Set([
-  "trim", "refine", "superRefine", "transform", "describe", "brand", "readonly",
+  "trim", "refine", "superRefine", "transform", "brand", "readonly",
   "regex", "startsWith", "endsWith", "includes", "toLowerCase", "toUpperCase",
   "catch", "passthrough", "strict", "strip", "positive", "nonnegative", "negative",
   "nonpositive", "finite", "safe", "step", "multipleOf", "length", "nonempty", "cuid", "cuid2", "ulid", "nanoid",
@@ -379,6 +379,13 @@ function applyZodModifier(
   const { ts } = extraction;
   switch (method) {
     case "optional": return { ...inner, optional: true };
+    case "describe": {
+      // Descriptions are prompt-load-bearing (04 §1: the derived schema drives
+      // the generation prompt) — carry a static string through instead of
+      // dropping it as a passthrough modifier.
+      const value = call.arguments[0] ? literalValue(extraction, call.arguments[0]) : undefined;
+      return typeof value === "string" ? { ...inner, schema: { ...inner.schema, description: value } } : inner;
+    }
     case "nullish": return { ...inner, optional: true, schema: nullable(inner.schema) };
     case "nullable": return { ...inner, schema: nullable(inner.schema) };
     case "default": {
