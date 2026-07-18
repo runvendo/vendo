@@ -1,5 +1,5 @@
 import { authJsPreset, type SecretSource } from "@vendoai/actions/presets";
-import type { Principal } from "@vendoai/core";
+import type { ActAs, Principal } from "@vendoai/core";
 import type { HostOAuthAdapter } from "@vendoai/mcp";
 import { environment } from "../wire/shared.js";
 import type { HostAuthPreset, HostAuthPresetOptions, HostAuthPresetUser } from "./shared.js";
@@ -17,16 +17,23 @@ type AuthJsGetToken = (params: {
     peerDependency loaded lazily on first use — a host wiring authJs() already
     runs Auth.js, so it is present next to their auth setup. The failure is an
     actionable install instruction, not a bare module-not-found. */
+const MISSING_AUTH_CORE_MESSAGE =
+  "authJs() reads the Auth.js session through @auth/core, which is not installed. Install it alongside your Auth.js setup: npm install @auth/core";
+
+/** Node's dynamic-import failure for a package that simply isn't installed. */
+function isAuthCoreNotFound(error: unknown): boolean {
+  return error instanceof Error
+    && (error as { code?: unknown }).code === "ERR_MODULE_NOT_FOUND"
+    && error.message.includes("@auth/core");
+}
+
 let getTokenPromise: Promise<AuthJsGetToken> | undefined;
 function loadGetToken(): Promise<AuthJsGetToken> {
   getTokenPromise ??= import("@auth/core/jwt").then(
     (module) => module.getToken as unknown as AuthJsGetToken,
     (cause) => {
       getTokenPromise = undefined; // let a later call retry after an install
-      throw new Error(
-        "authJs() reads the Auth.js session through @auth/core, which is not installed. Install it alongside your Auth.js setup: npm install @auth/core",
-        { cause: cause as Error },
-      );
+      throw new Error(MISSING_AUTH_CORE_MESSAGE, { cause: cause as Error });
     },
   );
   return getTokenPromise;
@@ -133,23 +140,36 @@ export function authJs(options: HostAuthPresetOptions = {}): HostAuthPreset {
   // secret/posture/identity this preset resolves sessions with. Without a
   // subject→user resolver nothing can decline, and the mint carries only `sub`
   // (there are no claims to look up) — which is what lets the doctor's
-  // synthetic actAs probe round-trip. NOTE: the posture is captured when
-  // authJs() is called (composition time), same as demo-bank's module-level
-  // actAsMapleUser.
-  const actAs = authJsPreset({
-    ...(secret === undefined ? {} : { secret }),
-    secureCookie: isSecureDeployment(),
-    ...(user === undefined ? {} : {
-      claims: async (grantPrincipal: Principal) => {
-        const resolved = await user(grantPrincipal.subject, {});
-        if (resolved === null) return null;
-        return {
-          ...(resolved.display === undefined ? {} : { name: resolved.display }),
-          ...(resolved.email === undefined ? {} : { email: resolved.email }),
-        };
-      },
-    }),
-  });
+  // synthetic actAs probe round-trip. Built lazily on FIRST MINT and cached
+  // (its TokenCache survives across calls): the secure-cookie posture then
+  // resolves at use time like the secret does, never racing env loading at
+  // composition. A missing @auth/core fails with the same actionable install
+  // error as the other two halves, not the encoder's bare module-not-found.
+  let mint: ActAs | undefined;
+  const actAs: ActAs = async (grantPrincipal, grant) => {
+    mint ??= authJsPreset({
+      ...(secret === undefined ? {} : { secret }),
+      secureCookie: isSecureDeployment(),
+      ...(user === undefined ? {} : {
+        claims: async (claimsPrincipal: Principal) => {
+          const resolved = await user(claimsPrincipal.subject, {});
+          if (resolved === null) return null;
+          return {
+            ...(resolved.display === undefined ? {} : { name: resolved.display }),
+            ...(resolved.email === undefined ? {} : { email: resolved.email }),
+          };
+        },
+      }),
+    });
+    try {
+      return await mint(grantPrincipal, grant);
+    } catch (error) {
+      if (isAuthCoreNotFound(error)) {
+        throw new Error(MISSING_AUTH_CORE_MESSAGE, { cause: error as Error });
+      }
+      throw error;
+    }
+  };
 
   // The door's identity seam (10-mcp §3): host session lookup + subject
   // resolution; the door owns consent, CSRF, replay, and redirects.

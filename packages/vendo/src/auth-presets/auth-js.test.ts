@@ -1,8 +1,9 @@
 import { encode } from "@auth/core/jwt";
 import type { PermissionGrant } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { hostAuthPresetConformance } from "./conformance.js";
-import { authJs } from "./index.js";
+// The kit ships publicly next to the presets (imported here through the same
+// entry hosts use, pinning the re-export).
+import { authJs, hostAuthPresetConformance } from "./index.js";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -161,6 +162,16 @@ describe("authJs() secure-cookie posture (https VENDO_BASE_URL)", () => {
     const material = await preset.actAs?.({ kind: "user", subject: "user_dev" }, grantFor("user_dev"));
     expect(material?.headers["cookie"]).toMatch(/^authjs\.session-token=/);
   });
+
+  it("resolves the actAs posture lazily at FIRST MINT, not at authJs() call time", async () => {
+    // Composition can run before env loading settles (the same rationale as
+    // per-call secret resolution): the preset built with no VENDO_BASE_URL in
+    // sight must still mint __Secure- once the deployment turns out secure.
+    const preset = authJs({ secret });
+    vi.stubEnv("VENDO_BASE_URL", "https://app.example.com");
+    const material = await preset.actAs?.({ kind: "user", subject: "user_late_env" }, grantFor("user_late_env"));
+    expect(material?.headers["cookie"]).toMatch(/^__Secure-authjs\.session-token=/);
+  });
 });
 
 describe("authJs() oauth login redirect", () => {
@@ -177,6 +188,21 @@ describe("authJs() oauth login redirect", () => {
     expect(location.origin).toBe("https://public.example.com");
     expect(location.pathname).toBe("/login");
     expect(location.searchParams.get("returnTo")).toBe(returnTo);
+  });
+
+  it("conformance redirect case honors an operator-set VENDO_BASE_URL (env-aware expected origin)", async () => {
+    // Correct preset behavior redirects to the PUBLIC origin when
+    // VENDO_BASE_URL is set; the kit's expectation must move with it instead
+    // of failing on the runner's environment.
+    vi.stubEnv("VENDO_BASE_URL", "https://public.example.com");
+    const suite = hostAuthPresetConformance({
+      preset: authJs({ secret, user: userResolver }),
+      sessionRequest: async (subject) => withCookie(await sessionCookie(subject, {}, "__Secure-authjs.session-token")),
+      knownSubject: "maple_yousef",
+      unknownSubject: "intruder",
+    });
+    const redirectCase = suite.cases.find((c) => c.name.includes("redirects a sessionless request"));
+    await expect(redirectCase!.run()).resolves.toBeUndefined();
   });
 
   it("resolves a per-call secret function lazily (demo-bank's () => authSecret() idiom)", async () => {

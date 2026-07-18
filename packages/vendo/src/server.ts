@@ -67,7 +67,9 @@ export {
 // `auth` key fills the principal, actAs, and oauth seams from one config.
 export {
   authJs,
+  hostAuthPresetConformance,
   type HostAuthPreset,
+  type HostAuthPresetConformanceOptions,
   type HostAuthPresetOptions,
   type HostAuthPresetUser,
   type HostAuthPresetUserResolver,

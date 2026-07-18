@@ -38,6 +38,24 @@ const assert: (condition: unknown, message: string) => asserts condition = (cond
 const defaultAnonymousRequest = (): Request =>
   new Request("https://host.conformance.test/api/vendo/threads");
 
+/** The deployment's public origin, computed exactly the way the presets do:
+    the operator-set VENDO_BASE_URL when configured (empty string = unset, the
+    umbrella's `environment()` semantics), else the request's own origin. Kept
+    env-aware so the redirect case passes on CORRECT preset behavior whether or
+    not the suite's runner has VENDO_BASE_URL in its environment. */
+const publicOrigin = (request: Request): string => {
+  const base = typeof process === "undefined" ? undefined : process.env["VENDO_BASE_URL"];
+  if (base !== undefined && base.length > 0) {
+    try {
+      return new URL(base).origin;
+    } catch {
+      // An unparseable base is an env misconfiguration; fall back to the
+      // request origin rather than failing the case on the harness's env.
+    }
+  }
+  return new URL(request.url).origin;
+};
+
 const defaultGrant = (subject: string): PermissionGrant => ({
   id: "grt_host_auth_preset_conformance",
   subject,
@@ -152,8 +170,8 @@ export function hostAuthPresetConformance(opts: HostAuthPresetConformanceOptions
           assert(location !== null, "oauth.session redirect carries no location");
           const target = new URL(location);
           assert(
-            target.origin === new URL(request.url).origin,
-            `oauth.session redirected off the request's public origin: ${target.origin}`,
+            target.origin === publicOrigin(request),
+            `oauth.session redirected off the deployment's public origin: ${target.origin}`,
           );
           assert(
             target.searchParams.get("returnTo") === returnTo,
