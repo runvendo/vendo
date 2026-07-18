@@ -216,8 +216,13 @@ export async function runAiRepoMatrix(options: RunAiRepoMatrixOptions): Promise<
 
     // Preserve the per-stage artifacts the pipeline wrote into the repo's
     // `.vendo/data/extract/` — the next model's run clears that directory.
+    // A run that died before its first stage has no directory to copy.
     const stageDir = path.join(options.appRoot, ".vendo", "data", "extract");
-    await cp(stageDir, path.join(artifactsDir, "stages"), { recursive: true, force: true }).catch(() => {});
+    try {
+      await cp(stageDir, path.join(artifactsDir, "stages"), { recursive: true, force: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
     if (notes.length > 0) {
       await writeFile(path.join(artifactsDir, "notes.txt"), `${notes.join("\n")}\n`);
     }
