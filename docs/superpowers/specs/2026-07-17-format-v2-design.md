@@ -402,7 +402,9 @@ format:
 
 ## 7. Open questions for Yousef
 
-Each with a recommendation; none block starting the compiler + renderer.
+> **DECIDED 2026-07-17: Yousef accepted every recommendation below verbatim**
+> ("accept", simplify-v2 session). Each item now reads as the decision of
+> record; the "Recommend" phrasing is preserved for the reasoning trail.
 
 1. **Stdlib/macro launch scope.** How many entries at launch? —
    **Recommend:** start ~20–30 (the corpus's repeat offenders: record table,
