@@ -51,6 +51,10 @@ const VendoContext = createContext<VendoContextValue | null>(null);
  * takes as `catalog`). */
 export type HostComponentsInput = Record<string, ComponentType> | ComponentRegistry;
 
+/** Safe narrow: a plain-map value is a function/class component or an exotic
+ * React component object ($$typeof/render/type — never a `component` field),
+ * while a registry entry always carries `component` plus its REQUIRED string
+ * `description` (01 §14). Both checks together rule out misdetection. */
 function isRegistryEntry(value: ComponentType | ComponentRegistryEntry): value is ComponentRegistryEntry {
   return typeof value === "object" && value !== null
     && "component" in value
