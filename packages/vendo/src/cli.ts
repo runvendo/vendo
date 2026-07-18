@@ -2,6 +2,7 @@ import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { runCloud } from "./cli/cloud/index.js";
 import { runDoctor } from "./cli/doctor.js";
+import { runEject } from "./cli/eject.js";
 import { runInit } from "./cli/init.js";
 import { runMcp } from "./cli/mcp/index.js";
 import { runPlayground } from "./cli/playground.js";
@@ -19,6 +20,7 @@ Commands:
 
 Advanced:
   sync [dir]      Re-extract tools and baselines (init hooks this into predev/prebuild; --strict is the CI gate)
+  eject <surface> [dir]  Copy a shipped chrome surface's presentation source into your repo (--list to see surfaces)
   refine [dir]    Propose compound capabilities, risk corrections, and brief updates as reviewable diffs
   playground      Render every Vendo surface against scripted data in the browser — no model key needed
   mcp <command>   Generate MCP registry discovery and domain-verification files
@@ -27,7 +29,8 @@ Advanced:
 Options:
   --agent                    Init only: print a read-only JSON plan — code changes, extracted tools, risk recommendations
   --yes                      Init: skip the cloud-login offer; refine: approve displayed diffs; doctor: auto-start the dev server
-  --force                    Init/server-json: overwrite owned or generated files
+  --force                    Init/server-json: overwrite owned or generated files; eject: overwrite an ejected dir
+  --list                     Eject only: show the ejectable surfaces
   --model-import <specifier> Refine only: module exporting the host's ai-SDK model
   --ask <text>               Refine only: interview answer (repeatable) for non-interactive runs
   --url <url>                Doctor/refine/server-json: mounted wire base or public MCP URL
@@ -142,6 +145,17 @@ export async function main(argv: string[]): Promise<number> {
       targetDir: target(args),
       agent: args.includes("--agent"),
       yes: args.includes("--yes"),
+      force: args.includes("--force"),
+    });
+  }
+  if (command === "eject") {
+    const positional = args.filter((value) => !value.startsWith("--"));
+    const list = args.includes("--list");
+    // `eject --list [dir]` has no surface positional — the first one is the dir.
+    return runEject({
+      surface: list ? undefined : positional[0],
+      targetDir: (list ? positional[0] : positional[1]) ?? process.cwd(),
+      list,
       force: args.includes("--force"),
     });
   }
