@@ -1,0 +1,98 @@
+import { execFile } from "node:child_process";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { consoleOutput, type Output } from "./shared.js";
+
+/**
+ * `vendo playground` — a local page rendering every shipped Vendo surface
+ * against scripted (director-mode) data: no model key, no database, no host
+ * app. install-dx design §8; the page itself ships in ./playground/.
+ */
+
+export interface PlaygroundServer {
+  url: string;
+  close(): Promise<void>;
+}
+
+function pageHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Vendo Playground</title>
+</head>
+<body>
+<div id="root"></div>
+</body>
+</html>
+`;
+}
+
+export async function startPlaygroundServer(options: { port?: number }): Promise<PlaygroundServer> {
+  const server = createServer((request, response) => {
+    if (request.method !== "GET") {
+      response.writeHead(405).end();
+      return;
+    }
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(pageHtml());
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(options.port ?? 0, "127.0.0.1", () => resolve());
+  });
+
+  const { port } = server.address() as AddressInfo;
+  return {
+    url: `http://127.0.0.1:${port}`,
+    close: () =>
+      new Promise((resolve, reject) => {
+        server.closeAllConnections();
+        server.close((error) => (error ? reject(error) : resolve()));
+      }),
+  };
+}
+
+export interface PlaygroundOptions {
+  port?: number;
+  /** When false (`--no-open`), print the URL without launching the browser. */
+  open?: boolean;
+  output?: Output;
+  /** Test seams. */
+  openBrowser?: (url: string) => void;
+  /** When false, return right after startup instead of blocking until Ctrl+C. */
+  wait?: boolean;
+}
+
+function defaultOpenBrowser(url: string): void {
+  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+  execFile(command, [url], () => undefined);
+}
+
+export async function runPlayground(options: PlaygroundOptions = {}): Promise<number> {
+  const output = options.output ?? consoleOutput;
+
+  let server: PlaygroundServer;
+  try {
+    server = await startPlaygroundServer({ port: options.port });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "unknown error";
+    output.error(`vendo playground: could not listen on port ${options.port ?? 0} (${detail}) — pass a different --port`);
+    return 1;
+  }
+
+  output.log(`Vendo playground running at ${server.url}`);
+  output.log("Every surface, scripted data, no model key. Press Ctrl+C to stop.");
+  if (options.open !== false) (options.openBrowser ?? defaultOpenBrowser)(server.url);
+
+  if (options.wait === false) {
+    await server.close();
+    return 0;
+  }
+
+  await new Promise<void>((resolve) => process.once("SIGINT", resolve));
+  await server.close();
+  return 0;
+}
