@@ -40,6 +40,24 @@ describe("greeting-as-tutorial on VendoPage", () => {
     expect(hasSeen("greeting")).toBe(true);
   });
 
+  it("a FAILED thread list never burns the greeting — an error is not proof of a new user (Greptile PR#365)", async () => {
+    vi.spyOn(client.threads, "list").mockRejectedValue(new Error("wire down"));
+    render(<VendoProvider client={client}><VendoPage /></VendoProvider>);
+    // Let the rejected list settle (isLoading -> false with an error).
+    await waitFor(() => expect(intro()).toBeNull());
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(intro()).toBeNull();
+    expect(hasSeen("greeting")).toBe(false);
+    // While the list is erroring, first-ness stays unverifiable — even an
+    // explicit New conversation (a state no-op here: the page already sits on
+    // the fresh landing) withholds the greeting rather than risk burning it.
+    // The user's one showing arrives on a later visit with a healthy list.
+    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(intro()).toBeNull();
+    expect(hasSeen("greeting")).toBe(false);
+  });
+
   it("brand-new user (no conversations): the settled empty landing shows the tutorial", async () => {
     vi.spyOn(client.threads, "list").mockResolvedValue([]);
     render(<VendoProvider client={client}><VendoPage /></VendoProvider>);

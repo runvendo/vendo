@@ -22,7 +22,7 @@ function title(tab: Tab): string {
 
 function ChatWorkspace() {
   const takeover = useMobileTakeover();
-  const { threads, isLoading, refresh } = useThreads();
+  const { threads, isLoading, error: threadsError, refresh } = useThreads();
   const [selected, setSelected] = useState<string>();
   // ENG-222 — the thr_ the server mints for a "New conversation" turn. Tracked
   // separately from `selected` (which drives VendoThread's threadId prop) so a
@@ -90,12 +90,18 @@ function ChatWorkspace() {
               one-time greeting for a returning user who is about to be snapped
               to their latest conversation. Hold the dial quiet until the
               surface has SETTLED on a genuinely fresh thread: list resolved
-              with no conversations, or an explicit user choice (userChose is
-              set synchronously before the click's re-render). */}
+              with no conversations (a FAILED list proves nothing — the empty
+              array is just the initial value, so an error keeps the gate
+              shut), or an explicit user choice (userChose is set
+              synchronously before the click's re-render). */}
           <VendoThread
             threadId={selected}
             onThreadId={onThreadId}
-            discoverability={!isLoading && (userChose.current || threads.length === 0) ? undefined : "quiet"}
+            discoverability={
+              userChose.current || (!isLoading && threadsError === undefined && threads.length === 0)
+                ? undefined
+                : "quiet"
+            }
           />
         </div>
       </div>
