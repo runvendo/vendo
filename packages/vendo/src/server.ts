@@ -9,6 +9,7 @@ import { createAgent, type VendoAgent } from "@vendoai/agent";
 import {
   createApps,
   pinBaselineSchema,
+  type AppsConfig,
   type AppsRuntime,
   type PinBaseline,
   type SandboxAdapter,
@@ -177,6 +178,10 @@ export interface CreateVendoConfig {
       Vendo Cloud managed inference — and fails honestly with instructions
       when none exists (precedence: selectModel). */
   model?: LanguageModel;
+  /** v2 spec §4 — tier-0 paint lane knob for app generation. `model` is the
+      no-think switch (a thinking-disabled model instance for the instant
+      paint); `disabled` forces single-lane generation. */
+  paint?: AppsConfig["paint"];
   principal: (req: Request) => Promise<Principal | null>;
   /** Host components available to generated apps; entry names must mirror the client-side components map 1:1. */
   catalog?: ComponentCatalog;
@@ -894,6 +899,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     model: inference.model,
     catalog,
     pinBaselines,
+    ...(config.paint === undefined ? {} : { paint: config.paint }),
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
     secrets: config.secrets ?? envSecrets(),

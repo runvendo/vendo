@@ -27,27 +27,16 @@ interface AppDoc {
   tree: { nodes: TreeNode[] };
 }
 
-const CREATE_DIALECT = {
-  name: "Greeting",
-  description: "A greeting card",
-  tree: {
-    formatVersion: "vendo-genui/v1",
-    root: "root",
-    nodes: [
-      { id: "root", component: "Stack", source: "prewired", children: ["greeting"] },
-      { id: "greeting", component: "Text", source: "prewired", props: { text: "Hello" } },
-    ],
-  },
-};
+const CREATE_DIALECT = '<App name="Greeting"><Text text="Hello"/></App>';
 
 // EDIT-TREE dialect: patch the greeting text. The instruction avoids the
 // engine's server-keyword heuristic so it routes to the tree (not code) dialect.
 const EDIT_DIALECT = {
-  ops: [{ op: "set-prop", nodeId: "greeting", prop: "text", value: "Goodbye" }],
+  ops: [{ op: "set-prop", nodeId: "text-1", prop: "text", value: "Goodbye" }],
 };
 
 const greetingText = (doc: AppDoc): string | undefined =>
-  doc.tree.nodes.find((node) => node.id === "greeting")?.props?.text;
+  doc.tree.nodes.find((node) => node.id === "text-1")?.props?.text;
 
 let stack: Stack;
 afterEach(async () => {

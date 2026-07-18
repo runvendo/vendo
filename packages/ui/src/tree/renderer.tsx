@@ -4,6 +4,7 @@ import {
   isStateBinding,
   validateTree,
   VENDO_TREE_FORMAT,
+  VENDO_TREE_FORMAT_V2,
   type Json,
   type PathBinding,
   type ToolOutcome,
@@ -11,6 +12,7 @@ import {
   type TreeNode,
   type UIPayload,
 } from "@vendoai/core";
+import { convertV2Payload } from "./renderer-v2.js";
 import {
   useCallback,
   useMemo,
@@ -63,6 +65,25 @@ function VendoTreeRenderer({ payload, ...props }: PayloadRendererProps) {
 }
 
 registerTreeRenderer(VENDO_TREE_FORMAT, VendoTreeRenderer);
+
+/** v2 spec §1 — a validated v2 payload converts to the v1 tree shape and
+ *  walks the SAME TreeView (renderer-v2.tsx documents the mapping). The
+ *  registration lives here, in PayloadView's own module: the package is
+ *  `sideEffects: false`, so a registration-only import would be tree-shaken
+ *  out of host bundles. */
+function VendoTreeV2Renderer({ payload, ...props }: PayloadRendererProps) {
+  const converted = useMemo(() => convertV2Payload(payload), [payload]);
+  if (!converted.ok) {
+    return (
+      <ContainedNotice label="Invalid UI tree" code={converted.error.code}>
+        {`${converted.error.code}: ${converted.error.message}`}
+      </ContainedNotice>
+    );
+  }
+  return <TreeView tree={converted.tree} {...props} />;
+}
+
+registerTreeRenderer(VENDO_TREE_FORMAT_V2, VendoTreeV2Renderer);
 
 /** 01-core §8 — renderer dispatch is exclusively by the payload tag. */
 export function PayloadView(props: PayloadRendererProps) {

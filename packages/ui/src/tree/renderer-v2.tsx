@@ -1,7 +1,6 @@
 import {
   validateTreeV2,
   VENDO_TREE_FORMAT,
-  VENDO_TREE_FORMAT_V2,
   type Json,
   type Tree,
   type TreeNode,
@@ -9,9 +8,6 @@ import {
   type TreeQueryV2,
   type TreeV2,
 } from "@vendoai/core";
-import { useMemo } from "react";
-import { ContainedNotice } from "./notice.js";
-import { registerTreeRenderer, TreeView, type PayloadRendererProps } from "./renderer.js";
 
 /**
  * v2 spec §1 (docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md) —
@@ -28,6 +24,11 @@ import { registerTreeRenderer, TreeView, type PayloadRendererProps } from "./ren
  * - component sources ride on the PAYLOAD (app-document level), never the
  *   canonical tree — validateTreeV2 rejects tree-carried `components`, so
  *   they are lifted off before validation and re-attached for the walk.
+ *
+ * This module is a PURE converter. The registry registration lives in
+ * renderer.tsx next to PayloadView: the ui package is `sideEffects: false`,
+ * so a registration-only side-effect import would be tree-shaken out of
+ * host bundles (caught live in the Wave 2 browser gate).
  */
 
 /** wire-v2 D5 — the canonical action prop shape `{ action: "tool" | "fn:..." }`. */
@@ -58,11 +59,11 @@ const convertQuery = (query: TreeQueryV2): TreeQuery => ({
   ...(query.input === undefined ? {} : { input: query.input }),
 });
 
-type ConvertedV2 =
+export type ConvertedV2 =
   | { ok: true; tree: Tree }
   | { ok: false; error: { code: "version" | "provision"; message: string } };
 
-function convertV2Payload(payload: PayloadRendererProps["payload"]): ConvertedV2 {
+export function convertV2Payload(payload: { formatVersion: string }): ConvertedV2 {
   // Sources live at the app-document level; the payload may carry them
   // alongside the tree, but the canonical v2 tree must not (validateTreeV2
   // rejects it), so they are lifted off before the gate.
@@ -84,17 +85,3 @@ function convertV2Payload(payload: PayloadRendererProps["payload"]): ConvertedV2
     } as Tree,
   };
 }
-
-function VendoTreeV2Renderer({ payload, ...props }: PayloadRendererProps) {
-  const converted = useMemo(() => convertV2Payload(payload), [payload]);
-  if (!converted.ok) {
-    return (
-      <ContainedNotice label="Invalid UI tree" code={converted.error.code}>
-        {`${converted.error.code}: ${converted.error.message}`}
-      </ContainedNotice>
-    );
-  }
-  return <TreeView tree={converted.tree} {...props} />;
-}
-
-registerTreeRenderer(VENDO_TREE_FORMAT_V2, VendoTreeV2Renderer);

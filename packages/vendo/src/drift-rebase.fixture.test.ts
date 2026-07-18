@@ -118,7 +118,7 @@ export const hostCatalog = [{
       name: "Maple overview",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Stack", source: "prewired" }],
       },

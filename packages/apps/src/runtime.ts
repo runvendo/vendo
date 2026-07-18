@@ -1,4 +1,5 @@
 import {
+  VENDO_TREE_FORMAT_V2,
   VendoError,
   validateAppDocument,
   type AppDocument,
@@ -64,6 +65,10 @@ export interface AppsConfig {
   tools: ToolRegistry;
   sandbox?: SandboxAdapter;
   model?: LanguageModel;
+  /** v2 spec §4 — tier-0 paint lane knob, passed to the generation engine.
+   *  `model` is the no-think switch (a thinking-disabled model instance);
+   *  `disabled` forces single-lane generation. */
+  paint?: GenerationDependencies["paint"];
   catalog: ComponentCatalog;
   theme?: VendoTheme;
   secrets?: SecretsProvider;
@@ -321,6 +326,7 @@ const generationDependencies = (
   theme: config.theme,
   designRules: config.designRules,
   pinBaselines: config.pinBaselines,
+  ...(config.paint === undefined ? {} : { paint: config.paint }),
   ...(onPartial === undefined ? {} : { onPartial }),
 });
 
@@ -333,7 +339,7 @@ const stripServerAuthoritativeFields = (payload: object): void => {
 };
 
 const pinnedSubtree = (app: AppDocument, componentName: string): unknown[] => {
-  if (app.tree?.formatVersion !== "vendo-genui/v1") return [];
+  if (app.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) return [];
   const tree = app.tree as unknown as Tree;
   const included = new Set(tree.nodes.filter((node) => node.component === componentName).map((node) => node.id));
   const pending = [...included];
@@ -741,8 +747,13 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       const generated = await engine.create(
         { prompt: input.prompt },
         generationDependencies(config, config.model, input.onView === undefined ? undefined : (partial) => {
-          latestTree = structuredClone(partial.tree);
-          emit(latestTree);
+          // v2 spec §1 — the payload carries islands at payload level (the
+          // renderer lifts them); a mid-stream payload is marked streaming.
+          latestTree = {
+            ...(structuredClone(partial.tree) as unknown as Tree),
+            ...(partial.components === undefined ? {} : { components: structuredClone(partial.components) }),
+          };
+          emit({ ...structuredClone(latestTree), streaming: true } as Tree);
           queryResolver?.update(latestTree);
         }),
       );
@@ -754,7 +765,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // venue or drift field has no business being persisted in the first place.
       if (app.tree !== undefined) stripServerAuthoritativeFields(app.tree);
       let finalTree: Tree | undefined;
-      if (input.onView !== undefined && app.tree?.formatVersion === "vendo-genui/v1") {
+      if (input.onView !== undefined && app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
         finalTree = {
           ...(structuredClone(app.tree) as unknown as Tree),
           ...(app.components === undefined ? {} : { components: structuredClone(app.components) }),

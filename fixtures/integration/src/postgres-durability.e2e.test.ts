@@ -37,18 +37,7 @@ const POSTGRES_URL = process.env.POSTGRES_URL;
 const CREATE = "host_invoices_create";
 const EVENT = "j9.invoice.ready";
 
-const CREATE_DIALECT = {
-  name: "Ada's Durable Card",
-  description: "A card that must survive a restart",
-  tree: {
-    formatVersion: "vendo-genui/v1",
-    root: "root",
-    nodes: [
-      { id: "root", component: "Stack", source: "prewired", children: ["greeting"] },
-      { id: "greeting", component: "Text", source: "prewired", props: { text: "Durable Ada" } },
-    ],
-  },
-};
+const CREATE_DIALECT = `<App name="Ada's Durable Card"><Text text="Durable Ada"/></App>`;
 
 function invoiceAutomation(): AppDocument {
   return {
@@ -98,6 +87,7 @@ describe.skipIf(!POSTGRES_URL)("J9: core journeys on Postgres survive a serving-
       turns: [
         toolCallTurn("vendo_apps_create", { prompt: "Build a durable card" }, "call_app"),
         generationTurn(CREATE_DIALECT),
+        generationTurn(CREATE_DIALECT, "gen_2"),
         textTurn("Created your durable app.", "t1"),
       ],
     });

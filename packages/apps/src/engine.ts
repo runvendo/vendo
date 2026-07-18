@@ -6,26 +6,35 @@ import {
   TREE_MAX_QUERIES,
   TREE_MAX_TOTAL_COMPONENT_BYTES,
   VENDO_APP_FORMAT,
+  VENDO_TREE_FORMAT_V2,
   VendoError,
+  compileWireV2,
   isPathBinding,
   isStateBinding,
   validateAppDocument,
-  validateTree,
+  validateTreeV2,
   type AppDocument,
   type ComponentCatalog,
   type Json,
   type Tree,
   type TreeNode,
-  type TreeQuery,
+  type TreeQueryV2,
+  type TreeV2,
   type VendoTheme,
+  type WireCompileResult,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
-import {
-  IncrementalTreeParser,
-  parseModelJson,
-  type IncrementalGeneratedTree,
-} from "./incremental-tree.js";
+import { parseModelJson } from "./incremental-tree.js";
 import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "./pins.js";
+
+/** v2 spec §§1,4 — a compiled prefix of the streaming wire: always a
+ *  validateTreeV2-passing tree (valid-while-partial) plus the islands
+ *  admitted so far. */
+export interface GeneratedPartial {
+  name?: string;
+  tree: TreeV2;
+  components?: Record<string, string>;
+}
 
 export interface GenerationDependencies {
   model: LanguageModel;
@@ -34,7 +43,18 @@ export interface GenerationDependencies {
   designRules?: string;
   pinBaselines?: readonly PinBaseline[];
   /** 06-apps §5 — additive, optional partial-tree streaming seam. */
-  onPartial?: (partial: IncrementalGeneratedTree) => void | Promise<void>;
+  onPartial?: (partial: GeneratedPartial) => void | Promise<void>;
+  /**
+   * v2 spec §4 — the tier-0 paint lane. The lane runs only when a streaming
+   * consumer (onPartial) is wired: the instant paint exists to reach a screen.
+   * `model` is the no-think switch — point it at a thinking-disabled model
+   * instance and the paint lane runs on it while the full lane keeps the main
+   * model. `disabled` forces the single-lane flow.
+   */
+  paint?: {
+    model?: LanguageModel;
+    disabled?: boolean;
+  };
 }
 
 export interface GenerationCreateInput {
@@ -117,18 +137,17 @@ const generationPromptSections = (deps: GenerationDependencies): GenerationPromp
   content: "You are the Vendo app generation engine. Return JSON only, with no markdown.",
 }, {
   id: "tree-contract",
-  content: `TREE CONTRACT:
+  content: `TREE CONTRACT (vendo-genui/v2):
 - At rest the app is {name, description?, tree, components?}; never emit id, server, secrets, egress, storage, or authority.
-- tree.formatVersion is "vendo-genui/v1" and tree contains root, nodes, optional data and queries.
+- tree.formatVersion is "vendo-genui/v2" and tree contains root, nodes, optional data and queries. Generated component sources live at the DOCUMENT level in components — the tree itself never carries them.
 - Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} generated components, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per generated component source, ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes of generated-component source in total.
 - Reserved prewired primitive names: ${RESERVED_COMPONENT_NAMES.join(", ")}.
-- Every node is exactly {id, component, source, props?, children?}. "component" is a REQUIRED non-empty string on EVERY node, including layout containers — use a prewired primitive (e.g. Stack, Row, Grid) as the component for containers; children is an array of node ids. Never emit a node without a component.
+- Every node is exactly {id, component, source?, props?, children?}. "component" is a REQUIRED non-empty string on EVERY node, including layout containers — use a prewired primitive (e.g. Stack, Row, Grid) as the component for containers; children is an array of node ids. Never emit a node without a component.
 - "nodes" is a FLAT array of every node; nesting is expressed only through "children" id references, never by inlining child objects. "root" is the id of the top node.
-- A node source is "prewired", "host", or "generated". Generated names are PascalCase, non-reserved, and require a top-level components[name] ESM React source.
-- Minimal valid shape: {"name":"X","tree":{"formatVersion":"vendo-genui/v1","root":"r","nodes":[{"id":"r","component":"Stack","source":"prewired","children":["t"]},{"id":"t","component":"Text","source":"prewired","props":{"text":"Hi"}}]}}.
+- A node source is "prewired", "host", or "generated". Generated names are PascalCase, non-reserved, and require a document components[name] ESM React source.
 - Prefer a host component whenever it covers the need. Matching the host brand is a hard goal.
-- Prop bindings are exactly {"$path":"/json/pointer"} and {"$state":"clientStateKey"}.
-- Queries are {path, tool, input?}; path is an RFC 6901 JSON Pointer. Actions embedded in props are {action,payload?}.
+- Prop bindings are exactly {"$path":"/json/pointer"} and {"$state":"clientStateKey"}. A query's result lives at "/" + its name.
+- Queries are {name, tool, input?}; name is a bare identifier. Actions embedded in props are {action,payload?}.
 - Query tools and action names are host tool names, or fn:<name> where name matches [A-Za-z_][A-Za-z0-9_-]*. A rung-1 tree cannot use fn: because it has no server.
 `,
 }, {
@@ -157,25 +176,82 @@ ${pinBaselinesPrompt(deps.pinBaselines)}
 const formatContract = (deps: GenerationDependencies): string =>
   composePromptSections(generationPromptSections(deps));
 
-const generateJson = async (
+/** v2 spec §2 — the JSX-wire create contract. The model emits markup, never
+ *  JSON; the deterministic compiler owns ids, bindings, and validation. */
+const wireContractSections = (deps: GenerationDependencies): GenerationPromptSection[] => [{
+  id: "role",
+  content: "You are the Vendo app generation engine. Return ONLY vendo-genui/v2 wire markup: a single <App> element. No prose, no markdown fences, no JSON.",
+}, {
+  id: "tree-contract",
+  content: `WIRE DIALECT (vendo-genui/v2):
+- Emit exactly one <App name="..."> element containing the whole app. Positional nesting expresses the tree; NEVER emit id attributes — the compiler mints stable ids.
+- <Query id="queryName" tool="tool_name" input={{...}}/> declarations come FIRST inside <App>, before layout, so data fetching starts while the rest streams. A query result lives at the query's name; bind it into props with expressions like value={queryName} or value={queryName.field.path}.
+- Attribute values: "string", {42}, {true}, bare attribute for true, {{...}} objects, {[...]} arrays, and query bindings {queryName.path.segments}.
+- Components resolve host catalog -> prewired primitives -> your <Island> components; the host brand wins a name collision. Prewired primitives: ${RESERVED_COMPONENT_NAMES.join(", ")}, Card, Button, Input, Select, Table, Badge, Stat, Tabs.
+- Prefer a host catalog component whenever it covers the need, with its exact name and props schema. Matching the host brand is a hard goal.
+- Actions are on* attributes naming a host tool or fn:<name> (name matches [A-Za-z_][A-Za-z0-9_-]*), e.g. onClick="host_tool" or onRun="fn:submit". A rung-1 app has no server, so never use fn: on create.
+- Generated components are top-level <Island name="PascalName">raw TSX with a default export</Island>, referenced as <PascalName/>. No JSON escaping — write plain TSX.
+- Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} islands, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per island, ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes of island source total.`,
+}, ...generationPromptSections(deps).filter(({ id }) =>
+  id === "component-styling" || id === "catalog" || id === "theme" || id === "design-rules")];
+
+const wireContract = (deps: GenerationDependencies): string =>
+  composePromptSections(wireContractSections(deps));
+
+/** v2 spec §4 — the tier-0 lane emits a complete, fully-WIRED generic app
+ *  immediately; the full lane then upgrades it in place by stable id. */
+const tier0Contract = (deps: GenerationDependencies): string => `${wireContract(deps)}
+
+PAINT PASS (tier-0): emit a complete, minimal, fully-wired GENERIC app for the request RIGHT NOW.
+- Catalog components with conservative default props; real <Query> declarations for the most relevant read tools so live data flows immediately.
+- NO <Island> code islands — catalog and prewired components only.
+- Keep it small (well under 40 nodes) and generic; a full-quality pass will replace it subtree-by-subtree, so favor a stable, conventional layout over cleverness.`;
+
+/** The compact tier-0 structure the full lane is conditioned on: minted id +
+ *  component per node, in document order, so the full lane can keep the
+ *  layout ordering (and therefore the minted ids) stable for in-place
+ *  hot-swap. */
+const layoutHeader = (compiled: WireCompileResult): string =>
+  compiled.tree.nodes.map((node) => `${node.id}:${node.component}`).join(" ");
+
+/** Models wrap output in prose or a markdown fence despite instructions
+ *  (the v1 JSON path had the same tolerance in parseModelJson). The wire is
+ *  everything from the first `<App` through the last `</App>` (or stream
+ *  end while it is still open) — deterministic, so prefix compiles stay
+ *  valid-while-partial. */
+const extractWire = (text: string): string => {
+  const start = text.indexOf("<App");
+  if (start === -1) return text;
+  const closeTag = "</App>";
+  const close = text.lastIndexOf(closeTag);
+  return close === -1 ? text.slice(start) : text.slice(start, close + closeTag.length);
+};
+
+/** Stream the wire, compiling each accumulated prefix (throttled) into a
+ *  valid-while-partial tree for the onPartial seam. */
+const streamWire = async (
   deps: GenerationDependencies,
   system: string,
   prompt: string,
-): Promise<{ value?: unknown; issues: string[] }> => {
-  const parser = deps.onPartial === undefined ? undefined : new IncrementalTreeParser();
-  let latest: IncrementalGeneratedTree | undefined;
-  let lastFlushAt = 0;
+  hostComponents: readonly string[],
+): Promise<{ compiled?: WireCompileResult; issues: string[] }> => {
+  let text = "";
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let lastFlushAt = 0;
   const pending: Promise<void>[] = [];
   const flush = (): void => {
-    if (latest === undefined || deps.onPartial === undefined) return;
-    const partial = latest;
-    latest = undefined;
+    if (deps.onPartial === undefined) return;
     lastFlushAt = Date.now();
+    const compiled = compileWireV2(extractWire(text), { hostComponents });
+    const partial: GeneratedPartial = {
+      tree: compiled.tree,
+      ...(compiled.name === undefined ? {} : { name: compiled.name }),
+      ...(Object.keys(compiled.components).length === 0 ? {} : { components: compiled.components }),
+    };
     pending.push(Promise.resolve(deps.onPartial(partial)).catch(() => undefined));
   };
-  const schedule = (partial: IncrementalGeneratedTree): void => {
-    latest = partial;
+  const schedule = (): void => {
+    if (deps.onPartial === undefined) return;
     const remaining = Math.max(0, 100 - (Date.now() - lastFlushAt));
     if (lastFlushAt === 0 || remaining === 0) {
       if (timer !== undefined) clearTimeout(timer);
@@ -189,11 +265,71 @@ const generateJson = async (
     }
   };
   const finishPartials = async (): Promise<void> => {
-    if (timer !== undefined) clearTimeout(timer);
-    timer = undefined;
-    flush();
+    // A throttled flush may still be pending at stream end — deliver it so
+    // the last pre-final prefix reaches the seam before the final document.
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+      flush();
+    }
     await Promise.all(pending);
   };
+  try {
+    const { streamText } = await import("ai");
+    const result = streamText({
+      model: deps.model,
+      system,
+      prompt,
+      temperature: 0,
+      maxRetries: 0,
+    });
+    for await (const delta of result.textStream) {
+      text += delta;
+      schedule();
+    }
+    await finishPartials();
+    return { compiled: compileWireV2(extractWire(text), { hostComponents }), issues: [] };
+  } catch (error) {
+    await finishPartials();
+    return { issues: [`model generation failed: ${error instanceof Error ? error.message : "unknown error"}`] };
+  }
+};
+
+/** v2 create validation: the compile must be complete and clean, the tree
+ *  catalog-consistent and renderable, and the assembled document valid. */
+const validateCompiledCreate = async (
+  compiled: WireCompileResult,
+  deps: GenerationDependencies,
+): Promise<{ document?: GeneratedAppDocument; issues: string[] }> => {
+  const issues: string[] = [];
+  if (!compiled.complete) issues.push("wire did not parse to a complete <App> document");
+  issues.push(...compiled.issues.map(({ code, message }) => `wire ${code}: ${message}`));
+  const name = compiled.name?.trim() ?? "";
+  if (name === "") issues.push('App must carry a non-empty name="..." attribute');
+  const components = Object.keys(compiled.components).length === 0 ? undefined : compiled.components;
+  issues.push(...await catalogIssues(compiled.tree as unknown as Tree, components, deps.catalog));
+  issues.push(...rootedRenderIssues(compiled.tree as unknown as Tree));
+  if (issues.length > 0) return { issues };
+  const document: GeneratedAppDocument = {
+    format: VENDO_APP_FORMAT,
+    name,
+    ui: "tree",
+    tree: structuredClone(compiled.tree) as unknown as NonNullable<AppDocument["tree"]>,
+    ...(components === undefined ? {} : { components: structuredClone(components) }),
+  };
+  const appValidation = validateAppDocument({ ...document, id: "app_generation_validation" });
+  if (!appValidation.ok) return { issues: [appValidation.error.message] };
+  return { document, issues: [] };
+};
+
+/** Edit-dialect model call: accumulate the stream and parse it as JSON.
+ *  (The v1 create-streaming parser is gone — v2 creates stream through the
+ *  wire compiler in {@link streamWire}.) */
+const generateJson = async (
+  deps: GenerationDependencies,
+  system: string,
+  prompt: string,
+): Promise<{ value?: unknown; issues: string[] }> => {
   try {
     const { streamText } = await import("ai");
     const result = streamText({
@@ -206,13 +342,9 @@ const generateJson = async (
     let text = "";
     for await (const delta of result.textStream) {
       text += delta;
-      const partial = parser?.push(delta);
-      if (partial !== undefined) schedule(partial);
     }
-    await finishPartials();
     return parseModelJson(text);
   } catch (error) {
-    await finishPartials();
     return { issues: [`model generation failed: ${error instanceof Error ? error.message : "unknown error"}`] };
   }
 };
@@ -307,79 +439,13 @@ const catalogIssues = async (
   return issues;
 };
 
-interface GeneratedShape {
-  name: string;
-  description?: string;
-  tree: Tree;
-  components?: Record<string, string>;
-}
-
-const validateGenerated = async (
-  value: unknown,
-  deps: GenerationDependencies,
-): Promise<{ shape?: GeneratedShape; issues: string[] }> => {
-  if (!isRecord(value)) return { issues: ["model output must be an object"] };
-  const issues: string[] = [];
-  if (typeof value.name !== "string" || value.name.trim().length === 0) {
-    issues.push("name must be a non-empty string");
-  }
-  if (value.description !== undefined && typeof value.description !== "string") {
-    issues.push("description must be a string when present");
-  }
-  if (value.components !== undefined && !isRecord(value.components)) {
-    issues.push("components must be an object when present");
-  }
-  const components = isRecord(value.components)
-    ? Object.fromEntries(Object.entries(value.components).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
-    : undefined;
-  if (isRecord(value.components) && Object.keys(components ?? {}).length !== Object.keys(value.components).length) {
-    issues.push("every generated component source must be a string");
-  }
-  const validation = validateTree(
-    isRecord(value.tree) ? { ...value.tree, components } : value.tree,
-  );
-  if (!validation.ok) {
-    issues.push(validation.error.message);
-  } else {
-    issues.push(...await catalogIssues(validation.tree, components, deps.catalog));
-  }
-  if (issues.length > 0 || !validation.ok || typeof value.name !== "string") return { issues };
-  const tree = structuredClone(validation.tree);
-  delete tree.components;
-  const shape: GeneratedShape = {
-    name: value.name.trim(),
-    tree,
-    ...(typeof value.description === "string" && value.description.trim() !== ""
-      ? { description: value.description.trim() }
-      : {}),
-    ...(components === undefined ? {} : { components }),
-  };
-  const appValidation = validateAppDocument({
-    format: VENDO_APP_FORMAT,
-    id: "app_generation_validation",
-    ui: "tree",
-    ...shape,
-  });
-  if (!appValidation.ok) return { issues: [appValidation.error.message] };
-  return { shape, issues: [] };
-};
-
-const createDocument = (shape: GeneratedShape): GeneratedAppDocument => ({
-  format: VENDO_APP_FORMAT,
-  name: shape.name,
-  ...(shape.description === undefined ? {} : { description: shape.description }),
-  ui: "tree",
-  tree: shape.tree as unknown as NonNullable<AppDocument["tree"]>,
-  ...(shape.components === undefined ? {} : { components: shape.components }),
-});
-
 type TreeOp = Record<string, unknown> & { op: string };
 
 const distinctIssues = (current: string[], next: string[]): string[] => [
   ...new Set([...current, ...next]),
 ];
 
-const removeChildReference = (tree: Tree, nodeId: string): void => {
+const removeChildReference = (tree: TreeV2, nodeId: string): void => {
   for (const node of tree.nodes) {
     if (node.children !== undefined) node.children = node.children.filter((child) => child !== nodeId);
   }
@@ -397,7 +463,7 @@ const insertChild = (parent: TreeNode, nodeId: string, index: unknown): void => 
 const validOptionalIndex = (value: unknown): boolean => value === undefined
   || (typeof value === "number" && Number.isInteger(value) && value >= 0);
 
-const reachesNode = (tree: Tree, startId: string, targetId: string): boolean => {
+const reachesNode = (tree: TreeV2, startId: string, targetId: string): boolean => {
   const pending = [startId];
   const visited = new Set<string>();
   while (pending.length > 0) {
@@ -417,10 +483,10 @@ const applyTreeOps = (
   deps: GenerationDependencies,
 ): { app?: AppDocument; issues: string[] } => {
   const app = structuredClone(source);
-  if (app.tree?.formatVersion !== "vendo-genui/v1") {
-    return { issues: ["tree ops require a vendo-genui/v1 app"] };
+  if (app.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) {
+    return { issues: ["tree ops require a vendo-genui/v2 app"] };
   }
-  const tree = app.tree as unknown as Tree;
+  const tree = app.tree as unknown as TreeV2;
   const issue = (index: number, operation: TreeOp, message: string): { issues: string[] } => ({
     issues: [`tree op[${index}] ${operation.op} failed: ${message}`],
   });
@@ -542,7 +608,7 @@ const applyTreeOps = (
           queries.splice(operation.index, 1);
         } else if (isRecord(operation.query)) {
           if (operation.index > queries.length) return issue(index, operation, `query index ${operation.index} leaves a gap`);
-          queries[operation.index] = structuredClone(operation.query) as unknown as TreeQuery;
+          queries[operation.index] = structuredClone(operation.query) as unknown as TreeQueryV2;
         } else {
           return issue(index, operation, "requires a query object or null");
         }
@@ -665,16 +731,16 @@ const validateEditedApp = async (
 ): Promise<string[]> => {
   const validation = validateAppDocument(app);
   if (!validation.ok) return [validation.error.message];
-  if (app.tree?.formatVersion !== "vendo-genui/v1") return ["tree edit produced an unsupported format"];
-  const treeValidation = validateTree({ ...app.tree, components: app.components });
+  if (app.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) return ["tree edit produced an unsupported format"];
+  const treeValidation = validateTreeV2(app.tree);
   if (!treeValidation.ok) return [treeValidation.error.message];
-  const sourceTreeValidation = validateTree({ ...source.tree, components: source.components });
+  const sourceTreeValidation = validateTreeV2(source.tree);
   const sourceRenderIssues = sourceTreeValidation.ok
-    ? new Set(rootedRenderIssues(sourceTreeValidation.tree))
+    ? new Set(rootedRenderIssues(sourceTreeValidation.tree as unknown as Tree))
     : new Set<string>();
   return [
-    ...rootedRenderIssues(treeValidation.tree).filter((issue) => !sourceRenderIssues.has(issue)),
-    ...await catalogIssues(treeValidation.tree, app.components, deps.catalog),
+    ...rootedRenderIssues(treeValidation.tree as unknown as Tree).filter((issue) => !sourceRenderIssues.has(issue)),
+    ...await catalogIssues(treeValidation.tree as unknown as Tree, app.components, deps.catalog),
   ];
 };
 
@@ -738,7 +804,7 @@ const editTree = async (
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const output = await generateJson(
       deps,
-      `${formatContract(deps)}\n\nTREE EDIT DIALECT: emit {"ops":[...]}. Patch the supplied app; do not regenerate it.\nExact op shapes:\n- {"op":"set-prop","nodeId":"...","prop":"...","value":...}\n- {"op":"add-node","node":{"id":"...","component":"...","source":"prewired|host|generated","props":{},"children":[]},"parentId":"...","index":0}\n- {"op":"remove-node","nodeId":"..."}\n- {"op":"move-node","nodeId":"...","parentId":"...","index":0}\n- {"op":"set-query","index":0,"query":{...}|null}\n- {"op":"add-component","name":"PascalCaseName","source":"complete ESM React source"}\n- {"op":"fork-pin","slot":"exact remixable slot","nodeId":"newNodeId","parentId":"...","index":0,"props":{}}\n- {"op":"set-name","name":"..."}\n- {"op":"set-description","description":"..."}\nUse nodeId, never id, for existing nodes. Use index, never position or beforeId. Attach every added visible node with parentId, never add the existing root again, preserve all component sources not intentionally replaced, and never leave the rooted view empty.`,
+      `${formatContract(deps)}\n\nTREE EDIT DIALECT: emit {"ops":[...]}. Patch the supplied app; do not regenerate it.\nExact op shapes:\n- {"op":"set-prop","nodeId":"...","prop":"...","value":...}\n- {"op":"add-node","node":{"id":"...","component":"...","source":"prewired|host|generated","props":{},"children":[]},"parentId":"...","index":0}\n- {"op":"remove-node","nodeId":"..."}\n- {"op":"move-node","nodeId":"...","parentId":"...","index":0}\n- {"op":"set-query","index":0,"query":{"name":"identifier","tool":"...","input":{}}|null}\n- {"op":"add-component","name":"PascalCaseName","source":"complete ESM React source"}\n- {"op":"fork-pin","slot":"exact remixable slot","nodeId":"newNodeId","parentId":"...","index":0,"props":{}}\n- {"op":"set-name","name":"..."}\n- {"op":"set-description","description":"..."}\nUse nodeId, never id, for existing nodes. Use index, never position or beforeId. Attach every added visible node with parentId, never add the existing root again, preserve all component sources not intentionally replaced, and never leave the rooted view empty.`,
       `TASK: EDIT_TREE\nINSTRUCTION: ${input.instruction}\nCURRENT_APP: ${JSON.stringify(input.app)}${repairPrompt(issues)}`,
     );
     issues = distinctIssues(issues, output.issues);
@@ -784,23 +850,62 @@ const editCode = async (
   return { kind: "failure", issues: issues.length === 0 ? ["code edit failed validation"] : issues };
 };
 
-/** 06-apps §§2,5 — model-backed rung-1 generation and two-dialect edit planning. */
+/** 06-apps §§2,5; v2 spec §§2,4 — wire-backed rung-1 generation and
+ *  two-dialect edit planning. */
 export const modelEngine: GenerationEngine = {
   async create(input, deps) {
-    let issues: string[] = [];
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const output = await generateJson(
-        deps,
-        `${formatContract(deps)}\n\nCREATE DIALECT: emit exactly {"name":"...","description":"...","tree":{...},"components":{...}?}. Start and finish at rung 1.`,
-        `TASK: CREATE_APP\nUSER_REQUEST: ${input.prompt}${repairPrompt(issues)}`,
-      );
-      issues = output.issues;
-      if (output.value !== undefined) {
-        const validated = await validateGenerated(output.value, deps);
-        issues = validated.issues;
-        if (validated.shape !== undefined) return createDocument(validated.shape);
+    const hostComponents = deps.catalog.map(({ name }) => name);
+    const basePrompt = `TASK: CREATE_APP\nUSER_REQUEST: ${input.prompt}`;
+    // Tier-0 paint lane (v2 spec §4): only with a streaming consumer — the
+    // instant paint exists to reach a screen. One attempt, no repair loop:
+    // an invalid paint is simply not resident (the full lane still runs).
+    let resident: GeneratedAppDocument | undefined;
+    let residentLayout: string | undefined;
+    if (deps.onPartial !== undefined && deps.paint?.disabled !== true) {
+      const paintDeps = deps.paint?.model === undefined ? deps : { ...deps, model: deps.paint.model };
+      const paint = await streamWire(paintDeps, tier0Contract(deps), basePrompt, hostComponents);
+      if (paint.compiled !== undefined) {
+        const validated = await validateCompiledCreate(paint.compiled, deps);
+        if (validated.document !== undefined) {
+          resident = validated.document;
+          residentLayout = layoutHeader(paint.compiled);
+        }
       }
     }
+    // The upgrade must never regress the painted surface: while the resident
+    // tier-0 app is on screen, full-lane prefixes smaller than the resident
+    // stay suppressed — the paint holds until the upgrade can replace it
+    // whole (ids stay stable via the TIER0_LAYOUT conditioning).
+    const residentNodes = resident === undefined
+      ? 0
+      : (resident.tree as unknown as TreeV2).nodes.length;
+    const forward = deps.onPartial;
+    const fullLaneDeps: GenerationDependencies = forward === undefined || residentNodes === 0
+      ? deps
+      : {
+        ...deps,
+        onPartial: (partial) => partial.tree.nodes.length < residentNodes ? undefined : forward(partial),
+      };
+    let issues: string[] = [];
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const output = await streamWire(
+        fullLaneDeps,
+        wireContract(deps),
+        `${basePrompt}${residentLayout === undefined
+          ? ""
+          : `\nTIER0_LAYOUT: ${residentLayout}\nAn instant paint pass already rendered that layout. Emit the full-quality app; keep the top-level component ordering compatible where reasonable so minted node ids stay stable and the upgrade swaps in place.`}${repairPrompt(issues)}`,
+        hostComponents,
+      );
+      issues = distinctIssues(issues, output.issues);
+      if (output.compiled !== undefined) {
+        const validated = await validateCompiledCreate(output.compiled, deps);
+        issues = distinctIssues(issues, validated.issues);
+        if (validated.document !== undefined) return validated.document;
+      }
+    }
+    // Never a white box: a failed full lane falls back to the resident
+    // tier-0 app (v2 spec §4).
+    if (resident !== undefined) return resident;
     throw new VendoError("validation", "model could not produce a valid app", issues);
   },
   async edit(input, deps) {

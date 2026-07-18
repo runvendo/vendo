@@ -4,7 +4,7 @@
  * `vendo_apps_create` capability tool (added to the registry by the umbrella via
  * `actions.add(apps.agentTools())`); executing it drives the apps generation
  * engine — the SAME model instance, via doGenerate — which returns a valid
- * vendo-genui/v1 CREATE tree; the agent then closes with a text turn.
+ * vendo-genui/v2 wire; the agent then closes with a text turn.
  *
  * Asserts the whole composition worked: the SSE stream completes, a vendo_apps
  * row owned by ADA lands (raw SQL), the wire lists + opens it as a tree, and —
@@ -23,18 +23,7 @@ import {
   type Stack,
 } from "./harness.js";
 
-const CREATE_DIALECT = {
-  name: "Ada's Greeting",
-  description: "A tiny greeting card",
-  tree: {
-    formatVersion: "vendo-genui/v1",
-    root: "root",
-    nodes: [
-      { id: "root", component: "Stack", source: "prewired", children: ["greeting"] },
-      { id: "greeting", component: "Text", source: "prewired", props: { text: "Hello Ada" } },
-    ],
-  },
-};
+const CREATE_DIALECT = `<App name="Ada's Greeting"><Text text="Hello Ada"/></App>`;
 
 let stack: Stack;
 afterEach(async () => {
@@ -47,7 +36,10 @@ describe("J1: chat generates an app through the real composition", () => {
     stack = await createStack({
       turns: [
         toolCallTurn("vendo_apps_create", { prompt: "Build me a greeting card" }, "call_1"),
+        // Two-lane create (v2 spec §4): the tier-0 paint lane and the full
+        // lane each consume one generation turn.
         generationTurn(CREATE_DIALECT),
+        generationTurn(CREATE_DIALECT, "gen_2"),
         textTurn("Created your app.", "t1"),
       ],
     });
@@ -89,9 +81,9 @@ describe("J1: chat generates an app through the real composition", () => {
       payload: { formatVersion: string; root: string; nodes: Array<{ id: string; props?: { text?: string } }> };
     };
     expect(opened.kind).toBe("tree");
-    expect(opened.payload.formatVersion).toBe("vendo-genui/v1");
+    expect(opened.payload.formatVersion).toBe("vendo-genui/v2");
     expect(opened.payload.root).toBe("root");
-    expect(opened.payload.nodes.find((node) => node.id === "greeting")?.props?.text).toBe("Hello Ada");
+    expect(opened.payload.nodes.find((node) => node.id === "text-1")?.props?.text).toBe("Hello Ada");
 
     // One-security-rule ownership: BOB does not see ADA's app.
     const bobList = (await (await stack.wireFetch("/apps", {}, BOB)).json()) as Array<{ id: string }>;

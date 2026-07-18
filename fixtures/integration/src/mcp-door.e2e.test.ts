@@ -48,18 +48,7 @@ import {
 } from "./harness.js";
 import { connectWithSdk, descriptorShape, textOf } from "./mcp-support.js";
 
-const CREATE_DIALECT = {
-  name: "MCP ride-along app",
-  description: "A rung-1 tree opened over the door",
-  tree: {
-    formatVersion: "vendo-genui/v1",
-    root: "root",
-    nodes: [
-      { id: "root", component: "Stack", source: "prewired", children: ["hi"] },
-      { id: "hi", component: "Text", source: "prewired", props: { text: "Hello over MCP" } },
-    ],
-  },
-};
+const CREATE_DIALECT = `<App name="MCP ride-along app"><Text text="Hello over MCP"/></App>`;
 
 let stack: Stack;
 afterEach(async () => {
@@ -173,7 +162,7 @@ describe("J6: MCP door round-trip composed around the umbrella", () => {
       // --- Apps ride-along: open a wire-created app over the door for real ---
       const opened = await connected.client.callTool({ name: "vendo_apps_open", arguments: { appId: app.id } });
       expect(opened.isError).not.toBe(true);
-      expect(textOf(opened)).toContain("vendo-genui/v1");
+      expect(textOf(opened)).toContain("vendo-genui/v2");
 
       // --- SQL: door shares the audit plane, keeps its own protocol state ----
       expect(await stack.sql(
