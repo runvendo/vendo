@@ -66,6 +66,28 @@ describe("parseExpression literals", () => {
     expectValue('"\\q"', "q");
   });
 
+  it("decodes \\uXXXX and \\r escapes", () => {
+    expectValue('"Caf\\u00e9"', "Café");
+    expectValue('"\\u0041"', "A");
+    expectValue('"a\\rb"', "a\rb");
+    expectValue('"\\uD83D\\uDE00"', "😀");
+  });
+
+  it("drops invalid \\u escapes", () => {
+    expectDropped('"\\uZZZZ"', "malformed-expression");
+    expectDropped('"\\u12"', "malformed-expression");
+  });
+
+  it("drops ill-formed UTF-16 (lone surrogates), literal or escaped", () => {
+    expectDropped('"\uD800"', "malformed-expression");
+    expectDropped('"\\uD800"', "malformed-expression");
+    expectDropped('"a\uDC00b"', "malformed-expression");
+  });
+
+  it("accepts well-formed astral characters", () => {
+    expectValue('"🚀"', "🚀");
+  });
+
   it("preserves unicode in strings", () => {
     expectValue('"héllo wörld 🚀"', "héllo wörld 🚀");
   });
@@ -104,6 +126,10 @@ describe("parseExpression arrays and objects", () => {
 
   it("tolerates trailing commas in objects", () => {
     expectValue("{ a: 1, }", { a: 1 });
+  });
+
+  it("resolves duplicate object keys last-wins", () => {
+    expectValue("{ a: 1, a: 2 }", { a: 2 });
   });
 
   it("parses nested object/array combinations", () => {
@@ -188,6 +214,10 @@ describe("parseExpression reshape pipes", () => {
     expect(result.value).toEqual({ $path: "/revenue" });
     expect(result.issues.map((issue) => issue.code)).toEqual(["reshape-unsupported"]);
     expect(result.issues[0]?.message).toMatch(/later wave/i);
+  });
+
+  it("treats nested pipes as malformed in wave 1 (wave 3 lands the reshape vocabulary)", () => {
+    expectDropped("[revenue | asPoints(x)]", "malformed-expression");
   });
 
   it("consumes arbitrary text after the pipe without erroring", () => {

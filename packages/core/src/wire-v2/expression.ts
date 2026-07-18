@@ -84,8 +84,21 @@ const parseNumber = (state: ParserState): number | Failed => {
   return value;
 };
 
-/** Quote char and backslash escape themselves; `\n`/`\t` become newline/tab;
- *  any other escaped character passes through verbatim (lenient, total). */
+const HEX_ESCAPE = /^[0-9a-fA-F]{4}$/;
+
+/** ES2024 String.prototype.isWellFormed — guaranteed at runtime by the
+ *  package's engines floor (node >= 20) but absent from this tsconfig's
+ *  ES2022 lib, hence the local cast. */
+const isWellFormedUtf16 = (text: string): boolean =>
+  (text as string & { isWellFormed(): boolean }).isWellFormed();
+
+/** Quote char and backslash escape themselves; `\n`/`\t`/`\r` become
+ *  newline/tab/carriage return; `\uXXXX` decodes a UTF-16 code unit
+ *  (surrogate pairs combine); any other escaped character passes through
+ *  verbatim (lenient, total). Ill-formed UTF-16 — a lone surrogate, literal
+ *  or escape-produced — is rejected: canonicalJson (jcs.ts) throws on lone
+ *  surrogates downstream, so letting one through would un-drop the totality
+ *  guarantee one layer up. */
 const parseString = (state: ParserState): string | Failed => {
   const quote = state.source[state.index] as string;
   state.index += 1;
@@ -94,12 +107,24 @@ const parseString = (state: ParserState): string | Failed => {
     const char = state.source[state.index] as string;
     if (char === quote) {
       state.index += 1;
+      if (!isWellFormedUtf16(text)) {
+        return malformed(state, "string contains a lone surrogate (ill-formed UTF-16)");
+      }
       return text;
     }
     if (char === "\\") {
       const escaped = state.source[state.index + 1];
       if (escaped === undefined) break;
-      text += escaped === "n" ? "\n" : escaped === "t" ? "\t" : escaped;
+      if (escaped === "u") {
+        const hex = state.source.slice(state.index + 2, state.index + 6);
+        if (!HEX_ESCAPE.test(hex)) {
+          return malformed(state, `invalid \\u escape at index ${state.index} (expected 4 hex digits)`);
+        }
+        text += String.fromCharCode(Number.parseInt(hex, 16));
+        state.index += 6;
+        continue;
+      }
+      text += escaped === "n" ? "\n" : escaped === "t" ? "\t" : escaped === "r" ? "\r" : escaped;
       state.index += 2;
       continue;
     }
@@ -262,7 +287,10 @@ const parseExpressionUnsafe = (source: string, context: ExpressionContext): Expr
   if (state.index < source.length) {
     if (source[state.index] === "|") {
       // Reshape pipe: compile the base value as-is and swallow the rest —
-      // the reshape vocabulary lands in a later wave.
+      // the reshape vocabulary lands in a later wave. Top level only by
+      // design: a pipe nested inside an array/object falls to
+      // malformed-expression in wave 1; wave 3 revisits when the reshape
+      // vocabulary lands.
       state.index = source.length;
       state.issues.push({
         code: "reshape-unsupported",
