@@ -755,9 +755,22 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // local createStore default (unchanged, including 02-store §4 default-on
   // encryption via VENDO_STORE_ENCRYPTION_KEY). The session doors travel
   // with the store: SQL registry locally, the store wire when hosted.
+  // Touch-debounce window, clamped by BOTH knobs. INVARIANT: the window must
+  // sit well inside the TTL, so continuous traffic always refreshes
+  // touched_at before the sweep cutoff — with sweepIntervalMs/2 alone, a
+  // ttlMs shorter than the sweep interval would let an actively-used
+  // session's stamp go a full window stale, cross the cutoff, and the claim
+  // leg would re-read that SAME stale stamp and erase a live session
+  // mid-use. sweepIntervalMs/2 bounds the wire chatter; ttlMs/4 enforces the
+  // safety margin. ttlMs 0 disables the sweep entirely (runSweep), so the
+  // zero window it produces (every touch rides the wire) is merely
+  // conservative, never wrong.
   const { store, sessions: sessionOps } = selectStore(
     config.store,
-    Math.floor(sessionsConfig.sweepIntervalMs / 2),
+    Math.min(
+      Math.floor(sessionsConfig.sweepIntervalMs / 2),
+      Math.floor(sessionsConfig.ttlMs / 4),
+    ),
   );
   const sandbox = selectSandbox(config.sandbox);
   // Inference, selected by the adapter rule at this composition seam

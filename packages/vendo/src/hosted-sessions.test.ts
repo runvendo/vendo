@@ -119,6 +119,40 @@ describe("hosted store: ephemeral sessions over the wire", () => {
     expect(h.console_.sessions.get(subject)).toBe(600);
   });
 
+  it("never sweeps a continuously-used session when the TTL is shorter than the sweep interval", async () => {
+    // The clamp under test: window = min(sweepIntervalMs/2, ttlMs/4). With
+    // sweepIntervalMs/2 alone (2000 here), every re-touch below would be
+    // debounced, touched_at would freeze at 0, and the t=4200 sweep would
+    // claim a session that is actively in use. ttlMs/4 (250) keeps the
+    // window well inside the TTL, so continuous traffic always refreshes
+    // touched_at before the cutoff.
+    const h = harness({ ttlMs: 1_000, sweepIntervalMs: 4_000 });
+    h.setNow(0);
+    const first = await h.vendo.handler(listThreads());
+    expect(first.status).toBe(200);
+    const cookie = cookieOf(first);
+    const subject = (h.wireCalls("/sessions/register")[0]!.json as { subject: string }).subject;
+
+    // Continuous traffic every 200ms (inside AND outside the 250ms window),
+    // crossing the t=4000 sweep trigger.
+    let requestCount = 1;
+    for (let now = 200; now <= 4_200; now += 200) {
+      h.setNow(now);
+      expect((await h.vendo.handler(listThreads(cookie))).status).toBe(200);
+      requestCount += 1;
+    }
+
+    // The sweep DID run (the interval elapsed) but found nothing stale: the
+    // live session was never claimed, never erased, and is still registered.
+    expect(h.wireCalls("/sessions/stale").length).toBeGreaterThan(0);
+    expect(h.wireCalls("/sessions/claim")).toHaveLength(0);
+    expect(h.console_.eraseCalls).toEqual([]);
+    expect(h.console_.sessions.has(subject)).toBe(true);
+    // And the debounce still did its job: fewer wire touches than requests.
+    expect(h.wireCalls("/sessions/register").length).toBeLessThan(requestCount);
+    expect(h.wireCalls("/sessions/register").length).toBeGreaterThan(1);
+  });
+
   it("fails closed on FIRST registration, open (with a warn) on later touches", async () => {
     // INVARIANT under test: registered ⇒ sweepable. A subject whose first
     // registration never landed must not get rows on the hosted store; a
