@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { LanguageModel } from "ai";
+import { resolveCloudBaseUrl } from "../cli/cloud/client.js";
 import {
   describeDevCredential,
   resolveDevCredential,
@@ -17,8 +18,10 @@ import {
  *
  * - env-key rungs delegate to the host-installed @ai-sdk provider (^3, spec
  *   v3) with full native tool calling — works in production too.
- * - VENDO_API_KEY delegates to the Vendo Cloud model gateway once it ships;
- *   until then it fails honestly with instructions.
+ * - VENDO_API_KEY delegates to the Vendo Cloud model gateway: the
+ *   host-installed @ai-sdk/anthropic pointed at `<console>/api/v1`, whose
+ *   Anthropic-compatible /messages endpoint serves the metered dev-mode
+ *   allowance.
  * - nothing available → every call fails with the exact instructions.
  */
 
@@ -151,10 +154,26 @@ export class DevModelController {
     }
 
     if (credential.rung === "vendo-cloud") {
-      const message = "VENDO_API_KEY is set, but the Vendo Cloud dev-mode model gateway is not live yet. "
-        + "Set a provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY) for now.";
-      this.announce(credential, " — model gateway not live yet");
-      return { mode: "unavailable", credential, message };
+      // The gateway speaks the Anthropic Messages wire, so the anthropic
+      // provider serves it — pointed at the console instead of Anthropic.
+      const spec = DEFAULT_MODELS["anthropic"]!;
+      let loaded: Record<string, unknown>;
+      try {
+        loaded = await this.importModule(this.root, spec.module);
+      } catch {
+        const message = `VENDO_API_KEY is set but ${spec.module} is not installed in this app; install it (\`${spec.install}\`).`;
+        this.announce(credential, ` — but ${spec.module} is missing`);
+        return { mode: "unavailable", credential, message };
+      }
+      const factory = loaded[spec.factory] as (
+        config: { apiKey: string; baseURL: string },
+      ) => (model: string) => LanguageModelV3Like;
+      const base = resolveCloudBaseUrl({ env: this.env });
+      const baseURL = base.endsWith("/api/v1") ? base : `${base}/api/v1`;
+      const modelId = this.env[spec.modelEnv] ?? spec.model;
+      const model = factory({ apiKey: this.env["VENDO_API_KEY"]!, baseURL })(modelId);
+      this.announce(credential, ` → ${modelId} via the Cloud gateway`);
+      return { mode: "delegate", credential, model };
     }
 
     this.announce(credential);
