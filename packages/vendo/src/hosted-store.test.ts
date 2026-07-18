@@ -2,175 +2,14 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import {
-  VendoError,
-  canonicalJson,
-  type StoreAdapter,
-  type VendoRecord,
-} from "@vendoai/core";
-import { memoryStoreAdapter, storeAdapterConformance } from "@vendoai/core/conformance";
+import { type StoreAdapter } from "@vendoai/core";
+import { storeAdapterConformance } from "@vendoai/core/conformance";
 import { createStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
 import { hostedStore } from "./hosted-store.js";
+import { fakeConsole } from "./hosted-store.test-util.js";
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 
-interface RecordedRequest {
-  url: string;
-  method: string;
-  authorization: string | null;
-  contentType: string | null;
-  deploymentHost: string | null;
-  deploymentName: string | null;
-  json?: unknown;
-  bytes?: Uint8Array;
-}
-
-/** In-memory fake of the console's /api/v1/store surface (the wire the adapter
- * must speak — see apps/console/lib/api/store-handlers.ts). Records ride the
- * reference memoryStoreAdapter, which already mirrors the store engine's
- * reserved-collection semantics (append-only audit, state id grammar,
- * cross-subject refusals), so parity failures surface as real envelopes. */
-function fakeConsole() {
-  const adapter = memoryStoreAdapter();
-  const requests: RecordedRequest[] = [];
-  const eraseCalls: unknown[] = [];
-
-  const STATUS: Record<string, number> = {
-    validation: 400,
-    unauthorized: 401,
-    blocked: 403,
-    "not-found": 404,
-    conflict: 409,
-  };
-  const json = (body: unknown, status = 200): Response => Response.json(body, { status });
-  const envelope = (code: string, message: string): Response =>
-    json({ error: { code, message } }, STATUS[code] ?? 503);
-
-  const sameValue = (
-    current: VendoRecord,
-    expected: { data: unknown; refs?: Record<string, string> },
-  ): boolean =>
-    canonicalJson(current.data) === canonicalJson(expected.data)
-    && canonicalJson(current.refs ?? null) === canonicalJson(expected.refs ?? null);
-
-  const handler = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const request = new Request(input, init);
-    const url = new URL(request.url);
-    const recorded: RecordedRequest = {
-      url: request.url,
-      method: request.method,
-      authorization: request.headers.get("authorization"),
-      contentType: request.headers.get("content-type"),
-      deploymentHost: request.headers.get("x-vendo-deployment-host"),
-      deploymentName: request.headers.get("x-vendo-deployment-name"),
-    };
-    const raw = new Uint8Array(await request.arrayBuffer());
-    if (recorded.contentType === "application/json") {
-      recorded.json = JSON.parse(decoder.decode(raw));
-    } else if (raw.length > 0) {
-      recorded.bytes = raw;
-    }
-    requests.push(recorded);
-    if (recorded.authorization === null) {
-      return envelope("unauthorized", "Valid API key required.");
-    }
-
-    try {
-      const segments = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
-      // /api/v1/store/...
-      if (segments[0] !== "api" || segments[1] !== "v1" || segments[2] !== "store") {
-        return envelope("not-found", "unknown route");
-      }
-      const rest = segments.slice(3);
-
-      if (rest[0] === "records" && request.method === "POST") {
-        const collection = rest[1]!;
-        const method = rest.slice(2).join("/");
-        const body = recorded.json as Record<string, unknown>;
-        const records = adapter.records(collection);
-        switch (method) {
-          case "get":
-            return json({ record: await records.get(body.id as string) });
-          case "put":
-            return json({ record: await records.put(body.record as never) });
-          case "delete":
-            await records.delete(body.id as string);
-            return json({ ok: true });
-          case "list":
-            return json(await records.list((body.query ?? {}) as never));
-          case "claim": {
-            const expected = body.expected as { id: string; data: unknown; refs?: Record<string, string> };
-            const current = await records.get(expected.id);
-            if (current === null || !sameValue(current, expected)) return json({ claimed: false });
-            const replacement = body.replacement as { data: unknown; refs?: Record<string, string> } | undefined;
-            if (replacement === undefined) {
-              await records.delete(expected.id);
-            } else {
-              await records.put({
-                id: expected.id,
-                data: replacement.data as never,
-                ...(replacement.refs === undefined ? {} : { refs: replacement.refs }),
-              });
-            }
-            return json({ claimed: true });
-          }
-          case "atomic/insert-if-absent":
-            return json({ record: await records.atomic!.insertIfAbsent(body.record as never) });
-          case "atomic/compare-and-swap":
-            return json({
-              record: await records.atomic!.compareAndSwap(
-                body.record as never,
-                body.expectedRevision as string,
-              ),
-            });
-          default:
-            return envelope("not-found", `unknown records method: ${method}`);
-        }
-      }
-
-      if (rest[0] === "blobs") {
-        const namespace = rest[1]!;
-        const blobs = adapter.blobs(namespace);
-        if (rest.length === 2 && request.method === "GET") {
-          const keys = await blobs.list(url.searchParams.get("prefix") ?? "");
-          return json({ keys });
-        }
-        const key = rest.slice(2).join("/");
-        if (request.method === "PUT") {
-          const contentType = recorded.contentType ?? undefined;
-          await blobs.put(key, recorded.bytes ?? new Uint8Array(), contentType === undefined ? undefined : { contentType });
-          return json({ ok: true });
-        }
-        if (request.method === "GET") {
-          const blob = await blobs.get(key);
-          if (blob === null) return envelope("not-found", "Blob not found.");
-          return new Response(blob.bytes.slice().buffer as ArrayBuffer, {
-            headers: blob.contentType === undefined ? {} : { "content-type": blob.contentType },
-          });
-        }
-        if (request.method === "DELETE") {
-          await blobs.delete(key);
-          return json({ ok: true });
-        }
-      }
-
-      if (rest[0] === "erase" && request.method === "POST") {
-        eraseCalls.push(recorded.json);
-        // The cascade itself is the console's concern (proven in the console
-        // repo against real per-org stores); the fake answers the wire shape.
-        return json({ report: { vendo_apps: 1, vendo_threads: 2 } });
-      }
-
-      return envelope("not-found", "unknown route");
-    } catch (error) {
-      if (error instanceof VendoError) return envelope(error.code, error.message);
-      return envelope("unavailable", error instanceof Error ? error.message : String(error));
-    }
-  };
-
-  return { adapter, requests, eraseCalls, handler };
-}
 
 const hosted = (console_: ReturnType<typeof fakeConsole>) => hostedStore({
   apiKey: "vnd_secret",
@@ -297,6 +136,44 @@ describe("hostedStore wire", () => {
     expect(await blobs.list("")).toEqual(["images/a b.png"]);
   });
 
+  it("speaks the session wire: register/adopt/stale/claim, millisecond clocks on the body", async () => {
+    const console_ = fakeConsole();
+    const store = hosted(console_);
+    const base = Date.parse("2026-01-01T00:00:00Z");
+
+    await store.sessions.register("anonymous_1", base);
+    expect(console_.requests[0]).toMatchObject({
+      method: "POST",
+      url: "https://cloud.test/api/v1/store/sessions/register",
+      json: { subject: "anonymous_1", now: base },
+    });
+    expect(console_.sessions.get("anonymous_1")).toBe(base);
+
+    expect(await store.sessions.stale(30_000, base + 60_000)).toEqual(["anonymous_1"]);
+    expect(console_.requests[1]).toMatchObject({
+      url: "https://cloud.test/api/v1/store/sessions/stale",
+      json: { idleMs: 30_000, now: base + 60_000 },
+    });
+
+    expect(await store.sessions.claim("anonymous_1", 30_000, base + 60_000)).toBe(true);
+    expect(console_.requests[2]).toMatchObject({
+      url: "https://cloud.test/api/v1/store/sessions/claim",
+      json: { subject: "anonymous_1", idleMs: 30_000, now: base + 60_000 },
+    });
+    expect(await store.sessions.claim("anonymous_1", 30_000, base + 60_000)).toBe(false);
+
+    await store.sessions.register("anonymous_2", base);
+    expect(await store.sessions.adopt("anonymous_2", "user_signed")).toEqual({
+      apps: 0, threads: 0, states: 0, skipped: 0,
+    });
+    expect(console_.requests.at(-1)).toMatchObject({
+      url: "https://cloud.test/api/v1/store/sessions/adopt",
+      json: { from: "anonymous_2", to: "user_signed" },
+    });
+    // A replay finds nothing to merge — null, not an error.
+    expect(await store.sessions.adopt("anonymous_2", "user_signed")).toBeNull();
+  });
+
   it("speaks the erase wire: one POST per cascade, subject or app scoped", async () => {
     const console_ = fakeConsole();
     const store = hosted(console_);
@@ -391,6 +268,14 @@ describe("hostedStore error mapping", () => {
       .rejects.toThrow(/invalid erase/);
     await expect(adapterFor(vi.fn(async () => Response.json({ keys: [1] }))).blobs("files").list())
       .rejects.toThrow(/invalid blob list/);
+    const hostedFor = (fetchImpl: unknown) =>
+      hostedStore({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: fetchImpl as typeof fetch });
+    await expect(hostedFor(vi.fn(async () => Response.json({}))).sessions.stale(1_000))
+      .rejects.toThrow(/invalid stale/);
+    await expect(hostedFor(vi.fn(async () => Response.json({ claimed: "yes" }))).sessions.claim("s", 1_000))
+      .rejects.toThrow(/invalid claim/);
+    await expect(hostedFor(vi.fn(async () => Response.json({ report: "moved" }))).sessions.adopt("a", "b"))
+      .rejects.toThrow(/invalid adopt/);
   });
 });
 

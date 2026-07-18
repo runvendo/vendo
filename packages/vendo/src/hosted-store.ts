@@ -12,6 +12,7 @@ import {
   DEDICATED_RECORD_COLLECTIONS,
   RESERVED_COLLECTIONS,
   type EraseReport,
+  type SubjectMergeReport,
   type VendoStore,
 } from "@vendoai/store";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
@@ -58,6 +59,17 @@ export interface HostedStore extends VendoStore {
   erase: {
     bySubject(subject: string): Promise<EraseReport>;
     byApp(appId: string): Promise<EraseReport>;
+  };
+  /** The ephemeral-session doors (02-store §4, hosted): registration == touch
+   * on every ephemeral request, adoption on sign-in, and the list/claim legs
+   * of the HOST-driven TTL sweep — the sweep claims a stale subject, then
+   * finishes through `erase.bySubject` (hosted-store one-pager). Millisecond
+   * clocks ride the wire so an injected session clock stays authoritative. */
+  sessions: {
+    register(subject: string, now?: number): Promise<void>;
+    adopt(from: string, to: string): Promise<SubjectMergeReport | null>;
+    stale(idleMs: number, now?: number): Promise<string[]>;
+    claim(subject: string, idleMs: number, now?: number): Promise<boolean>;
   };
 }
 
@@ -288,9 +300,50 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
     return report as EraseReport;
   };
 
+  const parseMergeReport = (payload: unknown): SubjectMergeReport | null => {
+    const report = typeof payload === "object" && payload !== null && "report" in payload
+      ? (payload as { report?: unknown }).report
+      : undefined;
+    if (report === null) return null;
+    if (
+      typeof report !== "object" || report === undefined || Array.isArray(report)
+      || !Object.values(report).every((count) => typeof count === "number")
+    ) {
+      invalidResponse("invalid adopt");
+    }
+    return report as SubjectMergeReport;
+  };
+
   return {
     records,
     blobs,
+    sessions: {
+      async register(subject, now) {
+        await sendJson("/sessions/register", { subject, ...(now === undefined ? {} : { now }) });
+      },
+      async adopt(from, to) {
+        return parseMergeReport(await sendJson("/sessions/adopt", { from, to }));
+      },
+      async stale(idleMs, now) {
+        const payload = await sendJson("/sessions/stale", {
+          idleMs,
+          ...(now === undefined ? {} : { now }),
+        }) as { subjects?: unknown };
+        if (!Array.isArray(payload.subjects) || !payload.subjects.every((subject) => typeof subject === "string")) {
+          invalidResponse("invalid stale");
+        }
+        return payload.subjects as string[];
+      },
+      async claim(subject, idleMs, now) {
+        const payload = await sendJson("/sessions/claim", {
+          subject,
+          idleMs,
+          ...(now === undefined ? {} : { now }),
+        }) as { claimed?: unknown };
+        if (typeof payload.claimed !== "boolean") invalidResponse("invalid claim");
+        return payload.claimed as boolean;
+      },
+    },
     // 02-store §5 — the subject/app cascade runs server-side with eraseStore
     // parity; the host-side ephemeral TTL sweep is built on bySubject.
     erase: {

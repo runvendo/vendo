@@ -9,7 +9,7 @@ import {
 } from "@vendoai/core";
 import type { VendoGuard } from "@vendoai/guard";
 import type { McpDoor } from "@vendoai/mcp";
-import type { VendoStore } from "@vendoai/store";
+import type { SubjectMergeReport, VendoStore } from "@vendoai/store";
 import type { Telemetry } from "@vendoai/telemetry";
 import type { VendoAgent } from "@vendoai/agent";
 import type { ConnectionsService } from "../connections.js";
@@ -69,6 +69,12 @@ export interface WireDeps {
       (possibly injected) session clock; `sweep` runs the store TTL sweep and
       cascades swept subjects into the agent. */
   sessions: { ttlMs: number; sweepIntervalMs: number; now: () => number };
+  /** The session doors bound to the composed store (selectStore): the local
+      engine's SQL registry, or the hosted store's wire doors. */
+  sessionStore: {
+    register(subject: string, now: number): Promise<void>;
+    adopt(from: string, to: string): Promise<SubjectMergeReport | null>;
+  };
   sweep: () => Promise<void>;
 }
 
