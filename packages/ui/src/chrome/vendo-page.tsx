@@ -10,7 +10,7 @@ import { AutomationsPanel } from "./automations-panel.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
 import { TakeoverPortal } from "./takeover-portal.js";
-import { VendoThread } from "./vendo-thread.js";
+import { VendoThread } from "./thread/index.js";
 import { WaitingQueue } from "./waiting-queue.js";
 
 const TABS = ["chat", "apps", "automations", "accounts", "activity"] as const;

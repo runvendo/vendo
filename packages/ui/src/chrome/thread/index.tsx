@@ -1,12 +1,12 @@
 import { isToolUIPart } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useVendoThread } from "../hooks/use-vendo-thread.js";
-import { ChromeRoot } from "./chrome-root.js";
-import { MorphToast, type MorphToastProps } from "./morph-toast.js";
-import { Composer, useComposer } from "./thread/composer.js";
-import { MessageList } from "./thread/message-list.js";
-import { useMessageWindow, useStickToBottom } from "./thread/scrolling.js";
-import { approvalByCall, riskByCall, userText } from "./thread/message-data.js";
+import { useVendoThread } from "../../hooks/use-vendo-thread.js";
+import { ChromeRoot } from "../chrome-root.js";
+import { MorphToast, type MorphToastProps } from "../morph-toast.js";
+import { Composer, useComposer } from "./composer.js";
+import { MessageList } from "./message-list.js";
+import { useMessageWindow, useStickToBottom } from "./scrolling.js";
+import { approvalByCall, riskByCall, userText } from "./message-data.js";
 
 export interface VendoThreadProps {
   threadId?: string;

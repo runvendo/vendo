@@ -4,7 +4,7 @@ import { useVendoTheme } from "../context.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { themeCssVariables } from "../theme.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { VendoThread } from "./vendo-thread.js";
+import { VendoThread } from "./thread/index.js";
 
 const FOCUSABLE = "button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex='-1'])";
 

@@ -125,7 +125,7 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
    excluded: FluidReveal already morphs those. */
 @media (prefers-reduced-motion: no-preference) {
   /* ENG-218 — entrance-animation gating on restore: turns present when a long
-     thread is reopened carry .fl-no-entrance (set in vendo-thread), so only
+     thread is reopened carry .fl-no-entrance (set in chrome/thread), so only
      turns that ARRIVE after restore (streamed replies, sends) run the rise.
      A reopened 200-turn thread no longer fires 200 animations on first paint. */
   .fl-msglist > :not(.fl-reveal):not(.fl-no-entrance) { animation: fl-item-in .32s cubic-bezier(.22, 1, .36, 1) both; }
