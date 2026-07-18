@@ -32,6 +32,8 @@ const RUNTIME_EXPORTS = [
   "capabilityMissToolFailureSchema", "capabilityMissTriggerSchema", "capabilityMissEventSchema",
   "appIdSchema", "grantIdSchema", "approvalIdSchema", "runIdSchema", "threadIdSchema",
   "isoDateTimeSchema", "jsonSchemaSchema",
+  "VENDO_TREE_FORMAT_V2", "validateTreeV2", "treeV2Schema", "treeQueryV2Schema",
+  "compileWireV2", "WIRE_ISSUE_CODES",
 ];
 
 interface PackedPackage {

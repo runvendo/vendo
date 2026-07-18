@@ -3,8 +3,9 @@
  * the vendo-genui/v2 markup (v2 spec §2,
  * docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md). The wire-v2
  * markup compiler hands this module the text BETWEEN an attribute's braces;
- * it returns canonical JSON with `$path`/`$state` bindings compiled in. Not
- * exported from the package root.
+ * it returns canonical JSON with `$path`/`$state` bindings compiled in. Only
+ * the issue contract (`WIRE_ISSUE_CODES`, `WireIssueCode`, `WireIssue`) is
+ * exported from the package root; the parser itself stays internal.
  *
  * The grammar is JSON5-lite: JSON literals, single- OR double-quoted strings,
  * arrays/objects with trailing commas and bare object keys, plus bare dotted

@@ -2,9 +2,10 @@ import { z } from "zod";
 import { componentMapError } from "./component-map.js";
 import { safeErrorMessage } from "./errors.js";
 import { FN_REFERENCE_PATTERN, collectActionReferences } from "./fn-references.js";
-import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT } from "./formats.js";
+import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT, VENDO_TREE_FORMAT_V2 } from "./formats.js";
 import { appIdSchema, type AppId } from "./ids.js";
 import { TOOL_NAME_PATTERN } from "./tools.js";
+import { validateTreeV2 } from "./tree-v2.js";
 import { triggerSchema, type Trigger } from "./triggers.js";
 import { uiPayloadSchema, validateTree, type UIPayload } from "./tree.js";
 
@@ -114,6 +115,35 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
     const treeResult = validateTree({ ...app.tree, components: app.components });
     if (!treeResult.ok) {
       return fail("validation", treeResult.error.message);
+    }
+    for (const query of treeResult.tree.queries ?? []) {
+      if (query.tool.startsWith("fn:")) fnReferences.push(query.tool);
+    }
+    for (const node of treeResult.tree.nodes) {
+      if (node.props !== undefined) collectActionReferences(node.props, fnReferences);
+    }
+  } else if (app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
+    // No grafting: v2 trees never carry components (validateTreeV2 rejects a
+    // tree-level `components` member itself), so the tree validates AS-IS and
+    // the document-level map is validated beside it.
+    const treeResult = validateTreeV2(app.tree);
+    if (!treeResult.ok) {
+      return fail("validation", treeResult.error.message);
+    }
+    const components = app.components ?? {};
+    const componentError = componentMapError(components);
+    if (componentError !== null) {
+      return fail("validation", componentError);
+    }
+    // Generated-presence — the check validateTreeV2 deliberately defers to the
+    // document, which is where the components map lives (mirrors v1's rule).
+    for (const node of treeResult.tree.nodes) {
+      if (node.source === "generated" && !Object.prototype.hasOwnProperty.call(components, node.component)) {
+        return fail(
+          "validation",
+          `node "${node.id}" references generated component "${node.component}" with no definition in components`,
+        );
+      }
     }
     for (const query of treeResult.tree.queries ?? []) {
       if (query.tool.startsWith("fn:")) fnReferences.push(query.tool);

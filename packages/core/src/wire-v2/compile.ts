@@ -1,10 +1,12 @@
 /**
- * Internal: the vendo-genui/v2 wire markup compiler
+ * The vendo-genui/v2 wire markup compiler
  * (document shape, elements, attributes, nesting, deterministic id minting,
  * query hoisting, raw-TSX islands, actions, text children, source resolution)
  * per the v2 spec §2 (docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md)
  * and plan decisions D3/D5/D6
  * (docs/superpowers/plans/2026-07-18-vendo-v2-wave1-format-compiler-renderer.md).
+ * `compileWireV2` and its options/result types are exported from the package
+ * root; the sibling wire-v2 modules stay internal.
  *
  * The wire is a single `<App ...>...</App>` element whose element children
  * become children of a synthetic `root` Stack node. The compiler is pure,

@@ -21,3 +21,8 @@ export * from "./tools.js";
 export * from "./tree.js";
 export * from "./tree-v2.js";
 export * from "./triggers.js";
+// wire-v2 — only the compiler entry point and the renderer/repair issue
+// contract are public; the sibling modules (expressions, attributes, scan,
+// limits, state) stay internal.
+export { compileWireV2, type WireCompileOptions, type WireCompileResult } from "./wire-v2/compile.js";
+export { WIRE_ISSUE_CODES, type WireIssue, type WireIssueCode } from "./wire-v2/expression.js";
