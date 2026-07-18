@@ -47,10 +47,9 @@ Engineering doctrine (both proof points say this is the hard part):
 Five steps, zero questions on the happy path:
 
 1. **Wire.** Apply the bounded change set: agent route handler, starter model
-   module, one-line VendoRoot layout wrap, package.json hooks. Requires a
-   clean git tree. No per-file y/N; ends with "4 files changed, git diff to
-   review". Git is the review surface (field norm: create-next-app, shadcn,
-   Sentry wizard, Convex; nobody does per-diff approvals).
+   module, one-line VendoRoot layout wrap, package.json hooks. No gates, no
+   per-file y/N, no git ceremony: apply and list the files changed (field
+   norm: create-next-app, shadcn; nobody does per-diff approvals).
 2. **Get a key.** Env key if present (one line, done). Otherwise offer the
    cloud starter key: browser login, Vendo Cloud mints a metered dev key and
    writes it to .env.local. The dev never pastes a key. This is the only
@@ -71,8 +70,8 @@ zero when an env key exists.
 - **Kill the 4-question interview.** Model import is detected; the brief is
   AI-drafted; risk marking is AI-proposed; the MCP door question leaves init
   (it stays a deliberate post-setup step via the existing `vendo mcp` flow).
-- **Kill per-diff y/N approvals.** Clean-git-tree gate plus apply plus
-  changed-files summary. No full-file "diffs" for files that did not exist.
+- **Kill per-diff y/N approvals.** Apply and list the files changed. No
+  full-file "diffs", no git gates or messaging.
 - **Kill the session-rung runtime ladder.** The Claude Code / Codex login was
   never meant to serve product turns. Runtime model = real keys only (env key
   or minted starter key). The Claude session's proper place is init-time
@@ -102,7 +101,7 @@ zero when an env key exists.
   VENDO_DEV_ALLOW_SESSIONS, the SDK devDependency install prompt, and the
   codex drift probe in doctor.
 - Interview: remove the 4-question flow and --brief/--ask surface tied to it.
-- Per-diff confirm flow: remove; add clean-tree gate and summary output.
+- Per-diff confirm flow: remove; replace with the changed-files summary.
 - Refine offer and finale ordering: finale is the guaranteed ending; no
   pre-finale refine offer.
 - Build the Cloud starter-key minting endpoint (was already a parked follow-up;
