@@ -15,10 +15,9 @@ import { readOptional, writeText, type Output } from "./shared.js";
  * mint a metered dev-mode starter allowance and write it to .env.local so the
  * dev never pastes a key.
  *
- * Starter-allowance minting is the Cloud console's POST /api/v1/dev/starter-key
- * (live since the managed-inference lane); against an older console that
- * lacks it, mint returns null and the step degrades to a clear pointer
- * instead of blocking init.
+ * Starter-allowance minting rides the console's generic POST /api/v1/keys
+ * (purpose: "dev-mode"); against a console that lacks it, mint returns null
+ * and the step degrades to a clear pointer instead of blocking init.
  */
 
 async function askYesNo(question: string, defaultYes = false): Promise<boolean> {
@@ -43,8 +42,10 @@ async function askText(question: string): Promise<string> {
 }
 
 /**
- * Console hand-off contract (implemented by vendo-web):
- *   POST /api/v1/dev/starter-key      auth: user session (Bearer access token)
+ * Console hand-off contract (console follow-up moves its live
+ * /api/v1/dev/starter-key mint onto this generic path; until that lands the
+ * 404 degradation below covers the gap):
+ *   POST /api/v1/keys                 auth: user session (Bearer access token)
  *   request  { purpose: "dev-mode" }
  *   response { key: "vnd_<40 hex>", meter: { runs: { included, remaining } } }
  * The key is a metered dev-mode API key scoped to the caller's default org.
@@ -56,7 +57,10 @@ export async function mintStarterAllowance(
   options: Pick<CloudFetchOptions, "apiUrl" | "env" | "fetchImpl" | "home"> = {},
 ): Promise<string | null> {
   try {
-    const result = await cloudFetch("/api/v1/dev/starter-key", {
+    // One key-mint path for everyone (Yousef 2026-07-18): the generic keys
+    // resource; the dev-mode meter comes from the purpose in the body, not a
+    // special path.
+    const result = await cloudFetch("/api/v1/keys", {
       ...options,
       auth: "user",
       method: "POST",
