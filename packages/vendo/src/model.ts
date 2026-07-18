@@ -1,5 +1,6 @@
 import { VendoError } from "@vendoai/core";
 import type { LanguageModel } from "ai";
+import { deploymentIdentityHeaders } from "./deployment-identity.js";
 
 /** The inference adapter seam (cloud definition 2026-07-17, adapter rule).
  * The agent and apps blocks consume exactly one interface — an ai-SDK
@@ -138,6 +139,7 @@ export function cloudModel(options: CloudModelOptions): LanguageModel {
         authorization: `Bearer ${options.apiKey}`,
         accept: mode === "generate" ? "application/json" : "application/x-ndjson",
         "content-type": "application/json",
+        ...(await deploymentIdentityHeaders()),
       },
       body: JSON.stringify({ mode, options: wire }),
       ...(signal === undefined ? {} : { signal }),

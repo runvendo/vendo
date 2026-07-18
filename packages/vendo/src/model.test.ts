@@ -80,6 +80,17 @@ describe("cloudModel", () => {
     expect("headers" in sent.options).toBe(false);
   });
 
+  it("attaches the deployment identity headers on every request", async () => {
+    const cloudFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      expect(request.headers.get("x-vendo-deployment-host")).toBeTruthy();
+      expect(request.headers.get("x-vendo-deployment-name")).toBeTruthy();
+      return Response.json(generatePayload);
+    });
+    await asV3(cloudModel({ apiKey: "vnd_secret", fetch: cloudFetch as unknown as typeof fetch })).doGenerate(promptOptions);
+    expect(cloudFetch).toHaveBeenCalledTimes(1);
+  });
+
   it("defaults the base URL to the Vendo console", async () => {
     const cloudFetch = vi.fn(async () => Response.json(generatePayload));
     await asV3(cloudModel({ apiKey: "vnd_secret", fetch: cloudFetch as unknown as typeof fetch })).doGenerate(promptOptions);
