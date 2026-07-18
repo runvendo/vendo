@@ -44,6 +44,12 @@ export interface CompileState {
   readonly hoistedQueryNames: Set<string>;
   /** D3 — captured `<Island>` raw-TSX sources by name. */
   readonly components: Record<string, string>;
+  /** §8 (limits.ts) — running UTF-8 byte total of admitted island sources. */
+  componentBytes: number;
+  /** §8 (limits.ts) — the once-per-compile cap issues already recorded. */
+  nodeLimitIssued: boolean;
+  queryLimitIssued: boolean;
+  componentLimitIssued: boolean;
   /** True once `</App>` (or `<App/>`) properly closed the document. */
   appClosed: boolean;
   /** True when EOF truncated an open tag or left elements to auto-close. */
@@ -59,10 +65,35 @@ export interface Frame {
   node: TreeNode;
 }
 
+/** §8-adjacent hygiene cap (Task 5, review-mandated): at most this many
+ *  issues are recorded per compile; when the cap is hit one final
+ *  `issues-truncated` marker is appended (so the array never exceeds
+ *  {@link WIRE_MAX_ISSUES} + 1 entries). Hostile input can otherwise mint an
+ *  issue per byte. */
+export const WIRE_MAX_ISSUES = 256;
+
+const pushCapped = (state: CompileState, entry: WireIssue): void => {
+  if (state.issues.length > WIRE_MAX_ISSUES) return;
+  if (state.issues.length === WIRE_MAX_ISSUES) {
+    state.issues.push({
+      code: "issues-truncated",
+      message: `issue list capped at ${WIRE_MAX_ISSUES}; further issues were not recorded`,
+    });
+    return;
+  }
+  state.issues.push(entry);
+};
+
 /** Records a compile issue with the current cursor as its best-effort source
- *  position (expression-layer issues, merged elsewhere, carry no index). */
+ *  position (expression-layer issues, merged via {@link mergeIssues}, carry
+ *  no index). The ONLY write paths into state.issues — both capped. */
 export const issue = (state: CompileState, code: string, message: string): void => {
-  state.issues.push({ code, message, index: state.index });
+  pushCapped(state, { code, message, index: state.index });
+};
+
+/** Merges expression-layer issues (attributes.ts) through the same cap. */
+export const mergeIssues = (state: CompileState, issues: readonly WireIssue[]): void => {
+  for (const entry of issues) pushCapped(state, entry);
 };
 
 /** ES2024 String.prototype.isWellFormed — guaranteed at runtime by the

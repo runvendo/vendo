@@ -7,7 +7,7 @@
  * `{ action }` prop shape (D5).
  */
 
-import { FN_REFERENCE_PATTERN } from "../fn-references.js";
+import { FN_REFERENCE_PATTERN, findInvalidActionReference } from "../fn-references.js";
 import type { Json } from "../ids.js";
 import { TOOL_NAME_PATTERN } from "../tools.js";
 import { parseExpression } from "./expression.js";
@@ -17,6 +17,7 @@ import {
   FAILED,
   issue,
   isWellFormedUtf16,
+  mergeIssues,
   type CompileState,
   type Dropped,
   type Failed,
@@ -60,7 +61,14 @@ const parseMarkupString = (state: CompileState, name: string): string | Dropped 
     }
     if (char === "\\") {
       const escaped = state.source[state.index + 1];
-      if (escaped === undefined) break;
+      if (escaped === undefined) {
+        // Invariant: FAILED means EOF truncation, and every FAILED producer
+        // leaves the cursor AT EOF — otherwise the caller resumes mid-tag
+        // and mints the tail as phantom text (the D6 roundtrip property
+        // sweep caught a dangling backslash doing exactly that).
+        state.index = state.source.length;
+        break;
+      }
       text += escaped === '"' || escaped === "\\" ? escaped : `\\${escaped}`;
       state.index += 2;
       continue;
@@ -79,7 +87,7 @@ const parseExpressionAttribute = (state: CompileState): Json | Dropped | Failed 
   if (skipBraceBlock(state) === FAILED) return FAILED;
   const inner = state.source.slice(start, state.index - 1);
   const result = parseExpression(inner, { queryNames: state.queryNames });
-  state.issues.push(...result.issues);
+  mergeIssues(state, result.issues);
   return result.dropped ? DROPPED : (result.value as Json);
 };
 
@@ -155,6 +163,22 @@ export const parseAttributes = (state: CompileState, element: AttributeElement):
         const parsed = parseExpressionAttribute(state);
         if (parsed === FAILED) return FAILED;
         value = parsed;
+        // D6 always-validates: validateTreeV2 walks node props for the fn:
+        // action grammar (same walk, ../fn-references.js), so an expression
+        // value smuggling { action: "fn:9bad" } anywhere would un-validate
+        // the tree. Drop the attribute here instead — only component props
+        // land in tree nodes, so only "component" needs the walk.
+        if (element === "component" && value !== DROPPED) {
+          const invalidAction = findInvalidActionReference(value);
+          if (invalidAction !== null) {
+            issue(
+              state,
+              "invalid-action",
+              `attribute "${name}" contains action "${invalidAction}", not a valid fn: reference; the attribute was dropped`,
+            );
+            value = DROPPED;
+          }
+        }
       } else if (opener === "'") {
         issue(
           state,

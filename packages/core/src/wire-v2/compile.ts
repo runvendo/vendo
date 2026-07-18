@@ -12,12 +12,16 @@
  * throws — malformed input degrades to ordered issues plus a smaller tree
  * that still passes validateTreeV2.
  *
- * Module stack (one-directional): compile → attributes → scan → state.
- * This file owns element dispatch, the frame stack, the forward-reference
- * pre-scan, and result assembly.
+ * Module stack (one-directional): compile → attributes → scan/limits →
+ * state. This file owns element dispatch, the frame stack, the
+ * forward-reference pre-scan, and result assembly; limits.ts guards every
+ * accumulation site with the §8 caps so the emitted tree and components
+ * always stay within the pinned limits.
  *
- * Valid-while-partial refinement and the §8 limits land in Task 5 (they
- * rework {@link determineComplete} and the accumulation sites).
+ * Valid-while-partial (D6) is property-tested in roundtrip.e2e.test.ts:
+ * EVERY prefix of a wire compiles to a validateTreeV2-passing tree with
+ * monotonically non-decreasing node counts, `complete` true only at a
+ * proper full parse.
  */
 
 import { safeErrorMessage } from "../errors.js";
@@ -29,6 +33,7 @@ import { RESERVED_COMPONENT_NAMES } from "../tree-limits.js";
 import { QUERY_NAME_PATTERN, type TreeQueryV2, type TreeV2 } from "../tree-v2.js";
 import { parseAttributes } from "./attributes.js";
 import type { WireIssue } from "./expression.js";
+import { admitIslandSource, claimNodeSlot, claimQuerySlot } from "./limits.js";
 import { collectText, NAME_CHAR, readName, scanTagEnd, skipElement, skipWhitespace } from "./scan.js";
 import { FAILED, issue, isWellFormedUtf16, type CompileState, type Frame } from "./state.js";
 
@@ -89,6 +94,10 @@ const makeState = (
   queries: [],
   hoistedQueryNames: new Set(),
   components: {},
+  componentBytes: 0,
+  nodeLimitIssued: false,
+  queryLimitIssued: false,
+  componentLimitIssued: false,
   appClosed: false,
   eofTruncated: false,
   droppedTrailing: false,
@@ -121,7 +130,7 @@ const compileQuery = (state: CompileState, frames: Frame[]): void => {
   const attrs = parseAttributes(state, "declaration");
   if (attrs === FAILED) {
     state.eofTruncated = true;
-    issue(state, "unclosed-element", "<Query> tag was truncated at end of input; the query was dropped");
+    issue(state, "truncated-tag", "<Query> tag was truncated at end of input; the query was dropped");
     return;
   }
   if (!attrs.selfClosing) {
@@ -157,6 +166,7 @@ const compileQuery = (state: CompileState, frames: Frame[]): void => {
     issue(state, "duplicate-query", `duplicate query name "${name}" (the first one wins; this one was dropped)`);
     return;
   }
+  if (!claimQuerySlot(state)) return; // §8 — over-cap queries are dropped
   const query: TreeQueryV2 = { name, tool };
   const input = attrs.props?.input;
   if (input !== undefined) {
@@ -178,7 +188,7 @@ const compileIsland = (state: CompileState): void => {
   const attrs = parseAttributes(state, "declaration");
   if (attrs === FAILED) {
     state.eofTruncated = true;
-    issue(state, "unclosed-element", "<Island> tag was truncated at end of input; the island was dropped");
+    issue(state, "truncated-tag", "<Island> tag was truncated at end of input; the island was dropped");
     return;
   }
   const name = attrs.props?.name;
@@ -201,12 +211,14 @@ const compileIsland = (state: CompileState): void => {
   if (close === -1) {
     state.index = state.source.length;
     state.eofTruncated = true;
-    issue(state, "unclosed-element", "<Island> was not closed before end of input; the island was dropped");
+    issue(state, "unclosed-skipped", "<Island> raw content was not closed before end of input; the island was dropped");
     return;
   }
   const sourceText = state.source.slice(start, close);
   state.index = close + ISLAND_CLOSE.length;
-  if (validName && !duplicate) state.components[name] = sourceText;
+  // §8 + hygiene (limits.ts): UTF-16 well-formedness, count cap, per-source
+  // and total byte caps all gate admission into the component map.
+  if (validName && !duplicate) admitIslandSource(state, name, sourceText);
 };
 
 /**
@@ -237,7 +249,17 @@ const compileOpenTag = (state: CompileState, frames: Frame[], name: string): voi
   const attrs = parseAttributes(state, "component");
   if (attrs === FAILED) {
     state.eofTruncated = true;
-    issue(state, "unclosed-element", `<${name}> tag was truncated at end of input; the element was dropped`);
+    issue(state, "truncated-tag", `<${name}> tag was truncated at end of input; the element was dropped`);
+    return;
+  }
+  if (!claimNodeSlot(state)) {
+    // §8 — beyond TREE_MAX_NODES the element still parses for document
+    // structure (attribute cursor movement above, close-tag balancing via
+    // this frame), but no node is appended and no child id is recorded, so
+    // children only ever reference emitted nodes. The frame's node is a
+    // placeholder that can never be emitted or mutated: once the cap is hit
+    // no descendant claims a slot either.
+    if (!attrs.selfClosing) frames.push({ tag: name, node: { id: name, component: name } });
     return;
   }
   const node: TreeNode = { id: mintId(state, name), component: name };
@@ -255,7 +277,7 @@ const skipUnparsedElement = (state: CompileState, name: string): void => {
   const end = scanTagEnd(state);
   if (end === FAILED) {
     state.eofTruncated = true;
-    issue(state, "unclosed-element", `<${name}> tag was truncated at end of input`);
+    issue(state, "truncated-tag", `<${name}> tag was truncated at end of input`);
     return;
   }
   if (!end.selfClosing) skipElement(state, name);
@@ -284,6 +306,7 @@ const closeTag = (state: CompileState, frames: Frame[], name: string): void => {
 const appendTextChild = (state: CompileState, frames: Frame[], raw: string): void => {
   const text = raw.trim();
   if (text.length === 0) return; // whitespace-only runs are ignored silently
+  if (!claimNodeSlot(state)) return; // §8 — beyond the cap, text produces no node
   if (!isWellFormedUtf16(text)) {
     issue(state, "malformed-text", "text child contains a lone surrogate (ill-formed UTF-16); the text was skipped");
     return;
@@ -320,14 +343,23 @@ const parseChildren = (state: CompileState, frames: Frame[]): void => {
     }
     state.index += 1;
     const name = readName(state);
+    if (name.length === 0 && state.index >= state.source.length) {
+      // D6 — a lone "<" at EOF is an incomplete trailing tag on a streaming
+      // prefix (the next chunk may extend it into a real tag), never text:
+      // as text it would mint a phantom Text node that a longer prefix takes
+      // back, breaking node-count monotonicity (the roundtrip property sweep
+      // caught exactly that).
+      issue(state, "truncated-tag", '"<" at end of input starts an incomplete tag; it was dropped');
+      break;
+    }
     compileOpenTag(state, frames, name);
   }
   // EOF with the document still open: auto-close everything (D6).
   state.eofTruncated = true;
   for (let i = frames.length - 1; i >= 1; i -= 1) {
-    issue(state, "unclosed-element", `<${(frames[i] as Frame).tag}> was auto-closed at end of input`);
+    issue(state, "eof-unclosed", `<${(frames[i] as Frame).tag}> was auto-closed at end of input`);
   }
-  issue(state, "unclosed-element", "<App> was not closed before end of input");
+  issue(state, "eof-unclosed", "<App> was not closed before end of input");
 };
 
 /** True when the cursor sits on `<App` followed by a tag-name boundary. */
@@ -343,6 +375,14 @@ const opensApp = (state: CompileState): boolean => {
  * dropped duplicate's name still resolves — it is the same name) and the
  * `<Island name>` names BEFORE the main parse, so binding attributes may
  * reference a declaration that appears later in the wire.
+ *
+ * §8 interplay (pinned decision): this set deliberately ignores the caps the
+ * main pass enforces, so it may contain names of queries/islands the main
+ * pass DROPS (over-cap, like dropped duplicates). A binding to such a name
+ * still compiles to a valid `{ $path }` — it renders as absent data, and
+ * wave-3 shape checking is the layer that surfaces it. Keeping resolution
+ * cap-blind keeps prefix compiles consistent: whether a name resolves never
+ * depends on how much of the document has streamed in.
  *
  * It reuses the quote-aware scanners and skips Island raw content and
  * skipped subtrees (unknown elements, nested App, paired-Query content)
@@ -415,9 +455,11 @@ const prescanDeclarations = (wire: string): { queryNames: Set<string>; islandNam
   return { queryNames, islandNames };
 };
 
-/** D6 wave-1 partial heuristic, kept in one place for Task 5 to rework:
- *  complete iff App opened and properly closed, nothing was truncated or
- *  auto-closed at EOF, and no trailing content after `</App>` was dropped. */
+/** D6 — complete iff App opened and properly closed, nothing was truncated
+ *  or auto-closed at EOF, and no trailing content after `</App>` was
+ *  dropped. Structural only: §8 cap drops do NOT clear `complete` (the wire
+ *  itself parsed fully). Pinned by the roundtrip property sweep: false for
+ *  every proper prefix, true only at full length. */
 const determineComplete = (state: CompileState): boolean =>
   state.appClosed && !state.eofTruncated && !state.droppedTrailing;
 
@@ -455,7 +497,7 @@ const compileWireV2Unsafe = (wire: string, options: WireCompileOptions | undefin
   const app = parseAttributes(state, "app");
   if (app === FAILED) {
     state.eofTruncated = true;
-    issue(state, "unclosed-element", "<App ...> tag was truncated at end of input");
+    issue(state, "truncated-tag", "<App ...> tag was truncated at end of input");
     return finishResult(state, undefined);
   }
   // D3 — only App's name attribute means anything; the rest are discarded.

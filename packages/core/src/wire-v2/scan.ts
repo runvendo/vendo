@@ -136,19 +136,22 @@ export const skipElement = (state: CompileState, tag: string): void => {
     }
   }
   state.eofTruncated = true;
-  issue(state, "unclosed-element", `skipped element <${tag}> was not closed before end of input`);
+  issue(state, "unclosed-skipped", `skipped element <${tag}> was not closed before end of input`);
 };
 
 /** Consumes text up to the next plausible tag start (`<` followed by a name
- *  character or `/`) or EOF, returning the raw run. The caller (compile.ts)
- *  turns non-whitespace runs into Text nodes (D3); whitespace-only runs are
- *  ignored silently. */
+ *  character or `/`) or EOF, returning the raw run. A `<` that is the LAST
+ *  character also stops the run: on a streaming prefix it may become a tag
+ *  once more input arrives, so treating it as text would mint a phantom Text
+ *  node that a longer prefix takes back (the D6 monotonicity property test
+ *  caught exactly that). The caller (compile.ts) turns non-whitespace runs
+ *  into Text nodes (D3); whitespace-only runs are ignored silently. */
 export const collectText = (state: CompileState): string => {
   const start = state.index;
   while (state.index < state.source.length) {
     if (state.source[state.index] === "<") {
       const next = state.source[state.index + 1];
-      if (next !== undefined && (next === "/" || NAME_CHAR.test(next))) break;
+      if (next === undefined || next === "/" || NAME_CHAR.test(next)) break;
     }
     state.index += 1;
   }

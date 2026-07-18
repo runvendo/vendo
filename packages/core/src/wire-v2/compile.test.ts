@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { componentMapError } from "../component-map.js";
 import { VENDO_TREE_FORMAT_V2 } from "../formats.js";
+import {
+  TREE_MAX_COMPONENT_SOURCE_BYTES,
+  TREE_MAX_GENERATED_COMPONENTS,
+  TREE_MAX_NODES,
+  TREE_MAX_QUERIES,
+  TREE_MAX_TOTAL_COMPONENT_BYTES,
+} from "../tree-limits.js";
 import { validateTreeV2 } from "../tree-v2.js";
 import { compileWireV2, type WireCompileOptions, type WireCompileResult } from "./compile.js";
 
-/** D6 — every compiled tree must pass validateTreeV2, whatever the input.
- *  (Shared gate: all tests below go through this helper unless the input
- *  deliberately exceeds the §8 caps, which Task 5 enforces at compile.) */
+/** D6 — every compiled tree must pass validateTreeV2, whatever the input
+ *  (the §8 caps are enforced at compile, so even over-cap input compiles to
+ *  a within-limits valid tree). */
 const compile = (wire: string, options?: WireCompileOptions): WireCompileResult => {
   const result = compileWireV2(wire, options);
   const validation = validateTreeV2(result.tree);
@@ -293,31 +301,40 @@ describe("compileWireV2 document errors", () => {
   });
 });
 
-describe("compileWireV2 partial input (wave-1 heuristic; Task 5 refines)", () => {
-  it("auto-closes unclosed elements at EOF and marks incomplete", () => {
+describe("compileWireV2 partial input (D6)", () => {
+  it("auto-closes unclosed elements at EOF with eof-unclosed and marks incomplete", () => {
     const result = compile("<App><Stack><Card/>");
     expect(result.tree.nodes).toStrictEqual([
       { id: "root", component: "Stack", source: "prewired", children: ["stack-1"] },
       { id: "stack-1", component: "Stack", source: "prewired", children: ["card-1"] },
       { id: "card-1", component: "Card", source: "prewired" },
     ]);
-    expect(codes(result)).toEqual(["unclosed-element", "unclosed-element"]);
+    expect(codes(result)).toEqual(["eof-unclosed", "eof-unclosed"]);
     expect(result.complete).toBe(false);
   });
 
-  it("drops an element whose tag is truncated at EOF", () => {
+  it("drops an element whose open tag is truncated at EOF with truncated-tag", () => {
     const result = compile('<App><Card title="x');
     expect(result.tree.nodes).toStrictEqual([
       { id: "root", component: "Stack", source: "prewired" },
     ]);
-    expect(codes(result)).toContain("unclosed-element");
+    expect(codes(result)).toContain("truncated-tag");
     expect(result.complete).toBe(false);
   });
 
   it("compiles a truncated App open tag to the empty tree, incomplete", () => {
     const result = compile('<App name="half');
     expect(result.tree).toStrictEqual(EMPTY_TREE);
-    expect(codes(result)).toEqual(["unclosed-element"]);
+    expect(codes(result)).toEqual(["truncated-tag"]);
+    expect(result.complete).toBe(false);
+  });
+
+  it("records an unterminated skipped element as unclosed-skipped", () => {
+    const result = compile("<App><div><Card/>");
+    expect(result.tree.nodes).toStrictEqual([
+      { id: "root", component: "Stack", source: "prewired" },
+    ]);
+    expect(codes(result)).toEqual(["unknown-element", "unclosed-skipped", "eof-unclosed"]);
     expect(result.complete).toBe(false);
   });
 });
@@ -354,16 +371,15 @@ describe("compileWireV2 totality", () => {
     }
   });
 
-  it("survives huge nesting without throwing (cap enforcement lands in Task 5)", () => {
-    // 20k nested Stacks exceed TREE_MAX_NODES, so the tree does not validate
-    // yet — Task 5 makes over-cap input stop accumulating. Totality only here.
+  it("caps huge nesting at TREE_MAX_NODES and the tree stays valid", () => {
     const wire = "<App>" + "<Stack>".repeat(20_000);
     let result: WireCompileResult | undefined;
     expect(() => {
       result = compileWireV2(wire);
     }).not.toThrow();
     expect(result?.complete).toBe(false);
-    expect(result?.tree.nodes.length).toBe(20_001);
+    expect(result?.tree.nodes.length).toBe(TREE_MAX_NODES);
+    expect(validateTreeV2(result?.tree)).toEqual({ ok: true, tree: result?.tree });
   });
 });
 
@@ -548,10 +564,10 @@ describe("compileWireV2 islands (D3)", () => {
     expect(result.tree.nodes.map((node) => node.id)).toEqual(["root", "badge-1"]);
   });
 
-  it("drops an unterminated island at EOF and marks incomplete", () => {
+  it("drops an unterminated island at EOF (unclosed-skipped) and marks incomplete", () => {
     const result = compile('<App><Island name="A">export default');
     expect(result.components).toStrictEqual({});
-    expect(codes(result)).toContain("unclosed-element");
+    expect(codes(result)).toContain("unclosed-skipped");
     expect(result.complete).toBe(false);
   });
 });
@@ -649,12 +665,25 @@ describe("compileWireV2 actions (D5)", () => {
     expect(codes(result)).toEqual(["invalid-action"]);
   });
 
-  it("passes expression-form on* attributes through untouched", () => {
+  it("passes expression-form on* attributes with valid fn: actions through untouched", () => {
     const result = compile('<App><Button onClick={{ action: "fn:do_thing", confirm: true }}/></App>');
     expect(result.tree.nodes[1]?.props).toStrictEqual({
       onClick: { action: "fn:do_thing", confirm: true },
     });
     expect(result.issues).toEqual([]);
+  });
+
+  it("drops an expression attribute carrying an invalid fn: action reference (D6 always-validates)", () => {
+    const result = compile('<App><Button onClick={{ action: "fn:9bad" }} title="kept"/></App>');
+    expect(result.tree.nodes[1]?.props).toStrictEqual({ title: "kept" });
+    expect(codes(result)).toEqual(["invalid-action"]);
+  });
+
+  it("finds an invalid fn: action nested anywhere in an expression value", () => {
+    const result = compile('<App><Card cfg={{ list: [{ deep: { action: "fn:" } }] }}/></App>');
+    expect(result.tree.nodes[1]?.props).toBeUndefined();
+    expect(codes(result)).toEqual(["invalid-action"]);
+    expect(validateTreeV2(result.tree)).toEqual({ ok: true, tree: result.tree });
   });
 
   it("leaves non-action-shaped attributes alone", () => {
@@ -701,10 +730,12 @@ describe("compileWireV2 behavior pins (review)", () => {
     expect(result.issues).toEqual([]);
   });
 
-  it("populates a best-effort index on compile-side issues", () => {
+  it("populates an exact best-effort index on compile-side issues", () => {
     const result = compile("<App></Grid><Card/></App>");
     expect(codes(result)).toEqual(["stray-close-tag"]);
-    expect(typeof result.issues[0]?.index).toBe("number");
+    // The cursor sits just past the close tag's ">" when the issue records:
+    // "<App></Grid>" is 12 characters, so the index pins at 12.
+    expect(result.issues[0]?.index).toBe(12);
   });
 });
 
@@ -782,5 +813,114 @@ describe("compileWireV2 full-spec-example gate (spec §2)", () => {
     const result = compile(specWire("revenue | asPoints(month, revenue)"));
     expectSpecTree(result);
     expect(codes(result)).toEqual(["reshape-unsupported"]);
+  });
+});
+
+describe("compileWireV2 §8 limits", () => {
+  it("stops creating nodes at TREE_MAX_NODES with a single node-limit issue", () => {
+    const wire = "<App>" + "<Card/>".repeat(TREE_MAX_NODES + 100) + "</App>";
+    const result = compile(wire);
+    expect(result.tree.nodes).toHaveLength(TREE_MAX_NODES);
+    expect(codes(result)).toEqual(["node-limit"]);
+    expect(result.complete).toBe(true);
+    // Children reference only nodes that exist in the emitted tree.
+    const ids = new Set(result.tree.nodes.map((node) => node.id));
+    for (const node of result.tree.nodes) {
+      for (const child of node.children ?? []) expect(ids.has(child)).toBe(true);
+    }
+  });
+
+  it("keeps parsing document structure beyond the node cap (close tags still balance)", () => {
+    const depth = TREE_MAX_NODES + 50;
+    const wire = "<App>" + "<Stack>".repeat(depth) + "</Stack>".repeat(depth) + "<Badge/></App>";
+    const result = compile(wire);
+    expect(result.tree.nodes).toHaveLength(TREE_MAX_NODES);
+    expect(codes(result)).toEqual(["node-limit"]);
+    expect(result.complete).toBe(true);
+  });
+
+  it("hoists only the first TREE_MAX_QUERIES queries with a single query-limit issue", () => {
+    const declarations = Array.from(
+      { length: TREE_MAX_QUERIES + 4 },
+      (_, i) => `<Query id="q${i}" tool="t"/>`,
+    ).join("");
+    const result = compile(`<App>${declarations}</App>`);
+    expect(result.tree.queries).toHaveLength(TREE_MAX_QUERIES);
+    expect(result.tree.queries?.map((query) => query.name)).toEqual(
+      Array.from({ length: TREE_MAX_QUERIES }, (_, i) => `q${i}`),
+    );
+    expect(codes(result)).toEqual(["query-limit"]);
+  });
+
+  it("pins dangling $path: a binding to an over-cap (dropped) query stays a valid $path binding", () => {
+    // Same decision as dropped-duplicate names: the pre-scan name set may
+    // contain over-cap names, so the binding compiles to { $path } and simply
+    // renders as absent data. Wave-3 shape checking surfaces it.
+    const declarations = Array.from(
+      { length: TREE_MAX_QUERIES + 2 },
+      (_, i) => `<Query id="q${i}" tool="t"/>`,
+    ).join("");
+    const result = compile(`<App>${declarations}<Card x={q${TREE_MAX_QUERIES + 1}}/></App>`);
+    expect(result.tree.queries).toHaveLength(TREE_MAX_QUERIES);
+    expect(result.tree.nodes[1]?.props).toStrictEqual({ x: { $path: `/q${TREE_MAX_QUERIES + 1}` } });
+    expect(codes(result)).toEqual(["query-limit"]);
+  });
+
+  it("keeps only the first TREE_MAX_GENERATED_COMPONENTS islands with a single component-limit issue", () => {
+    const islands = Array.from(
+      { length: TREE_MAX_GENERATED_COMPONENTS + 3 },
+      (_, i) => `<Island name="I${i}">src${i}</Island>`,
+    ).join("");
+    const result = compile(`<App>${islands}</App>`);
+    expect(Object.keys(result.components)).toHaveLength(TREE_MAX_GENERATED_COMPONENTS);
+    expect(result.components.I0).toBe("src0");
+    expect(result.components[`I${TREE_MAX_GENERATED_COMPONENTS - 1}`]).toBeDefined();
+    expect(result.components[`I${TREE_MAX_GENERATED_COMPONENTS}`]).toBeUndefined();
+    expect(codes(result)).toEqual(["component-limit"]);
+    expect(componentMapError(result.components)).toBeNull();
+  });
+
+  it("drops an island whose source exceeds TREE_MAX_COMPONENT_SOURCE_BYTES", () => {
+    const big = "x".repeat(TREE_MAX_COMPONENT_SOURCE_BYTES + 1);
+    const result = compile(`<App><Island name="Big">${big}</Island><Island name="Ok">small</Island></App>`);
+    expect(result.components).toStrictEqual({ Ok: "small" });
+    expect(codes(result)).toEqual(["component-size-limit"]);
+    expect(componentMapError(result.components)).toBeNull();
+  });
+
+  it("measures island sources in UTF-8 bytes, not UTF-16 units", () => {
+    // "€" is one UTF-16 code unit but three UTF-8 bytes, so this source is
+    // under the cap in code units and over it in bytes.
+    const big = "€".repeat(Math.ceil((TREE_MAX_COMPONENT_SOURCE_BYTES + 1) / 3));
+    const result = compile(`<App><Island name="Wide">${big}</Island></App>`);
+    expect(result.components).toStrictEqual({});
+    expect(codes(result)).toEqual(["component-size-limit"]);
+  });
+
+  it("drops islands once the running total exceeds TREE_MAX_TOTAL_COMPONENT_BYTES", () => {
+    const chunk = "y".repeat(60_000);
+    const islands = Array.from({ length: 5 }, (_, i) => `<Island name="T${i}">${chunk}</Island>`).join("");
+    const result = compile(`<App>${islands}</App>`);
+    // 4 × 60000 = 240000 ≤ cap; the fifth would push the total to 300000.
+    expect(Object.keys(result.components)).toEqual(["T0", "T1", "T2", "T3"]);
+    expect(codes(result)).toEqual(["component-size-limit"]);
+    const total = Object.values(result.components).reduce((sum, source) => sum + source.length, 0);
+    expect(total).toBeLessThanOrEqual(TREE_MAX_TOTAL_COMPONENT_BYTES);
+    expect(componentMapError(result.components)).toBeNull();
+  });
+
+  it("drops an ill-formed UTF-16 island source with malformed-island", () => {
+    const result = compile('<App><Island name="Bad">export \uD800 default</Island></App>');
+    expect(result.components).toStrictEqual({});
+    expect(codes(result)).toEqual(["malformed-island"]);
+  });
+
+  it("caps the issue list at 256 plus one final issues-truncated marker", () => {
+    const wire = "<App>" + "</Nope>".repeat(300) + "</App>";
+    const result = compile(wire);
+    expect(result.issues).toHaveLength(257);
+    expect(result.issues.slice(0, 256).every((entry) => entry.code === "stray-close-tag")).toBe(true);
+    expect(result.issues[256]?.code).toBe("issues-truncated");
+    expect(result.complete).toBe(true);
   });
 });
