@@ -144,6 +144,33 @@ const parseIndex = (value: unknown): number | null | typeof FAILED => {
   return FAILED;
 };
 
+/** Structural ops take a CLOSED attribute set (Set/Unset are open by
+ *  design — their attributes ARE the payload). A typo like position= must be
+ *  loud, not a silent misplacement. Returns the violation message or null. */
+const OP_ALLOWED_ATTRS: Readonly<Record<string, readonly string[]>> = {
+  Insert: ["into", "at"],
+  Move: ["id", "into", "at"],
+  Remove: ["id"],
+  SetName: ["name"],
+  RemoveQuery: ["id"],
+  RemoveIsland: ["name"],
+};
+
+const unknownAttrs = (op: string, props: Record<string, unknown>): string | null => {
+  const allowed = OP_ALLOWED_ATTRS[op];
+  if (allowed === undefined) return null;
+  const unexpected = Object.keys(props).filter((key) => !allowed.includes(key));
+  if (unexpected.length === 0) return null;
+  return `<${op}> does not take ${unexpected.map((key) => `"${key}"`).join(", ")} (allowed: ${allowed.join(", ")}); the op was skipped`;
+};
+
+/** An explicit index past the current child count is a gap — loud, not a
+ *  silent append (the model misread the structure; repair teaches it). */
+const gapIndex = (patch: PatchTree, parentId: string, at: number | null): boolean => {
+  if (at === null) return false;
+  return at > (patch.byId.get(parentId)?.children ?? []).length;
+};
+
 const spliceChildren = (patch: PatchTree, parentId: string, at: number | null, ids: readonly string[]): void => {
   const parent = mutable(patch, parentId);
   const children = parent.children ?? [];
@@ -276,6 +303,7 @@ const compileWirePatchV2Unsafe = (
       }
       const at = parseIndex(attrs.props?.at);
       const target = liveTarget(patch, attrs.props?.into);
+      const badAttrs = unknownAttrs("Insert", attrs.props ?? {});
       if (attrs.selfClosing) {
         issue(state, "invalid-patch-op", "<Insert> has no content; the op was skipped");
         continue;
@@ -288,13 +316,18 @@ const compileWirePatchV2Unsafe = (
       parseChildren(state, [{ tag: "Insert", node: container }], "Insert");
       state.appClosed = false; // parseChildren's frame-0 close is our </Insert>
       const inserted = state.nodes.slice(before);
-      if (target === null || at === FAILED) {
+      const insertGap = target !== null && at !== FAILED && gapIndex(patch, target, at);
+      if (target === null || at === FAILED || badAttrs !== null || insertGap) {
         issue(
           state,
           target === null ? "unknown-target" : "invalid-patch-op",
           target === null
             ? `<Insert> into "${String(attrs.props?.into ?? "")}" does not name a node; the op was skipped`
-            : "<Insert> at must be a non-negative integer; the op was skipped",
+            : badAttrs !== null
+              ? badAttrs
+              : at === FAILED
+                ? "<Insert> at must be a non-negative integer; the op was skipped"
+                : `<Insert> at={${String(at)}} leaves a gap in "${target}" children; the op was skipped`,
         );
         state.nodes.length = before; // discard the parsed subtree
         continue;
@@ -330,6 +363,11 @@ const compileWirePatchV2Unsafe = (
     }
     skipOpContent(state, attrs.selfClosing, op);
     const props = attrs.props ?? {};
+    const badAttrs = unknownAttrs(op, props);
+    if (badAttrs !== null) {
+      issue(state, "invalid-patch-op", badAttrs);
+      continue;
+    }
 
     if (op === "Set" || op === "Unset") {
       const target = liveTarget(patch, props.id);
@@ -386,7 +424,7 @@ const compileWirePatchV2Unsafe = (
         issue(state, "unknown-target", `<Move> needs live id and into anchors; the op was skipped`);
         continue;
       }
-      if (target === base.tree.root || at === FAILED || inSubtree(patch, into, target)) {
+      if (target === base.tree.root || at === FAILED || inSubtree(patch, into, target) || gapIndex(patch, into, at)) {
         issue(
           state,
           "invalid-patch-op",
@@ -394,7 +432,9 @@ const compileWirePatchV2Unsafe = (
             ? "the root node cannot be moved; the op was skipped"
             : at === FAILED
               ? "<Move> at must be a non-negative integer; the op was skipped"
-              : `moving "${target}" into its own subtree would cycle; the op was skipped`,
+              : inSubtree(patch, into, target)
+                ? `moving "${target}" under its own descendant "${into}" would create a cycle; the op was skipped`
+                : `<Move> at leaves a gap in "${into}" children; the op was skipped`,
         );
         continue;
       }

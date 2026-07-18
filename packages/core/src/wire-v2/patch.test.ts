@@ -249,3 +249,27 @@ describe("compileWirePatchV2 extension ops", () => {
     expect(node(paired, "card-1")).toBeUndefined();
   });
 });
+
+describe("compileWirePatchV2 strict op attributes", () => {
+  it("rejects unknown attributes on structural ops instead of silently misplacing (position alias)", () => {
+    const result = patch('<Edit><Insert into="grid-1" position={0}><Card/></Insert></Edit>');
+    expect(codes(result)).toEqual(["invalid-patch-op"]);
+    expect(result.issues[0]?.message).toContain('"position"');
+    expect(node(result, "card-1")).toBeUndefined();
+    expect(codes(patch('<Edit><Move id="button-1" into="grid-1" order={0}/></Edit>'))).toEqual(["invalid-patch-op"]);
+    expect(codes(patch('<Edit><Remove id="button-1" force/></Edit>'))).toEqual(["invalid-patch-op"]);
+  });
+
+  it("rejects an index that leaves a gap instead of silently appending", () => {
+    const result = patch('<Edit><Move id="button-1" into="grid-1" at={4}/></Edit>');
+    expect(codes(result)).toEqual(["invalid-patch-op"]);
+    expect(result.issues[0]?.message).toContain("gap");
+    expect(node(result, "grid-1")?.children).toEqual(["linechart-1", "datatable-1"]);
+    expect(codes(patch('<Edit><Insert into="grid-1" at={3}><Card/></Insert></Edit>'))).toEqual(["invalid-patch-op"]);
+  });
+
+  it("names the descendant rule in the cycle message", () => {
+    const result = patch('<Edit><Move id="stack-1" into="grid-1"/></Edit>');
+    expect(result.issues[0]?.message).toContain("descendant");
+  });
+});
