@@ -71,6 +71,27 @@ hand-written `brief.md` are never overwritten). The output lands in the
 override channel, so `vendo sync` regeneration keeps it. Skipped silently in
 non-interactive runs; re-run `vendo init` any time to add it.
 
+### Bring your own coding agent
+
+The extraction contract is portable: any coding agent already living in your
+repo (Claude Code, Cursor, Codex) can do the reading instead. `npx vendo init
+--agent` emits an `aiPolish` object in its read-only plan: the composed
+`instructions`, the exact draft `draftSchema`, and the apply command. Let your
+agent read the codebase against the instructions and write the draft JSON to a
+file, then apply it:
+
+```bash
+npx vendo extract --apply draft.json
+```
+
+The apply step is non-interactive safe and runs the same deterministic guards
+as the built-in pass, so delegation never becomes a second, weaker path into
+`.vendo/`. It writes the same artifacts, re-syncs, and prints the same
+summary. An unusable draft (unreadable file, schema mismatch) exits non-zero
+with the reason; guard refusals (unknown tool names, risk downgrades,
+unreasoned wakes) are printed per entry while the rest of the draft applies.
+`--force` replaces a hand-edited brief, exactly like `vendo init --force`.
+
 ## Create the server
 
 `createVendo` has this exact configuration surface:

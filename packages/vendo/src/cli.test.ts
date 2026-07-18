@@ -82,6 +82,31 @@ describe("vendo CLI commands", () => {
     log.mockRestore();
   });
 
+  it("wires extract: --apply is required, unknown flags fail loudly, errors route home", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(await main(["--help"])).toBe(0);
+    expect(log.mock.calls.flat().join("\n")).toContain("extract [dir]");
+    expect(log.mock.calls.flat().join("\n")).toContain("--apply <draft.json>");
+
+    // No --apply → loud error, nothing runs (ENG-335 posture).
+    expect(await main(["extract"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--apply <draft.json> is required");
+
+    expect(await main(["extract", "--apply", "draft.json", "--dry-run"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("unknown option: --dry-run");
+
+    // A parsed --apply reaches the command: an un-inited dir fails honestly.
+    const root = await mkdtemp(join(tmpdir(), "vendo-cli-extract-"));
+    cleanup.push(root);
+    expect(await main(["extract", root, "--apply", join(root, "draft.json")])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("run `vendo init` first");
+
+    log.mockRestore();
+    error.mockRestore();
+  });
+
   it("wires eject: --list routes, surface + dir + --force parse, help documents it", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const error = vi.spyOn(console, "error").mockImplementation(() => {});

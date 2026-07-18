@@ -78,7 +78,7 @@ export const briefSchema = z.object({
  *  survey must not turn into a runaway number of model calls. */
 const MAX_SURFACES = 12;
 
-function staticFacts(tools: StaticTool[]): string {
+export function staticFacts(tools: StaticTool[]): string {
   return JSON.stringify(tools.map((tool) => ({
     name: tool.name,
     ...(tool.method === undefined ? {} : { method: tool.method }),

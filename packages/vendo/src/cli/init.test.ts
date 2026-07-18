@@ -390,6 +390,7 @@ describe("vendo init (zero-question)", () => {
       manualSteps: string[];
       extraction: { tools: unknown[]; warnings: string[] };
       riskRecommendations: unknown[];
+      aiPolish: { instructions: string; draftSchema: Record<string, unknown>; apply: string };
     };
     expect(plan.framework).toBe("next");
     expect(plan.writes).toContain(".vendo/tools.json");
@@ -398,6 +399,12 @@ describe("vendo init (zero-question)", () => {
     expect(plan.manualSteps.join("\n")).toContain("<VendoRoot");
     expect(Array.isArray(plan.extraction.tools)).toBe(true);
     expect(Array.isArray(plan.riskRecommendations)).toBe(true);
+    // The delegation contract rides the plan: instructions an external agent
+    // executes, the draft schema, and the apply command that runs the guards.
+    expect(plan.aiPolish.instructions).toContain("never lower");
+    expect(plan.aiPolish.instructions).toContain("Statically extracted tools");
+    expect(plan.aiPolish.draftSchema).toMatchObject({ type: "object", required: ["brief", "tools"] });
+    expect(plan.aiPolish.apply).toContain("vendo extract --apply");
     expect(await tree(root)).toEqual(before); // --agent wrote nothing
   });
 });
