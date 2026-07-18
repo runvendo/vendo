@@ -26,6 +26,43 @@ export async function registerEphemeralSubject(
   );
 }
 
+/** The stale-session candidates for a HOST-DRIVEN sweep (the hosted-store
+    service exposes this so the umbrella's hosted sweep can list → claim →
+    erase over the wire, ending in the erase cascade — 2026-07-18 hosted-store
+    one-pager). Same idleness predicate and ordering as sweepEphemeralSubjects;
+    reading a candidate confers no ownership — winning claimEphemeralSubject
+    does. */
+export async function listStaleEphemeralSubjects(
+  store: VendoStore,
+  opts: { idleMs: number; now?: number },
+): Promise<string[]> {
+  const cutoff = new Date((opts.now ?? Date.now()) - opts.idleMs).toISOString();
+  const result = await dbFor(store).query(
+    "SELECT subject FROM vendo_sessions WHERE touched_at <= $1 ORDER BY touched_at ASC",
+    [cutoff],
+  );
+  return result.rows.map((row) => String(row["subject"]));
+}
+
+/** The claim leg of a host-driven sweep: deleting the session row is the
+    mutual-exclusion point (identical statement to sweepEphemeralSubjects'
+    claim, including the repeated idleness predicate — a re-touch after the
+    stale listing defeats the claim, so a live session is never erased out
+    from under its visitor). The winner owns the subject and MUST follow with
+    the erase cascade. */
+export async function claimEphemeralSubject(
+  store: VendoStore,
+  subject: string,
+  opts: { idleMs: number; now?: number },
+): Promise<boolean> {
+  const cutoff = new Date((opts.now ?? Date.now()) - opts.idleMs).toISOString();
+  const result = await dbFor(store).query(
+    "DELETE FROM vendo_sessions WHERE subject = $1 AND touched_at <= $2 RETURNING 1",
+    [subject, cutoff],
+  );
+  return result.rows[0] !== undefined;
+}
+
 /** Whether the subject currently has a registered ephemeral session. */
 export async function isEphemeralSubject(store: VendoStore, subject: string): Promise<boolean> {
   const result = await dbFor(store).query(

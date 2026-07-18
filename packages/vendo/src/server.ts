@@ -39,9 +39,12 @@ import {
 import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import {
+  adoptEphemeralSubject,
   createStore,
   envSecrets,
+  registerEphemeralSubject,
   sweepEphemeralSubjects,
+  type SubjectMergeReport,
   type VendoStore,
 } from "@vendoai/store";
 // 02-store §5: the erase API ships on the umbrella's runtime surface so hosts
@@ -110,6 +113,11 @@ import { cloudSandbox } from "./sandbox.js";
 // adapters: a host can pass it explicitly via createVendo({ sandbox }) with
 // its own options instead of relying on the VENDO_API_KEY default.
 export { cloudSandbox, type CloudSandboxOptions } from "./sandbox.js";
+import { hostedStore, type HostedStore } from "./hosted-store.js";
+// The hosted-store adapter rides the server surface like the other Cloud
+// adapters: a host can pass it explicitly via createVendo({ store }) with its
+// own options instead of relying on the VENDO_API_KEY default.
+export { hostedStore, type HostedStore, type HostedStoreOptions } from "./hosted-store.js";
 import { cloudModel, unconfiguredModel } from "./model.js";
 // The shipped inference adapters ride the server surface so a host can read
 // the wire contract and pass one explicitly via createVendo({ model }) — see
@@ -371,6 +379,124 @@ function selectModel(configured: LanguageModel | undefined): {
   return { model: unconfiguredModel(), venue: false };
 }
 
+/** The ephemeral-session operations bound to the composed store (02-store §4):
+    registration == touch, adoption on sign-in, and the TTL sweep. Selected
+    WITH the store (selectStore below) because the local engine reaches its
+    session registry over SQL while the hosted store reaches it over the
+    store wire — downstream consumers (wire/context, the sweep) stay
+    oblivious to which one they got. */
+interface SessionOps {
+  register(subject: string, now: number): Promise<void>;
+  adopt(from: string, to: string): Promise<SubjectMergeReport | null>;
+  /** Erases every session idle ≥ idleMs; resolves the evicted subjects. */
+  sweep(idleMs: number, now: number): Promise<string[]>;
+}
+
+function localSessionOps(store: VendoStore): SessionOps {
+  return {
+    register: (subject, now) => registerEphemeralSubject(store, subject, now),
+    adopt: (from, to) => adoptEphemeralSubject(store, from, to),
+    sweep: (idleMs, now) => sweepEphemeralSubjects(store, { idleMs, now }),
+  };
+}
+
+function hostedSessionOps(store: HostedStore, touchDebounceMs: number): SessionOps {
+  // Last successful WIRE touch per subject. Presence means the subject is
+  // registered on the console; entries retire with the session (adopt/sweep),
+  // so the map tracks at most the live anonymous sessions of this process.
+  const wireTouched = new Map<string, number>();
+  return {
+    async register(subject, now) {
+      // In-process debounce: skip the wire touch when this subject's LAST
+      // successful touch is younger than sweepIntervalMs/2. TTLs are hours
+      // while the debounce window is seconds, and the claim leg re-checks
+      // idleness server-side, so a touched_at that is up to one debounce
+      // window stale can never get a live session swept — steady-state
+      // anonymous traffic costs zero extra round-trips.
+      const last = wireTouched.get(subject);
+      if (last !== undefined && now - last < touchDebounceMs) return;
+      try {
+        await store.sessions.register(subject, now);
+        wireTouched.set(subject, now);
+      } catch (error) {
+        // INVARIANT: registered ⇒ sweepable. The FIRST registration must fail
+        // closed — if it doesn't land, rows written under this subject would
+        // be unreachable by the TTL sweep forever. A subsequent touch only
+        // refreshes idleness, so a console blip there fails OPEN with a warn:
+        // the next request retries (the failed touch is not recorded), and an
+        // hours-long TTL absorbs the staleness.
+        if (last === undefined) throw error;
+        console.warn(`[vendo] hosted session touch failed; will retry next request: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    },
+    async adopt(from, to) {
+      const report = await store.sessions.adopt(from, to);
+      wireTouched.delete(from);
+      return report;
+    },
+    // The HOST-driven sweep (hosted-store one-pager): list stale candidates,
+    // claim each (the wire claim repeats the idleness predicate — a re-touch
+    // defeats it, same serialization as sweepEphemeralSubjects), and finish
+    // every claimed subject through the erase cascade.
+    async sweep(idleMs, now) {
+      const evicted: string[] = [];
+      for (const subject of await store.sessions.stale(idleMs, now)) {
+        if (!(await store.sessions.claim(subject, idleMs, now))) continue;
+        await store.erase.bySubject(subject);
+        wireTouched.delete(subject);
+        evicted.push(subject);
+      }
+      return evicted;
+    },
+  };
+}
+
+/** A host may also pass hostedStore({...}) explicitly via createVendo({ store });
+    the session doors it carries are then used as-is instead of the local SQL
+    engine's (any other custom store keeps the local ops — and with them
+    today's loud dbFor failure rather than a silent no-op). */
+function isHostedStore(store: VendoStore): store is HostedStore {
+  const candidate = store as Partial<HostedStore>;
+  return typeof candidate.sessions?.register === "function"
+    && typeof candidate.erase?.bySubject === "function";
+}
+
+/** ADAPTER RULE, store seam (cloned from selectConnections): persistence is
+    one VendoStore; which implementation composes is decided HERE. Precedence,
+    top to bottom:
+      1. an explicitly passed store always wins (BYO — the host's own Postgres
+         or PGlite via createStore, the hard BYO rule);
+      2. VENDO_API_KEY makes the Cloud hosted store the default for the seam
+         the host left unfilled (VENDO_CLOUD_URL overrides the console base) —
+         Vendo data lives with Vendo, tenant = the key's org, resolved
+         server-side on every call;
+      3. the local createStore default, byte-identical to the pre-seam
+         behavior: 02-store §4 default-on encryption picks up
+         VENDO_STORE_ENCRYPTION_KEY (provisioned into .env by `vendo init`).
+    The adapters themselves never read the environment. */
+function selectStore(configured: VendoStore | undefined, touchDebounceMs: number): {
+  store: VendoStore;
+  sessions: SessionOps;
+} {
+  if (configured !== undefined) {
+    return {
+      store: configured,
+      sessions: isHostedStore(configured)
+        ? hostedSessionOps(configured, touchDebounceMs)
+        : localSessionOps(configured),
+    };
+  }
+  const apiKey = environment("VENDO_API_KEY");
+  if (apiKey !== undefined) {
+    const baseUrl = environment("VENDO_CLOUD_URL");
+    const hosted = hostedStore({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) });
+    return { store: hosted, sessions: hostedSessionOps(hosted, touchDebounceMs) };
+  }
+  const encryptionKey = environment("VENDO_STORE_ENCRYPTION_KEY");
+  const local = createStore(encryptionKey === undefined ? {} : { encryption: { key: encryptionKey } });
+  return { store: local, sessions: localSessionOps(local) };
+}
+
 function isJsonRequest(request: Request): boolean {
   return request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
     === "application/json";
@@ -617,18 +743,35 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
 
 /** 09-vendo §2 — compose every live block around the guard choke point. */
 export function createVendo(config: CreateVendoConfig): Vendo {
-  // 02-store §4 default-on encryption: when the host doesn't hand us a store,
-  // the composed default picks up VENDO_STORE_ENCRYPTION_KEY (provisioned into
-  // .env by `vendo init`) so stored secrets are encrypted with zero extra
-  // wiring. An explicitly configured store always wins as-is.
-  const encryptionKey = environment("VENDO_STORE_ENCRYPTION_KEY");
-  const store = config.store
-    ?? createStore(encryptionKey === undefined ? {} : { encryption: { key: encryptionKey } });
   // 02-store §4 (kill-list B3) — ephemeral session policy. Validated like the
   // agent's context config; defaults are the recommended knobs. The store takes
   // the clock per call (register/sweep), so one time source needs no seam.
+  // Validated FIRST because the hosted session ops derive their touch-debounce
+  // window from the sweep interval.
   const sessionsConfig = validateSessionsConfig(config.sessions);
   const sessionNow = sessionsConfig.now ?? Date.now;
+  // Persistence, selected by the adapter rule at this composition seam
+  // (selectStore above): explicit store → VENDO_API_KEY hosted store → the
+  // local createStore default (unchanged, including 02-store §4 default-on
+  // encryption via VENDO_STORE_ENCRYPTION_KEY). The session doors travel
+  // with the store: SQL registry locally, the store wire when hosted.
+  // Touch-debounce window, clamped by BOTH knobs. INVARIANT: the window must
+  // sit well inside the TTL, so continuous traffic always refreshes
+  // touched_at before the sweep cutoff — with sweepIntervalMs/2 alone, a
+  // ttlMs shorter than the sweep interval would let an actively-used
+  // session's stamp go a full window stale, cross the cutoff, and the claim
+  // leg would re-read that SAME stale stamp and erase a live session
+  // mid-use. sweepIntervalMs/2 bounds the wire chatter; ttlMs/4 enforces the
+  // safety margin. ttlMs 0 disables the sweep entirely (runSweep), so the
+  // zero window it produces (every touch rides the wire) is merely
+  // conservative, never wrong.
+  const { store, sessions: sessionOps } = selectStore(
+    config.store,
+    Math.min(
+      Math.floor(sessionsConfig.sweepIntervalMs / 2),
+      Math.floor(sessionsConfig.ttlMs / 4),
+    ),
+  );
   const sandbox = selectSandbox(config.sandbox);
   // Inference, selected by the adapter rule at this composition seam
   // (selectModel above) — the one model the agent and apps blocks consume.
@@ -819,7 +962,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // rather than finding threads without store state). Disabled when ttlMs is 0.
   const runSweep = async (): Promise<void> => {
     if (sessionsConfig.ttlMs <= 0) return;
-    for (const subject of await sweepEphemeralSubjects(store, { idleMs: sessionsConfig.ttlMs, now: sessionNow() })) {
+    for (const subject of await sessionOps.sweep(sessionsConfig.ttlMs, sessionNow())) {
       agent.evictSubject(subject);
     }
   };
@@ -970,6 +1113,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       sweepIntervalMs: sessionsConfig.sweepIntervalMs,
       now: sessionNow,
     },
+    sessionStore: sessionOps,
     sweep: runSweep,
     ...(door === undefined ? {} : { door }),
     ...(runtimeCapture === null ? {} : { runtimeCapture }),
