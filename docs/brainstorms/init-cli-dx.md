@@ -61,11 +61,12 @@ Five steps, zero questions on the happy path:
    brief.md (see above). Replaces both the old interview and the old
    refine-as-separate-command for the first-run case.
 4. **Launch.** Start the host dev server, open the browser.
-5. **First turn.** Seed one turn; the reply streams in the terminal (API-side,
-   works before the layout line). Then the guided layout paste: init prints
-   the VendoRoot one-liner, watches for the hot reload, and opens the browser
-   on the same thread. The agent introduces itself from a model-written
-   toolbox and brief.
+5. **First turn — in the browser.** Guided layout paste (init prints the
+   VendoRoot one-liner, watches for the hot reload), then the browser opens
+   with a pre-seeded thread already answering: the agent introduces itself
+   inside the product, in the host brand, from a model-written toolbox. The
+   terminal just points at it. Seed stays adaptive (tools demo / on-brand UI /
+   tour). Decided; details deferred until the core works.
 
 Total interaction: one keypress (yes to the starter key) plus a browser login;
 zero when an env key exists.
