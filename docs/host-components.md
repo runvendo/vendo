@@ -9,7 +9,7 @@
 | --- | --- |
 | `@vendoai/ui` | client, provider, and hooks, with no styles |
 | `@vendoai/ui/chrome` | shipped, theme-driven surfaces |
-| `@vendoai/ui/tree` | the `vendo-genui/v1` renderer |
+| `@vendoai/ui/tree` | the `vendo-genui/v2` renderer |
 | `@vendoai/ui/voice` | voice stage driver and surface |
 
 ## Provider
@@ -291,7 +291,7 @@ export function TreeView(props: {
 }): JSX.Element;
 ```
 
-`TreeView` renders `vendo-genui/v1`. `$path` resolves against app data and
+`PayloadView` renders `vendo-genui/v2` (`TreeView` is the underlying walk). `$path` resolves against app data and
 `$state` against the per-user, per-app state singleton. Host components render
 by registered name. Generated components always run inside the iframe jail
 with `connect-src 'none'`. Pin forks carry their captured furnishing —

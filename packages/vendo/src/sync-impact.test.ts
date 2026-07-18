@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT,
+  VENDO_TREE_FORMAT_V2,
   type AppDocument,
   type PermissionGrant,
   type Principal,
@@ -27,7 +27,7 @@ function plainApp(id: string, name: string, tool: string): AppDocument {
     name,
     ui: "tree",
     tree: {
-      formatVersion: VENDO_TREE_FORMAT,
+      formatVersion: VENDO_TREE_FORMAT_V2,
       root: "root",
       nodes: [{ id: "root", component: "Text", props: { text: name } }],
       queries: [{ path: "/widgets", tool }],

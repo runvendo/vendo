@@ -491,10 +491,10 @@ describe("§12/§13/§14 — store, host-seam, and theme schemas", () => {
 
   it("stream parts carry the pinned data-* type discriminants", () => {
     expect(vendoViewPartSchema.safeParse({
-      type: "data-vendo-view", appId: "app_1", payload: { formatVersion: "vendo-genui/v1" },
+      type: "data-vendo-view", appId: "app_1", payload: { formatVersion: "vendo-genui/v2" },
     }).success).toBe(true);
     expect(vendoViewPartSchema.safeParse({
-      type: "data-vendo-render", appId: "app_1", payload: { formatVersion: "vendo-genui/v1" },
+      type: "data-vendo-render", appId: "app_1", payload: { formatVersion: "vendo-genui/v2" },
     }).success).toBe(false);
     expect(vendoApprovalPartSchema.safeParse({ type: "data-vendo-approval", toolCallId: "c1", risk: "read" }).success).toBe(true);
   });

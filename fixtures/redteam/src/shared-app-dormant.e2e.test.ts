@@ -30,7 +30,7 @@ import {
  * dispatches exactly this ref through the guard-bound registry. */
 function dormantTree(tool: string, args: Record<string, unknown>) {
   return {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
       {

@@ -147,7 +147,7 @@ describe("agent UI message wire", () => {
     const view = {
       appId: "app_1",
       payload: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "r",
         nodes: [{ id: "r", component: "Text", props: { text: "Ready" } }],
       },
@@ -190,7 +190,7 @@ describe("agent UI message wire", () => {
 
   it("gates view emission on core's VENDO_APPS_TOOL_PREFIX, not a local string match (AGENT-4)", async () => {
     const payload = {
-      formatVersion: "vendo-genui/v1",
+      formatVersion: "vendo-genui/v2",
       root: "r",
       nodes: [{ id: "r", component: "Text", props: { text: "Ready" } }],
     };

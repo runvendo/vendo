@@ -5,7 +5,7 @@ import {
   type ApprovalRequest,
   type Json,
   type ToolOutcome,
-  type Tree,
+ 
   type UIPayload,
   type VendoTheme,
 } from "@vendoai/core";
@@ -500,7 +500,7 @@ export function FurnishedBadge() {
 }
 `;
 
-const jailTree: Tree & { furnishings: Record<string, unknown> } = {
+const jailTree: UIPayload & { furnishings: Record<string, unknown> } = {
   formatVersion: "vendo-genui/v2",
   root: "root",
   nodes: [
@@ -598,7 +598,7 @@ export default function PromotedCard({ customer, onRun }) {
 }
 `;
 
-function inClientTree(inClient: Record<string, unknown>): Tree {
+function inClientTree(inClient: Record<string, unknown>): UIPayload {
   return {
     formatVersion: "vendo-genui/v2",
     root: "root",
@@ -617,7 +617,7 @@ function inClientTree(inClient: Record<string, unknown>): Tree {
     ],
     components: { PromotedCard: inClientSource },
     ...( { inClient } as object),
-  } as Tree;
+  } as UIPayload;
 }
 
 function InClientScenario() {
@@ -676,7 +676,7 @@ export default function RemixedNetWorthCard() {
 `;
 
 function PinDriftScenario() {
-  const tree: Tree = {
+  const tree: UIPayload = {
     formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
@@ -694,7 +694,7 @@ function PinDriftScenario() {
         reason: "baseline-changed",
       }],
     } as object),
-  } as Tree;
+  } as UIPayload;
   return (
     <TreeThemeBoundary>
       <section aria-label="Drifted remixed pin">
@@ -1036,7 +1036,7 @@ function StreamCompletionScenario() {
     return () => globalThis.clearTimeout(timer);
   }, []);
   const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
-  const streamingTree: Tree = {
+  const streamingTree: UIPayload = {
     formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
@@ -1065,7 +1065,7 @@ function SlotFallbackScenario() {
 
 /** A stored v1 tree rendered beside the v2 surface while v1 is being removed
  *  (v2 replaces v1; the remaining v1 surface is deleted across waves 2–4). */
-const storedV1Tree: Tree = {
+const storedV1Tree: UIPayload = {
   formatVersion: "vendo-genui/v2",
   root: "root",
   data: { invoice: { total: 4200 } },

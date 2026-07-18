@@ -200,7 +200,7 @@ for (const transport of [
           execute: async () => ({
             kind: "tree",
             payload: {
-              formatVersion: "vendo-genui/v1",
+              formatVersion: "vendo-genui/v2",
               root: "r",
               nodes: [{ id: "r", component: "Text", props: { text: "Ready" } }],
             },
@@ -255,7 +255,7 @@ for (const transport of [
         ctx: runCtx,
       }));
       expect(view.parts.find((part) => part.type === "data-vendo-view")).toMatchObject({
-        data: { appId: "app_1", payload: { formatVersion: "vendo-genui/v1", root: "r" } },
+        data: { appId: "app_1", payload: { formatVersion: "vendo-genui/v2", root: "r" } },
       });
       expect(tools.invocations.vendo_apps_open).toBe(1);
       harness.assertComplete();

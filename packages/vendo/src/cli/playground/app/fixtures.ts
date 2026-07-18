@@ -36,7 +36,7 @@ export const playgroundToolMeta: ToolMetaMap = {
 };
 
 /* ------------------------------------------------------------------ */
-/* Generated views (vendo-genui/v1)                                    */
+/* Generated views (vendo-genui/v2)                                    */
 /* ------------------------------------------------------------------ */
 
 const HERO_SOURCE = `
@@ -101,7 +101,7 @@ export default function RenewalList() {
 /** The finished "Renewals radar" view — also the slot's pinned payload. */
 export function renewalsViewPayload(): UIPayload {
   return {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     name: "Renewals radar",
     root: "root",
     nodes: [
@@ -121,7 +121,7 @@ export function renewalsViewPayload(): UIPayload {
  *  boundary keeps the host's original children visible (06-apps §8). */
 export function brokenViewPayload(): UIPayload {
   return {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     name: "Broken view",
     root: "root",
     streaming: true,

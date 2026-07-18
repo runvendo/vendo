@@ -54,7 +54,7 @@ describe("agent stream consumed by an ai-SDK client", () => {
     const view = {
       appId: "app_1",
       payload: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "r",
         nodes: [{ id: "r", component: "Text", props: { text: "Ready" } }],
       },
@@ -124,7 +124,7 @@ describe("agent stream consumed by an ai-SDK client", () => {
     const appId = "app_stream";
     const stableId = vendoViewStreamId(appId);
     const partialOne = {
-      formatVersion: "vendo-genui/v1",
+      formatVersion: "vendo-genui/v2",
       root: "r",
       nodes: [{ id: "r", component: "Stack", children: ["later"] }],
       streaming: true,
@@ -134,7 +134,7 @@ describe("agent stream consumed by an ai-SDK client", () => {
       nodes: [...partialOne.nodes, { id: "later", component: "Text", props: { text: "Loading data" } }],
     };
     const finalPayload = {
-      formatVersion: "vendo-genui/v1",
+      formatVersion: "vendo-genui/v2",
       root: "r",
       nodes: [...partialTwo.nodes],
       data: { ready: true },

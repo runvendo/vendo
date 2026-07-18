@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { capturedPinBaselineSchema } from "@vendoai/actions";
 import {
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT,
+  VENDO_TREE_FORMAT_V2,
   VendoError,
   type AppDocument,
   type ComponentCatalog,
@@ -42,7 +42,7 @@ const app = (id = "app_wire"): AppDocument => ({
   name: "Wire app",
   ui: "tree",
   tree: {
-    formatVersion: VENDO_TREE_FORMAT,
+    formatVersion: VENDO_TREE_FORMAT_V2,
     root: "root",
     nodes: [{ id: "root", component: "Text", props: { text: "ok" } }],
   },
