@@ -442,11 +442,12 @@ export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
 /** Name-keyed registry form (2026-07-18 amendment) — the same object serves both sides:
  *  the server reads the data fields, <VendoRoot> reads the component references (08 §2).
  *  Accepted anywhere the array form is (09 §2); the composition normalizes registry →
- *  catalog by name. The array form remains valid. */
+ *  catalog entry by entry: key → `name`, `props` → `propsSchema`, `component` dropped.
+ *  The array form remains valid. */
 export interface ComponentRegistryEntry {
   component: unknown;              // host component reference — the SERVER MUST IGNORE this field (React types stay out of core); it exists so one object serves the client too
   description: string;             // what the generator reads
-  props?: StandardSchema;          // the ONE optional props schema, as above
+  props?: StandardSchema;          // the ONE optional props schema — named `props` here vs `propsSchema` on RegisteredComponent; same StandardSchema type, same derivation (normalized as above)
   examples?: string[];
   remixable?: boolean;
 }

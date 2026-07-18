@@ -130,7 +130,9 @@ registrations the composition derives it from the entry's ONE standard-schema
 same document drives both the generation prompt and generated-props
 validation — the old gap where disk-loaded entries ran a pass-through
 `StandardSchema` is closed. Schema-less entries validate permissively by
-design (the model infers props).
+design (the model infers props); on disk, `catalog@1`'s `propsSchema` field is
+unchanged and always present — a schema-less entry syncs with the same
+permissive placeholder used for unrepresentable exotic props.
 
 ### `.vendo/overrides.json` (human-written, respected forever)
 
