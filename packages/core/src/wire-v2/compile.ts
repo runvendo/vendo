@@ -90,7 +90,7 @@ const ISLAND_CLOSE = "</Island>";
 
 const NO_NAMES: ReadonlySet<string> = new Set();
 
-const makeState = (
+export const makeState = (
   wire: string,
   queryNames: ReadonlySet<string>,
   islandNames: ReadonlySet<string>,
@@ -139,7 +139,7 @@ const resolveSource = (state: CompileState, name: string): TreeNode["source"] =>
 
 /** D3 — `<Query id tool input?>` hoists to tree.queries wherever it appears
  *  (a nested one records a non-fatal issue). Produces no tree node. */
-const compileQuery = (state: CompileState, frames: Frame[]): void => {
+export const compileQuery = (state: CompileState, frames: Frame[]): void => {
   const attrs = parseAttributes(state, "declaration");
   if (attrs === FAILED) {
     state.eofTruncated = true;
@@ -197,7 +197,7 @@ const compileQuery = (state: CompileState, frames: Frame[]): void => {
  *  tag's `>` and the FIRST literal `</Island>` verbatim: no parsing, no
  *  nesting, quotes/braces/`<` all pass through (raw TSX — the v1 JSON
  *  escaping pain is the point). Produces no tree node. */
-const compileIsland = (state: CompileState): void => {
+export const compileIsland = (state: CompileState): void => {
   const attrs = parseAttributes(state, "declaration");
   if (attrs === FAILED) {
     state.eofTruncated = true;
@@ -339,7 +339,7 @@ const appendTextChild = (state: CompileState, frames: Frame[], raw: string): voi
 
 /** Iterative child loop over an explicit frame stack (no recursion, so
  *  pathological nesting cannot overflow the call stack). */
-const parseChildren = (state: CompileState, frames: Frame[]): void => {
+export const parseChildren = (state: CompileState, frames: Frame[], rootLabel = "App"): void => {
   while (state.index < state.source.length) {
     appendTextChild(state, frames, collectText(state));
     if (state.index >= state.source.length) break;
@@ -379,15 +379,17 @@ const parseChildren = (state: CompileState, frames: Frame[]): void => {
   for (let i = frames.length - 1; i >= 1; i -= 1) {
     issue(state, "eof-unclosed", `<${(frames[i] as Frame).tag}> was auto-closed at end of input`);
   }
-  issue(state, "eof-unclosed", "<App> was not closed before end of input");
+  issue(state, "eof-unclosed", `<${rootLabel}> was not closed before end of input`);
 };
 
-/** True when the cursor sits on `<App` followed by a tag-name boundary. */
-const opensApp = (state: CompileState): boolean => {
-  if (!state.source.startsWith("<App", state.index)) return false;
-  const next = state.source[state.index + 4];
+/** True when the cursor sits on `<` + tag followed by a name boundary. */
+export const opensRoot = (state: CompileState, tag: string): boolean => {
+  if (!state.source.startsWith(`<${tag}`, state.index)) return false;
+  const next = state.source[state.index + 1 + tag.length];
   return next === undefined || !NAME_CHAR.test(next);
 };
+
+const opensApp = (state: CompileState): boolean => opensRoot(state, "App");
 
 /**
  * D3 forward references — a lightweight pre-scan over the raw wire that
@@ -411,13 +413,13 @@ const opensApp = (state: CompileState): boolean => {
  * issue happen in the main pass, in source order (this pass runs on a
  * throwaway state whose issues are discarded).
  */
-const prescanDeclarations = (wire: string): { queryNames: Set<string>; islandNames: Set<string> } => {
+export const prescanDeclarations = (wire: string, rootTag = "App"): { queryNames: Set<string>; islandNames: Set<string> } => {
   const queryNames = new Set<string>();
   const islandNames = new Set<string>();
   const state = makeState(wire, NO_NAMES, NO_NAMES, NO_NAMES);
   skipWhitespace(state);
-  if (!opensApp(state)) return { queryNames, islandNames };
-  state.index += 4; // consume "<App"
+  if (!opensRoot(state, rootTag)) return { queryNames, islandNames };
+  state.index += 1 + rootTag.length; // consume "<" + rootTag
   const app = parseAttributes(state, "app");
   if (app === FAILED || app.selfClosing) return { queryNames, islandNames };
   while (state.index < state.source.length) {
@@ -433,7 +435,7 @@ const prescanDeclarations = (wire: string): { queryNames: Set<string>; islandNam
       state.index += 1;
       // Nested <App> elements are skipped-with-subtree below, so any </App>
       // reaching the main stream closes the document in the main pass too.
-      if (name === "App") break;
+      if (name === rootTag) break;
       continue;
     }
     state.index += 1;

@@ -88,6 +88,17 @@ export const WIRE_ISSUE_CODES = [
   "duplicate-island",
   /** Self-closing `<Island/>` has no source; island skipped. */
   "island-no-content",
+  // — edit dialect (patch.ts; v2 spec §5)
+  /** The patch document is not a single `<Edit>...</Edit>`; base returned. */
+  "missing-edit",
+  /** An op anchors an id/name that does not exist; the op was skipped. */
+  "unknown-target",
+  /** Unknown op element, missing required anchor/attrs, bad index, root or
+   *  cycle violation; the op was skipped. */
+  "invalid-patch-op",
+  /** The applied result failed re-validation; the base was returned
+   *  unchanged. Never expected from compiler-produced bases. */
+  "patch-invalid",
   // — shape check (shape-check.ts)
   /** A binding names fields absent from the tool's KNOWN response shape (or
    *  a reshape op incompatible with it); mirrored one-per-binding in
