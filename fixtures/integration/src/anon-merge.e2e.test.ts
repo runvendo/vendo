@@ -77,7 +77,10 @@ describe("ENG-263: anonymous→signed-in auto-merge", () => {
     stack = await createStack({
       turns: [
         toolCallTurn("vendo_apps_create", { prompt: "Build a greeting card" }, "call_app"),
+        // Two-lane create (v2 spec §4): the tier-0 paint lane and the full
+        // lane each consume one generation turn.
         generationTurn(CREATE_DIALECT),
+        generationTurn(CREATE_DIALECT, "gen_2"),
         textTurn("Created your app.", "t1"),
         // A destructive host tool the composed policy parks → an approval
         // queued under the ANON subject (the consent that must NOT migrate).

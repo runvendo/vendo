@@ -36,7 +36,10 @@ describe("J1: chat generates an app through the real composition", () => {
     stack = await createStack({
       turns: [
         toolCallTurn("vendo_apps_create", { prompt: "Build me a greeting card" }, "call_1"),
+        // Two-lane create (v2 spec §4): the tier-0 paint lane and the full
+        // lane each consume one generation turn.
         generationTurn(CREATE_DIALECT),
+        generationTurn(CREATE_DIALECT, "gen_2"),
         textTurn("Created your app.", "t1"),
       ],
     });
