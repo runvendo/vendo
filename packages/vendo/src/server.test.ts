@@ -331,7 +331,7 @@ describe("09 §3 public wire", () => {
     });
   });
 
-  it("selects explicit, E2B, Modal, and dark venues with the required precedence", async () => {
+  it("selects explicit, E2B, Modal, Cloud, and dark venues with the required precedence", async () => {
     const custom: SandboxAdapter = {
       create: vi.fn(async () => { throw new Error("not called"); }),
       resume: vi.fn(async () => { throw new Error("not called"); }),
@@ -340,7 +340,7 @@ describe("09 §3 public wire", () => {
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
     const statusFor = async (
-      env: { E2B_API_KEY: string; MODAL_TOKEN_ID: string; MODAL_TOKEN_SECRET: string },
+      env: { E2B_API_KEY: string; MODAL_TOKEN_ID: string; MODAL_TOKEN_SECRET: string; VENDO_API_KEY: string },
       sandbox?: SandboxAdapter,
     ): Promise<unknown> => {
       for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
@@ -354,11 +354,20 @@ describe("09 §3 public wire", () => {
       return (await status.json() as { blocks: { sandbox: unknown } }).blocks.sandbox;
     };
 
-    const allKeys = { E2B_API_KEY: "e2b-key", MODAL_TOKEN_ID: "modal-id", MODAL_TOKEN_SECRET: "modal-secret" };
+    // Adapter rule (2026-07-17 cloud definition): the explicit adapter always
+    // wins; BYO sandbox env beats the Vendo key (the Cloud default fills ONLY
+    // the slot the host left unfilled); no key and no BYO env → dark.
+    const allKeys = {
+      E2B_API_KEY: "e2b-key",
+      MODAL_TOKEN_ID: "modal-id",
+      MODAL_TOKEN_SECRET: "modal-secret",
+      VENDO_API_KEY: "vnd_cloud_key",
+    };
     expect(await statusFor(allKeys, custom)).toBe("custom");
     expect(await statusFor(allKeys)).toBe("e2b");
     expect(await statusFor({ ...allKeys, E2B_API_KEY: "" })).toBe("modal");
-    expect(await statusFor({ ...allKeys, E2B_API_KEY: "", MODAL_TOKEN_SECRET: "" })).toBe(false);
+    expect(await statusFor({ ...allKeys, E2B_API_KEY: "", MODAL_TOKEN_SECRET: "" })).toBe("cloud");
+    expect(await statusFor({ ...allKeys, E2B_API_KEY: "", MODAL_TOKEN_SECRET: "", VENDO_API_KEY: "" })).toBe(false);
     expect(custom.create).not.toHaveBeenCalled();
     expect(custom.resume).not.toHaveBeenCalled();
   });

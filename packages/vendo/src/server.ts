@@ -105,6 +105,11 @@ export {
   type CloudConnectionsOptions,
   type ConnectionsService,
 } from "./connections.js";
+import { cloudSandbox } from "./sandbox.js";
+// The Cloud sandbox adapter rides the server surface like the connections
+// adapters: a host can pass it explicitly via createVendo({ sandbox }) with
+// its own options instead of relying on the VENDO_API_KEY default.
+export { cloudSandbox, type CloudSandboxOptions } from "./sandbox.js";
 import { createRuntimeCapture } from "./runtime-capture.js";
 import {
   BASE_PATH,
@@ -264,6 +269,12 @@ function validateSessionsConfig(sessions: CreateVendoConfig["sessions"]): Resolv
     truncated to a preview instead of blowing the context window. Override via config.agent. */
 const DEFAULT_TOOL_OUTPUT_CAP = 32_000;
 
+/** Sandbox leg of the ADAPTER RULE (see the block comment at
+    selectConnections below): explicit adapter → BYO sandbox env (e2b, then
+    modal) → VENDO_API_KEY defaults the Cloud managed pool → the dark venue.
+    The Cloud slot fills ONLY when the host passed no sandbox and no BYO
+    sandbox env is present, so setting a Vendo key never shadows an existing
+    provider account. */
 function selectSandbox(configured: SandboxAdapter | undefined): {
   adapter: SandboxAdapter | undefined;
   venue: SandboxVenue;
@@ -284,6 +295,15 @@ function selectSandbox(configured: SandboxAdapter | undefined): {
     return {
       adapter: modalSandbox({ tokenId: modalTokenId, tokenSecret: modalTokenSecret }),
       venue: "modal",
+    };
+  }
+
+  const apiKey = environment("VENDO_API_KEY");
+  if (apiKey !== undefined) {
+    const baseUrl = environment("VENDO_CLOUD_URL");
+    return {
+      adapter: cloudSandbox({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) }),
+      venue: "cloud",
     };
   }
 

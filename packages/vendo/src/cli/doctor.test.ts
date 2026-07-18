@@ -241,7 +241,7 @@ describe("vendo doctor", () => {
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
     expect(messages.errors).toContain(
-      "warning: install the e2b package and set E2B_API_KEY, or install modal and set MODAL_TOKEN_ID+MODAL_TOKEN_SECRET, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable",
+      "warning: install the e2b package and set E2B_API_KEY, or install modal and set MODAL_TOKEN_ID+MODAL_TOKEN_SECRET, or set VENDO_API_KEY for the managed Cloud sandbox, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable",
     );
     expect(messages.logs).toContain(
       "Ladder: execution venue is checked above; actAs for away host actions; connectors for external tools.",

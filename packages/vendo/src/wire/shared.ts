@@ -24,7 +24,7 @@ import type { RuntimeCaptureHandler } from "../runtime-capture.js";
 export const VERSION = "0.3.0";
 export const BASE_PATH = "/api/vendo";
 
-export type SandboxVenue = "e2b" | "modal" | "custom" | false;
+export type SandboxVenue = "e2b" | "modal" | "cloud" | "custom" | false;
 
 const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   validation: 400,
