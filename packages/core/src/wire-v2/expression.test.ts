@@ -207,27 +207,6 @@ describe("parseExpression bindings", () => {
   });
 });
 
-describe("parseExpression reshape pipes", () => {
-  it("compiles the base value and records reshape-unsupported", () => {
-    const result = parse("revenue | asPoints(month, revenue)");
-    expect(result.dropped).toBe(false);
-    expect(result.value).toEqual({ $path: "/revenue" });
-    expect(result.issues.map((issue) => issue.code)).toEqual(["reshape-unsupported"]);
-    expect(result.issues[0]?.message).toMatch(/later wave/i);
-  });
-
-  it("treats nested pipes as malformed in wave 1 (wave 3 lands the reshape vocabulary)", () => {
-    expectDropped("[revenue | asPoints(x)]", "malformed-expression");
-  });
-
-  it("consumes arbitrary text after the pipe without erroring", () => {
-    const result = parse('5 | round | pad("x") ]] garbage');
-    expect(result.dropped).toBe(false);
-    expect(result.value).toBe(5);
-    expect(result.issues.map((issue) => issue.code)).toEqual(["reshape-unsupported"]);
-  });
-});
-
 describe("parseExpression malformed input", () => {
   it("drops unterminated strings", () => {
     expectDropped('"unterminated', "malformed-expression");
@@ -307,5 +286,67 @@ describe("parseExpression totality", () => {
     const piped = parse("mystery | reshape");
     expect(piped.dropped).toBe(true);
     expect(piped.issues[0]?.code).toBe("unknown-reference");
+  });
+});
+
+/** v2 spec §3 — the reshape pipe grammar (wave 3 replaces wave 1's
+ *  reshape-unsupported swallow with the real vocabulary). */
+describe("parseExpression reshape pipes", () => {
+  it("compiles the spec's pipe to a $reshape chain on the binding", () => {
+    expectValue("revenue | asPoints(month, revenue)", {
+      $path: "/revenue",
+      $reshape: [{ op: "asPoints", args: ["month", "revenue"] }],
+    });
+  });
+
+  it("chains pipes left to right, on dotted paths too", () => {
+    expectValue("revenue.rows | pick(month, revenue) | rename(month, label)", {
+      $path: "/revenue/rows",
+      $reshape: [
+        { op: "pick", args: ["month", "revenue"] },
+        { op: "rename", args: ["month", "label"] },
+      ],
+    });
+  });
+
+  it("pipes are legal nested inside arrays and objects, and on state references", () => {
+    expectValue("[revenue | count(), 5]", [
+      { $path: "/revenue", $reshape: [{ op: "count", args: [] }] },
+      5,
+    ]);
+    expectValue("{ total: revenue | sum(revenue) }", {
+      total: { $path: "/revenue", $reshape: [{ op: "sum", args: ["revenue"] }] },
+    });
+    expectValue("state.rate | format(percent)", {
+      $state: "rate",
+      $reshape: [{ op: "format", args: ["percent"] }],
+    });
+  });
+
+  it("accepts quoted-string args and trailing commas", () => {
+    expectValue("revenue | pick(\"weird field\", month,)", {
+      $path: "/revenue",
+      $reshape: [{ op: "pick", args: ["weird field", "month"] }],
+    });
+  });
+
+  it("drops unknown ops, bad arity, bad format kinds, and over-long chains as invalid-reshape", () => {
+    expectDropped("revenue | eval(x)", "invalid-reshape");
+    expectDropped("revenue | asPoints(month)", "invalid-reshape");
+    expectDropped("revenue | format(month, loud)", "invalid-reshape");
+    expectDropped(`revenue${" | count()".repeat(9)}`, "invalid-reshape");
+  });
+
+  it("drops malformed pipe syntax as invalid-reshape", () => {
+    expectDropped("revenue |", "invalid-reshape");
+    expectDropped("revenue | asPoints(month revenue)", "invalid-reshape");
+    expectDropped("revenue | asPoints(month", "invalid-reshape");
+    expectDropped("revenue | count", "invalid-reshape");
+    expectDropped("revenue | pick(5)", "invalid-reshape");
+  });
+
+  it("a pipe after a non-binding value stays malformed-expression", () => {
+    expectDropped("5 | count()", "malformed-expression");
+    expectDropped("true | count()", "malformed-expression");
   });
 });

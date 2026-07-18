@@ -34,17 +34,22 @@ import type { Json } from "../ids.js";
 import { isPlainObject, type TreeNode } from "../tree.js";
 import { RESERVED_COMPONENT_NAMES } from "../tree-limits.js";
 import { QUERY_NAME_PATTERN, type TreeQueryV2, type TreeV2 } from "../tree-v2.js";
+import type { ShapeType } from "../shape.js";
 import { parseAttributes } from "./attributes.js";
 import type { WireIssue } from "./expression.js";
+import { checkBindingShapes, type BindingShapeError } from "./shape-check.js";
 import { admitIslandSource, claimNodeSlot, claimQuerySlot } from "./limits.js";
 import { collectText, NAME_CHAR, readName, scanTagEnd, skipElement, skipWhitespace } from "./scan.js";
-import { FAILED, issue, isWellFormedUtf16, type CompileState, type Frame } from "./state.js";
+import { FAILED, issue, isWellFormedUtf16, mergeIssues, type CompileState, type Frame } from "./state.js";
 
 /** v2 spec §2 / plan D3 — compiler options. `hostComponents` (the host
  *  catalog names) feeds source resolution: host brand wins over the prewired
- *  set and islands. */
+ *  set and islands. `toolShapes` (v2 spec §3) are the shape cards' outputs
+ *  keyed by tool name (host tools and fn: refs alike); when present, every
+ *  `$path` binding is type-checked against them (shape-check.ts). */
 export interface WireCompileOptions {
   hostComponents?: readonly string[];
+  toolShapes?: Readonly<Record<string, ShapeType>>;
 }
 
 /** v2 spec §2 / plan D6 — the compile result. */
@@ -58,6 +63,11 @@ export interface WireCompileResult {
   /** Ordered issues in source order, sharing {@link WireIssue} with the
    *  expression grammar. Stable kebab-case codes. */
   issues: WireIssue[];
+  /** v2 spec §3 — the per-binding repair contract: one entry per binding
+   *  whose fields/reshape violate a KNOWN tool shape (empty without
+   *  `toolShapes` or when everything checks). `bindingErrors.length > 0` is
+   *  the engine's unshippable gate. */
+  bindingErrors: BindingShapeError[];
   /** D6 — true when the input parsed to a proper close of App. */
   complete: boolean;
 }
@@ -473,7 +483,11 @@ const prescanDeclarations = (wire: string): { queryNames: Set<string>; islandNam
 const determineComplete = (state: CompileState): boolean =>
   state.appClosed && !state.eofTruncated && !state.droppedTrailing;
 
-const finishResult = (state: CompileState, name: string | undefined): WireCompileResult => {
+const finishResult = (
+  state: CompileState,
+  name: string | undefined,
+  toolShapes: Readonly<Record<string, ShapeType>> | undefined,
+): WireCompileResult => {
   // Dangling-generated reconciliation: the pre-scan marks nodes "generated"
   // cap-blind, but admitIslandSource may then drop the island (§8 size/count
   // caps, malformed UTF-16). A generated node with no components entry fails
@@ -491,10 +505,24 @@ const finishResult = (state: CompileState, name: string | undefined): WireCompil
     nodes: state.nodes,
   };
   if (state.queries.length > 0) tree.queries = state.queries;
+  // v2 spec §3 — the binding shape check runs as a post-pass over the
+  // emitted nodes, only when the caller supplied shape cards. Shape errors
+  // are repairable, not structural: the binding stays in the tree (repair
+  // needs the anchor) and `complete` is untouched — the engine's ship gate
+  // is `bindingErrors.length > 0`. Each error also mirrors into the issue
+  // stream (capped like every issue; no index — post-pass, not a cursor).
+  const bindingErrors = toolShapes === undefined
+    ? []
+    : checkBindingShapes(state.nodes, state.queries, toolShapes);
+  mergeIssues(state, bindingErrors.map((error): WireIssue => ({
+    code: "shape-mismatch",
+    message: `node "${error.nodeId}" prop "${error.prop}" (${error.path}): ${error.message}`,
+  })));
   const result: WireCompileResult = {
     tree,
     components: state.components,
     issues: state.issues,
+    bindingErrors,
     complete: determineComplete(state),
   };
   if (name !== undefined) result.name = name;
@@ -512,14 +540,14 @@ const compileWireV2Unsafe = (wire: string, options: WireCompileOptions | undefin
   // all, or garbage before it) degrades to the empty valid tree.
   if (!opensApp(state)) {
     issue(state, "missing-app", "expected a single <App ...>...</App> element");
-    return finishResult(state, undefined);
+    return finishResult(state, undefined, options?.toolShapes);
   }
   state.index += 4; // consume "<App"
   const app = parseAttributes(state, "app");
   if (app === FAILED) {
     state.eofTruncated = true;
     issue(state, "truncated-tag", "<App ...> tag was truncated at end of input");
-    return finishResult(state, undefined);
+    return finishResult(state, undefined, options?.toolShapes);
   }
   // D3 — only App's name attribute means anything; the rest are discarded.
   const name = typeof app.props?.name === "string" ? app.props.name : undefined;
@@ -535,7 +563,7 @@ const compileWireV2Unsafe = (wire: string, options: WireCompileOptions | undefin
       issue(state, "trailing-content", "content after </App> was dropped");
     }
   }
-  return finishResult(state, name);
+  return finishResult(state, name, options?.toolShapes);
 };
 
 /**
@@ -556,6 +584,7 @@ export function compileWireV2(wire: string, options?: WireCompileOptions): WireC
       },
       components: {},
       issues: [{ code: "compile-failed", message: `wire compile failed: ${safeErrorMessage(error)}` }],
+      bindingErrors: [],
       complete: false,
     };
   }

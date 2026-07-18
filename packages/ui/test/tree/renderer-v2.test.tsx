@@ -241,3 +241,98 @@ describe("v1 walk regression", () => {
     expect(screen.queryByText("Host card: still primitive")).toBeNull();
   });
 });
+
+/** v2 spec §3 — runtime reshape containment: a binding's $reshape chain is
+ *  applied on resolution; a data-shape mismatch renders the contained
+ *  data-shape notice INSTEAD of mounting the component with garbage props;
+ *  absent data (query still loading) is not a mismatch. */
+describe("v2 reshape bindings at render", () => {
+  const revenueData: Record<string, Json> = {
+    revenue: { rows: [{ month: "Jan", revenue: 1200 }, { month: "Feb", revenue: 900 }] },
+  };
+
+  it("applies a $reshape chain on resolution (count over rows renders 2)", () => {
+    render(
+      <PayloadView
+        payload={treeV2([
+          { id: "root", component: "Stack", children: ["text-1"] },
+          {
+            id: "text-1",
+            component: "Text",
+            props: { text: { $path: "/revenue/rows", $reshape: [{ op: "count", args: [] }] } },
+          },
+        ], { data: revenueData })}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+    expect(screen.getByText("2")).toBeTruthy();
+    expect(screen.queryByRole("note", { name: "Data shape" })).toBeNull();
+  });
+
+  it("renders the contained data-shape notice on a runtime mismatch instead of a broken component", () => {
+    render(
+      <PayloadView
+        payload={treeV2([
+          { id: "root", component: "Stack", children: ["text-1"] },
+          {
+            id: "text-1",
+            component: "Text",
+            props: {
+              text: {
+                $path: "/revenue/rows",
+                $reshape: [{ op: "asPoints", args: ["period", "value"] }],
+              },
+            },
+          },
+        ], { data: revenueData })}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+    const notice = screen.getByRole("note", { name: "Data shape" });
+    expect(notice.textContent).toContain("period");
+    expect(document.querySelector('[data-primitive="Text"]')).toBeNull();
+  });
+
+  it("a mis-bound container's notice replaces the component only, never its valid children", () => {
+    render(
+      <PayloadView
+        payload={treeV2([
+          { id: "root", component: "Stack", children: ["card-1"] },
+          {
+            id: "card-1",
+            component: "Card",
+            props: { title: { $path: "/revenue/rows", $reshape: [{ op: "asPoints", args: ["period", "value"] }] } },
+            children: ["text-1"],
+          },
+          { id: "text-1", component: "Text", props: { text: "child survives" } },
+        ], { data: revenueData })}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+    expect(screen.getByRole("note", { name: "Data shape" })).toBeTruthy();
+    expect(screen.getByText("child survives")).toBeTruthy();
+  });
+
+  it("absent data is loading, not a mismatch: no notice, component renders empty", () => {
+    render(
+      <PayloadView
+        payload={treeV2([
+          { id: "root", component: "Stack", children: ["text-1", "text-2"] },
+          {
+            id: "text-1",
+            component: "Text",
+            props: { text: { $path: "/pending/rows", $reshape: [{ op: "count", args: [] }] } },
+          },
+          { id: "text-2", component: "Text", props: { text: "still here" } },
+        ], { data: {} })}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+    expect(screen.queryByRole("note", { name: "Data shape" })).toBeNull();
+    expect(screen.getByText("still here")).toBeTruthy();
+  });
+});

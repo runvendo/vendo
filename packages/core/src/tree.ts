@@ -17,14 +17,20 @@ export {
   RESERVED_COMPONENT_NAMES,
 } from "./tree-limits.js";
 
-/** 01-core §8 */
+import type { ReshapeStep } from "./reshape.js";
+
+/** 01-core §8; `$reshape` is v2 spec §3 — an optional bounded reshape chain
+ *  (additive: every existing consumer keeps working; the v2 gate validates
+ *  the chain, and the renderer applies it on resolution). */
 export interface PathBinding {
   $path: string;
+  $reshape?: ReshapeStep[];
 }
 
-/** 01-core §8 */
+/** 01-core §8; `$reshape` as on {@link PathBinding} (v2 spec §3). */
 export interface StateBinding {
   $state: string;
+  $reshape?: ReshapeStep[];
 }
 
 /** 01-core §8 */

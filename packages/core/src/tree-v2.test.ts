@@ -206,6 +206,33 @@ describe("validateTreeV2 action references", () => {
   });
 });
 
+/** v2 spec §3 — the bounded reshape vocabulary is enforced at the format
+ *  gate: unknown ops or malformed chains fail provision. */
+describe("validateTreeV2 reshape gate", () => {
+  const withProps = (props: Record<string, unknown>): Record<string, unknown> => ({
+    ...minimal(),
+    nodes: [{ id: "n1", component: "LineChart", props }],
+  });
+
+  it("accepts a binding with a valid $reshape chain", () => {
+    expect(validateTreeV2(withProps({
+      points: { $path: "/revenue/rows", $reshape: [{ op: "asPoints", args: ["month", "revenue"] }] },
+    })).ok).toBe(true);
+  });
+
+  it("rejects unknown ops, bad arity, non-string args, and non-array chains — nested at any depth", () => {
+    for (const props of [
+      { points: { $path: "/a", $reshape: [{ op: "eval", args: [] }] } },
+      { points: { $path: "/a", $reshape: [{ op: "asPoints", args: ["one"] }] } },
+      { points: { $path: "/a", $reshape: [{ op: "pick", args: [42] }] } },
+      { points: { $path: "/a", $reshape: { op: "pick", args: ["a"] } } },
+      { deep: [{ inner: { $path: "/a", $reshape: [{ op: "format", args: ["x", "loud"] }] } }] },
+    ]) {
+      expectProvision(withProps(props));
+    }
+  });
+});
+
 describe("validateTreeV2 hostile inputs", () => {
   it("never throws on inputs with throwing getters", () => {
     const hostile = Object.defineProperty({}, "formatVersion", {

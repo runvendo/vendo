@@ -810,10 +810,15 @@ describe("compileWireV2 full-spec-example gate (spec §2)", () => {
     expect(result.issues).toEqual([]);
   });
 
-  it("compiles the spec example WITH the pipe: reshape-unsupported is the sole issue", () => {
+  it("compiles the spec example WITH the pipe to a $reshape binding, zero issues (v2 spec §3)", () => {
     const result = compile(specWire("revenue | asPoints(month, revenue)"));
-    expectSpecTree(result);
-    expect(codes(result)).toEqual(["reshape-unsupported"]);
+    expect(result.issues).toEqual([]);
+    const chart = result.tree.nodes.find((node) => node.id === "linechart-1");
+    expect(chart?.props?.points).toEqual({
+      $path: "/revenue",
+      $reshape: [{ op: "asPoints", args: ["month", "revenue"] }],
+    });
+    expect(result.complete).toBe(true);
   });
 });
 
@@ -977,5 +982,102 @@ describe("compileWireV2 dangling-generated reconciliation", () => {
     const full = compile(wire);
     expect(full.tree.nodes.find(({ id }) => id === "note-1")?.source).toBe("generated");
     expect(full.components.Note).toBe("export default function Note() {}");
+  });
+});
+
+/** v2 spec §3 — the compile-time shape check: a binding to fields absent
+ *  from the tool's response shape is a compile error routed to per-binding
+ *  repair; unknown shapes stay defensive (Json). */
+describe("compileWireV2 shape check (v2 spec §3)", () => {
+  const revenueShape = {
+    kind: "object" as const,
+    fields: {
+      rows: {
+        kind: "array" as const,
+        items: {
+          kind: "object" as const,
+          fields: { month: { kind: "string" as const }, revenue: { kind: "number" as const } },
+        },
+      },
+      total: { kind: "number" as const },
+    },
+  };
+  const shapes: WireCompileOptions = { toolShapes: { "metrics.revenue": revenueShape } };
+  const chartWire = (points: string): string => `
+<App name="Cash">
+  <Query id="revenue" tool="metrics.revenue"/>
+  <LineChart points={${points}}/>
+</App>`;
+
+  it("a valid binding with a valid reshape produces no errors", () => {
+    const result = compile(chartWire("revenue.rows | asPoints(month, revenue)"), shapes);
+    expect(result.issues).toEqual([]);
+    expect(result.bindingErrors).toEqual([]);
+  });
+
+  it("the chart-bug class fails at compile: absent field ⇒ shape-mismatch + structured repair anchor", () => {
+    const result = compile(chartWire("revenue.series"), shapes);
+    expect(codes(result)).toEqual(["shape-mismatch"]);
+    expect(result.bindingErrors).toEqual([{
+      nodeId: "linechart-1",
+      prop: "points",
+      query: "revenue",
+      tool: "metrics.revenue",
+      path: "/revenue/series",
+      message: expect.stringContaining("series"),
+      missing: ["series"],
+      available: ["rows", "total"],
+    }]);
+    // Shape errors are repairable, not structural: the parse itself completed.
+    expect(result.complete).toBe(true);
+  });
+
+  it("a reshape referencing absent fields fails with missing/available for repair", () => {
+    const result = compile(chartWire("revenue.rows | asPoints(period, revenue)"), shapes);
+    expect(codes(result)).toEqual(["shape-mismatch"]);
+    const error = result.bindingErrors[0];
+    expect(error?.missing).toEqual(["period"]);
+    expect(error?.available).toEqual(["month", "revenue"]);
+    expect(error?.path).toBe("/revenue/rows");
+  });
+
+  it("a reshape op incompatible with the known shape fails (aggregate over a string field)", () => {
+    const result = compile(chartWire("revenue.rows | sum(month)"), shapes);
+    expect(codes(result)).toEqual(["shape-mismatch"]);
+    expect(result.bindingErrors[0]?.message).toContain("month");
+  });
+
+  it("bindings nested inside arrays and objects are checked too", () => {
+    const result = compile(chartWire("{ deep: [revenue.missing] }"), shapes);
+    expect(codes(result)).toEqual(["shape-mismatch"]);
+    expect(result.bindingErrors[0]?.prop).toBe("points");
+  });
+
+  it("unknown tools, json regions, and state bindings stay defensive: no errors", () => {
+    const unknownTool = compile(`
+<App>
+  <Query id="p" tool="payments.list"/>
+  <DataTable rows={p.items}/>
+</App>`, shapes);
+    expect(unknownTool.bindingErrors).toEqual([]);
+
+    const jsonRegion = compile(chartWire("revenue.rows | pick(anything)"), {
+      toolShapes: { "metrics.revenue": { kind: "json" } },
+    });
+    expect(jsonRegion.bindingErrors).toEqual([]);
+
+    const stateBinding = compile("<App><Input value={state.draft}/></App>", shapes);
+    expect(stateBinding.bindingErrors).toEqual([]);
+  });
+
+  it("without toolShapes the check is off: wave-2-compatible result with empty bindingErrors", () => {
+    const result = compile(chartWire("revenue.series"));
+    expect(result.issues).toEqual([]);
+    expect(result.bindingErrors).toEqual([]);
+  });
+
+  it("a binding pointing past a scalar in a known shape is a mismatch", () => {
+    const result = compile(chartWire("revenue.total.deeper"), shapes);
+    expect(codes(result)).toEqual(["shape-mismatch"]);
   });
 });
