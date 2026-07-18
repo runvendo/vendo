@@ -121,21 +121,21 @@ Four independent tasks; each is test-first and separately committed.
 - Files: packages/core (component entry type), packages/vendo/src/catalog.ts
   + server.ts, packages/ui (VendoRoot registry prop), packages/apps
   (validation path), apps/demo-bank registry migration, tests throughout.
-- [ ] Test: catalog accepts the name-keyed registry object; entry name comes
+- [x] Test: catalog accepts the name-keyed registry object; entry name comes
   from the key; `component` field is ignored server-side; array form still
   accepted for back-compat during migration.
-- [ ] Test: JSON Schema is derived internally from the single zod/standard
+- [x] Test: JSON Schema is derived internally from the single zod/standard
   schema (zod v4 native conversion); schema-less entries are legal and
   produce description-only prompt entries with permissive validation;
   derived schema drives both the prompt and generated-props validation (the
   disk-catalog permissive-validation gap closes for schema-bearing entries).
-- [ ] Implement server side; keep .vendo/catalog.json merging semantics
+- [x] Implement server side; keep .vendo/catalog.json merging semantics
   (explicit registry wins by name).
-- [ ] VendoRoot accepts the registry as its components input (entries with
+- [x] VendoRoot accepts the registry as its components input (entries with
   `component`); update packages/ui tests.
-- [ ] Migrate demo-bank to one vendo/registry.tsx consumed by both
+- [x] Migrate demo-bank to one vendo/registry.tsx consumed by both
   server.ts and the root; delete the old catalog block.
-- [ ] Browser-verify a generated view using a registry component in
+- [x] Browser-verify a generated view using a registry component in
   demo-bank; screenshot for the PR.
 - [ ] Wave gate: full green quad, PR opened.
 
