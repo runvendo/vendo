@@ -124,11 +124,29 @@ describe("vendo extract --apply (the delegation surface)", () => {
     expect(await runExtractApply({ targetDir: root, apply: join(root, "nope.json"), output: sink.output, sync: okSync() })).toBe(1);
     expect(sink.errors.join("\n")).toContain("Draft file not found");
 
+    // Non-ENOENT read failures (a directory, permissions) exit honestly too
+    // instead of escaping as an uncaught crash (Greptile P1).
+    expect(await runExtractApply({ targetDir: root, apply: root, output: sink.output, sync: okSync() })).toBe(1);
+    expect(sink.errors.join("\n")).toContain("Draft file unreadable");
+
     const bare = await mkdtemp(join(tmpdir(), "vendo-extract-apply-bare-"));
     cleanup.push(bare);
     const draft = await draftFile(bare, { brief: "b", tools: [] });
     expect(await runExtractApply({ targetDir: bare, apply: draft, output: sink.output, sync: okSync() })).toBe(1);
     expect(sink.errors.join("\n")).toContain("run `vendo init` first");
+  });
+
+  it("exits non-zero honestly when a hand-edited overrides.json cannot be parsed (Devin)", async () => {
+    const root = await fixture();
+    await writeFile(join(root, ".vendo", "overrides.json"), '{"format": "vendo/overrides@1", "tools": {');
+    const draft = await draftFile(root, {
+      brief: "b",
+      tools: [{ name: "host_invoices_list", description: "List invoices." }],
+    });
+    const sink = output();
+    expect(await runExtractApply({ targetDir: root, apply: draft, output: sink.output, sync: okSync() })).toBe(1);
+    expect(sink.errors.join("\n")).toContain("Could not apply the draft");
+    expect(sink.errors.join("\n")).toContain("overrides.json");
   });
 
   it("reports a failed re-sync as non-zero after applying (overrides landed, tools.json is stale)", async () => {

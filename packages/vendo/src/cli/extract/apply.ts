@@ -52,7 +52,15 @@ export async function runExtractApply(options: ExtractApplyOptions): Promise<num
     return 1;
   }
 
-  const draftRaw = await readOptional(resolve(options.apply));
+  // readOptional only maps ENOENT to null — a directory (EISDIR) or a
+  // permission error must still exit honestly, not as an uncaught crash.
+  let draftRaw: string | null;
+  try {
+    draftRaw = await readOptional(resolve(options.apply));
+  } catch (error) {
+    output.error(`Draft file unreadable: ${options.apply} (${describeError(error)})`);
+    return 1;
+  }
   if (draftRaw === null) {
     output.error(`Draft file not found: ${options.apply}`);
     return 1;
@@ -65,12 +73,20 @@ export async function runExtractApply(options: ExtractApplyOptions): Promise<num
     return 1;
   }
 
-  const applied = await applyDraft({
-    root,
-    draft,
-    tools,
-    ...(options.force === undefined ? {} : { force: options.force }),
-  });
+  // applyDraft throws on a hand-edited overrides.json it cannot parse — the
+  // same honest-exit contract applies, never an unhandled stack trace.
+  let applied: Awaited<ReturnType<typeof applyDraft>>;
+  try {
+    applied = await applyDraft({
+      root,
+      draft,
+      tools,
+      ...(options.force === undefined ? {} : { force: options.force }),
+    });
+  } catch (error) {
+    output.error(`Could not apply the draft (${describeError(error)}) — check .vendo/overrides.json and re-apply.`);
+    return 1;
+  }
   // Same as init's built-in pass: a successful apply re-syncs so tools.json
   // reflects the polish immediately.
   try {

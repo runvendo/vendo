@@ -157,6 +157,10 @@ export async function main(argv: string[]): Promise<number> {
     const problems = optionErrors(args, EXTRACT_FLAGS, EXTRACT_VALUE_OPTIONS);
     if (!args.some((arg) => arg === "--apply" || arg.startsWith("--apply="))) {
       problems.push("--apply <draft.json> is required");
+    } else if (option(args, "--apply") === "") {
+      // `--apply=` slips past the missing-value check with an empty string,
+      // which would resolve to the cwd instead of failing loudly.
+      problems.push("--apply requires a value");
     }
     if (problems.length > 0) {
       console.error(`vendo extract: ${problems.join("; ")}\n\n${HELP}`);

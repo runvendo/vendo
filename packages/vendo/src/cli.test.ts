@@ -94,6 +94,10 @@ describe("vendo CLI commands", () => {
     expect(await main(["extract"])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain("--apply <draft.json> is required");
 
+    // `--apply=` (empty value) fails loudly instead of resolving to the cwd.
+    expect(await main(["extract", "--apply="])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--apply requires a value");
+
     expect(await main(["extract", "--apply", "draft.json", "--dry-run"])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain("unknown option: --dry-run");
 
