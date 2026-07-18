@@ -105,6 +105,35 @@ grammar, `vendo_threads` revisions) are enforced server-side, same rules as
   `storage_gb` quota — no entitlement flag (2026-07-17 decision: no capability
   booleans anywhere).
 
+## Pre-GA follow-ups (2026-07-18 quality round — recorded, not yet built)
+
+Every record RPC currently pays a fixed stack: key-hash lookup + three
+deferred usage writes, a `hosted_instances` query, a credential decrypt, and
+a FRESH pg pool per call (Workers forbid cross-invocation pools). Fine for
+v1 traffic; before GA:
+
+1. **Pooling/caching** — route the hosted Postgres through Hyperdrive (or
+   pgbouncer) so per-call pools stop paying TCP+TLS setup, and add a
+   short-TTL in-memory key→instance cache (key hash → org, schema, decrypted
+   role URL) so steady-state RPCs skip the registry query and decrypt. TTL
+   seconds, never persisted — key rotation semantics stay "next call".
+2. **Retry posture** — idempotent reads (records get/list, blob get/list)
+   should retry once on transient network failure in `hostedStore`; writes
+   stay single-shot (put is upsert-idempotent but claim/atomic are not).
+3. **Shared golden wire fixtures** — the OSS in-memory fake and the console
+   handlers are verified against each other only by discipline today; a
+   shared fixture set (request/response pairs both sides must satisfy) would
+   pin the wire against drift.
+4. **Vendored-tarball naming** — future console vendor bumps should suffix
+   the tarball (e.g. `vendoai-store-0.3.0-r2.tgz`) instead of replacing the
+   file in place, so a lockfile integrity mismatch can never resolve stale.
+5. **isHostedStore duck-typing caveat** — the composition recognizes an
+   explicitly passed hosted store by its `sessions`/`erase` surface; a host
+   WRAPPING a hosted store (decorator that forwards records/blobs but not
+   the session doors) silently gets local session ops and the loud dbFor
+   failure. Document or export a branded check if wrapping becomes a
+   pattern.
+
 ## Decisions (Yousef, 2026-07-17)
 
 1. **Postgres substrate — accepted as recommended.** Managed Postgres (Neon or
