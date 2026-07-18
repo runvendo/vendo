@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import {
@@ -91,7 +91,7 @@ export async function discoverAiConfiguredRepoNames(expectationsRoot: string): P
   for (const entry of entries) {
     if (!entry.isDirectory() || !safeRepoNamePattern.test(entry.name)) continue;
     try {
-      await readFile(repoAiExpectedPath(expectationsRoot, entry.name));
+      await access(repoAiExpectedPath(expectationsRoot, entry.name));
       configured.push(entry.name);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;

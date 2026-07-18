@@ -186,8 +186,14 @@ export async function runAiRepoMatrix(options: RunAiRepoMatrixOptions): Promise<
   await mkdir(options.aiLogsDir, { recursive: true });
 
   const models: AiModelRunResult[] = [];
+  const takenDirNames = new Set<string>();
   for (const model of options.models) {
-    const artifactsDir = path.join(options.aiLogsDir, modelDirName(model));
+    // Distinct model ids may normalize to the same slug — keep artifact
+    // directories unique within the run.
+    let dirName = modelDirName(model);
+    for (let suffix = 2; takenDirNames.has(dirName); suffix += 1) dirName = `${modelDirName(model)}-${suffix}`;
+    takenDirNames.add(dirName);
+    const artifactsDir = path.join(options.aiLogsDir, dirName);
     await rm(artifactsDir, { recursive: true, force: true });
     await mkdir(artifactsDir, { recursive: true });
     const env = model === DEFAULT_MODEL_LABEL
@@ -227,13 +233,29 @@ export async function runAiRepoMatrix(options: RunAiRepoMatrixOptions): Promise<
       await writeFile(path.join(artifactsDir, "notes.txt"), `${notes.join("\n")}\n`);
     }
 
-    const score = await evaluateDraft({
-      draft,
-      ...(failure === undefined ? {} : { draftError: failure }),
-      statics,
-      expected,
-      scratchRoot: artifactsDir,
-    });
+    // The deterministic tail can fail too (guard-apply IO, malformed
+    // overrides); that floors THIS cell, never the sibling models or the
+    // whole repo row (Devin finding on #372).
+    let score: Awaited<ReturnType<typeof evaluateDraft>>;
+    try {
+      score = await evaluateDraft({
+        draft,
+        ...(failure === undefined ? {} : { draftError: failure }),
+        statics,
+        expected,
+        scratchRoot: artifactsDir,
+      });
+    } catch (error) {
+      failure = `draft evaluation failed: ${error instanceof Error ? error.message : String(error)}`;
+      await writeFile(path.join(artifactsDir, "error.txt"), `${failure}\n`);
+      score = await evaluateDraft({
+        draft: null,
+        draftError: failure,
+        statics,
+        expected,
+        scratchRoot: artifactsDir,
+      });
+    }
     await writeFile(
       path.join(artifactsDir, "checks.json"),
       `${JSON.stringify({ score: score.score, dimensions: score.dimensions, checks: score.checks, notes }, null, 2)}\n`,
@@ -280,6 +302,12 @@ function cell(score: ScorecardScore | undefined): string {
   return `${score.passed}/${score.total}`;
 }
 
+/** Raw error messages and notes go into table cells — keep them from
+ * breaking the row. */
+function escapeCell(text: string): string {
+  return text.replaceAll(/\r?\n/g, " ").replaceAll("|", "\\|");
+}
+
 export function renderAiScoreboardMarkdown(doc: AiScoreboardDocument): string {
   const lines = [
     "# AI extraction scoreboard",
@@ -295,7 +323,7 @@ export function renderAiScoreboardMarkdown(doc: AiScoreboardDocument): string {
 
   for (const repo of doc.repos) {
     if (repo.failure) {
-      lines.push(`| ${repo.repo} | — | FAIL | ${DIMENSION_COLUMNS.map(() => "—").join(" | ")} | ${repo.failure} |`);
+      lines.push(`| ${repo.repo} | — | FAIL | ${DIMENSION_COLUMNS.map(() => "—").join(" | ")} | ${escapeCell(repo.failure)} |`);
       continue;
     }
     for (const run of repo.models) {
@@ -311,7 +339,7 @@ export function renderAiScoreboardMarkdown(doc: AiScoreboardDocument): string {
         run.model,
         `${run.score.value.toFixed(3)} (${cell(run.score)})`,
         ...DIMENSION_COLUMNS.map((name) => cell(run.dimensions[name])),
-        notes.join("; ") || "all checks passed",
+        escapeCell(notes.join("; ")) || "all checks passed",
         "",
       ].join(" | ").trim());
     }

@@ -172,8 +172,11 @@ export function scoreAiExtraction(input: ScoreAiExtractionInput): AiExtractionSc
   const effectiveCritical = (tool: AiScoredStaticTool): boolean =>
     overrides[tool.name]?.critical ?? tool.critical ?? false;
 
-  // Denominators that must not depend on the draft, so every model's run on
-  // the same repo carries the same check set (score.total).
+  // Cross-model comparability of score.total rests on two invariants: every
+  // check carries a constant weight regardless of its internal fraction, and
+  // the null-draft branch pushes the SAME check set under the same
+  // conditions as the valid branch. The sets below are draft-independent so
+  // those conditions never diverge between branches.
   const describable = staticTools.filter((tool) => tool.disabled !== true);
   const riskJudgeable = (): ExpectedJoin[] =>
     joined.filter(({ tool }) => tool.disabled !== true || wokenBy(tool));
@@ -376,11 +379,15 @@ function toScore(entries: readonly WeightedCheck[]): ScorecardScore {
   };
 }
 
+function dimensionOf(checkId: string): string {
+  return checkId.split(".")[1] ?? "other";
+}
+
 function finalize(weightedChecks: readonly WeightedCheck[], hardFailure: boolean): AiExtractionScore {
   const scored = weightedChecks.filter((entry) => entry.weight > 0);
   const dimensions: Record<string, ScorecardScore> = {};
-  for (const dimension of new Set(scored.map((entry) => entry.check.id.split(".")[1] ?? "other"))) {
-    dimensions[dimension] = toScore(scored.filter((entry) => entry.check.id.split(".")[1] === dimension));
+  for (const dimension of new Set(scored.map((entry) => dimensionOf(entry.check.id)))) {
+    dimensions[dimension] = toScore(scored.filter((entry) => dimensionOf(entry.check.id) === dimension));
   }
   return {
     score: toScore(scored),
