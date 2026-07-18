@@ -1,7 +1,7 @@
 FROM node:22-bookworm-slim
 
 WORKDIR /app
-RUN npm install --global pnpm@9.12.0
+RUN npm install --global pnpm@11.10.0
 
 COPY . .
 RUN pnpm install --frozen-lockfile

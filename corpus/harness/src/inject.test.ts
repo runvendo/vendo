@@ -349,6 +349,163 @@ describe("createLocalVendoInjector", () => {
     });
   }
 
+  for (const target of [
+    { name: "a packageManager pin of pnpm@11", pin: "pnpm@11.2.1" as string | undefined },
+    { name: "no packageManager pin (harness pnpm is 11+)", pin: undefined },
+  ]) {
+    it(`mirrors overrides into a created pnpm-workspace.yaml and drops --ignore-workspace for a standalone target with ${target.name}`, async () => {
+      const workspaceRoot = await createWorkspace();
+      const corpusRoot = await makeTempRoot();
+      const context = createRunContext({ corpusRoot });
+      const repoDir = context.repoDir("repo-pnpm11-standalone");
+      await writeJson(path.join(repoDir, "package.json"), {
+        name: "repo-pnpm11-standalone",
+        ...(target.pin ? { packageManager: target.pin } : {}),
+        dependencies: {
+          "@vendoai/vendo": "latest",
+          "vendoai": "latest",
+        },
+      });
+      // Unpinned targets are detected as pnpm via their lockfile.
+      if (!target.pin) await writeFile(path.join(repoDir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+      const pack: PackWorkspacePackage = async (pkg, opts) => {
+        await mkdir(opts.vendorDir, { recursive: true });
+        await writeFile(path.join(opts.vendorDir, opts.fileName), `packed ${pkg.name}`);
+      };
+      const installCalls: string[] = [];
+      const injector = createLocalVendoInjector({
+        context,
+        workspaceRoot,
+        pack,
+        log() {},
+        async buildWorkspace() {},
+        async runInstallCommand(command, cwd) {
+          installCalls.push(`${command} @ ${cwd}`);
+          await writeFile(path.join(cwd, "pnpm-lock.yaml"), [
+            "dependencies:",
+            "  '@vendoai/vendo':",
+            "    specifier: file:vendor/vendoai-vendo-0.3.0.tgz",
+            "    version: file:vendor/vendoai-vendo-0.3.0.tgz",
+            "",
+          ].join("\n"));
+        },
+      });
+
+      await injector.inject({
+        name: "repo-pnpm11-standalone",
+        bootstrap: {
+          installCommand: "pnpm install --frozen-lockfile --force --ignore-workspace",
+          envTemplate: {},
+          buildCommand: "pnpm build",
+        },
+      });
+
+      expect(installCalls).toEqual([
+        `pnpm --config.minimumReleaseAge=0 --config.dangerouslyAllowAllBuilds=true install --no-frozen-lockfile --force @ ${repoDir}`,
+      ]);
+      const workspaceYaml = await readFile(path.join(repoDir, "pnpm-workspace.yaml"), "utf8");
+      expect(workspaceYaml).toContain('packages:\n  - "."');
+      expect(workspaceYaml).toContain('"@vendoai/vendo": "file:vendor/vendoai-vendo-0.3.0.tgz"');
+      expect(workspaceYaml).toContain('"vendoai": "file:vendor/vendoai-0.3.0.tgz"');
+      expect(workspaceYaml).toContain('"ai": "6.0.28"');
+      // package.json keeps the overrides too, for pnpm ≤10 dev environments.
+      const pkg = await readPackageJson(repoDir);
+      expect(pkg.pnpm.overrides["@vendoai/vendo"]).toBe("file:vendor/vendoai-vendo-0.3.0.tgz");
+    });
+  }
+
+  it("keeps --ignore-workspace and writes no pnpm-workspace.yaml for a standalone target pinned to pnpm 9", async () => {
+    const workspaceRoot = await createWorkspace();
+    const corpusRoot = await makeTempRoot();
+    const repoDir = await createTargetRepo(corpusRoot, "repo-pnpm9-standalone");
+    const pack: PackWorkspacePackage = async (pkg, opts) => {
+      await mkdir(opts.vendorDir, { recursive: true });
+      await writeFile(path.join(opts.vendorDir, opts.fileName), `packed ${pkg.name}`);
+    };
+    const installCalls: string[] = [];
+    const injector = createLocalVendoInjector({
+      context: createRunContext({ corpusRoot }),
+      workspaceRoot,
+      pack,
+      log() {},
+      async buildWorkspace() {},
+      async runInstallCommand(command, cwd) {
+        installCalls.push(`${command} @ ${cwd}`);
+        await writeFile(path.join(cwd, "pnpm-lock.yaml"), [
+          "dependencies:",
+          "  '@vendoai/vendo':",
+          "    specifier: file:vendor/vendoai-vendo-0.3.0.tgz",
+          "    version: file:vendor/vendoai-vendo-0.3.0.tgz",
+          "",
+        ].join("\n"));
+      },
+    });
+
+    await injector.inject({
+      name: "repo-pnpm9-standalone",
+      bootstrap: {
+        installCommand: "pnpm install --frozen-lockfile --ignore-workspace",
+        envTemplate: {},
+        buildCommand: "pnpm build",
+      },
+    });
+
+    expect(installCalls).toEqual([
+      `pnpm --config.minimumReleaseAge=0 --config.dangerouslyAllowAllBuilds=true install --no-frozen-lockfile --ignore-workspace @ ${repoDir}`,
+    ]);
+    await expect(readFile(path.join(repoDir, "pnpm-workspace.yaml"), "utf8")).rejects.toThrow();
+  });
+
+  it("merges overrides into an existing pnpm-workspace.yaml for a standalone pnpm 11 target that curates builds", async () => {
+    const workspaceRoot = await createWorkspace();
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repoDir = context.repoDir("repo-pnpm11-curated");
+    await writeJson(path.join(repoDir, "package.json"), {
+      name: "repo-pnpm11-curated",
+      packageManager: "pnpm@11.2.1",
+      dependencies: {
+        "@vendoai/vendo": "latest",
+        "vendoai": "latest",
+      },
+    });
+    await writeFile(
+      path.join(repoDir, "pnpm-workspace.yaml"),
+      "packages:\n  - '.'\nallowBuilds:\n  esbuild: true\n",
+    );
+    const pack: PackWorkspacePackage = async (pkg, opts) => {
+      await mkdir(opts.vendorDir, { recursive: true });
+      await writeFile(path.join(opts.vendorDir, opts.fileName), `packed ${pkg.name}`);
+    };
+    const installCalls: string[] = [];
+    const injector = createLocalVendoInjector({
+      context,
+      workspaceRoot,
+      pack,
+      log() {},
+      async buildWorkspace() {},
+      async runInstallCommand(command, cwd) {
+        installCalls.push(`${command} @ ${cwd}`);
+        await writeFile(path.join(cwd, "pnpm-lock.yaml"), [
+          "dependencies:",
+          "  '@vendoai/vendo':",
+          "    specifier: file:vendor/vendoai-vendo-0.3.0.tgz",
+          "    version: file:vendor/vendoai-vendo-0.3.0.tgz",
+          "",
+        ].join("\n"));
+      },
+    });
+
+    await injector.inject({ name: "repo-pnpm11-curated" });
+
+    expect(installCalls).toEqual([
+      `pnpm --config.minimumReleaseAge=0 install --no-frozen-lockfile @ ${repoDir}`,
+    ]);
+    const workspaceYaml = await readFile(path.join(repoDir, "pnpm-workspace.yaml"), "utf8");
+    expect(workspaceYaml).toContain("allowBuilds:\n  esbuild: true");
+    expect(workspaceYaml).toContain('"@vendoai/vendo": "file:vendor/vendoai-vendo-0.3.0.tgz"');
+  });
+
   it("targets appDir package.json when injecting into monorepo apps", async () => {
     const workspaceRoot = await createWorkspace();
     const corpusRoot = await makeTempRoot();

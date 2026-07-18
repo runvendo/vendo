@@ -11,3 +11,19 @@ packages:
   # ai-SDK consumer (packages/agent, packages/ui, fixtures, ...). It installs
   # standalone with its own lockfile instead — see spikes/install-dx-creds/README.md.
   - "!spikes/install-dx-creds"
+
+# pnpm 9 ran every dependency build script; pnpm 11 (strictDepBuilds) requires
+# an explicit allowlist. These five are the deps with build scripts in the
+# tree — all allowed, preserving pnpm 9 behavior.
+allowBuilds:
+  cbor-extract: true
+  esbuild: true
+  protobufjs: true
+  sharp: true
+  unrs-resolver: true
+
+# pnpm 11 no longer reads the `pnpm` field in package.json; overrides live here.
+overrides:
+  "@types/react": "^19.2.0"
+  "@types/react-dom": "^19.2.0"
+  "postcss@<8.5.10": ">=8.5.10"
