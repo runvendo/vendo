@@ -43,7 +43,15 @@ export function hasSeen(element: string): boolean {
   const store = storage();
   if (!store) return true;
   try {
-    return store.getItem(PREFIX + element) !== null;
+    if (store.getItem(PREFIX + element) !== null) return true;
+    // Quota-full storage commonly still READS while writes throw; reporting
+    // unseen there means markSeen can never persist and the element replays
+    // on every visit. Probe writability first — a failed probe reads as seen
+    // (degraded environments never nag).
+    const probe = `${PREFIX}probe`;
+    store.setItem(probe, "1");
+    store.removeItem(probe);
+    return false;
   } catch {
     return true;
   }

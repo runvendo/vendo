@@ -41,6 +41,26 @@ describe("discoverability fire-once store", () => {
     }
   });
 
+  it("treats readable-but-unwritable storage (quota-full) as already-seen — a dropped write must never replay", () => {
+    // Quota-full localStorage commonly still READS while setItem throws: the
+    // flag can never persist, so without a writability probe every reload
+    // would show the whisper/greeting again — the exact nagging §6 forbids.
+    const backing = new Map<string, string>();
+    const full = {
+      getItem: (key: string) => backing.get(key) ?? null,
+      setItem() { throw new Error("QuotaExceededError"); },
+      removeItem: (key: string) => void backing.delete(key),
+    };
+    const descriptor = Object.getOwnPropertyDescriptor(window, "localStorage");
+    Object.defineProperty(window, "localStorage", { configurable: true, value: full });
+    try {
+      expect(hasSeen("whisper")).toBe(true);
+      expect(() => markSeen("whisper")).not.toThrow();
+    } finally {
+      Object.defineProperty(window, "localStorage", descriptor!);
+    }
+  });
+
   it("treats a storage that throws on read/write as already-seen and never throws", () => {
     // Quota-full / partitioned storage: the object exists but operations fail.
     const broken = {
