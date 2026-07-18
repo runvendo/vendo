@@ -4,7 +4,7 @@ import type { JsonSchema } from "@vendoai/core";
 import type tsTypes from "typescript";
 import type { CatalogEntry } from "../formats.js";
 import { walk } from "./common.js";
-import { parseModule, zodFromExpression, type FileModule, type StaticExtraction } from "./static-ts.js";
+import { parseModule, resolveIdentifier, zodFromExpression, type FileModule, type StaticExtraction } from "./static-ts.js";
 
 let ts: typeof tsTypes;
 
@@ -269,35 +269,44 @@ async function registeredCatalogEntries(
     const constants = localConstants(module.sf);
     const modulePath = relativeModulePath(root, file);
     const candidates: RegistrationCandidate[] = [];
-    const collectArrayEntry = (element: tsTypes.Expression): void => {
-      const rawEntry = resolvedLocalExpression(constants, element);
+    /** The module the catalog expression actually lives in — the registration
+     * file itself, or the shared registry module it imports (01 §14: one
+     * registry file serves both `createVendo` and `<VendoRoot>`). */
+    interface CatalogContext {
+      constants: Map<string, tsTypes.Expression>;
+      module: FileModule;
+      modulePath: string;
+    }
+    const collectArrayEntry = (context: CatalogContext, element: tsTypes.Expression): void => {
+      const rawEntry = resolvedLocalExpression(context.constants, element);
       if (!ts.isObjectLiteralExpression(rawEntry)) return;
       candidates.push({
-        name: localConstantJson(constants, objectField(rawEntry, "name") ?? rawEntry) as unknown,
-        description: localConstantJson(constants, objectField(rawEntry, "description") ?? rawEntry) as unknown,
-        examples: readExamples(constants, rawEntry),
+        name: localConstantJson(context.constants, objectField(rawEntry, "name") ?? rawEntry) as unknown,
+        description: localConstantJson(context.constants, objectField(rawEntry, "description") ?? rawEntry) as unknown,
+        examples: readExamples(context.constants, rawEntry),
         schemaExpression: objectField(rawEntry, "propsSchema"),
-        module,
-        modulePath,
+        module: context.module,
+        modulePath: context.modulePath,
       });
     };
-    const collectRegistryEntry = (name: string, value: tsTypes.Expression): void => {
-      const rawEntry = resolvedLocalExpression(constants, value);
+    const collectRegistryEntry = (context: CatalogContext, name: string, value: tsTypes.Expression): void => {
+      const rawEntry = resolvedLocalExpression(context.constants, value);
       if (!ts.isObjectLiteralExpression(rawEntry)) {
-        candidates.push({ name, description: undefined, examples: undefined, schemaExpression: undefined, module, modulePath });
+        candidates.push({ name, description: undefined, examples: undefined, schemaExpression: undefined, module: context.module, modulePath: context.modulePath });
         return;
       }
       // 01 §14: the registry entry's `component` reference is IGNORED by sync
       // (and the server) — it exists so the same object serves the client.
       candidates.push({
         name,
-        description: localConstantJson(constants, objectField(rawEntry, "description") ?? rawEntry) as unknown,
-        examples: readExamples(constants, rawEntry),
+        description: localConstantJson(context.constants, objectField(rawEntry, "description") ?? rawEntry) as unknown,
+        examples: readExamples(context.constants, rawEntry),
         schemaExpression: objectField(rawEntry, "props"),
-        module,
-        modulePath,
+        module: context.module,
+        modulePath: context.modulePath,
       });
     };
+    const catalogExpressions: tsTypes.Expression[] = [];
     const visit = (node: tsTypes.Node): void => {
       if (!ts.isCallExpression(node)
         || !ts.isIdentifier(node.expression)
@@ -309,24 +318,40 @@ async function registeredCatalogEntries(
       const config = resolvedLocalExpression(constants, node.arguments[0]);
       if (!ts.isObjectLiteralExpression(config)) return;
       const catalogExpression = objectField(config, "catalog");
-      if (catalogExpression === undefined) return;
-      const catalog = resolvedLocalExpression(constants, catalogExpression);
+      if (catalogExpression !== undefined) catalogExpressions.push(catalogExpression);
+    };
+    visit(module.sf);
+    for (const catalogExpression of catalogExpressions) {
+      let context: CatalogContext = { constants, module, modulePath };
+      let catalog = resolvedLocalExpression(constants, catalogExpression);
+      if (ts.isIdentifier(catalog)) {
+        // The shared-registry main path: `catalog` is imported from the one
+        // registry module both sides consume — follow the import statically.
+        const resolved = await resolveIdentifier(extraction, module, catalog.text, 0);
+        if (resolved !== null) {
+          context = {
+            constants: localConstants(resolved.module.sf),
+            module: resolved.module,
+            modulePath: relativeModulePath(root, resolved.module.file),
+          };
+          catalog = resolvedLocalExpression(context.constants, unwrapExpression(resolved.expr));
+        }
+      }
       if (ts.isArrayLiteralExpression(catalog)) {
         for (const element of catalog.elements) {
-          if (!ts.isSpreadElement(element)) collectArrayEntry(element);
+          if (!ts.isSpreadElement(element)) collectArrayEntry(context, element);
         }
       } else if (ts.isObjectLiteralExpression(catalog)) {
         for (const property of catalog.properties) {
           if (ts.isPropertyAssignment(property)) {
             const name = propertyName(property.name);
-            if (name !== undefined) collectRegistryEntry(name, property.initializer);
+            if (name !== undefined) collectRegistryEntry(context, name, property.initializer);
           }
         }
       } else {
         warnings.push(`registered component catalog in ${modulePath} is not a statically resolvable array or registry object; scanned entries remain authoritative`);
       }
-    };
-    visit(module.sf);
+    }
     for (const candidate of candidates) {
       const { name, description, examples } = candidate;
       if (typeof name !== "string" || !PASCAL_CASE.test(name)
@@ -394,7 +419,16 @@ function exportedObjectCandidates(
       value = property.name;
     }
     if (name === undefined || value === undefined || !PASCAL_CASE.test(name)) continue;
-    const component = functionFromDeclaration(symbolDeclaration(checker, value));
+    let componentExpression = unwrapExpression(value);
+    if (ts.isObjectLiteralExpression(componentExpression)) {
+      // 01 §14 registry entry passed to <VendoRoot>: the component reference
+      // lives in the entry's `component` field; the data fields are the
+      // server's side of the same object.
+      const inner = objectField(componentExpression, "component");
+      if (inner === undefined) continue;
+      componentExpression = unwrapExpression(inner);
+    }
+    const component = functionFromDeclaration(symbolDeclaration(checker, componentExpression));
     if (component !== undefined && hasJsxEvidence(component)) {
       candidates.push({ name, declaration: component, exportPath: `${modulePath}#${exportName}.${name}` });
     }

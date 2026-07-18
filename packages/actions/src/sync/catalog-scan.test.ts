@@ -10,7 +10,7 @@ afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true })));
 });
 
-async function host(source: string): Promise<string> {
+async function hostFiles(files: Record<string, string>): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "vendo-catalog-scan-"));
   temporaryDirectories.push(root);
   await fs.writeFile(path.join(root, "tsconfig.json"), JSON.stringify({
@@ -18,8 +18,14 @@ async function host(source: string): Promise<string> {
     include: ["src"],
   }), "utf8");
   await fs.mkdir(path.join(root, "src"));
-  await fs.writeFile(path.join(root, "src", "components.tsx"), source, "utf8");
+  for (const [name, source] of Object.entries(files)) {
+    await fs.writeFile(path.join(root, "src", name), source, "utf8");
+  }
   return root;
+}
+
+async function host(source: string): Promise<string> {
+  return hostFiles({ "components.tsx": source });
 }
 
 describe("deterministic component catalog scan", () => {
@@ -136,6 +142,57 @@ describe("deterministic component catalog scan", () => {
       examples: ["<MetricCard value={42} />"],
       exportPath: "./src/components.tsx#hostComponents.MetricCard",
       propsSchema: { type: "object", properties: { value: { type: "number", description: "Value in dollars" } }, required: ["value"], additionalProperties: false },
+    })]);
+  });
+
+  it("follows a catalog registry imported from another module (the shared-registry main path)", async () => {
+    const root = await hostFiles({
+      "registry.tsx": `
+        function MetricCard({ value }: { value: number }) { return <strong>{value}</strong>; }
+        export const registry = {
+          MetricCard: {
+            component: MetricCard,
+            description: "Use for one headline metric.",
+            props: z.object({ value: z.number().describe("Value in dollars") }),
+            examples: ["<MetricCard value={42} />"],
+          },
+        };
+        export function CatalogRoot() { return <VendoRoot components={registry} />; }
+      `,
+      "server.ts": `
+        import { registry } from "./registry";
+        createVendo({ catalog: registry });
+      `,
+    });
+
+    const result = await scanComponentCatalog(root);
+    expect(result.warnings).toEqual([]);
+    expect(result).toMatchObject({ registered: 1 });
+    expect(result.entries).toEqual([expect.objectContaining({
+      name: "MetricCard",
+      source: "registered",
+      description: "Use for one headline metric.",
+      examples: ["<MetricCard value={42} />"],
+      exportPath: "./src/registry.tsx#registry.MetricCard",
+      propsSchema: { type: "object", properties: { value: { type: "number", description: "Value in dollars" } }, required: ["value"], additionalProperties: false },
+    })]);
+  });
+
+  it("scans component references out of a registry object passed to VendoRoot", async () => {
+    const root = await host(`
+      function MetricCard({ value }: { value: number }) { return <strong>{value}</strong>; }
+      export const registry = {
+        MetricCard: { component: MetricCard, description: "Use for one headline metric." },
+      };
+      export function CatalogRoot() { return <VendoRoot components={registry} />; }
+    `);
+
+    const result = await scanComponentCatalog(root);
+    expect(result).toMatchObject({ discovered: 1 });
+    expect(result.entries).toEqual([expect.objectContaining({
+      name: "MetricCard",
+      exportPath: "./src/components.tsx#registry.MetricCard",
+      propsSchema: expect.objectContaining({ properties: { value: { type: "number" } } }),
     })]);
   });
 
