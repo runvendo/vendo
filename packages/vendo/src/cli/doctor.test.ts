@@ -20,7 +20,7 @@ afterEach(async () => {
 /** Existing checks are about static wiring + the HTTP probes, not the new
  *  live-turn/cloud/dev-server-probe surface (those get dedicated tests below).
  *  This wrapper stubs the new seams so the legacy assertions stay focused:
- *  a canned successful live turn, no cloud key, no codex, non-interactive. */
+ *  a canned successful live turn, no cloud key, non-interactive. */
 async function doctor(options: Parameters<typeof runDoctor>[0]): Promise<number> {
   return runDoctor({
     env: {},
@@ -34,7 +34,6 @@ async function doctor(options: Parameters<typeof runDoctor>[0]): Promise<number>
       elapsedMs: 1,
     }),
     cloudProbe: async () => ({ present: false, ok: false, unlocks: ["a starter allowance"] }),
-    codexDriftProbe: async () => ({ installed: false, tested: "0.144", drifted: false }),
     ...options,
   });
 }
@@ -423,7 +422,6 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       env: { ANTHROPIC_API_KEY: "sk-test" },
       interactive: false,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
-      codexDriftProbe: async () => ({ installed: false, tested: "0.144", drifted: false }),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -441,7 +439,6 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       env: { ANTHROPIC_API_KEY: "sk-test" },
       interactive: false,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
-      codexDriftProbe: async () => ({ installed: false, tested: "0.144", drifted: false }),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(1);
@@ -557,7 +554,6 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       confirm,
       startDevServer,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
-      codexDriftProbe: async () => ({ installed: false, tested: "0.144", drifted: false }),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -567,17 +563,6 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     expect(stop).toHaveBeenCalledOnce();
   });
 
-  it("warns on codex app-server protocol drift", async () => {
-    const messages = output();
-    await doctor({
-      targetDir: await healthy(),
-      fetchImpl: successfulProbeFetch(),
-      codexDriftProbe: async () => ({ installed: true, version: "0.160.0", tested: "0.144", drifted: true }),
-      output: messages.sink,
-      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-    });
-    expect(messages.errors.some((l) => l.includes("codex 0.160.0 is off the tested 0.144.x line"))).toBe(true);
-  });
 });
 
 function discoveryFetch(challenge?: string): typeof fetch {
