@@ -55,9 +55,13 @@ const VALUE_EXPORTS = [
   "registerPrefillConsumer",
   "LONG_TEXT_CAP",
   "truncateHead",
-  // Discoverability (ui-usage-dx §6) — the built-in greeting fallback, so
-  // hosts can extend rather than replace it.
+  // Discoverability (ui-usage-dx §6) — the built-in greeting fallback (so
+  // hosts can extend rather than replace it) plus the fire-once store, which
+  // the ejected thread template imports (the eject standalone guard requires
+  // every template import to be public).
   "defaultVendoGreeting",
+  "hasSeen",
+  "markSeen",
 ] as const;
 
 const TYPE_EXPORTS = [
