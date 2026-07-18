@@ -224,16 +224,16 @@ const applyStep = (value: Json, step: ReshapeStep): ReshapeResult => {
   if (op === "asPoints") {
     const [labelField, valueField] = args as [string, string];
     if (!isRowArray(value)) return mismatch("asPoints needs an array of rows");
-    const points = value
-      .filter((row) => Object.prototype.hasOwnProperty.call(row, labelField)
-        && Object.prototype.hasOwnProperty.call(row, valueField))
-      .map((row) => ({ label: row[labelField], value: row[valueField] }));
-    if (value.length > 0 && points.length === 0) {
-      const missing = [labelField, valueField]
-        .filter((field) => !fieldPresent(value, field));
-      return mismatch(`asPoints fields ${missing.map((field) => `"${field}"`).join(", ") || `"${labelField}", "${valueField}"`} are absent from the rows`);
+    // Strict per-row: a chart silently missing rows IS the broken-chart
+    // class, so any row lacking either axis field is a mismatch (an absent
+    // key signals mis-binding; sparse data carries explicit nulls, which
+    // still plot). pick/rename stay lenient — they are projections, not axes.
+    const missing = [labelField, valueField]
+      .filter((field) => value.some((row) => !Object.prototype.hasOwnProperty.call(row, field)));
+    if (missing.length > 0) {
+      return mismatch(`asPoints fields ${missing.map((field) => `"${field}"`).join(", ")} are absent from one or more rows`);
     }
-    return { ok: true, value: points };
+    return { ok: true, value: value.map((row) => ({ label: row[labelField], value: row[valueField] })) };
   }
   if (op === "format") {
     if (args.length === 1) {

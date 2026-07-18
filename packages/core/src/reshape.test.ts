@@ -63,6 +63,20 @@ describe("applyReshape", () => {
     });
   });
 
+  it("asPoints is strict per-row: a mixed-row response is a mismatch, never a silent partial chart", () => {
+    const mixed = applyReshape(
+      [{ month: "Jan", revenue: 1 }, { month: "Feb" }],
+      [step("asPoints", "month", "revenue")],
+    );
+    expect(mixed.ok).toBe(false);
+    if (!mixed.ok) expect(mixed.reason).toContain("revenue");
+    // Sparse data carries explicit nulls; those rows still plot.
+    expect(applyReshape(
+      [{ month: "Jan", revenue: 1 }, { month: "Feb", revenue: null }],
+      [step("asPoints", "month", "revenue")],
+    )).toEqual({ ok: true, value: [{ label: "Jan", value: 1 }, { label: "Feb", value: null }] });
+  });
+
   it("chains steps left to right", () => {
     expect(applyReshape(rows, [step("pick", "month", "revenue"), step("rename", "month", "label")])).toEqual({
       ok: true,
