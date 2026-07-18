@@ -178,6 +178,9 @@ export const statusRoutes: RouteEntry[] = [
         apps: true,
         automations: true,
         sandbox: deps.sandbox,
+        // Inference seam (cloud definition 2026-07-17): "custom" (host-passed
+        // model), "cloud" (VENDO_API_KEY managed inference), or off.
+        model: deps.model,
         // 10-mcp §1 — the door is off by default; true only when
         // createVendo({ mcp: true }) opened it.
         mcp: deps.mcp,
