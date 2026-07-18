@@ -11,6 +11,8 @@ export {
 } from "./routing.js";
 export { eraseStore, type EraseReport, type EraseTable } from "./erase.js";
 export {
+  claimEphemeralSubject,
+  listStaleEphemeralSubjects,
   registerEphemeralSubject,
   sweepEphemeralSubjects,
 } from "./sessions.js";
