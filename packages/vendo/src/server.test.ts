@@ -16,7 +16,7 @@ import { createStore, secretStore, storeSecrets, type VendoStore } from "@vendoa
 import { createHmac, randomBytes } from "node:crypto";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createVendo, nextVendoHandler, wellKnownVendoHandler, type CreateVendoConfig, type Vendo } from "./server.js";
+import { authJs, createVendo, nextVendoHandler, wellKnownVendoHandler, type CreateVendoConfig, type Vendo } from "./server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -1017,6 +1017,116 @@ describe("00 overview / 01-core §2 — per-client anonymous sessions", () => {
       expect(cookieId).toMatch(/^[0-9a-f]{32}$/); // opaque pointer, no signature suffix
       expect(seen[i]).toBe(`anonymous_${cookieId}`);
     });
+  });
+});
+
+describe("09 §2.1 — host-identity presets (auth)", () => {
+  const authJsSecret = "vendo-umbrella-auth-preset-secret";
+
+  /** Mint a REAL Auth.js v5 session JWE (the actions preset tests' idiom). */
+  async function mintSessionCookie(subject: string, claims: Record<string, unknown> = {}): Promise<string> {
+    const { encode } = await import("@auth/core/jwt");
+    const token = await encode({
+      token: { sub: subject, ...claims },
+      secret: authJsSecret,
+      salt: "authjs.session-token",
+      maxAge: 300,
+    });
+    return `authjs.session-token=${token}`;
+  }
+
+  it.each(["principal", "actAs", "oauth"] as const)(
+    "throws VendoError(validation) at compose time when auth is combined with %s",
+    async (key) => {
+      const store = await tempStore("vendo-auth-mix-");
+      const seams = {
+        principal: { principal: async () => null },
+        actAs: { actAs: async () => null },
+        oauth: { oauth: { async principal() { return null; } } },
+      } as const;
+      let thrown: unknown;
+      try {
+        createVendo({
+          model: {} as LanguageModel,
+          store,
+          auth: { principal: async () => null },
+          ...seams[key],
+        } as CreateVendoConfig);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(VendoError);
+      expect((thrown as VendoError).code).toBe("validation");
+      expect((thrown as VendoError).message).toContain(key);
+    },
+  );
+
+  it("boots anonymous ephemeral sessions when neither auth nor principal is configured", async () => {
+    const store = await tempStore("vendo-auth-none-");
+    const vendo = createVendo({ model: {} as LanguageModel, store });
+    const seen: string[] = [];
+    vi.spyOn(vendo.apps, "list").mockImplementation(async (listCtx) => {
+      seen.push(listCtx.principal.subject);
+      return [];
+    });
+    const response = await vendo.handler(request("GET", "/apps"));
+    expect(response.status).toBe(200);
+    expect(seen[0]).toMatch(/^anonymous_[0-9a-f]{32}$/);
+    expect(setCookie(response)).toContain("vendo_anon_session=");
+  });
+
+  it("auth fills the principal seam — one real wire request resolves the host session", async () => {
+    vi.stubEnv("AUTH_SECRET", authJsSecret);
+    const store = await tempStore("vendo-auth-principal-");
+    const vendo = createVendo({ model: {} as LanguageModel, store, auth: authJs() });
+    const seen: Principal[] = [];
+    vi.spyOn(vendo.apps, "list").mockImplementation(async (listCtx) => {
+      seen.push(listCtx.principal);
+      return [];
+    });
+    const response = await vendo.handler(request("GET", "/apps", undefined, {
+      cookie: await mintSessionCookie("user_auth_wire", { name: "Wire User" }),
+    }));
+    expect(response.status).toBe(200);
+    expect(seen[0]).toEqual({ kind: "user", subject: "user_auth_wire", display: "Wire User" });
+    expect(setCookie(response)).toBeNull(); // a resolved host session mints no anon cookie
+  });
+
+  it("auth's oauth half opens the MCP door — mcp: true needs no separate oauth key", async () => {
+    vi.stubEnv("AUTH_SECRET", authJsSecret);
+    const store = await tempStore("vendo-auth-door-");
+    const vendo = createVendo({ model: {} as LanguageModel, store, auth: authJs(), mcp: true });
+    await store.ensureSchema();
+    const res = await vendo.handler(new Request("https://host.test/.well-known/oauth-protected-resource/api/vendo/mcp"));
+    expect(res.status).toBe(200);
+    expect((await res.json() as { resource?: string }).resource).toBe("https://host.test/api/vendo/mcp");
+  });
+
+  it("an auth preset WITHOUT an oauth half leaves the door seam unset — mcp: true still throws", async () => {
+    const store = await tempStore("vendo-auth-no-oauth-");
+    expect(() => createVendo({
+      model: {} as LanguageModel,
+      store,
+      auth: { principal: async () => null },
+      mcp: true,
+    })).toThrowError(VendoError);
+  });
+
+  it("auth's actAs half is live — the doctor actAs probe round-trips a minted Auth.js session", async () => {
+    vi.stubEnv("AUTH_SECRET", authJsSecret);
+    const store = await tempStore("vendo-auth-actas-");
+    const vendo = createVendo({ model: {} as LanguageModel, store, auth: authJs() });
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const target = input instanceof Request ? input : new Request(input, init);
+      return vendo.handler(target);
+    }));
+
+    // Teach the zero-config route origin, then run the real away branch: the
+    // probe mints through the preset's actAs and the echo route verifies the
+    // minted cookie through the preset's own principal resolver.
+    expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
+    const probe = await vendo.handler(request("POST", "/doctor/act-as", {}));
+    expect(await probe.json()).toEqual({ ok: true });
   });
 });
 

@@ -63,6 +63,16 @@ export {
   type RefineResult,
   type RefineTranscript,
 } from "./refine.js";
+// 09-vendo §2.1 — host-identity presets, shipped on the server entry: one
+// `auth` key fills the principal, actAs, and oauth seams from one config.
+export {
+  authJs,
+  type HostAuthPreset,
+  type HostAuthPresetOptions,
+  type HostAuthPresetUser,
+  type HostAuthPresetUserResolver,
+} from "./auth-presets/index.js";
+import type { HostAuthPreset } from "./auth-presets/index.js";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
 import {
@@ -145,7 +155,14 @@ export interface Vendo {
 
 export interface CreateVendoConfig {
   model: LanguageModel;
-  principal: (req: Request) => Promise<Principal | null>;
+  /** 09-vendo §2.1 — ONE host-identity preset filling the principal, actAs, and
+      oauth seams from one config key. Mutually exclusive with all three:
+      mixing throws VendoError("validation") at compose time. */
+  auth?: HostAuthPreset;
+  /** Per-seam escape hatch: host session → principal; null → the per-client
+      ephemeral anonymous principal. With neither `auth` nor `principal`, every
+      session is anonymous (the null path is the default resolver — 09 §2). */
+  principal?: (req: Request) => Promise<Principal | null>;
   /** Host components available to generated apps; entry names must mirror the client-side components map 1:1. */
   catalog?: ComponentCatalog;
   store?: VendoStore;
@@ -518,6 +535,25 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
 
 /** 09-vendo §2 — compose every live block around the guard choke point. */
 export function createVendo(config: CreateVendoConfig): Vendo {
+  // 09-vendo §2.1 — one preset or the per-seam trio, never mixed. Checked
+  // before anything is constructed so a miswired config leaks no resources.
+  if (config.auth !== undefined) {
+    const mixed = (["principal", "actAs", "oauth"] as const)
+      .filter((key) => config[key] !== undefined);
+    if (mixed.length > 0) {
+      throw new VendoError(
+        "validation",
+        `createVendo({ auth }) already fills the principal, actAs, and oauth seams from one preset (09-vendo §2.1); remove ${mixed.map((key) => `\`${key}\``).join(", ")} or drop \`auth\` — one preset or the per-seam trio, never mixed.`,
+      );
+    }
+  }
+  // The three seams the identity story fills: from the preset, from the
+  // per-seam trio, or — with neither `auth` nor `principal` — the anonymous
+  // default resolver (every session ephemeral, 00 conventions "identity
+  // optional" / 02-store §4). Absent preset halves leave their seams unset.
+  const resolvePrincipal = config.auth?.principal ?? config.principal ?? (async () => null);
+  const actAsSeam = config.auth === undefined ? config.actAs : config.auth.actAs;
+  const oauthSeam = config.auth === undefined ? config.oauth : config.auth.oauth;
   // 02-store §4 default-on encryption: when the host doesn't hand us a store,
   // the composed default picks up VENDO_STORE_ENCRYPTION_KEY (provisioned into
   // .env by `vendo init`) so stored secrets are encrypted with zero extra
@@ -621,7 +657,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   } = {
     dir: ".",
     ...(config.connectors === undefined ? {} : { connectors: config.connectors }),
-    ...(config.actAs === undefined ? {} : { actAs: config.actAs }),
+    ...(actAsSeam === undefined ? {} : { actAs: actAsSeam }),
     ...(config.serverActions === undefined ? {} : { serverActions: config.serverActions }),
     ...(configuredBaseUrl === undefined ? {} : { baseUrl: configuredBaseUrl, baseUrlTrusted: true }),
     onPresentCredentialsNotForwarded: warnPresentCredentialsNotForwarded,
@@ -788,10 +824,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       : undefined;
   let door: McpDoor | undefined;
   if (mcpOptions !== undefined) {
-    if (config.oauth === undefined) {
+    if (oauthSeam === undefined) {
       throw new VendoError(
         "validation",
-        "createVendo({ mcp: true }) requires an `oauth` HostOAuthAdapter (10-mcp §3): the door mints door principals through it and cannot open without one.",
+        "createVendo({ mcp: true }) requires a HostOAuthAdapter (10-mcp §3) — from `oauth` or an `auth` preset carrying one: the door mints door principals through it and cannot open without one.",
       );
     }
     // AppsRuntime.open adds a "resuming" variant AppsPort (tree | http) does not
@@ -824,7 +860,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       tools: boundTools,
       guard,
       store,
-      oauth: config.oauth,
+      oauth: oauthSeam,
       apps: appsPort,
       mount: MCP_MOUNT,
       ...(doorBaseUrl === undefined ? {} : { baseUrl: doorBaseUrl }),
@@ -875,7 +911,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     })().catch(() => undefined);
   }
   const handler = createWireHandler({
-    principal: config.principal,
+    principal: resolvePrincipal,
     ready,
     trustedBaseIsHttps,
     sessionId,
