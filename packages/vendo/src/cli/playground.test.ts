@@ -29,7 +29,7 @@ describe("startPlaygroundServer", () => {
     cleanup.push(() => server.close());
 
     const page = await (await fetch(server.url)).text();
-    expect(page).toContain('src="/playground.js"');
+    expect(page).toContain('src="/playground.js?v=');
 
     const bundle = await fetch(`${server.url}/playground.js`);
     expect(bundle.status).toBe(200);
