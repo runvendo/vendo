@@ -65,6 +65,10 @@ export interface AppsConfig {
   tools: ToolRegistry;
   sandbox?: SandboxAdapter;
   model?: LanguageModel;
+  /** v2 spec §4 — tier-0 paint lane knob, passed to the generation engine.
+   *  `model` is the no-think switch (a thinking-disabled model instance);
+   *  `disabled` forces single-lane generation. */
+  paint?: GenerationDependencies["paint"];
   catalog: ComponentCatalog;
   theme?: VendoTheme;
   secrets?: SecretsProvider;
@@ -322,6 +326,7 @@ const generationDependencies = (
   theme: config.theme,
   designRules: config.designRules,
   pinBaselines: config.pinBaselines,
+  ...(config.paint === undefined ? {} : { paint: config.paint }),
   ...(onPartial === undefined ? {} : { onPartial }),
 });
 

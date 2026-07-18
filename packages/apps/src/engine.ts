@@ -44,6 +44,17 @@ export interface GenerationDependencies {
   pinBaselines?: readonly PinBaseline[];
   /** 06-apps §5 — additive, optional partial-tree streaming seam. */
   onPartial?: (partial: GeneratedPartial) => void | Promise<void>;
+  /**
+   * v2 spec §4 — the tier-0 paint lane. The lane runs only when a streaming
+   * consumer (onPartial) is wired: the instant paint exists to reach a screen.
+   * `model` is the no-think switch — point it at a thinking-disabled model
+   * instance and the paint lane runs on it while the full lane keeps the main
+   * model. `disabled` forces the single-lane flow.
+   */
+  paint?: {
+    model?: LanguageModel;
+    disabled?: boolean;
+  };
 }
 
 export interface GenerationCreateInput {
@@ -186,6 +197,22 @@ const wireContractSections = (deps: GenerationDependencies): GenerationPromptSec
 
 const wireContract = (deps: GenerationDependencies): string =>
   composePromptSections(wireContractSections(deps));
+
+/** v2 spec §4 — the tier-0 lane emits a complete, fully-WIRED generic app
+ *  immediately; the full lane then upgrades it in place by stable id. */
+const tier0Contract = (deps: GenerationDependencies): string => `${wireContract(deps)}
+
+PAINT PASS (tier-0): emit a complete, minimal, fully-wired GENERIC app for the request RIGHT NOW.
+- Catalog components with conservative default props; real <Query> declarations for the most relevant read tools so live data flows immediately.
+- NO <Island> code islands — catalog and prewired components only.
+- Keep it small (well under 40 nodes) and generic; a full-quality pass will replace it subtree-by-subtree, so favor a stable, conventional layout over cleverness.`;
+
+/** The compact tier-0 structure the full lane is conditioned on: minted id +
+ *  component per node, in document order, so the full lane can keep the
+ *  layout ordering (and therefore the minted ids) stable for in-place
+ *  hot-swap. */
+const layoutHeader = (compiled: WireCompileResult): string =>
+  compiled.tree.nodes.map((node) => `${node.id}:${node.component}`).join(" ");
 
 /** Stream the wire, compiling each accumulated prefix (throttled) into a
  *  valid-while-partial tree for the onPartial seam. */
@@ -815,12 +842,31 @@ const editCode = async (
 export const modelEngine: GenerationEngine = {
   async create(input, deps) {
     const hostComponents = deps.catalog.map(({ name }) => name);
+    const basePrompt = `TASK: CREATE_APP\nUSER_REQUEST: ${input.prompt}`;
+    // Tier-0 paint lane (v2 spec §4): only with a streaming consumer — the
+    // instant paint exists to reach a screen. One attempt, no repair loop:
+    // an invalid paint is simply not resident (the full lane still runs).
+    let resident: GeneratedAppDocument | undefined;
+    let residentLayout: string | undefined;
+    if (deps.onPartial !== undefined && deps.paint?.disabled !== true) {
+      const paintDeps = deps.paint?.model === undefined ? deps : { ...deps, model: deps.paint.model };
+      const paint = await streamWire(paintDeps, tier0Contract(deps), basePrompt, hostComponents);
+      if (paint.compiled !== undefined) {
+        const validated = await validateCompiledCreate(paint.compiled, deps);
+        if (validated.document !== undefined) {
+          resident = validated.document;
+          residentLayout = layoutHeader(paint.compiled);
+        }
+      }
+    }
     let issues: string[] = [];
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const output = await streamWire(
         deps,
         wireContract(deps),
-        `TASK: CREATE_APP\nUSER_REQUEST: ${input.prompt}${repairPrompt(issues)}`,
+        `${basePrompt}${residentLayout === undefined
+          ? ""
+          : `\nTIER0_LAYOUT: ${residentLayout}\nAn instant paint pass already rendered that layout. Emit the full-quality app; keep the top-level component ordering compatible where reasonable so minted node ids stay stable and the upgrade swaps in place.`}${repairPrompt(issues)}`,
         hostComponents,
       );
       issues = distinctIssues(issues, output.issues);
@@ -830,6 +876,9 @@ export const modelEngine: GenerationEngine = {
         if (validated.document !== undefined) return validated.document;
       }
     }
+    // Never a white box: a failed full lane falls back to the resident
+    // tier-0 app (v2 spec §4).
+    if (resident !== undefined) return resident;
     throw new VendoError("validation", "model could not produce a valid app", issues);
   },
   async edit(input, deps) {

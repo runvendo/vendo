@@ -1273,3 +1273,96 @@ describe("v2 wire create", () => {
     expect(await rejecting.list(ctx)).toEqual([]);
   });
 });
+
+describe("tier0-wired create (two lanes)", () => {
+  const deps = (model: Parameters<typeof createApps>[0]["model"], extra: Record<string, unknown> = {}) => ({
+    model: model as NonNullable<Parameters<typeof createApps>[0]["model"]>,
+    catalog,
+    ...extra,
+  }) as unknown as Parameters<typeof modelEngine.create>[1];
+
+  const tier0Wire = '<App name="Instant board"><MetricCard label="Revenue" value="--"/></App>';
+  const tier2Wire = '<App name="Full board"><MetricCard label="Revenue" value="$42k" trend={12}/></App>';
+
+  it("paints a validated tier-0 app through onPartial, then returns the full-lane document", async () => {
+    const prompts: string[] = [];
+    const systems: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      const text = promptText(call);
+      prompts.push(text);
+      systems.push(text);
+      return prompts.length === 1 ? tier0Wire : tier2Wire;
+    });
+    const partials: Array<{ name?: string }> = [];
+
+    const document = await modelEngine.create(
+      { prompt: "Build a revenue board" },
+      deps(model, { onPartial: (partial: { name?: string }) => partials.push(partial) }),
+    );
+
+    expect(document.name).toBe("Full board");
+    expect(prompts).toHaveLength(2);
+    expect(systems[0]).toContain("PAINT PASS");
+    expect(systems[1]).not.toContain("PAINT PASS");
+    expect(systems[1]).toContain("TIER0_LAYOUT");
+    expect(systems[1]).toContain("metriccard-1:MetricCard");
+    expect(partials.some((partial) => partial.name === "Instant board")).toBe(true);
+    expect(partials.some((partial) => partial.name === "Full board")).toBe(true);
+  });
+
+  it("falls back to the resident tier-0 document when the full lane cannot validate", async () => {
+    let calls = 0;
+    const model = scriptedLanguageModel(() => {
+      calls += 1;
+      return calls === 1 ? tier0Wire : '<App name="Broken"><MetricCard/></App>';
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "Build a revenue board" },
+      deps(model, { onPartial: () => undefined }),
+    );
+
+    expect(document.name).toBe("Instant board");
+    expect(calls).toBe(3); // tier-0 + full lane attempt + one repair attempt
+  });
+
+  it("skips the paint lane without a streaming consumer and when disabled", async () => {
+    let calls = 0;
+    const model = scriptedLanguageModel(() => {
+      calls += 1;
+      return tier2Wire;
+    });
+
+    await modelEngine.create({ prompt: "No stream" }, deps(model));
+    expect(calls).toBe(1);
+
+    await modelEngine.create(
+      { prompt: "Stream but disabled" },
+      deps(model, { onPartial: () => undefined, paint: { disabled: true } }),
+    );
+    expect(calls).toBe(2);
+  });
+
+  it("runs the paint lane on the dedicated no-think paint model when configured", async () => {
+    const paintPrompts: string[] = [];
+    const mainPrompts: string[] = [];
+    const paintModel = scriptedLanguageModel((call) => {
+      paintPrompts.push(promptText(call));
+      return tier0Wire;
+    });
+    const model = scriptedLanguageModel((call) => {
+      mainPrompts.push(promptText(call));
+      return tier2Wire;
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "Build a revenue board" },
+      deps(model, { onPartial: () => undefined, paint: { model: paintModel } }),
+    );
+
+    expect(document.name).toBe("Full board");
+    expect(paintPrompts).toHaveLength(1);
+    expect(paintPrompts[0]).toContain("PAINT PASS");
+    expect(mainPrompts).toHaveLength(1);
+  });
+});
