@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { VendoOverlay, VendoPalette } from "../../src/chrome/index.js";
+import { markSeen } from "../../src/chrome/discoverability.js";
 import { createWireServer } from "../wire-server.js";
 
 describe("VendoPalette self-sufficient defaults", () => {
@@ -15,6 +16,10 @@ describe("VendoPalette self-sufficient defaults", () => {
   beforeEach(async () => {
     wire = await createWireServer();
     client = createVendoClient({ baseUrl: wire.url });
+    // These tests assert the RETURNING-user landing ("What can I help you
+    // build?"); a first-ever open would show the one-time greeting-as-tutorial
+    // instead (discoverability §6), so mark it already seen.
+    markSeen("greeting");
   });
 
   afterEach(async () => {

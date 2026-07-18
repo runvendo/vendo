@@ -55,6 +55,9 @@ const VALUE_EXPORTS = [
   "registerPrefillConsumer",
   "LONG_TEXT_CAP",
   "truncateHead",
+  // Discoverability (ui-usage-dx §6) — the built-in greeting fallback, so
+  // hosts can extend rather than replace it.
+  "defaultVendoGreeting",
 ] as const;
 
 const TYPE_EXPORTS = [
@@ -75,6 +78,9 @@ const TYPE_EXPORTS = [
   "VendoThreadProps",
   "MorphToastProps",
   "OutcomeTone",
+  // Discoverability (ui-usage-dx §6) — the dial + greeting config shapes.
+  "VendoDiscoverability",
+  "VendoGreeting",
 ];
 
 // vitest's jsdom environment rewrites import.meta.url to a non-file scheme,

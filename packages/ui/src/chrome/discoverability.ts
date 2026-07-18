@@ -11,6 +11,22 @@
  *  host-placed and untouched by the dial. */
 export type VendoDiscoverability = "quiet" | "default";
 
+/** The greeting-as-tutorial content (§6 first-open moment): an agent-voiced
+ *  intro line plus 2–3 tappable starter prompts (chips PREFILL the composer,
+ *  never send). Hosts supply it via the provider/overlay `greeting` prop —
+ *  typically loaded from `.vendo/greeting.json`, which uses this exact shape. */
+export interface VendoGreeting {
+  intro: string;
+  prompts: string[];
+}
+
+/** Fallback greeting when the host supplies none: a generic capable intro
+ *  whose second prompt is always a molding prompt (the §6 requirement). */
+export const defaultVendoGreeting: VendoGreeting = {
+  intro: "Hi — I'm built into this app. Ask me questions, hand me tasks, or have me reshape a screen to fit how you work.",
+  prompts: ["What can you do here?", "Rebuild this page around what I use most"],
+};
+
 const PREFIX = "vendo:discoverability:";
 
 function storage(): Storage | null {

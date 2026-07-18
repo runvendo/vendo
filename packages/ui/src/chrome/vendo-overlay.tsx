@@ -4,7 +4,7 @@ import { useVendoDiscoverability, useVendoTheme } from "../context.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { themeCssVariables } from "../theme.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { hasSeen, markSeen, type VendoDiscoverability } from "./discoverability.js";
+import { hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "./discoverability.js";
 import { deliverPrefill, PrefillScopeContext, registerOverlayOpener } from "./overlay-registry.js";
 import { VendoThread, type VendoThreadProps } from "./thread/index.js";
 
@@ -47,6 +47,12 @@ export interface VendoOverlayProps {
    * moment it first renders.
    */
   discoverability?: VendoDiscoverability;
+  /**
+   * Greeting-as-tutorial content for the thread's one-time first message
+   * (intro + prompt chips — the `.vendo/greeting.json` shape), overriding the
+   * provider's `greeting`.
+   */
+  greeting?: VendoGreeting;
 }
 
 /** Whisper caption duration — long enough to read two short lines, short
@@ -72,6 +78,7 @@ export function VendoOverlay({
   conversationKey,
   thread: Thread = VendoThread,
   discoverability,
+  greeting,
 }: VendoOverlayProps = {}) {
   const controlled = openProp !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
@@ -296,7 +303,7 @@ export function VendoOverlay({
           <span className="fl-sr-only">Close</span>
         </button>
         <PrefillScopeContext.Provider value={prefillScope.current}>
-          <Thread key={`${conversationKey ?? 0}:${conversationEpoch}`} />
+          <Thread key={`${conversationKey ?? 0}:${conversationEpoch}`} discoverability={dial} firstRunGreeting={greeting} />
         </PrefillScopeContext.Provider>
       </div>
     </div>,

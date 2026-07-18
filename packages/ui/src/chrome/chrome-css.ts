@@ -806,6 +806,13 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-landing { display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 16px; flex: 1; padding: 30px; text-align: center; }
 .fl-greet { margin: 0; font-family: var(--vendo-heading-font); font-size: calc(var(--vendo-base-size) * 1.533); font-weight: 600; letter-spacing: -.022em; }
+/* Greeting-as-tutorial (ui-usage-dx §6): the one-time first message reads as
+   the agent speaking — left-aligned assistant typography with its prompt chips
+   beneath — inside the otherwise-centered landing. */
+.fl-greeting { display: flex; flex-direction: column; gap: 14px; align-self: stretch;
+  max-width: 560px; margin: 0 auto; text-align: left; }
+.fl-greeting-intro { margin: 0; line-height: 1.65; font-size: var(--vendo-text-body); letter-spacing: -.006em; }
+.fl-greeting .fl-chips { justify-content: flex-start; }
 .fl-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .fl-chip { border: 1px solid var(--vendo-border); background: var(--vendo-glass-strong);
   -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);

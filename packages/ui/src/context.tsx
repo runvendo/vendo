@@ -3,7 +3,7 @@ import type { VendoTheme } from "@vendoai/core";
 import type { ChatTransport, UIMessage } from "ai";
 import { createContext, useContext, useMemo, type ComponentType, type ReactNode } from "react";
 import { createVendoClient, type VendoClient } from "./client.js";
-import type { VendoDiscoverability } from "./chrome/discoverability.js";
+import type { VendoDiscoverability, VendoGreeting } from "./chrome/discoverability.js";
 import type { ToolMetaMap } from "./chrome/humanize.js";
 import { defaultVendoTheme, resolveTheme } from "./theme.js";
 import type { VoiceDriver } from "./voice/driver.js";
@@ -37,6 +37,9 @@ export interface VendoContextValue {
   /** The discoverability dial (ui-usage-dx §6): quiet | default. Default keeps
       the fire-once whisper + greeting; surfaces may override via their own prop. */
   discoverability: VendoDiscoverability;
+  /** Host greeting-as-tutorial content (§6): intro + starter prompts, the
+      `.vendo/greeting.json` shape. Absent = the built-in generic greeting. */
+  greeting?: VendoGreeting;
 }
 
 /** One connectable toolkit in the connect dock (ENG-225). */
@@ -60,9 +63,10 @@ export function VendoProvider(props: {
   tools?: ToolMetaMap;
   connectors?: ConnectorOption[];
   discoverability?: VendoDiscoverability;
+  greeting?: VendoGreeting;
   children: ReactNode;
 }): ReactNode {
-  const { client, components, theme, voice, transport, onPin, tools, connectors, discoverability, children } = props;
+  const { client, components, theme, voice, transport, onPin, tools, connectors, discoverability, greeting, children } = props;
   const value = useMemo<VendoContextValue>(
     () => ({
       client: client ?? createVendoClient({}),
@@ -74,8 +78,9 @@ export function VendoProvider(props: {
       tools: tools ?? {},
       connectors: connectors ?? [],
       discoverability: discoverability ?? "default",
+      greeting,
     }),
-    [client, components, theme, voice, transport, onPin, tools, connectors, discoverability],
+    [client, components, theme, voice, transport, onPin, tools, connectors, discoverability, greeting],
   );
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
 }
@@ -106,4 +111,9 @@ export function useVendoThemeOrDefault(): VendoTheme {
 /** The discoverability dial, provider-optional (standalone surfaces default on). */
 export function useVendoDiscoverability(): VendoDiscoverability {
   return useContext(VendoContext)?.discoverability ?? "default";
+}
+
+/** Host greeting-as-tutorial content, provider-optional (absent = built-in). */
+export function useVendoGreeting(): VendoGreeting | undefined {
+  return useContext(VendoContext)?.greeting;
 }

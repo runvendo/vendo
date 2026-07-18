@@ -6,6 +6,10 @@ import { ScriptedTransport, type DirectorScript, type ToolMetaMap } from "@vendo
 import { cadenceHostComponents } from "@/vendo/host-components";
 import { cadenceTheme } from "@/vendo/theme";
 import { cadenceRealtimeVoiceDriver } from "./voice-realtime";
+// The greeting-as-tutorial seeds (ui-usage-dx §6): catalog-flavored starter
+// prompts, one always a molding prompt. Lives in .vendo/ so init can generate
+// it from extraction later; VendoRoot passes it straight through.
+import cadenceGreeting from "../../../.vendo/greeting.json";
 
 /**
  * ENG-216 humanization seam: Cadence describes its own tools so build beats
@@ -88,7 +92,7 @@ export function VendoRoot({
   if (directorEligible && director.enabled && !director.transport) return null;
   if (!directorEligible) {
     return (
-      <UmbrellaVendoRoot components={cadenceHostComponents} theme={cadenceTheme} tools={cadenceToolMeta} voice={{ driver: cadenceRealtimeVoiceDriver }} onPin={onPin}>
+      <UmbrellaVendoRoot components={cadenceHostComponents} theme={cadenceTheme} tools={cadenceToolMeta} voice={{ driver: cadenceRealtimeVoiceDriver }} greeting={cadenceGreeting} onPin={onPin}>
         {children}
       </UmbrellaVendoRoot>
     );
@@ -101,6 +105,7 @@ export function VendoRoot({
       tools={cadenceToolMeta}
       voice={{ driver: cadenceRealtimeVoiceDriver }}
       transport={director.transport}
+      greeting={cadenceGreeting}
       onPin={onPin}
     >
       {/* VENDO-MIGRATION: thread selection moved from the provider to each
