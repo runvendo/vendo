@@ -137,7 +137,7 @@ Four independent tasks; each is test-first and separately committed.
   server.ts and the root; delete the old catalog block.
 - [x] Browser-verify a generated view using a registry component in
   demo-bank; screenshot for the PR.
-- [ ] Wave gate: full green quad, PR opened.
+- [x] Wave gate: full green quad (build+test+typecheck+lint exit 0, 2026-07-18); single PR at branch end per recorded deviation.
 
 ## Wave 4 — Docs and demos (one PR)
 
@@ -168,9 +168,10 @@ VendoRoot components prop, auth-library detection for the line it writes).
   Cadence's ES256 GoTrue sessions (commented in server.ts). Express host
   registers no catalog components and its README made no claims the waves
   falsified — left untouched.
-- [ ] Run vendo doctor + one real model turn against migrated demo-bank;
-  screenshots of the seeded first turn for the PR.
-- [ ] Wave gate: full green quad, PR opened.
+- [x] Run vendo doctor + one real model turn against migrated demo-bank;
+  screenshots of the seeded first turn for the PR. (doctor: 0 failures, liveTurn
+  ok via env-key rung; browser evidence at plans/assets/2026-07-18-wave3b/)
+- [x] Wave gate: full green quad (build+test+typecheck+lint exit 0, 2026-07-18); single PR at branch end per recorded deviation.
 
 ## Out of scope (recorded in the brainstorm doc)
 
