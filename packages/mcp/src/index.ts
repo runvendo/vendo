@@ -1,4 +1,4 @@
-/** @vendoai/mcp — the door (docs/contracts/10-mcp.md).
+/** @vendoai/mcp — the door (docs/archive/contracts/10-mcp.md).
  *
  * Landed (wave-6 DOOR lane, 2026-07-13): door + OAuth adapter + MCP Apps shim
  * and tests are implemented. The public surface below is the contract's §1

@@ -13,6 +13,8 @@ const store = createStore(databaseUrl ? { url: databaseUrl } : { dataDir: ".vend
 
 export const vendo = createVendo({
   model,
+  // v2 spec §4 — the tier-0 paint lane runs on a fast no-think model.
+  paint: { model: anthropic(process.env.VENDO_DEMO_PAINT_MODEL ?? "claude-haiku-4-5") },
   store,
   // One preset fills all three identity seams (09-vendo §2.1): the
   // request→Principal resolver, the away/MCP actAs seam, and the door's

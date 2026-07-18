@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "postRevalidate",
+      "method": "POST",
+      "path": "/api/revalidate",
+      "risk": "write"
+    }
+  ]
+}

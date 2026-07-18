@@ -132,6 +132,10 @@ const ADDITIVE_DDL = [
   // Tracks the secret's last rewrite (rotation) separately from created_at;
   // set() stamps it. NULL on legacy rows means created_at IS the last write.
   "ALTER TABLE vendo_secrets ADD COLUMN IF NOT EXISTS updated_at timestamptz",
+  // The TTL sweep's stale scan and the host-driven claim both predicate on
+  // touched_at (sessions.ts); without this a busy anonymous host seq-scans
+  // the registry on every sweep interval.
+  "CREATE INDEX IF NOT EXISTS vendo_sessions_touched_idx ON vendo_sessions (touched_at)",
 ] as const;
 
 // v2 backfill (runs once, only when upgrading from a version < 2 — 02 §4 keys

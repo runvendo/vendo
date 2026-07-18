@@ -13,6 +13,7 @@
   "dependencies": {
     "@vendoai/actions": "workspace:*",
     "@vendoai/core": "workspace:*",
+    "@vendoai/vendo": "workspace:*",
     "zod": "^3.24.0"
   },
   "devDependencies": {

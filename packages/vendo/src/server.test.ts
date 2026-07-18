@@ -13,6 +13,8 @@ import {
   type RunContext,
 } from "@vendoai/core";
 import type { SandboxAdapter } from "@vendoai/apps";
+import type { Connector } from "@vendoai/actions";
+import type { ConnectionsService } from "./connections.js";
 import { createStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
 import { createHmac, randomBytes } from "node:crypto";
 import type { LanguageModel } from "ai";
@@ -336,6 +338,8 @@ describe("09 §3 public wire", () => {
         apps: true,
         automations: true,
         sandbox: false,
+        // setup() passes an explicit model — the BYO rung of the inference seam.
+        model: "custom",
         mcp: false,
         // 04-actions §3 — no BYO connector and no VENDO_API_KEY → no broker.
         connections: false,
@@ -343,14 +347,14 @@ describe("09 §3 public wire", () => {
     });
   });
 
-  it("selects explicit, E2B, Modal, and dark venues with the required precedence", async () => {
+  it("selects explicit, E2B, Modal, Cloud, and dark venues with the required precedence", async () => {
     const custom: SandboxAdapter = {
       create: vi.fn(async () => { throw new Error("not called"); }),
       resume: vi.fn(async () => { throw new Error("not called"); }),
     };
     const store = await tempStore("vendo-wire-custom-");
     const statusFor = async (
-      env: { E2B_API_KEY: string; MODAL_TOKEN_ID: string; MODAL_TOKEN_SECRET: string },
+      env: { E2B_API_KEY: string; MODAL_TOKEN_ID: string; MODAL_TOKEN_SECRET: string; VENDO_API_KEY: string },
       sandbox?: SandboxAdapter,
     ): Promise<unknown> => {
       for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
@@ -364,13 +368,221 @@ describe("09 §3 public wire", () => {
       return (await status.json() as { blocks: { sandbox: unknown } }).blocks.sandbox;
     };
 
-    const allKeys = { E2B_API_KEY: "e2b-key", MODAL_TOKEN_ID: "modal-id", MODAL_TOKEN_SECRET: "modal-secret" };
+    // Adapter rule (2026-07-17 cloud definition): the explicit adapter always
+    // wins; BYO sandbox env beats the Vendo key (the Cloud default fills ONLY
+    // the slot the host left unfilled); no key and no BYO env → dark.
+    const allKeys = {
+      E2B_API_KEY: "e2b-key",
+      MODAL_TOKEN_ID: "modal-id",
+      MODAL_TOKEN_SECRET: "modal-secret",
+      VENDO_API_KEY: "vnd_cloud_key",
+    };
     expect(await statusFor(allKeys, custom)).toBe("custom");
     expect(await statusFor(allKeys)).toBe("e2b");
     expect(await statusFor({ ...allKeys, E2B_API_KEY: "" })).toBe("modal");
-    expect(await statusFor({ ...allKeys, E2B_API_KEY: "", MODAL_TOKEN_SECRET: "" })).toBe(false);
+    expect(await statusFor({ ...allKeys, E2B_API_KEY: "", MODAL_TOKEN_SECRET: "" })).toBe("cloud");
+    expect(await statusFor({ ...allKeys, E2B_API_KEY: "", MODAL_TOKEN_SECRET: "", VENDO_API_KEY: "" })).toBe(false);
     expect(custom.create).not.toHaveBeenCalled();
     expect(custom.resume).not.toHaveBeenCalled();
+  });
+
+  it("the VENDO_API_KEY sandbox default is a live Cloud adapter: fork reaches the console over HTTP", async () => {
+    // Beyond the venue string above: prove the composed seam holds a REAL
+    // console-bound adapter by driving apps.fork on a server app, whose
+    // resume → snapshot → stop runs through config.sandbox only.
+    vi.stubEnv("E2B_API_KEY", "");
+    vi.stubEnv("MODAL_TOKEN_ID", "");
+    vi.stubEnv("MODAL_TOKEN_SECRET", "");
+    vi.stubEnv("VENDO_API_KEY", "vnd_cloud_key");
+    vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-rung.test");
+    const machineId = `m_${"a".repeat(24)}`;
+    const consoleCalls: Array<{ url: string; method: string; authorization: string | null }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const sent = new Request(input, init);
+      consoleCalls.push({
+        url: sent.url,
+        method: sent.method,
+        authorization: sent.headers.get("authorization"),
+      });
+      const url = new URL(sent.url);
+      if (url.pathname === "/api/v1/sandboxes/resume") {
+        return Response.json({ id: machineId, url: `https://${machineId}.m.vendo.run` });
+      }
+      if (url.pathname.endsWith("/snapshot")) {
+        return Response.json({ ref: `vendo:snap_${"b".repeat(40)}` });
+      }
+      return Response.json({ ok: true });
+    }));
+
+    const { vendo } = await setup();
+    expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
+    await vendo.store.records("vendo_apps").put({
+      id: "app_cloud",
+      data: {
+        subject: principal.subject,
+        enabled: true,
+        doc: { ...app("app_cloud"), ui: "http", server: `vendo:snap_${"c".repeat(40)}` },
+      },
+      refs: { subject: principal.subject },
+    });
+
+    const fork = await vendo.apps.fork("app_cloud", ctx);
+    expect(fork.server).toBe(`vendo:snap_${"b".repeat(40)}`);
+    expect(consoleCalls[0]).toEqual({
+      url: "https://cloud-rung.test/api/v1/sandboxes/resume",
+      method: "POST",
+      authorization: "Bearer vnd_cloud_key",
+    });
+    expect(consoleCalls.map((call) => call.method === "DELETE"
+      ? "DELETE"
+      : new URL(call.url).pathname.split("/").at(-1))).toEqual(["resume", "snapshot", "DELETE"]);
+  });
+
+  it("selects the connections adapter with the adapter-rule precedence", async () => {
+    // Adapter rule (2026-07-17 cloud definition): explicit adapter → BYO
+    // brokers → VENDO_API_KEY defaults the Cloud adapter → unconfigured.
+    vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-connections-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    // Each composition is settled through one /status request (awaits that
+    // vendo's schema readiness) so teardown never races an in-flight migration.
+    const compose = async (config: Partial<CreateVendoConfig>): Promise<Vendo> => {
+      const vendo = createVendo({
+        model: {} as LanguageModel,
+        principal: vi.fn(async () => principal),
+        store,
+        ...config,
+      });
+      await vendo.handler(request("GET", "/status"));
+      return vendo;
+    };
+
+    const broker: Connector = {
+      name: "composio",
+      descriptors: async () => [],
+      execute: async () => ({ status: "ok", output: {} }),
+      connections: {
+        list: async () => [],
+        initiate: async () => ({ id: "ca_x", redirectUrl: "https://connect.test/x" }),
+        status: async () => null,
+        disconnect: async () => {},
+      },
+    };
+
+    // An explicitly passed adapter wins over BOTH lower rungs at once: the
+    // composition also carries a BYO broker and the key is set.
+    const explicit: ConnectionsService = {
+      posture: "byo",
+      list: async () => [],
+      initiate: async () => { throw new Error("unused"); },
+      status: async () => null,
+      disconnect: async () => {},
+    };
+    expect((await compose({ connections: explicit, connectors: [broker] })).connections).toBe(explicit);
+
+    // A BYO connector's connections capability beats the key.
+    expect((await compose({ connectors: [broker] })).connections.posture).toBe("byo");
+
+    // The key alone defaults the Cloud adapter for the unfilled seam.
+    expect((await compose({})).connections.posture).toBe("cloud");
+
+    // Neither → the unconfigured fallback.
+    vi.stubEnv("VENDO_API_KEY", "");
+    expect((await compose({})).connections.posture).toBe(false);
+  });
+
+  it("selects the inference adapter with the adapter-rule precedence", async () => {
+    // Adapter rule (2026-07-17 cloud definition) unified with install-dx v1's
+    // model-optional createVendo: explicit model → the composed devModel
+    // ladder (provider env key, then VENDO_API_KEY via the Cloud model
+    // gateway, then honest failure — all resolved lazily INSIDE the ladder).
+    vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-model-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    const modelVenue = async (config: Partial<CreateVendoConfig>): Promise<unknown> => {
+      const vendo = createVendo({
+        principal: vi.fn(async () => principal),
+        store,
+        ...config,
+      });
+      const status = await vendo.handler(request("GET", "/status"));
+      return (await status.json() as { blocks: { model: unknown } }).blocks.model;
+    };
+
+    // An explicitly passed model wins over every env credential.
+    expect(await modelVenue({ model: {} as LanguageModel })).toBe("custom");
+
+    // Otherwise the devModel ladder composes — with or without any key set
+    // (rung resolution is lazy; the honest failure happens on first call).
+    expect(await modelVenue({})).toBe("ladder");
+    vi.stubEnv("VENDO_API_KEY", "");
+    expect(await modelVenue({})).toBe("ladder");
+  });
+
+  it("selects the store with the adapter-rule precedence", async () => {
+    // Adapter rule (2026-07-17 cloud definition), store seam (hosted-store
+    // one-pager): explicit store → VENDO_API_KEY defaults the hosted store →
+    // the local createStore default, byte-identical to pre-seam behavior.
+    vi.stubEnv("VENDO_API_KEY", "vnd_store_key");
+    vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-store.test");
+    const consoleCalls: Array<{ url: string; authorization: string | null }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const sent = new Request(input, init);
+      consoleCalls.push({ url: sent.url, authorization: sent.headers.get("authorization") });
+      return Response.json({ record: null });
+    }));
+    const compose = (config: Partial<CreateVendoConfig>): Vendo => createVendo({
+      model: {} as LanguageModel,
+      principal: vi.fn(async () => principal),
+      ...config,
+    });
+
+    // An explicitly passed store wins over the key — the hard BYO rule.
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-store-"));
+    const explicit = createStore({ dataDir });
+    cleanups.push(async () => { await explicit.close(); await rm(dataDir, { recursive: true, force: true }); });
+    const custom = compose({ store: explicit });
+    await custom.handler(request("GET", "/status"));
+    expect(custom.store).toBe(explicit);
+    expect(consoleCalls).toHaveLength(0);
+
+    // The key alone defaults the hosted store for the unfilled seam: a LIVE
+    // console-bound adapter (VENDO_CLOUD_URL base, Bearer key), whose
+    // ensureSchema is a client no-op — the service owns its migrations.
+    const hosted = compose({});
+    cleanups.push(async () => { await hosted.store.close(); });
+    expect(await hosted.store.records("invoices").get("inv_1")).toBeNull();
+    expect(consoleCalls).toEqual([{
+      url: "https://cloud-store.test/api/v1/store/records/invoices/get",
+      authorization: "Bearer vnd_store_key",
+    }]);
+    expect(() => hosted.store.raw()).toThrow(/no local database/);
+
+    // No key → the local default engine, untouched: rows land on disk, raw()
+    // hands back the live driver, and the console never hears about it.
+    vi.stubEnv("VENDO_API_KEY", "");
+    const localDir = await mkdtemp(join(tmpdir(), "vendo-wire-store-local-"));
+    // The default engine roots its PGlite data dir in the cwd (.vendo/data) —
+    // compose AND settle the first queries inside the temp dir so the test
+    // never writes into the repo tree (vitest's fork pool keeps chdir local
+    // to this worker process).
+    const cwd = process.cwd();
+    process.chdir(localDir);
+    try {
+      const local = compose({});
+      cleanups.push(async () => { await local.store.close(); await rm(localDir, { recursive: true, force: true }); });
+      // Settle the composition through /status (awaits schema readiness) so
+      // the direct store access below never races the migration.
+      await local.handler(request("GET", "/status"));
+      await local.store.records("invoices").put({ id: "inv_local", data: { total: 3 } });
+      expect((await local.store.records("invoices").get("inv_local"))?.data).toEqual({ total: 3 });
+      expect(local.store.raw()).toBeDefined();
+      expect(consoleCalls).toHaveLength(1);
+    } finally {
+      process.chdir(cwd);
+    }
   });
 
   it("serves sync impact on dev servers and blocks it in production", async () => {
@@ -1295,12 +1507,12 @@ describe("09 §3 conversational turn against the real composed store", () => {
               {
                 type: "text-delta",
                 id: "generation",
-                delta: '{"name":"SSE app","tree":{"formatVersion":"vendo-genui/v1","root":"root","nodes":[{"id":"root","component":"Stack","source":"prewired","children":["detail"]},',
+                delta: '<App name="SSE app"><Stack>',
               },
               {
                 type: "text-delta",
                 id: "generation",
-                delta: '{"id":"detail","component":"Text","source":"prewired","props":{"text":"Ready"}}]}}',
+                delta: '<Text text="Ready"/></Stack></App>',
               },
               { type: "text-end", id: "generation" },
               { type: "finish", usage, finishReason: { unified: "stop", raw: undefined } },
@@ -1360,9 +1572,9 @@ describe("09 §3 conversational turn against the real composed store", () => {
 
     expect(response.status).toBe(200);
     expect(views.length).toBeGreaterThanOrEqual(3);
-    expect(views[0]?.data.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }] });
+    expect(views[0]?.data.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }, { id: "stack-1" }] });
     expect(new Set(views.map((view) => view.id))).toEqual(new Set([`vendo-view:${views[0]?.data.appId}`]));
-    expect(views.at(-1)?.data.payload.nodes).toHaveLength(2);
+    expect(views.at(-1)?.data.payload.nodes).toHaveLength(3);
     expect(views.at(-1)?.data.payload.streaming).toBeUndefined();
   });
 });
@@ -1371,19 +1583,7 @@ describe("09 §2 apps composition", () => {
   it("passes host-component catalog registrations to createApps", { timeout: 120_000 }, async () => {
     const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
     const store = await tempStore("vendo-catalog-");
-    const generated = JSON.stringify({
-      name: "Catalog app",
-      tree: {
-        formatVersion: VENDO_TREE_FORMAT,
-        root: "metric",
-        nodes: [{
-          id: "metric",
-          component: "MetricCard",
-          source: "host",
-          props: { label: "Revenue" },
-        }],
-      },
-    });
+    const generated = '<App name="Catalog app"><MetricCard label="Revenue"/></App>';
     const model = new MockLanguageModelV3({
       doStream: async () => ({
         stream: simulateReadableStream({ chunks: [
@@ -1415,7 +1615,7 @@ describe("09 §2 apps composition", () => {
     await store.ensureSchema();
 
     await expect(vendo.apps.create({ prompt: "Show revenue" }, ctx)).resolves.toMatchObject({
-      tree: { nodes: [{ component: "MetricCard", source: "host" }] },
+      tree: { nodes: [{ component: "Stack" }, { component: "MetricCard", source: "host" }] },
     });
   });
 
@@ -1492,14 +1692,7 @@ describe("09 §2 apps composition", () => {
     }));
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
-    const generated = JSON.stringify({
-      name: "Disk catalog app",
-      tree: {
-        formatVersion: VENDO_TREE_FORMAT,
-        root: "metric",
-        nodes: [{ id: "metric", component: "DiskMetric", source: "host", props: { value: 42 } }],
-      },
-    });
+    const generated = '<App name="Disk catalog app"><DiskMetric value={42}/></App>';
     const model = new MockLanguageModelV3({
       doStream: async () => ({
         stream: simulateReadableStream({ chunks: [
@@ -1529,7 +1722,7 @@ describe("09 §2 apps composition", () => {
     await store.ensureSchema();
 
     await expect(vendo.apps.create({ prompt: "Show the disk metric" }, ctx)).resolves.toMatchObject({
-      tree: { nodes: [{ component: "DiskMetric", source: "host", props: { value: 42 } }] },
+      tree: { nodes: [{ component: "Stack" }, { component: "DiskMetric", source: "host", props: { value: 42 } }] },
     });
   });
 

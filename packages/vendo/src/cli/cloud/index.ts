@@ -4,7 +4,7 @@ import { runKeys } from "./keys.js";
 import { runInvite, runMembers } from "./members.js";
 import { cloudConsoleOutput } from "./output.js";
 import { runBilling, runDeployments, runOrgs, runUsage } from "./read.js";
-import { runPinShip, runPublish, runShare, runValidate } from "./services.js";
+import { runPinShip, runPublish, runShare } from "./services.js";
 import { runDeploy, type CloudDeployOptions } from "./deploy.js";
 
 export const CLOUD_HELP = `vendo cloud — Vendo Cloud API client
@@ -27,7 +27,6 @@ User commands:
   billing --org <id>                   Show billing status
 
 Machine commands:
-  validate [--json]                     Validate a key and show plan, capabilities, and quota
   deploy [--app <id>] [--secret NAME=VALUE]
                                         Deploy local enabled automations to the hosted instance
   share <appfile.json>                  Create a ShareSnapshot
@@ -63,7 +62,6 @@ export async function runCloud(args: string[], options: RunCloudOptions = {}): P
   if (command === "members") return runMembers(commandArgs, options);
   if (command === "invite") return runInvite(commandArgs, options);
   if (command === "billing") return runBilling(commandArgs, options);
-  if (command === "validate") return runValidate(commandArgs, options);
   if (command === "deploy") return runDeploy(commandArgs, options);
   if (command === "share") return runShare(commandArgs, options);
   if (command === "publish") return runPublish(commandArgs, options);

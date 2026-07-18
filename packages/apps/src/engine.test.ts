@@ -1,5 +1,6 @@
 import {
   validateTree,
+  validateTreeV2,
   type AppDocument,
   type NormalizedCatalog,
   type RunContext,
@@ -57,29 +58,10 @@ const catalog: NormalizedCatalog = [{
   examples: ['{"label":"Revenue","value":"$42k","trend":12}'],
 }];
 
-const validCreate = (name = "Revenue dashboard") => JSON.stringify({
-  name,
-  description: "Shows the revenue headline.",
-  tree: {
-    formatVersion: "vendo-genui/v1",
-    root: "metric",
-    nodes: [{
-      id: "metric",
-      component: "MetricCard",
-      source: "host",
-      props: { label: "Revenue", value: "$42k" },
-    }],
-  },
-});
+const validCreate = (name = "Revenue dashboard") =>
+  `<App name="${name}"><MetricCard label="Revenue" value="$42k"/></App>`;
 
-const invalidCreate = JSON.stringify({
-  name: "Broken",
-  tree: {
-    formatVersion: "vendo-genui/v1",
-    root: "missing",
-    nodes: [{ id: "root", component: "MetricCard", source: "host" }],
-  },
-});
+const invalidCreate = '<App name="Broken"><MetricCard/></App>';
 
 const putApp = async (
   store: ReturnType<typeof memoryStore>,
@@ -99,7 +81,7 @@ const generatedTreeApp = (): AppDocument => ({
   name: "Generated dashboard",
   ui: "tree",
   tree: {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
       { id: "root", component: "Stack", source: "prewired", children: ["existing"] },
@@ -120,7 +102,7 @@ describe("generation engine through createApps", () => {
       name: "Safe tree",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Text", props: { text: "Safe" } }],
       },
@@ -183,41 +165,9 @@ describe("generation engine through createApps", () => {
     expect(capturedPrompt).toContain('you MUST use a source:"host" node with its exact name and props schema');
   });
 
-  it("creates a validated rung-1 document with a catalog host component", async () => {
-    const store = memoryStore();
-    const runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      catalog,
-      model: scriptedLanguageModel(validCreate()),
-      designRules: "Use concise labels and the accent color for positive trends.",
-    });
-
-    const app = await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
-
-    expect(app.name).toBe("Revenue dashboard");
-    expect(app.server).toBeUndefined();
-    expect(app.tree).toMatchObject({
-      nodes: [{ component: "MetricCard", source: "host" }],
-    });
-    expect(validateTree({ ...app.tree, components: app.components }).ok).toBe(true);
-  });
 
   it("reports wrong-typed host props as catalog issues", async () => {
-    const wrongProps = JSON.stringify({
-      name: "Broken metric",
-      tree: {
-        formatVersion: "vendo-genui/v1",
-        root: "metric",
-        nodes: [{
-          id: "metric",
-          component: "MetricCard",
-          source: "host",
-          props: { label: "Revenue", value: 42 },
-        }],
-      },
-    });
+    const wrongProps = '<App name="Broken metric"><MetricCard label="Revenue" value={42}/></App>';
     const runtime = createApps({
       store: memoryStore(),
       guard: guardFixture(),
@@ -229,7 +179,7 @@ describe("generation engine through createApps", () => {
     await expect(runtime.create({ prompt: "Build a broken metric" }, ctx)).rejects.toMatchObject({
       code: "validation",
       detail: expect.arrayContaining([
-        expect.stringMatching(/node "metric" props.*MetricCard.*value.*Expected string/i),
+        expect.stringMatching(/node "metriccard-1" props.*MetricCard.*value.*Expected string/i),
       ]),
     });
   });
@@ -275,23 +225,10 @@ describe("generation engine through createApps", () => {
   });
 
   it("exempts path, state, and action bindings while validating the remaining host props", async () => {
-    const boundProps = JSON.stringify({
-      name: "Bound metric",
-      tree: {
-        formatVersion: "vendo-genui/v1",
-        root: "metric",
-        nodes: [{
-          id: "metric",
-          component: "MetricCard",
-          source: "host",
-          props: {
-            label: { $path: "/headline/label" },
-            value: { $state: "selectedValue" },
-            onSelect: { action: "selectMetric", payload: { id: "revenue" } },
-          },
-        }],
-      },
-    });
+    const boundProps = [
+      '<App name="Bound metric"><Query id="headline" tool="host_headline"/>',
+      '<MetricCard label={headline.label} value={state.selectedValue} onSelect="selectMetric"/></App>',
+    ].join("");
     const runtime = createApps({
       store: memoryStore(),
       guard: guardFixture(),
@@ -301,73 +238,11 @@ describe("generation engine through createApps", () => {
     });
 
     await expect(runtime.create({ prompt: "Build a bound metric" }, ctx)).resolves.toMatchObject({
-      tree: { nodes: [{ component: "MetricCard" }] },
+      tree: { nodes: [{ component: "Stack" }, { component: "MetricCard" }] },
     });
   });
 
-  it("streams node-boundary view snapshots, resolves queries during create, and finishes with the open result", async () => {
-    const streamed = [
-      '{"name":"Streaming dashboard","tree":{"formatVersion":"vendo-genui/v1","root":"root","nodes":[{"id":"root","component":"Stack","source":"prewired","children":["metric"]},',
-      '{"id":"metric","component":"Text","source":"prewired","props":{"text":{"$path":"/metric"}}}],"queries":[{"path":"/metric","tool":"host_metric"}]}}',
-    ];
-    const queryTools: ToolRegistry = {
-      async descriptors() { return []; },
-      async execute(call) {
-        return call.tool === "host_metric"
-          ? { status: "ok", output: "$42k" }
-          : { status: "error", error: { code: "not-found", message: "missing" } };
-      },
-    };
-    const runtime = createApps({
-      store: memoryStore(),
-      guard: guardFixture(),
-      tools: queryTools,
-      catalog: [],
-      model: scriptedLanguageModel(streamed),
-    });
-    const views: Array<{ appId: string; payload: Record<string, unknown> }> = [];
 
-    const app = await runtime.create({
-      prompt: "Build a streaming dashboard",
-      onView: (part) => views.push(part as unknown as typeof views[number]),
-    }, ctx);
-    const opened = await runtime.open(app.id, ctx);
-
-    expect(views.length).toBeGreaterThanOrEqual(3);
-    expect(views.every((view) => view.appId === app.id)).toBe(true);
-    expect(views[0]?.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }] });
-    expect(views.some((view) => (view.payload.data as { metric?: string } | undefined)?.metric === "$42k")).toBe(true);
-    expect(views.at(-1)?.payload).not.toHaveProperty("streaming");
-    expect(opened).toMatchObject({ kind: "tree" });
-    if (opened.kind !== "tree") throw new Error("Expected a tree surface");
-    expect(views.at(-1)?.payload).toEqual(opened.payload);
-  });
-
-  it("repairs one invalid create and rejects two invalid attempts without persisting", async () => {
-    const repairedStore = memoryStore();
-    const repaired = createApps({
-      store: repairedStore,
-      guard: guardFixture(),
-      tools,
-      catalog,
-      model: scriptedLanguageModel(invalidCreate, validCreate("Repaired")),
-    });
-    await expect(repaired.create({ prompt: "Repair me" }, ctx)).resolves.toMatchObject({ name: "Repaired" });
-
-    const failedStore = memoryStore();
-    const failed = createApps({
-      store: failedStore,
-      guard: guardFixture(),
-      tools,
-      catalog,
-      model: scriptedLanguageModel(invalidCreate, invalidCreate),
-    });
-    await expect(failed.create({ prompt: "Still broken" }, ctx)).rejects.toMatchObject({
-      code: "validation",
-      detail: expect.arrayContaining([expect.stringContaining("root")]),
-    });
-    await expect(failed.list(ctx)).resolves.toEqual([]);
-  });
 
   it("applies tree ops, records rung 1, and undo restores the previous document", async () => {
     const store = memoryStore();
@@ -378,14 +253,14 @@ describe("generation engine through createApps", () => {
       catalog,
       model: scriptedLanguageModel(
         validCreate(),
-        JSON.stringify({ ops: [{ op: "set-prop", nodeId: "metric", prop: "value", value: "$84k" }] }),
+        JSON.stringify({ ops: [{ op: "set-prop", nodeId: "metriccard-1", prop: "value", value: "$84k" }] }),
       ),
     });
     const original = await runtime.create({ prompt: "Dashboard" }, ctx);
 
     const result = await runtime.edit(original.id, "Double the displayed revenue", ctx);
 
-    expect(result.app.tree).toMatchObject({ nodes: [{ props: { value: "$84k" } }] });
+    expect(result.app.tree).toMatchObject({ nodes: [{ id: "root" }, { props: { value: "$84k" } }] });
     expect(result.version.rung).toBe(1);
     expect(await runtime.history(original.id).list()).toEqual([result.version]);
     await expect(runtime.history(original.id).undo()).resolves.toEqual(original);
@@ -419,6 +294,10 @@ describe("generation engine through createApps", () => {
           source: source.replace("$1.2M", "$1.4M"),
         }],
       }),
+      // Props-only edit to the pinned node: no source change, no base change —
+      // the SUBTREE comparison alone must mark the slot touched (Devin, PR #375:
+      // the v1-gated pinnedSubtree made this dead for v2 apps).
+      JSON.stringify({ ops: [{ op: "set-prop", nodeId: "maple-net-worth", prop: "tone", value: "bold" }] }),
       JSON.stringify({ ops: [{ op: "set-name", name: "Maple overview" }] }),
     );
     const runtime = createApps({
@@ -441,7 +320,7 @@ describe("generation engine through createApps", () => {
       name: "Maple overview",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Stack", source: "prewired" }],
       },
@@ -461,6 +340,7 @@ describe("generation engine through createApps", () => {
     });
 
     await runtime.edit(original.id, "Increase the displayed net worth", ctx);
+    await runtime.edit(original.id, "Make the card bold", ctx);
     await runtime.edit(original.id, "Rename the app", ctx);
 
     const rows = await store.records(`vendo:app-pin-intents:${original.id}`).list();
@@ -468,8 +348,9 @@ describe("generation engine through createApps", () => {
     expect(trails).toEqual(expect.arrayContaining([
       expect.objectContaining({ slot, intent: "Remix the net worth card" }),
       expect.objectContaining({ slot, intent: "Increase the displayed net worth" }),
+      expect.objectContaining({ slot, intent: "Make the card bold" }),
     ]));
-    expect(trails).toHaveLength(2);
+    expect(trails).toHaveLength(3);
   });
 
   it("forks a named-export host slot with a synthesized default export (ENG-348)", async () => {
@@ -501,7 +382,7 @@ describe("generation engine through createApps", () => {
       name: "Maple overview",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Stack", source: "prewired" }],
       },
@@ -543,7 +424,7 @@ describe("generation engine through createApps", () => {
       name: "Maple overview",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Stack", source: "prewired" }],
       },
@@ -831,7 +712,7 @@ describe("generation engine through createApps", () => {
       name: "Cycle guard",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [
           { id: "root", component: "Text", children: ["section"] },
@@ -886,7 +767,7 @@ describe("generation engine through createApps", () => {
       name: "Server tree",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Text" }],
       },
@@ -996,7 +877,7 @@ describe("generation engine through createApps", () => {
       catalog,
       model: scriptedLanguageModel(
         validCreate(),
-        JSON.stringify({ ops: [{ op: "set-prop", nodeId: "metric", prop: "label", value: "API status" }] }),
+        JSON.stringify({ ops: [{ op: "set-prop", nodeId: "metriccard-1", prop: "label", value: "API status" }] }),
       ),
     });
     const original = await runtime.create({ prompt: "Dashboard" }, ctx);
@@ -1005,7 +886,7 @@ describe("generation engine through createApps", () => {
 
     expect(result.issues).toBeUndefined();
     expect(result.version.rung).toBe(1);
-    expect(result.app.tree).toMatchObject({ nodes: [{ props: { label: "API status" } }] });
+    expect(result.app.tree).toMatchObject({ nodes: [{ id: "root" }, { props: { label: "API status" } }] });
   });
 
   it("keeps the first graduated version on the scaffold and repairs reserved-file edits", async () => {
@@ -1134,7 +1015,7 @@ describe("generation engine through createApps", () => {
       name: "Original",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Text" }],
       },
@@ -1283,5 +1164,304 @@ describe("instructionRequiresServer (ENG-349)", () => {
 
   it("always routes an http app to the code dialect", () => {
     expect(instructionRequiresServer(app("http"), "Make the heading blue")).toBe(true);
+  });
+});
+
+describe("v2 wire create", () => {
+  const wireCreate = (name = "Revenue dashboard") =>
+    `<App name="${name}"><MetricCard label="Revenue" value="$42k"/></App>`;
+
+  it("creates a validated v2 document from the wire dialect", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(wireCreate()),
+    });
+
+    const app = await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+
+    expect(app.name).toBe("Revenue dashboard");
+    expect(app.server).toBeUndefined();
+    expect(app.components).toBeUndefined();
+    expect(app.tree).toMatchObject({
+      formatVersion: "vendo-genui/v2",
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "prewired" },
+        { id: "metriccard-1", component: "MetricCard", source: "host", props: { label: "Revenue", value: "$42k" } },
+      ],
+    });
+    expect(validateTreeV2(app.tree).ok).toBe(true);
+  });
+
+  it("sends the wire dialect with the catalog and no v1 JSON contract", async () => {
+    let capturedPrompt = "";
+    const model = scriptedLanguageModel((call) => {
+      capturedPrompt = promptText(call);
+      return wireCreate();
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model,
+    });
+
+    await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+
+    expect(capturedPrompt).toContain("WIRE DIALECT (vendo-genui/v2)");
+    expect(capturedPrompt).toContain('"whenToUse": "Use for a single important metric');
+    expect(capturedPrompt).not.toContain('formatVersion is "vendo-genui/v1"');
+    expect(capturedPrompt).not.toContain("CREATE DIALECT: emit exactly");
+  });
+
+  it("carries islands to document-level components, never on the tree", async () => {
+    const wire = [
+      '<App name="Noted"><RevenueNote/>',
+      '<Island name="RevenueNote">export default function RevenueNote() { return <p>note</p>; }</Island></App>',
+    ].join("");
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(wire),
+    });
+
+    const app = await runtime.create({ prompt: "Build a note" }, ctx);
+
+    expect(app.components).toStrictEqual({
+      RevenueNote: "export default function RevenueNote() { return <p>note</p>; }",
+    });
+    expect(app.tree).not.toHaveProperty("components");
+    expect(app.tree).toMatchObject({
+      formatVersion: "vendo-genui/v2",
+      nodes: [{ id: "root" }, { id: "revenuenote-1", component: "RevenueNote", source: "generated" }],
+    });
+  });
+
+  it("streams valid-while-partial v2 payloads and finishes with resolved query data", async () => {
+    const streamed = [
+      '<App name="Streaming dashboard"><Query id="metric" tool="host_metric"/>',
+      '<Stack gap={8}><Text text="Revenue"/>',
+      '<MetricCard label="Revenue" value={metric}/></Stack></App>',
+    ];
+    const queryTools: ToolRegistry = {
+      async descriptors() { return []; },
+      async execute(call) {
+        return call.tool === "host_metric"
+          ? { status: "ok", output: "$42k" }
+          : { status: "error", error: { code: "not-found", message: "missing" } };
+      },
+    };
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools: queryTools,
+      catalog,
+      model: scriptedLanguageModel(streamed),
+    });
+    const views: Array<{ appId: string; payload: Record<string, unknown> }> = [];
+
+    const app = await runtime.create({
+      prompt: "Build a streaming dashboard",
+      onView: (part) => views.push(part as unknown as typeof views[number]),
+    }, ctx);
+    const opened = await runtime.open(app.id, ctx);
+
+    expect(views.length).toBeGreaterThanOrEqual(2);
+    expect(views.every((view) => view.appId === app.id)).toBe(true);
+    expect(views.every((view) => view.payload.formatVersion === "vendo-genui/v2")).toBe(true);
+    expect(views[0]?.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }] });
+    expect(views.some((view) => (view.payload.data as { metric?: string } | undefined)?.metric === "$42k")).toBe(true);
+    expect(views.at(-1)?.payload).not.toHaveProperty("streaming");
+    expect(opened).toMatchObject({ kind: "tree" });
+    if (opened.kind !== "tree") throw new Error("Expected a tree surface");
+    expect((opened.payload as { data?: { metric?: string } }).data?.metric).toBe("$42k");
+    expect(views.at(-1)?.payload).toEqual(opened.payload);
+  });
+
+  it("repairs one invalid wire with issue feedback and rejects two invalid attempts", async () => {
+    const invalidWire = '<App name="Broken"><MetricCard/></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? invalidWire : wireCreate("Repaired");
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model,
+    });
+
+    const app = await runtime.create({ prompt: "Build a metric" }, ctx);
+
+    expect(app.name).toBe("Repaired");
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("REPAIR_THESE_ISSUES");
+    expect(prompts[1]).toContain("MetricCard");
+
+    const rejectingStore = memoryStore();
+    const rejecting = createApps({
+      store: rejectingStore,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(invalidWire, invalidWire),
+    });
+    await expect(rejecting.create({ prompt: "Build a metric" }, ctx)).rejects.toMatchObject({
+      code: "validation",
+    });
+    expect(await rejecting.list(ctx)).toEqual([]);
+  });
+});
+
+describe("tier0-wired create (two lanes)", () => {
+  const deps = (model: Parameters<typeof createApps>[0]["model"], extra: Record<string, unknown> = {}) => ({
+    model: model as NonNullable<Parameters<typeof createApps>[0]["model"]>,
+    catalog,
+    ...extra,
+  }) as unknown as Parameters<typeof modelEngine.create>[1];
+
+  const tier0Wire = '<App name="Instant board"><MetricCard label="Revenue" value="--"/></App>';
+  const tier2Wire = '<App name="Full board"><MetricCard label="Revenue" value="$42k" trend={12}/></App>';
+
+  it("paints a validated tier-0 app through onPartial, then returns the full-lane document", async () => {
+    const prompts: string[] = [];
+    const systems: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      const text = promptText(call);
+      prompts.push(text);
+      systems.push(text);
+      return prompts.length === 1 ? tier0Wire : tier2Wire;
+    });
+    const partials: Array<{ name?: string }> = [];
+
+    const document = await modelEngine.create(
+      { prompt: "Build a revenue board" },
+      deps(model, { onPartial: (partial: { name?: string }) => partials.push(partial) }),
+    );
+
+    expect(document.name).toBe("Full board");
+    expect(prompts).toHaveLength(2);
+    expect(systems[0]).toContain("PAINT PASS");
+    expect(systems[1]).not.toContain("PAINT PASS");
+    expect(systems[1]).toContain("TIER0_LAYOUT");
+    expect(systems[1]).toContain("metriccard-1:MetricCard");
+    expect(partials.some((partial) => partial.name === "Instant board")).toBe(true);
+    expect(partials.some((partial) => partial.name === "Full board")).toBe(true);
+  });
+
+  it("falls back to the resident tier-0 document when the full lane cannot validate", async () => {
+    let calls = 0;
+    const model = scriptedLanguageModel(() => {
+      calls += 1;
+      return calls === 1 ? tier0Wire : '<App name="Broken"><MetricCard/></App>';
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "Build a revenue board" },
+      deps(model, { onPartial: () => undefined }),
+    );
+
+    expect(document.name).toBe("Instant board");
+    expect(calls).toBe(3); // tier-0 + full lane attempt + one repair attempt
+  });
+
+  it("skips the paint lane without a streaming consumer and when disabled", async () => {
+    let calls = 0;
+    const model = scriptedLanguageModel(() => {
+      calls += 1;
+      return tier2Wire;
+    });
+
+    await modelEngine.create({ prompt: "No stream" }, deps(model));
+    expect(calls).toBe(1);
+
+    await modelEngine.create(
+      { prompt: "Stream but disabled" },
+      deps(model, { onPartial: () => undefined, paint: { disabled: true } }),
+    );
+    expect(calls).toBe(2);
+  });
+
+  it("runs the paint lane on the dedicated no-think paint model when configured", async () => {
+    const paintPrompts: string[] = [];
+    const mainPrompts: string[] = [];
+    const paintModel = scriptedLanguageModel((call) => {
+      paintPrompts.push(promptText(call));
+      return tier0Wire;
+    });
+    const model = scriptedLanguageModel((call) => {
+      mainPrompts.push(promptText(call));
+      return tier2Wire;
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "Build a revenue board" },
+      deps(model, { onPartial: () => undefined, paint: { model: paintModel } }),
+    );
+
+    expect(document.name).toBe("Full board");
+    expect(paintPrompts).toHaveLength(1);
+    expect(paintPrompts[0]).toContain("PAINT PASS");
+    expect(mainPrompts).toHaveLength(1);
+  });
+});
+
+describe("wire extraction tolerance", () => {
+  it("compiles a wire wrapped in a markdown fence or prose preamble", async () => {
+    const fenced = "Here is the app:\n```xml\n" + validCreate("Fenced board") + "\n```\nDone!";
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(fenced),
+    });
+
+    const app = await runtime.create({ prompt: "Build a fenced board" }, ctx);
+
+    expect(app.name).toBe("Fenced board");
+    expect(app.tree).toMatchObject({ formatVersion: "vendo-genui/v2" });
+  });
+});
+
+describe("tier-2 hot-swap never regresses the resident paint", () => {
+  it("suppresses full-lane partials smaller than the resident tier-0 tree", async () => {
+    const tier0 = '<App name="Instant"><MetricCard label="Revenue" value="--"/><Text text="Loading detail"/></App>';
+    const tier2Chunks = [
+      '<App name="Full">',
+      '<MetricCard label="Revenue" value="$42k"/>',
+      '<Text text="Detail"/><Text text="More"/></App>',
+    ];
+    let calls = 0;
+    const model = scriptedLanguageModel(() => {
+      calls += 1;
+      return calls === 1 ? tier0 : tier2Chunks;
+    });
+    const partials: number[] = [];
+
+    const document = await modelEngine.create(
+      { prompt: "Build it" },
+      {
+        model,
+        catalog,
+        onPartial: (partial: { tree: { nodes: unknown[] } }) => { partials.push(partial.tree.nodes.length); },
+      } as unknown as Parameters<typeof modelEngine.create>[1],
+    );
+
+    expect(document.name).toBe("Full");
+    // Tier-0 painted 3 nodes (root + card + text). Once resident, no later
+    // partial may show fewer nodes than the resident paint.
+    const residentSize = 3;
+    const afterResident = partials.slice(partials.indexOf(residentSize) + 1);
+    expect(afterResident.every((count) => count >= residentSize)).toBe(true);
   });
 });

@@ -14,7 +14,7 @@ describe("cloud command dispatch", () => {
     expect(messages.logs.join("\n")).toContain("pin-ship --app <id>");
     expect(messages.logs.join("\n")).toContain("login EMAIL");
     expect(messages.logs.join("\n")).toContain("deploy [--app <id>] [--secret NAME=VALUE]");
-    expect(messages.logs.join("\n")).toContain("validate [--json]                     Validate a key and show plan, capabilities, and quota");
+    expect(messages.logs.join("\n")).not.toContain("validate");
   });
 
   it("returns one for unknown cloud commands", async () => {
@@ -25,8 +25,14 @@ describe("cloud command dispatch", () => {
 
   it("dispatches machine-principal commands", async () => {
     const messages = output();
-    expect(await runCloud(["validate"], { output: messages.sink, env: {} })).toBe(1);
+    expect(await runCloud(["share", "app.json"], { output: messages.sink, env: {} })).toBe(1);
     expect(messages.errors).toEqual(["Pass --key or set VENDO_API_KEY"]);
+  });
+
+  it("rejects the removed validate command", async () => {
+    const messages = output();
+    expect(await runCloud(["validate"], { output: messages.sink, env: {} })).toBe(1);
+    expect(messages.errors.join("\n")).toContain("Unknown cloud command");
   });
 
   it("dispatches deploy with the machine principal", async () => {

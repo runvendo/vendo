@@ -7,7 +7,7 @@ description: "Every environment variable Vendo reads across host process, sandbo
 
 | Variable | Effect |
 | --- | --- |
-| `VENDO_API_KEY` | activates cloud-gated sharing, publishing, org overlays, pinning, and the hosted `vendoSandbox()` broker after entitlement verification |
+| `VENDO_API_KEY` | authenticates Vendo Cloud calls (sharing, publishing, pinning, the hosted `vendoSandbox()` broker) and selects Cloud defaults for adapter slots the host left unset; an explicitly passed adapter always wins, and key problems surface on the first real call |
 | `VENDO_CLOUD_URL` | overrides the Vendo Cloud base URL for the runtime and CLI; defaults to `https://console.vendo.run` |
 | `VENDO_TELEMETRY_DISABLED=1` | disables build and development telemetry |
 | `VENDO_TICK_SECRET` | bearer secret required by `POST /tick` |

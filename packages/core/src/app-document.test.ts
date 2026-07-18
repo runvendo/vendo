@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
+  VENDO_TREE_FORMAT_V2,
+  WIRE_ISSUE_CODES,
   appDocumentSchema,
+  compileWireV2,
   validateAppDocument,
 } from "./index.js";
 
@@ -203,5 +206,135 @@ describe("appDocumentSchema and validateAppDocument", () => {
     const result = validateAppDocument(hostile);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("validation");
+  });
+});
+
+const v2Minimal = () => ({
+  format: VENDO_APP_FORMAT,
+  id: "app_v2",
+  name: "V2 App",
+  ui: "tree" as const,
+  tree: {
+    formatVersion: VENDO_TREE_FORMAT_V2,
+    root: "root",
+    nodes: [{ id: "root", component: "Text", props: { text: "How can I help?" } }],
+  },
+});
+
+const expectValidationMessage = (input: unknown, message: string): void => {
+  const result = validateAppDocument(input);
+  expect(result.ok).toBe(false);
+  if (!result.ok) {
+    expect(result.error.code).toBe("validation");
+    expect(result.error.message).toBe(message);
+  }
+};
+
+describe("validateAppDocument with vendo-genui/v2 trees", () => {
+  it("accepts a v2 tree whose generated nodes are backed by document-level components", () => {
+    const document = {
+      ...v2Minimal(),
+      tree: {
+        formatVersion: VENDO_TREE_FORMAT_V2,
+        root: "root",
+        nodes: [
+          { id: "root", component: "Stack", children: ["gauge"] },
+          { id: "gauge", component: "Gauge", source: "generated" as const },
+        ],
+      },
+      components: { Gauge: "export default function Gauge(){ return null; }" },
+    };
+    expect(appDocumentSchema.parse(document)).toEqual(document);
+    expect(validateAppDocument(document)).toEqual({ ok: true, app: document });
+  });
+
+  it("rejects components smuggled inside a v2 tree with the tree validator's message", () => {
+    expectValidationMessage(
+      { ...v2Minimal(), tree: { ...v2Minimal().tree, components: {} } },
+      "v2 trees must not carry components (they live at the app-document level)",
+    );
+  });
+
+  it("rejects generated nodes with no definition in the document components", () => {
+    expectValidationMessage(
+      {
+        ...v2Minimal(),
+        tree: {
+          ...v2Minimal().tree,
+          nodes: [{ id: "root", component: "Gauge", source: "generated" as const }],
+        },
+      },
+      'node "root" references generated component "Gauge" with no definition in components',
+    );
+  });
+
+  it("enforces document component limits beside a v2 tree", () => {
+    expectValidation({ ...v2Minimal(), components: { Text: "export default () => null;" } }); // reserved
+    expectValidation({ ...v2Minimal(), components: { "not-pascal": "x" } });
+  });
+
+  it("requires a server for fn: v2 query tools and prop actions", () => {
+    const withQuery = {
+      ...v2Minimal(),
+      tree: { ...v2Minimal().tree, queries: [{ name: "load", tool: "fn:load" }] },
+    };
+    expectValidationMessage(withQuery, "fn: references require an app server");
+    expect(validateAppDocument({ ...withQuery, server: "e2b:snap_ok" }).ok).toBe(true);
+    expectValidationMessage(
+      {
+        ...v2Minimal(),
+        tree: {
+          ...v2Minimal().tree,
+          nodes: [{ id: "root", component: "Button", props: { nested: [{ action: "fn:click" }] } }],
+        },
+      },
+      "fn: references require an app server",
+    );
+  });
+
+  it("rejects malformed fn: prop actions in v2 nodes even when a server exists", () => {
+    expectValidation({
+      ...v2Minimal(),
+      server: "e2b:snap_ok",
+      tree: {
+        ...v2Minimal().tree,
+        nodes: [{ id: "root", component: "Button", props: { onClick: { action: "fn:bad name" } } }],
+      },
+    });
+  });
+
+  it("rejects malformed fn: v2 query tools even when a server exists", () => {
+    expectValidation({
+      ...v2Minimal(),
+      server: "e2b:snap_ok",
+      tree: { ...v2Minimal().tree, queries: [{ name: "load", tool: "fn:bad name" }] },
+    });
+  });
+
+  it("leaves v1 documents and opaque unknown formats untouched", () => {
+    expect(validateAppDocument(minimal())).toEqual({ ok: true, app: minimal() });
+    expect(validateAppDocument(invoiceChaser())).toEqual({ ok: true, app: invoiceChaser() });
+    const opaque = {
+      ...minimal(),
+      tree: { formatVersion: "vendo-canvas/v3", opaque: { components: true, action: "fn:not_walked" } },
+    };
+    expect(validateAppDocument(opaque)).toEqual({ ok: true, app: opaque });
+  });
+
+  it("exports the wire compiler and issue registry from the package root", () => {
+    expect(WIRE_ISSUE_CODES).toContain("missing-app");
+    const compiled = compileWireV2('<App name="Tiny"><Text>hi</Text></App>');
+    expect(compiled.complete).toBe(true);
+    expect(compiled.issues).toEqual([]);
+    expect(compiled.name).toBe("Tiny");
+    const document = {
+      format: VENDO_APP_FORMAT,
+      id: "app_wire",
+      name: compiled.name ?? "Tiny",
+      ui: "tree" as const,
+      tree: compiled.tree,
+      components: compiled.components,
+    };
+    expect(validateAppDocument(document)).toEqual({ ok: true, app: document });
   });
 });

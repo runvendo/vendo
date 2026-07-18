@@ -38,20 +38,6 @@ export function VendoLayer({ children }: { children: ReactNode }) {
     if (!floatingSurface) close();
   }, [floatingSurface, close]);
 
-  // Remix entry point: a host component's "Remix" affordance opens the Vendo
-  // overlay and hands the thread the request to type + build — the whole
-  // build happens in the one conversational surface.
-  useEffect(() => {
-    const onRemix = (event: Event) => {
-      const prompt = (event as CustomEvent<{ prompt?: string }>).detail?.prompt;
-      open();
-      // Wait for the overlay's thread to mount, then prefill + send.
-      setTimeout(() => window.dispatchEvent(new CustomEvent("vendo:prefill", { detail: { prompt, send: true } })), 260);
-    };
-    window.addEventListener("vendo:remix", onRemix);
-    return () => window.removeEventListener("vendo:remix", onRemix);
-  }, [open]);
-
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) return;

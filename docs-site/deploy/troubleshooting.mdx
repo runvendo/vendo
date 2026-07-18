@@ -20,7 +20,7 @@ is green; exit code 1 means broken wiring.
 | `not-found` | the scoped resource does not exist | 404 |
 | `blocked` | guard rejected the operation | 403 |
 | `conflict` | the operation conflicts with current state | 409 |
-| `cloud-required` | a cloud-gated surface lacks entitlement | 402 |
+| `cloud-required` | a Cloud call has no valid key or its meter is exhausted | 402 |
 | `sandbox-unavailable` | no sandbox adapter or unreachable machine | 501 |
 | `not-implemented` | an optional host seam is absent | 501 |
 

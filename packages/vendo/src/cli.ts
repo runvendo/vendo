@@ -2,33 +2,44 @@ import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { runCloud } from "./cli/cloud/index.js";
 import { runDoctor } from "./cli/doctor.js";
+import { runEject } from "./cli/eject.js";
+import { runExtractApply } from "./cli/extract/apply.js";
 import { runInit } from "./cli/init.js";
 import { runMcp } from "./cli/mcp/index.js";
+import { runPlayground } from "./cli/playground.js";
 import { runRefineCommand } from "./cli/refine.js";
 import { CLI_VERSION } from "./cli/shared.js";
 import { runSync } from "./cli/sync.js";
 
-const HELP = `vendo — default Vendo composition
+const HELP = `vendo — install your product's agent
 
 Usage: vendo <command> [dir] [options]
 
 Commands:
-  init [dir]      Scan, interview, write .vendo, and propose handler + VendoRoot wiring
-  doctor [dir]    Verify wiring, present credentials, actAs, and one real model turn over live HTTP
-  sync [dir]      Extract tools and remix baselines (use --strict for CI)
+  init [dir]      Set up Vendo: wire the handler, extract tools + theme, resolve a model key
+  doctor [dir]    Verify the install: wiring, live probes, and one real model turn (--json for agents)
+
+Advanced:
+  sync [dir]      Re-extract tools and baselines (init hooks this into predev/prebuild; --strict is the CI gate)
+  eject <surface> [dir]  Copy a shipped chrome surface's presentation source into your repo (--list to see surfaces)
+  extract [dir]   Apply a coding agent's extraction draft through the deterministic guards (--apply <draft.json>)
   refine [dir]    Propose compound capabilities, risk corrections, and brief updates as reviewable diffs
+  playground      Render every Vendo surface against scripted data in the browser — no model key needed
   mcp <command>   Generate MCP registry discovery and domain-verification files
   cloud <command> Use the public Vendo Cloud API
 
 Options:
-  --agent                    Init only: print a read-only plan — four questions, code diffs, extracted tools, risk recommendations
-  --yes                      Init/refine: skip the interview and approve displayed changes; doctor: auto-start the dev server for the probe
-  --force                    Init/server-json: overwrite owned or generated files
-  --model-import <specifier> Init/refine: module exporting the host's ai-SDK model
-  --brief <text>             Init only: product brief used for non-interactive setup
+  --agent                    Init only: print a read-only JSON plan — code changes, extracted tools, risk recommendations, the aiPolish delegation contract
+  --apply <draft.json>       Extract only: draft file an external agent produced from the plan's aiPolish contract
+  --yes                      Init: skip the cloud-login offer; refine: approve displayed diffs; doctor: auto-start the dev server
+  --force                    Init/server-json: overwrite owned or generated files; eject: overwrite an ejected dir
+  --list                     Eject only: show the ejectable surfaces
+  --model-import <specifier> Refine only: module exporting the host's ai-SDK model
   --ask <text>               Refine only: interview answer (repeatable) for non-interactive runs
   --url <url>                Doctor/refine/server-json: mounted wire base or public MCP URL
   --strict                   Sync only: exit 2 on breaking changes, 3 when saved references are impacted
+  --port <port>              Playground only: listen on a fixed port (default: any free port)
+  --no-open                  Playground only: print the URL without opening the browser
   --json                     Sync/doctor: print one machine-readable report object
   --report                   Sync only: push the report to Vendo Cloud
   --key <key>                Sync/cloud: override VENDO_API_KEY
@@ -52,19 +63,21 @@ function options(args: string[], name: string): string[] {
 }
 
 const INIT_FLAGS = new Set(["--agent", "--yes", "--force"]);
-const INIT_VALUE_OPTIONS = ["--model-import", "--brief"];
+const INIT_VALUE_OPTIONS: string[] = [];
+const EXTRACT_FLAGS = new Set(["--force"]);
+const EXTRACT_VALUE_OPTIONS = ["--apply"];
 
-/** ENG-335: init options the CLI does not recognize — or value options missing
+/** ENG-335: options the CLI does not recognize — or value options missing
     their value — must fail loudly before anything runs. Silently dropping a
     flag is how the "--agent writes nothing" promise broke in the field: an
     older CLI ignored --agent and ran a full, writing init. */
-function initOptionErrors(args: string[]): string[] {
+function optionErrors(args: string[], flags: Set<string>, valueOptions: string[]): string[] {
   const errors: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
     if (!arg.startsWith("--")) continue;
-    if (INIT_FLAGS.has(arg)) continue;
-    if (INIT_VALUE_OPTIONS.includes(arg)) {
+    if (flags.has(arg)) continue;
+    if (valueOptions.includes(arg)) {
       // A value that looks like another flag is a missing value, not a value —
       // otherwise `--model-import --force` proceeds with modelImport "--force".
       const value = args[index + 1];
@@ -72,15 +85,42 @@ function initOptionErrors(args: string[]): string[] {
       else index += 1;
       continue;
     }
-    if (INIT_VALUE_OPTIONS.some((name) => arg.startsWith(`${name}=`))) continue;
+    if (valueOptions.some((name) => arg.startsWith(`${name}=`))) continue;
     errors.push(`unknown option: ${arg}`);
   }
   return errors;
 }
 
+/** Playground follows the ENG-335 rule too: unknown flags fail loudly. */
+function playgroundOptionErrors(args: string[]): { errors: string[]; port?: number } {
+  const errors: string[] = [];
+  let port: number | undefined;
+  const parsePort = (value: string | undefined, flag: string): void => {
+    const parsed = value !== undefined && /^\d+$/.test(value) ? Number(value) : NaN;
+    if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 65_535) port = parsed;
+    else errors.push(`${flag} requires a port number (1-65535)`);
+  };
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (arg === "--no-open") continue;
+    if (arg === "--port") {
+      const value = args[index + 1];
+      parsePort(value !== undefined && value.startsWith("--") ? undefined : value, "--port");
+      if (value !== undefined && !value.startsWith("--")) index += 1;
+      continue;
+    }
+    if (arg.startsWith("--port=")) {
+      parsePort(arg.slice("--port=".length), "--port");
+      continue;
+    }
+    errors.push(arg.startsWith("--") ? `unknown option: ${arg}` : `unexpected argument: ${arg}`);
+  }
+  return { errors, port };
+}
+
 function target(args: string[]): string {
   const optionValues = new Set<string>();
-  for (const name of ["--model-import", "--url", "--brief", "--key", "--api-url", "--ask"]) {
+  for (const name of ["--model-import", "--url", "--brief", "--key", "--api-url", "--ask", "--apply"]) {
     for (let index = 0; index < args.length; index += 1) {
       if (args[index] === name && args[index + 1] !== undefined) optionValues.add(args[index + 1]!);
     }
@@ -101,7 +141,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "cloud") return runCloud(args);
   if (command === "mcp") return runMcp(args);
   if (command === "init") {
-    const problems = initOptionErrors(args);
+    const problems = optionErrors(args, INIT_FLAGS, INIT_VALUE_OPTIONS);
     if (problems.length > 0) {
       console.error(`vendo init: ${problems.join("; ")}\n\n${HELP}`);
       return 1;
@@ -111,8 +151,36 @@ export async function main(argv: string[]): Promise<number> {
       agent: args.includes("--agent"),
       yes: args.includes("--yes"),
       force: args.includes("--force"),
-      modelImport: option(args, "--model-import"),
-      brief: option(args, "--brief"),
+    });
+  }
+  if (command === "extract") {
+    const problems = optionErrors(args, EXTRACT_FLAGS, EXTRACT_VALUE_OPTIONS);
+    if (!args.some((arg) => arg === "--apply" || arg.startsWith("--apply="))) {
+      problems.push("--apply <draft.json> is required");
+    } else if (option(args, "--apply") === "") {
+      // `--apply=` slips past the missing-value check with an empty string,
+      // which would resolve to the cwd instead of failing loudly.
+      problems.push("--apply requires a value");
+    }
+    if (problems.length > 0) {
+      console.error(`vendo extract: ${problems.join("; ")}\n\n${HELP}`);
+      return 1;
+    }
+    return runExtractApply({
+      targetDir: target(args),
+      apply: option(args, "--apply")!,
+      force: args.includes("--force"),
+    });
+  }
+  if (command === "eject") {
+    const positional = args.filter((value) => !value.startsWith("--"));
+    const list = args.includes("--list");
+    // `eject --list [dir]` has no surface positional — the first one is the dir.
+    return runEject({
+      surface: list ? undefined : positional[0],
+      targetDir: (list ? positional[0] : positional[1]) ?? process.cwd(),
+      list,
+      force: args.includes("--force"),
     });
   }
   if (command === "doctor") {
@@ -131,6 +199,14 @@ export async function main(argv: string[]): Promise<number> {
       asks: options(args, "--ask"),
       yes: args.includes("--yes"),
     });
+  }
+  if (command === "playground") {
+    const { errors, port } = playgroundOptionErrors(args);
+    if (errors.length > 0) {
+      console.error(`vendo playground: ${errors.join("; ")}\n\n${HELP}`);
+      return 1;
+    }
+    return runPlayground({ port, open: !args.includes("--no-open") });
   }
   if (command === "sync") {
     return runSync({

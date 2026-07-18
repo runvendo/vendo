@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentType, type CSSProperties, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { useVendoTheme } from "../context.js";
+import { useVendoDiscoverability, useVendoTheme } from "../context.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { themeCssVariables } from "../theme.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { VendoThread } from "./vendo-thread.js";
+import { hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "./discoverability.js";
+import { deliverPrefill, PrefillScopeContext, registerOverlayOpener } from "./overlay-registry.js";
+import { VendoThread, type VendoThreadProps } from "./thread/index.js";
 
 const FOCUSABLE = "button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex='-1'])";
 
@@ -28,7 +30,34 @@ export interface VendoOverlayProps {
    * built-in new-conversation button works with or without this prop.
    */
   conversationKey?: string | number;
+  /**
+   * The one sanctioned component-injection point (the eject seam): a thread
+   * component the panel renders in place of the built-in `VendoThread`. The
+   * overlay stays the positioning shell — portal, scrim, focus, mobile sheet —
+   * while an ejected (or fully custom) thread supplies the conversation
+   * pixels. It receives `VendoThreadProps` (all optional), so a plain
+   * zero-prop component works too.
+   */
+  thread?: ComponentType<VendoThreadProps>;
+  /**
+   * The discoverability dial (ui-usage-dx §6), overriding the provider's.
+   * `"default"` keeps the fire-once whisper on the launcher pill (and the
+   * thread's greeting-as-tutorial); `"quiet"` turns both off. Nothing here
+   * ever fires twice for the same user — the whisper marks itself seen the
+   * moment it first renders.
+   */
+  discoverability?: VendoDiscoverability;
+  /**
+   * Greeting-as-tutorial content for the thread's one-time first message
+   * (intro + prompt chips — the `.vendo/greeting.json` shape), overriding the
+   * provider's `greeting`.
+   */
+  greeting?: VendoGreeting;
 }
+
+/** Whisper caption duration — long enough to read two short lines, short
+ *  enough to stay ambient (~6s per the §6 decision). */
+const WHISPER_MS = 6000;
 
 /** display:none/visibility:hidden elements silently swallow focus() — skip them. */
 function canReceiveFocus(element: HTMLElement | null): element is HTMLElement {
@@ -47,6 +76,9 @@ export function VendoOverlay({
   onOpenChange,
   launcher = "bottom-right",
   conversationKey,
+  thread: Thread = VendoThread,
+  discoverability,
+  greeting,
 }: VendoOverlayProps = {}) {
   const controlled = openProp !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
@@ -63,6 +95,35 @@ export function VendoOverlay({
   const [conversationEpoch, setConversationEpoch] = useState(0);
   const theme = useVendoTheme();
   const takeover = useMobileTakeover();
+  const providerDial = useVendoDiscoverability();
+  const dial = discoverability ?? providerDial;
+  // ui-usage-dx §6 — the whisper: the first time a user actually faces the
+  // pill, it pulses once and a small caption says the app can be reshaped,
+  // then never again (fire-once store). Arming is REACTIVE, not mount-frozen
+  // (PR #365 review): quiet dial, launcher="none", and overlay-already-open
+  // states are not eligible and do not burn the flag — the moment the pill
+  // becomes genuinely visible (dial flipped, launcher enabled, overlay
+  // closed) is the first showing, and only that showing burns it.
+  const [whisperActive, setWhisperActive] = useState(false);
+  useEffect(() => {
+    if (whisperActive || open || launcher === "none" || dial === "quiet") return;
+    if (hasSeen("whisper")) return;
+    // Seen is recorded on first SHOWING, not on dismiss: a reload
+    // mid-animation must never replay the whisper.
+    markSeen("whisper");
+    setWhisperActive(true);
+  }, [whisperActive, open, launcher, dial]);
+  // The whisper ends after ~6s — or the instant the overlay opens, because
+  // the user has found the entry point it exists to point at.
+  useEffect(() => {
+    if (!whisperActive) return;
+    if (open) {
+      setWhisperActive(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setWhisperActive(false), WHISPER_MS);
+    return () => window.clearTimeout(timer);
+  }, [whisperActive, open]);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
   const portalRoot = useRef<HTMLDivElement>(null);
@@ -149,6 +210,31 @@ export function VendoOverlay({
 
   const close = () => setOpen(false);
 
+  // The prefill scope: this overlay's composer registers under it, so a
+  // delivered prompt reaches THIS overlay's thread — not an embedded
+  // VendoThread/VendoPage composer that happened to register later.
+  const prefillScope = useRef(Symbol("vendo-overlay-prefill"));
+
+  // Registry opener (ui-usage-dx §2): lets slot remix / trigger / palette
+  // affordances open this overlay — optionally preloading a prompt or starting
+  // fresh — without a ref. The prompt goes through the registry's scoped
+  // prefill hand-off, which parks it until the thread's composer mounts
+  // (first open) or delivers immediately (already mounted, even while
+  // hidden). newConversation defers delivery past the outgoing composer:
+  // the epoch bump remounts the thread, and only the fresh composer may
+  // drain the prompt (a live delivery would hand it to the one unmounting).
+  useEffect(() => registerOverlayOpener(options => {
+    setOpen(true);
+    const fresh = options?.newConversation === true;
+    if (fresh) setConversationEpoch(epoch => epoch + 1);
+    if (typeof options?.prompt === "string" && options.prompt.length > 0) {
+      deliverPrefill(
+        { prompt: options.prompt, send: options.send === true },
+        { scope: prefillScope.current, defer: fresh },
+      );
+    }
+  }), [setOpen]);
+
   const newConversation = () => {
     setConversationEpoch(epoch => epoch + 1);
     // The remounted thread lands on the empty composer — put focus there so
@@ -226,7 +312,9 @@ export function VendoOverlay({
           </svg>
           <span className="fl-sr-only">Close</span>
         </button>
-        <VendoThread key={`${conversationKey ?? 0}:${conversationEpoch}`} />
+        <PrefillScopeContext.Provider value={prefillScope.current}>
+          <Thread key={`${conversationKey ?? 0}:${conversationEpoch}`} discoverability={dial} firstRunGreeting={greeting} />
+        </PrefillScopeContext.Provider>
       </div>
     </div>,
     document.body,
@@ -239,6 +327,9 @@ export function VendoOverlay({
           ref={launcherRef}
           className="fl-launcher"
           data-vendo-launcher={launcher}
+          // Present only while the whisper is live: keys the one-time pulse
+          // (suppressed under prefers-reduced-motion — the caption still shows).
+          {...(whisperActive && !open ? { "data-vendo-whisper": "" } : {})}
           type="button"
           aria-expanded={open}
           aria-controls="vendo-overlay-dialog"
@@ -251,6 +342,15 @@ export function VendoOverlay({
           Vendo
         </button>
       )}
+      {/* The whisper caption rides above the pill and auto-dismisses; opening
+          the overlay ends it early (it has done its job). role="status" keeps
+          it polite for assistive tech. */}
+      {launcher !== "none" && whisperActive && !open ? (
+        <div className="fl-whisper" data-vendo-launcher={launcher} role="status">
+          <strong>You can reshape this app</strong>
+          <span>Ask Vendo to build the view you need.</span>
+        </div>
+      ) : null}
       {portal}
     </ChromeRoot>
   );

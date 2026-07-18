@@ -12,6 +12,7 @@ export function createStore(config?: {
   url?: string;
   dataDir?: string;
   encryption?: { key: string };
+  allowUnencryptedSecrets?: boolean; // dev-mode only; never set in production
 }): VendoStore;
 ```
 
@@ -35,13 +36,14 @@ idempotent and forward-only within the version train.
 App data remains plaintext so hosts can query and join it. Database and disk
 encryption remain the host's responsibility.
 
-Encryption is on by default in the composed stack: `vendo init` provisions
-`VENDO_STORE_ENCRYPTION_KEY` into the host's `.env`, and `createVendo` reads it
-from the environment when no store is passed. Ciphertext is bound to its secret
-name (AES-GCM AAD, versioned envelope), so a ciphertext swapped between rows
-fails to decrypt; rows written before the AAD change keep decrypting and
-upgrade on their next write. Never rotate the key by hand — existing ciphertext
-would be orphaned.
+Encryption is production-owned: set `VENDO_STORE_ENCRYPTION_KEY` in your
+deploy environment and `createVendo` reads it when no store is passed. Without
+a key, development stores secrets unencrypted in the gitignored local data dir
+(`plain@1:` envelope) while production secret writes fail closed with
+instructions. Ciphertext is bound to its secret name (AES-GCM AAD, versioned
+envelope), so a ciphertext swapped between rows fails to decrypt; plaintext
+rows written before a key existed keep reading after one is added. Never
+rotate the key by hand — existing ciphertext would be orphaned.
 
 ## Public table map
 

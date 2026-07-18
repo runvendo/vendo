@@ -226,11 +226,17 @@ export function unrecognized(reason: string): ZodSchemaResult {
   return { schema: {}, optional: false, recognized: false, reason };
 }
 
+/** Modifiers that pass the inner schema through unchanged on the wire.
+ * Narrowed (kill-list §B1) to the set the corpus fixtures and the actions
+ * suite actually exercise — measured 2026-07-17 over the pinned rallly tRPC
+ * routers and nextcrm server actions. Anything else fails closed (permissive
+ * schema + note), which is the correct posture for modifiers nobody has
+ * proven against the corpus. */
 const ZOD_PASSTHROUGH_MODIFIERS = new Set([
-  "trim", "refine", "superRefine", "transform", "brand", "readonly",
-  "regex", "startsWith", "endsWith", "includes", "toLowerCase", "toUpperCase",
-  "catch", "passthrough", "strict", "strip", "positive", "nonnegative", "negative",
-  "nonpositive", "finite", "safe", "step", "multipleOf", "length", "nonempty", "cuid", "cuid2", "ulid", "nanoid",
+  // "describe" is NOT passthrough: it has a real handler below carrying the
+  // description into the derived schema (01 §14 derivation parity).
+  "trim", "refine", "transform", "regex", "toUpperCase", "catch",
+  "positive", "nonnegative", "length", "nonempty", "cuid",
 ]);
 
 export async function zodFromExpression(

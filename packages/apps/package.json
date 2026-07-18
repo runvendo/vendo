@@ -38,10 +38,6 @@
     "./modal": {
       "types": "./dist/modal/index.d.ts",
       "default": "./dist/modal/index.js"
-    },
-    "./vendo": {
-      "types": "./dist/vendo/index.d.ts",
-      "default": "./dist/vendo/index.js"
     }
   },
   "files": [
@@ -57,7 +53,7 @@
   "dependencies": {
     "@vendoai/core": "workspace:*",
     "fflate": "^0.8.2",
-    "zod": "^3.24.0"
+    "zod": "^3.25.0"
   },
   "peerDependencies": {
     "ai": ">=6.0.0 <7",

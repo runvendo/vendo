@@ -9,7 +9,7 @@ import {
 } from "@vendoai/core";
 import type { VendoGuard } from "@vendoai/guard";
 import type { McpDoor } from "@vendoai/mcp";
-import type { VendoStore } from "@vendoai/store";
+import type { SubjectMergeReport, VendoStore } from "@vendoai/store";
 import type { Telemetry } from "@vendoai/telemetry";
 import type { VendoAgent } from "@vendoai/agent";
 import type { ConnectionsService } from "../connections.js";
@@ -24,7 +24,13 @@ import type { RuntimeCaptureHandler } from "../runtime-capture.js";
 export const VERSION = "0.3.0";
 export const BASE_PATH = "/api/vendo";
 
-export type SandboxVenue = "e2b" | "modal" | "custom" | false;
+export type SandboxVenue = "e2b" | "modal" | "cloud" | "custom" | false;
+
+/** How inference is served: "custom" (a host-passed model) or "ladder" (the
+    composed devModel default — provider env key, then VENDO_API_KEY via the
+    Cloud model gateway, then the honest keyless failure; the ladder resolves
+    lazily, so /status cannot name the rung without forcing a resolution). */
+export type ModelVenue = "custom" | "ladder";
 
 const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   validation: 400,
@@ -50,6 +56,7 @@ export interface WireDeps {
   automations: AutomationsEngine;
   connections: ConnectionsService;
   sandbox: SandboxVenue;
+  model: ModelVenue;
   doctor: {
     present(ctx: RunContext): Promise<ToolOutcome>;
     actAs(): Promise<ToolOutcome>;
@@ -64,6 +71,12 @@ export interface WireDeps {
       (possibly injected) session clock; `sweep` runs the store TTL sweep and
       cascades swept subjects into the agent. */
   sessions: { ttlMs: number; sweepIntervalMs: number; now: () => number };
+  /** The session doors bound to the composed store (selectStore): the local
+      engine's SQL registry, or the hosted store's wire doors. */
+  sessionStore: {
+    register(subject: string, now: number): Promise<void>;
+    adopt(from: string, to: string): Promise<SubjectMergeReport | null>;
+  };
   sweep: () => Promise<void>;
 }
 
