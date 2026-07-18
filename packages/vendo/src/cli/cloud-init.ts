@@ -97,6 +97,8 @@ export interface CloudStepOptions {
   env?: Record<string, string | undefined>;
   apiUrl?: string;
   home?: string;
+  /** Fetch seam for the default mint path (tests mock the console with it). */
+  fetchImpl?: typeof fetch;
   /** Seams (tests). */
   confirm?: (question: string, defaultYes?: boolean) => Promise<boolean>;
   promptEmail?: (question: string) => Promise<string>;
@@ -160,6 +162,7 @@ export async function runCloudStep(options: CloudStepOptions): Promise<CloudStep
     env,
     ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
     ...(options.home === undefined ? {} : { home: options.home }),
+    ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
   })))();
   if (key === null) {
     output.error("Logged in, but this console does not serve the dev-mode starter allowance yet (older console). Set a provider key or ride your Claude/Codex CLI for now.");

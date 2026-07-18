@@ -145,6 +145,42 @@ describe("runCloudStep", () => {
     expect(envLocal).toContain(`VENDO_API_KEY=${goodKey}`);
   });
 
+  it("mints through the REAL default mint path against a mocked console and writes .env.local", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(join(home, ".vendo"), { recursive: true });
+    await writeFile(
+      join(home, ".vendo", "cloud-session.json"),
+      JSON.stringify({ access_token: "user-jwt", expires_at: Math.floor(Date.now() / 1000) + 3600 }),
+    );
+    const consoleFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      expect(request.url).toBe("https://cloud.test/api/v1/dev/starter-key");
+      expect(request.headers.get("authorization")).toBe("Bearer user-jwt");
+      expect(await request.json()).toEqual({ purpose: "dev-mode" });
+      return Response.json({ key: goodKey, meter: { runs: { included: 1000, remaining: 1000 } } });
+    }) as unknown as typeof fetch;
+
+    const result = await runCloudStep({
+      root,
+      output: output().sink,
+      yes: false,
+      credential: noKey,
+      apiUrl: "https://cloud.test",
+      home,
+      fetchImpl: consoleFetch,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      confirm: async () => true,
+      promptEmail: async () => "dev@example.com",
+      login: async () => 0,
+    });
+    expect(consoleFetch).toHaveBeenCalledOnce();
+    expect(result.wroteEnvLocal).toBe(true);
+    const envLocal = await readFile(join(root, ".env.local"), "utf8");
+    expect(envLocal).toContain(`VENDO_API_KEY=${goodKey}`);
+  });
+
   it("upserts into an existing .env.local without clobbering other keys", async () => {
     const root = await tempRoot();
     await writeFile(join(root, ".env.local"), "FOO=bar\nVENDO_API_KEY=old\n");
