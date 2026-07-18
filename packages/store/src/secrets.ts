@@ -1,5 +1,5 @@
 import { VendoError, type SecretsProvider } from "@vendoai/core";
-import { decryptSecret, encryptSecret, getEncryptionKey } from "./crypto.js";
+import { decryptSecret, encryptSecret, getEncryptionKey, plaintextSecretsAllowed } from "./crypto.js";
 import { dbFor, type VendoStore } from "./store.js";
 import { text } from "./helpers/utils.js";
 
@@ -12,15 +12,35 @@ export function envSecrets(prefix = ""): SecretsProvider {
   };
 }
 
-function keyFor(store: VendoStore): Buffer {
+/** 02-store §4 — dev-mode plaintext envelope. Version-prefixed like the
+ *  encrypted `v2:` envelope so a store that later gains a key still reads
+ *  rows written before it. */
+const PLAINTEXT_PREFIX = "plain@1:";
+
+/** One loud line the first time a plaintext secret is actually stored — the
+ *  guard against a deploy that forgot both NODE_ENV=production and the key
+ *  (Devin review on the NODE_ENV-only gate). */
+let plaintextWarned = false;
+function warnPlaintextOnce(): void {
+  if (plaintextWarned) return;
+  plaintextWarned = true;
+  console.warn(
+    "[vendo] Storing secrets UNENCRYPTED (dev mode). If this is a real deployment, set NODE_ENV=production "
+      + "and VENDO_STORE_ENCRYPTION_KEY (base64 32-byte) — production refuses plaintext secrets.",
+  );
+}
+
+/** The key when configured; null when plaintext is allowed (dev mode);
+ *  fail-closed otherwise — production stores secrets encrypted or not at all. */
+function keyFor(store: VendoStore): Buffer | null {
   const key = getEncryptionKey(store);
-  if (!key) {
-    throw new VendoError(
-      "not-implemented",
-      "Stored secrets require createStore({ encryption: { key } })",
-    );
-  }
-  return key;
+  if (key) return key;
+  if (plaintextSecretsAllowed(store)) return null;
+  throw new VendoError(
+    "not-implemented",
+    "Stored secrets require an encryption key in production: set VENDO_STORE_ENCRYPTION_KEY "
+      + "(base64 32-byte) or pass createStore({ encryption: { key } }).",
+  );
 }
 
 /** 02-store §1 */
@@ -31,7 +51,15 @@ export function storeSecrets(store: VendoStore): SecretsProvider {
       const key = keyFor(store);
       const result = await db.query("SELECT ciphertext FROM vendo_secrets WHERE name = $1", [name]);
       const row = result.rows[0];
-      return row ? decryptSecret(text(row["ciphertext"]), key, name) : undefined;
+      if (!row) return undefined;
+      const stored = text(row["ciphertext"]);
+      if (stored.startsWith(PLAINTEXT_PREFIX)) {
+        return Buffer.from(stored.slice(PLAINTEXT_PREFIX.length), "base64").toString("utf8");
+      }
+      if (key === null) {
+        throw new VendoError("validation", "Stored secret is encrypted but no encryption key is configured");
+      }
+      return decryptSecret(stored, key, name);
     },
   };
 }
@@ -45,7 +73,11 @@ export function secretStore(store: VendoStore): {
   const db = dbFor(store);
   return {
     async set(name, value) {
-      const ciphertext = encryptSecret(value, keyFor(store), name);
+      const key = keyFor(store);
+      if (key === null) warnPlaintextOnce();
+      const ciphertext = key === null
+        ? `${PLAINTEXT_PREFIX}${Buffer.from(value, "utf8").toString("base64")}`
+        : encryptSecret(value, key, name);
       // updated_at marks the last write (rotation), distinct from created_at.
       await db.query(
         `INSERT INTO vendo_secrets (name, ciphertext, created_at, updated_at) VALUES ($1, $2, $3, $3)

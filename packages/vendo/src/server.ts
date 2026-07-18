@@ -5,7 +5,7 @@ import {
   type Connector,
   type ServerActionHandler,
 } from "@vendoai/actions";
-import { assembleSystemPrompt, createAgent, type VendoAgent } from "@vendoai/agent";
+import { createAgent, type VendoAgent } from "@vendoai/agent";
 import {
   createApps,
   pinBaselineSchema,
@@ -70,10 +70,10 @@ import {
   createCapabilityMissCapture,
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
-import { devModelController } from "./dev-creds/model.js";
-// ENG-338 — the dev-mode model-credential ladder: `devModel()` is what a fresh
-// `vendo init` scaffolds; the resolver is shared by init, doctor, and
-// extraction --deep (one credential story, install-dx design §2).
+import { devModel } from "./dev-creds/model.js";
+// install-dx v1 — `devModel()` is the env-resolving model createVendo composes
+// when the host passes none; the resolver is shared by init and doctor (one
+// credential story, real keys only).
 export {
   devModel,
   DevModelController,
@@ -82,10 +82,7 @@ export {
 } from "./dev-creds/model.js";
 export {
   describeDevCredential,
-  hasSessionConsent,
-  readDevSessionConsent,
   resolveDevCredential,
-  writeDevSessionConsent,
   type DevCredential,
   type ResolveDevCredentialOptions,
 } from "./dev-creds/resolve.js";
@@ -144,7 +141,11 @@ export interface Vendo {
 }
 
 export interface CreateVendoConfig {
-  model: LanguageModel;
+  /** The agent's LLM (any ai-SDK model). Optional since install-dx v1: when
+      absent, the composed default resolves a real key from the environment
+      (provider keys, then the Vendo Cloud gateway) and fails honestly with
+      instructions when none exists. BYO-LLM = pass your own. */
+  model?: LanguageModel;
   principal: (req: Request) => Promise<Principal | null>;
   /** Host components available to generated apps; entry names must mirror the client-side components map 1:1. */
   catalog?: ComponentCatalog;
@@ -518,13 +519,19 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
 
 /** 09-vendo §2 — compose every live block around the guard choke point. */
 export function createVendo(config: CreateVendoConfig): Vendo {
-  // 02-store §4 default-on encryption: when the host doesn't hand us a store,
-  // the composed default picks up VENDO_STORE_ENCRYPTION_KEY (provisioned into
-  // .env by `vendo init`) so stored secrets are encrypted with zero extra
-  // wiring. An explicitly configured store always wins as-is.
+  // install-dx v1: `model` is optional — the composed default resolves a real
+  // key from the environment lazily and fails honestly when none exists.
+  const model = config.model ?? devModel();
+  // 02-store §4 (re-derived): encryption is a production-owned concern. With
+  // VENDO_STORE_ENCRYPTION_KEY set, stored secrets encrypt at rest; without
+  // it, dev mode stores locally unencrypted (the data dir is gitignored)
+  // while production secret writes fail closed with instructions. An
+  // explicitly configured store always wins as-is.
   const encryptionKey = environment("VENDO_STORE_ENCRYPTION_KEY");
   const store = config.store
-    ?? createStore(encryptionKey === undefined ? {} : { encryption: { key: encryptionKey } });
+    ?? createStore(encryptionKey === undefined
+      ? { allowUnencryptedSecrets: environment("NODE_ENV") !== "production" }
+      : { encryption: { key: encryptionKey } });
   // 02-store §4 (kill-list B3) — ephemeral session policy. Validated like the
   // agent's context config; defaults are the recommended knobs. The store takes
   // the clock per call (register/sweep), so one time source needs no seam.
@@ -651,7 +658,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     store,
     guard,
     tools: boundTools,
-    model: config.model,
+    model,
     catalog,
     pinBaselines,
     ...(theme === undefined ? {} : { theme }),
@@ -677,19 +684,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
         ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
       }
     : undefined;
-  // ENG-338 dev-mode ladder: when the host's model came from devModel(), wire
-  // its rider seam into the agent — session rungs (authed Claude/Codex CLI
-  // logins) own the model loop while tools + consent stay on the guard-bound
-  // path. Key rungs resolve to null and run the native loop unchanged. The
-  // controller refuses session rungs outright when NODE_ENV === "production".
-  const devController = devModelController(config.model);
   const agent = createAgent({
-    model: config.model,
+    model,
     tools: boundTools,
     guard,
-    ...(devController === null
-      ? {}
-      : { rider: { session: ({ threadId }: { threadId: string }) => devController.chatSession(threadId) } }),
     store,
     ...(system === undefined ? {} : { system }),
     context: {
@@ -826,27 +824,6 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     || (config.development !== false && environment("NODE_ENV") === "development");
   const developmentPaths = typeof config.development === "object" ? config.development : {};
   const runtimeCapture = development ? createRuntimeCapture(developmentPaths) : null;
-  // ENG-338: pre-spawn the first Claude rider session at dev-server boot (its
-  // spawn+init costs ~12s; the user's first message must not pay it). The
-  // warmup system prompt approximates the loop's (synthetic dev principal);
-  // the adopting thread swaps in its live tool bridge. Fire-and-forget: any
-  // failure just means a cold start on the first message.
-  if (devController !== null && development) {
-    void (async () => {
-      // The warmed Claude session keeps this prompt (adoption never restarts
-      // it), so assemble the SAME brief/catalog system the loop would use.
-      const [descriptors, warmupSystem] = await Promise.all([
-        boundTools.descriptors(),
-        assembleSystemPrompt(guard, {
-          principal: { kind: "user", subject: "vendo_dev_warmup", ephemeral: true },
-          venue: "chat",
-          presence: "present",
-          sessionId: "session_vendo_dev_warmup",
-        }, system, false),
-      ]);
-      devController.warmup({ system: warmupSystem, tools: descriptors });
-    })().catch(() => undefined);
-  }
   const handler = createWireHandler({
     principal: config.principal,
     ready,

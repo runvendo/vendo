@@ -8,6 +8,10 @@ export interface StoreConfig {
   url?: string;
   dataDir?: string;
   encryption?: { key: string };
+  /** 02-store §4 — dev-mode escape hatch: store secrets unencrypted when no
+      encryption key is configured. Never enable in production; secret writes
+      without a key fail closed there. */
+  allowUnencryptedSecrets?: boolean;
 }
 
 /** 02-store §4 */

@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   cloudDoctor,
-  codexDrift,
   CLOUD_UNLOCKS,
   liveModelTurn,
 } from "./doctor-live.js";
@@ -106,25 +105,5 @@ describe("cloudDoctor", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.error).toContain("401");
-  });
-});
-
-describe("codexDrift", () => {
-  it("reports not installed when codex is absent", async () => {
-    const result = await codexDrift(async () => null);
-    expect(result.installed).toBe(false);
-    expect(result.drifted).toBe(false);
-  });
-
-  it("is not drifted on the tested minor line", async () => {
-    const result = await codexDrift(async () => "0.144.9");
-    expect(result.installed).toBe(true);
-    expect(result.drifted).toBe(false);
-  });
-
-  it("is drifted off the tested minor line", async () => {
-    const result = await codexDrift(async () => "0.160.0");
-    expect(result.drifted).toBe(true);
-    expect(result.version).toBe("0.160.0");
   });
 });

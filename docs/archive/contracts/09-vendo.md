@@ -26,7 +26,7 @@ import type { AutomationsEngine } from "@vendoai/automations";
 import type { HostOAuthAdapter } from "@vendoai/mcp";       // the door's identity + consent seam (10-mcp §3), re-exported from the umbrella root
 
 export function createVendo(config: {
-  model: LanguageModel;                       // the one required thing
+  model?: LanguageModel;                      // optional since install-dx v1 (amended 2026-07-18): absent → env-resolving default (provider keys → Vendo Cloud gateway → honest failure); pass your own for BYO-LLM
   principal: (req: Request) => Promise<Principal | null>;   // host session → principal; null → ephemeral anonymous
   store?: VendoStore;                         // default: createStore() (PGlite, .vendo/data)
   sandbox?: SandboxAdapter;                   // e.g. e2bSandbox({ apiKey }); absent → rung 1 only

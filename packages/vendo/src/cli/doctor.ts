@@ -3,14 +3,11 @@ import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import type { Telemetry } from "@vendoai/telemetry";
-import type { ResolveDevCredentialOptions } from "../dev-creds/resolve.js";
 import {
   cloudDoctor,
-  codexDrift,
   liveModelTurn,
   startDevServerForProbe,
   type CloudDoctorResult,
-  type CodexDriftResult,
   type LiveTurnResult,
 } from "./doctor-live.js";
 import { detectFramework, detectVendoWiring } from "./framework.js";
@@ -28,21 +25,19 @@ export interface DoctorOptions {
   yes?: boolean;
   env?: Record<string, string | undefined>;
   apiUrl?: string;
-  probes?: ResolveDevCredentialOptions["probes"];
   telemetry?: {
     home?: string;
     env?: Record<string, string | undefined>;
     posthogKey?: string;
     fetchImpl?: typeof fetch;
   };
-  /** Seams (tests): each new probe is injectable so doctor runs without keys,
-   *  a running server, or the codex CLI. */
+  /** Seams (tests): each new probe is injectable so doctor runs without keys
+   *  or a running server. */
   interactive?: boolean;
   confirm?: (question: string, defaultYes?: boolean) => Promise<boolean>;
   liveTurn?: (base: string) => Promise<LiveTurnResult>;
   cloudProbe?: (options: { env?: Record<string, string | undefined>; apiUrl?: string; fetchImpl?: typeof fetch }) => Promise<CloudDoctorResult>;
   startDevServer?: (options: { root: string; statusUrl: string; env?: Record<string, string | undefined>; fetchImpl?: typeof fetch }) => Promise<{ ok: boolean; stop: () => void }>;
-  codexDriftProbe?: () => Promise<CodexDriftResult>;
 }
 
 type CheckStatus = "ok" | "broken" | "warning";
@@ -329,15 +324,14 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   note("Ladder: execution venue is checked above; actAs for away host actions; connectors for external tools.");
 
   // One real model turn through the wired route (design §5). Exit 0 == a user
-  // would have gotten an answer. Reuses the wave-2 resolver + devModel: the
-  // running dev server serves the turn over the same ladder doctor reports.
+  // would have gotten an answer. Reuses the resolver + devModel: the running
+  // dev server serves the turn over the same credential doctor reports.
   let liveTurn: LiveTurnResult;
   if (liveComposition) {
     liveTurn = await (options.liveTurn ?? ((base: string) => liveModelTurn({
       base,
       fetchImpl,
       env,
-      ...(options.probes === undefined ? {} : { probes: options.probes }),
     })))(statusUrl);
     if (liveTurn.ok) {
       pass(`live model turn answered over ${liveTurn.credential} (${liveTurn.elapsedMs}ms)`);
@@ -367,12 +361,6 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     note(`Vendo Cloud (optional): no VENDO_API_KEY. A key unlocks ${cloud.unlocks.join("; ")}. Run \`vendo cloud login\` to start.`);
   }
 
-  // Codex app-server protocol-drift warning (dev-only, informational).
-  const codex = await (options.codexDriftProbe ?? codexDrift)();
-  if (codex.installed && codex.drifted) {
-    warn(`codex ${codex.version} is off the tested ${codex.tested}.x line; the app-server tool-call surface may have drifted. Re-verify with \`codex app-server generate-ts\` before relying on the codex rung.`);
-  }
-
   if (devServerStop !== null) devServerStop();
 
   const wired = failures === 0;
@@ -387,7 +375,6 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       checks,
       liveTurn,
       cloud,
-      codex,
       summary: { failures, warnings },
     }, null, 2));
   }
