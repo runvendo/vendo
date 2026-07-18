@@ -2,8 +2,20 @@
 
 Lane of the install-dx-2 coordinator. Brainstormed with Yousef 2026-07-17,
 extended 2026-07-18 (discoverability, teams, playground, voice/mobile).
-**Status: CONVERGED.** Decisions below are his calls; open questions are for
-the coordinator to route.
+**Status: CONVERGED → BUILT (2026-07-18).** Decisions below are his calls; open
+questions are for the coordinator to route.
+
+**Build record:** all buildable decisions shipped to main the same day via six
+PRs — #361 shelf core (thread split into `chrome/thread/`, overlay `thread`
+injection seam, slot self-discovery + `remix` flag, palette self-sufficient
+defaults), #359 VendoActivities + VendoTrigger on the `openVendoConversation`
+seam, #360 `vendo playground` (scripted transport, no model key), #364
+`vendo eject thread|activities` + doctor drift check + ladder docs, #365
+discoverability (whisper launcher + greeting-as-tutorial, fire-once,
+quiet/default dial, `.vendo/greeting.json`), #366 evidence re-commit.
+Full gates green on merged main (43/43 turbo tasks). Still unbuilt, by
+decision: teams (blocked on hosted store/console), mold mode, Page
+apps-as-board styling (Yousef's UI session), and the open questions below.
 
 ## Goal
 
