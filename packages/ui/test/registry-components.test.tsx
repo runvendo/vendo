@@ -5,10 +5,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { VendoProvider, hostComponentMap } from "../src/index.js";
 import { VendoSlot } from "../src/chrome/index.js";
 
-/** A pinned vendo-genui/v1 tree whose single node is the HOST component —
+/** A pinned vendo-genui/v2 tree whose single node is the HOST component —
  *  the render path that resolves it through the provider's components map. */
 const pinPayload = {
-  formatVersion: "vendo-genui/v1",
+  formatVersion: "vendo-genui/v2",
   root: "root",
   nodes: [{ id: "root", component: "MetricCard", props: { value: 42 } }],
 } as UIPayload;
