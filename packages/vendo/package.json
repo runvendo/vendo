@@ -73,11 +73,18 @@
     "zod": "^3.24.0"
   },
   "peerDependencies": {
+    "@auth/core": "^0.34.3",
     "ai": ">=6.0.0 <7",
     "react": "^18.0.0 || ^19.0.0",
     "react-dom": "^18.0.0 || ^19.0.0"
   },
+  "peerDependenciesMeta": {
+    "@auth/core": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@auth/core": "^0.34.3",
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.0",
     "ai": "6.0.28",
