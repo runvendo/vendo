@@ -82,6 +82,7 @@ export {
   type HostAuthPresetOptions,
   type HostAuthPresetUser,
   type HostAuthPresetUserResolver,
+  type SupabaseHostAuthPresetOptions,
 } from "./auth-presets/index.js";
 import type { HostAuthPreset } from "./auth-presets/index.js";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";

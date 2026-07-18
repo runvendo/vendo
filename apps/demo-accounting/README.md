@@ -28,26 +28,30 @@ boots the local stack and seeds two demo users from `supabase/seed.sql`:
 
 Every page and firm API route requires a session (`src/proxy.ts`): pages
 bounce to `/login`, APIs answer 401. The login form posts to GoTrue's real
-password grant; the resulting Supabase access token becomes the
-`cadence-session` cookie. Verification is hybrid (`src/server/session.ts`):
-ES256 login tokens verify against GoTrue's JWKS, HS256 tokens verify offline
-against the project JWT secret. No env vars are needed locally — the app
-defaults to the well-known `supabase start` URL, anon key, and JWT secret.
+password grant; the resulting Supabase access token becomes the session
+cookie, named `sb-cadence-auth-token` per Supabase's own `sb-<ref>-auth-token`
+convention. Verification is hybrid (`src/server/session.ts`): ES256 login
+tokens verify against GoTrue's JWKS, HS256 tokens verify offline against the
+project JWT secret. No env vars are needed locally — the app defaults to the
+well-known `supabase start` URL, anon key, and JWT secret.
 
-Away execution needs no live session at all: `actAs` in `src/vendo/auth.ts`
-mints a real Supabase user JWT for the granting user with the project JWT
-secret via `@vendoai/actions/presets`. `src/vendo/away-drill.test.ts` proves
-it end to end (and runs without the Supabase stack — only login needs GoTrue;
-`src/vendo/login-e2e.test.ts` covers that and skips itself cleanly when the
-stack is down).
+The Supabase session is the identity for everything, wired with one config
+key — `auth: cadenceAuth` (the shipped `supabase()` preset, configured in
+`src/vendo/auth.ts`): the Vendo principal is the Supabase user id, the MCP
+OAuth adapter resolves the same session, and away execution needs no live
+session at all — the preset's actAs half mints a real Supabase user JWT for
+the granting user with the project JWT secret. `src/vendo/away-drill.test.ts`
+proves it end to end (and runs without the Supabase stack — only login needs
+GoTrue; `src/vendo/login-e2e.test.ts` covers that and skips itself cleanly
+when the stack is down).
 
 ## Architecture
 
 Cadence's product pages and seeded data remain self-contained under
 `src/app`, `src/components`, and `src/server`. Vendo is composed once in
-`src/vendo/server.ts` with the host model, the session-backed principal, the
-Supabase `actAs` preset for away execution, the deployed policy, optional
-Vendo Auto judge, and Gmail/Google Calendar Composio connector.
+`src/vendo/server.ts` with the host model, the `auth: supabase()` identity
+preset, the deployed policy, optional Vendo Auto judge, and Gmail/Google
+Calendar Composio connector.
 
 The umbrella is mounted by the single catch-all route at
 `/api/vendo/[...vendo]`. React surfaces use the umbrella `VendoRoot`, UI
