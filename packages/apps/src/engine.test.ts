@@ -202,7 +202,7 @@ describe("generation engine through createApps", () => {
 
 
 
-  it("applies tree ops, records rung 1, and undo restores the previous document", async () => {
+  it("applies a wire edit patch, records rung 1, and undo restores the previous document", async () => {
     const store = memoryStore();
     const runtime = createApps({
       store,
@@ -211,7 +211,7 @@ describe("generation engine through createApps", () => {
       catalog,
       model: scriptedLanguageModel(
         validCreate(),
-        JSON.stringify({ ops: [{ op: "set-prop", nodeId: "metriccard-1", prop: "value", value: "$84k" }] }),
+        '<Edit><Set id="metriccard-1" value="$84k"/></Edit>',
       ),
     });
     const original = await runtime.create({ prompt: "Dashboard" }, ctx);
@@ -241,22 +241,14 @@ describe("generation engine through createApps", () => {
         expect(prompt).toContain("MapleNetWorthCard");
         expect(prompt).toContain("$1.2M");
         expect(prompt).toContain(componentName);
-        return JSON.stringify({
-          ops: [{ op: "fork-pin", slot, nodeId: "maple-net-worth", parentId: "root" }],
-        });
+        return `<Edit><ForkPin slot="${slot}" into="root"/></Edit>`;
       },
-      JSON.stringify({
-        ops: [{
-          op: "add-component",
-          name: componentName,
-          source: source.replace("$1.2M", "$1.4M"),
-        }],
-      }),
+      `<Edit><Island name="${componentName}">${source.replace("$1.2M", "$1.4M")}</Island></Edit>`,
       // Props-only edit to the pinned node: no source change, no base change —
       // the SUBTREE comparison alone must mark the slot touched (Devin, PR #375:
       // the v1-gated pinnedSubtree made this dead for v2 apps).
-      JSON.stringify({ ops: [{ op: "set-prop", nodeId: "maple-net-worth", prop: "tone", value: "bold" }] }),
-      JSON.stringify({ ops: [{ op: "set-name", name: "Maple overview" }] }),
+      `<Edit><Set id="${pinComponentName(slot).toLowerCase()}-1" tone="bold"/></Edit>`,
+      '<Edit><SetName name="Maple overview"/></Edit>',
     );
     const runtime = createApps({
       store,
@@ -291,7 +283,7 @@ describe("generation engine through createApps", () => {
     expect(forked.app.components?.[componentName]).toBe(source);
     expect(forked.app.tree).toMatchObject({
       nodes: expect.arrayContaining([expect.objectContaining({
-        id: "maple-net-worth",
+        id: `${componentName.toLowerCase()}-1`,
         component: componentName,
         source: "generated",
       })]),
@@ -323,9 +315,7 @@ describe("generation engine through createApps", () => {
       guard: guardFixture(),
       tools,
       catalog,
-      model: scriptedLanguageModel(JSON.stringify({
-        ops: [{ op: "fork-pin", slot, nodeId: "maple-net-worth", parentId: "root" }],
-      })),
+      model: scriptedLanguageModel(`<Edit><ForkPin slot="${slot}" into="root"/></Edit>`),
       pinBaselines: [{
         slot,
         source,
@@ -359,9 +349,7 @@ describe("generation engine through createApps", () => {
   it("refuses to fork a baseline with no detectable component export, loudly", async () => {
     const store = memoryStore();
     const slot = "net-worth-card";
-    const forkOps = JSON.stringify({
-      ops: [{ op: "fork-pin", slot, nodeId: "maple-net-worth", parentId: "root" }],
-    });
+    const forkOps = `<Edit><ForkPin slot="${slot}" into="root"/></Edit>`;
     const runtime = createApps({
       store,
       guard: guardFixture(),
@@ -398,11 +386,9 @@ describe("generation engine through createApps", () => {
     expect(await runtime.get(original.id, ctx)).toEqual(original);
   });
 
-  it("contains twice-broken tree ops and leaves the original document untouched", async () => {
+  it("contains twice-broken wire patches and leaves the original document untouched", async () => {
     const store = memoryStore();
-    const brokenOps = JSON.stringify({
-      ops: [{ op: "set-prop", nodeId: "missing", prop: "value", value: 1 }],
-    });
+    const brokenOps = '<Edit><Set id="missing" value={1}/></Edit>';
     const runtime = createApps({
       store,
       guard: guardFixture(),
@@ -424,44 +410,25 @@ describe("generation engine through createApps", () => {
     const store = memoryStore();
     const original = generatedTreeApp();
     await putApp(store, original);
-    const duplicateRoot = JSON.stringify({
-      ops: [{
-        op: "add-node",
-        node: { id: "root", component: "Stack", source: "prewired" },
-      }],
-    });
-    const malformedComponent = JSON.stringify({
-      ops: [{ op: "add-component", component: { name: "PeriodFilter", source: "export default null" } }],
-    });
-    const repaired = JSON.stringify({
-      ops: [
-        {
-          op: "add-component",
-          name: "PeriodFilter",
-          source: "export default function PeriodFilter() { return <select><option>All time</option></select>; }",
-        },
-        {
-          op: "add-node",
-          node: { id: "filter", component: "PeriodFilter", source: "generated" },
-          parentId: "root",
-          index: 1,
-        },
-      ],
-    });
+    const unknownParent = '<Edit><Insert into="ghost-1"><PeriodFilter/></Insert></Edit>';
+    const unknownOp = '<Edit><AddComponent name="PeriodFilter"/></Edit>';
+    const repaired = `<Edit>
+      <Island name="PeriodFilter">export default function PeriodFilter() { return <select><option>All time</option></select>; }</Island>
+      <Insert into="root" at={1}><PeriodFilter/></Insert>
+    </Edit>`;
     const runtime = createApps({
       store,
       guard: guardFixture(),
       tools,
       catalog: [],
       model: scriptedLanguageModel(
-        duplicateRoot,
-        malformedComponent,
+        unknownParent,
+        unknownOp,
         (call) => {
           const prompt = promptText(call).replaceAll('\\"', '"');
-          expect(prompt).toContain('tree op[0] add-node failed: node "root" already exists');
-          expect(prompt).toContain("tree op[0] add-component failed: requires name and source strings");
-          expect(prompt).toContain('"index"');
-          expect(prompt).toContain('"nodeId"');
+          expect(prompt).toContain('wire unknown-target');
+          expect(prompt).toContain('ghost-1');
+          expect(prompt).toContain('wire invalid-patch-op: <AddComponent> is not an edit op');
           return repaired;
         },
       ),
@@ -471,7 +438,7 @@ describe("generation engine through createApps", () => {
 
     expect(result.failure).toBeUndefined();
     expect(result.issues).toBeUndefined();
-    expect(result.app.tree?.nodes.find(({ id }) => id === "root")?.children).toEqual(["existing", "filter"]);
+    expect(result.app.tree?.nodes.find(({ id }) => id === "root")?.children).toEqual(["existing", "periodfilter-1"]);
     expect(result.app.components).toMatchObject({
       ExistingPanel: original.components?.ExistingPanel,
       PeriodFilter: expect.stringContaining("<select>"),
@@ -482,9 +449,7 @@ describe("generation engine through createApps", () => {
     const store = memoryStore();
     const original = generatedTreeApp();
     await putApp(store, original);
-    const removeOnlyContent = JSON.stringify({
-      ops: [{ op: "remove-node", nodeId: "existing" }],
-    });
+    const removeOnlyContent = '<Edit><Remove id="existing"/></Edit>';
     const runtime = createApps({
       store,
       guard: guardFixture(),
@@ -512,30 +477,10 @@ describe("generation engine through createApps", () => {
       tools,
       catalog: [],
       model: scriptedLanguageModel(
-        JSON.stringify({
-          ops: [
-            { op: "add-component", name: "PeriodFilter", source },
-            {
-              op: "add-node",
-              node: { id: "filter", component: "PeriodFilter", source: "generated" },
-              parentId: "root",
-              position: 0,
-            },
-          ],
-        }),
+        `<Edit><Island name="PeriodFilter">${source}</Island><Insert into="root" position={0}><PeriodFilter/></Insert></Edit>`,
         (call) => {
-          expect(promptText(call).replaceAll('\\"', '"')).toContain('tree op[1] add-node failed: unsupported field "position"');
-          return JSON.stringify({
-            ops: [
-              { op: "add-component", name: "PeriodFilter", source },
-              {
-                op: "add-node",
-                node: { id: "filter", component: "PeriodFilter", source: "generated" },
-                parentId: "root",
-                index: 0,
-              },
-            ],
-          });
+          expect(promptText(call).replaceAll('\\"', '"')).toContain('<Insert> does not take "position"');
+          return `<Edit><Island name="PeriodFilter">${source}</Island><Insert into="root" at={0}><PeriodFilter/></Insert></Edit>`;
         },
       ),
     });
@@ -543,59 +488,7 @@ describe("generation engine through createApps", () => {
     const result = await runtime.edit(original.id, "Put a filter before the dashboard", ctx);
 
     expect(result.failure).toBeUndefined();
-    expect(result.app.tree?.nodes.find(({ id }) => id === "root")?.children).toEqual(["filter", "existing"]);
-  });
-
-  it("repairs parent placement fields nested inside add-node instead of persisting an orphan", async () => {
-    const store = memoryStore();
-    const original = generatedTreeApp();
-    await putApp(store, original);
-    const source = "export default function PeriodFilter() { return <select><option>All</option></select>; }";
-    const runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      catalog: [],
-      model: scriptedLanguageModel(
-        JSON.stringify({
-          ops: [
-            { op: "add-component", name: "PeriodFilter", source },
-            {
-              op: "add-node",
-              node: {
-                id: "filter",
-                component: "PeriodFilter",
-                source: "generated",
-                parentId: "root",
-                position: 0,
-              },
-            },
-          ],
-        }),
-        (call) => {
-          const prompt = promptText(call).replaceAll('\\"', '"');
-          expect(prompt).toContain('tree op[1] add-node failed: node has unsupported fields "parentId", "position"');
-          expect(prompt).toContain("place parentId and index on the add-node operation");
-          return JSON.stringify({
-            ops: [
-              { op: "add-component", name: "PeriodFilter", source },
-              {
-                op: "add-node",
-                node: { id: "filter", component: "PeriodFilter", source: "generated" },
-                parentId: "root",
-                index: 0,
-              },
-            ],
-          });
-        },
-      ),
-    });
-
-    const result = await runtime.edit(original.id, "Put a filter before the dashboard", ctx);
-
-    expect(result.failure).toBeUndefined();
-    expect(result.app.tree?.nodes.find(({ id }) => id === "root")?.children).toEqual(["filter", "existing"]);
-    expect(result.app.tree?.nodes.filter(({ id }) => id === "filter")).toHaveLength(1);
+    expect(result.app.tree?.nodes.find(({ id }) => id === "root")?.children).toEqual(["periodfilter-1", "existing"]);
   });
 
   it("rejects a move index that leaves a gap instead of silently appending the node", async () => {
@@ -608,16 +501,10 @@ describe("generation engine through createApps", () => {
       tools,
       catalog: [],
       model: scriptedLanguageModel(
-        JSON.stringify({
-          ops: [{ op: "move-node", nodeId: "existing", parentId: "root", index: 4 }],
-        }),
+        '<Edit><Move id="existing" into="root" at={4}/></Edit>',
         (call) => {
-          expect(promptText(call).replaceAll('\\"', '"')).toContain(
-            'tree op[0] move-node failed: index 4 leaves a gap in parent "root" children (length 0)',
-          );
-          return JSON.stringify({
-            ops: [{ op: "move-node", nodeId: "existing", parentId: "root", index: 0 }],
-          });
+          expect(promptText(call).replaceAll('\\"', '"')).toContain("leaves a gap");
+          return '<Edit><Move id="existing" into="root" at={0}/></Edit>';
         },
       ),
     });
@@ -637,9 +524,7 @@ describe("generation engine through createApps", () => {
       guard: guardFixture(),
       tools,
       catalog: [],
-      model: scriptedLanguageModel(JSON.stringify({
-        ops: [{ op: "set-prop", nodeId: "existing", prop: "tone", value: "green" }],
-      })),
+      model: scriptedLanguageModel('<Edit><Set id="existing" tone="green"/></Edit>'),
     });
 
     const result = await runtime.edit(original.id, "Make the numbers green", ctx);
@@ -654,9 +539,7 @@ describe("generation engine through createApps", () => {
 
   it("rejects moving a node under its own descendant without changing the document", async () => {
     const store = memoryStore();
-    const moveCycle = JSON.stringify({
-      ops: [{ op: "move-node", nodeId: "section", parentId: "leaf" }],
-    });
+    const moveCycle = '<Edit><Move id="section" into="leaf"/></Edit>';
     const runtime = createApps({
       store,
       guard: guardFixture(),
@@ -737,7 +620,7 @@ describe("generation engine through createApps", () => {
       guard: guardFixture(),
       tools,
       catalog,
-      model: scriptedLanguageModel(JSON.stringify({ ops: [{ op: "set-name", name: "Renamed" }] })),
+      model: scriptedLanguageModel('<Edit><SetName name="Renamed"/></Edit>'),
     });
 
     const result = await runtime.edit(original.id, "Rename the title", ctx);
@@ -835,7 +718,7 @@ describe("generation engine through createApps", () => {
       catalog,
       model: scriptedLanguageModel(
         validCreate(),
-        JSON.stringify({ ops: [{ op: "set-prop", nodeId: "metriccard-1", prop: "label", value: "API status" }] }),
+        '<Edit><Set id="metriccard-1" label="API status"/></Edit>',
       ),
     });
     const original = await runtime.create({ prompt: "Dashboard" }, ctx);
@@ -987,7 +870,7 @@ describe("generation engine through createApps", () => {
       model: scriptedLanguageModel(async () => {
         started();
         await gate;
-        return JSON.stringify({ ops: [{ op: "set-name", name: "Model edit" }] });
+        return '<Edit><SetName name="Model edit"/></Edit>';
       }),
     });
 

@@ -61,10 +61,14 @@ export interface PatchExtensionOp {
   props: Record<string, Json>;
 }
 
+/** v2 spec §5 — patch-only result additions: the collected extension ops and
+ *  the count of successfully APPLIED ops (a valid op whose result happens to
+ *  equal the input — a no-op Move — still counts; skipped ops do not). */
+
 /** v2 spec §5 — mirrors {@link WireCompileResult}: the patched document plus
  *  ordered issues, the wave-3 repair contract, streaming completeness, and
  *  the caller's collected extension ops. */
-export type WirePatchResult = WireCompileResult & { extensionOps: PatchExtensionOp[] };
+export type WirePatchResult = WireCompileResult & { extensionOps: PatchExtensionOp[]; appliedOps: number };
 
 const MINTED_ID_PATTERN = /^([a-z][a-z0-9]*)-([1-9]\d*)$/;
 
@@ -229,10 +233,12 @@ const compileWirePatchV2Unsafe = (
     issues,
     bindingErrors: [],
     extensionOps: [],
+    appliedOps: 0,
     complete: false,
   });
   const declaredExtensions = new Set(options?.extensionOps ?? []);
   const extensionOps: PatchExtensionOp[] = [];
+  let appliedOps = 0;
 
   // Forward references: bindings and source resolution see base declarations
   // plus everything this patch declares anywhere (the wave-1 cap-blind
@@ -339,6 +345,7 @@ const compileWirePatchV2Unsafe = (
         for (const childId of node.children ?? []) patch.parentOf.set(childId, node.id);
       }
       spliceChildren(patch, target, at, container.children ?? []);
+      appliedOps += 1;
       continue;
     }
 
@@ -384,6 +391,7 @@ const compileWirePatchV2Unsafe = (
           Object.defineProperty(merged, key, { value, enumerable: true, writable: true, configurable: true });
         }
         node.props = merged;
+        appliedOps += 1;
       } else {
         const remaining: Record<string, Json> = { ...(node.props ?? {}) };
         for (const [key, value] of entries) {
@@ -398,6 +406,7 @@ const compileWirePatchV2Unsafe = (
         } else {
           node.props = remaining;
         }
+        appliedOps += 1;
       }
       continue;
     }
@@ -413,6 +422,7 @@ const compileWirePatchV2Unsafe = (
         continue;
       }
       removeSubtree(patch, target);
+      appliedOps += 1;
       continue;
     }
 
@@ -440,6 +450,7 @@ const compileWirePatchV2Unsafe = (
       }
       unlinkFromParent(patch, target);
       spliceChildren(patch, into, at, [target]);
+      appliedOps += 1;
       continue;
     }
 
@@ -449,6 +460,7 @@ const compileWirePatchV2Unsafe = (
         continue;
       }
       name = props.name;
+      appliedOps += 1;
       continue;
     }
 
@@ -463,6 +475,7 @@ const compileWirePatchV2Unsafe = (
         continue;
       }
       removedQueries.add(queryName as string);
+      appliedOps += 1;
       continue;
     }
 
@@ -478,6 +491,7 @@ const compileWirePatchV2Unsafe = (
         continue;
       }
       removedIslands.add(islandName as string);
+      appliedOps += 1;
       continue;
     }
 
@@ -586,6 +600,8 @@ const compileWirePatchV2Unsafe = (
     issues: state.issues,
     bindingErrors,
     extensionOps,
+    // Hoisted Query/Island declarations are ops too.
+    appliedOps: appliedOps + state.queries.length + Object.keys(state.components).length,
     complete: editClosed && !state.eofTruncated && !state.droppedTrailing,
   };
   if (name !== undefined) result.name = name;
@@ -613,6 +629,7 @@ export function compileWirePatchV2(
       issues: [{ code: "compile-failed", message: `wire patch failed: ${safeErrorMessage(error)}` }],
       bindingErrors: [],
       extensionOps: [],
+      appliedOps: 0,
       complete: false,
     };
   }

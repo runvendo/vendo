@@ -84,20 +84,7 @@ describe("ladder rung transitions (e2e)", () => {
       model: scriptedLanguageModel(
         '<App name="Editable dashboard"><Text text="Spending"/></App>',
 
-        JSON.stringify({
-          ops: [
-            {
-              op: "add-component",
-              name: "SpendingChart",
-              source: "export default function SpendingChart() { return <div role=\"img\">Chart</div>; }",
-            },
-            {
-              op: "add-node",
-              node: { id: "chart", component: "SpendingChart", source: "generated" },
-              parentId: "root",
-            },
-          ],
-        }),
+        `<Edit><Island name="SpendingChart">export default function SpendingChart() { return <div role="img">Chart</div>; }</Island><Insert into="root"><SpendingChart/></Insert></Edit>`,
       ),
     });
     const ada = ctx();
@@ -113,7 +100,7 @@ describe("ladder rung transitions (e2e)", () => {
       payload: {
         root: "root",
         nodes: expect.arrayContaining([
-          expect.objectContaining({ id: "chart", component: "SpendingChart", source: "generated" }),
+          expect.objectContaining({ id: "spendingchart-1", component: "SpendingChart", source: "generated" }),
         ]),
         components: { SpendingChart: expect.stringContaining("Chart") },
       },

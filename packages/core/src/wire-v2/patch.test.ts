@@ -273,3 +273,11 @@ describe("compileWirePatchV2 strict op attributes", () => {
     expect(result.issues[0]?.message).toContain("descendant");
   });
 });
+
+describe("compileWirePatchV2 appliedOps", () => {
+  it("counts applied ops — a structurally no-op Move still counts; skipped ops do not", () => {
+    expect(patch('<Edit><Move id="datatable-1" into="grid-1" at={1}/></Edit>').appliedOps).toBe(1);
+    expect(patch('<Edit><Set id="ghost-9" title="x"/></Edit>').appliedOps).toBe(0);
+    expect(patch('<Edit><Query id="p" tool="t"/><Set id="pageheader-1" a="1"/></Edit>').appliedOps).toBe(2);
+  });
+});
