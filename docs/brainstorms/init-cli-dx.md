@@ -142,18 +142,20 @@ to keep improving the AI quality after. Do not overbuild v1.
   navigator — rejected for this). Vendo's IP is the layer above: the staged
   extraction instructions, the deterministic verification tools, and the
   artifact contract (tools.json, brief.md). Any competent agent executes it.
-  - Best-available delegation: a coding agent already on the dev's machine
-    (Claude Code driven headless, Codex) runs the extraction.
-  - Floor: the CLI bundles an agent harness as its own dependency (never the
-    host app's) running on the starter key via the gateway or a BYO key.
-    Claude Agent SDK is the v1 floor choice.
-  - **Adaptability is a requirement:** all harnesses sit behind one thin
+  - **The user picks what reads their code.** One prompt during init, options
+    detected on the machine: your Claude Code login / your API key / a free
+    Vendo key. Explicit choice doubles as consent; no silent delegation.
+  - The CLI bundles one agent harness as its own dependency (never the host
+    app's) and runs it on the chosen credential. Claude Agent SDK is the v1
+    harness choice.
+  - **Adaptability is a requirement:** the harness sits behind one thin
     ExtractionHarness seam (run staged instructions + tools, return
-    artifacts). Swapping the floor to a different vendor or model in the
-    future is a config change, not an architecture change. Nothing above the
-    seam may assume Claude.
-  - This unifies --agent mode and interactive init: the vendo-setup skill,
-    Cursor, etc. are just more harnesses executing the same contract.
+    artifacts). Swapping to a different vendor or model in the future is a
+    config change, not an architecture change. Nothing above the seam may
+    assume Claude.
+  - Deferred (do not build now): delegating extraction to arbitrary external
+    coding agents (Cursor, the vendo-setup skill as harness, --agent
+    unification). The seam keeps the door open.
 - **Credential (init-time only, decoupled from runtime):** the delegated
   agent brings its own (dev's Claude/Codex login — ephemeral init help,
   nothing installed into the host app); the floor uses the starter key or a
