@@ -766,6 +766,25 @@ function noApprovalsClient(client: VendoClient): VendoClient {
   return { ...client, approvals: { ...client.approvals, pending: async () => [] } };
 }
 
+/** Reproduces apps/demo-bank/src/app/vendo/page.tsx: VendoThread and VendoStage
+ *  mount as siblings under one bounded, scrollable flex column (Maple's /vendo
+ *  tab) — the composition where the docs/verification/simplify-v2-wave2
+ *  browser smoke found the voice widget could crowd out the in-conversation
+ *  approval card's buttons at short viewport heights (see
+ *  e2e/voice-approval-overlap.spec.ts, which drives voice active here to
+ *  reproduce it). */
+function ThreadVoiceStackScenario() {
+  const driver = useMemo(() => new ScriptedBrowserVoiceDriver(), []);
+  return (
+    <VendoProvider client={threadClient(baseClient, pendingThread)} components={components} theme={mapleTheme} voice={{ driver }}>
+      <div style={{ height: "calc(100vh - 96px)", minHeight: 0, display: "flex", flexDirection: "column", overflow: "auto" }}>
+        <VendoThread threadId="thr_1" />
+        <VendoStage />
+      </div>
+    </VendoProvider>
+  );
+}
+
 function VoiceShowcaseScenario({ script, approvals = true, theme }: {
   script: VoiceDriverEvent[];
   approvals?: boolean;
@@ -1416,6 +1435,7 @@ const pinnedViewTree: UIPayload = {
 function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme>; content: ReactNode; ownProvider?: boolean } {
   switch (pathname) {
     case "/thread": return { title: "Thread — dark theme", theme: darkTheme, content: <VendoThread threadId="thr_1" /> };
+    case "/thread-voice-stack": return { title: "Thread + Voice stage — stacked (Maple /vendo)", content: <ThreadVoiceStackScenario />, ownProvider: true };
     case "/composer": return { title: "Composer (Maple)", content: <ComposerScenario theme={mapleTheme} />, ownProvider: true };
     case "/composer-dark": return { title: "Composer — dark", content: <ComposerScenario theme={darkTheme} />, ownProvider: true };
     case "/thread-bounded": return { title: "Thread — bounded host pane", content: <BoundedThreadScenario />, ownProvider: true };
