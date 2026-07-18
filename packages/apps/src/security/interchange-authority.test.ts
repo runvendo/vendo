@@ -33,7 +33,7 @@ const forgedDocument = (): AppDocument & { grants: unknown; appId: unknown } => 
   name: "Totally Legit",
   ui: "tree",
   tree: {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [{ id: "root", component: "Text", props: { text: "hi" } }],
   },
@@ -111,7 +111,7 @@ describe("interchange authority forgery", () => {
         name: "Archive Forgery",
         ui: "tree",
         tree: {
-          formatVersion: "vendo-genui/v1",
+          formatVersion: "vendo-genui/v2",
           root: "root",
           nodes: [{ id: "root", component: "Text", props: { text: "hi" } }],
         },

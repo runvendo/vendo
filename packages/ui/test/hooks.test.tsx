@@ -25,7 +25,7 @@ const extraApp: AppDocument = {
   id: "app_extra",
   name: "Extra",
   ui: "tree",
-  tree: { formatVersion: "vendo-genui/v1", root: "root", nodes: [{ id: "root", component: "Text", props: { text: "x" } }] },
+  tree: { formatVersion: "vendo-genui/v2", root: "root", nodes: [{ id: "root", component: "Text", props: { text: "x" } }] },
 };
 
 describe("headless hooks", () => {
@@ -125,7 +125,7 @@ describe("headless hooks", () => {
           return {
             kind: "tree" as const,
             payload: {
-              formatVersion: "vendo-genui/v1",
+              formatVersion: "vendo-genui/v2",
               root: id,
               nodes: [{ id, component: "Text", props: { text: id } }],
             },

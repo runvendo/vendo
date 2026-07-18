@@ -19,7 +19,6 @@ import {
   type ComponentCatalog,
   type Json,
   type ShapeType,
-  type Tree,
   type TreeNode,
   type TreeQueryV2,
   type TreeV2,
@@ -27,7 +26,7 @@ import {
   type WireCompileResult,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
-import { parseModelJson } from "./incremental-tree.js";
+import { parseModelJson } from "./model-json.js";
 import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "./pins.js";
 
 /** v2 spec §§1,4 — a compiled prefix of the streaming wire: always a
@@ -313,8 +312,8 @@ const validateCompiledCreate = async (
   const name = compiled.name?.trim() ?? "";
   if (name === "") issues.push('App must carry a non-empty name="..." attribute');
   const components = Object.keys(compiled.components).length === 0 ? undefined : compiled.components;
-  issues.push(...await catalogIssues(compiled.tree as unknown as Tree, components, deps.catalog));
-  issues.push(...rootedRenderIssues(compiled.tree as unknown as Tree));
+  issues.push(...await catalogIssues(compiled.tree, components, deps.catalog));
+  issues.push(...rootedRenderIssues(compiled.tree));
   if (issues.length > 0) return { issues };
   const document: GeneratedAppDocument = {
     format: VENDO_APP_FORMAT,
@@ -415,7 +414,7 @@ const hostPropsIssues = async (
 };
 
 const catalogIssues = async (
-  tree: Tree,
+  tree: TreeV2,
   components: Record<string, string> | undefined,
   catalog: ComponentCatalog,
 ): Promise<string[]> => {
@@ -458,7 +457,7 @@ const insertChild = (parent: TreeNode, nodeId: string, index: unknown): void => 
   parent.children = children;
 };
 
-const rootedRenderIssues = (tree: Tree): string[] => {
+const rootedRenderIssues = (tree: TreeV2): string[] => {
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
   const pending = [tree.root];
   const visited = new Set<string>();
@@ -501,11 +500,11 @@ const validateEditedApp = async (
   if (!treeValidation.ok) return [treeValidation.error.message];
   const sourceTreeValidation = validateTreeV2(source.tree);
   const sourceRenderIssues = sourceTreeValidation.ok
-    ? new Set(rootedRenderIssues(sourceTreeValidation.tree as unknown as Tree))
+    ? new Set(rootedRenderIssues(sourceTreeValidation.tree))
     : new Set<string>();
   return [
-    ...rootedRenderIssues(treeValidation.tree as unknown as Tree).filter((issue) => !sourceRenderIssues.has(issue)),
-    ...await catalogIssues(treeValidation.tree as unknown as Tree, app.components, deps.catalog),
+    ...rootedRenderIssues(treeValidation.tree).filter((issue) => !sourceRenderIssues.has(issue)),
+    ...await catalogIssues(treeValidation.tree, app.components, deps.catalog),
   ];
 };
 

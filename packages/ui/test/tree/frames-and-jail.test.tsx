@@ -2,7 +2,7 @@
 import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { VENDO_TREE_FORMAT, type Tree, type ToolOutcome } from "@vendoai/core";
+import { VENDO_TREE_FORMAT_V2, type ToolOutcome } from "@vendoai/core";
 import { AppFrame, PinMount, TreeView } from "../../src/tree/index.js";
 
 afterEach(() => {
@@ -52,7 +52,7 @@ describe("AppFrame", () => {
         surface={{
           kind: "tree",
           payload: {
-            formatVersion: VENDO_TREE_FORMAT,
+            formatVersion: VENDO_TREE_FORMAT_V2,
             root: "root",
             nodes: [{ id: "root", component: "Text", props: { text: "Instant app" } }],
           },
@@ -89,7 +89,7 @@ describe("PinMount", () => {
 describe("generated component jail structure", () => {
   it("relays captured modules, styles, and sample props as data without putting CSS in the outer frame", () => {
     const generatedTree = {
-      formatVersion: VENDO_TREE_FORMAT,
+      formatVersion: VENDO_TREE_FORMAT_V2,
       root: "root",
       nodes: [{ id: "root", component: "Furnished", source: "generated" }],
       components: {
@@ -131,7 +131,7 @@ describe("generated component jail structure", () => {
       "export default function Unsafe() { return <p>inside only</p> }",
     ].join("\n");
     const generatedTree: Tree = {
-      formatVersion: VENDO_TREE_FORMAT,
+      formatVersion: VENDO_TREE_FORMAT_V2,
       root: "root",
       nodes: [{ id: "root", component: "Unsafe", source: "generated" }],
       components: { Unsafe: source },
@@ -152,7 +152,7 @@ describe("generated component jail structure", () => {
 
   it("recovers from a reported error when generated source changes", async () => {
     const broken: Tree = {
-      formatVersion: VENDO_TREE_FORMAT,
+      formatVersion: VENDO_TREE_FORMAT_V2,
       root: "root",
       nodes: [{ id: "root", component: "Editable", source: "generated" }],
       components: { Editable: "export default function Editable() { throw new Error('broken') }" },
@@ -177,7 +177,7 @@ describe("generated component jail structure", () => {
 
   it("applies reported content height for both growth and shrinkage", () => {
     const generatedTree: Tree = {
-      formatVersion: VENDO_TREE_FORMAT,
+      formatVersion: VENDO_TREE_FORMAT_V2,
       root: "root",
       nodes: [{ id: "root", component: "Resizable", source: "generated" }],
       components: { Resizable: "export default function Resizable() { return <p>content</p> }" },
@@ -207,7 +207,7 @@ describe("generated component jail structure", () => {
 
   it("contains a generated component that renders no content", async () => {
     const generatedTree: Tree = {
-      formatVersion: VENDO_TREE_FORMAT,
+      formatVersion: VENDO_TREE_FORMAT_V2,
       root: "root",
       nodes: [{ id: "root", component: "Empty", source: "generated" }],
       components: { Empty: "export default function Empty() { return null; }" },

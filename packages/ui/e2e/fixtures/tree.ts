@@ -2,7 +2,7 @@ import type { Tree } from "@vendoai/core";
 
 /** Shared real-browser renderer fixture. */
 export const browserTreeFixture: Tree = {
-  formatVersion: "vendo-genui/v1",
+  formatVersion: "vendo-genui/v2",
   root: "root",
   data: { customer: { name: "Ada Lovelace" }, invoice: { total: 4200 } },
   nodes: [

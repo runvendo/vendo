@@ -1,10 +1,7 @@
 import {
   validateTreeV2,
-  VENDO_TREE_FORMAT,
   type Json,
-  type Tree,
   type TreeNode,
-  type TreeQuery,
   type TreeQueryV2,
   type TreeV2,
 } from "@vendoai/core";
@@ -17,7 +14,7 @@ import {
  * reimplemented. Only the payload surface differs:
  *
  * - `queries` name bare identifiers; the result lives at JSON Pointer
- *   `"/" + name` by definition, which is exactly a v1 `TreeQuery.path`.
+ *   `"/" + name` by definition — the walk's path-keyed query shape.
  * - action props use the canonical `{ action: "..." }` shape the compiler
  *   emits (wire-v2 D5); the v1 walk dispatches `{ $action }`, so conversion
  *   rewrites the key.
@@ -53,14 +50,16 @@ const convertNode = (node: TreeNode): TreeNode => node.props === undefined
   : { ...node, props: convertPropValue(node.props) as Record<string, Json> };
 
 /** v2 query results reside at `"/" + name` — that pointer is the v1 path. */
-const convertQuery = (query: TreeQueryV2): TreeQuery => ({
+const convertQuery = (query: TreeQueryV2): { path: string; tool: string; input?: Record<string, Json> } => ({
   path: `/${query.name}`,
   tool: query.tool,
   ...(query.input === undefined ? {} : { input: query.input }),
 });
 
+import type { WalkTree } from "./renderer.js";
+
 export type ConvertedV2 =
-  | { ok: true; tree: Tree }
+  | { ok: true; tree: WalkTree }
   | { ok: false; error: { code: "version" | "provision"; message: string } };
 
 export function convertV2Payload(payload: { formatVersion: string }): ConvertedV2 {
@@ -71,17 +70,17 @@ export function convertV2Payload(payload: { formatVersion: string }): ConvertedV
   const validation = validateTreeV2(tree);
   if (!validation.ok) return validation;
   // Payload extras beyond the TreeV2 shape (streaming, furnishings, inClient,
-  // pinDrift…) survive the spread at runtime; the v1 walk reads them off the
-  // tree object exactly as it does for v1 payloads.
+  // pinDrift…) survive the spread at runtime; the shared walk reads them off
+  // the tree object (v2 spec §6 — the mechanics survive, the v1 format
+  // surface around them is gone).
   const valid: TreeV2 = validation.tree;
   return {
     ok: true,
     tree: {
       ...valid,
-      formatVersion: VENDO_TREE_FORMAT,
       nodes: valid.nodes.map(convertNode),
       ...(valid.queries === undefined ? {} : { queries: valid.queries.map(convertQuery) }),
       ...(components === undefined ? {} : { components }),
-    } as Tree,
+    } as unknown as WalkTree,
   };
 }

@@ -42,7 +42,7 @@ const treeApp = (id: string, name: string): AppDocument => ({
   name,
   ui: "tree",
   tree: {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [{ id: "root", component: "Text", source: "prewired", props: { text: name } }],
   },

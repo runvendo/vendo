@@ -28,7 +28,7 @@ const shimTree: Tree = {
 };
 
 const themeProofTree: Tree = {
-  formatVersion: "vendo-genui/v1",
+  formatVersion: "vendo-genui/v2",
   root: "root",
   nodes: [
     { id: "root", component: "Surface", children: ["content"] },

@@ -501,7 +501,7 @@ export function FurnishedBadge() {
 `;
 
 const jailTree: Tree & { furnishings: Record<string, unknown> } = {
-  formatVersion: "vendo-genui/v1",
+  formatVersion: "vendo-genui/v2",
   root: "root",
   nodes: [
     { id: "root", component: "Stack", children: ["before", "furnished", "probe", "thrower", "empty", "after"] },
@@ -600,7 +600,7 @@ export default function PromotedCard({ customer, onRun }) {
 
 function inClientTree(inClient: Record<string, unknown>): Tree {
   return {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
       { id: "root", component: "Stack", children: ["promoted", "sibling"] },
@@ -677,7 +677,7 @@ export default function RemixedNetWorthCard() {
 
 function PinDriftScenario() {
   const tree: Tree = {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
       { id: "root", component: "Stack", children: ["worth", "sibling"] },
@@ -742,7 +742,7 @@ class ReplayVoiceDriver implements VoiceDriver {
 
 function voiceViewPayload(id: string, heading: string, body: string): UIPayload {
   return {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
       { id: "root", component: "Surface", children: ["stack"] },
@@ -1037,7 +1037,7 @@ function StreamCompletionScenario() {
   }, []);
   const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
   const streamingTree: Tree = {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
       { id: "root", component: "Stack", children: ["late"] },
@@ -1066,7 +1066,7 @@ function SlotFallbackScenario() {
 /** A stored v1 tree rendered beside the v2 surface while v1 is being removed
  *  (v2 replaces v1; the remaining v1 surface is deleted across waves 2–4). */
 const storedV1Tree: Tree = {
-  formatVersion: "vendo-genui/v1",
+  formatVersion: "vendo-genui/v2",
   root: "root",
   data: { invoice: { total: 4200 } },
   nodes: [
@@ -1136,7 +1136,7 @@ function TreeV2Scenario() {
           </output>
         </section>
         <section aria-label="Stored v1 tree">
-          <h2>vendo-genui/v1 — stored app (coexistence)</h2>
+          <h2>vendo-genui/v2 — stored app (coexistence)</h2>
           <PayloadView payload={storedV1Tree as unknown as UIPayload} components={components} onAction={noop} />
         </section>
       </div>
@@ -1501,10 +1501,10 @@ function ToastsScenario() {
   );
 }
 
-/** ENG-223 — a pinned generated view (a vendo-genui/v1 tree) mounted in the slot
+/** ENG-223 — a pinned generated view (a vendo-genui/v2 tree) mounted in the slot
  *  in place of the host's original hero, through the pin path + error boundary. */
 const pinnedViewTree: UIPayload = {
-  formatVersion: "vendo-genui/v1",
+  formatVersion: "vendo-genui/v2",
   root: "root",
   nodes: [
     { id: "root", component: "Surface", children: ["stack"] },

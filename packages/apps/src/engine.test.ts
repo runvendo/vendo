@@ -1056,7 +1056,7 @@ describe("v2 wire create", () => {
 
     expect(capturedPrompt).toContain("WIRE DIALECT (vendo-genui/v2)");
     expect(capturedPrompt).toContain('"whenToUse": "Use for a single important metric');
-    expect(capturedPrompt).not.toContain('formatVersion is "vendo-genui/v1"');
+    expect(capturedPrompt).not.toContain('formatVersion is "vendo-genui/v2"');
     expect(capturedPrompt).not.toContain("CREATE DIALECT: emit exactly");
   });
 
