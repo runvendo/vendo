@@ -316,6 +316,9 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@vendoai/vendo':
+        specifier: workspace:*
+        version: link:../../packages/vendo
       zod:
         specifier: ^3.24.0
         version: 3.25.76
