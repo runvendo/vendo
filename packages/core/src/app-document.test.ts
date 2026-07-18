@@ -326,6 +326,7 @@ describe("validateAppDocument with vendo-genui/v2 trees", () => {
     const compiled = compileWireV2('<App name="Tiny"><Text>hi</Text></App>');
     expect(compiled.complete).toBe(true);
     expect(compiled.issues).toEqual([]);
+    expect(compiled.name).toBe("Tiny");
     const document = {
       format: VENDO_APP_FORMAT,
       id: "app_wire",

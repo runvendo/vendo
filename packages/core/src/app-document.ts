@@ -7,7 +7,7 @@ import { appIdSchema, type AppId } from "./ids.js";
 import { TOOL_NAME_PATTERN } from "./tools.js";
 import { validateTreeV2 } from "./tree-v2.js";
 import { triggerSchema, type Trigger } from "./triggers.js";
-import { uiPayloadSchema, validateTree, type UIPayload } from "./tree.js";
+import { uiPayloadSchema, validateTree, type TreeNode, type UIPayload } from "./tree.js";
 
 /** 01-core §9 */
 export interface StorageDecl {
@@ -90,6 +90,21 @@ const fail = (code: string, message: string): AppDocumentValidation => ({
   error: { code, message },
 });
 
+/** Shared by the v1 and v2 tree branches: collect every fn: reference a
+ *  validated tree names (query tools + prop actions) for the machine-presence
+ *  rule. Grammar and server checks happen at the call sites' shared tail. */
+const collectTreeFnReferences = (
+  tree: { nodes: TreeNode[]; queries?: Array<{ tool: string }> },
+  fnReferences: string[],
+): void => {
+  for (const query of tree.queries ?? []) {
+    if (query.tool.startsWith("fn:")) fnReferences.push(query.tool);
+  }
+  for (const node of tree.nodes) {
+    if (node.props !== undefined) collectActionReferences(node.props, fnReferences);
+  }
+};
+
 const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     return fail("validation", "app document must be a non-null object");
@@ -116,12 +131,7 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
     if (!treeResult.ok) {
       return fail("validation", treeResult.error.message);
     }
-    for (const query of treeResult.tree.queries ?? []) {
-      if (query.tool.startsWith("fn:")) fnReferences.push(query.tool);
-    }
-    for (const node of treeResult.tree.nodes) {
-      if (node.props !== undefined) collectActionReferences(node.props, fnReferences);
-    }
+    collectTreeFnReferences(treeResult.tree, fnReferences);
   } else if (app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
     // No grafting: v2 trees never carry components (validateTreeV2 rejects a
     // tree-level `components` member itself), so the tree validates AS-IS and
@@ -145,12 +155,7 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
         );
       }
     }
-    for (const query of treeResult.tree.queries ?? []) {
-      if (query.tool.startsWith("fn:")) fnReferences.push(query.tool);
-    }
-    for (const node of treeResult.tree.nodes) {
-      if (node.props !== undefined) collectActionReferences(node.props, fnReferences);
-    }
+    collectTreeFnReferences(treeResult.tree, fnReferences);
   } else if (app.components !== undefined) {
     // No v1 tree to graft onto — the pinned component limits (01-core §8) still
     // bound what the jail will compile.
