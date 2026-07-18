@@ -88,6 +88,11 @@ export const WIRE_ISSUE_CODES = [
   "duplicate-island",
   /** Self-closing `<Island/>` has no source; island skipped. */
   "island-no-content",
+  // — shape check (shape-check.ts)
+  /** A binding names fields absent from the tool's KNOWN response shape (or
+   *  a reshape op incompatible with it); mirrored one-per-binding in
+   *  WireCompileResult.bindingErrors, the per-binding repair contract. */
+  "shape-mismatch",
   // — §8 limits & hygiene (limits.ts, state.ts)
   /** TREE_MAX_NODES reached; further elements parse but produce no nodes (once). */
   "node-limit",
