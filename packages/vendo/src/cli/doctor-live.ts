@@ -153,7 +153,7 @@ export const CLOUD_UNLOCKS: readonly string[] = [
   "a free dev-mode starter model allowance (keyless first turns)",
   "team sharing and org governance (roles, SSO)",
   "hosted deploys of your enabled automations",
-  "session replay, insights, and the MCP broker",
+  "registry publishing and hosted infrastructure defaults like the managed MCP broker",
 ];
 
 export interface CloudDoctorResult {
