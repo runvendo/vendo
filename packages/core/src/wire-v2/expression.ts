@@ -15,6 +15,7 @@
 import { safeErrorMessage } from "../errors.js";
 import type { Json } from "../ids.js";
 import type { PathBinding, StateBinding } from "../tree.js";
+import { isWellFormedUtf16 } from "./state.js";
 
 /** v2 spec §2 — one compiler-visible issue. Codes are stable kebab-case
  *  (`unknown-reference`, `state-depth-unsupported`, `reshape-unsupported`,
@@ -85,12 +86,6 @@ const parseNumber = (state: ParserState): number | Failed => {
 };
 
 const HEX_ESCAPE = /^[0-9a-fA-F]{4}$/;
-
-/** ES2024 String.prototype.isWellFormed — guaranteed at runtime by the
- *  package's engines floor (node >= 20) but absent from this tsconfig's
- *  ES2022 lib, hence the local cast. */
-const isWellFormedUtf16 = (text: string): boolean =>
-  (text as string & { isWellFormed(): boolean }).isWellFormed();
 
 /** Quote char and backslash escape themselves; `\n`/`\t`/`\r` become
  *  newline/tab/carriage return; `\uXXXX` decodes a UTF-16 code unit
