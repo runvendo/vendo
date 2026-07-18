@@ -61,7 +61,7 @@ describe("mintStarterAllowance", () => {
     });
     expect(key).toBe(goodKey);
     expect(requests[0]).toEqual({
-      url: "https://cloud.test/api/v1/dev/starter-key",
+      url: "https://cloud.test/api/v1/keys",
       method: "POST",
       authorization: "Bearer user-jwt",
       body: { purpose: "dev-mode" },
@@ -156,7 +156,7 @@ describe("runCloudStep", () => {
     );
     const consoleFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
-      expect(request.url).toBe("https://cloud.test/api/v1/dev/starter-key");
+      expect(request.url).toBe("https://cloud.test/api/v1/keys");
       expect(request.headers.get("authorization")).toBe("Bearer user-jwt");
       expect(await request.json()).toEqual({ purpose: "dev-mode" });
       return Response.json({ key: goodKey, meter: { runs: { included: 1000, remaining: 1000 } } });
