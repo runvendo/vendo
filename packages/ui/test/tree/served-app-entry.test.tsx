@@ -53,7 +53,7 @@ const installFetchStub = (): void => {
   }));
 };
 
-const keptTree = (): Tree => ({
+const keptTree = (): UIPayload => ({
   formatVersion: VENDO_TREE_FORMAT_V2,
   root: "root",
   nodes: [

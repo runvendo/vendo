@@ -1,7 +1,7 @@
-import type { Tree } from "@vendoai/core";
+import type { UIPayload } from "@vendoai/core";
 
 /** Shared real-browser renderer fixture. */
-export const browserTreeFixture: Tree = {
+export const browserTreeFixture: UIPayload = {
   formatVersion: "vendo-genui/v2",
   root: "root",
   data: { customer: { name: "Ada Lovelace" }, invoice: { total: 4200 } },

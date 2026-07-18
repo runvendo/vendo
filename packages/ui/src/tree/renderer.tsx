@@ -95,6 +95,9 @@ const validateWalkTree = (input: WalkTree): WalkValidation => {
     if (!isPlainRecord(node)) return walkFail("each node must be an object");
     if (typeof node.id !== "string" || node.id.length === 0) return walkFail("each node must have a non-empty string id");
     if (typeof node.component !== "string") return walkFail(`node "${node.id}" must have a string component`);
+    if (node.source !== undefined && !["prewired", "host", "generated"].includes(node.source as string)) {
+      return walkFail(`node "${node.id}" has an invalid source`);
+    }
     if (node.children !== undefined
       && (!Array.isArray(node.children) || !node.children.every((child) => typeof child === "string"))) {
       return walkFail(`node "${node.id}" children must be an array of strings`);

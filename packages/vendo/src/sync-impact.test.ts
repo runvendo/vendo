@@ -30,7 +30,7 @@ function plainApp(id: string, name: string, tool: string): AppDocument {
       formatVersion: VENDO_TREE_FORMAT_V2,
       root: "root",
       nodes: [{ id: "root", component: "Text", props: { text: name } }],
-      queries: [{ path: "/widgets", tool }],
+      queries: [{ name: "widgets", tool }],
     },
   };
 }

@@ -105,7 +105,7 @@ describe("generated component jail structure", () => {
           styles: [{ path: "src/app/globals.css", css: ".furnished-secret { color: rebeccapurple; }" }],
         },
       },
-    } as Tree & { furnishings: Record<string, unknown> };
+    } as UIPayload & { furnishings: Record<string, unknown> };
 
     render(<TreeView tree={generatedTree} components={{}} onAction={ok} />);
     const iframe = screen.getByTitle("Generated component: Furnished") as HTMLIFrameElement;
@@ -130,7 +130,7 @@ describe("generated component jail structure", () => {
       "globalThis.__vendoHostExecuted = true;",
       "export default function Unsafe() { return <p>inside only</p> }",
     ].join("\n");
-    const generatedTree: Tree = {
+    const generatedTree: UIPayload = {
       formatVersion: VENDO_TREE_FORMAT_V2,
       root: "root",
       nodes: [{ id: "root", component: "Unsafe", source: "generated" }],
@@ -151,13 +151,13 @@ describe("generated component jail structure", () => {
   });
 
   it("recovers from a reported error when generated source changes", async () => {
-    const broken: Tree = {
+    const broken: UIPayload = {
       formatVersion: VENDO_TREE_FORMAT_V2,
       root: "root",
       nodes: [{ id: "root", component: "Editable", source: "generated" }],
       components: { Editable: "export default function Editable() { throw new Error('broken') }" },
     };
-    const fixed: Tree = {
+    const fixed: UIPayload = {
       ...broken,
       components: { Editable: "export default function Editable() { return <p>fixed</p> }" },
     };
@@ -176,7 +176,7 @@ describe("generated component jail structure", () => {
   });
 
   it("applies reported content height for both growth and shrinkage", () => {
-    const generatedTree: Tree = {
+    const generatedTree: UIPayload = {
       formatVersion: VENDO_TREE_FORMAT_V2,
       root: "root",
       nodes: [{ id: "root", component: "Resizable", source: "generated" }],
@@ -206,7 +206,7 @@ describe("generated component jail structure", () => {
   });
 
   it("contains a generated component that renders no content", async () => {
-    const generatedTree: Tree = {
+    const generatedTree: UIPayload = {
       formatVersion: VENDO_TREE_FORMAT_V2,
       root: "root",
       nodes: [{ id: "root", component: "Empty", source: "generated" }],
