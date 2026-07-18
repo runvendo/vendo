@@ -203,6 +203,29 @@ const stripForgedServerFields = <T extends object>(payload: T): T => {
   return payload;
 };
 
+/** 06-apps §8 — jail furnishing for forked pins rides inside the tagged tree
+ *  payload (UIPayload is forward-compatible); shared by the v1 and v2 open
+ *  branches. */
+const attachPinFurnishings = (
+  tree: Tree,
+  app: AppDocument,
+  pinBaselines: readonly PinBaseline[],
+): void => {
+  const furnishings = Object.fromEntries((app.pins ?? []).flatMap((pin) => {
+    const baseline = pinBaselines.find((candidate) => candidate.slot === pin.slot && candidate.hash === pin.base);
+    if (baseline === undefined) return [];
+    return [[pinComponentName(pin.slot), {
+      ...(baseline.sourceImports === undefined ? {} : { sourceImports: structuredClone(baseline.sourceImports) }),
+      ...(baseline.subSources === undefined ? {} : { subSources: structuredClone(baseline.subSources) }),
+      ...(baseline.sampleProps === undefined ? {} : { sampleProps: structuredClone(baseline.sampleProps) }),
+      ...(baseline.styles === undefined ? {} : { styles: structuredClone(baseline.styles) }),
+    }]];
+  }));
+  if (Object.keys(furnishings).length > 0) {
+    (tree as Tree & { furnishings: typeof furnishings }).furnishings = furnishings;
+  }
+};
+
 /** 06-apps §§1–2 — construct the invisible-graduation open surface. */
 export const createAppOpener = (
   machines: MachineSessions,
@@ -250,6 +273,7 @@ export const createAppOpener = (
     if (pinDrift.length > 0) {
       (tree as Tree & { pinDrift: PinDrift[] }).pinDrift = pinDrift;
     }
+    attachPinFurnishings(tree, app, pinBaselines);
     const queries = createProgressiveQueryResolver(machines, caller, app, ctx, undefined, authorization);
     queries.update(tree);
     tree.data = await queries.complete();
@@ -288,21 +312,7 @@ export const createAppOpener = (
   if (pinDrift.length > 0) {
     (tree as Tree & { pinDrift: PinDrift[] }).pinDrift = pinDrift;
   }
-  const furnishings = Object.fromEntries((app.pins ?? []).flatMap((pin) => {
-    const baseline = pinBaselines.find((candidate) => candidate.slot === pin.slot && candidate.hash === pin.base);
-    if (baseline === undefined) return [];
-    return [[pinComponentName(pin.slot), {
-      ...(baseline.sourceImports === undefined ? {} : { sourceImports: structuredClone(baseline.sourceImports) }),
-      ...(baseline.subSources === undefined ? {} : { subSources: structuredClone(baseline.subSources) }),
-      ...(baseline.sampleProps === undefined ? {} : { sampleProps: structuredClone(baseline.sampleProps) }),
-      ...(baseline.styles === undefined ? {} : { styles: structuredClone(baseline.styles) }),
-    }]];
-  }));
-  // UIPayload is explicitly forward-compatible. Furnishing rides inside the
-  // tagged tree payload so the frozen OpenSurface sibling shape stays intact.
-  if (Object.keys(furnishings).length > 0) {
-    (tree as Tree & { furnishings: typeof furnishings }).furnishings = furnishings;
-  }
+  attachPinFurnishings(tree, app, pinBaselines);
   const queries = createProgressiveQueryResolver(machines, caller, app, ctx, undefined, authorization);
   queries.update(tree);
   tree.data = await queries.complete();

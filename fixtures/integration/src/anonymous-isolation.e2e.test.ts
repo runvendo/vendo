@@ -29,18 +29,7 @@ import {
   type Stack,
 } from "./harness.js";
 
-const CREATE_DIALECT = {
-  name: "Anon's Greeting",
-  description: "A tiny greeting card",
-  tree: {
-    formatVersion: "vendo-genui/v1",
-    root: "root",
-    nodes: [
-      { id: "root", component: "Stack", source: "prewired", children: ["greeting"] },
-      { id: "greeting", component: "Text", source: "prewired", props: { text: "Hello anon" } },
-    ],
-  },
-};
+const CREATE_DIALECT = `<App name="Anon's Greeting"><Text text="Hello anon"/></App>`;
 
 /** A single browser-like anonymous client: no x-vendo-test-user, its own cookie
  * jar. Tracks the anon session id (subject = `anonymous_<id>`) and whether the

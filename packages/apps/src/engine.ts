@@ -225,8 +225,13 @@ const streamWire = async (
     }
   };
   const finishPartials = async (): Promise<void> => {
-    if (timer !== undefined) clearTimeout(timer);
-    timer = undefined;
+    // A throttled flush may still be pending at stream end — deliver it so
+    // the last pre-final prefix reaches the seam before the final document.
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+      flush();
+    }
     await Promise.all(pending);
   };
   try {

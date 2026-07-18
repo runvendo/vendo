@@ -24,18 +24,7 @@ import {
   type Stack,
 } from "./harness.js";
 
-const CREATE_DIALECT = {
-  name: "Anon Merge App",
-  description: "A tiny greeting card",
-  tree: {
-    formatVersion: "vendo-genui/v1",
-    root: "root",
-    nodes: [
-      { id: "root", component: "Stack", source: "prewired", children: ["greeting"] },
-      { id: "greeting", component: "Text", source: "prewired", props: { text: "Hello anon" } },
-    ],
-  },
-};
+const CREATE_DIALECT = `<App name="Anon Merge App"><Text text="Hello anon"/></App>`;
 
 let stack: Stack;
 afterEach(async () => {

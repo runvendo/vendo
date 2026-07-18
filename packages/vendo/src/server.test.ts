@@ -1093,12 +1093,12 @@ describe("09 §3 conversational turn against the real composed store", () => {
               {
                 type: "text-delta",
                 id: "generation",
-                delta: '{"name":"SSE app","tree":{"formatVersion":"vendo-genui/v1","root":"root","nodes":[{"id":"root","component":"Stack","source":"prewired","children":["detail"]},',
+                delta: '<App name="SSE app"><Stack>',
               },
               {
                 type: "text-delta",
                 id: "generation",
-                delta: '{"id":"detail","component":"Text","source":"prewired","props":{"text":"Ready"}}]}}',
+                delta: '<Text text="Ready"/></Stack></App>',
               },
               { type: "text-end", id: "generation" },
               { type: "finish", usage, finishReason: { unified: "stop", raw: undefined } },
@@ -1160,9 +1160,9 @@ describe("09 §3 conversational turn against the real composed store", () => {
 
     expect(response.status).toBe(200);
     expect(views.length).toBeGreaterThanOrEqual(3);
-    expect(views[0]?.data.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }] });
+    expect(views[0]?.data.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }, { id: "stack-1" }] });
     expect(new Set(views.map((view) => view.id))).toEqual(new Set([`vendo-view:${views[0]?.data.appId}`]));
-    expect(views.at(-1)?.data.payload.nodes).toHaveLength(2);
+    expect(views.at(-1)?.data.payload.nodes).toHaveLength(3);
     expect(views.at(-1)?.data.payload.streaming).toBeUndefined();
   });
 });
@@ -1173,19 +1173,7 @@ describe("09 §2 apps composition", () => {
     const dataDir = await mkdtemp(join(tmpdir(), "vendo-catalog-"));
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
-    const generated = JSON.stringify({
-      name: "Catalog app",
-      tree: {
-        formatVersion: VENDO_TREE_FORMAT,
-        root: "metric",
-        nodes: [{
-          id: "metric",
-          component: "MetricCard",
-          source: "host",
-          props: { label: "Revenue" },
-        }],
-      },
-    });
+    const generated = '<App name="Catalog app"><MetricCard label="Revenue"/></App>';
     const model = new MockLanguageModelV3({
       doStream: async () => ({
         stream: simulateReadableStream({ chunks: [
@@ -1217,7 +1205,7 @@ describe("09 §2 apps composition", () => {
     await store.ensureSchema();
 
     await expect(vendo.apps.create({ prompt: "Show revenue" }, ctx)).resolves.toMatchObject({
-      tree: { nodes: [{ component: "MetricCard", source: "host" }] },
+      tree: { nodes: [{ component: "Stack" }, { component: "MetricCard", source: "host" }] },
     });
   });
 
@@ -1238,14 +1226,7 @@ describe("09 §2 apps composition", () => {
     }));
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
-    const generated = JSON.stringify({
-      name: "Disk catalog app",
-      tree: {
-        formatVersion: VENDO_TREE_FORMAT,
-        root: "metric",
-        nodes: [{ id: "metric", component: "DiskMetric", source: "host", props: { value: 42 } }],
-      },
-    });
+    const generated = '<App name="Disk catalog app"><DiskMetric value={42}/></App>';
     const model = new MockLanguageModelV3({
       doStream: async () => ({
         stream: simulateReadableStream({ chunks: [
@@ -1275,7 +1256,7 @@ describe("09 §2 apps composition", () => {
     await store.ensureSchema();
 
     await expect(vendo.apps.create({ prompt: "Show the disk metric" }, ctx)).resolves.toMatchObject({
-      tree: { nodes: [{ component: "DiskMetric", source: "host", props: { value: 42 } }] },
+      tree: { nodes: [{ component: "Stack" }, { component: "DiskMetric", source: "host", props: { value: 42 } }] },
     });
   });
 
