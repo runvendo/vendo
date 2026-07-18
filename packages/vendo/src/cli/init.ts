@@ -1054,11 +1054,16 @@ export async function runInit(options: InitOptions): Promise<number> {
             summary.defaulted = summary.defaulted.filter((name) => name !== slot);
           }
         }
-        // A replaced accent invalidates a contrast-derived accentText —
-        // re-derive it against the new accent (an explicit token or a direct
-        // human/model answer stays authoritative).
-        if (summary.matched["accent"] === "(you)" && summary.matched["accentText"] === "(contrast) accent") {
+        // A replaced accent invalidates an accentText nobody chose — one that
+        // was contrast-derived, or still the neutral default because the model
+        // omitted the accent too. Re-derive against the new accent; an explicit
+        // token or a direct human/model answer stays authoritative.
+        const accentTextUnchosen = summary.matched["accentText"] === "(contrast) accent"
+          || summary.defaulted.includes("accentText");
+        if (summary.matched["accent"] === "(you)" && accentTextUnchosen) {
           summary.slots.accentText = contrastingText(summary.slots.accent);
+          summary.matched["accentText"] = "(contrast) accent";
+          summary.defaulted = summary.defaulted.filter((name) => name !== "accentText");
         }
       }
       await writeText(themePath, `${JSON.stringify(toVendoTheme(summary.slots), null, 2)}\n`);
