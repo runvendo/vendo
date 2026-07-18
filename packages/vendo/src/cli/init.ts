@@ -16,7 +16,9 @@ import type { VendoTheme } from "@vendoai/core";
 import type { Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
 import { runCloudStep, type CloudStepOptions } from "./cloud-init.js";
+import { APPLY_COMMAND, composeDelegatedInstructions, EXTRACTION_DRAFT_JSON_SCHEMA } from "./extract/delegate.js";
 import { runAiExtraction, type AiExtractionOptions } from "./extract/extraction.js";
+import type { StaticTool } from "./extract/stages.js";
 import { resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
 import { resolveRefineModel } from "./refine.js";
@@ -101,6 +103,11 @@ export interface InitPlan {
       real tool names instead of re-deriving them. */
   extraction?: { tools: ExtractedTool[]; warnings: string[] };
   riskRecommendations?: RiskRecommendation[];
+  /** --agent only: the delegated AI-polish contract. An external coding agent
+      reads the codebase against `instructions`, writes a draft matching
+      `draftSchema`, and lands it with `apply` — the SAME deterministic guards
+      as init's built-in pass decide what applies. */
+  aiPolish?: { instructions: string; draftSchema: Record<string, unknown>; apply: string };
 }
 
 export interface InitOptions {
@@ -498,6 +505,22 @@ async function extractForPlan(root: string): Promise<{ tools: ExtractedTool[]; w
   }
 }
 
+/** Project extraction results onto the small static-facts shape the
+    delegation instructions carry (route bindings surface method+path). */
+function planStaticTools(tools: ExtractedTool[]): StaticTool[] {
+  return tools.map((tool) => {
+    const binding = tool.binding as { method?: unknown; path?: unknown };
+    return {
+      name: tool.name,
+      description: tool.description,
+      risk: tool.risk,
+      ...(tool.disabled === true ? { disabled: true } : {}),
+      ...(typeof binding.method === "string" ? { method: binding.method } : {}),
+      ...(typeof binding.path === "string" ? { path: binding.path } : {}),
+    };
+  });
+}
+
 /** 04-actions §1 risk ladder projected as advice: destructive asks first,
     writes get reviewed, reads auto-run (no entry). */
 function riskRecommendations(tools: ExtractedTool[]): RiskRecommendation[] {
@@ -687,10 +710,24 @@ export async function runInit(options: InitOptions): Promise<number> {
     // names and risk advice; the throwaway out dir keeps --agent read-only.
     const { plan } = await buildPlan(options);
     const extraction = await extractForPlan(root);
+    let appName = "app";
+    try {
+      appName = (JSON.parse((await readOptional(join(root, "package.json"))) ?? "{}") as { name?: string }).name ?? "app";
+    } catch {
+      // package.json is optional context
+    }
     output.log(JSON.stringify({
       ...plan,
       extraction,
       riskRecommendations: riskRecommendations(extraction.tools),
+      // The delegation contract: the agent reading this plan can do the AI
+      // polish itself and land it through `vendo extract --apply` — the same
+      // deterministic guards as init's built-in pass.
+      aiPolish: {
+        instructions: composeDelegatedInstructions(planStaticTools(extraction.tools), appName),
+        draftSchema: EXTRACTION_DRAFT_JSON_SCHEMA,
+        apply: APPLY_COMMAND,
+      },
     } satisfies InitPlan, null, 2));
     return 0;
   }

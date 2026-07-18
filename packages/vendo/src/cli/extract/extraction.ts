@@ -43,7 +43,7 @@ const overridesSchema = z.object({
 }).passthrough();
 type Overrides = z.infer<typeof overridesSchema>;
 
-interface AppliedSummary {
+export interface AppliedSummary {
   described: number;
   riskRaised: number;
   critical: number;
@@ -127,6 +127,29 @@ export async function applyDraft(input: {
     summary.briefWritten = true;
   }
   return summary;
+}
+
+/** The one applied-polish summary both init's built-in pass and
+ *  `vendo extract --apply` print — delegation must read identically. */
+export function reportApplied(input: {
+  output: Output;
+  applied: AppliedSummary;
+  briefDrafted: boolean;
+  artifactsNote?: string;
+  notes?: string[];
+}): void {
+  const { output, applied } = input;
+  const parts = [
+    `${applied.described} descriptions`,
+    ...(applied.riskRaised > 0 ? [`${applied.riskRaised} risk raises`] : []),
+    ...(applied.critical > 0 ? [`${applied.critical} critical marks`] : []),
+    ...(applied.woken > 0 ? [`${applied.woken} tools woken`] : []),
+    ...(input.briefDrafted ? ["brief drafted"] : []),
+  ];
+  output.log(`AI polish applied: ${parts.join(" · ")} → .vendo/overrides.json, .vendo/brief.md${input.artifactsNote ?? ""}`);
+  for (const note of input.notes ?? []) output.error(`  ${note}`);
+  for (const refused of applied.refused) output.error(`  refused: ${refused}`);
+  for (const missed of applied.missedSurfaces) output.log(`  missed surface (not extracted yet): ${missed}`);
 }
 
 async function askYesNo(question: string, defaultYes: boolean): Promise<boolean> {
@@ -213,17 +236,13 @@ export async function runAiExtraction(options: AiExtractionOptions): Promise<{ r
       onProgress: (line) => output.log(`  ${line}`),
     });
     const applied = await applyDraft({ root, draft: staged.draft, tools, ...(options.force === undefined ? {} : { force: options.force }) });
-    const parts = [
-      `${applied.described} descriptions`,
-      ...(applied.riskRaised > 0 ? [`${applied.riskRaised} risk raises`] : []),
-      ...(applied.critical > 0 ? [`${applied.critical} critical marks`] : []),
-      ...(applied.woken > 0 ? [`${applied.woken} tools woken`] : []),
-      ...(applied.briefWritten && staged.briefFromStage ? ["brief drafted"] : []),
-    ];
-    output.log(`AI polish applied: ${parts.join(" · ")} → .vendo/overrides.json, .vendo/brief.md (stage artifacts: .vendo/data/extract/)`);
-    for (const note of staged.notes) output.error(`  ${note}`);
-    for (const refused of applied.refused) output.error(`  refused: ${refused}`);
-    for (const missed of applied.missedSurfaces) output.log(`  missed surface (not extracted yet): ${missed}`);
+    reportApplied({
+      output,
+      applied,
+      briefDrafted: applied.briefWritten && staged.briefFromStage,
+      artifactsNote: " (stage artifacts: .vendo/data/extract/)",
+      notes: staged.notes,
+    });
     return { ran: true };
   } catch (error) {
     output.error(`AI polish did not complete (${error instanceof Error ? error.message : "unknown error"}); extractor defaults stand. Re-run \`vendo init\` to retry — stage artifacts in .vendo/data/extract/ show how far it got.`);

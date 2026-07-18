@@ -23,7 +23,7 @@ fetch it when you need more detail than this skill carries.
 2. Run init. As an agent, plan first, then apply:
 
    ```bash
-   npx vendo init --agent   # read-only JSON plan: framework, code diffs, questions, extracted tools, risk recommendations
+   npx vendo init --agent   # read-only JSON plan: framework, code diffs, extracted tools, risk recommendations, aiPolish delegation contract
    npx vendo init --yes --model-import "@/lib/ai" --brief "<one-paragraph product brief>"
    ```
 
@@ -76,6 +76,22 @@ fetch it when you need more detail than this skill carries.
 
 ## Stage 2 — review and keep extraction fresh
 
+- AI polish, delegated to you: the `--agent` plan's `aiPolish` object is a
+  contract you can execute yourself. Read the codebase per
+  `aiPolish.instructions` (task-oriented tool descriptions, risk review,
+  wakes with reasoning, the product brief), write one JSON draft matching
+  `aiPolish.draftSchema` to a file, then:
+
+  ```bash
+  npx vendo extract --apply draft.json
+  ```
+
+  Vendo runs the same deterministic guards as init's built-in pass (only
+  extracted tool names accepted, risk raised never lowered, wakes need
+  reasoning plus a grade, human decisions win), writes
+  `.vendo/overrides.json` and `.vendo/brief.md`, and re-syncs. Non-zero exit
+  means the draft was rejected with the reason printed; fix and re-apply.
+  `--force` replaces a hand-edited brief; leave it off otherwise.
 - Re-extract after API changes: `npx vendo sync` (fail-soft). In CI use
   `npx vendo sync --strict` — exit 2 on breaking tool changes, 3 when saved
   apps/automations/grants are impacted. `--json` emits one machine-readable
