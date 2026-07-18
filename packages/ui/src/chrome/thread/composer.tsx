@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { ConnectDockButton, ConnectTray } from "../connect-dock.js";
+import { registerPrefillConsumer } from "../overlay-registry.js";
 import { fileExt, fileToPart, formatBytes } from "./attachments.js";
 
 /** The message shape the composer commits — mirrors useVendoThread.sendMessage. */
@@ -97,18 +98,27 @@ export function useComposer({ busy, sendMessage }: {
     dispatch(text, pending);
   };
 
-  // Remix bridge: a host affordance (the hero card's "Remix") opens this
-  // surface and hands it the request to type + send, so the whole build
-  // happens here — the one conversational place (08-ui §4).
+  // Remix bridge: a host affordance (slot remix, a trigger button, the legacy
+  // `vendo:prefill` event) opens this surface and hands it the request to
+  // type + send, so the whole build happens here — the one conversational
+  // place (08-ui §4). The registry consumer also drains a prompt parked while
+  // this composer was still mounting (overlay first open).
   useEffect(() => {
+    const prefill = (prompt: string, sendNow: boolean) => {
+      setDraft(prompt);
+      if (sendNow) queueMicrotask(() => send(prompt));
+    };
     const onPrefill = (event: Event) => {
       const detail = (event as CustomEvent<{ prompt?: string; send?: boolean }>).detail;
       if (typeof detail?.prompt !== "string") return;
-      setDraft(detail.prompt);
-      if (detail.send) queueMicrotask(() => send(detail.prompt));
+      prefill(detail.prompt, detail.send === true);
     };
     window.addEventListener("vendo:prefill", onPrefill);
-    return () => window.removeEventListener("vendo:prefill", onPrefill);
+    const unregister = registerPrefillConsumer(parked => prefill(parked.prompt, parked.send));
+    return () => {
+      window.removeEventListener("vendo:prefill", onPrefill);
+      unregister();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- send closes over stable refs
   }, []);
 

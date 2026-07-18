@@ -6,6 +6,7 @@ export { ConnectCard, type ConnectCardProps } from "./connect-card.js";
 export { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
 export { NoPolicyNotice } from "./no-policy-notice.js";
 export { VendoOverlay, type VendoOverlayProps } from "./vendo-overlay.js";
+export { openVendoOverlay, type OpenConversationOptions } from "./overlay-registry.js";
 export { VendoPage } from "./vendo-page.js";
 export { VendoPalette, type VendoCommand } from "./vendo-palette.js";
 export { type HotkeyChord, type PaletteHotkey } from "./palette-hotkey.js";

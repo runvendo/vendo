@@ -4,6 +4,7 @@ import { useVendoTheme } from "../context.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { themeCssVariables } from "../theme.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { deliverPrefill, registerOverlayOpener } from "./overlay-registry.js";
 import { VendoThread, type VendoThreadProps } from "./thread/index.js";
 
 const FOCUSABLE = "button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex='-1'])";
@@ -158,6 +159,18 @@ export function VendoOverlay({
   }, [open]);
 
   const close = () => setOpen(false);
+
+  // Registry opener (ui-usage-dx §2): lets slot remix / trigger / palette
+  // affordances open this overlay — optionally preloading a prompt — without a
+  // ref. The prompt goes through the registry's prefill hand-off, which parks
+  // it until the thread's composer mounts (first open) or delivers immediately
+  // (already mounted, even while hidden).
+  useEffect(() => registerOverlayOpener(options => {
+    setOpen(true);
+    if (typeof options?.prompt === "string" && options.prompt.length > 0) {
+      deliverPrefill({ prompt: options.prompt, send: options.send === true });
+    }
+  }), [setOpen]);
 
   const newConversation = () => {
     setConversationEpoch(epoch => epoch + 1);

@@ -1,12 +1,17 @@
 import type { Json, ToolOutcome, UIPayload } from "@vendoai/core";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useVendoContext } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useSlotApp } from "../hooks/use-slot-app.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { openVendoOverlay } from "./overlay-registry.js";
 import { openVendoPalette } from "./palette-hotkey.js";
+
+function developmentMode(): boolean {
+  return typeof process !== "undefined" && process.env?.NODE_ENV === "development";
+}
 
 /** The faint skeleton behind the ghost/empty states — decorative only. */
 function GhostSkeleton() {
@@ -72,13 +77,22 @@ export interface VendoSlotPin {
  *  the original `children` as the visible recovery path (06-apps §8). Without any
  *  of the three, the children render UNTOUCHED (no wrapper — hosts may inline
  *  slots anywhere). */
-export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, children }: {
+export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, remixPrompt, children }: {
   id: string;
   appId?: string;
   pin?: VendoSlotPin;
   /** Invoked when the empty-state CTA is activated — the seam to open a thread
    *  or palette to author the view. Defaults to opening a mounted VendoPalette. */
   onAuthor?(slotId: string): void;
+  /** Remix folds into Slot as a flag (ui-usage-dx §2): show the hover Remix
+   *  affordance on the slot's content; activating it opens the mounted overlay
+   *  preloaded with the remix prompt. The slot id should match a registered
+   *  (remixable) host component so the agent can fork the captured source —
+   *  init/doctor verify the flag against catalog registrations. */
+  remix?: boolean;
+  /** Override for the remix request; defaults to a prompt naming the slot's
+   *  registered component. */
+  remixPrompt?: string;
   children?: ReactNode;
 }) {
   const { components } = useVendoContext();
@@ -86,6 +100,16 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, children }: {
   // resolves its own pinned app — hosts never write the polling dance.
   const discovery = useSlotApp(id, { enabled: appIdProp === undefined && pin === undefined });
   const appId = appIdProp ?? (pin === undefined ? discovery.appId : undefined);
+
+  // Dev rail: the remix flow forks the component captured under this slot's
+  // registered name — an unregistered name means the agent has nothing to fork.
+  // (The client can't see catalog `remixable` flags; init verifies those.)
+  useEffect(() => {
+    if (!remix || !developmentMode() || components[id] !== undefined) return;
+    console.warn(
+      `[vendo] VendoSlot "${id}" sets remix, but no host component is registered under that name — register it (marked remixable) so the agent can capture and fork it.`,
+    );
+  }, [remix, id, components]);
 
   const author = () => {
     if (onAuthor) {
@@ -95,8 +119,37 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, children }: {
     openVendoPalette();
   };
 
+  const startRemix = () => {
+    const prompt = remixPrompt
+      ?? `Remix the ${id} component — I want to make this view my own.`;
+    const opened = openVendoOverlay({ prompt, send: true });
+    if (!opened && developmentMode()) {
+      console.warn(`[vendo] VendoSlot "${id}": remix opens the conversation surface — mount a VendoOverlay for it to land in.`);
+    }
+  };
+
+  const remixButton = remix ? (
+    <button type="button" className="fl-slot-remix" aria-label={`Remix ${id} with Vendo`} onClick={startRemix}>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3Z" />
+      </svg>
+      Remix
+    </button>
+  ) : null;
+
   if (!appId && !pin) {
-    if (children !== undefined) return <>{children}</>;
+    if (children !== undefined) {
+      if (remixButton === null) return <>{children}</>;
+      // The affordance needs a positioned boundary over the host's own markup;
+      // the inline wrapper stays layout-neutral (the ChromeRoot child is an
+      // empty block carrying only the absolutely-positioned button).
+      return (
+        <div data-vendo-slot={id} style={{ position: "relative", height: "100%" }}>
+          <ChromeRoot automaticPolicyNotice={false}>{remixButton}</ChromeRoot>
+          {children}
+        </div>
+      );
+    }
     return (
       <ChromeRoot>
         <div className="fl-slot" data-vendo-slot={id}>
@@ -124,6 +177,7 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, children }: {
   return (
     <ChromeRoot>
       <div className="fl-slot" data-vendo-slot={id}>
+        {remixButton}
         <div className="fl-slot-filled">
           <FluidReveal stateKey={appId ? `app:${appId}` : `pin:${id}`} initialExit={children}>
             <PinMount slot={id} fallback={Fallback}>{mounted}</PinMount>

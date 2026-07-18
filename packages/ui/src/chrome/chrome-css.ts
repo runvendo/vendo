@@ -1085,6 +1085,22 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-slot-cta svg { margin-bottom: 2px; opacity: .85; }
 .fl-slot-cta small { font-weight: 400; font-size: 11.5px; color: var(--vendo-fg-muted); }
 
+/* ---- remix affordance (ui-usage-dx §2 — remix folds into Slot as a flag) ----
+   Hover-revealed over the slot's content: the filled state (.fl-slot) and the
+   host-original state (the [data-vendo-slot] inline wrapper) share one rule.
+   Focus reveals it too, so it stays keyboard-reachable. */
+.fl-slot-remix { position: absolute; top: 10px; right: 10px; z-index: 6;
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px;
+  border: 1px solid var(--vendo-border); border-radius: 9px;
+  background: color-mix(in srgb, var(--vendo-surface) 92%, transparent);
+  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  color: var(--vendo-fg-muted); font: 600 11.5px/1 var(--vendo-font-family);
+  box-shadow: var(--vendo-shadow); cursor: pointer;
+  opacity: 0; pointer-events: none; transition: opacity .15s, color .15s; }
+[data-vendo-slot]:hover .fl-slot-remix, .fl-slot-remix:focus-visible { opacity: 1; pointer-events: auto; }
+.fl-slot-remix:hover { color: var(--vendo-fg); }
+.fl-slot-remix:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
+
 /* ---- filled state + overflow menu ---- */
 .fl-slot-filled { position: relative; flex: 1; }
 .fl-slot-filled > .fl-uinode { height: 100%; }
