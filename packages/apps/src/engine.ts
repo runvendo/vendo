@@ -12,8 +12,8 @@ import {
   validateAppDocument,
   validateTree,
   type AppDocument,
-  type ComponentCatalog,
   type Json,
+  type NormalizedCatalog,
   type Tree,
   type TreeNode,
   type TreeQuery,
@@ -29,7 +29,8 @@ import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } f
 
 export interface GenerationDependencies {
   model: LanguageModel;
-  catalog: ComponentCatalog;
+  /** The composition-normalized catalog (01 §14): propsJsonSchema is derived. */
+  catalog: NormalizedCatalog;
   theme?: VendoTheme;
   designRules?: string;
   pinBaselines?: readonly PinBaseline[];
@@ -81,7 +82,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const asJson = (value: unknown): Json => value as Json;
 
-const catalogPrompt = (catalog: ComponentCatalog): string => JSON.stringify(
+const catalogPrompt = (catalog: NormalizedCatalog): string => JSON.stringify(
   catalog.map(({ name, description, propsJsonSchema, examples }) => ({
     name,
     whenToUse: description,
@@ -259,8 +260,11 @@ const issueMessage = (issue: unknown): string => {
 
 const hostPropsIssues = async (
   node: TreeNode,
-  component: ComponentCatalog[number],
+  component: NormalizedCatalog[number],
 ): Promise<string[]> => {
+  // 01 §14: schema-less entries validate permissively by design — the model
+  // infers props and the entry carries no validator.
+  if (component.propsSchema === undefined) return [];
   const props = node.props ?? {};
   try {
     const result = await component.propsSchema["~standard"].validate(props);
@@ -279,7 +283,7 @@ const hostPropsIssues = async (
 const catalogIssues = async (
   tree: Tree,
   components: Record<string, string> | undefined,
-  catalog: ComponentCatalog,
+  catalog: NormalizedCatalog,
 ): Promise<string[]> => {
   const hostCatalog = new Map(catalog.map((component) => [component.name, component]));
   const hostNames = new Set(hostCatalog.keys());

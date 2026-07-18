@@ -3,10 +3,10 @@ import {
   validateAppDocument,
   type AppDocument,
   type AppId,
-  type ComponentCatalog,
   type Guard,
   type IsoDateTime,
   type Json,
+  type NormalizedCatalog,
   type RunContext,
   type ApprovalId,
   type RiskLabel,
@@ -64,7 +64,8 @@ export interface AppsConfig {
   tools: ToolRegistry;
   sandbox?: SandboxAdapter;
   model?: LanguageModel;
-  catalog: ComponentCatalog;
+  /** The composition-normalized catalog (01 §14): derived schemas included. */
+  catalog: NormalizedCatalog;
   theme?: VendoTheme;
   secrets?: SecretsProvider;
   designRules?: string;
