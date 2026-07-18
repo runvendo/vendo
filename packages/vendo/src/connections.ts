@@ -1,5 +1,6 @@
 import { VendoError, type Principal } from "@vendoai/core";
 import type { Connector, ConnectorAccount, ConnectorConnections } from "@vendoai/actions";
+import { deploymentIdentityHeaders } from "./deployment-identity.js";
 
 /** Subjects the runtime mints for machine principals (automations webhook
  * triggers today; the reserved `vendo:` namespace going forward). A synthetic
@@ -129,6 +130,9 @@ export function cloudConnections(options: CloudConnectionsOptions): ConnectionsS
       headers: {
         authorization: `Bearer ${options.apiKey}`,
         accept: "application/json",
+        // Interaction model: key-authed Cloud requests carry the deployment
+        // identity; the console meters usage from real traffic.
+        ...(await deploymentIdentityHeaders()),
         ...(init?.body === undefined ? {} : { "content-type": "application/json" }),
         ...init?.headers,
       },
@@ -154,13 +158,13 @@ export function cloudConnections(options: CloudConnectionsOptions): ConnectionsS
   return {
     posture: "cloud",
     async list(principal) {
-      const payload = await cloudFetch(`/v1/connections?${subjectQuery(principal)}`) as { connections?: unknown };
+      const payload = await cloudFetch(`/api/v1/connections?${subjectQuery(principal)}`) as { connections?: unknown };
       return Array.isArray(payload.connections) ? (payload.connections as ConnectorAccount[]) : [];
     },
     async initiate(principal, options) {
       guardInitiatePrincipal(principal);
       guardCallbackUrl(options.callbackUrl);
-      const payload = await cloudFetch("/v1/connections/initiate", {
+      const payload = await cloudFetch("/api/v1/connections/initiate", {
         method: "POST",
         body: JSON.stringify({
           subject: principal.subject,
@@ -180,13 +184,13 @@ export function cloudConnections(options: CloudConnectionsOptions): ConnectionsS
     },
     async status(principal, connector, connectionId) {
       const payload = await cloudFetch(
-        `/v1/connections/${encodeURIComponent(connectionId)}?${subjectQuery(principal)}&connector=${encodeURIComponent(connector)}`,
+        `/api/v1/connections/${encodeURIComponent(connectionId)}?${subjectQuery(principal)}&connector=${encodeURIComponent(connector)}`,
       ) as { connection?: unknown };
       return (payload.connection as ConnectorAccount | undefined) ?? null;
     },
     async disconnect(principal, connector, connectionId) {
       await cloudFetch(
-        `/v1/connections/${encodeURIComponent(connectionId)}?${subjectQuery(principal)}&connector=${encodeURIComponent(connector)}`,
+        `/api/v1/connections/${encodeURIComponent(connectionId)}?${subjectQuery(principal)}&connector=${encodeURIComponent(connector)}`,
         { method: "DELETE" },
       );
     },

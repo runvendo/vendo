@@ -74,13 +74,22 @@ describe("byoConnections", () => {
 
 describe("cloudConnections", () => {
   it("sends bearer-keyed per-subject requests to the cloud endpoint", async () => {
-    const requests: Array<{ url: string; method: string; authorization: string | null; body?: unknown }> = [];
+    const requests: Array<{
+      url: string;
+      method: string;
+      authorization: string | null;
+      deploymentHost: string | null;
+      deploymentName: string | null;
+      body?: unknown;
+    }> = [];
     const cloudFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
       requests.push({
         url: request.url,
         method: request.method,
         authorization: request.headers.get("authorization"),
+        deploymentHost: request.headers.get("x-vendo-deployment-host"),
+        deploymentName: request.headers.get("x-vendo-deployment-name"),
         ...(request.method === "POST" ? { body: await request.json() } : {}),
       });
       if (request.method === "POST") {
@@ -105,21 +114,29 @@ describe("cloudConnections", () => {
       method: "GET",
       authorization: "Bearer vnd_secret",
     });
-    expect(requests[0]!.url).toContain("https://cloud.test/v1/connections?subject=user_ada");
+    expect(requests[0]!.url).toContain("https://cloud.test/api/v1/connections?subject=user_ada");
     expect(requests[1]).toMatchObject({
       method: "POST",
       authorization: "Bearer vnd_secret",
       body: { subject: "user_ada", toolkit: "gmail", callbackUrl: "https://host.test/vendo" },
     });
     expect(requests[2]).toMatchObject({ method: "DELETE", authorization: "Bearer vnd_secret" });
-    expect(requests[2]!.url).toContain("/v1/connections/ca_cloud?subject=user_ada&connector=composio");
+    expect(requests[2]!.url).toContain("/api/v1/connections/ca_cloud?subject=user_ada&connector=composio");
+    // Interaction model: every key-authed request carries the deployment
+    // identity the console meters usage from.
+    for (const sent of requests) {
+      expect(sent.deploymentHost).toEqual(expect.any(String));
+      expect(sent.deploymentHost).not.toBe("");
+      expect(sent.deploymentName).toEqual(expect.any(String));
+      expect(sent.deploymentName).not.toBe("");
+    }
   });
 
   it("defaults the base URL to the Vendo console", async () => {
     const cloudFetch = vi.fn(async () => Response.json({ connections: [] }));
     const service = cloudConnections({ apiKey: "vnd_secret", fetch: cloudFetch as unknown as typeof fetch });
     await service.list(ada);
-    expect(cloudFetch.mock.calls[0]![0]).toContain("https://console.vendo.run/v1/connections");
+    expect(cloudFetch.mock.calls[0]![0]).toContain("https://console.vendo.run/api/v1/connections");
   });
 
   it("maps a cloud plan rejection to a cloud-required error", async () => {
