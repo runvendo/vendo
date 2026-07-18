@@ -5,7 +5,7 @@
 //    about to unmount (Greptile P1 / Devin);
 // 3. a prompt targets the opened overlay's own composer, not whichever
 //    composer registered last (Devin cross-surface finding).
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { VendoOverlay, VendoThread, openVendoConversation } from "../../src/chrome/index.js";
@@ -44,6 +44,30 @@ describe("openVendoConversation registry", () => {
       const fresh = within(dialog()).getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
       expect(fresh.value).toBe("fresh start");
     });
+  });
+
+  it("queues a send:true prompt fired mid-turn instead of bypassing the single-in-flight contract", async () => {
+    let release = () => undefined as void;
+    wire.state.threadReplyGate = new Promise<void>(resolve => { release = resolve; });
+    render(<VendoProvider client={client}><VendoOverlay defaultOpen /></VendoProvider>);
+    const composer = within(dialog()).getByRole("textbox", { name: "Message" });
+
+    fireEvent.change(composer, { target: { value: "First" } });
+    fireEvent.keyDown(composer, { key: "Enter" });
+    await within(dialog()).findByRole("button", { name: "Stop" });
+    const posts = () => wire.requests.filter(r => r.method === "POST" && r.path === "/threads");
+    await waitFor(() => expect(posts()).toHaveLength(1));
+
+    // A remix fired while the turn streams must park in the QUEUED slot (the
+    // .fl-queued pill), not dispatch as a concurrent send.
+    openVendoConversation({ prompt: "Remix mid-stream", send: true });
+    expect(await within(dialog()).findByText("Remix mid-stream", { selector: ".fl-queued-text" })).toBeTruthy();
+    expect(posts()).toHaveLength(1);
+
+    await act(async () => release());
+    await within(dialog()).findByText("Turn complete");
+    // Turn done → the queued remix auto-sends as the second turn.
+    await waitFor(() => expect(posts()).toHaveLength(2));
   });
 
   it("targets the opened overlay's composer, not an embedded thread mounted later", async () => {

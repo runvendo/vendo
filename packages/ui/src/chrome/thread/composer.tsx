@@ -101,6 +101,12 @@ export function useComposer({ busy, sendMessage }: {
   // The enclosing overlay's prefill scope (null for embedded threads/pages):
   // registry-delivered prompts are directed at one overlay's composer.
   const prefillScope = useContext(PrefillScopeContext);
+  // The listeners below register once but must send with CURRENT composer
+  // state: a first-render `send` closure sees busy=false forever, so a remix
+  // fired mid-stream would dispatch concurrently instead of parking in the
+  // queued slot (the single-in-flight contract).
+  const sendRef = useRef(send);
+  sendRef.current = send;
   // Remix bridge: a host affordance (slot remix, a trigger button, the legacy
   // `vendo:prefill` event) opens this surface and hands it the request to
   // type + send, so the whole build happens here — the one conversational
@@ -109,7 +115,7 @@ export function useComposer({ busy, sendMessage }: {
   useEffect(() => {
     const prefill = (prompt: string, sendNow: boolean) => {
       setDraft(prompt);
-      if (sendNow) queueMicrotask(() => send(prompt));
+      if (sendNow) queueMicrotask(() => sendRef.current(prompt));
     };
     const onPrefill = (event: Event) => {
       const detail = (event as CustomEvent<{ prompt?: string; send?: boolean }>).detail;
@@ -122,7 +128,7 @@ export function useComposer({ busy, sendMessage }: {
       window.removeEventListener("vendo:prefill", onPrefill);
       unregister();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- send closes over stable refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sendRef tracks the latest send; scope is mount-stable
   }, []);
 
   // Flush the queued message the moment the active turn finishes. A ref-tracked
