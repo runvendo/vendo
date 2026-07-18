@@ -111,6 +111,11 @@ zero when an env key exists.
 - Remove the layout codemod (wireLayout) and the lib/ai.ts scaffold; make
   createVendo's `model` optional with env/starter-key resolution as default;
   build the finale's paste-and-watch step for the layout line.
+- Remove remix offers from init entirely (remixWrapChanges, the re-sync
+  recapture pass, and unresolved-slot warnings in init output). Component side
+  of init = silent catalog discovery + theme extraction only. `remixable:
+  true` is a documented user opt-in; suggesting candidates is judgment work
+  that can live in doctor later.
 - Refine offer and finale ordering: finale is the guaranteed ending; no
   pre-finale refine offer.
 - Build the Cloud starter-key minting endpoint (was already a parked follow-up;
