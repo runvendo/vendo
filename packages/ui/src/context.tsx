@@ -1,5 +1,5 @@
 /** VendoProvider + the internal context every hook and surface reads (08 §2). */
-import type { VendoTheme } from "@vendoai/core";
+import type { ComponentRegistry, ComponentRegistryEntry, VendoTheme } from "@vendoai/core";
 import type { ChatTransport, UIMessage } from "ai";
 import { createContext, useContext, useMemo, type ComponentType, type ReactNode } from "react";
 import { createVendoClient, type VendoClient } from "./client.js";
@@ -46,9 +46,32 @@ export interface ConnectorOption {
 
 const VendoContext = createContext<VendoContextValue | null>(null);
 
+/** 08 §2 (amended 2026-07-18): the components input — the plain name→component
+ * map, or the 01 §14 name-keyed ComponentRegistry (the same object the server
+ * takes as `catalog`). */
+export type HostComponentsInput = Record<string, ComponentType> | ComponentRegistry;
+
+function isRegistryEntry(value: ComponentType | ComponentRegistryEntry): value is ComponentRegistryEntry {
+  return typeof value === "object" && value !== null
+    && "component" in value
+    && typeof (value as ComponentRegistryEntry).description === "string";
+}
+
+/** Extract the name→component map from either components-input form. Registry
+ * data fields (description, props schema, examples, remixable) are server-side
+ * concerns the client ignores (01 §14). */
+export function hostComponentMap(components: HostComponentsInput | undefined): Record<string, ComponentType> {
+  if (components === undefined) return {};
+  const map: Record<string, ComponentType> = {};
+  for (const [name, value] of Object.entries(components)) {
+    map[name] = isRegistryEntry(value) ? (value.component as ComponentType) : value;
+  }
+  return map;
+}
+
 export function VendoProvider(props: {
   client?: VendoClient;
-  components?: Record<string, ComponentType>;
+  components?: HostComponentsInput;
   theme?: Partial<VendoTheme>;
   voice?: { driver: VoiceDriver };
   transport?: ChatTransport<UIMessage>;
@@ -61,7 +84,7 @@ export function VendoProvider(props: {
   const value = useMemo<VendoContextValue>(
     () => ({
       client: client ?? createVendoClient({}),
-      components: components ?? {},
+      components: hostComponentMap(components),
       theme: resolveTheme(defaultVendoTheme, theme),
       voice,
       transport,
