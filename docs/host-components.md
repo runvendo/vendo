@@ -217,6 +217,50 @@ an embedded thread's. The slot remix flag and the palette defaults route
 through it; it returns `false` when no overlay is mounted so callers can
 fall back.
 
+### Discoverability
+
+Two elements teach end users the app is moldable, both on by default and both
+hard-capped at one showing per user per deployment, ever (a persistent flag;
+environments where storage is unavailable never show them):
+
+- **Whisper** — on the first visit with a visible launcher pill, the pill
+  pulses once and a small ~6s caption says the app can be reshaped. Under
+  `prefers-reduced-motion` the caption shows without the pulse.
+  `launcher="none"` hosts simply never see it (no orphan caption).
+- **Greeting-as-tutorial** — the first-ever fresh conversation opens with an
+  agent-voiced intro plus 2–3 tappable starter prompts. Chips prefill the
+  composer (never auto-send), and the greeting is presentation-only: it is
+  never persisted to the thread and never sent to the model. Threads opened
+  with history are ineligible and do not consume the one showing.
+
+One dial controls both, on the provider or per-overlay (the overlay prop
+wins): `discoverability="default" | "quiet"`. Quiet disables both without
+consuming the one-time showing. Contextual affordances (slot ghosts, remix
+hover, Trigger buttons) are host-placed and unaffected by the dial.
+
+Greeting content is host-supplied via the `greeting` prop on
+`VendoProvider`/`VendoRoot` or `VendoOverlay`; without it a generic capable
+intro (with one molding prompt) is used. The conventional home for the
+content is `.vendo/greeting.json`, imported and passed through:
+
+```jsonc
+// .vendo/greeting.json
+{
+  "intro": "Hi — I'm Cadence's built-in assistant. …",
+  "prompts": [
+    "Which clients still owe documents?",
+    "Build me a deadline board for this month",
+    "Reshape my dashboard around document chasing"   // keep one molding prompt
+  ]
+}
+```
+
+```tsx
+import greeting from "../.vendo/greeting.json";
+
+<VendoRoot greeting={greeting}>…</VendoRoot>
+```
+
 ### Slot placement
 
 A bare `<VendoSlot id="HeroCard">{original}</VendoSlot>` renders the host's
