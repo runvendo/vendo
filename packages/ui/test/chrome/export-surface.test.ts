@@ -32,6 +32,9 @@ const VALUE_EXPORTS = [
   // Shelf Task 4 — the conversation-opening registry seam (slot remix,
   // triggers, palette defaults all route through it).
   "openVendoConversation",
+  // Shelf Lane B — the two placeable pieces (ui-usage-dx §2).
+  "VendoActivities",
+  "VendoTrigger",
 ] as const;
 
 const TYPE_EXPORTS = [
@@ -46,6 +49,8 @@ const TYPE_EXPORTS = [
   "VendoToastAction",
   "WaitingQueueProps",
   "OpenConversationOptions",
+  "VendoActivitiesProps",
+  "VendoTriggerProps",
 ];
 
 // vitest's jsdom environment rewrites import.meta.url to a non-file scheme,

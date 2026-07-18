@@ -124,6 +124,8 @@ each a one-liner:
 | `VendoThread` | The same chat, embedded in a host page. |
 | `VendoPage` | The full workspace console (threads, apps, automations, activity). |
 | `VendoSlot` | A region of the host page the user can replace with their own generated view. |
+| `VendoActivities` | Drop-in feed of what the agent did + pending approvals, placeable in any host page. |
+| `VendoTrigger` | A button that opens the chat preloaded with a prompt and context. |
 
 `VendoPalette` is an optional extra, not part of the default story. Without an
 `onCommand` router its conversation commands open the mounted overlay on their
@@ -152,9 +154,9 @@ Two shelf pieces are placeable anywhere in host pages:
 - **`VendoTrigger`** — a button that opens the chat preloaded with a prompt
   and context. Props: `prompt` (required), `context` (appended to the prompt),
   children as the label. The prompt is prefilled into the composer, never
-  auto-sent. Hosts using their own element call `openVendoConversation(prompt)`
-  directly — it opens the most recently mounted `VendoOverlay` and returns
-  `false` (with a dev-mode console hint) when none is mounted.
+  auto-sent (the trigger never passes `send`). Hosts using their own element
+  call `openVendoConversation({ prompt })` from it directly — the same
+  registry seam described under "Overlay entry" below.
 
 Chrome derives all styling from `VendoTheme` tokens. The required bar is WCAG
 2.1 AA, complete keyboard access, screen-reader testing, and mobile web.

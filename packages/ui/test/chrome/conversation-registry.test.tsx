@@ -70,6 +70,40 @@ describe("openVendoConversation registry", () => {
     await waitFor(() => expect(posts()).toHaveLength(2));
   });
 
+  it("prefills the composer WITHOUT sending by default (safe for destructive prompts)", async () => {
+    render(<VendoProvider client={client}><VendoOverlay /></VendoProvider>);
+    expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull();
+
+    let opened: boolean | undefined;
+    act(() => {
+      opened = openVendoConversation({ prompt: "Pay my electric bill" });
+    });
+    expect(opened).toBe(true);
+
+    // First open: the thread mounts lazily in this very commit and the parked
+    // prompt lands in its composer — prefilled, never dispatched.
+    await waitFor(() => {
+      const composer = within(dialog()).getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
+      expect(composer.value).toBe("Pay my electric bill");
+    });
+    expect(wire.requests.some(request => request.method === "POST" && request.path === "/threads")).toBe(false);
+  });
+
+  it("opens without a prompt, leaving the composer untouched", async () => {
+    render(<VendoProvider client={client}><VendoOverlay /></VendoProvider>);
+    act(() => {
+      openVendoConversation();
+    });
+    expect(await screen.findByRole("dialog", { name: "Vendo assistant" })).toBeTruthy();
+    expect((within(dialog()).getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("unregisters on unmount so a dead surface is never opened", () => {
+    const { unmount } = render(<VendoProvider client={client}><VendoOverlay /></VendoProvider>);
+    unmount();
+    expect(openVendoConversation({ prompt: "late" })).toBe(false);
+  });
+
   it("targets the opened overlay's composer, not an embedded thread mounted later", async () => {
     const { container } = render(
       <VendoProvider client={client}>

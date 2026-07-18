@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 // VendoTrigger — the shelf's "do it with AI" button (ui-usage-dx §2): opens
-// the chat preloaded with a prompt (+ optional context). Hosts wanting a fully
+// the chat preloaded with a prompt (+ optional context) through the
+// conversation registry. Hosts wanting a fully
 // custom element skip the component and call openVendoConversation directly —
 // the repo's existing programmatic-seam idiom (no render-prop API, §4).
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { VendoTrigger } from "../../src/chrome/index.js";
-import { registerConversationOpener } from "../../src/chrome/overlay-open.js";
+import { registerOverlayOpener } from "../../src/chrome/overlay-registry.js";
 import { createWireServer } from "../wire-server.js";
 
 describe("VendoTrigger", () => {
@@ -20,7 +21,7 @@ describe("VendoTrigger", () => {
     wire = await createWireServer();
     client = createVendoClient({ baseUrl: wire.url });
     opener = vi.fn();
-    unregister = registerConversationOpener(opener);
+    unregister = registerOverlayOpener(opener);
   });
 
   afterEach(async () => {
@@ -39,7 +40,8 @@ describe("VendoTrigger", () => {
     expect(button.tagName).toBe("BUTTON");
     expect(button.getAttribute("type")).toBe("button");
     fireEvent.click(button);
-    expect(opener).toHaveBeenCalledWith("Chase clients with missing documents");
+    // Prefill only: the trigger never passes send — the user presses Send.
+    expect(opener).toHaveBeenCalledWith({ prompt: "Chase clients with missing documents" });
   });
 
   it("appends the optional context to the prompt", () => {
@@ -49,7 +51,7 @@ describe("VendoTrigger", () => {
       </VendoTrigger>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Nudge with AI" }));
-    expect(opener).toHaveBeenCalledWith("Draft a reminder\n\nClient: Acme — W-9 outstanding since June");
+    expect(opener).toHaveBeenCalledWith({ prompt: "Draft a reminder\n\nClient: Acme — W-9 outstanding since June" });
   });
 
   it("falls back to a default label without children", () => {
