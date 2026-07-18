@@ -1,4 +1,4 @@
-/** @vendoai/core — the shapes everything speaks (docs/contracts/01-core.md). */
+/** @vendoai/core — the shapes everything speaks (docs/archive/contracts/01-core.md). */
 export * from "./app-document.js";
 export * from "./audit.js";
 export * from "./catalog.js";

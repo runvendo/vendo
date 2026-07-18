@@ -806,7 +806,7 @@ async function buildPlan(options: InitOptions, mcpEnabled = false): Promise<{ pl
         { id: "brief", question: "In one paragraph, what should the agent know about this product?", recommendation: options.brief ?? "Describe the product, users, and the jobs they do." },
         { id: "risk", question: "Which extracted write actions need stricter review?", recommendation: "Mark destructive or irreversible tools critical in .vendo/overrides.json." },
         // 10-mcp §2: opening the door is a host decision, never a default — so ask.
-        { id: "mcp", question: "Open the MCP door so agents (Claude, ChatGPT, Cursor) can use your product's tools?", recommendation: "No — opening it is a host decision and needs a HostOAuthAdapter (docs/contracts/10-mcp)." },
+        { id: "mcp", question: "Open the MCP door so agents (Claude, ChatGPT, Cursor) can use your product's tools?", recommendation: "No — opening it is a host decision and needs a HostOAuthAdapter (docs/archive/contracts/10-mcp)." },
       ],
     },
   };
