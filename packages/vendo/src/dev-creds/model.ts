@@ -9,6 +9,7 @@ import {
   type RiderSession,
 } from "@vendoai/dev-riders";
 import type { LanguageModel } from "ai";
+import { cloudModel } from "../model.js";
 import {
   describeDevCredential,
   hasSessionConsent,
@@ -44,6 +45,8 @@ export interface DevModelOptions {
   probes?: ResolveDevCredentialOptions["probes"];
   /** Test seam for host-module resolution (providers). */
   importModule?: (root: string, specifier: string) => Promise<Record<string, unknown>>;
+  /** Test seam for the vendo-cloud rung's managed-inference client. */
+  fetchImpl?: typeof fetch;
 }
 
 interface LanguageModelV3Like {
@@ -153,6 +156,7 @@ export class DevModelController {
   private readonly env: Record<string, string | undefined>;
   private readonly probes: ResolveDevCredentialOptions["probes"];
   private readonly importModule: (root: string, specifier: string) => Promise<Record<string, unknown>>;
+  private readonly fetchImpl: typeof fetch | undefined;
   private resolution: Promise<Resolution> | null = null;
   private readonly chatSessions = new Map<string, RiderSession>();
   private warmSession: WarmClaudeSession | null = null;
@@ -163,6 +167,7 @@ export class DevModelController {
     this.env = options.env ?? process.env;
     this.probes = options.probes;
     this.importModule = options.importModule ?? importHostModule;
+    this.fetchImpl = options.fetchImpl;
   }
 
   /** Resolve the ladder once per process; state it on the server log once.
@@ -218,11 +223,17 @@ export class DevModelController {
     }
 
     if (credential.rung === "vendo-cloud") {
-      const message = "VENDO_API_KEY is set, but the Vendo Cloud dev-mode model gateway is not live yet "
-        + "(console follow-up). `vendo init` writes a starter-allowance key to .env.local after `vendo cloud login`; "
-        + "until the gateway ships, set a provider key or log in to the Claude Code / Codex CLI for dev mode.";
-      this.announce(credential, " — model gateway not live yet");
-      return { mode: "unavailable", credential, message };
+      // The ladder is the resolver at the seam, so reading env HERE is the
+      // adapter rule working as intended; the cloudModel adapter itself only
+      // sees constructor arguments.
+      const baseUrl = this.env["VENDO_CLOUD_URL"];
+      const model = cloudModel({
+        apiKey: this.env["VENDO_API_KEY"]!,
+        ...(baseUrl === undefined ? {} : { baseUrl }),
+        ...(this.fetchImpl === undefined ? {} : { fetch: this.fetchImpl }),
+      }) as unknown as LanguageModelV3Like;
+      this.announce(credential, " → Vendo Cloud managed inference");
+      return { mode: "delegate", credential, model };
     }
 
     this.announce(credential);

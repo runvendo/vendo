@@ -105,6 +105,11 @@ export {
   type CloudConnectionsOptions,
   type ConnectionsService,
 } from "./connections.js";
+import { cloudModel, unconfiguredModel } from "./model.js";
+// The shipped inference adapters ride the server surface so a host can read
+// the wire contract and pass one explicitly via createVendo({ model }) — see
+// selectModel.
+export { cloudModel, unconfiguredModel, type CloudModelOptions } from "./model.js";
 import { createRuntimeCapture } from "./runtime-capture.js";
 import {
   BASE_PATH,
@@ -114,6 +119,7 @@ import {
   errorResponse,
   internalError,
   routeSegments,
+  type ModelVenue,
   type RouteEntry,
   type SandboxVenue,
   type WireContext,
@@ -159,7 +165,11 @@ export interface Vendo {
 }
 
 export interface CreateVendoConfig {
-  model: LanguageModel;
+  /** The inference adapter (03-agent §1): any ai-SDK LanguageModel — your own
+      provider model (BYO, today's default) or devModel()'s ladder. An
+      explicitly passed model always wins; when unset, VENDO_API_KEY selects
+      Vendo Cloud managed inference (precedence: selectModel). */
+  model?: LanguageModel;
   principal: (req: Request) => Promise<Principal | null>;
   /** Host components available to generated apps; entry names must mirror the client-side components map 1:1. */
   catalog?: ComponentCatalog;
@@ -314,6 +324,31 @@ function selectConnections(
     return cloudConnections({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) });
   }
   return unconfiguredConnections();
+}
+
+/** ADAPTER RULE, inference seam (cloned from selectConnections): the agent and
+    apps blocks consume one ai-SDK LanguageModel; which implementation composes
+    is decided HERE. Precedence, top to bottom:
+      1. an explicitly passed model always wins (BYO — the host's own provider
+         model or devModel()'s ladder);
+      2. VENDO_API_KEY makes Cloud managed inference the default for the seam
+         the host left unfilled (VENDO_CLOUD_URL overrides the console base);
+      3. the unconfigured fallback, which fails closed with setup guidance.
+    The adapters themselves never read the environment. */
+function selectModel(configured: LanguageModel | undefined): {
+  model: LanguageModel;
+  venue: ModelVenue;
+} {
+  if (configured !== undefined) return { model: configured, venue: "custom" };
+  const apiKey = environment("VENDO_API_KEY");
+  if (apiKey !== undefined) {
+    const baseUrl = environment("VENDO_CLOUD_URL");
+    return {
+      model: cloudModel({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) }),
+      venue: "cloud",
+    };
+  }
+  return { model: unconfiguredModel(), venue: false };
 }
 
 function isJsonRequest(request: Request): boolean {
@@ -575,6 +610,9 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const sessionsConfig = validateSessionsConfig(config.sessions);
   const sessionNow = sessionsConfig.now ?? Date.now;
   const sandbox = selectSandbox(config.sandbox);
+  // Inference, selected by the adapter rule at this composition seam
+  // (selectModel above) — the one model the agent and apps blocks consume.
+  const inference = selectModel(config.model);
   const ready = store.ensureSchema();
   // Keep eager schema readiness for hosts that reach into composed blocks,
   // while preventing an unhandled rejection before the first handler/emit awaits it.
@@ -695,7 +733,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     store,
     guard,
     tools: boundTools,
-    model: config.model,
+    model: inference.model,
     catalog,
     pinBaselines,
     ...(theme === undefined ? {} : { theme }),
@@ -726,9 +764,9 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // logins) own the model loop while tools + consent stay on the guard-bound
   // path. Key rungs resolve to null and run the native loop unchanged. The
   // controller refuses session rungs outright when NODE_ENV === "production".
-  const devController = devModelController(config.model);
+  const devController = devModelController(inference.model);
   const agent = createAgent({
-    model: config.model,
+    model: inference.model,
     tools: boundTools,
     guard,
     ...(devController === null
@@ -903,6 +941,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     automations,
     connections,
     sandbox: sandbox.venue,
+    model: inference.venue,
     doctor,
     mcp: mcpOptions !== undefined,
     development,

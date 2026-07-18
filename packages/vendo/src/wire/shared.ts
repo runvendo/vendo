@@ -26,6 +26,10 @@ export const BASE_PATH = "/api/vendo";
 
 export type SandboxVenue = "e2b" | "modal" | "custom" | false;
 
+/** How inference is served: "custom" (a host-passed model — BYO provider or
+    devModel), "cloud" (VENDO_API_KEY → Vendo Cloud managed inference), or off. */
+export type ModelVenue = "custom" | "cloud" | false;
+
 const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   validation: 400,
   "not-found": 404,
@@ -50,6 +54,7 @@ export interface WireDeps {
   automations: AutomationsEngine;
   connections: ConnectionsService;
   sandbox: SandboxVenue;
+  model: ModelVenue;
   doctor: {
     present(ctx: RunContext): Promise<ToolOutcome>;
     actAs(): Promise<ToolOutcome>;

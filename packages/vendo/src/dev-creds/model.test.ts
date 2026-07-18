@@ -91,6 +91,35 @@ describe("devModel", () => {
   });
 });
 
+describe("vendo-cloud rung", () => {
+  it("delegates to Vendo Cloud managed inference through the console endpoint", async () => {
+    const requests: Array<{ url: string; authorization: string | null; body: unknown }> = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      requests.push({
+        url: request.url,
+        authorization: request.headers.get("authorization"),
+        body: await request.json(),
+      });
+      return Response.json({ content: [{ type: "text", text: "ok" }], finishReason: { unified: "stop", raw: null }, usage: {}, warnings: [] });
+    }) as unknown as typeof fetch;
+    const controller = new DevModelController({
+      env: { VENDO_API_KEY: `vnd_${"a".repeat(40)}`, VENDO_CLOUD_URL: "https://cloud.test" },
+      probes: probes(false, false),
+      fetchImpl,
+    });
+    const result = await controller.doGenerate({ prompt: [] }) as { content: unknown[] };
+    expect(result.content).toEqual([{ type: "text", text: "ok" }]);
+    expect(requests[0]).toMatchObject({
+      url: "https://cloud.test/api/v1/inference",
+      authorization: `Bearer vnd_${"a".repeat(40)}`,
+      body: { mode: "generate", options: { prompt: [] } },
+    });
+    // Key rungs never ride a session: the chat loop stays native.
+    expect(await controller.chatSession("thr_1")).toBeNull();
+  });
+});
+
 describe("session-rung chat sessions", () => {
   let root: string;
 

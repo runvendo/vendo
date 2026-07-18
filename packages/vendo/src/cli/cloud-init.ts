@@ -15,9 +15,10 @@ import { readOptional, writeText, type Output } from "./shared.js";
  * mint a metered dev-mode starter allowance and write it to .env.local so the
  * dev never pastes a key.
  *
- * Starter-allowance minting is a Cloud console endpoint (see PR hand-off
- * contract); until it lands, mint returns null and the step degrades to a
- * clear pointer instead of blocking init.
+ * Starter-allowance minting is the Cloud console's POST /api/v1/dev/starter-key
+ * (live since the managed-inference lane); against an older console that
+ * lacks it, mint returns null and the step degrades to a clear pointer
+ * instead of blocking init.
  */
 
 async function askYesNo(question: string, defaultYes = false): Promise<boolean> {
@@ -42,13 +43,14 @@ async function askText(question: string): Promise<string> {
 }
 
 /**
- * Console hand-off contract (parked follow-up in vendo-web):
+ * Console hand-off contract (implemented by vendo-web):
  *   POST /api/v1/dev/starter-key      auth: user session (Bearer access token)
  *   request  { purpose: "dev-mode" }
  *   response { key: "vnd_<40 hex>", meter: { runs: { included, remaining } } }
  * The key is a metered dev-mode API key scoped to the caller's default org.
  * Returns null when the endpoint is absent (404 / not-implemented) so init
- * degrades gracefully; real auth/network errors propagate.
+ * degrades gracefully against older consoles; real auth/network errors
+ * propagate.
  */
 export async function mintStarterAllowance(
   options: Pick<CloudFetchOptions, "apiUrl" | "env" | "fetchImpl" | "home"> = {},
@@ -160,7 +162,7 @@ export async function runCloudStep(options: CloudStepOptions): Promise<CloudStep
     ...(options.home === undefined ? {} : { home: options.home }),
   })))();
   if (key === null) {
-    output.error("Logged in, but the dev-mode starter allowance is not available yet (Cloud console follow-up). Set a provider key or ride your Claude/Codex CLI for now.");
+    output.error("Logged in, but this console does not serve the dev-mode starter allowance yet (older console). Set a provider key or ride your Claude/Codex CLI for now.");
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
   }
   await upsertEnvLocal(root, "VENDO_API_KEY", key);

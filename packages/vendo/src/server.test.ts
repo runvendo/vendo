@@ -324,6 +324,8 @@ describe("09 §3 public wire", () => {
         apps: true,
         automations: true,
         sandbox: false,
+        // setup() passes an explicit model — the BYO rung of the inference seam.
+        model: "custom",
         mcp: false,
         // 04-actions §3 — no BYO connector and no VENDO_API_KEY → no broker.
         connections: false,
@@ -415,6 +417,34 @@ describe("09 §3 public wire", () => {
     // Neither → the unconfigured fallback.
     vi.stubEnv("VENDO_API_KEY", "");
     expect((await compose({})).connections.posture).toBe(false);
+  });
+
+  it("selects the inference adapter with the adapter-rule precedence", async () => {
+    // Adapter rule (2026-07-17 cloud definition), inference seam: explicit
+    // model → VENDO_API_KEY defaults Cloud managed inference → unconfigured.
+    vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-model-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    const modelVenue = async (config: Partial<CreateVendoConfig>): Promise<unknown> => {
+      const vendo = createVendo({
+        principal: vi.fn(async () => principal),
+        store,
+        ...config,
+      });
+      const status = await vendo.handler(request("GET", "/status"));
+      return (await status.json() as { blocks: { model: unknown } }).blocks.model;
+    };
+
+    // An explicitly passed model wins over the key.
+    expect(await modelVenue({ model: {} as LanguageModel })).toBe("custom");
+
+    // The key alone defaults Cloud managed inference for the unfilled seam.
+    expect(await modelVenue({})).toBe("cloud");
+
+    // Neither → the unconfigured fallback (fails closed on first use).
+    vi.stubEnv("VENDO_API_KEY", "");
+    expect(await modelVenue({})).toBe(false);
   });
 
   it("serves sync impact on dev servers and blocks it in production", async () => {
