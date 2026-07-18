@@ -1,11 +1,15 @@
 /**
  * Internal: the attribute layer of the vendo-genui/v2 wire markup compiler
  * (v2 spec §2, docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md;
- * plan decisions D3/D4). Parses one open tag's attribute region into props,
- * delegating brace values to the expression grammar (expression.ts).
+ * plan decisions D3/D4/D5). Parses one open tag's attribute region into
+ * props, delegating brace values to the expression grammar (expression.ts)
+ * and compiling string-form `on*` action attributes to the canonical
+ * `{ action }` prop shape (D5).
  */
 
+import { FN_REFERENCE_PATTERN } from "../fn-references.js";
 import type { Json } from "../ids.js";
+import { TOOL_NAME_PATTERN } from "../tools.js";
 import { parseExpression } from "./expression.js";
 import { NAME_START, readName, skipBraceBlock, skipQuotedRun, skipWhitespace } from "./scan.js";
 import {
@@ -18,9 +22,19 @@ import {
   type Failed,
 } from "./state.js";
 
-/** Task 4 threads the declared `<Query>` names into expression parsing; the
- *  wave-1 skeleton has none, so every bare identifier is unknown-reference. */
-const NO_QUERY_NAMES: ReadonlySet<string> = new Set();
+/** D5 — an attribute name in action position: `on` + uppercase letter. */
+const ACTION_ATTR_PATTERN = /^on[A-Z][A-Za-z0-9_]*$/;
+
+/**
+ * Which element kind the attribute region belongs to (D3/D5):
+ * - `component` — `id` is compiler-owned (ignored with an issue) and
+ *   string-form `on*` attributes compile to canonical actions.
+ * - `app` — `id` is ignored like a component's, but non-name attributes are
+ *   silently discarded by the caller, so no action compilation runs.
+ * - `declaration` — Query/Island: `id`/`name` are the declaration's own
+ *   fields, kept verbatim; no action compilation.
+ */
+export type AttributeElement = "component" | "app" | "declaration";
 
 /** D3 — markup-layer strings are double-quoted only; `\"` and `\\` are the
  *  only escapes (other backslash sequences pass through verbatim — rich
@@ -64,9 +78,26 @@ const parseExpressionAttribute = (state: CompileState): Json | Dropped | Failed 
   const start = state.index + 1;
   if (skipBraceBlock(state) === FAILED) return FAILED;
   const inner = state.source.slice(start, state.index - 1);
-  const result = parseExpression(inner, { queryNames: NO_QUERY_NAMES });
+  const result = parseExpression(inner, { queryNames: state.queryNames });
   state.issues.push(...result.issues);
   return result.dropped ? DROPPED : (result.value as Json);
+};
+
+/** D5 — a string-form `on*` attribute must name a host tool or an fn:
+ *  reference; it compiles to the v1 canonical action prop shape. Anything
+ *  else is dropped. Expression-form `on*` attributes never come through
+ *  here — a hand-written `{ action: ... }` object passes through as-is
+ *  (validateTreeV2's props walk checks fn: grammar anywhere). */
+const compileActionValue = (state: CompileState, name: string, value: string): Json | Dropped => {
+  if (TOOL_NAME_PATTERN.test(value) || FN_REFERENCE_PATTERN.test(value)) {
+    return { action: value };
+  }
+  issue(
+    state,
+    "invalid-action",
+    `action attribute "${name}" names neither a tool nor a valid fn: reference; the attribute was dropped`,
+  );
+  return DROPPED;
 };
 
 export interface ParsedAttributes {
@@ -76,9 +107,11 @@ export interface ParsedAttributes {
 
 /** Parses the attribute region of an open tag through its `>` or `/>`.
  *  Three value forms (D3): `attr="string"`, `attr={expr}`, bare `attr` →
- *  true. Duplicates: last wins + issue. `id` is ignored with an issue (ids
- *  are compiler-owned). Returns FAILED only on EOF truncation. */
-export const parseAttributes = (state: CompileState): ParsedAttributes | Failed => {
+ *  true. Duplicates: last wins + issue. Outside declarations, `id` is
+ *  ignored with an issue (ids are compiler-owned) and string-form `on*`
+ *  attributes compile to actions on components (D5, see
+ *  {@link AttributeElement}). Returns FAILED only on EOF truncation. */
+export const parseAttributes = (state: CompileState, element: AttributeElement): ParsedAttributes | Failed => {
   const props: Record<string, Json> = {};
   const seen = new Set<string>();
   for (;;) {
@@ -115,6 +148,9 @@ export const parseAttributes = (state: CompileState): ParsedAttributes | Failed 
         const parsed = parseMarkupString(state, name);
         if (parsed === FAILED) return FAILED;
         value = parsed;
+        if (typeof value === "string" && element === "component" && ACTION_ATTR_PATTERN.test(name)) {
+          value = compileActionValue(state, name, value);
+        }
       } else if (opener === "{") {
         const parsed = parseExpressionAttribute(state);
         if (parsed === FAILED) return FAILED;
@@ -138,7 +174,7 @@ export const parseAttributes = (state: CompileState): ParsedAttributes | Failed 
       issue(state, "duplicate-attribute", `duplicate attribute "${name}" (the last one wins)`);
     }
     seen.add(name);
-    if (name === "id") {
+    if (name === "id" && element !== "declaration") {
       issue(state, "wire-id-ignored", "wire-supplied id attributes are ignored (ids are compiler-owned)");
       continue;
     }

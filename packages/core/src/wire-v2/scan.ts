@@ -140,9 +140,10 @@ export const skipElement = (state: CompileState, tag: string): void => {
 };
 
 /** Consumes text up to the next plausible tag start (`<` followed by a name
- *  character or `/`) or EOF. Non-whitespace text is skipped with an issue —
- *  Task 4 turns it into Text nodes; whitespace is ignored silently (D3). */
-export const collectText = (state: CompileState): void => {
+ *  character or `/`) or EOF, returning the raw run. The caller (compile.ts)
+ *  turns non-whitespace runs into Text nodes (D3); whitespace-only runs are
+ *  ignored silently. */
+export const collectText = (state: CompileState): string => {
   const start = state.index;
   while (state.index < state.source.length) {
     if (state.source[state.index] === "<") {
@@ -151,7 +152,5 @@ export const collectText = (state: CompileState): void => {
     }
     state.index += 1;
   }
-  if (state.source.slice(start, state.index).trim().length > 0) {
-    issue(state, "text-unsupported-yet", "text children are not supported yet; the text was skipped");
-  }
+  return state.source.slice(start, state.index);
 };

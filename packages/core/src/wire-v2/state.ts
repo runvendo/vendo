@@ -7,6 +7,7 @@
  */
 
 import type { TreeNode } from "../tree.js";
+import type { TreeQueryV2 } from "../tree-v2.js";
 import type { WireIssue } from "./expression.js";
 
 /** Internal EOF-truncation sentinel — flows up instead of a throw so every
@@ -26,6 +27,19 @@ export interface CompileState {
   readonly nodes: TreeNode[];
   /** Per-lowercased-component-name ordinal counters for id minting (D3). */
   readonly ordinals: Map<string, number>;
+  /** D3 forward references — ALL grammar-valid `<Query id>` names in the
+   *  document (collected by the compile pre-scan), so bindings may reference
+   *  a query declared later in the wire. */
+  readonly queryNames: ReadonlySet<string>;
+  /** D3 forward references — the declared `<Island>` names (pre-scanned),
+   *  for `source: "generated"` resolution. */
+  readonly islandNames: ReadonlySet<string>;
+  /** D3 — the host catalog names (compiler option) for source resolution. */
+  readonly hostComponents: ReadonlySet<string>;
+  /** D3 — hoisted `<Query>` declarations in document order. */
+  readonly queries: TreeQueryV2[];
+  /** D3 — captured `<Island>` raw-TSX sources by name. */
+  readonly components: Record<string, string>;
   /** True once `</App>` (or `<App/>`) properly closed the document. */
   appClosed: boolean;
   /** True when EOF truncated an open tag or left elements to auto-close. */
@@ -41,8 +55,10 @@ export interface Frame {
   node: TreeNode;
 }
 
+/** Records a compile issue with the current cursor as its best-effort source
+ *  position (expression-layer issues, merged elsewhere, carry no index). */
 export const issue = (state: CompileState, code: string, message: string): void => {
-  state.issues.push({ code, message });
+  state.issues.push({ code, message, index: state.index });
 };
 
 /** ES2024 String.prototype.isWellFormed — guaranteed at runtime by the

@@ -19,10 +19,14 @@ import { isWellFormedUtf16 } from "./state.js";
 
 /** v2 spec §2 — one compiler-visible issue. Codes are stable kebab-case
  *  (`unknown-reference`, `state-depth-unsupported`, `reshape-unsupported`,
- *  `malformed-expression`); the markup compiler reuses this shape. */
+ *  `malformed-expression`); the markup compiler reuses this shape. `index`
+ *  is a best-effort source position: the markup compiler records its cursor
+ *  when the position is at hand; expression-layer issues omit it (their
+ *  indices are relative to the attribute's inner text, not the wire). */
 export interface WireIssue {
   code: string;
   message: string;
+  index?: number;
 }
 
 /** v2 spec §2 — the declared `<Query>` names in scope for binding resolution. */

@@ -8,8 +8,10 @@ import { isPlainObject, treeNodeSchema, type TreeNode } from "./tree.js";
 
 /** v2 spec §1–2 (docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md) —
  *  query names are bare identifiers: the query's result lives at JSON Pointer
- *  `"/" + name` by definition, so there is no `path` field to validate. */
-const QUERY_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+ *  `"/" + name` by definition, so there is no `path` field to validate.
+ *  Shared with the wire compiler (wire-v2/compile.ts), which validates
+ *  `<Query id>` against the same grammar. */
+export const QUERY_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /** v2 spec §1–2 (docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md) */
 export interface TreeQueryV2 {
