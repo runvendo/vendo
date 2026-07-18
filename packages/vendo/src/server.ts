@@ -594,7 +594,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const nodeEnv = environment("NODE_ENV");
   const isDevelopmentEnv = nodeEnv === "development";
   const isProductionEnv = nodeEnv === "production";
-  if (configuredBaseUrl === undefined && isProductionEnv) {
+  // One condition arms BOTH the boot warning and the per-call fail-closed
+  // policy below, so the console.error tests pin exactly what arms refusal.
+  const baseUrlMissingInProduction = configuredBaseUrl === undefined && isProductionEnv;
+  if (baseUrlMissingInProduction) {
     // Loud, once, at composition — never throws (a host that never makes a
     // present-mode host tool call must keep booting). The actual refusal
     // happens per-call below via untrustedOriginPolicy: "fail".
@@ -626,7 +629,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // it can't authenticate rather than quietly dropping the caller's
     // credentials. Dev/test keep today's warn-and-continue (dev never reaches
     // "untrusted-host-origin" at all — see onRequestOrigin below).
-    ...(configuredBaseUrl === undefined && isProductionEnv ? { untrustedOriginPolicy: "fail" as const } : {}),
+    ...(baseUrlMissingInProduction ? { untrustedOriginPolicy: "fail" as const } : {}),
   };
   const actions = createActions(actionsConfig);
   const doctor = {

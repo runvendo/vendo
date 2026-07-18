@@ -26,6 +26,21 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
+/** Temp-dir PGlite store with registered teardown. Teardown awaits schema
+ * readiness first: createVendo fires ensureSchema() without awaiting it, and
+ * closing PGlite mid-query hangs the process (bites tests that compose and
+ * assert without ever touching the wire). */
+async function tempStore(prefix: string): Promise<VendoStore> {
+  const dataDir = await mkdtemp(join(tmpdir(), prefix));
+  const store = createStore({ dataDir });
+  cleanups.push(async () => {
+    await store.ensureSchema().catch(() => undefined);
+    await store.close();
+    await rm(dataDir, { recursive: true, force: true });
+  });
+  return store;
+}
+
 const principal: Principal = { kind: "user", subject: "user_wire" };
 const ctx: RunContext = {
   principal,
@@ -50,17 +65,7 @@ async function setup(
   resolver = vi.fn(async () => principal),
   options: Pick<Partial<CreateVendoConfig>, "policy" | "development"> = {},
 ): Promise<{ vendo: Vendo; resolver: typeof resolver }> {
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-"));
-  const store = createStore({ dataDir });
-  // Await schema readiness before closing: boot-only tests (compose, assert,
-  // never touch the wire) must not close the store while createVendo's
-  // fire-and-forget ensureSchema() is in flight — closing PGlite mid-query
-  // hangs the process.
-  cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+  const store = await tempStore("vendo-wire-");
   const vendo = createVendo({
     model: {} as LanguageModel,
     principal: resolver,
@@ -342,17 +347,7 @@ describe("09 §3 public wire", () => {
       create: vi.fn(async () => { throw new Error("not called"); }),
       resume: vi.fn(async () => { throw new Error("not called"); }),
     };
-    const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-custom-"));
-    const store = createStore({ dataDir });
-    // Await schema readiness before closing: boot-only tests (compose, assert,
-  // never touch the wire) must not close the store while createVendo's
-  // fire-and-forget ensureSchema() is in flight — closing PGlite mid-query
-  // hangs the process.
-  cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+    const store = await tempStore("vendo-wire-custom-");
     const statusFor = async (
       env: { E2B_API_KEY: string; MODAL_TOKEN_ID: string; MODAL_TOKEN_SECRET: string },
       sandbox?: SandboxAdapter,
@@ -1117,17 +1112,7 @@ describe("03 §3 prompt wiring (AGENT-1/2)", () => {
 describe("09 §3 conversational turn against the real composed store", () => {
   it("streams a turn, persists the thread through the routed vendo_threads table, and reads it back", async () => {
     const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
-    const dataDir = await mkdtemp(join(tmpdir(), "vendo-turn-"));
-    const store = createStore({ dataDir });
-    // Await schema readiness before closing: boot-only tests (compose, assert,
-  // never touch the wire) must not close the store while createVendo's
-  // fire-and-forget ensureSchema() is in flight — closing PGlite mid-query
-  // hangs the process.
-  cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+    const store = await tempStore("vendo-turn-");
     const model = new MockLanguageModelV3({
       doStream: async () => ({
         stream: simulateReadableStream({
@@ -1241,17 +1226,7 @@ describe("09 §3 conversational turn against the real composed store", () => {
         };
       },
     });
-    const dataDir = await mkdtemp(join(tmpdir(), "vendo-stream-turn-"));
-    const store = createStore({ dataDir });
-    // Await schema readiness before closing: boot-only tests (compose, assert,
-  // never touch the wire) must not close the store while createVendo's
-  // fire-and-forget ensureSchema() is in flight — closing PGlite mid-query
-  // hangs the process.
-  cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+    const store = await tempStore("vendo-stream-turn-");
     const vendo = createVendo({
       model: model as unknown as LanguageModel,
       principal: async () => principal,
@@ -1284,17 +1259,7 @@ describe("09 §3 conversational turn against the real composed store", () => {
 describe("09 §2 apps composition", () => {
   it("passes host-component catalog registrations to createApps", { timeout: 120_000 }, async () => {
     const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
-    const dataDir = await mkdtemp(join(tmpdir(), "vendo-catalog-"));
-    const store = createStore({ dataDir });
-    // Await schema readiness before closing: boot-only tests (compose, assert,
-  // never touch the wire) must not close the store while createVendo's
-  // fire-and-forget ensureSchema() is in flight — closing PGlite mid-query
-  // hangs the process.
-  cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+    const store = await tempStore("vendo-catalog-");
     const generated = JSON.stringify({
       name: "Catalog app",
       tree: {
@@ -1431,17 +1396,7 @@ describe("09 §2 apps composition", () => {
 
 describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H)", () => {
   async function mcpVendo(mcp: CreateVendoConfig["mcp"] = true): Promise<Vendo> {
-    const dataDir = await mkdtemp(join(tmpdir(), "vendo-door-"));
-    const store = createStore({ dataDir });
-    // Await schema readiness before closing: boot-only tests (compose, assert,
-  // never touch the wire) must not close the store while createVendo's
-  // fire-and-forget ensureSchema() is in flight — closing PGlite mid-query
-  // hangs the process.
-  cleanups.push(async () => {
-    await store.ensureSchema().catch(() => undefined);
-    await store.close();
-    await rm(dataDir, { recursive: true, force: true });
-  });
+    const store = await tempStore("vendo-door-");
     const vendo = createVendo({
       model: {} as LanguageModel,
       principal: async () => null,
