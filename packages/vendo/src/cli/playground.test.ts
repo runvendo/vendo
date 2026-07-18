@@ -24,6 +24,19 @@ describe("startPlaygroundServer", () => {
     expect(await response.text()).toContain("Vendo Playground");
   });
 
+  it("serves the bundled playground app the page loads", async () => {
+    const server = await startPlaygroundServer({});
+    cleanup.push(() => server.close());
+
+    const page = await (await fetch(server.url)).text();
+    expect(page).toContain('src="/playground.js"');
+
+    const bundle = await fetch(`${server.url}/playground.js`);
+    expect(bundle.status).toBe(200);
+    expect(bundle.headers.get("content-type")).toContain("javascript");
+    expect((await bundle.text()).length).toBeGreaterThan(10_000);
+  });
+
   it("honors a requested port", async () => {
     // Find a currently-free port, then ask for it explicitly.
     const probe = await startPlaygroundServer({});

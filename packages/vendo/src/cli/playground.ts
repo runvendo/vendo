@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { PLAYGROUND_BUNDLE_SOURCE } from "./playground/bundle.gen.js";
 import { consoleOutput, type Output } from "./shared.js";
 
 /**
@@ -15,6 +16,8 @@ export interface PlaygroundServer {
 }
 
 function pageHtml(): string {
+  // Content-keyed script URL: a rebuilt bundle can never be served stale out
+  // of the browser cache.
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -24,6 +27,7 @@ function pageHtml(): string {
 </head>
 <body>
 <div id="root"></div>
+<script src="/playground.js?v=${PLAYGROUND_BUNDLE_SOURCE.length.toString(36)}"></script>
 </body>
 </html>
 `;
@@ -35,7 +39,21 @@ export async function startPlaygroundServer(options: { port?: number }): Promise
       response.writeHead(405).end();
       return;
     }
-    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    const path = new URL(request.url ?? "/", "http://localhost").pathname;
+    if (path === "/playground.js") {
+      response.writeHead(200, { "content-type": "application/javascript; charset=utf-8", "cache-control": "no-store" });
+      response.end(PLAYGROUND_BUNDLE_SOURCE);
+      return;
+    }
+    if (path === "/favicon.ico") {
+      response.writeHead(204).end();
+      return;
+    }
+    if (path !== "/" && path !== "/index.html") {
+      response.writeHead(404, { "content-type": "text/plain" }).end("Not found");
+      return;
+    }
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     response.end(pageHtml());
   });
 
