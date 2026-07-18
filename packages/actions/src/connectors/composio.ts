@@ -118,6 +118,13 @@ export function composioConnector(config: {
     for (let page = 0; page < MAX_PAGES; page += 1) {
       const response = await composioFetch("/api/v3/tools", {
         query: {
+          // Composio's real catalog is 1,000+ toolkits and 20,000+ tools
+          // (docs.composio.dev/toolkits). An unscoped fetch (bare `apps`)
+          // walks that whole catalog, so every page requests the API's max
+          // page size — 1000, per docs.composio.dev/reference/api-reference/
+          // tools/getTools — to keep the walk inside MAX_PAGES regardless of
+          // whatever smaller default the API would otherwise apply.
+          limit: "1000",
           ...(app === undefined ? {} : { toolkit_slug: app }),
           ...(cursor === undefined ? {} : { cursor }),
         },
