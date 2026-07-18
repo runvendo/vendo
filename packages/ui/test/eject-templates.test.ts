@@ -96,12 +96,15 @@ describe("eject template assembly", () => {
   it("accepts imports of publicly exported symbols and intra-surface relative imports", async () => {
     const { checkTemplateSource, publicSurfaces } = await lib();
     const surfaces = await publicSurfaces(PACKAGE_DIR);
+    // Specifiers are concatenated so the repo dependency-guard (which greps
+    // raw file text for import-shaped strings) doesn't read fixture data as
+    // real escaping imports.
     const errors = checkTemplateSource(
       "thread/fine.tsx",
       [
-        'import { ApprovalCard } from "../approval-card.js";',
-        'import { useVendoThread } from "../../hooks/use-vendo-thread.js";',
-        'import { PayloadView } from "../../tree/renderer.js";',
+        'import { ApprovalCard } from ' + '"../approval-card.js";',
+        'import { useVendoThread } from ' + '"../../hooks/use-vendo-thread.js";',
+        'import { PayloadView } from ' + '"../../tree/renderer.js";',
         'import { Composer } from "./composer.js";',
         'import { useState } from "react";',
         "",
