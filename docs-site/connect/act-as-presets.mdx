@@ -101,7 +101,8 @@ configurable claims and header shape.
 Import the preset you want and hand it to `createVendo` as `actAs`. Each
 preset closes over a secret you provision (session secret, project JWT
 secret, or a host-generated away secret) and returns the `ActAs` function
-Vendo calls before every away tool call.
+Vendo calls before every away tool call. Clerk and Auth0 return a preset
+object instead — pass its `actAs` half.
 
 ```ts
 import { createVendo } from "@vendoai/vendo/server";
@@ -126,7 +127,7 @@ should stamp on each minted token:
 import { supabasePreset } from "@vendoai/actions/presets";
 
 actAs: supabasePreset({
-  jwtSecret: process.env.SUPABASE_JWT_SECRET!,
+  secret: process.env.SUPABASE_JWT_SECRET!,
   role: "authenticated",
   audience: "authenticated",
 });
@@ -138,23 +139,24 @@ share with the verify middleware in the next section:
 ```ts
 import { clerkPreset } from "@vendoai/actions/presets";
 
-actAs: clerkPreset({
-  awaySecret: process.env.VENDO_AWAY_SECRET!,
+const clerk = clerkPreset({
+  secret: process.env.VENDO_AWAY_TOKEN_SECRET!,
 });
+
+// in createVendo:
+actAs: clerk.actAs,
 ```
 
-The generic preset covers anything else. Configure the claims map, header
-name, and prefix your host API expects:
+The generic preset covers anything else. Configure the claims map and the
+headers your host API expects (the default is `Authorization: Bearer`):
 
 ```ts
 import { genericJwtPreset } from "@vendoai/actions/presets";
 
 actAs: genericJwtPreset({
   secret: process.env.HOST_JWT_SECRET!,
-  header: "authorization",
-  prefix: "Bearer ",
+  headers: (token) => ({ authorization: `Bearer ${token}` }),
   claims: (principal) => ({
-    sub: principal.subject,
     scope: "api:call",
   }),
 });
@@ -171,9 +173,11 @@ middleware and an Express middleware — mount the one that fits your app.
 // middleware.ts (Next.js)
 import { clerkPreset } from "@vendoai/actions/presets";
 
-export const middleware = clerkPreset.nextMiddleware({
-  awaySecret: process.env.VENDO_AWAY_SECRET!,
+const clerk = clerkPreset({
+  secret: process.env.VENDO_AWAY_TOKEN_SECRET!,
 });
+
+export const middleware = clerk.nextMiddleware;
 
 export const config = { matcher: "/api/:path*" };
 ```
@@ -183,10 +187,12 @@ export const config = { matcher: "/api/:path*" };
 import express from "express";
 import { auth0Preset } from "@vendoai/actions/presets";
 
+const auth0 = auth0Preset({
+  secret: process.env.VENDO_AWAY_TOKEN_SECRET!,
+});
+
 const app = express();
-app.use(auth0Preset.expressMiddleware({
-  awaySecret: process.env.VENDO_AWAY_SECRET!,
-}));
+app.use(auth0.expressMiddleware);
 ```
 
 Middleware does three things on every request:
@@ -199,8 +205,9 @@ Middleware does three things on every request:
 - Rejects forged, expired, or wrong-audience tokens before your handler
   runs.
 
-The `awaySecret` you pass to the preset and the middleware must match. Store
-it as an environment variable and rotate by redeploying both halves.
+The `secret` the producer and the middleware constructions read must match
+(both default to the `VENDO_AWAY_TOKEN_SECRET` env variable). Store it as an
+environment variable and rotate by redeploying both halves.
 
 ## Impersonation guard
 
@@ -213,7 +220,7 @@ preset — you don't wire it separately.
 ## Token caching and rotation
 
 Every preset caches minted tokens in memory until just before expiry (default
-300 s safety margin, 30 s for the short-lived away tokens). Cache keys
+300 s token lifetime, refreshed 30 s before expiry). Cache keys
 include a fingerprint of the signing secret, so rotating the secret
 invalidates the cache immediately — the next away call mints against the new
 secret. Expired entries are dropped on write, so the cache size stays bounded
