@@ -31,6 +31,14 @@ describe("parseExpression literals", () => {
     expectValue("2.5E-2", 0.025);
   });
 
+  it("drops 1e999 (overflows to Infinity, which canonicalJson rejects)", () => {
+    expectDropped("1e999", "malformed-expression");
+  });
+
+  it("drops -1e999 (overflows to -Infinity, which canonicalJson rejects)", () => {
+    expectDropped("-1e999", "malformed-expression");
+  });
+
   it("rejects non-JSON number spellings", () => {
     expectDropped("+5", "malformed-expression");
     expectDropped(".5", "malformed-expression");

@@ -74,7 +74,14 @@ const parseNumber = (state: ParserState): number | Failed => {
     return malformed(state, `invalid number at index ${state.index}`);
   }
   state.index = NUMBER_PATTERN.lastIndex;
-  return Number(match[0]);
+  const value = Number(match[0]);
+  // A grammar-valid literal like 1e999 overflows to ±Infinity, which is not
+  // JSON: canonicalJson (jcs.ts) throws on non-finite numbers, so letting it
+  // through would un-drop the totality guarantee one layer up.
+  if (!Number.isFinite(value)) {
+    return malformed(state, `number literal "${match[0]}" overflows to a non-finite value`);
+  }
+  return value;
 };
 
 /** Quote char and backslash escape themselves; `\n`/`\t` become newline/tab;
