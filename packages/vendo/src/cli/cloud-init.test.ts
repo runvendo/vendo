@@ -27,17 +27,17 @@ const envKey: DevCredential = { rung: "env-key", provider: "anthropic", envVar: 
 const goodKey = `vnd_${"a".repeat(40)}`;
 
 describe("runCloudStep", () => {
-  it("states the plan when VENDO_API_KEY is valid", async () => {
+  it("reports a present, well-formed VENDO_API_KEY", async () => {
     const messages = output();
     const result = await runCloudStep({
       root: await tempRoot(),
       output: messages.sink,
       yes: false,
       credential: envKey,
-      cloudProbe: async () => ({ present: true, ok: true, plan: { id: "pro", name: "Pro", status: "active" }, capabilities: ["sharing"], unlocks: ["x"] }),
+      cloudProbe: async () => ({ present: true, ok: true, unlocks: ["x"] }),
     });
     expect(result.keyValid).toBe(true);
-    expect(messages.logs.some((l) => l.includes("VENDO_API_KEY valid (plan: Pro)"))).toBe(true);
+    expect(messages.logs.some((l) => l.includes("VENDO_API_KEY present and well-formed"))).toBe(true);
   });
 
   it("one calm line + a pointer when no key and the ladder wants one", async () => {

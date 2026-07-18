@@ -493,17 +493,16 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     expect(report.liveTurn.attempted).toBe(false);
   });
 
-  it("validates a present VENDO_API_KEY and shows the plan", async () => {
+  it("reports a present, well-formed VENDO_API_KEY", async () => {
     const messages = output();
     expect(await doctor({
       targetDir: await healthy(),
       fetchImpl: successfulProbeFetch(),
-      cloudProbe: async () => ({ present: true, ok: true, plan: { id: "pro", name: "Pro", status: "active" }, capabilities: ["sharing", "insights"], unlocks: ["x"] }),
+      cloudProbe: async () => ({ present: true, ok: true, unlocks: ["x"] }),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
-    expect(messages.logs).toContain("ok: Vendo Cloud key valid (plan: Pro)");
-    expect(messages.logs).toContain("Cloud capabilities: sharing, insights.");
+    expect(messages.logs).toContain("ok: Vendo Cloud key present and well-formed");
   });
 
   it("warns when VENDO_API_KEY is present but invalid", async () => {

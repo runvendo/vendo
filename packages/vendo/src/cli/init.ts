@@ -1146,8 +1146,9 @@ export async function runInit(options: InitOptions): Promise<number> {
       yes: options.yes === true,
       ...(options.devMode ?? {}),
     });
-    // ENG-339: cloud in init — validate VENDO_API_KEY (state what it unlocks),
-    // else offer `vendo cloud login` + a starter allowance written to .env.local.
+    // ENG-339: cloud in init — check VENDO_API_KEY shape locally (state what a
+    // key unlocks), else offer `vendo cloud login` + a starter allowance
+    // written to .env.local.
     await runCloudStep({
       root,
       output,

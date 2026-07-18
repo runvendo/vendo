@@ -27,7 +27,6 @@ export interface DoctorOptions {
   /** Auto-confirm the dev-server-probe consent (non-interactive). */
   yes?: boolean;
   env?: Record<string, string | undefined>;
-  apiUrl?: string;
   probes?: ResolveDevCredentialOptions["probes"];
   telemetry?: {
     home?: string;
@@ -40,7 +39,7 @@ export interface DoctorOptions {
   interactive?: boolean;
   confirm?: (question: string, defaultYes?: boolean) => Promise<boolean>;
   liveTurn?: (base: string) => Promise<LiveTurnResult>;
-  cloudProbe?: (options: { env?: Record<string, string | undefined>; apiUrl?: string; fetchImpl?: typeof fetch }) => Promise<CloudDoctorResult>;
+  cloudProbe?: (options: { env?: Record<string, string | undefined> }) => Promise<CloudDoctorResult>;
   startDevServer?: (options: { root: string; statusUrl: string; env?: Record<string, string | undefined>; fetchImpl?: typeof fetch }) => Promise<{ ok: boolean; stop: () => void }>;
   codexDriftProbe?: () => Promise<CodexDriftResult>;
 }
@@ -350,17 +349,11 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     fail(`live model turn cannot run; start the dev server at ${statusUrl} and retry`);
   }
 
-  // VENDO_API_KEY validation + what Cloud unlocks (design §5-6).
-  const cloud = await (options.cloudProbe ?? ((o) => cloudDoctor(o)))({
-    env,
-    ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
-    ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
-  });
+  // VENDO_API_KEY local shape check + what Cloud unlocks (design §5-6). Key
+  // problems surface on the first real service call — no validate round-trip.
+  const cloud = await (options.cloudProbe ?? ((o) => cloudDoctor(o)))({ env });
   if (cloud.present && cloud.ok) {
-    pass(`Vendo Cloud key valid (plan: ${cloud.plan?.name || cloud.plan?.id || "unknown"})`);
-    if (cloud.capabilities && cloud.capabilities.length > 0) {
-      note(`Cloud capabilities: ${cloud.capabilities.join(", ")}.`);
-    }
+    pass("Vendo Cloud key present and well-formed");
   } else if (cloud.present) {
     warn(`VENDO_API_KEY is set but not usable: ${cloud.error ?? "validation failed"}`);
   } else {

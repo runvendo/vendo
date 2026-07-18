@@ -11,16 +11,15 @@ import {
   type DevCredential,
   type ResolveDevCredentialOptions,
 } from "../dev-creds/resolve.js";
-import { cloudFetch, resolveCloudBaseUrl, type CloudFetchOptions } from "./cloud/client.js";
-import { isVendoKey, parseContractV2, type ContractV2 } from "./cloud/entitlements.js";
+import { isVendoKey } from "./cloud/client.js";
 import { detectPackageManager } from "./dev-mode.js";
 
 /**
  * ENG-339 (install-dx design §5-6) — doctor v2's live surface: one real model
- * turn through the wired HTTP route, VENDO_API_KEY validation with what Cloud
- * unlocks, a consent-gated dev-server starter for the probe, and a codex
- * app-server protocol-drift warning. All seam-driven so doctor stays testable
- * without live keys or a running server.
+ * turn through the wired HTTP route, a local VENDO_API_KEY shape check with
+ * what Cloud unlocks, a consent-gated dev-server starter for the probe, and a
+ * codex app-server protocol-drift warning. All seam-driven so doctor stays
+ * testable without live keys or a running server.
  */
 
 /* ------------------------------------------------------------------------ *
@@ -145,7 +144,7 @@ async function readTurnStream(
 }
 
 /* ------------------------------------------------------------------------ *
- * VENDO_API_KEY validation + what Cloud unlocks.
+ * VENDO_API_KEY local shape check + what Cloud unlocks.
  * ------------------------------------------------------------------------ */
 
 /** Human-facing list of what a Cloud key unlocks over OSS single-player. Shown
@@ -160,29 +159,17 @@ export const CLOUD_UNLOCKS: readonly string[] = [
 export interface CloudDoctorResult {
   present: boolean;
   ok: boolean;
-  plan?: { id: string; name: string; status: string };
-  capabilities?: string[];
   unlocks: readonly string[];
   error?: string;
 }
 
 export interface CloudDoctorOptions {
   env?: Record<string, string | undefined>;
-  apiUrl?: string;
-  fetchImpl?: typeof fetch;
-  /** Test seam: validate a key without a network round-trip. */
-  validate?: (key: string) => Promise<ContractV2 | null>;
 }
 
-async function defaultValidate(
-  key: string,
-  options: Pick<CloudFetchOptions, "apiUrl" | "env" | "fetchImpl">,
-): Promise<ContractV2 | null> {
-  const raw = await cloudFetch("/api/v1/keys/validate", { ...options, auth: "key", apiKey: key, method: "POST" });
-  return parseContractV2(raw);
-}
-
-/** Validate VENDO_API_KEY when present; always surface what Cloud unlocks. */
+/** Check VENDO_API_KEY presence and shape locally; always surface what Cloud
+ *  unlocks. Key problems surface on the first real service call — there is no
+ *  validate endpoint. */
 export async function cloudDoctor(options: CloudDoctorOptions = {}): Promise<CloudDoctorResult> {
   const env = options.env ?? process.env;
   const key = env["VENDO_API_KEY"];
@@ -192,29 +179,7 @@ export async function cloudDoctor(options: CloudDoctorOptions = {}): Promise<Clo
   if (!isVendoKey(key)) {
     return { present: true, ok: false, unlocks: CLOUD_UNLOCKS, error: "VENDO_API_KEY is malformed (expected vnd_ + 40 hex chars)" };
   }
-  const validate = options.validate
-    ?? ((candidate: string) => defaultValidate(candidate, {
-      ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
-      env,
-      ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
-    }));
-  try {
-    const contract = await validate(key);
-    if (contract === null) {
-      return { present: true, ok: false, unlocks: CLOUD_UNLOCKS, error: "Vendo Cloud did not return a valid entitlement contract" };
-    }
-    const capabilities = Object.entries(contract.capabilities)
-      .filter(([, on]) => on)
-      .map(([name]) => name);
-    return { present: true, ok: true, plan: contract.plan, capabilities, unlocks: CLOUD_UNLOCKS };
-  } catch (error) {
-    return {
-      present: true,
-      ok: false,
-      unlocks: CLOUD_UNLOCKS,
-      error: error instanceof Error ? error.message : "Vendo Cloud validation failed",
-    };
-  }
+  return { present: true, ok: true, unlocks: CLOUD_UNLOCKS };
 }
 
 /* ------------------------------------------------------------------------ *

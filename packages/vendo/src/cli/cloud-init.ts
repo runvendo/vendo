@@ -3,17 +3,17 @@ import { stdin, stdout } from "node:process";
 import { join } from "node:path";
 import type { DevCredential } from "../dev-creds/resolve.js";
 import { runLogin } from "./cloud/auth.js";
-import { CloudError, cloudFetch, type CloudFetchOptions } from "./cloud/client.js";
-import { isVendoKey } from "./cloud/entitlements.js";
+import { CloudError, cloudFetch, isVendoKey, type CloudFetchOptions } from "./cloud/client.js";
 import { cloudDoctor, type CloudDoctorResult } from "./doctor-live.js";
 import { readOptional, writeText, type Output } from "./shared.js";
 
 /**
- * ENG-339 (install-dx design §6) — cloud in init. Detect + validate
- * VENDO_API_KEY when present (state what it unlocks), one calm line when
- * absent, and — when a starter model key would actually help the ladder —
- * offer `vendo cloud login` inline, then mint a metered dev-mode starter
- * allowance and write it to .env.local so the dev never pastes a key.
+ * ENG-339 (install-dx design §6) — cloud in init. Detect VENDO_API_KEY when
+ * present and check its shape locally (key problems surface on the first real
+ * service call), one calm line when absent, and — when a starter model key
+ * would actually help the ladder — offer `vendo cloud login` inline, then
+ * mint a metered dev-mode starter allowance and write it to .env.local so the
+ * dev never pastes a key.
  *
  * Starter-allowance minting is a Cloud console endpoint (see PR hand-off
  * contract); until it lands, mint returns null and the step degrades to a
@@ -98,7 +98,7 @@ export interface CloudStepOptions {
   /** Seams (tests). */
   confirm?: (question: string, defaultYes?: boolean) => Promise<boolean>;
   promptEmail?: (question: string) => Promise<string>;
-  cloudProbe?: (options: { env?: Record<string, string | undefined>; apiUrl?: string }) => Promise<CloudDoctorResult>;
+  cloudProbe?: (options: { env?: Record<string, string | undefined> }) => Promise<CloudDoctorResult>;
   login?: (email: string) => Promise<number>;
   mint?: () => Promise<string | null>;
 }
@@ -113,21 +113,14 @@ export interface CloudStepResult {
 export async function runCloudStep(options: CloudStepOptions): Promise<CloudStepResult> {
   const { root, output, credential } = options;
   const env = options.env ?? process.env;
-  const cloud = await (options.cloudProbe ?? ((o) => cloudDoctor(o)))({
-    env,
-    ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
-  });
+  const cloud = await (options.cloudProbe ?? ((o) => cloudDoctor(o)))({ env });
 
   if (cloud.present && cloud.ok) {
-    const plan = cloud.plan?.name || cloud.plan?.id || "unknown";
-    output.log(`\nVendo Cloud: VENDO_API_KEY valid (plan: ${plan}).`);
-    if (cloud.capabilities && cloud.capabilities.length > 0) {
-      output.log(`Unlocked: ${cloud.capabilities.join(", ")}.`);
-    }
+    output.log("\nVendo Cloud: VENDO_API_KEY present and well-formed.");
     return { keyPresent: true, keyValid: true, wroteEnvLocal: false };
   }
   if (cloud.present) {
-    output.error(`\nVendo Cloud: VENDO_API_KEY is set but not usable (${cloud.error ?? "validation failed"}). Fix or remove it; \`vendo cloud login\` can issue a fresh one.`);
+    output.error(`\nVendo Cloud: VENDO_API_KEY is set but not usable (${cloud.error ?? "malformed"}). Fix or remove it; \`vendo cloud login\` can issue a fresh one.`);
     return { keyPresent: true, keyValid: false, wroteEnvLocal: false };
   }
 
