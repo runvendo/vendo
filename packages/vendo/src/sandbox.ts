@@ -1,5 +1,6 @@
 import { VendoError, type VendoErrorCode } from "@vendoai/core";
 import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
+import { deploymentIdentityHeaders } from "./deployment-identity.js";
 
 /** The console mounts the managed-sandbox surface here
  * (apps/console/app/api/v1/sandboxes/*). */
@@ -18,10 +19,17 @@ const CLOUD_ERROR_CODES: ReadonlySet<string> = new Set([
   "conflict",
 ] satisfies VendoErrorCode[]);
 
+/** Same default as the e2b adapter and the retired ENG-295 broker client:
+ * generous enough for a slow machine boot, small enough that a hung console
+ * request can't wedge a generation forever. */
+const DEFAULT_TIMEOUT_MS = 300_000;
+
 export interface CloudSandboxOptions {
   apiKey: string;
   /** Defaults to the Vendo console; the composition seam passes VENDO_CLOUD_URL. */
   baseUrl?: string;
+  /** Per-request abort timeout, in milliseconds. */
+  timeoutMs?: number;
   fetch?: typeof fetch;
 }
 
@@ -47,7 +55,9 @@ function decodeBase64(value: string): Uint8Array {
   try {
     return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
   } catch {
-    throw new VendoError("validation", "Vendo Cloud sandbox returned invalid base64 content");
+    // Console garbage is the SERVICE misbehaving, never the caller's fault —
+    // same posture as every malformed-success branch below.
+    throw new VendoError("sandbox-unavailable", "Vendo Cloud sandbox returned invalid base64 content");
   }
 }
 
@@ -65,8 +75,13 @@ async function raiseCloudError(response: Response): Promise<never> {
     ? error.message
     : `Vendo Cloud sandbox request failed with ${response.status}`;
   // The console's meter gate (quota-exhausted) rides HTTP 402 — the one
-  // "pay/upgrade to proceed" signal, same mapping as cloudConnections.
-  if (response.status === 402) throw new VendoError("cloud-required", message);
+  // "pay/upgrade to proceed" signal, same mapping as cloudConnections. 401
+  // (bad/revoked key) is the same "fix your Cloud standing" story for the
+  // host operator, so it keeps the ENG-295 client's cloud-required mapping —
+  // with the server's own message preserved.
+  if (response.status === 402 || response.status === 401) {
+    throw new VendoError("cloud-required", message);
+  }
   const code = typeof error?.code === "string" && CLOUD_ERROR_CODES.has(error.code)
     ? (error.code as VendoErrorCode)
     : "sandbox-unavailable";
@@ -81,6 +96,7 @@ async function raiseCloudError(response: Response): Promise<never> {
  * never reads the environment. */
 export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchImpl = options.fetch ?? globalThis.fetch;
 
   const send = async (path: string, init: RequestInit = {}): Promise<Response> => {
@@ -89,8 +105,12 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
       headers: {
         authorization: `Bearer ${options.apiKey}`,
         accept: "application/json",
+        // Interaction model: key-authed Cloud requests carry the deployment
+        // identity; the console meters usage from real traffic.
+        ...(await deploymentIdentityHeaders()),
         ...init.headers,
       },
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) await raiseCloudError(response);
     return response;
@@ -123,10 +143,11 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
           ...(req.body === undefined ? {} : { body_b64: encodeBase64(toBytes(req.body)) }),
         }) as { status?: unknown; headers?: unknown; body_b64?: unknown };
         if (typeof payload.status !== "number" || typeof payload.body_b64 !== "string") {
-          throw new VendoError("validation", "Vendo Cloud sandbox returned an invalid proxy response");
+          throw new VendoError("sandbox-unavailable", "Vendo Cloud sandbox returned an invalid proxy response");
         }
         const headers = typeof payload.headers === "object" && payload.headers !== null
-          ? (payload.headers as Record<string, string>)
+          ? Object.fromEntries(Object.entries(payload.headers)
+              .filter((entry): entry is [string, string] => typeof entry[1] === "string"))
           : {};
         return { status: payload.status, headers, body: decodeBase64(payload.body_b64) };
       },
@@ -137,7 +158,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
           ...(execOptions?.timeoutMs === undefined ? {} : { timeout_ms: execOptions.timeoutMs }),
         }) as { code?: unknown; stdout?: unknown; stderr?: unknown };
         if (typeof payload.code !== "number") {
-          throw new VendoError("validation", "Vendo Cloud sandbox returned an invalid exec response");
+          throw new VendoError("sandbox-unavailable", "Vendo Cloud sandbox returned an invalid exec response");
         }
         return {
           code: payload.code,
@@ -167,7 +188,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
       async snapshot() {
         const payload = await sendJson(`${prefix}/snapshot`, "POST") as { ref?: unknown };
         if (typeof payload.ref !== "string" || payload.ref.length === 0) {
-          throw new VendoError("validation", "Vendo Cloud sandbox returned no snapshot reference");
+          throw new VendoError("sandbox-unavailable", "Vendo Cloud sandbox returned no snapshot reference");
         }
         return payload.ref;
       },
@@ -189,7 +210,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
   const parseHandle = (payload: unknown): { id: string; url: string } => {
     const handle = payload as { id?: unknown; url?: unknown };
     if (typeof handle.id !== "string" || typeof handle.url !== "string") {
-      throw new VendoError("validation", "Vendo Cloud sandbox returned no machine handle");
+      throw new VendoError("sandbox-unavailable", "Vendo Cloud sandbox returned no machine handle");
     }
     return { id: handle.id, url: handle.url };
   };

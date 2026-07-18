@@ -14,6 +14,8 @@ interface RecordedRequest {
   method: string;
   authorization: string | null;
   contentType: string | null;
+  deploymentHost: string | null;
+  deploymentName: string | null;
   json?: unknown;
   bytes?: Uint8Array;
 }
@@ -40,6 +42,8 @@ function fakeConsole() {
       method: request.method,
       authorization: request.headers.get("authorization"),
       contentType: request.headers.get("content-type"),
+      deploymentHost: request.headers.get("x-vendo-deployment-host"),
+      deploymentName: request.headers.get("x-vendo-deployment-name"),
     };
     const raw = new Uint8Array(await request.arrayBuffer());
     if (recorded.contentType === "application/json") {
@@ -213,11 +217,17 @@ describe("cloudSandbox", () => {
       fetch: console_.handler as unknown as typeof fetch,
     }));
     expect(ref).toMatch(/^vendo:snap_/);
-    // Every request carried the org key; nothing spoke to the provider directly.
+    // Every request carried the org key AND the deployment identity (the
+    // console meters usage from real traffic); nothing spoke to the provider
+    // directly.
     expect(console_.requests.length).toBeGreaterThan(0);
     for (const request of console_.requests) {
       expect(request.authorization).toBe("Bearer vnd_secret");
       expect(request.url).toContain("https://cloud.test/api/v1/sandboxes");
+      expect(request.deploymentHost).toEqual(expect.any(String));
+      expect(request.deploymentHost).not.toBe("");
+      expect(request.deploymentName).toEqual(expect.any(String));
+      expect(request.deploymentName).not.toBe("");
     }
   });
 
@@ -309,6 +319,67 @@ describe("cloudSandbox", () => {
       code: "cloud-required",
       message: "Sandbox minutes quota exhausted.",
     });
+  });
+
+  it("maps a rejected key (401) to cloud-required with the server's message", async () => {
+    const denied = vi.fn(async () => Response.json(
+      { error: { code: "unauthorized", message: "Invalid API key." } },
+      { status: 401 },
+    ));
+    const adapter = cloudSandbox({ apiKey: "vnd_revoked", baseUrl: "https://cloud.test", fetch: denied as unknown as typeof fetch });
+    await expect(adapter.create({ env: {} })).rejects.toMatchObject({
+      code: "cloud-required",
+      message: "Invalid API key.",
+    });
+  });
+
+  it("treats malformed 200 responses as sandbox-unavailable — console garbage is never the caller's fault", async () => {
+    const adapterFor = (fetchImpl: unknown) =>
+      cloudSandbox({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: fetchImpl as typeof fetch });
+    // A stub whose FIRST response is a valid machine handle, then garbage.
+    const handleThen = (garbage: unknown) => {
+      let first = true;
+      return vi.fn(async () => {
+        if (first) {
+          first = false;
+          return Response.json({ id: `m_${"0".repeat(24)}`, url: "https://m.test" }, { status: 201 });
+        }
+        return Response.json(garbage);
+      });
+    };
+    const machineFor = async (garbage: unknown): Promise<SandboxMachine> =>
+      adapterFor(handleThen(garbage)).create({ env: {} });
+
+    // Missing machine handle on create and resume.
+    await expect(adapterFor(vi.fn(async () => Response.json({}))).create({ env: {} }))
+      .rejects.toMatchObject({ code: "sandbox-unavailable", message: /no machine handle/ });
+    await expect(adapterFor(vi.fn(async () => Response.json({ id: 42, url: null }))).resume(`vendo:snap_${"a".repeat(40)}`))
+      .rejects.toMatchObject({ code: "sandbox-unavailable", message: /no machine handle/ });
+
+    // Invalid exec response (no numeric code).
+    await expect((await machineFor({ stdout: "but no code" })).exec("pwd"))
+      .rejects.toMatchObject({ code: "sandbox-unavailable", message: /invalid exec response/ });
+
+    // Invalid proxy response (no body_b64).
+    await expect((await machineFor({ status: 200, headers: {} })).request({ method: "GET", path: "/" }))
+      .rejects.toMatchObject({ code: "sandbox-unavailable", message: /invalid proxy response/ });
+
+    // Well-shaped proxy response carrying invalid base64.
+    await expect(
+      (await machineFor({ status: 200, headers: {}, body_b64: "!!not-base64!!" })).request({ method: "GET", path: "/" }),
+    ).rejects.toMatchObject({ code: "sandbox-unavailable", message: /invalid base64/ });
+
+    // Missing snapshot ref.
+    await expect((await machineFor({})).snapshot())
+      .rejects.toMatchObject({ code: "sandbox-unavailable", message: /no snapshot reference/ });
+
+    // Non-string proxy header values are dropped, not passed through.
+    const mixed = await (await machineFor({
+      status: 200,
+      headers: { "x-ok": "yes", "x-bad": 42, "x-worse": { nested: true } },
+      body_b64: "",
+    })).request({ method: "GET", path: "/" });
+    expect(mixed.headers).toEqual({ "x-ok": "yes" });
   });
 
   it("preserves the console's error codes and falls back to sandbox-unavailable", async () => {

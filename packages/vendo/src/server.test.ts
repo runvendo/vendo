@@ -372,6 +372,58 @@ describe("09 §3 public wire", () => {
     expect(custom.resume).not.toHaveBeenCalled();
   });
 
+  it("the VENDO_API_KEY sandbox default is a live Cloud adapter: fork reaches the console over HTTP", async () => {
+    // Beyond the venue string above: prove the composed seam holds a REAL
+    // console-bound adapter by driving apps.fork on a server app, whose
+    // resume → snapshot → stop runs through config.sandbox only.
+    vi.stubEnv("E2B_API_KEY", "");
+    vi.stubEnv("MODAL_TOKEN_ID", "");
+    vi.stubEnv("MODAL_TOKEN_SECRET", "");
+    vi.stubEnv("VENDO_API_KEY", "vnd_cloud_key");
+    vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-rung.test");
+    const machineId = `m_${"a".repeat(24)}`;
+    const consoleCalls: Array<{ url: string; method: string; authorization: string | null }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const sent = new Request(input, init);
+      consoleCalls.push({
+        url: sent.url,
+        method: sent.method,
+        authorization: sent.headers.get("authorization"),
+      });
+      const url = new URL(sent.url);
+      if (url.pathname === "/api/v1/sandboxes/resume") {
+        return Response.json({ id: machineId, url: `https://${machineId}.m.vendo.run` });
+      }
+      if (url.pathname.endsWith("/snapshot")) {
+        return Response.json({ ref: `vendo:snap_${"b".repeat(40)}` });
+      }
+      return Response.json({ ok: true });
+    }));
+
+    const { vendo } = await setup();
+    expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
+    await vendo.store.records("vendo_apps").put({
+      id: "app_cloud",
+      data: {
+        subject: principal.subject,
+        enabled: true,
+        doc: { ...app("app_cloud"), ui: "http", server: `vendo:snap_${"c".repeat(40)}` },
+      },
+      refs: { subject: principal.subject },
+    });
+
+    const fork = await vendo.apps.fork("app_cloud", ctx);
+    expect(fork.server).toBe(`vendo:snap_${"b".repeat(40)}`);
+    expect(consoleCalls[0]).toEqual({
+      url: "https://cloud-rung.test/api/v1/sandboxes/resume",
+      method: "POST",
+      authorization: "Bearer vnd_cloud_key",
+    });
+    expect(consoleCalls.map((call) => call.method === "DELETE"
+      ? "DELETE"
+      : new URL(call.url).pathname.split("/").at(-1))).toEqual(["resume", "snapshot", "DELETE"]);
+  });
+
   it("selects the connections adapter with the adapter-rule precedence", async () => {
     // Adapter rule (2026-07-17 cloud definition): explicit adapter → BYO
     // brokers → VENDO_API_KEY defaults the Cloud adapter → unconfigured.
