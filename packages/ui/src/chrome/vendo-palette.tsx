@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { useApps } from "../hooks/use-apps.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { developmentMode } from "./dev-mode.js";
+import { openVendoOverlay } from "./overlay-registry.js";
 import { isEditableTarget, registerPaletteHotkey, registerPaletteOpener, resolveHotkeyMatcher, type PaletteHotkey } from "./palette-hotkey.js";
 import { TakeoverPortal } from "./takeover-portal.js";
 
@@ -94,7 +96,24 @@ export function VendoPalette({ onCommand, hotkey }: { onCommand?(command: VendoC
   const select = (command: VendoCommand | undefined) => {
     if (!command) return;
     close();
-    onCommand?.(command);
+    if (onCommand) {
+      onCommand(command);
+      return;
+    }
+    // Self-sufficient default (ui-usage-dx §2 — the palette is an optional
+    // extra, but it must act without a host-written command router):
+    // conversation commands open the mounted overlay via the registry; the
+    // rest need host routing and say so in dev instead of dying silently.
+    if (command.kind === "new-conversation") {
+      const opened = openVendoOverlay({ newConversation: true });
+      if (!opened && developmentMode()) {
+        console.warn("[vendo] VendoPalette: \"New conversation\" opens the conversation surface — mount a VendoOverlay for it to land in (or supply onCommand).");
+      }
+      return;
+    }
+    if (developmentMode()) {
+      console.warn(`[vendo] VendoPalette: "${command.label}" needs an onCommand handler to route (kind "${command.kind}").`);
+    }
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {

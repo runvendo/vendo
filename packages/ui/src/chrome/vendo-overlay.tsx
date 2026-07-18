@@ -161,12 +161,13 @@ export function VendoOverlay({
   const close = () => setOpen(false);
 
   // Registry opener (ui-usage-dx §2): lets slot remix / trigger / palette
-  // affordances open this overlay — optionally preloading a prompt — without a
-  // ref. The prompt goes through the registry's prefill hand-off, which parks
-  // it until the thread's composer mounts (first open) or delivers immediately
-  // (already mounted, even while hidden).
+  // affordances open this overlay — optionally preloading a prompt or starting
+  // fresh — without a ref. The prompt goes through the registry's prefill
+  // hand-off, which parks it until the thread's composer mounts (first open)
+  // or delivers immediately (already mounted, even while hidden).
   useEffect(() => registerOverlayOpener(options => {
     setOpen(true);
+    if (options?.newConversation === true) setConversationEpoch(epoch => epoch + 1);
     if (typeof options?.prompt === "string" && options.prompt.length > 0) {
       deliverPrefill({ prompt: options.prompt, send: options.send === true });
     }

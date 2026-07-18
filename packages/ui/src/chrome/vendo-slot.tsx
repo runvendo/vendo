@@ -6,12 +6,9 @@ import { useSlotApp } from "../hooks/use-slot-app.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { developmentMode } from "./dev-mode.js";
 import { openVendoOverlay } from "./overlay-registry.js";
 import { openVendoPalette } from "./palette-hotkey.js";
-
-function developmentMode(): boolean {
-  return typeof process !== "undefined" && process.env?.NODE_ENV === "development";
-}
 
 /** The faint skeleton behind the ghost/empty states — decorative only. */
 function GhostSkeleton() {

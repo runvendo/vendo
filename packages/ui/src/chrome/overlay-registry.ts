@@ -19,6 +19,8 @@ export interface OpenConversationOptions {
   prompt?: string;
   /** Send the prompt immediately (default: leave it in the composer). */
   send?: boolean;
+  /** Start a fresh conversation instead of resuming the current one. */
+  newConversation?: boolean;
 }
 
 type OverlayOpener = (options?: OpenConversationOptions) => void;
