@@ -104,3 +104,13 @@ describe("printWireV2 forms", () => {
     expect(recompiled.tree).toStrictEqual(tree);
   });
 });
+
+describe("printWireV2 totality fallbacks", () => {
+  it("prints non-Json prop values as null instead of throwing", () => {
+    const base = compileWireV2("<App><Card/></App>");
+    const tree = structuredClone(base.tree);
+    (tree.nodes[1] as { props?: Record<string, unknown> }).props = { broken: undefined };
+    const printed = printWireV2({ ...base, tree: tree as typeof base.tree }, { includeIds: false });
+    expect(printed).toContain("broken={null}");
+  });
+});

@@ -281,3 +281,93 @@ describe("compileWirePatchV2 appliedOps", () => {
     expect(patch('<Edit><Query id="p" tool="t"/><Set id="pageheader-1" a="1"/></Edit>').appliedOps).toBe(2);
   });
 });
+
+/** Edge/defensive coverage: every skip/degrade path is exercised so the
+ *  totality claims stay pinned (CI coverage gate). */
+describe("compileWirePatchV2 edge paths", () => {
+  it("truncated <Edit tag, lone '<', and truncated ops degrade with issues", () => {
+    expect(codes(compileWirePatchV2("<Edit id=", base(), OPTIONS))).toEqual(["truncated-tag"]);
+    const lone = compileWirePatchV2("<Edit><", base(), OPTIONS);
+    expect(codes(lone)).toEqual(["truncated-tag", "eof-unclosed"]);
+    expect(codes(compileWirePatchV2('<Edit><Insert into="grid-1"', base(), OPTIONS))).toEqual(["truncated-tag", "eof-unclosed"]);
+    expect(codes(compileWirePatchV2('<Edit><Set id="pageheader-1"', base(), OPTIONS))).toEqual(["truncated-tag", "eof-unclosed"]);
+  });
+
+  it("bare text, stray closes, paired attribute-only ops, and self-closing Insert are contained", () => {
+    const result = patch('<Edit>hello</Nope><Remove id="button-1"><Card/></Remove><Insert into="grid-1"/></Edit>');
+    expect(codes(result)).toEqual(["invalid-patch-op", "stray-close-tag", "invalid-patch-op", "invalid-patch-op"]);
+    expect(node(result, "button-1")).toBeUndefined(); // paired Remove still applied
+    expect(node(result, "card-1")).toBeUndefined();   // its content skipped
+  });
+
+  it("bad indexes, root moves, valued Unset attrs, and non-string SetName are skipped loudly", () => {
+    expect(codes(patch('<Edit><Insert into="grid-1" at={1.5}><Card/></Insert></Edit>'))).toEqual(["invalid-patch-op"]);
+    expect(codes(patch('<Edit><Move id="button-1" into="grid-1" at={-1}/></Edit>'))).toEqual(["invalid-patch-op"]);
+    expect(codes(patch('<Edit><Move id="root" into="grid-1"/></Edit>'))).toEqual(["invalid-patch-op"]);
+    expect(codes(patch('<Edit><SetName name={5}/></Edit>'))).toEqual(["invalid-patch-op"]);
+    const valued = patch('<Edit><Unset id="pageheader-1" title="x"/></Edit>');
+    expect(codes(valued)).toEqual(["invalid-patch-op"]);
+    expect(node(valued, "pageheader-1")?.props?.title).toBe("Cash");
+  });
+
+  it("unknown RemoveQuery/RemoveIsland anchors are unknown-target", () => {
+    expect(codes(patch('<Edit><RemoveQuery id="nope"/></Edit>'))).toEqual(["unknown-target"]);
+    expect(codes(patch('<Edit><RemoveQuery id={5}/></Edit>'))).toEqual(["unknown-target"]);
+    expect(codes(patch('<Edit><RemoveIsland name="Nope"/></Edit>'))).toEqual(["unknown-target"]);
+  });
+
+  it("re-enforces the §8 query and island caps across base + patch", () => {
+    const manyQueries = compileWireV2(
+      `<App>${Array.from({ length: 16 }, (_, i) => `<Query id="q${i}" tool="t"/>`).join("")}<Card/></App>`,
+    );
+    const overQuery = compileWirePatchV2('<Edit><Query id="q_extra" tool="t"/></Edit>', manyQueries, {});
+    expect(codes(overQuery)).toEqual(["query-limit"]);
+    expect(overQuery.tree.queries).toHaveLength(16);
+
+    const manyIslands = compileWireV2(
+      `<App>${Array.from({ length: 16 }, (_, i) => `<Island name="Gen${i}">export default () => null;</Island>`).join("")}<Card/></App>`,
+    );
+    const overIsland = compileWirePatchV2('<Edit><Island name="GenExtra">export default () => null;</Island></Edit>', manyIslands, {});
+    expect(codes(overIsland)).toEqual(["component-limit"]);
+    expect(Object.keys(overIsland.components)).toHaveLength(16);
+    // Upsert of an EXISTING island replaces in place (no cap interaction).
+    const upsert = compileWirePatchV2('<Edit><Island name="Gen0">export default () => "v2";</Island></Edit>', manyIslands, {});
+    expect(upsert.issues).toEqual([]);
+    expect(upsert.components.Gen0).toContain("v2");
+  });
+
+  it("a hand-built base that re-validates invalid degrades to the base with patch-invalid", () => {
+    const badBase = {
+      tree: {
+        formatVersion: "vendo-genui/v2" as const,
+        root: "root",
+        nodes: [
+          { id: "root", component: "Stack" as const, children: ["bad-1"] },
+          { id: "bad-1", component: "Card", props: { v: { $path: "/x", $reshape: [{ op: "eval", args: [] }] } } },
+        ],
+      },
+      components: {},
+      name: "Bad",
+    };
+    const result = compileWirePatchV2('<Edit><SetName name="Renamed"/></Edit>', badBase as never, {});
+    expect(codes(result)).toEqual(["patch-invalid"]);
+    expect(result.tree).toBe(badBase.tree);
+    expect(result.complete).toBe(false);
+  });
+
+  it("an exploding base degrades through the compile-failed catch, never a throw", () => {
+    const hostile = {
+      tree: {
+        formatVersion: "vendo-genui/v2",
+        root: "root",
+        get nodes(): never {
+          throw new Error("boom");
+        },
+      },
+      components: {},
+    };
+    const result = compileWirePatchV2("<Edit/>", hostile as never, {});
+    expect(codes(result)).toEqual(["compile-failed"]);
+    expect(result.appliedOps).toBe(0);
+  });
+});

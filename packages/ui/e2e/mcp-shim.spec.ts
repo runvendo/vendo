@@ -1,18 +1,18 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { Tree, UIPayload, VendoTheme } from "@vendoai/core";
+import type { UIPayload, VendoTheme } from "@vendoai/core";
 import { mkdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { themeCssVariables } from "../src/theme.js";
 import { browserTreeFixture } from "./fixtures/tree.js";
 
-const shimTree: Tree = {
+const shimTree = {
   ...browserTreeFixture,
-  queries: [{ path: "/invoice/total", tool: "host_invoice_total", input: { invoiceId: "inv_42" } }],
+  queries: [{ name: "total", tool: "host_invoice_total", input: { invoiceId: "inv_42" } }],
   nodes: [
     ...browserTreeFixture.nodes.map((node) => node.id === "root"
       ? { ...node, children: [...(node.children ?? []), "query-value", "shim-action"] }
       : node),
-    { id: "query-value", component: "Text", props: { text: { $path: "/invoice/total" } } },
+    { id: "query-value", component: "Text", props: { text: { $path: "/total" } } },
     {
       id: "shim-action",
       component: "ShimAction",
@@ -27,7 +27,7 @@ const shimTree: Tree = {
   },
 };
 
-const themeProofTree: Tree = {
+const themeProofTree = {
   formatVersion: "vendo-genui/v2",
   root: "root",
   nodes: [

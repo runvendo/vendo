@@ -250,3 +250,37 @@ describe("findInvalidReshape (the validateTreeV2 gate)", () => {
     })).toBeNull();
   });
 });
+
+describe("reshapeShape defensive regions", () => {
+  it("array-of-json regions pass every projection defensively", () => {
+    const arrayJson: ShapeType = { kind: "array", items: { kind: "json" } };
+    expect(reshapeShape(arrayJson, step("pick", "a"))).toEqual({ ok: true, shape: arrayJson });
+    expect(reshapeShape(arrayJson, step("rename", "a", "b"))).toEqual({ ok: true, shape: arrayJson });
+    expect(reshapeShape(arrayJson, step("format", "a", "currency"))).toEqual({ ok: true, shape: arrayJson });
+    expect(reshapeShape(arrayJson, step("asPoints", "a", "b"))).toEqual({
+      ok: true,
+      shape: { kind: "array", items: { kind: "object", fields: { label: { kind: "json" }, value: { kind: "json" } } } },
+    });
+    expect(reshapeShape(arrayJson, step("sum", "a"))).toEqual({ ok: true, shape: { kind: "number" } });
+  });
+
+  it("bare-object pick/rename/format flow without an array wrapper", () => {
+    const object: ShapeType = { kind: "object", fields: { a: { kind: "number" }, b: { kind: "string" } } };
+    expect(reshapeShape(object, step("rename", "a", "x"))).toEqual({
+      ok: true,
+      shape: { kind: "object", fields: { x: { kind: "number" }, b: { kind: "string" } } },
+    });
+    expect(reshapeShape(object, step("format", "a", "currency"))).toEqual({
+      ok: true,
+      shape: { kind: "object", fields: { a: { kind: "string" }, b: { kind: "string" } } },
+    });
+    expect(reshapeShape(object, step("format", "b", "date"))).toEqual({
+      ok: true,
+      shape: { kind: "object", fields: { a: { kind: "number" }, b: { kind: "string" } } },
+    });
+  });
+
+  it("structurally invalid steps report the structural violation", () => {
+    expect(reshapeShape({ kind: "json" }, { op: "eval", args: [] } as never).ok).toBe(false);
+  });
+});
