@@ -33,16 +33,25 @@ time as needs grow.
    Rationale: demo-bank derives all three seams from the same two lookups —
    ~115 lines of glue for one identity story.
 
-2. **The `catalog` key leaves `createVendo` entirely.** Component registration
-   moves client-side, next to the components map the host already maintains —
-   the pattern Tambo and CopilotKit use (one registration object: component
-   reference, description, one optional zod schema; the framework serializes
-   it to the model side). Kills the dual zod + hand-written JSON Schema
-   registration (~30 drift-prone lines/component). The server persists the
-   last-seen catalog in the store so away automations and MCP-door generation
-   work with no browser open. Client-side details belong to the client-lane;
-   this lane's decision is only that the server config sheds the key.
-   *Contract-amending.*
+2. **Catalog: one shared registry file, defined once, imported by both
+   sides.** (Revised 2026-07-18 after Yousef caught the flaw in a first
+   client-ships-catalog design: the server must know components at boot —
+   away automations and MCP-door generation run with no client connected, a
+   client-fed catalog is attacker-influenced, and the catalog feeds the boot-
+   time system prompt. Tambo can register client-side because it only
+   generates for the live client; Vendo cannot.) The registry is an object
+   keyed by component name; each entry holds the real component reference, a
+   description, and ONE optional zod props schema. `createVendo` takes the
+   registry as `catalog` and reads only the data fields (deriving the
+   model-facing JSON Schema internally — the hand-duplicated
+   `propsJsonSchema` dies); `VendoRoot` takes the same registry and reads
+   only the component references (init writes that one prop). Keying by name
+   removes the mirror-two-maps discipline entirely. Schema-less entries are
+   legal (description-only; the model infers props). Bundler-less hosts
+   (plain-Node Express) use a lazy component import the server never invokes,
+   or split the file — escape hatch, not main path; doctor can test-import
+   the registry to catch server-unsafe component modules.
+   *Contract-amending* (drops `propsJsonSchema` from the component entry).
 
 3. **`model` stays exactly an AI SDK provider instance.** No string forms, no
    resolution ladder in `createVendo`. The dev-credential ladder (CLI
@@ -104,5 +113,5 @@ handler rather than hiding the file.
   of this lane's scope.
 - **Door graduation criteria**: who runs the attended live matrix
   (Claude/ChatGPT/Cursor) that unblocks blessing `mcp` in the quickstart.
-- **Server-persisted catalog semantics** (staleness, trust) land with the
-  client-lane's registration design.
+- **Registry ergonomics beyond the server seam** (VendoRoot prop shape,
+  lazy-import escape hatch syntax) overlap with the client-lane; align there.
