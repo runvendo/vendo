@@ -21,16 +21,6 @@ const catalog: ComponentCatalog = [
       variant: z.enum(["missing", "overdue", "review", "verified", "neutral"]).optional(),
       dot: z.boolean().optional(),
     }),
-    propsJsonSchema: {
-      type: "object",
-      properties: {
-        text: { type: "string" },
-        variant: { enum: ["missing", "overdue", "review", "verified", "neutral"] },
-        dot: { type: "boolean" },
-      },
-      required: ["text"],
-      additionalProperties: false,
-    },
     examples: ['{"text":"Needs review","variant":"review","dot":true}'],
   },
   {
@@ -40,35 +30,16 @@ const catalog: ComponentCatalog = [
       value: z.number(),
       max: z.number(),
     }),
-    propsJsonSchema: {
-      type: "object",
-      properties: {
-        value: { type: "number" },
-        max: { type: "number" },
-      },
-      required: ["value", "max"],
-      additionalProperties: false,
-    },
     examples: ['{"value":7,"max":10}'],
   },
   {
     name: "CadenceMissingDocsHero",
     description: "The Cadence dashboard hero card: clients with outstanding documents, an action badge, and the active-client total. Use it for who-still-owes-documents or chase-list summary requests.",
     propsSchema: z.object({
-      missingCount: z.number(),
-      clientCount: z.number(),
+      missingCount: z.number().describe("Clients with at least one outstanding document"),
+      clientCount: z.number().describe("All active clients"),
       badgeLabel: z.string().optional(),
     }),
-    propsJsonSchema: {
-      type: "object",
-      properties: {
-        missingCount: { type: "number", description: "Clients with at least one outstanding document" },
-        clientCount: { type: "number", description: "All active clients" },
-        badgeLabel: { type: "string" },
-      },
-      required: ["missingCount", "clientCount"],
-      additionalProperties: false,
-    },
     examples: ['{"missingCount":8,"clientCount":12}'],
   },
 ];

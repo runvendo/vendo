@@ -66,6 +66,7 @@
             "type": "string"
           },
           "variant": {
+            "type": "string",
             "enum": [
               "missing",
               "overdue",

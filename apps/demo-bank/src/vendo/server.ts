@@ -33,15 +33,6 @@ const catalog: ComponentCatalog = [
       data: z.array(z.number()),
       height: z.number().optional(),
     }),
-    propsJsonSchema: {
-      type: "object",
-      properties: {
-        data: { type: "array", items: { type: "number" } },
-        height: { type: "number" },
-      },
-      required: ["data"],
-      additionalProperties: false,
-    },
     examples: ['{"data":[1280,1315,1298,1360,1412],"height":32}'],
   },
   {
@@ -50,30 +41,10 @@ const catalog: ComponentCatalog = [
     propsSchema: z.object({
       slices: z.array(z.object({
         category: mapleCategorySchema,
-        amount: z.number(),
+        amount: z.number().describe("Amount in dollars"),
       })),
       size: z.number().optional(),
     }),
-    propsJsonSchema: {
-      type: "object",
-      properties: {
-        slices: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              category: { enum: mapleCategorySchema.options },
-              amount: { type: "number", description: "Amount in dollars" },
-            },
-            required: ["category", "amount"],
-            additionalProperties: false,
-          },
-        },
-        size: { type: "number" },
-      },
-      required: ["slices"],
-      additionalProperties: false,
-    },
     examples: [
       '{"slices":[{"category":"dining","amount":342.18},{"category":"groceries","amount":286.42}],"size":200}',
     ],
@@ -82,24 +53,12 @@ const catalog: ComponentCatalog = [
     name: "MapleNetWorthCard",
     description: "The Maple total-balance card: animated USD total, change badge, range switcher, and an area trend of the balance history. Use it for net worth, total balance, or balance-over-time requests. Values are integer cents.",
     propsSchema: z.object({
-      valueCents: z.number(),
-      series: z.array(z.number()),
+      valueCents: z.number().describe("Total balance in integer cents"),
+      series: z.array(z.number()).describe("Balance history in integer cents"),
       changeLabel: z.string().optional(),
       initialRange: z.enum(["1W", "1M", "3M", "1Y", "All"]).optional(),
       chartHeight: z.number().optional(),
     }),
-    propsJsonSchema: {
-      type: "object",
-      properties: {
-        valueCents: { type: "number", description: "Total balance in integer cents" },
-        series: { type: "array", items: { type: "number" }, description: "Balance history in integer cents" },
-        changeLabel: { type: "string" },
-        initialRange: { enum: ["1W", "1M", "3M", "1Y", "All"] },
-        chartHeight: { type: "number" },
-      },
-      required: ["valueCents", "series"],
-      additionalProperties: false,
-    },
     examples: [
       '{"valueCents":5490715,"series":[5329117,5446991,5589669,5679262,5733114,5794065,5901309,5748395],"changeLabel":"▲ 2.3% this month"}',
     ],
