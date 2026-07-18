@@ -83,3 +83,37 @@ Where no shape was known and the data still mismatches, the renderer applies
 loading) passes through untouched and renders as before.
 
 See it live: `packages/ui/e2e/harness` scenario `/tree-v2-shape`.
+
+## Edits: one dialect
+
+Edits use the same grammar (spec §5). The model sees the app printed as wire
+markup with id anchors and emits a single `<Edit>` patch; there is no JSON ops
+dialect.
+
+```ts
+import { printWireV2, compileWirePatchV2 } from "@vendoai/core";
+
+const context = printWireV2(compiled, { includeIds: true });
+// <App name="Cash overview">
+//   <Stack id="stack-1" gap={14}>
+//     <Stat id="stat-1" label="Revenue" value="$42k"/>
+//     ...
+
+const patched = compileWirePatchV2(`<Edit>
+  <Set id="stat-1" label="Revenue (Q1)" value="$61k"/>
+  <Insert into="grid-1" at={1}><Stat label="Overdue" value="3"/></Insert>
+  <Remove id="button-1"/>
+</Edit>`, compiled, { toolShapes });
+```
+
+Ops: `Set`, `Unset`, `Insert`, `Remove`, `Move`, `Query`/`RemoveQuery`,
+`Island`/`RemoveIsland`, `SetName`. The apply is deterministic and total: a
+bad op is skipped whole with an issue, untouched nodes keep object identity
+(hot-swap keys off stable ids), inserted nodes mint fresh ids past the
+existing ordinals, and the result re-validates through `validateTreeV2` plus
+the shape check above, so a bad edit is as unshippable as a bad create.
+Callers may declare `extensionOps` (the engine's `ForkPin`/`SetDescription`)
+that parse in the same grammar and come back in `result.extensionOps` for
+engine-policy application.
+
+See it live: harness scenario `/tree-v2-edit`.
