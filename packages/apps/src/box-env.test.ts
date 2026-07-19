@@ -69,7 +69,14 @@ describe("buildEnv (execution-v2 skin contract, env half)", () => {
   });
 
   it("refuses a secret name that would shadow a reserved boundary var", async () => {
-    for (const name of ["PORT", "VENDO_APP_TOKEN", "VENDO_STORE_URL"]) {
+    for (const name of [
+      "PORT",
+      "VENDO_APP_TOKEN",
+      "VENDO_STORE_URL",
+      "VENDO_HOST_URL",
+      "VENDO_INFERENCE_URL",
+      "VENDO_INFERENCE_KEY",
+    ]) {
       const document = app({ secrets: [name] });
       await expect(
         buildEnv(document, baseContext({ granted: new Set([name]), secrets: { get: async () => "x" } })),
@@ -77,8 +84,20 @@ describe("buildEnv (execution-v2 skin contract, env half)", () => {
     }
   });
 
-  it("honors an explicit port", async () => {
+  it("honors an explicit port and refuses a nonsense one", async () => {
     const { env } = await buildEnv(app(), baseContext({ port: 3000 }));
     expect(env["PORT"]).toBe("3000");
+    for (const port of [0, -1, 1.5, 70_000]) {
+      await expect(buildEnv(app(), baseContext({ port }))).rejects.toThrowError(VendoError);
+    }
+  });
+
+  it("deduplicates a doubly-declared secret", async () => {
+    const document = app({ secrets: ["STRIPE_KEY", "STRIPE_KEY"] });
+    const { injectedSecrets } = await buildEnv(document, baseContext({
+      granted: new Set(["STRIPE_KEY"]),
+      secrets,
+    }));
+    expect(injectedSecrets).toEqual(["STRIPE_KEY"]);
   });
 });

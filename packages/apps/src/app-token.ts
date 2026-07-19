@@ -44,7 +44,11 @@ export const createAppTokens = (store: StoreAdapter): AppTokens => {
   return {
     async mint(appId, subject) {
       // One live token per app: minting rotates, so a leaked pre-rotation
-      // bearer dies with the re-provision instead of accumulating.
+      // bearer dies with the re-provision instead of accumulating. Rotation is
+      // revoke-then-put without a store transaction; the provision path that
+      // calls mint is single-flighted per app (machine lifecycle), so
+      // concurrent mints for one app do not occur in practice — racing mints
+      // could each leave a verifiable row until the next rotation.
       await revoke(appId);
       const bytes = globalThis.crypto.getRandomValues(new Uint8Array(32));
       const token = `vat_${[...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;

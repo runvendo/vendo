@@ -54,12 +54,8 @@ describe("vendo.json manifest (execution-v2 skin contract)", () => {
   });
 
   it("names the offending path in the error message", () => {
-    try {
-      parseVendoManifest(JSON.stringify({ schedules: [{ cron: "bad", fn: "ok" }] }));
-      expect.unreachable("should have thrown");
-    } catch (error) {
-      expect((error as VendoError).message).toContain("schedules");
-    }
+    expect(() => parseVendoManifest(JSON.stringify({ schedules: [{ cron: "bad", fn: "ok" }] })))
+      .toThrowError(/schedules\.0\.cron/);
   });
 
   it("exposes the schema for later waves (broker reads schedules, egress lane reads egress)", () => {

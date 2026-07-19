@@ -48,9 +48,12 @@ export interface BuiltBoxEnv {
 }
 
 export async function buildEnv(app: AppDocument, ctx: BuildEnvContext): Promise<BuiltBoxEnv> {
+  if (ctx.port !== undefined && (!Number.isInteger(ctx.port) || ctx.port < 1 || ctx.port > 65_535)) {
+    throw new VendoError("validation", "port must be an integer between 1 and 65535");
+  }
   const env: Record<string, string> = {};
   const injectedSecrets: string[] = [];
-  for (const name of app.secrets ?? []) {
+  for (const name of new Set(app.secrets ?? [])) {
     if (RESERVED_ENV.has(name)) {
       throw new VendoError("validation", `secret name ${name} collides with a reserved box env var`);
     }
