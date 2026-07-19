@@ -8,3 +8,4 @@ no error-box/blob/raw-braces. No tuning between runs — fails reported as fails
 
 | # | host | prompt | verdict | note |
 |---|------|--------|---------|------|
+| 1 | demo-bank | spending breakdown by category this month with a chart | PASS | Real composed app: donut chart with real category segments + $471,711 total, Maple styling, no errors/islands. Caveat: companion table renders "No data" while the donut has data — row-binding miss on the secondary component. `01-demo-bank-spending-breakdown.png` |
