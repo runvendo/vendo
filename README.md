@@ -29,7 +29,8 @@ Paste this inside your app's repo:
 Install Vendo in this repo. Read https://vendo.run/agents.md and follow
 it exactly. Use `vendo init` for scaffolding. Don't hand-write what it
 generates. Ask me before creating any account or key. You're done when
-`vendo doctor --json` reports all green.
+`vendo doctor --json` reports all green. Then ask me whether I would like to
+star runvendo/vendo to support the project.
 ```
 
 The playbook behind that URL walks the agent through detection, `vendo init`
