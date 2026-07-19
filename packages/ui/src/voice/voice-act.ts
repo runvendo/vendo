@@ -260,7 +260,12 @@ export function createVoiceActBridge(options: VoiceActBridgeOptions): VoiceToolB
           }
           let allConnected = true;
           for (const connect of connects) {
-            if (!(await waitForConnection(connect.toolkit))) allConnected = false;
+            // Count only the waits that actually failed — a mixed batch must
+            // not report already-connected accounts as still blocked.
+            if (!(await waitForConnection(connect.toolkit))) {
+              allConnected = false;
+              unconnected += 1;
+            }
           }
           if (allConnected) {
             messages.push({
@@ -273,7 +278,6 @@ export function createVoiceActBridge(options: VoiceActBridgeOptions): VoiceToolB
             emitViews(assistant);
             continue;
           }
-          unconnected += connects.length;
         }
         const pending = pendingApprovalsOf(assistant);
         if (pending.length === 0) break;

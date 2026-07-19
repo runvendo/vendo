@@ -75,6 +75,8 @@ export function VoiceConsent({ request, receipt, listening, busy, error, intent,
         {!critical && listening ? (
           intent === "approve" ? (
             <span className="fl-voice-consent-hint is-heard" role="status">&ldquo;Approve&rdquo; heard ✓</span>
+          ) : intent === "decline" ? (
+            <span className="fl-voice-consent-hint is-heard" role="status">&ldquo;Decline&rdquo; heard ✓</span>
           ) : (
             <span className="fl-voice-consent-hint">
               Say &ldquo;approve&rdquo; — or tap
@@ -115,7 +117,9 @@ function approvalFact(request: ApprovalRequest): string | undefined {
   return preview.length > 120 ? `${preview.slice(0, 117)}…` : preview;
 }
 
-function isAutomation(request: ApprovalRequest): boolean {
+/** Exported for the stage's spoken-yes guard: automation requests use the rich
+    card register with NO spoken affordance, so an intent must never decide one. */
+export function isAutomation(request: ApprovalRequest): boolean {
   return request.ctx.venue === "automation" || [request.descriptor.name, request.descriptor.description, request.call.tool]
     .some((value) => /automation|schedule|recurring/i.test(value));
 }

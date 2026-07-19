@@ -7,7 +7,7 @@ import type { VoiceSessionView, VoiceState } from "./driver.js";
 import { useVoiceApprovals } from "./use-voice-approvals.js";
 import { useVoice } from "./use-voice.js";
 import { VoiceBlob, type VoiceBlobState } from "./voice-blob.js";
-import { VoiceConsent } from "./voice-consent.js";
+import { VoiceConsent, isAutomation } from "./voice-consent.js";
 import { VoiceDrawer } from "./voice-drawer.js";
 
 const ACTIVE_STATES = new Set<VoiceState>(["connecting", "reconnecting", "listening", "speaking"]);
@@ -84,18 +84,27 @@ export function VendoStage({ onSessionEnd, suggestions }: VendoStageProps) {
     if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
   }, []);
 
-  // C-A spoken-yes: a recognized "approve"/"decline" decides the act-tier bar.
-  // Critical stays hand-only — the intent is dropped, the amber register asks
-  // for the click (same rule as voice-consent's named confirm).
+  // C-A spoken-yes: a recognized "approve"/"decline" decides the act-tier bar —
+  // but ONLY the request that was already on screen when the words were spoken.
+  // The refs pin that request: an intent with no matching request is discarded
+  // (never carried forward to a later approval), criticals stay hand-only, and
+  // automation requests (rich card, no spoken affordance) are never voice-decided.
   const decide = approvals.decide;
+  const { clearIntent } = voice;
+  const pendingApprovalRef = useRef(pendingApproval);
+  pendingApprovalRef.current = pendingApproval;
+  const voiceStateRef = useRef(voice.state);
+  voiceStateRef.current = voice.state;
   useEffect(() => {
-    if (!voice.intent || !pendingApproval) return;
-    const critical = pendingApproval.descriptor.risk === "destructive" || pendingApproval.descriptor.critical === true;
-    if (!critical && voice.state === "listening") {
-      void decide(pendingApproval, voice.intent === "approve");
+    const intent = voice.intent;
+    if (!intent) return;
+    const request = pendingApprovalRef.current;
+    if (request && voiceStateRef.current === "listening") {
+      const critical = request.descriptor.risk === "destructive" || request.descriptor.critical === true;
+      if (!critical && !isAutomation(request)) void decide(request, intent === "approve");
     }
-    voice.clearIntent();
-  }, [voice.intent, pendingApproval, voice.state, decide, voice.clearIntent, voice]);
+    clearIntent();
+  }, [voice.intent, decide, clearIntent]);
 
   const endSession = () => {
     if (leaving) return;
@@ -224,7 +233,7 @@ export function VendoStage({ onSessionEnd, suggestions }: VendoStageProps) {
           </div>
         ) : null}
 
-        {pendingConnect && !leaving ? (
+        {pendingConnect && active && !leaving ? (
           <div className="fl-voice-connect" role="status" aria-live="polite">
             <ConnectCard
               connector={pendingConnect.connector}
