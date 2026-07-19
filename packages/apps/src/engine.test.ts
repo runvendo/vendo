@@ -128,8 +128,9 @@ describe("generation engine through createApps", () => {
     const result = await runtime.edit(original.id, "Make the heading blue", ctx);
 
     expect(result.issues).toEqual([
-      "approval-required: a tree-classified edit unexpectedly produced server code",
+      "not-implemented: server code edits ride the execution-v2 in-box agent; this build applies tree edits only",
     ]);
+    expect(result.failure).toMatchObject({ code: "edit-rejected", retryable: false });
     expect(result.app).toEqual(original);
     expect(await runtime.get(original.id, ctx)).toEqual(original);
     expect(await runtime.history(original.id).list()).toEqual([]);
@@ -618,35 +619,6 @@ describe("generation engine through createApps", () => {
     expect(await runtime.get(original.id, ctx)).toEqual(original);
   });
 
-  it("edits server files in a fork, syntax-checks, and rotates the snapshot", async () => {
-    const sandbox = fakeSandbox();
-    const seed = await sandbox.create({ env: {}, files: { "/app/server.js": "export const value = 1;" } });
-    const server = await seed.snapshot();
-    const store = memoryStore();
-    const runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      sandbox,
-      catalog,
-      model: scriptedLanguageModel(
-        validCreate(),
-        JSON.stringify({ rung: 2, files: [{ path: "/app/server.js", content: "export const value = 2;" }] }),
-      ),
-    });
-    const created = await runtime.create({ prompt: "Dashboard" }, ctx);
-    const original = { ...created, server };
-    await putApp(store, original);
-
-    const result = await runtime.edit(created.id, "Change the server code", ctx);
-    const editedMachine = [...sandbox.machines.values()].at(-1);
-
-    expect(new TextDecoder().decode(await editedMachine?.files.read("/app/server.js"))).toBe("export const value = 2;");
-    expect(editedMachine?.commands).toContainEqual({ cmd: "node --check '/app/server.js'", opts: { cwd: "/app", timeoutMs: 10_000 } });
-    expect(result.app.server).not.toBe(server);
-    expect(result.version.rung).toBe(2);
-  });
-
   it("records a tree edit on a server-backed app as rung 2", async () => {
     const store = memoryStore();
     const original: AppDocument = {
@@ -675,84 +647,6 @@ describe("generation engine through createApps", () => {
     expect(result.version.rung).toBe(2);
   });
 
-  it("honors a model-declared rung 3 on a code edit with a generic instruction", async () => {
-    const sandbox = fakeSandbox();
-    const seed = await sandbox.create({ env: {}, files: { "/app/server.js": "export const value = 1;" } });
-    const server = await seed.snapshot();
-    const store = memoryStore();
-    const runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      sandbox,
-      catalog,
-      model: scriptedLanguageModel(
-        validCreate(),
-        // rung 3 declared by the model; the instruction text does NOT match the
-        // server-computed heuristic, so the old code recorded rung 2.
-        JSON.stringify({ rung: 3, files: [{ path: "/app/server.js", content: "export const value = 3;" }] }),
-      ),
-    });
-    const created = await runtime.create({ prompt: "Dashboard" }, ctx);
-    await putApp(store, { ...created, server });
-
-    const result = await runtime.edit(created.id, "Update the backend", ctx);
-
-    expect(result.version.rung).toBe(3);
-  });
-
-  it("accepts a model-declared rung 4 for a tree app and flips the document ui", async () => {
-    const sandbox = fakeSandbox();
-    const store = memoryStore();
-    const runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      sandbox,
-      catalog,
-      model: scriptedLanguageModel(
-        validCreate(),
-        JSON.stringify({ rung: 4, files: [{ path: "/app/custom.js", content: "export const ready = true;" }] }),
-      ),
-    });
-    const original = await runtime.create({ prompt: "Dashboard" }, ctx);
-
-    const result = await runtime.edit(original.id, "Update the backend", ctx);
-
-    expect(result.issues).toBeUndefined();
-    expect(result.version.rung).toBe(4);
-    expect(result.app.ui).toBe("http");
-    expect(result.app.tree).toEqual(original.tree);
-    expect(result.app.server).toMatch(/^fake:snap_/);
-    expect(await runtime.get(original.id, ctx)).toEqual(result.app);
-  });
-
-  it("routes every rung-4 phrase to the code dialect, so a custom-client ask graduates", async () => {
-    // "custom client" is a FULL_WEB_APP phrase with no SERVER_INSTRUCTION word in
-    // it; before the routing fix it took the tree dialect and could never graduate.
-    const sandbox = fakeSandbox();
-    const store = memoryStore();
-    const runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      sandbox,
-      catalog,
-      model: scriptedLanguageModel(
-        validCreate(),
-        JSON.stringify({ rung: 4, files: [{ path: "/app/custom.js", content: "export const ready = true;" }] }),
-      ),
-    });
-    const original = await runtime.create({ prompt: "Dashboard" }, ctx);
-
-    const result = await runtime.edit(original.id, "Make this a custom client over the data", ctx);
-
-    expect(result.issues).toBeUndefined();
-    expect(result.version.rung).toBe(4);
-    expect(result.app.ui).toBe("http");
-    expect(result.app.tree).toEqual(original.tree);
-  });
-
   it("routes a UI ask that mentions the API to the tree dialect (ENG-349)", async () => {
     // "API" and "function" are SERVER_INSTRUCTION words, but here they label
     // visible elements; before the routing fix this edit took the code dialect
@@ -775,120 +669,6 @@ describe("generation engine through createApps", () => {
     expect(result.issues).toBeUndefined();
     expect(result.version.rung).toBe(1);
     expect(result.app.tree).toMatchObject({ nodes: [{ id: "root" }, { props: { label: "API status" } }] });
-  });
-
-  it("keeps the first graduated version on the scaffold and repairs reserved-file edits", async () => {
-    const sandbox = fakeSandbox();
-    const store = memoryStore();
-    const runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      sandbox,
-      catalog,
-      model: scriptedLanguageModel(
-        validCreate(),
-        JSON.stringify({
-          rung: 4,
-          files: [{ path: "/app/start.sh", content: "exec node /app/custom.js" }],
-        }),
-        JSON.stringify({
-          rung: 4,
-          files: [{ path: "/app/custom.js", content: "export const ready = true;" }],
-        }),
-      ),
-    });
-    const original = await runtime.create({ prompt: "Dashboard" }, ctx);
-
-    const result = await runtime.edit(original.id, "Turn this into a full web app", ctx);
-
-    expect(result.issues).toBeUndefined();
-    const graduatedMachine = [...sandbox.machines.values()].at(-1);
-    expect(new TextDecoder().decode(await graduatedMachine?.files.read("/app/.vendo/scaffold-server.cjs")))
-      .toContain("process.env.PORT");
-    expect(new TextDecoder().decode(await graduatedMachine?.files.read("/app/start.sh")))
-      .toContain("/app/.vendo/scaffold-server.cjs");
-    expect(new TextDecoder().decode(await graduatedMachine?.files.read("/app/custom.js")))
-      .toBe("export const ready = true;");
-  });
-
-  it("evicts a snapshotted code-edit machine before the next fn call", async () => {
-    const base = fakeSandbox();
-    const seed = await base.create({ env: {} });
-    const server = await seed.snapshot();
-    const sandbox: SandboxAdapter = {
-      create: (spec) => base.create(spec),
-      async resume(ref) {
-        const machine = await base.resume(ref);
-        const snapshot = machine.snapshot.bind(machine);
-        machine.snapshot = async () => {
-          const nextRef = await snapshot();
-          machine.stopped = true;
-          return nextRef;
-        };
-        return machine;
-      },
-    };
-    const store = memoryStore();
-    const original: AppDocument = {
-      format: "vendo/app@1",
-      id: "app_pausing_snapshot",
-      name: "Pausing snapshot",
-      server,
-    };
-    await putApp(store, original);
-    const runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      sandbox,
-      catalog,
-      model: scriptedLanguageModel(JSON.stringify({
-        rung: 2,
-        files: [{ path: "/app/server.js", content: "export const ready = true;" }],
-      })),
-    });
-
-    await runtime.edit(original.id, "Change the server function", ctx);
-
-    await expect(runtime.call(original.id, "fn:ready", {}, ctx)).resolves.toMatchObject({
-      status: "ok",
-      output: { name: "ready" },
-    });
-  });
-
-  it("captures a rung-4 cover during a real code edit and returns it while resuming", async () => {
-    const sandbox = fakeSandbox();
-    const seed = await sandbox.create({ env: {} });
-    const server = await seed.snapshot();
-    const store = memoryStore();
-    const original: AppDocument = {
-      format: "vendo/app@1",
-      id: "app_http_cover",
-      name: "HTTP cover",
-      ui: "http",
-      server,
-    };
-    await putApp(store, original);
-    const runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      sandbox,
-      catalog,
-      model: scriptedLanguageModel(JSON.stringify({
-        rung: 4,
-        files: [{ path: "/app/server.js", content: "export const ready = true;" }],
-      })),
-    });
-
-    await runtime.edit(original.id, "Change the served web app", ctx);
-
-    expect(await store.blobs(`app:${original.id}`).get("cover.png")).not.toBeNull();
-    await expect(runtime.open(original.id, ctx)).resolves.toEqual({
-      kind: "resuming",
-      cover: expect.stringMatching(/^data:image\/png;base64,/),
-    });
   });
 
   it("rejects an edit computed from a document changed before persistence", async () => {
@@ -931,90 +711,29 @@ describe("generation engine through createApps", () => {
     await expect(runtime.get(original.id, ctx)).resolves.toEqual(concurrent);
   });
 
-  it("discards a syntax-error code fork and leaves the document and prior machine untouched", async () => {
-    const base = fakeSandbox();
-    const seed = await base.create({ env: {}, files: { "/app/server.js": "export const value = 1;" } });
-    const server = await seed.snapshot();
-    const sandbox: SandboxAdapter = {
-      create: (spec) => base.create(spec),
-      async resume(ref) {
-        const machine = await base.resume(ref);
-        machine.programExec({ code: 1, stdout: "", stderr: "SyntaxError: Unexpected token" });
-        return machine;
-      },
-    };
-    const store = memoryStore();
-    const runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      sandbox,
-      catalog,
-      model: scriptedLanguageModel(
-        validCreate(),
-        JSON.stringify({ rung: 2, files: [{ path: "/app/server.js", content: "export const = ;" }] }),
-      ),
-    });
-    const created = await runtime.create({ prompt: "Dashboard" }, ctx);
-    const original = { ...created, server };
-    await putApp(store, original);
-
-    const result = await runtime.edit(created.id, "Change the server code", ctx);
-
-    expect(result.app).toEqual(original);
-    expect(result.issues).toEqual(expect.arrayContaining([expect.stringContaining("SyntaxError") ]));
-    expect(new TextDecoder().decode(await seed.files.read("/app/server.js"))).toBe("export const value = 1;");
-    expect(await runtime.get(created.id, ctx)).toEqual(original);
-  });
-
-  it("graduates a rung-1 app only after the fork snapshots and preserves its tree", async () => {
-    const sandbox = fakeSandbox();
-    let release!: () => void;
-    let started!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const startedPromise = new Promise<void>((resolve) => { started = resolve; });
-    const model = scriptedLanguageModel(
-      validCreate(),
-      async () => {
-        started();
-        await gate;
-        return JSON.stringify({
-          rung: 2,
-          files: [{ path: "/app/server.js", content: "export const state = new Map();" }],
-        });
-      },
-    );
-    const store = memoryStore();
-    const runtime = createApps({ store, guard: guardFixture(), tools, sandbox, catalog, model });
-    const original = await runtime.create({ prompt: "Dashboard" }, ctx);
-
-    const editing = runtime.edit(original.id, "Build a server-computed view", ctx);
-    await startedPromise;
-    expect(await runtime.get(original.id, ctx)).toEqual(original);
-    release();
-    const result = await editing;
-
-    expect(result.app.server).toMatch(/^fake:snap_/);
-    expect(result.app.tree).toEqual(original.tree);
-    expect(result.version.rung).toBe(3);
-    expect(await runtime.get(original.id, ctx)).toEqual(result.app);
-  });
-
-  it("returns a contained issue when an edit requires an unavailable sandbox", async () => {
+  it("returns a non-retryable contained failure when the model answers with server code", async () => {
+    // execution-v2 — the v1 apply path (fork, write files, snapshot) is
+    // deleted; server code lands via the in-box agent in a later wave.
     const store = memoryStore();
     const runtime = createApps({
       store,
       guard: guardFixture(),
       tools,
       catalog,
-      model: scriptedLanguageModel(validCreate()),
+      model: scriptedLanguageModel(validCreate(), JSON.stringify({
+        rung: 2,
+        files: [{ path: "/app/server.js", content: "export const ready = true;" }],
+      })),
     });
     const original = await runtime.create({ prompt: "Dashboard" }, ctx);
 
     const result = await runtime.edit(original.id, "Persist mutations in server state", ctx);
 
     expect(result.app).toEqual(original);
-    expect(result.issues).toContain("sandbox-unavailable: this edit requires server execution");
+    expect(result.failure).toMatchObject({ code: "edit-rejected", retryable: false });
+    expect(result.issues).toEqual([
+      "not-implemented: server code edits ride the execution-v2 in-box agent; this build applies tree edits only",
+    ]);
     expect(await runtime.history(original.id).list()).toEqual([]);
   });
 });

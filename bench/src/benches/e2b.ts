@@ -1,8 +1,6 @@
 import { performance } from "node:perf_hooks";
 import { e2bSandbox } from "@vendoai/apps/e2b";
-// execution-v2 transition: this bench still provisions through the archived v1
-// surface (files+exec); the Wave 3 in-box agent supersedes it.
-import { toV1SandboxAdapter, type V1SandboxMachine } from "@vendoai/apps";
+import type { SandboxMachine } from "@vendoai/apps";
 import { summarize } from "../stats.js";
 import type { CaseResult, Suite, SuiteResult } from "../types.js";
 
@@ -22,7 +20,14 @@ http.createServer((request, response) => {
 `;
 
 /** Poll the machine until the in-sandbox HTTP server answers, returning the body. */
-const requestEventually = async (machine: V1SandboxMachine): Promise<string> => {
+// The bench provisions through the e2b adapter's ADAPTER-PRIVATE extras
+// (initial files + exec) — bootstrap surface, not the public seam; the Wave 3
+// in-box agent supersedes this provisioning style.
+interface AdapterPrivateExtras {
+  exec(cmd: string, opts?: { cwd?: string; timeoutMs?: number }): Promise<{ code: number; stdout: string; stderr: string }>;
+}
+
+const requestEventually = async (machine: SandboxMachine): Promise<string> => {
   let failure: unknown;
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
@@ -41,7 +46,7 @@ const requestEventually = async (machine: V1SandboxMachine): Promise<string> => 
  *
  * The v2 seam's snapshot() is a point-in-time checkpoint that leaves the
  * source machine running, so each source is destroyed right after its
- * checkpoint (the v1 bridge maps stop() to destroy). Per trial we time
+ * checkpoint. Per trial we time
  * resume(ref) and the resume→first-successful-request path, then checkpoint
  * and destroy that machine for the next trial. The 06 §1 "resuming" surface
  * claims a ~1s wake — this measures the truth.
@@ -54,16 +59,20 @@ export const e2bSuite: Suite = {
       return { suite: "e2b", kind: "live", cases: [], skipped: true, reason: "E2B_API_KEY not set" };
     }
 
-    const adapter = toV1SandboxAdapter(e2bSandbox({ apiKey: process.env.E2B_API_KEY, timeoutMs: 180_000 }));
+    const adapter = e2bSandbox({ apiKey: process.env.E2B_API_KEY, timeoutMs: 180_000 });
     const resumeMs: number[] = [];
     const wakeToServeMs: number[] = [];
-    let live: V1SandboxMachine | undefined;
+    let live: SandboxMachine | undefined;
 
     try {
-      // Boot once, start the server, confirm it serves.
-      const machine = await adapter.create({ env: { PORT: "8080" }, files: { "/app/server.js": serverSource } });
+      // Boot once, start the server, confirm it serves. `files` is the e2b
+      // adapter's private initial-files seeding, not part of the seam.
+      const machine = await adapter.create({
+        env: { PORT: "8080" },
+        files: { "/app/server.js": serverSource },
+      } as Parameters<typeof adapter.create>[0]);
       live = machine;
-      const exec = await machine.exec("nohup node /app/server.js >/tmp/vendo-e2b-bench.log 2>&1 &", {
+      const exec = await (machine as unknown as AdapterPrivateExtras).exec("nohup node /app/server.js >/tmp/vendo-e2b-bench.log 2>&1 &", {
         cwd: "/app",
         timeoutMs: 10_000,
       });
@@ -71,7 +80,7 @@ export const e2bSuite: Suite = {
       await requestEventually(machine);
 
       let ref = await machine.snapshot();
-      await machine.stop().catch(() => undefined); // bridge: destroy the running source
+      await machine.destroy().catch(() => undefined); // snapshot leaves the source running
       live = undefined;
 
       for (let trial = 0; trial < TRIALS; trial += 1) {
@@ -82,7 +91,7 @@ export const e2bSuite: Suite = {
         await requestEventually(resumed);
         wakeToServeMs.push(performance.now() - start);
         ref = await resumed.snapshot(); // checkpoint for the next trial
-        await resumed.stop().catch(() => undefined); // bridge: destroy this trial's machine
+        await resumed.destroy().catch(() => undefined); // destroy this trial's machine
         live = undefined;
       }
 
@@ -97,7 +106,7 @@ export const e2bSuite: Suite = {
           : `Verdict: the ~1s wake claim is OPTIMISTIC — resume→serve p95 = ${p95.toFixed(0)}ms (${(p95 / 1000).toFixed(1)}x the claim).`;
       return { suite: "e2b", kind: "live", cases, notes: [verdict] };
     } finally {
-      if (live !== undefined) await live.stop().catch(() => undefined);
+      if (live !== undefined) await live.destroy().catch(() => undefined);
     }
   },
 };

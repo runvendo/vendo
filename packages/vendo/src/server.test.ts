@@ -383,10 +383,12 @@ describe("09 §3 public wire", () => {
     expect(custom.resume).not.toHaveBeenCalled();
   });
 
-  it("the VENDO_API_KEY sandbox default is a live Cloud adapter: fork reaches the console over HTTP", async () => {
-    // Beyond the venue string above: prove the composed seam holds a REAL
-    // console-bound adapter by driving apps.fork on a server app, whose
-    // resume → snapshot → stop runs through config.sandbox only.
+  it("fork never touches the Cloud sandbox: the copy drops the retired server ref", async () => {
+    // execution-v2 Wave 1.5 — the v1 fork path (resume → snapshot → stop
+    // through config.sandbox) is deleted: a fork carries no machine and no
+    // retired v1 server ref, so even with the Cloud sandbox selected the
+    // console sees no traffic. (cloudSandbox itself is Wave-5-ported; until
+    // then it fills no runtime slot.)
     vi.stubEnv("E2B_API_KEY", "");
     vi.stubEnv("MODAL_TOKEN_ID", "");
     vi.stubEnv("MODAL_TOKEN_SECRET", "");
@@ -424,15 +426,9 @@ describe("09 §3 public wire", () => {
     });
 
     const fork = await vendo.apps.fork("app_cloud", ctx);
-    expect(fork.server).toBe(`vendo:snap_${"b".repeat(40)}`);
-    expect(consoleCalls[0]).toEqual({
-      url: "https://cloud-rung.test/api/v1/sandboxes/resume",
-      method: "POST",
-      authorization: "Bearer vnd_cloud_key",
-    });
-    expect(consoleCalls.map((call) => call.method === "DELETE"
-      ? "DELETE"
-      : new URL(call.url).pathname.split("/").at(-1))).toEqual(["resume", "snapshot", "DELETE"]);
+    expect(fork).not.toHaveProperty("server");
+    expect(fork).not.toHaveProperty("machine");
+    expect(consoleCalls.filter((call) => call.url.includes("/api/v1/sandboxes"))).toEqual([]);
   });
 
   it("selects the connections adapter with the adapter-rule precedence", async () => {
@@ -2052,22 +2048,17 @@ describe("02-store §4 default-on encryption composition", () => {
   });
 });
 
-// ENG-290 M4 — the umbrella mounts the apps machine proxy (06-apps §4.4–4.5) at
-// /proxy/*: the egress route the in-sandbox fetch shim targets exists on the
-// wire and enforces its run-token gate. Substitution mechanics are proven in
-// @vendoai/apps (proxy suites + live lanes); this pins the composition seam.
-describe("the machine proxy mount", () => {
-  it("routes /proxy/egress to the apps proxy, which refuses a request without a run token", async () => {
+// execution-v2 Wave 1.5 — the v1 run-token machine proxy mount (/proxy/*) is
+// deleted; the box callback surface (/box/*, app-token bearer) is the
+// replacement. Pin the absence so a stale in-sandbox fetch shim can never
+// find a live proxy on the wire again.
+describe("the retired machine proxy mount", () => {
+  it("no longer serves /proxy/*", async () => {
     const { vendo } = await setup();
-    const response = await vendo.handler(request("POST", "/proxy/egress", { url: "https://api.stripe.com/v1/charges" }));
-    expect(response.status).toBe(401);
-    expect(await response.json()).toMatchObject({ error: { code: "unauthorized" } });
-  });
-
-  it("routes /proxy/tools/<name> the same way", async () => {
-    const { vendo } = await setup();
-    const response = await vendo.handler(request("POST", "/proxy/tools/host_tool", { args: {} }));
-    expect(response.status).toBe(401);
+    const egress = await vendo.handler(request("POST", "/proxy/egress", { url: "https://api.stripe.com/v1/charges" }));
+    expect(egress.status).toBe(404);
+    const tool = await vendo.handler(request("POST", "/proxy/tools/host_tool", { args: {} }));
+    expect(tool.status).toBe(404);
   });
 });
 

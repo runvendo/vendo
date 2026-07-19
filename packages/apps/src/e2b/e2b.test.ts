@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { toV1SandboxAdapter } from "../sandbox-v1-compat.js";
 import { e2bSandbox } from "./index.js";
+
+/** The adapter-private bootstrap/diagnostics extras (not part of the seam). */
+interface AdapterPrivateMachine {
+  exec(cmd: string, opts?: { cwd?: string; timeoutMs?: number }): Promise<{ code: number; stdout: string; stderr: string }>;
+  files: {
+    read(path: string): Promise<Uint8Array>;
+    write(path: string, bytes: Uint8Array | string): Promise<void>;
+    list(dir: string): Promise<string[]>;
+  };
+  url?(port: number): Promise<string>;
+}
 
 const sdk = vi.hoisted(() => {
   const sandbox = {
@@ -207,13 +217,14 @@ describe("e2bSandbox", () => {
     expect(sdk.deleteSnapshot).toHaveBeenCalledWith("snapshot_789", { apiKey: "key_test" });
   });
 
-  it("keeps adapter-private exec, files, url, and v1 create extras for the compat bridge", async () => {
-    const adapter = toV1SandboxAdapter(e2bSandbox({ apiKey: "key_test", timeoutMs: 5_000 }));
-    const machine = await adapter.create({
+  it("keeps adapter-private exec, files, url, and deprecated create extras", async () => {
+    const adapter = e2bSandbox({ apiKey: "key_test", timeoutMs: 5_000 });
+    const created = await adapter.create({
       env: { PORT: "8080" },
       files: { "/app/a.txt": "alpha", "/app/b.bin": new Uint8Array([4, 5]) },
       egress: ["api.example.com"],
-    });
+    } as Parameters<typeof adapter.create>[0]);
+    const machine = created as unknown as AdapterPrivateMachine;
     expect(sdk.create).toHaveBeenCalledWith(expect.objectContaining({
       network: { allowOut: ["api.example.com"], denyOut: ["0.0.0.0/0"] },
     }));
@@ -238,9 +249,11 @@ describe("e2bSandbox", () => {
     await expect(machine.files.list("/app")).resolves.toEqual(["a.txt", "nested"]);
     await expect(machine.url?.(8080)).resolves.toBe("https://8080-sandbox_123.e2b.app");
 
-    // v1 stop meant teardown: the bridge maps it to destroy, never pause.
-    await machine.stop();
+    // v2 seam semantics: stop() is the snapshot-preserving pause, destroy() kills.
+    await created.stop();
+    expect(sdk.sandbox.pause).toHaveBeenCalledOnce();
+    expect(sdk.sandbox.kill).not.toHaveBeenCalled();
+    await created.destroy();
     expect(sdk.sandbox.kill).toHaveBeenCalledOnce();
-    expect(sdk.sandbox.pause).not.toHaveBeenCalled();
   });
 });
