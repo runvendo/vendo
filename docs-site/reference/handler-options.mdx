@@ -23,7 +23,7 @@ description: "Every createVendo configuration option and fetch-handler setting, 
 | `oauth` | conditional | escape hatch: `HostOAuthAdapter` used by the door for session lookup and principal resolution; required when `mcp` is enabled and `auth` supplies no oauth half. Mutually exclusive with `auth`. The door renders consent when the adapter uses `session`, or hands off the whole page when it supplies `authorize` instead — see [MCP door](/capabilities/mcp) |
 | `remoteAs` | no | delegates MCP bearer authentication to an external ES256-signing authorization server (`{ issuer, audience, jwksUri? }`); disables the door's local OAuth endpoints. Also accepted under `mcp: { remoteAs }` — see [MCP door](/capabilities/mcp) |
 | `federation` | no | enables the `/api/vendo/mcp/federate` handshake so an external authorization server can borrow the host's login flow; takes a shared `{ secret }`. Also accepted under `mcp: { federation }` — see [MCP door](/capabilities/mcp) |
-| `agent` | no | chat context controls: `toolOutputCap`, `maxOutputTokens`, `historyWindow` (see [Agent context](#agent-context)) |
+| `agent` | no | chat context controls: `toolOutputCap`, `maxOutputTokens`, `historyWindow`, `maxInitialTools`, `loadout` (see [Agent context](#agent-context)) |
 
 ## Agent context
 
@@ -38,6 +38,8 @@ createVendo({
     toolOutputCap: 32_000, // char cap per tool result before it reaches the model; 0 disables
     maxOutputTokens: 4_000, // upper bound on tokens the model may emit per turn
     historyWindow: 20,      // last N whole messages re-sent per turn; omit to send the full thread
+    maxInitialTools: 128,   // cap on host tools shown to the model at turn start; the rest stay discoverable via search
+    loadout: ["issues_list", "issues_create"], // explicit initial host tools; overrides the default policy
   },
 });
 ```
@@ -52,6 +54,21 @@ createVendo({
   each turn. Vendo keeps whole messages so tool-call/result pairs stay
   paired. Omit to send the full thread (current behavior). The stored
   thread is untouched; only the per-turn model context shrinks.
+- `maxInitialTools` bounds how many host tools the model sees at the start
+  of a turn. Hosts that expose hundreds of tools would otherwise flood the
+  model's context. When the enabled host surface exceeds the cap, Vendo
+  picks a deterministic read-first initial loadout (safest risk first,
+  then name); the remainder stay available and the model can pull them in
+  mid-turn through the `vendo_tools_search` meta-tool. Defaults to `128`.
+  Vendo's own `vendo_*` tools are always active and don't count toward the
+  cap.
+- `loadout` is an explicit list of host tool names to load at turn start.
+  Names that don't exist are dropped; duplicates are ignored. Use this when
+  you want to curate the starting surface for a specific product — for
+  example, a support console that only needs a handful of ticket tools.
+  Anything omitted from the list is still discoverable via
+  `vendo_tools_search`. Every tool — initial or searched-in — still
+  executes through the same guard binding.
 
 ## Base path
 
