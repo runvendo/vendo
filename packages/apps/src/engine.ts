@@ -527,6 +527,7 @@ const validateCompiledCreate = async (
   issues.push(...bindingKindIssues(compiled, deps));
   issues.push(...interpolationIssues(compiled));
   issues.push(...await catalogIssues(compiled.tree, components, deps.catalog));
+  issues.push(...actionIssues(compiled.tree, deps.tools));
   issues.push(...rootedRenderIssues(compiled.tree));
   if (issues.length > 0) return { issues };
   const document: GeneratedAppDocument = {
@@ -675,6 +676,74 @@ const catalogIssues = async (
       && !reserved.has(node.component)
       && !generatedNames.has(node.component)) {
       issues.push(`node "${node.id}" references unknown component "${node.component}"`);
+    }
+  }
+  return issues;
+};
+
+/** Button labels that promise a state change. A Button carrying one of these
+ *  is a submit/primary affordance: it must DO something (a mutating host tool
+ *  bound to real context) or honestly say it can't — a no-op submit is the
+ *  facade class (verify-v2 #6 intake form). Read-only verbs (view/show/open)
+ *  and dismiss verbs (cancel/clear/close) are deliberately excluded. */
+const SUBMIT_LABEL = /\b(submit|save|create|add|send|remind|reminder|transfer|pay|confirm|update|delete|remove|apply|schedule|book|post|approve|generate|register|enroll|invite|assign)\b/i;
+
+const isMutatingRisk = (risk: string | undefined): boolean => risk === "write" || risk === "destructive";
+
+const hasPayload = (payload: unknown): boolean =>
+  isRecord(payload) ? Object.keys(payload).length > 0 : payload !== undefined && payload !== null;
+
+/** Every {action,payload?} binding reachable in a node's props, with the prop
+ *  it sits under (actions can nest inside arrays/objects, not just top-level
+ *  on* attributes). */
+const actionBindingsInProps = (
+  props: Record<string, unknown>,
+): Array<{ prop: string; action: string; payload: unknown }> => {
+  const found: Array<{ prop: string; action: string; payload: unknown }> = [];
+  const walk = (prop: string, value: unknown): void => {
+    if (isActionBinding(value)) {
+      const record = value as Record<string, unknown>;
+      found.push({ prop, action: record.action as string, payload: record.payload });
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(prop, item);
+      return;
+    }
+    if (isRecord(value)) {
+      for (const child of Object.values(value)) walk(prop, child);
+    }
+  };
+  for (const [prop, value] of Object.entries(props)) walk(prop, value);
+  return found;
+};
+
+/** Action-wiring honesty (verify-v2 #4 reminder, #6 intake). A mutating action
+ *  with no payload has nothing to change; a submit button wired to a read tool
+ *  or to nothing at all is a fake affordance. Each routes to repair, where the
+ *  model binds the row/form context — or, when the host has no tool for the
+ *  ask, replaces the dead button with an honest disclaimer. */
+const actionIssues = (tree: TreeV2, tools: readonly HostToolInfo[] | undefined): string[] => {
+  const risk = new Map((tools ?? []).map((tool) => [tool.name, tool.risk]));
+  const issues: string[] = [];
+  for (const node of tree.nodes) {
+    const props = node.props;
+    const label = node.component === "Button" && typeof props?.label === "string" ? props.label : "";
+    const submitLike = label !== "" && SUBMIT_LABEL.test(label);
+    const bindings = props === undefined ? [] : actionBindingsInProps(props);
+    if (submitLike && bindings.length === 0) {
+      issues.push(`node "${node.id}" is a submit button ("${label}") with no action — a button that does nothing is a fake affordance. Wire its onClick to a host tool that performs the action, binding the form/row context into payload; or if NO host tool can perform it, replace the button with an honest Text/Badge disclaimer that the action isn't available.`);
+    }
+    for (const { prop, action, payload } of bindings) {
+      if (action.startsWith("fn:")) continue;
+      const toolRisk = risk.get(action);
+      if (toolRisk === undefined) continue;
+      if (isMutatingRisk(toolRisk) && !hasPayload(payload)) {
+        issues.push(`node "${node.id}" prop "${prop}" invokes mutating tool "${action}" with no payload — bind the context it acts on (a per-row id, or the form field values) into payload:{...} so the action has something to change.`);
+      }
+      if (submitLike && toolRisk === "read") {
+        issues.push(`node "${node.id}" submit button ("${label}") prop "${prop}" is wired to read-only tool "${action}" — a submit that only reads is a fake affordance. Wire it to a mutating host tool with a payload, or render an honest disclaimer if the host has none.`);
+      }
     }
   }
   return issues;

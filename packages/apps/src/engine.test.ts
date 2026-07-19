@@ -1560,7 +1560,7 @@ describe("branded prewired components validate on create", () => {
       '<App name="Branded"><Stack>',
       '<Stat label="Overdue" value="3"/><Badge label="Late"/>',
       '<Card title="Invoices"><Table rows={[]}/></Card>',
-      '<Button label="Remind"/>',
+      '<Button label="Remind" onClick="host_remind"/>',
       "</Stack></App>",
     ].join("");
     const document = await modelEngine.create(
@@ -1628,5 +1628,86 @@ describe("string interpolation guard", () => {
     expect(prompts[1]).toContain("string interpolation is unsupported");
     expect((document.tree as { nodes: Array<{ props?: Record<string, unknown> }> }).nodes.at(-1)?.props?.label)
       .toBe("Total");
+  });
+});
+
+describe("action-wiring honesty guard", () => {
+  const actionDeps = (model: unknown, tools: Array<{ name: string; description: string; risk: string }>) => ({
+    model,
+    catalog,
+    tools,
+  }) as unknown as Parameters<typeof modelEngine.create>[1];
+
+  it("repairs a mutating action that carries no payload", async () => {
+    const wrong = '<App name="Remind"><Button label="Send Reminder" onClick="host_remind"/></App>';
+    const right = '<App name="Remind"><Button label="Send Reminder" onClick={{action:"host_remind",payload:{clientId:"c1"}}}/></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? wrong : right;
+    });
+    const document = await modelEngine.create(
+      { prompt: "Overdue invoices with a reminder button" },
+      actionDeps(model, [{ name: "host_remind", description: "Send a reminder", risk: "write" }]),
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("no payload");
+    expect((document.tree as { nodes: Array<{ props?: Record<string, unknown> }> }).nodes.at(-1)?.props?.onClick)
+      .toEqual({ action: "host_remind", payload: { clientId: "c1" } });
+  });
+
+  it("repairs a submit button wired to a read-only tool", async () => {
+    const wrong = '<App name="Form"><Button label="Submit" onClick="host_list"/></App>';
+    const right = '<App name="Form"><Button label="Submit" onClick={{action:"host_create",payload:{name:"x"}}}/></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? wrong : right;
+    });
+    await modelEngine.create(
+      { prompt: "A form" },
+      actionDeps(model, [
+        { name: "host_list", description: "List clients", risk: "read" },
+        { name: "host_create", description: "Create a client", risk: "write" },
+      ]),
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("read-only tool");
+  });
+
+  it("repairs a dead submit button into an honest disclaimer when the host has no tool", async () => {
+    const wrong = '<App name="Intake"><Stack><Input label="Name"/><Button label="Submit Intake Form"/></Stack></App>';
+    const right = '<App name="Intake"><Stack><Input label="Name"/><Text text="This host has no client-creation tool, so intake can\'t be submitted here."/></Stack></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? wrong : right;
+    });
+    const document = await modelEngine.create(
+      { prompt: "A new-client intake form" },
+      actionDeps(model, [{ name: "host_list", description: "List clients", risk: "read" }]),
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("fake affordance");
+    const components = (document.tree as { nodes: Array<{ component: string }> }).nodes.map((node) => node.component);
+    expect(components).not.toContain("Button");
+    expect(components).toContain("Text");
+  });
+
+  it("accepts a mutating action with a payload and a non-submit read button on the first pass", async () => {
+    const wire = '<App name="Ok"><Stack><Button label="Delete" onClick={{action:"host_delete",payload:{id:"x"}}}/><Button label="Cancel"/><Button label="View details" onClick="host_list"/></Stack></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return wire;
+    });
+    await modelEngine.create(
+      { prompt: "Build it" },
+      actionDeps(model, [
+        { name: "host_delete", description: "Delete a row", risk: "destructive" },
+        { name: "host_list", description: "List rows", risk: "read" },
+      ]),
+    );
+    expect(prompts).toHaveLength(1);
   });
 });
