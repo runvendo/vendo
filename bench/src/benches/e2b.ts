@@ -1,6 +1,8 @@
 import { performance } from "node:perf_hooks";
 import { e2bSandbox } from "@vendoai/apps/e2b";
-import type { SandboxMachine } from "@vendoai/apps";
+// execution-v2 transition: this bench still provisions through the archived v1
+// surface (files+exec); the Wave 3 in-box agent supersedes it.
+import { toV1SandboxAdapter, type V1SandboxMachine } from "@vendoai/apps";
 import { summarize } from "../stats.js";
 import type { CaseResult, Suite, SuiteResult } from "../types.js";
 
@@ -20,7 +22,7 @@ http.createServer((request, response) => {
 `;
 
 /** Poll the machine until the in-sandbox HTTP server answers, returning the body. */
-const requestEventually = async (machine: SandboxMachine): Promise<string> => {
+const requestEventually = async (machine: V1SandboxMachine): Promise<string> => {
   let failure: unknown;
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
@@ -50,10 +52,10 @@ export const e2bSuite: Suite = {
       return { suite: "e2b", kind: "live", cases: [], skipped: true, reason: "E2B_API_KEY not set" };
     }
 
-    const adapter = e2bSandbox({ apiKey: process.env.E2B_API_KEY, timeoutMs: 180_000 });
+    const adapter = toV1SandboxAdapter(e2bSandbox({ apiKey: process.env.E2B_API_KEY, timeoutMs: 180_000 }));
     const resumeMs: number[] = [];
     const wakeToServeMs: number[] = [];
-    let live: SandboxMachine | undefined;
+    let live: V1SandboxMachine | undefined;
 
     try {
       // Boot once, start the server, confirm it serves.

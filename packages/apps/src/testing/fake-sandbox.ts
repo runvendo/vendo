@@ -1,8 +1,10 @@
 import type { SandboxAdapter, SandboxMachine } from "../sandbox.js";
+import type { V1SandboxCreateSpec } from "../sandbox-v1-compat.js";
 
 export interface MachineRequest {
   method: string;
   path: string;
+  port?: number;
   headers?: Record<string, string>;
   body?: Uint8Array | string;
 }
@@ -13,7 +15,17 @@ export interface MachineResponse {
   body: Uint8Array | string;
 }
 
-export type MachineApp = (request: MachineRequest) => MachineResponse | Promise<MachineResponse>;
+/** The box's boundary as the fake's in-process app handler sees it. */
+export interface MachineAppContext {
+  env: Readonly<Record<string, string>>;
+  allowedDomains: readonly string[] | undefined;
+  port: number;
+}
+
+export type MachineApp = (
+  request: MachineRequest,
+  ctx: MachineAppContext,
+) => MachineResponse | Promise<MachineResponse>;
 
 export interface FakeExecResult {
   code: number;
@@ -26,11 +38,19 @@ export interface FakeExecCall {
   opts?: { cwd?: string; timeoutMs?: number };
 }
 
+/** The v2 create spec plus the deprecated v1 compat extras the fake still models. */
+export interface FakeCreateSpec extends Pick<V1SandboxCreateSpec, "files" | "egress"> {
+  template?: string;
+  env: Record<string, string>;
+  allowedDomains?: string[];
+}
+
 interface FakeSnapshot {
   env: Readonly<Record<string, string>>;
-  egress?: readonly string[];
+  allowedDomains?: readonly string[];
+  template?: string;
   files: ReadonlyMap<string, Uint8Array>;
-  app: MachineApp;
+  app: MachineApp | undefined;
 }
 
 // Fake provider state intentionally outlives one adapter object, matching the
@@ -39,11 +59,18 @@ const providerSnapshots = new Map<string, FakeSnapshot>();
 let nextProviderMachine = 1;
 let nextProviderSnapshot = 1;
 
+const DEFAULT_PORT = 8080;
+
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
 const toBytes = (value: Uint8Array | string): Uint8Array =>
   typeof value === "string" ? textEncoder.encode(value) : value.slice();
+
+const parsePort = (env: Record<string, string>): number => {
+  const port = Number(env.PORT ?? DEFAULT_PORT);
+  return Number.isInteger(port) && port > 0 && port <= 65_535 ? port : DEFAULT_PORT;
+};
 
 const cloneRequest = (request: MachineRequest): MachineRequest => ({
   ...request,
@@ -63,7 +90,12 @@ const bodyArgs = (body: Uint8Array | string | undefined): unknown => {
   }
 };
 
-const defaultApp = (env: Record<string, string>): MachineApp => (request) => {
+/** The provider-native wildcard-aware allowlist rule the fake simulates. */
+const domainAllowed = (allowedDomains: readonly string[] | undefined, host: string): boolean =>
+  allowedDomains === undefined || allowedDomains.some((rule) =>
+    rule === host || (rule.startsWith("*.") && host.endsWith(rule.slice(1))));
+
+const defaultApp: MachineApp = (request, ctx) => {
   const match = /^\/fn\/([A-Za-z_][A-Za-z0-9_-]*)$/.exec(request.path);
   if (request.method.toUpperCase() === "POST" && match?.[1] !== undefined) {
     return {
@@ -73,7 +105,7 @@ const defaultApp = (env: Record<string, string>): MachineApp => (request) => {
         result: {
           name: match[1],
           args: bodyArgs(request.body),
-          env: { ...env },
+          env: { ...ctx.env },
           headers: { ...request.headers },
         },
       }),
@@ -101,20 +133,40 @@ export class FakeSandboxMachine implements SandboxMachine {
   readonly execResults: FakeExecResult[] = [];
   readonly fileContents: Map<string, Uint8Array>;
   readonly env: Record<string, string>;
+  readonly port: number;
+  /** v2 sleep flag; also true once destroyed. Writable for test scripting. */
   stopped = false;
-  app: MachineApp;
+  /** v2 gone-for-good flag. */
+  destroyed = false;
+  app: MachineApp | undefined;
 
   constructor(
     readonly id: string,
     env: Record<string, string>,
-    readonly egress: readonly string[] | undefined,
+    readonly allowedDomains: readonly string[] | undefined,
+    readonly template: string | undefined,
     files: ReadonlyMap<string, Uint8Array>,
     app: MachineApp | undefined,
     private readonly saveSnapshot: (machine: FakeSandboxMachine) => string,
   ) {
     this.env = Object.freeze({ ...env });
+    this.port = parsePort(this.env);
     this.fileContents = new Map([...files].map(([path, bytes]) => [path, bytes.slice()]));
-    this.app = app ?? defaultApp(this.env);
+    this.app = app;
+  }
+
+  /** @deprecated v1 alias for allowedDomains, kept for the dying v1 call sites. */
+  get egress(): readonly string[] | undefined {
+    return this.allowedDomains;
+  }
+
+  private appContext(): MachineAppContext {
+    return { env: this.env, allowedDomains: this.allowedDomains, port: this.port };
+  }
+
+  private ensureRunning(operation: string): void {
+    if (this.destroyed) throw new Error(`Fake sandbox machine ${this.id} is destroyed; cannot ${operation}`);
+    if (this.stopped) throw new Error(`Fake sandbox machine ${this.id} is stopped (asleep); cannot ${operation}`);
   }
 
   readonly files = {
@@ -138,9 +190,13 @@ export class FakeSandboxMachine implements SandboxMachine {
   };
 
   async request(request: MachineRequest): Promise<{ status: number; headers: Record<string, string>; body: Uint8Array }> {
-    if (this.stopped) throw new Error(`Fake sandbox machine ${this.id} is stopped`);
-    this.requests.push(cloneRequest(request));
-    const response = await this.app(cloneRequest(request));
+    this.ensureRunning("serve a request");
+    const port = request.port ?? this.port;
+    if (port !== this.port) {
+      throw new Error(`Fake sandbox machine ${this.id} has no listener on port ${port} (the app's $PORT is ${this.port})`);
+    }
+    this.requests.push({ ...cloneRequest(request), port });
+    const response = await (this.app ?? defaultApp)(cloneRequest(request), this.appContext());
     return {
       status: response.status,
       headers: { ...response.headers },
@@ -160,8 +216,7 @@ export class FakeSandboxMachine implements SandboxMachine {
 
     const fetchedHost = /fetch\(['"]https:\/\/([^/'"]+)/.exec(cmd)?.[1];
     if (fetchedHost !== undefined) {
-      const allowed = this.egress === undefined || this.egress.some((rule) =>
-        rule === fetchedHost || (rule.startsWith("*.") && fetchedHost.endsWith(rule.slice(1))));
+      const allowed = domainAllowed(this.allowedDomains, fetchedHost);
       const exits = /then\(\(\) => process\.exit\((\d+)\)\)\.catch\(\(\) => process\.exit\((\d+)\)\)/.exec(cmd);
       return {
         code: Number(allowed ? exits?.[1] ?? 0 : exits?.[2] ?? 1),
@@ -182,6 +237,7 @@ export class FakeSandboxMachine implements SandboxMachine {
   }
 
   async snapshot(): Promise<string> {
+    this.ensureRunning("snapshot");
     return this.saveSnapshot(this);
   }
 
@@ -196,10 +252,17 @@ export class FakeSandboxMachine implements SandboxMachine {
   async stop(): Promise<void> {
     this.stopped = true;
   }
+
+  async destroy(): Promise<void> {
+    this.stopped = true;
+    this.destroyed = true;
+  }
 }
 
 export interface FakeSandboxAdapter extends SandboxAdapter {
   readonly machines: Map<string, FakeSandboxMachine>;
+  create(spec: FakeCreateSpec): Promise<FakeSandboxMachine>;
+  resume(snapshotRef: string): Promise<FakeSandboxMachine>;
   setApp(app: MachineApp): void;
 }
 
@@ -212,7 +275,8 @@ export const fakeSandbox = (options: { app?: MachineApp } = {}): FakeSandboxAdap
     const ref = `fake:snap_${nextProviderSnapshot++}`;
     providerSnapshots.set(ref, Object.freeze({
       env: Object.freeze({ ...machine.env }),
-      ...(machine.egress === undefined ? {} : { egress: Object.freeze([...machine.egress]) }),
+      ...(machine.allowedDomains === undefined ? {} : { allowedDomains: Object.freeze([...machine.allowedDomains]) }),
+      ...(machine.template === undefined ? {} : { template: machine.template }),
       files: new Map([...machine.fileContents].map(([path, bytes]) => [path, bytes.slice()])),
       app: machine.app,
     }));
@@ -221,7 +285,8 @@ export const fakeSandbox = (options: { app?: MachineApp } = {}): FakeSandboxAdap
 
   const makeMachine = (
     env: Record<string, string>,
-    egress: readonly string[] | undefined,
+    allowedDomains: readonly string[] | undefined,
+    template: string | undefined,
     files: ReadonlyMap<string, Uint8Array>,
     app?: MachineApp,
   ): FakeSandboxMachine => {
@@ -229,7 +294,8 @@ export const fakeSandbox = (options: { app?: MachineApp } = {}): FakeSandboxAdap
     const machine = new FakeSandboxMachine(
       id,
       env,
-      egress === undefined ? undefined : Object.freeze([...egress]),
+      allowedDomains === undefined ? undefined : Object.freeze([...allowedDomains]),
+      template,
       files,
       app,
       saveSnapshot,
@@ -244,15 +310,31 @@ export const fakeSandbox = (options: { app?: MachineApp } = {}): FakeSandboxAdap
       installedApp = app;
       for (const machine of machines.values()) machine.setApp(app);
     },
-    async create(spec): Promise<FakeSandboxMachine> {
+    async create(spec: FakeCreateSpec): Promise<FakeSandboxMachine> {
       const files = new Map<string, Uint8Array>();
+      // A template ref that names a stored snapshot seeds the machine from it,
+      // matching real providers where snapshots double as templates.
+      const seed = spec.template === undefined ? undefined : providerSnapshots.get(spec.template);
+      for (const [path, bytes] of seed?.files ?? []) files.set(path, bytes.slice());
       for (const [path, bytes] of Object.entries(spec.files ?? {})) files.set(path, toBytes(bytes));
-      return makeMachine(spec.env, spec.egress, files, installedApp);
+      return makeMachine(
+        spec.env,
+        spec.allowedDomains ?? spec.egress,
+        spec.template,
+        files,
+        installedApp ?? seed?.app,
+      );
     },
-    async resume(snapshotRef): Promise<FakeSandboxMachine> {
+    async resume(snapshotRef: string): Promise<FakeSandboxMachine> {
       const snapshot = providerSnapshots.get(snapshotRef);
       if (snapshot === undefined) throw new Error(`Unknown fake sandbox snapshot: ${snapshotRef}`);
-      return makeMachine({ ...snapshot.env }, snapshot.egress, snapshot.files, snapshot.app);
+      return makeMachine(
+        { ...snapshot.env },
+        snapshot.allowedDomains,
+        snapshot.template,
+        snapshot.files,
+        snapshot.app,
+      );
     },
   };
 };
