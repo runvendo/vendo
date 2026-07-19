@@ -764,6 +764,16 @@ const VOICE_SHOWCASE_SCRIPT: VoiceDriverEvent[] = [
   { type: "view", view: { id: "view-reminders", appId: "app_1", payload: voiceViewPayload("v2", "Reminder drafts", "3 drafts ready — sending needs your approval") } },
 ];
 
+/** Voice-lane Cn-A — a connector call ends connect-required mid-session; the
+ *  ConnectCard docks in the consent slot while the session stays live. */
+const VOICE_CONNECT_SCRIPT: VoiceDriverEvent[] = [
+  { type: "state", state: "listening" },
+  { type: "amplitude", level: 0.5 },
+  { type: "transcript", entry: { id: "c-user", role: "user", text: "Chase Meridian over Slack too.", final: true } },
+  { type: "transcript", entry: { id: "c-agent", role: "assistant", text: "I can do that once Slack is connected — I'll wait, keep talking.", final: true } },
+  { type: "connect", connect: { id: "connect-call-1", toolkit: "Slack", connector: "slack", message: "Sending Slack messages needs a connected Slack account." } },
+];
+
 /** A client whose approvals list is empty — for the drawer capture (the drawer
  *  auto-yields to pending consent, so the wire fixture's apr_1 would close it). */
 function noApprovalsClient(client: VendoClient): VendoClient {
@@ -882,6 +892,20 @@ function StageScenario() {
       <AutoOpen selector='button[aria-label="Start voice"], button'>
         <VendoStage />
       </AutoOpen>
+    </VendoProvider>
+  );
+}
+
+/** Voice-lane S-E — the idle invitation: host-provided suggestion chips. */
+function StageIdleScenario() {
+  const driver = useMemo(() => new ScriptedBrowserVoiceDriver(), []);
+  return (
+    <VendoProvider client={baseClient} voice={{ driver }}>
+      <VendoStage suggestions={[
+        "What's outstanding this week?",
+        "Draft reminders for overdue invoices",
+        "How did June close?",
+      ]} />
     </VendoProvider>
   );
 }
@@ -1601,6 +1625,8 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/automations": return { title: "Automations", content: <AutomationsPanel /> };
     case "/notice": return { title: "Unconfigured policy", ownProvider: true, content: (<VendoProvider client={unconfiguredClient} components={components}><NoPolicyNotice /></VendoProvider>) };
     case "/stage": return { title: "Voice stage", content: <StageScenario />, ownProvider: true };
+    case "/stage-idle": return { title: "Voice stage — idle invitation (S-E)", content: <StageIdleScenario />, ownProvider: true };
+    case "/stage-connect": return { title: "Voice stage — connect during voice (Cn-A)", content: <VoiceShowcaseScenario script={VOICE_CONNECT_SCRIPT} approvals={false} />, ownProvider: true };
     case "/stage-live": return { title: "Voice stage (live)", content: <LiveStageScenario />, ownProvider: true };
     case "/stage-full": return { title: "Voice stage — views + consent (Maple)", content: <VoiceShowcaseScenario script={VOICE_SHOWCASE_SCRIPT} />, ownProvider: true };
     case "/stage-full-dark": return { title: "Voice stage — dark", content: <VoiceShowcaseScenario script={VOICE_SHOWCASE_SCRIPT} theme={darkTheme} />, ownProvider: true };

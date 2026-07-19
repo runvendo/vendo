@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isPlainObject as isRecord } from "@vendoai/core";
 import { useVendoContext } from "../context.js";
 import type {
+  VoiceConnectRequest,
   VoiceDriverEvent,
   VoiceSessionHandle,
   VoiceSessionState,
@@ -20,6 +21,12 @@ export interface UseVoiceResult {
   setMuted(muted: boolean): void;
   amplitude: number;
   views: VoiceSessionView[];
+  /** Latest recognized spoken decision (C-A spoken-yes); consumed via clearIntent. */
+  intent: "approve" | "decline" | null;
+  clearIntent(): void;
+  /** Connector calls blocked on a connection (Cn-A); dismissed by id. */
+  connects: VoiceConnectRequest[];
+  dismissConnect(id: string): void;
 }
 
 const SESSION_STATES = new Set<VoiceSessionState>(["connecting", "reconnecting", "listening", "speaking"]);
@@ -36,6 +43,8 @@ export function useVoice(): UseVoiceResult {
   const [muted, setMutedState] = useState(false);
   const [amplitude, setAmplitude] = useState(0);
   const [views, setViews] = useState<VoiceSessionView[]>([]);
+  const [intent, setIntent] = useState<"approve" | "decline" | null>(null);
+  const [connects, setConnects] = useState<VoiceConnectRequest[]>([]);
   const handleRef = useRef<VoiceSessionHandle | null>(null);
   const activeRef = useRef(false);
   const generationRef = useRef(0);
@@ -65,6 +74,8 @@ export function useVoice(): UseVoiceResult {
     setMutedState(false);
     setAmplitude(0);
     setViews([]);
+    setIntent(null);
+    setConnects([]);
     setState(driver ? "idle" : "unavailable");
 
     return () => {
@@ -86,6 +97,8 @@ export function useVoice(): UseVoiceResult {
     setMutedState(false);
     setAmplitude(0);
     setViews([]);
+    setIntent(null);
+    setConnects([]);
     setState("connecting");
     let failedSynchronously = false;
 
@@ -110,6 +123,17 @@ export function useVoice(): UseVoiceResult {
 
       if (isViewEvent(event)) {
         setViews((current) => updateViews(current, event.view));
+        return;
+      }
+
+      if (isIntentEvent(event)) {
+        setIntent(event.intent);
+        return;
+      }
+
+      if (isConnectEvent(event)) {
+        setConnects((current) =>
+          current.some((c) => c.id === event.connect.id) ? current : [...current, event.connect]);
         return;
       }
 
@@ -154,7 +178,12 @@ export function useVoice(): UseVoiceResult {
     setMutedState(nextMuted);
   }, []);
 
-  return { state, start, stop, transcript, error, muted, setMuted, amplitude, views };
+  const clearIntent = useCallback(() => setIntent(null), []);
+  const dismissConnect = useCallback((id: string) => {
+    setConnects((current) => current.filter((c) => c.id !== id));
+  }, []);
+
+  return { state, start, stop, transcript, error, muted, setMuted, amplitude, views, intent, clearIntent, connects, dismissConnect };
 }
 
 function isStateEvent(
@@ -178,6 +207,21 @@ function isTranscriptEvent(
 
 function isAmplitudeEvent(event: VoiceDriverEvent): event is { type: "amplitude"; level: number } {
   return event.type === "amplitude" && "level" in event && typeof event.level === "number";
+}
+
+function isIntentEvent(event: VoiceDriverEvent): event is { type: "intent"; intent: "approve" | "decline" } {
+  return event.type === "intent" && "intent" in event
+    && (event.intent === "approve" || event.intent === "decline");
+}
+
+function isConnectEvent(event: VoiceDriverEvent): event is { type: "connect"; connect: VoiceConnectRequest } {
+  if (event.type !== "connect" || !("connect" in event) || !isRecord(event.connect)) return false;
+  return (
+    typeof event.connect.id === "string" &&
+    typeof event.connect.toolkit === "string" &&
+    typeof event.connect.connector === "string" &&
+    typeof event.connect.message === "string"
+  );
 }
 
 function isViewEvent(event: VoiceDriverEvent): event is { type: "view"; view: VoiceSessionView } {
