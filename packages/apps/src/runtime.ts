@@ -51,6 +51,7 @@ import {
   createMachineLifecycle,
   type BuildMachineEnv,
   type LifecycleClock,
+  type MachineSandboxAdapter,
 } from "./machine-lifecycle.js";
 import { createAppOpener, createProgressiveQueryResolver } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
@@ -60,9 +61,8 @@ import { createRunTokenGate } from "./run-token-gate.js";
 import { createSecretExposure, type SecretExposureGrant } from "./secret-exposure.js";
 import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
 import { appVersionHash } from "./version-hash.js";
-import type { SandboxAdapter } from "./sandbox.js";
+import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 import { toV1SandboxAdapter, type V1SandboxAdapter, type V1SandboxMachine } from "./sandbox-v1-compat.js";
-import type { SandboxAdapterV2, SandboxMachineV2 } from "./sandbox-v2.js";
 import { FETCH_SHIM_BOOT_PRELUDE, FETCH_SHIM_PATH, FETCH_SHIM_SOURCE } from "./scaffold/fetch-shim.js";
 import { servedAppScaffold } from "./scaffold/index.js";
 import type { IpResolver } from "./ssrf.js";
@@ -81,7 +81,7 @@ export interface AppsConfig {
    * unaffected.
    */
   machine?: {
-    sandbox?: SandboxAdapterV2;
+    sandbox?: MachineSandboxAdapter;
     buildEnv?: BuildMachineEnv;
     template?: string;
     idleMs?: number;
@@ -258,7 +258,7 @@ export interface AppsRuntime {
     /** Create the machine from the base template, snapshot it, store the ref. Idempotent. */
     provision(appId: AppId, ctx: RunContext): Promise<AppDocument>;
     /** Resume the stored snapshot; concurrent wakes coalesce to one machine. */
-    wake(appId: AppId, ctx: RunContext): Promise<SandboxMachineV2>;
+    wake(appId: AppId, ctx: RunContext): Promise<SandboxMachine>;
     /** Snapshot the live machine, store the new ref, stop it. No-op when not awake. */
     sleep(appId: AppId, ctx: RunContext): Promise<AppDocument>;
     /** Destroy the sandbox and clear the document's machine field (de-graduation). */

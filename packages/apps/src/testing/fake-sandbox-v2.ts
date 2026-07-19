@@ -1,4 +1,5 @@
-import type { SandboxAdapterV2, SandboxMachineV2 } from "../sandbox-v2.js";
+import type { SandboxMachine } from "../sandbox.js";
+import type { MachineSandboxAdapter } from "../machine-lifecycle.js";
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -24,7 +25,7 @@ interface FakeSnapshotV2 {
  * reads it back), so lifecycle tests can prove a snapshot/resume cycle
  * preserves what ran inside the box.
  */
-export class FakeMachineV2 implements SandboxMachineV2 {
+export class FakeMachineV2 implements SandboxMachine {
   stopped = false;
   /** True after the live-machine destroy() (distinct from a snapshot-preserving stop). */
   destroyedSelf = false;
@@ -79,7 +80,7 @@ export class FakeMachineV2 implements SandboxMachineV2 {
   }
 }
 
-export interface FakeSandboxV2 extends SandboxAdapterV2 {
+export interface FakeSandboxV2 extends MachineSandboxAdapter {
   /** Every machine this adapter ever booted, in boot order. */
   readonly machines: FakeMachineV2[];
   /** Live provider-side snapshots (destroy removes its ref from here). */
@@ -90,7 +91,7 @@ export interface FakeSandboxV2 extends SandboxAdapterV2 {
   resumes: number;
 }
 
-/** In-process SandboxAdapterV2 with inspectable machines, snapshots, and destroys. */
+/** In-process MachineSandboxAdapter with inspectable machines, snapshots, and destroys. */
 export const fakeSandboxV2 = (): FakeSandboxV2 => {
   const machines: FakeMachineV2[] = [];
   const snapshots = new Map<string, FakeSnapshotV2>();

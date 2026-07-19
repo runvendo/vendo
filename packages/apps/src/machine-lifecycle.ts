@@ -5,12 +5,23 @@ import {
   type StoreAdapter,
 } from "@vendoai/core";
 import { appRecordInput, rowFromRecord } from "./persistence.js";
-import type { SandboxAdapterV2, SandboxMachineV2 } from "./sandbox-v2.js";
+import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 
 /** Execution-v2 wake/sleep policy: auto-sleep after 5 minutes idle. */
 const DEFAULT_IDLE_MS = 5 * 60_000;
 /** Bounded CAS retries before a document update reports a conflict. */
 const CAS_ATTEMPTS = 3;
+
+/**
+ * The canonical execution-v2 seam plus the orchestrator-locked destroy-by-ref
+ * amendment: releasing a SLEEPING machine's provider resources needs no resume.
+ * Lane A lands the method on SandboxAdapter itself (with the e2b
+ * implementation); when it does, this extension collapses to SandboxAdapter.
+ */
+export interface MachineSandboxAdapter extends SandboxAdapter {
+  /** Release a sleeping machine's snapshot and every provider resource behind it. */
+  destroy(snapshotRef: string): Promise<void>;
+}
 
 /** Injectable timer seam so idle auto-sleep is testable without real time. */
 export interface LifecycleClock {
@@ -29,7 +40,7 @@ export type BuildMachineEnv = (
 
 export interface MachineLifecycleConfig {
   store: StoreAdapter;
-  sandbox?: SandboxAdapterV2;
+  sandbox?: MachineSandboxAdapter;
   buildEnv?: BuildMachineEnv;
   /** Provider base template every provisioned machine boots from. */
   template?: string;
@@ -46,11 +57,11 @@ export interface MachineLifecycleConfig {
 export interface MachineLifecycle {
   available(): boolean;
   /** The live machine for an app, when one is awake in this process. */
-  peek(appId: AppId): SandboxMachineV2 | undefined;
+  peek(appId: AppId): SandboxMachine | undefined;
   /** Create the machine from the base template, snapshot it, store the ref. Idempotent. */
   provision(app: AppDocument): Promise<AppDocument>;
   /** Resume the stored snapshot; concurrent wakes of one app share one machine. */
-  wake(app: AppDocument): Promise<SandboxMachineV2>;
+  wake(app: AppDocument): Promise<SandboxMachine>;
   /** Snapshot the live machine, store the new ref, stop it. No-op when not awake. */
   sleep(app: AppDocument): Promise<AppDocument>;
   /** Destroy the sandbox and clear the document's machine field. */
@@ -58,8 +69,8 @@ export interface MachineLifecycle {
 }
 
 interface LiveEntry {
-  raw: SandboxMachineV2;
-  wrapped: SandboxMachineV2;
+  raw: SandboxMachine;
+  wrapped: SandboxMachine;
   timer?: unknown;
   /** Requests currently inside the box; auto-sleep defers while any are in flight. */
   inflight: number;
@@ -75,10 +86,10 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
   };
 
   const live = new Map<AppId, LiveEntry>();
-  const waking = new Map<AppId, Promise<SandboxMachineV2>>();
+  const waking = new Map<AppId, Promise<SandboxMachine>>();
   const provisioning = new Map<AppId, Promise<AppDocument>>();
 
-  const requireAdapter = (): SandboxAdapterV2 => {
+  const requireAdapter = (): MachineSandboxAdapter => {
     if (config.sandbox === undefined) {
       throw new VendoError("sandbox-unavailable", "sandbox execution is unavailable");
     }
@@ -134,7 +145,7 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
   };
 
   /** Every request through the machine counts as activity and re-arms the idle timer. */
-  const withIdleTracking = (appId: AppId, raw: SandboxMachineV2): SandboxMachineV2 => ({
+  const withIdleTracking = (appId: AppId, raw: SandboxMachine): SandboxMachine => ({
     id: raw.id,
     request: async (req) => {
       const entry = live.get(appId);
@@ -225,7 +236,7 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
     }
   };
 
-  const wake = async (app: AppDocument): Promise<SandboxMachineV2> => {
+  const wake = async (app: AppDocument): Promise<SandboxMachine> => {
     const entry = live.get(app.id);
     if (entry !== undefined) {
       armIdleTimer(app.id);
