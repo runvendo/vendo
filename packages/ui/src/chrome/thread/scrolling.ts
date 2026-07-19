@@ -71,6 +71,12 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
   const stuckRef = useRef(true);
   const lastScrollHeightRef = useRef(0);
   const [unseen, setUnseen] = useState(false);
+  // Lane pick 3A — the jump affordance grew into a bar with a COUNT of turns
+  // that landed while scrolled away and a snippet of the newest text. Count =
+  // messages appended since the stick released; snippet = the latest turn's
+  // trailing text (best-effort, purely presentational).
+  const [unseenCount, setUnseenCount] = useState(0);
+  const seenLengthRef = useRef(messages.length);
 
   // A different conversation is a different reader position: when the caller
   // switches the hook to another thread, re-arm the stick and forget the
@@ -80,6 +86,7 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
     stuckRef.current = true;
     lastScrollHeightRef.current = 0;
     setUnseen(false);
+    setUnseenCount(0);
   }, [threadKey]);
 
   const atBottom = (node: HTMLElement) =>
@@ -91,7 +98,11 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
     // Both user scrolls and our own programmatic sticks land here; either way
     // the reader's actual position is the single source of truth.
     stuckRef.current = atBottom(node);
-    if (stuckRef.current) setUnseen(false);
+    if (stuckRef.current) {
+      setUnseen(false);
+      setUnseenCount(0);
+      seenLengthRef.current = messages.length;
+    }
   };
 
   const jumpToLatest = () => {
@@ -99,6 +110,8 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
     if (!node) return;
     stuckRef.current = true;
     setUnseen(false);
+    setUnseenCount(0);
+    seenLengthRef.current = messages.length;
     node.scrollTop = node.scrollHeight;
   };
 
@@ -113,8 +126,10 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
     lastScrollHeightRef.current = node.scrollHeight;
     if (stuckRef.current) {
       node.scrollTop = node.scrollHeight;
+      seenLengthRef.current = messages.length;
     } else if (grew) {
       setUnseen(true);
+      setUnseenCount(Math.max(1, messages.length - seenLengthRef.current));
     }
     // contentRevision — ENG-215: turn-actions (Edit/Regenerate) mount below the
     // last turn the instant a stream settles (busy→false), adding height AFTER
@@ -144,5 +159,16 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
     };
   }, []);
 
-  return { listRef, onScroll, jumpToLatest, showJump: unseen };
+  // 3A snippet: trailing text of the newest message (bounded; presentational).
+  const lastMessage = messages.at(-1);
+  const snippet = unseen && lastMessage
+    ? lastMessage.parts
+        .filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
+        .map(part => part.text)
+        .join(" ")
+        .trim()
+        .slice(0, 120)
+    : "";
+
+  return { listRef, onScroll, jumpToLatest, showJump: unseen, unseenCount, snippet };
 }

@@ -1,10 +1,43 @@
 import type { RiskLabel } from "@vendoai/core";
-import type { UIMessage } from "ai";
+import { isToolUIPart, type UIMessage } from "ai";
 import { Fragment } from "react";
+import { useVendoContext } from "../../context.js";
 import { useCopyFeedback } from "../clipboard.js";
+import { toolTitle } from "../humanize.js";
 import { SentAttachment, type FilePart } from "./attachments.js";
 import { assistantText, collapseToolRuns, userText } from "./message-data.js";
 import { ThreadPart } from "./parts.js";
+
+/** Lane pick 8C — the settled turn's quiet sources row: every completed tool
+    call the turn drew on, as informational chips ("what did it read?"). The
+    full mechanical record stays in the Activity panel; these are the in-place
+    scent. Only read-risk calls qualify — writes are actions, not sources. */
+function TurnSources({ message, risks }: { message: UIMessage; risks: Map<string, RiskLabel> }) {
+  const { tools } = useVendoContext();
+  // Identical repeated calls collapse to one chip with a ×N count — the same
+  // ENG-216 run-collapse identity (name + args) the old beat stack used.
+  const sources = collapseToolRuns(message.parts).filter(({ part }) =>
+    isToolUIPart(part) && part.state === "output-available"
+    && (risks.get(part.toolCallId) ?? "read") === "read");
+  if (sources.length === 0) return null;
+  return (
+    <div className="fl-sources" aria-label="Sources">
+      {sources.map(({ part, count }) => {
+        const toolPart = part as Extract<UIMessage["parts"][number], { toolCallId: string }>;
+        const name = toolPart.type === "dynamic-tool"
+          ? (toolPart as { toolName: string }).toolName
+          : toolPart.type.replace(/^tool-/, "");
+        return (
+          <span className="fl-source" key={toolPart.toolCallId} title="Recorded in Activity">
+            <i aria-hidden="true" />
+            {toolTitle(name, tools[name])}
+            {count > 1 ? <span className="fl-source-count" aria-label={`repeated ${count} times`}>×{count}</span> : null}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 /** ENG-225 — the copy turn action (.fl-turn-actions design). */
 function CopyTurnButton({ text }: { text: string }) {
@@ -82,6 +115,9 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
               risks={risks}
             />
           ))}
+          {!streamingTurn && message.role === "assistant" ? (
+            <TurnSources message={message} risks={risks} />
+          ) : null}
           {showActions ? (
             <div className="fl-turn-actions">
               {bubbleText.length > 0 ? <CopyTurnButton text={bubbleText} /> : null}

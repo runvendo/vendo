@@ -33,12 +33,12 @@ export {
   type ActivityGlyph,
   type OutcomeTone,
 } from "./activity-semantics.js";
-export { BuildBeat, toolPresentation } from "./build-beat.js";
+export { BuildBeat, StatusRibbon, toolPresentation } from "./build-beat.js";
 export { ChromeRoot } from "./chrome-root.js";
 export { useCopyFeedback } from "./clipboard.js";
 export { ConnectDockButton, ConnectTray } from "./connect-dock.js";
 export { FluidThinking } from "./fluid-thinking.js";
-export { previewArgs } from "./humanize.js";
+export { previewArgs, toolTitle } from "./humanize.js";
 export { Markdown } from "./markdown.js";
 export { MorphToast, type MorphToastProps } from "./morph-toast.js";
 export { PrefillScopeContext, registerPrefillConsumer } from "./overlay-registry.js";

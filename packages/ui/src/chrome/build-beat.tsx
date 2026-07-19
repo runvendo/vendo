@@ -1,4 +1,5 @@
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
+import { useEffect, useRef, useState } from "react";
 import { useVendoContext } from "../context.js";
 import { toolTitle, type ToolMeta } from "./humanize.js";
 
@@ -79,6 +80,59 @@ export function toolPresentation(name: string, args?: unknown, meta?: ToolMeta):
     sub = `Emails ${flat.to} as you`;
   }
   return { title, eyebrow, description, sub, toolkit, logoUrl };
+}
+
+/** Lane pick C1 (1A+1D) — the live status ribbon. While a turn works, ONE
+    surface above the composer narrates the build: the humanized label of the
+    active tool call, a live elapsed clock, and a "step N of M" counter. The
+    transcript stays beat-free (only errored calls still leave a line — a
+    failure is content, not progress). Label changes crossfade via the
+    .fl-ribbon-label key remount; the elapsed clock resets per tool call. */
+export function StatusRibbon({ part, stepIndex, stepTotal, risk = "read" }: {
+  part: AnyToolPart;
+  /** 1-based index of the active call within the turn's tool calls. */
+  stepIndex: number;
+  stepTotal: number;
+  /** Rides the data attr (parity with the old beat's machine affordance). */
+  risk?: string;
+}) {
+  const { tools } = useVendoContext();
+  const name = rawToolName(part);
+  const label = toolTitle(name, tools[name]);
+  const waiting = part.state === "approval-requested";
+  // Elapsed ticks while this call is the active one; keyed to the call id so a
+  // new step restarts the clock. Interval only mounts when motion is allowed —
+  // the ribbon is short-lived, but a reduced-motion reader gets a quiet label.
+  const startRef = useRef<{ id: string; t0: number }>({ id: part.toolCallId, t0: Date.now() });
+  if (startRef.current.id !== part.toolCallId) {
+    startRef.current = { id: part.toolCallId, t0: Date.now() };
+  }
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = setInterval(() => {
+      setElapsed((Date.now() - startRef.current.t0) / 1000);
+    }, 100);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <div
+      className="fl-ribbon"
+      role="status"
+      aria-live="polite"
+      data-vendo-tool={name}
+      data-vendo-approval={risk}
+      title={name}
+    >
+      <span className="fl-beat-orb" aria-hidden="true" />
+      <span className="fl-ribbon-label" key={part.toolCallId}>
+        {label}
+        {waiting ? " — waiting for your approval" : "…"}
+      </span>
+      {elapsed >= 0.1 ? <span className="fl-ribbon-time" aria-hidden="true">{elapsed.toFixed(1)}s</span> : null}
+      {stepTotal > 1 ? <span className="fl-ribbon-count">step {stepIndex} of {stepTotal}</span> : null}
+    </div>
+  );
 }
 
 export function BuildBeat({

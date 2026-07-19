@@ -1773,4 +1773,171 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   .fl-voice-stage:not(.is-docked) .fl-voice-blob { transition: none; }
 }
 
+/* ====================================================================
+   ui-lane-thread block — the converged thread-surface picks (C1 ribbon,
+   C5 bar pin, 2B/2C/2E/2F composer, 3A/3D list, 4B landing cards, 6B
+   mobile jump, 8A-8E markdown). Derived from existing tokens only.
+   ==================================================================== */
+
+/* C1 — live status ribbon (glued above the composer while a turn works). */
+.fl-ribbon { display: flex; align-items: center; gap: 9px; margin: 0 16px -6px; padding: 8px 12px;
+  border: 1px solid var(--vendo-border); border-radius: 12px; background: var(--vendo-glass-strong);
+  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  font: 500 12.5px/1.3 var(--vendo-font); color: var(--vendo-fg-muted); box-shadow: var(--vendo-shadow); }
+.fl-ribbon .fl-beat-orb { width: 9px; height: 9px; }
+.fl-ribbon-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--vendo-fg); font-weight: 550; }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-ribbon { animation: fl-item-in .24s cubic-bezier(.22, 1, .36, 1) both; }
+  .fl-ribbon-label { animation: fl-fade-in .22s ease both; }
+}
+.fl-ribbon-time { flex-shrink: 0; font: 500 10.5px/1 var(--vendo-font-mono); color: var(--vendo-fg-muted);
+  opacity: .75; font-variant-numeric: tabular-nums; }
+.fl-ribbon-count { margin-left: auto; flex-shrink: 0; font: 600 10.5px/1.4 var(--vendo-font);
+  border: 1px solid var(--vendo-border); border-radius: 999px; padding: 1px 7px; color: var(--vendo-fg-muted); }
+
+/* C5 — the pin lives on the app-card bar once the view is ready (replaces the
+   old footer row). Sits between the boot labels and the hairline. */
+.fl-barpin { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
+  cursor: pointer; border: 0; background: transparent; color: var(--vendo-fg-muted);
+  font: 550 11.5px/1 var(--vendo-font); padding: 4px 8px; border-radius: 7px;
+  transition: background .12s, color .12s; }
+.fl-barpin:hover { background: var(--vendo-accent-soft); color: var(--vendo-fg); }
+.fl-barpin:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 1px; }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-appcard-bar[data-state="ready"] .fl-barpin { animation: fl-fade-in .3s ease both; }
+}
+
+/* 2B — Send now on the queued pill. */
+.fl-queued-now { flex-shrink: 0; border: 0; background: none; cursor: pointer; padding: 3px 6px;
+  border-radius: 6px; font: 600 11px/1.2 var(--vendo-font); color: var(--vendo-accent); }
+.fl-queued-now:hover { background: var(--vendo-accent-soft); }
+
+/* 2C — focus bloom: hint row exists only while the composer holds focus. */
+.fl-hintrow { display: flex; align-items: center; gap: 12px; padding: 0 2px;
+  font: 500 11px/1.4 var(--vendo-font); color: var(--vendo-fg-muted);
+  max-height: 0; opacity: 0; overflow: hidden; margin: 0;
+  transition: max-height .18s ease, opacity .18s ease, margin .18s ease; }
+.fl-composer:focus-within .fl-hintrow { max-height: 22px; opacity: 1; margin-top: 2px; }
+.fl-kbd { font: 600 10px/1 var(--vendo-font-mono); border: 1px solid var(--vendo-border);
+  border-bottom-width: 2px; border-radius: 4px; padding: 2px 4px; color: var(--vendo-fg-muted); }
+
+/* 2E — the whole thread is the drop target; the overlay covers the surface
+   with a centered card. (The composer-local .fl-drop geometry is superseded.) */
+.fl-drop--thread { position: absolute; inset: 10px; z-index: 30; display: grid; place-items: center;
+  border-radius: 16px; border: 1.5px dashed var(--vendo-accent);
+  background: color-mix(in srgb, var(--vendo-accent) 7%, var(--vendo-surface)); }
+.fl-drop-card { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center;
+  color: var(--vendo-fg); font: 550 13px/1.4 var(--vendo-font); }
+/* The drop surface needs a positioning context on the thread itself. */
+.fl-thread { position: relative; }
+
+/* 2F — attachment read ring + per-chip error with retry. */
+.fl-att-ring { position: relative; width: 18px; height: 18px; flex-shrink: 0; }
+.fl-att-ring svg { transform: rotate(-90deg); display: block; }
+.fl-att-ring circle { fill: none; stroke-width: 2.6; }
+.fl-att-ring-bg { stroke: var(--vendo-border); }
+.fl-att-ring-fg { stroke: var(--vendo-accent); stroke-linecap: round; transition: stroke-dashoffset .2s linear; }
+.fl-att-file--error { border-color: var(--vendo-danger-border); }
+.fl-att-fail { color: var(--vendo-danger); font-size: 10.5px; }
+.fl-att-retry { border: 0; background: none; padding: 0; cursor: pointer; font: inherit;
+  color: var(--vendo-danger); text-decoration: underline; text-underline-offset: 2px; }
+
+/* 3A — the new-replies bar docks onto the composer edge (replaces .fl-jump). */
+.fl-newbar { position: absolute; left: 16px; right: 16px; bottom: 0; z-index: 5; display: flex;
+  align-items: center; justify-content: center; gap: 8px; padding: 8px 12px; cursor: pointer;
+  border: 1px solid var(--vendo-border-strong); border-radius: 12px 12px 0 0; border-bottom: 0;
+  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  font: 600 12px/1 var(--vendo-font); color: var(--vendo-fg); box-shadow: var(--vendo-shadow); }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-newbar { animation: fl-newbar-rise .22s cubic-bezier(.22, 1, .36, 1) both; }
+}
+@keyframes fl-newbar-rise { from { transform: translateY(100%); } to { transform: none; } }
+.fl-newbar:hover { border-color: var(--vendo-accent); }
+.fl-newbar:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
+.fl-newbar small { color: var(--vendo-fg-muted); font-weight: 500; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
+/* 6B — at phone widths (and in the takeover) the same affordance re-clothes as
+   a bottom-center thumb pill; the snippet yields to the count. */
+@media (max-width: 480px) {
+  .fl-newbar { left: 50%; right: auto; bottom: 8px; transform: translateX(-50%);
+    border-radius: 999px; border-bottom: 1px solid var(--vendo-border-strong);
+    padding: 7px 14px; font-size: 11.5px; }
+  .fl-newbar small { display: none; }
+}
+.fl-takeover .fl-newbar { left: 50%; right: auto; bottom: 8px; transform: translateX(-50%);
+  border-radius: 999px; border-bottom: 1px solid var(--vendo-border-strong);
+  padding: 7px 14px; font-size: 11.5px; }
+.fl-takeover .fl-newbar small { display: none; }
+
+/* 3D — fold-with-fade for restored huge bodies (user paste + markdown). */
+.fl-fold { position: relative; }
+.fl-fold:not(.fl-fold--open) { max-height: 190px; overflow: hidden; padding-bottom: 34px; }
+.fl-fold-veil { position: absolute; left: 0; right: 0; bottom: 0; display: grid; place-items: end center;
+  padding-bottom: 6px; height: 88px;
+  background: linear-gradient(180deg, transparent, var(--vendo-user-bubble) 82%); }
+.fl-turn-assistant .fl-fold-veil { background: linear-gradient(180deg, transparent, var(--vendo-bg) 82%); }
+.fl-fold--open .fl-fold-veil { position: static; height: auto; background: none; padding: 8px 0 0; }
+.fl-fold-pill { border: 1px solid var(--vendo-border-strong); border-radius: 999px;
+  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  padding: 5px 12px; font: 600 11.5px/1.3 var(--vendo-font); color: var(--vendo-fg); cursor: pointer;
+  box-shadow: var(--vendo-shadow); text-decoration: none; margin-top: 0; }
+.fl-fold-pill:hover { border-color: var(--vendo-accent); }
+
+/* 4B — starter cards on the landing (object suggestions). */
+.fl-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px;
+  width: 100%; max-width: 560px; }
+.fl-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left;
+  cursor: pointer; border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
+  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  padding: 12px 13px; color: var(--vendo-fg);
+  transition: border-color .14s, transform .18s cubic-bezier(.22, 1, .36, 1), box-shadow .18s; }
+.fl-card:hover { border-color: var(--vendo-border-strong); transform: translateY(-1px);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--vendo-fg) 8%, transparent); }
+.fl-card:active { transform: translateY(0); box-shadow: none; }
+.fl-card:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
+.fl-card b { font: 600 12.5px/1.3 var(--vendo-font); }
+.fl-card span { font: 400 11.5px/1.45 var(--vendo-font); color: var(--vendo-fg-muted); }
+.fl-card svg { color: var(--vendo-fg-muted); }
+
+/* 8A — code header bar (Copy is always visible; overrides the hover reveal). */
+.fl-codeblock { border: 1px solid var(--vendo-border); border-radius: 11px; overflow: hidden;
+  background: var(--vendo-accent-soft); }
+.fl-md .fl-codeblock pre { margin: 0; border: 0; border-radius: 0; background: none; }
+.fl-codehead { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 13px;
+  border-bottom: 1px solid var(--vendo-border); }
+.fl-codehead-lang { font: 600 11px/1 var(--vendo-font-mono); color: var(--vendo-fg-muted); }
+.fl-codehead-wrap { border: 0; background: none; cursor: pointer; margin-left: auto;
+  font: 500 11px/1 var(--vendo-font); color: var(--vendo-fg-muted); padding: 4px 8px; border-radius: 6px; }
+.fl-codehead-wrap:hover { background: var(--vendo-accent-soft); color: var(--vendo-fg); }
+.fl-codehead-wrap--on { color: var(--vendo-accent); }
+.fl-codehead .fl-copy { position: static; opacity: 1; }
+
+/* 8B — ledger tables: no zebra, hairline rows, numerals aligned. */
+.fl-md tbody tr:nth-child(even) { background: none; }
+.fl-md th, .fl-md td { border-bottom: 1px solid var(--vendo-border); }
+.fl-td-num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* 8C — the settled turn's quiet sources row. */
+.fl-sources { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.fl-source { display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--vendo-border); border-radius: 999px; background: var(--vendo-surface);
+  font: 600 10px/1 var(--vendo-font); color: var(--vendo-fg-muted); padding: 3px 8px; }
+.fl-source i { width: 6px; height: 6px; border-radius: 2px; background: var(--vendo-accent); opacity: .7; }
+.fl-source-count { margin-left: 1px; color: var(--vendo-fg-muted); font-weight: 700; }
+
+/* 8D — collapsible sections in restored long replies. */
+.fl-mdsec { margin: 2px 0; }
+.fl-mdsec-head { display: flex; align-items: center; gap: 7px; width: 100%; border: 0; background: none;
+  padding: 4px 0; cursor: pointer; text-align: left;
+  font: 650 1.05em/1.3 var(--vendo-font); color: var(--vendo-fg); }
+.fl-mdsec-head svg { flex-shrink: 0; color: var(--vendo-fg-muted); transition: transform .16s; }
+.fl-mdsec--open > .fl-mdsec-head svg { transform: rotate(90deg); }
+.fl-mdsec-head:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; border-radius: 6px; }
+.fl-mdsec-body { padding: 2px 0 4px; }
+
+/* 8E — a streaming table's forming row. */
+.fl-tr-forming td { padding: var(--vendo-density-table-padding); }
+.fl-tr-forming .fl-skeleton-bar { display: block; height: 9px; width: 62%; border-radius: 5px; }
+
 `;
