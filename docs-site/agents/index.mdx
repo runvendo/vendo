@@ -1,6 +1,6 @@
 ---
 title: "Agent install playbook"
-description: "The install playbook for coding agents: detect the stack, run vendo init with value flags, hand-wire the gaps the agent tail names, gate on vendo doctor --json."
+description: "The install playbook for coding agents: detect the stack, run vendo init with value flags, hand-wire the gaps the agent tail names, gate on the vendo doctor JSON output."
 ---
 
 Vendo puts an agent inside a company's product: customers build views, act
@@ -76,7 +76,7 @@ is left.
 
 - **Ask your human before creating any account or key.** That includes Vendo
   Cloud (`vendo cloud login`), model provider keys, and sandbox accounts
-  (E2B/Modal). Relay the choice; never sign up on your own.
+  (E2B or the managed Cloud sandbox). Relay the choice; never sign up on your own.
 - **Never invent props or tools outside the catalog.** Only components
   registered in `vendo/registry.tsx` exist, and only with the props their
   schemas declare. Only tools in `.vendo/tools.json` exist. Copy real names

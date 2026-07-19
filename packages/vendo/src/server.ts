@@ -13,9 +13,9 @@ import {
   type AppsRuntime,
   type PinBaseline,
   type SandboxAdapter,
+  type V1SandboxAdapter,
 } from "@vendoai/apps";
 import { e2bInstalled, e2bSandbox } from "@vendoai/apps/e2b";
-import { modalInstalled, modalSandbox } from "@vendoai/apps/modal";
 import {
   createAutomations,
   type AutomationsEngine,
@@ -214,7 +214,7 @@ export interface CreateVendoConfig {
       mirror the client-side components map 1:1. */
   catalog?: ComponentCatalog | ComponentRegistry;
   store?: VendoStore;
-  sandbox?: SandboxAdapter;
+  sandbox?: SandboxAdapter | V1SandboxAdapter;
   connectors?: Connector[];
   /** 04-actions §3 — an explicit connections adapter; always wins over the
       defaults (precedence: selectConnections). */
@@ -315,13 +315,14 @@ function validateSessionsConfig(sessions: CreateVendoConfig["sessions"]): Resolv
 const DEFAULT_TOOL_OUTPUT_CAP = 32_000;
 
 /** Sandbox leg of the ADAPTER RULE (see the block comment at
-    selectConnections below): explicit adapter → BYO sandbox env (e2b, then
-    modal) → VENDO_API_KEY defaults the Cloud managed pool → the dark venue.
+    selectConnections below): explicit adapter → BYO sandbox env (e2b) →
+    VENDO_API_KEY defaults the Cloud managed pool → the dark venue.
     The Cloud slot fills ONLY when the host passed no sandbox and no BYO
     sandbox env is present, so setting a Vendo key never shadows an existing
-    provider account. */
-function selectSandbox(configured: SandboxAdapter | undefined): {
-  adapter: SandboxAdapter | undefined;
+    provider account. (The v1 Modal adapter is retired with the execution-v2
+    seam; Modal can return behind the same seam later.) */
+function selectSandbox(configured: SandboxAdapter | V1SandboxAdapter | undefined): {
+  adapter: SandboxAdapter | V1SandboxAdapter | undefined;
   venue: SandboxVenue;
 } {
   if (configured !== undefined) return { adapter: configured, venue: "custom" };
@@ -332,15 +333,6 @@ function selectSandbox(configured: SandboxAdapter | undefined): {
   const e2bApiKey = environment("E2B_API_KEY");
   if (e2bApiKey !== undefined && e2bInstalled()) {
     return { adapter: e2bSandbox({ apiKey: e2bApiKey }), venue: "e2b" };
-  }
-
-  const modalTokenId = environment("MODAL_TOKEN_ID");
-  const modalTokenSecret = environment("MODAL_TOKEN_SECRET");
-  if (modalTokenId !== undefined && modalTokenSecret !== undefined && modalInstalled()) {
-    return {
-      adapter: modalSandbox({ tokenId: modalTokenId, tokenSecret: modalTokenSecret }),
-      venue: "modal",
-    };
   }
 
   const apiKey = environment("VENDO_API_KEY");

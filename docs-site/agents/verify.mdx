@@ -1,6 +1,6 @@
 ---
 title: "Verify: every doctor error code"
-description: "Symptom, cause, and exact fix for every error code vendo doctor can emit. fix_ref URLs from doctor --json anchor into this page."
+description: "Symptom, cause, and exact fix for every error code vendo doctor can emit. fix_ref URLs from the doctor JSON output anchor into this page."
 ---
 
 `npx vendo doctor --json` is the install gate. It prints one JSON object; each
@@ -178,7 +178,7 @@ running, or it runs on a different port than the probe target.
 **Symptom:** `/status` returned an invalid execution venue.
 
 **Cause:** `blocks.sandbox` in the status response is not one of the known
-venues (`e2b`, `modal`, `cloud`, `custom`), `false`, or absent. The status
+venues (`e2b`, `cloud`, `custom`), `false`, or absent. The status
 route is patched or the composition is corrupted.
 
 **Fix:** Remove any custom `/status` handling and upgrade `@vendoai/vendo` so
@@ -192,10 +192,10 @@ the stock status route answers.
 server (anything beyond tree-only rendering) return sandbox-unavailable.
 Tree-only apps still work.
 
-**Fix:** One of: install the `e2b` package and set `E2B_API_KEY`; install
-`modal` and set `MODAL_TOKEN_ID` + `MODAL_TOKEN_SECRET`; set `VENDO_API_KEY`
-for the managed Cloud sandbox; or pass `sandbox:` to `createVendo`. Ask your
-human which venue they want; this needs an account or key.
+**Fix:** One of: install the `e2b` package and set `E2B_API_KEY`; set
+`VENDO_API_KEY` for the managed Cloud sandbox; or pass `sandbox:` to
+`createVendo`. Ask your human which venue they want; this needs an account or
+key.
 
 ### E-LIVE-005 {#E-LIVE-005}
 
