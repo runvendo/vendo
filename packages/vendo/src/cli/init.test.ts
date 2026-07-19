@@ -468,6 +468,80 @@ describe("vendo init (zero-question)", () => {
     expect(jwtSink.logs.join("\n")).toContain("auth: jwt({ secret:");
   });
 
+  // Agent-install-dx: a non-interactive scaffold run is agent-driven — the
+  // run ENDS with the repo-specific agent tail (the wired auth preset and
+  // what's still stubbed, the exact files to hand-edit, the doctor gate),
+  // every line derived from what this run actually wrote.
+  it("non-interactive runs end with the agent tail: wired preset, hand-edit files, doctor gate", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
+    }));
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    const logs = sink.logs.join("\n");
+    const tailAt = logs.indexOf("Agent tail:");
+    expect(tailAt).toBeGreaterThan(-1);
+    const tail = logs.slice(tailAt);
+    // The wired preset with its provenance — real run facts, not prose…
+    expect(tail).toContain("auth: authJs() wired (detected next-auth)");
+    // …the exact files the agent must now hand-edit, each described…
+    expect(tail).toContain(`edit ${join("vendo", "registry.tsx")} — `);
+    expect(tail).toContain(`edit ${join("app", "layout.tsx")} — `);
+    expect(tail).toContain(`edit ${join(".vendo", "brief.md")} — `);
+    // …and the machine gate, as the run's FINAL line.
+    expect(tail).toContain("vendo doctor --json");
+    expect(sink.logs[sink.logs.length - 1]).toContain("vendo doctor --json");
+    expect(sink.logs[sink.logs.length - 1]).toContain("green");
+  });
+
+  it("the tail states auth stubs honestly: anonymous scaffolds point at the composition, a picked preset names its missing SDK", async () => {
+    // No auth dependency: the tail says so and points the hand-edit at the
+    // generated composition file.
+    const anonymous = await fixture();
+    const anonymousSink = output();
+    expect(await run(anonymous, anonymousSink)).toBe(0);
+    const anonymousTail = anonymousSink.logs.join("\n").split("Agent tail:")[1]!;
+    expect(anonymousTail).toContain("auth: none wired");
+    expect(anonymousTail).toContain(`edit ${join("app", "api", "vendo", "[...vendo]", "route.ts")} — `);
+    // The advisory count stays exact: the tail never repeats the "Auth:" line.
+    expect(anonymousSink.logs.filter((line) => line.includes("Auth:"))).toHaveLength(1);
+
+    // --auth clerk without the SDK: the stub is the missing runtime package.
+    const picked = await fixture();
+    const pickedSink = output();
+    expect(await run(picked, pickedSink, { yes: true, auth: "clerk" })).toBe(0);
+    const pickedTail = pickedSink.logs.join("\n").split("Agent tail:")[1]!;
+    expect(pickedTail).toContain("auth: clerk() wired");
+    expect(pickedTail).toContain("@clerk/backend");
+  });
+
+  it("interactive runs keep the clack-style summary — no agent tail; --yes brings it back even on a TTY", async () => {
+    const interactive = await fixture();
+    const interactiveSink = output();
+    expect(await run(interactive, interactiveSink, { interactive: true })).toBe(0);
+    expect(interactiveSink.logs.join("\n")).not.toContain("Agent tail");
+
+    // --yes IS the non-interactive path, TTY or not.
+    const flagged = await fixture();
+    const flaggedSink = output();
+    expect(await run(flagged, flaggedSink, { yes: true, interactive: true })).toBe(0);
+    expect(flaggedSink.logs.join("\n")).toContain("Agent tail:");
+  });
+
+  it("the Express tail points at the printed wiring lines (no exact entry file exists to name)", async () => {
+    const root = await expressFixture(false);
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    const tail = sink.logs.join("\n").split("Agent tail:")[1]!;
+    expect(tail).toContain("auth: none wired");
+    expect(tail).toContain(`edit ${join("vendo", "registry.tsx")} — `);
+    expect(tail).toContain(`edit ${join("vendo", "server.ts")} — `);
+    expect(tail).toContain("mountVendo()");
+    expect(tail).toContain("vendo doctor --json");
+  });
+
   // Agent-install-dx: an undetectable framework has NO safe default — a
   // non-interactive run errors with the exact flag instead of guessing the
   // Next layout into an unknown host (or hanging on a prompt it can't show).

@@ -59,6 +59,8 @@ import {
 
 const DEFAULT_RADIUS = { small: "4px", large: "12px" } as const;
 
+const BRIEF_PLACEHOLDER = "Describe this product, its users, and the jobs the agent should help them complete.\n";
+
 function toVendoTheme(slots: ThemeSlotValues): VendoTheme {
   const deriveRadius = (factor: number, fallback: string): string => {
     const value = slots.radius.match(/^(\d+(?:\.\d+)?)px$/)?.[1];
@@ -847,11 +849,70 @@ async function vendoRootPasteLines(root: string, framework: HostFramework, withR
   return [`In ${layout}:`, ...importLines.map((line) => `  ${line}`), `  … then wrap: ${wrap}`];
 }
 
-async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, selectAuth?: SelectAuth): Promise<{ plan: InitPlan; changes: PlannedChange[]; manualSteps: string[]; authAdvice: string | null }> {
+/** The repo-specific agent tail (agent-install-dx): a non-interactive
+    scaffold run is agent-driven, so the run ends with plain deterministic
+    pointers — the wired auth preset and what is still stubbed about it, the
+    exact files left to hand-edit (derived from what THIS run wrote, never
+    canned prose), and the one doctor command that gates "done". A pointer to
+    work, not documentation: the playbook carries the teaching. */
+async function agentTailLines(args: {
+  root: string;
+  framework: HostFramework;
+  changes: PlannedChange[];
+  compositionPath: string | null;
+  authWired: AuthMatch | null;
+}): Promise<string[]> {
+  const lines: string[] = [];
+  // Auth is a tail fact only when a composition was created this run — a
+  // re-run against an existing composition changed nothing about auth.
+  if (args.compositionPath !== null) {
+    if (args.authWired === null) {
+      lines.push("auth: none wired — sessions stay anonymous until a preset is added");
+    } else if (args.authWired.source === "picked") {
+      lines.push(`auth: ${args.authWired.preset}() wired — stubbed: ${args.authWired.dependency} is not in package.json; install it before the first authenticated run`);
+    } else {
+      lines.push(`auth: ${args.authWired.preset}() wired (detected ${args.authWired.dependency})`);
+    }
+  }
+  const registry = args.changes.find((change) => /registry\.(?:tsx|mjs)$/.test(change.path));
+  if (registry !== undefined) {
+    lines.push(`edit ${registry.path} — register the components the agent may render (generated empty)`);
+  }
+  if (args.compositionPath !== null && args.authWired === null) {
+    lines.push(`edit ${args.compositionPath} — add the auth preset named in the advisory above when the host has auth`);
+  }
+  if (args.framework === "express") {
+    // No exact entry file exists to name on Express — point at the printed
+    // wiring lines instead of guessing a path.
+    lines.push("edit your server and client entries — paste the mountVendo() and <VendoRoot> lines above");
+  } else {
+    const layout = relative(args.root, join(await appDirectory(args.root), "layout.tsx"));
+    lines.push(`edit ${layout} — wrap the app in the <VendoRoot> lines above`);
+  }
+  if (await readOptional(join(args.root, ".vendo", "brief.md")) === BRIEF_PLACEHOLDER) {
+    lines.push(`edit ${join(".vendo", "brief.md")} — replace the placeholder with what this product does and for whom`);
+  }
+  lines.push("gate: run `vendo doctor --json` — done when every check reports green");
+  return lines;
+}
+
+async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, selectAuth?: SelectAuth): Promise<{
+  plan: InitPlan;
+  changes: PlannedChange[];
+  manualSteps: string[];
+  authAdvice: string | null;
+  /** What the fresh composition wired (agent-tail fact); null when no
+      composition was created this run OR it stayed anonymous. */
+  authWired: AuthMatch | null;
+  /** Relative path of the composition created THIS run; null otherwise. */
+  compositionPath: string | null;
+}> {
   const root = resolve(options.targetDir);
   const framework = options.framework ?? await detectFramework(root);
   const changes: PlannedChange[] = [];
   let authAdvice: string | null = null;
+  let authWired: AuthMatch | null = null;
+  let compositionPath: string | null = null;
   let withRegistry = false;
 
   if (framework === "express") {
@@ -887,6 +948,8 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
         const serverAfter = expressServerSource(typescript, auth.wired);
         changes.push({ absolute: server, path, before: null, after: serverAfter, diff: diff(path, null, serverAfter) });
         authAdvice = auth.advice;
+        authWired = auth.wired;
+        compositionPath = path;
       }
       withRegistry = registryBefore !== null || registryPlanned;
     }
@@ -929,6 +992,8 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
       const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired, registrySpecifier });
       changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
       authAdvice = auth.advice;
+      authWired = auth.wired;
+      compositionPath = path;
     } else if (registrations.length > 0) {
       // The route already exists but server actions appeared since it was
       // generated: wire the registration map into the existing createVendo so
@@ -983,6 +1048,8 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     changes,
     manualSteps,
     authAdvice,
+    authWired,
+    compositionPath,
     plan: {
       framework,
       root,
@@ -1085,7 +1152,7 @@ export async function runInit(options: InitOptions): Promise<number> {
   const selectAuth = options.yes === true || !interactive
     ? undefined
     : (options.selectAuth ?? (pretty === null ? plainSelect : pretty.select));
-  const { plan, changes, manualSteps, authAdvice } = await buildPlan(options, confirmAuth, selectAuth);
+  const { plan, changes, manualSteps, authAdvice, authWired, compositionPath } = await buildPlan(options, confirmAuth, selectAuth);
   const telemetry = telemetryFor(options, output);
   await telemetry.track("init_started", { framework: plan.framework });
 
@@ -1172,7 +1239,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     );
     await writeIfMissing(
       join(root, ".vendo", "brief.md"),
-      "Describe this product, its users, and the jobs the agent should help them complete.\n",
+      BRIEF_PLACEHOLDER,
       options.force === true,
     );
     // Exact-or-model theme extraction (§B2). Skipped entirely when a
@@ -1300,6 +1367,16 @@ export async function runInit(options: InitOptions): Promise<number> {
     for (const line of manualSteps) output.log(`  ${line}`);
     output.log("\nThen start your dev server — the agent is live in your app.");
     output.log("Verify everything: `npx vendo doctor` (it can start the server and run a live turn).");
+
+    // Agent tail (agent-install-dx): the --yes-or-non-TTY path is agent-driven
+    // — the run's FINAL block is the repo-specific pointers an agent parses.
+    // Interactive human runs keep the clack-style output untouched; --agent
+    // never reaches here (its read-only JSON plan returned above).
+    if (options.yes === true || !interactive) {
+      output.log("\nAgent tail:");
+      const tail = await agentTailLines({ root, framework: plan.framework, changes, compositionPath, authWired });
+      for (const line of tail) output.log(`  ${line}`);
+    }
     pretty?.done(Date.now() - started, true);
     return 0;
   } catch (error) {
