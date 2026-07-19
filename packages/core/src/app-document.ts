@@ -201,8 +201,11 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
       return fail("validation", `invalid fn: reference "${reference}"`);
     }
   }
-  if (fnReferences.length > 0 && app.server === undefined) {
-    return fail("validation", "fn: references require an app server");
+  // execution-v2 machine-presence rule: an fn: ref is only meaningful when the
+  // document carries a box to answer it — the v2 `machine` (Lane B), or the
+  // dying v1 `server` snapshot until its execution path is fully removed.
+  if (fnReferences.length > 0 && app.server === undefined && app.machine === undefined) {
+    return fail("validation", "fn: references require a machine (or legacy app server)");
   }
 
   for (const [name, declaration] of Object.entries(app.storage ?? {})) {

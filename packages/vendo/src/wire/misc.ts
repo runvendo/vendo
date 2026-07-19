@@ -117,7 +117,14 @@ export const systemRoutes: RouteEntry[] = [
     if (!await tickAuthorized(request)) {
       return json({ error: { code: "blocked", message: "invalid tick credential" } }, 401);
     }
-    return json({ runIds: await deps.automations.tick() });
+    // execution-v2 Lane D — one authenticated tick drives BOTH schedulers: the
+    // automations engine and the machine-app vendo.json schedules (additive
+    // `schedules` field). Point any external cron here (Vercel cron, GitHub
+    // Actions, crontab); the Cloud broker calls this same surface.
+    return json({
+      runIds: await deps.automations.tick(),
+      schedules: await deps.apps.schedules.tick(),
+    });
   }),
   route("POST", "/sync/impact", async ({ request, deps }) => {
     if (environment("NODE_ENV") === "production") {

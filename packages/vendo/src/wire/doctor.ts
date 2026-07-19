@@ -64,6 +64,16 @@ export const doctorRoutes: RouteEntry[] = [
     }
     return undefined;
   }),
+  // execution-v2 Lane D — dev-only machine/schedule reporting (sits AFTER the
+  // production gate above, like every probe route). Reporting only: which apps
+  // carry a machine, whether a schedule caller (VENDO_TICK_SECRET) is
+  // configured for the /tick surface, and each schedule's last-fired state.
+  route("GET", "/doctor/machines", async ({ deps }) => {
+    return json({
+      scheduleCallerConfigured: environment("VENDO_TICK_SECRET") !== undefined,
+      machines: await deps.apps.schedules.report(),
+    });
+  }),
   route("GET", "/doctor/present/echo", async ({ request }) => {
     return json({
       ok: request.headers.get("authorization") === DOCTOR_PRESENT_AUTHORIZATION
