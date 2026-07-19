@@ -11,11 +11,13 @@ npx vendo init
 ```
 
 `vendo init` asks nothing on the happy path. It writes two code files — an
-empty `vendo/registry.tsx` and the catch-all handler wired to it, with your
-auth preset detected silently from package.json — plus two package.json
-script hooks, extracts your tools and brand theme into `.vendo/`, resolves a
-model key, and prints the one `<VendoRoot components={registry}>` line that
-is yours to paste. It never edits code you wrote.
+empty `vendo/registry.tsx` and the catch-all handler wired to it — plus two
+package.json script hooks, extracts your tools and brand theme into
+`.vendo/`, resolves a model key, and prints the one
+`<VendoRoot components={registry}>` line that is yours to paste. When it
+detects your auth provider in package.json it asks once to confirm the
+preset (Enter accepts; `--yes` and non-interactive runs accept it
+silently). It never edits code you wrote.
 
 ## The two files you own
 

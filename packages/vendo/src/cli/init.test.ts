@@ -204,7 +204,9 @@ describe("vendo init (zero-question)", () => {
     ["@clerk/nextjs", "clerk"],
     ["@supabase/supabase-js", "supabase"],
     ["@auth0/nextjs-auth0", "auth0"],
-  ] as const)("silently wires auth from %s → %s()", async (dependency, preset) => {
+  ] as const)("non-interactive runs silently wire auth from %s → %s()", async (dependency, preset) => {
+    // No `interactive` override and vitest has no TTY: the detected default
+    // is accepted without a question (--yes behaves identically).
     const root = await fixture();
     await writeFile(join(root, "package.json"), JSON.stringify({
       name: "host",
@@ -222,6 +224,66 @@ describe("vendo init (zero-question)", () => {
     expect(route).not.toContain("principal");
     // Detection is silent: no question, no advisory.
     expect(sink.logs.join("\n")).not.toContain("Auth:");
+  });
+
+  it("interactive runs confirm the detected preset with one [Y/n]-style question — accept wires it", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
+    }));
+    const asked: Array<{ question: string; defaultYes: boolean }> = [];
+    const sink = output();
+    expect(await run(root, sink, {
+      interactive: true,
+      confirmAuth: async (question, defaultYes) => {
+        asked.push({ question, defaultYes });
+        return true; // Enter/Y
+      },
+    })).toBe(0);
+    expect(asked).toEqual([{ question: "Detected next-auth — wire auth: authJs()?", defaultYes: true }]);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain("auth: authJs(),");
+    expect(sink.logs.join("\n")).not.toContain("Auth:");
+  });
+
+  it("interactive decline keeps the composition anonymous and names the exact line to add later", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "@clerk/nextjs": "6.0.0" },
+    }));
+    const sink = output();
+    expect(await run(root, sink, { interactive: true, confirmAuth: async () => false })).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).not.toContain("auth:");
+    expect(route).toContain("principal: async () => null");
+    const advisories = sink.logs.filter((line) => line.includes("Auth:"));
+    expect(advisories).toHaveLength(1);
+    expect(advisories[0]).toContain("left anonymous");
+    expect(advisories[0]).toContain("@clerk/nextjs");
+    expect(advisories[0]).toContain("auth: clerk()");
+    expect(advisories[0]).toContain(join("app", "api", "vendo", "[...vendo]", "route.ts"));
+  });
+
+  it("--yes never asks even in an interactive run: the detected default is accepted", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
+    }));
+    let askedCount = 0;
+    expect(await run(root, output(), {
+      yes: true,
+      interactive: true,
+      confirmAuth: async () => {
+        askedCount += 1;
+        return false;
+      },
+    })).toBe(0);
+    expect(askedCount).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain("auth: authJs(),");
   });
 
   it("stays anonymous and advises once when several auth providers are present", async () => {

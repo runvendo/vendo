@@ -77,11 +77,14 @@ and is now the old surface — every demo and the docs have moved past it.
    separate `vendo/server.ts`: the route is init's one recognized createVendo
    shape (the ENG-248 serverActions rewiring depends on it), and a split
    would add a third generated file for no behavior. The route now carries
-   `catalog: registry` plus silent auth detection from package.json
-   dependencies (one unambiguous family → the preset line with an
-   escape-hatch comment; none or several → anonymous plus ONE advisory line
-   naming the exact line to add — zero-question contract preserved, `jwt()`
-   is advice-only, never scaffolded).
+   `catalog: registry` plus detect+confirm auth wiring from package.json
+   dependencies (Yousef's revision over the original silent-detection ask):
+   one unambiguous family → ONE consent-style [Y/n] confirm in interactive
+   runs (Enter accepts; decline stays anonymous with the exact line named),
+   accepted silently under `--yes`/non-interactive/--agent; none or several
+   → anonymous plus ONE advisory line naming the exact line to add. `jwt()`
+   is advice-only, never scaffolded; the wired preset line carries an
+   escape-hatch comment.
 
 3. **`<VendoRoot>` wiring** — pass the same registry object as `components`:
 

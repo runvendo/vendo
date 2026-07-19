@@ -17,7 +17,7 @@ import type { Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
 import { runCloudStep, type CloudStepOptions } from "./cloud-init.js";
 import { APPLY_COMMAND, composeDelegatedInstructions, EXTRACTION_DRAFT_JSON_SCHEMA } from "./extract/delegate.js";
-import { runAiExtraction, type AiExtractionOptions } from "./extract/extraction.js";
+import { askYesNo, runAiExtraction, type AiExtractionOptions } from "./extract/extraction.js";
 import type { StaticTool } from "./extract/stages.js";
 import { resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
@@ -44,10 +44,11 @@ import {
  * questions on the happy path, no ceremony.
  *
  *   scan → wire (the two-file surface — empty vendo/registry.tsx + the
- *   catch-all handler wired to it, auth preset detected silently — plus
- *   package.json hooks; never edits user-authored code) → key (env stated,
- *   else the cloud starter offer) → done summary (files changed, the
- *   VendoRoot line to paste, next steps).
+ *   catch-all handler wired to it; a detected auth preset gets one
+ *   consent-style confirm in interactive runs, --yes/non-interactive accept
+ *   it silently — plus package.json hooks; never edits user-authored code)
+ *   → key (env stated, else the cloud starter offer) → done summary (files
+ *   changed, the VendoRoot line to paste, next steps).
  *
  * Removed by design: the interview, per-diff y/N approvals, the layout
  * codemod, the lib/ai.ts scaffold (createVendo's `model` is optional now),
@@ -131,6 +132,13 @@ export interface InitOptions {
   cloud?: Partial<Omit<CloudStepOptions, "root" | "output" | "yes" | "credential">>;
   /** Test seam: AI extraction step overrides (harnesses, consent). */
   extract?: Partial<Omit<AiExtractionOptions, "root" | "output" | "yes" | "env">>;
+  /** Test seam: the detect+confirm auth question, asked only in interactive
+      runs when exactly one auth family is detected and init is creating the
+      composition. Mirrors the AI-polish consent's confirm shape. */
+  confirmAuth?: (question: string, defaultYes: boolean) => Promise<boolean>;
+  /** Test seam: interactivity override for the auth confirm (default: TTY),
+      mirroring runAiExtraction's `interactive`. */
+  interactive?: boolean;
   /** Test seam: the theme LLM pass's model; default rides the refine seam. */
   themeModel?: () => Promise<LanguageModel>;
   /** Uncertain-slot review — asked ONLY when the model reports uncertainty. */
@@ -258,6 +266,36 @@ function authAdvisory(detection: AuthDetection, compositionPath: string): string
   const names = detection.matches.map((match) => match.dependency).join(", ");
   const calls = detection.matches.map((match) => `auth: ${match.preset}()`).join(" or ");
   return `Auth: several providers detected (${names}) — staying anonymous rather than guessing. Add one line in ${compositionPath}: ${calls}.`;
+}
+
+/** The declined-confirm advisory: anonymous composition, exact line in hand. */
+function declinedAuthAdvisory(match: AuthMatch, compositionPath: string): string {
+  return `Auth: left anonymous. To wire ${match.dependency} later, add one line in ${compositionPath}: auth: ${match.preset}().`;
+}
+
+type ConfirmAuth = (question: string, defaultYes: boolean) => Promise<boolean>;
+
+/** Detect + confirm: in interactive runs, exactly one detected family gets
+    ONE calm [Y/n] question before anything is written (Enter accepts).
+    Without a confirm (non-interactive, --yes, --agent) silent detection
+    stands — a default has to exist. None/ambiguous never ask: nothing is
+    certain enough to confirm, the advisory line covers it. */
+async function resolveScaffoldAuth(
+  root: string,
+  compositionPath: string,
+  confirmAuth: ConfirmAuth | undefined,
+): Promise<{ wired: AuthMatch | null; advice: string | null }> {
+  const detection = await detectAuthPreset(root);
+  if (detection.wired === null || confirmAuth === undefined) {
+    return { wired: detection.wired, advice: authAdvisory(detection, compositionPath) };
+  }
+  const accepted = await confirmAuth(
+    `Detected ${detection.wired.dependency} — wire auth: ${detection.wired.preset}()?`,
+    true,
+  );
+  return accepted
+    ? { wired: detection.wired, advice: null }
+    : { wired: null, advice: declinedAuthAdvisory(detection.wired, compositionPath) };
 }
 
 /** The wired preset line plus its escape-hatch comment. */
@@ -696,7 +734,7 @@ async function vendoRootPasteLines(root: string, framework: HostFramework, withR
   return [`In ${layout}:`, ...importLines.map((line) => `  ${line}`), `  … then wrap: ${wrap}`];
 }
 
-async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; changes: PlannedChange[]; manualSteps: string[]; authAdvice: string | null }> {
+async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth): Promise<{ plan: InitPlan; changes: PlannedChange[]; manualSteps: string[]; authAdvice: string | null }> {
   const root = resolve(options.targetDir);
   const framework = await detectFramework(root);
   const changes: PlannedChange[] = [];
@@ -728,14 +766,14 @@ async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; change
         changes.push({ absolute: registryFile, path, before: null, after: registryAfter, diff: diff(path, null, registryAfter) });
       }
       if (scaffolding) {
-        const auth = await detectAuthPreset(root);
-        const serverAfter = expressServerSource(typescript, auth.wired);
         const path = relative(root, server);
+        // Detect + confirm happens only here — fresh composition creation —
+        // so a re-run before the manual <VendoRoot> paste neither asks nor
+        // re-fires the advisory after "Already wired".
+        const auth = await resolveScaffoldAuth(root, path, confirmAuth);
+        const serverAfter = expressServerSource(typescript, auth.wired);
         changes.push({ absolute: server, path, before: null, after: serverAfter, diff: diff(path, null, serverAfter) });
-        // Advisory only on fresh composition creation — a re-run before the
-        // manual <VendoRoot> paste stays silent instead of re-firing after
-        // "Already wired".
-        authAdvice = authAdvisory(auth, path);
+        authAdvice = auth.advice;
       }
       withRegistry = registryBefore !== null || registryPlanned;
     }
@@ -771,12 +809,13 @@ async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; change
       }
     }
     if (routeBefore === null) {
-      const auth = await detectAuthPreset(root);
       const path = relative(root, route);
+      // Detect + confirm happens only on fresh composition creation.
+      const auth = await resolveScaffoldAuth(root, path, confirmAuth);
       const registrySpecifier = relative(dirname(route), join(dirname(app), "vendo", "registry")).split(sep).join("/");
       const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired, registrySpecifier });
       changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
-      authAdvice = authAdvisory(auth, path);
+      authAdvice = auth.advice;
     } else if (registrations.length > 0) {
       // The route already exists but server actions appeared since it was
       // generated: wire the registration map into the existing createVendo so
@@ -896,7 +935,14 @@ export async function runInit(options: InitOptions): Promise<number> {
     return 0;
   }
 
-  const { plan, changes, manualSteps, authAdvice } = await buildPlan(options);
+  // Detect + confirm (interactive runs only): --yes and non-interactive runs
+  // accept the detected default silently — the same interactivity posture as
+  // the AI-polish consent.
+  const interactive = options.interactive ?? (Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
+  const confirmAuth = options.yes === true || !interactive
+    ? undefined
+    : (options.confirmAuth ?? askYesNo);
+  const { plan, changes, manualSteps, authAdvice } = await buildPlan(options, confirmAuth);
   const telemetry = telemetryFor(options, output);
   await telemetry.track("init_started", { framework: plan.framework });
 
