@@ -1,11 +1,11 @@
 import type { UIPayload } from "@vendoai/core";
 
-/** ENG-230 — the Maple home slot's pinned dashboard: a `vendo-genui/v1` tree
+/** ENG-230 — the Maple home slot's pinned dashboard: a `vendo-genui/v2` tree
  *  mounted in place through the ENG-223 pin path (no server round trip), so the
  *  slot's FILLED state is reachable in the demo. Uses Maple's own catalog
  *  components (MapleSparkline, MapleSpendingDonut) for brand fidelity. */
 export const maplePinnedDashboard: UIPayload = {
-  formatVersion: "vendo-genui/v1",
+  formatVersion: "vendo-genui/v2",
   root: "root",
   nodes: [
     { id: "root", component: "Surface", children: ["stack"] },

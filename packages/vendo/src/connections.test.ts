@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Principal } from "@vendoai/core";
 import type { Connector, ConnectorAccount } from "@vendoai/actions";
-import { createConnections } from "./connections.js";
+import { byoConnections, cloudConnections, unconfiguredConnections } from "./connections.js";
 
 const ada: Principal = { kind: "user", subject: "user_ada" };
 const anonymous: Principal = { kind: "user", subject: "anonymous_abc", ephemeral: true };
@@ -24,34 +24,17 @@ function fakeConnector(name: string, accounts: Record<string, ConnectorAccount[]
 
 const adaGmail: ConnectorAccount = { id: "ca_1", connector: "composio", toolkit: "gmail", status: "active" };
 
-describe("createConnections broker selection", () => {
-  it("prefers a BYO connector capability and reports byo posture", () => {
-    const service = createConnections({
-      connectors: [fakeConnector("composio", {})],
-      env: { VENDO_API_KEY: "vnd_key" },
-    });
-    expect(service.posture).toBe("byo");
+describe("byoConnections", () => {
+  const service = () => byoConnections([fakeConnector("composio", { user_ada: [adaGmail] })]);
+
+  it("reports byo posture", () => {
+    expect(service().posture).toBe("byo");
   });
 
-  it("rides the cloud broker when only VENDO_API_KEY is set", () => {
-    const service = createConnections({ connectors: [], env: { VENDO_API_KEY: "vnd_key" } });
-    expect(service.posture).toBe("cloud");
+  it("refuses connectors with no connections capability", () => {
+    const bare: Connector = { name: "bare", descriptors: async () => [], execute: async () => ({ status: "ok", output: {} }) };
+    expect(() => byoConnections([bare])).toThrow(/connections/i);
   });
-
-  it("has no posture and fails closed with neither", async () => {
-    const service = createConnections({ connectors: [], env: {} });
-    expect(service.posture).toBe(false);
-    await expect(service.list(ada)).resolves.toEqual([]);
-    await expect(service.initiate(ada, { toolkit: "gmail" })).rejects.toThrow(/connected accounts/i);
-  });
-});
-
-describe("createConnections over BYO connectors", () => {
-  const service = () =>
-    createConnections({
-      connectors: [fakeConnector("composio", { user_ada: [adaGmail] })],
-      env: {},
-    });
 
   it("lists, reads, and disconnects per-principal", async () => {
     expect(await service().list(ada)).toEqual([adaGmail]);
@@ -89,15 +72,24 @@ describe("createConnections over BYO connectors", () => {
   });
 });
 
-describe("createConnections over the cloud broker", () => {
+describe("cloudConnections", () => {
   it("sends bearer-keyed per-subject requests to the cloud endpoint", async () => {
-    const requests: Array<{ url: string; method: string; authorization: string | null; body?: unknown }> = [];
+    const requests: Array<{
+      url: string;
+      method: string;
+      authorization: string | null;
+      deploymentHost: string | null;
+      deploymentName: string | null;
+      body?: unknown;
+    }> = [];
     const cloudFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
       requests.push({
         url: request.url,
         method: request.method,
         authorization: request.headers.get("authorization"),
+        deploymentHost: request.headers.get("x-vendo-deployment-host"),
+        deploymentName: request.headers.get("x-vendo-deployment-name"),
         ...(request.method === "POST" ? { body: await request.json() } : {}),
       });
       if (request.method === "POST") {
@@ -106,11 +98,12 @@ describe("createConnections over the cloud broker", () => {
       if (request.method === "DELETE") return Response.json({});
       return Response.json({ connections: [adaGmail] });
     });
-    const service = createConnections({
-      connectors: [],
-      env: { VENDO_API_KEY: "vnd_secret", VENDO_CLOUD_URL: "https://cloud.test" },
+    const service = cloudConnections({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
       fetch: cloudFetch as unknown as typeof fetch,
     });
+    expect(service.posture).toBe("cloud");
 
     expect(await service.list(ada)).toEqual([adaGmail]);
     const initiated = await service.initiate(ada, { toolkit: "gmail", callbackUrl: "https://host.test/vendo" });
@@ -121,24 +114,85 @@ describe("createConnections over the cloud broker", () => {
       method: "GET",
       authorization: "Bearer vnd_secret",
     });
-    expect(requests[0]!.url).toContain("https://cloud.test/v1/connections?subject=user_ada");
+    expect(requests[0]!.url).toContain("https://cloud.test/api/v1/connections?subject=user_ada");
     expect(requests[1]).toMatchObject({
       method: "POST",
       authorization: "Bearer vnd_secret",
       body: { subject: "user_ada", toolkit: "gmail", callbackUrl: "https://host.test/vendo" },
     });
     expect(requests[2]).toMatchObject({ method: "DELETE", authorization: "Bearer vnd_secret" });
-    expect(requests[2]!.url).toContain("/v1/connections/ca_cloud?subject=user_ada&connector=composio");
+    expect(requests[2]!.url).toContain("/api/v1/connections/ca_cloud?subject=user_ada&connector=composio");
+    // Interaction model: every key-authed request carries the deployment
+    // identity the console meters usage from.
+    for (const sent of requests) {
+      expect(sent.deploymentHost).toEqual(expect.any(String));
+      expect(sent.deploymentHost).not.toBe("");
+      expect(sent.deploymentName).toEqual(expect.any(String));
+      expect(sent.deploymentName).not.toBe("");
+    }
   });
 
-  it("maps a cloud entitlement rejection to a cloud-required error", async () => {
+  it("defaults the base URL to the Vendo console", async () => {
+    const cloudFetch = vi.fn(async () => Response.json({ connections: [] }));
+    const service = cloudConnections({ apiKey: "vnd_secret", fetch: cloudFetch as unknown as typeof fetch });
+    await service.list(ada);
+    expect(cloudFetch.mock.calls[0]![0]).toContain("https://console.vendo.run/api/v1/connections");
+  });
+
+  it("maps a cloud plan rejection to a cloud-required error", async () => {
     const cloudFetch = vi.fn(async () =>
       Response.json({ error: { code: "cloud-required", message: "plan does not include connections" } }, { status: 402 }));
-    const service = createConnections({
-      connectors: [],
-      env: { VENDO_API_KEY: "vnd_secret", VENDO_CLOUD_URL: "https://cloud.test" },
+    const service = cloudConnections({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
       fetch: cloudFetch as unknown as typeof fetch,
     });
     await expect(service.initiate(ada, { toolkit: "gmail" })).rejects.toThrow(/plan does not include/i);
+  });
+});
+
+describe("unconfiguredConnections", () => {
+  it("has no posture and fails closed", async () => {
+    const service = unconfiguredConnections();
+    expect(service.posture).toBe(false);
+    await expect(service.list(ada)).resolves.toEqual([]);
+    await expect(service.initiate(ada, { toolkit: "gmail" })).rejects.toThrow(/connected accounts/i);
+  });
+});
+
+describe("adapter rule", () => {
+  // Env prefixes an adapter could be tempted to sniff. Lanes cloning this test
+  // for their block must widen the list to that block's vars (e.g. E2B_ /
+  // MODAL_ for sandbox, model-key vars for inference).
+  const WATCHED_ENV_PREFIXES = ["VENDO_"];
+
+  it("no adapter reads the environment: behavior comes only from constructor arguments", async () => {
+    // The adapter rule bans hidden key-conditional branches: prove it by
+    // recording every process.env read while all three adapters construct and
+    // serve calls, with tempting VENDO_* values present.
+    const reads: string[] = [];
+    const realEnv = process.env;
+    process.env = new Proxy({ ...realEnv, VENDO_API_KEY: "vnd_env", VENDO_CLOUD_URL: "https://env.test" }, {
+      get(target, property) {
+        if (typeof property === "string") reads.push(property);
+        return target[property as keyof typeof target];
+      },
+    });
+    try {
+      const byo = byoConnections([fakeConnector("composio", { user_ada: [adaGmail] })]);
+      expect(await byo.list(ada)).toEqual([adaGmail]);
+
+      const cloudFetch = vi.fn(async () => Response.json({ connections: [] }));
+      const cloud = cloudConnections({ apiKey: "vnd_arg", baseUrl: "https://arg.test", fetch: cloudFetch as unknown as typeof fetch });
+      await cloud.list(ada);
+      expect(cloudFetch.mock.calls[0]![0]).toContain("https://arg.test/");
+
+      const dark = unconfiguredConnections();
+      await expect(dark.initiate(ada, { toolkit: "gmail" })).rejects.toThrow(/connected accounts/i);
+
+      expect(reads.filter((key) => WATCHED_ENV_PREFIXES.some((prefix) => key.startsWith(prefix)))).toEqual([]);
+    } finally {
+      process.env = realEnv;
+    }
   });
 });

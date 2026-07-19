@@ -274,6 +274,39 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   0%   { opacity: 1; transform: none; }
   100% { opacity: 0; transform: scale(1.015); } }
 
+/* Fill reveal (pick A, ui-lane-renderer 2026-07-19): a shape-derived
+   silhouette already holds the incoming view's approximate geometry, so its
+   arrival crossfades in place — no rise, no settle. Placed AFTER the .fl-reveal
+   rules so the equal-specificity override wins by order. */
+@media (prefers-reduced-motion: no-preference) {
+  .fl-reveal-fill:has(.fl-reveal-exit) .fl-reveal-enter { animation: fl-fill-in .45s ease both; }
+  .fl-reveal-fill .fl-reveal-exit { animation: fl-fill-out .45s ease both; }
+}
+@keyframes fl-fill-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fl-fill-out { from { opacity: 1; } to { opacity: 0; } }
+
+/* App boot bar (pick C, V2 indeterminate sweep): while a generated view is
+   still forming, the appcard bar narrates — the dot pulses (fl-beat-orb), the
+   label reads "Building your view…", and a short accent segment sweeps along
+   the bar's bottom edge. On ready the label pair crossfades to the app name
+   and the sweep fades. Honest by design: no fake percentage, no completion
+   jump. The label pair shares one grid cell so the swap never remounts. */
+.fl-appcard-bar { position: relative; }
+.fl-boot-labels { position: relative; display: grid; min-width: 0; flex: 1; }
+.fl-boot-labels > span { grid-area: 1 / 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: opacity .3s ease; }
+.fl-appcard-bar[data-state="building"] .fl-boot-ready { opacity: 0; }
+.fl-appcard-bar[data-state="ready"] .fl-boot-building { opacity: 0; }
+.fl-boot-building { color: var(--vendo-fg-muted); font-weight: 500; }
+.fl-boot-hairline { position: absolute; left: 0; bottom: -1px; z-index: 1; width: 26%; height: 2px;
+  border-radius: 2px; background: var(--vendo-accent); opacity: 0; transition: opacity .5s ease; }
+.fl-appcard-bar[data-state="building"] .fl-boot-hairline { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-appcard-bar[data-state="building"] .fl-appcard-dot { animation: fl-beat-orb 1.6s ease-in-out infinite; }
+  .fl-appcard-bar[data-state="building"] .fl-boot-hairline { animation: fl-boot-sweep 1.5s cubic-bezier(.45, .05, .55, .95) infinite; }
+}
+@keyframes fl-boot-sweep { from { transform: translateX(-110%); } to { transform: translateX(495%); } }
+
 /* Working indicator — fluidkit metaball droplets (ENG-205); inherits the muted
    foreground as the flat-material fill. The .fl-typing dots below are its
    first-paint and no-fluidkit fallback. */

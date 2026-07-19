@@ -27,15 +27,19 @@ import {
 const ACTION_ATTR_PATTERN = /^on[A-Z][A-Za-z0-9_]*$/;
 
 /**
- * Which element kind the attribute region belongs to (D3/D5):
+ * Which element kind the attribute region belongs to (D3/D5; patch is v2
+ * spec §5):
  * - `component` — `id` is compiler-owned (ignored with an issue) and
  *   string-form `on*` attributes compile to canonical actions.
  * - `app` — `id` is ignored like a component's, but non-name attributes are
  *   silently discarded by the caller, so no action compilation runs.
  * - `declaration` — Query/Island: `id`/`name` are the declaration's own
  *   fields, kept verbatim; no action compilation.
+ * - `patch` — edit-dialect ops: `id` is the op's ANCHOR (kept verbatim), and
+ *   values compile exactly like a component's (actions included), since Set
+ *   merges them into node props.
  */
-export type AttributeElement = "component" | "app" | "declaration";
+export type AttributeElement = "component" | "app" | "declaration" | "patch";
 
 /** D3 — markup-layer strings are double-quoted only; `\"` and `\\` are the
  *  only escapes (other backslash sequences pass through verbatim — rich
@@ -152,7 +156,7 @@ export const parseAttributes = (state: CompileState, element: AttributeElement):
         const parsed = parseMarkupString(state, name);
         if (parsed === FAILED) return FAILED;
         value = parsed;
-        if (typeof value === "string" && element === "component" && ACTION_ATTR_PATTERN.test(name)) {
+        if (typeof value === "string" && (element === "component" || element === "patch") && ACTION_ATTR_PATTERN.test(name)) {
           value = compileActionValue(state, name, value);
         }
       } else if (opener === "{") {
@@ -164,7 +168,7 @@ export const parseAttributes = (state: CompileState, element: AttributeElement):
         // value smuggling { action: "fn:9bad" } anywhere would un-validate
         // the tree. Drop the attribute here instead — only component props
         // land in tree nodes, so only "component" needs the walk.
-        if (element === "component" && value !== DROPPED) {
+        if ((element === "component" || element === "patch") && value !== DROPPED) {
           const invalidAction = findInvalidActionReference(value);
           if (invalidAction !== null) {
             issue(
@@ -194,7 +198,7 @@ export const parseAttributes = (state: CompileState, element: AttributeElement):
       issue(state, "duplicate-attribute", `duplicate attribute "${name}" (the last one wins)`);
     }
     seen.add(name);
-    if (name === "id" && element !== "declaration") {
+    if (name === "id" && element !== "declaration" && element !== "patch") {
       issue(state, "wire-id-ignored", "wire-supplied id attributes are ignored (ids are compiler-owned)");
       continue;
     }

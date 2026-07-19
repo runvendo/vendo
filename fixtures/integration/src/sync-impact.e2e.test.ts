@@ -1,5 +1,5 @@
 /** ENG-261 — sync blast radius over the real composed wire and store. */
-import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT, type AppDocument } from "@vendoai/core";
+import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT_V2, type AppDocument } from "@vendoai/core";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ADA,
@@ -25,10 +25,10 @@ function plainApp(): AppDocument {
     name: "Invoice viewer",
     ui: "tree",
     tree: {
-      formatVersion: VENDO_TREE_FORMAT,
+      formatVersion: VENDO_TREE_FORMAT_V2,
       root: "root",
       nodes: [{ id: "root", component: "Text", props: { text: "Invoices" } }],
-      queries: [{ path: "/invoices", tool: TOOL }],
+      queries: [{ name: "invoices", tool: TOOL }],
     },
   };
 }

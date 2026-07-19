@@ -71,38 +71,134 @@ hand-written `brief.md` are never overwritten). The output lands in the
 override channel, so `vendo sync` regeneration keeps it. Skipped silently in
 non-interactive runs; re-run `vendo init` any time to add it.
 
-## Create the server
+### Bring your own coding agent
 
-`createVendo` has this exact configuration surface:
+The extraction contract is portable: any coding agent already living in your
+repo (Claude Code, Cursor, Codex) can do the reading instead. `npx vendo init
+--agent` emits an `aiPolish` object in its read-only plan: the composed
+`instructions`, the exact draft `draftSchema`, and the apply command. Let your
+agent read the codebase against the instructions and write the draft JSON to a
+file, then apply it:
+
+```bash
+npx vendo extract --apply draft.json
+```
+
+The apply step is non-interactive safe and runs the same deterministic guards
+as the built-in pass, so delegation never becomes a second, weaker path into
+`.vendo/`. It writes the same artifacts, re-syncs, and prints the same
+summary. An unusable draft (unreadable file, schema mismatch) exits non-zero
+with the reason; guard refusals (unknown tool names, risk downgrades,
+unreasoned wakes) are printed per entry while the rest of the draft applies.
+`--force` replaces a hand-edited brief, exactly like `vendo init --force`.
+
+## The two files you own
+
+A host's entire server wiring is two files: `vendo/registry.tsx`, which
+declares the components generated views can use, and `vendo/server.ts`, which
+calls `createVendo` with a model, an auth preset, and that registry.
+
+### `vendo/registry.tsx` — the component registry
+
+One object, keyed by component name. Each entry holds the real component
+reference, a description the model reads, and an optional zod props schema.
+The same object serves both sides: `createVendo` reads the registry as
+`catalog` and uses only the data fields; `<VendoRoot>` reads it as `components`
+and uses only the component references. There is no second map to keep in
+sync.
+
+```tsx
+import type { ComponentRegistry } from "@vendoai/core";
+import { z } from "zod";
+import { SpendingDonut } from "@/components/charts/spending-donut";
+
+export const registry = {
+  SpendingDonut: {
+    component: SpendingDonut,
+    description: "Spending by category. Use for where-did-my-money-go requests.",
+    props: z.object({
+      slices: z.array(z.object({ category: z.string(), amount: z.number() })),
+    }),
+    examples: ['{"slices":[{"category":"dining","amount":342.18}]}'],
+  },
+} satisfies ComponentRegistry;
+```
+
+The props schema is optional — a schema-less entry is legal and renders as a
+description-only prompt entry the model infers props for. When a schema is
+present, the model-facing JSON Schema is derived from it internally; you never
+hand-write one.
+
+### `vendo/server.ts` — the composition
 
 ```ts
-import type { Principal, ActAs, SecretsProvider, Json, RunId } from "@vendoai/core";
+import { anthropic } from "@ai-sdk/anthropic";
+import { authJs, createVendo } from "@vendoai/vendo/server";
+import { registry } from "./registry";
+
+export const vendo = createVendo({
+  model: anthropic("claude-sonnet-4-6"),
+  auth: authJs(),
+  catalog: registry,
+});
+```
+
+The example pins an explicit provider. You can omit `model` entirely — the
+composed default resolves a real key from the environment (see Model keys
+above), so the first turn works before you have picked one; pass any AI SDK
+model whenever you want full control.
+
+`authJs()` is zero-argument in the standard case: it reads `AUTH_SECRET`
+(mirroring Auth.js itself) and derives the principal's display name and email
+from the session-token claims. `auth` is one preset that fills all three
+identity seams `createVendo` needs — the request→principal resolver, the
+away/MCP `actAs` seam, and the door's OAuth adapter — from one config key.
+Presets exist for Auth.js, Clerk, Supabase, Auth0, and a generic JWT scheme;
+see [actAs preset recipes](./act-as-presets.md) for the full list, the
+`user` resolver for custom identity mapping, and the per-seam escape hatch for
+hosts without a shipped preset.
+
+`model` and `catalog` are the only other keys most hosts touch on day one.
+Every key is optional — a bare `createVendo()` legitimately boots, with an
+env-resolved model, anonymous ephemeral sessions, and PGlite persistence.
+Add a named `policy` preset once you want a guard posture instead of the
+unconfigured-policy default: `"cautious"` asks before write/destructive calls
+and runs reads, `"readonly"` runs reads and blocks everything else, and
+`"autopilot"` runs everything. `.vendo/policy.json` (the `{ file }` form) and
+inline `{ rules }` stay available for anything a preset doesn't cover.
+
+`createVendo`'s real configuration surface:
+
+```ts
+import type { Principal, ActAs, ComponentCatalog, ComponentRegistry, SecretsProvider, Json, RunId } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import type { VendoStore } from "@vendoai/store";
 import type { VendoAgent } from "@vendoai/agent";
-import type { ActionsRegistry, Connector } from "@vendoai/actions";
+import type { Connector, ActionsRegistry, ServerActionHandler } from "@vendoai/actions";
 import type { VendoGuard, PolicyConfig, Judge } from "@vendoai/guard";
 import type { AppsRuntime, SandboxAdapter } from "@vendoai/apps";
 import type { AutomationsEngine } from "@vendoai/automations";
-import type { HostOAuthAdapter } from "@vendoai/mcp";
+import type { HostAuthPreset, HostOAuthAdapter } from "@vendoai/vendo/server";
 
 export function createVendo(config: {
-  model?: LanguageModel;         // absent → env-resolved key (see Model keys above)
-  principal: (req: Request) => Promise<Principal | null>;
+  model?: LanguageModel;       // absent → env-resolved key (see Model keys above)
+  auth?: HostAuthPreset;       // one preset fills principal + actAs + oauth
+  principal?: (req: Request) => Promise<Principal | null>; // escape hatch
+  catalog?: ComponentCatalog | ComponentRegistry;           // registry.tsx, or the array form
   store?: VendoStore;
   sandbox?: SandboxAdapter;
   connectors?: Connector[];
-  actAs?: ActAs;
-  policy?: PolicyConfig;
+  actAs?: ActAs;                // escape hatch
+  policy?: PolicyConfig;        // "cautious" | "readonly" | "autopilot" | { file } | { rules }
   judge?: Judge;
   secrets?: SecretsProvider;
   telemetry?: boolean;
-  mcp?: boolean;               // open the door: serve host tools to MCP clients
-  oauth?: HostOAuthAdapter;    // required when mcp is true
-  sessions?: {                 // anonymous (ephemeral) session lifecycle
-    ttlMs?: number;            // idle timeout, default 30 min; 0 disables TTL
-    sweepIntervalMs?: number;  // sweep cadence, default 60 s
-  };
+  mcp?: boolean | { baseUrl?: string; remoteAs?: object; federation?: object };
+  oauth?: HostOAuthAdapter;     // escape hatch; required when `mcp` is true and `auth` is absent
+  serverActions?: Record<string, ServerActionHandler>; // generated by `vendo sync`
+  agent?: { toolOutputCap?: number; maxOutputTokens?: number; historyWindow?: number; maxInitialTools?: number; maxSteps?: number };
+  sessions?: { ttlMs?: number; sweepIntervalMs?: number };
+  development?: boolean | { root?: string; out?: string }; // dev-only source capture
 }): Vendo;
 
 export interface Vendo {
@@ -112,20 +208,15 @@ export interface Vendo {
 }
 ```
 
-The principal resolver is the only required configuration (`model` resolves
-from the environment when absent). Returning `null` from `principal` creates
-an ephemeral session-scoped principal. That session works normally but does
-not persist.
+Every key is optional: `model` resolves from the environment when absent (see
+Model keys above), and with neither `auth` nor `principal` every session is
+ephemeral and anonymous. `auth` and any of `principal`/`actAs`/`oauth` are
+mutually exclusive — supplying both throws a validation error at compose
+time. Pick the preset or hand-wire the three seams, never both.
 
 ```ts
 import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
-
-const vendo = createVendo({
-  principal: async (request) => {
-    const user = await resolveSession(request);
-    return user ? { kind: "user", subject: user.id, display: user.name } : null;
-  },
-});
+import { vendo } from "@/vendo/server";
 
 export const { GET, POST, DELETE } = nextVendoHandler(vendo);
 ```
@@ -137,15 +228,18 @@ framework-agnostic.
 
 ```tsx
 import { VendoRoot } from "@vendoai/vendo/react";
+import { registry } from "@/vendo/registry";
 
 export function Root({ children }: { children: React.ReactNode }) {
-  return <VendoRoot>{children}</VendoRoot>;
+  return <VendoRoot components={registry}>{children}</VendoRoot>;
 }
 ```
 
-Use the headless hooks from `@vendoai/ui`, or add a shipped surface from
-`@vendoai/ui/chrome`. `<VendoThread />`, `<VendoOverlay />`, `<VendoPage />`,
-and `<VendoPalette />` all speak to the same wire.
+`components` accepts the same registry object `server.ts` passes as
+`catalog` — it reads only the component references and ignores the data
+fields. Use the headless hooks from `@vendoai/ui`, or add a shipped surface
+from `@vendoai/ui/chrome`. `<VendoThread />`, `<VendoOverlay />`,
+`<VendoPage />`, and `<VendoPalette />` all speak to the same wire.
 
 ## First turn
 
@@ -155,13 +249,23 @@ is an AI SDK UI message stream. Any generated app surface arrives in a
 `data-vendo-view` part and any approval metadata in a `data-vendo-approval`
 part.
 
-Set `VENDO_BASE_URL` to the host origin (for example,
-`http://localhost:3000`) before starting the server. Present tool calls forward
-the inbound request's cookie and authorization headers only when this trusted
-origin is set; without it, route execution still works but forwards no
-credentials. Every call passes through the guard. With no policy or judge,
-calls auto-run and are audited, and shipped chrome displays the
-unconfigured-policy notice.
+Present tool calls forward the inbound request's cookie and authorization
+headers only when the wire trusts its own origin. In development, it learns
+and trusts that origin automatically from the first request — no
+configuration needed. In every other environment (including `NODE_ENV=test`),
+the learned origin stays untrusted by default: a spoofed `Host` header can
+never turn it into a credential-exfiltration target. Production deployments
+must set `VENDO_BASE_URL` to the host's public origin; without it, a
+present-mode host tool call that needs to forward credentials fails loud
+instead of running unauthenticated, and `vendo doctor` reports the missing
+var as a failing check.
+
+```bash
+VENDO_BASE_URL=https://app.example.com
+```
+
+Every call passes through the guard. With no policy or judge, calls auto-run
+and are audited, and shipped chrome displays the unconfigured-policy notice.
 
 ## What works without more configuration
 
@@ -170,9 +274,10 @@ unconfigured-policy notice.
 - threads, approvals, grants, activity, and app lifecycle routes
 - schedule, host-event, and external-trigger automation machinery
 
-A sandbox adapter unlocks server-backed app rungs. `actAs` unlocks host API
-calls while the user is away. Connectors add external tools. `VENDO_API_KEY`
-activates cloud-gated sharing, publishing, org overlays, and pinning.
+A sandbox adapter unlocks server-backed app rungs. `auth` (or its `actAs`
+half, hand-wired) unlocks host API calls while the user is away. Connectors
+add external tools. `VENDO_API_KEY` activates cloud-gated sharing, publishing,
+org overlays, and pinning.
 
 Use the [actAs preset recipes](./act-as-presets.md) to wire Auth.js, Supabase
 Auth, Clerk, Auth0, or a host-owned generic JWT without changing the
@@ -184,86 +289,13 @@ grant, the run parks for approval before `actAs` is called.
 
 ## Serve your product to MCP clients (the door)
 
-The door makes your host tools installable in Claude, ChatGPT, Cursor, and any
-MCP client. Enable it with one flag and one seam:
-
-```ts
-const vendo = createVendo({
-  principal,
-  actAs,          // see below
-  mcp: true,
-  oauth: hostOAuth,
-});
-```
-
-`oauth` uses the host's existing session and subject resolver. The door owns the
-OAuth protocol and the complete consent UI.
-
-```ts
-import type { HostOAuthAdapter } from "@vendoai/mcp";
-
-const hostOAuth: HostOAuthAdapter = {
-  // Use the exact returnTo: after login the door resumes the OAuth request once,
-  // sees the new session, and shows consent instead of bouncing back to login.
-  session: async (req, { returnTo }) => {
-    const subject = await currentSubject(req);
-    if (subject) return { subject };
-    const login = new URL("/login", req.url);
-    login.searchParams.set("returnTo", returnTo);
-    return Response.redirect(login);
-  },
-  // Resolve a subject to the principal the door executes as. null revokes.
-  principal: async (subject) => resolveUser(subject),
-};
-```
-
-The prebuilt page uses the same `--vendo-*` CSS token namespace as the UI
-pipeline; `createVendo` automatically passes the resolved `.vendo/theme.json`
-theme into it. The page CSRF-protects approve/deny, rejects decision replay,
-escapes the attacker-controlled DCR `client_name`, and returns the standard
-OAuth code or `access_denied` redirect.
-
-Need a fully custom page? Add `authorize(req, ctx)` alongside `session`. Render
-your page from `ctx.clientName`/`ctx.scopes` (escape both), then submit hidden
-`transaction` and `csrf_token` values from `ctx.consent` plus
-`decision=approve|deny` to `ctx.consent.action`. The door keeps ownership of the
-flow and validation.
-
-MCP clients have no host browser session, so door tool calls cannot forward
-cookies. They authenticate over the **same `actAs` seam** away automations use.
-There is one seam, not two: `actAs` now backs both away automations and MCP
-host calls. If you already implemented `actAs`, the door reuses it. If you have
-not, host tool calls over the door degrade cleanly with a not-implemented tool
-error, exactly like away execution on a host that never wired the seam.
-
-Policy posture: the shipped policy example blocks `venue: "mcp"`. Opening the
-door is a host decision, never a default — it happens here, deliberately,
-after setup; `vendo init` never asks about it.
-
-The door also serves discovery documents at the origin root, which the
-`/api/vendo/[...]` catch-all cannot see. In a Next.js host, add this route
-(under `src/app` when that layout is present); it allows only the door's four
-exact paths and 404s everything else, so it never shadows host OAuth/OIDC
-metadata:
-
-```ts
-// app/.well-known/[...vendo]/route.ts
-import { vendo } from "@/lib/vendo";
-
-const DOOR_PATHS = new Set([
-  "/.well-known/oauth-protected-resource/api/vendo/mcp",
-  "/.well-known/oauth-authorization-server/api/vendo/mcp",
-  "/.well-known/mcp/server-card.json",
-  "/.well-known/mcp-server-card",
-]);
-
-const forward = (req: Request) =>
-  DOOR_PATHS.has(new URL(req.url).pathname)
-    ? vendo.handler(req)
-    : new Response(null, { status: 404 });
-export const GET = forward;
-export const POST = forward;
-```
+Outside agents — Claude, ChatGPT, Cursor, and any MCP client — can connect to
+your product through the MCP door: one flag (`mcp: true`) plus the same
+`auth`/`oauth` seam you already wired. It is **experimental** and stays out of
+this quickstart's main path until the attended live client matrix
+(Claude/ChatGPT/Cursor) is demonstrably green. See [the MCP door
+guide](../docs-site/capabilities/mcp.mdx) for the full setup, the discovery
+route, and the graduation criterion.
 
 ## Check the install
 

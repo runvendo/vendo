@@ -15,8 +15,8 @@ const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 const WORK_DIR = join(PACKAGE_DIR, ".e2e-pack");
 
 const RUNTIME_EXPORTS = [
-  "VENDO_APP_FORMAT", "VENDO_TREE_FORMAT", "VENDO_TOOLS_FORMAT", "VENDO_OVERRIDES_FORMAT",
-  "VENDO_CAPABILITIES_FORMAT", "VENDO_POLICY_FORMAT", "VENDO_CAPABILITY_MISS_FORMAT", "descriptorHash", "validateTree", "validateAppDocument", "VendoError",
+  "VENDO_APP_FORMAT", "VENDO_TOOLS_FORMAT", "VENDO_OVERRIDES_FORMAT",
+  "VENDO_CAPABILITIES_FORMAT", "VENDO_POLICY_FORMAT", "VENDO_CAPABILITY_MISS_FORMAT", "descriptorHash", "validateTreeV2", "validateAppDocument", "VendoError",
   "safeErrorMessage", "canonicalJson", "sha256Hex", "TOOL_NAME_PATTERN",
   "TREE_MAX_NODES", "TREE_MAX_QUERIES", "TREE_MAX_GENERATED_COMPONENTS",
   "TREE_MAX_COMPONENT_SOURCE_CHARS", "TREE_MAX_TOTAL_COMPONENT_CHARS", "RESERVED_COMPONENT_NAMES",
@@ -25,7 +25,7 @@ const RUNTIME_EXPORTS = [
   "toolDescriptorSchema", "toolCallSchema", "toolOutcomeSchema",
   "grantScopeSchema", "grantDurationSchema", "permissionGrantSchema", "approvalRequestSchema",
   "approvalDecisionSchema", "guardDecisionSchema", "auditEventSchema", "uiPayloadSchema",
-  "treeSchema", "treeNodeSchema", "treeQuerySchema", "appDocumentSchema", "storageDeclSchema",
+  "treeNodeSchema", "appDocumentSchema", "storageDeclSchema",
   "pinSchema", "triggerSourceSchema", "runModelSchema", "stepSchema", "triggerSchema",
   "vendoRecordSchema", "recordQuerySchema", "authMaterialSchema", "agentRunReportSchema",
   "vendoThemeSchema", "vendoViewPartSchema", "vendoApprovalPartSchema", "vendoErrorCodeSchema",
@@ -88,8 +88,8 @@ describe("packaging e2e — the artifact blocks will install", () => {
     expect(missing).toEqual([]);
 
     // behavior spot-checks through the packed artifact
-    const tree = core.validateTree({
-      formatVersion: "vendo-genui/v1",
+    const tree = core.validateTreeV2({
+      formatVersion: "vendo-genui/v2",
       root: "a",
       nodes: [{ id: "a", component: "Text" }],
     });
@@ -166,7 +166,7 @@ describe("packaging e2e — the artifact blocks will install", () => {
     const script = `
       const core = await import(${JSON.stringify(pathToFileURL(packed.resolve(".")).href)});
       const conf = await import(${JSON.stringify(pathToFileURL(packed.resolve("./conformance")).href)});
-      const tree = core.validateTree({ formatVersion: "vendo-genui/v1", root: "a", nodes: [{ id: "a", component: "Text" }] });
+      const tree = core.validateTreeV2({ formatVersion: "vendo-genui/v2", root: "a", nodes: [{ id: "a", component: "Text" }] });
       const hash = core.descriptorHash({ name: "t", description: "", inputSchema: {}, risk: "read" });
       const report = await conf.runConformance(conf.storeAdapterConformance({ makeAdapter: async () => ({ adapter: conf.memoryStoreAdapter() }) }));
       if (!tree.ok || !hash.startsWith("sha256:") || !report.ok) throw new Error("bun leg failed");

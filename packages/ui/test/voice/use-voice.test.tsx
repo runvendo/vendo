@@ -87,21 +87,21 @@ describe("useVoice", () => {
     act(() => {
       driver.emit({
         type: "view",
-        view: { id: "view-1", appId: "app_1", payload: { formatVersion: "vendo-genui/v1", title: "First" } },
+        view: { id: "view-1", appId: "app_1", payload: { formatVersion: "vendo-genui/v2", title: "First" } },
       });
       driver.emit({
         type: "view",
-        view: { id: "view-2", appId: "app_2", payload: { formatVersion: "vendo-genui/v1", title: "Second" } },
+        view: { id: "view-2", appId: "app_2", payload: { formatVersion: "vendo-genui/v2", title: "Second" } },
       });
       driver.emit({
         type: "view",
-        view: { id: "view-1", appId: "app_1", payload: { formatVersion: "vendo-genui/v1", title: "Updated" } },
+        view: { id: "view-1", appId: "app_1", payload: { formatVersion: "vendo-genui/v2", title: "Updated" } },
       });
     });
 
     expect(result.current.views).toEqual([
-      { id: "view-1", appId: "app_1", payload: { formatVersion: "vendo-genui/v1", title: "Updated" } },
-      { id: "view-2", appId: "app_2", payload: { formatVersion: "vendo-genui/v1", title: "Second" } },
+      { id: "view-1", appId: "app_1", payload: { formatVersion: "vendo-genui/v2", title: "Updated" } },
+      { id: "view-2", appId: "app_2", payload: { formatVersion: "vendo-genui/v2", title: "Second" } },
     ]);
 
     act(() => driver.emit({ type: "state", state: "reconnecting" }));

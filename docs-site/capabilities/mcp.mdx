@@ -13,6 +13,16 @@ asks whether you want it. On yes, init generates the Next.js discovery route
 and points you at the host-owned OAuth wiring; it never invents an auth adapter
 or turns the flag on by itself.
 
+**Status: experimental.** `mcp: true` is real, guard-bound, and covered by
+protocol-level e2e (`fixtures/mcp-e2e`), but it stays out of the main
+[quickstart](/quickstart) path until the attended live client matrix — a real
+Claude, ChatGPT, and Cursor client each completing one real tool call against
+a running door — is demonstrably green. `fixtures/mcp-e2e/src/live-claude.e2e.test.ts`
+(env-gated behind `VENDO_LIVE_MCP=1`) is the harness for the Claude leg today;
+equivalent attended runs against ChatGPT and Cursor are still outstanding. The
+door graduates into the quickstart's main flow once all three are green and
+someone records the run.
+
 ## When to use it
 
 - You want an installable MCP server that exposes your product's tools to
@@ -143,19 +153,23 @@ The door's transport and OAuth endpoints mount under the wire at
 OAuth discovery documents live at the origin root, outside `/api/vendo`. When
 you opt into MCP during `vendo init`, a Next.js host gets
 `app/.well-known/[...vendo]/route.ts` (under `src/app` when present), forwarding
-to the same handler. If you wire Vendo without init, add the equivalent route:
+to the same handler. If you wire Vendo without init, add the equivalent route
+as a two-line re-export of the shipped handler:
 
 ```ts
 // app/.well-known/[...vendo]/route.ts
+import { wellKnownVendoHandler } from "@vendoai/vendo/server";
 import { vendo } from "@/lib/vendo";
 
-export const GET = (request: Request) => vendo.handler(request);
+export const { GET, POST } = wellKnownVendoHandler(vendo);
 ```
 
-The door answers only its own discovery paths and returns 404 for anything else
-under `/.well-known`. If your app also serves its own well-known documents,
-branch on the pathname and call `vendo.handler` only for the paths below. The
-door owns:
+`wellKnownVendoHandler` answers only the door's own discovery paths (the SAME
+allowlist the wire itself matches, so it can never drift) and returns 404 for
+anything else under `/.well-known` — with `mcp` left unconfigured it still
+recognizes those paths but has no door to serve them, so the request falls
+through to an ordinary 404 rather than a 500. If your app also serves its own
+well-known documents, register those routes separately; the door owns exactly:
 
 - `/.well-known/oauth-protected-resource/api/vendo/mcp` (RFC 9728
   protected-resource metadata)

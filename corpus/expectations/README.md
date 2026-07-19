@@ -140,3 +140,37 @@ Baselines record the accepted Layer 2 score for a labeled repo:
 The scorer flags a regression when a run scores below baseline. When a run
 scores above baseline, it prints a replacement `baseline.json` candidate but
 does not edit or commit it.
+
+## ai-expected.json
+
+Ground-truth labels for the AI extraction matrix (`pnpm corpus ai`). Entries
+reuse the same binding identities as `expected.json` (method + path, tRPC
+procedure, GraphQL operation, server-action module + export) and carry the
+judgment the AI pass is scored on:
+
+```json
+{
+  "version": 1,
+  "tools": [
+    { "name": "listInvoices", "method": "GET", "path": "/api/invoices", "risk": "read" },
+    { "name": "deleteInvoice", "method": "DELETE", "path": "/api/invoices/{id}", "risk": "destructive", "critical": true },
+    { "name": "webhook", "method": "POST", "path": "/api/webhooks", "risk": "write", "wake": false }
+  ]
+}
+```
+
+- `risk` is the correct semantic grade. The current files are derived
+  mechanically: HTTP verbs are the read/write baseline (GET is `read`,
+  everything else `write`) because several repos' `readOrWrite`/`mutating`
+  labels blanket-mark GETs as writes (a Layer 2 fail-closed join artifact);
+  the curated `dangerous` flags upgrade to `destructive`; non-HTTP bindings
+  keep their hand labels. Replace individual entries with hand-verified
+  grades as curation improves — hand labels always beat the derivation.
+- `critical` marks tools that must carry a critical (irreversible) mark. It is
+  a curator addition, never derived; the critical check only runs for repos
+  that label at least one.
+- `wake` matters only for statically-unclassifiable tools (emitted disabled).
+  A disabled tool whose identity matches a labeled entry is expected to be
+  woken at the labeled risk; set `wake: false` to pin one that must stay
+  asleep. Labels whose identity was never extracted are a static-extraction
+  recall problem (Layer 2's job) and are excluded from AI scoring.

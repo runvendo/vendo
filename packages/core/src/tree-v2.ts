@@ -2,6 +2,7 @@ import { z } from "zod";
 import { safeErrorMessage } from "./errors.js";
 import { VENDO_TREE_FORMAT_V2 } from "./formats.js";
 import { FN_REFERENCE_PATTERN, findInvalidActionReference } from "./fn-references.js";
+import { findInvalidReshape } from "./reshape.js";
 import type { Json } from "./ids.js";
 import { TREE_MAX_NODES, TREE_MAX_QUERIES } from "./tree-limits.js";
 import { isPlainObject, treeNodeSchema, type TreeNode } from "./tree.js";
@@ -156,6 +157,13 @@ const validateTreeV2Unsafe = (input: unknown): TreeV2Validation => {
       const invalidAction = findInvalidActionReference(node.props);
       if (invalidAction !== null) {
         return fail("provision", `node "${node.id}" action "${invalidAction}" is not a valid fn: reference`);
+      }
+      // v2 spec §3 — the bounded reshape vocabulary is enforced here at the
+      // format gate (same walk discipline as the fn: action rule above), so
+      // an unknown op or malformed chain can never reach the renderer.
+      const invalidReshape = findInvalidReshape(node.props);
+      if (invalidReshape !== null) {
+        return fail("provision", `node "${node.id}" has an invalid $reshape: ${invalidReshape}`);
       }
     }
     if (ids.has(node.id)) {

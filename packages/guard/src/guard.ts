@@ -26,10 +26,11 @@ import type {
   ToolRegistry,
   VendoRecord,
 } from "@vendoai/core";
-import { PolicyResolver, ruleMatches } from "./policy.js";
+import { PolicyResolver, resolvePolicyConfig, ruleMatches } from "./policy.js";
 import type {
   CreateGuardConfig,
   Judge,
+  PolicyConfigObject,
   VendoGuard,
 } from "./types.js";
 
@@ -222,6 +223,7 @@ function normalizeRememberedScope(scope: GrantScope, request: ApprovalRequest): 
 class GuardImplementation implements VendoGuard {
   readonly #store: StoreAdapter;
   readonly #config: CreateGuardConfig;
+  readonly #policyConfig: PolicyConfigObject | undefined;
   readonly #policy: PolicyResolver;
   readonly #maxCallsPerMinute: number;
   readonly #maxWritesPerRun: number;
@@ -255,7 +257,11 @@ class GuardImplementation implements VendoGuard {
   constructor(config: CreateGuardConfig) {
     this.#store = config.store;
     this.#config = config;
-    this.#policy = new PolicyResolver(config.policy);
+    // Compose time, not first call: an unknown preset name (or any other
+    // policy misconfiguration `resolvePolicyConfig` catches) must fail loud
+    // from `createGuard` itself.
+    this.#policyConfig = resolvePolicyConfig(config.policy);
+    this.#policy = new PolicyResolver(this.#policyConfig);
     this.#maxCallsPerMinute = config.breakers?.maxCallsPerMinute ?? 60;
     this.#maxWritesPerRun = config.breakers?.maxWritesPerRun ?? 20;
   }
@@ -405,7 +411,7 @@ class GuardImplementation implements VendoGuard {
   }
 
   status(): { posture: "unconfigured" | "rules" | "judge" | "rules+judge" } {
-    const hasRules = this.#config.policy !== undefined;
+    const hasRules = this.#policyConfig !== undefined;
     const hasJudge = this.#config.judge !== undefined;
     if (hasRules && hasJudge) return { posture: "rules+judge" };
     if (hasRules) return { posture: "rules" };
@@ -623,7 +629,7 @@ class GuardImplementation implements VendoGuard {
       });
     }
 
-    const code = this.#config.policy?.code;
+    const code = this.#policyConfig?.code;
     if (code !== undefined) {
       try {
         const decision = code(call, descriptor, ctx);

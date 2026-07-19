@@ -104,7 +104,7 @@ describe("wire envelopes for §16 parts", () => {
     const flat = {
       type: "data-vendo-view" as const,
       appId: "app_1",
-      payload: { formatVersion: "vendo-genui/v1", root: "r", nodes: [] },
+      payload: { formatVersion: "vendo-genui/v2", root: "r", nodes: [] },
     };
     expect(toVendoWirePart(flat, "vendo-view:app_1")).toEqual({
       type: "data-vendo-view",
@@ -121,13 +121,13 @@ describe("wire envelopes for §16 parts", () => {
     const wire = {
       type: "data-vendo-view",
       id: "vendo-view:app_1",
-      data: { appId: "app_1", payload: { formatVersion: "vendo-genui/v1" } },
+      data: { appId: "app_1", payload: { formatVersion: "vendo-genui/v2" } },
     };
     expect(vendoViewWirePartSchema.safeParse(wire).success).toBe(true);
     expect(vendoViewWirePartSchema.safeParse({
       type: "data-vendo-view",
       appId: "app_1",
-      payload: { formatVersion: "vendo-genui/v1" },
+      payload: { formatVersion: "vendo-genui/v2" },
     }).success).toBe(false);
   });
 

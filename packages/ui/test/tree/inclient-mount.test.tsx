@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { VENDO_TREE_FORMAT, type Tree, type ToolOutcome } from "@vendoai/core";
+import { VENDO_TREE_FORMAT_V2, type ToolOutcome, type UIPayload } from "@vendoai/core";
 import { TreeView, evaluateApprovedComponent } from "../../src/tree/index.js";
 import type { InClientVenue } from "../../src/tree/renderer.js";
 
@@ -25,9 +25,9 @@ const GRANTED: InClientVenue = {
   at: "2026-07-15T09:00:00.000Z",
 };
 
-function venueTree(inClient?: InClientVenue, source = WIDGET_SOURCE): Tree {
-  const tree: Tree & { inClient?: InClientVenue } = {
-    formatVersion: VENDO_TREE_FORMAT,
+function venueTree(inClient?: InClientVenue, source = WIDGET_SOURCE): UIPayload {
+  const tree: UIPayload & { inClient?: InClientVenue } = {
+    formatVersion: VENDO_TREE_FORMAT_V2,
     root: "root",
     nodes: [
       { id: "root", component: "Stack", children: ["gen"] },
@@ -70,7 +70,7 @@ describe("in-client venue enforcement (06-apps §9)", () => {
     // A forked pin commonly has no live tree props; the jail rehearses it with
     // the baseline's sampleProps. Promotion is hash-pinned, so the approved
     // mount must see the same props instead of crashing on undefined.
-    const tree = venueTree(GRANTED, "export default function Widget({ label }) { return <p>Sampled {label}</p>; }") as Tree & {
+    const tree = venueTree(GRANTED, "export default function Widget({ label }) { return <p>Sampled {label}</p>; }") as UIPayload & {
       furnishings?: Record<string, { sampleProps?: Record<string, unknown> }>;
     };
     delete (tree.nodes[1] as { props?: unknown }).props;

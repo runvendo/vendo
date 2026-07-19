@@ -6,10 +6,10 @@ import { VendoProvider, createVendoClient, type VendoClient } from "../../src/in
 import { VendoPalette, VendoSlot } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
-/** A minimal pinned generated view — a vendo-genui/v1 tree of a single Text
+/** A minimal pinned generated view — a vendo-genui/v2 tree of a single Text
  *  primitive. This is the "pinned component" the slot mounts in place (08 §4). */
 const pinPayload = {
-  formatVersion: "vendo-genui/v1",
+  formatVersion: "vendo-genui/v2",
   root: "root",
   nodes: [{ id: "root", component: "Text", props: { text: "Pinned revenue card" } }],
 } as UIPayload;
@@ -74,7 +74,7 @@ describe("VendoSlot empty-state CTA + pinned-component path (ENG-223)", () => {
 
   it("threads live pin data through, overriding the tree's embedded data model", async () => {
     const bound = {
-      formatVersion: "vendo-genui/v1",
+      formatVersion: "vendo-genui/v2",
       root: "root",
       data: { revenue: { label: "Stale embedded label" } },
       nodes: [{ id: "root", component: "Text", props: { text: { $path: "/revenue/label" } } }],

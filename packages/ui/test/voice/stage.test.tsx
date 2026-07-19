@@ -306,7 +306,7 @@ function textView(id: string, appId: string, text: string) {
     id,
     appId,
     payload: {
-      formatVersion: "vendo-genui/v1",
+      formatVersion: "vendo-genui/v2",
       root: "root",
       nodes: [{ id: "root", component: "Text", props: { text } }],
     },
@@ -318,7 +318,7 @@ function actionView(id: string, appId: string) {
     id,
     appId,
     payload: {
-      formatVersion: "vendo-genui/v1",
+      formatVersion: "vendo-genui/v2",
       root: "root",
       nodes: [{
         id: "root",

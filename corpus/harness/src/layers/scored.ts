@@ -111,7 +111,7 @@ function scoreTheme(expected: RepoExpectations, actual: VendoTheme): WeightedRes
 // (`getAdminTeams`). Keying on the identity is the "adapted names" the v0
 // corpus requires, and still catches every real extraction defect: a missed
 // surface drops recall, a mis-classified read/write breaks the key.
-function actualToolIdentity(tool: ExtractedTool): string {
+export function actualToolIdentity(tool: ExtractedTool): string {
   if (tool.binding.kind === "trpc") return `trpc\t${tool.binding.procedure}`;
   if (tool.binding.kind === "graphql") return `graphql\t${tool.binding.operation}`;
   if (tool.binding.kind === "server-action") return `server-action\t${tool.binding.module}#${tool.binding.exportName}`;

@@ -92,9 +92,16 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks }: 
       // frame — so it reads as a distinct piece of software, not loose
       // content bleeding into the surrounding chat text.
       <div className="fl-uihost fl-appcard" key={`${partKey}-${appId}`}>
-        <div className="fl-appcard-bar">
+        {/* Pick C (ui-lane-renderer): the bar narrates forming → live. The
+            data-state contract ("building" | "ready") is shared with the
+            thread lane; the label pair stays mounted so the swap crossfades. */}
+        <div className="fl-appcard-bar" data-state={streaming ? "building" : "ready"}>
           <span className="fl-appcard-dot" aria-hidden="true" />
-          <span className="fl-appcard-name">{appTitle(payload) ?? "Your app"}</span>
+          <span className="fl-boot-labels fl-appcard-name">
+            <span className="fl-boot-building">Building your view…</span>
+            <span className="fl-boot-ready">{appTitle(payload) ?? "Your app"}</span>
+          </span>
+          <span className="fl-boot-hairline" aria-hidden="true" />
         </div>
         <div className="fl-appcard-body">
           <PayloadView

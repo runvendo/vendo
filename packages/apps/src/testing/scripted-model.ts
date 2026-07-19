@@ -84,16 +84,12 @@ export const basicLanguageModel = (): LanguageModel => scriptedLanguageModel((ca
   const prompt = textOf(call);
   if (prompt.includes("TASK: EDIT_TREE")) {
     const instruction = markedValue(prompt, "INSTRUCTION: ");
-    return JSON.stringify({ ops: [{ op: "set-name", name: instruction }] });
+    // v2 spec §5 — edits are wire patches; quotes in the derived name would
+    // break the attribute, so strip them.
+    return `<Edit><SetName name="${instruction.replaceAll('"', "'")}"/></Edit>`;
   }
   const name = markedValue(prompt, "USER_REQUEST: ");
-  return JSON.stringify({
-    name,
-    description: `${name} generated app`,
-    tree: {
-      formatVersion: "vendo-genui/v1",
-      root: "root",
-      nodes: [{ id: "root", component: "Text", source: "prewired", props: { text: name } }],
-    },
-  });
+  // v2 spec §2 — creates are wire markup; quotes in the derived name would
+  // break the attribute, so strip them.
+  return `<App name="${name.replaceAll('"', "'")}"><Text text="${name.replaceAll('"', "'")}"/></App>`;
 });

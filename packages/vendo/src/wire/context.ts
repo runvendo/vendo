@@ -5,7 +5,6 @@ import {
   type Principal,
   type RunContext,
 } from "@vendoai/core";
-import { adoptEphemeralSubject, registerEphemeralSubject } from "@vendoai/store";
 import { BASE_PATH, hex, type WireDeps } from "./shared.js";
 
 /** The anonymous-session machinery + the one shared per-request context
@@ -182,7 +181,7 @@ export function createContextResolver(
         const anonId = readAnonCookie(req.headers.get("cookie"), secure);
         if (anonId !== null) {
           try {
-            const merged = await adoptEphemeralSubject(deps.store, `anonymous_${anonId}`, principal.subject);
+            const merged = await deps.sessionStore.adopt(`anonymous_${anonId}`, principal.subject);
             anon.setCookie = clearedAnonCookie(secure);
             if (merged !== null) {
               await deps.guard.report({
@@ -206,7 +205,7 @@ export function createContextResolver(
     // session sweepable and keeps it alive while the visitor is active. One
     // touch covers both anonymous and host-resolved ephemeral principals.
     if (principal.ephemeral === true) {
-      await registerEphemeralSubject(deps.store, principal.subject, deps.sessions.now());
+      await deps.sessionStore.register(principal.subject, deps.sessions.now());
     }
     return {
       principal,

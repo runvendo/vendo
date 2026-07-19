@@ -34,17 +34,22 @@ import type { Json } from "../ids.js";
 import { isPlainObject, type TreeNode } from "../tree.js";
 import { RESERVED_COMPONENT_NAMES } from "../tree-limits.js";
 import { QUERY_NAME_PATTERN, type TreeQueryV2, type TreeV2 } from "../tree-v2.js";
+import type { ShapeType } from "../shape.js";
 import { parseAttributes } from "./attributes.js";
 import type { WireIssue } from "./expression.js";
+import { checkBindingShapes, type BindingShapeError } from "./shape-check.js";
 import { admitIslandSource, claimNodeSlot, claimQuerySlot } from "./limits.js";
 import { collectText, NAME_CHAR, readName, scanTagEnd, skipElement, skipWhitespace } from "./scan.js";
-import { FAILED, issue, isWellFormedUtf16, type CompileState, type Frame } from "./state.js";
+import { FAILED, issue, isWellFormedUtf16, mergeIssues, type CompileState, type Frame } from "./state.js";
 
 /** v2 spec §2 / plan D3 — compiler options. `hostComponents` (the host
  *  catalog names) feeds source resolution: host brand wins over the prewired
- *  set and islands. */
+ *  set and islands. `toolShapes` (v2 spec §3) are the shape cards' outputs
+ *  keyed by tool name (host tools and fn: refs alike); when present, every
+ *  `$path` binding is type-checked against them (shape-check.ts). */
 export interface WireCompileOptions {
   hostComponents?: readonly string[];
+  toolShapes?: Readonly<Record<string, ShapeType>>;
 }
 
 /** v2 spec §2 / plan D6 — the compile result. */
@@ -58,6 +63,11 @@ export interface WireCompileResult {
   /** Ordered issues in source order, sharing {@link WireIssue} with the
    *  expression grammar. Stable kebab-case codes. */
   issues: WireIssue[];
+  /** v2 spec §3 — the per-binding repair contract: one entry per binding
+   *  whose fields/reshape violate a KNOWN tool shape (empty without
+   *  `toolShapes` or when everything checks). `bindingErrors.length > 0` is
+   *  the engine's unshippable gate. */
+  bindingErrors: BindingShapeError[];
   /** D6 — true when the input parsed to a proper close of App. */
   complete: boolean;
 }
@@ -80,7 +90,7 @@ const ISLAND_CLOSE = "</Island>";
 
 const NO_NAMES: ReadonlySet<string> = new Set();
 
-const makeState = (
+export const makeState = (
   wire: string,
   queryNames: ReadonlySet<string>,
   islandNames: ReadonlySet<string>,
@@ -129,7 +139,7 @@ const resolveSource = (state: CompileState, name: string): TreeNode["source"] =>
 
 /** D3 — `<Query id tool input?>` hoists to tree.queries wherever it appears
  *  (a nested one records a non-fatal issue). Produces no tree node. */
-const compileQuery = (state: CompileState, frames: Frame[]): void => {
+export const compileQuery = (state: CompileState, frames: Frame[]): void => {
   const attrs = parseAttributes(state, "declaration");
   if (attrs === FAILED) {
     state.eofTruncated = true;
@@ -187,7 +197,7 @@ const compileQuery = (state: CompileState, frames: Frame[]): void => {
  *  tag's `>` and the FIRST literal `</Island>` verbatim: no parsing, no
  *  nesting, quotes/braces/`<` all pass through (raw TSX — the v1 JSON
  *  escaping pain is the point). Produces no tree node. */
-const compileIsland = (state: CompileState): void => {
+export const compileIsland = (state: CompileState): void => {
   const attrs = parseAttributes(state, "declaration");
   if (attrs === FAILED) {
     state.eofTruncated = true;
@@ -329,7 +339,7 @@ const appendTextChild = (state: CompileState, frames: Frame[], raw: string): voi
 
 /** Iterative child loop over an explicit frame stack (no recursion, so
  *  pathological nesting cannot overflow the call stack). */
-const parseChildren = (state: CompileState, frames: Frame[]): void => {
+export const parseChildren = (state: CompileState, frames: Frame[], rootLabel = "App"): void => {
   while (state.index < state.source.length) {
     appendTextChild(state, frames, collectText(state));
     if (state.index >= state.source.length) break;
@@ -369,15 +379,17 @@ const parseChildren = (state: CompileState, frames: Frame[]): void => {
   for (let i = frames.length - 1; i >= 1; i -= 1) {
     issue(state, "eof-unclosed", `<${(frames[i] as Frame).tag}> was auto-closed at end of input`);
   }
-  issue(state, "eof-unclosed", "<App> was not closed before end of input");
+  issue(state, "eof-unclosed", `<${rootLabel}> was not closed before end of input`);
 };
 
-/** True when the cursor sits on `<App` followed by a tag-name boundary. */
-const opensApp = (state: CompileState): boolean => {
-  if (!state.source.startsWith("<App", state.index)) return false;
-  const next = state.source[state.index + 4];
+/** True when the cursor sits on `<` + tag followed by a name boundary. */
+export const opensRoot = (state: CompileState, tag: string): boolean => {
+  if (!state.source.startsWith(`<${tag}`, state.index)) return false;
+  const next = state.source[state.index + 1 + tag.length];
   return next === undefined || !NAME_CHAR.test(next);
 };
+
+const opensApp = (state: CompileState): boolean => opensRoot(state, "App");
 
 /**
  * D3 forward references — a lightweight pre-scan over the raw wire that
@@ -401,13 +413,13 @@ const opensApp = (state: CompileState): boolean => {
  * issue happen in the main pass, in source order (this pass runs on a
  * throwaway state whose issues are discarded).
  */
-const prescanDeclarations = (wire: string): { queryNames: Set<string>; islandNames: Set<string> } => {
+export const prescanDeclarations = (wire: string, rootTag = "App"): { queryNames: Set<string>; islandNames: Set<string> } => {
   const queryNames = new Set<string>();
   const islandNames = new Set<string>();
   const state = makeState(wire, NO_NAMES, NO_NAMES, NO_NAMES);
   skipWhitespace(state);
-  if (!opensApp(state)) return { queryNames, islandNames };
-  state.index += 4; // consume "<App"
+  if (!opensRoot(state, rootTag)) return { queryNames, islandNames };
+  state.index += 1 + rootTag.length; // consume "<" + rootTag
   const app = parseAttributes(state, "app");
   if (app === FAILED || app.selfClosing) return { queryNames, islandNames };
   while (state.index < state.source.length) {
@@ -423,7 +435,7 @@ const prescanDeclarations = (wire: string): { queryNames: Set<string>; islandNam
       state.index += 1;
       // Nested <App> elements are skipped-with-subtree below, so any </App>
       // reaching the main stream closes the document in the main pass too.
-      if (name === "App") break;
+      if (name === rootTag) break;
       continue;
     }
     state.index += 1;
@@ -473,7 +485,11 @@ const prescanDeclarations = (wire: string): { queryNames: Set<string>; islandNam
 const determineComplete = (state: CompileState): boolean =>
   state.appClosed && !state.eofTruncated && !state.droppedTrailing;
 
-const finishResult = (state: CompileState, name: string | undefined): WireCompileResult => {
+const finishResult = (
+  state: CompileState,
+  name: string | undefined,
+  toolShapes: Readonly<Record<string, ShapeType>> | undefined,
+): WireCompileResult => {
   // Dangling-generated reconciliation: the pre-scan marks nodes "generated"
   // cap-blind, but admitIslandSource may then drop the island (§8 size/count
   // caps, malformed UTF-16). A generated node with no components entry fails
@@ -491,10 +507,24 @@ const finishResult = (state: CompileState, name: string | undefined): WireCompil
     nodes: state.nodes,
   };
   if (state.queries.length > 0) tree.queries = state.queries;
+  // v2 spec §3 — the binding shape check runs as a post-pass over the
+  // emitted nodes, only when the caller supplied shape cards. Shape errors
+  // are repairable, not structural: the binding stays in the tree (repair
+  // needs the anchor) and `complete` is untouched — the engine's ship gate
+  // is `bindingErrors.length > 0`. Each error also mirrors into the issue
+  // stream (capped like every issue; no index — post-pass, not a cursor).
+  const bindingErrors = toolShapes === undefined
+    ? []
+    : checkBindingShapes(state.nodes, state.queries, toolShapes);
+  mergeIssues(state, bindingErrors.map((error): WireIssue => ({
+    code: "shape-mismatch",
+    message: `node "${error.nodeId}" prop "${error.prop}" (${error.path}): ${error.message}`,
+  })));
   const result: WireCompileResult = {
     tree,
     components: state.components,
     issues: state.issues,
+    bindingErrors,
     complete: determineComplete(state),
   };
   if (name !== undefined) result.name = name;
@@ -512,14 +542,14 @@ const compileWireV2Unsafe = (wire: string, options: WireCompileOptions | undefin
   // all, or garbage before it) degrades to the empty valid tree.
   if (!opensApp(state)) {
     issue(state, "missing-app", "expected a single <App ...>...</App> element");
-    return finishResult(state, undefined);
+    return finishResult(state, undefined, options?.toolShapes);
   }
   state.index += 4; // consume "<App"
   const app = parseAttributes(state, "app");
   if (app === FAILED) {
     state.eofTruncated = true;
     issue(state, "truncated-tag", "<App ...> tag was truncated at end of input");
-    return finishResult(state, undefined);
+    return finishResult(state, undefined, options?.toolShapes);
   }
   // D3 — only App's name attribute means anything; the rest are discarded.
   const name = typeof app.props?.name === "string" ? app.props.name : undefined;
@@ -535,7 +565,7 @@ const compileWireV2Unsafe = (wire: string, options: WireCompileOptions | undefin
       issue(state, "trailing-content", "content after </App> was dropped");
     }
   }
-  return finishResult(state, name);
+  return finishResult(state, name, options?.toolShapes);
 };
 
 /**
@@ -556,6 +586,7 @@ export function compileWireV2(wire: string, options?: WireCompileOptions): WireC
       },
       components: {},
       issues: [{ code: "compile-failed", message: `wire compile failed: ${safeErrorMessage(error)}` }],
+      bindingErrors: [],
       complete: false,
     };
   }

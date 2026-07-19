@@ -65,7 +65,7 @@ export const mcpBrowserFixture: AppDocument = {
   description: "A browser-driven MCP Apps ride-along fixture.",
   components: { InvoiceActions: invoiceActions },
   tree: {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
       { id: "root", component: "Surface", source: "prewired", children: ["layout"] },

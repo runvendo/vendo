@@ -1,10 +1,13 @@
 import {
+  compileWirePatchV2,
   compileWireV2,
+  deriveShapeCard,
+  printWireV2,
   type ApprovalDecision,
   type ApprovalRequest,
   type Json,
   type ToolOutcome,
-  type Tree,
+ 
   type UIPayload,
   type VendoTheme,
 } from "@vendoai/core";
@@ -499,8 +502,8 @@ export function FurnishedBadge() {
 }
 `;
 
-const jailTree: Tree & { furnishings: Record<string, unknown> } = {
-  formatVersion: "vendo-genui/v1",
+const jailTree: UIPayload & { furnishings: Record<string, unknown> } = {
+  formatVersion: "vendo-genui/v2",
   root: "root",
   nodes: [
     { id: "root", component: "Stack", children: ["before", "furnished", "probe", "thrower", "empty", "after"] },
@@ -597,9 +600,9 @@ export default function PromotedCard({ customer, onRun }) {
 }
 `;
 
-function inClientTree(inClient: Record<string, unknown>): Tree {
+function inClientTree(inClient: Record<string, unknown>): UIPayload {
   return {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
       { id: "root", component: "Stack", children: ["promoted", "sibling"] },
@@ -616,7 +619,7 @@ function inClientTree(inClient: Record<string, unknown>): Tree {
     ],
     components: { PromotedCard: inClientSource },
     ...( { inClient } as object),
-  } as Tree;
+  } as UIPayload;
 }
 
 function InClientScenario() {
@@ -675,8 +678,8 @@ export default function RemixedNetWorthCard() {
 `;
 
 function PinDriftScenario() {
-  const tree: Tree = {
-    formatVersion: "vendo-genui/v1",
+  const tree: UIPayload = {
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
       { id: "root", component: "Stack", children: ["worth", "sibling"] },
@@ -693,7 +696,7 @@ function PinDriftScenario() {
         reason: "baseline-changed",
       }],
     } as object),
-  } as Tree;
+  } as UIPayload;
   return (
     <TreeThemeBoundary>
       <section aria-label="Drifted remixed pin">
@@ -741,7 +744,7 @@ class ReplayVoiceDriver implements VoiceDriver {
 
 function voiceViewPayload(id: string, heading: string, body: string): UIPayload {
   return {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
       { id: "root", component: "Surface", children: ["stack"] },
@@ -1035,8 +1038,8 @@ function StreamCompletionScenario() {
     return () => globalThis.clearTimeout(timer);
   }, []);
   const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
-  const streamingTree: Tree = {
-    formatVersion: "vendo-genui/v1",
+  const streamingTree: UIPayload = {
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
       { id: "root", component: "Stack", children: ["late"] },
@@ -1062,10 +1065,10 @@ function SlotFallbackScenario() {
   );
 }
 
-/** A stored v1 tree rendered beside the v2 surface while v1 is being removed
- *  (v2 replaces v1; the remaining v1 surface is deleted across waves 2–4). */
-const storedV1Tree: Tree = {
-  formatVersion: "vendo-genui/v1",
+/** A stored v2 tree rendered beside the freshly compiled wire (v1 is gone;
+ *  stored documents are v2-only). */
+const storedTree: UIPayload = {
+  formatVersion: "vendo-genui/v2",
   root: "root",
   data: { invoice: { total: 4200 } },
   nodes: [
@@ -1134,9 +1137,135 @@ function TreeV2Scenario() {
             {action ? JSON.stringify(action) : "No action recorded"}
           </output>
         </section>
-        <section aria-label="Stored v1 tree">
-          <h2>vendo-genui/v1 — stored app (coexistence)</h2>
-          <PayloadView payload={storedV1Tree as unknown as UIPayload} components={components} onAction={noop} />
+        <section aria-label="Stored tree">
+          <h2>vendo-genui/v2 — stored app</h2>
+          <PayloadView payload={storedTree as unknown as UIPayload} components={components} onAction={noop} />
+        </section>
+      </div>
+    </TreeThemeBoundary>
+  );
+}
+
+/** v2 spec §3 (wave 3) — shape-aware binding: reshape pipes adapt the tool's
+ *  rows without a code island; a mislabeled field is caught at compile when
+ *  shape cards are supplied, and contained at render when they are not. */
+const SHAPE_DATA: Record<string, Json> = {
+  revenue: {
+    rows: [
+      { month: "Jan", revenue: 1240 },
+      { month: "Feb", revenue: 980 },
+      { month: "Mar", revenue: 1495.5 },
+    ],
+  },
+};
+
+const SHAPE_WIRE = `<App name="Revenue by month">
+  <Query id="revenue" tool="metrics_revenue"/>
+  <Stack gap={14}>
+    <Text text="Shape-aware binding: reshape pipes, no code island" variant="heading"/>
+    <Stat label="Total revenue" value={revenue.rows | sum(revenue) | format(currency)}/>
+    <Table caption="Monthly revenue" rows={revenue.rows | format(revenue, currency) | rename(month, Month, revenue, Revenue)}/>
+  </Stack>
+</App>`;
+
+/** The broken-chart class: the model guessed field names ("period"/"amount")
+ *  that the tool's rows don't carry. */
+const SHAPE_WIRE_BROKEN = `<App name="Revenue by month (mis-bound)">
+  <Query id="revenue" tool="metrics_revenue"/>
+  <Stack gap={14}>
+    <Text text="Mis-bound reshape: contained at render, compile error with shape cards" variant="heading"/>
+    <Table caption="Broken binding" rows={revenue.rows | asPoints(period, amount)}/>
+  </Stack>
+</App>`;
+
+function TreeV2ShapeScenario() {
+  const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
+  // The shape card comes straight from the scripted sample — the same
+  // deriveShapeCard path `vendo sync`/the engine uses on recorded responses.
+  const toolShapes = useMemo(
+    () => ({ metrics_revenue: deriveShapeCard("metrics_revenue", [SHAPE_DATA.revenue]).output }),
+    [],
+  );
+  const happy = useMemo(() => compileWireV2(SHAPE_WIRE, { toolShapes }), [toolShapes]);
+  const broken = useMemo(() => compileWireV2(SHAPE_WIRE_BROKEN, { toolShapes }), [toolShapes]);
+  const happyPayload = useMemo(() => happy.tree as unknown as UIPayload, [happy]);
+  const brokenPayload = useMemo(() => broken.tree as unknown as UIPayload, [broken]);
+  return (
+    <TreeThemeBoundary>
+      <div className="format-drill-grid">
+        <section aria-label="Reshaped bindings">
+          <h2>Reshape pipes against the tool shape — wired, no island</h2>
+          <PayloadView payload={happyPayload} components={components} data={SHAPE_DATA} onAction={noop} />
+          <output className="recorder" data-testid="shape-happy-recorder">
+            {`compile: complete=${happy.complete} issues=${happy.issues.length} bindingErrors=${happy.bindingErrors.length}`}
+          </output>
+        </section>
+        <section aria-label="Mis-bound reshape">
+          <h2>Mis-bound fields — compile error + contained notice</h2>
+          <PayloadView payload={brokenPayload} components={components} data={SHAPE_DATA} onAction={noop} />
+          <output className="recorder" data-testid="shape-error-recorder">
+            {JSON.stringify(broken.bindingErrors, null, 1)}
+          </output>
+        </section>
+      </div>
+    </TreeThemeBoundary>
+  );
+}
+
+/** WAVE 4 GATE (v2 spec §§5,8): the ONE edit dialect live — the app prints
+ *  with id anchors, an <Edit> wire patch applies deterministically, and the
+ *  surface re-renders in place. */
+const EDIT_BASE_WIRE = `<App name="Cash overview">
+  <Stack gap={14}>
+    <Text text="Cash overview" variant="heading"/>
+    <Grid columns={2}>
+      <Stat label="Revenue" value="$42k"/>
+      <Card title="Notes">
+        Send the March reminders.
+      </Card>
+    </Grid>
+    <Button label="Remind" onClick="fn:send_reminder"/>
+  </Stack>
+</App>`;
+
+const EDIT_PATCH = `<Edit>
+  <Set id="stat-1" label="Revenue (Q1)" value="$61k" tone="accent"/>
+  <Insert into="grid-1" at={1}><Stat label="Overdue" value="3"/></Insert>
+  <Remove id="button-1"/>
+  <SetName name="Cash overview (edited)"/>
+</Edit>`;
+
+function TreeV2EditScenario() {
+  const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
+  const base = useMemo(() => compileWireV2(EDIT_BASE_WIRE), []);
+  const [patched, setPatched] = useState<ReturnType<typeof compileWirePatchV2>>();
+  const shown = patched ?? base;
+  const payload = useMemo(
+    () => ({ ...shown.tree, components: shown.components }) as unknown as UIPayload,
+    [shown],
+  );
+  return (
+    <TreeThemeBoundary>
+      <div className="format-drill-grid">
+        <section aria-label="Edited surface">
+          <h2>{patched === undefined ? "Base app (compiled from the wire)" : `After the <Edit> patch — ${patched.name}`}</h2>
+          <PayloadView payload={payload} components={components} onAction={noop} />
+          <button
+            type="button"
+            data-testid="apply-edit"
+            onClick={() => setPatched(compileWirePatchV2(EDIT_PATCH, base))}
+          >
+            Apply the &lt;Edit&gt; patch
+          </button>
+          <output className="recorder" data-testid="edit-recorder">
+            {patched === undefined
+              ? "No patch applied"
+              : `patch: complete=${patched.complete} issues=${patched.issues.length} appliedOps=${patched.appliedOps}`}
+          </output>
+        </section>
+        <section aria-label="Model edit context">
+          <h2>The model's edit context (printWireV2, id anchors)</h2>
+          <pre className="recorder" data-testid="edit-context">{printWireV2(base, { includeIds: true })}</pre>
         </section>
       </div>
     </TreeThemeBoundary>
@@ -1434,10 +1563,10 @@ function ToastsScenario() {
   );
 }
 
-/** ENG-223 — a pinned generated view (a vendo-genui/v1 tree) mounted in the slot
+/** ENG-223 — a pinned generated view (a vendo-genui/v2 tree) mounted in the slot
  *  in place of the host's original hero, through the pin path + error boundary. */
 const pinnedViewTree: UIPayload = {
-  formatVersion: "vendo-genui/v1",
+  formatVersion: "vendo-genui/v2",
   root: "root",
   nodes: [
     { id: "root", component: "Surface", children: ["stack"] },
@@ -1492,7 +1621,9 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree-drift": return { title: "Pin drift (host component updated)", content: <PinDriftScenario /> };
     case "/tree-themed": return { title: "Tree — loud host theme", theme: loudTheme, content: <TreeScenario /> };
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
-    case "/tree-v2": return { title: "vendo-genui/v2 — wire compile + v1 coexistence", content: <TreeV2Scenario /> };
+    case "/tree-v2": return { title: "vendo-genui/v2 — wire compile + stored render", content: <TreeV2Scenario /> };
+    case "/tree-v2-shape": return { title: "vendo-genui/v2 — shape-aware binding (wave 3)", content: <TreeV2ShapeScenario /> };
+    case "/tree-v2-edit": return { title: "vendo-genui/v2 — one-dialect edit (wave 4)", content: <TreeV2EditScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
     case "/slot": return { title: "Inline app slot", content: <VendoSlot id="hero" appId="app_1"><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
     case "/slot-empty": return { title: "Inline slot — empty CTA (Maple)", theme: mapleTheme, content: <><VendoSlot id="hero" /><VendoPalette /></> };

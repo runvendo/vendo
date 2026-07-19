@@ -299,6 +299,82 @@ describe("host HTTP execution", () => {
     expect(seen[0]?.accept).toBe("application/json");
   });
 
+  it("09-vendo §2 (install-dx wave 1.1): fails a present-mode call closed on an untrusted origin when untrustedOriginPolicy is 'fail', instead of running it unauthenticated", async () => {
+    const seen: Array<Record<string, string | string[] | undefined>> = [];
+    const server = createServer((req, res) => {
+      seen.push(req.headers);
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ ok: true }));
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => { server.off("error", reject); resolve(); });
+    });
+    const { port } = server.address() as AddressInfo;
+    closers.push(async () => { server.close(); server.closeAllConnections(); });
+    const learnedOrigin = `http://127.0.0.1:${port}`;
+    const warned: Array<{ reason: string }> = [];
+    const actions = createActions({
+      tools: [routeTool("host_probe")],
+      baseUrl: learnedOrigin,
+      baseUrlTrusted: false,
+      untrustedOriginPolicy: "fail",
+      onPresentCredentialsNotForwarded: async (event) => { warned.push({ reason: event.reason }); },
+    });
+    const presentCtx: RunContext = {
+      ...ctx,
+      requestHeaders: { cookie: "fixture_session=user_1", authorization: "Bearer inbound" },
+    };
+    const outcome = await actions.execute({ id: "1", tool: "host_probe", args: {} }, presentCtx);
+    expect(outcome).toMatchObject({
+      status: "error",
+      error: { code: "blocked", message: expect.stringContaining("VENDO_BASE_URL") },
+    });
+    // The host never sees the call — "fail" refuses BEFORE the outbound fetch,
+    // it does not merely audit a call that ran unauthenticated.
+    expect(seen).toHaveLength(0);
+    // The audit warning still records (the umbrella reports it before failing).
+    expect(warned).toEqual([{ reason: "untrusted-host-origin" }]);
+  });
+
+  it("09-vendo §2 (install-dx wave 1.1): 'cross-origin-binding' never fails even under untrustedOriginPolicy: 'fail' — same-origin trust must never extend cross-origin", async () => {
+    const seen: Array<Record<string, string | string[] | undefined>> = [];
+    async function stub(): Promise<string> {
+      const server = createServer((req, res) => {
+        seen.push(req.headers);
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: true }));
+      });
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", () => { server.off("error", reject); resolve(); });
+      });
+      const { port } = server.address() as AddressInfo;
+      closers.push(async () => { server.close(); server.closeAllConnections(); });
+      return `http://127.0.0.1:${port}`;
+    }
+    const configuredOrigin = await stub();
+    const otherOrigin = await stub();
+    const warned: Array<{ reason: string }> = [];
+    const actions = createActions({
+      tools: [routeTool("host_other_origin", {
+        binding: { kind: "openapi", operationId: "other", baseUrl: otherOrigin, method: "GET", path: "/other" },
+      })],
+      baseUrl: configuredOrigin,
+      untrustedOriginPolicy: "fail",
+      onPresentCredentialsNotForwarded: async (event) => { warned.push({ reason: event.reason }); },
+    });
+    const presentCtx: RunContext = {
+      ...ctx,
+      requestHeaders: { cookie: "fixture_session=user_1", authorization: "Bearer inbound" },
+    };
+    // The call still runs (unauthenticated to the other origin) — a refused
+    // cross-origin binding is a routing fact, not a missing-VENDO_BASE_URL fact.
+    await expect(actions.execute({ id: "1", tool: "host_other_origin", args: {} }, presentCtx))
+      .resolves.toMatchObject({ status: "ok" });
+    expect(warned).toEqual([{ reason: "cross-origin-binding" }]);
+  });
+
   it("encodes query values, strips unsafe forwarded headers, and maps JSON/non-JSON/HTTP failures", async () => {
     const requests: Array<{ url: URL; headers: Record<string, string> }> = [];
     const server = createServer((req, res) => {

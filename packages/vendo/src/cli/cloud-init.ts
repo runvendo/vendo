@@ -3,21 +3,21 @@ import { stdin, stdout } from "node:process";
 import { join } from "node:path";
 import type { DevCredential } from "../dev-creds/resolve.js";
 import { runLogin } from "./cloud/auth.js";
-import { CloudError, cloudFetch, type CloudFetchOptions } from "./cloud/client.js";
-import { isVendoKey } from "./cloud/entitlements.js";
+import { CloudError, cloudFetch, isVendoKey, type CloudFetchOptions } from "./cloud/client.js";
 import { cloudDoctor, type CloudDoctorResult } from "./doctor-live.js";
 import { readOptional, writeText, type Output } from "./shared.js";
 
 /**
- * ENG-339 (install-dx design §6) — cloud in init. Detect + validate
- * VENDO_API_KEY when present (state what it unlocks), one calm line when
- * absent, and — when a starter model key would actually help the ladder —
- * offer `vendo cloud login` inline, then mint a metered dev-mode starter
- * allowance and write it to .env.local so the dev never pastes a key.
+ * ENG-339 (install-dx design §6) — cloud in init. Detect VENDO_API_KEY when
+ * present and check its shape locally (key problems surface on the first real
+ * service call), one calm line when absent, and — when a starter model key
+ * would actually help the ladder — offer `vendo cloud login` inline, then
+ * mint a metered dev-mode starter allowance and write it to .env.local so the
+ * dev never pastes a key.
  *
- * Starter-allowance minting is a Cloud console endpoint (see PR hand-off
- * contract); until it lands, mint returns null and the step degrades to a
- * clear pointer instead of blocking init.
+ * Starter-allowance minting rides the console's generic POST /api/v1/keys
+ * (purpose: "dev-mode"); against a console that lacks it, mint returns null
+ * and the step degrades to a clear pointer instead of blocking init.
  */
 
 async function askYesNo(question: string, defaultYes = false): Promise<boolean> {
@@ -42,21 +42,24 @@ async function askText(question: string): Promise<string> {
 }
 
 /**
- * Console hand-off contract (parked follow-up in vendo-web):
+ * Console hand-off contract (console follow-up moves its live
+ * /api/v1/dev/starter-key mint onto this generic path; until that lands the
+ * 404 degradation below covers the gap):
  *   POST /api/v1/keys                 auth: user session (Bearer access token)
  *   request  { purpose: "dev-mode" }
  *   response { key: "vnd_<40 hex>", meter: { runs: { included, remaining } } }
  * The key is a metered dev-mode API key scoped to the caller's default org.
  * Returns null when the endpoint is absent (404 / not-implemented) so init
- * degrades gracefully; real auth/network errors propagate.
+ * degrades gracefully against older consoles; real auth/network errors
+ * propagate.
  */
 export async function mintStarterAllowance(
   options: Pick<CloudFetchOptions, "apiUrl" | "env" | "fetchImpl" | "home"> = {},
 ): Promise<string | null> {
   try {
     // One key-mint path for everyone (Yousef 2026-07-18): the generic keys
-    // resource beside /api/v1/keys/validate; the dev-mode meter comes from the
-    // purpose in the body, not a special path.
+    // resource; the dev-mode meter comes from the purpose in the body, not a
+    // special path.
     const result = await cloudFetch("/api/v1/keys", {
       ...options,
       auth: "user",
@@ -98,10 +101,12 @@ export interface CloudStepOptions {
   env?: Record<string, string | undefined>;
   apiUrl?: string;
   home?: string;
+  /** Fetch seam for the default mint path (tests mock the console with it). */
+  fetchImpl?: typeof fetch;
   /** Seams (tests). */
   confirm?: (question: string, defaultYes?: boolean) => Promise<boolean>;
   promptEmail?: (question: string) => Promise<string>;
-  cloudProbe?: (options: { env?: Record<string, string | undefined>; apiUrl?: string }) => Promise<CloudDoctorResult>;
+  cloudProbe?: (options: { env?: Record<string, string | undefined> }) => Promise<CloudDoctorResult>;
   login?: (email: string) => Promise<number>;
   mint?: () => Promise<string | null>;
 }
@@ -116,21 +121,14 @@ export interface CloudStepResult {
 export async function runCloudStep(options: CloudStepOptions): Promise<CloudStepResult> {
   const { root, output, credential } = options;
   const env = options.env ?? process.env;
-  const cloud = await (options.cloudProbe ?? ((o) => cloudDoctor(o)))({
-    env,
-    ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
-  });
+  const cloud = await (options.cloudProbe ?? ((o) => cloudDoctor(o)))({ env });
 
   if (cloud.present && cloud.ok) {
-    const plan = cloud.plan?.name || cloud.plan?.id || "unknown";
-    output.log(`\nVendo Cloud: VENDO_API_KEY valid (plan: ${plan}).`);
-    if (cloud.capabilities && cloud.capabilities.length > 0) {
-      output.log(`Unlocked: ${cloud.capabilities.join(", ")}.`);
-    }
+    output.log("\nVendo Cloud: VENDO_API_KEY present and well-formed.");
     return { keyPresent: true, keyValid: true, wroteEnvLocal: false };
   }
   if (cloud.present) {
-    output.error(`\nVendo Cloud: VENDO_API_KEY is set but not usable (${cloud.error ?? "validation failed"}). Fix or remove it; \`vendo cloud login\` can issue a fresh one.`);
+    output.error(`\nVendo Cloud: VENDO_API_KEY is set but not usable (${cloud.error ?? "malformed"}). Fix or remove it; \`vendo cloud login\` can issue a fresh one.`);
     return { keyPresent: true, keyValid: false, wroteEnvLocal: false };
   }
 
@@ -164,13 +162,24 @@ export async function runCloudStep(options: CloudStepOptions): Promise<CloudStep
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
   }
 
-  const key = await (options.mint ?? (() => mintStarterAllowance({
-    env,
-    ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
-    ...(options.home === undefined ? {} : { home: options.home }),
-  })))();
+  // mintStarterAllowance propagates real errors (auth, network, the console's
+  // per-org starter-key cap) so callers can show them; THIS caller's contract
+  // is "never changes init's exit code", so they land as one clear line here.
+  let key: string | null;
+  try {
+    key = await (options.mint ?? (() => mintStarterAllowance({
+      env,
+      ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
+      ...(options.home === undefined ? {} : { home: options.home }),
+      ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+    })))();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    output.error(`Vendo Cloud starter-allowance minting failed: ${message} Set a provider key or retry \`vendo init\` later; init continues.`);
+    return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
+  }
   if (key === null) {
-    output.error("Logged in, but the dev-mode starter allowance is not available yet (Cloud console follow-up). Set a provider key or ride your Claude/Codex CLI for now.");
+    output.error("Logged in, but this console does not serve the dev-mode starter allowance yet (older console). Set a provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY) for now.");
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
   }
   await upsertEnvLocal(root, "VENDO_API_KEY", key);

@@ -7,19 +7,20 @@ description: "Every createVendo configuration option and fetch-handler setting, 
 
 | Option | Required | Behavior |
 | --- | --- | --- |
-| `model` | yes | AI SDK `LanguageModel` used by the agent and default app generation |
-| `principal` | yes | resolves the host request to a principal; `null` creates an ephemeral session |
+| `model` | yes | AI SDK `LanguageModel` used by the agent and default app generation; the only required key — `createVendo({ model })` alone boots with anonymous ephemeral sessions |
+| `auth` | no | one host-identity preset filling `principal`, `actAs`, and `oauth` from a single config key; mutually exclusive with all three — see [actAs presets](/connect/act-as-presets) |
+| `principal` | no | escape hatch: resolves the host request to a principal; `null` creates an ephemeral session. Mutually exclusive with `auth` |
 | `store` | no | defaults to PGlite at `.vendo/data` |
 | `sandbox` | no | unlocks app rungs 2 through 4; absent means rung 1 only |
-| `catalog` | no | `ComponentCatalog` of host components exposed to the generation prompt; merged with any `.vendo/catalog.json` written by `vendo sync`, with explicit entries winning by name — see [Host components](/connect/host-components) |
+| `catalog` | no | `ComponentCatalog` or the name-keyed `ComponentRegistry` of host components exposed to the generation prompt; merged with any `.vendo/catalog.json` written by `vendo sync`, with explicit entries winning by name — see [Host components](/connect/host-components) |
 | `connectors` | no | adds external connector tool registries |
-| `actAs` | no | supplies scoped auth material for away host API execution — see [actAs presets](/connect/act-as-presets) |
-| `policy` | no | policy file, rules, directions, and code escape hatch |
+| `actAs` | no | escape hatch: supplies scoped auth material for away host API execution. Mutually exclusive with `auth` — see [actAs presets](/connect/act-as-presets) |
+| `policy` | no | named preset (`"cautious"`, `"readonly"`, `"autopilot"`), policy file, rules, directions, and code escape hatch |
 | `judge` | no | contextual guard judge |
 | `secrets` | no | defaults to environment-backed secret lookup |
 | `telemetry` | no | wires build and development telemetry |
 | `mcp` | no | opens the [MCP door](/capabilities/mcp) so outside agents reach host tools through the guarded path; `true` for defaults, or an object carrying `{ baseUrl?, remoteAs?, federation? }` when door-specific settings need to flow through the umbrella (see [Configure the door through the umbrella](/capabilities/mcp#configure-the-door-through-the-umbrella)); off by default |
-| `oauth` | conditional | `HostOAuthAdapter` used by the door for session lookup and principal resolution; required when `mcp` is enabled. The door renders consent when the adapter uses `session`, or hands off the whole page when it supplies `authorize` instead — see [MCP door](/capabilities/mcp) |
+| `oauth` | conditional | escape hatch: `HostOAuthAdapter` used by the door for session lookup and principal resolution; required when `mcp` is enabled and `auth` supplies no oauth half. Mutually exclusive with `auth`. The door renders consent when the adapter uses `session`, or hands off the whole page when it supplies `authorize` instead — see [MCP door](/capabilities/mcp) |
 | `remoteAs` | no | delegates MCP bearer authentication to an external ES256-signing authorization server (`{ issuer, audience, jwksUri? }`); disables the door's local OAuth endpoints. Also accepted under `mcp: { remoteAs }` — see [MCP door](/capabilities/mcp) |
 | `federation` | no | enables the `/api/vendo/mcp/federate` handshake so an external authorization server can borrow the host's login flow; takes a shared `{ secret }`. Also accepted under `mcp: { federation }` — see [MCP door](/capabilities/mcp) |
 | `agent` | no | chat context controls: `toolOutputCap`, `maxOutputTokens`, `historyWindow` (see [Agent context](#agent-context)) |
@@ -60,9 +61,11 @@ not proxied through this base.
 
 ## Identity
 
-Every wire request passes through `principal(req)`. The returned
-`Principal.subject` scopes threads, apps, approvals, grants, activity, and
-runs. Ephemeral principals never write to disk.
+Every wire request resolves a principal — through an `auth` preset's request
+resolver, or a hand-wired `principal(req)`. With neither key, every session
+is anonymous. The returned `Principal.subject` scopes threads, apps,
+approvals, grants, activity, and runs. Ephemeral principals never write to
+disk.
 
 `principal(req)` must return `kind: "user"` (or `null`). Returning
 `kind: "org"` or a subject that starts with `vendo:` is rejected at the

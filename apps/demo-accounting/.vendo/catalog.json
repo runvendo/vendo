@@ -3,7 +3,7 @@
   "entries": [
     {
       "name": "CadenceDocProgress",
-      "exportPath": "./src/vendo/host-components.tsx#cadenceHostComponents.CadenceDocProgress",
+      "exportPath": "./src/vendo/registry.tsx#cadenceRegistry.CadenceDocProgress",
       "propsSchema": {
         "type": "object",
         "properties": {
@@ -28,7 +28,7 @@
     },
     {
       "name": "CadenceMissingDocsHero",
-      "exportPath": "./src/vendo/host-components.tsx#cadenceHostComponents.CadenceMissingDocsHero",
+      "exportPath": "./src/vendo/registry.tsx#cadenceRegistry.CadenceMissingDocsHero",
       "propsSchema": {
         "type": "object",
         "properties": {
@@ -58,7 +58,7 @@
     },
     {
       "name": "CadenceStatusBadge",
-      "exportPath": "./src/vendo/host-components.tsx#cadenceHostComponents.CadenceStatusBadge",
+      "exportPath": "./src/vendo/registry.tsx#cadenceRegistry.CadenceStatusBadge",
       "propsSchema": {
         "type": "object",
         "properties": {
@@ -66,6 +66,7 @@
             "type": "string"
           },
           "variant": {
+            "type": "string",
             "enum": [
               "missing",
               "overdue",

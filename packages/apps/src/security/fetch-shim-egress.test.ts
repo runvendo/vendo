@@ -194,15 +194,7 @@ describe("the boot convention delivers the shim", () => {
       sandbox,
       catalog: [],
       model: scriptedLanguageModel(
-        JSON.stringify({
-          name: "Boot convention app",
-          description: "asserts the shim boot prelude",
-          tree: {
-            formatVersion: "vendo-genui/v1",
-            root: "root",
-            nodes: [{ id: "root", component: "Text", source: "prewired", props: { text: "hi" } }],
-          },
-        }),
+        '<App name="Boot convention app"><Text text="hi"/></App>',
         JSON.stringify({
           rung: 2,
           files: [{

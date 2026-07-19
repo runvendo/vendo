@@ -65,25 +65,13 @@ export const scriptedLanguageModel = (
   return model as unknown as LanguageModel;
 };
 
-/** A scripted model that emits a realistic rung-1 tree with data-bound nodes and queries. */
+/** A scripted model that emits a realistic rung-1 wire with data-bound nodes and queries. */
 export const appGenerationModel = (): LanguageModel =>
-  scriptedLanguageModel(() =>
-    JSON.stringify({
-      name: "Bench App",
-      description: "A scripted app used to measure apps-api overhead.",
-      tree: {
-        formatVersion: "vendo-genui/v1",
-        root: "root",
-        nodes: [
-          { id: "root", component: "Stack", source: "prewired", children: ["title", "row", "note"] },
-          { id: "title", component: "Text", source: "prewired", props: { text: "Items" } },
-          { id: "row", component: "Row", source: "prewired", children: ["count", "first"] },
-          { id: "count", component: "Text", source: "prewired", props: { text: { $path: "/items/0/name" } } },
-          { id: "first", component: "Text", source: "prewired", props: { text: { $state: "selected" } } },
-          { id: "note", component: "Text", source: "prewired", props: { text: "ready" } },
-        ],
-        data: { items: [] },
-        queries: [{ path: "/items", tool: "host_items_list", input: {} }],
-      },
-    }),
-  );
+  scriptedLanguageModel(() => [
+    '<App name="Bench App">',
+    '<Query id="items" tool="host_items_list" input={{}}/>',
+    '<Text text="Items"/>',
+    '<Row><Text text={items.name}/><Text text={state.selected}/></Row>',
+    '<Text text="ready"/>',
+    "</App>",
+  ].join(""));
