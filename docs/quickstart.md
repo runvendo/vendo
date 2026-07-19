@@ -160,7 +160,7 @@ const vendo = createVendo({
   catalog: registry,
 });
 
-export const { GET, POST, DELETE } = nextVendoHandler(vendo);
+export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
 ```
 
 The example pins an explicit provider. You can omit `model` entirely — the
@@ -243,7 +243,7 @@ then shrinks to a re-export:
 import { nextVendoHandler } from "@vendoai/vendo/server";
 import { vendo } from "@/vendo/server";
 
-export const { GET, POST, DELETE } = nextVendoHandler(vendo);
+export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
 ```
 
 Mount the route at `/api/vendo/[...]`. The fetch handler itself is

@@ -768,7 +768,7 @@ const vendo = createVendo({
   principal: async () => null,
 });
 
-export const { GET, POST, DELETE } = nextVendoHandler(vendo);
+export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
 `);
   actions.push("ensured the Vendo App Router handler exists (current init scaffold)");
 
