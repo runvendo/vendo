@@ -21,7 +21,9 @@ export const defaultVendoTheme: VendoTheme = {
     border: "#e3e3e8",
   },
   typography: {
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+    // Onest is the brand font; the chrome sheet inlines its @font-face (latin
+    // subsets, OFL) so the default look renders it without host setup.
+    fontFamily: "Onest, system-ui, -apple-system, 'Segoe UI', sans-serif",
     baseSize: "15px",
   },
   radius: { small: "6px", medium: "10px", large: "16px" },
