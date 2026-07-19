@@ -40,7 +40,7 @@
       },
       {
         "group": "Connect your app",
-        "pages": ["connect/vendo-init", "connect/api-tools", "connect/act-as-presets", "connect/host-components", "connect/theming", "connect/tool-labels", "connect/instructions"]
+        "pages": ["connect/vendo-init", "connect/dev-mode", "connect/api-tools", "connect/act-as-presets", "connect/host-components", "connect/theming", "connect/tool-labels", "connect/instructions"]
       },
       {
         "group": "Capabilities",

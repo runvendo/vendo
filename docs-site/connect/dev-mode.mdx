@@ -1,0 +1,139 @@
+---
+title: "Dev-mode credential ladder: run Vendo without an API key"
+description: "How vendo init resolves a model in development from env keys, Claude, Codex, or Vendo Cloud, with consent, per-machine storage, and production behavior."
+---
+
+Vendo runs on any AI SDK `LanguageModel`, and in production you set an API key
+for the provider you chose. In development, `vendo init` scaffolds `lib/ai.ts`
+to call `devModel()` — a resolver that tries a ladder of credential sources so
+a fresh clone can send a first turn without provisioning a key.
+
+## Ladder
+
+`devModel()` walks these rungs in order and stops at the first one that
+resolves. Explicit keys always beat implicit sessions.
+
+<Steps>
+  <Step title="Env key">
+    Reads the first of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or
+    `GOOGLE_GENERATIVE_AI_API_KEY` in `.env.local` or the shell. The matching
+    `@ai-sdk/*@^3` provider must be installed in your app. This rung runs the
+    full native tool loop and is the only rung that works in production.
+  </Step>
+  <Step title="Claude Code session">
+    If you are logged into the Claude Code CLI (`claude auth status`), Vendo
+    rides that login through a persistent Agent SDK session. Tool calls are
+    restricted to your Vendo tool surface — the ridden session cannot use
+    Claude's own tools or read your local settings.
+  </Step>
+  <Step title="Codex session">
+    If you are logged into the Codex CLI (`codex login status`), Vendo rides
+    that session over JSON-RPC in an isolated home directory. Personal MCP
+    servers from your real Codex config are not loaded; the sandbox is
+    read-only and every approval is denied.
+  </Step>
+  <Step title="Vendo Cloud starter allowance">
+    `VENDO_API_KEY` is detected and reported. Init can also mint a metered
+    starter key inline through `vendo cloud login`. The Cloud model gateway
+    that turns this key into a working dev model is a follow-up — until it
+    ships, the rung reports itself as unavailable with next-step
+    instructions.
+  </Step>
+  <Step title="None">
+    No credential resolves. The wire returns a generic error and the server
+    log prints the exact set of instructions to unblock: install a provider
+    and set a key, log into Claude Code, log into Codex, or pin a rung.
+  </Step>
+</Steps>
+
+## Consent
+
+The Claude and Codex rungs ride a real developer login, so they only activate
+after you consent. `vendo init` asks once during setup and records the answer
+per machine in `.vendo/data/dev-credential.json` (gitignored). Delete the file
+to be asked again.
+
+For non-interactive setups (CI, dotfiles, agents), set:
+
+```bash
+VENDO_DEV_ALLOW_SESSIONS=1
+```
+
+Without recorded consent or the env flag, the resolver falls through session
+rungs and never rides a CLI login.
+
+## Pinning a rung
+
+Force a specific rung for reproducible runs or E2E matrices:
+
+```bash
+VENDO_DEV_CREDENTIAL=env-key    # skip session probes
+VENDO_DEV_CREDENTIAL=claude     # only ride the Claude Code login
+VENDO_DEV_CREDENTIAL=codex      # only ride the Codex login
+VENDO_DEV_CREDENTIAL=vendo      # only use VENDO_API_KEY
+VENDO_DEV_CREDENTIAL=none       # force the honest failure
+```
+
+Pinning a session rung still requires consent. Pinning a rung that cannot
+resolve produces the same honest error as the unpinned `none` case.
+
+## Production behavior
+
+The resolver skips every session probe when `NODE_ENV=production`, even when
+a rung is pinned. Only the env-key rung and `VENDO_API_KEY` resolve in
+production; anything else surfaces the honest error with instructions to set
+a real key. Production always needs a real key.
+
+## Scoping and limits on session rungs
+
+Session rungs are for local development. They serve tool-less generation for
+`vendo apps`, `vendo refine`, and `vendo doctor`, and full tool riding for
+the chat loop. Known limits:
+
+- The rider system prompt is fixed at session start.
+- Automations and away runs on session rungs are text-only.
+- The capability-miss reporter tool runs on the native loop only.
+
+If you rely on any of these paths in daily development, set a provider key
+so the env-key rung takes over.
+
+## What init scaffolds
+
+Init writes a `lib/ai.ts` that calls `devModel()`, appends the three provider
+key names to `.env.example` with a note that production needs one of them,
+and — with consent — offers to install `@anthropic-ai/claude-agent-sdk` as a
+`devDependency` so the Claude rung can spawn its persistent session.
+
+```ts
+// lib/ai.ts (scaffolded by vendo init)
+import { devModel } from "@vendoai/vendo/server";
+
+// In production, set ANTHROPIC_API_KEY (or OPENAI_API_KEY, or
+// GOOGLE_GENERATIVE_AI_API_KEY) and install the matching @ai-sdk/* provider.
+export const model = devModel();
+```
+
+Swap `devModel()` for any AI SDK `LanguageModel` when you are ready to pin a
+provider. The [handler](/reference/handler-options) contract does not change.
+
+## Init finale
+
+After scaffolding, and only in an interactive terminal with consent, init
+finishes with a live first turn:
+
+1. Detects your package manager and starts the dev server.
+2. Waits for `/api/vendo/status` to return green.
+3. Opens your app in the browser.
+4. Seeds a first message adapted to what your app exposes — a live tool
+   demo when tools were extracted, on-brand UI generation when only theme
+   was extracted, or a self-aware tour on a blank app.
+
+The seeded reply streams into your terminal. The dev server keeps running
+after init exits.
+
+## Related
+
+- [Install](/install) — the staged install playbook.
+- [vendo init](/connect/vendo-init) — the interview and wiring diffs.
+- [Environment variables](/reference/environment-variables) — every
+  `VENDO_*` variable Vendo reads.
