@@ -716,6 +716,27 @@ describe("vendo doctor error codes + fix_refs", () => {
     });
   });
 
+  it("check ids are unique across a full run, healthy and broken alike", async () => {
+    // Duplicate ids would make fix_ref anchors and agents' remediation notes
+    // ambiguous — every check in one run must be individually addressable.
+    const healthyRun = await jsonChecks({
+      targetDir: await healthy(),
+      fetchImpl: successfulProbeFetch(),
+    });
+    const brokenRoot = await mkdtemp(join(tmpdir(), "vendo-doctor-ids-broken-"));
+    cleanup.push(() => rm(brokenRoot, { recursive: true, force: true }));
+    const brokenRun = await jsonChecks({
+      targetDir: brokenRoot,
+      fetchImpl: vi.fn().mockRejectedValue(new Error("offline")),
+      liveTurn: undefined, // exercise the real skip path (server unreachable)
+    });
+    for (const { report } of [healthyRun, brokenRun]) {
+      const ids = report.checks.map((check) => check.id);
+      expect(ids.length).toBeGreaterThan(0);
+      expect([...new Set(ids)].sort()).toEqual([...ids].sort());
+    }
+  });
+
   it("exits nonzero while any single check fails", async () => {
     const root = await healthy();
     await rm(join(root, ".vendo", "brief.md"));

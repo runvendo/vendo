@@ -858,7 +858,7 @@ async function vendoRootPasteLines(root: string, framework: HostFramework, withR
 async function agentTailLines(args: {
   root: string;
   framework: HostFramework;
-  changes: PlannedChange[];
+  registryPath: string | null;
   compositionPath: string | null;
   authWired: AuthMatch | null;
 }): Promise<string[]> {
@@ -874,9 +874,8 @@ async function agentTailLines(args: {
       lines.push(`auth: ${args.authWired.preset}() wired (detected ${args.authWired.dependency})`);
     }
   }
-  const registry = args.changes.find((change) => /registry\.(?:tsx|mjs)$/.test(change.path));
-  if (registry !== undefined) {
-    lines.push(`edit ${registry.path} — register the components the agent may render (generated empty)`);
+  if (args.registryPath !== null) {
+    lines.push(`edit ${args.registryPath} — register the components the agent may render (generated empty)`);
   }
   if (args.compositionPath !== null && args.authWired === null) {
     lines.push(`edit ${args.compositionPath} — add the auth preset named in the advisory above when the host has auth`);
@@ -906,6 +905,8 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
   authWired: AuthMatch | null;
   /** Relative path of the composition created THIS run; null otherwise. */
   compositionPath: string | null;
+  /** Relative path of the registry generated THIS run; null otherwise. */
+  registryPath: string | null;
 }> {
   const root = resolve(options.targetDir);
   const framework = options.framework ?? await detectFramework(root);
@@ -913,6 +914,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
   let authAdvice: string | null = null;
   let authWired: AuthMatch | null = null;
   let compositionPath: string | null = null;
+  let registryPath: string | null = null;
   let withRegistry = false;
 
   if (framework === "express") {
@@ -938,6 +940,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
         const path = relative(root, registryFile);
         const registryAfter = registrySource(typescript ? "tsx" : "mjs");
         changes.push({ absolute: registryFile, path, before: null, after: registryAfter, diff: diff(path, null, registryAfter) });
+        registryPath = path;
       }
       if (scaffolding) {
         const path = relative(root, server);
@@ -972,6 +975,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
       const path = relative(root, registryFile);
       const registryAfter = registrySource("tsx");
       changes.push({ absolute: registryFile, path, before: null, after: registryAfter, diff: diff(path, null, registryAfter) });
+      registryPath = path;
     }
     withRegistry = registryBefore !== null || registryPlanned;
     // The registration map regenerates whenever the detected "use server"
@@ -1050,6 +1054,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     authAdvice,
     authWired,
     compositionPath,
+    registryPath,
     plan: {
       framework,
       root,
@@ -1152,7 +1157,7 @@ export async function runInit(options: InitOptions): Promise<number> {
   const selectAuth = options.yes === true || !interactive
     ? undefined
     : (options.selectAuth ?? (pretty === null ? plainSelect : pretty.select));
-  const { plan, changes, manualSteps, authAdvice, authWired, compositionPath } = await buildPlan(options, confirmAuth, selectAuth);
+  const { plan, changes, manualSteps, authAdvice, authWired, compositionPath, registryPath } = await buildPlan(options, confirmAuth, selectAuth);
   const telemetry = telemetryFor(options, output);
   await telemetry.track("init_started", { framework: plan.framework });
 
@@ -1374,7 +1379,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     // never reaches here (its read-only JSON plan returned above).
     if (options.yes === true || !interactive) {
       output.log("\nAgent tail:");
-      const tail = await agentTailLines({ root, framework: plan.framework, changes, compositionPath, authWired });
+      const tail = await agentTailLines({ root, framework: plan.framework, registryPath, compositionPath, authWired });
       for (const line of tail) output.log(`  ${line}`);
     }
     pretty?.done(Date.now() - started, true);

@@ -170,6 +170,14 @@ describe("vendo init (zero-question)", () => {
     expect(await run(root, again)).toBe(0);
     expect(await tree(root)).toEqual(first);
     expect(again.logs.join("\n")).toContain("Already wired — nothing to change.");
+    // The second run's agent tail reflects what THIS run did: no composition
+    // was created (no auth line), no registry was generated (no registry edit
+    // line) — only the still-manual layout paste and the doctor gate remain.
+    const tail = again.logs.join("\n").split("Agent tail:")[1]!;
+    expect(tail).not.toContain("auth:");
+    expect(tail).not.toContain(join("vendo", "registry.tsx"));
+    expect(tail).toContain(`edit ${join("app", "layout.tsx")} — `);
+    expect(tail).toContain("vendo doctor --json");
   });
 
   it("computes the theme paste specifier from a src/app layout (../../ to project root)", async () => {
