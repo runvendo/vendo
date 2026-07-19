@@ -144,6 +144,22 @@ export interface AppsProxy {
   handler(request: Request): Promise<Response>;
 }
 
+/** execution-v2 Lane C — one HTTP request across the skin of the box (the
+ * shape SandboxMachine.request speaks, named at the runtime surface). */
+export interface BoxRequest {
+  method: string;
+  path: string;
+  headers?: Record<string, string>;
+  body?: Uint8Array | string;
+}
+
+/** execution-v2 Lane C — the box's answer, relayed verbatim by the caller. */
+export interface BoxResponse {
+  status: number;
+  headers: Record<string, string>;
+  body: Uint8Array;
+}
+
 /**
  * ENG-345 — the in-sandbox status of one declared secret for one app.
  * `handle` is the Option B default; `exposed` means an active owner-approved
@@ -217,6 +233,17 @@ export interface AppsRuntime {
    * the static descriptor remains authoritative. */
   agentToolRisk(call: ToolCall, ctx: RunContext): Promise<RiskLabel | undefined>;
   proxy: AppsProxy;
+  /**
+   * execution-v2 skin contract (Lane C) — the box door the wire's fn proxy
+   * route rides: wake the app's machine on demand and proxy ONE HTTP request
+   * to its $PORT (the box serves `POST /fn/<name>` per the contract; the
+   * caller shapes the path). Owner-scoped like every app surface. Additive
+   * like `proxy`/`inClient` — not part of the frozen §1 method table. Lane B's
+   * machine lifecycle owns the wake internals behind this door.
+   */
+  box: {
+    request(appId: AppId, request: BoxRequest, ctx: RunContext): Promise<BoxResponse>;
+  };
   /**
    * 06-apps §9 — additive trust-axis surface (like `proxy`/`agentToolRisk`,
    * not part of the frozen §1 method table). OSS carries the enforcement
@@ -1350,6 +1377,17 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
 
     proxy,
+
+    box: {
+      // v2 only: the fn door rides the machine lifecycle's wake — an
+      // un-provisioned app fails loudly here (graduation provisions first);
+      // the dying v1 session cache never serves a box request.
+      async request(appId, request, ctx) {
+        const app = await requireOwned(appId, ctx.principal.subject);
+        const machine = await lifecycle.wake(app);
+        return machine.request(request);
+      },
+    },
   };
 
   return runtime;

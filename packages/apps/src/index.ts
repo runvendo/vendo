@@ -20,6 +20,8 @@ export {
   type AppsConfig,
   type AppsProxy,
   type AppsRuntime,
+  type BoxRequest,
+  type BoxResponse,
   type EditFailure,
   type EditResult,
   type OpenSurface,
@@ -34,6 +36,26 @@ export {
   type SecretExposureGrant,
 } from "./secret-exposure.js";
 export type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
+// execution-v2 skin contract (Lane C): the manifest gate, the per-app box
+// token, and the box env assembly Lane B consumes at provision.
+export {
+  parseVendoManifest,
+  vendoManifestSchema,
+  type VendoManifest,
+  type VendoManifestSchedule,
+} from "./manifest.js";
+export {
+  APP_TOKEN_COLLECTION,
+  createAppTokens,
+  type AppTokenIdentity,
+  type AppTokens,
+} from "./app-token.js";
+export {
+  buildEnv,
+  type BuildEnvContext,
+  type BuiltBoxEnv,
+  type InferenceResolver,
+} from "./box-env.js";
 // execution-v2 Lane B — the machine lifecycle over the canonical seam.
 // (MachineSandboxAdapter has collapsed to a deprecated alias of SandboxAdapter
 // now that destroy-by-ref lives on the seam itself.)

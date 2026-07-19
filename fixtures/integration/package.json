@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@vendoai/actions": "workspace:*",
+    "@vendoai/apps": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/mcp": "workspace:*",
     "@vendoai/store": "workspace:*",

@@ -616,7 +616,10 @@ describe("09 §3 public wire", () => {
   it("adapts the same fetch handler to Next route exports", async () => {
     const { vendo } = await setup();
     const next = nextVendoHandler(vendo);
-    for (const method of ["GET", "POST", "PATCH", "DELETE"] as const) expect(next[method]).toBeTypeOf("function");
+    // PUT is load-bearing for the box callback surface (execution-v2 Lane C):
+    // /box/rows/:collection/:id writes are PUTs, and Next.js 405s any method
+    // the route module does not export before the wire ever sees it.
+    for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE"] as const) expect(next[method]).toBeTypeOf("function");
     expect((await next.GET(request("GET", "/status"))).status).toBe(200);
     // PATCH is load-bearing even with no PATCH-only wire route left: without
     // this export Next.js would 405 a PATCH before it ever reached the wire's
