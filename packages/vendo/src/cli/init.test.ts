@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -1104,6 +1105,120 @@ describe("vendo init (zero-question)", () => {
     expect(logs).not.toContain("No model key yet");
     expect(seen.length).toBeGreaterThan(0);
     expect(seen[0]).toBe(key);
+  });
+
+  // Agent-install-dx (§CLI-5): the star ask — ONE consent question at the end
+  // of a fully successful INTERACTIVE run. Yes stars via gh (any failure
+  // degrades to the repo URL, one line, no error noise); no does nothing.
+  // Never shown non-interactively, and never able to change init's exit code.
+  it("interactive success ends with the star ask; yes stars runvendo/vendo via gh", async () => {
+    const root = await fixture();
+    const asked: Array<{ question: string; defaultYes: boolean }> = [];
+    const spawned: Array<{ command: string; args: string[] }> = [];
+    const sink = output();
+    expect(await run(root, sink, {
+      interactive: true,
+      confirmStar: async (question, defaultYes) => {
+        asked.push({ question, defaultYes });
+        return true; // Enter/Y
+      },
+      spawnStar: (command, args) => {
+        spawned.push({ command, args });
+        const child = new EventEmitter();
+        setImmediate(() => child.emit("exit", 0));
+        return child;
+      },
+    })).toBe(0);
+    expect(asked).toEqual([{ question: "Star runvendo/vendo to support the project?", defaultYes: true }]);
+    expect(spawned).toEqual([{ command: "gh", args: ["api", "-X", "PUT", "user/starred/runvendo/vendo"] }]);
+    // The star landed: no fallback URL line.
+    expect(sink.logs.join("\n")).not.toContain("github.com/runvendo/vendo");
+  });
+
+  it("a missing or failing gh degrades to one repo-URL line and leaves the exit code alone", async () => {
+    // gh absent: spawn emits ENOENT.
+    const missing = await fixture();
+    const missingSink = output();
+    expect(await run(missing, missingSink, {
+      interactive: true,
+      confirmStar: async () => true,
+      spawnStar: () => {
+        const child = new EventEmitter();
+        setImmediate(() => child.emit("error", new Error("spawn gh ENOENT")));
+        return child;
+      },
+    })).toBe(0);
+    const missingUrls = missingSink.logs.filter((line) => line.includes("https://github.com/runvendo/vendo"));
+    expect(missingUrls).toHaveLength(1);
+    expect(missingSink.errors.join("\n")).not.toContain("gh"); // no error noise
+
+    // gh present but the call fails (non-zero exit): same one-line fallback.
+    const failing = await fixture();
+    const failingSink = output();
+    expect(await run(failing, failingSink, {
+      interactive: true,
+      confirmStar: async () => true,
+      spawnStar: () => {
+        const child = new EventEmitter();
+        setImmediate(() => child.emit("exit", 1));
+        return child;
+      },
+    })).toBe(0);
+    expect(failingSink.logs.filter((line) => line.includes("https://github.com/runvendo/vendo"))).toHaveLength(1);
+
+    // Even a spawn seam that throws synchronously never fails the init.
+    const throwing = await fixture();
+    const throwingSink = output();
+    expect(await run(throwing, throwingSink, {
+      interactive: true,
+      confirmStar: async () => true,
+      spawnStar: () => { throw new Error("no spawn at all"); },
+    })).toBe(0);
+    expect(throwingSink.logs.filter((line) => line.includes("https://github.com/runvendo/vendo"))).toHaveLength(1);
+  });
+
+  it("declining the star ask does nothing: no gh, no URL, no guilt text", async () => {
+    const root = await fixture();
+    let spawnCount = 0;
+    const sink = output();
+    expect(await run(root, sink, {
+      interactive: true,
+      confirmStar: async () => false,
+      spawnStar: () => {
+        spawnCount += 1;
+        return new EventEmitter();
+      },
+    })).toBe(0);
+    expect(spawnCount).toBe(0);
+    const logs = sink.logs.join("\n");
+    expect(logs).not.toContain("github.com/runvendo/vendo");
+    expect(logs).not.toContain("Star");
+  });
+
+  it("the star ask never fires non-interactively: --yes, non-TTY, and --agent stay deterministic", async () => {
+    const seams = {
+      confirmStar: async () => { throw new Error("star prompted"); },
+      spawnStar: (): EventEmitter => { throw new Error("star spawned"); },
+    };
+    // Non-TTY (vitest default interactivity): no prompt.
+    const nonTty = await fixture();
+    expect(await run(nonTty, output(), seams)).toBe(0);
+    // --yes on a TTY: no prompt.
+    const flagged = await fixture();
+    expect(await run(flagged, output(), { yes: true, interactive: true, ...seams })).toBe(0);
+    // --agent: the read-only JSON plan carries no prompt either.
+    const agent = await fixture();
+    const agentSink = output();
+    expect(await run(agent, agentSink, { agent: true, ...seams })).toBe(0);
+    expect(agentSink.logs.join("\n")).not.toContain("Star");
+  });
+
+  it("a star step that blows up entirely never changes init's exit code", async () => {
+    const root = await fixture();
+    expect(await run(root, output(), {
+      interactive: true,
+      confirmStar: async () => { throw new Error("terminal went away"); },
+    })).toBe(0);
   });
 
   it("emits a read-only agent plan with code changes, extraction, and paste steps", async () => {

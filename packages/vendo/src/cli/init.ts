@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -164,6 +165,11 @@ export interface InitOptions {
   /** Test seam: interactivity override for the auth confirm (default: TTY),
       mirroring runAiExtraction's `interactive`. */
   interactive?: boolean;
+  /** Test seam: the star ask — the ONE consent question that ends a fully
+      successful interactive run. Mirrors the auth confirm's shape. */
+  confirmStar?: (question: string, defaultYes: boolean) => Promise<boolean>;
+  /** Test seam: the gh spawn behind a "yes" to the star ask. */
+  spawnStar?: (command: string, args: string[]) => StarProcess;
   /** Test seam: the theme LLM pass's model; default rides the refine seam. */
   themeModel?: () => Promise<LanguageModel>;
   /** Uncertain-slot review — asked ONLY when the model reports uncertainty. */
@@ -895,6 +901,33 @@ async function agentTailLines(args: {
   return lines;
 }
 
+/** The slice of the spawned gh process the star step observes (injectable —
+    tests drive it with a plain EventEmitter). */
+export interface StarProcess {
+  on(event: "error", listener: (error: Error) => void): unknown;
+  on(event: "exit", listener: (code: number | null) => void): unknown;
+}
+
+const STAR_REPO = "runvendo/vendo";
+const STAR_REPO_URL = `https://github.com/${STAR_REPO}`;
+
+/** Star the repo via gh (agent-install-dx §CLI-5). Every failure mode — gh
+    not installed (spawn error), a non-zero exit, a throwing seam — is plain
+    `false`: the caller prints the repo URL instead, one line, no error noise. */
+function starViaGh(spawnStar: NonNullable<InitOptions["spawnStar"]>): Promise<boolean> {
+  return new Promise((resolveStar) => {
+    let child: StarProcess;
+    try {
+      child = spawnStar("gh", ["api", "-X", "PUT", `user/starred/${STAR_REPO}`]);
+    } catch {
+      resolveStar(false);
+      return;
+    }
+    child.on("error", () => resolveStar(false));
+    child.on("exit", (code) => resolveStar(code === 0));
+  });
+}
+
 async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, selectAuth?: SelectAuth): Promise<{
   plan: InitPlan;
   changes: PlannedChange[];
@@ -1381,6 +1414,31 @@ export async function runInit(options: InitOptions): Promise<number> {
       output.log("\nAgent tail:");
       const tail = await agentTailLines({ root, framework: plan.framework, registryPath, compositionPath, authWired });
       for (const line of tail) output.log(`  ${line}`);
+    } else {
+      // Star ask (agent-install-dx §CLI-5): the interactive success screen
+      // ends with ONE consent question — never shown non-interactively (the
+      // playbook owns the agent-path ask; deterministic runs stay that way),
+      // and never fatal: nothing in this step can change init's exit code.
+      // Yes stars via gh; any failure degrades to the repo URL, one line.
+      // No does nothing — no guilt text.
+      try {
+        // The plain fallback mirrors pretty.confirm's stdin guard: no real
+        // keyboard (an `interactive` override without a seam, `init < file`)
+        // means no question — readline must never block on a non-TTY.
+        const confirmStar = options.confirmStar
+          ?? (pretty === null
+            ? async (question: string, defaultYes: boolean) =>
+              stdin.isTTY === true ? askYesNo(question, defaultYes) : false
+            : pretty.confirm);
+        if (await confirmStar(`Star ${STAR_REPO} to support the project?`, true)) {
+          const starred = await starViaGh(
+            options.spawnStar ?? ((command, args) => spawn(command, args, { stdio: "ignore" })),
+          );
+          if (!starred) output.log(`Star it anytime: ${STAR_REPO_URL}`);
+        }
+      } catch {
+        // The ask is best-effort by design; init already succeeded.
+      }
     }
     pretty?.done(Date.now() - started, true);
     return 0;
