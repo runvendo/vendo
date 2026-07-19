@@ -49,7 +49,7 @@ test("a phone viewport never crushes the thread to one column of characters", as
 
 test("rapid overlay open/close never dumps focus to the body or leaves a ghost dialog", async ({ page }) => {
   await openScenario(page, "overlay-manual");
-  const launcher = page.getByRole("button", { name: "Vendo" });
+  const launcher = page.getByRole("button", { name: "AI agent" });
   for (let i = 0; i < 6; i += 1) {
     await launcher.click();
     await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
@@ -82,11 +82,12 @@ test("concurrent surfaces coexist: the palette keybinding stays a singleton", as
   await openScenario(page, "concurrent");
   // A filled slot and a live thread render together with no collision.
   await expect(page.getByText("Outstanding this week")).toBeVisible();
-  // One ⌘K opens exactly ONE palette even with several providers on the page.
+  // One ⌘K opens exactly ONE conversation surface even with several providers
+  // on the page (one-surface ⌘K: the palette dialog no longer exists).
   await page.keyboard.press("Meta+k");
-  await expect(page.getByRole("dialog", { name: "Vendo command palette" })).toHaveCount(1);
+  await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toHaveCount(1);
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog", { name: "Vendo command palette" })).toBeHidden();
+  await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeHidden();
 });
 
 test("dark-brand host renders readable chrome (light-dark derives from background)", async ({ page }) => {

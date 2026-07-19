@@ -26,16 +26,16 @@ test("overlay traps focus, closes on Escape, and restores the launcher", async (
   await expect(composer).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole("button", { name: "Vendo" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "AI agent" })).toBeFocused();
 });
 
-test("palette filters and Enter records the selected public command", async ({ page }) => {
+test("⌘K chip strip records the selected public command", async ({ page }) => {
+  // One-surface ⌘K: commands are chips above the overlay composer; the host
+  // onCommand router receives the activation exactly as it did from the old
+  // palette rows.
   await openScenario(page, "palette");
-  const input = page.getByRole("combobox");
-  await expect(input).toBeFocused();
-  await input.fill("Invoices");
-  await expect(page.getByRole("option", { name: "Open Invoices" })).toBeVisible();
-  await input.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
+  await page.getByRole("toolbar", { name: "Commands" }).getByRole("button", { name: "Open Invoices" }).click();
   await expect(page.getByTestId("command-recorder")).toContainText('"kind":"open-app"');
   await expect(page.getByTestId("command-recorder")).toContainText('"appId":"app_1"');
 });

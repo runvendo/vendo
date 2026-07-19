@@ -137,7 +137,11 @@ export function VendoOverlay({
   const launcherPosition: "bottom-right" | "bottom-left" =
     typeof launcher === "string" && launcher !== "none" ? launcher : launcherConfig.position ?? "bottom-right";
   const launcherHidden = launcher === "none";
-  const launcherLabel = launcherConfig.label === undefined ? "AI agent" : launcherConfig.label;
+  // Empty/whitespace labels collapse to the blob-only orb exactly like null —
+  // otherwise `label: ""` would render an icon-only button with no accessible
+  // name (cubic PR#391 finding).
+  const configuredLabel = launcherConfig.label === undefined ? "AI agent" : launcherConfig.label;
+  const launcherLabel = configuredLabel !== null && configuredLabel.trim() === "" ? null : configuredLabel;
   // The palette's command set renders as a chip strip above the composer —
   // the one-surface replacement for the palette dialog (pick P-C).
   const commandSet = useSyncExternalStore(subscribeConversationCommands, getConversationCommands, getConversationCommands);
@@ -282,6 +286,10 @@ export function VendoOverlay({
     // of no-opping; every other affordance strictly opens.
     if (options?.toggle === true && open) {
       setOpen(false);
+      return;
+    }
+    if (options?.close === true) {
+      if (open) setOpen(false);
       return;
     }
     setOpen(true);
