@@ -4,9 +4,10 @@ description: "How vendo init resolves a model in development from env keys, Clau
 ---
 
 Vendo runs on any AI SDK `LanguageModel`, and in production you set an API key
-for the provider you chose. In development, `vendo init` scaffolds `lib/ai.ts`
-to call `devModel()` — a resolver that tries a ladder of credential sources so
-a fresh clone can send a first turn without provisioning a key.
+for the provider you chose. `createVendo`'s `model` is optional: when you omit
+it, the runtime resolves a model through `devModel()` — a resolver that tries a
+ladder of credential sources so a fresh clone can send a first turn without
+provisioning a key.
 
 ## Ladder
 
@@ -97,43 +98,42 @@ the chat loop. Known limits:
 If you rely on any of these paths in daily development, set a provider key
 so the env-key rung takes over.
 
-## What init scaffolds
+## The generated composition
 
-Init writes a `lib/ai.ts` that calls `devModel()`, appends the three provider
-key names to `.env.example` with a note that production needs one of them,
-and — with consent — offers to install `@anthropic-ai/claude-agent-sdk` as a
-`devDependency` so the Claude rung can spawn its persistent session.
+The route init scaffolds calls `createVendo()` without a `model`, so the runtime
+resolves the ladder above on every turn. Init does not scaffold a model file. To
+pin a provider, add `model` to the composition with any AI SDK `LanguageModel`:
 
 ```ts
-// lib/ai.ts (scaffolded by vendo init)
+import { createVendo } from "@vendoai/vendo/server";
 import { devModel } from "@vendoai/vendo/server";
 
+// Omit `model` to keep the dev-mode ladder, or set it to pin a provider.
 // In production, set ANTHROPIC_API_KEY (or OPENAI_API_KEY, or
 // GOOGLE_GENERATIVE_AI_API_KEY) and install the matching @ai-sdk/* provider.
-export const model = devModel();
+const vendo = createVendo({ model: devModel(), catalog: registry });
 ```
 
-Swap `devModel()` for any AI SDK `LanguageModel` when you are ready to pin a
-provider. The [handler](/reference/handler-options) contract does not change.
+The [handler](/reference/handler-options) contract does not change either way.
+The Claude rung needs `@anthropic-ai/claude-agent-sdk` resolvable; install it
+with `npm install -D @anthropic-ai/claude-agent-sdk` when you want to ride a
+Claude Code login.
 
-## Init finale
+## Verifying the model
 
-After scaffolding, and only in an interactive terminal with consent, init
-finishes with a live first turn:
+Init does not run a live turn. `vendo doctor` sends one real model turn through
+the same ladder, so doctor and runtime agree on what is wired:
 
-1. Detects your package manager and starts the dev server.
-2. Waits for `/api/vendo/status` to return green.
-3. Opens your app in the browser.
-4. Seeds a first message adapted to what your app exposes — a live tool
-   demo when tools were extracted, on-brand UI generation when only theme
-   was extracted, or a self-aware tour on a blank app.
+```bash
+npx vendo doctor
+```
 
-The seeded reply streams into your terminal. The dev server keeps running
-after init exits.
+Exit 0 means a real user would have gotten an answer. See the
+[CLI reference](/reference/cli#vendo-doctor-dir).
 
 ## Related
 
 - [Install](/install) — the staged install playbook.
-- [vendo init](/connect/vendo-init) — the interview and wiring diffs.
+- [vendo init](/connect/vendo-init) — the scaffold command.
 - [Environment variables](/reference/environment-variables) — every
   `VENDO_*` variable Vendo reads.
