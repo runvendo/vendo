@@ -34,6 +34,17 @@ export {
   type SecretExposureGrant,
 } from "./secret-exposure.js";
 export type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
+// execution-v2 Lane B — the machine lifecycle over the canonical seam.
+// MachineSandboxAdapter is the seam plus the locked destroy-by-ref amendment;
+// it collapses to SandboxAdapter when Lane A lands the method on the seam.
+export {
+  createMachineLifecycle,
+  type BuildMachineEnv,
+  type LifecycleClock,
+  type MachineLifecycle,
+  type MachineLifecycleConfig,
+  type MachineSandboxAdapter,
+} from "./machine-lifecycle.js";
 export {
   toV1SandboxAdapter,
   type V1SandboxAdapter,
