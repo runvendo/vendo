@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, describe, expect, it } from "vitest";
-import { runInit } from "./init.js";
+import { runInit, starViaGh } from "./init.js";
 import type { Output } from "./shared.js";
 
 const cleanup: string[] = [];
@@ -1211,6 +1211,25 @@ describe("vendo init (zero-question)", () => {
     const agentSink = output();
     expect(await run(agent, agentSink, { agent: true, ...seams })).toBe(0);
     expect(agentSink.logs.join("\n")).not.toContain("Star");
+  });
+
+  it("an unshown prompt is never a yes: interactive override without a TTY stdin means no star", async () => {
+    // A programmatic runInit({ interactive: true }) with piped stdin (vitest
+    // has no TTY) must not auto-star off the confirm's Y default — the
+    // question was never actually shown, so the answer is false.
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, {
+      interactive: true,
+      // No confirmStar seam: the real default path must decline on its own.
+      spawnStar: (): EventEmitter => { throw new Error("star spawned"); },
+    })).toBe(0);
+    expect(sink.logs.join("\n")).not.toContain("github.com/runvendo/vendo");
+  });
+
+  it("a gh that hangs resolves the star as false after the timeout", async () => {
+    // A child that never emits: the timer settles the promise instead.
+    await expect(starViaGh(() => new EventEmitter(), 25)).resolves.toBe(false);
   });
 
   it("a star step that blows up entirely never changes init's exit code", async () => {

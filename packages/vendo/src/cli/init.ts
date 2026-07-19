@@ -912,19 +912,28 @@ const STAR_REPO = "runvendo/vendo";
 const STAR_REPO_URL = `https://github.com/${STAR_REPO}`;
 
 /** Star the repo via gh (agent-install-dx §CLI-5). Every failure mode — gh
-    not installed (spawn error), a non-zero exit, a throwing seam — is plain
-    `false`: the caller prints the repo URL instead, one line, no error noise. */
-function starViaGh(spawnStar: NonNullable<InitOptions["spawnStar"]>): Promise<boolean> {
+    not installed (spawn error), a non-zero exit, a throwing seam, or a gh
+    that hangs past `timeoutMs` — is plain `false`: the caller prints the
+    repo URL instead, one line, no error noise. Exported for the timeout's
+    direct unit test only. */
+export function starViaGh(spawnStar: NonNullable<InitOptions["spawnStar"]>, timeoutMs = 5_000): Promise<boolean> {
   return new Promise((resolveStar) => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const settle = (starred: boolean): void => {
+      if (timer !== null) clearTimeout(timer);
+      resolveStar(starred);
+    };
     let child: StarProcess;
     try {
       child = spawnStar("gh", ["api", "-X", "PUT", `user/starred/${STAR_REPO}`]);
     } catch {
-      resolveStar(false);
+      settle(false);
       return;
     }
-    child.on("error", () => resolveStar(false));
-    child.on("exit", (code) => resolveStar(code === 0));
+    timer = setTimeout(() => settle(false), timeoutMs);
+    timer.unref?.();
+    child.on("error", () => settle(false));
+    child.on("exit", (code) => settle(code === 0));
   });
 }
 
@@ -1184,6 +1193,9 @@ export async function runInit(options: InitOptions): Promise<number> {
     );
     return 1;
   }
+  // (No stdin-TTY guard on these defaults, unlike the star ask's: an unshown
+  // auth confirm resolving its default just wires the detected preset — the
+  // very accept the non-interactive path performs silently anyway.)
   const confirmAuth = options.yes === true || !interactive
     ? undefined
     : (options.confirmAuth ?? (pretty === null ? askYesNo : pretty.confirm));
@@ -1422,14 +1434,16 @@ export async function runInit(options: InitOptions): Promise<number> {
       // Yes stars via gh; any failure degrades to the repo URL, one line.
       // No does nothing — no guilt text.
       try {
-        // The plain fallback mirrors pretty.confirm's stdin guard: no real
-        // keyboard (an `interactive` override without a seam, `init < file`)
-        // means no question — readline must never block on a non-TTY.
+        // Consent guard: an unshown prompt is NEVER a yes. On a non-TTY
+        // stdin (programmatic `interactive: true`, `init < file`) both real
+        // confirms would resolve the default — pretty.confirm returns it,
+        // askYesNo would block — and starring is an account action, so the
+        // answer without a real keyboard is false, regardless of path.
         const confirmStar = options.confirmStar
-          ?? (pretty === null
-            ? async (question: string, defaultYes: boolean) =>
-              stdin.isTTY === true ? askYesNo(question, defaultYes) : false
-            : pretty.confirm);
+          ?? (async (question: string, defaultYes: boolean) =>
+            stdin.isTTY === true
+              ? (pretty === null ? askYesNo : pretty.confirm)(question, defaultYes)
+              : false);
         if (await confirmStar(`Star ${STAR_REPO} to support the project?`, true)) {
           const starred = await starViaGh(
             options.spawnStar ?? ((command, args) => spawn(command, args, { stdio: "ignore" })),
