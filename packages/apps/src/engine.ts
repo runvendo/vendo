@@ -53,8 +53,11 @@ export interface GeneratedPartial {
 /** Speed lane (vendo-v2-speed) — structured create timing emitted per lane.
  *  `atMs` is milliseconds since the create() call began; `first-partial` fires
  *  when the first compiled prefix reaches the seam (time-to-paint) and
- *  `complete` when the lane's stream ends (with token usage). Opt-in: nothing
- *  is emitted unless `onTiming` is wired. */
+ *  `complete` when the lane's stream ends (with token usage). The full lane may
+ *  repair up to 3× on validation failure, so it emits one `complete` per
+ *  attempt — the LAST `full`/`complete` is the successful document; earlier
+ *  ones are failed attempts. Opt-in: nothing is emitted unless `onTiming` is
+ *  wired. */
 export interface GenerationTimingEvent {
   lane: "paint" | "full";
   phase: "first-partial" | "complete";

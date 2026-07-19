@@ -74,7 +74,12 @@ const runOnce = async (deps: GenerationDependencies, variant: string, mode: stri
   };
   await modelEngine.create({ prompt: PROMPT }, wired);
   const completeMs = Date.now() - start;
-  const find = (lane: string, phase: string) => events.find((e) => e.lane === lane && e.phase === phase);
+  // The full lane repairs up to 3×, emitting one `complete` per attempt — take
+  // the LAST match so tokens/atMs reflect the successful document, not a failed
+  // repair attempt (Devin review). first-partial is the first prefix either way.
+  const find = (lane: string, phase: string) => phase === "complete"
+    ? events.findLast((e) => e.lane === lane && e.phase === phase)
+    : events.find((e) => e.lane === lane && e.phase === phase);
   const sample: Sample = {
     mode,
     variant,
