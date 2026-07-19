@@ -113,14 +113,31 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     );
   });
 
-  it("offers connect-ahead chips in the empty state and initiates through the broker", async () => {
+  it("drives connect-ahead chips from the host connector catalog and initiates through the broker", async () => {
     vi.stubGlobal("open", vi.fn());
+    wire.state.connections = [];
+    render(
+      <VendoProvider
+        client={client}
+        connectors={[{ toolkit: "slack", connector: "composio" }, { toolkit: "hubspot", label: "HubSpot CRM" }]}
+      >
+        <ConnectedAccountsPanel />
+      </VendoProvider>,
+    );
+    expect(await screen.findByText(/No connected accounts yet/)).toBeTruthy();
+    // Host labels win; unlisted toolkits proper-case.
+    expect(screen.getByRole("button", { name: "Connect HubSpot CRM" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Connect Slack" }));
+    // The host-pinned connector rides the initiation.
+    await waitFor(() => expect(wire.requests).toContainEqual(
+      expect.objectContaining({ method: "POST", path: "/connections/initiate", body: { toolkit: "slack", connector: "composio" } }),
+    ));
+  });
+
+  it("hides connect-ahead entirely when the host configured no connectors", async () => {
     wire.state.connections = [];
     render(<VendoProvider client={client}><ConnectedAccountsPanel /></VendoProvider>);
     expect(await screen.findByText(/No connected accounts yet/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Connect Slack" }));
-    await waitFor(() => expect(wire.requests).toContainEqual(
-      expect.objectContaining({ method: "POST", path: "/connections/initiate", body: { toolkit: "slack" } }),
-    ));
+    expect(screen.queryByRole("button", { name: /^Connect / })).toBeNull();
   });
 });

@@ -1,27 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { useVendoContext } from "../context.js";
+import { useVendoContext, type ConnectorOption } from "../context.js";
 import { useConnections } from "../hooks/use-connections.js";
 import type { ConnectionAccount } from "../wire-types.js";
 import { toolkitLogoUrl } from "./build-beat.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { completeConnection } from "./connect-dock.js";
+import { toolkitDisplayName } from "./humanize.js";
 
 /** ui-lane-panels picks A + D + F — identity-forward rows, a two-step
  * disconnect with an undo window, and a connect-ahead empty state. */
-
-const TOOLKIT_DISPLAY: Record<string, string> = {
-  slack: "Slack",
-  github: "GitHub",
-  gmail: "Gmail",
-  notion: "Notion",
-  linear: "Linear",
-  googlecalendar: "Google Calendar",
-};
-
-/** "slack" → "Slack"; unknown slugs get a capital letter, never raw. */
-export function toolkitDisplayName(toolkit: string): string {
-  return TOOLKIT_DISPLAY[toolkit] ?? (toolkit ? `${toolkit.charAt(0).toUpperCase()}${toolkit.slice(1)}` : toolkit);
-}
 
 function connectorDisplayName(connector: string): string {
   return connector === "composio" ? "Composio" : toolkitDisplayName(connector);
@@ -37,9 +24,6 @@ const STATUS: Record<ConnectionAccount["status"], { label: string; tone: "ok" | 
 function connectedDate(createdAt: string): string {
   return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(createdAt));
 }
-
-/** Toolkits offered by the connect-ahead empty state (pick F). */
-const CONNECT_AHEAD_TOOLKITS = ["slack", "gmail", "github", "notion", "linear"];
 
 function ToolkitMark({ toolkit }: { toolkit: string }) {
   const logo = toolkitLogoUrl(toolkit);
@@ -76,7 +60,7 @@ export interface ConnectedAccountsPanelProps {
  * in-flow (the connect card); the empty state additionally offers connecting
  * ahead of time via the same broker redirect. */
 export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPanelProps = {}) {
-  const { client } = useVendoContext();
+  const { client, connectors } = useVendoContext();
   const { connections, disconnect, refresh } = useConnections();
   const [confirming, setConfirming] = useState<Record<string, boolean>>({});
   const [severing, setSevering] = useState<Record<string, Severing | undefined>>({});
@@ -160,16 +144,19 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
     setSevering(current => ({ ...current, [id]: undefined }));
   };
 
-  const connectAhead = async (toolkit: string) => {
+  // Connect-ahead runs through the host's connector catalog (context), so the
+  // chips honour host labels and pinned broker connectors — never a hardcoded
+  // toolkit list.
+  const connectAhead = async (option: ConnectorOption) => {
     setError(undefined);
-    setBusy(current => ({ ...current, [`connect-${toolkit}`]: true }));
+    setBusy(current => ({ ...current, [`connect-${option.toolkit}`]: true }));
     try {
-      await completeConnection(client, { toolkit }, () => cancelled.current);
+      await completeConnection(client, { toolkit: option.toolkit, connector: option.connector }, () => cancelled.current);
       if (!cancelled.current) await refresh();
     } catch (reason) {
       if (!cancelled.current) setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
-      if (!cancelled.current) setBusy(current => ({ ...current, [`connect-${toolkit}`]: false }));
+      if (!cancelled.current) setBusy(current => ({ ...current, [`connect-${option.toolkit}`]: false }));
     }
   };
 
@@ -183,22 +170,27 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
             <span className="fl-acct-ghost-title">No connected accounts yet</span>
             <p className="fl-acct-ghost-copy">
               Normally you’ll connect an account right in the conversation, the moment the agent needs
-              it. If you’d rather set one up ahead of time:
+              it.{connectors.length > 0 ? " If you’d rather set one up ahead of time:" : ""}
             </p>
-            <div className="fl-acct-connect-row">
-              {CONNECT_AHEAD_TOOLKITS.map(toolkit => (
-                <button
-                  key={toolkit}
-                  className="fl-acct-connect-chip"
-                  type="button"
-                  disabled={busy[`connect-${toolkit}`] === true}
-                  onClick={() => void connectAhead(toolkit)}
-                >
-                  <ToolkitMark toolkit={toolkit} />
-                  <span>{busy[`connect-${toolkit}`] ? "Connecting…" : `Connect ${toolkitDisplayName(toolkit)}`}</span>
-                </button>
-              ))}
-            </div>
+            {connectors.length > 0 ? (
+              <div className="fl-acct-connect-row">
+                {connectors.map(option => {
+                  const label = option.label ?? toolkitDisplayName(option.toolkit);
+                  return (
+                    <button
+                      key={option.toolkit}
+                      className="fl-acct-connect-chip"
+                      type="button"
+                      disabled={busy[`connect-${option.toolkit}`] === true}
+                      onClick={() => void connectAhead(option)}
+                    >
+                      <ToolkitMark toolkit={option.toolkit} />
+                      <span>{busy[`connect-${option.toolkit}`] ? "Connecting…" : `Connect ${label}`}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         ) : null}
         {connections.map(connection => {

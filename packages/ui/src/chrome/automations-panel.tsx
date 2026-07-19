@@ -181,7 +181,12 @@ export function AutomationsPanel() {
       void (async () => {
         try {
           const result = await listRuns({ appId });
-          if (cancelled) return;
+          // A discarded (cancelled) response must also unmark the appId, or an
+          // effect restart would skip its only retry and the strip never renders.
+          if (cancelled) {
+            stripFetched.current.delete(appId);
+            return;
+          }
           setRecent(current => ({ ...current, [appId]: result.runs.slice(0, RUN_STRIP_LIMIT) }));
         } catch {
           if (!cancelled) stripFetched.current.delete(appId);
@@ -265,8 +270,14 @@ export function AutomationsPanel() {
           const runningStep = runningRun && plannedSteps > 0
             ? ` · step ${Math.min(runningRun.steps.length + 1, plannedSteps)}/${plannedSteps}`
             : "";
+          // Latest start by value, not position — storage pages are not
+          // guaranteed newest-first (ISO instants compare lexically).
+          const lastStartedAt = known?.reduce<string | undefined>(
+            (latest, run) => (!latest || run.startedAt > latest ? run.startedAt : latest),
+            undefined,
+          );
           const nextRun = entry.enabled && !runningRun
-            ? nextRunLabel(entry.app.trigger, known?.[0]?.startedAt, now)
+            ? nextRunLabel(entry.app.trigger, lastStartedAt, now)
             : null;
           return (
             <article

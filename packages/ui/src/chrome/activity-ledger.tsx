@@ -4,6 +4,7 @@
     humanized action with the input preview folded in, outcome with decider,
     relative timestamp (absolute in the title/dateTime). */
 import type { AuditEvent } from "@vendoai/core";
+import { useEffect, useState } from "react";
 import type { ToolMetaMap } from "./humanize.js";
 import {
   describeActivity,
@@ -57,7 +58,13 @@ function KindGlyph({ kind, label }: { kind: AuditEvent["kind"]; label: string })
 /** The rows only — header, caption, footer and empty states stay with the
     owning panel (they differ between the audit table and the shelf feed). */
 export function ActivityLedger({ events, tools }: { events: AuditEvent[]; tools?: ToolMetaMap }) {
-  const now = new Date();
+  // Relative labels ride a slow clock so "just now" doesn't freeze forever in
+  // a non-polling panel; minute precision needs nothing faster.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   return (
     <ul className="fl-act-led" role="list">
       {events.map(event => {

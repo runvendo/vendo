@@ -63,20 +63,37 @@ test("in-flow connect card: connect-required → connect → automatic retry exe
   await page.screenshot({ path: "e2e/artifacts/connect-card-retried.png", fullPage: false });
 });
 
-test("settings panel lists the connected account and disconnects it", async ({ page, request }) => {
+test("settings panel lists the connected account and severs it through confirm + undo window", async ({ page, request }) => {
   await reset(request);
   // user_ada is seeded with an active gmail connection in the broker stub.
   await page.goto("/?user=user_ada&thread=thr_accounts");
 
   const panel = page.getByRole("region", { name: "Settings" });
   await expect(panel.getByRole("heading", { name: "Connected accounts" })).toBeVisible();
-  await expect(panel.getByRole("button", { name: "Disconnect gmail" })).toBeVisible();
-  await expect(panel.getByText(/Connected · since/)).toBeVisible();
+  // ui-lane-panels pick A — identity-forward rows: display name (never the raw
+  // slug), a status chip, and the connector demoted to a byline.
+  await expect(panel.getByText("Gmail").first()).toBeVisible();
+  await expect(panel.getByText(/via Composio · connected/)).toBeVisible();
+  const disconnect = panel.getByRole("button", { name: "Disconnect Gmail" });
+  await expect(disconnect).toBeVisible();
   await panel.scrollIntoViewIfNeeded();
   await page.screenshot({ path: "e2e/artifacts/connected-accounts-panel.png", fullPage: true });
 
-  await panel.getByRole("button", { name: "Disconnect gmail" }).click();
-  await expect(panel.getByText(/No connected accounts yet/)).toBeVisible();
-  await expect(panel.getByText(/Connected · since/)).toBeHidden();
+  // ui-lane-panels pick D — severing is a two-step ceremony. Step 1 expands
+  // the inline consequence confirm (no wire call yet).
+  await disconnect.click();
+  await expect(disconnect).toHaveAttribute("aria-expanded", "true");
+
+  // Step 2 collapses the card into a severed row with a live undo window; the
+  // wire DELETE is deferred until the window lapses.
+  await panel.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await expect(panel.getByText(/Gmail disconnected/)).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Undo" })).toBeVisible();
+  await page.screenshot({ path: "e2e/artifacts/connected-accounts-undo-window.png", fullPage: true });
+
+  // The 10s undo window lapses → the disconnect commits over the wire and the
+  // connect-ahead empty state (pick F) takes the panel.
+  await expect(panel.getByText(/No connected accounts yet/)).toBeVisible({ timeout: 20_000 });
+  await expect(panel.getByText(/via Composio · connected/)).toBeHidden();
   await page.screenshot({ path: "e2e/artifacts/connected-accounts-disconnected.png", fullPage: true });
 });
