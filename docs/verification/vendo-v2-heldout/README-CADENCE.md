@@ -14,3 +14,4 @@ resolution), which is when the workspace can render it.
 | Prompt | Text | Verdict | Timing | Note |
 |---|---|---|---|---|
 | C1 | a client health dashboard: who's behind on documents | PASS | ~35s (upper bound; poll started late) | Hero stats (8 of 12 behind, 21 outstanding) + Clients Behind table + Deadline Risk table + Recent Activity, all real seeded data, dates formatted (Jul 22, 2026). Minor: status cells show raw enum `missing_docs` (not a raw-brace violation). |
+| C2 | show all clients with their assigned staff and deadlines | PASS | ~8s | 12-row table, contact/staff object cells resolved to names (no raw braces), deadlines formatted (Jul 22, 2026), docs "3 of 6". Minor: raw enum `missing_docs` in status column (recurring). |
