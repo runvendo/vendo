@@ -21,6 +21,7 @@ import { askYesNo, runAiExtraction, type AiExtractionOptions } from "./extract/e
 import type { StaticTool } from "./extract/stages.js";
 import { resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
+import { createPrettyOutput, usePrettyOutput, type PrettyOutput } from "./pretty.js";
 import { resolveRefineModel } from "./refine.js";
 import { contrastingText } from "./theme/color.js";
 import {
@@ -903,7 +904,15 @@ function telemetryFor(options: InitOptions, output: Output): Telemetry {
 
 /** 09-vendo §5 — idempotent, zero-question setup. */
 export async function runInit(options: InitOptions): Promise<number> {
-  const output = options.output ?? consoleOutput;
+  // The clack-style renderer rides the SAME Output seam: it restyles the
+  // exact plain messages below, and is selected only for a human terminal
+  // (TTY, no NO_COLOR/CI, never --agent, never an injected output). Every
+  // other run — tests, pipes, CI — keeps the plain strings byte-for-byte.
+  const pretty: PrettyOutput | null =
+    options.output === undefined && options.agent !== true && usePrettyOutput()
+      ? createPrettyOutput()
+      : null;
+  const output = options.output ?? pretty ?? consoleOutput;
   const started = Date.now();
   const root = resolve(options.targetDir);
   const env = options.env ?? process.env;
@@ -941,7 +950,7 @@ export async function runInit(options: InitOptions): Promise<number> {
   const interactive = options.interactive ?? (Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
   const confirmAuth = options.yes === true || !interactive
     ? undefined
-    : (options.confirmAuth ?? askYesNo);
+    : (options.confirmAuth ?? (pretty === null ? askYesNo : pretty.confirm));
   const { plan, changes, manualSteps, authAdvice } = await buildPlan(options, confirmAuth);
   const telemetry = telemetryFor(options, output);
   await telemetry.track("init_started", { framework: plan.framework });
@@ -987,9 +996,11 @@ export async function runInit(options: InitOptions): Promise<number> {
     // reruns never spend a model call or overwrite hand edits.
     const themePath = join(root, ".vendo", "theme.json");
     if (options.force === true || !(await exists(themePath))) {
+      pretty?.spin("Capturing your theme");
       const summary = await extractThemeSlots(root, {
         resolveModel: options.themeModel ?? themeModelResolver(root),
       });
+      pretty?.stopSpin();
       if (summary.uncertain.length > 0 && options.yes !== true) {
         const overrides = await (options.themeReview ?? defaultThemeReview)(summary);
         for (const [slot, raw] of Object.entries(overrides)) {
@@ -1024,7 +1035,9 @@ export async function runInit(options: InitOptions): Promise<number> {
     }
     await writeIfMissing(join(root, ".vendo", "data", ".gitignore"), "*\n!.gitignore\n", options.force === true);
 
+    pretty?.spin("Learning your API surface");
     const report = await vendoSync({ root, out: join(root, ".vendo") });
+    pretty?.stopSpin();
     for (const warning of report.warnings) output.error(`warning: ${warning}`);
 
     let toolCount = 0;
@@ -1060,6 +1073,7 @@ export async function runInit(options: InitOptions): Promise<number> {
       output,
       yes: options.yes === true,
       credential,
+      ...(pretty === null ? {} : { confirm: pretty.confirm }),
       ...(options.cloud ?? {}),
     });
     if (credential.rung === "none") {
@@ -1078,6 +1092,7 @@ export async function runInit(options: InitOptions): Promise<number> {
       env,
       yes: options.yes === true,
       ...(options.force === true ? { force: true } : {}),
+      ...(pretty === null ? {} : { confirm: pretty.confirm }),
       ...(options.extract ?? {}),
     });
     if (polish.ran) {
@@ -1097,11 +1112,13 @@ export async function runInit(options: InitOptions): Promise<number> {
     for (const line of manualSteps) output.log(`  ${line}`);
     output.log("\nThen start your dev server — the agent is live in your app.");
     output.log("Verify everything: `npx vendo doctor` (it can start the server and run a live turn).");
+    pretty?.done(Date.now() - started, true);
     return 0;
   } catch (error) {
     await telemetry.track("init_failed", { framework: plan.framework, failedStep: "wiring" });
     await telemetry.track("error_class", { errorClass: errorClass(error) });
     output.error(error instanceof Error ? error.message : "vendo init failed");
+    pretty?.done(Date.now() - started, false);
     return 1;
   }
 }
