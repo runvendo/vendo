@@ -992,10 +992,15 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const appTokens = createAppTokens(store);
   // The box env assembler the machine lifecycle calls at provision: rotate the
   // app token, compose the callback doors from the operator-set public origin
-  // (the wire lives under it at BASE_PATH), and inject granted secrets —
-  // grant-state wiring is the Wave-2 secrets/egress lane, so nothing is
-  // granted yet and buildEnv injects no secret values.
-  const machineEnv = async (app: AppDocument): Promise<Record<string, string>> => {
+  // (the wire lives under it at BASE_PATH), and inject granted secrets — the
+  // apps runtime resolves the app's active grants and passes them here (Lane
+  // E), so only declared ∩ granted secret values enter the box. A BYO model
+  // key is just such a secret: declare it, grant it, and it rides the same
+  // injection path as any other key.
+  const machineEnv = async (
+    app: AppDocument,
+    grants?: { grantedSecrets: ReadonlySet<string> },
+  ): Promise<Record<string, string>> => {
     const record = await store.records("vendo_apps").get(app.id);
     const subject = record?.refs?.["subject"];
     if (typeof subject !== "string") {
@@ -1009,13 +1014,27 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     }
     const boxBase = `${configuredBaseUrl.replace(/\/+$/, "")}${BASE_PATH}/box`;
     const built = await buildEnv(app, {
-      granted: new Set<string>(),
+      granted: grants?.grantedSecrets ?? new Set<string>(),
       secrets: config.secrets ?? envSecrets(),
       storeUrl: boxBase,
       hostUrl: boxBase,
       appToken: await appTokens.mint(app.id, subject),
     });
     return built.env;
+  };
+  // Lane E — the implicit skin domains for the machine egress allowlist: the
+  // box must always reach its own boundary, and in OSS the store surface and
+  // the host-callback surface share the deployment origin (the /box mount
+  // above). The inference endpoint host joins this list when Wave 3 wires the
+  // box inference resolver. Assembled here because this file owns the same
+  // URLs it injects as VENDO_STORE_URL / VENDO_HOST_URL.
+  const implicitMachineDomains = (): string[] => {
+    if (configuredBaseUrl === undefined) return [];
+    try {
+      return [new URL(configuredBaseUrl).hostname];
+    } catch {
+      return [];
+    }
   };
   const apps = createApps({
     store,
@@ -1035,6 +1054,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     machine: {
       ...(sandbox.adapter !== undefined && "destroy" in sandbox.adapter ? { sandbox: sandbox.adapter } : {}),
       buildEnv: machineEnv,
+      implicitDomains: implicitMachineDomains(),
     },
   });
   resolveAppToolRisk = apps.agentToolRisk;

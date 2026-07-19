@@ -29,15 +29,44 @@ export interface LifecycleClock {
  * Lane C's env-assembly seam (PORT, secrets, store URL, callback URL,
  * inference endpoint). Injected here so the lanes do not collide; the default
  * assembles nothing.
+ *
+ * Lane E adds `grants`: the runtime resolves the app's active secret grants
+ * and hands them to the host's assembler, so ONLY declared ∩ granted secrets
+ * inject real values (the assembler never reads grant state itself). The
+ * lifecycle calls the seam with the document only; the runtime composes the
+ * grant-carrying closure.
  */
 export type BuildMachineEnv = (
   app: AppDocument,
+  grants?: MachineEnvGrants,
 ) => Promise<Record<string, string>> | Record<string, string>;
+
+/** Lane E — grant state resolved by the runtime for the env assembler. */
+export interface MachineEnvGrants {
+  /** Names of declared secrets the owner granted to THIS app. */
+  grantedSecrets: ReadonlySet<string>;
+}
+
+/**
+ * Lane E's egress-policy seam: resolves the CURRENT allowlist a machine must
+ * boot or wake with (approved declaration + implicit skin domains — see
+ * boxAllowlist in egress-approval.ts, where the list is assembled). Consulted
+ * on every provision AND every wake, so a grant decided while the machine
+ * slept applies at the next resume; it throws to refuse the operation (an
+ * unapproved declared domain must never reach the provider). `undefined`
+ * result means unrestricted egress (no policy for this app). No callback →
+ * pre-Lane-E behavior: create unrestricted, resume with the snapshot ref's
+ * stored policy.
+ */
+export type BuildMachineAllowlist = (
+  app: AppDocument,
+) => Promise<string[] | undefined> | string[] | undefined;
 
 export interface MachineLifecycleConfig {
   store: StoreAdapter;
   sandbox?: MachineSandboxAdapter;
   buildEnv?: BuildMachineEnv;
+  allowedDomains?: BuildMachineAllowlist;
   /** Provider base template every provisioned machine boots from. */
   template?: string;
   idleMs?: number;
@@ -206,9 +235,13 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
       const doc = await currentDocument(app.id);
       if (doc.machine !== undefined) return doc;
       const adapter = requireAdapter();
+      // Lane E — the egress policy gates provisioning BEFORE any provider
+      // call: an unapproved declared domain throws here and no machine exists.
+      const allowlist = await config.allowedDomains?.(doc);
       const machine = await adapter.create({
         ...(config.template === undefined ? {} : { template: config.template }),
         env: await buildEnv(doc),
+        ...(allowlist === undefined ? {} : { allowedDomains: allowlist }),
       });
       try {
         const snapshotRef = await machine.snapshot();
@@ -239,6 +272,16 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
   const wake = async (app: AppDocument): Promise<SandboxMachine> => {
     const entry = live.get(app.id);
     if (entry !== undefined) {
+      // Lane E — a live machine answers to the CURRENT policy too: a
+      // declaration that lost (or never had) approval refuses here rather
+      // than riding the warm entry. (A running provider machine's network
+      // policy cannot be re-tightened in place — the refusal plus the idle
+      // sleep is the containment; the next wake re-applies the policy.)
+      // Evaluated over the authoritative row, not the caller's copy — a
+      // grant committed since the caller loaded its document must count.
+      if (config.allowedDomains !== undefined) {
+        await config.allowedDomains(await currentDocument(app.id));
+      }
       armIdleTimer(app.id);
       return entry.wrapped;
     }
@@ -250,7 +293,14 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
         throw new VendoError("validation", `app ${app.id} has no machine to wake`, { appId: app.id });
       }
       const adapter = requireAdapter();
-      const raw = await adapter.resume(doc.machine.snapshotRef);
+      // Lane E — a wake applies the CURRENT egress policy over the snapshot's
+      // stored one (grants may have changed while the machine slept); it also
+      // refuses loudly when a declared domain lost or never had approval.
+      const raw = config.allowedDomains === undefined
+        ? await adapter.resume(doc.machine.snapshotRef)
+        : await adapter.resume(doc.machine.snapshotRef, {
+          allowedDomains: await config.allowedDomains(doc),
+        });
       const wrapped = withIdleTracking(app.id, raw);
       live.set(app.id, { raw, wrapped, inflight: 0 });
       armIdleTimer(app.id);

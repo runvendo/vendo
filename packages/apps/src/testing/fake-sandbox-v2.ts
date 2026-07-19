@@ -15,6 +15,8 @@ const respond = (
 
 interface FakeSnapshotV2 {
   env: Readonly<Record<string, string>>;
+  /** The create-time egress allowlist the snapshot carries (like real refs). */
+  allowedDomains?: readonly string[];
   template?: string;
   state: ReadonlyMap<string, string>;
 }
@@ -35,6 +37,7 @@ export class FakeMachineV2 implements SandboxMachine {
   constructor(
     readonly id: string,
     env: Record<string, string>,
+    readonly allowedDomains: readonly string[] | undefined,
     readonly template: string | undefined,
     state: ReadonlyMap<string, string>,
     private readonly saveSnapshot: (machine: FakeMachineV2) => string,
@@ -103,6 +106,7 @@ export const fakeSandboxV2 = (): FakeSandboxV2 => {
     const ref = `fake-v2:snap_${nextSnapshot++}`;
     snapshots.set(ref, Object.freeze({
       env: machine.env,
+      ...(machine.allowedDomains === undefined ? {} : { allowedDomains: Object.freeze([...machine.allowedDomains]) }),
       ...(machine.template === undefined ? {} : { template: machine.template }),
       state: new Map(machine.state),
     }));
@@ -111,12 +115,14 @@ export const fakeSandboxV2 = (): FakeSandboxV2 => {
 
   const boot = (
     env: Record<string, string>,
+    allowedDomains: readonly string[] | undefined,
     template: string | undefined,
     state: ReadonlyMap<string, string>,
   ): FakeMachineV2 => {
     const machine = new FakeMachineV2(
       `fake-machine-${nextMachine++}`,
       env,
+      allowedDomains === undefined ? undefined : Object.freeze([...allowedDomains]),
       template,
       state,
       saveSnapshot,
@@ -133,13 +139,15 @@ export const fakeSandboxV2 = (): FakeSandboxV2 => {
     resumes: 0,
     async create(spec) {
       adapter.creates += 1;
-      return boot(spec.env, spec.template, new Map());
+      return boot(spec.env, spec.allowedDomains, spec.template, new Map());
     },
-    async resume(snapshotRef) {
+    async resume(snapshotRef, policy) {
       adapter.resumes += 1;
       const snapshot = snapshots.get(snapshotRef);
       if (snapshot === undefined) throw new Error(`unknown fake v2 snapshot: ${snapshotRef}`);
-      return boot({ ...snapshot.env }, snapshot.template, snapshot.state);
+      // Lane E — a passed policy replaces the snapshot-time allowlist (seam rule).
+      const allowedDomains = policy === undefined ? snapshot.allowedDomains : policy.allowedDomains;
+      return boot({ ...snapshot.env }, allowedDomains, snapshot.template, snapshot.state);
     },
     async destroy(snapshotRef) {
       destroyed.push(snapshotRef);

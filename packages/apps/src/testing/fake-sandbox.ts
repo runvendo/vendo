@@ -276,7 +276,7 @@ export class FakeSandboxMachine implements SandboxMachine {
 export interface FakeSandboxAdapter extends SandboxAdapter {
   readonly machines: Map<string, FakeSandboxMachine>;
   create(spec: FakeCreateSpec): Promise<FakeSandboxMachine>;
-  resume(snapshotRef: string): Promise<FakeSandboxMachine>;
+  resume(snapshotRef: string, policy?: { allowedDomains: string[] | undefined }): Promise<FakeSandboxMachine>;
   setApp(app: MachineApp): void;
 }
 
@@ -339,12 +339,13 @@ export const fakeSandbox = (options: { app?: MachineApp } = {}): FakeSandboxAdap
         installedApp ?? seed?.app,
       );
     },
-    async resume(snapshotRef: string): Promise<FakeSandboxMachine> {
+    async resume(snapshotRef: string, policy?: { allowedDomains: string[] | undefined }): Promise<FakeSandboxMachine> {
       const snapshot = providerSnapshots.get(snapshotRef);
       if (snapshot === undefined) throw new Error(`Unknown fake sandbox snapshot: ${snapshotRef}`);
       return makeMachine(
         { ...snapshot.env },
-        snapshot.allowedDomains,
+        // Lane E — a passed policy replaces the snapshot-time allowlist (seam rule).
+        policy === undefined ? snapshot.allowedDomains : policy.allowedDomains,
         snapshot.template,
         snapshot.files,
         snapshot.app,

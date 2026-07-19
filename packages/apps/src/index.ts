@@ -30,7 +30,17 @@ export {
   type SecretExposure,
   type SecretExposureGrant,
 } from "./secret-exposure.js";
-export type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
+// execution-v2 Lane E — grant-style egress approval over the vendo.json
+// declaration, enforced as the machine's network allowlist.
+export {
+  boxAllowlist,
+  createEgressApprovals,
+  normalizeEgressDomain,
+  unapprovedEgress,
+  type EgressApprovalRequest,
+  type EgressApprovals,
+} from "./egress-approval.js";
+export type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "./sandbox.js";
 // execution-v2 skin contract (Lane C): the manifest gate, the per-app box
 // token, and the box env assembly Lane B consumes at provision.
 export {
@@ -74,8 +84,10 @@ export {
 // now that destroy-by-ref lives on the seam itself.)
 export {
   createMachineLifecycle,
+  type BuildMachineAllowlist,
   type BuildMachineEnv,
   type LifecycleClock,
+  type MachineEnvGrants,
   type MachineLifecycle,
   type MachineLifecycleConfig,
   type MachineSandboxAdapter,

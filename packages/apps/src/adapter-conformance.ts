@@ -183,6 +183,40 @@ export const sandboxAdapterConformance = (
       TEST_TIMEOUT_MS,
     );
 
+    it.skipIf(!harness.enforcesAllowedDomains)(
+      "a resume-time policy replaces the snapshot's egress allowlist",
+      async () => {
+        const adapter = await harness.makeAdapter();
+        const source = track(await adapter.create({
+          env: { PORT: "8080" },
+          allowedDomains: ["example.com"],
+        }));
+        await harness.bootstrap(source);
+        const attempt = async (machine: SandboxMachine, host: string): Promise<boolean> => {
+          const result = await requestEventually(machine, {
+            method: "GET",
+            path: `/conformance/egress/${host}`,
+          });
+          return (JSON.parse(result.body) as { allowed: boolean }).allowed;
+        };
+        expect(await attempt(source, "example.com")).toBe(true);
+        const ref = await mint(adapter, source);
+
+        // A bare resume restores the snapshot-time policy…
+        const bare = track(await adapter.resume(ref));
+        expect(await attempt(bare, "example.com")).toBe(true);
+        expect(await attempt(bare, "vendo.run")).toBe(false);
+
+        // …and a passed policy replaces it — the wake enforces CURRENT grants
+        // (Lane E), not what the machine slept with. The positive probe uses
+        // an IANA-reserved domain so reachability never masquerades as policy.
+        const repoliced = track(await adapter.resume(ref, { allowedDomains: ["example.org"] }));
+        expect(await attempt(repoliced, "example.org")).toBe(true);
+        expect(await attempt(repoliced, "example.com")).toBe(false);
+      },
+      TEST_TIMEOUT_MS,
+    );
+
     it("rejects a snapshot ref it did not issue", async () => {
       const adapter = await harness.makeAdapter();
       await expect(adapter.resume("bogus:not-a-real-ref")).rejects.toThrow();
