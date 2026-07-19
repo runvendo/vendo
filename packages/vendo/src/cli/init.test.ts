@@ -249,14 +249,18 @@ describe("vendo init (zero-question)", () => {
     expect(sink.logs.join("\n")).not.toContain("Auth:");
   });
 
-  it("interactive decline keeps the composition anonymous and names the exact line to add later", async () => {
+  it("interactive decline + picking none keeps the composition anonymous and names the exact line to add later", async () => {
     const root = await fixture();
     await writeFile(join(root, "package.json"), JSON.stringify({
       name: "host",
       dependencies: { next: "16.0.0", "@clerk/nextjs": "6.0.0" },
     }));
     const sink = output();
-    expect(await run(root, sink, { interactive: true, confirmAuth: async () => false })).toBe(0);
+    expect(await run(root, sink, {
+      interactive: true,
+      confirmAuth: async () => false,
+      selectAuth: async () => "none",
+    })).toBe(0);
     const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
     expect(route).not.toContain("auth:");
     expect(route).toContain("principal: async () => null");
@@ -268,13 +272,14 @@ describe("vendo init (zero-question)", () => {
     expect(advisories[0]).toContain(join("app", "api", "vendo", "[...vendo]", "route.ts"));
   });
 
-  it("--yes never asks even in an interactive run: the detected default is accepted", async () => {
+  it("--yes never asks even in an interactive run: the detected default is accepted, no picker either", async () => {
     const root = await fixture();
     await writeFile(join(root, "package.json"), JSON.stringify({
       name: "host",
       dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
     }));
     let askedCount = 0;
+    let pickedCount = 0;
     expect(await run(root, output(), {
       yes: true,
       interactive: true,
@@ -282,10 +287,108 @@ describe("vendo init (zero-question)", () => {
         askedCount += 1;
         return false;
       },
+      selectAuth: async () => {
+        pickedCount += 1;
+        return "clerk";
+      },
     })).toBe(0);
     expect(askedCount).toBe(0);
+    expect(pickedCount).toBe(0);
     const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
     expect(route).toContain("auth: authJs(),");
+  });
+
+  it("decline → picker → clerk wires clerk() and hints the missing SDK install", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
+    }));
+    const askedSelects: Array<{ question: string; options: Array<{ value: string; label: string; hint?: string }> }> = [];
+    const sink = output();
+    expect(await run(root, sink, {
+      interactive: true,
+      confirmAuth: async () => false,
+      selectAuth: async (question, options) => {
+        askedSelects.push({ question, options });
+        return "clerk";
+      },
+    })).toBe(0);
+
+    // One picker: none first (the default), detected authJs named, jwt last.
+    expect(askedSelects).toHaveLength(1);
+    expect(askedSelects[0]!.question).toBe("Which auth should Vendo wire?");
+    const values = askedSelects[0]!.options.map((option) => option.value);
+    expect(values[0]).toBe("none");
+    expect(values[values.length - 1]).toBe("jwt");
+    expect(askedSelects[0]!.options[1]).toMatchObject({ value: "authJs", hint: "detected next-auth" });
+
+    // clerk() is wired exactly like a detection-accept…
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain("auth: clerk(),");
+    expect(route).toContain("docs/act-as-presets.md");
+    expect(route).not.toContain("principal");
+    // …plus one install hint, since @clerk/backend is not in package.json.
+    const advisories = sink.logs.filter((line) => line.includes("Auth:"));
+    expect(advisories).toHaveLength(1);
+    expect(advisories[0]).toContain("clerk() wired");
+    expect(advisories[0]).toContain("npm install @clerk/backend");
+  });
+
+  it("decline → picker → jwt wires nothing and prints the jwt recipe", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
+    }));
+    const sink = output();
+    expect(await run(root, sink, {
+      interactive: true,
+      confirmAuth: async () => false,
+      selectAuth: async () => "jwt",
+    })).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).not.toContain("auth:");
+    expect(route).toContain("principal: async () => null");
+    const advisories = sink.logs.filter((line) => line.includes("Auth:"));
+    expect(advisories).toHaveLength(1);
+    expect(advisories[0]).toContain("auth: jwt({ secret:");
+    expect(advisories[0]).toContain("docs/act-as-presets.md");
+  });
+
+  it("ambiguous detection offers the picker with detected families first (after none)", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "@supabase/supabase-js": "2.0.0", "@auth0/nextjs-auth0": "3.0.0" },
+    }));
+    const askedSelects: Array<Array<{ value: string; hint?: string }>> = [];
+    let confirmCount = 0;
+    const sink = output();
+    expect(await run(root, sink, {
+      interactive: true,
+      confirmAuth: async () => {
+        confirmCount += 1;
+        return true;
+      },
+      selectAuth: async (_question, options) => {
+        askedSelects.push(options);
+        return "supabase";
+      },
+    })).toBe(0);
+
+    // Ambiguity never gets the single-family confirm — straight to the picker.
+    expect(confirmCount).toBe(0);
+    expect(askedSelects).toHaveLength(1);
+    expect(askedSelects[0]!.map((option) => option.value))
+      .toEqual(["none", "supabase", "auth0", "authJs", "clerk", "jwt"]);
+    expect(askedSelects[0]![1]).toMatchObject({ hint: "detected @supabase/supabase-js" });
+    expect(askedSelects[0]![2]).toMatchObject({ hint: "detected @auth0/nextjs-auth0" });
+
+    // The detected pick wires like a detection-accept: no advisory at all.
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain("auth: supabase(),");
+    expect(sink.logs.join("\n")).not.toContain("Auth:");
   });
 
   it("stays anonymous and advises once when several auth providers are present", async () => {

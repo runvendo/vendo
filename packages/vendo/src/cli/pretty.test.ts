@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPrettyOutput, usePrettyOutput } from "./pretty.js";
+import { createPrettyOutput, plainSelect, usePrettyOutput, type SelectInput } from "./pretty.js";
 
 const ESC = "\u001b";
 
@@ -23,6 +23,24 @@ function sink(): { write: (chunk: string) => void; raw: () => string; plain: () 
 afterEach(() => {
   vi.useRealTimers();
 });
+
+/** A PTY-free keypress source for the select loop. */
+function fakeInput(): { input: SelectInput; press: (text: string) => void } {
+  const listeners = new Set<(chunk: Buffer | string) => void>();
+  return {
+    input: {
+      isTTY: true,
+      setRawMode: () => undefined,
+      resume: () => undefined,
+      pause: () => undefined,
+      on: (_event, listener) => listeners.add(listener),
+      off: (_event, listener) => listeners.delete(listener),
+    },
+    press: (text) => {
+      for (const listener of [...listeners]) listener(text);
+    },
+  };
+}
 
 describe("usePrettyOutput (selection)", () => {
   it("selects pretty only on a TTY with no opt-outs", () => {
@@ -146,6 +164,47 @@ describe("createPrettyOutput (visual system)", () => {
     pretty.done(900, false);
     expect(out.plain()).toContain("└  Failed after 0.9s");
     expect(out.raw()).toContain(`${ESC}[31mFailed after 0.9s${ESC}[39m`);
+  });
+
+  it("select: arrow keys move the selection, Enter accepts, list collapses to the answer", async () => {
+    const out = sink();
+    const keys = fakeInput();
+    const pretty = createPrettyOutput(out.write, keys.input);
+    const choice = pretty.select("Which auth should Vendo wire?", [
+      { value: "none", label: "none — stay anonymous, add it later" },
+      { value: "clerk", label: "clerk() — Clerk", hint: "detected @clerk/nextjs" },
+      { value: "jwt", label: "jwt — my own JWT scheme" },
+    ]);
+    keys.press("\u001b[B");
+    keys.press("\r");
+    expect(await choice).toBe("clerk");
+    const plain = out.plain();
+    expect(plain).toContain("◇  Which auth should Vendo wire?");
+    expect(plain).toContain("○ ");
+    expect(plain).toContain("(detected @clerk/nextjs)");
+    // Collapsed to the chosen answer.
+    expect(plain).toContain("● clerk() — Clerk");
+  });
+
+  it("select: number keys pick directly without Enter", async () => {
+    const out = sink();
+    const keys = fakeInput();
+    const pretty = createPrettyOutput(out.write, keys.input);
+    const choice = pretty.select("Which auth should Vendo wire?", [
+      { value: "none", label: "none" },
+      { value: "authJs", label: "authJs()" },
+      { value: "jwt", label: "jwt" },
+    ]);
+    keys.press("3");
+    expect(await choice).toBe("jwt");
+    expect(out.plain()).toContain("● jwt");
+  });
+
+  it("plainSelect returns the default without prompting when not a TTY", async () => {
+    expect(await plainSelect("Which auth should Vendo wire?", [
+      { value: "none", label: "none — stay anonymous" },
+      { value: "clerk", label: "clerk()" },
+    ])).toBe("none");
   });
 
   it("spins during slow phases and clears the frame before any log line", () => {

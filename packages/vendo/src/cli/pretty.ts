@@ -42,12 +42,33 @@ export function usePrettyOutput(
   return true;
 }
 
+export interface SelectOption {
+  value: string;
+  label: string;
+  /** Dim parenthetical after the label (e.g. what detection found). */
+  hint?: string;
+}
+
+/** The slice of a readable TTY stream the select loop needs (injectable for
+    tests — a plain emitter drives the keypress parser without a PTY). */
+export interface SelectInput {
+  isTTY?: boolean;
+  setRawMode?(mode: boolean): unknown;
+  resume?(): unknown;
+  pause?(): unknown;
+  on(event: "data", listener: (chunk: Buffer | string) => void): unknown;
+  off(event: "data", listener: (chunk: Buffer | string) => void): unknown;
+}
+
 export interface PrettyOutput extends Output {
   /** Dots spinner for a slow phase; any log/error line clears the frame. */
   spin(label: string): void;
   stopSpin(): void;
   /** The styled [Y/n] confirm — Enter accepts the default, answer echoed. */
   confirm(question: string, defaultYes?: boolean): Promise<boolean>;
+  /** The styled select — arrows move, Enter accepts, number keys pick
+      directly; collapses to the chosen answer. */
+  select(question: string, options: SelectOption[], defaultIndex?: number): Promise<string>;
   /** The `└ Done in Xs` footer (red `Failed` when init exits non-zero). */
   done(durationMs: number, ok: boolean): void;
 }
@@ -61,8 +82,35 @@ function styleInline(text: string): string {
   return text.replace(/`([^`]+)`/g, (_match, code: string) => bold(cyan(code)));
 }
 
+/** The plain-terminal select for non-pretty interactive runs: numbered list +
+    readline. Non-TTY runs never prompt — the default option stands. */
+export async function plainSelect(
+  question: string,
+  options: SelectOption[],
+  defaultIndex = 0,
+): Promise<string> {
+  const fallback = (options[defaultIndex] ?? options[0])!.value;
+  if (stdin.isTTY !== true || stdout.isTTY !== true) return fallback;
+  stdout.write(`${question}\n`);
+  options.forEach((option, index) => {
+    stdout.write(`  ${index + 1}. ${option.label}${option.hint === undefined ? "" : ` (${option.hint})`}\n`);
+  });
+  const prompt = createInterface({ input: stdin, output: stdout });
+  try {
+    const answer = (await prompt.question(`Choose [${defaultIndex + 1}]: `)).trim();
+    const number = /^\d+$/.test(answer) ? Number(answer) : NaN;
+    if (Number.isInteger(number) && number >= 1 && number <= options.length) {
+      return options[number - 1]!.value;
+    }
+    return fallback;
+  } finally {
+    prompt.close();
+  }
+}
+
 export function createPrettyOutput(
   write: (chunk: string) => void = (chunk) => { stdout.write(chunk); },
+  input: SelectInput = stdin,
 ): PrettyOutput {
   let headerPrinted = false;
   let lastWasBar = false;
@@ -209,6 +257,66 @@ export function createPrettyOutput(
       } finally {
         prompt.close();
       }
+    },
+    async select(question, options, defaultIndex = 0) {
+      stopSpin();
+      ensureHeader();
+      section(cyan("◇"), bold(question));
+      let index = defaultIndex;
+      const optionLine = (option: SelectOption, at: number): string => {
+        const marker = at === index ? cyan("●") : dim("○");
+        const label = at === index ? option.label : dim(option.label);
+        const hint = option.hint === undefined ? "" : ` ${dim(`(${option.hint})`)}`;
+        return `${BAR}  ${marker} ${label}${hint}`;
+      };
+      for (const [at, option] of options.entries()) line(optionLine(option, at));
+      const redraw = (): void => {
+        write(`${ESC}[${options.length}A`);
+        for (const [at, option] of options.entries()) write(`${ESC}[2K${optionLine(option, at)}\n`);
+      };
+      const chosen = await new Promise<number>((resolveChoice) => {
+        const cleanup = (): void => {
+          input.off("data", onData);
+          input.setRawMode?.(false);
+          input.pause?.();
+        };
+        const onData = (chunk: Buffer | string): void => {
+          const text = String(chunk);
+          if (text === "\u0003") { // Ctrl+C
+            cleanup();
+            write("\n");
+            process.exit(130);
+          }
+          if (text === "\r" || text === "\n") {
+            cleanup();
+            resolveChoice(index);
+            return;
+          }
+          if (text === `${ESC}[A` || text === `${ESC}[D`) {
+            index = (index + options.length - 1) % options.length;
+            redraw();
+            return;
+          }
+          if (text === `${ESC}[B` || text === `${ESC}[C`) {
+            index = (index + 1) % options.length;
+            redraw();
+            return;
+          }
+          // Number keys pick directly (the arrows-free fallback).
+          if (/^[1-9]$/.test(text) && Number(text) <= options.length) {
+            index = Number(text) - 1;
+            cleanup();
+            resolveChoice(index);
+          }
+        };
+        input.setRawMode?.(true);
+        input.resume?.();
+        input.on("data", onData);
+      });
+      // Collapse the option list to the chosen answer.
+      write(`${ESC}[${options.length}A${ESC}[0J`);
+      line(`${BAR}  ${cyan("●")} ${options[chosen]!.label}`);
+      return options[chosen]!.value;
     },
     done(durationMs, ok) {
       stopSpin();

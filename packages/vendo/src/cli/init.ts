@@ -21,7 +21,7 @@ import { askYesNo, runAiExtraction, type AiExtractionOptions } from "./extract/e
 import type { StaticTool } from "./extract/stages.js";
 import { resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
-import { createPrettyOutput, usePrettyOutput, type PrettyOutput } from "./pretty.js";
+import { createPrettyOutput, plainSelect, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
 import { devModel, NO_CREDENTIAL_MESSAGE } from "../dev-creds/model.js";
 import { contrastingText } from "./theme/color.js";
 import {
@@ -137,6 +137,10 @@ export interface InitOptions {
       runs when exactly one auth family is detected and init is creating the
       composition. Mirrors the AI-polish consent's confirm shape. */
   confirmAuth?: (question: string, defaultYes: boolean) => Promise<boolean>;
+  /** Test seam: the auth picker shown when the confirm is declined or when
+      several families are detected. Receives the choice list (value/label/
+      hint) and resolves the chosen value. */
+  selectAuth?: (question: string, options: SelectOption[]) => Promise<string>;
   /** Test seam: interactivity override for the auth confirm (default: TTY),
       mirroring runAiExtraction's `interactive`. */
   interactive?: boolean;
@@ -281,28 +285,97 @@ function declinedAuthAdvisory(match: AuthMatch, compositionPath: string): string
 }
 
 type ConfirmAuth = (question: string, defaultYes: boolean) => Promise<boolean>;
+type SelectAuth = (question: string, options: SelectOption[]) => Promise<string>;
 
-/** Detect + confirm: in interactive runs, exactly one detected family gets
-    ONE calm [Y/n] question before anything is written (Enter accepts).
-    Without a confirm (non-interactive, --yes, --agent) silent detection
-    stands — a default has to exist. None/ambiguous never ask: nothing is
-    certain enough to confirm, the advisory line covers it. */
+/** Picker labels + the runtime package each zero-arg preset lazy-loads (the
+    install hint when the picked family's SDK is absent; the preset's own
+    lazy-load error already guards runtime). */
+const AUTH_FAMILY_INFO: Record<AuthPresetName, { label: string; runtime: string }> = {
+  authJs: { label: "authJs() — Auth.js / next-auth", runtime: "@auth/core" },
+  clerk: { label: "clerk() — Clerk", runtime: "@clerk/backend" },
+  supabase: { label: "supabase() — Supabase Auth", runtime: "jose" },
+  auth0: { label: "auth0() — Auth0", runtime: "jose" },
+};
+
+/** The auth picker (decline or ambiguity): none — stay anonymous — is first
+    and the default; detected families come next (named), then the remaining
+    zero-arg presets, then jwt (recipe only — it cannot be zero-arg). */
+async function pickScaffoldAuth(
+  detection: AuthDetection,
+  compositionPath: string,
+  selectAuth: SelectAuth,
+): Promise<{ wired: AuthMatch | null; advice: string | null }> {
+  const detected = detection.matches;
+  const undetected = (Object.keys(AUTH_FAMILY_INFO) as AuthPresetName[])
+    .filter((preset) => !detected.some((match) => match.preset === preset));
+  const picked = await selectAuth("Which auth should Vendo wire?", [
+    { value: "none", label: "none — stay anonymous, add it later" },
+    ...detected.map((match) => ({
+      value: match.preset,
+      label: AUTH_FAMILY_INFO[match.preset].label,
+      hint: `detected ${match.dependency}`,
+    })),
+    ...undetected.map((preset) => ({ value: preset, label: AUTH_FAMILY_INFO[preset].label })),
+    { value: "jwt", label: "jwt — my own JWT scheme (prints the recipe)" },
+  ]);
+  if (picked === "jwt") {
+    // jwt() cannot be zero-arg — nothing is wired; the recipe is the answer.
+    return {
+      wired: null,
+      advice: `Auth: your own JWT — add one line in ${compositionPath}: auth: jwt({ secret: <your signing secret> }). ` +
+        "Options and the claim mapping: docs/act-as-presets.md.",
+    };
+  }
+  const detectedMatch = detected.find((match) => match.preset === picked);
+  if (detectedMatch !== undefined) return { wired: detectedMatch, advice: null };
+  if (picked in AUTH_FAMILY_INFO) {
+    // Picked without its SDK in package.json: wire it exactly like a
+    // detection-accept, plus one install hint.
+    const preset = picked as AuthPresetName;
+    const info = AUTH_FAMILY_INFO[preset];
+    return {
+      wired: { preset, dependency: info.runtime },
+      advice: `Auth: ${preset}() wired — ${info.runtime} is not in package.json yet; install it ` +
+        `(npm install ${info.runtime}) before the first authenticated run (the preset fails loud until then).`,
+    };
+  }
+  // none (or anything unrecognized): today's decline behavior.
+  return detection.wired !== null
+    ? { wired: null, advice: declinedAuthAdvisory(detection.wired, compositionPath) }
+    : { wired: null, advice: authAdvisory(detection, compositionPath) };
+}
+
+/** Detect + confirm + choose: in interactive runs, exactly one detected
+    family gets ONE calm [Y/n] question before anything is written (Enter
+    accepts and wires it — no picker on the happy path). A decline — and the
+    ambiguous case (several families) — offers the picker instead of settling
+    for anonymous. Without the seams (non-interactive, --yes, --agent) silent
+    detection stands and none/ambiguous keep the advisory line — a default
+    has to exist. None-detected never asks: there is nothing to choose from
+    that the advisory doesn't already name. */
 async function resolveScaffoldAuth(
   root: string,
   compositionPath: string,
   confirmAuth: ConfirmAuth | undefined,
+  selectAuth: SelectAuth | undefined,
 ): Promise<{ wired: AuthMatch | null; advice: string | null }> {
   const detection = await detectAuthPreset(root);
-  if (detection.wired === null || confirmAuth === undefined) {
+  if (confirmAuth === undefined) {
     return { wired: detection.wired, advice: authAdvisory(detection, compositionPath) };
   }
-  const accepted = await confirmAuth(
-    `Detected ${detection.wired.dependency} — wire auth: ${detection.wired.preset}()?`,
-    true,
-  );
-  return accepted
-    ? { wired: detection.wired, advice: null }
-    : { wired: null, advice: declinedAuthAdvisory(detection.wired, compositionPath) };
+  if (detection.wired !== null) {
+    const accepted = await confirmAuth(
+      `Detected ${detection.wired.dependency} — wire auth: ${detection.wired.preset}()?`,
+      true,
+    );
+    if (accepted) return { wired: detection.wired, advice: null };
+    if (selectAuth !== undefined) return pickScaffoldAuth(detection, compositionPath, selectAuth);
+    return { wired: null, advice: declinedAuthAdvisory(detection.wired, compositionPath) };
+  }
+  if (detection.matches.length > 1 && selectAuth !== undefined) {
+    return pickScaffoldAuth(detection, compositionPath, selectAuth);
+  }
+  return { wired: null, advice: authAdvisory(detection, compositionPath) };
 }
 
 /** The wired preset line plus its escape-hatch comment. */
@@ -741,7 +814,7 @@ async function vendoRootPasteLines(root: string, framework: HostFramework, withR
   return [`In ${layout}:`, ...importLines.map((line) => `  ${line}`), `  … then wrap: ${wrap}`];
 }
 
-async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth): Promise<{ plan: InitPlan; changes: PlannedChange[]; manualSteps: string[]; authAdvice: string | null }> {
+async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, selectAuth?: SelectAuth): Promise<{ plan: InitPlan; changes: PlannedChange[]; manualSteps: string[]; authAdvice: string | null }> {
   const root = resolve(options.targetDir);
   const framework = await detectFramework(root);
   const changes: PlannedChange[] = [];
@@ -777,7 +850,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth): Promi
         // Detect + confirm happens only here — fresh composition creation —
         // so a re-run before the manual <VendoRoot> paste neither asks nor
         // re-fires the advisory after "Already wired".
-        const auth = await resolveScaffoldAuth(root, path, confirmAuth);
+        const auth = await resolveScaffoldAuth(root, path, confirmAuth, selectAuth);
         const serverAfter = expressServerSource(typescript, auth.wired);
         changes.push({ absolute: server, path, before: null, after: serverAfter, diff: diff(path, null, serverAfter) });
         authAdvice = auth.advice;
@@ -818,7 +891,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth): Promi
     if (routeBefore === null) {
       const path = relative(root, route);
       // Detect + confirm happens only on fresh composition creation.
-      const auth = await resolveScaffoldAuth(root, path, confirmAuth);
+      const auth = await resolveScaffoldAuth(root, path, confirmAuth, selectAuth);
       const registrySpecifier = relative(dirname(route), join(dirname(app), "vendo", "registry")).split(sep).join("/");
       const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired, registrySpecifier });
       changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
@@ -965,7 +1038,10 @@ export async function runInit(options: InitOptions): Promise<number> {
   const confirmAuth = options.yes === true || !interactive
     ? undefined
     : (options.confirmAuth ?? (pretty === null ? askYesNo : pretty.confirm));
-  const { plan, changes, manualSteps, authAdvice } = await buildPlan(options, confirmAuth);
+  const selectAuth = options.yes === true || !interactive
+    ? undefined
+    : (options.selectAuth ?? (pretty === null ? plainSelect : pretty.select));
+  const { plan, changes, manualSteps, authAdvice } = await buildPlan(options, confirmAuth, selectAuth);
   const telemetry = telemetryFor(options, output);
   await telemetry.track("init_started", { framework: plan.framework });
 
