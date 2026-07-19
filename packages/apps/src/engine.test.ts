@@ -1253,6 +1253,46 @@ describe("tier0-wired create (two lanes)", () => {
     expect(partials.some((partial) => partial.name === "Full board")).toBe(true);
   });
 
+  it("prewarms full + paint models best-effort and swallows failures", async () => {
+    let calls = 0;
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(() => { calls += 1; return "ok"; }),
+      paint: { model: scriptedLanguageModel(() => { calls += 1; return "ok"; }) },
+    });
+    await runtime.prewarm();
+    expect(calls).toBe(2); // one warm-up hit per configured model
+
+    // A throwing model must not surface — prewarm is best-effort.
+    const throwing = { specificationVersion: "v2", provider: "x", modelId: "x", supportedUrls: {}, doGenerate() { throw new Error("boom"); }, doStream() { throw new Error("boom"); } } as unknown as Parameters<typeof createApps>[0]["model"];
+    const runtime2 = createApps({ store: memoryStore(), guard: guardFixture(), tools, catalog, model: throwing });
+    await expect(runtime2.prewarm()).resolves.toBeUndefined();
+  });
+
+  it("emits per-lane timing (first-partial + complete with usage) through onTiming", async () => {
+    const model = scriptedLanguageModel((call) =>
+      promptText(call).includes("PAINT PASS") ? tier0Wire : tier2Wire);
+    const events: Array<{ lane: string; phase: string; atMs: number; thinking: boolean; usage?: { outputTokens?: number } }> = [];
+
+    await modelEngine.create(
+      { prompt: "Build a revenue board" },
+      deps(model, { onPartial: () => undefined, onTiming: (e: typeof events[number]) => events.push(e) }),
+    );
+
+    const paintFirst = events.find((e) => e.lane === "paint" && e.phase === "first-partial");
+    const paintComplete = events.find((e) => e.lane === "paint" && e.phase === "complete");
+    const fullComplete = events.find((e) => e.lane === "full" && e.phase === "complete");
+    expect(paintFirst).toBeDefined();
+    expect(paintComplete?.usage?.outputTokens).toBe(1);
+    expect(fullComplete).toBeDefined();
+    expect(events.every((e) => e.thinking === false)).toBe(true);
+    expect(events.every((e) => e.atMs >= 0)).toBe(true);
+  });
+
   it("falls back to the resident tier-0 document when the full lane cannot validate", async () => {
     let calls = 0;
     const model = scriptedLanguageModel(() => {

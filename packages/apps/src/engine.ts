@@ -51,6 +51,22 @@ export interface GeneratedPartial {
   components?: Record<string, string>;
 }
 
+/** Speed lane (vendo-v2-speed) — structured create timing emitted per lane.
+ *  `atMs` is milliseconds since the create() call began; `first-partial` fires
+ *  when the first compiled prefix reaches the seam (time-to-paint) and
+ *  `complete` when the lane's stream ends (with token usage). The full lane may
+ *  repair up to 3× on validation failure, so it emits one `complete` per
+ *  attempt — the LAST `full`/`complete` is the successful document; earlier
+ *  ones are failed attempts. Opt-in: nothing is emitted unless `onTiming` is
+ *  wired. */
+export interface GenerationTimingEvent {
+  lane: "paint" | "full";
+  phase: "first-partial" | "complete";
+  atMs: number;
+  thinking: boolean;
+  usage?: { inputTokens?: number; outputTokens?: number };
+}
+
 export interface GenerationDependencies {
   model: LanguageModel;
   /** The composition-normalized catalog (01 §14): propsJsonSchema is derived. */
@@ -78,6 +94,8 @@ export interface GenerationDependencies {
     model?: LanguageModel;
     disabled?: boolean;
   };
+  /** Speed lane — opt-in structured timing seam (see GenerationTimingEvent). */
+  onTiming?: (event: GenerationTimingEvent) => void;
 }
 
 export interface GenerationCreateInput {
@@ -278,13 +296,20 @@ const streamWire = async (
   system: string,
   prompt: string,
   hostComponents: readonly string[],
+  timing?: { lane: "paint" | "full"; thinking: boolean; startedAt: number },
 ): Promise<{ compiled?: WireCompileResult; issues: string[] }> => {
   let text = "";
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastFlushAt = 0;
+  let firstPartialAt = 0;
   const pending: Promise<void>[] = [];
+  const reportTiming = (phase: "first-partial" | "complete", usage?: { inputTokens?: number; outputTokens?: number }): void => {
+    if (deps.onTiming === undefined || timing === undefined) return;
+    deps.onTiming({ lane: timing.lane, phase, atMs: Date.now() - timing.startedAt, thinking: timing.thinking, ...(usage === undefined ? {} : { usage }) });
+  };
   const flush = (): void => {
     if (deps.onPartial === undefined) return;
+    if (firstPartialAt === 0) { firstPartialAt = Date.now(); reportTiming("first-partial"); }
     lastFlushAt = Date.now();
     const compiled = compileWireV2(extractWire(text), { hostComponents, ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }) });
     const partial: GeneratedPartial = {
@@ -332,6 +357,10 @@ const streamWire = async (
       schedule();
     }
     await finishPartials();
+    if (deps.onTiming !== undefined && timing !== undefined) {
+      const usage = await Promise.resolve(result.usage).catch(() => undefined);
+      reportTiming("complete", usage === undefined ? undefined : { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens });
+    }
     return { compiled: compileWireV2(extractWire(text), { hostComponents, ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }) }), issues: [] };
   } catch (error) {
     await finishPartials();
@@ -1078,10 +1107,26 @@ const editCode = async (
   return { kind: "failure", issues: issues.length === 0 ? ["code edit failed validation"] : issues };
 };
 
+/**
+ * Speed lane — page-open prewarm. Pays the provider import + TLS/keep-alive
+ * connection cost up front with a throwaway 1-token generation so the first
+ * real create reuses a live socket instead of opening one cold. Best-effort:
+ * any failure (no key, offline) is swallowed. Measured effect on first-paint
+ * is small (model time-to-first-token dominates), so this is a cheap
+ * worst-case guard, not a headline win — see docs/verification/vendo-v2-speed.
+ */
+export const prewarmModels = async (models: readonly LanguageModel[]): Promise<void> => {
+  const { generateText } = await import("ai");
+  await Promise.all(
+    models.map((model) => generateText({ model, prompt: "ok", maxOutputTokens: 1, maxRetries: 0 }).then(() => undefined).catch(() => undefined)),
+  );
+};
+
 /** 06-apps §§2,5; v2 spec §§2,4 — wire-backed rung-1 generation and
  *  two-dialect edit planning. */
 export const modelEngine: GenerationEngine = {
   async create(input, deps) {
+    const startedAt = Date.now();
     const hostComponents = deps.catalog.map(({ name }) => name);
     const basePrompt = `TASK: CREATE_APP\nUSER_REQUEST: ${input.prompt}`;
     // Tier-0 paint lane (v2 spec §4): only with a streaming consumer — the
@@ -1091,7 +1136,7 @@ export const modelEngine: GenerationEngine = {
     let residentLayout: string | undefined;
     if (deps.onPartial !== undefined && deps.paint?.disabled !== true) {
       const paintDeps = deps.paint?.model === undefined ? deps : { ...deps, model: deps.paint.model };
-      const paint = await streamWire(paintDeps, tier0Contract(deps), basePrompt, hostComponents);
+      const paint = await streamWire(paintDeps, tier0Contract(deps), basePrompt, hostComponents, { lane: "paint", thinking: false, startedAt });
       if (paint.compiled !== undefined) {
         const validated = await validateCompiledCreate(paint.compiled, deps);
         if (validated.document !== undefined) {
@@ -1123,6 +1168,7 @@ export const modelEngine: GenerationEngine = {
           ? ""
           : `\nTIER0_LAYOUT: ${residentLayout}\nAn instant paint pass already rendered that layout. Emit the full-quality app; keep the top-level component ordering compatible where reasonable so minted node ids stay stable and the upgrade swaps in place.`}${repairPrompt(issues)}`,
         hostComponents,
+        { lane: "full", thinking: false, startedAt },
       );
       issues = distinctIssues(issues, output.issues);
       if (output.compiled !== undefined) {
