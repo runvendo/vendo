@@ -1858,14 +1858,20 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-newbar small { color: var(--vendo-fg-muted); font-weight: 500; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
 /* 6B — at phone widths (and in the takeover) the same affordance re-clothes as
-   a bottom-center thumb pill; the snippet yields to the count. */
+   a bottom-center thumb pill; the snippet yields to the count. Centered via
+   auto margins, NOT translateX — the fl-newbar-rise entrance animates the
+   transform property with fill:both, which would overwrite a transform-based centering
+   and land the pill half off-center (AI-review catch). The two pill blocks
+   below are intentionally identical — keep them in lockstep (a media query and
+   a class selector can't share one declaration block in this sheet). */
 @media (max-width: 480px) {
-  .fl-newbar { left: 50%; right: auto; bottom: 8px; transform: translateX(-50%);
+  .fl-newbar { left: 0; right: 0; bottom: 8px; margin: 0 auto; width: fit-content; max-width: calc(100% - 32px);
     border-radius: 999px; border-bottom: 1px solid var(--vendo-border-strong);
     padding: 7px 14px; font-size: 11.5px; }
   .fl-newbar small { display: none; }
 }
-.fl-takeover .fl-newbar { left: 50%; right: auto; bottom: 8px; transform: translateX(-50%);
+/* mirror of the 480px pill block above — keep identical */
+.fl-takeover .fl-newbar { left: 0; right: 0; bottom: 8px; margin: 0 auto; width: fit-content; max-width: calc(100% - 32px);
   border-radius: 999px; border-bottom: 1px solid var(--vendo-border-strong);
   padding: 7px 14px; font-size: 11.5px; }
 .fl-takeover .fl-newbar small { display: none; }
@@ -1926,8 +1932,10 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-source i { width: 6px; height: 6px; border-radius: 2px; background: var(--vendo-accent); opacity: .7; }
 .fl-source-count { margin-left: 1px; color: var(--vendo-fg-muted); font-weight: 700; }
 
-/* 8D — collapsible sections in restored long replies. */
+/* 8D — collapsible sections in restored long replies. The h2/h3 wrapper keeps
+   document-outline semantics; the button inside carries all the styling. */
 .fl-mdsec { margin: 2px 0; }
+.fl-mdsec-h { margin: 0; font-size: inherit; font-weight: inherit; line-height: inherit; }
 .fl-mdsec-head { display: flex; align-items: center; gap: 7px; width: 100%; border: 0; background: none;
   padding: 4px 0; cursor: pointer; text-align: left;
   font: 650 1.05em/1.3 var(--vendo-font); color: var(--vendo-fg); }

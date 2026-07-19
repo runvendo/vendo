@@ -344,32 +344,36 @@ export function VendoThread({
             {!tutorialActive && suggestions.length > 0 ? (
               // Lane pick 4B — object suggestions render as two-line starter
               // cards (title + concrete outcome, optional host icon); plain
-              // strings keep the pill chip. Both send on tap, unchanged.
-              suggestions.some(s => typeof s !== "string") ? (
-                <div className="fl-cards">
-                  {suggestions.map((suggestion, i) => {
-                    if (typeof suggestion === "string") {
-                      return <button type="button" className="fl-chip" key={`${i}-${suggestion}`} onClick={() => send(suggestion)}>{suggestion}</button>;
-                    }
-                    const prompt = suggestion.prompt ?? suggestion.title;
-                    return (
-                      <button type="button" className="fl-card" key={`${i}-${suggestion.title}`} onClick={() => send(prompt)}>
-                        {suggestion.icon}
-                        <b>{suggestion.title}</b>
-                        <span>{suggestion.description}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="fl-chips">
-                  {suggestions.map((text, i) => (
-                    typeof text === "string"
-                      ? <button type="button" className="fl-chip" key={`${i}-${text}`} onClick={() => send(text)}>{text}</button>
-                      : null
-                  ))}
-                </div>
-              )
+              // strings keep the pill chip. A MIXED array renders both
+              // containers (cards grid, then a chips row) so string entries
+              // never stretch as grid cells (AI-review catch). Both send on
+              // tap, unchanged.
+              <>
+                {suggestions.some(s => typeof s !== "string") ? (
+                  <div className="fl-cards">
+                    {suggestions.flatMap((suggestion, i) => {
+                      if (typeof suggestion === "string") return [];
+                      const prompt = suggestion.prompt ?? suggestion.title;
+                      return [(
+                        <button type="button" className="fl-card" key={`${i}-${suggestion.title}`} onClick={() => send(prompt)}>
+                          {suggestion.icon}
+                          <b>{suggestion.title}</b>
+                          <span>{suggestion.description}</span>
+                        </button>
+                      )];
+                    })}
+                  </div>
+                ) : null}
+                {suggestions.some(s => typeof s === "string") ? (
+                  <div className="fl-chips">
+                    {suggestions.flatMap((text, i) => (
+                      typeof text === "string"
+                        ? [<button type="button" className="fl-chip" key={`${i}-${text}`} onClick={() => send(text)}>{text}</button>]
+                        : []
+                    ))}
+                  </div>
+                ) : null}
+              </>
             ) : null}
           </div>
         </div>
