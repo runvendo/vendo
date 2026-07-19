@@ -30,6 +30,7 @@ export const RESHAPE_OPS = [
   "pick",
   "rename",
   "asPoints",
+  "asOptions",
   "format",
   "sum",
   "avg",
@@ -45,7 +46,7 @@ export type ReshapeOp = (typeof RESHAPE_OPS)[number];
 export const RESHAPE_MAX_STEPS = 8;
 
 /** format's closed kind vocabulary (deterministic en-US / USD / UTC). */
-const FORMAT_KINDS = ["number", "currency", "percent", "date"] as const;
+const FORMAT_KINDS = ["number", "currency", "currencyCents", "percent", "date"] as const;
 type FormatKind = (typeof FORMAT_KINDS)[number];
 
 const OP_SET: ReadonlySet<string> = new Set(RESHAPE_OPS);
@@ -56,6 +57,7 @@ const OP_ARITY: Record<ReshapeOp, readonly [number, number]> = {
   pick: [1, Number.POSITIVE_INFINITY],
   rename: [2, Number.POSITIVE_INFINITY],
   asPoints: [2, 2],
+  asOptions: [2, 2],
   format: [1, 2],
   sum: [1, 1],
   avg: [1, 1],
@@ -187,6 +189,8 @@ const formatScalar = (value: unknown, kind: FormatKind): string | null => {
   }
   if (typeof value !== "number" || !Number.isFinite(value)) return null;
   if (kind === "currency") return CURRENCY_FORMAT.format(value);
+  // Host money fields are integer minor units (cents); scale to major units.
+  if (kind === "currencyCents") return CURRENCY_FORMAT.format(value / 100);
   if (kind === "percent") return PERCENT_FORMAT.format(value);
   return NUMBER_FORMAT.format(value);
 };
@@ -234,6 +238,19 @@ const applyStep = (value: Json, step: ReshapeStep): ReshapeResult => {
       return mismatch(`asPoints fields ${missing.map((field) => `"${field}"`).join(", ")} are absent from one or more rows`);
     }
     return { ok: true, value: value.map((row) => ({ label: row[labelField], value: row[valueField] })) };
+  }
+  if (op === "asOptions") {
+    const [valueField, labelField] = args as [string, string];
+    if (!isRowArray(value)) return mismatch("asOptions needs an array of rows");
+    // Strict per-row (mirrors asPoints): a Select silently missing an option's
+    // value or label IS the blank-option class, so any row lacking either
+    // field is a mismatch — an absent key signals mis-binding.
+    const missing = [valueField, labelField]
+      .filter((field) => value.some((row) => !Object.prototype.hasOwnProperty.call(row, field)));
+    if (missing.length > 0) {
+      return mismatch(`asOptions fields ${missing.map((field) => `"${field}"`).join(", ")} are absent from one or more rows`);
+    }
+    return { ok: true, value: value.map((row) => ({ value: row[valueField], label: row[labelField] })) };
   }
   if (op === "format") {
     if (args.length === 1) {
@@ -360,7 +377,7 @@ const viewRows = (shape: ShapeType, op: ReshapeOp): RowsView | null => {
       isArray: true,
     };
   }
-  if (shape.kind === "object" && !AGGREGATE_OPS.has(op) && op !== "asPoints") {
+  if (shape.kind === "object" && !AGGREGATE_OPS.has(op) && op !== "asPoints" && op !== "asOptions") {
     return {
       fields: shape.fields,
       optional: new Set(shape.optional ?? []),
@@ -420,7 +437,7 @@ export function reshapeShape(shape: ShapeType, step: ReshapeStep): ReshapeShapeR
 
   const view = viewRows(shape, op);
   if (view === null) {
-    return shapeError(`${op} needs ${AGGREGATE_OPS.has(op) || op === "asPoints" ? "an array of rows" : "an object or an array of rows"}; the response shape is ${shape.kind}`);
+    return shapeError(`${op} needs ${AGGREGATE_OPS.has(op) || op === "asPoints" || op === "asOptions" ? "an array of rows" : "an object or an array of rows"}; the response shape is ${shape.kind}`);
   }
 
   if (AGGREGATE_OPS.has(op)) {
@@ -449,6 +466,18 @@ export function reshapeShape(shape: ShapeType, step: ReshapeStep): ReshapeShapeR
     return {
       ok: true,
       shape: { kind: "array", items: { kind: "object", fields: { label: labelShape, value: valueShape } } },
+    };
+  }
+
+  if (op === "asOptions") {
+    const [valueField, labelField] = args as [string, string];
+    const violation = checkedFields(view, [valueField, labelField], op);
+    if (violation !== null) return violation;
+    const valueShape = view.fields === null ? JSON_SHAPE : view.fields[valueField] as ShapeType;
+    const labelShape = view.fields === null ? JSON_SHAPE : view.fields[labelField] as ShapeType;
+    return {
+      ok: true,
+      shape: { kind: "array", items: { kind: "object", fields: { value: valueShape, label: labelShape } } },
     };
   }
 

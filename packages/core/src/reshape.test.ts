@@ -63,6 +63,29 @@ describe("applyReshape", () => {
     });
   });
 
+  it("asOptions maps object rows to { value, label } — the blank-Select fix", () => {
+    const accounts = [
+      { id: "acc_1", name: "Checking", balance: 1200 },
+      { id: "acc_2", name: "Savings" },
+    ];
+    expect(applyReshape(accounts, [step("asOptions", "id", "name")])).toEqual({
+      ok: true,
+      value: [
+        { value: "acc_1", label: "Checking" },
+        { value: "acc_2", label: "Savings" },
+      ],
+    });
+  });
+
+  it("asOptions is strict per-row: a row missing the value or label field is a mismatch", () => {
+    const mixed = applyReshape(
+      [{ id: "a", name: "A" }, { id: "b" }],
+      [step("asOptions", "id", "name")],
+    );
+    expect(mixed.ok).toBe(false);
+    if (!mixed.ok) expect(mixed.reason).toContain("name");
+  });
+
   it("asPoints is strict per-row: a mixed-row response is a mismatch, never a silent partial chart", () => {
     const mixed = applyReshape(
       [{ month: "Jan", revenue: 1 }, { month: "Feb" }],
@@ -112,6 +135,16 @@ describe("applyReshape", () => {
     });
   });
 
+  it("format currencyCents divides integer minor units by 100 (the raw-cents fix)", () => {
+    expect(applyReshape(471711, [step("format", "currencyCents")]))
+      .toEqual({ ok: true, value: "$4,717.11" });
+    const perRow = applyReshape(
+      [{ label: "housing", amount: 285000 }],
+      [step("format", "amount", "currencyCents")],
+    );
+    expect(perRow).toEqual({ ok: true, value: [{ label: "housing", amount: "$2,850.00" }] });
+  });
+
   it("format date accepts ISO strings and epoch numbers, UTC-stable", () => {
     expect(applyReshape("2026-07-18T12:00:00Z", [step("format", "date")]))
       .toEqual({ ok: true, value: "Jul 18, 2026" });
@@ -156,6 +189,17 @@ describe("reshapeShape (compile-time flow)", () => {
         items: {
           kind: "object",
           fields: { label: { kind: "string" }, value: { kind: "number" } },
+        },
+      },
+    });
+    const options = reshapeShape(rowsShape, step("asOptions", "revenue", "month"));
+    expect(options).toEqual({
+      ok: true,
+      shape: {
+        kind: "array",
+        items: {
+          kind: "object",
+          fields: { value: { kind: "number" }, label: { kind: "string" } },
         },
       },
     });
