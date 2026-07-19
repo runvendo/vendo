@@ -30,3 +30,9 @@ packages/vendo/.type-surface.*.ts
 
 # Coverage reports (v8 / vitest)
 coverage/
+
+# Local env files — NEVER commit keys (browser-verification gate).
+.env
+.env.local
+.env.*.local
+apps/*/.env.local

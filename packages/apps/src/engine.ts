@@ -31,6 +31,7 @@ import {
 import type { LanguageModel } from "ai";
 import { parseModelJson } from "./model-json.js";
 import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "./pins.js";
+import { prewiredPropNames, prewiredSchemaPrompt } from "./prewired-schema.js";
 
 /** The slice of a tool descriptor generation needs: prompt context and the
  *  query-tool existence check. */
@@ -144,7 +145,7 @@ const pinBaselinesPrompt = (baselines: readonly PinBaseline[] = []): string => J
 );
 
 interface GenerationPromptSection {
-  id: "role" | "tree-contract" | "component-styling" | "catalog" | "theme" | "design-rules" | "remixable-slots";
+  id: "role" | "tree-contract" | "component-styling" | "catalog" | "theme" | "design-rules" | "remixable-slots" | "prewired-props";
   content: string;
 }
 
@@ -214,6 +215,9 @@ const wireContractSections = (deps: GenerationDependencies): GenerationPromptSec
 - Actions are on* attributes naming a host tool or fn:<name> (name matches [A-Za-z_][A-Za-z0-9_-]*), e.g. onClick="host_tool" or onRun="fn:submit". A rung-1 app has no server, so never use fn: on create.
 - <Island> generated components are a LAST RESORT: one small, self-contained visual piece that no catalog or prewired component can express (a custom chart, a novel visualization). NEVER put the whole app, layout, data, or fetching inside an island. Island content is top-level <Island name="PascalName">raw TSX with an \`export default\`</Island>, referenced as <PascalName/> — plain source, never wrapped in braces, template literals, or fences.
 - Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} islands, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per island, ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes of island source total.`,
+}, {
+  id: "prewired-props",
+  content: `PREWIRED COMPONENT PROPS (use these EXACT prop names — any other name is silently dropped and fails validation):\n${prewiredSchemaPrompt()}`,
 }, ...hostToolSections(deps),
 ...generationPromptSections(deps).filter(({ id }) =>
   id === "component-styling" || id === "catalog" || id === "theme" || id === "design-rules")];
@@ -596,6 +600,21 @@ const hostPropsIssues = async (
   }
 };
 
+/** Prewired primitives are handed to the model by name plus an exact prop
+ *  signature (prewired-schema.ts). The compiler keeps any attribute the model
+ *  writes, so a wrong name (`data` for Table's `rows`, `onPress` for Button's
+ *  `onClick`) survives into props and the renderer silently ignores it — the
+ *  "valid table, empty rows" class. Reject unknown prop names so the model
+ *  repairs to the real one instead of shipping a dead component. */
+const prewiredPropsIssues = (node: TreeNode): string[] => {
+  const allowed = prewiredPropNames.get(node.component);
+  const props = node.props;
+  if (allowed === undefined || props === undefined) return [];
+  return Object.keys(props)
+    .filter((name) => !allowed.has(name))
+    .map((name) => `node "${node.id}" sets unknown prop "${name}" on prewired component "${node.component}"; the renderer drops it. Allowed props: ${[...allowed].join(", ") || "(none)"}`);
+};
+
 const catalogIssues = async (
   tree: TreeV2,
   components: Record<string, string> | undefined,
@@ -613,8 +632,12 @@ const catalogIssues = async (
       } else {
         issues.push(...await hostPropsIssues(node, component));
       }
-    } else if (node.source === "prewired" && !reserved.has(node.component)) {
-      issues.push(`node "${node.id}" references unknown prewired component "${node.component}"`);
+    } else if (node.source === "prewired") {
+      if (!reserved.has(node.component)) {
+        issues.push(`node "${node.id}" references unknown prewired component "${node.component}"`);
+      } else {
+        issues.push(...prewiredPropsIssues(node));
+      }
     } else if (node.source === "generated" && !generatedNames.has(node.component)) {
       issues.push(`node "${node.id}" references generated component "${node.component}" without source`);
     } else if (node.source === undefined
