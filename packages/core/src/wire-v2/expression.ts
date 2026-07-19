@@ -241,6 +241,16 @@ const parseString = (state: ParserState): string | Failed => {
   return malformed(state, `unterminated string (opened with ${quote})`);
 };
 
+const DIGIT = /[0-9]/;
+
+const parseNumericSegment = (state: ParserState): string | Failed => {
+  const start = state.index;
+  while (state.index < state.source.length && DIGIT.test(state.source[state.index] as string)) {
+    state.index += 1;
+  }
+  return state.source.slice(start, state.index);
+};
+
 const parseIdentifier = (state: ParserState): string | Failed => {
   const start = state.index;
   if (start >= state.source.length || !IDENTIFIER_START.test(state.source[start] as string)) {
@@ -266,7 +276,12 @@ const parseReference = (state: ParserState): Json | Failed => {
   const segments = [first];
   while (state.source[state.index] === ".") {
     state.index += 1;
-    const segment = parseIdentifier(state);
+    // Array elements address by dot-numeric segment ({accounts.data.0.field}
+    // → /accounts/data/0/field); the first segment stays an identifier (the
+    // query name).
+    const segment = DIGIT.test(state.source[state.index] ?? "")
+      ? parseNumericSegment(state)
+      : parseIdentifier(state);
     if (segment === FAILED) return FAILED;
     segments.push(segment);
   }

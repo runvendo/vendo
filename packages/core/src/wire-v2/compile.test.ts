@@ -1102,3 +1102,18 @@ describe("compileWireV2 shape check pointer misses", () => {
     expect(pastScalar.bindingErrors[0]?.message).toContain("goes past");
   });
 });
+
+describe("compileWireV2 comments", () => {
+  it("skips HTML comments between elements and inside text", () => {
+    const result = compile('<App name="C"><!-- Header --><Text text="hi"/><!-- KPI Row --><Card/></App>');
+    expect(result.tree.nodes.map((node) => node.component)).toEqual(["Stack", "Text", "Card"]);
+    expect(result.issues).toEqual([]);
+    expect(result.complete).toBe(true);
+  });
+
+  it("treats an unterminated comment as truncation, not content", () => {
+    const result = compileWireV2('<App name="C"><Text text="hi"/><!-- dangling', undefined);
+    expect(result.tree.nodes.map((node) => node.component)).toEqual(["Stack", "Text"]);
+    expect(result.complete).toBe(false);
+  });
+});

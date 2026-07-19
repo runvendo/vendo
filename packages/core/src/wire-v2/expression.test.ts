@@ -201,8 +201,12 @@ describe("parseExpression bindings", () => {
     expectDropped("{ a: [1, { b: mystery }] }", "unknown-reference");
   });
 
-  it("rejects non-identifier path segments", () => {
-    expectDropped("revenue.0", "malformed-expression");
+  it("accepts numeric array segments and rejects trailing dots", () => {
+    // Array elements address by dot-numeric segment (verify-v2 fixes: hosts
+    // expose number[] fields under array rows, e.g. accounts.data.0.sparkline).
+    const numeric = parseExpression("revenue.0", { queryNames: new Set(["revenue"]) });
+    expect(numeric.issues).toEqual([]);
+    expect(numeric.value).toEqual({ $path: "/revenue/0" });
     expectDropped("revenue.", "malformed-expression");
   });
 });
@@ -348,5 +352,13 @@ describe("parseExpression reshape pipes", () => {
   it("a pipe after a non-binding value stays malformed-expression", () => {
     expectDropped("5 | count()", "malformed-expression");
     expectDropped("true | count()", "malformed-expression");
+  });
+});
+
+describe("numeric path segments", () => {
+  it("accepts dot-numeric segments for array elements in query bindings", () => {
+    const result = parseExpression("accounts.data.0.sparkline", { queryNames: new Set(["accounts"]) });
+    expect(result.issues).toEqual([]);
+    expect(result.value).toEqual({ $path: "/accounts/data/0/sparkline" });
   });
 });

@@ -1266,7 +1266,7 @@ describe("tier0-wired create (two lanes)", () => {
     );
 
     expect(document.name).toBe("Instant board");
-    expect(calls).toBe(3); // tier-0 + full lane attempt + one repair attempt
+    expect(calls).toBe(4); // tier-0 + full lane attempt + two repair attempts
   });
 
   it("skips the paint lane without a streaming consumer and when disabled", async () => {
@@ -1517,5 +1517,82 @@ describe("runtime tool-shape wiring", () => {
     expect(prompts[0]).toContain("host_delete");
     expect(prompts[0]).toContain("TOOL RESPONSE SHAPES");
     expect(prompts[0]).toContain("currency");
+  });
+});
+
+describe("branded prewired components validate on create", () => {
+  it("accepts Card/Stat/Badge/Table/Button as prewired (compiler and validator agree)", async () => {
+    const wire = [
+      '<App name="Branded"><Stack>',
+      '<Stat label="Overdue" value="3"/><Badge label="Late"/>',
+      '<Card title="Invoices"><Table rows={[]}/></Card>',
+      '<Button label="Remind"/>',
+      "</Stack></App>",
+    ].join("");
+    const document = await modelEngine.create(
+      { prompt: "Build it" },
+      { model: scriptedLanguageModel(wire), catalog } as unknown as Parameters<typeof modelEngine.create>[1],
+    );
+    const sources = (document.tree as { nodes: Array<{ component: string; source?: string }> }).nodes
+      .map((node) => [node.component, node.source]);
+    expect(sources).toContainEqual(["Stat", "prewired"]);
+    expect(sources).toContainEqual(["Card", "prewired"]);
+  });
+});
+
+describe("binding kind vs host prop schema", () => {
+  it("repairs a binding whose field shape mismatches the prop's declared type", async () => {
+    const wrong = '<App name="Chart"><Query id="cashflow" tool="host_cashflow"/><MetricCard label="Revenue" value={cashflow.rows}/></App>';
+    const right = '<App name="Chart"><Query id="cashflow" tool="host_cashflow"/><MetricCard label="Revenue" value={cashflow.total}/></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? wrong : right;
+    });
+    const document = await modelEngine.create(
+      { prompt: "Build it" },
+      {
+        model,
+        catalog,
+        tools: [{ name: "host_cashflow", description: "Cashflow", risk: "read" }],
+        toolShapes: {
+          host_cashflow: {
+            kind: "object",
+            fields: {
+              total: { kind: "string" },
+              rows: { kind: "array", items: { kind: "object", fields: { label: { kind: "string" } } } },
+            },
+          },
+        },
+      } as unknown as Parameters<typeof modelEngine.create>[1],
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("expected a string, the bound field is array");
+    expect((document.tree as { nodes: Array<{ props?: Record<string, unknown> }> }).nodes.at(-1)?.props?.value)
+      .toEqual({ $path: "/cashflow/total" });
+  });
+});
+
+describe("string interpolation guard", () => {
+  it("repairs a binding embedded inside a string attribute", async () => {
+    const wrong = '<App name="Interp"><Query id="metric" tool="host_metric"/><MetricCard label="Total: {metric.total}" value={metric.total}/></App>';
+    const right = '<App name="Interp"><Query id="metric" tool="host_metric"/><MetricCard label="Total" value={metric.total}/></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? wrong : right;
+    });
+    const document = await modelEngine.create(
+      { prompt: "Build it" },
+      {
+        model,
+        catalog,
+        tools: [{ name: "host_metric", description: "Metric", risk: "read" }],
+      } as unknown as Parameters<typeof modelEngine.create>[1],
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("string interpolation is unsupported");
+    expect((document.tree as { nodes: Array<{ props?: Record<string, unknown> }> }).nodes.at(-1)?.props?.label)
+      .toBe("Total");
   });
 });

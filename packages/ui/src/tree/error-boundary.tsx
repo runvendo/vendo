@@ -4,6 +4,10 @@ import { ContainedNotice } from "./notice.js";
 interface BoundaryProps {
   children: ReactNode;
   nodeId: string;
+  /** When this identity changes (streamed data arriving, an upgraded
+   *  payload), a latched error clears and the node re-renders — a crash on
+   *  absent mid-stream data must not survive the data. */
+  retryKey?: unknown;
 }
 
 interface BoundaryState {
@@ -23,7 +27,10 @@ export class NodeErrorBoundary extends Component<BoundaryProps, BoundaryState> {
   }
 
   componentDidUpdate(previous: BoundaryProps): void {
-    if (previous.nodeId !== this.props.nodeId && this.state.error) this.setState({ error: undefined });
+    if (
+      (previous.nodeId !== this.props.nodeId || previous.retryKey !== this.props.retryKey)
+      && this.state.error
+    ) this.setState({ error: undefined });
   }
 
   render() {

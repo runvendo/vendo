@@ -32,7 +32,7 @@ import { FN_REFERENCE_PATTERN } from "../fn-references.js";
 import { VENDO_TREE_FORMAT_V2 } from "../formats.js";
 import type { Json } from "../ids.js";
 import { isPlainObject, type TreeNode } from "../tree.js";
-import { RESERVED_COMPONENT_NAMES } from "../tree-limits.js";
+import { PREWIRED_COMPONENT_NAMES, RESERVED_COMPONENT_NAMES } from "../tree-limits.js";
 import { QUERY_NAME_PATTERN, type TreeQueryV2, type TreeV2 } from "../tree-v2.js";
 import type { ShapeType } from "../shape.js";
 import { parseAttributes } from "./attributes.js";
@@ -75,13 +75,9 @@ export interface WireCompileResult {
 /** D3 — component tag names (and Island names) are PascalCase. */
 const PASCAL_TAG_PATTERN = /^[A-Z][A-Za-z0-9]*$/;
 
-/** D3 — the branded prewired components beyond the 7 reserved layout
- *  primitives. Pinned mirror of the implementations in
- *  packages/ui/src/tree/branded.tsx (core cannot import ui). */
-const BRANDED_PREWIRED_NAMES = ["Card", "Button", "Input", "Select", "Table", "Badge", "Stat", "Tabs"] as const;
-
-/** D3 — the full prewired set: reserved layout primitives + branded. */
-const PREWIRED_NAMES: ReadonlySet<string> = new Set([...RESERVED_COMPONENT_NAMES, ...BRANDED_PREWIRED_NAMES]);
+/** D3 — the full prewired set (reserved layout primitives + branded),
+ *  shared with the engine's catalog validation via tree-limits. */
+const PREWIRED_NAMES: ReadonlySet<string> = new Set(PREWIRED_COMPONENT_NAMES);
 
 const RESERVED_SET: ReadonlySet<string> = new Set(RESERVED_COMPONENT_NAMES);
 
@@ -343,6 +339,27 @@ export const parseChildren = (state: CompileState, frames: Frame[], rootLabel = 
   while (state.index < state.source.length) {
     appendTextChild(state, frames, collectText(state));
     if (state.index >= state.source.length) break;
+    // Models narrate with HTML comments despite instructions; a total
+    // compiler skips them. An unterminated (or prefix-truncated) comment is
+    // stream truncation, and "<!" that is not a comment is dropped, so the
+    // cursor always advances (totality) and prefixes stay monotonic (D6).
+    if (state.source[state.index + 1] === "!") {
+      const opener = state.source.slice(state.index, state.index + 4);
+      if (opener === "<!--") {
+        const close = state.source.indexOf("-->", state.index + 4);
+        if (close === -1) {
+          state.index = state.source.length;
+          break;
+        }
+        state.index = close + 3;
+      } else if ("<!--".startsWith(opener)) {
+        state.index = state.source.length;
+        break;
+      } else {
+        state.index += 2;
+      }
+      continue;
+    }
     // The cursor sits on a "<" that plausibly starts a tag.
     if (state.source[state.index + 1] === "/") {
       state.index += 2;

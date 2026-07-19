@@ -724,23 +724,34 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   // the descriptor list gates query tool names. A failed sample leaves that
   // tool's shape unknown (defensive `json` per the spec).
   const sampledShapes = new Map<string, ShapeType>();
-  const sampledTools = new Set<string>();
+  const settledSamples = new Set<string>();
+  const requiresInput = (descriptor: ToolDescriptor): boolean => {
+    const required = (descriptor.inputSchema as { required?: unknown }).required;
+    return Array.isArray(required) && required.length > 0;
+  };
   const generationToolContext = async (
     ctx: RunContext,
   ): Promise<Pick<GenerationDependencies, "tools" | "toolShapes">> => {
     const descriptors = await config.tools.descriptors().catch(() => []);
     await Promise.all(descriptors
-      .filter((descriptor) => descriptor.risk === "read" && !sampledTools.has(descriptor.name))
+      .filter((descriptor) =>
+        descriptor.risk === "read" && !requiresInput(descriptor) && !settledSamples.has(descriptor.name))
       .map(async (descriptor) => {
-        sampledTools.add(descriptor.name);
         try {
           const outcome = await config.tools.execute(
             { id: `call_${globalThis.crypto.randomUUID()}`, tool: descriptor.name, args: {} },
             ctx,
           );
           if (outcome.status === "ok") {
+            settledSamples.add(descriptor.name);
             sampledShapes.set(descriptor.name, deriveShapeCard(descriptor.name, [outcome.output]).output);
+          } else if (outcome.status === "pending-approval" || outcome.status === "blocked") {
+            // The policy gates this read: never re-ask on later creates (one
+            // parked approval per boot at most), and leave the shape unknown.
+            settledSamples.add(descriptor.name);
           }
+          // Transient errors (e.g. an unauthenticated caller) retry on the
+          // next create with that caller's own authority.
         } catch {
           // Unknown shape stays defensive; the tool is still listed by name.
         }

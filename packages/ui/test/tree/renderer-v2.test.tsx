@@ -336,3 +336,32 @@ describe("v2 reshape bindings at render", () => {
     expect(screen.getByText("still here")).toBeTruthy();
   });
 });
+
+describe("streaming error recovery", () => {
+  it("recovers a node that threw on absent streaming data once the data arrives", () => {
+    const Sparkline: ComponentType<{ series?: number[] }> = ({ series }) => (
+      <output>{(series as number[]).slice(0, 2).join(",")}</output>
+    );
+    const payload = (data?: Record<string, Json>): UIPayload => ({
+      formatVersion: VENDO_TREE_FORMAT_V2,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", children: ["sparkline-1"] },
+        { id: "sparkline-1", component: "Sparkline", source: "host", props: { series: { $path: "/accounts/spark" } } },
+      ],
+      ...(data === undefined ? {} : { data }),
+    } as unknown as UIPayload);
+    const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
+
+    const view = render(
+      <PayloadView payload={payload()} components={{ Sparkline }} onAction={noop} />,
+    );
+    expect(screen.getByRole("note", { name: /node render error/i })).toBeTruthy();
+
+    view.rerender(
+      <PayloadView payload={payload({ accounts: { spark: [5, 9, 12] } })} components={{ Sparkline }} onAction={noop} />,
+    );
+    expect(screen.queryByRole("note", { name: /node render error/i })).toBeNull();
+    expect(screen.getByText("5,9")).toBeTruthy();
+  });
+});
