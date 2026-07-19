@@ -30,7 +30,9 @@
  */
 import { describe, expect, it } from "vitest";
 import { e2bSandbox } from "@vendoai/apps/e2b";
-import type { SandboxMachine } from "@vendoai/apps";
+// execution-v2 transition: provisioning and probing still ride the archived v1
+// surface (files+exec) until the Wave 3 in-box agent replaces them.
+import { toV1SandboxAdapter, type V1SandboxMachine } from "@vendoai/apps";
 
 const liveKey = process.env.E2B_API_KEY;
 const plausible = typeof liveKey === "string" && liveKey.length > 10;
@@ -104,7 +106,7 @@ interface ProbeResult {
 
 /** Run /app/probe.js in the machine and parse its JSON verdict. */
 async function probe(
-  machine: SandboxMachine,
+  machine: V1SandboxMachine,
   args: { url: string; method?: string; body?: string; follow?: boolean },
 ): Promise<ProbeResult> {
   const parts = ["node", "/app/probe.js", shellQuote(args.url), shellQuote(args.method ?? "GET")];
@@ -128,7 +130,7 @@ describe.skipIf(!plausible)("live e2b egress: exfil is blocked and secrets never
     "enforces the provider-native allowlist against direct, redirect, DNS/IP, and secret-exfil attacks",
     { timeout: 300_000 },
     async () => {
-      const adapter = e2bSandbox({ apiKey: liveKey as string, timeoutMs: 120_000 });
+      const adapter = toV1SandboxAdapter(e2bSandbox({ apiKey: liveKey as string, timeoutMs: 120_000 }));
       const machine = await adapter.create({
         // egress allows ONLY example.com; everything else is denied by E2B's
         // ALL_TRAFFIC deny rule (see packages/apps/src/e2b/index.ts).
