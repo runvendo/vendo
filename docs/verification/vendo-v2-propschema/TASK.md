@@ -9,7 +9,7 @@ DO NOT expect this fix to fix: #5 (island importing `recharts` → jail rejects)
 
 ## Setup
 - Branch: yousefh409/vendo-v2-propschema (already has the fix + a green build/test/typecheck/lint). Keys: /Users/yousefh/orca/workspaces/flowlet/.env — copy the needed model key into a gitignored .env; NEVER commit keys.
-- Boot each host once and leave it running for that host's 3 prompts. `next dev` is acceptable and faster than prod for this correctness check (prop names, real data, no error box) — note in the row that it was dev. If Cadence PGlite breaks under Turbopack, add `@electric-sql/pglite` to serverExternalPackages (packaging fix, not tuning).
+- Boot each host once and leave it running for that host's 3 prompts. DO NOT use `next dev` (Turbopack + PGlite has blown up to ~40GB and killed a session). Use PRODUCTION boot: `next build && next start` with `NODE_OPTIONS=--max-old-space-size=3072`. Kill by port (`lsof -tiTCP:3000 -sTCP:LISTEN | xargs kill`), not `pkill -f`, and check for orphan `processChild.js`/detached next-server after each kill. Maple prod needs `AUTH_SECRET` + `MAPLE_DEMO_PASSWORD` (login yousef@maple.com). Cadence prod: ensure `serverExternalPackages: ["esbuild", "@electric-sql/pglite"]` (PGlite WASM breaks under Turbopack chunking); auth is Supabase GoTrue — mint an HS256 JWT from `SUPABASE_JWT_SECRET` (aud+role "authenticated", sub = seeded uuid from src/server/users.ts) into cookie `sb-cadence-auth-token`.
 - Drive the real Apps create path (POST /api/vendo/apps is fastest) in a real browser, let it render.
 
 ## Matrix (ONE AT A TIME, in order) — same 6 as the prior run
