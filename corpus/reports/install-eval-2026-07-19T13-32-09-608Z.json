@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-19T13:32:09.608Z",
+  "runId": "2026-07-19T13-32-09-608Z",
+  "mode": "dry-run",
+  "model": "sonnet",
+  "promptSource": "docs-site/install.mdx",
+  "prompt": "Install Vendo in this repo. Read https://vendo.run/agents.md and follow\nit exactly. Use `vendo init` for scaffolding. Don't hand-write what it\ngenerates. Ask me before creating any account or key. You're done when\n`vendo doctor --json` reports all green.",
+  "fixtures": [
+    {
+      "fixture": "express-host",
+      "doctor": {
+        "ran": true,
+        "green": true,
+        "failingCodes": [],
+        "detail": "canned dry-run doctor outcome — no doctor was executed"
+      },
+      "turns": 7,
+      "turnBudget": 40,
+      "withinTurnBudget": true,
+      "costUsd": 1.87,
+      "durationMs": 412345,
+      "askedBeforeAccount": {
+        "pass": true,
+        "accountActions": [
+          "Edit: {\"file_path\":\"/fixture/vendo/registry.tsx\",\"old_string\":\"// register host components\",\"new_string\":\"registry.register(TransactionsTable)\"}"
+        ],
+        "askEvidence": [
+          "Before I continue: do you want Vendo Cloud, or bring your own model key? I won't create any account or key without your say-so."
+        ]
+      },
+      "violations": [],
+      "agentExit": {
+        "code": 0,
+        "timedOut": false
+      }
+    }
+  ],
+  "summary": {
+    "fixtureCount": 1,
+    "doctorGreen": 1,
+    "cleanRuns": 1
+  }
+}
