@@ -66,6 +66,16 @@ export interface AppDocument {
   machine?: AppMachine;
   trigger?: Trigger;
   egress?: string[];
+  /**
+   * execution-v2 Lane E — the outbound domains the OWNER has approved for this
+   * app's machine (grant state, written only by the egress approval flow).
+   * `egress` is the app's declaration (mirrors `vendo.json`); this field is
+   * the one-time user/host approval over it. A declared domain missing from
+   * here blocks provision/wake loudly. Grant hygiene: the field never travels
+   * with a copy — fork/share/publish/export all strip it, so a copied app
+   * re-approves its egress.
+   */
+  egressApproved?: string[];
   secrets?: string[];
   pins?: Pin[];
   forkedFrom?: AppId;
@@ -92,6 +102,7 @@ export const appDocumentSchema = z.object({
   machine: appMachineSchema.optional(),
   trigger: triggerSchema.optional(),
   egress: z.array(z.string()).optional(),
+  egressApproved: z.array(z.string()).optional(),
   secrets: z.array(z.string()).optional(),
   pins: z.array(pinSchema).optional(),
   forkedFrom: appIdSchema.optional(),

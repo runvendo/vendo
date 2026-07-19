@@ -31,13 +31,18 @@ http.createServer((request, response) => {
     const egress = /^\\/conformance\\/egress\\/(.+)$/.exec(request.url);
     if (egress) {
       let allowed = false;
-      try {
-        await fetch("https://" + decodeURIComponent(egress[1]) + "/", {
-          signal: AbortSignal.timeout(5000),
-          redirect: "manual",
-        });
-        allowed = true;
-      } catch {}
+      // Two attempts: a machine resumed from a memory snapshot can hold a
+      // dead keep-alive socket for this origin in the fetch pool; the first
+      // attempt's abort evicts it and the retry opens a fresh connection.
+      for (let attempt = 0; attempt < 2 && !allowed; attempt += 1) {
+        try {
+          await fetch("https://" + decodeURIComponent(egress[1]) + "/", {
+            signal: AbortSignal.timeout(5000),
+            redirect: "manual",
+          });
+          allowed = true;
+        } catch {}
+      }
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ allowed }));
       return;

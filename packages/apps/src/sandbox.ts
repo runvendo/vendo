@@ -22,8 +22,15 @@ export interface SandboxAdapter {
     allowedDomains?: string[];
   }): Promise<SandboxMachine>;
 
-  /** Restore a machine from a provider-prefixed opaque snapshot reference (e.g. "e2b:…"). */
-  resume(snapshotRef: string): Promise<SandboxMachine>;
+  /**
+   * Restore a machine from a provider-prefixed opaque snapshot reference
+   * (e.g. "e2b:…"). When `policy` is present its allowlist REPLACES whatever
+   * egress policy the snapshot carries — the approved grant state may have
+   * changed while the machine slept (Wave 2 Lane E), and a wake must enforce
+   * the current policy, not the snapshot-time one. Absent policy restores the
+   * snapshot-time behavior unchanged.
+   */
+  resume(snapshotRef: string, policy?: SandboxResumePolicy): Promise<SandboxMachine>;
 
   /**
    * Destroy a SLEEPING machine by its snapshot reference without resuming it:
@@ -32,6 +39,16 @@ export interface SandboxAdapter {
    * another provider rejects.
    */
   destroy(snapshotRef: string): Promise<void>;
+}
+
+/**
+ * Wave 2 Lane E — the egress policy a wake applies over a snapshot's stored
+ * one. The key is required on purpose: passing the object at all means "the
+ * caller owns the policy now", and `allowedDomains: undefined` explicitly
+ * means unrestricted egress (same semantics as create()).
+ */
+export interface SandboxResumePolicy {
+  allowedDomains: string[] | undefined;
 }
 
 export interface SandboxMachine {

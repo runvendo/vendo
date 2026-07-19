@@ -260,3 +260,69 @@ describe("the /box callback surface (app-token bearer)", () => {
     expect(response.status).toBe(400);
   });
 });
+
+describe("the Lane E redaction guard on the box seams", () => {
+  const STRIPE_VALUE = "vendo_fixture_4eC39HqLyjWDarjtT1zdp7dc";
+  const bearer = (token: string): Record<string, string> => ({ authorization: `Bearer ${token}` });
+
+  /** Like setup(), but the app declares a secret and the host has its value. */
+  async function secretSetup(handler: BoxHandler): Promise<Skin> {
+    vi.stubEnv("VENDO_BASE_URL", "http://wire.test");
+    const store = await tempStore("vendo-box-redact-");
+    await store.ensureSchema();
+    await store.records("vendo_apps").put({
+      id: "app_skin",
+      data: { subject: ADA.subject, enabled: false, doc: { ...doc(), secrets: ["STRIPE_KEY"] } },
+      refs: { subject: ADA.subject },
+    });
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async (req) => {
+        const subject = req.headers.get("x-test-user");
+        return subject === null ? null : { kind: "user", subject };
+      },
+      store,
+      sandbox: boxSandbox(handler),
+      secrets: { get: async (name) => (name === "STRIPE_KEY" ? STRIPE_VALUE : undefined) },
+    });
+    await vendo.apps.machine.provision("app_skin", {
+      principal: ADA,
+      venue: "app",
+      presence: "present",
+      sessionId: "session_box_redact",
+    });
+    const token = await createAppTokens(store).mint("app_skin", ADA.subject);
+    return { vendo, store, token };
+  }
+
+  it("an fn response echoing the secret value relays redacted", async () => {
+    const { vendo } = await secretSetup(() => ({
+      status: 200,
+      headers: { "content-type": "text/plain" },
+      body: `charged via ${STRIPE_VALUE}`,
+    }));
+    const response = await vendo.handler(wireRequest("/apps/app_skin/fn/charge", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    }, ADA.subject));
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("charged via [redacted:STRIPE_KEY]");
+  });
+
+  it("a row PUT carrying the secret value is scrubbed BEFORE it lands in the store", async () => {
+    const { vendo, store, token } = await secretSetup(() => ({ status: 200 }));
+    const put = await vendo.handler(wireRequest("/box/rows/notes/note_1", {
+      method: "PUT",
+      headers: { ...bearer(token), "content-type": "application/json" },
+      body: JSON.stringify({ data: { memo: `key is ${STRIPE_VALUE}` } }),
+    }));
+    expect(put.status).toBe(200);
+    // The response is scrubbed…
+    expect(JSON.stringify(await put.json())).not.toContain(STRIPE_VALUE);
+    // …and so is the persisted row itself (the store never holds the value).
+    const record = await store.records("app:app_skin:box:notes").get("note_1");
+    expect(JSON.stringify(record)).not.toContain(STRIPE_VALUE);
+    expect((record?.data as { memo: string }).memo).toBe("key is [redacted:STRIPE_KEY]");
+  });
+});

@@ -58,6 +58,13 @@ import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRe
 import { detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
 import { createRunTokenGate } from "./run-token-gate.js";
+import { collectSecretValues, redactSecretJson, redactSecretText } from "./redaction.js";
+import {
+  boxAllowlist,
+  createEgressApprovals,
+  normalizeEgressDomain,
+  unapprovedEgress,
+} from "./egress-approval.js";
 import { createSecretExposure, type SecretExposureGrant } from "./secret-exposure.js";
 import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
 import { appVersionHash } from "./version-hash.js";
@@ -83,6 +90,14 @@ export interface AppsConfig {
   machine?: {
     sandbox?: MachineSandboxAdapter;
     buildEnv?: BuildMachineEnv;
+    /**
+     * Lane E — the implicit skin domains merged into every machine's egress
+     * allowlist (the box must always reach its own boundary: store surface,
+     * host-callback surface, inference endpoint). The host assembles them
+     * from the same origins it injects as VENDO_STORE_URL / VENDO_HOST_URL /
+     * VENDO_INFERENCE_URL. They are never subject to declaration or approval.
+     */
+    implicitDomains?: string[];
     template?: string;
     idleMs?: number;
     clock?: LifecycleClock;
@@ -243,6 +258,14 @@ export interface AppsRuntime {
    */
   box: {
     request(appId: AppId, request: BoxRequest, ctx: RunContext): Promise<BoxResponse>;
+    /**
+     * Lane E — scrub the app's known secret values out of a JSON-ish value
+     * (defensive redaction guard). The /box wire surface runs every callback
+     * outcome and row payload through this before it can land in a response,
+     * a store row, or a log line. Not an authority operation: it only ever
+     * REMOVES information.
+     */
+    redact(appId: AppId, value: Json): Promise<Json>;
   };
   /**
    * 06-apps §9 — additive trust-axis surface (like `proxy`/`agentToolRisk`,
@@ -456,6 +479,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   // ENG-345 — per-secret × per-app in-sandbox exposure grants. A dedicated store
   // collection, NEVER part of the app document, so no copy path can carry it.
   const exposure = createSecretExposure(config.store);
+  // Lane E — parked egress approvals (approved state lives on the document's
+  // egressApproved field; this collection holds only undecided cards).
+  const egressApprovals = createEgressApprovals(config.store);
 
   const reportGuard = async (
     kind: "app-lifecycle",
@@ -497,9 +523,25 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
   // execution-v2 — the v2 machine lifecycle (provision/wake/sleep/destroy)
   // stands beside the v1 session cache until the v1 execution path is removed.
+  const { implicitDomains, buildEnv: hostBuildEnv, ...machineConfig } = config.machine ?? {};
+  const implicitEgress = (implicitDomains ?? [])
+    .map(normalizeEgressDomain)
+    .filter((domain) => domain !== "");
   const lifecycle = createMachineLifecycle({
     store: config.store,
-    ...config.machine,
+    ...machineConfig,
+    // Lane E — the runtime resolves the app's active secret grants at every
+    // env assembly, so the host's buildEnv injects ONLY declared ∩ granted
+    // secrets (per-app grants decide which keys enter the box).
+    ...(hostBuildEnv === undefined ? {} : {
+      buildEnv: async (doc: AppDocument) =>
+        hostBuildEnv(doc, { grantedSecrets: await exposure.activeNames(doc.id) }),
+    }),
+    // Lane E — the egress policy EVERY provision and wake consults (including
+    // ctx-less paths like an idle resume or a schedule fire): approved
+    // declaration + implicit skin domains, or a loud refusal naming the
+    // unapproved domains. See boxAllowlist for the assembly rules.
+    allowedDomains: (doc) => boxAllowlist(doc, implicitEgress),
   });
 
   const owned = async (appId: AppId, subject: string): Promise<AppDocument | null> => {
@@ -560,6 +602,114 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     });
   };
 
+  // Lane E — approving an app's declared egress reuses the SAME high-risk
+  // critical-approval flow (approval card in-client, no new ceremony types):
+  // check() with this descriptor parks an approval, and the shared
+  // onApprovalDecision subscription below commits the parked domains onto the
+  // app document's egressApproved field only when the owner approves.
+  const EGRESS_TOOL = "vendo_egress_allow";
+  const egressDescriptor = (): ToolDescriptor => ({
+    name: EGRESS_TOOL,
+    description: "Allow this app's machine outbound network access to its declared egress domains (high-risk, owner-only).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        appId: { type: "string" },
+        domains: { type: "array", items: { type: "string" } },
+      },
+      required: ["appId", "domains"],
+    },
+    risk: "destructive",
+    critical: true,
+  });
+  // Stable across the park/approve phases so the real guard's approved-replay
+  // match (subject + call id + args + descriptor + venue/presence/app) lines up.
+  const egressCall = (appId: AppId, domains: string[]): ToolCall => ({
+    id: `call_egress_${appId}_${domains.join("_")}`,
+    tool: EGRESS_TOOL,
+    args: { appId, domains },
+  });
+
+  /** Bounded read-mutate-CAS on the app row (the lifecycle uses the same recipe). */
+  const updateAppDocument = async (
+    appId: AppId,
+    mutate: (doc: AppDocument) => AppDocument,
+  ): Promise<AppDocument> => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const record = await apps.get(appId);
+      if (record === null) throw new VendoError("not-found", `app not found: ${appId}`);
+      const row = rowFromRecord(record);
+      const next = mutate(structuredClone(row.doc));
+      const input = appRecordInput(next, row.subject, row.enabled);
+      if (apps.atomic === undefined || record.revision === undefined) {
+        await apps.put(input);
+        return next;
+      }
+      if (await apps.atomic.compareAndSwap(input, record.revision) !== null) return next;
+    }
+    throw new VendoError("conflict", `app ${appId} was concurrently modified`, { appId });
+  };
+
+  const commitEgressApproval = async (
+    appId: AppId,
+    domains: string[],
+    owner: string,
+  ): Promise<void> => {
+    const updated = await updateAppDocument(appId, (doc) => ({
+      ...doc,
+      egressApproved: [...new Set([
+        ...(doc.egressApproved ?? []).map(normalizeEgressDomain),
+        ...domains,
+      ])],
+    }));
+    for (const domain of domains) await egressApprovals.remove(appId, domain);
+    // A sleeping snapshot carries the pre-grant allowlist and the wake-time
+    // policy override fixes that — but a LIVE machine still runs the old
+    // network policy, so put it to sleep; its next wake applies the grant.
+    await lifecycle.sleep(updated).catch(() => undefined);
+    await reportGuard("app-lifecycle", owner, appId, { venue: "app", presence: "present" }, {
+      operation: "egress-approved",
+      domains,
+    });
+  };
+
+  /**
+   * Lane E — the ctx-carrying pre-flight run by provision/wake/box surfaces:
+   * declared domains without a grant route through the guard (which parks the
+   * approval card), and the operation refuses loudly until the owner decides.
+   * The lifecycle's policy callback re-checks on every path; this seam is the
+   * one that can ASK, because it has the acting principal.
+   */
+  const ensureEgressApproved = async (app: AppDocument, ctx: RunContext): Promise<void> => {
+    const unapproved = unapprovedEgress(app);
+    if (unapproved.length === 0) return;
+    const guardCtx: RunContext = { ...ctx, appId: app.id };
+    const decision = await config.guard.check(egressCall(app.id, unapproved), egressDescriptor(), guardCtx);
+    if (decision.action === "block") {
+      throw new VendoError("blocked", decision.reason);
+    }
+    if (decision.action === "run") {
+      // A pre-approved replay already cleared the high-risk gate — commit now.
+      await commitEgressApproval(app.id, unapproved, ctx.principal.subject);
+      return;
+    }
+    const requestedAt = new Date().toISOString();
+    for (const domain of unapproved) {
+      await egressApprovals.putPending({
+        appId: app.id,
+        domain,
+        owner: ctx.principal.subject,
+        approvalId: decision.approval.id,
+        requestedAt,
+      });
+    }
+    throw new VendoError(
+      "blocked",
+      `machine egress requires approval for: ${unapproved.join(", ")}`,
+      { status: "pending-approval", approvalId: decision.approval.id, unapprovedDomains: unapproved },
+    );
+  };
+
   const onApprovalDecision = async (id: ApprovalId, approved: boolean): Promise<void> => {
     const parked = await exposure.byApproval(id);
     for (const grant of parked) {
@@ -569,6 +719,29 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       } else {
         // Denied high-risk approval leaves the secret a handle (fail closed).
         await exposure.revoke(grant.appId, grant.secretName);
+      }
+    }
+    // Lane E — parked egress domains riding this approval commit or clear as
+    // one batch per app (a card's call pins a single appId, but group anyway).
+    const parkedEgress = await egressApprovals.byApproval(id);
+    if (parkedEgress.length > 0) {
+      const byApp = new Map<AppId, { owner: string; domains: string[] }>();
+      for (const request of parkedEgress) {
+        const entry = byApp.get(request.appId) ?? { owner: request.owner, domains: [] };
+        entry.domains.push(request.domain);
+        byApp.set(request.appId, entry);
+      }
+      for (const [appId, entry] of byApp) {
+        if (approved) {
+          await commitEgressApproval(appId, entry.domains, entry.owner);
+        } else {
+          // Denial leaves the declaration unapproved (fail closed) and clears the card.
+          for (const domain of entry.domains) await egressApprovals.remove(appId, domain);
+          await reportGuard("app-lifecycle", entry.owner, appId, { venue: "app", presence: "present" }, {
+            operation: "egress-denied",
+            domains: entry.domains,
+          });
+        }
       }
     }
   };
@@ -940,6 +1113,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       await history.clear(appId);
       await inClientApprovals.clear(appId);
       await exposure.clearForApp(appId);
+      await egressApprovals.clearForApp(appId);
       await apps.delete(appId);
       await reportLifecycle("delete", appId, ctx);
     },
@@ -954,6 +1128,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // execution-v2 — a fork never carries the machine; the copy re-graduates
       // on its own.
       delete fork.machine;
+      // Lane E grant hygiene — egress approval never travels with a copy; the
+      // fork re-approves its declaration.
+      delete fork.egressApproved;
       if (source.server !== undefined && config.sandbox !== undefined) {
         const machine = await toV1SandboxAdapter(config.sandbox).resume(source.server);
         try {
@@ -1118,12 +1295,17 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     async share(appId, ctx) {
       const app = await requireOwned(appId, ctx.principal.subject);
-      return share(appId, app, ctx);
+      // Lane E grant hygiene — a share copy never carries the owner's egress
+      // approval; whoever runs the copy approves its declaration themselves.
+      const { egressApproved: _egressApproved, ...shared } = app;
+      return share(appId, shared, ctx);
     },
 
     async publish(appId, ctx) {
       const app = await requireOwned(appId, ctx.principal.subject);
-      return publish(appId, app, ctx);
+      // Lane E grant hygiene — same rule as share: approval never travels.
+      const { egressApproved: _published, ...published } = app;
+      return publish(appId, published, ctx);
     },
 
     agentTools() {
@@ -1278,12 +1460,18 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       async provision(appId, ctx) {
         const app = await requireOwned(appId, ctx.principal.subject);
         const alreadyProvisioned = app.machine !== undefined;
+        // Lane E — first provision is the "approve once" moment: unapproved
+        // declared egress parks the approval card and refuses loudly here.
+        await ensureEgressApproved(app, ctx);
         const provisioned = await lifecycle.provision(app);
         if (!alreadyProvisioned) await reportLifecycle("machine-provision", appId, ctx);
         return provisioned;
       },
       async wake(appId, ctx) {
         const app = await requireOwned(appId, ctx.principal.subject);
+        // Lane E — a manifest change adding domains re-prompts at the next
+        // wake: the new declaration parks a fresh card for the delta only.
+        await ensureEgressApproved(app, ctx);
         return lifecycle.wake(app);
       },
       async sleep(appId, ctx) {
@@ -1384,8 +1572,47 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // the dying v1 session cache never serves a box request.
       async request(appId, request, ctx) {
         const app = await requireOwned(appId, ctx.principal.subject);
+        // Lane E — the fn door wakes the machine, so it carries the same
+        // egress pre-flight (and re-prompt on a grown declaration) as wake.
+        await ensureEgressApproved(app, ctx);
         const machine = await lifecycle.wake(app);
-        return machine.request(request);
+        // Lane E redaction guard — a box may echo its own env (fn responses
+        // are host-side artifacts that reach clients and logs): scrub every
+        // known secret value out of the response, and out of any error
+        // message crossing this seam.
+        const secretValues = await collectSecretValues(app.secrets, config.secrets);
+        try {
+          const answer = await machine.request(request);
+          if (secretValues.size === 0) return answer;
+          const text = new TextDecoder().decode(answer.body);
+          const scrubbed = redactSecretText(text, secretValues);
+          return {
+            status: answer.status,
+            headers: Object.fromEntries(Object.entries(answer.headers)
+              .map(([header, value]) => [header, redactSecretText(value, secretValues)])),
+            // Untouched bodies pass through byte-identical (binary safety).
+            body: scrubbed === text ? answer.body : new TextEncoder().encode(scrubbed),
+          };
+        } catch (error) {
+          if (error instanceof Error) {
+            // Mutate in place so the error keeps its type, stack, and code.
+            error.message = redactSecretText(error.message, secretValues);
+          }
+          if (error instanceof VendoError && error.detail !== undefined) {
+            error.detail = redactSecretJson(error.detail, secretValues);
+          }
+          throw error;
+        }
+      },
+
+      async redact(appId, value) {
+        const record = await apps.get(appId);
+        if (record === null) return value;
+        const secretValues = await collectSecretValues(
+          documentFromRecord(record).secrets,
+          config.secrets,
+        );
+        return redactSecretJson(value, secretValues);
       },
     },
   };

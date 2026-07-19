@@ -262,14 +262,17 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
       if (initialFiles.length > 0) await sandbox.files.write(initialFiles);
       return wrap(sandbox, { allowedDomains, port: parsePort(spec.env) });
     },
-    async resume(snapshotRef) {
+    async resume(snapshotRef, policy) {
       const state = decodeSnapshotRef(snapshotRef);
+      // Lane E — a wake enforces the CURRENT egress policy when the caller
+      // passes one; the snapshot-time allowlist applies only to a bare resume.
+      const allowedDomains = policy === undefined ? state.allowedDomains : policy.allowedDomains;
       const { ALL_TRAFFIC, Sandbox } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "e2b");
       return wrap(await Sandbox.create(state.snapshotId, {
         ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
         timeoutMs,
-        ...networkOptions(state.allowedDomains, ALL_TRAFFIC),
-      }), state);
+        ...networkOptions(allowedDomains, ALL_TRAFFIC),
+      }), { ...state, allowedDomains });
     },
     async destroy(snapshotRef) {
       const state = decodeSnapshotRef(snapshotRef);

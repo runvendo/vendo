@@ -52,6 +52,7 @@ const setup = async (options: {
   template?: string;
   idleMs?: number;
   withAdapter?: boolean;
+  allowedDomains?: (doc: AppDocument) => Promise<string[] | undefined> | string[] | undefined;
 } = {}) => {
   const store = memoryStore();
   const sandbox = fakeSandboxV2();
@@ -62,6 +63,7 @@ const setup = async (options: {
     store,
     sandbox: options.withAdapter === false ? undefined : sandbox,
     buildEnv: () => options.env ?? { PORT: "8080" },
+    allowedDomains: options.allowedDomains,
     template: options.template,
     idleMs: options.idleMs,
     clock: timers.clock,
@@ -403,5 +405,60 @@ describe("machine lifecycle: sandbox-unavailable", () => {
     const { lifecycle, doc } = await setup({ doc: provisioned(), withAdapter: false });
     const result = await lifecycle.provision(doc);
     expect(result.machine?.snapshotRef).toBe("fake-v2:seeded");
+  });
+});
+
+describe("machine lifecycle: egress allowlist policy (Lane E)", () => {
+  it("provision passes the resolved allowlist to create", async () => {
+    const { sandbox, lifecycle, doc } = await setup({
+      allowedDomains: () => ["api.example.com", "host.vendo.test"],
+    });
+    await lifecycle.provision(doc);
+    expect(sandbox.machines[0]?.allowedDomains).toEqual(["api.example.com", "host.vendo.test"]);
+  });
+
+  it("provision without a policy callback creates unrestricted (pre-Lane-E behavior)", async () => {
+    const { sandbox, lifecycle, doc } = await setup();
+    await lifecycle.provision(doc);
+    expect(sandbox.machines[0]?.allowedDomains).toBeUndefined();
+  });
+
+  it("wake applies the CURRENT policy over the snapshot-time allowlist", async () => {
+    let domains: string[] = ["api.example.com"];
+    const { sandbox, lifecycle, doc } = await setup({ allowedDomains: () => [...domains] });
+    await lifecycle.provision(doc);
+    // A grant decided while the machine slept widens the policy…
+    domains = ["api.example.com", "hooks.stripe.com"];
+    const woken = await lifecycle.wake(doc);
+    const raw = sandbox.machines.find((machine) => machine.id === woken.id);
+    // …and the wake enforces it even though the snapshot carried the old list.
+    expect(raw?.allowedDomains).toEqual(["api.example.com", "hooks.stripe.com"]);
+  });
+
+  it("a policy refusal blocks provision before any provider call", async () => {
+    const { sandbox, lifecycle, doc } = await setup({
+      allowedDomains: () => {
+        throw new VendoError("blocked", "machine egress is not approved for: hooks.stripe.com");
+      },
+    });
+    await expect(lifecycle.provision(doc)).rejects.toMatchObject({
+      code: "blocked",
+      message: expect.stringContaining("hooks.stripe.com"),
+    });
+    expect(sandbox.creates).toBe(0);
+  });
+
+  it("a policy refusal blocks wake before any provider call", async () => {
+    let approved = true;
+    const { sandbox, lifecycle, doc } = await setup({
+      allowedDomains: () => {
+        if (!approved) throw new VendoError("blocked", "machine egress is not approved for: api.example.com");
+        return ["api.example.com"];
+      },
+    });
+    await lifecycle.provision(doc);
+    approved = false;
+    await expect(lifecycle.wake(doc)).rejects.toMatchObject({ code: "blocked" });
+    expect(sandbox.resumes).toBe(0);
   });
 });

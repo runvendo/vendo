@@ -161,9 +161,14 @@ async function handleRows(wire: WireContext, appId: string): Promise<Response | 
   // the host-declared v1 storage collections sharing the app:<id> prefix.
   const records = deps.store.records(`app:${appId}:box:${collection}`);
 
+  // Lane E redaction guard — nothing a box writes or reads through this door
+  // may carry a known secret value into a store row or a response body.
+  const scrub = <T>(value: T): Promise<T> =>
+    deps.apps.box.redact(appId, value as Json) as Promise<T>;
+
   if (segments.length === 3) {
     if (request.method !== "GET") return undefined;
-    return json(await records.list(rowsQuery(url)));
+    return json(await scrub(await records.list(rowsQuery(url))));
   }
   if (segments.length !== 4) return undefined;
   const id = segments[3]!;
@@ -173,7 +178,7 @@ async function handleRows(wire: WireContext, appId: string): Promise<Response | 
   if (request.method === "GET") {
     const record = await records.get(id);
     if (record === null) throw new VendoError("not-found", `row not found: ${id}`);
-    return json(record);
+    return json(await scrub(record));
   }
   if (request.method === "DELETE") {
     await records.delete(id);
@@ -196,11 +201,13 @@ async function handleRows(wire: WireContext, appId: string): Promise<Response | 
         throw new VendoError("validation", "row refs must be an object of non-empty strings");
       }
     }
-    return json(await records.put({
+    // Scrub BEFORE persisting: a secret value must never land in a store row,
+    // even when the box itself sent it.
+    return json(await records.put(await scrub({
       id,
       data: body["data"] as Json,
       ...(body["refs"] === undefined ? {} : { refs: body["refs"] as Record<string, string> }),
-    }));
+    })));
   }
   return undefined;
 }
@@ -226,7 +233,9 @@ async function handleTools(wire: WireContext, ctx: RunContext): Promise<Response
     tool: name,
     args: args as Json,
   }, ctx);
-  return json(outcome);
+  // Lane E redaction guard — a tool outcome relayed into a response is a
+  // host-side artifact; scrub known secret values before it crosses back.
+  return json(await deps.apps.box.redact(ctx.appId ?? "", outcome as Json));
 }
 
 export const boxRoutes: RouteEntry[] = [
