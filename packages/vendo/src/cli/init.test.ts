@@ -1,4 +1,6 @@
 import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LanguageModel } from "ai";
@@ -335,14 +337,76 @@ describe("vendo init (zero-question)", () => {
     const logs = sink.logs.join("\n");
     expect(logs).toContain("Model: explicit ANTHROPIC_API_KEY (anthropic)");
     expect(logs).not.toContain("No model key yet");
+    // The credential story leads the run — before the AI passes and the summary.
+    expect(logs.indexOf("Model: explicit")).toBeLessThan(logs.indexOf("Wired ("));
   });
 
   it("points a keyless host at .env.local and `vendo cloud login`", async () => {
     const root = await fixture();
     const sink = output();
     expect(await run(root, sink)).toBe(0);
-    expect(sink.logs.join("\n")).toContain("No model key yet");
-    expect(sink.logs.join("\n")).toContain("vendo cloud login");
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("No model key yet");
+    expect(logs).toContain("vendo cloud login");
+    // The Cloud offer runs FIRST (before theme capture and the wired summary);
+    // the end of the run keeps only the short one-line reminder.
+    expect(logs.indexOf("Vendo Cloud")).toBeLessThan(logs.indexOf("Theme:"));
+    expect(logs.indexOf("Vendo Cloud")).toBeLessThan(logs.indexOf("Wired ("));
+    expect(logs.indexOf("No model key yet")).toBeGreaterThan(logs.indexOf("Wired ("));
+    expect(logs.match(/Vendo Cloud \(optional\)/g)).toHaveLength(1);
+  });
+
+  it("picks up a starter key minted mid-run: the same run's theme model pass sees it", async () => {
+    const root = await fixture();
+    const sink = output();
+    const key = `vnd_${"a".repeat(40)}`;
+    // A canned Cloud model gateway: records what credential the theme model
+    // pass presents, answers 401 so the pass degrades gracefully. VENDO_CLOUD_URL
+    // in the run's env points devModel's gateway at it — no real network.
+    const seen: Array<string | undefined> = [];
+    const gateway = createServer((request, response) => {
+      seen.push(request.headers["x-api-key"] as string | undefined);
+      response.statusCode = 401;
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "starter key rejected by test gateway" } }));
+    });
+    await new Promise<void>((resolveListen) => gateway.listen(0, "127.0.0.1", resolveListen));
+    const port = (gateway.address() as AddressInfo).port;
+
+    try {
+      // No themeModel seam here on purpose: the DEFAULT resolver must observe
+      // the key the cloud step just wrote to .env.local.
+      expect(await runInit({
+        targetDir: root,
+        output: sink.output,
+        env: { VENDO_CLOUD_URL: `http://127.0.0.1:${port}` },
+        telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+        cloud: {
+          cloudProbe: async () => ({ present: false, ok: false, unlocks: ["a starter allowance"] as readonly string[] }),
+          confirm: async () => true,
+          promptEmail: async () => "dev@example.com",
+          login: async () => 0,
+          mint: async () => key,
+        },
+      })).toBe(0);
+    } finally {
+      await new Promise<void>((resolveClose) => gateway.close(() => resolveClose()));
+    }
+
+    // The mint landed in .env.local…
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${key}`);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Wrote VENDO_API_KEY to .env.local");
+    // …the SAME run's theme model pass presented the minted key to the model
+    // gateway (same-run pickup, end to end)…
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen[0]).toBe(key);
+    // …and degraded with the gateway's real answer, never "no key".
+    const warnings = sink.errors.join("\n");
+    expect(warnings).toContain("theme model pass unavailable:");
+    expect(warnings).not.toContain("Vendo found no model key");
+    // A key now exists — the end-of-run reminder is suppressed.
+    expect(logs).not.toContain("No model key yet");
   });
 
   it("preserves an existing env example while appending the trusted Vendo origin once", async () => {

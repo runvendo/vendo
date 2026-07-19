@@ -22,7 +22,7 @@ import type { StaticTool } from "./extract/stages.js";
 import { resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
 import { createPrettyOutput, usePrettyOutput, type PrettyOutput } from "./pretty.js";
-import { resolveRefineModel } from "./refine.js";
+import { devModel, NO_CREDENTIAL_MESSAGE } from "../dev-creds/model.js";
 import { contrastingText } from "./theme/color.js";
 import {
   extractTheme as extractThemeSlots,
@@ -147,14 +147,20 @@ export interface InitOptions {
 }
 
 /**
- * Theme extraction's model comes from the SAME seam `vendo refine` uses (the
- * host's key + installed provider) — no theme-specific configuration exists.
- * Vendo-hosted inference will swap in behind this same seam later; total
- * failure is handled by extractTheme's graceful degradation to reported
- * defaults.
+ * Theme extraction's model rides the devModel ladder — the same env resolution
+ * the runtime composes when `model` is omitted: provider env keys, then
+ * VENDO_API_KEY via the Cloud gateway. That is what makes the same-run pickup
+ * real: a starter key minted moments earlier in this init powers this pass.
+ * No credential throws the honest instructions instead of constructing a model
+ * that can only fail later; total failure is handled by extractTheme's
+ * graceful degradation to reported defaults.
  */
-function themeModelResolver(root: string): () => Promise<LanguageModel> {
-  return () => resolveRefineModel({ root, env: process.env });
+function themeModelResolver(root: string, env: Record<string, string | undefined>): () => Promise<LanguageModel> {
+  return async () => {
+    const credential = await resolveDevCredential({ env });
+    if (credential.rung === "none") throw new Error(NO_CREDENTIAL_MESSAGE);
+    return devModel({ root, env });
+  };
 }
 
 const THEME_PALETTE_SLOTS = ["accent", "background", "surface", "text", "mutedText", "border", "danger"] as const;
@@ -886,6 +892,14 @@ async function writeIfMissing(path: string, content: string, force: boolean): Pr
   await writeText(path, content);
 }
 
+/** The value of one NAME=value line in .env.local (the cloud step's upsert
+    target) — the same-run pickup reads the freshly minted key back from disk. */
+async function envLocalValue(root: string, name: string): Promise<string | null> {
+  const raw = await readOptional(join(root, ".env.local"));
+  const match = raw?.match(new RegExp(`^\\s*${name}\\s*=\\s*(.+?)\\s*$`, "m"));
+  return match?.[1] ?? null;
+}
+
 async function ensureVendoEnvExample(root: string): Promise<void> {
   const path = join(root, ".env.example");
   const current = await readOptional(path);
@@ -956,6 +970,35 @@ export async function runInit(options: InitOptions): Promise<number> {
   await telemetry.track("init_started", { framework: plan.framework });
 
   try {
+    // Key first (product order fix): the model-credential story — env keys,
+    // else the Vendo Cloud offer — runs BEFORE the AI-assisted passes, so a
+    // starter key minted here powers the SAME run's theme model pass and AI
+    // polish instead of those passes reporting "no model" while the offer
+    // waits below them. --yes / non-interactive semantics are unchanged.
+    let credential = await (options.resolveCredential ?? resolveDevCredential)({ env });
+    if (credential.rung === "env-key") {
+      output.log(`Model: ${describeDevCredential(credential)} — production uses this same key server-side.`);
+    }
+    const cloud = await runCloudStep({
+      root,
+      output,
+      yes: options.yes === true,
+      credential,
+      ...(pretty === null ? {} : { confirm: pretty.confirm }),
+      ...(options.cloud ?? {}),
+    });
+    // Same-run pickup: a freshly minted starter key lands in .env.local, not
+    // in this process's env — merge it into the env every credential consumer
+    // below reads (theme model pass, AI polish, the end-of-run reminder).
+    let effectiveEnv = env;
+    if (cloud.wroteEnvLocal) {
+      const minted = await envLocalValue(root, "VENDO_API_KEY");
+      if (minted !== null) {
+        effectiveEnv = { ...env, VENDO_API_KEY: minted };
+        credential = await (options.resolveCredential ?? resolveDevCredential)({ env: effectiveEnv });
+      }
+    }
+
     // Wire — apply the bounded change set and list it. No gates, no prompts.
     for (const change of changes) {
       await writeText(change.absolute, change.after);
@@ -998,7 +1041,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     if (options.force === true || !(await exists(themePath))) {
       pretty?.spin("Capturing your theme");
       const summary = await extractThemeSlots(root, {
-        resolveModel: options.themeModel ?? themeModelResolver(root),
+        resolveModel: options.themeModel ?? themeModelResolver(root, effectiveEnv),
       });
       pretty?.stopSpin();
       if (summary.uncertain.length > 0 && options.yes !== true) {
@@ -1063,23 +1106,6 @@ export async function runInit(options: InitOptions): Promise<number> {
     if (authAdvice !== null) output.log(authAdvice);
     output.log(`Learned: ${toolCount} tools · theme captured → .vendo/ (tools.json, theme.json, brief.md)`);
 
-    // Key — state the env credential, or offer the cloud starter key.
-    const credential = await (options.resolveCredential ?? resolveDevCredential)({ env });
-    if (credential.rung === "env-key") {
-      output.log(`Model: ${describeDevCredential(credential)} — production uses this same key server-side.`);
-    }
-    await runCloudStep({
-      root,
-      output,
-      yes: options.yes === true,
-      credential,
-      ...(pretty === null ? {} : { confirm: pretty.confirm }),
-      ...(options.cloud ?? {}),
-    });
-    if (credential.rung === "none") {
-      output.log("No model key yet: set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY in .env.local, or run `vendo cloud login` for a free dev key.");
-    }
-
     // AI extraction (install-dx, staged): a coding agent surveys the repo,
     // drafts each surface in a focused pass, cross-checks the combined draft,
     // and drafts the brief — all into the override channel; deterministic
@@ -1089,7 +1115,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     const polish = await runAiExtraction({
       root,
       output,
-      env,
+      env: effectiveEnv,
       yes: options.yes === true,
       ...(options.force === true ? { force: true } : {}),
       ...(pretty === null ? {} : { confirm: pretty.confirm }),
@@ -1106,6 +1132,12 @@ export async function runInit(options: InitOptions): Promise<number> {
       toolCount,
       durationMs: Date.now() - started,
     });
+
+    // The one short Cloud reminder in the end-of-run summary — ONLY while no
+    // key exists (the full emphasized block already ran up top; no repeat).
+    if (credential.rung === "none") {
+      output.log("No model key yet: set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY in .env.local, or run `vendo cloud login` for a free dev key.");
+    }
 
     // Done — the one paste that is the user's, then their own dev server.
     output.log("\nLast steps are yours:");
