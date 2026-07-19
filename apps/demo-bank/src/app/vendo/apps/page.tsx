@@ -2,10 +2,10 @@
 
 import { useState, type FormEvent } from "react";
 import type { AppId } from "@vendoai/core";
-import { createVendoClient, useApp, useApps, type ShipDiff } from "@vendoai/ui";
+import { createVendoClient, hostComponentMap, useApp, useApps, type ShipDiff } from "@vendoai/ui";
 import { AppFrame } from "@vendoai/ui/tree";
 import { VendoRoot } from "@/components/vendo/VendoRoot";
-import { mapleHostComponents } from "@/vendo/host-components";
+import { mapleRegistry } from "@/vendo/registry";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 // The same wire base the provider uses (08-ui §1); ship-diff and action calls
@@ -116,7 +116,7 @@ function OpenApp({ appId }: { appId: AppId }) {
             <AppFrame
               key={appId}
               surface={surface}
-              components={mapleHostComponents}
+              components={hostComponentMap(mapleRegistry)}
               onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})}
             />
           ) : (

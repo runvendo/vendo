@@ -117,9 +117,10 @@ Captured 2026-07-16 on the Maple demo host (`apps/demo-bank`), per the Wave 6
 section of the same spec. All captures are local: `next dev` on
 `localhost:3000` driven through a real browser session logged in as the demo
 user (`yousef@maple.com`), plus scripted wire/`psql` transcripts. The
-resilience beats run on a throwaway Homebrew Postgres 18 cluster
+resilience beats B–C run on a throwaway Homebrew Postgres 18 cluster
 (`postgres://vendo@127.0.0.1:54331/vendo_maple` via the host's own
-`VENDO_DATABASE_URL` knob — no source change needed for the store swap).
+`VENDO_DATABASE_URL` knob — no source change needed for the store swap);
+beat D runs on the default PGlite store.
 
 No source changes ship with this PR. The provider-swap and churn beats needed
 a small uncommitted wire-up in `apps/demo-bank/src/vendo/server.ts` (reverted
@@ -251,10 +252,68 @@ node docs/verification/foundations-wave6/resilience/session-churn.mjs \
 
 **Files**: `03-session-churn-transcript.txt`, `session-churn.mjs`.
 
+## Beat D — client disconnect cancels the loop (`resilience/`)
+
+Captured 2026-07-16, after the wave-5 AbortSignal work (ENG-238, PR #318)
+merged: POST /threads hands `request.signal` to the agent turn
+(`packages/vendo/src/server.ts`), which passes it to `streamText` as
+`abortSignal` (`packages/agent/src/agent.ts`).
+
+**What was captured** — `04-client-disconnect-transcript.txt` +
+`05-client-disconnect-proxy-log.txt`. To make provider calls observable
+without source changes, the host ran with `ANTHROPIC_BASE_URL` pointed at
+`anthropic-passthrough-proxy.mjs`, a logging pass-through in front of
+api.anthropic.com — every agent-loop provider call is one numbered line, and
+a host-side abort of an in-flight call logs a `CLIENT DISCONNECTED` teardown.
+`client-disconnect.mjs` drives a real chat turn on the wire and disconnects
+the client mid-generation:
+
+1. **Control** — the turn takes two provider calls (tool step + answer step)
+   and completes in ~9 s.
+2. **Disconnect right after the tool step** — the answer step's freshly
+   issued provider call is torn down **3 ms** after the client disconnect,
+   and the proxy log shows ZERO further provider lines through a 45 s settle
+   window. The host log corroborates: the request ended at the disconnect
+   (3.6 s) instead of running the full turn (8.7 s).
+3. **Disconnect mid-answer-stream** — the streaming provider call is torn
+   down **6 ms** after the disconnect; settle window silent.
+4. **curl SIGKILLed mid-turn** — same result, teardown **7 ms** after the
+   kill.
+
+`06-client-disconnect-browser.png` shows the Maple UI one second before a
+real-browser disconnect: the turn mid-generation, four host tool calls done,
+a fifth still input-streaming.
+
+**Finding (flagged for follow-up, not fixed here):** a real browser closing
+the tab or navigating away does NOT trigger this path under `next dev`
+(Next 16.2.9/Turbopack). Abrupt client aborts (scripted `AbortController`,
+killed curl) fire `request.signal` within milliseconds — but on a graceful
+Chromium disconnect Next ends the POST without firing the signal, and the
+abandoned turn runs to completion: observed 7 provider calls issued over
+7m14s AFTER an Orca-embedded-browser tab close, and the same via plain
+Playwright Chromium for both `page.close()` (3 calls, 2m28s) and
+navigate-away (6 calls, 3m33s); reproduce with `browser-disconnect.mjs`. The
+wave-5 wiring itself is correct and fast whenever the signal fires; the gap
+is the dev server's disconnect detection (untested under `next start`).
+Worth a ticket; out of scope for a capture-only PR.
+
+**Reproduce** (repo root; keys sourced, never committed):
+
+```bash
+node docs/verification/foundations-wave6/resilience/anthropic-passthrough-proxy.mjs 8788 &
+ANTHROPIC_BASE_URL=http://127.0.0.1:8788/v1 VENDO_BASE_URL=http://localhost:3000 \
+  pnpm --filter demo-bank dev
+node docs/verification/foundations-wave6/resilience/client-disconnect.mjs --mode control
+node docs/verification/foundations-wave6/resilience/client-disconnect.mjs --mode abort --abort-after-ms 400
+# real-browser finding (run from fixtures/integration-browser):
+node ../../docs/verification/foundations-wave6/resilience/browser-disconnect.mjs page-close
+```
+
+**Files**: `04-client-disconnect-transcript.txt`,
+`05-client-disconnect-proxy-log.txt`, `06-client-disconnect-browser.png`,
+`anthropic-passthrough-proxy.mjs`, `client-disconnect.mjs`,
+`browser-disconnect.mjs`.
+
 ## Parked beats (Maple)
 
-- **Beat D — client disconnect visibly cancels the loop**: blocked on ENG-238
-  merge — the wave-5 AbortSignal work is not yet on main (coordinator
-  confirmed 2026-07-16), so there is no disconnect-to-cancellation path to
-  capture. Follow-up capture after wave 5 lands: disconnect mid-generation,
-  show the loop stops server-side (log line + no further provider calls).
+None — all Maple beats captured.

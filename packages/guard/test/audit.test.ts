@@ -172,27 +172,6 @@ describe("audit persistence, query, and export", () => {
     expect(detail.actAs).toBe("declined");
   });
 
-  it("audits org context (org principal + actor) on org-owned executions (ENG-263)", async () => {
-    const sqlStore = await store();
-    const tools = new FixtureTools();
-    const guard = createGuard({ store: sqlStore });
-    const bound = guard.bind(tools);
-
-    const orgCtx = {
-      ...context(),
-      principal: { kind: "org" as const, subject: "vendo:org:org_1", display: "Acme" },
-      actor: alice,
-    };
-    await expect(bound.execute(call("host_read", {}, "audit_org"), orgCtx)).resolves.toMatchObject({ status: "ok" });
-
-    const rows = await sqlStore.query<{ subject: string; detail: string | null }>(
-      `SELECT subject, event->>'detail' AS detail FROM vendo_audit WHERE tool = 'host_read'`,
-    );
-    expect(rows.rows[0]?.subject).toBe("vendo:org:org_1");
-    const detail = JSON.parse(rows.rows[0]!.detail!) as Record<string, unknown>;
-    expect(detail.org).toEqual({ subject: "vendo:org:org_1", actor: alice.subject });
-  });
-
   it("audits connect-required connector outcomes with their identity", async () => {
     const sqlStore = await store();
     const tools = new FixtureTools();

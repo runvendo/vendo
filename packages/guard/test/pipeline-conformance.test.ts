@@ -10,7 +10,7 @@ afterEach(() => {
 });
 
 describe("decision pipeline conformance", () => {
-  const stages = ["critical", "scanner", "grant", "rule", "code", "judge", "default"] as const;
+  const stages = ["critical", "grant", "rule", "code", "judge", "default"] as const;
   const presences = ["present", "away"] as const;
   const risks: RiskLabel[] = ["read", "write", "destructive"];
 
@@ -38,17 +38,6 @@ describe("decision pipeline conformance", () => {
 
           const guard = createGuard({
             store,
-            ...(stage === "scanner"
-              ? {
-                  scanners: [
-                    {
-                      name: "input-deny",
-                      on: "input" as const,
-                      scan: async () => ({ verdict: "block" as const, findings: ["unsafe input"] }),
-                    },
-                  ],
-                }
-              : {}),
             ...(stage === "rule"
               ? { policy: { rules: [{ match: { tool: d.name }, action: "block" as const }] } }
               : {}),
@@ -75,7 +64,6 @@ describe("decision pipeline conformance", () => {
           const decision = await guard.check(toolCall, d, ctx);
           const expected = {
             critical: { action: "ask", decidedBy: "critical" },
-            scanner: { action: "block", decidedBy: "scanner" },
             grant: { action: "run", decidedBy: "grant" },
             rule: { action: "block", decidedBy: "rule" },
             code: { action: "block", decidedBy: "rule" },
@@ -138,87 +126,6 @@ describe("decision pipeline conformance", () => {
       },
       ctx: {},
       args: { amount: 10 },
-      matches: false,
-    },
-    {
-      name: "constrained scope resolves JSON pointers and every operator",
-      grant: {
-        scope: {
-          kind: "constrained" as const,
-          constraints: [
-            { path: "/amount", op: "lte" as const, value: 10 },
-            { path: "/amount", op: "gte" as const, value: 5 },
-            { path: "/currency", op: "eq" as const, value: "USD" },
-            { path: "/memo", op: "matches" as const, value: "^invoice-[0-9]+$" },
-            { path: "/a~1b/~0key", op: "eq" as const, value: true },
-          ],
-        },
-      },
-      ctx: {},
-      args: { amount: 7, currency: "USD", memo: "invoice-42", "a/b": { "~key": true } },
-      matches: true,
-    },
-    {
-      name: "constrained scope rejects unresolved and type-mismatched values",
-      grant: {
-        scope: {
-          kind: "constrained" as const,
-          constraints: [
-            { path: "/missing", op: "eq" as const, value: 1 },
-            { path: "/amount", op: "lte" as const, value: 10 },
-          ],
-        },
-      },
-      ctx: {},
-      args: { amount: "7" },
-      matches: false,
-    },
-    {
-      name: "constrained matches rejects oversized patterns (ReDoS bound)",
-      grant: {
-        scope: {
-          kind: "constrained" as const,
-          constraints: [{ path: "/memo", op: "matches" as const, value: `^${"(a+)+".repeat(60)}$` }],
-        },
-      },
-      ctx: {},
-      args: { memo: "aaaa" },
-      matches: false,
-    },
-    {
-      name: "constrained matches rejects nested-quantifier patterns even within length bounds (ReDoS)",
-      grant: {
-        scope: {
-          kind: "constrained" as const,
-          constraints: [{ path: "/memo", op: "matches" as const, value: "^(a+)+$" }],
-        },
-      },
-      ctx: {},
-      args: { memo: `${"a".repeat(64)}b` },
-      matches: false,
-    },
-    {
-      name: "constrained matches rejects backreference patterns (ReDoS)",
-      grant: {
-        scope: {
-          kind: "constrained" as const,
-          constraints: [{ path: "/memo", op: "matches" as const, value: "^(a*)b\\1$" }],
-        },
-      },
-      ctx: {},
-      args: { memo: "ab" },
-      matches: false,
-    },
-    {
-      name: "constrained matches rejects oversized input values (ReDoS bound)",
-      grant: {
-        scope: {
-          kind: "constrained" as const,
-          constraints: [{ path: "/memo", op: "matches" as const, value: "^a+$" }],
-        },
-      },
-      ctx: {},
-      args: { memo: "a".repeat(5000) },
       matches: false,
     },
     {
@@ -310,7 +217,6 @@ describe("decision pipeline conformance", () => {
 
   it.each([
     ["critical beats grant", "critical"],
-    ["scanner block beats grant", "scanner"],
     ["grant beats rule", "grant"],
     ["rule beats code", "rule"],
     ["code beats judge", "code"],
@@ -318,13 +224,9 @@ describe("decision pipeline conformance", () => {
   ] as const)("stage precedence: %s", async (_name, winner) => {
     const store = createMemoryStore();
     const d = descriptor("read", { critical: winner === "critical" });
-    if (["critical", "scanner", "grant"].includes(winner)) await seedGrant(store, { descriptor: d });
+    if (["critical", "grant"].includes(winner)) await seedGrant(store, { descriptor: d });
     const guard = createGuard({
       store,
-      scanners:
-        winner === "scanner"
-          ? [{ name: "deny", on: "input", scan: async () => ({ verdict: "block", findings: ["deny"] }) }]
-          : [],
       policy: {
         ...(winner === "grant" ? { rules: [{ match: {}, action: "block" as const }] } : {}),
         ...(winner === "rule"

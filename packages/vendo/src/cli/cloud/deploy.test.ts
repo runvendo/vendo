@@ -106,6 +106,8 @@ describe("cloud deploy", () => {
         "user-agent": "vendo-cli/0.3.0",
         "content-type": "application/json",
         authorization: "Bearer vnd_test",
+        "x-vendo-deployment-host": expect.any(String),
+        "x-vendo-deployment-name": expect.any(String),
       },
       body: JSON.stringify({
         apps: [{ doc: enabled, enabled: true }],

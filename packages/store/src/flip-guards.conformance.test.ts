@@ -2,7 +2,7 @@ import { VendoError, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
 import { appFixture, at, grantFixture } from "./fixtures.test-util.js";
-import { appStore, grantStore, registerEphemeralSubject } from "./index.js";
+import { appStore, grantStore } from "./index.js";
 
 // 02-store §2: the app row IS the user's copy and grants are subject-scoped —
 // neither ever crosses subjects. Wave 3 gives vendo_apps and vendo_grants the
@@ -51,17 +51,17 @@ for (const backend of backends()) {
       expect((await store.get(doc.id))?.subject).toBe(userA);
     });
 
-    it("refuses the flip in the ephemeral overlay", async () => {
+    it("refuses the flip for ephemeral principals through the same disk path (kill-list B3)", async () => {
       const anonA: Principal = { kind: "user", subject: "anon_flip_a", ephemeral: true };
       const anonB: Principal = { kind: "user", subject: "anon_flip_b", ephemeral: true };
       const store = appStore(made.store);
-      const doc = appFixture("app_flip_overlay");
+      const doc = appFixture("app_flip_anon");
       await store.put(anonA, doc);
 
       await expect(store.put(anonB, doc))
         .rejects.toMatchObject<VendoError>({ code: "conflict" });
 
-      // The routed door mirrors the helper's refusal on the same overlay row.
+      // The routed door refuses the same flip on the same disk row.
       const apps = made.store.records("vendo_apps");
       await expect(apps.put({ id: doc.id, data: { subject: anonB.subject, enabled: true, doc } }))
         .rejects.toMatchObject<VendoError>({ code: "conflict" });
@@ -99,22 +99,21 @@ for (const backend of backends()) {
       expect((updated.data as { revokedAt?: string }).revokedAt).toBe(at(40));
     });
 
-    it("refuses the flip in the ephemeral overlay", async () => {
+    it("refuses the flip for ephemeral principals through the same disk path (kill-list B3)", async () => {
       const anonA: Principal = { kind: "user", subject: "anon_grant_a", ephemeral: true };
       const anonB: Principal = { kind: "user", subject: "anon_grant_b", ephemeral: true };
       const store = grantStore(made.store);
-      await store.create(anonA, grantFixture("grt_flip_overlay", { subject: anonA.subject }));
+      await store.create(anonA, grantFixture("grt_flip_anon", { subject: anonA.subject }));
 
-      await expect(store.create(anonB, grantFixture("grt_flip_overlay", { subject: anonB.subject })))
+      await expect(store.create(anonB, grantFixture("grt_flip_anon", { subject: anonB.subject })))
         .rejects.toMatchObject<VendoError>({ code: "conflict" });
 
-      // The routed door mirrors the helper's refusal on the same overlay row.
-      registerEphemeralSubject(made.store, anonB.subject);
+      // The routed door refuses the same flip on the same disk row.
       const grants = made.store.records("vendo_grants");
-      const forged = grantFixture("grt_flip_overlay", { subject: anonB.subject });
+      const forged = grantFixture("grt_flip_anon", { subject: anonB.subject });
       await expect(grants.put({ id: forged.id, data: forged }))
         .rejects.toMatchObject<VendoError>({ code: "conflict" });
-      expect((await store.get("grt_flip_overlay"))?.subject).toBe(anonA.subject);
+      expect((await store.get("grt_flip_anon"))?.subject).toBe(anonA.subject);
     });
   });
 }

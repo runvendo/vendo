@@ -18,18 +18,7 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
 const INVOICE = "inv_0003"; // ADA's seeded draft invoice
-const CREATE_DIALECT = {
-  name: "Ada's Greeting",
-  description: "A tiny greeting card",
-  tree: {
-    formatVersion: "vendo-genui/v1",
-    root: "root",
-    nodes: [
-      { id: "root", component: "Stack", source: "prewired", children: ["greeting"] },
-      { id: "greeting", component: "Text", source: "prewired", props: { text: "Hello Ada" } },
-    ],
-  },
-};
+const CREATE_DIALECT = `<App name="Ada's Greeting"><Text text="Hello Ada"/></App>`;
 
 async function script(request: APIRequestContext): Promise<void> {
   await expect(async () => {
@@ -42,7 +31,9 @@ async function script(request: APIRequestContext): Promise<void> {
         { kind: "text", text: "Hi Ada, I'm ready to help.", id: "t_greet" },
         { kind: "tool", name: "host_invoices_delete", input: { id: INVOICE }, toolCallId: "call_del" },
         { kind: "text", text: "Deleted the invoice.", id: "t_done" },
+        // Two-lane create (v2 spec §4): paint + full lane each consume a turn.
         { kind: "generate", dialect: CREATE_DIALECT },
+        { kind: "generate", dialect: CREATE_DIALECT, id: "gen_2" },
       ],
     },
   });
@@ -66,7 +57,9 @@ test("J7: chat streams, destructive approval executes for real, useApps lists th
   await composer.fill(`Delete invoice ${INVOICE}`);
   await composer.press("Enter");
 
-  const approval = page.getByRole("article", { name: /Approval for host_invoices_delete/i });
+  // ENG-216 — the approval card aria-label carries the humanized title
+  // (humanizeToolName("host_invoices_delete") → "Invoices delete"), not the raw slug.
+  const approval = page.getByRole("article", { name: /Approval for Invoices delete/i });
   await expect(approval).toBeVisible();
   // The parked destructive call must NOT have executed yet.
   await expect
@@ -78,7 +71,8 @@ test("J7: chat streams, destructive approval executes for real, useApps lists th
 
   // UI reflects completion...
   await expect(page.getByText("Deleted the invoice.")).toBeVisible();
-  await expect(page.getByText(/Tool: host_invoices_delete/i)).toBeVisible();
+  // ENG-216 — chip shows the humanized tool label, never the raw slug / "Tool:" prefix.
+  await expect(page.getByText("Invoices delete").last()).toBeVisible({ timeout: 10_000 });
   // ...and the REAL side effect landed on the host app.
   await expect
     .poll(async () => (await (await request.get(`/__test/host/invoice/${INVOICE}`)).json()).exists, {

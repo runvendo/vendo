@@ -1,0 +1,1568 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "host_activate_user",
+      "kind": "server-action",
+      "module": "actions/admin/users/activate-user.ts",
+      "export": "activateUser",
+      "risk": "write"
+    },
+    {
+      "name": "host_add_comment",
+      "kind": "server-action",
+      "module": "actions/crm/tasks/add-comment.ts",
+      "export": "addComment",
+      "risk": "write"
+    },
+    {
+      "name": "host_add_comment_to_task",
+      "kind": "server-action",
+      "module": "actions/projects/add-comment-to-task.ts",
+      "export": "addCommentToTask",
+      "risk": "write"
+    },
+    {
+      "name": "host_add_contract_line_item",
+      "kind": "server-action",
+      "module": "actions/crm/contract-line-items/add-line-item/index.ts",
+      "export": "addContractLineItem",
+      "risk": "write"
+    },
+    {
+      "name": "host_add_opportunity_line_item",
+      "kind": "server-action",
+      "module": "actions/crm/opportunity-line-items/add-line-item/index.ts",
+      "export": "addOpportunityLineItem",
+      "risk": "write"
+    },
+    {
+      "name": "host_add_payment",
+      "kind": "server-action",
+      "module": "actions/invoices/add-payment.ts",
+      "export": "addPayment",
+      "risk": "write"
+    },
+    {
+      "name": "host_add_targets_to_list",
+      "kind": "server-action",
+      "module": "actions/crm/target-lists/add-targets-to-list.ts",
+      "export": "addTargetsToList",
+      "risk": "write"
+    },
+    {
+      "name": "host_admin_invoices_series_create",
+      "method": "POST",
+      "path": "/api/admin/invoices/series",
+      "risk": "write"
+    },
+    {
+      "name": "host_admin_invoices_series_delete",
+      "method": "DELETE",
+      "path": "/api/admin/invoices/series/{id}",
+      "risk": "destructive"
+    },
+    {
+      "name": "host_admin_invoices_series_list",
+      "method": "GET",
+      "path": "/api/admin/invoices/series",
+      "risk": "read"
+    },
+    {
+      "name": "host_admin_invoices_series_update",
+      "method": "PATCH",
+      "path": "/api/admin/invoices/series/{id}",
+      "risk": "write"
+    },
+    {
+      "name": "host_admin_invoices_tax_rates_create",
+      "method": "POST",
+      "path": "/api/admin/invoices/tax-rates",
+      "risk": "write"
+    },
+    {
+      "name": "host_admin_invoices_tax_rates_delete",
+      "method": "DELETE",
+      "path": "/api/admin/invoices/tax-rates/{id}",
+      "risk": "write"
+    },
+    {
+      "name": "host_admin_invoices_tax_rates_list",
+      "method": "GET",
+      "path": "/api/admin/invoices/tax-rates",
+      "risk": "read"
+    },
+    {
+      "name": "host_admin_invoices_tax_rates_update",
+      "method": "PATCH",
+      "path": "/api/admin/invoices/tax-rates/{id}",
+      "risk": "write"
+    },
+    {
+      "name": "host_assign_document_to_crm_task",
+      "kind": "server-action",
+      "module": "actions/crm/tasks/assign-document.ts",
+      "export": "assignDocumentToCrmTask",
+      "risk": "write"
+    },
+    {
+      "name": "host_assign_document_to_task",
+      "kind": "server-action",
+      "module": "actions/projects/assign-document-to-task.ts",
+      "export": "assignDocumentToTask",
+      "risk": "write"
+    },
+    {
+      "name": "host_assign_product",
+      "kind": "server-action",
+      "module": "actions/crm/account-products/assign-product/index.ts",
+      "export": "assignProduct",
+      "risk": "write"
+    },
+    {
+      "name": "host_auth_create",
+      "method": "POST",
+      "path": "/api/auth/{all}",
+      "risk": "write"
+    },
+    {
+      "name": "host_auth_get",
+      "method": "GET",
+      "path": "/api/auth/{all}",
+      "risk": "read"
+    },
+    {
+      "name": "host_auth_test_otp_list",
+      "method": "GET",
+      "path": "/api/auth/test-otp",
+      "risk": "read"
+    },
+    {
+      "name": "host_bulk_change_type",
+      "kind": "server-action",
+      "module": "actions/documents/bulk-change-type.ts",
+      "export": "bulkChangeType",
+      "risk": "write"
+    },
+    {
+      "name": "host_bulk_delete_documents",
+      "kind": "server-action",
+      "module": "actions/documents/bulk-delete-documents.ts",
+      "export": "bulkDeleteDocuments",
+      "risk": "destructive"
+    },
+    {
+      "name": "host_bulk_link_to_account",
+      "kind": "server-action",
+      "module": "actions/documents/bulk-link-to-account.ts",
+      "export": "bulkLinkToAccount",
+      "risk": "write"
+    },
+    {
+      "name": "host_campaigns_targets_enrich",
+      "method": "POST",
+      "path": "/api/campaigns/targets/{id}/enrich",
+      "risk": "write"
+    },
+    {
+      "name": "host_campaigns_targets_enrich_bulk_create",
+      "method": "POST",
+      "path": "/api/campaigns/targets/enrich-bulk",
+      "risk": "write"
+    },
+    {
+      "name": "host_campaigns_targets_enrich_create",
+      "method": "POST",
+      "path": "/api/campaigns/targets/enrich",
+      "risk": "write"
+    },
+    {
+      "name": "host_campaigns_targets_enrich_delete",
+      "method": "DELETE",
+      "path": "/api/campaigns/targets/enrich",
+      "risk": "write"
+    },
+    {
+      "name": "host_campaigns_targets_update",
+      "method": "PATCH",
+      "path": "/api/campaigns/targets/{id}",
+      "risk": "write"
+    },
+    {
+      "name": "host_campaigns_unsubscribe_list",
+      "method": "GET",
+      "path": "/api/campaigns/unsubscribe",
+      "risk": "read"
+    },
+    {
+      "name": "host_campaigns_webhooks_resend_create",
+      "method": "POST",
+      "path": "/api/campaigns/webhooks/resend",
+      "risk": "write"
+    },
+    {
+      "name": "host_cancel_invoice",
+      "kind": "server-action",
+      "module": "actions/invoices/cancel-invoice.ts",
+      "export": "cancelInvoice",
+      "risk": "destructive"
+    },
+    {
+      "name": "host_check_duplicate",
+      "kind": "server-action",
+      "module": "actions/documents/check-duplicate.ts",
+      "export": "checkDuplicate",
+      "risk": "write"
+    },
+    {
+      "name": "host_convert_target",
+      "kind": "server-action",
+      "module": "actions/crm/targets/convert-target.ts",
+      "export": "convertTarget",
+      "risk": "write"
+    },
+    {
+      "name": "host_copy_line_items_from_opportunity",
+      "kind": "server-action",
+      "module": "actions/crm/contract-line-items/copy-from-opportunity/index.ts",
+      "export": "copyLineItemsFromOpportunity",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_account",
+      "kind": "server-action",
+      "module": "actions/crm/accounts/create-account.ts",
+      "export": "createAccount",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_activity",
+      "kind": "server-action",
+      "module": "actions/crm/activities/create-activity.ts",
+      "export": "createActivity",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_api_token",
+      "kind": "server-action",
+      "module": "actions/api-tokens.ts",
+      "export": "createApiToken",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_campaign",
+      "kind": "server-action",
+      "module": "actions/campaigns/create-campaign.ts",
+      "export": "createCampaign",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_config_value",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/crm-settings/_actions/crm-settings.ts",
+      "export": "createConfigValue",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_contact",
+      "kind": "server-action",
+      "module": "actions/crm/contacts/create-contact.ts",
+      "export": "createContact",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_currency",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/currencies/_actions/currencies.ts",
+      "export": "createCurrency",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_document",
+      "kind": "server-action",
+      "module": "actions/documents/create-document.ts",
+      "export": "createDocument",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_document_version",
+      "kind": "server-action",
+      "module": "actions/documents/create-document-version.ts",
+      "export": "createDocumentVersion",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_email_account",
+      "kind": "server-action",
+      "module": "actions/emails/accounts.ts",
+      "export": "createEmailAccount",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_invoice",
+      "kind": "server-action",
+      "module": "actions/invoices/create-invoice.ts",
+      "export": "createInvoice",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_lead",
+      "kind": "server-action",
+      "module": "actions/crm/leads/create-lead.ts",
+      "export": "createLead",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_new_contract",
+      "kind": "server-action",
+      "module": "actions/crm/contracts/create-new-contract/index.ts",
+      "export": "createNewContract",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_opportunity",
+      "kind": "server-action",
+      "module": "actions/crm/opportunities/create-opportunity.ts",
+      "export": "createOpportunity",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_product",
+      "kind": "server-action",
+      "module": "actions/crm/products/create-product/index.ts",
+      "export": "createProduct",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_project",
+      "kind": "server-action",
+      "module": "actions/projects/create-project.ts",
+      "export": "createProject",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_schedule",
+      "kind": "server-action",
+      "module": "actions/reports/schedule.ts",
+      "export": "createSchedule",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_section",
+      "kind": "server-action",
+      "module": "actions/projects/create-section.ts",
+      "export": "createSection",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_target",
+      "kind": "server-action",
+      "module": "actions/crm/targets/create-target.ts",
+      "export": "createTarget",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_target_list",
+      "kind": "server-action",
+      "module": "actions/crm/target-lists/create-target-list.ts",
+      "export": "createTargetList",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_task",
+      "kind": "server-action",
+      "module": "actions/crm/accounts/create-task.ts",
+      "export": "createTask",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_task_action",
+      "kind": "server-action",
+      "module": "actions/projects/create-task.ts",
+      "export": "createTask",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_task_in_board",
+      "kind": "server-action",
+      "module": "actions/projects/create-task-in-board.ts",
+      "export": "createTaskInBoard",
+      "risk": "write"
+    },
+    {
+      "name": "host_create_template",
+      "kind": "server-action",
+      "module": "actions/campaigns/templates/create-template.ts",
+      "export": "createTemplate",
+      "risk": "write"
+    },
+    {
+      "name": "host_crm_contacts_create_from_remote_create",
+      "method": "POST",
+      "path": "/api/crm/contacts/create-from-remote",
+      "risk": "write"
+    },
+    {
+      "name": "host_crm_contacts_enrich_bulk_create",
+      "method": "POST",
+      "path": "/api/crm/contacts/enrich-bulk",
+      "risk": "write"
+    },
+    {
+      "name": "host_crm_contacts_enrich_create",
+      "method": "POST",
+      "path": "/api/crm/contacts/enrich",
+      "risk": "write"
+    },
+    {
+      "name": "host_crm_contacts_enrich_delete",
+      "method": "DELETE",
+      "path": "/api/crm/contacts/enrich",
+      "risk": "write"
+    },
+    {
+      "name": "host_crm_contacts_update",
+      "method": "PATCH",
+      "path": "/api/crm/contacts/{id}",
+      "risk": "write"
+    },
+    {
+      "name": "host_crm_leads_create_lead_from_web_create",
+      "method": "POST",
+      "path": "/api/crm/leads/create-lead-from-web",
+      "risk": "write"
+    },
+    {
+      "name": "host_crm_targets_contacts",
+      "method": "POST",
+      "path": "/api/crm/targets/{id}/contacts",
+      "risk": "write"
+    },
+    {
+      "name": "host_crm_targets_contacts_enrich",
+      "method": "POST",
+      "path": "/api/crm/targets/{id}/contacts/{contactId}/enrich",
+      "risk": "write"
+    },
+    {
+      "name": "host_crm_targets_enrich",
+      "method": "POST",
+      "path": "/api/crm/targets/{id}/enrich",
+      "risk": "write"
+    },
+    {
+      "name": "host_crm_targets_enrich_bulk_create",
+      "method": "POST",
+      "path": "/api/crm/targets/enrich-bulk",
+      "risk": "write"
+    },
+    {
+      "name": "host_crm_targets_enrich_create",
+      "method": "POST",
+      "path": "/api/crm/targets/enrich",
+      "risk": "write"
+    },
+    {
+      "name": "host_crm_targets_enrich_delete",
+      "method": "DELETE",
+      "path": "/api/crm/targets/enrich",
+      "risk": "write"
+    },
+    {
+      "name": "host_crm_targets_update",
+      "method": "PATCH",
+      "path": "/api/crm/targets/{id}",
+      "risk": "write"
+    },
+    {
+      "name": "host_deactivate_user",
+      "kind": "server-action",
+      "module": "actions/admin/users/deactivate-user.ts",
+      "export": "deactivateUser",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_account",
+      "kind": "server-action",
+      "module": "actions/crm/accounts/delete-account.ts",
+      "export": "deleteAccount",
+      "risk": "destructive"
+    },
+    {
+      "name": "host_delete_activity",
+      "kind": "server-action",
+      "module": "actions/crm/activities/delete-activity.ts",
+      "export": "deleteActivity",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_api_token",
+      "kind": "server-action",
+      "module": "actions/api-tokens.ts",
+      "export": "deleteApiToken",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_campaign",
+      "kind": "server-action",
+      "module": "actions/campaigns/delete-campaign.ts",
+      "export": "deleteCampaign",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_config",
+      "kind": "server-action",
+      "module": "actions/reports/config.ts",
+      "export": "deleteConfig",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_config_value",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/crm-settings/_actions/crm-settings.ts",
+      "export": "deleteConfigValue",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_contact",
+      "kind": "server-action",
+      "module": "actions/crm/contacts/delete-contact.ts",
+      "export": "deleteContact",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_contract",
+      "kind": "server-action",
+      "module": "actions/crm/contracts/delete-contract/index.ts",
+      "export": "deleteContract",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_document",
+      "kind": "server-action",
+      "module": "actions/documents/delete-document.ts",
+      "export": "deleteDocument",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_email",
+      "kind": "server-action",
+      "module": "actions/emails/messages.ts",
+      "export": "deleteEmail",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_email_account",
+      "kind": "server-action",
+      "module": "actions/emails/accounts.ts",
+      "export": "deleteEmailAccount",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_lead",
+      "kind": "server-action",
+      "module": "actions/crm/leads/delete-lead.ts",
+      "export": "deleteLead",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_opportunity",
+      "kind": "server-action",
+      "module": "actions/crm/opportunities/delete-opportunity.ts",
+      "export": "deleteOpportunity",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_payment",
+      "kind": "server-action",
+      "module": "actions/invoices/delete-payment.ts",
+      "export": "deletePayment",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_product",
+      "kind": "server-action",
+      "module": "actions/crm/products/delete-product/index.ts",
+      "export": "deleteProduct",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_project",
+      "kind": "server-action",
+      "module": "actions/projects/delete-project.ts",
+      "export": "deleteProject",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_schedule",
+      "kind": "server-action",
+      "module": "actions/reports/schedule.ts",
+      "export": "deleteSchedule",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_section",
+      "kind": "server-action",
+      "module": "actions/projects/delete-section.ts",
+      "export": "deleteSection",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_system_api_key",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/actions/api-keys.ts",
+      "export": "deleteSystemApiKey",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_target",
+      "kind": "server-action",
+      "module": "actions/crm/targets/delete-target.ts",
+      "export": "deleteTarget",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_target_list",
+      "kind": "server-action",
+      "module": "actions/crm/target-lists/delete-target-list.ts",
+      "export": "deleteTargetList",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_task",
+      "kind": "server-action",
+      "module": "actions/crm/tasks/delete-task.ts",
+      "export": "deleteTask",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_task_action",
+      "kind": "server-action",
+      "module": "actions/projects/delete-task.ts",
+      "export": "deleteTask",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_template",
+      "kind": "server-action",
+      "module": "actions/campaigns/templates/delete-template.ts",
+      "export": "deleteTemplate",
+      "risk": "write"
+    },
+    {
+      "name": "host_delete_user",
+      "kind": "server-action",
+      "module": "actions/admin/users/delete-user.ts",
+      "export": "deleteUser",
+      "risk": "destructive"
+    },
+    {
+      "name": "host_delete_user_api_key",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/profile/actions/api-keys.ts",
+      "export": "deleteUserApiKey",
+      "risk": "write"
+    },
+    {
+      "name": "host_disconnect_document_from_crm_task",
+      "kind": "server-action",
+      "module": "actions/crm/tasks/assign-document.ts",
+      "export": "disconnectDocumentFromCrmTask",
+      "risk": "write"
+    },
+    {
+      "name": "host_disconnect_document_from_task",
+      "kind": "server-action",
+      "module": "actions/projects/assign-document-to-task.ts",
+      "export": "disconnectDocumentFromTask",
+      "risk": "write"
+    },
+    {
+      "name": "host_duplicate_config",
+      "kind": "server-action",
+      "module": "actions/reports/config.ts",
+      "export": "duplicateConfig",
+      "risk": "write"
+    },
+    {
+      "name": "host_duplicate_invoice",
+      "kind": "server-action",
+      "module": "actions/invoices/duplicate-invoice.ts",
+      "export": "duplicateInvoice",
+      "risk": "write"
+    },
+    {
+      "name": "host_generate_template",
+      "kind": "server-action",
+      "module": "actions/campaigns/templates/generate-template.ts",
+      "export": "generateTemplate",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_account_by_id",
+      "kind": "server-action",
+      "module": "actions/crm/accounts/get-account-by-id.ts",
+      "export": "getAccountById",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_accounts",
+      "kind": "server-action",
+      "module": "actions/crm/accounts/get-accounts.ts",
+      "export": "getAccounts",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_activities_by_entity",
+      "kind": "server-action",
+      "module": "actions/crm/activities/get-activities-by-entity.ts",
+      "export": "getActivitiesByEntity",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_api_tokens",
+      "kind": "server-action",
+      "module": "actions/api-tokens.ts",
+      "export": "getApiTokens",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_audit_log_admin",
+      "kind": "server-action",
+      "module": "actions/crm/audit-log/get-audit-log-admin.ts",
+      "export": "getAuditLogAdmin",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_audit_log_by_entity",
+      "kind": "server-action",
+      "module": "actions/crm/audit-log/get-audit-log-by-entity.ts",
+      "export": "getAuditLogByEntity",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_campaign",
+      "kind": "server-action",
+      "module": "actions/campaigns/get-campaign.ts",
+      "export": "getCampaign",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_campaigns",
+      "kind": "server-action",
+      "module": "actions/campaigns/get-campaigns.ts",
+      "export": "getCampaigns",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_config_values",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/crm-settings/_actions/crm-settings.ts",
+      "export": "getConfigValues",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_contract",
+      "kind": "server-action",
+      "module": "actions/crm/get-contract.ts",
+      "export": "getContract",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_contracts_by_account_id",
+      "kind": "server-action",
+      "module": "actions/crm/get-contracts.ts",
+      "export": "getContractsByAccountId",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_contracts_with_includes",
+      "kind": "server-action",
+      "module": "actions/crm/get-contracts.ts",
+      "export": "getContractsWithIncludes",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_currencies",
+      "kind": "server-action",
+      "module": "actions/crm/get-currencies.ts",
+      "export": "getCurrencies",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_currencies_action",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/currencies/_actions/currencies.ts",
+      "export": "getCurrencies",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_document_versions",
+      "kind": "server-action",
+      "module": "actions/documents/get-document-versions.ts",
+      "export": "getDocumentVersions",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_documents",
+      "kind": "server-action",
+      "module": "actions/documents/get-documents.ts",
+      "export": "getDocuments",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_ecb_auto_update",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/currencies/_actions/currencies.ts",
+      "export": "getEcbAutoUpdate",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_email",
+      "kind": "server-action",
+      "module": "actions/emails/messages.ts",
+      "export": "getEmail",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_email_accounts",
+      "kind": "server-action",
+      "module": "actions/emails/accounts.ts",
+      "export": "getEmailAccounts",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_emails",
+      "kind": "server-action",
+      "module": "actions/emails/messages.ts",
+      "export": "getEmails",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_exchange_rates_admin",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/currencies/_actions/currencies.ts",
+      "export": "getExchangeRatesAdmin",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_industries",
+      "kind": "server-action",
+      "module": "actions/crm/get-industries.ts",
+      "export": "getIndustries",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_opportunities_full",
+      "kind": "server-action",
+      "module": "actions/crm/get-opportunities-with-includes.ts",
+      "export": "getOpportunitiesFull",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_similar_accounts",
+      "kind": "server-action",
+      "module": "actions/crm/similarity/get-similar-accounts.ts",
+      "export": "getSimilarAccounts",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_similar_contacts",
+      "kind": "server-action",
+      "module": "actions/crm/similarity/get-similar-contacts.ts",
+      "export": "getSimilarContacts",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_similar_leads",
+      "kind": "server-action",
+      "module": "actions/crm/similarity/get-similar-leads.ts",
+      "export": "getSimilarLeads",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_similar_opportunities",
+      "kind": "server-action",
+      "module": "actions/crm/similarity/get-similar-opportunities.ts",
+      "export": "getSimilarOpportunities",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_system_api_keys",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/actions/api-keys.ts",
+      "export": "getSystemApiKeys",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_target",
+      "kind": "server-action",
+      "module": "actions/crm/get-target.ts",
+      "export": "getTarget",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_target_list",
+      "kind": "server-action",
+      "module": "actions/crm/get-target-list.ts",
+      "export": "getTargetList",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_target_lists",
+      "kind": "server-action",
+      "module": "actions/crm/get-target-lists.ts",
+      "export": "getTargetLists",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_targets",
+      "kind": "server-action",
+      "module": "actions/crm/get-targets.ts",
+      "export": "getTargets",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_tasks_count",
+      "kind": "server-action",
+      "module": "actions/dashboard/get-tasks-count.ts",
+      "export": "getTasksCount",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_template",
+      "kind": "server-action",
+      "module": "actions/campaigns/templates/get-template.ts",
+      "export": "getTemplate",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_templates",
+      "kind": "server-action",
+      "module": "actions/campaigns/templates/get-templates.ts",
+      "export": "getTemplates",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_user_api_keys",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/profile/actions/api-keys.ts",
+      "export": "getUserApiKeys",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_user_by_id",
+      "kind": "server-action",
+      "module": "actions/user/get-user-by-id.ts",
+      "export": "getUserById",
+      "risk": "write"
+    },
+    {
+      "name": "host_get_users_tasks_count",
+      "kind": "server-action",
+      "module": "actions/dashboard/get-tasks-count.ts",
+      "export": "getUsersTasksCount",
+      "risk": "write"
+    },
+    {
+      "name": "host_import_products",
+      "kind": "server-action",
+      "module": "actions/crm/products/import-products.ts",
+      "export": "importProducts",
+      "risk": "write"
+    },
+    {
+      "name": "host_import_targets",
+      "kind": "server-action",
+      "module": "actions/crm/targets/import-targets.ts",
+      "export": "importTargets",
+      "risk": "write"
+    },
+    {
+      "name": "host_inngest_create",
+      "method": "POST",
+      "path": "/api/inngest",
+      "risk": "write"
+    },
+    {
+      "name": "host_inngest_list",
+      "method": "GET",
+      "path": "/api/inngest",
+      "risk": "read"
+    },
+    {
+      "name": "host_inngest_update",
+      "method": "PUT",
+      "path": "/api/inngest",
+      "risk": "write"
+    },
+    {
+      "name": "host_invite_user",
+      "kind": "server-action",
+      "module": "actions/admin/users/invite-user.ts",
+      "export": "inviteUser",
+      "risk": "destructive"
+    },
+    {
+      "name": "host_invoices_pdf_list",
+      "method": "GET",
+      "path": "/api/invoices/{invoiceId}/pdf",
+      "risk": "read"
+    },
+    {
+      "name": "host_issue_invoice",
+      "kind": "server-action",
+      "module": "actions/invoices/issue-invoice.ts",
+      "export": "issueInvoice",
+      "risk": "write"
+    },
+    {
+      "name": "host_list_imap_folders",
+      "kind": "server-action",
+      "module": "actions/emails/accounts.ts",
+      "export": "listImapFolders",
+      "risk": "write"
+    },
+    {
+      "name": "host_list_schedules",
+      "kind": "server-action",
+      "module": "actions/reports/schedule.ts",
+      "export": "listSchedules",
+      "risk": "write"
+    },
+    {
+      "name": "host_load_configs",
+      "kind": "server-action",
+      "module": "actions/reports/config.ts",
+      "export": "loadConfigs",
+      "risk": "write"
+    },
+    {
+      "name": "host_mark_task_done",
+      "kind": "server-action",
+      "module": "actions/projects/mark-task-done.ts",
+      "export": "markTaskDone",
+      "risk": "write"
+    },
+    {
+      "name": "host_mcp_create",
+      "method": "POST",
+      "path": "/api/mcp/{transport}",
+      "risk": "write"
+    },
+    {
+      "name": "host_mcp_get",
+      "method": "GET",
+      "path": "/api/mcp/{transport}",
+      "risk": "read"
+    },
+    {
+      "name": "host_og_list",
+      "method": "GET",
+      "path": "/api/og",
+      "risk": "read"
+    },
+    {
+      "name": "host_pause_campaign",
+      "kind": "server-action",
+      "module": "actions/campaigns/pause-campaign.ts",
+      "export": "pauseCampaign",
+      "risk": "write"
+    },
+    {
+      "name": "host_regenerate_invoice_pdf",
+      "kind": "server-action",
+      "module": "actions/invoices/regenerate-pdf.ts",
+      "export": "regenerateInvoicePdf",
+      "risk": "write"
+    },
+    {
+      "name": "host_remove_assignment",
+      "kind": "server-action",
+      "module": "actions/crm/account-products/remove-assignment/index.ts",
+      "export": "removeAssignment",
+      "risk": "destructive"
+    },
+    {
+      "name": "host_remove_contract_line_item",
+      "kind": "server-action",
+      "module": "actions/crm/contract-line-items/remove-line-item/index.ts",
+      "export": "removeContractLineItem",
+      "risk": "write"
+    },
+    {
+      "name": "host_remove_opportunity_line_item",
+      "kind": "server-action",
+      "module": "actions/crm/opportunity-line-items/remove-line-item/index.ts",
+      "export": "removeOpportunityLineItem",
+      "risk": "write"
+    },
+    {
+      "name": "host_remove_target_from_list",
+      "kind": "server-action",
+      "module": "actions/crm/target-lists/remove-target-from-list.ts",
+      "export": "removeTargetFromList",
+      "risk": "write"
+    },
+    {
+      "name": "host_reorder_contract_line_items",
+      "kind": "server-action",
+      "module": "actions/crm/contract-line-items/reorder-line-items/index.ts",
+      "export": "reorderContractLineItems",
+      "risk": "write"
+    },
+    {
+      "name": "host_reorder_opportunity_line_items",
+      "kind": "server-action",
+      "module": "actions/crm/opportunity-line-items/reorder-line-items/index.ts",
+      "export": "reorderOpportunityLineItems",
+      "risk": "write"
+    },
+    {
+      "name": "host_reports_export_list",
+      "method": "GET",
+      "path": "/api/reports/export",
+      "risk": "read"
+    },
+    {
+      "name": "host_restore_account",
+      "kind": "server-action",
+      "module": "actions/crm/accounts/restore-account.ts",
+      "export": "restoreAccount",
+      "risk": "write"
+    },
+    {
+      "name": "host_restore_contact",
+      "kind": "server-action",
+      "module": "actions/crm/contacts/restore-contact.ts",
+      "export": "restoreContact",
+      "risk": "write"
+    },
+    {
+      "name": "host_restore_contract",
+      "kind": "server-action",
+      "module": "actions/crm/contracts/restore-contract/index.ts",
+      "export": "restoreContract",
+      "risk": "write"
+    },
+    {
+      "name": "host_restore_lead",
+      "kind": "server-action",
+      "module": "actions/crm/leads/restore-lead.ts",
+      "export": "restoreLead",
+      "risk": "write"
+    },
+    {
+      "name": "host_restore_opportunity",
+      "kind": "server-action",
+      "module": "actions/crm/opportunities/restore-opportunity.ts",
+      "export": "restoreOpportunity",
+      "risk": "write"
+    },
+    {
+      "name": "host_retry_enrichment",
+      "kind": "server-action",
+      "module": "actions/documents/retry-enrichment.ts",
+      "export": "retryEnrichment",
+      "risk": "write"
+    },
+    {
+      "name": "host_save_config",
+      "kind": "server-action",
+      "module": "actions/reports/config.ts",
+      "export": "saveConfig",
+      "risk": "write"
+    },
+    {
+      "name": "host_save_invoice_settings",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/invoices/settings/_actions/invoice-settings.ts",
+      "export": "saveInvoiceSettings",
+      "risk": "write"
+    },
+    {
+      "name": "host_schedule_campaign",
+      "kind": "server-action",
+      "module": "actions/campaigns/schedule-campaign.ts",
+      "export": "scheduleCampaign",
+      "risk": "write"
+    },
+    {
+      "name": "host_search_accounts",
+      "kind": "server-action",
+      "module": "actions/crm/accounts/search-accounts.ts",
+      "export": "searchAccounts",
+      "risk": "write"
+    },
+    {
+      "name": "host_search_documents",
+      "kind": "server-action",
+      "module": "actions/documents/search-documents.ts",
+      "export": "searchDocuments",
+      "risk": "write"
+    },
+    {
+      "name": "host_search_users",
+      "kind": "server-action",
+      "module": "actions/user/search-users.ts",
+      "export": "searchUsers",
+      "risk": "write"
+    },
+    {
+      "name": "host_send_campaign_now",
+      "kind": "server-action",
+      "module": "actions/campaigns/send-campaign-now.ts",
+      "export": "sendCampaignNow",
+      "risk": "write"
+    },
+    {
+      "name": "host_send_email",
+      "kind": "server-action",
+      "module": "actions/emails/messages.ts",
+      "export": "sendEmail",
+      "risk": "destructive"
+    },
+    {
+      "name": "host_send_feedback",
+      "kind": "server-action",
+      "module": "actions/feedback/send-feedback.ts",
+      "export": "sendFeedback",
+      "risk": "write"
+    },
+    {
+      "name": "host_send_invoice_email",
+      "kind": "server-action",
+      "module": "actions/invoices/send-invoice-email.ts",
+      "export": "sendInvoiceEmail",
+      "risk": "write"
+    },
+    {
+      "name": "host_send_mail_to_all",
+      "kind": "server-action",
+      "module": "actions/admin/send-mail-to-all/index.ts",
+      "export": "sendMailToAll",
+      "risk": "destructive"
+    },
+    {
+      "name": "host_set_default_currency",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/currencies/_actions/currencies.ts",
+      "export": "setDefaultCurrency",
+      "risk": "write"
+    },
+    {
+      "name": "host_set_ecb_auto_update",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/currencies/_actions/currencies.ts",
+      "export": "setEcbAutoUpdate",
+      "risk": "write"
+    },
+    {
+      "name": "host_set_email_account_active",
+      "kind": "server-action",
+      "module": "actions/emails/accounts.ts",
+      "export": "setEmailAccountActive",
+      "risk": "write"
+    },
+    {
+      "name": "host_set_inactive_opportunity",
+      "kind": "server-action",
+      "module": "actions/crm/opportunity/dashboard/set-inactive.ts",
+      "export": "setInactiveOpportunity",
+      "risk": "write"
+    },
+    {
+      "name": "host_set_language",
+      "kind": "server-action",
+      "module": "actions/user/set-language.ts",
+      "export": "setLanguage",
+      "risk": "write"
+    },
+    {
+      "name": "host_set_smtp",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/_components/ResendCard.tsx",
+      "export": "setSMTP",
+      "risk": "write"
+    },
+    {
+      "name": "host_set_user_role",
+      "kind": "server-action",
+      "module": "actions/admin/users/set-role.ts",
+      "export": "setUserRole",
+      "risk": "write"
+    },
+    {
+      "name": "host_suggest_mapping",
+      "kind": "server-action",
+      "module": "actions/crm/targets/suggest-mapping.ts",
+      "export": "suggestMapping",
+      "risk": "write"
+    },
+    {
+      "name": "host_test_email_connection",
+      "kind": "server-action",
+      "module": "actions/emails/accounts.ts",
+      "export": "testEmailConnection",
+      "risk": "write"
+    },
+    {
+      "name": "host_toggle_currency",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/currencies/_actions/currencies.ts",
+      "export": "toggleCurrency",
+      "risk": "write"
+    },
+    {
+      "name": "host_toggle_share",
+      "kind": "server-action",
+      "module": "actions/reports/config.ts",
+      "export": "toggleShare",
+      "risk": "write"
+    },
+    {
+      "name": "host_trigger_sync",
+      "kind": "server-action",
+      "module": "actions/emails/sync.ts",
+      "export": "triggerSync",
+      "risk": "write"
+    },
+    {
+      "name": "host_unified_search",
+      "kind": "server-action",
+      "module": "actions/fulltext/unified-search.ts",
+      "export": "unifiedSearch",
+      "risk": "write"
+    },
+    {
+      "name": "host_unlink_from_account",
+      "kind": "server-action",
+      "module": "actions/documents/unlink-from-account.ts",
+      "export": "unlinkFromAccount",
+      "risk": "write"
+    },
+    {
+      "name": "host_unlink_opportunity",
+      "kind": "server-action",
+      "module": "actions/crm/contacts/unlink-opportunity.ts",
+      "export": "unlinkOpportunity",
+      "risk": "write"
+    },
+    {
+      "name": "host_unwatch_account",
+      "kind": "server-action",
+      "module": "actions/crm/accounts/unwatch-account.ts",
+      "export": "unwatchAccount",
+      "risk": "write"
+    },
+    {
+      "name": "host_unwatch_project",
+      "kind": "server-action",
+      "module": "actions/projects/watch-project.ts",
+      "export": "unwatchProject",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_account",
+      "kind": "server-action",
+      "module": "actions/crm/accounts/update-account.ts",
+      "export": "updateAccount",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_activity",
+      "kind": "server-action",
+      "module": "actions/crm/activities/update-activity.ts",
+      "export": "updateActivity",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_assignment",
+      "kind": "server-action",
+      "module": "actions/crm/account-products/update-assignment/index.ts",
+      "export": "updateAssignment",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_campaign",
+      "kind": "server-action",
+      "module": "actions/campaigns/update-campaign.ts",
+      "export": "updateCampaign",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_config_value",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/crm-settings/_actions/crm-settings.ts",
+      "export": "updateConfigValue",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_contact",
+      "kind": "server-action",
+      "module": "actions/crm/contacts/update-contact.ts",
+      "export": "updateContact",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_contract",
+      "kind": "server-action",
+      "module": "actions/crm/contracts/update-contract/index.ts",
+      "export": "updateContract",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_contract_line_item",
+      "kind": "server-action",
+      "module": "actions/crm/contract-line-items/update-line-item/index.ts",
+      "export": "updateContractLineItem",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_exchange_rate",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/currencies/_actions/currencies.ts",
+      "export": "updateExchangeRate",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_invoice",
+      "kind": "server-action",
+      "module": "actions/invoices/update-invoice.ts",
+      "export": "updateInvoice",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_kanban_position",
+      "kind": "server-action",
+      "module": "actions/projects/update-kanban-position.ts",
+      "export": "updateKanbanPosition",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_lead",
+      "kind": "server-action",
+      "module": "actions/crm/leads/update-lead.ts",
+      "export": "updateLead",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_opportunity",
+      "kind": "server-action",
+      "module": "actions/crm/opportunities/update-opportunity.ts",
+      "export": "updateOpportunity",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_opportunity_line_item",
+      "kind": "server-action",
+      "module": "actions/crm/opportunity-line-items/update-line-item/index.ts",
+      "export": "updateOpportunityLineItem",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_product",
+      "kind": "server-action",
+      "module": "actions/crm/products/update-product/index.ts",
+      "export": "updateProduct",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_profile",
+      "kind": "server-action",
+      "module": "actions/user/update-profile.ts",
+      "export": "updateProfile",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_profile_photo",
+      "kind": "server-action",
+      "module": "actions/user/update-profile-photo.ts",
+      "export": "updateProfilePhoto",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_project",
+      "kind": "server-action",
+      "module": "actions/projects/update-project.ts",
+      "export": "updateProject",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_schedule",
+      "kind": "server-action",
+      "module": "actions/reports/schedule.ts",
+      "export": "updateSchedule",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_section_title",
+      "kind": "server-action",
+      "module": "actions/projects/update-section-title.ts",
+      "export": "updateSectionTitle",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_target",
+      "kind": "server-action",
+      "module": "actions/crm/targets/update-target.ts",
+      "export": "updateTarget",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_target_list",
+      "kind": "server-action",
+      "module": "actions/crm/target-lists/update-target-list.ts",
+      "export": "updateTargetList",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_task",
+      "kind": "server-action",
+      "module": "actions/projects/update-task.ts",
+      "export": "updateTask",
+      "risk": "write"
+    },
+    {
+      "name": "host_update_template",
+      "kind": "server-action",
+      "module": "actions/campaigns/templates/update-template.ts",
+      "export": "updateTemplate",
+      "risk": "write"
+    },
+    {
+      "name": "host_upload_presigned_url_create",
+      "method": "POST",
+      "path": "/api/upload/presigned-url",
+      "risk": "write"
+    },
+    {
+      "name": "host_upsert_system_api_key",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/admin/actions/api-keys.ts",
+      "export": "upsertSystemApiKey",
+      "risk": "write"
+    },
+    {
+      "name": "host_upsert_user_api_key",
+      "kind": "server-action",
+      "module": "app/[locale]/(routes)/profile/actions/api-keys.ts",
+      "export": "upsertUserApiKey",
+      "risk": "write"
+    },
+    {
+      "name": "host_watch_account",
+      "kind": "server-action",
+      "module": "actions/crm/accounts/watch-account.ts",
+      "export": "watchAccount",
+      "risk": "write"
+    },
+    {
+      "name": "host_watch_project",
+      "kind": "server-action",
+      "module": "actions/projects/watch-project.ts",
+      "export": "watchProject",
+      "risk": "write"
+    }
+  ]
+}

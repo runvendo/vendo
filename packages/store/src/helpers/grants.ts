@@ -6,14 +6,9 @@ import {
   type PermissionGrant,
   type Principal,
 } from "@vendoai/core";
-import { overlayFor, registerEphemeralSubject, snapshot } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
 import { grantFromRow, putGrantRow } from "./rows.js";
 import { parsePermissionGrant } from "../validate.js";
-
-function active(grant: PermissionGrant, now: string): boolean {
-  return grant.revokedAt === undefined && (grant.expiresAt === undefined || grant.expiresAt > now);
-}
 
 /** 02-store §3 */
 export function grantStore(store: VendoStore): {
@@ -23,43 +18,21 @@ export function grantStore(store: VendoStore): {
   revoke(id: GrantId, revokedAt: IsoDateTime): Promise<void>;
 } {
   const db = dbFor(store);
-  const overlay = overlayFor(store);
   return {
     async create(principal, grant) {
       const parsedGrant = parsePermissionGrant(grant);
       if (parsedGrant.subject !== principal.subject) {
         throw new VendoError("validation", "Grant subject must match principal subject");
       }
-      if (principal.ephemeral === true) {
-        registerEphemeralSubject(store, principal.subject);
-        // Mirror putGrantRow's cross-subject refusal (02 §2): a prior overlay
-        // grant owned by another subject is never flipped.
-        const prior = overlay.grants.get(parsedGrant.id);
-        if (prior !== undefined && prior.subject !== parsedGrant.subject) {
-          throw new VendoError("conflict", `grant ${parsedGrant.id} belongs to another subject`);
-        }
-        overlay.grants.set(parsedGrant.id, snapshot(parsedGrant));
-        return;
-      }
-      await putGrantRow(db, parsedGrant, false);
+      // Guarded upsert (02 §2): a same-subject re-create updates in place; an
+      // id owned by another subject is refused as a conflict.
+      await putGrantRow(db, parsedGrant);
     },
     async get(id) {
-      const memory = overlay.grants.get(id);
-      if (memory) return snapshot(memory);
       const result = await db.query("SELECT * FROM vendo_grants WHERE id = $1", [id]);
       return result.rows[0] ? grantFromRow(result.rows[0]) : null;
     },
     async list(principal, filter = {}) {
-      if (principal.ephemeral === true) {
-        const now = new Date().toISOString();
-        return [...overlay.grants.values()]
-          .filter((grant) => grant.subject === principal.subject)
-          .filter((grant) => filter.tool === undefined || grant.tool === filter.tool)
-          .filter((grant) => filter.appId === undefined || grant.appId === filter.appId)
-          .filter((grant) => filter.includeInactive === true || active(grant, now))
-          .sort((a, b) => a.grantedAt.localeCompare(b.grantedAt) || a.id.localeCompare(b.id))
-          .map(snapshot);
-      }
       const params: unknown[] = [principal.subject];
       const clauses = ["subject = $1"];
       if (filter.tool !== undefined) {
@@ -80,11 +53,6 @@ export function grantStore(store: VendoStore): {
       return result.rows.map(grantFromRow);
     },
     async revoke(id, revokedAt) {
-      const memory = overlay.grants.get(id);
-      if (memory) {
-        overlay.grants.set(id, snapshot({ ...memory, revokedAt }));
-        return;
-      }
       const result = await db.query(
         "UPDATE vendo_grants SET revoked_at = $2 WHERE id = $1 RETURNING id",
         [id, revokedAt],

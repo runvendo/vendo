@@ -1,7 +1,7 @@
 import {
-  VENDO_TREE_FORMAT,
+  VENDO_TREE_FORMAT_V2,
   VendoError,
-  validateTree,
+  validateTreeV2,
   type AppDocument,
   type Json,
   type RunContext,
@@ -24,9 +24,13 @@ const own = (value: object, key: string): boolean => Object.prototype.hasOwnProp
 const validatedUi = (input: unknown): UIPayload | null => {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return null;
   const candidate = input as UIPayload;
-  if (candidate.formatVersion !== VENDO_TREE_FORMAT) return null;
-  const result = validateTree(candidate);
-  return result.ok ? result.tree as unknown as UIPayload : null;
+  if (candidate.formatVersion !== VENDO_TREE_FORMAT_V2) return null;
+  // A server-computed payload may carry components beside the tree fields
+  // (the renderer lifts them and the jail enforces the component caps); the
+  // canonical tree validates without them.
+  const { components: _components, ...tree } = candidate as UIPayload & { components?: unknown };
+  const result = validateTreeV2(tree);
+  return result.ok ? candidate : null;
 };
 
 /** 06-apps §4.1 — internal execution surface shared by open() and call(). */

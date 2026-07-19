@@ -24,7 +24,7 @@ const scrollState = (page: Page) =>
 
 test.beforeEach(async ({ page }) => {
   await openScenario(page, "thread-bounded");
-  await expect(page.getByLabel("Approval for host_email_send")).toBeVisible();
+  await expect(page.getByLabel("Approval for Email send")).toBeVisible();
 });
 
 test("a loaded long thread starts at the latest turn, not the top", async ({ page }) => {
@@ -96,7 +96,7 @@ test("switching threads re-arms the stick — the new thread opens at its latest
   // Switch to thread B (same turns, no trailing approval): the scroll state
   // must not leak — B opens at the end.
   await page.getByTestId("switch-thread").click();
-  await expect(page.getByLabel("Approval for host_email_send")).toBeHidden();
+  await expect(page.getByLabel("Approval for Email send")).toBeHidden();
   await expect(page.getByText("Answer 10:").first()).toBeVisible();
   await expect.poll(async () => (await scrollState(page)).gap, {
     message: "a freshly loaded thread must open at its latest turn even after a scroll-up in the previous one",

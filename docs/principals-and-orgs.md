@@ -7,20 +7,21 @@ that seam.
 ## Anonymous sessions and sign-in
 
 When `principal(req)` returns `null`, the visitor gets a per-client ephemeral
-principal carried by a signed httpOnly cookie. Nothing an anonymous session
-touches lands on disk.
+principal carried by an opaque httpOnly cookie — a random 128-bit session id.
+The cookie is just a pointer: the `vendo_sessions` row is the authority, so a
+forged or invented id merely names its own empty session. Anonymous work is
+stored like any other — ordinary rows under the anonymous subject — plus one
+row in `vendo_sessions` recording the session's last activity.
 
-**Sessions expire.** Every request touches the session; a session idle past
-`sessions.ttlMs` (default 30 minutes) is evicted — its in-memory data
-(threads, apps, state, grants, approvals) is discarded in one cascade. A
-request still in flight holds its session open, however long the turn streams.
-The cookie itself stays valid: the next request simply gets a fresh, empty
-session. A write that races an eviction fails closed with `not-found`
-("session may have expired") rather than landing on disk. Tune with
-`createVendo({ sessions: { ttlMs, sweepIntervalMs, maxSessions } })`;
-`ttlMs: 0` disables TTL eviction (the `maxSessions` cap still applies).
-Sessions are per-process: multi-instance deployments need sticky routing for
-anonymous traffic.
+**Sessions expire.** Every request touches the session; a sweep erases every
+session idle past `sessions.ttlMs` (default 30 minutes) — its rows (threads,
+apps, state, grants, approvals) are deleted in one cascade. The cookie itself
+stays valid: the next request simply gets a fresh, empty session. A stale
+app-scoped write after the sweep fails closed with `not-found` ("session may
+have expired") rather than recreating unreachable rows. Tune with
+`createVendo({ sessions: { ttlMs, sweepIntervalMs } })`; `ttlMs: 0` disables
+TTL eviction. Sessions live in the database, so they survive restarts and are
+shared across instances.
 
 **Auto-merge on sign-in.** The first authenticated request that still carries
 a valid anonymous-session cookie adopts that session's work into the signed-in
@@ -57,36 +58,22 @@ configure. Every actAs-authenticated call audits its disposition in
 Subjects starting with `vendo:` are runtime-minted only:
 
 - webhook trigger principals are `vendo:webhook:<source>`,
-- org principals are `vendo:org:<orgId>`.
+- `vendo:org:<orgId>` is reserved for Vendo Cloud organization workspaces
+  (see below) — the OSS wire never mints this subject itself.
 
 Host principal resolvers are forbidden from producing reserved subjects (and
-from minting `kind: "org"` principals — org context is derived from
-membership); the wire rejects both loudly. Reserved subjects can never hold
-connected accounts or org membership.
+from minting `kind: "org"` principals); the wire rejects both loudly.
+Reserved subjects can never hold connected accounts.
 
 ## Orgs (Vendo Cloud)
 
-Full org semantics ship in the OSS packages — `vendo_orgs` +
-`vendo_org_members` tables, `kind: "org"` principals, org-owned apps and
-automations, management chrome — but **activation is key-gated**: set
-`VENDO_API_KEY` for a plan with the `orgs` capability (validated through the
-console's `/keys/validate`). Without it, every org API returns a
-`cloud-required` posture error, and `GET /api/vendo/status` reports
-`blocks.orgs: false`.
+Organization workspaces — shared apps, approvals, and grants under one org
+subject — are a [Vendo Cloud](https://vendo.run) capability, not an OSS wire
+feature. The self-hosted wire always answers every `/api/vendo/orgs` route,
+and any `?org=<id>` param on `/api/vendo/approvals` or `/api/vendo/grants`,
+with a `cloud-required` posture error (`402`) — unconditionally, regardless
+of `VENDO_API_KEY`. `GET /api/vendo/status` reports no `orgs` block.
 
-Roles: **members run, admins approve and manage, owners control the owner
-set.** An org can never lose its last owner (except through the store erase
-API, where full erasure wins).
-
-- `POST /api/vendo/orgs` — create (caller becomes owner)
-- `GET /api/vendo/orgs` · `GET /api/vendo/orgs/:id` — list / members
-- `POST /api/vendo/orgs/:id/members` · `PATCH|DELETE /api/vendo/orgs/:id/members/:subject`
-- `POST /api/vendo/orgs/:id/apps` — transfer one of your apps to the org
-
-An org-owned app runs with the org principal; the human behind the request
-rides along as `actor` and lands in the audit trail (`detail.org`). Grants and
-approvals for org apps live under the org subject — org approvals are decided
-on the admin-gated surfaces (`GET /api/vendo/approvals?org=<id>`,
-`POST /api/vendo/approvals/decide` with `org`), and standing grants are
-managed the same way (`/api/vendo/grants?org=<id>`). Transferring an app does
-not transfer grants: the org re-approves as itself.
+Vendo Cloud manages its own accounts, members, and org-scoped keys
+server-side; see `vendo cloud whoami`, `vendo cloud members`, and `--org`
+key scoping in the CLI reference for the Cloud-side org model.

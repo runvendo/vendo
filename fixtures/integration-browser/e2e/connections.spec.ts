@@ -57,7 +57,9 @@ test("in-flow connect card: connect-required → connect → automatic retry exe
 
   // The retry executed the REAL connector call through the fresh connection.
   await expect(page.getByText("Sent the email.")).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText(/Tool: gmail_GMAIL_SEND_EMAIL/i).last()).toBeVisible();
+  // ENG-216 — the chip renders the humanized tool label (host metadata absent →
+  // humanizeToolName("gmail_GMAIL_SEND_EMAIL")), never the raw slug or "Tool:" prefix.
+  await expect(page.getByText("Gmail send email").last()).toBeVisible({ timeout: 10_000 });
   await page.screenshot({ path: "e2e/artifacts/connect-card-retried.png", fullPage: false });
 });
 

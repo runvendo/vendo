@@ -6,17 +6,21 @@
   "type": "module",
   "scripts": {
     "corpus": "node --import tsx src/cli.ts",
+    "ui-parity": "node --import tsx src/ui-parity-nightly.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@vendoai/actions": "workspace:*",
     "@vendoai/core": "workspace:*",
+    "@vendoai/vendo": "workspace:*",
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
     "@playwright/test": "^1.48.0",
     "@types/node": "^22.0.0",
+    "ai": ">=6.0.0 <7",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"

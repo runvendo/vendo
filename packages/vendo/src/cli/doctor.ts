@@ -1,21 +1,59 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
+import { stdin, stdout } from "node:process";
 import type { Telemetry } from "@vendoai/telemetry";
+import {
+  cloudDoctor,
+  liveModelTurn,
+  startDevServerForProbe,
+  type CloudDoctorResult,
+  type LiveTurnResult,
+} from "./doctor-live.js";
+import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { detectFramework, detectVendoWiring } from "./framework.js";
+import { walk } from "./theme/walk.js";
 import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
-import { consoleOutput, exists, readOptional, toolingTelemetry, type Output } from "./shared.js";
+import { CLI_VERSION, consoleOutput, exists, readOptional, toolingTelemetry, type Output } from "./shared.js";
 
 export interface DoctorOptions {
   targetDir: string;
   url?: string;
   fetchImpl?: typeof fetch;
   output?: Output;
+  /** Machine-readable single-object output (design §5). */
+  json?: boolean;
+  /** Auto-confirm the dev-server-probe consent (non-interactive). */
+  yes?: boolean;
+  env?: Record<string, string | undefined>;
   telemetry?: {
     home?: string;
     env?: Record<string, string | undefined>;
     posthogKey?: string;
     fetchImpl?: typeof fetch;
   };
+  /** Seams (tests): each new probe is injectable so doctor runs without keys
+   *  or a running server. */
+  interactive?: boolean;
+  confirm?: (question: string, defaultYes?: boolean) => Promise<boolean>;
+  liveTurn?: (base: string) => Promise<LiveTurnResult>;
+  cloudProbe?: (options: { env?: Record<string, string | undefined> }) => Promise<CloudDoctorResult>;
+  startDevServer?: (options: { root: string; statusUrl: string; env?: Record<string, string | undefined>; fetchImpl?: typeof fetch }) => Promise<{ ok: boolean; stop: () => void }>;
+}
+
+type CheckStatus = "ok" | "broken" | "warning";
+interface DoctorCheck { status: CheckStatus; message: string; }
+
+async function askYesNo(question: string, defaultYes = false): Promise<boolean> {
+  if (!stdin.isTTY || !stdout.isTTY) return false;
+  const prompt = createInterface({ input: stdin, output: stdout });
+  try {
+    const answer = (await prompt.question(`${question} ${defaultYes ? "[Y/n]" : "[y/N]"} `)).trim().toLowerCase();
+    if (answer === "") return defaultYes;
+    return ["y", "yes"].includes(answer);
+  } finally {
+    prompt.close();
+  }
 }
 
 async function hasDependency(root: string): Promise<boolean> {
@@ -54,12 +92,18 @@ async function probeBody(response: Response): Promise<DoctorProbeBody> {
 export async function runDoctor(options: DoctorOptions): Promise<number> {
   const root = resolve(options.targetDir);
   const output = options.output ?? consoleOutput;
+  const json = options.json === true;
+  const env = options.env ?? process.env;
   const telemetry = telemetryFor(options, output);
   let failures = 0;
   let warnings = 0;
-  const pass = (message: string): void => output.log(`ok: ${message}`);
-  const fail = (message: string): void => { failures += 1; output.error(`broken: ${message}`); };
-  const warn = (message: string): void => { warnings += 1; output.error(`warning: ${message}`); };
+  const checks: DoctorCheck[] = [];
+  // In --json mode nothing but the final object may reach stdout; human lines
+  // are suppressed and the same information rides the checks array instead.
+  const note = (message: string): void => { if (!json) output.log(message); };
+  const pass = (message: string): void => { checks.push({ status: "ok", message }); if (!json) output.log(`ok: ${message}`); };
+  const fail = (message: string): void => { failures += 1; checks.push({ status: "broken", message }); if (!json) output.error(`broken: ${message}`); };
+  const warn = (message: string): void => { warnings += 1; checks.push({ status: "warning", message }); if (!json) output.error(`warning: ${message}`); };
 
   const framework = await detectFramework(root);
   if (framework === "express") {
@@ -98,10 +142,60 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   }
   if (!await exists(join(root, ".vendo", "data", ".gitignore"))) warn(".vendo/data/.gitignore is missing");
 
+  // §4 customization ladder — ejected chrome drift. The ejected pixels are the
+  // host's code, so a version gap is awareness (warn), never breakage (fail):
+  // the hooks/wire dependency keeps working; only new presentation is missed.
+  const installedUi = await readOptional(join(root, "node_modules", "@vendoai", "ui", "package.json"));
+  let uiVersion: string | null = null;
+  try {
+    if (installedUi !== null) uiVersion = (JSON.parse(installedUi) as { version?: string }).version ?? null;
+  } catch {
+    // Malformed install metadata — skip the drift check rather than fail doctor.
+  }
+  if (uiVersion !== null) {
+    for (const manifestPath of await walk(root, (rel) => rel.endsWith(EJECT_MANIFEST_FILE))) {
+      let ejected: EjectedManifest;
+      try {
+        ejected = JSON.parse(await readFile(manifestPath, "utf8")) as EjectedManifest;
+      } catch {
+        continue;
+      }
+      if (ejected.version === uiVersion) {
+        pass(`ejected ${ejected.surface} matches @vendoai/ui v${uiVersion}`);
+      } else {
+        warn(`ejected ${ejected.surface} came from @vendoai/ui v${ejected.version} but v${uiVersion} is installed — review the changelog (https://github.com/runvendo/vendo/releases) and \`vendo eject ${ejected.surface} --force\` if you want the new presentation`);
+      }
+    }
+  }
+
   const statusUrl = options.url
-    ?? process.env.VENDO_URL?.replace(/\/$/, "")
+    ?? env.VENDO_URL?.replace(/\/$/, "")
     ?? "http://localhost:3000/api/vendo";
   const fetchImpl = options.fetchImpl ?? fetch;
+
+  // Consent-gated dev-server start (design §5): when nothing is listening on
+  // the dev port and doctor is interactive, offer to boot it so the live probes
+  // have something to reach. Skipped in --json and non-interactive runs.
+  const interactive = options.interactive ?? (Boolean(stdout.isTTY) && Boolean(stdin.isTTY));
+  const confirm = options.confirm ?? askYesNo;
+  let devServerStop: (() => void) | null = null;
+  if (!json && interactive) {
+    let listening = false;
+    try { listening = (await fetchImpl(`${statusUrl}/status`)).ok; } catch { listening = false; }
+    if (!listening) {
+      const go = options.yes === true
+        || await confirm("Nothing is listening on the dev port. Start the dev server for the probe?", true);
+      if (go) {
+        note(`\nStarting the dev server so the probe has a live composition to reach…`);
+        const start = options.startDevServer
+          ?? ((o) => startDevServerForProbe(o));
+        const started = await start({ root, statusUrl, env, fetchImpl });
+        if (started.ok) { devServerStop = started.stop; pass("started the dev server for the probe"); }
+        else warn("could not start the dev server for the probe; start it yourself (e.g. `npm run dev`) and re-run `vendo doctor`");
+      }
+    }
+  }
+
   let mcpEnabled = false;
   let sandboxVenue: unknown;
   let liveComposition = false;
@@ -123,10 +217,10 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       // 10-mcp §1 — the door flag lives under blocks.mcp.
       mcpEnabled = body.blocks.mcp === true;
       sandboxVenue = body.blocks.sandbox;
-      if (sandboxVenue === "e2b" || sandboxVenue === "modal" || sandboxVenue === "custom") {
+      if (sandboxVenue === "e2b" || sandboxVenue === "modal" || sandboxVenue === "cloud" || sandboxVenue === "custom") {
         pass(`execution venue: ${sandboxVenue}`);
       } else if (sandboxVenue === false) {
-        warn("install the e2b package and set E2B_API_KEY, or install modal and set MODAL_TOKEN_ID+MODAL_TOKEN_SECRET, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable");
+        warn("install the e2b package and set E2B_API_KEY, or install modal and set MODAL_TOKEN_ID+MODAL_TOKEN_SECRET, or set VENDO_API_KEY for the managed Cloud sandbox, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable");
       } else if (sandboxVenue === undefined) {
         // Older hosts predate blocks.sandbox — version skew, not a broken install.
         warn("host /status does not report an execution venue; upgrade @vendoai/vendo to enable the venue check");
@@ -254,8 +348,56 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     }
   }
 
-  output.log("Ladder: execution venue is checked above; actAs for away host actions; connectors for external tools.");
+  note("Ladder: execution venue is checked above; actAs for away host actions; connectors for external tools.");
+
+  // One real model turn through the wired route (design §5). Exit 0 == a user
+  // would have gotten an answer. Reuses the resolver + devModel: the running
+  // dev server serves the turn over the same credential doctor reports.
+  let liveTurn: LiveTurnResult;
+  if (liveComposition) {
+    liveTurn = await (options.liveTurn ?? ((base: string) => liveModelTurn({
+      base,
+      fetchImpl,
+      env,
+    })))(statusUrl);
+    if (liveTurn.ok) {
+      pass(`live model turn answered over ${liveTurn.credential} (${liveTurn.elapsedMs}ms)`);
+      if (liveTurn.reply !== undefined) note(`\n  ${liveTurn.reply.trim()}\n`);
+    } else {
+      fail(`live model turn did not answer over ${liveTurn.credential}: ${liveTurn.error ?? "no reply"}`);
+    }
+  } else {
+    liveTurn = { attempted: false, ok: false, rung: "none", credential: "n/a", elapsedMs: 0, error: "dev server unreachable" };
+    fail(`live model turn cannot run; start the dev server at ${statusUrl} and retry`);
+  }
+
+  // VENDO_API_KEY local shape check + what Cloud unlocks (design §5-6). Key
+  // problems surface on the first real service call — no validate round-trip.
+  const cloud = await (options.cloudProbe ?? ((o) => cloudDoctor(o)))({ env });
+  if (cloud.present && cloud.ok) {
+    pass("Vendo Cloud key present and well-formed");
+  } else if (cloud.present) {
+    warn(`VENDO_API_KEY is set but not usable: ${cloud.error ?? "malformed"}`);
+  } else {
+    note(`Vendo Cloud (optional): no VENDO_API_KEY. A key unlocks ${cloud.unlocks.join("; ")}. Run \`vendo cloud login\` to start.`);
+  }
+
+  if (devServerStop !== null) devServerStop();
+
   const wired = failures === 0;
   await telemetry.track("doctor_run", { failures, warnings, wired });
+
+  if (json) {
+    output.log(JSON.stringify({
+      vendo: "doctor",
+      version: CLI_VERSION,
+      wired,
+      exit: wired ? 0 : 1,
+      checks,
+      liveTurn,
+      cloud,
+      summary: { failures, warnings },
+    }, null, 2));
+  }
   return wired ? 0 : 1;
 }

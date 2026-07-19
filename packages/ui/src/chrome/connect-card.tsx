@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useVendoContext } from "../context.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { completeConnection } from "./connect-dock.js";
 
 export interface ConnectCardProps {
   connector: string;
@@ -12,13 +13,12 @@ export interface ConnectCardProps {
 
 type Phase = "idle" | "connecting" | "connected" | "failed";
 
-const POLL_INTERVAL_MS = 1_500;
-const POLL_DEADLINE_MS = 120_000;
-
 /** 04-actions §3 / 08-ui §4 — the inline connect card: a connector call ended
  * `connect-required`, so offer the broker's OAuth redirect in place, poll the
  * connection status while the user completes it, then retry the call. Follows
- * the approval-card pattern (same chrome, keyed to the same tool call). */
+ * the approval-card pattern (same chrome, keyed to the same tool call).
+ * The initiate → OAuth window → poll-to-active loop is `completeConnection`,
+ * shared with the connect dock (ENG-225). */
 export function ConnectCard({ connector, toolkit, message, onConnected }: ConnectCardProps) {
   const { client } = useVendoContext();
   const [phase, setPhase] = useState<Phase>("idle");
@@ -32,26 +32,10 @@ export function ConnectCard({ connector, toolkit, message, onConnected }: Connec
     setPhase("connecting");
     setError(undefined);
     try {
-      const initiated = await client.connections.initiate({ toolkit, connector });
-      // The broker's hosted OAuth flow runs in its own window; this page keeps
-      // polling until the connection turns active.
-      window.open(initiated.redirectUrl, "_blank", "noopener");
-      const deadline = Date.now() + POLL_DEADLINE_MS;
-      while (!cancelled.current && Date.now() < deadline) {
-        const account = await client.connections
-          .status(initiated.id, initiated.connector)
-          .catch(() => undefined);
-        if (account?.status === "active") {
-          setPhase("connected");
-          await onConnected();
-          return;
-        }
-        if (account?.status === "failed" || account?.status === "expired") {
-          throw new Error(`The ${toolkit} connection ${account.status} — try again.`);
-        }
-        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-      }
-      if (!cancelled.current) throw new Error(`Timed out waiting for the ${toolkit} connection — try again.`);
+      await completeConnection(client, { toolkit, connector }, () => cancelled.current);
+      if (cancelled.current) return;
+      setPhase("connected");
+      await onConnected();
     } catch (reason) {
       if (cancelled.current) return;
       setPhase("failed");

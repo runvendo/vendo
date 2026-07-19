@@ -8,7 +8,7 @@
  * Adversarial coverage:
  *   - an anonymous session cannot be used to STEAL another subject's rows
  *     (colliding ids are skipped, the durable row wins),
- *   - a forged (tampered) cookie merges nothing and is not honored,
+ *   - a garbage cookie (wrong shape) merges nothing and is not honored,
  *   - the merge is idempotent under cookie replay.
  */
 import { afterEach, describe, expect, it } from "vitest";
@@ -24,18 +24,7 @@ import {
   type Stack,
 } from "./harness.js";
 
-const CREATE_DIALECT = {
-  name: "Anon Merge App",
-  description: "A tiny greeting card",
-  tree: {
-    formatVersion: "vendo-genui/v1",
-    root: "root",
-    nodes: [
-      { id: "root", component: "Stack", source: "prewired", children: ["greeting"] },
-      { id: "greeting", component: "Text", source: "prewired", props: { text: "Hello anon" } },
-    ],
-  },
-};
+const CREATE_DIALECT = `<App name="Anon Merge App"><Text text="Hello anon"/></App>`;
 
 let stack: Stack;
 afterEach(async () => {
@@ -88,7 +77,10 @@ describe("ENG-263: anonymous→signed-in auto-merge", () => {
     stack = await createStack({
       turns: [
         toolCallTurn("vendo_apps_create", { prompt: "Build a greeting card" }, "call_app"),
+        // Two-lane create (v2 spec §4): the tier-0 paint lane and the full
+        // lane each consume one generation turn.
         generationTurn(CREATE_DIALECT),
+        generationTurn(CREATE_DIALECT, "gen_2"),
         textTurn("Created your app.", "t1"),
         // A destructive host tool the composed policy parks → an approval
         // queued under the ANON subject (the consent that must NOT migrate).
@@ -118,8 +110,10 @@ describe("ENG-263: anonymous→signed-in auto-merge", () => {
     const cookie = anon.cookie();
     expect(cookie).toBeDefined();
 
-    // Nothing on disk yet (ephemeral session).
-    expect(await stack.sql("SELECT id FROM vendo_threads")).toEqual([]);
+    // The anonymous work is on disk under the anon subject (02 §4, kill-list B3).
+    const anonThreadRows = await stack.sql<{ subject: string }>("SELECT subject FROM vendo_threads");
+    expect(anonThreadRows).toHaveLength(2);
+    for (const row of anonThreadRows) expect(row.subject).toMatch(/^anonymous_[0-9a-f]{32}$/);
 
     // --- First authenticated request carrying the anon cookie merges + clears.
     const merged = await signedInWithCookie(stack, "/threads", cookie!);
@@ -200,8 +194,8 @@ describe("ENG-263: anonymous→signed-in auto-merge", () => {
     expect(await stack.sql("SELECT subject FROM vendo_threads WHERE id = 'thr_bobs'"))
       .toEqual([{ subject: "user_bob" }]); // unmoved
 
-    // A forged cookie (valid shape, wrong signature) merges nothing and is NOT
-    // cleared — no new merge audit event appears.
+    // A garbage cookie (wrong shape — rejected by the pointer grammar) merges
+    // nothing and is NOT cleared — no new merge audit event appears.
     const before = (await stack.sql("SELECT id FROM vendo_audit WHERE kind = 'principal'")).length;
     const forged = `${"a".repeat(32)}.${"b".repeat(64)}`;
     const response = await signedInWithCookie(stack, "/threads", forged);

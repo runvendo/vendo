@@ -24,11 +24,11 @@ test.use({ reducedMotion: "reduce" });
 for (const scenario of chromeScenarios) {
   test(`${scenario} has zero WCAG 2.1 A/AA axe violations`, async ({ page }) => {
     await openScenario(page, scenario);
-    if (scenario === "thread") await expect(page.getByLabel("Approval for host_email_send")).toBeVisible();
+    if (scenario === "thread") await expect(page.getByLabel("Approval for Email send")).toBeVisible();
     if (scenario === "overlay") await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
     if (scenario === "page") await expect(page.getByRole("tab", { name: "Apps" })).toHaveAttribute("aria-selected", "true");
     if (scenario === "palette") await expect(page.getByRole("dialog", { name: "Vendo command palette" })).toBeVisible();
-    if (scenario === "activity") await expect(page.getByText("host_invoices_list").first()).toBeVisible();
+    if (scenario === "activity") await expect(page.getByText("Invoices list").first()).toBeVisible();
     if (scenario === "automations") await expect(page.getByRole("switch")).toBeVisible();
     if (scenario === "notice") await expect(page.getByRole("region", { name: "Vendo is running without a policy" })).toBeVisible();
     if (scenario === "stage") await expect(page.getByText("Revenue is ready")).toBeVisible();

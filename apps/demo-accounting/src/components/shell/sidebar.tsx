@@ -58,17 +58,17 @@ function isActive(pathname: string, href: string): boolean {
 export function Sidebar() {
   const pathname = usePathname()
   return (
-    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col bg-evergreen-950">
+    <aside className="border-line sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r bg-surface">
       <div className="flex h-14 items-center px-5">
         <Link href="/" aria-label="Cadence dashboard">
-          <CadenceLogo tone="light" />
+          <CadenceLogo tone="dark" />
         </Link>
       </div>
       <nav className="mt-3 flex-1 space-y-6 overflow-y-auto px-3" aria-label="Main">
         {NAV_GROUPS.map(group => (
           <div key={group.label ?? "root"}>
             {group.label && (
-              <p className="px-2.5 pb-1.5 text-[10.5px] font-semibold tracking-[0.08em] text-evergreen-100/40 uppercase">
+              <p className="text-ink-faint px-2.5 pb-1.5 text-[10.5px] font-semibold tracking-[0.08em] uppercase">
                 {group.label}
               </p>
             )}
@@ -83,14 +83,14 @@ export function Sidebar() {
                       className={cn(
                         "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors",
                         active
-                          ? "bg-white/10 text-white"
-                          : "text-evergreen-100/65 hover:bg-white/5 hover:text-white",
+                          ? "bg-line/70 text-ink"
+                          : "text-ink-soft hover:bg-line/40 hover:text-ink",
                       )}
                     >
                       <item.icon
                         size={15}
                         strokeWidth={1.75}
-                        className={cn(active ? "text-evergreen-300" : "text-evergreen-100/45")}
+                        className={cn(active ? "text-ink" : "text-ink-faint")}
                       />
                       {item.label}
                     </Link>
@@ -101,9 +101,9 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
-      <div className="border-t border-white/8 px-5 py-4">
-        <p className="text-[11px] font-medium text-evergreen-100/50">Hartwell &amp; Associates</p>
-        <p className="mt-0.5 text-[10.5px] text-evergreen-100/30">Tax season 2026</p>
+      <div className="border-line border-t px-5 py-4">
+        <p className="text-ink-soft text-[11px] font-medium">Hartwell &amp; Associates</p>
+        <p className="text-ink-faint mt-0.5 text-[10.5px]">Tax season 2026</p>
       </div>
     </aside>
   )

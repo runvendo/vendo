@@ -43,7 +43,7 @@ describe("GET /api/dashboard", () => {
     expect(data.documentsTotal).toBeGreaterThan(0)
     expect(data.documentsReceived + data.documentsOutstanding).toBe(data.documentsTotal)
     expect(Number.isNaN(Date.parse(data.nearestDeadline))).toBe(false)
-    expect(data.nearestDeadlineClient.businessName).toBe("Rivera Landscaping LLC")
+    expect(data.nearestDeadlineClient.businessName).toBe("Blue Bottle Coffee")
     expect(data.nearestDeadlineClient.filingDeadline).toBe(data.nearestDeadline)
   })
 })
@@ -55,14 +55,14 @@ describe("GET /api/clients", () => {
     expect(data.length).toBe(12)
 
     const rivera = data.find(
-      (c: { businessName: string }) => c.businessName === "Rivera Landscaping LLC",
+      (c: { businessName: string }) => c.businessName === "Blue Bottle Coffee",
     )
     expect(rivera.progress).toEqual({ received: 3, total: 6 })
     expect(rivera.status).toBe("missing_docs")
     expect(rivera.assignee).toMatchObject({ id: "st_maya", name: "Maya Alvarez" })
 
     const lakeside = data.find(
-      (c: { businessName: string }) => c.businessName === "Lakeside Veterinary Clinic",
+      (c: { businessName: string }) => c.businessName === "Banfield Pet Hospital",
     )
     expect(lakeside.status).toBe("complete")
   })
@@ -78,12 +78,12 @@ describe("GET /api/clients", () => {
     const res = await listClients(new Request("http://x/api/clients?q=rivera"))
     const { data } = await res.json()
     expect(data.length).toBe(1)
-    expect(data[0].businessName).toBe("Rivera Landscaping LLC")
+    expect(data[0].businessName).toBe("Blue Bottle Coffee")
 
     const byContact = await listClients(new Request("http://x/api/clients?q=wei+chen"))
     const contactBody = await byContact.json()
     expect(contactBody.data.length).toBe(1)
-    expect(contactBody.data[0].businessName).toBe("Chen Consulting")
+    expect(contactBody.data[0].businessName).toBe("Linear")
   })
 })
 
@@ -92,7 +92,7 @@ describe("GET /api/clients/:id", () => {
     const res = await getClient(new Request("http://x"), withParams({ id: "cl_rivera" }))
     expect(res.status).toBe(200)
     const { data } = await res.json()
-    expect(data.businessName).toBe("Rivera Landscaping LLC")
+    expect(data.businessName).toBe("Blue Bottle Coffee")
     expect(data.progress).toEqual({ received: 3, total: 6 })
     expect(data.assignee.initials).toBe("MA")
   })
@@ -231,12 +231,12 @@ describe("GET /api/deadlines", () => {
     expect(deadlines).toEqual([...deadlines].sort((a, b) => a - b))
 
     const rivera = data[0]
-    expect(rivera.businessName).toBe("Rivera Landscaping LLC")
+    expect(rivera.businessName).toBe("Blue Bottle Coffee")
     expect(rivera.progress).toEqual({ received: 3, total: 6 })
     expect(rivera.missingDocKinds).toEqual(["W-2", "1099-NEC", "Receipts"])
 
     const complete = data.find(
-      (d: { businessName: string }) => d.businessName === "Lakeside Veterinary Clinic",
+      (d: { businessName: string }) => d.businessName === "Banfield Pet Hospital",
     )
     expect(complete.missingDocKinds).toEqual([])
   })
@@ -286,7 +286,7 @@ describe("POST /api/demo/reset", () => {
     expect(Number.isNaN(Date.parse(data.nearestDeadline))).toBe(false)
     expect(data.nearestDeadlineClient).toMatchObject({
       id: "cl_rivera",
-      businessName: "Rivera Landscaping LLC",
+      businessName: "Blue Bottle Coffee",
       filingDeadline: data.nearestDeadline,
     })
 

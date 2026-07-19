@@ -1,0 +1,16 @@
+[rung-claude] dev server up at http://localhost:3405
+[rung-claude] POST /threads → 200; thread=thr_2583bace82f04834bd204bf7d5c6a5fc
+[rung-claude] turn 8264ms; parts=[start,start-step,text-start,text-delta,text-end,finish-step,finish]
+[rung-claude] REPLY: I'm Vendo's agent, here to help you build and manage Vendo apps on your behalf.
+
+Here are the tools I have:
+
+- **Create app** – Build a new Vendo app from a natural-language prompt.
+- **Edit app** – Modify an existing app with a natural-language instruction.
+- **Open app** – Open the latest serving surface for an app.
+- **Rebase pin** – Update a drifted remixed pin of an app onto its host's updated component.
+- **List data** – List records from an app's data collection.
+- **Put data** – Create or replace a record in an app's data collection.
+- **Delete data** – Delete a record from an app's data collection.
+[rung-claude] server log:
+[vendo] dev-mode model: your authed Claude Code session (dev only) — production needs a real key

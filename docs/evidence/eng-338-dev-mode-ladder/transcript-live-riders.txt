@@ -1,0 +1,18 @@
+
+ RUN  v2.1.9 /private/tmp/vendo-eng338/packages/dev-riders
+
+stdout | src/live.test.ts > live riders (VENDO_LIVE_RIDERS=1) > claude session: rides the login, executes a bridged tool through a parked executor
+[live claude] model=claude-opus-4-8[1m] calls=1 answer="Your current balance is $4,321.09."
+
+stdout | src/live.test.ts > live riders (VENDO_LIVE_RIDERS=1) > codex session: rides the login, executes a bridged dynamic tool through a parked executor
+[live codex] model=gpt-5.6-sol calls=1 answer="I’ll check your Vendo demo-bank balance now.Your current Vendo balance is **$4,321.09**."
+
+ ✓ src/live.test.ts (2 tests) 24744ms
+   ✓ live riders (VENDO_LIVE_RIDERS=1) > claude session: rides the login, executes a bridged tool through a parked executor 12909ms
+   ✓ live riders (VENDO_LIVE_RIDERS=1) > codex session: rides the login, executes a bridged dynamic tool through a parked executor 11834ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  03:43:01
+   Duration  31.26s (transform 915ms, setup 0ms, collect 444ms, tests 24.74s, environment 0ms, prepare 1.47s)
+

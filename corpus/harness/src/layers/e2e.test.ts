@@ -494,4 +494,94 @@ describe("runE2eLayer", () => {
     ]);
     expect(promptSent).toBe(true);
   });
+
+  it("logs teable in via the sign-in form and targets the authenticated /space page", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-"));
+    const expectationsRoot = path.join(root, "expectations");
+    const logsDir = path.join(root, "logs");
+    const repoDir = path.join(root, "repo");
+    await mkdir(path.join(expectationsRoot, "teable"), { recursive: true });
+    await mkdir(path.join(repoDir, ".vendo"), { recursive: true });
+    await writeFile(path.join(repoDir, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
+    await writeFile(
+      path.join(expectationsRoot, "teable", "conversations.json"),
+      JSON.stringify({
+        version: 1,
+        k: 1,
+        threshold: 1,
+        timeoutMs: 2_000,
+        conversations: [
+          {
+            id: "teable-login",
+            prompts: ["show me the records"],
+            assertions: [{ kind: "no-error-toast" }],
+          },
+        ],
+      }),
+    );
+
+    const gotoUrls: string[] = [];
+    let credentialsVisible = true;
+    let promptSent = false;
+    const page: E2ePage = {
+      async goto(url: string) {
+        gotoUrls.push(url);
+      },
+      locator(selector: string) {
+        if (selector.includes('input[name="email"]') || selector.includes('input[type="email"]')) {
+          return new FakeLocator(() => credentialsVisible ? 1 : 0);
+        }
+        if (selector.includes('input[name="password"]') || selector.includes('input[type="password"]')) {
+          return new FakeLocator(() => credentialsVisible ? 1 : 0);
+        }
+        if (selector === "body" || selector.includes("[role='dialog']")) return new FakeLocator(1, "dialog ready");
+        return new FakeLocator(0);
+      },
+      getByRole(role: string) {
+        if (role === "dialog") return new FakeLocator(1);
+        if (role === "button") {
+          return new FakeLocator(1, "", {
+            click: () => {
+              credentialsVisible = false;
+            },
+          });
+        }
+        if (role === "textbox") {
+          return new FakeLocator(1, "", {
+            fill: () => {},
+            press: () => {
+              promptSent = true;
+            },
+          });
+        }
+        return new FakeLocator(0);
+      },
+      getByLabel() {
+        return new FakeLocator(1, "", {
+          fill: () => {},
+          press: () => {
+            promptSent = true;
+          },
+        });
+      },
+    };
+
+    const result = await runE2eLayer({
+      repoName: "teable",
+      repoDir,
+      readinessUrl: "http://127.0.0.1:43105/auth/login",
+      expectationsRoot,
+      logsDir,
+      pageFactory: async () => ({ page }),
+      now: () => new Date("2026-07-16T00:00:00.000Z"),
+    });
+
+    expect(result.layer.status).toBe("pass");
+    expect(gotoUrls).toEqual([
+      "http://127.0.0.1:43105/space?vendoThread=corpus-teable-login-1",
+      "http://127.0.0.1:43105/auth/login",
+      "http://127.0.0.1:43105/space?vendoThread=corpus-teable-login-1",
+    ]);
+    expect(promptSent).toBe(true);
+  });
 });

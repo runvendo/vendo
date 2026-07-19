@@ -1,334 +1,465 @@
 import { promises as fs } from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
+import { generateObject, type LanguageModel } from "ai";
+import { z } from "zod";
+import { contrastingText, normalizeColor, normalizeLength, resolveCssVarRefs } from "./color.js";
 import { parseCssVars, type CssVarDecl } from "./css-vars.js";
-import { collectNextFontVars, collectNextLayoutVars, TAILWIND_NEUTRAL_COLORS } from "./next-fonts.js";
-import {
-  mapVarsToBrand,
-  normalizeColorVar,
-  type BrandMappingResult,
-  type InferredSlotValue,
-  type ThemeSlotValues,
-} from "./map-to-brand.js";
-import { resolveWorkspacePackageSpecifier } from "./workspace-resolve.js";
+import { ENTRY_FILE_CANDIDATES } from "./entry-candidates.js";
 import { walk } from "./walk.js";
 
-export interface ThemeSummary extends BrandMappingResult {
-  errors: string[];
-  varCount: number;
+/**
+ * Theme extraction, exact-or-model (kill-list §B2):
+ *
+ * 1. Allowlist fast-path — conventional shadcn/Tailwind tokens are read
+ *    EXACTLY (`--primary`, `--background`, `--font-sans`, ... and their
+ *    Tailwind-v4 `--color-*` spellings). No name scoring, no inference.
+ * 2. LLM pass — when the allowlist leaves brand slots unfilled, ONE model
+ *    call reads the collected CSS + Tailwind config + root layout and fills
+ *    the rest, flagging slots it is genuinely unsure about.
+ * 3. Anything neither path fills falls back to neutral defaults and is
+ *    reported as defaulted — a miss is visible, never a silent wrong brand.
+ *
+ * theme.json stays the editable source of truth; init shows the palette for
+ * a one-glance confirm and asks only about model-flagged uncertainty.
+ */
+
+export interface ThemeSlotValues {
+  accent: string;
+  accentText: string;
+  background: string;
+  border: string;
+  danger: string;
+  surface: string;
+  text: string;
+  mutedText: string;
+  radius: string;
+  fontFamily: string;
+  headingFamily: string;
+  baseSize: string;
+  density: "compact" | "comfortable";
+  motion: "full" | "reduced";
 }
 
-const SOURCE_WITH_CSS_IMPORTS = /\.(tsx|jsx|ts|js|mjs|cjs)$/;
-const CSS_IMPORT_RE = /\bimport\s+(?:[^"']+\s+from\s+)?["']([^"']+\.css)["']/g;
-const CSS_REQUIRE_RE = /\brequire\(\s*["']([^"']+\.css)["']\s*\)/g;
-const CSS_AT_IMPORT_RE = /@import\s+(url\(\s*)?(?:"([^"]+)"|'([^']+)'|([^"')\s;]+))\s*\)?/g;
-const ENTRY_SOURCE_FILE = /(^|\/)(app\/(?:[^/]+\/)*layout|src\/app\/(?:[^/]+\/)*layout|pages\/_app|src\/pages\/_app)\.(tsx|jsx|ts|js|mjs)$/;
-const ENTRY_SOURCE_CANDIDATES = [
-  "app/layout.tsx",
-  "app/layout.jsx",
-  "app/layout.ts",
-  "app/layout.js",
-  "src/app/layout.tsx",
-  "src/app/layout.jsx",
-  "src/app/layout.ts",
-  "src/app/layout.js",
-  "pages/_app.tsx",
-  "pages/_app.jsx",
-  "pages/_app.ts",
-  "pages/_app.js",
-  "src/pages/_app.tsx",
-  "src/pages/_app.jsx",
-  "src/pages/_app.ts",
-  "src/pages/_app.js",
-];
-const CSS_GRAPH_MAX_FILES = 200;
-const CSS_GRAPH_MAX_DEPTH = 12;
+export interface ThemeUncertainty {
+  slot: keyof ThemeSlotValues;
+  note: string;
+}
+
+export interface ThemeSummary {
+  /** Fully resolved values used to assemble the frozen VendoTheme contract. */
+  slots: ThemeSlotValues;
+  /** slot -> provenance: the exact token name, "(model)", or a derivation. */
+  matched: Record<string, string>;
+  /** Slots that fell back to neutral defaults (reported, never silent). */
+  defaulted: string[];
+  /** Model-flagged genuine uncertainty — init's only theme question trigger. */
+  uncertain: ThemeUncertainty[];
+  usedModel: boolean;
+  errors: string[];
+  hasDarkVariant: boolean;
+}
+
+export interface ExtractThemeOptions {
+  /**
+   * Lazily resolves the model for the LLM pass — the SAME seam `vendo refine`
+   * uses (`resolveRefineModel`: --model-import, else the host's key +
+   * installed provider). Vendo-hosted inference will swap in behind this same
+   * seam later. Absent or failing resolution degrades to allowlist + defaults.
+   */
+  resolveModel?: () => Promise<LanguageModel>;
+}
+
+export const DEFAULT_THEME_SLOTS: ThemeSlotValues = {
+  accent: "#2563eb",
+  accentText: "#ffffff",
+  background: "#ffffff",
+  border: "#e2e8f0",
+  danger: "#dc2626",
+  surface: "#f8fafc",
+  text: "#0f172a",
+  mutedText: "#64748b",
+  radius: "8px",
+  fontFamily: "system-ui, sans-serif",
+  headingFamily: "system-ui, sans-serif",
+  baseSize: "16px",
+  density: "comfortable",
+  motion: "full",
+};
+
+// ---------------------------------------------------------------------------
+// Context gathering — root layout, its CSS graph, Tailwind config.
+// ---------------------------------------------------------------------------
+
+interface ContextFile {
+  path: string;
+  content: string;
+}
+
+interface ThemeContext {
+  layout: ContextFile | null;
+  css: ContextFile[];
+  tailwindConfig: ContextFile | null;
+}
+
+const CSS_IMPORT_RE = /\bimport\s+(?:[^"']+\s+from\s+)?["']([^"']+\.css)["']|\brequire\(\s*["']([^"']+\.css)["']\s*\)/g;
+const CSS_AT_IMPORT_RE = /@import\s+(?:url\(\s*)?["']?([^"')\s;]+)["']?\s*\)?/g;
+const CSS_FALLBACK_NAME = /^(?:globals?|app|main|index|tokens?|theme|styles?)\.css$/;
+const MAX_CSS_FILES = 12;
+const MAX_FILE_BYTES = 24_000;
+
+async function readCapped(file: string): Promise<string | null> {
+  try {
+    const content = await fs.readFile(file, "utf8");
+    return content.length > MAX_FILE_BYTES ? content.slice(0, MAX_FILE_BYTES) : content;
+  } catch {
+    return null;
+  }
+}
 
 async function exists(file: string): Promise<boolean> {
   return fs.access(file).then(() => true, () => false);
 }
 
-async function resolveCssImport(spec: string, fromFile: string, targetDir: string, requireFromTarget: NodeRequire): Promise<string | null> {
-  if (spec.startsWith(".") || spec.startsWith("/")) {
-    const resolved = path.resolve(path.dirname(fromFile), spec);
-    if (await exists(resolved)) return resolved;
-    return resolved.endsWith(".css") ? null : ((await exists(`${resolved}.css`)) ? `${resolved}.css` : null);
-  }
-  if (spec.startsWith("@/")) {
-    const withoutAlias = spec.slice(2);
-    for (const root of [path.join(targetDir, "src"), targetDir]) {
-      const resolved = path.join(root, withoutAlias);
-      if (await exists(resolved)) return resolved;
-      if (!resolved.endsWith(".css") && await exists(`${resolved}.css`)) return `${resolved}.css`;
-    }
-    return null;
-  }
-  if (spec.startsWith("http:") || spec.startsWith("https:")) return null;
-  try {
-    return requireFromTarget.resolve(spec);
-  } catch {
-    return resolveWorkspacePackageSpecifier(spec, path.dirname(fromFile));
-  }
+function resolveLocalSpec(spec: string, fromDir: string, targetDir: string): string | null {
+  if (spec.startsWith(".") || spec.startsWith("/")) return path.resolve(fromDir, spec);
+  // The near-universal `@/` alias; package-specifier CSS (vendor sheets) is
+  // deliberately not chased — host brand tokens live in the host's own tree.
+  if (spec.startsWith("@/")) return path.join(targetDir, "src", spec.slice(2));
+  return null;
 }
 
-function cssImportsFromSource(source: string): string[] {
-  const specs: string[] = [];
-  for (const re of [CSS_IMPORT_RE, CSS_REQUIRE_RE]) {
-    re.lastIndex = 0;
-    for (const match of source.matchAll(re)) specs.push(match[1]!);
-  }
-  return specs;
-}
-
-function isSelfReferentialVar(decl: CssVarDecl): boolean {
-  return new RegExp(`^\\s*var\\(\\s*${decl.name}\\s*(?:,\\s*[^)]*)?\\)(?:\\s*,[\\s\\S]*)?\\s*$`).test(decl.value);
-}
-
-function cssImportsFromCss(source: string): Array<{ spec: string; fromUrl: boolean }> {
-  const specs: Array<{ spec: string; fromUrl: boolean }> = [];
-  CSS_AT_IMPORT_RE.lastIndex = 0;
-  for (const match of source.matchAll(CSS_AT_IMPORT_RE)) {
-    const spec = match[2] ?? match[3] ?? match[4];
-    if (!spec || spec === "tailwindcss" || spec.startsWith("http:") || spec.startsWith("https:")) continue;
-    specs.push({ spec, fromUrl: Boolean(match[1]) });
-  }
-  return specs;
-}
-
-async function collectCssGraph(
-  roots: string[],
-  targetDir: string,
-  requireFromTarget: NodeRequire,
-): Promise<string[]> {
-  const ordered: string[] = [];
+async function collectCss(layout: ContextFile | null, targetDir: string): Promise<ContextFile[]> {
+  const files: ContextFile[] = [];
   const seen = new Set<string>();
-  const visit = async (file: string | null, depth: number): Promise<void> => {
-    if (!file || seen.has(file) || depth > CSS_GRAPH_MAX_DEPTH || ordered.length >= CSS_GRAPH_MAX_FILES) return;
-    seen.add(file);
-    const css = await fs.readFile(file, "utf8").catch(() => "");
-    for (const { spec, fromUrl } of cssImportsFromCss(css)) {
-      // Local url(...) imports are often assets or prose stylesheets; package
-      // url imports still carry token sheets in some monorepos.
-      if (fromUrl && (spec.startsWith(".") || spec.startsWith("/") || spec.startsWith("@/"))) continue;
-      await visit(await resolveCssImport(spec, file, targetDir, requireFromTarget), depth + 1);
+  const visit = async (absolute: string, depth: number): Promise<void> => {
+    if (seen.has(absolute) || files.length >= MAX_CSS_FILES || depth > 3) return;
+    seen.add(absolute);
+    const content = await readCapped(absolute);
+    if (content === null) return;
+    files.push({ path: path.relative(targetDir, absolute), content });
+    for (const match of content.matchAll(CSS_AT_IMPORT_RE)) {
+      const spec = match[1]!;
+      if (spec === "tailwindcss" || spec.startsWith("http")) continue;
+      const resolved = resolveLocalSpec(spec, path.dirname(absolute), targetDir);
+      if (resolved === null) continue;
+      const candidate = resolved.endsWith(".css") ? resolved : `${resolved}.css`;
+      if (await exists(candidate)) await visit(candidate, depth + 1);
+      else if (spec.startsWith("@/") && await exists(path.join(targetDir, spec.slice(2)))) {
+        await visit(path.join(targetDir, spec.slice(2)), depth + 1);
+      }
     }
-    ordered.push(file);
-  };
-  for (const root of roots) await visit(root, 0);
-  return ordered;
-}
-
-async function collectCssFiles(targetDir: string): Promise<{ selected: string[]; all: string[] }> {
-  const requireFromTarget = createRequire(path.join(targetDir, "package.json"));
-  const sourceFiles = await walk(targetDir, (rel) => SOURCE_WITH_CSS_IMPORTS.test(rel), 2_000);
-  const detectedCssFiles = await walk(targetDir, (rel) => rel.endsWith(".css"), 2_000);
-  const directEntryFiles = await Promise.all(
-    ENTRY_SOURCE_CANDIDATES.map(async (candidate) => {
-      const file = path.join(targetDir, candidate);
-      return await exists(file) ? file : null;
-    }),
-  );
-  const entryFiles = new Set([
-    ...directEntryFiles.filter((file): file is string => Boolean(file)),
-    ...sourceFiles.filter((file) => ENTRY_SOURCE_FILE.test(path.relative(targetDir, file))),
-  ]);
-  const filesToScan = [...new Set([...entryFiles, ...sourceFiles])];
-  const entryRoots: string[] = [];
-  const blindRoots: string[] = [];
-  const add = (file: string | null) => {
-    if (file && !blindRoots.includes(file)) blindRoots.push(file);
   };
 
-  for (const sourceFile of filesToScan) {
-    const source = await fs.readFile(sourceFile, "utf8").catch(() => "");
-    const resolved = await Promise.all(cssImportsFromSource(source).map((spec) => resolveCssImport(spec, sourceFile, targetDir, requireFromTarget)));
-    if (entryFiles.has(sourceFile)) {
-      for (const cssFile of resolved) if (cssFile && !entryRoots.includes(cssFile)) entryRoots.push(cssFile);
+  if (layout !== null) {
+    const layoutDir = path.dirname(path.join(targetDir, layout.path));
+    for (const match of layout.content.matchAll(CSS_IMPORT_RE)) {
+      const spec = (match[1] ?? match[2])!;
+      let resolved = resolveLocalSpec(spec, layoutDir, targetDir);
+      if (resolved !== null && spec.startsWith("@/") && !(await exists(resolved))) {
+        resolved = path.join(targetDir, spec.slice(2));
+      }
+      if (resolved !== null && await exists(resolved)) await visit(resolved, 0);
     }
-    for (const cssFile of resolved) add(cssFile);
   }
-  for (const cssFile of detectedCssFiles) add(cssFile);
-  const entryGraph = await collectCssGraph(entryRoots, targetDir, requireFromTarget);
-  const blindGraph = await collectCssGraph(blindRoots, targetDir, requireFromTarget);
-  return { selected: entryGraph.length > 0 ? entryGraph : blindGraph, all: blindGraph };
+  if (files.length === 0) {
+    // No layout-imported CSS found: fall back to conventionally named sheets.
+    const all = await walk(targetDir, (rel) => rel.endsWith(".css"), 500);
+    const named = all.filter((file) => CSS_FALLBACK_NAME.test(path.basename(file)));
+    for (const file of (named.length > 0 ? named : all).slice(0, 4)) await visit(file, 0);
+  }
+  return files;
 }
 
-/**
- * Muted-text inference of last resort: when no CSS variable fills the slot,
- * the app's dominant `text-<neutral>-<400..600>` Tailwind utility is its de
- * facto muted-text token (formbricks styles secondary text with
- * text-slate-500 in ~200 files; vercel/commerce with text-neutral-500).
- * Bounded scan, strict majority — ambiguous usage infers nothing.
- */
-const MUTED_UTILITY = /(?<![\w:-])text-(slate|gray|zinc|neutral|stone)-(400|500|600)\b/g;
-
-const ACCENT_BG_UTILITY = /(?<![\w:-])bg-([a-z][a-z0-9-]*)\b/g;
-const RADIUS_UTILITY = /(?<![\w:-])rounded-(sm|md|lg|xl|2xl|3xl)(?![\w-])/g;
-const SMALL_TEXT_UTILITY = /(?<![\w:-])text-(xs|sm)\b|(?<![\w:-])text-\[((?:\d+|\d*\.\d+))px\]/g;
-const LARGE_TEXT_UTILITY = /(?<![\w:-])text-(base|lg)\b|(?<![\w:-])text-\[((?:\d+|\d*\.\d+))px\]/g;
-const COMPACT_HEIGHT_UTILITY = /(?<![\w:-])h-(6|7|8)\b/g;
-const COMFORTABLE_HEIGHT_UTILITY = /(?<![\w:-])h-(10|11|12)\b/g;
-const MOTION_UTILITY = /(?<![\w:-])(?:transition(?:-[\w-]+)?|animate-[\w-]+)\b/g;
-const NON_ACCENT_BG = /^(?:bg|background|surface|card|panel|popover|hover|muted|border|line|transparent|current|inherit|white|gray|grey|slate|stone|zinc|neutral|status|success|warning|error|danger|destructive|positive|negative|pos|neg)(?:-|$)/;
-const RADIUS_VALUES: Record<string, string> = {
-  sm: "2px",
-  md: "6px",
-  lg: "8px",
-  xl: "12px",
-  "2xl": "16px",
-  "3xl": "24px",
-};
-
-interface SourceInferences {
-  accent?: InferredSlotValue;
-  mutedText?: InferredSlotValue;
-  radius?: InferredSlotValue;
-  density?: InferredSlotValue;
-  motion?: InferredSlotValue;
-}
-
-function hasDisablingReducedMotionRule(source: string): boolean {
-  const media = /@media\s*\([^)]*prefers-reduced-motion\s*:\s*reduce[^)]*\)\s*\{/gi;
-  for (const match of source.matchAll(media)) {
-    const start = match.index! + match[0].length;
-    let depth = 1;
-    let end = start;
-    for (; end < source.length && depth > 0; end += 1) {
-      if (source[end] === "{") depth += 1;
-      else if (source[end] === "}") depth -= 1;
-    }
-    const block = source.slice(start, end - 1);
-    if (/(?:animation|transition)(?:-duration)?\s*:\s*none(?:\s*!important)?\s*[;}]/i.test(block)) return true;
-    if (/scroll-behavior\s*:\s*auto(?:\s*!important)?\s*[;}]/i.test(block)) return true;
-    for (const duration of block.matchAll(/(?:animation|transition)-duration\s*:\s*(\d*\.?\d+)(ms|s)(?:\s*!important)?\s*[;}]/gi)) {
-      const milliseconds = Number(duration[1]) * (duration[2]!.toLowerCase() === "s" ? 1_000 : 1);
-      if (milliseconds <= 1) return true;
-    }
-  }
-  return false;
-}
-
-function dominant(
-  counts: Map<string, number>,
-  minimum: number,
-  lead = 1.5,
-): [string, number] | undefined {
-  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  const [winner, runnerUp] = ranked;
-  if (!winner || winner[1] < minimum || (runnerUp && winner[1] < runnerUp[1] * lead)) return undefined;
-  return winner;
-}
-
-/**
- * Source-level fallbacks are deliberately high-signal: a utility must be used
- * repeatedly and dominate alternatives. A one-off class never becomes a host
- * theme token, which keeps extraction fail-closed on mixed design systems.
- */
-async function inferSlotsFromUtilities(targetDir: string, vars: CssVarDecl[]): Promise<SourceInferences> {
-  const files = await walk(targetDir, (rel) => /\.(tsx|jsx)$/.test(rel), 2_000);
-  const cssFiles = await walk(targetDir, (rel) => rel.endsWith(".css"), 2_000);
-  const accentCounts = new Map<string, number>();
-  const mutedCounts = new Map<string, number>();
-  const radiusCounts = new Map<string, number>();
-  let compact = 0;
-  let comfortable = 0;
-  let motion = 0;
-
-  for (const file of files) {
-    const source = await fs.readFile(file, "utf8").catch(() => "");
-    for (const match of source.matchAll(ACCENT_BG_UTILITY)) {
-      const token = match[1]!;
-      if (!NON_ACCENT_BG.test(token)) accentCounts.set(token, (accentCounts.get(token) ?? 0) + 1);
-    }
-    for (const match of source.matchAll(MUTED_UTILITY)) {
-      const token = `${match[1]}-${match[2]}`;
-      mutedCounts.set(token, (mutedCounts.get(token) ?? 0) + 1);
-    }
-    for (const match of source.matchAll(RADIUS_UTILITY)) {
-      const token = match[1]!;
-      radiusCounts.set(token, (radiusCounts.get(token) ?? 0) + 1);
-    }
-    for (const match of source.matchAll(SMALL_TEXT_UTILITY)) {
-      const arbitrary = match[2] ? Number(match[2]) : null;
-      if (arbitrary === null || arbitrary <= 13.5) compact += 1;
-    }
-    for (const match of source.matchAll(LARGE_TEXT_UTILITY)) {
-      const arbitrary = match[2] ? Number(match[2]) : null;
-      if (arbitrary === null || arbitrary >= 16) comfortable += 1;
-    }
-    compact += [...source.matchAll(COMPACT_HEIGHT_UTILITY)].length;
-    comfortable += [...source.matchAll(COMFORTABLE_HEIGHT_UTILITY)].length;
-    motion += [...source.matchAll(MOTION_UTILITY)].length;
-  }
-
-  const inferred: SourceInferences = {};
-  const accent = dominant(accentCounts, 5);
-  if (accent) {
-    const decl = [...vars].reverse().find((value) => !value.darkScope && value.name === `--color-${accent[0]}`);
-    const color = decl ? normalizeColorVar(decl.value, vars) : null;
-    if (color) inferred.accent = { value: color, source: `bg-${accent[0]} ×${accent[1]}` };
-  }
-  const muted = dominant(mutedCounts, 5);
-  if (muted) {
-    const [family, step] = muted[0].split("-") as [string, string];
-    const value = TAILWIND_NEUTRAL_COLORS[family]?.[step];
-    if (value) inferred.mutedText = { value, source: `text-${muted[0]} ×${muted[1]}` };
-  }
-  const radius = dominant(radiusCounts, 5);
-  if (radius) inferred.radius = { value: RADIUS_VALUES[radius[0]]!, source: `rounded-${radius[0]} ×${radius[1]}` };
-
-  if (compact >= 12 && compact >= comfortable * 1.5) {
-    inferred.density = { value: "compact", source: `compact type/spacing utilities ×${compact}` };
-  } else if (comfortable >= 12 && comfortable >= compact * 1.5) {
-    inferred.density = { value: "comfortable", source: `comfortable type/spacing utilities ×${comfortable}` };
-  }
-  let reducedMotionFile: string | undefined;
-  for (const file of cssFiles) {
-    const source = await fs.readFile(file, "utf8").catch(() => "");
-    if (hasDisablingReducedMotionRule(source)) {
-      reducedMotionFile = path.relative(targetDir, file) || path.basename(file);
+async function gatherContext(targetDir: string): Promise<ThemeContext> {
+  let layout: ContextFile | null = null;
+  for (const candidate of ENTRY_FILE_CANDIDATES) {
+    const content = await readCapped(path.join(targetDir, candidate));
+    if (content !== null) {
+      layout = { path: candidate, content };
       break;
     }
   }
-  if (reducedMotionFile) {
-    inferred.motion = { value: "reduced", source: `prefers-reduced-motion in ${reducedMotionFile}` };
-  } else if (motion >= 5) {
-    inferred.motion = { value: "full", source: `transition/animation utilities ×${motion}` };
+  let tailwindConfig: ContextFile | null = null;
+  for (const name of ["tailwind.config.ts", "tailwind.config.js", "tailwind.config.mjs", "tailwind.config.cjs"]) {
+    const content = await readCapped(path.join(targetDir, name));
+    if (content !== null) {
+      tailwindConfig = { path: name, content };
+      break;
+    }
   }
-  return inferred;
+  return { layout, css: await collectCss(layout, targetDir), tailwindConfig };
 }
+
+// ---------------------------------------------------------------------------
+// Allowlist fast-path — exact reads of documented shadcn/Tailwind tokens.
+// ---------------------------------------------------------------------------
+
+type SlotKey = keyof ThemeSlotValues;
+
+/**
+ * The shadcn theme-variable vocabulary (ui.shadcn.com/docs/theming), mapped
+ * only where the shadcn semantic IS the Vendo slot semantic. Notably absent:
+ * shadcn's `--accent` (a hover wash, not the brand color — `--primary` is),
+ * `--muted` (a muted surface, not muted text), `--secondary`, `--popover`,
+ * `--input`, `--ring`, `--chart-*`, `--sidebar-*`. Each name is also accepted
+ * with the Tailwind-v4 `@theme` namespace prefix (`--color-primary`, ...).
+ */
+const EXACT_COLOR_TOKENS: ReadonlyArray<[SlotKey, string[]]> = [
+  ["background", ["--background"]],
+  ["text", ["--foreground"]],
+  ["surface", ["--card"]],
+  ["accent", ["--primary"]],
+  ["accentText", ["--primary-foreground"]],
+  ["mutedText", ["--muted-foreground"]],
+  ["border", ["--border"]],
+  ["danger", ["--destructive"]],
+];
+
+/** Non-color conventions: shadcn `--radius`; Tailwind v4 `--font-*` and
+ *  `--text-base` namespaces; Vendo's own documented `--density`/`--motion`. */
+const FONT_TOKENS: ReadonlyArray<[SlotKey, string[]]> = [
+  ["fontFamily", ["--font-sans"]],
+  ["headingFamily", ["--font-heading", "--font-display"]],
+];
+
+interface ExactReads {
+  values: Partial<ThemeSlotValues>;
+  matched: Record<string, string>;
+}
+
+function lastLightDecl(vars: CssVarDecl[], names: string[]): CssVarDecl | undefined {
+  for (const name of names) {
+    const spellings = [name, `--color-${name.slice(2)}`];
+    const hit = [...vars].reverse().find((v) => !v.darkScope && spellings.includes(v.name));
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+function normalizeFontStack(value: string): string {
+  const stack = value.split(",").map((part) => part.trim()).filter(Boolean).join(", ");
+  return /(?:^|,\s*)(?:sans-serif|serif|monospace|cursive|fantasy)(?:\s*,|$)/i.test(stack)
+    ? stack
+    : `${stack}, sans-serif`;
+}
+
+/** Fully-resolved font stack: no var() refs, no CSS structural characters. */
+function isSafeFontStack(value: string): boolean {
+  return value.length > 0 && !value.includes("var(") && !/[{};\n]/.test(value);
+}
+
+function readExact(vars: CssVarDecl[]): ExactReads {
+  const values: Partial<ThemeSlotValues> = {};
+  const matched: Record<string, string> = {};
+  const put = <K extends SlotKey>(slot: K, decl: CssVarDecl | undefined, value: ThemeSlotValues[K] | null) => {
+    if (decl === undefined || value === null) return;
+    values[slot] = value;
+    matched[slot] = decl.name;
+  };
+
+  for (const [slot, names] of EXACT_COLOR_TOKENS) {
+    const decl = lastLightDecl(vars, names);
+    const resolved = decl === undefined ? null : resolveCssVarRefs(decl.value, vars);
+    put(slot, decl, resolved === null ? null : normalizeColor(resolved));
+  }
+  for (const [slot, names] of FONT_TOKENS) {
+    const decl = lastLightDecl(vars, names);
+    const resolved = decl === undefined ? null : resolveCssVarRefs(decl.value, vars);
+    put(slot, decl, resolved !== null && isSafeFontStack(resolved) ? normalizeFontStack(resolved) : null);
+  }
+  const radius = lastLightDecl(vars, ["--radius"]);
+  const radiusResolved = radius === undefined ? null : resolveCssVarRefs(radius.value, vars);
+  put("radius", radius, radiusResolved === null ? null : normalizeLength(radiusResolved));
+  const baseSize = lastLightDecl(vars, ["--font-size", "--text-base"]);
+  const baseResolved = baseSize === undefined ? null : resolveCssVarRefs(baseSize.value, vars);
+  put("baseSize", baseSize, baseResolved === null ? null : normalizeLength(baseResolved));
+  const density = lastLightDecl(vars, ["--density"]);
+  if (density && /^(?:compact|comfortable)$/.test(density.value.trim())) {
+    put("density", density, density.value.trim() as ThemeSlotValues["density"]);
+  }
+  const motion = lastLightDecl(vars, ["--motion"]);
+  if (motion && /^(?:full|reduced)$/.test(motion.value.trim())) {
+    put("motion", motion, motion.value.trim() as ThemeSlotValues["motion"]);
+  }
+  return { values, matched };
+}
+
+// ---------------------------------------------------------------------------
+// LLM pass — one structured call fills what the allowlist could not read.
+// ---------------------------------------------------------------------------
+
+/** Brand-defining slots: any of these missing after the exact pass means the
+ *  fast path was insufficient and the model is consulted. The remaining slots
+ *  never trigger a call on their own: accentText derives from the accent by
+ *  WCAG contrast, headingFamily inherits fontFamily, and baseSize/density/
+ *  motion have safe brand-neutral defaults. */
+const CORE_SLOTS: readonly SlotKey[] = [
+  "accent", "background", "surface", "text", "mutedText",
+  "border", "danger", "radius", "fontFamily",
+];
+
+/** Slots worth interrupting init over. The rest (accentText, headingFamily,
+ *  baseSize, density, motion) have safe brand-neutral defaults/derivations —
+ *  model doubt about them never becomes a question. */
+const QUESTIONABLE_SLOTS: readonly SlotKey[] = [
+  "accent", "background", "surface", "text", "mutedText", "border", "danger",
+  "radius", "fontFamily",
+];
+
+const SLOT_KEYS = Object.keys(DEFAULT_THEME_SLOTS) as SlotKey[];
+
+const modelThemeSchema = z.object({
+  slots: z.object({
+    accent: z.string().optional(),
+    accentText: z.string().optional(),
+    background: z.string().optional(),
+    border: z.string().optional(),
+    danger: z.string().optional(),
+    surface: z.string().optional(),
+    text: z.string().optional(),
+    mutedText: z.string().optional(),
+    radius: z.string().optional(),
+    fontFamily: z.string().optional(),
+    headingFamily: z.string().optional(),
+    baseSize: z.string().optional(),
+    density: z.enum(["compact", "comfortable"]).optional(),
+    motion: z.enum(["full", "reduced"]).optional(),
+  }),
+  uncertain: z.array(z.object({ slot: z.string(), note: z.string() })).optional(),
+});
+
+const MODEL_SYSTEM_PROMPT = [
+  "You extract a product's brand theme from its source files for Vendo's theme.json.",
+  "Slots: accent (the brand's primary interactive color), accentText (text on accent),",
+  "background (page), surface (cards/panels), text (body), mutedText (secondary text),",
+  "border (default hairline), danger (destructive/error), radius (default control corner",
+  "radius, canonical px), fontFamily (body stack), headingFamily (heading stack, only if",
+  "distinct), baseSize (body font size, px), density (compact|comfortable), motion (full|reduced).",
+  "",
+  "Rules:",
+  "- Fill ONLY the requested slots, ONLY from evidence in the provided files.",
+  "- Colors must be 6-digit hex. Resolve CSS variables and color functions yourself.",
+  "- next/font: the imported font's export name is the family (underscores become spaces).",
+  "- A design-token sheet outranks scattered utility classes; dominant usage outranks one-offs.",
+  "- Status/state colors (success, positive, negative, warning, error, overdue, verified,",
+  "  and colors a comment demotes to data/status-only) are NEVER the brand accent.",
+  "- Monochrome brands exist: when the sheet declares no saturated non-status brand color,",
+  "  the ink/text color itself is the accent (primary buttons are painted with it).",
+  "- radius is the default CONTROL radius (buttons/inputs); a token named for cards or",
+  "  popovers rounds cards, which are typically larger than controls.",
+  "- An accessibility-only prefers-reduced-motion override does NOT make the brand 'reduced'.",
+  "- Omit any slot the files do not evidence. Do not invent plausible values.",
+  "- List a slot in `uncertain` ONLY when the files genuinely support multiple different",
+  "  answers (a real fork, e.g. two plausible brand colors). A value settled by the rules",
+  "  above — monochrome accent, contrast-derived accentText, single-font inheritance,",
+  "  browser-default sizing — is NOT uncertain.",
+].join("\n");
+
+async function modelPass(
+  model: LanguageModel,
+  context: ThemeContext,
+  exact: ExactReads,
+  needed: SlotKey[],
+): Promise<z.infer<typeof modelThemeSchema>> {
+  const prompt = JSON.stringify({
+    neededSlots: needed,
+    alreadyExact: exact.values,
+    files: [
+      ...(context.layout ? [context.layout] : []),
+      ...context.css,
+      ...(context.tailwindConfig ? [context.tailwindConfig] : []),
+    ],
+  });
+  const result = await generateObject({ model, schema: modelThemeSchema, system: MODEL_SYSTEM_PROMPT, prompt });
+  return result.object;
+}
+
+/** Deterministic validation of a proposed slot value (model or human). */
+export function validateSlotValue(slot: SlotKey, raw: string): string | null {
+  const value = raw.trim();
+  switch (slot) {
+    case "radius":
+    case "baseSize":
+      return normalizeLength(value);
+    case "density":
+      return /^(?:compact|comfortable)$/.test(value) ? value : null;
+    case "motion":
+      return /^(?:full|reduced)$/.test(value) ? value : null;
+    case "fontFamily":
+    case "headingFamily":
+      return isSafeFontStack(value) ? normalizeFontStack(value) : null;
+    default:
+      return normalizeColor(value);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Assembly
+// ---------------------------------------------------------------------------
 
 export async function extractTheme(
   targetDir: string,
+  options: ExtractThemeOptions = {},
 ): Promise<ThemeSummary> {
-  const vars: CssVarDecl[] = [];
   const errors: string[] = [];
+  const context = await gatherContext(targetDir);
+  const vars: CssVarDecl[] = context.css.flatMap((file) => parseCssVars(file.content, file.path));
+  const exact = readExact(vars);
 
-  const cssFiles = await collectCssFiles(targetDir);
-  for (const cssFile of cssFiles.selected) {
-    const css = await fs.readFile(cssFile, "utf8");
-    vars.push(...parseCssVars(css, path.relative(targetDir, cssFile)));
+  const needed = SLOT_KEYS.filter((slot) => exact.values[slot] === undefined);
+  const coreMissing = CORE_SLOTS.some((slot) => exact.values[slot] === undefined);
+  const fromModel: Partial<Record<SlotKey, string>> = {};
+  let uncertain: ThemeUncertainty[] = [];
+  let usedModel = false;
+  if (coreMissing && options.resolveModel !== undefined) {
+    try {
+      const model = await options.resolveModel();
+      const proposed = await modelPass(model, context, exact, needed);
+      usedModel = true;
+      for (const slot of needed) {
+        const raw = proposed.slots[slot];
+        if (raw === undefined) continue;
+        const value = validateSlotValue(slot, String(raw));
+        if (value !== null) fromModel[slot] = value;
+      }
+      uncertain = (proposed.uncertain ?? [])
+        .filter((entry): entry is ThemeUncertainty => (QUESTIONABLE_SLOTS as string[]).includes(entry.slot))
+        .filter((entry) => exact.values[entry.slot] === undefined);
+    } catch (error) {
+      errors.push(`theme model pass unavailable: ${error instanceof Error ? error.message : "unknown error"}`);
+    }
   }
-  vars.push(...await collectNextLayoutVars(targetDir));
-  // next/font injects --font-* vars at runtime; recover them from source so
-  // font var() chains resolve to the actual family. An explicit CSS
-  // declaration of the same variable stays authoritative.
-  const cssByName = new Map(vars.filter((v) => !v.darkScope).map((v) => [v.name, v]));
-  vars.push(...(await collectNextFontVars(targetDir)).filter((v) => {
-    if (!v.synthetic) return true;
-    const declared = cssByName.get(v.name);
-    return !declared || isSelfReferentialVar(declared);
-  }));
 
-  // Inference fallbacks fill only slots no declared variable claims — map
-  // first, and pay the source scan only when the slot actually defaulted.
-  let result = mapVarsToBrand(vars);
-  const utilitySlots = ["accent", "radius", "density", "motion"] satisfies Array<keyof ThemeSlotValues>;
-  const needsUtilityInference = utilitySlots.some((slot) => result.defaulted.includes(slot))
-    || /(?:card|popover|modal|dialog)/.test(result.matched.radius ?? "");
-  if (needsUtilityInference || result.defaulted.includes("mutedText")) {
-    const inferred = await inferSlotsFromUtilities(targetDir, vars);
-    result = mapVarsToBrand(vars, inferred);
+  const slots = { ...DEFAULT_THEME_SLOTS };
+  const matched: Record<string, string> = {};
+  const defaulted: string[] = [];
+  for (const slot of SLOT_KEYS) {
+    const exactValue = exact.values[slot];
+    const modelValue = fromModel[slot];
+    if (exactValue !== undefined) {
+      (slots as Record<string, unknown>)[slot] = exactValue;
+      matched[slot] = exact.matched[slot]!;
+    } else if (modelValue !== undefined) {
+      (slots as Record<string, unknown>)[slot] = modelValue;
+      matched[slot] = "(model)";
+    } else if (slot === "accentText" && (exact.values.accent !== undefined || fromModel.accent !== undefined)) {
+      slots.accentText = contrastingText(slots.accent);
+      matched[slot] = "(contrast) accent";
+    } else if (slot === "headingFamily" && (exact.values.fontFamily !== undefined || fromModel.fontFamily !== undefined)) {
+      slots.headingFamily = slots.fontFamily;
+      matched[slot] = "(inherit) fontFamily";
+    } else {
+      defaulted.push(slot);
+    }
   }
-  return { ...result, errors, varCount: vars.length };
+
+  return {
+    slots,
+    matched,
+    defaulted,
+    uncertain,
+    usedModel,
+    errors,
+    hasDarkVariant: vars.some((v) => v.darkScope),
+  };
 }

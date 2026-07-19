@@ -28,6 +28,7 @@ import {
   type OpenApiBinding,
   type OverridesFile,
   type RouteBinding,
+  type ServerActionBinding,
   type ToolBinding,
   type ToolOverride,
   type TrpcBinding,
@@ -54,11 +55,24 @@ export interface ActionsRegistry extends ToolRegistry {
  * directly. */
 export type ActionsRunContext = RunContext;
 
+/** One entry of the wiring-generated registration map (04 §1): the imported
+ * server-action function itself. `never[]` keeps arbitrary host action
+ * signatures assignable; the runtime invokes positionally per the binding's
+ * `params` order. */
+export type ServerActionHandler = (...args: never[]) => unknown;
+
 interface RegistryConfig {
   dir?: string;
   tools?: ExtractedTool[];
   connectors?: Connector[];
   actAs?: ActAs;
+  /**
+   * 04 §1: the server-action registration map the generated wiring file passes
+   * into `createVendo({ serverActions })`, keyed `"<module>#<exportName>"`.
+   * Dispatch is direct and in-process — no Next action-id bindings. A
+   * server-action tool whose key is absent fails closed (clear error, no work).
+   */
+  serverActions?: Record<string, ServerActionHandler>;
   baseUrl?: string;
   /**
    * Whether `baseUrl` is an operator-set, trusted origin. Present-request
@@ -78,6 +92,19 @@ interface RegistryConfig {
     tool: ToolDescriptor;
     reason: "untrusted-host-origin" | "cross-origin-binding";
   }) => void | Promise<void>;
+  /**
+   * 09-vendo §2 (install-dx wave 1.1): what to do when a present-mode call has
+   * browser auth to forward but the target fails the trusted-origin rule for
+   * "untrusted-host-origin" specifically — NEVER for "cross-origin-binding",
+   * which always stays warn-only (same-origin trust must never extend to a
+   * cross-origin binding). "warn" is today's behavior: fire
+   * `onPresentCredentialsNotForwarded` and run the call unauthenticated.
+   * "fail" runs the hook (the audit warning still records) and then fails the
+   * call closed instead of reaching the host with no credentials — the
+   * umbrella sets this in production so a missing VENDO_BASE_URL surfaces
+   * loudly. Defaults to "warn".
+   */
+  untrustedOriginPolicy?: "warn" | "fail";
   fetch?: typeof fetch;
   /** Inject `.vendo/capabilities.json` directly (tests, non-file hosts); takes precedence over `dir` (04 §1/§6). */
   capabilities?: CapabilitiesFile;
@@ -451,8 +478,58 @@ function graphqlOutput(binding: GraphqlBinding, parsed: unknown): ToolOutcome {
   return { status: "ok", output: data };
 }
 
+/** The JSON projection of an in-process return value: Dates become ISO
+ * strings, `undefined` members drop, a bare `undefined` becomes `null` — the
+ * same shape the value would have crossed an HTTP boundary with. */
+function jsonProjection(value: unknown): { ok: true; output: ToolOutcome & { status: "ok" } } | { ok: false; message: string } {
+  try {
+    const text = JSON.stringify(value);
+    return { ok: true, output: { status: "ok", output: text === undefined ? null : JSON.parse(text) } };
+  } catch (cause) {
+    return { ok: false, message: cause instanceof Error ? cause.message : "output is not JSON-serializable" };
+  }
+}
+
+/** Direct in-process dispatch through the wiring-generated registration map
+ * (04 §1). Rides the present user's ambient request context only: there is no
+ * HTTP seam to attach ActAs AuthMaterial to, so away and MCP execution fail
+ * closed instead of running with the wrong authority. A missing or non-function
+ * registration fails closed — clear error, no work performed. */
+async function executeServerAction(
+  config: RegistryConfig,
+  binding: ServerActionBinding,
+  call: ToolCall,
+  ctx: RunContext,
+): Promise<ToolOutcome> {
+  const key = `${binding.module}#${binding.exportName}`;
+  if (ctx.presence === "away" || ctx.venue === "mcp" || (ctx as ActionsRunContext).mcpConsent !== undefined) {
+    return error(
+      "not-implemented",
+      `server action ${key} executes in-process with the present user's session; away/MCP execution is not supported for server-action bindings`,
+    );
+  }
+  const handler = config.serverActions?.[key];
+  if (typeof handler !== "function") {
+    return error(
+      "not-implemented",
+      `server action ${key} is not in the createVendo({ serverActions }) registration map; re-run vendo init to regenerate the wiring`,
+    );
+  }
+  const args = call.args as Record<string, unknown>;
+  const positional = binding.params.map((param) => args[param]);
+  let output: unknown;
+  try {
+    output = await (handler as (...values: unknown[]) => unknown)(...positional);
+  } catch (cause) {
+    return error("server-action-error", cause instanceof Error ? cause.message : `Server action ${key} failed`);
+  }
+  const projected = jsonProjection(output);
+  return projected.ok ? projected.output : error("server-action-error", `Server action ${key} returned a non-JSON value: ${projected.message}`);
+}
+
 async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {
   if (!isArgsObject(call.args)) return error("validation", `Arguments for ${call.tool} must be an object`);
+  if (tool.binding.kind === "server-action") return executeServerAction(config, tool.binding, call, ctx);
 
   let url: URL;
   let method: HttpMethod;
@@ -543,14 +620,25 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
       config.baseUrl,
       config.baseUrlTrusted ?? true,
     );
-    if (!forwardsPresentHeaders && hasInboundAuthHeaders(ctx) && config.onPresentCredentialsNotForwarded !== undefined) {
+    if (!forwardsPresentHeaders && hasInboundAuthHeaders(ctx)) {
       const reason = config.baseUrlTrusted === false
         ? "untrusted-host-origin" as const
         : "cross-origin-binding" as const;
-      try {
-        await config.onPresentCredentialsNotForwarded({ ctx, tool: descriptorOf(tool), reason });
-      } catch {
-        // A warning sink must never turn a host API call into a product failure.
+      if (config.onPresentCredentialsNotForwarded !== undefined) {
+        try {
+          await config.onPresentCredentialsNotForwarded({ ctx, tool: descriptorOf(tool), reason });
+        } catch {
+          // A warning sink must never turn a host API call into a product failure.
+        }
+      }
+      // "untrusted-host-origin" only (09-vendo §2 install-dx wave 1.1):
+      // "cross-origin-binding" always stays warn-only, in every policy.
+      if (reason === "untrusted-host-origin" && config.untrustedOriginPolicy === "fail") {
+        return error(
+          "blocked",
+          `Present credentials for ${call.tool} cannot be forwarded because VENDO_BASE_URL is not set. `
+            + "Set VENDO_BASE_URL to this deployment's public origin and restart the server.",
+        );
       }
     }
     headers = forwardsPresentHeaders ? forwardedHeaders(ctx) : {};

@@ -1,0 +1,689 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "getAuthNextauth",
+      "method": "GET",
+      "path": "/api/auth/{nextauth}",
+      "risk": "read"
+    },
+    {
+      "name": "postAuthNextauth",
+      "method": "POST",
+      "path": "/api/auth/{nextauth}",
+      "risk": "write"
+    },
+    {
+      "name": "postAuthForgotPassword",
+      "method": "POST",
+      "path": "/api/auth/forgot-password",
+      "risk": "write"
+    },
+    {
+      "name": "getAuthOauthMe",
+      "method": "GET",
+      "path": "/api/auth/oauth/me",
+      "risk": "read"
+    },
+    {
+      "name": "postAuthOauthMe",
+      "method": "POST",
+      "path": "/api/auth/oauth/me",
+      "risk": "write"
+    },
+    {
+      "name": "postAuthOauthRefreshToken",
+      "method": "POST",
+      "path": "/api/auth/oauth/refreshToken",
+      "risk": "write"
+    },
+    {
+      "name": "postAuthOauthToken",
+      "method": "POST",
+      "path": "/api/auth/oauth/token",
+      "risk": "write"
+    },
+    {
+      "name": "postAuthResetPassword",
+      "method": "POST",
+      "path": "/api/auth/reset-password",
+      "risk": "destructive"
+    },
+    {
+      "name": "postAuthSetup",
+      "method": "POST",
+      "path": "/api/auth/setup",
+      "risk": "write"
+    },
+    {
+      "name": "postAuthSignup",
+      "method": "POST",
+      "path": "/api/auth/signup",
+      "risk": "write"
+    },
+    {
+      "name": "postAuthTwoFactorTotpDisable",
+      "method": "POST",
+      "path": "/api/auth/two-factor/totp/disable",
+      "risk": "write"
+    },
+    {
+      "name": "postAuthTwoFactorTotpEnable",
+      "method": "POST",
+      "path": "/api/auth/two-factor/totp/enable",
+      "risk": "write"
+    },
+    {
+      "name": "postAuthTwoFactorTotpSetup",
+      "method": "POST",
+      "path": "/api/auth/two-factor/totp/setup",
+      "risk": "write"
+    },
+    {
+      "name": "getAuthVerifyEmail",
+      "method": "GET",
+      "path": "/api/auth/verify-email",
+      "risk": "read"
+    },
+    {
+      "name": "getAvailabilityCalendar",
+      "method": "GET",
+      "path": "/api/availability/calendar",
+      "risk": "read"
+    },
+    {
+      "name": "postAvailabilityCalendar",
+      "method": "POST",
+      "path": "/api/availability/calendar",
+      "risk": "write"
+    },
+    {
+      "name": "deleteAvailabilityCalendar",
+      "method": "DELETE",
+      "path": "/api/availability/calendar",
+      "risk": "destructive"
+    },
+    {
+      "name": "getAvatarUuid",
+      "method": "GET",
+      "path": "/api/avatar/{uuid}",
+      "risk": "read"
+    },
+    {
+      "name": "postBookEvent",
+      "method": "POST",
+      "path": "/api/book/event",
+      "risk": "write"
+    },
+    {
+      "name": "postBookRecurringEvent",
+      "method": "POST",
+      "path": "/api/book/recurring-event",
+      "risk": "write"
+    },
+    {
+      "name": "postCancel",
+      "method": "POST",
+      "path": "/api/cancel",
+      "risk": "destructive"
+    },
+    {
+      "name": "deleteCancel",
+      "method": "DELETE",
+      "path": "/api/cancel",
+      "risk": "destructive"
+    },
+    {
+      "name": "postCronBookingReminder",
+      "method": "POST",
+      "path": "/api/cron/bookingReminder",
+      "risk": "write"
+    },
+    {
+      "name": "getCronCalendarSubscriptions",
+      "method": "GET",
+      "path": "/api/cron/calendar-subscriptions",
+      "risk": "read"
+    },
+    {
+      "name": "getCronCalendarSubscriptionsCleanup",
+      "method": "GET",
+      "path": "/api/cron/calendar-subscriptions-cleanup",
+      "risk": "read"
+    },
+    {
+      "name": "postCronChangeTimeZone",
+      "method": "POST",
+      "path": "/api/cron/changeTimeZone",
+      "risk": "write"
+    },
+    {
+      "name": "getCronSelectedCalendars",
+      "method": "GET",
+      "path": "/api/cron/selected-calendars",
+      "risk": "read"
+    },
+    {
+      "name": "postCronSyncAppMeta",
+      "method": "POST",
+      "path": "/api/cron/syncAppMeta",
+      "risk": "write"
+    },
+    {
+      "name": "postCronWebhookTriggers",
+      "method": "POST",
+      "path": "/api/cron/webhookTriggers",
+      "risk": "write"
+    },
+    {
+      "name": "getCsrf",
+      "method": "GET",
+      "path": "/api/csrf",
+      "risk": "read"
+    },
+    {
+      "name": "getEmail",
+      "method": "GET",
+      "path": "/api/email",
+      "risk": "read"
+    },
+    {
+      "name": "getGeolocation",
+      "method": "GET",
+      "path": "/api/geolocation",
+      "risk": "read"
+    },
+    {
+      "name": "postIntegrationsArgs",
+      "method": "POST",
+      "path": "/api/integrations/{args}",
+      "risk": "write"
+    },
+    {
+      "name": "postIntegrationsAlbyWebhook",
+      "method": "POST",
+      "path": "/api/integrations/alby/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "postIntegrationsBtcpayserverWebhook",
+      "method": "POST",
+      "path": "/api/integrations/btcpayserver/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "postIntegrationsPaypalWebhook",
+      "method": "POST",
+      "path": "/api/integrations/paypal/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "postIntegrationsStripepaymentWebhook",
+      "method": "POST",
+      "path": "/api/integrations/stripepayment/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "getIp",
+      "method": "GET",
+      "path": "/api/ip",
+      "risk": "read"
+    },
+    {
+      "name": "getLink",
+      "method": "GET",
+      "path": "/api/link",
+      "risk": "read"
+    },
+    {
+      "name": "getLogo",
+      "method": "GET",
+      "path": "/api/logo",
+      "risk": "read"
+    },
+    {
+      "name": "getMe",
+      "method": "GET",
+      "path": "/api/me",
+      "risk": "read"
+    },
+    {
+      "name": "postRecordedDailyVideo",
+      "method": "POST",
+      "path": "/api/recorded-daily-video",
+      "risk": "write"
+    },
+    {
+      "name": "getSocialOgImage",
+      "method": "GET",
+      "path": "/api/social/og/image",
+      "risk": "read"
+    },
+    {
+      "name": "postStripeWebhook",
+      "method": "POST",
+      "path": "/api/stripe/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "postSyncHelpscout",
+      "method": "POST",
+      "path": "/api/sync/helpscout",
+      "risk": "write"
+    },
+    {
+      "name": "getTasksCleanup",
+      "method": "GET",
+      "path": "/api/tasks/cleanup",
+      "risk": "read"
+    },
+    {
+      "name": "getTasksCron",
+      "method": "GET",
+      "path": "/api/tasks/cron",
+      "risk": "read"
+    },
+    {
+      "name": "getTrpcAdminTrpc",
+      "method": "GET",
+      "path": "/api/trpc/admin/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcAdminTrpc",
+      "method": "POST",
+      "path": "/api/trpc/admin/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcApiKeysTrpc",
+      "method": "GET",
+      "path": "/api/trpc/apiKeys/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcApiKeysTrpc",
+      "method": "POST",
+      "path": "/api/trpc/apiKeys/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcAppsTrpc",
+      "method": "GET",
+      "path": "/api/trpc/apps/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcAppsTrpc",
+      "method": "POST",
+      "path": "/api/trpc/apps/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcAppsRouterTrpc",
+      "method": "GET",
+      "path": "/api/trpc/appsRouter/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcAppsRouterTrpc",
+      "method": "POST",
+      "path": "/api/trpc/appsRouter/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcAuthTrpc",
+      "method": "GET",
+      "path": "/api/trpc/auth/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcAuthTrpc",
+      "method": "POST",
+      "path": "/api/trpc/auth/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcAvailabilityTrpc",
+      "method": "GET",
+      "path": "/api/trpc/availability/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcAvailabilityTrpc",
+      "method": "POST",
+      "path": "/api/trpc/availability/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcBookingsTrpc",
+      "method": "GET",
+      "path": "/api/trpc/bookings/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcBookingsTrpc",
+      "method": "POST",
+      "path": "/api/trpc/bookings/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcCalendarsTrpc",
+      "method": "GET",
+      "path": "/api/trpc/calendars/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcCalendarsTrpc",
+      "method": "POST",
+      "path": "/api/trpc/calendars/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcCalVideoTrpc",
+      "method": "GET",
+      "path": "/api/trpc/calVideo/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcCalVideoTrpc",
+      "method": "POST",
+      "path": "/api/trpc/calVideo/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcCredentialsTrpc",
+      "method": "GET",
+      "path": "/api/trpc/credentials/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcCredentialsTrpc",
+      "method": "POST",
+      "path": "/api/trpc/credentials/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcDeploymentSetupTrpc",
+      "method": "GET",
+      "path": "/api/trpc/deploymentSetup/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcDeploymentSetupTrpc",
+      "method": "POST",
+      "path": "/api/trpc/deploymentSetup/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcEventTypesTrpc",
+      "method": "GET",
+      "path": "/api/trpc/eventTypes/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcEventTypesTrpc",
+      "method": "POST",
+      "path": "/api/trpc/eventTypes/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcEventTypesHeavyTrpc",
+      "method": "GET",
+      "path": "/api/trpc/eventTypesHeavy/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcEventTypesHeavyTrpc",
+      "method": "POST",
+      "path": "/api/trpc/eventTypesHeavy/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcFeaturesTrpc",
+      "method": "GET",
+      "path": "/api/trpc/features/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcFeaturesTrpc",
+      "method": "POST",
+      "path": "/api/trpc/features/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcFeedbackTrpc",
+      "method": "GET",
+      "path": "/api/trpc/feedback/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcFeedbackTrpc",
+      "method": "POST",
+      "path": "/api/trpc/feedback/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcGoogleWorkspaceTrpc",
+      "method": "GET",
+      "path": "/api/trpc/googleWorkspace/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcGoogleWorkspaceTrpc",
+      "method": "POST",
+      "path": "/api/trpc/googleWorkspace/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcHolidaysTrpc",
+      "method": "GET",
+      "path": "/api/trpc/holidays/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcHolidaysTrpc",
+      "method": "POST",
+      "path": "/api/trpc/holidays/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcI18nTrpc",
+      "method": "GET",
+      "path": "/api/trpc/i18n/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcI18nTrpc",
+      "method": "POST",
+      "path": "/api/trpc/i18n/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcLoggedInViewerRouterTrpc",
+      "method": "GET",
+      "path": "/api/trpc/loggedInViewerRouter/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcLoggedInViewerRouterTrpc",
+      "method": "POST",
+      "path": "/api/trpc/loggedInViewerRouter/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcMeTrpc",
+      "method": "GET",
+      "path": "/api/trpc/me/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcMeTrpc",
+      "method": "POST",
+      "path": "/api/trpc/me/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcOAuthTrpc",
+      "method": "GET",
+      "path": "/api/trpc/oAuth/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcOAuthTrpc",
+      "method": "POST",
+      "path": "/api/trpc/oAuth/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcOooTrpc",
+      "method": "GET",
+      "path": "/api/trpc/ooo/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcOooTrpc",
+      "method": "POST",
+      "path": "/api/trpc/ooo/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcPublicTrpc",
+      "method": "GET",
+      "path": "/api/trpc/public/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcPublicTrpc",
+      "method": "POST",
+      "path": "/api/trpc/public/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcSlotsTrpc",
+      "method": "GET",
+      "path": "/api/trpc/slots/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcSlotsTrpc",
+      "method": "POST",
+      "path": "/api/trpc/slots/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcTimezonesTrpc",
+      "method": "GET",
+      "path": "/api/trpc/timezones/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcTimezonesTrpc",
+      "method": "POST",
+      "path": "/api/trpc/timezones/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcTravelSchedulesTrpc",
+      "method": "GET",
+      "path": "/api/trpc/travelSchedules/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcTravelSchedulesTrpc",
+      "method": "POST",
+      "path": "/api/trpc/travelSchedules/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcUsersTrpc",
+      "method": "GET",
+      "path": "/api/trpc/users/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcUsersTrpc",
+      "method": "POST",
+      "path": "/api/trpc/users/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcViewerTrpc",
+      "method": "GET",
+      "path": "/api/trpc/viewer/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcViewerTrpc",
+      "method": "POST",
+      "path": "/api/trpc/viewer/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcWebhookTrpc",
+      "method": "GET",
+      "path": "/api/trpc/webhook/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcWebhookTrpc",
+      "method": "POST",
+      "path": "/api/trpc/webhook/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getUserReferralsToken",
+      "method": "GET",
+      "path": "/api/user/referrals-token",
+      "risk": "read"
+    },
+    {
+      "name": "postUsername",
+      "method": "POST",
+      "path": "/api/username",
+      "risk": "write"
+    },
+    {
+      "name": "getVerifyBookingToken",
+      "method": "GET",
+      "path": "/api/verify-booking-token",
+      "risk": "read"
+    },
+    {
+      "name": "postVerifyBookingToken",
+      "method": "POST",
+      "path": "/api/verify-booking-token",
+      "risk": "write"
+    },
+    {
+      "name": "getVersion",
+      "method": "GET",
+      "path": "/api/version",
+      "risk": "read"
+    },
+    {
+      "name": "postVideoGuestSession",
+      "method": "POST",
+      "path": "/api/video/guest-session",
+      "risk": "write"
+    },
+    {
+      "name": "getVideoRecording",
+      "method": "GET",
+      "path": "/api/video/recording",
+      "risk": "read"
+    },
+    {
+      "name": "postWebhookAppCredential",
+      "method": "POST",
+      "path": "/api/webhook/app-credential",
+      "risk": "write"
+    },
+    {
+      "name": "postWebhooksCalendarSubscriptionProvider",
+      "method": "POST",
+      "path": "/api/webhooks/calendar-subscription/{provider}",
+      "risk": "write"
+    }
+  ]
+}

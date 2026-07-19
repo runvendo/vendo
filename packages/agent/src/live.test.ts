@@ -62,7 +62,7 @@ async function runProviderJourney(model: LanguageModel): Promise<void> {
       execute: async () => ({
         kind: "tree",
         payload: {
-          formatVersion: "vendo-genui/v1",
+          formatVersion: "vendo-genui/v2",
           root: "r",
           nodes: [{ id: "r", component: "Text", props: { text: "Live provider" } }],
         },
@@ -126,7 +126,7 @@ async function runProviderJourney(model: LanguageModel): Promise<void> {
     ctx: runCtx,
   }));
   expect(view.parts.find((part) => part.type === "data-vendo-view")).toMatchObject({
-    data: { appId: "app_1", payload: { formatVersion: "vendo-genui/v1" } },
+    data: { appId: "app_1", payload: { formatVersion: "vendo-genui/v2" } },
   });
   expect(tools.invocations.vendo_apps_open).toBe(1);
 }

@@ -1,12 +1,9 @@
 import type { PermissionGrant } from "@vendoai/core";
+import { authJs } from "@vendoai/vendo/server";
 import { encode } from "next-auth/jwt";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  actAsMapleUser,
-  resolveMapleSession,
-  resolveMaplePrincipal,
-  safeReturnTo,
-} from "./auth";
+import { authSecret, resolveMapleSubject } from "@/server/users";
+import { resolveMapleSession, safeReturnTo } from "./auth";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -37,9 +34,6 @@ describe("Maple Auth.js sessions", () => {
     await expect(resolveMapleSession(new Request("http://localhost:3000/", {
       headers: { cookie },
     }))).resolves.toMatchObject({ subject: "vendo-demo", display: "Yousef Helal" });
-    await expect(resolveMaplePrincipal(new Request("http://localhost:3000/", {
-      headers: { cookie },
-    }))).resolves.toEqual({ kind: "user", subject: "vendo-demo", display: "Yousef Helal" });
   });
 
   it("rejects tampered cookies, unknown subjects, and missing sessions", async () => {
@@ -52,16 +46,27 @@ describe("Maple Auth.js sessions", () => {
     }))).resolves.toBeNull();
     await expect(resolveMapleSession(new Request("http://localhost:3000/")))
       .resolves.toBeNull();
-    await expect(resolveMaplePrincipal(new Request("http://localhost:3000/")))
-      .resolves.toBeNull();
   });
 });
 
-describe("actAsMapleUser (Auth.js preset)", () => {
+// The exact server.ts config (./server.ts): one preset, Maple's own secret and
+// subject resolver.
+const auth = authJs({
+  secret: authSecret,
+  user: (subject) => {
+    const user = resolveMapleSubject(subject);
+    return user ? { display: user.display, email: user.email } : null;
+  },
+});
+
+describe("authJs's actAs half (away/MCP minting) — the session resolveMapleSession reads", () => {
   it("mints an away session Maple's own session reads accept", async () => {
-    // Cross-version proof: the preset encodes with @vendoai/actions' @auth/core
-    // while resolveMapleSession decodes with next-auth's bundled @auth/core.
-    const material = await actAsMapleUser(
+    // Cross-package proof: the preset's actAs half encodes the session JWE
+    // through @vendoai/actions' bundled @auth/core, while resolveMapleSession
+    // (and /api/transfers, /api/profile, /login) decode it through
+    // next-auth's own bundled @auth/core. The two must agree on wire format
+    // or away/MCP execution mints cookies the app itself cannot read.
+    const material = await auth.actAs!(
       { kind: "user", subject: "maple-mia", display: "Mia Nakamura" },
       grantFor("maple-mia"),
     );
@@ -72,7 +77,7 @@ describe("actAsMapleUser (Auth.js preset)", () => {
   });
 
   it("declines subjects Maple never issued", async () => {
-    await expect(actAsMapleUser(
+    await expect(auth.actAs!(
       { kind: "user", subject: "user_stranger" },
       grantFor("user_stranger"),
     )).resolves.toBeNull();

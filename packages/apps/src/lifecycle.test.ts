@@ -91,9 +91,9 @@ describe("apps lifecycle", () => {
     expect(first).toMatchObject({ format: VENDO_APP_FORMAT, name: "First app", ui: "tree" });
     expect(first.id).toMatch(/^app_/);
     expect(first.tree).toMatchObject({
-      formatVersion: "vendo-genui/v1",
+      formatVersion: "vendo-genui/v2",
       root: "root",
-      nodes: [{ id: "root", component: "Text" }],
+      nodes: [{ id: "root", component: "Stack" }, { id: "text-1", component: "Text" }],
     });
     expect(await runtime.get(first.id, ada)).toEqual(first);
     expect((await runtime.list(ada)).map((app) => app.id)).toEqual([second.id, first.id]);
@@ -276,7 +276,7 @@ describe("apps lifecycle", () => {
       name: "Original",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Text" }],
       },

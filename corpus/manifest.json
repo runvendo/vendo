@@ -412,6 +412,51 @@
     "notes": "First tRPC corpus fixture (ENG-246): Next 16 app router + tRPC 11 (superjson) + Prisma/Postgres pnpm monorepo. Default branch main verified via git ls-remote; apps/web/package.json declares next 16.2.6. prisma generate must precede typecheck/build (no postinstall hook). LICENSE contains the GNU Affero GPL v3 text."
   },
   {
+    "name": "nextcrm",
+    "gitUrl": "https://github.com/pdovhomilja/nextcrm-app.git",
+    "pinnedSha": "5b6a555022217607cba72df357d437a481fccbf4",
+    "license": "MIT",
+    "tier": "broad",
+    "bootstrap": {
+      "installCommand": "pnpm install --frozen-lockfile --force --ignore-workspace",
+      "envTemplate": {
+        "DATABASE_URL": "postgresql://corpus:corpus@127.0.0.1:55437/nextcrm",
+        "BETTER_AUTH_SECRET": "corpus-layer1-better-auth-secret",
+        "BETTER_AUTH_URL": "http://127.0.0.1:3000",
+        "INNGEST_ID": "nextcrm-corpus",
+        "INNGEST_APP_NAME": "NextCRM Corpus",
+        "INNGEST_EVENT_KEY": "corpus_dummy",
+        "INNGEST_SIGNING_KEY": "signkey-corpus-dummy",
+        "NEXT_PUBLIC_MINIO_ENDPOINT": "http://127.0.0.1:9000",
+        "MINIO_ENDPOINT": "http://127.0.0.1:9000",
+        "MINIO_PORT": "9000",
+        "MINIO_BUCKET": "nextcrm-corpus",
+        "MINIO_USE_SSL": "false",
+        "MINIO_ACCESS_KEY": "corpus_dummy",
+        "MINIO_SECRET_KEY": "corpus_dummy",
+        "OPENAI_API_KEY": "sk-corpus-dummy",
+        "RESEND_API_KEY": "re_corpus_dummy",
+        "EMAIL_ENCRYPTION_KEY": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "CRON_SECRET": "corpus_cron_secret"
+      },
+      "database": {
+        "kind": "docker-postgres",
+        "containerName": "vendo-corpus-nextcrm-postgres",
+        "image": "pgvector/pgvector:pg17",
+        "hostPort": 55437,
+        "database": "nextcrm",
+        "username": "corpus",
+        "password": "corpus",
+        "readinessTimeoutMs": 30000,
+        "readinessIntervalMs": 500
+      },
+      "seedCommand": "pnpm --ignore-workspace exec prisma migrate deploy",
+      "typecheckCommand": "pnpm --ignore-workspace exec prisma generate && pnpm --ignore-workspace exec tsc --noEmit",
+      "buildCommand": "pnpm --ignore-workspace exec prisma generate && pnpm --ignore-workspace exec next build"
+    },
+    "notes": "First server-actions corpus fixture (ENG-248): Next 16 app router with ~150 module-level \"use server\" action files over Prisma 7. Default branch main verified via git ls-remote; package.json declares next ^16.2.6. DB reality verified: the pinned schema targets PostgreSQL with pgvector (the repo migrated off MongoDB; docker-compose uses pgvector/pgvector:pg17), so the docker bootstrap uses that image. Layer 1-2 typecheck/build need only prisma generate, no live database — the repo's own build script runs prisma migrate deploy, which the corpus commands deliberately skip; the docker-postgres entry plus seedCommand serve future deep boots."
+  },
+  {
     "name": "teable",
     "gitUrl": "https://github.com/teableio/teable.git",
     "pinnedSha": "105e0f945dd9e4181ba6f80e44056c176a9800aa",

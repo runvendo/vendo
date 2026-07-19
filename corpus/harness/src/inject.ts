@@ -309,6 +309,38 @@ async function writePnpmWorkspaceRootOverrides(
   await writeFile(workspaceYaml, mergePnpmWorkspaceYamlOverrides(source, overrides));
 }
 
+/** pnpm ≥11 no longer reads the `pnpm` field from package.json, so the
+ * overrides rewritePackageJsonForLocalVendo writes there are silently ignored
+ * and transitive @vendoai deps would resolve from the registry. For standalone
+ * pnpm targets that will run pnpm ≥11 — a packageManager pin ≥11, or no pin at
+ * all (the harness environment provides pnpm 11) — mirror those overrides into
+ * the target's pnpm-workspace.yaml, creating it as a single-project workspace
+ * when missing. `packages: ["."]` keeps the created file valid for a dev
+ * machine still running pnpm 9, which reads the package.json overrides and
+ * ignores the yaml ones. Returns true when the yaml carries the overrides, so
+ * the caller must drop --ignore-workspace (pnpm 11 skips pnpm-workspace.yaml
+ * settings entirely under that flag). */
+async function writeStandalonePnpmWorkspaceOverrides(
+  repoDir: string,
+  summary: LocalVendoInstallSummary,
+): Promise<boolean> {
+  if (
+    summary.packageManager !== "pnpm"
+    || path.resolve(summary.installDir ?? repoDir) !== path.resolve(repoDir)
+    || (summary.pnpmMajor != null && summary.pnpmMajor < 11)
+  ) {
+    return false;
+  }
+  const pkg = JSON.parse(await readFile(path.join(repoDir, "package.json"), "utf8")) as Record<string, unknown>;
+  const overrides = isRecord(pkg["pnpm"]) ? stringRecord(pkg["pnpm"]["overrides"]) : {};
+  if (Object.keys(overrides).length === 0) return false;
+
+  const workspaceYaml = path.join(repoDir, "pnpm-workspace.yaml");
+  const source = await readOptional(workspaceYaml) ?? 'packages:\n  - "."\n';
+  await writeFile(workspaceYaml, mergePnpmWorkspaceYamlOverrides(source, overrides));
+  return true;
+}
+
 async function assertLocalVendoResolution(repoDir: string, summary: LocalVendoInstallSummary): Promise<void> {
   const pkg = JSON.parse(await readFile(path.join(repoDir, "package.json"), "utf8")) as Record<string, unknown>;
   const dependencySections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
@@ -400,6 +432,7 @@ export function createLocalVendoInjector(options: CreateLocalVendoInjectorOption
       const installDir = pnpmWorkspaceRoot ?? summary.installDir ?? repoDir;
       const installSummary = installDir === summary.installDir ? summary : { ...summary, installDir };
       await writePnpmWorkspaceRootOverrides(repoDir, installSummary);
+      const standaloneWorkspaceOverrides = await writeStandalonePnpmWorkspaceOverrides(repoDir, installSummary);
       if (runInstall) {
         const sourceCommand = installCommandSource(repo, installSummary);
         // pnpm ≥10 rejects dangerouslyAllowAllBuilds when the repo curates its
@@ -408,7 +441,8 @@ export function createLocalVendoInjector(options: CreateLocalVendoInjectorOption
         const repoCuratesBuilds = installSummary.packageManager === "pnpm"
           && await pnpmDeclaresBuiltDependencies(installDir);
         const installCommand = normalizePostInjectionInstallCommand(sourceCommand, {
-          dropIgnoreWorkspace: installSummary.packageManager === "pnpm" && installDir !== repoDir,
+          dropIgnoreWorkspace: installSummary.packageManager === "pnpm"
+            && (installDir !== repoDir || standaloneWorkspaceOverrides),
           disableYarnImmutableInstalls: installSummary.packageManager === "yarn-berry",
           pnpmConfig: installSummary.packageManager === "pnpm"
             ? [

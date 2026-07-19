@@ -13,7 +13,6 @@ import {
 } from "@vendoai/core";
 
 export const VENDO_CATALOG_FORMAT = "vendo/catalog@1" as const;
-export const VENDO_CATALOG_PROPOSALS_FORMAT = "vendo/catalog-proposals@1" as const;
 
 /** A deterministic or explicitly registered host-component catalog entry. */
 export interface CatalogEntry {
@@ -60,58 +59,6 @@ export const catalogFileSchema = z.object({
     names.add(entry.name);
   }
 }) satisfies z.ZodType<CatalogFile>;
-
-export interface CatalogCopyFields {
-  description: string;
-  examples?: string[];
-}
-
-export const catalogCopyFieldsSchema = z.object({
-  description: z.string(),
-  examples: z.array(z.string().min(1)).optional(),
-}).strict() satisfies z.ZodType<CatalogCopyFields>;
-
-const proposedCatalogCopyFieldsSchema = catalogCopyFieldsSchema.extend({
-  description: z.string().min(1),
-}).strict();
-
-export interface CatalogCopyProposal {
-  name: string;
-  /** Deterministic scanner context the proposal was authored against. */
-  basis: {
-    exportPath: string;
-    propsSchema: JsonSchema;
-    note?: string;
-  };
-  before: CatalogCopyFields;
-  after: CatalogCopyFields;
-}
-
-const catalogCopyProposalBasisSchema = z.object({
-  exportPath: z.string().min(1),
-  propsSchema: jsonSchemaSchema,
-  note: z.string().min(1).optional(),
-}).strict();
-
-export const catalogCopyProposalSchema = z.object({
-  name: z.string().regex(/^[A-Z][A-Za-z0-9_$]*$/),
-  basis: catalogCopyProposalBasisSchema,
-  before: catalogCopyFieldsSchema,
-  after: proposedCatalogCopyFieldsSchema,
-}).strict() satisfies z.ZodType<CatalogCopyProposal>;
-
-/** Review-only copy proposals. Runtime never reads this artifact. */
-export interface CatalogProposalsFile {
-  format: typeof VENDO_CATALOG_PROPOSALS_FORMAT;
-  catalogFormat: typeof VENDO_CATALOG_FORMAT;
-  proposals: CatalogCopyProposal[];
-}
-
-export const catalogProposalsFileSchema = z.object({
-  format: z.literal(VENDO_CATALOG_PROPOSALS_FORMAT),
-  catalogFormat: z.literal(VENDO_CATALOG_FORMAT),
-  proposals: z.array(catalogCopyProposalSchema),
-}).strict() satisfies z.ZodType<CatalogProposalsFile>;
 
 /** 04-actions §1: the http methods a binding can carry. */
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -207,6 +154,30 @@ export const graphqlBindingSchema = z.object({
 }).passthrough() satisfies z.ZodType<GraphqlBinding>;
 
 /**
+ * 04-actions §1 (additive within vendo/tools@1): execution binding for a Next.js
+ * server action. Tool identity is `module` (root-relative posix path) plus
+ * `exportName` — never a method+path pair. Execution is direct in-process
+ * dispatch through the registration map the generated wiring file passes into
+ * `createVendo({ serverActions })`; `params` carries the action's ordered
+ * parameter names so the args object maps onto positional arguments. When the
+ * registration map lacks the action, execution fails closed (clear error, no
+ * work performed). There are NO Next action-id bindings.
+ */
+export interface ServerActionBinding {
+  kind: "server-action";
+  module: string;                  // "app/actions/invoices.ts" — root-relative posix path
+  exportName: string;              // "createInvoice" | "default"
+  params: string[];                // ordered parameter names; args object keys map onto these
+}
+
+export const serverActionBindingSchema = z.object({
+  kind: z.literal("server-action"),
+  module: z.string().min(1),
+  exportName: z.string().min(1),
+  params: z.array(z.string().min(1)),
+}).passthrough() satisfies z.ZodType<ServerActionBinding>;
+
+/**
  * 04-actions §6: ordered steps over primitive host/connector tools, reusing the
  * core §11 `Step` shape. Expressions see `{ args, steps, item }`. Compounds are
  * agent-authored: they live in `.vendo/capabilities.json`, never `tools.json`.
@@ -225,15 +196,16 @@ export const compoundBindingSchema = z.object({
 ) satisfies z.ZodType<CompoundBinding>;
 
 /** The bindings deterministic extraction may emit into `.vendo/tools.json`. */
-export type PrimitiveToolBinding = RouteBinding | OpenApiBinding | TrpcBinding | GraphqlBinding;
+export type PrimitiveToolBinding = RouteBinding | OpenApiBinding | TrpcBinding | GraphqlBinding | ServerActionBinding;
 
-export type ToolBinding = RouteBinding | OpenApiBinding | TrpcBinding | GraphqlBinding | CompoundBinding;
+export type ToolBinding = RouteBinding | OpenApiBinding | TrpcBinding | GraphqlBinding | ServerActionBinding | CompoundBinding;
 
 export const toolBindingSchema = z.union([
   routeBindingSchema,
   openApiBindingSchema,
   trpcBindingSchema,
   graphqlBindingSchema,
+  serverActionBindingSchema,
   compoundBindingSchema,
 ]) satisfies z.ZodType<ToolBinding>;
 
@@ -249,6 +221,7 @@ const extractedBindingSchema = z.discriminatedUnion("kind", [
   openApiBindingSchema,
   trpcBindingSchema,
   graphqlBindingSchema,
+  serverActionBindingSchema,
   compoundKindSchema,
 ]) as unknown as z.ZodType<PrimitiveToolBinding>;
 

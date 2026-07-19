@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useVendoContext } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useApps } from "../hooks/use-apps.js";
@@ -9,11 +9,11 @@ import { ActivityPanel } from "./activity-panel.js";
 import { AutomationsPanel } from "./automations-panel.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
-import { OrgsPanel } from "./orgs-panel.js";
 import { TakeoverPortal } from "./takeover-portal.js";
-import { VendoThread } from "./vendo-thread.js";
+import { VendoThread } from "./thread/index.js";
+import { WaitingQueue } from "./waiting-queue.js";
 
-const TABS = ["chat", "apps", "automations", "accounts", "orgs", "activity"] as const;
+const TABS = ["chat", "apps", "automations", "accounts", "activity"] as const;
 type Tab = typeof TABS[number];
 
 function title(tab: Tab): string {
@@ -22,13 +22,32 @@ function title(tab: Tab): string {
 
 function ChatWorkspace() {
   const takeover = useMobileTakeover();
-  const { threads } = useThreads();
+  const { threads, isLoading, error: threadsError, refresh } = useThreads();
   const [selected, setSelected] = useState<string>();
-  // Default to the most recent conversation once the list loads; leave the
-  // caller's explicit selection (including the "New conversation" reset) alone.
+  // ENG-222 — the thr_ the server mints for a "New conversation" turn. Tracked
+  // separately from `selected` (which drives VendoThread's threadId prop) so a
+  // fresh mint highlights the sidebar without remounting the live conversation.
+  const [minted, setMinted] = useState<string>();
+  const activeId = selected ?? minted;
+  // Default to the most recent conversation until the user makes an explicit
+  // choice. `userChose` is set synchronously in the button handlers so that an
+  // explicit "New conversation" (selected → undefined) can never be clobbered by
+  // this effect — which, being passive, may flush AFTER the click and would
+  // otherwise resurrect the previous thread via `?? threads[0]` (ENG-222).
+  const userChose = useRef(false);
   useEffect(() => {
+    if (userChose.current || threads.length === 0) return;
     setSelected(current => current ?? threads[0]?.id);
   }, [threads]);
+  const onThreadId = useCallback((id: string) => setMinted(id), []);
+  // ENG-222 — a conversation started via "New conversation" mints a thr_ the
+  // sidebar list has never seen; refresh so it appears (and highlights). Once
+  // the refreshed list carries it the guard falls false, so this can't loop.
+  useEffect(() => {
+    if (minted !== undefined && !threads.some(thread => thread.id === minted)) {
+      void refresh();
+    }
+  }, [minted, threads, refresh]);
   return (
     <div
       className="fl-page-pane"
@@ -48,19 +67,44 @@ function ChatWorkspace() {
         aria-label="Conversations"
         style={{ alignSelf: "stretch", display: "flex", flexDirection: "column", gap: 8, maxHeight: "none", maxWidth: "none", padding: 12 }}
       >
-        <button type="button" className="fl-btn fl-btn-primary" onClick={() => setSelected(undefined)}>New conversation</button>
+        <button type="button" className="fl-btn fl-btn-primary" onClick={() => { userChose.current = true; setSelected(undefined); setMinted(undefined); }}>New conversation</button>
         {threads.map(thread => (
           <button
             type="button"
-            className={`fl-btn${selected === thread.id ? " fl-btn-primary" : ""}`}
-            aria-current={selected === thread.id ? "page" : undefined}
+            className={`fl-btn${activeId === thread.id ? " fl-btn-primary" : ""}`}
+            aria-current={activeId === thread.id ? "page" : undefined}
             key={thread.id}
-            onClick={() => setSelected(thread.id)}
+            onClick={() => { userChose.current = true; setSelected(thread.id); setMinted(undefined); }}
             style={{ justifyContent: "flex-start", textAlign: "left" }}
           >{thread.title}</button>
         ))}
       </nav>
-      <VendoThread threadId={selected} />
+      {/* ENG-225 — the waiting-on-you strip parks above the live conversation;
+          it renders nothing while no approvals are pending. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+        <WaitingQueue />
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          {/* Discoverability gate (§6): this thread mounts with threadId
+              undefined BEFORE the list resolves, and the auto-select effect
+              lands a render later — both transients would burn (or flash) the
+              one-time greeting for a returning user who is about to be snapped
+              to their latest conversation. Hold the dial quiet until the
+              surface has SETTLED on a genuinely fresh thread: list resolved
+              with no conversations (a FAILED list proves nothing — the empty
+              array is just the initial value, so an error keeps the gate
+              shut), or an explicit user choice (userChose is set
+              synchronously before the click's re-render). */}
+          <VendoThread
+            threadId={selected}
+            onThreadId={onThreadId}
+            discoverability={
+              userChose.current || (!isLoading && threadsError === undefined && threads.length === 0)
+                ? undefined
+                : "quiet"
+            }
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -198,7 +242,6 @@ export function VendoPage() {
             {tab === "apps" ? <AppsWorkspace /> : null}
             {tab === "automations" ? <AutomationsPanel /> : null}
             {tab === "accounts" ? <ConnectedAccountsPanel /> : null}
-            {tab === "orgs" ? <OrgsPanel /> : null}
             {tab === "activity" ? <ActivityPanel /> : null}
           </section>
         </div>

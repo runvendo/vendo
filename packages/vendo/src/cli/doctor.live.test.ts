@@ -113,6 +113,12 @@ describe("vendo doctor MCP discovery live", () => {
       url: `${origin}/api/vendo`,
       output: { log: (message) => logs.push(message), error: (message) => errors.push(message) },
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+      // This test proves MCP discovery, not the model turn (the fixture uses a
+      // stub model). Stub doctor v2's live surface so the discovery checks stay
+      // the subject.
+      interactive: false,
+      liveTurn: async () => ({ attempted: true, ok: true, rung: "env-key", credential: "stub", reply: "ok", elapsedMs: 1 }),
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
     })).toBe(0);
     expect(errors).toEqual([]);
     expect(logs).toContain("ok: server.json remote agrees with the live MCP door");

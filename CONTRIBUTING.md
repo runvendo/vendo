@@ -10,7 +10,7 @@ pnpm build
 pnpm test
 ```
 
-Node 20+, pnpm 9. The repo is a turbo monorepo: `packages/` are the published
+Node 22+, pnpm 11. The repo is a turbo monorepo: `packages/` are the published
 `@vendoai/*` libraries, built against the frozen contracts in `docs/contracts/`
 (read `00-overview.md` first; layering is enforced in `pnpm lint`). The demo
 host apps live under `apps/`.

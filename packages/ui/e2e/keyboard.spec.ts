@@ -3,7 +3,7 @@ import { expectFocusIndicator, expectKeyboardReachability, openScenario, tabTo }
 
 test("thread is keyboard-complete with visible focus", async ({ page }) => {
   await openScenario(page, "thread");
-  await expect(page.getByLabel("Approval for host_email_send")).toBeVisible();
+  await expect(page.getByLabel("Approval for Email send")).toBeVisible();
   await expectKeyboardReachability(page, 'main[data-scenario="thread"]');
   await tabTo(page, async () => page.evaluate(() => document.activeElement?.getAttribute("aria-label") === null
     && document.activeElement?.textContent?.trim() === "Approve"));
@@ -109,6 +109,17 @@ test("activity load-more is keyboard reachable and appends a page", async ({ pag
   await tabTo(page, async () => page.evaluate(() => document.activeElement?.textContent?.trim() === "Load more"));
   await page.keyboard.press("Enter");
   await expect(rows).toHaveCount(3);
+});
+
+test("activity reaches an explicit end-of-list once history is exhausted", async ({ page }) => {
+  await openScenario(page, "activity");
+  const loadMore = page.getByRole("button", { name: "Load more" });
+  // First page appends aud_3; the second repeats seen rows → end of the list.
+  await loadMore.click();
+  await expect(page.locator('main[data-scenario="activity"] tbody tr')).toHaveCount(3);
+  await loadMore.click();
+  await expect(page.getByTestId("activity-end")).toBeVisible();
+  await expect(loadMore).toHaveCount(0);
 });
 
 test("a destructive approval can be denied entirely by keyboard", async ({ page }) => {

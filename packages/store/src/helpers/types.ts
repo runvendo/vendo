@@ -57,7 +57,8 @@ export interface RunRow {
   finishedAt?: IsoDateTime;
 }
 
-export interface EphemeralStateRow {
+/** 02-store §3 — one per-user-per-app state singleton row. */
+export interface StateRow {
   appId: AppId;
   subject: string;
   data: Json;

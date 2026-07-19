@@ -47,7 +47,7 @@ const seedDoc = (id = "app_rebase"): AppDocument => ({
   name: "Maple overview",
   ui: "tree",
   tree: {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [{ id: "root", component: "Stack", source: "prewired" }],
   },
@@ -58,9 +58,7 @@ const promptText = (call: ScriptedModelCall): string => call.prompt.map((message
   return message.content.map((part) => part.text ?? "").join("");
 }).join("\n");
 
-const forkOps = JSON.stringify({
-  ops: [{ op: "fork-pin", slot: SLOT, nodeId: "worth", parentId: "root" }],
-});
+const forkOps = `<Edit><ForkPin slot="${SLOT}" into="root"/></Edit>`;
 
 /** Fork the pin and record one pinned edit + one non-pin edit on the OLD baseline. */
 const seedForkedHistory = async (
@@ -71,11 +69,10 @@ const seedForkedHistory = async (
   await seedAppRow(store, app, ctx.principal.subject);
   const responses = [
     forkOps,
-    JSON.stringify({ ops: [{ op: "add-component", name: COMPONENT, source: OLD_SOURCE.replace("$1.2M", "$1.2M in green") }] }),
-    ...extraPinnedEdits.map((marker) => JSON.stringify({
-      ops: [{ op: "add-component", name: COMPONENT, source: OLD_SOURCE.replace("$1.2M", marker) }],
-    })),
-    JSON.stringify({ ops: [{ op: "set-name", name: "Maple overview (renamed)" }] }),
+    `<Edit><Island name="${COMPONENT}">${OLD_SOURCE.replace("$1.2M", "$1.2M in green")}</Island></Edit>`,
+    ...extraPinnedEdits.map((marker) =>
+      `<Edit><Island name="${COMPONENT}">${OLD_SOURCE.replace("$1.2M", marker)}</Island></Edit>`),
+    '<Edit><SetName name="Maple overview (renamed)"/></Edit>',
   ];
   const runtime = createApps({
     store,
@@ -116,7 +113,7 @@ describe("06-apps §8 — drift surfacing", () => {
     const store = memoryStore();
     const appId = await seedForkedHistory(store);
     const runtime = rebasedRuntime(store, [
-      JSON.stringify({ ops: [{ op: "set-name", name: "Edited while drifted" }] }),
+      '<Edit><SetName name="Edited while drifted"/></Edit>',
     ]);
 
     const expectedDrift = [{
@@ -173,11 +170,11 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     const runtime = rebasedRuntime(store, [
       (call) => {
         prompts.push(promptText(call));
-        return JSON.stringify({ ops: [{ op: "add-component", name: COMPONENT, source: REPLAYED_SOURCE }] });
+        return `<Edit><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`;
       },
       (call) => {
         prompts.push(promptText(call));
-        return JSON.stringify({ ops: [{ op: "add-component", name: COMPONENT, source: REPLAYED_SOURCE.replace("in green", "underlined") }] });
+        return `<Edit><Island name="${COMPONENT}">${REPLAYED_SOURCE.replace("in green", "underlined")}</Island></Edit>`;
       },
     ]);
     const before = await runtime.get(appId, ctx);
@@ -232,7 +229,7 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
       catalog: [],
       model: scriptedLanguageModel(
         forkOps,
-        JSON.stringify({ ops: [{ op: "set-name", name: "Renamed, no pinned edits" }] }),
+        '<Edit><SetName name="Renamed, no pinned edits"/></Edit>',
       ),
       pinBaselines: [baseline(OLD_SOURCE, "sha256:maple-old")],
     });
@@ -318,7 +315,7 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     const store = memoryStore();
     const appId = await seedForkedHistory(store);
     const runtime = rebasedRuntime(store, [
-      JSON.stringify({ ops: [{ op: "add-component", name: COMPONENT, source: REPLAYED_SOURCE }] }),
+      `<Edit><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`,
     ]);
     await runtime.inClient.approve({ appId, approvedBy: "host-review" }, ctx);
     await expect(runtime.inClient.verdict(appId, ctx)).resolves.toMatchObject({ granted: true });
@@ -337,7 +334,7 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     const store = memoryStore();
     const appId = await seedForkedHistory(store);
     const runtime = rebasedRuntime(store, [
-      JSON.stringify({ ops: [{ op: "add-component", name: COMPONENT, source: REPLAYED_SOURCE }] }),
+      `<Edit><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`,
     ]);
     const before = await runtime.get(appId, ctx);
     const result = await runtime.pins.rebase({ appId, slot: SLOT }, ctx);
@@ -357,9 +354,9 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
   it("fails closed on a replay failure: reports the split and persists nothing", async () => {
     const store = memoryStore();
     const appId = await seedForkedHistory(store, ["$1.2M underlined"]);
-    const broken = JSON.stringify({ ops: [{ op: "set-prop", nodeId: "missing", prop: "x", value: 1 }] });
+    const broken = '<Edit><Set id="missing" x={1}/></Edit>';
     const runtime = rebasedRuntime(store, [
-      JSON.stringify({ ops: [{ op: "add-component", name: COMPONENT, source: REPLAYED_SOURCE }] }),
+      `<Edit><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`,
       broken,
       broken,
     ]);
@@ -397,7 +394,7 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
       refs: { slot: SLOT },
     });
     const runtime = rebasedRuntime(store, [
-      JSON.stringify({ ops: [{ op: "add-component", name: COMPONENT, source: REPLAYED_SOURCE }] }),
+      `<Edit><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`,
       JSON.stringify({ rung: 2, files: [{ path: "/app/index.js", content: "export {}" }] }),
     ]);
     const before = await runtime.get(appId, ctx);
@@ -476,7 +473,7 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
       tools,
       catalog: [],
       model: scriptedLanguageModel(
-        JSON.stringify({ ops: [{ op: "add-component", name: COMPONENT, source: REPLAYED_SOURCE }] }),
+        `<Edit><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`,
       ),
       pinBaselines: [baseline(NEW_SOURCE, "sha256:maple-new")],
     });

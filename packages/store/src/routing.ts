@@ -1,10 +1,7 @@
 import {
   VendoError,
-  type AppDocument,
-  type ApprovalRequest,
   type AtomicRecordStore,
   type AuditEvent,
-  type Json,
   type PermissionGrant,
   type RecordQuery,
   type RecordStore,
@@ -12,7 +9,6 @@ import {
 } from "@vendoai/core";
 import type { Db } from "./db.js";
 import { createRecordStore, requireRevision, type DedicatedRecordTable } from "./records.js";
-import { isEphemeralApp, isEphemeralSubject, overlayFor, registerEphemeralSubject, snapshot, stateKey } from "./ephemeral.js";
 import {
   appFromRow,
   approvalFromRow,
@@ -28,9 +24,8 @@ import {
   stateRowFromRow,
   threadFromRow,
 } from "./helpers/rows.js";
-import type { AppRow, ApprovalRow, EphemeralStateRow, RunRow, ThreadRow } from "./helpers/types.js";
+import type { AppRow, ApprovalRow, RunRow, StateRow, ThreadRow } from "./helpers/types.js";
 import { decodeCursor, encodeCursor, pageLimit } from "./helpers/utils.js";
-import type { VendoStore } from "./store.js";
 import {
   invalid,
   parseAppData,
@@ -44,7 +39,6 @@ import {
   requireRecordId,
   type ApprovalData,
   type AppData,
-  type RunData,
   type ThreadData,
 } from "./validate.js";
 
@@ -74,9 +68,10 @@ interface RoutedConfig {
   cursorColumn: string;
   refs: Readonly<Record<string, string>>;
   fromDb(row: Record<string, unknown>): VendoRecord;
-  overlayRecords(): VendoRecord[];
-  put(record: { id: string; data: Json; refs?: Record<string, string> }): Promise<VendoRecord>;
-  deleteOverlay(id: string): boolean;
+  /** Optional id-shape validation applied before delete (vendo_state enforces
+   *  its `<appId>:<subject>` grammar so a doctored id can't target anything). */
+  validateId?(id: string): void;
+  put(record: { id: string; data: unknown; refs?: Record<string, string> }): Promise<VendoRecord>;
   /** Optional additive capability (01 §12): guarded writes for collections whose
    *  table carries a revision counter. vendo_threads provides it (ENG-310). */
   atomic?: AtomicRecordStore;
@@ -164,15 +159,15 @@ function appRecord(row: AppRow): VendoRecord {
   return {
     id: row.id,
     data,
-    // trigger_kind mirrors the persisted generated column (schema.ts) so the DB and the
-    // in-memory overlay agree on the same filterable ref (the automations tick / emit query it).
+    // trigger_kind mirrors the persisted generated column (schema.ts) so the
+    // automations tick / emit query can filter on it.
     refs: refs({ subject: row.subject, trigger_kind: row.doc.trigger?.on.kind }),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
 }
 
-function stateRecord(row: EphemeralStateRow): VendoRecord {
+function stateRecord(row: StateRow): VendoRecord {
   return {
     id: `${row.appId}:${row.subject}`,
     data: row.data,
@@ -210,31 +205,17 @@ function splitStateId(id: string): { appId: string; subject: string } {
   return { appId, subject };
 }
 
-function matchesRecord(record: VendoRecord, query: RecordQuery, cursor?: { c: string; i: string }): boolean {
-  if (query.ids !== undefined && !query.ids.includes(record.id)) return false;
-  if (query.refs !== undefined) {
-    for (const [key, value] of Object.entries(query.refs)) {
-      if (record.refs?.[key] !== value) return false;
-    }
-  }
-  return cursor === undefined
-    || record.createdAt < cursor.c
-    || (record.createdAt === cursor.c && record.id < cursor.i);
-}
-
 function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
   return {
     async get(id) {
       requireRecordId(id);
-      const memory = config.overlayRecords().find((record) => record.id === id);
-      if (memory) return memory;
       const result = await db.query(`${config.select} WHERE id = $1`, [id]);
       return result.rows[0] ? config.fromDb(result.rows[0]) : null;
     },
     async put(record) {
       requireRecordId(record.id);
       // Reserved collections derive refs from typed columns; caller refs never participate in writes.
-      return snapshot(await config.put(record));
+      return await config.put(record);
     },
     async delete(id) {
       requireRecordId(id);
@@ -244,7 +225,7 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
           `${config.table} is append-only; rows are erased only via the store erase API (02-store §5)`,
         );
       }
-      if (config.deleteOverlay(id)) return;
+      config.validateId?.(id);
       await db.query(`DELETE FROM ${config.table} WHERE id = $1`, [id]);
     },
     async list(query: RecordQuery = {}) {
@@ -254,7 +235,6 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
           if (config.refs[key] === undefined) invalid(`Unknown ${config.table} ref key: ${key}`);
         }
       }
-      const cursor = query.cursor === undefined ? undefined : decodeCursor(query.cursor);
       const params: unknown[] = [];
       const clauses: string[] = [];
       for (const [key, value] of Object.entries(query.refs ?? {})) {
@@ -265,7 +245,8 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
         params.push(query.ids);
         clauses.push(`id = ANY($${params.length}::text[])`);
       }
-      if (cursor !== undefined) {
+      if (query.cursor !== undefined) {
+        const cursor = decodeCursor(query.cursor);
         params.push(cursor.c, cursor.i);
         clauses.push(`(${config.cursorColumn}, id) < ($${params.length - 1}, $${params.length})`);
       }
@@ -275,26 +256,18 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
          ORDER BY ${config.cursorColumn} DESC, id DESC LIMIT $${params.length}`,
         params,
       );
-      const allMemory = config.overlayRecords();
-      const memoryIds = new Set(allMemory.map((record) => record.id));
-      const records = [
-        ...result.rows.map(config.fromDb).filter((record) => !memoryIds.has(record.id)),
-        ...allMemory.filter((record) => matchesRecord(record, query, cursor)),
-      ].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
-      const page = records.slice(0, limit);
-      const last = page.at(-1);
-      const hasMore = records.length > limit || result.rows.length > limit;
+      const records = result.rows.slice(0, limit).map(config.fromDb);
+      const last = records.at(-1);
       return {
-        records: page,
-        ...(hasMore && last ? { cursor: encodeCursor(last.createdAt, last.id) } : {}),
+        records,
+        ...(result.rows.length > limit && last ? { cursor: encodeCursor(last.createdAt, last.id) } : {}),
       };
     },
     ...(config.atomic === undefined ? {} : { atomic: config.atomic }),
   };
 }
 
-function configFor(store: VendoStore, db: Db, collection: ReservedCollection): RoutedConfig {
-  const overlay = overlayFor(store);
+function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
   switch (collection) {
     case "vendo_grants":
       return {
@@ -303,24 +276,13 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         cursorColumn: "granted_at",
         refs: { subject: "subject", tool: "tool", app_id: "app_id" },
         fromDb: (row) => grantRecord(grantFromRow(row)),
-        overlayRecords: () => [...overlay.grants.values()].map((grant) => grantRecord(snapshot(grant))),
         async put(record) {
           const grant = parsePermissionGrant(record.data);
           requireMatchingId(record.id, grant.id, "permission grant id");
-          if (isEphemeralSubject(store, grant.subject)) {
-            // Mirror the SQL door's cross-subject refusal (02 §2): a prior
-            // overlay grant owned by another subject is never flipped.
-            const prior = overlay.grants.get(grant.id);
-            if (prior !== undefined && prior.subject !== grant.subject) {
-              throw new VendoError("conflict", `grant ${grant.id} belongs to another subject`);
-            }
-            overlay.grants.set(grant.id, snapshot(grant));
-          } else {
-            await putGrantRow(db, grant);
-          }
+          // The guarded upsert refuses cross-subject flips (02 §2).
+          await putGrantRow(db, grant);
           return grantRecord(grant);
         },
-        deleteOverlay: (id) => overlay.grants.delete(id),
       };
     case "vendo_approvals":
       return {
@@ -329,7 +291,6 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         cursorColumn: "created_at",
         refs: { subject: "subject", status: "status" },
         fromDb: (row) => approvalRecord(approvalFromRow(row)),
-        overlayRecords: () => [...overlay.approvals.values()].map((row) => approvalRecord(snapshot(row))),
         async put(record) {
           const data = parseApprovalData(record.data, record.id);
           const row: ApprovalRow = {
@@ -342,15 +303,9 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
             ...(data.consumedAt === undefined ? {} : { consumedAt: data.consumedAt }),
             createdAt: data.request.createdAt,
           };
-          if (data.request.ctx.principal.ephemeral === true) {
-            registerEphemeralSubject(store, row.subject);
-            overlay.approvals.set(row.id, snapshot(row));
-          } else {
-            await putApprovalRow(db, row);
-          }
+          await putApprovalRow(db, row);
           return approvalRecord(row);
         },
-        deleteOverlay: (id) => overlay.approvals.delete(id),
       };
     case "vendo_audit":
       return {
@@ -360,26 +315,13 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         cursorColumn: "at",
         refs: { subject: "subject", kind: "kind", app_id: "app_id", tool: "tool" },
         fromDb: (row) => auditRecord(row["event"] as AuditEvent),
-        overlayRecords: () => [...overlay.audit.values()].map((event) => auditRecord(snapshot(event))),
         async put(record) {
           const event = parseAuditEvent(record.data);
           requireMatchingId(record.id, event.id, "audit event id");
-          if (event.principal.ephemeral === true) {
-            registerEphemeralSubject(store, event.principal.subject);
-            // Mirror the SQL door's append-only refusal (02 §2): an existing
-            // overlay row is never replaced.
-            if (overlay.audit.has(event.id)) {
-              throw new VendoError("conflict", `audit event ${event.id} already exists (vendo_audit is append-only)`);
-            }
-            overlay.audit.set(event.id, snapshot(event));
-          } else {
-            await putAuditRow(db, event);
-          }
+          // putAuditRow refuses to replace an existing row (append-only, 02 §2).
+          await putAuditRow(db, event);
           return auditRecord(event);
         },
-        // Unreachable through the routed door (appendOnly refuses first); the
-        // erase API clears overlay audit rows directly (02 §5).
-        deleteOverlay: () => false,
       };
     case "vendo_threads":
       return {
@@ -394,60 +336,23 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         cursorColumn: "created_at",
         refs: { subject: "subject" },
         fromDb: (row) => threadRecord(threadFromRow(row)),
-        overlayRecords: () => [...overlay.threads.values()].map((row) => threadRecord(snapshot(row))),
         async put(record) {
           const data = parseThreadData(record.data, record.id);
-          const now = new Date().toISOString();
-          let row: ThreadRow;
-          if (isEphemeralSubject(store, data.subject)) {
-            const prior = overlay.threads.get(record.id);
-            // Mirror the SQL door's cross-subject refusal (03 §5): the bare id is
-            // shared, so a prior overlay row owned by another subject is never
-            // flipped — it is a conflict, same as putThreadRow's guarded upsert.
-            if (prior !== undefined && prior.subject !== data.subject) {
-              throw new VendoError("conflict", `thread ${record.id} belongs to another subject`);
-            }
-            row = {
-              id: record.id,
-              subject: data.subject,
-              messages: data.messages,
-              ...(data.title === undefined ? {} : { title: data.title }),
-              createdAt: prior?.createdAt ?? now,
-              updatedAt: now,
-              revision: String(BigInt(prior?.revision ?? "0") + 1n),
-            };
-            overlay.threads.set(record.id, snapshot(row));
-          } else {
-            row = await putThreadRow(db, { id: record.id, ...data }, now);
-          }
+          // The guarded upsert refuses cross-subject flips (03 §5).
+          const row = await putThreadRow(db, { id: record.id, ...data });
           return threadRecord(row);
         },
-        deleteOverlay: (id) => overlay.threads.delete(id),
         // ENG-310: guarded writes (01 §12) backed by the vendo_threads revision
         // counter, so a concurrent-turn persist can read-merge-write without
         // last-write-wins clobbering. Both verbs keep the same cross-subject
         // refusal as put: a foreign-subject write NEVER lands (it just loses —
-        // insertIfAbsent finds the id taken, compareAndSwap's guarded WHERE /
-        // overlay subject check fails — and returns null).
+        // insertIfAbsent finds the id taken, compareAndSwap's guarded WHERE
+        // fails — and returns null).
         atomic: {
           async insertIfAbsent(record) {
             requireRecordId(record.id);
             const data = parseThreadData(record.data, record.id);
             const now = new Date().toISOString();
-            if (isEphemeralSubject(store, data.subject)) {
-              if (overlay.threads.has(record.id)) return null;
-              const row: ThreadRow = {
-                id: record.id,
-                subject: data.subject,
-                messages: data.messages,
-                ...(data.title === undefined ? {} : { title: data.title }),
-                createdAt: now,
-                updatedAt: now,
-                revision: "1",
-              };
-              overlay.threads.set(record.id, snapshot(row));
-              return threadRecord(row);
-            }
             const result = await db.query(
               `INSERT INTO vendo_threads (id, subject, messages, title, created_at, updated_at, revision)
                VALUES ($1, $2, $3::jsonb, $4, $5, $5, 1)
@@ -464,24 +369,6 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
             requireRevision(expectedRevision);
             const data = parseThreadData(record.data, record.id);
             const now = new Date().toISOString();
-            if (isEphemeralSubject(store, data.subject)) {
-              const prior = overlay.threads.get(record.id);
-              if (prior === undefined || prior.subject !== data.subject
-                || prior.revision !== expectedRevision) {
-                return null;
-              }
-              const row: ThreadRow = {
-                id: record.id,
-                subject: data.subject,
-                messages: data.messages,
-                ...(data.title === undefined ? {} : { title: data.title }),
-                createdAt: prior.createdAt,
-                updatedAt: now,
-                revision: String(BigInt(expectedRevision) + 1n),
-              };
-              overlay.threads.set(record.id, snapshot(row));
-              return threadRecord(row);
-            }
             const result = await db.query(
               `UPDATE vendo_threads
                SET messages = $3::jsonb, title = $4, updated_at = $5, revision = revision + 1
@@ -502,15 +389,12 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         cursorColumn: "started_at",
         refs: { app_id: "app_id", status: "status" },
         fromDb: (row) => runRecord(runFromRow(row)),
-        overlayRecords: () => [...overlay.runs.values()].map((row) => runRecord(snapshot(row))),
         async put(record) {
           const data = parseRunData(record.data, record.id);
           const row: RunRow = { id: record.id, ...data };
-          if (await isEphemeralApp(store, db, data.appId)) overlay.runs.set(row.id, snapshot(row));
-          else await putRunRow(db, row);
+          await putRunRow(db, row);
           return runRecord(row);
         },
-        deleteOverlay: (id) => overlay.runs.delete(id),
       };
     case "vendo_apps":
       return {
@@ -519,33 +403,12 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         cursorColumn: "created_at",
         refs: { subject: "subject", trigger_kind: "trigger_kind" },
         fromDb: (row) => appRecord(appFromRow(row)),
-        overlayRecords: () => [...overlay.apps.values()].map((row) => appRecord(snapshot(row))),
         async put(record) {
           const data = parseAppData(record.data, record.id);
-          const now = new Date().toISOString();
-          let row: AppRow;
-          if (isEphemeralSubject(store, data.subject)) {
-            const prior = overlay.apps.get(record.id);
-            // Mirror the SQL door's cross-subject refusal (02 §2): a prior
-            // overlay app owned by another subject is never flipped.
-            if (prior !== undefined && prior.subject !== data.subject) {
-              throw new VendoError("conflict", `app ${record.id} belongs to another subject`);
-            }
-            row = {
-              id: record.id,
-              subject: data.subject,
-              enabled: data.enabled,
-              doc: data.doc,
-              createdAt: prior?.createdAt ?? now,
-              updatedAt: now,
-            };
-            overlay.apps.set(record.id, snapshot(row));
-          } else {
-            row = await putAppRow(db, { id: record.id, ...data }, now);
-          }
+          // The guarded upsert refuses cross-subject flips (02 §2).
+          const row = await putAppRow(db, { id: record.id, ...data });
           return appRecord(row);
         },
-        deleteOverlay: (id) => overlay.apps.delete(id),
       };
     case "vendo_state":
       return {
@@ -558,45 +421,24 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         cursorColumn: "created_at",
         refs: { app_id: "app_id", subject: "subject" },
         fromDb: (row) => stateRecord(stateRowFromRow(row)),
-        overlayRecords: () => [...overlay.states.values()].map((row) => stateRecord(snapshot(row))),
+        validateId: (id) => void splitStateId(id),
         async put(record) {
           const { appId, subject } = splitStateId(record.id);
           const data = requireJson(record.data, "state data");
-          const now = new Date().toISOString();
-          // Mirrors vendo_apps/vendo_threads: ephemerality is decided by the subject
-          // registry (the owning app registers the subject before state is written).
-          if (isEphemeralSubject(store, subject)) {
-            const key = stateKey(subject, appId);
-            const prior = overlay.states.get(key);
-            const row: EphemeralStateRow = {
-              appId,
-              subject,
-              data,
-              createdAt: prior?.createdAt ?? now,
-              updatedAt: now,
-            };
-            overlay.states.set(key, snapshot(row));
-            return stateRecord(row);
-          }
           // Shared persistent write path with stateStore.put (helpers/rows).
-          return stateRecord(await putStateRow(db, { appId, subject, data }, now));
-        },
-        deleteOverlay: (id) => {
-          const { appId, subject } = splitStateId(id);
-          return overlay.states.delete(stateKey(subject, appId));
+          return stateRecord(await putStateRow(db, { appId, subject, data }));
         },
       };
   }
 }
 
 export function createReservedRecordStore(
-  store: VendoStore,
   db: Db,
   collection: string,
 ): RecordStore | undefined {
   if ((DEDICATED_RECORD_COLLECTIONS as readonly string[]).includes(collection)) {
-    return createRecordStore(store, db, collection, collection as DedicatedRecordTable);
+    return createRecordStore(db, collection, collection as DedicatedRecordTable);
   }
   if (!(RESERVED_COLLECTIONS as readonly string[]).includes(collection)) return undefined;
-  return createTableRecordStore(db, configFor(store, db, collection as ReservedCollection));
+  return createTableRecordStore(db, configFor(db, collection as ReservedCollection));
 }

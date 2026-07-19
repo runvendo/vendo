@@ -575,6 +575,38 @@
           }
         }
       }
+    },
+    "/api/voice": {
+      "post": {
+        "operationId": "createVoiceSession",
+        "summary": "Mint an ephemeral OpenAI Realtime client secret for a local voice session (local-demo only; the standing API key never reaches the browser).",
+        "responses": {
+          "200": {
+            "description": "Ephemeral client secret + realtime model id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "clientSecret": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Voice is restricted to local demo runs"
+          },
+          "503": {
+            "description": "OPENAI_API_KEY is not configured"
+          }
+        }
+      }
     }
   },
   "components": {

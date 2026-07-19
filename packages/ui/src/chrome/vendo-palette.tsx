@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { useApps } from "../hooks/use-apps.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { developmentMode } from "./dev-mode.js";
+import { openVendoConversation } from "./overlay-registry.js";
+import { isEditableTarget, registerPaletteHotkey, registerPaletteOpener, resolveHotkeyMatcher, type PaletteHotkey } from "./palette-hotkey.js";
 import { TakeoverPortal } from "./takeover-portal.js";
 
 export interface VendoCommand {
@@ -13,8 +16,13 @@ export interface VendoCommand {
 
 const FOCUSABLE = "button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex='-1'])";
 
-/** 08-ui §4 — global keyboard command palette with an ARIA combobox. */
-export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand): void }) {
+/** 08-ui §4 — global keyboard command palette with an ARIA combobox.
+ *
+ * The keybinding is a host-collision-safe singleton (ENG-222): one shared
+ * document listener no matter how many palettes mount, a configurable/disable-
+ * able `hotkey` chord, and it never steals a keystroke from a focused host
+ * input while the palette is closed. */
+export function VendoPalette({ onCommand, hotkey }: { onCommand?(command: VendoCommand): void; hotkey?: PaletteHotkey }) {
   const { apps } = useApps();
   const takeover = useMobileTakeover();
   const [open, setOpen] = useState(false);
@@ -39,23 +47,41 @@ export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand):
     restoreFocus();
   }, [restoreFocus]);
 
+  // ENG-223: programmatic open (the VendoSlot CTA seam). Captures the invoking
+  // element first so Escape/close restores focus exactly as the keybinding does.
+  const openPalette = useCallback(() => {
+    setOpen(value => {
+      if (value) return value;
+      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      return true;
+    });
+  }, []);
+  useEffect(() => registerPaletteOpener(openPalette), [openPalette]);
+
+  // Read the live open state inside the (stable) shared-listener handler without
+  // re-subscribing on every toggle.
+  const openRef = useRef(open);
+  openRef.current = open;
+  const matcher = useMemo(() => resolveHotkeyMatcher(hotkey), [hotkey]);
   useEffect(() => {
-    const listener = (event: globalThis.KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setOpen(value => {
-          if (value) {
-            restoreFocus();
-            return false;
-          }
-          opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-          return true;
-        });
-      }
+    if (hotkey === false) return;
+    const handler = (event: globalThis.KeyboardEvent) => {
+      if (!matcher(event)) return;
+      // Host-collision safety: while closed, never steal a keystroke the host
+      // meant for its own focused input (its ⌘K, find-in-field, etc.).
+      if (!openRef.current && isEditableTarget(event.target)) return;
+      event.preventDefault();
+      setOpen(value => {
+        if (value) {
+          restoreFocus();
+          return false;
+        }
+        opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        return true;
+      });
     };
-    globalThis.addEventListener("keydown", listener);
-    return () => globalThis.removeEventListener("keydown", listener);
-  }, [restoreFocus]);
+    return registerPaletteHotkey(handler);
+  }, [matcher, hotkey, restoreFocus]);
 
   useEffect(() => {
     if (open) {
@@ -70,7 +96,24 @@ export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand):
   const select = (command: VendoCommand | undefined) => {
     if (!command) return;
     close();
-    onCommand?.(command);
+    if (onCommand) {
+      onCommand(command);
+      return;
+    }
+    // Self-sufficient default (ui-usage-dx §2 — the palette is an optional
+    // extra, but it must act without a host-written command router):
+    // conversation commands open the mounted overlay via the registry; the
+    // rest need host routing and say so in dev instead of dying silently.
+    if (command.kind === "new-conversation") {
+      const opened = openVendoConversation({ newConversation: true });
+      if (!opened && developmentMode()) {
+        console.warn("[vendo] VendoPalette: \"New conversation\" opens the conversation surface — mount a VendoOverlay for it to land in (or supply onCommand).");
+      }
+      return;
+    }
+    if (developmentMode()) {
+      console.warn(`[vendo] VendoPalette: "${command.label}" needs an onCommand handler to route (kind "${command.kind}").`);
+    }
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {

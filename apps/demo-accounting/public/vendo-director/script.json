@@ -1,0 +1,425 @@
+{
+  "turns": [
+    {
+      "cues": [
+        {
+          "delay": 0,
+          "chunk": {
+            "type": "start"
+          }
+        },
+        {
+          "delay": 100,
+          "chunk": {
+            "type": "start-step"
+          }
+        },
+        {
+          "delay": 400,
+          "chunk": {
+            "type": "tool-input-start",
+            "toolCallId": "call_deadlines",
+            "toolName": "host_listDeadlines"
+          }
+        },
+        {
+          "delay": 400,
+          "chunk": {
+            "type": "tool-input-available",
+            "toolCallId": "call_deadlines",
+            "toolName": "host_listDeadlines",
+            "input": {}
+          }
+        },
+        {
+          "delay": 1200,
+          "chunk": {
+            "type": "tool-output-available",
+            "toolCallId": "call_deadlines",
+            "output": {
+              "ok": true
+            }
+          }
+        },
+        {
+          "delay": 300,
+          "chunk": {
+            "type": "tool-input-start",
+            "toolCallId": "call_docs",
+            "toolName": "host_listClients"
+          }
+        },
+        {
+          "delay": 300,
+          "chunk": {
+            "type": "tool-input-available",
+            "toolCallId": "call_docs",
+            "toolName": "host_listClients",
+            "input": {
+              "filter": "missing_docs"
+            }
+          }
+        },
+        {
+          "delay": 900,
+          "chunk": {
+            "type": "tool-output-available",
+            "toolCallId": "call_docs",
+            "output": {
+              "ok": true
+            }
+          }
+        },
+        {
+          "delay": 400,
+          "chunk": {
+            "type": "tool-input-start",
+            "toolCallId": "call_build",
+            "toolName": "vendo_apps_create"
+          }
+        },
+        {
+          "delay": 300,
+          "chunk": {
+            "type": "tool-input-available",
+            "toolCallId": "call_build",
+            "toolName": "vendo_apps_create",
+            "input": {
+              "prompt": "document chases"
+            }
+          }
+        },
+        {
+          "delay": 700,
+          "chunk": {
+            "type": "data-vendo-view",
+            "id": "vendo-view:app_director",
+            "data": {
+              "appId": "app_director",
+              "payload": {
+                "formatVersion": "vendo-genui/v2",
+                "name": "Document chases",
+                "root": "root",
+                "streaming": true,
+                "nodes": [
+                  {
+                    "id": "root",
+                    "component": "Stack",
+                    "props": {
+                      "gap": 14
+                    },
+                    "children": [
+                      "hero",
+                      "list",
+                      "arrivals"
+                    ]
+                  },
+                  {
+                    "id": "hero",
+                    "component": "ChaseHero",
+                    "source": "generated"
+                  },
+                  {
+                    "id": "list",
+                    "component": "ChaseList",
+                    "source": "generated"
+                  },
+                  {
+                    "id": "arrivals",
+                    "component": "ChaseArrivals",
+                    "source": "generated"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "delay": 1500,
+          "chunk": {
+            "type": "data-vendo-view",
+            "id": "vendo-view:app_director",
+            "data": {
+              "appId": "app_director",
+              "payload": {
+                "formatVersion": "vendo-genui/v2",
+                "name": "Document chases",
+                "root": "root",
+                "streaming": true,
+                "nodes": [
+                  {
+                    "id": "root",
+                    "component": "Stack",
+                    "props": {
+                      "gap": 14
+                    },
+                    "children": [
+                      "hero",
+                      "list",
+                      "arrivals"
+                    ]
+                  },
+                  {
+                    "id": "hero",
+                    "component": "ChaseHero",
+                    "source": "generated"
+                  },
+                  {
+                    "id": "list",
+                    "component": "ChaseList",
+                    "source": "generated"
+                  },
+                  {
+                    "id": "arrivals",
+                    "component": "ChaseArrivals",
+                    "source": "generated"
+                  }
+                ],
+                "components": {
+                  "ChaseHero": "\nimport * as React from \"react\";\nconst S = { ink: \"#111111\", soft: \"#46443f\", faint: \"#908c85\", line: \"#ecebe8\", green: \"#1e7f53\", greenBg: \"#e7f4ee\", amber: \"#a16207\", amberBg: \"#faf3e3\" };\nexport default function ChaseHero() {\n  const [now, setNow] = React.useState(8);\n  React.useEffect(() => {\n    let v = 0;\n    const t = setInterval(() => { v += 1; setNow(v); if (v >= 8) clearInterval(t); }, 70);\n    return () => clearInterval(t);\n  }, []);\n  const tile = (label, value, sub) => (\n    <div style={{ flex: 1, border: \"1px solid \" + S.line, borderRadius: 10, padding: \"10px 12px\", background: \"#fff\" }}>\n      <div style={{ fontSize: 11.5, color: S.soft }}>{label}</div>\n      <div style={{ fontSize: 24, fontWeight: 650, color: S.ink, letterSpacing: \"-0.02em\" }}>{value}</div>\n      <div style={{ fontSize: 10.5, color: S.faint }}>{sub}</div>\n    </div>\n  );\n  return (\n    <div style={{ fontFamily: \"Inter, system-ui\", display: \"flex\", flexDirection: \"column\", gap: 10 }}>\n      <div style={{ display: \"flex\", justifyContent: \"flex-end\" }}>\n        <span style={{ display: \"inline-flex\", alignItems: \"center\", gap: 6, fontSize: 11, fontWeight: 600, color: \"#15573a\", background: S.greenBg, borderRadius: 999, padding: \"3px 10px\" }}>\n          <span style={{ width: 6, height: 6, borderRadius: 999, background: S.green }} />\n          every morning · 8:00\n        </span>\n      </div>\n      <div style={{ display: \"flex\", gap: 10 }}>\n        {tile(\"Clients behind\", now, \"of 12 active clients\")}\n        {tile(\"Docs outstanding\", 21, \"across all engagements\")}\n        {tile(\"Next deadline\", \"2d\", \"Blue Bottle Coffee · Jul 18\")}\n      </div>\n    </div>\n  );\n}\n"
+                }
+              }
+            }
+          }
+        },
+        {
+          "delay": 2100,
+          "chunk": {
+            "type": "data-vendo-view",
+            "id": "vendo-view:app_director",
+            "data": {
+              "appId": "app_director",
+              "payload": {
+                "formatVersion": "vendo-genui/v2",
+                "name": "Document chases",
+                "root": "root",
+                "streaming": true,
+                "nodes": [
+                  {
+                    "id": "root",
+                    "component": "Stack",
+                    "props": {
+                      "gap": 14
+                    },
+                    "children": [
+                      "hero",
+                      "list",
+                      "arrivals"
+                    ]
+                  },
+                  {
+                    "id": "hero",
+                    "component": "ChaseHero",
+                    "source": "generated"
+                  },
+                  {
+                    "id": "list",
+                    "component": "ChaseList",
+                    "source": "generated"
+                  },
+                  {
+                    "id": "arrivals",
+                    "component": "ChaseArrivals",
+                    "source": "generated"
+                  }
+                ],
+                "components": {
+                  "ChaseHero": "\nimport * as React from \"react\";\nconst S = { ink: \"#111111\", soft: \"#46443f\", faint: \"#908c85\", line: \"#ecebe8\", green: \"#1e7f53\", greenBg: \"#e7f4ee\", amber: \"#a16207\", amberBg: \"#faf3e3\" };\nexport default function ChaseHero() {\n  const [now, setNow] = React.useState(8);\n  React.useEffect(() => {\n    let v = 0;\n    const t = setInterval(() => { v += 1; setNow(v); if (v >= 8) clearInterval(t); }, 70);\n    return () => clearInterval(t);\n  }, []);\n  const tile = (label, value, sub) => (\n    <div style={{ flex: 1, border: \"1px solid \" + S.line, borderRadius: 10, padding: \"10px 12px\", background: \"#fff\" }}>\n      <div style={{ fontSize: 11.5, color: S.soft }}>{label}</div>\n      <div style={{ fontSize: 24, fontWeight: 650, color: S.ink, letterSpacing: \"-0.02em\" }}>{value}</div>\n      <div style={{ fontSize: 10.5, color: S.faint }}>{sub}</div>\n    </div>\n  );\n  return (\n    <div style={{ fontFamily: \"Inter, system-ui\", display: \"flex\", flexDirection: \"column\", gap: 10 }}>\n      <div style={{ display: \"flex\", justifyContent: \"flex-end\" }}>\n        <span style={{ display: \"inline-flex\", alignItems: \"center\", gap: 6, fontSize: 11, fontWeight: 600, color: \"#15573a\", background: S.greenBg, borderRadius: 999, padding: \"3px 10px\" }}>\n          <span style={{ width: 6, height: 6, borderRadius: 999, background: S.green }} />\n          every morning · 8:00\n        </span>\n      </div>\n      <div style={{ display: \"flex\", gap: 10 }}>\n        {tile(\"Clients behind\", now, \"of 12 active clients\")}\n        {tile(\"Docs outstanding\", 21, \"across all engagements\")}\n        {tile(\"Next deadline\", \"2d\", \"Blue Bottle Coffee · Jul 18\")}\n      </div>\n    </div>\n  );\n}\n",
+                  "ChaseList": "\nimport * as React from \"react\";\nconst S = { ink: \"#111111\", soft: \"#46443f\", faint: \"#908c85\", line: \"#ecebe8\", green: \"#1e7f53\", greenBg: \"#e7f4ee\", red: \"#b0473a\", redBg: \"#fbede9\", amber: \"#a16207\", amberBg: \"#faf3e3\" };\nconst CLIENTS = [\n  { name: \"Blue Bottle Coffee\", logo: \"data:image/jpeg;base64,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\", missing: \"W-2, 1099-NEC, Receipts\", due: \"Jul 18\", days: 2 },\n  { name: \"Linear\", logo: \"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBwgHBgkIBwgKCgkLDRYPDQwMDRsUFRAWIB0iIiAdHx8kKDQsJCYxJx8fLT0tMTU3Ojo6Iys/RD84QzQ5OjcBCgoKDQwNGg8PGjclHyU3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3N//AABEIAEAAQAMBIgACEQEDEQH/xAAcAAACAQUBAAAAAAAAAAAAAAAGBwIBAwQFCAD/xAAvEAABAwMDAAgHAQEBAAAAAAABAgMEAAYRBSExEhMUMkFhcZEHIkJRUmKBI1MV/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAH/xAAVEQEBAAAAAAAAAAAAAAAAAAAAEf/aAAwDAQACEQMRAD8AWAVUgqrINXozTsl9thhtTjriglCEDJUTwAKtEgqppQtXdSTTks34TxYzTcu5f95BGeyIVhDfkojvH029aY0PTYEFsNwoUdhA8G2kppRyqpK095JHqKtlVdXTdNgTmy3Ngx30HwcaSqlxeXwniyWXJVtf4SAM9kWrKF+SSe6fXb0pQliqolVSkNOxn3GH21NutqKVoWMFJHIIqyTVogDR5ZlpanO0NdyaBOQnVYUg9RGSQVKAG+fsTk4B5HrQAVYBPOPCmi1Bk2Y1GuS05Jn6eWEHUYxWCFDG6wR9Oc78pPOQTiBkWLeka6YSkrT2bU4+0qKrYpPHSGfDPtwaKelSm1eC1cqI942PI6jWW/mW2MAvkd5Ch+fkdlD+Gieyb1jXPCUFpEfUo/yyoqtik8ZGd8Z9jsagMSuolwVguSgBzWOqZ50C9+NltNOxU3JDRh5opamAfWg7JX6g4T6Efak2TXSuuBGpaNPgud2RGcb9CUnB98VzMlXSQFfcZoPUbW5qM+0o8KW6712izgFJeZBUIzpHzJI+/OU8KGSMkEUDZossvV2w27o81CHo74IDLnddSdyjyIPzJI3BziqCSQ09bkldxWwhK9OWAqfpzasoSj/o3+niD9GfxO2x1KCm40s3bZr/AFWtN7lI27TjlCxwHMbb7KGPI1oYsiRZMxlQddk2/IcIYfKcrjLPKFAbZxnI4UMqHiKzZsR+2XzctqpS9pbqQudAbVlAR+aP035+jzTxAZWjdke5Yavl7PqDG0mKrYoPGRnfGf6ODW5cVigPVIDdyNsXZZj/AFWtN95AwO0YG6FjjrMbb7KH8Nbe2LpYuKGolPUTmPlkxVbFB4yM74z7cGg2Gt6gNP0mbLWdmWFr9T0Tge+K56SOihKfsMUwvihcaHANEiL6WFBcpQPGN0o99z6Cl5mgiDXskEEEgg5BBwQagDVc1QYaJeTaWHINwR+1RXk9B1QGzif2A8QdwpO4IBxmsjR7kYtTU0s6fqH/AKGhvf6N4B62Pk7hSSORvkcKG4xkigfNeoGHqU2DbOpI1m1p8RyLKIErSkvDbO4UgchP28UnbcGtPdd0RNT1hnVNEZkwZ6UkPSgoJL2RjdIzuOOlnfbI2zQmMA5AquaCRJJJJJJOSSckmqZqmapmg//Z\", missing: \"Bank statements (2025)\", due: \"Jul 19\", days: 3 },\n  { name: \"Sweetgreen\", logo: \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAgVBMVEXm/1Xp/1Xs/1YAOjvv/1YAPjsARzwAMDoAQTsAQzwANToAMjrj/VUALDoARTwANzve+FQzYD9/n0ZqjUTR7FKfvEuXtUrY8lNOdUG/2k9TeUF2l0WLqkgaUT1liENIcEAAGDk5ZT+yzk3J5FFcgUIqWj74/1gOSzwAJzmqx0xBa0CrLHDXAAACAElEQVRYhe1U2ZKbMBBEx+gEGXMLA14w3rX9/x+YAey8ZGOlKpWHVNEPLmqsabpnWkTRjh07duz4pyCUIyj5poIPNNjPL1lzPDaZ508Kwj1WxrmqeZ2zU4CBxG0CDAH2elnPknqUa4XJEzCTBQjoFTTkXZcD6MSjBlIYpcycZY104I5N956Algd3jTlFrzlzLEYC4dQjXSpF79TwGRDAZ8XK7Qw/K9ZRZBQqIpsXK6Qnb/sj3irItukR/5EAR0YsvP7UEBxBx4TJalSMO4ujOOKjfkmKaAZqCK0xFiBA9kPlybryxUj1IjgB5CECkrYJU1oxI5uJr026fVm4up9q3oDX1SzkAZyyZ/ThE2GnZSqEVwdh4lA7QWBwU999gWAomA8HIbOCRJfcutsUdHCf7un6QHkOQuKbeZ4oMFIaUEcfNMBHe3vOjKS49nqp+QbH4oToyzhIQEvjvsiWg8KsChb3aTkIyzSTJQ8y9EqNSw54+tAw8HUq630uqh7EbQokEfOqQNsxz89WgcBxFN5fNh2UN0q1QQkkHZL18rJkjpc1fphbSp7+mB6DBEsQytPc5lWxnuVHpR+ELtv9xHsRTOImFi3T5zeNFFYr0U3elw9wSRGawa+gRW+AHYxh+BsOwreC7i1IK+3YhXPwGwrMdp3+yRf5HcnfNO/YsWPHf4EfwwYbmzduKigAAAAASUVORK5CYII=\", missing: \"1099-NEC, W-2\", due: \"Aug 6\", days: 21 },\n  { name: \"Equinox\", logo: \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACMAAAAjCAYAAAAe2bNZAAAB0ElEQVRYha2Y3XWDMAxGb5iAEbxBskEZIRuUDcoGZYNkA0boyQR0g6YTkE6QbEAfDInJwbId6zvHLyDkK1n+Y0O6DLAHtkDlPLtN7QKcgRPw/YL/oEqgAXpgTGgD0E2wKqompykQz63OhSiBQybECBxzQQzwowAyTEFlgeQOy9yMp48OeI+B0cjICLQe/7VjU0kgn5EdXbG1sOcRfTk5bwQQM30bHEYTCdH6HERobfgPa4ZdAGQAdi9CgJx14xqaCJDFB4mqAv4X0z+UlSoDZJY0Ma44Qy9N5U4BBMLZqcHWgWSUUyfP6oV+jgVyLVywO7CWTsK7twI58l9FEJCPFGUR+FgzK2Az7ZMJwWjrJr0MwWTtuCsy0ssCmXariiLDnAvkutihmx3p2PDH1Jm0zjSKMNLieu9HWoy823yiQseT+xLTBAxXt/kEmYD/wTUuWR56nlubCSINz31fctXGUCdqjxyk13+5EsEV/3T0PQe7Q0t1KGbFdRJjOBdjjz1itNi6+iKcicVOLQQEPIrZZxg6csS26FnaeAwNOneqAYX7d6cA0nsCTdKHAkibCzEr56bZo/hbZFaNnTGxddGScIbeZIBV2LF3O3P/XF1SHf4DPqm/e2KEkigAAAAASUVORK5CYII=\", missing: \"Bank statements (2025), W-2\", due: \"Aug 10\", days: 25 },\n  { name: \"TaskRabbit\", logo: \"data:image/png;base64,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\", missing: \"1099-NEC, Receipts\", due: \"Aug 14\", days: 29 },\n];\nexport default function ChaseList() {\n  const [nudged, setNudged] = React.useState({});\n  const [filter, setFilter] = React.useState(\"all\");\n  const [flash, setFlash] = React.useState(null);\n  const nudge = name => {\n    setNudged(prev => ({ ...prev, [name]: true }));\n    setFlash(name);\n    setTimeout(() => setFlash(current => (current === name ? null : current)), 1800);\n  };\n  const nudgeAll = () => {\n    CLIENTS.forEach((c, i) => setTimeout(() => nudge(c.name), i * 220));\n  };\n  const rows = CLIENTS.filter(c => filter === \"all\" ? true : filter === \"urgent\" ? c.days <= 7 : nudged[c.name]);\n  const seg = (id, label) => (\n    <button onClick={() => setFilter(id)} style={{ border: 0, cursor: \"pointer\", fontSize: 11.5, fontWeight: 600, padding: \"4px 10px\", borderRadius: 7, background: filter === id ? \"#111\" : \"transparent\", color: filter === id ? \"#fff\" : S.soft }}>{label}</button>\n  );\n  return (\n    <div style={{ fontFamily: \"Inter, system-ui\", border: \"1px solid \" + S.line, borderRadius: 12, background: \"#fff\", overflow: \"hidden\" }}>\n      <div style={{ display: \"flex\", alignItems: \"center\", justifyContent: \"space-between\", padding: \"10px 12px\", borderBottom: \"1px solid \" + S.line }}>\n        <div style={{ display: \"flex\", gap: 2, background: \"#f4f3f1\", borderRadius: 9, padding: 2 }}>\n          {seg(\"all\", \"All\")}{seg(\"urgent\", \"Due this week\")}{seg(\"nudged\", \"Emailed\")}\n        </div>\n        <button onClick={nudgeAll} style={{ border: 0, cursor: \"pointer\", fontSize: 12, fontWeight: 600, padding: \"6px 12px\", borderRadius: 8, background: \"#111\", color: \"#fff\" }}>Email all</button>\n      </div>\n      {rows.map(c => (\n        <div key={c.name} style={{ display: \"flex\", alignItems: \"center\", gap: 10, padding: \"9px 12px\", borderTop: \"1px solid #f0efec\", fontSize: 12.5 }}>\n          <img src={c.logo} width=\"26\" height=\"26\" style={{ borderRadius: 7, border: \"1px solid \" + S.line, padding: 2, background: \"#fff\" }} />\n          <div style={{ minWidth: 0, flex: 1 }}>\n            <div style={{ fontWeight: 600, color: S.ink }}>{c.name}</div>\n            <div style={{ fontSize: 11, color: S.faint }}>Missing: {c.missing} · {c.due}</div>\n          </div>\n          <span style={{ fontSize: 10.5, fontWeight: 600, padding: \"2px 8px\", borderRadius: 999, color: c.days <= 7 ? S.red : c.days <= 21 ? S.amber : S.soft, background: c.days <= 7 ? S.redBg : c.days <= 21 ? S.amberBg : \"#f0efec\" }}>{c.days}d</span>\n          {nudged[c.name] ? (\n            <span style={{ fontSize: 11.5, fontWeight: 600, color: S.green, minWidth: 64, textAlign: \"center\" }}>{flash === c.name ? \"Sent ✓\" : \"Emailed\"}</span>\n          ) : (\n            <button onClick={() => nudge(c.name)} style={{ minWidth: 64, border: \"1px solid \" + S.line, cursor: \"pointer\", fontSize: 11.5, fontWeight: 600, padding: \"5px 0\", borderRadius: 8, background: \"#fff\", color: S.ink }}>Email</button>\n          )}\n        </div>\n      ))}\n      {rows.length === 0 ? <div style={{ padding: 16, fontSize: 12, color: S.faint }}>Nothing here yet.</div> : null}\n    </div>\n  );\n}\n"
+                }
+              }
+            }
+          }
+        },
+        {
+          "delay": 1900,
+          "chunk": {
+            "type": "data-vendo-view",
+            "id": "vendo-view:app_director",
+            "data": {
+              "appId": "app_director",
+              "payload": {
+                "formatVersion": "vendo-genui/v2",
+                "name": "Document chases",
+                "root": "root",
+                "nodes": [
+                  {
+                    "id": "root",
+                    "component": "Stack",
+                    "props": {
+                      "gap": 14
+                    },
+                    "children": [
+                      "hero",
+                      "list",
+                      "arrivals"
+                    ]
+                  },
+                  {
+                    "id": "hero",
+                    "component": "ChaseHero",
+                    "source": "generated"
+                  },
+                  {
+                    "id": "list",
+                    "component": "ChaseList",
+                    "source": "generated"
+                  },
+                  {
+                    "id": "arrivals",
+                    "component": "ChaseArrivals",
+                    "source": "generated"
+                  }
+                ],
+                "components": {
+                  "ChaseHero": "\nimport * as React from \"react\";\nconst S = { ink: \"#111111\", soft: \"#46443f\", faint: \"#908c85\", line: \"#ecebe8\", green: \"#1e7f53\", greenBg: \"#e7f4ee\", amber: \"#a16207\", amberBg: \"#faf3e3\" };\nexport default function ChaseHero() {\n  const [now, setNow] = React.useState(8);\n  React.useEffect(() => {\n    let v = 0;\n    const t = setInterval(() => { v += 1; setNow(v); if (v >= 8) clearInterval(t); }, 70);\n    return () => clearInterval(t);\n  }, []);\n  const tile = (label, value, sub) => (\n    <div style={{ flex: 1, border: \"1px solid \" + S.line, borderRadius: 10, padding: \"10px 12px\", background: \"#fff\" }}>\n      <div style={{ fontSize: 11.5, color: S.soft }}>{label}</div>\n      <div style={{ fontSize: 24, fontWeight: 650, color: S.ink, letterSpacing: \"-0.02em\" }}>{value}</div>\n      <div style={{ fontSize: 10.5, color: S.faint }}>{sub}</div>\n    </div>\n  );\n  return (\n    <div style={{ fontFamily: \"Inter, system-ui\", display: \"flex\", flexDirection: \"column\", gap: 10 }}>\n      <div style={{ display: \"flex\", justifyContent: \"flex-end\" }}>\n        <span style={{ display: \"inline-flex\", alignItems: \"center\", gap: 6, fontSize: 11, fontWeight: 600, color: \"#15573a\", background: S.greenBg, borderRadius: 999, padding: \"3px 10px\" }}>\n          <span style={{ width: 6, height: 6, borderRadius: 999, background: S.green }} />\n          every morning · 8:00\n        </span>\n      </div>\n      <div style={{ display: \"flex\", gap: 10 }}>\n        {tile(\"Clients behind\", now, \"of 12 active clients\")}\n        {tile(\"Docs outstanding\", 21, \"across all engagements\")}\n        {tile(\"Next deadline\", \"2d\", \"Blue Bottle Coffee · Jul 18\")}\n      </div>\n    </div>\n  );\n}\n",
+                  "ChaseList": "\nimport * as React from \"react\";\nconst S = { ink: \"#111111\", soft: \"#46443f\", faint: \"#908c85\", line: \"#ecebe8\", green: \"#1e7f53\", greenBg: \"#e7f4ee\", red: \"#b0473a\", redBg: \"#fbede9\", amber: \"#a16207\", amberBg: \"#faf3e3\" };\nconst CLIENTS = [\n  { name: \"Blue Bottle Coffee\", logo: \"data:image/jpeg;base64,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\", missing: \"W-2, 1099-NEC, Receipts\", due: \"Jul 18\", days: 2 },\n  { name: \"Linear\", logo: \"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBwgHBgkIBwgKCgkLDRYPDQwMDRsUFRAWIB0iIiAdHx8kKDQsJCYxJx8fLT0tMTU3Ojo6Iys/RD84QzQ5OjcBCgoKDQwNGg8PGjclHyU3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3N//AABEIAEAAQAMBIgACEQEDEQH/xAAcAAACAQUBAAAAAAAAAAAAAAAGBwIBAwQFCAD/xAAvEAABAwMDAAgHAQEBAAAAAAABAgMEAAYRBSExEhMUMkFhcZEHIkJRUmKBI1MV/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAH/xAAVEQEBAAAAAAAAAAAAAAAAAAAAEf/aAAwDAQACEQMRAD8AWAVUgqrINXozTsl9thhtTjriglCEDJUTwAKtEgqppQtXdSTTks34TxYzTcu5f95BGeyIVhDfkojvH029aY0PTYEFsNwoUdhA8G2kppRyqpK095JHqKtlVdXTdNgTmy3Ngx30HwcaSqlxeXwniyWXJVtf4SAM9kWrKF+SSe6fXb0pQliqolVSkNOxn3GH21NutqKVoWMFJHIIqyTVogDR5ZlpanO0NdyaBOQnVYUg9RGSQVKAG+fsTk4B5HrQAVYBPOPCmi1Bk2Y1GuS05Jn6eWEHUYxWCFDG6wR9Oc78pPOQTiBkWLeka6YSkrT2bU4+0qKrYpPHSGfDPtwaKelSm1eC1cqI942PI6jWW/mW2MAvkd5Ch+fkdlD+Gieyb1jXPCUFpEfUo/yyoqtik8ZGd8Z9jsagMSuolwVguSgBzWOqZ50C9+NltNOxU3JDRh5opamAfWg7JX6g4T6Efak2TXSuuBGpaNPgud2RGcb9CUnB98VzMlXSQFfcZoPUbW5qM+0o8KW6712izgFJeZBUIzpHzJI+/OU8KGSMkEUDZossvV2w27o81CHo74IDLnddSdyjyIPzJI3BziqCSQ09bkldxWwhK9OWAqfpzasoSj/o3+niD9GfxO2x1KCm40s3bZr/AFWtN7lI27TjlCxwHMbb7KGPI1oYsiRZMxlQddk2/IcIYfKcrjLPKFAbZxnI4UMqHiKzZsR+2XzctqpS9pbqQudAbVlAR+aP035+jzTxAZWjdke5Yavl7PqDG0mKrYoPGRnfGf6ODW5cVigPVIDdyNsXZZj/AFWtN95AwO0YG6FjjrMbb7KH8Nbe2LpYuKGolPUTmPlkxVbFB4yM74z7cGg2Gt6gNP0mbLWdmWFr9T0Tge+K56SOihKfsMUwvihcaHANEiL6WFBcpQPGN0o99z6Cl5mgiDXskEEEgg5BBwQagDVc1QYaJeTaWHINwR+1RXk9B1QGzif2A8QdwpO4IBxmsjR7kYtTU0s6fqH/AKGhvf6N4B62Pk7hSSORvkcKG4xkigfNeoGHqU2DbOpI1m1p8RyLKIErSkvDbO4UgchP28UnbcGtPdd0RNT1hnVNEZkwZ6UkPSgoJL2RjdIzuOOlnfbI2zQmMA5AquaCRJJJJJJOSSckmqZqmapmg//Z\", missing: \"Bank statements (2025)\", due: \"Jul 19\", days: 3 },\n  { name: \"Sweetgreen\", logo: \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAgVBMVEXm/1Xp/1Xs/1YAOjvv/1YAPjsARzwAMDoAQTsAQzwANToAMjrj/VUALDoARTwANzve+FQzYD9/n0ZqjUTR7FKfvEuXtUrY8lNOdUG/2k9TeUF2l0WLqkgaUT1liENIcEAAGDk5ZT+yzk3J5FFcgUIqWj74/1gOSzwAJzmqx0xBa0CrLHDXAAACAElEQVRYhe1U2ZKbMBBEx+gEGXMLA14w3rX9/x+YAey8ZGOlKpWHVNEPLmqsabpnWkTRjh07duz4pyCUIyj5poIPNNjPL1lzPDaZ508Kwj1WxrmqeZ2zU4CBxG0CDAH2elnPknqUa4XJEzCTBQjoFTTkXZcD6MSjBlIYpcycZY104I5N956Algd3jTlFrzlzLEYC4dQjXSpF79TwGRDAZ8XK7Qw/K9ZRZBQqIpsXK6Qnb/sj3irItukR/5EAR0YsvP7UEBxBx4TJalSMO4ujOOKjfkmKaAZqCK0xFiBA9kPlybryxUj1IjgB5CECkrYJU1oxI5uJr026fVm4up9q3oDX1SzkAZyyZ/ThE2GnZSqEVwdh4lA7QWBwU999gWAomA8HIbOCRJfcutsUdHCf7un6QHkOQuKbeZ4oMFIaUEcfNMBHe3vOjKS49nqp+QbH4oToyzhIQEvjvsiWg8KsChb3aTkIyzSTJQ8y9EqNSw54+tAw8HUq630uqh7EbQokEfOqQNsxz89WgcBxFN5fNh2UN0q1QQkkHZL18rJkjpc1fphbSp7+mB6DBEsQytPc5lWxnuVHpR+ELtv9xHsRTOImFi3T5zeNFFYr0U3elw9wSRGawa+gRW+AHYxh+BsOwreC7i1IK+3YhXPwGwrMdp3+yRf5HcnfNO/YsWPHf4EfwwYbmzduKigAAAAASUVORK5CYII=\", missing: \"1099-NEC, W-2\", due: \"Aug 6\", days: 21 },\n  { name: \"Equinox\", logo: \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACMAAAAjCAYAAAAe2bNZAAAB0ElEQVRYha2Y3XWDMAxGb5iAEbxBskEZIRuUDcoGZYNkA0boyQR0g6YTkE6QbEAfDInJwbId6zvHLyDkK1n+Y0O6DLAHtkDlPLtN7QKcgRPw/YL/oEqgAXpgTGgD0E2wKqompykQz63OhSiBQybECBxzQQzwowAyTEFlgeQOy9yMp48OeI+B0cjICLQe/7VjU0kgn5EdXbG1sOcRfTk5bwQQM30bHEYTCdH6HERobfgPa4ZdAGQAdi9CgJx14xqaCJDFB4mqAv4X0z+UlSoDZJY0Ma44Qy9N5U4BBMLZqcHWgWSUUyfP6oV+jgVyLVywO7CWTsK7twI58l9FEJCPFGUR+FgzK2Az7ZMJwWjrJr0MwWTtuCsy0ssCmXariiLDnAvkutihmx3p2PDH1Jm0zjSKMNLieu9HWoy823yiQseT+xLTBAxXt/kEmYD/wTUuWR56nlubCSINz31fctXGUCdqjxyk13+5EsEV/3T0PQe7Q0t1KGbFdRJjOBdjjz1itNi6+iKcicVOLQQEPIrZZxg6csS26FnaeAwNOneqAYX7d6cA0nsCTdKHAkibCzEr56bZo/hbZFaNnTGxddGScIbeZIBV2LF3O3P/XF1SHf4DPqm/e2KEkigAAAAASUVORK5CYII=\", missing: \"Bank statements (2025), W-2\", due: \"Aug 10\", days: 25 },\n  { name: \"TaskRabbit\", logo: \"data:image/png;base64,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\", missing: \"1099-NEC, Receipts\", due: \"Aug 14\", days: 29 },\n];\nexport default function ChaseList() {\n  const [nudged, setNudged] = React.useState({});\n  const [filter, setFilter] = React.useState(\"all\");\n  const [flash, setFlash] = React.useState(null);\n  const nudge = name => {\n    setNudged(prev => ({ ...prev, [name]: true }));\n    setFlash(name);\n    setTimeout(() => setFlash(current => (current === name ? null : current)), 1800);\n  };\n  const nudgeAll = () => {\n    CLIENTS.forEach((c, i) => setTimeout(() => nudge(c.name), i * 220));\n  };\n  const rows = CLIENTS.filter(c => filter === \"all\" ? true : filter === \"urgent\" ? c.days <= 7 : nudged[c.name]);\n  const seg = (id, label) => (\n    <button onClick={() => setFilter(id)} style={{ border: 0, cursor: \"pointer\", fontSize: 11.5, fontWeight: 600, padding: \"4px 10px\", borderRadius: 7, background: filter === id ? \"#111\" : \"transparent\", color: filter === id ? \"#fff\" : S.soft }}>{label}</button>\n  );\n  return (\n    <div style={{ fontFamily: \"Inter, system-ui\", border: \"1px solid \" + S.line, borderRadius: 12, background: \"#fff\", overflow: \"hidden\" }}>\n      <div style={{ display: \"flex\", alignItems: \"center\", justifyContent: \"space-between\", padding: \"10px 12px\", borderBottom: \"1px solid \" + S.line }}>\n        <div style={{ display: \"flex\", gap: 2, background: \"#f4f3f1\", borderRadius: 9, padding: 2 }}>\n          {seg(\"all\", \"All\")}{seg(\"urgent\", \"Due this week\")}{seg(\"nudged\", \"Emailed\")}\n        </div>\n        <button onClick={nudgeAll} style={{ border: 0, cursor: \"pointer\", fontSize: 12, fontWeight: 600, padding: \"6px 12px\", borderRadius: 8, background: \"#111\", color: \"#fff\" }}>Email all</button>\n      </div>\n      {rows.map(c => (\n        <div key={c.name} style={{ display: \"flex\", alignItems: \"center\", gap: 10, padding: \"9px 12px\", borderTop: \"1px solid #f0efec\", fontSize: 12.5 }}>\n          <img src={c.logo} width=\"26\" height=\"26\" style={{ borderRadius: 7, border: \"1px solid \" + S.line, padding: 2, background: \"#fff\" }} />\n          <div style={{ minWidth: 0, flex: 1 }}>\n            <div style={{ fontWeight: 600, color: S.ink }}>{c.name}</div>\n            <div style={{ fontSize: 11, color: S.faint }}>Missing: {c.missing} · {c.due}</div>\n          </div>\n          <span style={{ fontSize: 10.5, fontWeight: 600, padding: \"2px 8px\", borderRadius: 999, color: c.days <= 7 ? S.red : c.days <= 21 ? S.amber : S.soft, background: c.days <= 7 ? S.redBg : c.days <= 21 ? S.amberBg : \"#f0efec\" }}>{c.days}d</span>\n          {nudged[c.name] ? (\n            <span style={{ fontSize: 11.5, fontWeight: 600, color: S.green, minWidth: 64, textAlign: \"center\" }}>{flash === c.name ? \"Sent ✓\" : \"Emailed\"}</span>\n          ) : (\n            <button onClick={() => nudge(c.name)} style={{ minWidth: 64, border: \"1px solid \" + S.line, cursor: \"pointer\", fontSize: 11.5, fontWeight: 600, padding: \"5px 0\", borderRadius: 8, background: \"#fff\", color: S.ink }}>Email</button>\n          )}\n        </div>\n      ))}\n      {rows.length === 0 ? <div style={{ padding: 16, fontSize: 12, color: S.faint }}>Nothing here yet.</div> : null}\n    </div>\n  );\n}\n",
+                  "ChaseArrivals": "\nimport * as React from \"react\";\nconst ARRIVALS = [\n  { client: \"Equinox\", doc: \"Payroll summary\", via: \"Gusto\", logo: \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAilBMVEX0XUj//////f30Y1DzPgD4tK/0X0v0YU70Xkn//PzzRyP0Vj785OL0VDvzOQD0UjfzTS7zRiD1eGr+8/L3mZH+9/bzQAz2jYP83NrzSij709D5uLP3npbzQRD1gXX71tP6ysb5v7v3p6H0aln1dGb0Z1X1fG/4qqP2konzKgD97ez2hHn6yMT5vrpkR9WbAAACRElEQVRYhe1Wy4KiMBAMJKZ5JzwFFRRRmR31/39vA4nI3tKzh92DfYgeqEqnU9UdQj7xif8/OABw78doykMZBDIEIATm4Ci4SORlWxTbIU05b9IpYvtsIGRdH5WOirI+N+Euqus6OjRgiafpcPKdJaIsn3/3CbXEV4Xa3DVw13XyXK2+s2F2BLQa3/CZwqyWBDQ9GMx7wRDwOCuXfV13nYcdAbRHs2v5KLr7QVUTdQSQW7NjPSSNEEFyi15nsSKgbDd97zpHFlLgHK5CaAY7Ao+AvvNc/TOUIvPtMzAncNeiuSYnnZQVQXvWFevEYh1oCvsMKNvMB86vZHEOFzcfT0BXBDGCANpxJvBv8fsI8gtRxMZ8PLbLxzTp7YvohYMWciRfDQgIzTFKrI56u/4XUO55nJJkhxASgcmLc/RNGxISs3CHdKM02neicwZw23xj3fhyk2Lx89xfOoJ9Q2H7xcA/aSiTFvq/amnEg3a/bkau812iCBQD20Yz1J1p6g5JoOog5aHWinKiscq0F8bKdrCoOvC0HYpxvz/fZSALTXVI7QmmeRo2FWOt4EPy0HW8C8x4nac7VW2RxsYeOSeoWe8R3VTjoNbu2NnX0OBZIESTXGojhK3ElICLLj8VXVc8SuPFI+IOyDRhj1Nj8o0QXae8hJgSQlAYLb6WAnWHntdEf5rhXKEqCO3T8Vfw/AuHV03huXri+KchwOHVJaTZ0zyyov7GQtQF6Bxi88y7yERQnIRNDq+HJv8RXHNgn6ef+MS/it/T3SE6eqpZCQAAAABJRU5ErkJggg==\", when: \"2h ago\" },\n  { client: \"Linear\", doc: \"Bank statements (H1)\", via: \"Bank of America\", logo: \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAt1BMVEX////jGDfjFTUBIWniACUAAF/hAB/iACPiACziACjjETMAHWfiCjD+9vgAH2j+8/X86ez0s7uwt8v63ODkID/sdoT2vcT1uL/vi5frb373ys/74uXwk57lKETpW23pVmn51dqhqcEACWEAFWSBjKy4v9Ho6/Hc4Onxm6bzqrThABjnQlnyo6zoTWHmM00KLHEzR3+VnrngAAAAAFbugY4bM3RVY5FxfaLEytkqP3tHV4lea5XrZnfib3djAAAClklEQVRYhe1Va3OaQBSFhX2CAgUURBAlUQkRtTVpTPP/f1eBZZc8TIp2pjOd8Xxycc8995y9s6soV1xxxf+B1P0bdp6QO+T5o8GlBQaTaYF0inEyPrfGJAwmVvPLvt/olOhmOOnPtgMPEYLVxLGbdTSNsUmQF9g9C1gjP9YJA6ZOEof3PprRMhhZZ3hIAw8TAExs+ilvqxdtvt3tV7KGT3SmAvp90yWYBmU5+oIOjezH9kl+GOQlQoUj2YeqK8ZwcbrEtwdoGPB42yyW4utYhG/dlzoBqqoyimLnI/1pBw1tsZ3z1d542C9f/+36rLJTwcRxcGI4V48w0zJ4s5RWDLj42Tl/wY04IDg5OQ43Fd2Az5z+dKx6qZaPIs10hsxaHFAaRJJj5Zu1MK8thsPFtjX/WNOHcCeidBNBV9fdaUxCqpt6XKe5eq4YBrxpzS8yTdOyrM1CsX18gj4uuCWGk0iZH2EGj1xvtYPDuvtfIsA1IzVdJeZUTmF1trjJs060zGvTz0IeNvLareiz1AHfF3ZzmMcdffYm0dURarV7IT8IUbMT4CKVm0ad+l2SvqYL+YWQH5O2e5bLPWmBWjpD7+jNIA41cZSK9YIB3xhK81bIA63DK06Nwz6De9Gp2sp73djnbaDViXgnRrnGUpz9Qbjv5N0Nb6kyT4M/3G9RofOdZic/1dvuAZpFX3BrOJSPDp518iUvWUf6+W3QYpCgZsj0tfw0FUfHsN/ndnYAUUmcSkcbIU/LnjezPbt7ke07pjy7Q//HoTPqozZ84p3xMEi4JRXhh5e8bzkVg0/GF9AVX8wOLfq+SW8Qxbx/gA+X0GULjH4y+X2QI0Y81z7nTXwHVy0GymF6eQGlFo8uivCKK674x/gNpg0xbRqejiQAAAAASUVORK5CYII=\", when: \"yesterday\" },\n  { client: \"Sweetgreen\", doc: \"Payroll summary (Q2)\", via: \"ADP\", logo: \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAZlBMVEX////QJx344uHQIxj44N7OEQDQHA/77OvNAADSMyrrrarPIBTeeHTwvrv++vrnoJ3OFwb00tH98/Lpp6TXUkzXT0ftt7TaWlLTOTHlko7nmpfyy8nVRD3ca2bfdXDZX1rihYHjgXv5DdjTAAACnUlEQVRYhe1VXbeqOgxMLGkLlVLKh6CA+v//5EmrIMLe57zeuxbztPeETtNkEgEOHDhw4D8Mn6xxUm/6tGN+w12KFbCr+yTQnVmYe+b/cj4n8Q1DcmSJweCHGW6/C3R8R7qCJIGSKhgW2kkUuvrt/JWQcrVCWQwsoa8XQbcXczs7JtpfKqjRTVuyNQb5DJUzkaQG6fSjwFkKE6qcNU0Pqqnre8HvV4NEDAJZc6nHnO9BIXf3BJQaKb6u0DSBImMM0dmCT0UUKJiRNFrIOdOfUqiNGGwUIHkGpYlC6rWHm44CV2Yk0gMABWX785lGncMi4Iuq6huHNLI7TBAomRmNQAW9k4/dedUJeYePQIR98JW3YI93Ef0g3A1acs+dQE+o+WHW2pVAuJwL5oXQZYhByQXkcv4gkEh0nNY0NE3DuSwCLYmUo0nioeIYW7rjr6TrtwI8BM7CjaLp8SNQaoEwv4wjIpiIq7W1c84ezMA7LnSAHr8ziAhd0Mh1fjgxbCbKdsLUPLVt/sZyQazB+5UcDaVsOYHtNBSEroQ97MOFLqyhuNqytt/fKS4Av7rNFuTgqyybfcCBKoGEmWLq+Dxu18ooBZ64XjRDTx8nqhjg2lUhzguHmq2PwxAUYBuDJiJ24TUL8unBDmEWWu4+onGU9pv85yFgK8tLxBB8oOrL5X7lafSXOI1RIL0/8v1WbGNbFS72qVZOhDyVcR8EgRW9AvtUTtZPDrWfeyLP1geU2cBG0kUjqLUswB1Vu53KbUFemSbUYRZ4r1Az70TeCNGgE+TPZ/J9PuH8ggCaDj4C8xLmooWtHAUwCLR9/m0ieyf5wscwV/2mRFr30V/CvT4ZISse346zyWnGwqmFU++OLf/zn//6bTpw4MCB/yf+AFb7JmxobtPOAAAAAElFTkSuQmCC\", when: \"Monday\" },\n];\nexport default function ChaseArrivals() {\n  return (\n    <div style={{ fontFamily: \"Inter, system-ui\", border: \"1px solid #ecebe8\", borderRadius: 12, background: \"#fff\", overflow: \"hidden\" }}>\n      <div style={{ padding: \"10px 12px\", fontSize: 12, fontWeight: 600, color: \"#46443f\", borderBottom: \"1px solid #ecebe8\" }}>Latest arrivals</div>\n      {ARRIVALS.map(a => (\n        <div key={a.client + a.doc} style={{ display: \"flex\", alignItems: \"center\", gap: 10, padding: \"8px 12px\", borderTop: \"1px solid #f0efec\", fontSize: 12 }}>\n          <img src={a.logo} width=\"22\" height=\"22\" style={{ borderRadius: 6, border: \"1px solid #ecebe8\", padding: 2, background: \"#fff\" }} />\n          <div style={{ minWidth: 0, flex: 1 }}>\n            <span style={{ fontWeight: 600, color: \"#111\" }}>{a.client}</span>\n            <span style={{ color: \"#46443f\" }}> uploaded {a.doc}</span>\n            <span style={{ color: \"#908c85\" }}> · via {a.via}</span>\n          </div>\n          <span style={{ fontSize: 10.5, color: \"#908c85\", flex: \"none\" }}>{a.when}</span>\n        </div>\n      ))}\n      <div style={{ display: \"flex\", alignItems: \"center\", gap: 7, padding: \"9px 12px\", borderTop: \"1px solid #ecebe8\", background: \"#fbfbfa\", fontSize: 11.5, color: \"#15573a\", fontWeight: 600 }}>\n        <span style={{ width: 6, height: 6, borderRadius: 999, background: \"#1e7f53\" }} />\n        Next chase — tomorrow 8:00 · 5 clients get a reminder\n      </div>\n    </div>\n  );\n}\n"
+                }
+              }
+            }
+          }
+        },
+        {
+          "delay": 700,
+          "chunk": {
+            "type": "tool-output-available",
+            "toolCallId": "call_build",
+            "output": {
+              "appId": "app_director"
+            }
+          }
+        },
+        {
+          "delay": 700,
+          "chunk": {
+            "type": "tool-input-start",
+            "toolCallId": "call_slack",
+            "toolName": "slack_SLACK_SEND_MESSAGE"
+          }
+        },
+        {
+          "delay": 300,
+          "chunk": {
+            "type": "tool-input-available",
+            "toolCallId": "call_slack",
+            "toolName": "slack_SLACK_SEND_MESSAGE",
+            "input": {
+              "channel": "#team",
+              "message": "Blue Bottle Coffee uploaded W-2 — 4 of 6 in",
+              "trigger": "whenever a client uploads a document"
+            }
+          }
+        },
+        {
+          "delay": 300,
+          "chunk": {
+            "type": "data-vendo-approval",
+            "id": "risk:call_slack",
+            "data": {
+              "toolCallId": "call_slack",
+              "risk": "write"
+            }
+          }
+        },
+        {
+          "delay": 600,
+          "chunk": {
+            "type": "tool-approval-request",
+            "approvalId": "appr_slack",
+            "toolCallId": "call_slack"
+          }
+        },
+        {
+          "delay": 200,
+          "chunk": {
+            "type": "finish-step"
+          }
+        },
+        {
+          "delay": 50,
+          "chunk": {
+            "type": "finish"
+          }
+        }
+      ]
+    },
+    {
+      "cues": [
+        {
+          "delay": 0,
+          "chunk": {
+            "type": "start"
+          }
+        },
+        {
+          "delay": 100,
+          "chunk": {
+            "type": "start-step"
+          }
+        },
+        {
+          "delay": 800,
+          "chunk": {
+            "type": "tool-output-available",
+            "toolCallId": "call_slack",
+            "output": {
+              "ok": true,
+              "channel": "#team"
+            }
+          }
+        },
+        {
+          "delay": 400,
+          "chunk": {
+            "type": "text-start",
+            "id": "txt_done"
+          }
+        },
+        {
+          "delay": 150,
+          "chunk": {
+            "type": "text-delta",
+            "id": "txt_done",
+            "delta": "Your Document chases app is live — "
+          }
+        },
+        {
+          "delay": 170,
+          "chunk": {
+            "type": "text-delta",
+            "id": "txt_done",
+            "delta": "it checks every morning at 8:00, emails whoever's behind, "
+          }
+        },
+        {
+          "delay": 170,
+          "chunk": {
+            "type": "text-delta",
+            "id": "txt_done",
+            "delta": "and #team hears the moment anything comes in."
+          }
+        },
+        {
+          "delay": 120,
+          "chunk": {
+            "type": "text-end",
+            "id": "txt_done"
+          }
+        },
+        {
+          "delay": 100,
+          "chunk": {
+            "type": "finish-step"
+          }
+        },
+        {
+          "delay": 50,
+          "chunk": {
+            "type": "finish"
+          }
+        }
+      ]
+    }
+  ]
+}

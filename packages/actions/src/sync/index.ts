@@ -14,7 +14,6 @@ import {
   type UnresolvedPin,
 } from "../formats.js";
 import { bindingIdentity, clearAliasCache, routeToolFullName, withUniqueNames } from "./common.js";
-import { proposeCatalogCopy, type CatalogCopyGenerator } from "./catalog-ai.js";
 import { scanComponentCatalog } from "./catalog-scan.js";
 import { writeCatalog } from "./catalog.js";
 import { runExtractors } from "./extractors.js";
@@ -191,8 +190,6 @@ export async function vendoSync(options: {
   root: string;
   out?: string;
   strict?: boolean;
-  /** Optional model seam. Output is written only to catalog.proposals.json for review. */
-  catalogCopyGenerator?: CatalogCopyGenerator;
 }): Promise<SyncReportWithWarnings> {
   const root = path.resolve(options.root);
   const out = path.resolve(options.out ?? path.join(root, ".vendo"));
@@ -224,10 +221,7 @@ export async function vendoSync(options: {
   await writeIfChanged(toolsPath, `${JSON.stringify(extracted, null, 2)}\n`);
   const catalogScan = await scanComponentCatalog(root);
   warnings.push(...catalogScan.warnings);
-  const catalog = await writeCatalog(out, catalogScan.entries);
-  if (options.catalogCopyGenerator !== undefined) {
-    await proposeCatalogCopy(out, catalog, options.catalogCopyGenerator);
-  }
+  await writeCatalog(out, catalogScan.entries);
   const pins = await capturePins(root, out, new Set(overrides?.remix?.ignoreSlots ?? []));
   warnings.push(...pins.warnings);
   const report: SyncReportWithWarnings = {

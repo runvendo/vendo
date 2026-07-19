@@ -14,11 +14,12 @@ function routeTool(name: string, path: string): ExtractedTool {
 }
 
 describe("extractor registrations", () => {
-  it("keeps OpenAPI ahead of trpc ahead of graphql ahead of route-scan", () => {
+  it("keeps OpenAPI ahead of trpc ahead of graphql ahead of server-actions ahead of route-scan", () => {
     expect(extractorRegistrations.map((extractor) => extractor.name)).toEqual([
       "openapi",
       "trpc",
       "graphql",
+      "server-actions",
       "route-scan",
     ]);
   });

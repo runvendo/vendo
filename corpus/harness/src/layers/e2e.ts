@@ -590,6 +590,12 @@ export function layer3TargetUrl(baseUrl: string, repoName: string, threadId: str
     if (repoName === "papermark") {
       url.pathname = "/corpus-e2e";
     }
+    // teable's readiness URL is the sign-in page; after login the Vendo overlay
+    // (VendoRoot, wired by init into the app-router layout) renders on the
+    // authenticated space page.
+    if (repoName === "teable") {
+      url.pathname = "/space";
+    }
     url.searchParams.set("vendoThread", threadId);
     return url.toString();
   } catch {
@@ -620,6 +626,10 @@ async function prepareHostPage(
     await loginToUmami(page, Math.min(timeoutMs, 15_000));
     return;
   }
+  if (repoName === "teable") {
+    await loginToTeable(page, targetUrl, Math.min(timeoutMs, 30_000), navigationOptions);
+    return;
+  }
   if (repoName === "papermark") {
     await loginToPapermark(page, targetUrl, navigationOptions);
   }
@@ -631,7 +641,7 @@ async function restoreAttemptUrlAfterHostPrep(
   targetUrl: string,
   navigationOptions?: E2eNavigationOptions,
 ): Promise<void> {
-  if (repoName !== "umami" && repoName !== "papermark") return;
+  if (repoName !== "umami" && repoName !== "papermark" && repoName !== "teable") return;
   await page.goto(targetUrl, navigationOptions);
 }
 
@@ -646,6 +656,34 @@ async function loginToUmami(page: E2ePage, timeoutMs: number): Promise<void> {
   await password.fill("umami");
   await clickIfPresent(page.getByRole("button", { name: /^login$/i }));
   await waitFor(async () => (await safeCount(username)) === 0, timeoutMs).catch(() => undefined);
+}
+
+// teable authenticates with an email/password session (deterministic E2E seed
+// admin test@e2e.com / 12345678; manifest §bootstrap). The Nest backend serves
+// the sign-in form at /auth/login; on success it redirects into the app, so the
+// caller re-navigates to the attempt URL afterward (restoreAttemptUrlAfterHostPrep).
+async function loginToTeable(
+  page: E2ePage,
+  targetUrl: string,
+  timeoutMs: number,
+  navigationOptions?: E2eNavigationOptions,
+): Promise<void> {
+  const loginUrl = new URL("/auth/login", targetUrl);
+  await page.goto(loginUrl.toString(), navigationOptions);
+
+  const email = page.locator('input[name="email"], input[type="email"], #email');
+  await waitFor(async () => (await safeCount(email)) > 0, timeoutMs).catch(() => undefined);
+  if (await safeCount(email) === 0) return;
+
+  const password = page.locator('input[name="password"], input[type="password"], #password');
+  if (!email.fill || !password.fill) return;
+  await email.fill("test@e2e.com");
+  await password.fill("12345678");
+  if (!await clickIfPresent(page.getByRole("button", { name: /sign\s?in|log\s?in|continue|submit/i }))) {
+    await email.press?.("Enter");
+  }
+  // The form clears from the DOM once the redirect lands.
+  await waitFor(async () => (await safeCount(email)) === 0, timeoutMs).catch(() => undefined);
 }
 
 async function loginToPapermark(

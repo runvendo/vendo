@@ -49,10 +49,9 @@
   },
   "dependencies": {
     "@vendoai/core": "workspace:*",
-    "es-module-lexer": "^1.7.0",
     "jsonata": "^2.0.5",
     "yaml": "^2.6.0",
-    "zod": "^3.24.0"
+    "zod": "^3.25.0"
   },
   "peerDependencies": {
     "@auth/core": "^0.34.3",

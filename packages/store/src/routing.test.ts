@@ -2,7 +2,7 @@ import { VendoError, auditEventSchema, permissionGrantSchema, type Principal } f
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
 import { approvalFixture, at, auditFixture, grantFixture } from "./fixtures.test-util.js";
-import { auditStore, grantStore, registerEphemeralSubject } from "./index.js";
+import { auditStore, grantStore } from "./index.js";
 
 for (const backend of backends()) {
   describe(backend.name, () => {
@@ -208,20 +208,19 @@ for (const backend of backends()) {
         .toEqual([{ collection: "vendo_mcp_clients_x", data: { ordinary: true } }]);
     });
 
-    it("keeps principal-aware and registered routed writes ephemeral", async () => {
+    it("routes ephemeral-principal writes to the dedicated tables like any other (kill-list B3)", async () => {
       const ephemeral: Principal = { kind: "user", subject: "sess_route", ephemeral: true };
       const request = approvalFixture("apr_ephemeral_route", {
         ctx: { principal: ephemeral, venue: "chat", presence: "present" },
       });
       await made.store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
       expect((await made.store.records("vendo_approvals").get(request.id))?.id).toBe(request.id);
-      expect(Number((await made.sql("SELECT COUNT(*)::int AS count FROM vendo_approvals WHERE id = $1", [request.id]))[0]?.count)).toBe(0);
+      expect(Number((await made.sql("SELECT COUNT(*)::int AS count FROM vendo_approvals WHERE id = $1", [request.id]))[0]?.count)).toBe(1);
 
-      registerEphemeralSubject(made.store, ephemeral.subject);
       const grant = grantFixture("grt_ephemeral_route", { subject: ephemeral.subject });
       await made.store.records("vendo_grants").put({ id: grant.id, data: grant });
       expect(await grantStore(made.store).get(grant.id)).toEqual(grant);
-      expect(Number((await made.sql("SELECT COUNT(*)::int AS count FROM vendo_grants WHERE id = $1", [grant.id]))[0]?.count)).toBe(0);
+      expect(Number((await made.sql("SELECT COUNT(*)::int AS count FROM vendo_grants WHERE id = $1", [grant.id]))[0]?.count)).toBe(1);
     });
   });
 }

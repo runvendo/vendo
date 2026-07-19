@@ -1,25 +1,25 @@
-import { readFileSync } from "node:fs";
 import { VendoError, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
 import { ERASE_TABLES, eraseStore } from "./erase.js";
+import { DDL } from "./schema.js";
 import { appFixture, approvalFixture, auditFixture, grantFixture } from "./fixtures.test-util.js";
-import { appStore, grantStore } from "./index.js";
+import { appStore, grantStore, registerEphemeralSubject } from "./index.js";
 
-// 02-store §5: "A store-level erase API ... erases by subject (full erasure),
-// by app, or by age, cascading the matching data across all 13 tables, and is
+// 02-store §5: "A store-level erase API ... erases by subject (full erasure)
+// or by app, cascading the matching data across all 14 tables, and is
 // exposed on the umbrella. It is the only sanctioned deletion path for audit
 // rows."
 
-describe("02-store §5 — erase cascade covers the contract's table map", () => {
-  it("keeps the erase table list identical to the §2 table map", () => {
-    const contract = readFileSync(
-      new URL("../../../docs/contracts/02-store.md", import.meta.url),
-      "utf8",
-    );
-    const documented = [...contract.matchAll(/^\| `(vendo_[a-z_]+)` \|/gm)].map((match) => match[1]);
-    expect(documented).toHaveLength(15);
-    expect(documented).toEqual([...ERASE_TABLES]);
+describe("erase cascade covers the whole schema", () => {
+  it("keeps ERASE_TABLES identical to the tables the schema actually creates", () => {
+    // Code-to-code invariant (the retired contract doc used to proxy this):
+    // every vendo_ table the DDL creates — plus vendo_meta, created in
+    // migrate() — must be reachable by the erase cascade.
+    const created = DDL
+      .map((statement) => statement.match(/CREATE TABLE IF NOT EXISTS (vendo_[a-z_]+)/)?.[1])
+      .filter((name): name is string => name !== undefined);
+    expect(new Set(ERASE_TABLES)).toEqual(new Set(["vendo_meta", ...created]));
   });
 });
 
@@ -115,8 +115,7 @@ for (const backend of backends()) {
         vendo_secrets: 0,
         vendo_mcp_clients: 0,
         vendo_mcp_grants: 1,
-        vendo_orgs: 0,
-        vendo_org_members: 0,
+        vendo_sessions: 0, // durable subject — never registered as a session
       });
 
       // Gone through the doors...
@@ -139,9 +138,10 @@ for (const backend of backends()) {
       expect(await store.records("vendo_audit").get(bystanderEvent.id)).not.toBeNull();
     });
 
-    it("erases an ephemeral subject's overlay rows (02 §4) all the same", async () => {
+    it("erases an ephemeral subject's rows and its session registration (02 §4) all the same", async () => {
       const store = made.store;
       const anon: Principal = { kind: "user", subject: "anon_erase", ephemeral: true };
+      await registerEphemeralSubject(store, anon.subject);
       const doc = appFixture("app_erase_anon");
       await appStore(store).put(anon, doc);
       await store.records(`app:${doc.id}:notes`).put({ id: "note_anon", data: { body: "mine" } });
@@ -156,6 +156,7 @@ for (const backend of backends()) {
       expect(report.vendo_threads).toBe(1);
       expect(report.vendo_grants).toBe(1);
       expect(report.vendo_audit).toBe(1);
+      expect(report.vendo_sessions).toBe(1);
 
       expect(await appStore(store).get(doc.id)).toBeNull();
       expect(await store.records("vendo_threads").get("thr_erase_anon")).toBeNull();
@@ -219,91 +220,6 @@ for (const backend of backends()) {
       expect(await store.records("vendo_grants").get("grt_app_erase_keep")).not.toBeNull();
       expect(await store.records("vendo_audit").get("aud_app_erase_keep")).not.toBeNull();
       expect(await store.records("vendo_threads").get("thr_erase_by_app")).not.toBeNull();
-    });
-  });
-
-  describe(`${backend.name} 02-store §5 — erase by age`, () => {
-    let made: MadeBackend;
-
-    beforeAll(async () => {
-      made = await backend.make();
-      await made.store.ensureSchema();
-    });
-    afterAll(async () => { if (made) await made.cleanup(); });
-
-    it("rejects a non-ISO cutoff", async () => {
-      await expect(eraseStore(made.store).byAge("yesterday"))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
-    });
-
-    it("erases rows whose last activity predates the cutoff and spares fresh rows", async () => {
-      const store = made.store;
-      const subject = "user_erase_by_age";
-      const old = "2020-01-01T00:00:00.000Z";
-      const cutoff = "2020-06-01T00:00:00.000Z";
-
-      // Rows whose timestamps the doors take from the data itself.
-      const oldEvent = auditFixture("aud_age_old", { principal: { kind: "user", subject }, at: old });
-      await store.records("vendo_audit").put({ id: oldEvent.id, data: oldEvent });
-      const freshEvent = auditFixture("aud_age_fresh", { principal: { kind: "user", subject } });
-      await store.records("vendo_audit").put({ id: freshEvent.id, data: freshEvent });
-      const oldGrant = grantFixture("grt_age_old", { subject, grantedAt: old });
-      await store.records("vendo_grants").put({ id: oldGrant.id, data: oldGrant });
-      const freshGrant = grantFixture("grt_age_fresh", { subject });
-      await store.records("vendo_grants").put({ id: freshGrant.id, data: freshGrant });
-
-      // Rows the doors stamp with "now": seed, then age them the host way (raw SQL).
-      await store.records("vendo_threads").put({ id: "thr_age_old", data: { subject, messages: [] } });
-      await store.records("vendo_threads").put({ id: "thr_age_fresh", data: { subject, messages: [] } });
-      await made.sql("UPDATE vendo_threads SET created_at = $1, updated_at = $1 WHERE id = 'thr_age_old'", [old]);
-      await store.records("crm:notes").put({ id: "note_age_old", data: { body: "old" } });
-      await store.records("crm:notes").put({ id: "note_age_fresh", data: { body: "fresh" } });
-      await made.sql("UPDATE vendo_records SET created_at = $1, updated_at = $1 WHERE id = 'note_age_old'", [old]);
-      // A stale secret row (the age axis reaches vendo_secrets too)...
-      await made.sql(
-        "INSERT INTO vendo_secrets (name, ciphertext, created_at) VALUES ('OLD_SECRET', 'v2:a:b:c', $1)",
-        [old],
-      );
-      // ...but a ROTATED secret (old created_at, fresh updated_at — exactly what
-      // secretStore.set stamps on rewrite) is recent activity and must survive.
-      await made.sql(
-        "INSERT INTO vendo_secrets (name, ciphertext, created_at, updated_at) VALUES ('ROTATED_SECRET', 'v2:d:e:f', $1, $2)",
-        [old, "2026-01-01T00:00:00.000Z"],
-      );
-
-      const report = await eraseStore(store).byAge(cutoff);
-      expect(report.vendo_audit).toBe(1);
-      expect(report.vendo_grants).toBe(1);
-      expect(report.vendo_threads).toBe(1);
-      expect(report.vendo_records).toBe(1);
-      expect(report.vendo_secrets).toBe(1);
-
-      expect(await store.records("vendo_audit").get("aud_age_old")).toBeNull();
-      expect(await store.records("vendo_grants").get("grt_age_old")).toBeNull();
-      expect(await store.records("vendo_threads").get("thr_age_old")).toBeNull();
-      expect(await store.records("crm:notes").get("note_age_old")).toBeNull();
-
-      expect(await store.records("vendo_audit").get("aud_age_fresh")).not.toBeNull();
-      expect(await store.records("vendo_grants").get("grt_age_fresh")).not.toBeNull();
-      expect(await store.records("vendo_threads").get("thr_age_fresh")).not.toBeNull();
-      expect(await store.records("crm:notes").get("note_age_fresh")).not.toBeNull();
-      const secrets = await made.sql("SELECT name FROM vendo_secrets ORDER BY name");
-      expect(secrets.map((row) => row.name)).toEqual(["ROTATED_SECRET"]);
-    });
-
-    it("never touches an unexpired standing grant granted before the cutoff's window ends", async () => {
-      const store = made.store;
-      // Granted long ago but expiring in the future: GREATEST(granted, revoked,
-      // expires) is in the future, so the grant's lifecycle has not aged out.
-      const grant = grantFixture("grt_age_active", {
-        subject: "user_age_active",
-        grantedAt: "2020-01-01T00:00:00.000Z",
-        expiresAt: "2099-01-01T00:00:00.000Z",
-      });
-      await store.records("vendo_grants").put({ id: grant.id, data: grant });
-      const report = await eraseStore(store).byAge("2020-06-01T00:00:00.000Z");
-      expect(report.vendo_grants).toBe(0);
-      expect(await store.records("vendo_grants").get(grant.id)).not.toBeNull();
     });
   });
 }

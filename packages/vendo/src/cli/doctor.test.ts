@@ -17,6 +17,27 @@ afterEach(async () => {
   for (const dispose of cleanup.splice(0).reverse()) await dispose();
 });
 
+/** Existing checks are about static wiring + the HTTP probes, not the new
+ *  live-turn/cloud/dev-server-probe surface (those get dedicated tests below).
+ *  This wrapper stubs the new seams so the legacy assertions stay focused:
+ *  a canned successful live turn, no cloud key, non-interactive. */
+async function doctor(options: Parameters<typeof runDoctor>[0]): Promise<number> {
+  return runDoctor({
+    env: {},
+    interactive: false,
+    liveTurn: async () => ({
+      attempted: true,
+      ok: true,
+      rung: "env-key",
+      credential: "explicit ANTHROPIC_API_KEY (anthropic)",
+      reply: "ok",
+      elapsedMs: 1,
+    }),
+    cloudProbe: async () => ({ present: false, ok: false, unlocks: ["a starter allowance"] }),
+    ...options,
+  });
+}
+
 async function healthy(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "vendo-doctor-"));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
@@ -159,7 +180,7 @@ describe("vendo doctor", () => {
   it("checks Express server and client wiring instead of Next files", async () => {
     const fetchImpl = successfulProbeFetch();
     const messages = output();
-    expect(await runDoctor({
+    expect(await doctor({
       targetDir: await expressHost(true),
       fetchImpl,
       output: messages.sink,
@@ -173,7 +194,7 @@ describe("vendo doctor", () => {
 
   it("returns one when an Express host is missing server and client wiring", async () => {
     const messages = output();
-    expect(await runDoctor({
+    expect(await doctor({
       targetDir: await expressHost(false),
       fetchImpl: successfulProbeFetch(),
       output: messages.sink,
@@ -187,7 +208,7 @@ describe("vendo doctor", () => {
 
   it("checks wiring and performs one live status round-trip", async () => {
     const fetchImpl = successfulProbeFetch();
-    expect(await runDoctor({
+    expect(await doctor({
       targetDir: await healthy(),
       fetchImpl,
       output: { log() {}, error() {} },
@@ -201,7 +222,7 @@ describe("vendo doctor", () => {
 
   it.each(["e2b", "modal", "custom"] as const)("reports a lit %s execution venue", async (sandbox) => {
     const messages = output();
-    expect(await runDoctor({
+    expect(await doctor({
       targetDir: await healthy(),
       fetchImpl: successfulProbeFetch({ store: true, sandbox }),
       output: messages.sink,
@@ -212,14 +233,14 @@ describe("vendo doctor", () => {
 
   it("warns with actionable guidance when the execution venue is dark", async () => {
     const messages = output();
-    expect(await runDoctor({
+    expect(await doctor({
       targetDir: await healthy(),
       fetchImpl: successfulProbeFetch({ store: true, sandbox: false }),
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
     expect(messages.errors).toContain(
-      "warning: install the e2b package and set E2B_API_KEY, or install modal and set MODAL_TOKEN_ID+MODAL_TOKEN_SECRET, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable",
+      "warning: install the e2b package and set E2B_API_KEY, or install modal and set MODAL_TOKEN_ID+MODAL_TOKEN_SECRET, or set VENDO_API_KEY for the managed Cloud sandbox, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable",
     );
     expect(messages.logs).toContain(
       "Ladder: execution venue is checked above; actAs for away host actions; connectors for external tools.",
@@ -228,7 +249,7 @@ describe("vendo doctor", () => {
 
   it("warns instead of failing when an older host omits the execution venue", async () => {
     const messages = output();
-    expect(await runDoctor({
+    expect(await doctor({
       targetDir: await healthy(),
       fetchImpl: successfulProbeFetch({ store: true }),
       output: messages.sink,
@@ -241,7 +262,7 @@ describe("vendo doctor", () => {
 
   it("fails when /status reports an unknown execution venue", async () => {
     const messages = output();
-    expect(await runDoctor({
+    expect(await doctor({
       targetDir: await healthy(),
       fetchImpl: successfulProbeFetch({ store: true, sandbox: "mainframe" }),
       output: messages.sink,
@@ -255,7 +276,7 @@ describe("vendo doctor", () => {
     cleanup.push(() => rm(root, { recursive: true, force: true }));
     const fetchImpl = vi.fn().mockRejectedValue(new Error("offline"));
     const messages = output();
-    expect(await runDoctor({ targetDir: root, fetchImpl, output: messages.sink })).toBe(1);
+    expect(await doctor({ targetDir: root, fetchImpl, output: messages.sink })).toBe(1);
     expect(messages.errors).toEqual(expect.arrayContaining([
       expect.stringContaining("start the dev server"),
       expect.stringContaining("cannot probe actAs"),
@@ -265,7 +286,7 @@ describe("vendo doctor", () => {
   it("proves present credentials and actAs mint+verify over a real booted server", async () => {
     const host = await liveHost();
     const messages = output();
-    expect(await runDoctor({
+    expect(await doctor({
       targetDir: host.root,
       url: host.url,
       output: messages.sink,
@@ -288,7 +309,7 @@ describe("vendo doctor", () => {
   it("fails actionably when VENDO_BASE_URL leaves present credentials disabled", async () => {
     const host = await liveHost({ configureBaseUrl: false });
     const messages = output();
-    expect(await runDoctor({
+    expect(await doctor({
       targetDir: host.root,
       url: host.url,
       output: messages.sink,
@@ -302,7 +323,7 @@ describe("vendo doctor", () => {
   it("warns actionably when actAs is not configured without breaking present-only hosts", async () => {
     const host = await liveHost({ actAs: false });
     const messages = output();
-    expect(await runDoctor({
+    expect(await doctor({
       targetDir: host.root,
       url: host.url,
       output: messages.sink,
@@ -324,7 +345,7 @@ describe("vendo doctor", () => {
     }));
     const messages = output();
 
-    expect(await runDoctor({
+    expect(await doctor({
       targetDir: root,
       url: "https://mcp.example.com/api/vendo",
       fetchImpl: discoveryFetch(),
@@ -346,7 +367,7 @@ describe("vendo doctor", () => {
     }));
     const messages = output();
 
-    expect(await runDoctor({
+    expect(await doctor({
       targetDir: root,
       url: "https://mcp.example.com/api/vendo",
       fetchImpl: discoveryFetch(),
@@ -361,7 +382,7 @@ describe("vendo doctor", () => {
     const root = await healthy();
     const messages = output();
 
-    expect(await runDoctor({
+    expect(await doctor({
       targetDir: root,
       url: "https://mcp.example.com/api/vendo",
       fetchImpl: discoveryFetch("not-an-mcp-challenge"),
@@ -369,6 +390,249 @@ describe("vendo doctor", () => {
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(1);
     expect(messages.errors).toContain("broken: MCP registry auth challenge must start with v=MCPv1");
+  });
+});
+
+/** Probe fetch that also answers the live-turn POST /threads with a UI-message
+ *  SSE stream. `reply` "" simulates a turn that produces no text. */
+function probeFetchWithTurn(reply = "I can respond.", options: { errorFrame?: boolean } = {}): ReturnType<typeof vi.fn> {
+  return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url.endsWith("/status")) return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { store: true, sandbox: "e2b" } });
+    if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
+    if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
+    if (url.endsWith("/threads") && init?.method === "POST") {
+      const frames: string[] = [];
+      if (options.errorFrame) frames.push('data: {"type":"error"}\n\n');
+      else if (reply.length > 0) frames.push(`data: ${JSON.stringify({ type: "text-delta", delta: reply })}\n\n`);
+      frames.push("data: [DONE]\n\n");
+      return new Response(frames.join(""), { headers: { "content-type": "text/event-stream" } });
+    }
+    return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
+  });
+}
+
+describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () => {
+  it("runs one real model turn over the wired route and exits 0 when it answers", async () => {
+    const fetchImpl = probeFetchWithTurn("Yes, I can respond.");
+    const messages = output();
+    expect(await runDoctor({
+      targetDir: await healthy(),
+      fetchImpl,
+      env: { ANTHROPIC_API_KEY: "sk-test" },
+      interactive: false,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(fetchImpl.mock.calls.some(([u]) => String(u).endsWith("/threads"))).toBe(true);
+    expect(messages.logs.some((line) => line.startsWith("ok: live model turn answered"))).toBe(true);
+    expect(messages.logs.join("\n")).toContain("Yes, I can respond.");
+  });
+
+  it("exits nonzero when the live turn produces no answer", async () => {
+    const fetchImpl = probeFetchWithTurn("", { errorFrame: true });
+    const messages = output();
+    expect(await runDoctor({
+      targetDir: await healthy(),
+      fetchImpl,
+      env: { ANTHROPIC_API_KEY: "sk-test" },
+      interactive: false,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors.some((line) => line.startsWith("broken: live model turn did not answer"))).toBe(true);
+  });
+
+  it("emits one machine-readable JSON object a script can consume", async () => {
+    const logs: string[] = [];
+    const exit = await doctor({
+      targetDir: await healthy(),
+      fetchImpl: successfulProbeFetch(),
+      json: true,
+      output: { log: (m) => logs.push(m), error: () => {} },
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    });
+    // --json prints exactly one object to stdout and nothing else.
+    expect(logs).toHaveLength(1);
+    const report = JSON.parse(logs[0]!) as {
+      vendo: string; wired: boolean; exit: number;
+      checks: Array<{ status: string; message: string }>;
+      liveTurn: { ok: boolean }; cloud: { present: boolean };
+      summary: { failures: number; warnings: number };
+    };
+    expect(report.vendo).toBe("doctor");
+    expect(report.exit).toBe(exit);
+    expect(report.wired).toBe(true);
+    expect(report.liveTurn.ok).toBe(true);
+    expect(report.cloud.present).toBe(false);
+    expect(report.checks.some((c) => c.status === "ok")).toBe(true);
+    expect(report.summary.failures).toBe(0);
+  });
+
+  it("reports exit 1 in --json when wiring is broken", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-doctor-json-broken-"));
+    cleanup.push(() => rm(root, { recursive: true, force: true }));
+    const logs: string[] = [];
+    const exit = await doctor({
+      targetDir: root,
+      fetchImpl: vi.fn().mockRejectedValue(new Error("offline")),
+      json: true,
+      liveTurn: undefined, // exercise the real skip path (server unreachable)
+      output: { log: (m) => logs.push(m), error: () => {} },
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    });
+    const report = JSON.parse(logs[0]!) as { exit: number; wired: boolean; liveTurn: { attempted: boolean } };
+    expect(exit).toBe(1);
+    expect(report.exit).toBe(1);
+    expect(report.wired).toBe(false);
+    expect(report.liveTurn.attempted).toBe(false);
+  });
+
+  it("reports a present, well-formed VENDO_API_KEY", async () => {
+    const messages = output();
+    expect(await doctor({
+      targetDir: await healthy(),
+      fetchImpl: successfulProbeFetch(),
+      cloudProbe: async () => ({ present: true, ok: true, unlocks: ["x"] }),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.logs).toContain("ok: Vendo Cloud key present and well-formed");
+  });
+
+  it("warns when VENDO_API_KEY is present but invalid", async () => {
+    const messages = output();
+    await doctor({
+      targetDir: await healthy(),
+      fetchImpl: successfulProbeFetch(),
+      cloudProbe: async () => ({ present: true, ok: false, unlocks: ["x"], error: "revoked" }),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    });
+    expect(messages.errors).toContain("warning: VENDO_API_KEY is set but not usable: revoked");
+  });
+
+  it("prints what Cloud unlocks when no key is set", async () => {
+    const messages = output();
+    await doctor({
+      targetDir: await healthy(),
+      fetchImpl: successfulProbeFetch(),
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["a starter allowance", "team sharing"] }),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    });
+    expect(messages.logs.some((l) => l.includes("A key unlocks a starter allowance; team sharing"))).toBe(true);
+  });
+
+  it("offers (consent) to start the dev server when nothing is listening", async () => {
+    let serverUp = false;
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/status")) {
+        if (!serverUp) throw new Error("connection refused");
+        return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { store: true, sandbox: "e2b" } });
+      }
+      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
+      if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
+      if (url.endsWith("/threads") && init?.method === "POST") {
+        return new Response('data: {"type":"text-delta","delta":"hi"}\n\ndata: [DONE]\n\n', { headers: { "content-type": "text/event-stream" } });
+      }
+      return Response.json({ error: { message: "unexpected" } }, { status: 404 });
+    });
+    const stop = vi.fn();
+    const startDevServer = vi.fn(async () => { serverUp = true; return { ok: true, stop }; });
+    const confirm = vi.fn(async () => true);
+    const messages = output();
+    expect(await runDoctor({
+      targetDir: await healthy(),
+      fetchImpl,
+      env: { ANTHROPIC_API_KEY: "sk-test" },
+      interactive: true,
+      confirm,
+      startDevServer,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(startDevServer).toHaveBeenCalledOnce();
+    expect(messages.logs).toContain("ok: started the dev server for the probe");
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  // §4 customization ladder — ejected chrome is the host's code; doctor only
+  // raises awareness when it predates the installed @vendoai/ui. Warn, never fail.
+  it("warns — never fails — when an ejected surface predates the installed @vendoai/ui", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "components", "vendo", "thread"), { recursive: true });
+    await writeFile(
+      join(root, "components", "vendo", "thread", ".vendo-eject.json"),
+      JSON.stringify({ surface: "thread", package: "@vendoai/ui", version: "0.2.0" }),
+    );
+    await mkdir(join(root, "node_modules", "@vendoai", "ui"), { recursive: true });
+    await writeFile(
+      join(root, "node_modules", "@vendoai", "ui", "package.json"),
+      JSON.stringify({ name: "@vendoai/ui", version: "0.3.0" }),
+    );
+    const messages = output();
+    const code = await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    });
+    expect(code).toBe(0);
+    const warning = messages.errors.find((line) => line.includes("ejected thread"));
+    expect(warning).toBeDefined();
+    expect(warning).toContain("v0.2.0");
+    expect(warning).toContain("v0.3.0");
+    expect(warning).toContain("changelog");
+    expect(warning).toContain("warning");
+  });
+
+  it("skips the drift check quietly when the installed @vendoai/ui package.json is malformed", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "components", "vendo", "thread"), { recursive: true });
+    await writeFile(
+      join(root, "components", "vendo", "thread", ".vendo-eject.json"),
+      JSON.stringify({ surface: "thread", package: "@vendoai/ui", version: "0.2.0" }),
+    );
+    await mkdir(join(root, "node_modules", "@vendoai", "ui"), { recursive: true });
+    await writeFile(join(root, "node_modules", "@vendoai", "ui", "package.json"), "{not json");
+    const messages = output();
+    const code = await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    });
+    expect(code).toBe(0);
+    expect([...messages.logs, ...messages.errors].some((line) => line.includes("ejected"))).toBe(false);
+  });
+
+  it("passes the drift check when the ejected surface matches the installed @vendoai/ui", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "src", "components", "vendo", "thread"), { recursive: true });
+    await writeFile(
+      join(root, "src", "components", "vendo", "thread", ".vendo-eject.json"),
+      JSON.stringify({ surface: "thread", package: "@vendoai/ui", version: "0.3.0" }),
+    );
+    await mkdir(join(root, "node_modules", "@vendoai", "ui"), { recursive: true });
+    await writeFile(
+      join(root, "node_modules", "@vendoai", "ui", "package.json"),
+      JSON.stringify({ name: "@vendoai/ui", version: "0.3.0" }),
+    );
+    const messages = output();
+    await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    });
+    expect(messages.logs.some((line) => line.includes("ejected thread matches @vendoai/ui v0.3.0"))).toBe(true);
+    expect(messages.errors.some((line) => line.includes("ejected"))).toBe(false);
   });
 });
 

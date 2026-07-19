@@ -39,7 +39,10 @@ async function waitForFixture(): Promise<void> {
     if (child?.exitCode !== null) throw new Error(`Fixture exited early (${child?.exitCode})\n${serverOutput}`);
     try {
       const response = await fetch(baseUrl);
-      if (response.ok) return;
+      if (response.ok) {
+        await warmRoutes(deadline);
+        return;
+      }
     } catch {
       // Next is still compiling.
     }
@@ -48,13 +51,40 @@ async function waitForFixture(): Promise<void> {
   throw new Error(`Fixture did not become ready\n${serverOutput}`);
 }
 
+/** Next dev compiles API routes lazily; under parallel-suite CPU load a first
+ *  request to an uncompiled dynamic route can 500 with an HTML error page.
+ *  Touch each route family once (any status counts — we only need the compile)
+ *  and retry the transient dev-compile 500s so tests assert against a warm
+ *  server instead of the compiler. */
+async function warmRoutes(deadline: number): Promise<void> {
+  const paths = ["/api/login", "/api/invoices", "/api/invoices/inv_warmup", "/api/customers", "/api/openapi"];
+  for (const path of paths) {
+    while (Date.now() < deadline) {
+      try {
+        const response = await fetch(`${baseUrl}${path}`);
+        // 500 with an HTML body is the dev compiler mid-flight; anything else
+        // (2xx/4xx/JSON 500) means the route module is compiled and serving.
+        if (response.status !== 500) break;
+        const body = await response.text();
+        if (!body.startsWith("<!DOCTYPE")) break;
+      } catch {
+        // Server hiccup while compiling — retry below.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+}
+
 async function stopFixture(): Promise<void> {
-  if (!child || child.exitCode !== null) return;
-  child.kill("SIGTERM");
-  const exited = new Promise<void>((resolve) => child?.once("exit", () => resolve()));
-  const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5_000));
-  await Promise.race([exited, timeout]);
-  if (child.exitCode === null) child.kill("SIGKILL");
+  if (child && child.exitCode === null) {
+    child.kill("SIGTERM");
+    const exited = new Promise<void>((resolve) => child?.once("exit", () => resolve()));
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5_000));
+    await Promise.race([exited, timeout]);
+    if (child.exitCode === null) child.kill("SIGKILL");
+  }
+  // Collect this run's isolated dist dir (see FIXTURE_DIST_DIR at spawn).
+  await rm(join(fixtureDir, ".next", "actions-e2e"), { recursive: true, force: true });
 }
 
 async function startFixture(): Promise<void> {
@@ -63,7 +93,12 @@ async function startFixture(): Promise<void> {
   serverOutput = "";
   const fixtureChild = spawn(nextBin, ["dev", "-p", String(port)], {
     cwd: fixtureDir,
-    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
+    // FIXTURE_DIST_DIR: host-app's next.config gives each concurrent consumer
+    // its own dist dir (see the comment there); the previous default `.next`
+    // shared a build cache with the other harnesses that boot this fixture.
+    // House convention: a stable name INSIDE .next, so Next's tsconfig
+    // auto-include never accumulates per-run entries in the tracked file.
+    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", FIXTURE_DIST_DIR: ".next/actions-e2e" },
     stdio: ["pipe", "pipe", "pipe"],
   });
   child = fixtureChild;

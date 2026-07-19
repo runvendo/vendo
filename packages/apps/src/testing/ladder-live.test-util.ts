@@ -53,7 +53,7 @@ http.createServer((request, response) => {
 const rung3ServerSource = `
 const http = require("node:http");
 const tree = {
-  formatVersion: "vendo-genui/v1",
+  formatVersion: "vendo-genui/v2",
   root: "root",
   nodes: [{ id: "root", component: "Text", source: "prewired", props: { text: "Server-computed (live)" } }],
 };
@@ -92,7 +92,7 @@ const laneModel = () => scriptedLanguageModel((call) => {
       name: "Live ladder app",
       description: "climbs the ladder on a real venue",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Text", source: "prewired", props: { text: "Rung 1 (live)" } }],
       },
@@ -172,7 +172,7 @@ export const ladderLiveLanes = (
         const dashboard = await runtime.call(created.id, "fn:dashboard", {}, ada);
         expect(dashboard).toMatchObject({
           status: "ok",
-          output: { ui: { formatVersion: "vendo-genui/v1" } },
+          output: { ui: { formatVersion: "vendo-genui/v2" } },
         });
 
         // Invisible graduation: open() still answers from the kept tree.

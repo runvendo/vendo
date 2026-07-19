@@ -5,11 +5,9 @@ const keys = new WeakMap<object, Buffer>();
 
 /** 02-store §4 */
 export function validateEncryptionKey(value: string): Buffer {
-  const normalized = value.replace(/=+$/, "");
   const validCharacters = /^[A-Za-z0-9+/]+={0,2}$/.test(value);
   const decoded = Buffer.from(value, "base64");
-  const canonical = decoded.toString("base64").replace(/=+$/, "") === normalized;
-  if (!validCharacters || !canonical || decoded.byteLength !== 32) {
+  if (!validCharacters || decoded.byteLength !== 32) {
     throw new VendoError("validation", "encryption.key must be a base64-encoded 32-byte key");
   }
   return decoded;
@@ -25,14 +23,25 @@ export function getEncryptionKey(store: object): Buffer | undefined {
 
 export function dropEncryptionKey(store: object): void {
   keys.delete(store);
+  plaintextAllowed.delete(store);
 }
 
-/** 02-store §4 — envelope versions:
- *  - `v1`: legacy AES-256-GCM, no AAD. Still decrypted so rows written before
- *    the AAD amendment keep working; never written anymore.
- *  - `v2`: AES-256-GCM with the secret NAME bound as AAD, so a ciphertext
- *    swapped between rows (or served for the wrong name) fails the auth tag
- *    instead of decrypting to another secret's value. */
+/** 02-store §4 — dev-mode plaintext secrets. Tracked per store handle like the
+ *  key itself; production composition never sets this. */
+const plaintextAllowed = new WeakSet<object>();
+
+export function setPlaintextSecretsAllowed(store: object, allowed: boolean): void {
+  if (allowed) plaintextAllowed.add(store);
+}
+
+export function plaintextSecretsAllowed(store: object): boolean {
+  return plaintextAllowed.has(store);
+}
+
+/** 02-store §4 — envelope version `v2`: AES-256-GCM with the secret NAME
+ *  bound as AAD, so a ciphertext swapped between rows (or served for the
+ *  wrong name) fails the auth tag instead of decrypting to another secret's
+ *  value. */
 export function encryptSecret(value: string, key: Buffer, name: string): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
@@ -47,13 +56,13 @@ export function decryptSecret(value: string, key: Buffer, name: string): string 
   try {
     const [version, ivValue, tagValue, ciphertextValue, extra] = value.split(":");
     if (
-      (version !== "v1" && version !== "v2")
+      version !== "v2"
       || !ivValue || !tagValue || ciphertextValue === undefined || extra !== undefined
     ) {
       throw new Error("invalid ciphertext envelope");
     }
     const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivValue, "base64"));
-    if (version === "v2") decipher.setAAD(Buffer.from(name, "utf8"));
+    decipher.setAAD(Buffer.from(name, "utf8"));
     decipher.setAuthTag(Buffer.from(tagValue, "base64"));
     return Buffer.concat([
       decipher.update(Buffer.from(ciphertextValue, "base64")),

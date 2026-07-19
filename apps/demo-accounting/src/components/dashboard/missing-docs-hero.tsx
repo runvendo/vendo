@@ -11,13 +11,14 @@
  * mirror the Cadence brand tokens in `src/app/globals.css`.
  */
 
-const EVERGREEN_800 = "#1c4339"
-const EVERGREEN_900 = "#16362e"
-const EVERGREEN_950 = "#0b211c"
-const EVERGREEN_100 = "#d8ebe2"
-const STATUS_MISSING = "#b45309"
-const STATUS_MISSING_BG = "#fdf0df"
-const FONT = 'var(--font-hanken, system-ui), ui-sans-serif, system-ui, sans-serif'
+const INK = "#111111"
+const INK_SOFT = "#46443f"
+const INK_FAINT = "#908c85"
+const LINE = "#ecebe8"
+const LEDGER_GREEN = "#1e7f53"
+const STATUS_MISSING = "#a16207"
+const STATUS_MISSING_BG = "#faf3e3"
+const FONT = 'var(--font-inter, system-ui), ui-sans-serif, system-ui, sans-serif'
 
 export interface MissingDocsHeroProps {
   /** Clients with at least one outstanding (missing/rejected) document. */
@@ -36,9 +37,9 @@ export function MissingDocsHero({
     <article
       style={{
         borderRadius: 12,
-        border: `1px solid ${EVERGREEN_900}`,
-        background: `linear-gradient(to bottom right, ${EVERGREEN_800}, ${EVERGREEN_950})`,
-        boxShadow: "0 1px 2px rgba(34,30,25,0.05), 0 1px 3px rgba(34,30,25,0.03)",
+        border: `1px solid ${LINE}`,
+        background: "#ffffff",
+        boxShadow: `inset 3px 0 0 ${LEDGER_GREEN}, 0 1px 2px rgba(17,17,17,0.04)`,
         padding: 20,
         fontFamily: FONT,
       }}
@@ -49,7 +50,7 @@ export function MissingDocsHero({
           fontSize: 13,
           fontWeight: 500,
           whiteSpace: "nowrap",
-          color: "rgba(216,235,226,0.8)",
+          color: INK_SOFT,
         }}
       >
         Clients missing documents
@@ -69,7 +70,7 @@ export function MissingDocsHero({
             lineHeight: 1,
             fontWeight: 600,
             letterSpacing: "-0.025em",
-            color: "#ffffff",
+            color: INK,
             fontVariantNumeric: "tabular-nums",
           }}
         >
@@ -105,7 +106,7 @@ export function MissingDocsHero({
         style={{
           margin: "10px 0 0",
           fontSize: 12,
-          color: `${EVERGREEN_100}99`,
+          color: INK_FAINT,
         }}
       >
         of {clientCount} active clients need chasing

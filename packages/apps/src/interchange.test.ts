@@ -32,7 +32,7 @@ const document = (overrides: Partial<AppDocument> = {}): AppDocument => ({
   name: "Invoice Chaser",
   ui: "tree",
   tree: {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [{ id: "root", component: "Text", props: { text: "Invoices" } }],
   },
@@ -272,7 +272,7 @@ describe(".vendoapp interchange through createApps", () => {
     const { id: _id, ...exported } = document({
       secrets: ["STRIPE_KEY"],
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{
           id: "root",
@@ -310,7 +310,7 @@ describe(".vendoapp interchange through createApps", () => {
     });
     const { id: _id, ...exported } = document({
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{
           id: "root",
@@ -338,7 +338,7 @@ describe(".vendoapp interchange through createApps", () => {
     const runtime = createApps({ store: memoryStore(), guard, tools, catalog: [] });
     const artifact = document({
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{
           id: "root",

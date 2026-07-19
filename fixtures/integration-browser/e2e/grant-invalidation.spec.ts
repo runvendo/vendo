@@ -6,6 +6,10 @@ import { resolve } from "node:path";
 import { expect, test, type APIRequestContext, type Locator } from "@playwright/test";
 
 const TOOL = "host_invoices_delete";
+// ENG-216 — the approval card aria-label is the humanized title
+// (humanizeToolName("host_invoices_delete")); the Activity panel still shows the
+// raw slug, so `TOOL` stays for the wire script and the Activity-row filter.
+const TOOL_LABEL = "Invoices delete";
 const FIRST = "inv_0006";
 const SECOND = "inv_0005";
 const THREAD = "thr_eng_261_browser";
@@ -45,7 +49,7 @@ test("descriptor drift explains the replacement approval and Activity event", as
   await composer.fill(`Delete invoice ${FIRST}`);
   await composer.press("Enter");
 
-  const firstApproval = page.getByRole("article", { name: `Approval for ${TOOL}` });
+  const firstApproval = page.getByRole("article", { name: `Approval for ${TOOL_LABEL}` });
   await expect(firstApproval).toBeVisible();
   await firstApproval.getByText("Remember this decision").click();
   await firstApproval.getByRole("checkbox", { name: /Create a reusable grant/i }).check();
@@ -61,7 +65,7 @@ test("descriptor drift explains the replacement approval and Activity event", as
 
   await composer.fill(`Delete invoice ${SECOND}`);
   await composer.press("Enter");
-  const replacement = page.getByRole("article", { name: `Approval for ${TOOL}` });
+  const replacement = page.getByRole("article", { name: `Approval for ${TOOL_LABEL}` });
   await expect(replacement.getByRole("note", { name: "Previous permission invalidated" })).toContainText(
     "This tool changed since you approved it on",
   );
@@ -87,13 +91,16 @@ test("descriptor drift explains the replacement approval and Activity event", as
     expect(committedThreadId).toBeTruthy();
   }).toPass({ timeout: 10_000 });
   await page.goto(`/?thread=${committedThreadId}&user=user_bob`);
-  const committedApproval = page.getByRole("article", { name: `Approval for ${TOOL}` });
+  const committedApproval = page.getByRole("article", { name: `Approval for ${TOOL_LABEL}` });
   await expect(committedApproval.getByRole("note", { name: "Previous permission invalidated" })).toBeVisible();
   await retain(committedApproval, "approval-card-invalidated-grant.png");
 
   const activity = page.getByRole("region", { name: "Activity" });
-  const event = activity.getByRole("row").filter({ hasText: "policy-decision" })
-    .filter({ hasText: TOOL }).filter({ hasText: "pending-approval" });
+  // The rebuilt activity panel (ENG-224) speaks in humanized labels: the kind
+  // reads "Policy", the action names the humanized tool, and the outcome reads
+  // "Awaiting approval" rather than the raw wire enums.
+  const event = activity.getByRole("row").filter({ hasText: "Policy" })
+    .filter({ hasText: TOOL_LABEL }).filter({ hasText: "Awaiting approval" });
   await expect(event).toBeVisible();
   await retain(activity, "activity-grant-invalidated-event.png");
 });

@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "postEmailNewsletter",
+      "method": "POST",
+      "path": "/api/email/newsletter",
+      "risk": "write"
+    },
+    {
+      "name": "getOg",
+      "method": "GET",
+      "path": "/api/og",
+      "risk": "read"
+    },
+    {
+      "name": "getRevalidate",
+      "method": "GET",
+      "path": "/api/revalidate",
+      "risk": "read"
+    },
+    {
+      "name": "postRevalidateTag",
+      "method": "POST",
+      "path": "/api/revalidate/{tag}",
+      "risk": "write"
+    },
+    {
+      "name": "getUploadthing",
+      "method": "GET",
+      "path": "/api/uploadthing",
+      "risk": "read"
+    },
+    {
+      "name": "postUploadthing",
+      "method": "POST",
+      "path": "/api/uploadthing",
+      "risk": "write"
+    },
+    {
+      "name": "postWebhooksStripe",
+      "method": "POST",
+      "path": "/api/webhooks/stripe",
+      "risk": "write"
+    }
+  ]
+}
