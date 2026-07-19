@@ -671,11 +671,16 @@ const catalogIssues = async (
       }
     } else if (node.source === "generated" && !generatedNames.has(node.component)) {
       issues.push(`node "${node.id}" references generated component "${node.component}" without source`);
-    } else if (node.source === undefined
-      && !hostNames.has(node.component)
-      && !reserved.has(node.component)
-      && !generatedNames.has(node.component)) {
-      issues.push(`node "${node.id}" references unknown component "${node.component}"`);
+    } else if (node.source === undefined) {
+      // Legacy/direct trees can omit source; the renderer resolves the name to
+      // a prewired primitive first, so a reserved name here gets the same
+      // prop-name gate as an explicit source:"prewired" node — otherwise a
+      // stored tree could still ship an ignored prop (e.g. Table.data).
+      if (reserved.has(node.component)) {
+        issues.push(...prewiredPropsIssues(node));
+      } else if (!hostNames.has(node.component) && !generatedNames.has(node.component)) {
+        issues.push(`node "${node.id}" references unknown component "${node.component}"`);
+      }
     }
   }
   return issues;
@@ -804,12 +809,24 @@ const validateEditedApp = async (
   const treeValidation = validateTreeV2(app.tree);
   if (!treeValidation.ok) return [treeValidation.error.message];
   const sourceTreeValidation = validateTreeV2(source.tree);
+  // Filter EVERY per-node check against the pre-existing app the same way, so
+  // an edit that doesn't touch a stale node (a legacy Table.data prop, an
+  // already-dead button) is never blocked by that node's issue — only issues
+  // the edit newly introduces surface. Ids are stable across an edit, so a
+  // carried-over issue is a byte-identical string.
   const sourceRenderIssues = sourceTreeValidation.ok
     ? new Set(rootedRenderIssues(sourceTreeValidation.tree))
     : new Set<string>();
+  const sourceCatalogIssues = sourceTreeValidation.ok
+    ? new Set([
+      ...await catalogIssues(sourceTreeValidation.tree, source.components, deps.catalog),
+      ...actionIssues(sourceTreeValidation.tree, deps.tools),
+    ])
+    : new Set<string>();
   return [
     ...rootedRenderIssues(treeValidation.tree).filter((issue) => !sourceRenderIssues.has(issue)),
-    ...await catalogIssues(treeValidation.tree, app.components, deps.catalog),
+    ...(await catalogIssues(treeValidation.tree, app.components, deps.catalog)).filter((issue) => !sourceCatalogIssues.has(issue)),
+    ...actionIssues(treeValidation.tree, deps.tools).filter((issue) => !sourceCatalogIssues.has(issue)),
   ];
 };
 

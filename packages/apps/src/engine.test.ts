@@ -1631,6 +1631,47 @@ describe("string interpolation guard", () => {
   });
 });
 
+describe("edit path filters pre-existing catalog/action issues (fast-follow)", () => {
+  const legacyApp = (): AppDocument => ({
+    format: "vendo/app@1",
+    id: "app_legacy",
+    name: "Invoices",
+    ui: "tree",
+    tree: {
+      formatVersion: "vendo-genui/v2",
+      root: "root",
+      // `table` omits source (legacy/direct tree) and carries the now-rejected
+      // `data` prop; the renderer still resolves it to the prewired Table.
+      nodes: [
+        { id: "root", component: "Stack", source: "prewired", children: ["heading", "table"] },
+        { id: "heading", component: "Text", props: { text: "Invoices" } },
+        { id: "table", component: "Table", props: { data: [] } },
+      ],
+    },
+  } as unknown as AppDocument);
+
+  it("does not block an edit to an untouched node carrying a now-rejected prewired prop", async () => {
+    const patch = '<Edit><Set id="heading" text="Overdue invoices"/></Edit>';
+    const result = await modelEngine.edit(
+      { app: legacyApp(), instruction: "Rename the heading" },
+      { model: scriptedLanguageModel(patch), catalog } as unknown as Parameters<typeof modelEngine.edit>[1],
+    );
+    expect(result.kind).toBe("document");
+  });
+
+  it("surfaces a prewired prop issue the edit newly introduces", async () => {
+    const patch = '<Edit><Set id="heading" data="bogus"/></Edit>';
+    const result = await modelEngine.edit(
+      { app: legacyApp(), instruction: "Break the heading" },
+      { model: scriptedLanguageModel(patch, patch), catalog } as unknown as Parameters<typeof modelEngine.edit>[1],
+    );
+    expect(result.kind).toBe("failure");
+    if (result.kind === "failure") {
+      expect(result.issues.some((issue) => issue.includes('unknown prop "data"') && issue.includes("heading"))).toBe(true);
+    }
+  });
+});
+
 describe("action-wiring honesty guard", () => {
   const actionDeps = (model: unknown, tools: Array<{ name: string; description: string; risk: string }>) => ({
     model,
