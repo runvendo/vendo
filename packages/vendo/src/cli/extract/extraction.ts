@@ -152,7 +152,9 @@ export function reportApplied(input: {
   for (const missed of applied.missedSurfaces) output.log(`  missed surface (not extracted yet): ${missed}`);
 }
 
-async function askYesNo(question: string, defaultYes: boolean): Promise<boolean> {
+/** Consent-style one-line prompt — shared machinery: the AI-polish consent
+    here and init's detected-auth confirm both use it. */
+export async function askYesNo(question: string, defaultYes: boolean): Promise<boolean> {
   const prompt = createInterface({ input: stdin, output: stdout });
   try {
     const answer = (await prompt.question(`${question} ${defaultYes ? "[Y/n]" : "[y/N]"} `)).trim().toLowerCase();
