@@ -5,7 +5,7 @@
  * zero host setup.
  *
  * Onest is licensed under the SIL Open Font License 1.1
- * (Copyright 2023 The Onest Project Authors, https://github.com/tipoTHEBES/Onest);
+ * (Copyright 2021 The Onest Project Authors, https://github.com/googlefonts/onest);
  * the license text ships in packages/ui/ONEST-OFL.txt.
  *
  * Run: pnpm --filter @vendoai/ui build:onest-font
@@ -19,6 +19,9 @@ const output = resolve(packageDir, "src/chrome/onest-font.gen.ts");
 
 // Pinned Onest v9 variable-weight (100-900) subsets from Google Fonts. Pinned
 // so regeneration is deterministic; bump deliberately when the family updates.
+// Data-URI faces require the host CSP to allow font-src data: — when a strict
+// host blocks them, the chrome falls back to the system stack in
+// defaultVendoTheme (graceful; no console noise beyond the CSP report).
 const SUBSETS = [
   {
     name: "latin",
