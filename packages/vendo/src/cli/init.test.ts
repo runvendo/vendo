@@ -323,9 +323,12 @@ describe("vendo init (zero-question)", () => {
     expect(values[values.length - 1]).toBe("jwt");
     expect(askedSelects[0]!.options[1]).toMatchObject({ value: "authJs", hint: "detected next-auth" });
 
-    // clerk() is wired exactly like a detection-accept…
+    // clerk() is wired exactly like a detection-accept, with an honest
+    // lead-in: it was picked, not detected.
     const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
     expect(route).toContain("auth: clerk(),");
+    expect(route).toContain("// Selected Clerk — clerk() fills the identity seams");
+    expect(route).not.toContain("Detected");
     expect(route).toContain("docs/act-as-presets.md");
     expect(route).not.toContain("principal");
     // …plus one install hint, since @clerk/backend is not in package.json.

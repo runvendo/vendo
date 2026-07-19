@@ -228,6 +228,9 @@ type AuthPresetName = "authJs" | "clerk" | "supabase" | "auth0";
 interface AuthMatch {
   preset: AuthPresetName;
   dependency: string;
+  /** How the family was chosen: detection (default) cites the dependency it
+      found; a picker pick says so honestly — nothing was detected. */
+  source?: "picked";
 }
 
 interface AuthDetection {
@@ -290,11 +293,11 @@ type SelectAuth = (question: string, options: SelectOption[]) => Promise<string>
 /** Picker labels + the runtime package each zero-arg preset lazy-loads (the
     install hint when the picked family's SDK is absent; the preset's own
     lazy-load error already guards runtime). */
-const AUTH_FAMILY_INFO: Record<AuthPresetName, { label: string; runtime: string }> = {
-  authJs: { label: "authJs() — Auth.js / next-auth", runtime: "@auth/core" },
-  clerk: { label: "clerk() — Clerk", runtime: "@clerk/backend" },
-  supabase: { label: "supabase() — Supabase Auth", runtime: "jose" },
-  auth0: { label: "auth0() — Auth0", runtime: "jose" },
+const AUTH_FAMILY_INFO: Record<AuthPresetName, { name: string; label: string; runtime: string }> = {
+  authJs: { name: "Auth.js", label: "authJs() — Auth.js / next-auth", runtime: "@auth/core" },
+  clerk: { name: "Clerk", label: "clerk() — Clerk", runtime: "@clerk/backend" },
+  supabase: { name: "Supabase Auth", label: "supabase() — Supabase Auth", runtime: "jose" },
+  auth0: { name: "Auth0", label: "auth0() — Auth0", runtime: "jose" },
 };
 
 /** The auth picker (decline or ambiguity): none — stay anonymous — is first
@@ -334,7 +337,7 @@ async function pickScaffoldAuth(
     const preset = picked as AuthPresetName;
     const info = AUTH_FAMILY_INFO[preset];
     return {
-      wired: { preset, dependency: info.runtime },
+      wired: { preset, dependency: info.runtime, source: "picked" },
       advice: `Auth: ${preset}() wired — ${info.runtime} is not in package.json yet; install it ` +
         `(npm install ${info.runtime}) before the first authenticated run (the preset fails loud until then).`,
     };
@@ -378,9 +381,14 @@ async function resolveScaffoldAuth(
   return { wired: null, advice: authAdvisory(detection, compositionPath) };
 }
 
-/** The wired preset line plus its escape-hatch comment. */
+/** The wired preset line plus its escape-hatch comment. The lead-in stays
+    honest about how the preset got here: detection cites the found
+    dependency, a picker pick says "Selected". */
 function authConfigLines(auth: AuthMatch): string {
-  return `  // Detected ${auth.dependency} — ${auth.preset}() fills the identity seams\n` +
+  const origin = auth.source === "picked"
+    ? `Selected ${AUTH_FAMILY_INFO[auth.preset].name}`
+    : `Detected ${auth.dependency}`;
+  return `  // ${origin} — ${auth.preset}() fills the identity seams\n` +
     `  // (request→user, actAs, door OAuth); options and the per-seam escape\n` +
     `  // hatch: docs/act-as-presets.md.\n` +
     `  auth: ${auth.preset}(),\n`;
