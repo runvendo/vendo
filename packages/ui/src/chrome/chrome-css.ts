@@ -1,6 +1,11 @@
+import { ONEST_FONT_CSS } from "./onest-font.gen.js";
+
 /** The ported Vendo shell stylesheet (design system). Generated from the
- *  wave-2 shell; tokens bridged to the VendoTheme contract. */
-export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell design, ported onto the frozen
+ *  wave-2 shell; tokens bridged to the VendoTheme contract. Onest (the brand
+ *  font, defaultVendoTheme's first family) rides along as inlined @font-face
+ *  data so the unthemed default look renders it with zero host setup — hosts
+ *  that set their own fontFamily simply never reference it. */
+export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2 Vendo shell design, ported onto the frozen
    VendoTheme contract. Every aesthetic token below is DERIVED from the contract
    brand tokens (--vendo-color-*, --vendo-radius-*, --vendo-font-*) that
    themeCssVariables() emits, so the host's brand still drives everything while
