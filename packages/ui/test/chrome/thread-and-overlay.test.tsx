@@ -65,7 +65,7 @@ describe("VendoThread and VendoOverlay exports", () => {
 
   it("opens as a modal, traps focus, closes on Escape, and restores launcher focus", async () => {
     render(<VendoProvider client={client}><VendoOverlay /></VendoProvider>);
-    const launcher = screen.getByRole("button", { name: "Vendo" });
+    const launcher = screen.getByRole("button", { name: "AI agent" });
     launcher.focus();
     fireEvent.click(launcher);
     const dialog = screen.getByRole("dialog", { name: "Vendo assistant" });

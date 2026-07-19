@@ -12,7 +12,8 @@ function renderOverlay(ui: React.ReactElement = <VendoOverlay />) {
 }
 
 const caption = () => screen.queryByText("You can reshape this app");
-const launcher = () => screen.getByRole("button", { name: /vendo/i });
+// The launcher is white-label now (ui-lane-entry pick L-B): default "AI agent".
+const launcher = () => screen.getByRole("button", { name: "AI agent" });
 
 describe("whisper launcher (ui-usage-dx §6 — ambient discoverability)", () => {
   beforeEach(() => {
