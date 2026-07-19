@@ -1,7 +1,12 @@
 import { VendoError, type AppDocument, type RunContext, type SecretsProvider } from "@vendoai/core";
 import { mintRunToken, type RunTokenSecret } from "./run-token.js";
 import type { RunTokenGate } from "./run-token-gate.js";
-import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
+import type { SandboxAdapter } from "./sandbox.js";
+import {
+  toV1SandboxAdapter,
+  type V1SandboxAdapter,
+  type V1SandboxMachine,
+} from "./sandbox-v1-compat.js";
 import { FETCH_SHIM_PATH, FETCH_SHIM_SOURCE } from "./scaffold/fetch-shim.js";
 
 const RUN_TTL_MS = 15 * 60 * 1_000;
@@ -23,12 +28,12 @@ export interface MachineAuthorization {
 
 /** 06-apps §4.2 — live machine plus fresh authorization claims for one operation. */
 export interface MachineRun extends MachineAuthorization {
-  machine: SandboxMachine;
+  machine: V1SandboxMachine;
 }
 
 /** 06-apps §4.2 — dependencies for an isolated createApps() machine cache. */
 export interface MachineSessionsConfig {
-  sandbox?: SandboxAdapter;
+  sandbox?: SandboxAdapter | V1SandboxAdapter;
   proxyUrl?: string;
   tokenSecret: RunTokenSecret;
   /** ENG-251 — the shared anti-replay gate the proxy also consults. When a live
@@ -61,7 +66,7 @@ export interface MachineSessionsConfig {
 /** 06-apps §4.2 — cache, boot, and resume live machines by app id. */
 export interface MachineSessions {
   available(): boolean;
-  peek(appId: string): SandboxMachine | undefined;
+  peek(appId: string): V1SandboxMachine | undefined;
   isWaking(appId: string): boolean;
   mintRun(app: AppDocument, ctx: RunContext): Promise<MachineAuthorization>;
   wake(app: AppDocument, ctx: RunContext, authorization: MachineAuthorization): void;
@@ -95,19 +100,21 @@ export interface MachineSessions {
 
 /** 06-apps §4.2 and block-plan decision 5. */
 export const createMachineSessions = (config: MachineSessionsConfig): MachineSessions => {
-  const live = new Map<string, SandboxMachine>();
-  const waking = new Map<string, Promise<SandboxMachine>>();
+  const live = new Map<string, V1SandboxMachine>();
+  const waking = new Map<string, Promise<V1SandboxMachine>>();
   // ENG-251 — the jti carried in each live machine's env token, so eviction can
   // revoke exactly that token. Set only when THIS sessions cache boots a fresh
   // machine (adapter.create); a snapshot resume keeps its snapshot-time token,
   // whose jti we never saw, so there is nothing here to burn for it.
   const envJti = new Map<string, string>();
 
-  const requireAdapter = (): SandboxAdapter => {
+  const requireAdapter = (): V1SandboxAdapter => {
     if (config.sandbox === undefined) {
       throw new VendoError("sandbox-unavailable", "sandbox execution is unavailable");
     }
-    return config.sandbox;
+    // execution-v2 transition: the dying v1 paths below drive any adapter —
+    // v2-native or v1-native — through the archived v1 seam (see sandbox-v1-compat.ts).
+    return toV1SandboxAdapter(config.sandbox);
   };
 
   const newRun = async (app: AppDocument, ctx: RunContext): Promise<MachineAuthorization> => {
@@ -179,7 +186,7 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     app: AppDocument,
     ctx: RunContext,
     auth: { runToken: string; jti: string },
-  ): Promise<SandboxMachine> => {
+  ): Promise<V1SandboxMachine> => {
     const adapter = requireAdapter();
     const existing = live.get(app.id);
     if (existing !== undefined) return existing;

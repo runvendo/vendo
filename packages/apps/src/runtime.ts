@@ -56,7 +56,7 @@ import { createSecretExposure, type SecretExposureGrant } from "./secret-exposur
 import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
 import { appVersionHash } from "./version-hash.js";
 import type { SandboxAdapter } from "./sandbox.js";
-import type { SandboxMachine } from "./sandbox.js";
+import { toV1SandboxAdapter, type V1SandboxAdapter, type V1SandboxMachine } from "./sandbox-v1-compat.js";
 import { FETCH_SHIM_BOOT_PRELUDE, FETCH_SHIM_PATH, FETCH_SHIM_SOURCE } from "./scaffold/fetch-shim.js";
 import { servedAppScaffold } from "./scaffold/index.js";
 import type { IpResolver } from "./ssrf.js";
@@ -66,7 +66,7 @@ export interface AppsConfig {
   store: StoreAdapter;
   guard: Guard;
   tools: ToolRegistry;
-  sandbox?: SandboxAdapter;
+  sandbox?: SandboxAdapter | V1SandboxAdapter;
   model?: LanguageModel;
   /** v2 spec §4 — tier-0 paint lane knob, passed to the generation engine.
    *  `model` is the no-think switch (a thinking-disabled model instance);
@@ -557,7 +557,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   ];
 
   const syntaxCheck = async (
-    machine: SandboxMachine,
+    machine: V1SandboxMachine,
     file: CodeFileEdit,
   ): Promise<string | undefined> => {
     if (!/\.[cm]?[jt]s$/i.test(file.path)) return undefined;
@@ -878,7 +878,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         forkedFrom: source.id,
       };
       if (source.server !== undefined && config.sandbox !== undefined) {
-        const machine = await config.sandbox.resume(source.server);
+        const machine = await toV1SandboxAdapter(config.sandbox).resume(source.server);
         try {
           fork.server = await machine.snapshot();
         } finally {

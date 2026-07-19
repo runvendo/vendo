@@ -12,7 +12,8 @@ import { unzipSync, zipSync, type Zippable } from "fflate";
 import type { MachineSessions } from "./machine.js";
 import { appRecordInput } from "./persistence.js";
 import { assertPinsExportable, type PinBaseline } from "./pins.js";
-import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
+import type { SandboxAdapter } from "./sandbox.js";
+import { toV1SandboxAdapter, type V1SandboxAdapter, type V1SandboxMachine } from "./sandbox-v1-compat.js";
 import { FETCH_SHIM_PATH } from "./scaffold/fetch-shim.js";
 
 const encoder = new TextEncoder();
@@ -112,7 +113,7 @@ const excludedMachinePath = (path: string): boolean => {
 };
 
 const collectMachineFiles = async (
-  machine: SandboxMachine,
+  machine: V1SandboxMachine,
 ): Promise<Record<string, Uint8Array>> => {
   const files: Record<string, Uint8Array> = {};
   const visitedDirectories = new Set<string>();
@@ -206,7 +207,7 @@ const parseArchive = (source: Uint8Array): ParsedArchive => {
 export interface AppInterchangeDependencies {
   store: StoreAdapter;
   guard: Guard;
-  sandbox?: SandboxAdapter;
+  sandbox?: SandboxAdapter | V1SandboxAdapter;
   /** Shared machine cache — import provisions its rebuilt snapshot through here
    * so it inherits the create/edit §4.2 run environment (ENG-347). */
   machines: MachineSessions;
@@ -256,7 +257,7 @@ export const createAppInterchange = (
         if (dependencies.sandbox === undefined) {
           throw new VendoError("sandbox-unavailable", "app snapshot cannot be exported without a sandbox adapter");
         }
-        const machine = await dependencies.sandbox.resume(app.server);
+        const machine = await toV1SandboxAdapter(dependencies.sandbox).resume(app.server);
         try {
           const files = await collectMachineFiles(machine);
           Object.assign(archive, Object.keys(files).length === 0

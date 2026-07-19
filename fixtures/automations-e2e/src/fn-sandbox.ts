@@ -14,7 +14,9 @@
  * body is a success envelope (`{ result }` or `{ ui }`); a non-2xx with
  * `{ error: { code, message } }` is the machine's failure envelope.
  */
-import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
+// execution-v2 transition: this fixture still speaks the archived v1 machine
+// surface the automations fn: path consumes (compat until Wave 2 Lane D).
+import type { V1SandboxAdapter, V1SandboxMachine } from "@vendoai/apps";
 import type { Json } from "@vendoai/core";
 
 export interface FnResponse {
@@ -39,9 +41,9 @@ const parseArgs = (body: Uint8Array | string | undefined): Json => {
 };
 
 /** Build a SandboxAdapter whose machine dispatches POST /fn/<name> to `handler`. */
-export function fnSandbox(handler: FnHandler): SandboxAdapter {
+export function fnSandbox(handler: FnHandler): V1SandboxAdapter {
   let counter = 0;
-  const makeMachine = (): SandboxMachine => {
+  const makeMachine = (): V1SandboxMachine => {
     const id = `fake_${counter++}`;
     let stopped = false;
     return {

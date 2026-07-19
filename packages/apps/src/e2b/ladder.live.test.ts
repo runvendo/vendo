@@ -8,5 +8,5 @@ describe.skipIf(!process.env.E2B_API_KEY)("e2b live lanes", () => {
   ladderLiveLanes("real E2B", () => e2bSandbox({
     apiKey: process.env.E2B_API_KEY,
     timeoutMs: 120_000,
-  }), { serverRefPattern: /^e2b:v1:/ });
+  }), { serverRefPattern: /^e2b:v2:/ });
 });

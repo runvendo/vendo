@@ -1,5 +1,8 @@
 import { VendoError, type VendoErrorCode } from "@vendoai/core";
-import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
+// execution-v2 transition: cloudSandbox still speaks the archived v1 seam
+// end-to-end (console wire included); the Wave 5 Cloud lane ports it to the
+// v2 seam. Until then it rides the deprecated compat surface.
+import type { V1SandboxAdapter, V1SandboxMachine } from "@vendoai/apps";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
 
 /** The console mounts the managed-sandbox surface here
@@ -94,7 +97,7 @@ async function raiseCloudError(response: Response): Promise<never> {
  * Cloned from cloudConnections' shape: behavior comes ONLY from constructor
  * arguments (adapter rule — see selectSandbox in server.ts); the adapter
  * never reads the environment. */
-export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
+export function cloudSandbox(options: CloudSandboxOptions): V1SandboxAdapter {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchImpl = options.fetch ?? globalThis.fetch;
@@ -131,7 +134,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
     }
   };
 
-  const wrap = (handle: { id: string; url: string }): SandboxMachine => {
+  const wrap = (handle: { id: string; url: string }): V1SandboxMachine => {
     const prefix = `/${encodeURIComponent(handle.id)}`;
     return {
       id: handle.id,
