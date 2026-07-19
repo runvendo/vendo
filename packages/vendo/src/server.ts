@@ -7,13 +7,30 @@ import {
 } from "@vendoai/actions";
 import { createAgent, type VendoAgent } from "@vendoai/agent";
 import {
+  buildEnv,
   createApps,
+  createAppTokens,
   pinBaselineSchema,
   type AppsConfig,
   type AppsRuntime,
   type PinBaseline,
   type SandboxAdapter,
   type V1SandboxAdapter,
+} from "@vendoai/apps";
+// execution-v2 skin contract (Lane C): the manifest gate and the box env
+// assembly ride the server surface so hosts and later waves (broker, egress)
+// reach them without installing @vendoai/apps directly.
+export {
+  buildEnv,
+  createAppTokens,
+  parseVendoManifest,
+  vendoManifestSchema,
+  type AppTokens,
+  type BuildEnvContext,
+  type BuiltBoxEnv,
+  type InferenceResolver,
+  type VendoManifest,
+  type VendoManifestSchedule,
 } from "@vendoai/apps";
 import { e2bInstalled, e2bSandbox } from "@vendoai/apps/e2b";
 import {
@@ -25,6 +42,7 @@ import {
   descriptorHash,
   vendoThemeSchema,
   type ActAs,
+  type AppDocument,
   type ComponentCatalog,
   type ComponentRegistry,
   type Json,
@@ -150,6 +168,7 @@ import {
   type WireDeps,
 } from "./wire/shared.js";
 import { appRoutes } from "./wire/apps.js";
+import { boxRoutes, fnProxyRoutes } from "./wire/box.js";
 import { approvalRoutes, grantRoutes } from "./wire/approvals.js";
 import { automationRoutes, runRoutes } from "./wire/automations.js";
 import { connectionRoutes } from "./wire/connections.js";
@@ -612,7 +631,11 @@ function isDoorPath(pathname: string): boolean {
 
 function jsonMutationRequired(request: Request, path: string): boolean {
   if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return false;
-  if (path === "/apps/import" || path === "/tick" || path.startsWith("/webhooks/")) return false;
+  // /box/ is the app-token bearer surface (execution-v2 Lane C): no cookies,
+  // no ambient credentials, curl-able from any language inside the box — so
+  // the CSRF json gate doesn't apply; JSON-bodied box routes validate their
+  // own content-type like the webhook surface does.
+  if (path === "/apps/import" || path === "/tick" || path.startsWith("/webhooks/") || path.startsWith("/box/")) return false;
   return true;
 }
 
@@ -642,11 +665,17 @@ const wireRoutes: readonly RouteEntry[] = [
   ...devRoutes,
   ...doctorRoutes,
   ...systemRoutes,
+  // execution-v2 Lane C: the box callback surface is a machine surface like
+  // webhooks/tick — raw prefix match, bearer-authenticated, ahead of the user
+  // surfaces; the fn proxy sits just before the grouped /apps arm so
+  // /apps/:id/fn/:name resolves here, not through the grouped fall-through.
+  ...boxRoutes,
   ...threadRoutes,
   ...approvalRoutes,
   ...connectionRoutes,
   ...grantRoutes,
   ...orgsRoutes,
+  ...fnProxyRoutes,
   ...appRoutes,
   ...automationRoutes,
   ...runRoutes,
@@ -958,6 +987,37 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     runtimeCatalogFromJson(dotVendoFile("catalog.json")),
     normalizeCatalogConfig(config.catalog),
   );
+  // execution-v2 Lane C — the per-app box bearer store (hash rows are the
+  // authority) shared by the machine-env assembler below (mint at provision)
+  // and the wire's /box verification.
+  const appTokens = createAppTokens(store);
+  // The box env assembler the machine lifecycle calls at provision: rotate the
+  // app token, compose the callback doors from the operator-set public origin
+  // (the wire lives under it at BASE_PATH), and inject granted secrets —
+  // grant-state wiring is the Wave-2 secrets/egress lane, so nothing is
+  // granted yet and buildEnv injects no secret values.
+  const machineEnv = async (app: AppDocument): Promise<Record<string, string>> => {
+    const record = await store.records("vendo_apps").get(app.id);
+    const subject = record?.refs?.["subject"];
+    if (typeof subject !== "string") {
+      throw new VendoError("not-found", `app not found: ${app.id}`);
+    }
+    if (configuredBaseUrl === undefined) {
+      throw new VendoError(
+        "validation",
+        "machine provisioning requires VENDO_BASE_URL — the box's callback URLs must be this deployment's public origin",
+      );
+    }
+    const boxBase = `${configuredBaseUrl.replace(/\/+$/, "")}${BASE_PATH}/box`;
+    const built = await buildEnv(app, {
+      granted: new Set<string>(),
+      secrets: config.secrets ?? envSecrets(),
+      storeUrl: boxBase,
+      hostUrl: boxBase,
+      appToken: await appTokens.mint(app.id, subject),
+    });
+    return built.env;
+  };
   const apps = createApps({
     store,
     guard,
@@ -970,6 +1030,14 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(designRules === undefined ? {} : { designRules }),
     secrets: config.secrets ?? envSecrets(),
     ...(sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter }),
+    // execution-v2 — the machine lifecycle's seams: the selected adapter when
+    // it speaks the canonical v2 seam (destroy-by-ref is the marker a
+    // @deprecated V1SandboxAdapter lacks — a v1-only custom adapter gets no
+    // machine lifecycle) and Lane C's env assembly.
+    machine: {
+      ...(sandbox.adapter !== undefined && "destroy" in sandbox.adapter ? { sandbox: sandbox.adapter } : {}),
+      buildEnv: machineEnv,
+    },
     ...(environment("VENDO_PROXY_URL") === undefined ? {} : { proxyUrl: environment("VENDO_PROXY_URL") }),
   });
   resolveAppToolRisk = apps.agentToolRisk;
@@ -1138,6 +1206,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     agent,
     guard,
     apps,
+    // execution-v2 Lane C — the /box surfaces: tool calls through the SAME
+    // guard binding, bearer verification over the composed store.
+    tools: boundTools,
+    appTokens,
     automations,
     connections,
     sandbox: sandbox.venue,
@@ -1193,15 +1265,18 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     reaches `vendo.handler`, so dropping it would turn e.g. `PATCH
     /api/vendo/orgs/:id/members/:subject` into a framework 405 instead of
     the wire's own `cloud-required` seam (the org routes matched ANY
-    method — orgsRoutes in wire/misc.ts). */
+    method — orgsRoutes in wire/misc.ts). PUT carries the box callback
+    surface's durable-row writes (execution-v2 Lane C:
+    PUT /api/vendo/box/rows/:collection/:id). */
 export function nextVendoHandler(vendo: Vendo): {
   GET(request: Request): Promise<Response>;
   POST(request: Request): Promise<Response>;
+  PUT(request: Request): Promise<Response>;
   PATCH(request: Request): Promise<Response>;
   DELETE(request: Request): Promise<Response>;
 } {
   const handle = (request: Request): Promise<Response> => vendo.handler(request);
-  return { GET: handle, POST: handle, PATCH: handle, DELETE: handle };
+  return { GET: handle, POST: handle, PUT: handle, PATCH: handle, DELETE: handle };
 }
 
 /** 10-mcp §5 — adapt the fetch handler to a Next.js `app/.well-known/[...vendo]/

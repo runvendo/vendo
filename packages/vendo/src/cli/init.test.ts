@@ -751,7 +751,7 @@ describe("vendo init (zero-question)", () => {
     await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
       'import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";\n' +
       "const vendo = createVendo({ principal: async () => null });\n" +
-      "export const { GET, POST, DELETE } = nextVendoHandler(vendo);\n");
+      "export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);\n");
     const sink = output();
     expect(await run(root, sink)).toBe(0);
     await expect(readFile(join(root, "vendo", "registry.tsx"))).rejects.toMatchObject({ code: "ENOENT" });

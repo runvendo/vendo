@@ -24,6 +24,7 @@ import { join } from "node:path";
 import { inject } from "vitest";
 import { zipSync } from "fflate";
 import type { Connector } from "@vendoai/actions";
+import type { SandboxAdapter } from "@vendoai/apps";
 import type { AppDocument, Principal, ToolRegistry } from "@vendoai/core";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import { createStore, type VendoStore } from "@vendoai/store";
@@ -210,6 +211,9 @@ export interface StackOptions {
   /** External connectors composed into the umbrella (04-actions §3) — the
    * connected-accounts journeys pass a composioConnector aimed at a stub. */
   connectors?: Connector[];
+  /** A sandbox adapter composed into the umbrella (explicit adapter always
+   * wins, the adapter rule) — the machine-skin journey passes a fake box. */
+  sandbox?: SandboxAdapter;
 }
 
 /** The door mounted alongside the wire when `createStack({ mcp: true })`. */
@@ -268,6 +272,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     policy: { file: ".vendo/policy.json" },
     ...(options.telemetry === true ? { telemetry: true } : {}),
     ...(options.connectors === undefined ? {} : { connectors: options.connectors }),
+    ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
   });
 
   // J6 — the MCP door, composed from the umbrella's OWN parts (the hookup note's

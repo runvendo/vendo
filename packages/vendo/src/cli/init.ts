@@ -466,7 +466,7 @@ function routeSource(options: { serverActions: boolean; auth: AuthMatch | null; 
     `  catalog: registry,\n` +
     (options.serverActions ? `  serverActions,\n` : "") +
     `});\n\n` +
-    `export const { GET, POST, DELETE } = nextVendoHandler(vendo);\n`;
+    `export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);\n`;
 }
 
 /** Best-effort detection of the host's registrable server actions for the
