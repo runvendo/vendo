@@ -45,7 +45,7 @@ export interface CardProps {
 /** Branded content container; remains in the host realm as a prewired primitive. */
 export function Card({ title, description, tone = "default", children }: PropsWithChildren<CardProps>) {
   const toneColor = tone === "accent"
-    ? "var(--vendo-color-accent, #2f5af5)"
+    ? "var(--vendo-color-accent, #111111)"
     : tone === "danger"
       ? "var(--vendo-color-danger, #c62f2f)"
       : "var(--vendo-color-border, #e3e3e8)";
@@ -104,7 +104,7 @@ export function Button({ label, variant = "primary", disabled = false, onClick, 
   const primary = variant === "primary";
   const danger = variant === "danger";
   const background = primary
-    ? "var(--vendo-color-accent, #2f5af5)"
+    ? "var(--vendo-color-accent, #111111)"
     : danger
       ? "var(--vendo-color-danger, #c62f2f)"
       : "var(--vendo-color-surface, #ffffff)";
@@ -403,14 +403,14 @@ export function Badge({ label, tone = "neutral", children }: PropsWithChildren<B
       ? "var(--vendo-color-danger, #c62f2f)"
       : "var(--vendo-color-text, #1a1a1e)";
   const background = tone === "accent"
-    ? "var(--vendo-color-accent, #2f5af5)"
+    ? "var(--vendo-color-accent, #111111)"
     : tone === "danger"
       ? "color-mix(in srgb, var(--vendo-color-danger, #c62f2f) 11%, var(--vendo-color-surface, #ffffff))"
       : "color-mix(in srgb, var(--vendo-color-muted, #6b6b76) 10%, var(--vendo-color-surface, #ffffff))";
   const border = tone === "danger"
     ? "color-mix(in srgb, var(--vendo-color-danger, #c62f2f) 30%, var(--vendo-color-border, #e3e3e8))"
     : tone === "accent"
-      ? "var(--vendo-color-accent, #2f5af5)"
+      ? "var(--vendo-color-accent, #111111)"
       : "var(--vendo-color-border, #e3e3e8)";
   return (
     <span
@@ -449,7 +449,7 @@ export interface StatProps {
 /** Branded metric summary with optional accent or danger emphasis. */
 export function Stat({ label, value, trend, prefix, suffix, tone = "default" }: StatProps) {
   const emphasis = tone === "accent"
-    ? "var(--vendo-color-accent, #2f5af5)"
+    ? "var(--vendo-color-accent, #111111)"
     : tone === "danger"
       ? "var(--vendo-color-danger, #c62f2f)"
       : "var(--vendo-color-text, #1a1a1e)";
