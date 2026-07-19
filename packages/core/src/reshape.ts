@@ -6,8 +6,9 @@ import { isPlainObject } from "./tree.js";
  * v2 spec §3 (docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md) —
  * the bounded reshape vocabulary: a small, pure, non-Turing projection
  * language that lets the model adapt `{ month, revenue }` to
- * `{ label, value }` WITHOUT a code island. Exactly the spec's five families:
- * pick, field-rename, map (asPoints), format, and aggregates.
+ * `{ label, value }` WITHOUT a code island. Exactly the spec's families:
+ * pick, field-rename, map (asPoints/asOptions), format, template (bounded
+ * object→string interpolation for display slots), and aggregates.
  *
  * Three consumers share this module:
  * - `validateTreeV2` gates the canonical form via {@link findInvalidReshape}
@@ -32,6 +33,7 @@ export const RESHAPE_OPS = [
   "asPoints",
   "asOptions",
   "format",
+  "template",
   "sum",
   "avg",
   "min",
@@ -59,6 +61,7 @@ const OP_ARITY: Record<ReshapeOp, readonly [number, number]> = {
   asPoints: [2, 2],
   asOptions: [2, 2],
   format: [1, 2],
+  template: [1, 2],
   sum: [1, 1],
   avg: [1, 1],
   min: [1, 1],
@@ -67,6 +70,30 @@ const OP_ARITY: Record<ReshapeOp, readonly [number, number]> = {
 };
 
 const AGGREGATE_OPS: ReadonlySet<ReshapeOp> = new Set(["sum", "avg", "min", "max"]);
+
+/** template's placeholder grammar: `{field}` or `{field.nested.path}` —
+ *  identifier segments only (the wire's identifier grammar), resolved within
+ *  the row/object the step runs on. */
+const TEMPLATE_PLACEHOLDER = /\{([^{}]*)\}/g;
+const TEMPLATE_PATH = /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/;
+
+/** The dot-paths a template pattern references, or null when the pattern has
+ *  no placeholders, a malformed one, or stray braces outside placeholders
+ *  (the closed-grammar violation — a placeholder-free template would be
+ *  hardcoded display data, and a leftover brace would re-render the exact
+ *  raw-braces output this op exists to prevent). */
+const templatePaths = (pattern: string): string[][] | null => {
+  const paths: string[][] = [];
+  for (const match of pattern.matchAll(TEMPLATE_PLACEHOLDER)) {
+    const path = match[1] as string;
+    if (!TEMPLATE_PATH.test(path)) return null;
+    paths.push(path.split("."));
+  }
+  if (paths.length === 0) return null;
+  const residue = pattern.replace(TEMPLATE_PLACEHOLDER, "");
+  if (residue.includes("{") || residue.includes("}")) return null;
+  return paths;
+};
 
 /** Validates ONE step's structure against the closed registry. Returns a
  *  violation message or null. */
@@ -88,6 +115,9 @@ const invalidStep = (value: unknown): string | null => {
   }
   if (op === "format" && !FORMAT_KIND_SET.has(args[args.length - 1] as string)) {
     return `reshape op "format" kind must be one of ${FORMAT_KINDS.join(", ")}`;
+  }
+  if (op === "template" && templatePaths(args[args.length - 1] as string) === null) {
+    return 'reshape op "template" pattern must contain {field} or {field.nested} placeholders';
   }
   return null;
 };
@@ -251,6 +281,81 @@ const applyStep = (value: Json, step: ReshapeStep): ReshapeResult => {
       return mismatch(`asOptions fields ${missing.map((field) => `"${field}"`).join(", ")} are absent from one or more rows`);
     }
     return { ok: true, value: value.map((row) => ({ value: row[valueField], label: row[labelField] })) };
+  }
+  if (op === "template") {
+    const pattern = args[args.length - 1] as string;
+    const paths = templatePaths(pattern) ?? [];
+    const resolvePath = (row: Record<string, unknown>, path: readonly string[]): unknown => {
+      let current: unknown = row;
+      for (const segment of path) {
+        if (!isPlainObject(current)) return undefined;
+        current = (current as Record<string, unknown>)[segment];
+      }
+      return current;
+    };
+    /** Interpolate one row/object; a placeholder resolving to an object or
+     *  array is the raw-braces class the op exists to prevent — a mismatch,
+     *  never a stringified object. */
+    const render = (row: Record<string, unknown>): { text: string } | { bad: string } => {
+      let bad: string | null = null;
+      const text = pattern.replace(TEMPLATE_PLACEHOLDER, (whole, raw: string) => {
+        const resolved = resolvePath(row, raw.split("."));
+        if (resolved === null || resolved === undefined) return "";
+        if (typeof resolved === "object") {
+          bad ??= whole;
+          return "";
+        }
+        return String(resolved);
+      });
+      return bad === null ? { text } : { bad };
+    };
+    const nonScalar = (bad: string): ReshapeResult =>
+      mismatch(`template placeholder ${bad} does not resolve to a scalar — reference a nested field (e.g. ${bad.slice(0, -1)}.name})`);
+    const roots = [...new Set(paths.map((path) => path[0] as string))];
+    const absentFrom = (record: Record<string, unknown>): string[] =>
+      roots.filter((root) => !Object.prototype.hasOwnProperty.call(record, root));
+    if (args.length === 1) {
+      if (!isPlainObject(value)) {
+        return mismatch("template(pattern) needs a bare object; over rows use template(field, pattern)");
+      }
+      const record = value as Record<string, unknown>;
+      const absent = absentFrom(record);
+      if (absent.length > 0) {
+        return mismatch(`template placeholders reference ${absent.map((root) => `"${root}"`).join(", ")}, absent`);
+      }
+      const rendered = render(record);
+      return "bad" in rendered ? nonScalar(rendered.bad) : { ok: true, value: rendered.text };
+    }
+    const field = args[0] as string;
+    const templateRow = (row: Record<string, unknown>): ReshapeResult => {
+      const rendered = render(row);
+      if ("bad" in rendered) return nonScalar(rendered.bad);
+      const next = { ...row };
+      defineValue(next, field, rendered.text);
+      return { ok: true, value: next as Json };
+    };
+    if (isRowArray(value)) {
+      const absent = roots.filter((root) => !fieldPresent(value, root));
+      if (absent.length > 0) {
+        return mismatch(`template placeholders reference ${absent.map((root) => `"${root}"`).join(", ")}, absent from the rows`);
+      }
+      const out: Json[] = [];
+      for (const row of value) {
+        const result = templateRow(row);
+        if (!result.ok) return result;
+        out.push(result.value as Json);
+      }
+      return { ok: true, value: out };
+    }
+    if (isPlainObject(value)) {
+      const record = value as Record<string, unknown>;
+      const absent = absentFrom(record);
+      if (absent.length > 0) {
+        return mismatch(`template placeholders reference ${absent.map((root) => `"${root}"`).join(", ")}, absent`);
+      }
+      return templateRow(record);
+    }
+    return mismatch("template needs an object or an array of rows");
   }
   if (op === "format") {
     if (args.length === 1) {
@@ -433,6 +538,51 @@ export function reshapeShape(shape: ShapeType, step: ReshapeStep): ReshapeShapeR
       || (kind === "date" ? shape.kind === "string" || shape.kind === "number" : shape.kind === "number");
     if (!formattable) return shapeError(`format "${kind}" cannot format a ${shape.kind} value`);
     return { ok: true, shape: STRING_SHAPE };
+  }
+
+  if (op === "template") {
+    const paths = templatePaths(args[args.length - 1] as string) ?? [];
+    /** Walks each placeholder path through the row/object shape: an absent
+     *  root is the repair-carrying miss; an object/array leaf is the
+     *  raw-braces class caught at compile. `json` regions stay defensive. */
+    const placeholderMiss = (owner: ShapeType): ReshapeShapeResult | null => {
+      for (const path of paths) {
+        const at = shapeAtPointer(owner, `/${path.join("/")}`);
+        if (at === undefined) {
+          return shapeError(
+            `template placeholder "{${path.join(".")}}" is absent from the response shape`,
+            [path[0] as string],
+            owner.kind === "object" ? Object.keys(owner.fields) : undefined,
+          );
+        }
+        if (at.kind === "object" || at.kind === "array") {
+          return shapeError(`template placeholder "{${path.join(".")}}" is an ${at.kind}, not a scalar — reference a nested field (e.g. {${path.join(".")}.name})`);
+        }
+      }
+      return null;
+    };
+    if (args.length === 1) {
+      if (shape.kind === "json") return { ok: true, shape: STRING_SHAPE };
+      if (shape.kind !== "object") {
+        return shapeError(`template(pattern) needs a bare object; over rows use template(field, pattern); the response shape is ${shape.kind}`);
+      }
+      return placeholderMiss(shape) ?? { ok: true, shape: STRING_SHAPE };
+    }
+    const view = viewRows(shape, op);
+    if (view === null) return shapeError(`template needs an object or an array of rows; the response shape is ${shape.kind}`);
+    if (view.fields === null) return { ok: true, shape: view.rebuild(JSON_SHAPE) };
+    const violation = placeholderMiss(objectShape(view.fields, [...view.optional]));
+    if (violation !== null) return violation;
+    const target = args[0] as string;
+    const fields: Record<string, ShapeType> = {};
+    for (const [key, value] of Object.entries(view.fields)) {
+      defineValue(fields as Record<string, unknown>, key, key === target ? STRING_SHAPE : value);
+    }
+    if (!Object.prototype.hasOwnProperty.call(fields, target)) {
+      defineValue(fields as Record<string, unknown>, target, STRING_SHAPE);
+    }
+    // The target field is always written, so it leaves the optional set.
+    return { ok: true, shape: view.rebuild(objectShape(fields, [...view.optional].filter((key) => key !== target))) };
   }
 
   const view = viewRows(shape, op);
