@@ -11,6 +11,7 @@ export * from "./guard.js";
 export * from "./heartbeat.js";
 export * from "./host-seams.js";
 export * from "./ids.js";
+export * from "./jail-modules.js";
 export * from "./jcs.js";
 export * from "./principal.js";
 export * from "./reshape.js";

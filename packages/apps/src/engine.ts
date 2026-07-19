@@ -12,6 +12,7 @@ import {
   compileWirePatchV2,
   compileWireV2,
   describeShape,
+  JAIL_ALLOWED_MODULES,
   shapeAtPointer,
   printWireV2,
   isPathBinding,
@@ -229,9 +230,11 @@ const wireContractSections = (deps: GenerationDependencies): GenerationPromptSec
 - Attribute values: "string", {42}, {true}, bare attribute for true, {{...}} objects, {[...]} arrays, and query bindings {queryName.path.segments}. Bindings are PLAIN FIELD REFERENCES ONLY — no arithmetic, no function/method calls (.filter/.map/.length), no bracket indexing (address array elements with dot-numeric segments, e.g. {accounts.data.0.sparkline}), no string concatenation. If a value would need computing, bind the closest raw field instead and let the component render it. There is NO string interpolation: never write {reference} inside a \"string\" attribute — bind the whole prop to one {reference} or use separate Text nodes.
 - Components resolve host catalog -> prewired primitives -> your <Island> components; the host brand wins a name collision. Prewired primitives: ${RESERVED_COMPONENT_NAMES.join(", ")}, Card, Button, Input, Select, Table, Badge, Stat, Tabs.
 - COMPOSE the app from host catalog and prewired components bound to query data. Prefer a host catalog component whenever it covers the need, with its exact name and props schema; use Stat/Card/Table/Badge and layout primitives for everything else. Matching the host brand is a hard goal.
-- Never hardcode business data (invoices, balances, metrics, rows). Every number, label, and row the user sees must come from a <Query> binding; if no tool provides it, leave the region out rather than inventing data.
+- Never hardcode business data (invoices, balances, metrics, rows). Every number, label, and row the user sees must come from a <Query> binding; if no tool provides it, leave the region out rather than inventing data. This applies to CHARTS and METRICS too: when NO host tool supplies the numbers, render an honest empty-state (a short Text/Badge that the data isn't available), never fabricated, placeholder, or example figures.
 - Actions are on* attributes naming a host tool or fn:<name> (name matches [A-Za-z_][A-Za-z0-9_-]*), e.g. onClick="host_tool" or onRun="fn:submit". A rung-1 app has no server, so never use fn: on create.
+- An action that CHANGES host state (a write/destructive tool) MUST carry a payload binding the context it acts on — the per-row id for a row action, the form field values for a submit — e.g. onClick={{action:"host_send_reminder", payload:{invoiceId: invoices.rows.0.id}}}. Never wire a submit/primary Button to a read-only tool, and never leave a submit/primary Button with no action: a button that does nothing is a fake affordance. When NO host tool can perform the requested action, do NOT render a dead Submit — render an honest disclaimer (Text/Badge) saying the action isn't available on this host.
 - <Island> generated components are a LAST RESORT: one small, self-contained visual piece that no catalog or prewired component can express (a custom chart, a novel visualization). NEVER put the whole app, layout, data, or fetching inside an island. Island content is top-level <Island name="PascalName">raw TSX with an \`export default\`</Island>, referenced as <PascalName/> — plain source, never wrapped in braces, template literals, or fences.
+- An island runs in a network-denied sandbox and may import ONLY react/react-dom (${JAIL_ALLOWED_MODULES.join(", ")}); NOTHING else loads. NEVER import a chart or utility library (no recharts, d3, chart.js, victory, nivo, lodash): render a chart as dependency-free INLINE SVG inside the island, or use a prewired/host component instead. Pass the chart's numbers in as props bound to a <Query>; never fabricate them.
 - Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} islands, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per island, ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes of island source total.`,
 }, {
   id: "prewired-props",
@@ -387,14 +390,41 @@ const esbuildTransform = (async () => {
   }
 })();
 
+/** Every module specifier an island source imports — static (`import … from`,
+ *  side-effect `import "x"`, `export … from`), dynamic `import("x")`, and
+ *  `require("x")`. The jail's sucrase loader rewrites all of these to its
+ *  require table, so any specifier here that is not a `JAIL_ALLOWED_MODULES`
+ *  entry cannot resolve at runtime. */
+const IMPORT_SPECIFIER =
+  /(?:\bimport\b|\bexport\b)[^'"]*?\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)|\brequire\s*\(\s*["']([^"']+)["']\s*\)/g;
+
+const islandImportSpecifiers = (source: string): string[] => {
+  const specifiers: string[] = [];
+  for (const match of source.matchAll(IMPORT_SPECIFIER)) {
+    const specifier = match[1] ?? match[2] ?? match[3] ?? match[4];
+    if (specifier !== undefined) specifiers.push(specifier);
+  }
+  return specifiers;
+};
+
+const JAIL_ALLOWED_MODULE_SET = new Set<string>(JAIL_ALLOWED_MODULES);
+
 /** verify-v2 fixes — a broken island must never persist: it renders as a
- *  contained error instead of an app. Checked at create, routed to repair. */
+ *  contained error instead of an app. Checked at create, routed to repair.
+ *  An island reaching for a module the jail cannot load (a chart library, a
+ *  util) error-boxes the whole app (verify-v2 #5: `recharts`), so a disallowed
+ *  import is rejected before the syntax gate. */
 const islandIssues = async (components: Record<string, string>): Promise<string[]> => {
   const issues: string[] = [];
   const transform = await esbuildTransform;
   for (const [name, source] of Object.entries(components)) {
     if (!hasDefaultExport(source)) {
       issues.push(`island "${name}" must be plain TSX with an \`export default\` component — no braces, template literals, or fences around the source`);
+      continue;
+    }
+    const disallowed = [...new Set(islandImportSpecifiers(source))].filter((specifier) => !JAIL_ALLOWED_MODULE_SET.has(specifier));
+    if (disallowed.length > 0) {
+      issues.push(`island "${name}" imports ${disallowed.map((specifier) => `"${specifier}"`).join(", ")} — the Vendo jail can load ONLY ${JAIL_ALLOWED_MODULES.join(", ")}. Remove the import: render charts as dependency-free inline SVG, or use a prewired/host component; never import an external chart or utility library.`);
       continue;
     }
     if (transform === undefined) continue;
@@ -526,6 +556,7 @@ const validateCompiledCreate = async (
   issues.push(...bindingKindIssues(compiled, deps));
   issues.push(...interpolationIssues(compiled));
   issues.push(...await catalogIssues(compiled.tree, components, deps.catalog));
+  issues.push(...actionIssues(compiled.tree, deps.tools));
   issues.push(...rootedRenderIssues(compiled.tree));
   if (issues.length > 0) return { issues };
   const document: GeneratedAppDocument = {
@@ -669,11 +700,84 @@ const catalogIssues = async (
       }
     } else if (node.source === "generated" && !generatedNames.has(node.component)) {
       issues.push(`node "${node.id}" references generated component "${node.component}" without source`);
-    } else if (node.source === undefined
-      && !hostNames.has(node.component)
-      && !reserved.has(node.component)
-      && !generatedNames.has(node.component)) {
-      issues.push(`node "${node.id}" references unknown component "${node.component}"`);
+    } else if (node.source === undefined) {
+      // Legacy/direct trees can omit source; the renderer resolves the name to
+      // a prewired primitive first, so a reserved name here gets the same
+      // prop-name gate as an explicit source:"prewired" node — otherwise a
+      // stored tree could still ship an ignored prop (e.g. Table.data).
+      if (reserved.has(node.component)) {
+        issues.push(...prewiredPropsIssues(node));
+      } else if (!hostNames.has(node.component) && !generatedNames.has(node.component)) {
+        issues.push(`node "${node.id}" references unknown component "${node.component}"`);
+      }
+    }
+  }
+  return issues;
+};
+
+/** Button labels that promise a state change. A Button carrying one of these
+ *  is a submit/primary affordance: it must DO something (a mutating host tool
+ *  bound to real context) or honestly say it can't — a no-op submit is the
+ *  facade class (verify-v2 #6 intake form). Read-only verbs (view/show/open)
+ *  and dismiss verbs (cancel/clear/close) are deliberately excluded. */
+const SUBMIT_LABEL = /\b(submit|save|create|add|send|remind|reminder|transfer|pay|confirm|update|delete|remove|apply|schedule|book|post|approve|generate|register|enroll|invite|assign)\b/i;
+
+const isMutatingRisk = (risk: string | undefined): boolean => risk === "write" || risk === "destructive";
+
+const hasPayload = (payload: unknown): boolean =>
+  isRecord(payload) ? Object.keys(payload).length > 0 : payload !== undefined && payload !== null;
+
+/** Every {action,payload?} binding reachable in a node's props, with the prop
+ *  it sits under (actions can nest inside arrays/objects, not just top-level
+ *  on* attributes). */
+const actionBindingsInProps = (
+  props: Record<string, unknown>,
+): Array<{ prop: string; action: string; payload: unknown }> => {
+  const found: Array<{ prop: string; action: string; payload: unknown }> = [];
+  const walk = (prop: string, value: unknown): void => {
+    if (isActionBinding(value)) {
+      const record = value as Record<string, unknown>;
+      found.push({ prop, action: record.action as string, payload: record.payload });
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(prop, item);
+      return;
+    }
+    if (isRecord(value)) {
+      for (const child of Object.values(value)) walk(prop, child);
+    }
+  };
+  for (const [prop, value] of Object.entries(props)) walk(prop, value);
+  return found;
+};
+
+/** Action-wiring honesty (verify-v2 #4 reminder, #6 intake). A mutating action
+ *  with no payload has nothing to change; a submit button wired to a read tool
+ *  or to nothing at all is a fake affordance. Each routes to repair, where the
+ *  model binds the row/form context — or, when the host has no tool for the
+ *  ask, replaces the dead button with an honest disclaimer. */
+const actionIssues = (tree: TreeV2, tools: readonly HostToolInfo[] | undefined): string[] => {
+  const risk = new Map((tools ?? []).map((tool) => [tool.name, tool.risk]));
+  const issues: string[] = [];
+  for (const node of tree.nodes) {
+    const props = node.props;
+    const label = node.component === "Button" && typeof props?.label === "string" ? props.label : "";
+    const submitLike = label !== "" && SUBMIT_LABEL.test(label);
+    const bindings = props === undefined ? [] : actionBindingsInProps(props);
+    if (submitLike && bindings.length === 0) {
+      issues.push(`node "${node.id}" is a submit button ("${label}") with no action — a button that does nothing is a fake affordance. Wire its onClick to a host tool that performs the action, binding the form/row context into payload; or if NO host tool can perform it, replace the button with an honest Text/Badge disclaimer that the action isn't available.`);
+    }
+    for (const { prop, action, payload } of bindings) {
+      if (action.startsWith("fn:")) continue;
+      const toolRisk = risk.get(action);
+      if (toolRisk === undefined) continue;
+      if (isMutatingRisk(toolRisk) && !hasPayload(payload)) {
+        issues.push(`node "${node.id}" prop "${prop}" invokes mutating tool "${action}" with no payload — bind the context it acts on (a per-row id, or the form field values) into payload:{...} so the action has something to change.`);
+      }
+      if (submitLike && toolRisk === "read") {
+        issues.push(`node "${node.id}" submit button ("${label}") prop "${prop}" is wired to read-only tool "${action}" — a submit that only reads is a fake affordance. Wire it to a mutating host tool with a payload, or render an honest disclaimer if the host has none.`);
+      }
     }
   }
   return issues;
@@ -734,12 +838,24 @@ const validateEditedApp = async (
   const treeValidation = validateTreeV2(app.tree);
   if (!treeValidation.ok) return [treeValidation.error.message];
   const sourceTreeValidation = validateTreeV2(source.tree);
+  // Filter EVERY per-node check against the pre-existing app the same way, so
+  // an edit that doesn't touch a stale node (a legacy Table.data prop, an
+  // already-dead button) is never blocked by that node's issue — only issues
+  // the edit newly introduces surface. Ids are stable across an edit, so a
+  // carried-over issue is a byte-identical string.
   const sourceRenderIssues = sourceTreeValidation.ok
     ? new Set(rootedRenderIssues(sourceTreeValidation.tree))
     : new Set<string>();
+  const sourceCatalogIssues = sourceTreeValidation.ok
+    ? new Set([
+      ...await catalogIssues(sourceTreeValidation.tree, source.components, deps.catalog),
+      ...actionIssues(sourceTreeValidation.tree, deps.tools),
+    ])
+    : new Set<string>();
   return [
     ...rootedRenderIssues(treeValidation.tree).filter((issue) => !sourceRenderIssues.has(issue)),
-    ...await catalogIssues(treeValidation.tree, app.components, deps.catalog),
+    ...(await catalogIssues(treeValidation.tree, app.components, deps.catalog)).filter((issue) => !sourceCatalogIssues.has(issue)),
+    ...actionIssues(treeValidation.tree, deps.tools).filter((issue) => !sourceCatalogIssues.has(issue)),
   ];
 };
 
