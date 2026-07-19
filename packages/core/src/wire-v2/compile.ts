@@ -442,6 +442,22 @@ export const prescanDeclarations = (wire: string, rootTag = "App"): { queryNames
   while (state.index < state.source.length) {
     collectText(state);
     if (state.index >= state.source.length) break;
+    // Byte-for-byte mirror of parseChildren's comment handling: the pre-scan
+    // cursor must move exactly like the main pass or declarations after a
+    // comment vanish (Devin, PR #381).
+    if (state.source[state.index + 1] === "!") {
+      const opener = state.source.slice(state.index, state.index + 4);
+      if (opener === "<!--") {
+        const close = state.source.indexOf("-->", state.index + 4);
+        if (close === -1) break;
+        state.index = close + 3;
+      } else if ("<!--".startsWith(opener)) {
+        break;
+      } else {
+        state.index += 2;
+      }
+      continue;
+    }
     if (state.source[state.index + 1] === "/") {
       state.index += 2;
       const name = readName(state);

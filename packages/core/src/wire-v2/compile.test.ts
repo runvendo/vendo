@@ -1117,3 +1117,21 @@ describe("compileWireV2 comments", () => {
     expect(result.complete).toBe(false);
   });
 });
+
+describe("compileWireV2 comments before declarations", () => {
+  it("still pre-scans queries and islands declared after a comment (Devin, PR #381)", () => {
+    const wire = [
+      '<App name="C"><!-- data -->',
+      '<Query id="metric" tool="host_metric"/>',
+      "<!-- widgets --><Note/>",
+      '<Card value={metric.total}/>',
+      '<Island name="Note">export default function Note() { return <p>n</p>; }</Island></App>',
+    ].join("");
+    const result = compile(wire);
+    expect(result.tree.queries).toEqual([{ name: "metric", tool: "host_metric" }]);
+    expect(result.tree.nodes.find(({ id }) => id === "note-1")?.source).toBe("generated");
+    expect(result.tree.nodes.find(({ id }) => id === "card-1")?.props).toEqual({ value: { $path: "/metric/total" } });
+    expect(result.issues).toEqual([]);
+    expect(result.complete).toBe(true);
+  });
+});
