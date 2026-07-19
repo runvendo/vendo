@@ -29,6 +29,10 @@ export interface VendoThreadProps {
    * provider's `greeting`. Distinct from `greeting` above (the returning-user
    * landing headline) — this one renders once per user, ever. */
   firstRunGreeting?: VendoGreeting;
+  /** Rendered directly above the composer in both landing and conversation
+   * layouts — the seam VendoOverlay uses for its command chip strip (the
+   * one-surface ⌘K design). Presentation-only; the thread never reads it. */
+  composerAccessory?: import("react").ReactNode;
 }
 
 /** 08-ui §4 — conversation chrome over the headless thread transport. */
@@ -40,6 +44,7 @@ export function VendoThread({
   onThreadId,
   discoverability,
   firstRunGreeting,
+  composerAccessory,
 }: VendoThreadProps) {
   const thread = useVendoThread(threadId);
   // ui-usage-dx §6 — greeting-as-tutorial: the user's FIRST-ever conversation
@@ -259,6 +264,7 @@ export function VendoThread({
               <h1 className="fl-greet">{greeting}</h1>
             )}
             {errorBanner}
+            {composerAccessory}
             <div className="fl-landing-composer">{composer}</div>
             {!tutorialActive && suggestions.length > 0 ? (
               <div className="fl-chips">
@@ -298,6 +304,7 @@ export function VendoThread({
           working={working}
         />
         {errorBanner}
+        {composerAccessory}
         {composer}
       </div>
       {morph ? <MorphToast {...morph} onDone={() => setMorph(null)} /> : null}

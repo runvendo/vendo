@@ -35,15 +35,15 @@ describe("VendoOverlay supported entry API", () => {
   it("opens uncontrolled via defaultOpen and positions the default launcher", () => {
     render(<VendoProvider client={client}><VendoOverlay defaultOpen /></VendoProvider>);
     expect(dialogQuery()).toBeTruthy();
-    const launcher = screen.getByRole("button", { name: "Vendo" });
+    const launcher = screen.getByRole("button", { name: "AI agent" });
     expect(launcher.getAttribute("data-vendo-launcher")).toBe("bottom-right");
   });
 
   it("supports bottom-left and hidden launcher variants", () => {
     const { rerender } = render(<VendoProvider client={client}><VendoOverlay launcher="bottom-left" /></VendoProvider>);
-    expect(screen.getByRole("button", { name: "Vendo" }).getAttribute("data-vendo-launcher")).toBe("bottom-left");
+    expect(screen.getByRole("button", { name: "AI agent" }).getAttribute("data-vendo-launcher")).toBe("bottom-left");
     rerender(<VendoProvider client={client}><VendoOverlay launcher="none" /></VendoProvider>);
-    expect(screen.queryByRole("button", { name: "Vendo" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "AI agent" })).toBeNull();
   });
 
   it("is controllable: open renders, close requests report via onOpenChange, parent flip closes", async () => {
@@ -108,7 +108,7 @@ describe("VendoOverlay supported entry API", () => {
     expect(document.body.style.overflow).toBe("");
     expect(host.hasAttribute("inert")).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "Vendo" }));
+    fireEvent.click(screen.getByRole("button", { name: "AI agent" }));
     expect(document.body.style.overflow).toBe("hidden");
     expect(host.hasAttribute("inert")).toBe(true);
     // The portal subtree itself must stay interactive.
@@ -131,7 +131,7 @@ describe("VendoOverlay supported entry API", () => {
 
   it("autofocuses the composer on open", async () => {
     render(<VendoProvider client={client}><VendoOverlay /></VendoProvider>);
-    fireEvent.click(screen.getByRole("button", { name: "Vendo" }));
+    fireEvent.click(screen.getByRole("button", { name: "AI agent" }));
     const composer = screen.getByRole("textbox", { name: "Message" });
     await waitFor(() => expect(document.activeElement).toBe(composer));
   });
@@ -167,7 +167,7 @@ describe("VendoOverlay supported entry API", () => {
     fireEvent.click(document.querySelector(".fl-overlay-scrim")!);
     expect(dialogQuery()).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Vendo" }));
+    fireEvent.click(screen.getByRole("button", { name: "AI agent" }));
     expect(dialogQuery()).toBeTruthy();
     // The prior conversation is right where the user left it.
     expect(screen.getByText("remember me")).toBeTruthy();
@@ -187,7 +187,7 @@ describe("VendoOverlay supported entry API", () => {
     fireEvent.keyDown(dialogQuery()!, { key: "Escape" });
     expect(dialogQuery()).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Vendo" }));
+    fireEvent.click(screen.getByRole("button", { name: "AI agent" }));
     expect(screen.getByText("via escape")).toBeTruthy();
     expect(screen.getByText("Turn complete")).toBeTruthy();
   });
@@ -269,7 +269,7 @@ describe("VendoOverlay supported entry API", () => {
     // fall back to the (visible) launcher rather than dropping focus on body.
     visible.style.display = "none";
     fireEvent.keyDown(screen.getByRole("dialog", { name: "Vendo assistant" }), { key: "Escape" });
-    const launcher = screen.getByRole("button", { name: "Vendo" });
+    const launcher = screen.getByRole("button", { name: "AI agent" });
     await waitFor(() => expect(document.activeElement).toBe(launcher));
     expect(document.activeElement).not.toBe(document.body);
   });

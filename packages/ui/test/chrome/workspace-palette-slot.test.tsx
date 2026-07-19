@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type OpenSurface, type VendoClient } from "../../src/index.js";
-import { VendoPage, VendoPalette, VendoSlot } from "../../src/chrome/index.js";
+import { VendoOverlay, VendoPage, VendoPalette, VendoSlot } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
 describe("VendoPage, VendoPalette, and VendoSlot exports", () => {
@@ -40,35 +40,39 @@ describe("VendoPage, VendoPalette, and VendoSlot exports", () => {
     expect(await screen.findByRole("heading", { name: "Activity" })).toBeTruthy();
   });
 
-  it("opens with Ctrl+K, filters, selects with arrows and Enter, and closes with Escape", async () => {
+  it("routes Ctrl+K to the conversation surface; command chips reach onCommand; Escape restores focus", async () => {
     const onCommand = vi.fn();
     render(
       <VendoProvider client={client}>
         <button type="button">Palette opener</button>
         <VendoPalette onCommand={onCommand} />
+        <VendoOverlay launcher="none" />
       </VendoProvider>,
     );
     await waitFor(() => expect(wire.requests.some(request => request.path === "/apps")).toBe(true));
     const opener = screen.getByRole("button", { name: "Palette opener" });
     opener.focus();
     fireEvent.keyDown(globalThis, { key: "k", ctrlKey: true });
-    const combobox = await screen.findByRole("combobox");
-    expect(document.activeElement).toBe(combobox);
-    fireEvent.change(combobox, { target: { value: "Invoices" } });
-    expect(screen.getByRole("option", { name: "Open Invoices" })).toBeTruthy();
-    expect(screen.queryByRole("option", { name: "Show activity" })).toBeNull();
-    fireEvent.keyDown(combobox, { key: "ArrowDown" });
-    fireEvent.keyDown(combobox, { key: "Enter" });
+    // One surface: the conversation overlay, composer focused, no combobox.
+    const dialog = await screen.findByRole("dialog", { name: "Vendo assistant" });
+    expect(screen.queryByRole("combobox")).toBeNull();
+    const composer = await screen.findByRole("textbox", { name: "Message" });
+    await waitFor(() => expect(document.activeElement).toBe(composer));
+    // The palette's commands (built-ins + wire apps) are the chip strip.
+    fireEvent.click(await screen.findByRole("button", { name: "Open Invoices" }));
     expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ kind: "open-app", appId: "app_1" }));
-    expect(screen.queryByRole("dialog", { name: "Vendo command palette" })).toBeNull();
+    // Escape closes the surface and restores focus to the invoker.
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(opener));
 
+    // ⌘K toggles: open, then a second press (even from the composer) closes.
     fireEvent.keyDown(globalThis, { key: "k", metaKey: true });
-    const reopened = await screen.findByRole("combobox");
-    fireEvent.keyDown(reopened, { key: "Tab" });
-    expect(document.activeElement).toBe(reopened);
-    fireEvent.keyDown(reopened, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "Vendo command palette" })).toBeNull();
+    await screen.findByRole("dialog", { name: "Vendo assistant" });
+    const reopenedComposer = await screen.findByRole("textbox", { name: "Message" });
+    await waitFor(() => expect(document.activeElement).toBe(reopenedComposer));
+    fireEvent.keyDown(reopenedComposer, { key: "k", metaKey: true });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 
