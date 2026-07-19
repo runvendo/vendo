@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { ensureRepoCheckout } from "../clone.js";
+import { loadManifest } from "../manifest.js";
+import { createRunContext } from "../run-context.js";
 
 /**
  * Install-eval fixtures: real host apps copied to a clean directory with the
@@ -19,8 +22,13 @@ import path from "node:path";
 
 export interface InstallEvalFixture {
   name: string;
-  /** Repo-root-relative source directory. */
-  sourcePath: string;
+  /** Repo-root-relative source directory (local fixtures). Mutually
+   * exclusive with corpusRepo. */
+  sourcePath?: string;
+  /** Corpus manifest repo name (external pinned fixtures): the source is the
+   * pinned checkout produced by the corpus clone machinery, so the pin has
+   * exactly one home — the manifest. */
+  corpusRepo?: string;
   devServer: {
     command: string;
     readinessUrl: string;
@@ -30,7 +38,30 @@ export interface InstallEvalFixture {
   doctorUrl: string;
 }
 
+/**
+ * External corpus repos evaluated for the fixture set (spec asks for the
+ * corpus repos — the only truly pre-Vendo hosts): every other deep-tier
+ * external repo (umami, skateshop, papermark, teable, twenty) needs
+ * dockerized Postgres/Redis plus seeds to boot its dev server, which the
+ * install eval deliberately does not drag in — the subject is the install
+ * loop, not the host's data stack — and the remaining broad-tier repos have
+ * no dev-server recipe and need real third-party env (Clerk, NextAuth
+ * GitHub apps, Shopify, ClickHouse). `invoify` is the fit inside the v1
+ * Next/Express scope: pinned Next 15, npm-native, zero env, no database,
+ * boots with plain `next dev`. Extending fixture prep with the corpus
+ * bootstrap/database machinery would unlock the heavier repos later.
+ */
 export const INSTALL_EVAL_FIXTURES: readonly InstallEvalFixture[] = [
+  {
+    name: "invoify",
+    corpusRepo: "invoify",
+    devServer: {
+      command: "npm run dev",
+      readinessUrl: "http://127.0.0.1:3000",
+      readinessTimeoutMs: 180_000,
+    },
+    doctorUrl: "http://127.0.0.1:3000/api/vendo",
+  },
   {
     name: "express-host",
     sourcePath: "corpus/hosts/express-host",
@@ -173,14 +204,29 @@ export interface PrepareFixtureOptions {
   fixturesRoot: string;
   /** Local registry URL written into the fixture .npmrc. */
   registryUrl: string;
+  /** Test seam: resolve a corpusRepo fixture to its pinned checkout dir.
+   * Defaults to the corpus clone machinery (manifest pin + ensureRepoCheckout). */
+  resolveCorpusSource?: (repoName: string, workspaceRoot: string) => Promise<string>;
+}
+
+async function defaultResolveCorpusSource(repoName: string, workspaceRoot: string): Promise<string> {
+  const manifest = await loadManifest();
+  const repo = manifest.find((entry) => entry.name === repoName);
+  if (!repo) {
+    throw new Error(`install-eval fixture references unknown corpus repo "${repoName}" — add it to corpus/manifest.json`);
+  }
+  return ensureRepoCheckout(repo, { context: createRunContext(), workspaceRoot });
 }
 
 /** Copy the fixture source to a clean directory, strip the Vendo footprint,
  * point npm at the local registry, and snapshot it as a one-commit git repo
  * (same trick as the corpus localPath checkout) so the agent's edits are
- * diffable afterwards. */
+ * diffable afterwards. Corpus-repo fixtures source from the pinned checkout. */
 export async function prepareFixture(options: PrepareFixtureOptions): Promise<string> {
-  const sourceDir = path.resolve(options.workspaceRoot, options.fixture.sourcePath);
+  const resolveCorpusSource = options.resolveCorpusSource ?? defaultResolveCorpusSource;
+  const sourceDir = options.fixture.corpusRepo !== undefined
+    ? await resolveCorpusSource(options.fixture.corpusRepo, options.workspaceRoot)
+    : path.resolve(options.workspaceRoot, options.fixture.sourcePath ?? options.fixture.name);
   const fixtureDir = path.join(options.fixturesRoot, options.fixture.name);
   await rm(fixtureDir, { recursive: true, force: true });
   await mkdir(path.dirname(fixtureDir), { recursive: true });

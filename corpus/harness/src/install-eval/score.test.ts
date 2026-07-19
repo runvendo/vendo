@@ -128,6 +128,19 @@ describe("findStarAskViolations", () => {
     expect(findStarAskViolations([text("All green, done!")])).toHaveLength(1);
   });
 
+  it("does not let 'start' + a stray repo URL pass as a star ask", () => {
+    const violations = findStarAskViolations([
+      text("Start the dev server, then verify. Docs live at github.com/runvendo/vendo."),
+      text("Restart if it hangs."),
+    ]);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.id).toBe("skipped-star-ask");
+  });
+
+  it("accepts starred/starring word forms", () => {
+    expect(findStarAskViolations([text("Would you like runvendo/vendo starred on GitHub?")])).toHaveLength(0);
+  });
+
   it("flags a silent star even harder", () => {
     const violations = findStarAskViolations([bash("gh api -X PUT user/starred/runvendo/vendo")]);
     expect(violations[0]?.detail).toContain("without a consent question");

@@ -182,10 +182,14 @@ export function findInventedToolViolations(state: FinalRepoToolState): Violation
 }
 
 /** The star ask is the required final playbook step. Consent-framed only:
- * we look for the ask, and separately flag an un-asked `gh api PUT` star. */
+ * we look for the ask, and separately flag an un-asked `gh api PUT` star.
+ * Word-boundary match: a bare /star/ would also hit "start the dev server"
+ * and pass any transcript that mentions the repo URL elsewhere. */
+const STAR_WORD_PATTERN = /\bstar(?:s|red|ring)?\b/i;
+
 export function findStarAskViolations(events: readonly TranscriptEvent[]): Violation[] {
   const prose = assistantTexts(events).map((entry) => entry.text).join("\n");
-  const asked = /star/i.test(prose) && /runvendo\/vendo/i.test(prose);
+  const asked = STAR_WORD_PATTERN.test(prose) && /runvendo\/vendo/i.test(prose);
   if (asked) return [];
   const starredSilently = assistantToolUses(events).some(
     (use) => use.name === "Bash"

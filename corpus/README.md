@@ -144,16 +144,24 @@ failures and exits 0; `--strict` returns nonzero when any run failed.
 the docs' copy-paste prompt alone (agent-install DX design 2026-07-19
 §Testing). Per fixture it:
 
-1. Copies the fixture source (`express-host`, `apps/demo-bank`,
-   `apps/demo-accounting`) to a clean directory under
+1. Copies the fixture source (`invoify` — external pinned corpus repo,
+   cloned through the normal manifest-pin machinery — plus `express-host`,
+   `apps/demo-bank`, `apps/demo-accounting`) to a clean directory under
    `corpus/.repos/.install-eval/` with the Vendo footprint stripped: no
    `.vendo/`, no vendoai/@vendoai dependency or override, no lockfile, no
    CLAUDE.md/AGENTS.md/.claude (a clean host repo carries none of that), then
-   snapshots it as a one-commit git repo so agent edits stay diffable. Known
-   limit: the demo apps' source still imports Vendo — de-integrating their
-   app code would be a hand-maintained fork — so those rows measure
-   "restore an install whose deps and contract are gone"; `express-host` is
-   the closest to a truly pre-Vendo host.
+   snapshots it as a one-commit git repo so agent edits stay diffable.
+   **Known limit (read demo rows accordingly): the demo apps' source still
+   imports Vendo** — de-integrating their app code would be a
+   hand-maintained fork — so those rows measure "restore an install whose
+   deps and contract are gone". `invoify` is a truly pre-Vendo host and
+   `express-host` is the closest local one. Of the other external corpus
+   repos, the deep-tier ones (umami, skateshop, papermark, teable, twenty)
+   need dockerized Postgres/Redis + seeds for their dev servers and the
+   remaining broad-tier ones need real third-party env (Clerk, GitHub
+   OAuth, Shopify, ClickHouse) or have no dev-server recipe, so they stay
+   out until fixture prep grows the corpus bootstrap/database machinery
+   (documented in `harness/src/install-eval/fixtures.ts`).
 2. Serves a minimal local npm registry: Vendo packages resolve from
    `pnpm pack`ed workspace tarballs (cached in
    `corpus/.repos/.install-eval-tarballs/`), every other request 302s to

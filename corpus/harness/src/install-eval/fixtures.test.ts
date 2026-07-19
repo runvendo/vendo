@@ -84,6 +84,45 @@ describe("prepareFixture", () => {
   });
 });
 
+describe("prepareFixture (corpus repo source)", () => {
+  it("sources external pinned fixtures from the corpus checkout via the seam", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "install-eval-corpus-fixture-"));
+    const checkoutDir = path.join(root, "pinned-checkout");
+    await mkdir(path.join(checkoutDir, ".git"), { recursive: true });
+    await writeFile(path.join(checkoutDir, "package.json"), JSON.stringify({
+      name: "invoify",
+      dependencies: { next: "15.3.8" },
+    }));
+    await writeFile(path.join(checkoutDir, "package-lock.json"), "{}");
+
+    const fixture: InstallEvalFixture = {
+      name: "invoify",
+      corpusRepo: "invoify",
+      devServer: { command: "npm run dev", readinessUrl: "http://127.0.0.1:3000" },
+      doctorUrl: "http://127.0.0.1:3000/api/vendo",
+    };
+    const resolved: string[] = [];
+    const fixtureDir = await prepareFixture({
+      fixture,
+      workspaceRoot: root,
+      fixturesRoot: path.join(root, "out"),
+      registryUrl: "http://127.0.0.1:4873",
+      resolveCorpusSource: async (repoName, workspaceRoot) => {
+        resolved.push(`${repoName}@${workspaceRoot}`);
+        return checkoutDir;
+      },
+    });
+
+    expect(resolved).toEqual([`invoify@${root}`]);
+    // The pinned repo's own .git and lockfile never reach the fixture; a
+    // fresh snapshot commit does.
+    expect(await pathExists(path.join(fixtureDir, "package-lock.json"))).toBe(false);
+    expect(await readFile(path.join(fixtureDir, ".npmrc"), "utf8")).toBe("registry=http://127.0.0.1:4873/\n");
+    const pkg = JSON.parse(await readFile(path.join(fixtureDir, "package.json"), "utf8")) as Record<string, unknown>;
+    expect(pkg["dependencies"]).toEqual({ next: "15.3.8" });
+  });
+});
+
 describe("readFinalToolState", () => {
   it("collects generated tool names and referenced names", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "install-eval-state-"));
