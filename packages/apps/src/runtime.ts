@@ -1,6 +1,7 @@
 import {
   VENDO_TREE_FORMAT_V2,
   VendoError,
+  deriveShapeCard,
   validateAppDocument,
   type AppDocument,
   type AppId,
@@ -12,6 +13,7 @@ import {
   type ApprovalId,
   type RiskLabel,
   type SecretsProvider,
+  type ShapeType,
   type StoreAdapter,
   type ToolCall,
   type ToolDescriptor,
@@ -320,6 +322,7 @@ const rungFor = (
 const generationDependencies = (
   config: AppsConfig,
   model: LanguageModel,
+  toolContext: Pick<GenerationDependencies, "tools" | "toolShapes">,
   onPartial?: GenerationDependencies["onPartial"],
 ): GenerationDependencies => ({
   model,
@@ -327,6 +330,7 @@ const generationDependencies = (
   theme: config.theme,
   designRules: config.designRules,
   pinBaselines: config.pinBaselines,
+  ...toolContext,
   ...(config.paint === undefined ? {} : { paint: config.paint }),
   ...(onPartial === undefined ? {} : { onPartial }),
 });
@@ -713,6 +717,40 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     });
   };
 
+  // verify-v2 fixes / v2 spec §3 — shape cards from live samples: each read
+  // tool is sampled once per runtime (empty input, the calling user's
+  // authority — the same call the app's queries make); the derived shape
+  // feeds the generation prompt and the compiler's binding type-check, and
+  // the descriptor list gates query tool names. A failed sample leaves that
+  // tool's shape unknown (defensive `json` per the spec).
+  const sampledShapes = new Map<string, ShapeType>();
+  const sampledTools = new Set<string>();
+  const generationToolContext = async (
+    ctx: RunContext,
+  ): Promise<Pick<GenerationDependencies, "tools" | "toolShapes">> => {
+    const descriptors = await config.tools.descriptors().catch(() => []);
+    await Promise.all(descriptors
+      .filter((descriptor) => descriptor.risk === "read" && !sampledTools.has(descriptor.name))
+      .map(async (descriptor) => {
+        sampledTools.add(descriptor.name);
+        try {
+          const outcome = await config.tools.execute(
+            { id: `call_${globalThis.crypto.randomUUID()}`, tool: descriptor.name, args: {} },
+            ctx,
+          );
+          if (outcome.status === "ok") {
+            sampledShapes.set(descriptor.name, deriveShapeCard(descriptor.name, [outcome.output]).output);
+          }
+        } catch {
+          // Unknown shape stays defensive; the tool is still listed by name.
+        }
+      }));
+    return {
+      tools: descriptors.map(({ name, description, risk }) => ({ name, description, risk })),
+      ...(sampledShapes.size === 0 ? {} : { toolShapes: Object.fromEntries(sampledShapes) }),
+    };
+  };
+
   const runtime: AppsRuntime = {
     async create(input, ctx) {
       if (config.model === undefined) {
@@ -747,7 +785,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         });
       const generated = await engine.create(
         { prompt: input.prompt },
-        generationDependencies(config, config.model, input.onView === undefined ? undefined : (partial) => {
+        generationDependencies(config, config.model, await generationToolContext(ctx), input.onView === undefined ? undefined : (partial) => {
           // v2 spec §1 — the payload carries islands at payload level (the
           // renderer lifts them); a mid-stream payload is marked streaming.
           latestTree = {
@@ -867,7 +905,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             instruction,
             ...(repairIssues === undefined ? {} : { repairIssues }),
           },
-          generationDependencies(config, config.model),
+          generationDependencies(config, config.model, await generationToolContext(ctx)),
         );
         if (generated.kind === "failure") {
           collectedIssues = appendIssues(collectedIssues, generated.issues);
@@ -1087,7 +1125,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         for (const [index, intent] of replayIntents.entries()) {
           const generated = await engine.edit(
             { app: structuredClone(working), instruction: intent },
-            generationDependencies(config, config.model),
+            generationDependencies(config, config.model, await generationToolContext(ctx)),
           );
           const remaining = replayIntents.slice(index + 1);
           if (generated.kind !== "document") {
