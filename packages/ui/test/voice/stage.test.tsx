@@ -267,6 +267,35 @@ describe("VendoStage", () => {
     await waitFor(() => expect(decide).toHaveBeenCalledWith("apr_act", { approve: true }));
   });
 
+  it("discards a spoken intent that arrives before any approval exists (P0)", async () => {
+    const driver = new ScriptedVoiceDriver();
+    const decide = vi.fn(async () => undefined);
+    const pending = deferred<ApprovalRequest[]>();
+    renderStage(driver, { client: testClient({ pending: () => pending.promise, decide }) });
+    fireEvent.click(screen.getByRole("button", { name: "Start voice" }));
+    act(() => driver.emit({ type: "state", state: "listening" }));
+
+    // The user says "approve" while NOTHING is pending — the intent must die here.
+    act(() => driver.emit({ type: "intent", intent: "approve" }));
+    // An unrelated approval lands afterwards; the stale intent must not decide it.
+    await act(async () => pending.resolve([actApproval]));
+    await screen.findByRole("button", { name: "Approve" });
+    expect(decide).not.toHaveBeenCalled();
+  });
+
+  it("never voice-decides an automation request — rich card, no spoken affordance", async () => {
+    const driver = new ScriptedVoiceDriver();
+    const decide = vi.fn(async () => undefined);
+    renderStage(driver, { client: testClient({ pending: async () => [automationApproval], decide }) });
+    fireEvent.click(screen.getByRole("button", { name: "Start voice" }));
+    act(() => driver.emit({ type: "state", state: "listening" }));
+
+    await screen.findByLabelText("Approval for Schedule weekly report");
+    act(() => driver.emit({ type: "intent", intent: "approve" }));
+    await waitFor(() => expect(screen.getByLabelText("Approval for Schedule weekly report")).toBeTruthy());
+    expect(decide).not.toHaveBeenCalled();
+  });
+
   it("keeps criticals hand-only — a spoken approve never decides them", async () => {
     const driver = new ScriptedVoiceDriver();
     const decide = vi.fn(async () => undefined);
