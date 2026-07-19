@@ -1082,6 +1082,69 @@ describe("compileWireV2 shape check (v2 spec §3)", () => {
   });
 });
 
+describe("compileWireV2 prewired option projection (v2 spec §3)", () => {
+  const accountsShape = {
+    kind: "object" as const,
+    fields: {
+      data: {
+        kind: "array" as const,
+        items: {
+          kind: "object" as const,
+          fields: { id: { kind: "string" as const }, name: { kind: "string" as const } },
+        },
+      },
+    },
+  };
+  const shapes: WireCompileOptions = { toolShapes: { host_listAccounts: accountsShape } };
+  const selectWire = (options: string): string => `
+<App name="Transfer">
+  <Query id="accts" tool="host_listAccounts"/>
+  <Select options={${options}}/>
+</App>`;
+
+  it("an object array bound straight to Select options fails: needs asOptions projection", () => {
+    const result = compile(selectWire("accts.data"), shapes);
+    expect(codes(result)).toEqual(["shape-mismatch"]);
+    const error = result.bindingErrors[0];
+    expect(error?.nodeId).toBe("select-1");
+    expect(error?.prop).toBe("options");
+    expect(error?.message).toContain("asOptions");
+    expect(error?.available).toEqual(["id", "name"]);
+  });
+
+  it("the same array projected with asOptions passes", () => {
+    const result = compile(selectWire("accts.data | asOptions(id, name)"), shapes);
+    expect(result.issues).toEqual([]);
+    expect(result.bindingErrors).toEqual([]);
+  });
+
+  it("Tabs tabs bound to a raw object array is flagged the same way", () => {
+    const result = compile(`
+<App name="T">
+  <Query id="accts" tool="host_listAccounts"/>
+  <Tabs tabs={accts.data}/>
+</App>`, shapes);
+    expect(codes(result)).toEqual(["shape-mismatch"]);
+    expect(result.bindingErrors[0]?.message).toContain("asOptions");
+  });
+
+  it("a literal options array with inline bindings is not flagged (already value/label shaped)", () => {
+    const result = compile(`
+<App name="T">
+  <Query id="accts" tool="host_listAccounts"/>
+  <Select options={[{ value: "a", label: "A" }]}/>
+</App>`, shapes);
+    expect(result.bindingErrors).toEqual([]);
+  });
+
+  it("a json-region option binding stays defensive", () => {
+    const result = compile(selectWire("accts.data"), {
+      toolShapes: { host_listAccounts: { kind: "json" } },
+    });
+    expect(result.bindingErrors).toEqual([]);
+  });
+});
+
 describe("compileWireV2 shape check pointer misses", () => {
   it("a non-index segment into an array and a pointer past a scalar report shaped messages", () => {
     const shapes: WireCompileOptions = {
