@@ -1,5 +1,6 @@
 import { runLogin, runLogout, runWhoami, type CloudAuthOptions } from "./auth.js";
 import type { CloudCommandOptions } from "./command.js";
+import { runDeviceLogin, type DeviceLoginOptions } from "./device-login.js";
 import { runKeys } from "./keys.js";
 import { runInvite, runMembers } from "./members.js";
 import { cloudConsoleOutput } from "./output.js";
@@ -14,6 +15,9 @@ Usage: vendo cloud <command> [options]
 User commands:
   login EMAIL                           Send an email OTP (6-10 digits) and prompt for it
   login --token <jwt>                   Store an access-token fallback
+  device-login [EMAIL]                  auth.md user-claimed flow: your human approves a
+                                        code in the browser; the minted VENDO_API_KEY is
+                                        written to .env.local (never printed)
   logout                               Delete the stored cloud session
   whoami [--token <jwt>]                List organizations for the current user
   orgs                                  List organizations
@@ -43,7 +47,7 @@ Global options:
   --json           JSON output (deploy defaults to a concise summary table)
 `;
 
-export type RunCloudOptions = CloudCommandOptions & CloudAuthOptions & CloudDeployOptions;
+export type RunCloudOptions = CloudCommandOptions & CloudAuthOptions & CloudDeployOptions & DeviceLoginOptions;
 
 export async function runCloud(args: string[], options: RunCloudOptions = {}): Promise<number> {
   const [command, ...commandArgs] = args;
@@ -53,6 +57,7 @@ export async function runCloud(args: string[], options: RunCloudOptions = {}): P
     return 0;
   }
   if (command === "login") return runLogin(commandArgs, options);
+  if (command === "device-login") return runDeviceLogin(commandArgs, options);
   if (command === "logout") return runLogout(commandArgs, options);
   if (command === "whoami") return runWhoami(commandArgs, options);
   if (command === "orgs") return runOrgs(commandArgs, options);
