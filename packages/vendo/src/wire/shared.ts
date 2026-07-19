@@ -1,10 +1,11 @@
-import type { AppsRuntime } from "@vendoai/apps";
+import type { AppsRuntime, AppTokens } from "@vendoai/apps";
 import type { AutomationsEngine } from "@vendoai/automations";
 import {
   VendoError,
   type Principal,
   type RunContext,
   type ToolOutcome,
+  type ToolRegistry,
   type VendoErrorCode,
 } from "@vendoai/core";
 import type { VendoGuard } from "@vendoai/guard";
@@ -53,6 +54,13 @@ export interface WireDeps {
   agent: VendoAgent;
   guard: VendoGuard;
   apps: AppsRuntime;
+  /** execution-v2 Lane C — the guard-bound registry (the SAME binding chat and
+      automations execute through); the /box tools callback rides it so
+      approvals and audit see box-originated calls like any other. */
+  tools: ToolRegistry;
+  /** execution-v2 Lane C — verify a presented per-app box bearer
+      (createAppTokens over the composed store; mint lives with provision). */
+  appTokens: Pick<AppTokens, "verify">;
   automations: AutomationsEngine;
   connections: ConnectionsService;
   sandbox: SandboxVenue;

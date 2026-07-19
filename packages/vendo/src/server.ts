@@ -8,11 +8,27 @@ import {
 import { createAgent, type VendoAgent } from "@vendoai/agent";
 import {
   createApps,
+  createAppTokens,
   pinBaselineSchema,
   type AppsConfig,
   type AppsRuntime,
   type PinBaseline,
   type SandboxAdapter,
+} from "@vendoai/apps";
+// execution-v2 skin contract (Lane C): the manifest gate and the box env
+// assembly ride the server surface so hosts and later waves (broker, egress)
+// reach them without installing @vendoai/apps directly.
+export {
+  buildEnv,
+  createAppTokens,
+  parseVendoManifest,
+  vendoManifestSchema,
+  type AppTokens,
+  type BuildEnvContext,
+  type BuiltBoxEnv,
+  type InferenceResolver,
+  type VendoManifest,
+  type VendoManifestSchedule,
 } from "@vendoai/apps";
 import { e2bInstalled, e2bSandbox } from "@vendoai/apps/e2b";
 import { modalInstalled, modalSandbox } from "@vendoai/apps/modal";
@@ -150,6 +166,7 @@ import {
   type WireDeps,
 } from "./wire/shared.js";
 import { appRoutes } from "./wire/apps.js";
+import { boxRoutes, fnProxyRoutes } from "./wire/box.js";
 import { approvalRoutes, grantRoutes } from "./wire/approvals.js";
 import { automationRoutes, runRoutes } from "./wire/automations.js";
 import { connectionRoutes } from "./wire/connections.js";
@@ -620,7 +637,11 @@ function isDoorPath(pathname: string): boolean {
 
 function jsonMutationRequired(request: Request, path: string): boolean {
   if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return false;
-  if (path === "/apps/import" || path === "/tick" || path.startsWith("/webhooks/")) return false;
+  // /box/ is the app-token bearer surface (execution-v2 Lane C): no cookies,
+  // no ambient credentials, curl-able from any language inside the box — so
+  // the CSRF json gate doesn't apply; JSON-bodied box routes validate their
+  // own content-type like the webhook surface does.
+  if (path === "/apps/import" || path === "/tick" || path.startsWith("/webhooks/") || path.startsWith("/box/")) return false;
   return true;
 }
 
@@ -650,11 +671,17 @@ const wireRoutes: readonly RouteEntry[] = [
   ...devRoutes,
   ...doctorRoutes,
   ...systemRoutes,
+  // execution-v2 Lane C: the box callback surface is a machine surface like
+  // webhooks/tick — raw prefix match, bearer-authenticated, ahead of the user
+  // surfaces; the fn proxy sits just before the grouped /apps arm so
+  // /apps/:id/fn/:name resolves here, not through the grouped fall-through.
+  ...boxRoutes,
   ...threadRoutes,
   ...approvalRoutes,
   ...connectionRoutes,
   ...grantRoutes,
   ...orgsRoutes,
+  ...fnProxyRoutes,
   ...appRoutes,
   ...automationRoutes,
   ...runRoutes,
@@ -1146,6 +1173,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     agent,
     guard,
     apps,
+    // execution-v2 Lane C — the /box surfaces: tool calls through the SAME
+    // guard binding, bearer verification over the composed store.
+    tools: boundTools,
+    appTokens: createAppTokens(store),
     automations,
     connections,
     sandbox: sandbox.venue,
