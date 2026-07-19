@@ -328,3 +328,136 @@ describe("reshapeShape defensive regions", () => {
     expect(reshapeShape({ kind: "json" }, { op: "eval", args: [] } as never).ok).toBe(false);
   });
 });
+
+/** vendo-v2-cells — template: the bounded object→string projection for
+ *  display slots (the raw-JSON-braces fix from the final 6-case gate). */
+describe("template (object→string projection)", () => {
+  const deadlines = [
+    {
+      client: "Blue Bottle Coffee",
+      dueDate: "2026-07-21",
+      progress: { received: 3, total: 6 },
+      assignedTo: { id: "st_maya", name: "Maya Alvarez", role: "Account Manager" },
+    },
+    {
+      client: "Verve Roasters",
+      dueDate: "2026-07-24",
+      progress: { received: 5, total: 5 },
+      assignedTo: { id: "st_ali", name: "Ali Tran", role: "Bookkeeper" },
+    },
+  ];
+
+  it("per-row form writes the target field from {path} placeholders (nested paths reach object fields)", () => {
+    const result = applyReshape(deadlines, [step("template", "progress", "{progress.received} of {progress.total}")]);
+    expect(result).toEqual({
+      ok: true,
+      value: [
+        { ...deadlines[0], progress: "3 of 6" },
+        { ...deadlines[1], progress: "5 of 5" },
+      ],
+    });
+  });
+
+  it("chained templates close both gate symptoms in one binding", () => {
+    const result = applyReshape(deadlines, [
+      step("template", "progress", "{progress.received} of {progress.total}"),
+      step("template", "assignedTo", "{assignedTo.name}"),
+    ]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual([
+        { ...deadlines[0], progress: "3 of 6", assignedTo: "Maya Alvarez" },
+        { ...deadlines[1], progress: "5 of 5", assignedTo: "Ali Tran" },
+      ]);
+    }
+  });
+
+  it("scalar form interpolates a bare object into one string", () => {
+    expect(applyReshape({ name: "Blue Bottle Coffee", city: "Oakland" }, [step("template", "{name} — {city}")]))
+      .toEqual({ ok: true, value: "Blue Bottle Coffee — Oakland" });
+  });
+
+  it("per-row form also applies directly to a bare object", () => {
+    expect(applyReshape(
+      { nearest: { name: "Blue Bottle Coffee" }, count: 12 },
+      [step("template", "nearest", "{nearest.name}")],
+    )).toEqual({ ok: true, value: { nearest: "Blue Bottle Coffee", count: 12 } });
+  });
+
+  it("null and per-row-absent placeholder values render empty; a non-scalar resolution is a mismatch", () => {
+    expect(applyReshape(
+      [{ a: null, b: 1 }, { b: 2 }],
+      [step("template", "a", "[{a}]")],
+    )).toEqual({ ok: true, value: [{ a: "[]", b: 1 }, { a: "[]", b: 2 }] });
+    const nonScalar = applyReshape([{ a: { b: 1 } }], [step("template", "a", "{a}")]);
+    expect(nonScalar.ok).toBe(false);
+    if (!nonScalar.ok) expect(nonScalar.reason).toContain("{a}");
+  });
+
+  it("a placeholder root absent from every row is a mismatch (the mis-binding signal)", () => {
+    const missing = applyReshape(deadlines, [step("template", "who", "{owner.name}")]);
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.reason).toContain("owner");
+  });
+
+  it("scalar form on an array is a mismatch routing to the per-row form", () => {
+    const wrong = applyReshape(deadlines, [step("template", "{client}")]);
+    expect(wrong.ok).toBe(false);
+    if (!wrong.ok) expect(wrong.reason).toContain("template(field, pattern)");
+  });
+
+  it("patterns are validated against the closed grammar: at least one valid {field.path} placeholder", () => {
+    expect(findInvalidReshape({ v: { $path: "/q/data", $reshape: [step("template", "a", "no placeholders")] } }))
+      .toContain("placeholder");
+    expect(findInvalidReshape({ v: { $path: "/q/data", $reshape: [step("template", "a", "{bad..path}")] } }))
+      .not.toBeNull();
+    expect(findInvalidReshape({ v: { $path: "/q/data", $reshape: [step("template", "a", "{ok.path} text")] } }))
+      .toBeNull();
+    expect(findInvalidReshape({ v: { $path: "/q/data", $reshape: [step("template")] } })).not.toBeNull();
+  });
+
+  const deadlinesShape: ShapeType = {
+    kind: "array",
+    items: {
+      kind: "object",
+      fields: {
+        client: { kind: "string" },
+        dueDate: { kind: "string" },
+        progress: { kind: "object", fields: { received: { kind: "number" }, total: { kind: "number" } } },
+        assignedTo: { kind: "object", fields: { id: { kind: "string" }, name: { kind: "string" } } },
+      },
+    },
+  };
+
+  it("compile-time flow: the target field becomes a string per-row; scalar form strings an object", () => {
+    const flowed = reshapeShape(deadlinesShape, step("template", "progress", "{progress.received} of {progress.total}"));
+    expect(flowed.ok).toBe(true);
+    if (flowed.ok && flowed.shape.kind === "array" && flowed.shape.items.kind === "object") {
+      expect(flowed.shape.items.fields.progress).toEqual({ kind: "string" });
+      expect(flowed.shape.items.fields.assignedTo?.kind).toBe("object");
+    }
+    expect(reshapeShape(
+      { kind: "object", fields: { name: { kind: "string" } } },
+      step("template", "{name}!"),
+    )).toEqual({ ok: true, shape: { kind: "string" } });
+  });
+
+  it("compile-time violations: absent placeholder roots carry missing/available; non-scalar leaves flag", () => {
+    const missing = reshapeShape(deadlinesShape, step("template", "who", "{owner.name}"));
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) {
+      expect(missing.error.missing).toEqual(["owner"]);
+      expect(missing.error.available).toEqual(["client", "dueDate", "progress", "assignedTo"]);
+    }
+    const nonScalar = reshapeShape(deadlinesShape, step("template", "assignedTo", "{assignedTo}"));
+    expect(nonScalar.ok).toBe(false);
+    const scalarFormOnRows = reshapeShape(deadlinesShape, step("template", "{client}"));
+    expect(scalarFormOnRows.ok).toBe(false);
+  });
+
+  it("json regions stay defensive through template", () => {
+    expect(reshapeShape({ kind: "json" }, step("template", "{anything}"))).toEqual({ ok: true, shape: { kind: "string" } });
+    const rowsForm = reshapeShape({ kind: "array", items: { kind: "json" } }, step("template", "a", "{a.b}"));
+    expect(rowsForm.ok).toBe(true);
+  });
+});
