@@ -229,6 +229,46 @@ const expectValidationMessage = (input: unknown, message: string): void => {
   }
 };
 
+describe("appDocumentSchema machine field (execution-v2)", () => {
+  const withMachine = () => ({
+    ...minimal(),
+    machine: { snapshotRef: "e2b:snap_42", provisionedAt: "2026-07-19T12:00:00.000Z" },
+  });
+
+  it("round-trips a document with a machine reference", () => {
+    const document = withMachine();
+    expect(appDocumentSchema.parse(document)).toEqual(document);
+    expect(validateAppDocument(document)).toEqual({ ok: true, app: document });
+  });
+
+  it("keeps the machine optional: an app without one is a layer-1 tree app", () => {
+    const result = validateAppDocument(minimal());
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.app.machine).toBeUndefined();
+  });
+
+  it("rejects a machine snapshotRef without a provider prefix", () => {
+    expectValidation({
+      ...minimal(),
+      machine: { snapshotRef: "snap_42", provisionedAt: "2026-07-19T12:00:00.000Z" },
+    });
+  });
+
+  it("rejects a machine with a malformed provisionedAt", () => {
+    expectValidation({
+      ...minimal(),
+      machine: { snapshotRef: "e2b:snap_42", provisionedAt: "yesterday" },
+    });
+  });
+
+  it("rejects a machine missing its snapshotRef", () => {
+    expectValidation({
+      ...minimal(),
+      machine: { provisionedAt: "2026-07-19T12:00:00.000Z" },
+    });
+  });
+});
+
 describe("validateAppDocument with vendo-genui/v2 trees", () => {
   it("accepts a v2 tree whose generated nodes are backed by document-level components", () => {
     const document = {

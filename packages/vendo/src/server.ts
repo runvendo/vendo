@@ -7,11 +7,13 @@ import {
 } from "@vendoai/actions";
 import { createAgent, type VendoAgent } from "@vendoai/agent";
 import {
+  buildEnv,
   createApps,
   createAppTokens,
   pinBaselineSchema,
   type AppsConfig,
   type AppsRuntime,
+  type MachineSandboxAdapter,
   type PinBaseline,
   type SandboxAdapter,
   type V1SandboxAdapter,
@@ -41,6 +43,7 @@ import {
   descriptorHash,
   vendoThemeSchema,
   type ActAs,
+  type AppDocument,
   type ComponentCatalog,
   type ComponentRegistry,
   type Json,
@@ -985,6 +988,37 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     runtimeCatalogFromJson(dotVendoFile("catalog.json")),
     normalizeCatalogConfig(config.catalog),
   );
+  // execution-v2 Lane C — the per-app box bearer store (hash rows are the
+  // authority) shared by the machine-env assembler below (mint at provision)
+  // and the wire's /box verification.
+  const appTokens = createAppTokens(store);
+  // The box env assembler the machine lifecycle calls at provision: rotate the
+  // app token, compose the callback doors from the operator-set public origin
+  // (the wire lives under it at BASE_PATH), and inject granted secrets —
+  // grant-state wiring is the Wave-2 secrets/egress lane, so nothing is
+  // granted yet and buildEnv injects no secret values.
+  const machineEnv = async (app: AppDocument): Promise<Record<string, string>> => {
+    const record = await store.records("vendo_apps").get(app.id);
+    const subject = record?.refs?.["subject"];
+    if (typeof subject !== "string") {
+      throw new VendoError("not-found", `app not found: ${app.id}`);
+    }
+    if (configuredBaseUrl === undefined) {
+      throw new VendoError(
+        "validation",
+        "machine provisioning requires VENDO_BASE_URL — the box's callback URLs must be this deployment's public origin",
+      );
+    }
+    const boxBase = `${configuredBaseUrl.replace(/\/+$/, "")}${BASE_PATH}/box`;
+    const built = await buildEnv(app, {
+      granted: new Set<string>(),
+      secrets: config.secrets ?? envSecrets(),
+      storeUrl: boxBase,
+      hostUrl: boxBase,
+      appToken: await appTokens.mint(app.id, subject),
+    });
+    return built.env;
+  };
   const apps = createApps({
     store,
     guard,
@@ -997,6 +1031,14 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(designRules === undefined ? {} : { designRules }),
     secrets: config.secrets ?? envSecrets(),
     ...(sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter }),
+    // execution-v2 — the machine lifecycle's seams: the selected adapter (the
+    // canonical v2 seam; the cast covers the destroy-by-ref amendment Lane A
+    // lands on SandboxAdapter itself, whereupon MachineSandboxAdapter
+    // collapses and the cast goes) and Lane C's env assembly.
+    machine: {
+      ...(sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter as MachineSandboxAdapter }),
+      buildEnv: machineEnv,
+    },
     ...(environment("VENDO_PROXY_URL") === undefined ? {} : { proxyUrl: environment("VENDO_PROXY_URL") }),
   });
   resolveAppToolRisk = apps.agentToolRisk;
@@ -1168,7 +1210,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // execution-v2 Lane C — the /box surfaces: tool calls through the SAME
     // guard binding, bearer verification over the composed store.
     tools: boundTools,
-    appTokens: createAppTokens(store),
+    appTokens,
     automations,
     connections,
     sandbox: sandbox.venue,

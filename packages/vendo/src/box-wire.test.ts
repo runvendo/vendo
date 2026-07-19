@@ -15,6 +15,7 @@ import { createVendo, type Vendo } from "./server.js";
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
@@ -80,6 +81,9 @@ interface Skin {
 }
 
 async function setup(handler: BoxHandler = () => ({ status: 200 })): Promise<Skin> {
+  // The machine-env assembler composes the box's callback doors from the
+  // operator-set public origin, so provisioning requires it.
+  vi.stubEnv("VENDO_BASE_URL", "http://wire.test");
   const store = await tempStore("vendo-box-wire-");
   await store.ensureSchema();
   await store.records("vendo_apps").put({
@@ -87,7 +91,6 @@ async function setup(handler: BoxHandler = () => ({ status: 200 })): Promise<Ski
     data: { subject: ADA.subject, enabled: false, doc: doc() },
     refs: { subject: ADA.subject },
   });
-  const token = await createAppTokens(store).mint("app_skin", ADA.subject);
   const vendo = createVendo({
     model: {} as LanguageModel,
     principal: async (req) => {
@@ -97,6 +100,15 @@ async function setup(handler: BoxHandler = () => ({ status: 200 })): Promise<Ski
     store,
     sandbox: boxSandbox(handler),
   });
+  // Provision (Lane B's graduation step) so the fn door has a machine to wake;
+  // it mints the app's bearer, which the test rotates to hold a known one.
+  await vendo.apps.machine.provision("app_skin", {
+    principal: ADA,
+    venue: "app",
+    presence: "present",
+    sessionId: "session_box_wire",
+  });
+  const token = await createAppTokens(store).mint("app_skin", ADA.subject);
   return { vendo, store, token };
 }
 

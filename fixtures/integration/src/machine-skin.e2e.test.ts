@@ -132,7 +132,19 @@ describe("machine skin: fn proxy, buildEnv, and the callback surface through the
     // Import the app through the public wire as ADA.
     const app = await importAutomation(stack, seedDoc, ADA);
 
-    // --- Provision stand-in (where Lane B calls Lane C's seams) ------------
+    // --- Provision: graduation's machine step (Lane B) — creates the box
+    // from the fake adapter, composes env through the umbrella's assembler
+    // (buildEnv + token mint), snapshots, and stores the machine ref.
+    await stack.vendo.apps.machine.provision(app.id, {
+      principal: ADA,
+      venue: "app",
+      presence: "present",
+      sessionId: "session_machine_skin",
+    });
+
+    // The journey pins its own bearer + env (rotating provision's mint) so the
+    // fake box can act on a KNOWN provision-time environment; the granted-
+    // secrets half of the composed assembler is the Wave-2 secrets lane.
     const token = await createAppTokens(stack.vendo.store).mint(app.id, ADA.subject);
     const built = await buildEnv(app, {
       granted: new Set(["STRIPE_KEY"]),
