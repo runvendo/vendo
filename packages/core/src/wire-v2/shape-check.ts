@@ -96,28 +96,38 @@ const splitPath = (path: string): { query: string; pointer: string } | null => {
 };
 
 /** The prewired props whose bound value must be `[{value, label}]` items (a
- *  bare `string[]` is also fine). A fetched object array lacking a `value`
- *  field renders blank options/tabs — the projection gap {@link optionItemMiss}
- *  routes to `| asOptions(valueField, labelField)` repair. */
-const OPTION_ITEM_PROPS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
-  ["Select", new Set(["options"])],
-  ["Tabs", new Set(["tabs", "items"])],
+ *  bare `string[]` is also fine), with the item fields that component requires.
+ *  A fetched object array lacking a required field renders blank options/tabs —
+ *  the projection gap {@link optionItemMiss} routes to
+ *  `| asOptions(valueField, labelField)` repair. Select labels are optional;
+ *  Tabs need both (a labelless tab is a blank button). */
+const OPTION_ITEM_PROPS: ReadonlyMap<string, { props: ReadonlySet<string>; required: readonly string[] }> = new Map([
+  ["Select", { props: new Set(["options"]), required: ["value"] }],
+  ["Tabs", { props: new Set(["tabs", "items"]), required: ["value", "label"] }],
 ]);
 
-const isOptionProp = (component: string, prop: string): boolean =>
-  OPTION_ITEM_PROPS.get(component)?.has(prop) ?? false;
+/** The item fields the component's option prop requires, or null when
+ *  (component, prop) is not an option target. */
+const optionRequired = (component: string, prop: string): readonly string[] | null => {
+  const entry = OPTION_ITEM_PROPS.get(component);
+  return entry !== undefined && entry.props.has(prop) ? entry.required : null;
+};
 
 /** A resolved shape feeding an option prop must be a `string[]` or an object
- *  array carrying `value`. An object array WITHOUT `value` is the blank-option
- *  class; anything else (scalar, json, non-array) stays defensive. */
-const optionItemMiss = (shape: ShapeType): MissReport | null => {
+ *  array carrying the fields that component's items need: Select items are
+ *  `{value, label?}` (value required), Tabs items `{value, label}` (both
+ *  required — a labelless tab renders a blank button). An object array missing
+ *  a required field is the blank-option class; anything else (scalar, json,
+ *  non-array) stays defensive. */
+const optionItemMiss = (shape: ShapeType, required: readonly string[]): MissReport | null => {
   if (shape.kind !== "array") return null;
   const items = shape.items;
   if (items.kind !== "object") return null;
-  if (Object.prototype.hasOwnProperty.call(items.fields, "value")) return null;
+  const missing = required.filter((field) => !Object.prototype.hasOwnProperty.call(items.fields, field));
+  if (missing.length === 0) return null;
   const available = Object.keys(items.fields);
   return {
-    message: `this binds an array of {${available.join(", ")}}, but the list prop needs [{value, label}] items — project it with | asOptions(valueField, labelField) (e.g. | asOptions(id, name))`,
+    message: `this binds an array of {${available.join(", ")}}, missing ${missing.map((field) => `"${field}"`).join(", ")}, but the list prop needs [{value, label}] items — project it with | asOptions(valueField, labelField) (e.g. | asOptions(id, name))`,
     available,
   };
 };
@@ -180,14 +190,15 @@ const collectFromValue = (
   queryTools: ReadonlyMap<string, string>,
   toolShapes: Readonly<Record<string, ShapeType>>,
   errors: BindingShapeError[],
-  /** True only for the whole value of a prewired option prop (Select.options,
-   *  Tabs.tabs); a nested binding inside a literal is not the option list. */
-  optionTarget: boolean,
+  /** The item fields required when this value is the whole value of a prewired
+   *  option prop (Select.options, Tabs.tabs); null otherwise. A nested binding
+   *  inside a literal is not the option list, so it descends with null. */
+  requiredFields: readonly string[] | null,
 ): void => {
   if (Array.isArray(value)) {
     // A literal option array (`options={[{value,label}]}`) is already shaped;
     // only its inner bindings are checked, never as the option list itself.
-    for (const item of value) collectFromValue(item, nodeId, prop, queryTools, toolShapes, errors, false);
+    for (const item of value) collectFromValue(item, nodeId, prop, queryTools, toolShapes, errors, null);
     return;
   }
   if (!isPlainObject(value)) return;
@@ -197,8 +208,8 @@ const collectFromValue = (
       pushMiss(errors, nodeId, prop, check.query, check.tool, value.$path, check.report);
       return;
     }
-    if (optionTarget && check.shape !== null && check.tool !== undefined && check.query !== undefined) {
-      const optionMiss = optionItemMiss(check.shape);
+    if (requiredFields !== null && check.shape !== null && check.tool !== undefined && check.query !== undefined) {
+      const optionMiss = optionItemMiss(check.shape, requiredFields);
       if (optionMiss !== null) {
         pushMiss(errors, nodeId, prop, check.query, check.tool, value.$path, optionMiss);
       }
@@ -206,7 +217,7 @@ const collectFromValue = (
     return; // a binding's $reshape/$path members hold no nested bindings
   }
   for (const child of Object.values(value)) {
-    collectFromValue(child, nodeId, prop, queryTools, toolShapes, errors, false);
+    collectFromValue(child, nodeId, prop, queryTools, toolShapes, errors, null);
   }
 };
 
@@ -225,7 +236,7 @@ export const checkBindingShapes = (
   for (const node of nodes) {
     if (node.props === undefined) continue;
     for (const [prop, value] of Object.entries(node.props)) {
-      collectFromValue(value, node.id, prop, queryTools, toolShapes, errors, isOptionProp(node.component, prop));
+      collectFromValue(value, node.id, prop, queryTools, toolShapes, errors, optionRequired(node.component, prop));
     }
   }
   return errors;
