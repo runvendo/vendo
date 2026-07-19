@@ -1102,3 +1102,36 @@ describe("compileWireV2 shape check pointer misses", () => {
     expect(pastScalar.bindingErrors[0]?.message).toContain("goes past");
   });
 });
+
+describe("compileWireV2 comments", () => {
+  it("skips HTML comments between elements and inside text", () => {
+    const result = compile('<App name="C"><!-- Header --><Text text="hi"/><!-- KPI Row --><Card/></App>');
+    expect(result.tree.nodes.map((node) => node.component)).toEqual(["Stack", "Text", "Card"]);
+    expect(result.issues).toEqual([]);
+    expect(result.complete).toBe(true);
+  });
+
+  it("treats an unterminated comment as truncation, not content", () => {
+    const result = compileWireV2('<App name="C"><Text text="hi"/><!-- dangling', undefined);
+    expect(result.tree.nodes.map((node) => node.component)).toEqual(["Stack", "Text"]);
+    expect(result.complete).toBe(false);
+  });
+});
+
+describe("compileWireV2 comments before declarations", () => {
+  it("still pre-scans queries and islands declared after a comment (Devin, PR #381)", () => {
+    const wire = [
+      '<App name="C"><!-- data -->',
+      '<Query id="metric" tool="host_metric"/>',
+      "<!-- widgets --><Note/>",
+      '<Card value={metric.total}/>',
+      '<Island name="Note">export default function Note() { return <p>n</p>; }</Island></App>',
+    ].join("");
+    const result = compile(wire);
+    expect(result.tree.queries).toEqual([{ name: "metric", tool: "host_metric" }]);
+    expect(result.tree.nodes.find(({ id }) => id === "note-1")?.source).toBe("generated");
+    expect(result.tree.nodes.find(({ id }) => id === "card-1")?.props).toEqual({ value: { $path: "/metric/total" } });
+    expect(result.issues).toEqual([]);
+    expect(result.complete).toBe(true);
+  });
+});

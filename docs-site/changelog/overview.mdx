@@ -3,6 +3,61 @@ title: "Vendo product changelog"
 description: "Weekly release notes covering new Vendo features, product updates, MCP door capabilities, and bug fixes shipped to the SDK and runtime."
 ---
 
+<Update label="July 17, 2026" description="Week of July 14 – July 20">
+
+## New features
+
+**Configurable palette keybinding.** `VendoPalette` now accepts an optional
+`hotkey` prop so hosts can retune or hand off the keyboard opener. Pass a
+chord (`{ key: "k", meta: true }`), a custom matcher `(e) => boolean`, or
+`false` to disable the built-in opener entirely and wire your own:
+
+```tsx
+import { VendoPalette } from "@vendoai/ui";
+
+// Rebind to Ctrl+/, leaving ⌘K for the host app.
+<VendoPalette hotkey={{ key: "/", ctrl: true }} />
+
+// Or turn the built-in opener off and drive it yourself.
+<VendoPalette hotkey={false} />
+```
+
+All mounted palettes now share a single `keydown` listener, and the keystroke
+routes to the most-recently-mounted palette. Mounting the palette in more
+than one place no longer double-toggles on a single press. While the palette
+is closed, the shortcut is also ignored when focus is in a host `input`,
+`textarea`, `select`, or `contenteditable`, so your app keeps its own ⌘K
+inside its own fields.
+
+**Humanized tool chips and approval cards.** `@vendoai/ui` chrome now shows
+friendly labels and readable argument previews instead of raw tool slugs,
+ai-SDK lifecycle strings, or raw JSON. `VendoProvider` accepts an optional
+`tools` prop (`ToolMetaMap`) with per-tool `label`, `description`, and
+`summarize(args)`; the new `useVendoTools()` hook exposes the same map to
+custom surfaces. Chrome falls back to prettified ids and `Key: value`
+previews when no metadata is supplied, collapses consecutive identical
+chips into a single entry with an `×N` count, and no longer prints a
+fabricated context byline on the in-thread approval card. See
+[Tool labels](/connect/tool-labels).
+
+## Fixes
+
+**Thread sidebar refreshes on new conversation.** `VendoPage`'s chat sidebar
+now surfaces and highlights a conversation started via **New conversation**
+as soon as the server mints its `thr_` id. `VendoThread` also gains an
+optional `onThreadId` callback that fires with the effective thread id, so
+headless hosts can mirror the same refresh into their own UI:
+
+```tsx
+<VendoThread onThreadId={(id) => console.log("active thread", id)} />
+```
+
+An explicit selection is now immune to the default-select effect, so the
+first turn after **New conversation** always posts against the newly minted
+thread instead of the previously selected one.
+
+</Update>
+
 <Update label="July 16, 2026" description="Week of July 14 – July 20">
 
 ## New features
@@ -13,6 +68,20 @@ serialized background polling that pauses in hidden tabs. `useThreads`
 brings headless parity with `VendoOverlay`, and `useApps` gains
 `export(appId)` and `import(bytes)` for round-tripping an `AppDocument`
 through the wire. See [Headless hooks](/reference/hooks).
+
+**Composer autogrow, type-while-streaming, edit, and regenerate.** The
+shipped chrome composer now grows with its content up to a 200px cap, then
+scrolls internally, so a long paste is no longer clipped to one line. The
+textarea stays enabled while a turn is streaming — a Send issued mid-turn
+shows as a cancelable **Queued** pill above the input and auto-sends the
+instant the reply finishes. Stop remains the explicit interrupt. Because
+the textarea no longer disables mid-turn, focus stays put and Escape and
+the overlay focus trap keep working. An **Edit** affordance on the last
+user turn drops that turn (and anything after) and refills the composer, so
+re-sending amends instead of duplicates. A **Regenerate** affordance on the
+last assistant turn re-issues from the preserved user message.
+Headless callers of `useVendoThread` get a new `setMessages` on the hook
+return that backs the same edit flow. See [Headless hooks](/reference/hooks#threads).
 
 </Update>
 

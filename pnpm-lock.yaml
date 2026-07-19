@@ -743,6 +743,9 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../core
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
       fflate:
         specifier: ^0.8.2
         version: 0.8.3

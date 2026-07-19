@@ -23,6 +23,14 @@ Critical-tool risk answers land in `.vendo/overrides.json` and remain
 authoritative across future sync runs. Init also writes policy, product brief,
 theme, and the PGlite ignore entry where applicable.
 
+When the scan detects Next.js server actions, init also generates an actions
+registration map beside the handler route and wires it into
+`createVendo({ serverActions })`. The map imports every detected action module
+so Vendo can dispatch calls in process. It regenerates deterministically on
+each run, so re-running `vendo init` on an unchanged surface leaves an empty
+diff. See [Tools from your API](/connect/api-tools#next-js-server-actions) for
+the runtime rules.
+
 Init also proposes `predev` and `prebuild` hooks in `package.json` so
 extraction runs alongside your dev and build:
 
@@ -40,8 +48,10 @@ exists), preserves your existing formatting, and only writes if you approve
 the diff.
 
 Init also creates or appends `VENDO_BASE_URL=http://localhost:3000` to
-`.env.example` with a comment explaining that present-mode credential
-forwarding is disabled without it. The write is idempotent — existing lines
+`.env.example` with a comment explaining the trust semantics: development
+trusts the request's own origin automatically, while production fails loud
+without the variable set (a credential-forwarding call errors instead of
+silently running unauthenticated). The write is idempotent — existing lines
 are preserved — so it is safe to run `vendo init` again.
 
 One of those questions is whether to open the [MCP door](/capabilities/mcp).
@@ -101,3 +111,46 @@ npx vendo init [dir] --yes --model-import '@/lib/ai' --brief 'What the product d
 - `--brief <text>` supplies the contents of `.vendo/brief.md`.
 - `--force` regenerates Vendo-owned `.vendo` files while preserving existing
   host source files.
+
+## Model scaffold
+
+Init writes `lib/ai.ts` that exports `model = devModel()`. The
+[credential ladder](/connect/dev-mode) boots without an API key by riding a
+logged-in Claude Code or Codex CLI, and falls through to a provider env key
+when one is set. Init asks for session-rung consent once and records the
+answer per machine in `.vendo/data/dev-credential.json`. If your app already
+exports a model, pass `--model-import <specifier>` and init leaves
+`lib/ai.ts` alone.
+
+With consent, init also offers to install `@anthropic-ai/claude-agent-sdk`
+as a `devDependency` so the Claude rung can spawn its persistent session.
+
+## Vendo Cloud step
+
+Right after the model scaffold, init runs a Vendo Cloud step. When
+`VENDO_API_KEY` is already set, init validates it against
+[Vendo Cloud](/deploy/vendo-cloud) and prints the plan and unlocked
+capabilities. When it is unset and a starter key would help the credential
+ladder, init offers `vendo cloud login` inline (email OTP). On success, it
+mints a metered starter allowance and appends `VENDO_API_KEY` to
+`.env.local` without touching your other keys. Init never fails on Cloud
+errors — a missing or unreachable endpoint degrades to guidance and leaves
+your exit code unchanged.
+
+## Init finale
+
+After you accept the wiring diffs, an interactive terminal run finishes with
+a live first turn (skipped with `--yes`, in CI, or when a session rung has
+no recorded consent):
+
+1. Init detects your package manager and starts the dev server.
+2. It polls `/api/vendo/status` until the composition is green.
+3. It opens your app in the browser.
+4. It seeds one message adapted to what your app exposes — a live tool
+   demo when tools were extracted, on-brand UI generation when only theme
+   was extracted, or a self-aware tour on a blank app — and streams the
+   reply into your terminal.
+
+The dev server keeps running after init exits. The seeded reply currently
+renders in the terminal only; the browser widget shows its own empty
+anonymous session.

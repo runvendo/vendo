@@ -1,80 +1,106 @@
 # Auto-merge Mintlify docs PRs (Yousef, 2026-07-18).
 #
 # Mintlify's docs agent opens PRs as mintlify[bot] on in-repo mintlify/*
-# branches, touching only docs-site/**. Those merge themselves once every
-# other check on the head SHA has finished green. Two guards keep this
-# narrow: the author must be mintlify[bot], and the diff must stay entirely
-# inside docs-site/ — a bot PR touching anything else is left for humans.
+# branches, touching only docs-site/**. Two guards keep this narrow: the
+# author must be mintlify[bot], and the diff must stay entirely inside
+# docs-site/ — a bot PR touching anything else is left for humans.
 #
-# The wait loop polls check-runs + commit statuses itself (instead of GitHub
-# native auto-merge, which would merge instantly because main has no required
-# checks; instead of `gh pr checks --watch`, which would deadlock waiting on
-# this very job). Success/neutral/skipped pass; any failure aborts without
-# merging.
+# main's branch protection requires ci/integration/perf green on an
+# up-to-date branch (strict mode), so this workflow arms GitHub native
+# auto-merge (repo allow_auto_merge is on) and nudges behind branches with
+# update-branch. GitHub merges the PR itself the moment required checks
+# pass. Because update-branch runs under GITHUB_TOKEN, the synchronize it
+# causes does not re-trigger this workflow — the half-hourly sweep is the
+# safety net that re-nudges anything that went behind again, and it also
+# prunes merged mintlify/* branches (native auto-merge doesn't delete them).
 name: mintlify-automerge
 
 on:
   pull_request:
     types: [opened, reopened, synchronize]
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: write
 
 concurrency:
-  group: mintlify-automerge-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: mintlify-automerge-${{ github.event.pull_request.number || 'sweep' }}
+  cancel-in-progress: false
 
 jobs:
   automerge:
     name: automerge
-    if: github.event.pull_request.user.login == 'mintlify[bot]'
+    if: github.event_name != 'pull_request' || github.event.pull_request.user.login == 'mintlify[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
-      PR: ${{ github.event.pull_request.number }}
-      SHA: ${{ github.event.pull_request.head.sha }}
+      EVENT_PR: ${{ github.event.pull_request.number }}
     steps:
-      - name: Guard: diff is docs-site/** only
+      - name: Arm auto-merge and nudge behind branches
         run: |
-          outside=$(gh api "repos/$REPO/pulls/$PR/files" --paginate \
-            --jq '.[].filename | select(startswith("docs-site/") | not)')
-          if [ -n "$outside" ]; then
-            echo "Not docs-site-only; leaving for humans:"
-            echo "$outside"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          process_pr() {
+            local pr="$1"
+
+            local outside
+            outside=$(gh api "repos/$REPO/pulls/$pr/files" --paginate \
+              --jq '.[].filename | select(startswith("docs-site/") | not)')
+            if [ -n "$outside" ]; then
+              echo "PR #$pr touches files outside docs-site/; leaving for humans:"
+              echo "$outside"
+              return 0
+            fi
+
+            local state mss
+            state=$(gh pr view "$pr" --repo "$REPO" --json state --jq .state)
+            mss=$(gh pr view "$pr" --repo "$REPO" --json mergeStateStatus --jq .mergeStateStatus)
+            echo "PR #$pr: state=$state mergeStateStatus=$mss"
+            [ "$state" = "OPEN" ] || return 0
+
+            if [ "$mss" = "DIRTY" ]; then
+              echo "PR #$pr has conflicts; leaving for humans."
+              return 0
+            fi
+
+            # Arm native auto-merge; if the PR is already clean this call is
+            # rejected, so fall through to an immediate merge.
+            if ! gh pr merge "$pr" --repo "$REPO" --auto --squash; then
+              gh pr merge "$pr" --repo "$REPO" --squash --delete-branch || true
+            fi
+
+            # Strict required checks demand an up-to-date branch, and GitHub
+            # never updates it for us.
+            if [ "$mss" = "BEHIND" ]; then
+              echo "PR #$pr is behind main; updating branch."
+              gh api -X PUT "repos/$REPO/pulls/$pr/update-branch" || true
+            fi
+          }
+
+          if [ -n "$EVENT_PR" ]; then
+            process_pr "$EVENT_PR"
+          else
+            for pr in $(gh pr list --repo "$REPO" --author 'app/mintlify' --state open --json number --jq '.[].number'); do
+              process_pr "$pr"
+            done
           fi
-        id: guard
 
-      - name: Wait for every other check on the head SHA
-        if: steps.guard.outputs.skip != 'true'
+      - name: Prune merged mintlify/* branches
+        if: github.event_name != 'pull_request'
         run: |
-          # Give slow-dispatching suites time to register before we trust
-          # "nothing pending" (this repo's check suites sometimes lag).
-          sleep 120
-          for i in $(seq 1 80); do
-            runs=$(gh api "repos/$REPO/commits/$SHA/check-runs" --paginate \
-              --jq '[.check_runs[] | select(.name != "automerge")]')
-            statuses=$(gh api "repos/$REPO/commits/$SHA/status" --jq '.statuses')
-            pending=$(jq -n --argjson r "$runs" --argjson s "$statuses" \
-              '([$r[] | select(.status != "completed")] + [$s[] | select(.state == "pending")]) | length')
-            failed=$(jq -n --argjson r "$runs" --argjson s "$statuses" \
-              '([$r[] | select(.conclusion and (.conclusion | IN("success","neutral","skipped") | not))] + [$s[] | select(.state | IN("failure","error"))]) | length')
-            total=$(jq -n --argjson r "$runs" --argjson s "$statuses" '($r + $s) | length')
-            echo "checks: total=$total pending=$pending failed=$failed"
-            if [ "$failed" -gt 0 ]; then
-              echo "A check failed — not merging."; exit 1
+          gh pr list --repo "$REPO" --author 'app/mintlify' --state merged --limit 30 \
+            --json headRefName,headRefOid \
+            --jq '.[] | select(.headRefName | startswith("mintlify/")) | "\(.headRefName) \(.headRefOid)"' |
+          while read -r branch merged_sha; do
+            # Exact-match ref lookup (git/ref, not git/refs, which prefix-matches).
+            current_sha=$(gh api "repos/$REPO/git/ref/heads/$branch" --jq .object.sha 2>/dev/null) || continue
+            if [ "$current_sha" != "$merged_sha" ]; then
+              echo "Branch $branch moved since its PR merged; leaving it."
+              continue
             fi
-            if [ "$total" -gt 0 ] && [ "$pending" -eq 0 ]; then
-              echo "All green."; exit 0
-            fi
-            sleep 60
+            echo "Deleting merged branch $branch"
+            gh api -X DELETE "repos/$REPO/git/refs/heads/$branch" || true
           done
-          echo "Timed out waiting for checks."; exit 1
-
-      - name: Merge
-        if: steps.guard.outputs.skip != 'true'
-        run: gh pr merge "$PR" --squash --delete-branch

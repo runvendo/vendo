@@ -11,6 +11,8 @@ export {
   TREE_MAX_COMPONENT_SOURCE_CHARS,
   TREE_MAX_TOTAL_COMPONENT_CHARS,
   RESERVED_COMPONENT_NAMES,
+  BRANDED_COMPONENT_NAMES,
+  PREWIRED_COMPONENT_NAMES,
 } from "./tree-limits.js";
 
 import type { ReshapeStep } from "./reshape.js";

@@ -365,7 +365,7 @@ function NodeRenderer(props: NodeRendererProps) {
   ancestry.add(node.id);
   const invoke = (action: string, payload?: Json) => props.runAction(node.id, action, payload);
   const children = node.children?.map((childId) => (
-    <NodeErrorBoundary key={childId} nodeId={childId}>
+    <NodeErrorBoundary key={childId} nodeId={childId} retryKey={props.data}>
       <NodeRenderer {...props} nodeId={childId} ancestry={ancestry} />
     </NodeErrorBoundary>
   ));
@@ -594,7 +594,7 @@ function StatefulTreeView({
     : null;
 
   return (
-    <NodeErrorBoundary nodeId={validation.tree.root}>
+    <NodeErrorBoundary nodeId={validation.tree.root} retryKey={data ?? validation.tree.data}>
       {dropBackNotice}
       {driftNotice}
       <NodeRenderer
