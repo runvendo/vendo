@@ -97,8 +97,11 @@ unreasoned wakes) are printed per entry while the rest of the draft applies.
 ## The two files you own
 
 A host's entire server wiring is two files: `vendo/registry.tsx`, which
-declares the components generated views can use, and `vendo/server.ts`, which
-calls `createVendo` with a model, an auth preset, and that registry.
+declares the components generated views can use, and the composition — one
+`createVendo` call with a model, an auth preset, and that registry. On
+Next.js the composition lives inline in the catch-all route
+`app/api/vendo/[...vendo]/route.ts`, which is exactly what `vendo init`
+scaffolds.
 
 ### `vendo/registry.tsx` — the component registry
 
@@ -131,18 +134,21 @@ description-only prompt entry the model infers props for. When a schema is
 present, the model-facing JSON Schema is derived from it internally; you never
 hand-write one.
 
-### `vendo/server.ts` — the composition
+### The catch-all route — the composition
 
 ```ts
+// app/api/vendo/[...vendo]/route.ts — what `vendo init` scaffolds
 import { anthropic } from "@ai-sdk/anthropic";
-import { authJs, createVendo } from "@vendoai/vendo/server";
-import { registry } from "./registry";
+import { authJs, createVendo, nextVendoHandler } from "@vendoai/vendo/server";
+import { registry } from "@/vendo/registry";
 
-export const vendo = createVendo({
+const vendo = createVendo({
   model: anthropic("claude-sonnet-4-6"),
   auth: authJs(),
   catalog: registry,
 });
+
+export const { GET, POST, DELETE } = nextVendoHandler(vendo);
 ```
 
 The example pins an explicit provider. You can omit `model` entirely — the
@@ -216,8 +222,13 @@ ephemeral and anonymous. `auth` and any of `principal`/`actAs`/`oauth` are
 mutually exclusive — supplying both throws a validation error at compose
 time. Pick the preset or hand-wire the three seams, never both.
 
+Prefer a separate `vendo/server.ts` (exporting the same `createVendo`
+result) when code outside the route needs the `vendo` object — `vendo.emit`
+for host events, the MCP door's `.well-known` route, or tests. The route
+then shrinks to a re-export:
+
 ```ts
-import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
+import { nextVendoHandler } from "@vendoai/vendo/server";
 import { vendo } from "@/vendo/server";
 
 export const { GET, POST, DELETE } = nextVendoHandler(vendo);
@@ -237,7 +248,7 @@ export function Root({ children }: { children: React.ReactNode }) {
 }
 ```
 
-`components` accepts the same registry object `server.ts` passes as
+`components` accepts the same registry object the composition passes as
 `catalog` — it reads only the component references and ignores the data
 fields. Use the headless hooks from `@vendoai/ui`, or add a shipped surface
 from `@vendoai/ui/chrome`. `<VendoThread />`, `<VendoOverlay />`,

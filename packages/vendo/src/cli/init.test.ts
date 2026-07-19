@@ -351,6 +351,8 @@ describe("vendo init (zero-question)", () => {
     await expect(readFile(join(unwired, "vendo", "ai.ts"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(sink.logs.join("\n")).toContain('app.use("/api/vendo", mountVendo());');
     expect(sink.logs.join("\n")).toContain("components={registry}");
+    // Fresh composition creation with no auth dependency: one calm advisory.
+    expect(sink.logs.join("\n")).toContain("Auth: no provider detected");
 
     const wired = await expressFixture(true);
     expect(await run(wired, output())).toBe(0);
@@ -359,6 +361,36 @@ describe("vendo init (zero-question)", () => {
     expect(await tree(wired)).toEqual(first);
     await expect(readFile(join(wired, "vendo", "server.ts"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(join(wired, "vendo", "registry.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("re-init on a scaffolded, not-yet-client-wired Express host changes nothing and stays silent", async () => {
+    const root = await expressFixture(false);
+    expect(await run(root, output())).toBe(0);
+    const first = await tree(root);
+    const again = output();
+    expect(await run(root, again)).toBe(0);
+    expect(await tree(root)).toEqual(first);
+    const logs = again.logs.join("\n");
+    expect(logs).toContain("Already wired — nothing to change.");
+    // The advisory fires only when the composition is created, never on the
+    // re-run between scaffold and the manual <VendoRoot> paste.
+    expect(logs).not.toContain("Auth:");
+  });
+
+  it("leaves a hand-wired Express composition at a custom path alone", async () => {
+    const root = await expressFixture(false);
+    await mkdir(join(root, "src"), { recursive: true });
+    await writeFile(join(root, "src", "agent.ts"),
+      'import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ principal: async () => null });\n');
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    // No duplicate server module, no orphaned registry, no advisory about a
+    // composition init does not own — and the paste line stays honest.
+    await expect(readFile(join(root, "vendo", "server.ts"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(root, "vendo", "registry.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
+    const logs = sink.logs.join("\n");
+    expect(logs).not.toContain("Auth:");
+    expect(logs).not.toContain("components={registry}");
   });
 
   it("uses an ESM scaffold when an Express host has no tsconfig", async () => {

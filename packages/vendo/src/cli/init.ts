@@ -710,22 +710,34 @@ async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; change
       const server = join(root, "vendo", typescript ? "server.ts" : "server.mjs");
       const registryFile = join(root, "vendo", typescript ? "registry.tsx" : "registry.mjs");
       const registryBefore = await readOptional(registryFile);
-      const auth = await detectAuthPreset(root);
-      // The registry is generated only while absent — never clobbered; the
-      // server file imports it as `catalog` (one file, two consumers).
-      if (registryBefore === null) {
+      const serverBefore = await readOptional(server);
+      // Init owns the composition only when it CREATES it: no generated
+      // server module yet AND no hand-wired createVendo anywhere else. A host
+      // that composed at its own path but hasn't pasted <VendoRoot> yet gets
+      // neither a duplicate server module nor an orphaned registry — the
+      // Express analog of the Next branch's routeBefore === null guard.
+      const scaffolding = serverBefore === null && !wiring.server;
+      // The registry regenerates only for a composition that uses it: the one
+      // being created now, or a previously generated server module whose
+      // ./registry import would otherwise dangle. Never clobbered.
+      const registryPlanned = registryBefore === null
+        && (scaffolding || serverBefore?.includes("./registry") === true);
+      if (registryPlanned) {
         const path = relative(root, registryFile);
         const registryAfter = registrySource(typescript ? "tsx" : "mjs");
         changes.push({ absolute: registryFile, path, before: null, after: registryAfter, diff: diff(path, null, registryAfter) });
       }
-      const serverBefore = await readOptional(server);
-      const serverAfter = expressServerSource(typescript, auth.wired);
-      if (serverBefore !== serverAfter) {
+      if (scaffolding) {
+        const auth = await detectAuthPreset(root);
+        const serverAfter = expressServerSource(typescript, auth.wired);
         const path = relative(root, server);
-        changes.push({ absolute: server, path, before: serverBefore, after: serverAfter, diff: diff(path, serverBefore, serverAfter) });
+        changes.push({ absolute: server, path, before: null, after: serverAfter, diff: diff(path, null, serverAfter) });
+        // Advisory only on fresh composition creation — a re-run before the
+        // manual <VendoRoot> paste stays silent instead of re-firing after
+        // "Already wired".
+        authAdvice = authAdvisory(auth, path);
       }
-      authAdvice = authAdvisory(auth, relative(root, server));
-      withRegistry = true;
+      withRegistry = registryBefore !== null || registryPlanned;
     }
   } else {
     const app = await appDirectory(root);
