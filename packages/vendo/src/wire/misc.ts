@@ -121,11 +121,23 @@ export const systemRoutes: RouteEntry[] = [
     // execution-v2 Lane D — one authenticated tick drives BOTH schedulers: the
     // automations engine and the machine-app vendo.json schedules (additive
     // `schedules` field). Point any external cron here (Vercel cron, GitHub
-    // Actions, crontab); the Cloud broker calls this same surface.
+    // Actions, crontab); the Cloud broker calls this same surface. The engines
+    // settle independently so one failing can never suppress the other; any
+    // failure still answers 500 so a retrying cron comes back (both engines
+    // are idempotent within their windows).
+    const [runs, schedules] = await Promise.allSettled([
+      deps.automations.tick(),
+      deps.apps.schedules.tick(),
+    ]);
+    const errors = [
+      ...(runs.status === "rejected" ? [`automations: ${runs.reason instanceof Error ? runs.reason.message : "tick failed"}`] : []),
+      ...(schedules.status === "rejected" ? [`schedules: ${schedules.reason instanceof Error ? schedules.reason.message : "tick failed"}`] : []),
+    ];
     return json({
-      runIds: await deps.automations.tick(),
-      schedules: await deps.apps.schedules.tick(),
-    });
+      ...(runs.status === "fulfilled" ? { runIds: runs.value } : {}),
+      ...(schedules.status === "fulfilled" ? { schedules: schedules.value } : {}),
+      ...(errors.length === 0 ? {} : { errors }),
+    }, errors.length === 0 ? 200 : 500);
   }),
   route("POST", "/sync/impact", async ({ request, deps }) => {
     if (environment("NODE_ENV") === "production") {

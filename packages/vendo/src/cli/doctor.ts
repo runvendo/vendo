@@ -400,7 +400,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
         }
         const declaresSchedules = machines.some((machine) => (machine.schedules?.length ?? 0) > 0);
         if (body.scheduleCallerConfigured === true) {
-          pass("machines/schedule-caller", "schedule caller configured (VENDO_TICK_SECRET); point an external cron at POST /tick");
+          pass("machines/schedule-caller", "schedule caller configured (VENDO_TICK_SECRET); point an external cron at POST /api/vendo/tick");
         } else if (declaresSchedules) {
           warn("machines/schedule-caller", "E-SCHED-001", "apps declare vendo.json schedules but no schedule caller is configured — set VENDO_TICK_SECRET and point an external cron (Vercel cron, GitHub Actions, crontab) at POST /api/vendo/tick");
         } else if (machines.length > 0) {
