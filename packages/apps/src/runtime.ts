@@ -38,6 +38,7 @@ import {
 import {
   instructionRequiresServer,
   modelEngine,
+  prewarmModels,
   type CodeFileEdit,
   type GenerationDependencies,
   type GenerationEngine,
@@ -191,6 +192,10 @@ export interface AppsRuntime {
     /** Additive per-call stream hook used by the agent bridge. */
     onView?: (part: VendoViewPart) => void;
   }, ctx: RunContext): Promise<AppDocument>;
+  /** Speed lane — best-effort page-open warm-up of the generation model(s)
+   *  (full + paint), so the first create reuses a live connection. Safe to
+   *  call on surface mount; never throws. */
+  prewarm(): Promise<void>;
   get(appId: AppId, ctx: RunContext): Promise<AppDocument | null>;
   list(ctx: RunContext): Promise<AppDocument[]>;
   delete(appId: AppId, ctx: RunContext): Promise<void>;
@@ -790,6 +795,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   };
 
   const runtime: AppsRuntime = {
+    async prewarm() {
+      const models = [config.model, config.paint?.model].filter(
+        (model): model is LanguageModel => model !== undefined,
+      );
+      if (models.length > 0) await prewarmModels(models);
+    },
     async create(input, ctx) {
       if (config.model === undefined) {
         throw new VendoError("not-implemented", "generation requires a model");
