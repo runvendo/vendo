@@ -35,7 +35,7 @@ minted key; the resolver already has the `vendo-cloud` rung). The console
 endpoint is a Cloud console (vendo-web) follow-up:
 
 ```
-POST /api/v1/dev/starter-key
+POST /api/v1/keys
   auth:    user session (Bearer access token from `vendo cloud login`)
   request: { "purpose": "dev-mode" }
   response:

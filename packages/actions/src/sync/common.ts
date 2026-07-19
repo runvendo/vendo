@@ -1,7 +1,8 @@
 import { promises as fs } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { sha256Hex } from "@vendoai/core";
-import { init, parse } from "es-module-lexer";
+import type TS from "typescript";
 import type { ExtractedTool, HttpMethod, PrimitiveToolBinding } from "../formats.js";
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"] as const;
@@ -60,53 +61,6 @@ export async function walk(
   return files.sort();
 }
 
-export function stripComments(source: string): string {
-  let output = "";
-  let quote: "'" | "\"" | "`" | null = null;
-  let escaped = false;
-  for (let index = 0; index < source.length; index += 1) {
-    const character = source[index]!;
-    const next = source[index + 1];
-    if (quote) {
-      output += character;
-      if (escaped) escaped = false;
-      else if (character === "\\") escaped = true;
-      else if (character === quote) quote = null;
-      continue;
-    }
-    if (character === "'" || character === "\"" || character === "`") {
-      quote = character;
-      output += character;
-      continue;
-    }
-    if (character === "/" && next === "/") {
-      while (index < source.length && source[index] !== "\n") {
-        output += " ";
-        index += 1;
-      }
-      if (index < source.length) output += "\n";
-      continue;
-    }
-    if (character === "/" && next === "*") {
-      output += "  ";
-      index += 2;
-      while (index < source.length && !(source[index] === "*" && source[index + 1] === "/")) {
-        output += source[index] === "\n" ? "\n" : " ";
-        index += 1;
-      }
-      if (index < source.length) output += "  ";
-      index += 1;
-      continue;
-    }
-    output += character;
-  }
-  return output;
-}
-
-function parseJsonLike(source: string): unknown {
-  return JSON.parse(stripComments(source).replace(/,\s*([}\]])/g, "$1"));
-}
-
 function extendsPath(value: unknown, configDir: string): string | null {
   if (typeof value !== "string" || (!value.startsWith(".") && !path.isAbsolute(value))) return null;
   const resolved = path.resolve(configDir, value);
@@ -114,12 +68,15 @@ function extendsPath(value: unknown, configDir: string): string | null {
 }
 
 async function loadAliases(configPath: string, depth = 0): Promise<TsconfigPathAlias[]> {
+  // tsconfig files are JSONC; the compiler's own config parser reads them.
+  const ts = loadCompiler();
   let parsed: any;
   try {
-    parsed = parseJsonLike(await fs.readFile(configPath, "utf8"));
+    parsed = ts?.parseConfigFileTextToJson(configPath, await fs.readFile(configPath, "utf8")).config;
   } catch {
     return [];
   }
+  if (!parsed || typeof parsed !== "object") return [];
   const configDir = path.dirname(configPath);
   const aliases: TsconfigPathAlias[] = [];
   const extended = depth < 4 ? extendsPath(parsed?.extends, configDir) : null;
@@ -190,169 +147,123 @@ async function resolvedCandidate(base: string, realRoot: string): Promise<Resolv
   return null;
 }
 
-function namedBindings(statement: string): Array<{ imported: string; exported: string }> {
-  const body = statement.match(/\{([\s\S]*?)\}/)?.[1];
-  if (body === undefined) return [];
-  return body.split(",").flatMap((raw) => {
-    const part = raw.trim().replace(/^type\s+/, "");
-    if (part === "") return [];
-    const pieces = part.split(/\s+as\s+/).map((value) => value.trim());
-    const imported = pieces[0];
-    const exported = pieces[1] ?? imported;
-    return imported && exported ? [{ imported, exported }] : [];
-  });
-}
+/** The TypeScript compiler, resolved lazily through this package's own
+ * dependency graph (the same posture as catalog-scan). Module analysis is
+ * fail-closed: when the compiler cannot be loaded, imports and exports
+ * resolve to nothing rather than being guessed at with string scans. */
+let compilerModule: typeof TS | null | undefined;
 
-interface ModuleImport {
-  statement: string;
-  specifier: string;
-}
-
-function fallbackModuleStatements(source: string): string[] {
-  const statements: string[] = [];
-  let quote: "'" | "\"" | "`" | null = null;
-  let escaped = false;
-  let lineComment = false;
-  let blockComment = false;
-  let depth = 0;
-  for (let index = 0; index < source.length; index += 1) {
-    const character = source[index]!;
-    const next = source[index + 1];
-    if (lineComment) {
-      if (character === "\n") lineComment = false;
-      continue;
+function loadCompiler(): typeof TS | null {
+  if (compilerModule === undefined) {
+    try {
+      compilerModule = createRequire(import.meta.url)("typescript") as typeof TS;
+    } catch {
+      compilerModule = null;
     }
-    if (blockComment) {
-      if (character === "*" && next === "/") {
-        blockComment = false;
-        index += 1;
-      }
-      continue;
-    }
-    if (quote) {
-      if (escaped) escaped = false;
-      else if (character === "\\") escaped = true;
-      else if (character === quote) quote = null;
-      continue;
-    }
-    if (character === "/" && next === "/") {
-      lineComment = true;
-      index += 1;
-      continue;
-    }
-    if (character === "/" && next === "*") {
-      blockComment = true;
-      index += 1;
-      continue;
-    }
-    if (character === "'" || character === "\"" || character === "`") {
-      quote = character;
-      continue;
-    }
-    if (character === "{" || character === "(" || character === "[") depth += 1;
-    else if (character === "}" || character === ")" || character === "]") depth = Math.max(0, depth - 1);
-    if (depth !== 0) continue;
-    const keyword = source.startsWith("import", index) ? "import"
-      : source.startsWith("export", index) ? "export"
-      : undefined;
-    if (!keyword || /[\w$]/.test(source[index - 1] ?? "") || /[\w$]/.test(source[index + keyword.length] ?? "")) continue;
-
-    let localDepth = 0;
-    let localQuote: "'" | "\"" | "`" | null = null;
-    let localEscaped = false;
-    let end = source.length;
-    for (let cursor = index; cursor < source.length; cursor += 1) {
-      const value = source[cursor]!;
-      if (localQuote) {
-        if (localEscaped) localEscaped = false;
-        else if (value === "\\") localEscaped = true;
-        else if (value === localQuote) localQuote = null;
-        continue;
-      }
-      if (value === "'" || value === "\"" || value === "`") {
-        localQuote = value;
-        continue;
-      }
-      if (value === "{" || value === "(" || value === "[") localDepth += 1;
-      else if (value === "}" || value === ")" || value === "]") localDepth = Math.max(0, localDepth - 1);
-      if (value === ";" && localDepth === 0) {
-        end = cursor;
-        break;
-      }
-      if (value === "\n" && localDepth === 0) {
-        const candidate = source.slice(index, cursor);
-        if (/\bfrom\s*["'][^"']+["']/.test(candidate)
-            || /^import\s*["'][^"']+["']/.test(candidate)
-            || /^export\s+(?:default\s+)?(?:async\s+)?(?:function|class|const|let|var)\b/.test(candidate)) {
-          end = cursor;
-          break;
-        }
-        // Semicolon-free sources: a balanced newline followed by a fresh
-        // import/export keyword always ends the current statement — otherwise
-        // `export interface X { … }` swallows every later export in the file.
-        if (/^\s*(?:import|export)[\s{"'(]/.test(source.slice(cursor + 1, cursor + 64))) {
-          end = cursor;
-          break;
-        }
-      }
-    }
-    statements.push(source.slice(index, end).trim());
-    index = end;
   }
-  return statements;
+  return compilerModule;
 }
 
-async function lexModule(source: string): Promise<{ imports: ModuleImport[]; exports: Set<string> }> {
-  await init;
-  try {
-    const [imports, exports] = parse(source);
-    return {
-      imports: imports.flatMap((item) => item.d === -1 && item.n !== undefined
-        ? [{ statement: source.slice(item.ss, item.se).trim(), specifier: item.n }]
-        : []),
-      exports: new Set(exports.map((item) => item.n)),
-    };
-  } catch {
-    const statements = fallbackModuleStatements(source);
-    const imports = statements.flatMap((statement) => {
-      const specifier = statement.match(/\bfrom\s*["']([^"']+)["']/)?.[1]
-        ?? statement.match(/^import\s*["']([^"']+)["']/)?.[1];
-      return specifier ? [{ statement, specifier }] : [];
-    });
-    const exports = new Set<string>();
-    for (const statement of statements) {
-      const declaration = statement.match(/^export\s+(?:default\s+)?(?:async\s+)?(?:function|class|const|let|var)\s+([A-Za-z_$][\w$]*)/)?.[1];
-      if (declaration) exports.add(declaration);
-      if (/^export\s+default\b/.test(statement)) exports.add("default");
-      if (/^export\s*\{/.test(statement)) {
-        for (const binding of namedBindings(statement)) exports.add(binding.exported);
-      }
+export interface ParsedModule {
+  ts: typeof TS;
+  sf: TS.SourceFile;
+}
+
+/** Parse one module's source for statement-level analysis (no type checking,
+ * no host code execution). TSX is the default script kind — extraction mostly
+ * reads component and route modules — with plain TS for `.ts`/`.mts`/`.cts`
+ * files so generic arrows are not mis-lexed as JSX. */
+export function parseModuleSource(source: string, fileName = "module.tsx"): ParsedModule | null {
+  const ts = loadCompiler();
+  if (!ts) return null;
+  const kind = /\.[cm]?ts$/u.test(fileName) ? ts.ScriptKind.TS : ts.ScriptKind.TSX;
+  return { ts, sf: ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind) };
+}
+
+/** Depth-first visit of every node under `root` (root excluded). */
+export function visitNodes(ts: typeof TS, root: TS.Node, visit: (node: TS.Node) => void): void {
+  const walkNode = (node: TS.Node): void => {
+    visit(node);
+    ts.forEachChild(node, walkNode);
+  };
+  ts.forEachChild(root, walkNode);
+}
+
+function hasExportModifier(ts: typeof TS, statement: TS.Statement): boolean {
+  return ts.canHaveModifiers(statement) === true
+    && (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+}
+
+function hasDefaultModifier(ts: typeof TS, statement: TS.Statement): boolean {
+  return ts.canHaveModifiers(statement) === true
+    && (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
+}
+
+function bindingDeclaresName(ts: typeof TS, name: TS.BindingName, exportedName: string): boolean {
+  if (ts.isIdentifier(name)) return name.text === exportedName;
+  return name.elements.some((element) =>
+    !ts.isOmittedExpression(element) && bindingDeclaresName(ts, element.name, exportedName));
+}
+
+/** True when the module itself declares an export named `exportedName`
+ * (declaration exports, `export default`, and specifier-only `export { x }`
+ * lists — the local-value cases resolution treats as owned by this module). */
+function declaresExport(ts: typeof TS, sf: TS.SourceFile, exportedName: string): boolean {
+  for (const statement of sf.statements) {
+    if (ts.isExportAssignment(statement)) {
+      if (exportedName === "default") return true;
+      continue;
     }
-    return { imports, exports };
+    if (ts.isExportDeclaration(statement)) {
+      if (statement.moduleSpecifier || !statement.exportClause || !ts.isNamedExports(statement.exportClause)) continue;
+      if (statement.exportClause.elements.some((element) => element.name.text === exportedName)) return true;
+      continue;
+    }
+    if (!hasExportModifier(ts, statement)) continue;
+    if (hasDefaultModifier(ts, statement) && exportedName === "default") return true;
+    if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement) || ts.isEnumDeclaration(statement))
+      && statement.name?.text === exportedName) return true;
+    if (ts.isVariableStatement(statement)
+      && statement.declarationList.declarations.some((declaration) => bindingDeclaresName(ts, declaration.name, exportedName))) {
+      return true;
+    }
   }
+  return false;
 }
 
-async function reExportTarget(source: string, exportedName: string): Promise<{
+async function reExportTarget(source: string, exportedName: string, fileName?: string): Promise<{
   direct: boolean;
   named?: { specifier: string; imported: string };
   stars: string[];
 }> {
-  const module = await lexModule(source);
+  const parsed = parseModuleSource(source, fileName);
+  if (!parsed) return { direct: false, stars: [] };
+  const { ts, sf } = parsed;
   const stars: string[] = [];
-  for (const imported of module.imports) {
-    const statement = imported.statement;
-    if (!statement.startsWith("export")) continue;
-    if (/^export\s*\*/.test(statement)) {
-      stars.push(imported.specifier);
+  let namespaceDeclared = false;
+  for (const statement of sf.statements) {
+    if (!ts.isExportDeclaration(statement) || !statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const specifier = statement.moduleSpecifier.text;
+    const clause = statement.exportClause;
+    if (!clause || ts.isNamespaceExport(clause)) {
+      // `export * as X from "./y"` declares X on this module itself — the
+      // barrel is the owning module (checked before any star chase, matching
+      // the lexer era, which listed X in the barrel's exports). Both forms
+      // also surface the target module for name-by-name probing.
+      if (clause && clause.name.text === exportedName) namespaceDeclared = true;
+      stars.push(specifier);
       continue;
     }
-    const binding = namedBindings(statement).find((item) => item.exported === exportedName);
-    if (binding) return { direct: false, named: { specifier: imported.specifier, imported: binding.imported }, stars };
+    const element = clause.elements.find((item) => item.name.text === exportedName);
+    if (element) {
+      return {
+        direct: false,
+        named: { specifier, imported: (element.propertyName ?? element.name).text },
+        stars,
+      };
+    }
   }
-  return {
-    direct: module.exports.has(exportedName),
-    stars,
-  };
+  return { direct: namespaceDeclared || declaresExport(ts, sf, exportedName), stars };
 }
 
 async function importBases(importer: string, specifier: string, root: string): Promise<string[]> {
@@ -384,7 +295,7 @@ async function resolveImportedSource(
   for (const base of bases) {
     const resolved = await resolvedCandidate(base, realRoot);
     if (!resolved) continue;
-    const target = await reExportTarget(resolved.source, importedName);
+    const target = await reExportTarget(resolved.source, importedName, resolved.file);
     if (target.named) {
       // A named re-export is authoritative: when its chain cannot be followed
       // the export does not resolve, and returning the barrel here would
@@ -427,82 +338,27 @@ export async function resolveImportSource(
 }
 
 export async function importReferenceFor(source: string, localExpression: string): Promise<ImportReference | undefined> {
-  const module = await lexModule(source);
+  const parsed = parseModuleSource(source);
   const [localName, namespaceMember] = localExpression.split(".", 2);
-  if (!localName) return undefined;
-  for (const imported of module.imports) {
-    const statement = imported.statement;
-    const clause = statement.match(/^import\s+(?:type\s+)?([\s\S]*?)\s+from\b/)?.[1]?.trim();
+  if (!parsed || !localName) return undefined;
+  const { ts, sf } = parsed;
+  for (const statement of sf.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const specifier = statement.moduleSpecifier.text;
+    const clause = statement.importClause;
     if (!clause) continue;
-    const namespace = clause.match(/(?:^|,)\s*\*\s+as\s+([A-Za-z_$][\w$]*)\s*$/)?.[1];
-    if (namespace === localName && namespaceMember) {
-      return { specifier: imported.specifier, imported: namespaceMember };
+    const bindings = clause.namedBindings;
+    if (bindings && ts.isNamespaceImport(bindings) && bindings.name.text === localName && namespaceMember) {
+      return { specifier, imported: namespaceMember };
     }
-    for (const binding of namedBindings(clause)) {
-      if (binding.exported === localName && namespaceMember === undefined) {
-        return { specifier: imported.specifier, imported: binding.imported };
-      }
+    if (namespaceMember !== undefined) continue;
+    if (bindings && ts.isNamedImports(bindings)) {
+      const element = bindings.elements.find((item) => item.name.text === localName);
+      if (element) return { specifier, imported: (element.propertyName ?? element.name).text };
     }
-    const defaultBinding = clause.split(",", 1)[0]?.trim();
-    if (defaultBinding === localName && namespaceMember === undefined) {
-      return { specifier: imported.specifier, imported: "default" };
-    }
+    if (clause.name?.text === localName) return { specifier, imported: "default" };
   }
   return undefined;
-}
-
-export function topLevelObjectLiteral(source: string, openBrace: number): string | null {
-  let depth = 0;
-  let quote: "'" | "\"" | "`" | null = null;
-  let escaped = false;
-  for (let index = openBrace; index < source.length; index += 1) {
-    const character = source[index]!;
-    if (quote) {
-      if (escaped) escaped = false;
-      else if (character === "\\") escaped = true;
-      else if (character === quote) quote = null;
-      continue;
-    }
-    if (character === "'" || character === "\"" || character === "`") {
-      quote = character;
-      continue;
-    }
-    if (character === "{") depth += 1;
-    else if (character === "}") {
-      depth -= 1;
-      if (depth === 0) return source.slice(openBrace + 1, index);
-    }
-  }
-  return null;
-}
-
-export function splitTopLevel(source: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let quote: "'" | "\"" | "`" | null = null;
-  let escaped = false;
-  let start = 0;
-  for (let index = 0; index < source.length; index += 1) {
-    const character = source[index]!;
-    if (quote) {
-      if (escaped) escaped = false;
-      else if (character === "\\") escaped = true;
-      else if (character === quote) quote = null;
-      continue;
-    }
-    if (character === "'" || character === "\"" || character === "`") {
-      quote = character;
-      continue;
-    }
-    if (character === "(" || character === "[" || character === "{") depth += 1;
-    else if (character === ")" || character === "]" || character === "}") depth = Math.max(0, depth - 1);
-    else if (character === "," && depth === 0) {
-      parts.push(source.slice(start, index));
-      start = index + 1;
-    }
-  }
-  parts.push(source.slice(start));
-  return parts;
 }
 
 export function limitToolName(fullName: string): string {

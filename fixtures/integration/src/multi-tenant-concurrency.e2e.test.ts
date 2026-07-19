@@ -53,7 +53,7 @@ function tenantApp(subject: string): AppDocument {
     id: "app_placeholder",
     name: `App for ${subject}`,
     tree: {
-      formatVersion: "vendo-genui/v1",
+      formatVersion: "vendo-genui/v2",
       root: "root",
       nodes: [
         { id: "root", component: "Stack", source: "prewired", children: ["t"] },

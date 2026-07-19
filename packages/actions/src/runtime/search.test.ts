@@ -1,5 +1,8 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import type { ToolDescriptor } from "@vendoai/core";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { composioConnector } from "../connectors/composio.js";
 import { createActions, type ExtractedTool } from "../index.js";
 import { searchToolDescriptors } from "./search.js";
 
@@ -82,5 +85,59 @@ describe("ActionsRegistry.search (over the merged surface)", () => {
     const matches = await registry.search("refund a payout", { limit: 5 });
     expect(matches[0]?.name).toBe("host_payouts_refund");
     expect(matches[0]?.risk).toBe("destructive");
+  });
+
+  const closers: Array<() => Promise<void>> = [];
+  afterEach(async () => {
+    await Promise.all(closers.splice(0).map((close) => close()));
+  });
+
+  it("surfaces a bare composioConnector's full-catalog tools, unbounded, from the registry search path", async () => {
+    const server = createServer((req, res) => {
+      res.setHeader("content-type", "application/json");
+      // Unscoped — no toolkit_slug in the request — spanning toolkits the
+      // host never named explicitly, the way a bare composioConnector() sees
+      // the whole Composio catalog (docs.composio.dev/toolkits).
+      res.end(JSON.stringify({
+        items: [
+          { slug: "SEND_EMAIL", toolkit_slug: "gmail", description: "Send an email", input_parameters: {} },
+          { slug: "CREATE_ISSUE", toolkit_slug: "linear", description: "Create a tracking issue", input_parameters: {} },
+          { slug: "CREATE_PAGE", toolkit_slug: "notion", description: "Create a notion page", input_parameters: {} },
+        ],
+      }));
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => {
+        server.off("error", reject);
+        resolve();
+      });
+    });
+    const { port } = server.address() as AddressInfo;
+    closers.push(async () => {
+      server.close();
+      server.closeAllConnections();
+    });
+
+    // Bare: no `apps` key at all — the connector under test for decision 7
+    // ("a bare composio() exposes the full Composio catalog; apps: narrows").
+    const registry = createActions({
+      connectors: [composioConnector({ apiKey: "secret", baseUrl: `http://127.0.0.1:${port}` })],
+    });
+
+    // The actions layer itself applies no cap — descriptors() returns the
+    // whole unscoped catalog. Bounding to a prompt-safe loadout is the
+    // agent layer's job (packages/agent/src/tool-search.ts
+    // computeInitialLoadout / DEFAULT_MAX_INITIAL_TOOLS), not the registry's.
+    expect((await registry.descriptors()).map((d) => d.name).sort()).toEqual([
+      "gmail_SEND_EMAIL",
+      "linear_CREATE_ISSUE",
+      "notion_CREATE_PAGE",
+    ]);
+
+    // A toolkit the host never listed in `apps` (there is no `apps` at all)
+    // is still discoverable through vendo_tools_search's registry seam.
+    const matches = await registry.search("create a tracking issue");
+    expect(matches[0]?.name).toBe("linear_CREATE_ISSUE");
   });
 });

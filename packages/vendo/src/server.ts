@@ -3,13 +3,13 @@ import {
   type ActionsRegistry,
   type ActionsRunContext,
   type Connector,
-  type ExtractedTool,
   type ServerActionHandler,
 } from "@vendoai/actions";
-import { assembleSystemPrompt, createAgent, type VendoAgent } from "@vendoai/agent";
+import { createAgent, type VendoAgent } from "@vendoai/agent";
 import {
   createApps,
   pinBaselineSchema,
+  type AppsConfig,
   type AppsRuntime,
   type PinBaseline,
   type SandboxAdapter,
@@ -19,19 +19,14 @@ import { modalInstalled, modalSandbox } from "@vendoai/apps/modal";
 import {
   createAutomations,
   type AutomationsEngine,
-  type RunStatus,
 } from "@vendoai/automations";
 import {
   VendoError,
-  approvalDecisionSchema,
   descriptorHash,
-  isReservedSubject,
-  orgPrincipal,
-  principalSchema,
   vendoThemeSchema,
   type ActAs,
-  type ApprovalDecision,
   type ComponentCatalog,
+  type ComponentRegistry,
   type Json,
   type PermissionGrant,
   type Principal,
@@ -41,21 +36,17 @@ import {
   type ToolDescriptor,
   type ToolOutcome,
   type ToolRegistry,
-  type VendoErrorCode,
   type VendoTheme,
 } from "@vendoai/core";
 import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import {
   adoptEphemeralSubject,
-  beginEphemeralRequest,
   createStore,
-  endEphemeralRequest,
   envSecrets,
   registerEphemeralSubject,
-  setSessionCap,
-  setSessionClock,
   sweepEphemeralSubjects,
+  type SubjectMergeReport,
   type VendoStore,
 } from "@vendoai/store";
 // 02-store §5: the erase API ships on the umbrella's runtime surface so hosts
@@ -77,17 +68,34 @@ export {
   type RefineResult,
   type RefineTranscript,
 } from "./refine.js";
+// 09-vendo §2.1 — host-identity presets, shipped on the server entry: one
+// `auth` key fills the principal, actAs, and oauth seams from one config.
+export {
+  auth0,
+  authJs,
+  clerk,
+  hostAuthPresetConformance,
+  jwt,
+  supabase,
+  type HostAuthPreset,
+  type HostAuthPresetConformanceOptions,
+  type HostAuthPresetOptions,
+  type HostAuthPresetUser,
+  type HostAuthPresetUserResolver,
+  type SupabaseHostAuthPresetOptions,
+} from "./auth-presets/index.js";
+import type { HostAuthPreset } from "./auth-presets/index.js";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
 import {
   capabilitySurfaceSnapshot,
   createCapabilityMissCapture,
 } from "./capability-misses.js";
-import { catalogThemeSummary, mergeRuntimeCatalog, runtimeCatalogFromJson } from "./catalog.js";
-import { devModelController } from "./dev-creds/model.js";
-// ENG-338 — the dev-mode model-credential ladder: `devModel()` is what a fresh
-// `vendo init` scaffolds; the resolver is shared by init, doctor, and
-// extraction --deep (one credential story, install-dx design §2).
+import { catalogThemeSummary, mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromJson } from "./catalog.js";
+import { devModel } from "./dev-creds/model.js";
+// install-dx v1 — `devModel()` is the env-resolving model createVendo composes
+// when the host passes none; the resolver is shared by init and doctor (one
+// credential story, real keys only).
 export {
   devModel,
   DevModelController,
@@ -96,53 +104,78 @@ export {
 } from "./dev-creds/model.js";
 export {
   describeDevCredential,
-  hasSessionConsent,
-  readDevSessionConsent,
   resolveDevCredential,
-  writeDevSessionConsent,
   type DevCredential,
   type ResolveDevCredentialOptions,
 } from "./dev-creds/resolve.js";
-import { createConnections, type ConnectionsService } from "./connections.js";
-import { createOrgs, type OrgsService } from "./orgs.js";
-import { createRuntimeCapture, type RuntimeCaptureHandler } from "./runtime-capture.js";
-import { computeImpact } from "./sync-impact.js";
+import {
+  byoConnections,
+  cloudConnections,
+  hasConnections,
+  unconfiguredConnections,
+  type ConnectionsService,
+} from "./connections.js";
+// The shipped connections adapters ride the server surface so a host can pass
+// one explicitly via createVendo({ connections }) — see selectConnections.
+export {
+  byoConnections,
+  cloudConnections,
+  unconfiguredConnections,
+  type CloudConnectionsOptions,
+  type ConnectionsService,
+} from "./connections.js";
+import { cloudSandbox } from "./sandbox.js";
+// The Cloud sandbox adapter rides the server surface like the connections
+// adapters: a host can pass it explicitly via createVendo({ sandbox }) with
+// its own options instead of relying on the VENDO_API_KEY default.
+export { cloudSandbox, type CloudSandboxOptions } from "./sandbox.js";
+import { hostedStore, type HostedStore } from "./hosted-store.js";
+// The hosted-store adapter rides the server surface like the other Cloud
+// adapters: a host can pass it explicitly via createVendo({ store }) with its
+// own options instead of relying on the VENDO_API_KEY default.
+export { hostedStore, type HostedStore, type HostedStoreOptions } from "./hosted-store.js";
+import { createRuntimeCapture } from "./runtime-capture.js";
+import {
+  BASE_PATH,
+  VERSION,
+  dispatchRoutes,
+  environment,
+  errorResponse,
+  internalError,
+  routeSegments,
+  type ModelVenue,
+  type RouteEntry,
+  type SandboxVenue,
+  type WireContext,
+  type WireDeps,
+} from "./wire/shared.js";
+import { appRoutes } from "./wire/apps.js";
+import { approvalRoutes, grantRoutes } from "./wire/approvals.js";
+import { automationRoutes, runRoutes } from "./wire/automations.js";
+import { connectionRoutes } from "./wire/connections.js";
+import {
+  createContextResolver,
+  withAnonCookie,
+  type AnonSession,
+} from "./wire/context.js";
+import {
+  DOCTOR_ACT_AS_APP_ID,
+  DOCTOR_ACT_AS_PRINCIPAL,
+  doctorActAsTool,
+  doctorPresentTool,
+  doctorRoutes,
+} from "./wire/doctor.js";
+import {
+  activityRoutes,
+  devRoutes,
+  orgsRoutes,
+  statusRoutes,
+  systemRoutes,
+} from "./wire/misc.js";
+import { threadRoutes } from "./wire/threads.js";
 
-const VERSION = "0.3.0";
-const BASE_PATH = "/api/vendo";
 /** 10-mcp §5 — the door's canonical mount under the wire's own prefix. */
 const MCP_MOUNT = `${BASE_PATH}/mcp`;
-const DOCTOR_PRESENT_AUTHORIZATION = "Bearer vendo-doctor-present";
-const DOCTOR_PRESENT_COOKIE = "vendo_doctor_present=1";
-const DOCTOR_ACT_AS_PRINCIPAL: Principal = { kind: "user", subject: "vendo_doctor_act_as" };
-const DOCTOR_ACT_AS_APP_ID = "app_vendo_doctor" as const;
-
-const doctorPresentTool: ExtractedTool = {
-  name: "vendo_doctor_present",
-  description: "Vendo doctor present credential round-trip",
-  inputSchema: { type: "object", properties: {}, additionalProperties: false },
-  risk: "read",
-  binding: { kind: "route", method: "GET", path: `${BASE_PATH}/doctor/present/echo`, argsIn: "query" },
-};
-
-const doctorActAsTool: ExtractedTool = {
-  name: "vendo_doctor_act_as",
-  description: "Vendo doctor actAs mint and verification round-trip",
-  inputSchema: { type: "object", properties: {}, additionalProperties: false },
-  risk: "read",
-  binding: { kind: "route", method: "GET", path: `${BASE_PATH}/doctor/act-as/echo`, argsIn: "query" },
-};
-
-const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
-  validation: 400,
-  "not-found": 404,
-  blocked: 403,
-  conflict: 409,
-  "cloud-required": 402,
-  "sandbox-unavailable": 501,
-  "not-implemented": 501,
-};
-
 export interface Vendo {
   handler: (req: Request) => Promise<Response>;
   emit(event: string, payload: Json, principal: Principal): Promise<RunId[]>;
@@ -152,18 +185,40 @@ export interface Vendo {
   automations: AutomationsEngine;
   actions: ActionsRegistry;
   connections: ConnectionsService;
-  orgs: OrgsService;
   store: VendoStore;
 }
 
 export interface CreateVendoConfig {
-  model: LanguageModel;
-  principal: (req: Request) => Promise<Principal | null>;
-  /** Host components available to generated apps; entry names must mirror the client-side components map 1:1. */
-  catalog?: ComponentCatalog;
+  /** The agent's LLM — the inference adapter seam (03-agent §1): any ai-SDK
+      LanguageModel. Optional since install-dx v1: an explicitly passed model
+      always wins (BYO-LLM); when absent the seam resolves a real key from the
+      environment — provider keys via devModel's ladder, then VENDO_API_KEY →
+      Vendo Cloud managed inference — and fails honestly with instructions
+      when none exists (precedence: selectModel). */
+  model?: LanguageModel;
+  /** v2 spec §4 — tier-0 paint lane knob for app generation. `model` is the
+      no-think switch (a thinking-disabled model instance for the instant
+      paint); `disabled` forces single-lane generation. */
+  paint?: AppsConfig["paint"];
+  /** 09-vendo §2.1 — ONE host-identity preset filling the principal, actAs, and
+      oauth seams from one config key. Mutually exclusive with all three:
+      mixing throws VendoError("validation") at compose time. */
+  auth?: HostAuthPreset;
+  /** Per-seam escape hatch: host session → principal; null → the per-client
+      ephemeral anonymous principal. With neither `auth` nor `principal`, every
+      session is anonymous (the null path is the default resolver — 09 §2). */
+  principal?: (req: Request) => Promise<Principal | null>;
+  /** Host components available to generated apps: the name-keyed registry
+      object (01 §14 — the same object serves <VendoRoot>; the server ignores
+      each entry's `component` reference) or the array form. Entry names must
+      mirror the client-side components map 1:1. */
+  catalog?: ComponentCatalog | ComponentRegistry;
   store?: VendoStore;
   sandbox?: SandboxAdapter;
   connectors?: Connector[];
+  /** 04-actions §3 — an explicit connections adapter; always wins over the
+      defaults (precedence: selectConnections). */
+  connections?: ConnectionsService;
   actAs?: ActAs;
   /** 04-actions §1 (ENG-248): the server-action registration map emitted by the
       generated wiring file, keyed `"<module>#<exportName>"`. Server-action tools
@@ -213,21 +268,18 @@ export interface CreateVendoConfig {
         renderable `data-vendo-step-limit` part instead of ending silently. */
     maxSteps?: number;
   };
-  /** 02-store §4 / ENG-237 — ephemeral (anonymous) session lifecycle. Anonymous
-      visitors get a TTL-based session: every request touches it, an idle session
-      is swept and its overlay data + in-memory threads are cascaded away. All
-      optional.
-      - `ttlMs` idle timeout before a session is evicted (default 30 min). `0`
-        disables TTL eviction (cap-only — today's behavior).
+  /** 02-store §4 (kill-list B3) — ephemeral (anonymous) session lifecycle.
+      Anonymous visitors get a TTL-based session on disk: every request touches
+      it; an idle session is swept — its rows erased from the store and its
+      in-memory threads cascaded away. All optional.
+      - `ttlMs` idle timeout before a session is swept (default 30 min). `0`
+        disables TTL eviction.
       - `sweepIntervalMs` how often the amortized on-request sweep and the
         unref'd background timer run (default 60 s).
-      - `maxSessions` hard ceiling on concurrent anonymous sessions; the oldest
-        idle session is cascaded out over the cap (default 10 000).
       - `now` internal clock seam (tests only). */
   sessions?: {
     ttlMs?: number;
     sweepIntervalMs?: number;
-    maxSessions?: number;
     now?: () => number;
   };
 }
@@ -236,32 +288,25 @@ export interface CreateVendoConfig {
     09-vendo contract text). */
 const DEFAULT_SESSION_TTL_MS = 30 * 60_000;
 const DEFAULT_SESSION_SWEEP_INTERVAL_MS = 60_000;
-const DEFAULT_MAX_SESSIONS = 10_000;
 
 interface ResolvedSessions {
   ttlMs: number;
   sweepIntervalMs: number;
-  maxSessions: number;
   now?: () => number;
 }
 
 function validateSessionsConfig(sessions: CreateVendoConfig["sessions"]): ResolvedSessions {
   const ttlMs = sessions?.ttlMs ?? DEFAULT_SESSION_TTL_MS;
   const sweepIntervalMs = sessions?.sweepIntervalMs ?? DEFAULT_SESSION_SWEEP_INTERVAL_MS;
-  const maxSessions = sessions?.maxSessions ?? DEFAULT_MAX_SESSIONS;
-  // ttlMs 0 (or negative) is the documented off switch (cap-only). Any other
-  // value must be a non-negative integer; the sweep interval and cap must be
-  // positive integers.
+  // ttlMs 0 (or negative) is the documented off switch. Any other value must
+  // be a non-negative integer; the sweep interval must be a positive integer.
   if (!Number.isInteger(ttlMs) || ttlMs < 0) {
     throw new VendoError("validation", "sessions.ttlMs must be a non-negative integer (0 disables TTL eviction)");
   }
   if (!Number.isInteger(sweepIntervalMs) || sweepIntervalMs < 1) {
     throw new VendoError("validation", "sessions.sweepIntervalMs must be a positive integer");
   }
-  if (!Number.isInteger(maxSessions) || maxSessions < 1) {
-    throw new VendoError("validation", "sessions.maxSessions must be a positive integer");
-  }
-  return { ttlMs, sweepIntervalMs, maxSessions, ...(sessions?.now === undefined ? {} : { now: sessions.now }) };
+  return { ttlMs, sweepIntervalMs, ...(sessions?.now === undefined ? {} : { now: sessions.now }) };
 }
 
 /** Default char cap on a single tool result before it reaches the model (03-agent §2).
@@ -269,8 +314,12 @@ function validateSessionsConfig(sessions: CreateVendoConfig["sessions"]): Resolv
     truncated to a preview instead of blowing the context window. Override via config.agent. */
 const DEFAULT_TOOL_OUTPUT_CAP = 32_000;
 
-type SandboxVenue = "e2b" | "modal" | "custom" | false;
-
+/** Sandbox leg of the ADAPTER RULE (see the block comment at
+    selectConnections below): explicit adapter → BYO sandbox env (e2b, then
+    modal) → VENDO_API_KEY defaults the Cloud managed pool → the dark venue.
+    The Cloud slot fills ONLY when the host passed no sandbox and no BYO
+    sandbox env is present, so setting a Vendo key never shadows an existing
+    provider account. */
 function selectSandbox(configured: SandboxAdapter | undefined): {
   adapter: SandboxAdapter | undefined;
   venue: SandboxVenue;
@@ -294,53 +343,189 @@ function selectSandbox(configured: SandboxAdapter | undefined): {
     };
   }
 
+  const apiKey = environment("VENDO_API_KEY");
+  if (apiKey !== undefined) {
+    const baseUrl = environment("VENDO_CLOUD_URL");
+    return {
+      adapter: cloudSandbox({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) }),
+      venue: "cloud",
+    };
+  }
+
   return { adapter: undefined, venue: false };
 }
 
-function json(body: unknown, status = 200): Response {
-  return Response.json(body, { status });
-}
-
-function errorResponse(error: VendoError): Response {
-  return json({ error: { code: error.code, message: error.message } }, STATUS_BY_CODE[error.code]);
-}
-
-function internalError(): Response {
-  return errorResponse(new VendoError("not-implemented", "Internal Vendo error"));
-}
-
-function object(value: unknown, label: string): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new VendoError("validation", `${label} must be an object`);
+/** ADAPTER RULE (docs/superpowers/specs/2026-07-17-vendo-cloud-definition-design.md):
+    an infrastructure-backed block defines one adapter interface; which
+    implementation composes is decided HERE, at the seam where createVendo
+    wires blocks together — never by a hidden key-conditional inside the block.
+    Precedence, top to bottom:
+      1. an explicitly passed adapter always wins;
+      2. BYO — a connector's own connections capability (connections must live
+         where the connector executes);
+      3. VENDO_API_KEY makes the Cloud adapter the default for the seam the
+         host left unfilled (VENDO_CLOUD_URL overrides the console base URL);
+      4. the unconfigured fallback, which fails closed with setup guidance.
+    The adapters themselves never read the environment. */
+function selectConnections(
+  configured: ConnectionsService | undefined,
+  connectors: Connector[],
+): ConnectionsService {
+  if (configured !== undefined) return configured;
+  if (connectors.some(hasConnections)) return byoConnections(connectors);
+  const apiKey = environment("VENDO_API_KEY");
+  if (apiKey !== undefined) {
+    const baseUrl = environment("VENDO_CLOUD_URL");
+    return cloudConnections({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) });
   }
-  return value as Record<string, unknown>;
+  return unconfiguredConnections();
 }
 
-function string(value: unknown, label: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new VendoError("validation", `${label} must be a non-empty string`);
-  }
-  return value;
+/** ADAPTER RULE, inference seam (cloned from selectConnections): the agent and
+    apps blocks consume one ai-SDK LanguageModel; which implementation composes
+    is decided HERE. Precedence, top to bottom:
+      1. an explicitly passed model always wins (BYO-LLM — any ai-SDK model);
+      2. otherwise devModel()'s env ladder composes as the default, and the
+         remaining rungs live INSIDE it (resolveDevCredential): a provider key
+         (ANTHROPIC / OPENAI / GOOGLE) via the host-installed @ai-sdk provider,
+         then VENDO_API_KEY via @ai-sdk/anthropic pointed at the Cloud model
+         gateway (`<console>/api/v1` — Anthropic-compatible /messages), then
+         the honest keyless failure with exact instructions on first use.
+    devModel is the one seam-sanctioned lazy env resolver; every other adapter
+    still never reads the environment. */
+function selectModel(configured: LanguageModel | undefined): {
+  model: LanguageModel;
+  venue: ModelVenue;
+} {
+  if (configured !== undefined) return { model: configured, venue: "custom" };
+  return { model: devModel(), venue: "ladder" };
 }
 
-async function requestJson(request: Request): Promise<Record<string, unknown>> {
-  try {
-    return object(await request.json(), "request body");
-  } catch (error) {
-    if (error instanceof VendoError) throw error;
-    throw new VendoError("validation", "request body must be valid JSON");
+/** The ephemeral-session operations bound to the composed store (02-store §4):
+    registration == touch, adoption on sign-in, and the TTL sweep. Selected
+    WITH the store (selectStore below) because the local engine reaches its
+    session registry over SQL while the hosted store reaches it over the
+    store wire — downstream consumers (wire/context, the sweep) stay
+    oblivious to which one they got. */
+interface SessionOps {
+  register(subject: string, now: number): Promise<void>;
+  adopt(from: string, to: string): Promise<SubjectMergeReport | null>;
+  /** Erases every session idle ≥ idleMs; resolves the evicted subjects. */
+  sweep(idleMs: number, now: number): Promise<string[]>;
+}
+
+function localSessionOps(store: VendoStore): SessionOps {
+  return {
+    register: (subject, now) => registerEphemeralSubject(store, subject, now),
+    adopt: (from, to) => adoptEphemeralSubject(store, from, to),
+    sweep: (idleMs, now) => sweepEphemeralSubjects(store, { idleMs, now }),
+  };
+}
+
+function hostedSessionOps(store: HostedStore, touchDebounceMs: number): SessionOps {
+  // Last successful WIRE touch per subject. Presence means the subject is
+  // registered on the console; entries retire with the session (adopt/sweep),
+  // so the map tracks at most the live anonymous sessions of this process.
+  const wireTouched = new Map<string, number>();
+  return {
+    async register(subject, now) {
+      // In-process debounce: skip the wire touch when this subject's LAST
+      // successful touch is younger than sweepIntervalMs/2. TTLs are hours
+      // while the debounce window is seconds, and the claim leg re-checks
+      // idleness server-side, so a touched_at that is up to one debounce
+      // window stale can never get a live session swept — steady-state
+      // anonymous traffic costs zero extra round-trips.
+      const last = wireTouched.get(subject);
+      if (last !== undefined && now - last < touchDebounceMs) return;
+      try {
+        await store.sessions.register(subject, now);
+        wireTouched.set(subject, now);
+      } catch (error) {
+        // INVARIANT: registered ⇒ sweepable. The FIRST registration must fail
+        // closed — if it doesn't land, rows written under this subject would
+        // be unreachable by the TTL sweep forever. A subsequent touch only
+        // refreshes idleness, so a console blip there fails OPEN with a warn:
+        // the next request retries (the failed touch is not recorded), and an
+        // hours-long TTL absorbs the staleness.
+        if (last === undefined) throw error;
+        console.warn(`[vendo] hosted session touch failed; will retry next request: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    },
+    async adopt(from, to) {
+      const report = await store.sessions.adopt(from, to);
+      wireTouched.delete(from);
+      return report;
+    },
+    // The HOST-driven sweep (hosted-store one-pager): list stale candidates,
+    // claim each (the wire claim repeats the idleness predicate — a re-touch
+    // defeats it, same serialization as sweepEphemeralSubjects), and finish
+    // every claimed subject through the erase cascade.
+    async sweep(idleMs, now) {
+      const evicted: string[] = [];
+      for (const subject of await store.sessions.stale(idleMs, now)) {
+        if (!(await store.sessions.claim(subject, idleMs, now))) continue;
+        await store.erase.bySubject(subject);
+        wireTouched.delete(subject);
+        evicted.push(subject);
+      }
+      return evicted;
+    },
+  };
+}
+
+/** A host may also pass hostedStore({...}) explicitly via createVendo({ store });
+    the session doors it carries are then used as-is instead of the local SQL
+    engine's (any other custom store keeps the local ops — and with them
+    today's loud dbFor failure rather than a silent no-op). */
+function isHostedStore(store: VendoStore): store is HostedStore {
+  const candidate = store as Partial<HostedStore>;
+  return typeof candidate.sessions?.register === "function"
+    && typeof candidate.erase?.bySubject === "function";
+}
+
+/** ADAPTER RULE, store seam (cloned from selectConnections): persistence is
+    one VendoStore; which implementation composes is decided HERE. Precedence,
+    top to bottom:
+      1. an explicitly passed store always wins (BYO — the host's own Postgres
+         or PGlite via createStore, the hard BYO rule);
+      2. VENDO_API_KEY makes the Cloud hosted store the default for the seam
+         the host left unfilled (VENDO_CLOUD_URL overrides the console base) —
+         Vendo data lives with Vendo, tenant = the key's org, resolved
+         server-side on every call;
+      3. the local createStore default (02-store §4 re-derived: encryption is
+         a production-owned concern — with VENDO_STORE_ENCRYPTION_KEY set,
+         stored secrets encrypt at rest; without it, dev mode stores locally
+         unencrypted (the data dir is gitignored) while production secret
+         writes fail closed with instructions).
+    The adapters themselves never read the environment. */
+function selectStore(configured: VendoStore | undefined, touchDebounceMs: number): {
+  store: VendoStore;
+  sessions: SessionOps;
+} {
+  if (configured !== undefined) {
+    return {
+      store: configured,
+      sessions: isHostedStore(configured)
+        ? hostedSessionOps(configured, touchDebounceMs)
+        : localSessionOps(configured),
+    };
   }
+  const apiKey = environment("VENDO_API_KEY");
+  if (apiKey !== undefined) {
+    const baseUrl = environment("VENDO_CLOUD_URL");
+    const hosted = hostedStore({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) });
+    return { store: hosted, sessions: hostedSessionOps(hosted, touchDebounceMs) };
+  }
+  const encryptionKey = environment("VENDO_STORE_ENCRYPTION_KEY");
+  const local = createStore(encryptionKey === undefined
+    ? { allowUnencryptedSecrets: environment("NODE_ENV") !== "production" }
+    : { encryption: { key: encryptionKey } });
+  return { store: local, sessions: localSessionOps(local) };
 }
 
 function isJsonRequest(request: Request): boolean {
   return request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
     === "application/json";
-}
-
-function environment(name: string): string | undefined {
-  if (typeof process === "undefined") return undefined;
-  const value = process.env[name];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 /** 09 §4 — the .vendo/ files feeding the generation seat, read fail-soft (the
@@ -433,175 +618,10 @@ function isDoorPath(pathname: string): boolean {
   return DOOR_WELL_KNOWN_PATHS.has(pathname);
 }
 
-function routeSegments(path: string): string[] {
-  try {
-    return path.split("/").filter(Boolean).map(decodeURIComponent);
-  } catch {
-    throw new VendoError("validation", "route contains invalid URL encoding");
-  }
-}
-
-function requestHeaders(request: Request): Record<string, string> {
-  return Object.fromEntries(request.headers.entries());
-}
-
 function jsonMutationRequired(request: Request, path: string): boolean {
   if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return false;
   if (path === "/apps/import" || path === "/tick" || path.startsWith("/webhooks/")) return false;
   return true;
-}
-
-/** Lazily-minted random per-process HMAC key for constant-time secret compares
-    (WebCrypto only — NO node:crypto — so the module keeps bundling for edge/
-    Worker targets; cf. newAnonKey). */
-let compareKeyPromise: Promise<CryptoKey> | undefined;
-function compareKey(): Promise<CryptoKey> {
-  compareKeyPromise ??= newAnonKey();
-  return compareKeyPromise;
-}
-
-/** Constant-time string equality via WebCrypto, matching the webhook HMAC path
-    (which leans on crypto.subtle.verify for the same guarantee). HMACs both
-    inputs under a random per-process key so the digests are equal-length 32-byte
-    values regardless of input length — equal digests iff equal inputs (SHA-256
-    collision resistance) — and the byte compare leaks neither length nor content
-    through timing. Replaces the `===` bearer compare, a classic timing oracle. */
-async function timingSafeEqual(a: string, b: string): Promise<boolean> {
-  const key = await compareKey();
-  const encoder = new TextEncoder();
-  const [da, db] = await Promise.all([
-    globalThis.crypto.subtle.sign("HMAC", key, encoder.encode(a)),
-    globalThis.crypto.subtle.sign("HMAC", key, encoder.encode(b)),
-  ]);
-  return constantTimeEqual(hex(da), hex(db));
-}
-
-async function tickAuthorized(request: Request): Promise<boolean> {
-  const secret = environment("VENDO_TICK_SECRET");
-  if (secret === undefined) return false;
-  return timingSafeEqual(request.headers.get("authorization") ?? "", `Bearer ${secret}`);
-}
-
-function ephemeralPrincipal(subject: string): Principal {
-  return { kind: "user", subject, ephemeral: true };
-}
-
-/** 00 overview ("no host principal resolver → an ephemeral session-scoped
-    principal"), 01-core §2, 02-store §4. When `principal(req)` returns null the
-    visitor is anonymous, and each CLIENT gets its OWN ephemeral principal —
-    session-scoped, never persisted — carried by a signed httpOnly cookie so two
-    anonymous visitors never share threads, grants, approvals, or apps. */
-const ANON_COOKIE = "vendo_anon_session";
-/** Secure requests use the `__Host-` prefix against session fixation (cookie
-    tossing): a sibling subdomain could otherwise plant an attacker's validly
-    signed cookie via `Domain=` and read everything the victim's anonymous
-    session then accrues — browsers refuse `__Host-*` cookies that set Domain or
-    arrive from another host. `__Host-` REQUIRES Secure + Path=/ + no Domain. */
-const ANON_COOKIE_SECURE = `__Host-${ANON_COOKIE}`;
-
-function anonCookieName(secure: boolean): string {
-  return secure ? ANON_COOKIE_SECURE : ANON_COOKIE;
-}
-
-/** Whether a request counts as secure for cookie purposes: its own URL is
-    https, OR the operator-set VENDO_BASE_URL (the TRUSTED origin channel —
-    never x-forwarded-*) is https — i.e. TLS terminates at a proxy and the
-    request reaches this process as http. */
-function secureRequest(url: URL, trustedBaseIsHttps: boolean): boolean {
-  return url.protocol === "https:" || trustedBaseIsHttps;
-}
-
-/** Per-process HMAC key for the anonymous-session cookie, generated at
-    createVendo() time with WebCrypto only (globalThis.crypto — NO node:crypto),
-    so this module keeps loading/bundling on edge/Worker targets (cf.
-    dotVendoFile). Restart semantics: a new process mints a new key, which
-    invalidates every outstanding cookie and resets all anonymous sessions —
-    acceptable because ephemeral sessions never persist past the process anyway
-    (00 overview; 02-store §4). */
-function newAnonKey(): Promise<CryptoKey> {
-  const raw = new Uint8Array(32);
-  globalThis.crypto.getRandomValues(raw);
-  return globalThis.crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-}
-
-function hex(bytes: ArrayBuffer | Uint8Array): string {
-  let out = "";
-  for (const b of bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)) out += b.toString(16).padStart(2, "0");
-  return out;
-}
-
-function randomId(): string {
-  const raw = new Uint8Array(16); // 128-bit session id
-  globalThis.crypto.getRandomValues(raw);
-  return hex(raw);
-}
-
-async function anonSign(key: CryptoKey, id: string): Promise<string> {
-  return hex(await globalThis.crypto.subtle.sign("HMAC", key, new TextEncoder().encode(id)));
-}
-
-/** Length-independent-leak-free digest compare (both are equal-length hex when
-    the cookie is well-formed; unequal lengths simply fail). */
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
-function readCookie(header: string | null, name: string): string | null {
-  if (header === null) return null;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq === -1) continue;
-    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
-  }
-  return null;
-}
-
-/** Verify the `<id>.<sig>` anon cookie against the per-process key; return the id
-    when the HMAC matches, else null (absent, malformed, or tampered → the caller
-    mints a fresh session). Looks up the name matching the CURRENT request's
-    secure determination — a client switching protocols just gets a fresh
-    ephemeral session. */
-async function verifyAnonCookie(key: CryptoKey, cookieHeader: string | null, secure: boolean): Promise<string | null> {
-  const raw = readCookie(cookieHeader, anonCookieName(secure));
-  if (raw === null) return null;
-  const dot = raw.lastIndexOf(".");
-  if (dot <= 0 || dot === raw.length - 1) return null;
-  const id = raw.slice(0, dot);
-  const sig = raw.slice(dot + 1);
-  return constantTimeEqual(sig, await anonSign(key, id)) ? id : null;
-}
-
-/** The Set-Cookie for a freshly minted anonymous session. Secure requests get
-    the fixation-proof `__Host-` form (Secure + Path=/, per the prefix rules);
-    insecure (localhost http dev) keeps the plain name scoped to the wire base. */
-async function buildAnonCookie(key: CryptoKey, id: string, secure: boolean): Promise<string> {
-  const value = `${id}.${await anonSign(key, id)}`;
-  return secure
-    ? `${ANON_COOKIE_SECURE}=${value}; Path=/; HttpOnly; SameSite=Lax; Secure`
-    : `${ANON_COOKIE}=${value}; Path=${BASE_PATH}; HttpOnly; SameSite=Lax`;
-}
-
-/** The Set-Cookie that CLEARS the anonymous session (block-actions design §C:
-    the first authenticated request carrying a valid anon cookie merges the
-    session's data and retires the cookie). Same attributes as buildAnonCookie
-    so the browser matches the stored cookie; Max-Age=0 expires it. */
-function clearedAnonCookie(secure: boolean): string {
-  return secure
-    ? `${ANON_COOKIE_SECURE}=; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=0`
-    : `${ANON_COOKIE}=; Path=${BASE_PATH}; HttpOnly; SameSite=Lax; Max-Age=0`;
-}
-
-/** Append the minted Set-Cookie to the response. Stream/SSE responses carry
-    immutable headers, so re-wrap via `new Response(body, response)` (copies
-    status/statusText/headers into a fresh mutable Headers) before appending. */
-function withAnonCookie(response: Response, setCookie: string | undefined): Response {
-  if (setCookie === undefined) return response;
-  const rewrapped = new Response(response.body, response);
-  rewrapped.headers.append("set-cookie", setCookie);
-  return rewrapped;
 }
 
 function telemetryClient(enabled: boolean | undefined): Telemetry | undefined {
@@ -613,167 +633,79 @@ function telemetryClient(enabled: boolean | undefined): Telemetry | undefined {
   }
 }
 
-function doctorProbeOk(outcome: ToolOutcome): boolean {
-  if (outcome.status !== "ok" || typeof outcome.output !== "object" || outcome.output === null) return false;
-  return "ok" in outcome.output && outcome.output.ok === true;
-}
+/** The wire route TABLE (kill-list B4): every route as (method, pattern,
+    handler), assembled from the per-area modules under src/wire/. Entries are
+    matched IN ORDER, preserving the old if-chain's precedence exactly:
+    1. the dev-only injection seams (fall through in production),
+    2. the doctor production gate + doctor probe routes,
+    3. the machine surfaces — webhooks, tick, sync impact, the apps proxy —
+       all raw-path matches ahead of any segment decoding,
+    4. the user surfaces: threads → approvals → connections → grants →
+       the orgs cloud-required seam → apps → automations → runs →
+       activity/status.
+    A handler returning undefined falls through to later entries (grouped
+    handlers keep the old chain's method/operation fall-out), and no match at
+    all answers not-found. */
+const wireRoutes: readonly RouteEntry[] = [
+  ...devRoutes,
+  ...doctorRoutes,
+  ...systemRoutes,
+  ...threadRoutes,
+  ...approvalRoutes,
+  ...connectionRoutes,
+  ...grantRoutes,
+  ...orgsRoutes,
+  ...appRoutes,
+  ...automationRoutes,
+  ...runRoutes,
+  ...activityRoutes,
+  ...statusRoutes,
+];
 
-function createWireHandler(deps: {
-  principal: CreateVendoConfig["principal"];
-  ready: Promise<void>;
-  anonKey: Promise<CryptoKey>;
-  /** VENDO_BASE_URL is https → TLS terminates upstream; see secureRequest. */
-  trustedBaseIsHttps: boolean;
-  sessionId: string;
-  store: VendoStore;
-  telemetry?: Telemetry;
-  agent: VendoAgent;
-  guard: VendoGuard;
-  apps: AppsRuntime;
-  automations: AutomationsEngine;
-  connections: ConnectionsService;
-  orgs: OrgsService;
-  sandbox: SandboxVenue;
-  doctor: {
-    present(ctx: RunContext): Promise<ToolOutcome>;
-    actAs(): Promise<ToolOutcome>;
-  };
-  mcp: boolean;
-  door?: McpDoor;
-  /** True only in a development composition — gates the local injection seams. */
-  development: boolean;
-  runtimeCapture?: RuntimeCaptureHandler;
-  onRequestOrigin?: (origin: string) => void;
-  /** ENG-237 ephemeral-session policy. `now` reads the (possibly injected)
-      session clock; `sweep` runs the store idle sweep and cascades evicted
-      subjects into the agent. */
-  sessions: { ttlMs: number; sweepIntervalMs: number; maxSessions: number; now: () => number };
-  sweep: () => void;
-}): (request: Request) => Promise<Response> {
+function createWireHandler(deps: WireDeps): (request: Request) => Promise<Response> {
   // Amortized on-request sweep bookkeeping — lives in the shared handler closure
   // (persists across requests), NOT per-invocation. The serverless-safe leg:
   // Next.js gives no timer guarantee, so every request may trigger the sweep.
+  // Awaited BEFORE the request is handled (evict-on-expiry): a request arriving
+  // past the TTL gets a fresh, empty session rather than racing its own sweep.
+  // A sweep failure is caught and logged, never surfaced to the innocent
+  // request that triggered it (same posture as the background timer leg) — a
+  // failed sweep just means idle sessions live until the next interval.
   let lastSweepAt = deps.sessions.now();
-  const maybeSweep = (): void => {
+  const maybeSweep = async (): Promise<void> => {
     if (deps.sessions.ttlMs <= 0) return;
     const now = deps.sessions.now();
     if (now - lastSweepAt < deps.sessions.sweepIntervalMs) return;
     lastSweepAt = now;
-    deps.sweep();
+    try {
+      await deps.sweep();
+    } catch (error) {
+      console.warn(`[vendo] session sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`);
+    }
   };
+  // LOAD-BEARING per-request ordering relative to routing (kill-list B4 kept
+  // it byte-identical to the old chain):
+  //   1. maybeSweep — awaited BEFORE anything (evict-on-expiry, above);
+  //   2. the MCP door's paths — before relativePath's not-found AND the CSRF
+  //      json-mutation gate (see the comment at the check);
+  //   3. relativePath → not-found for non-wire paths;
+  //   4. onRequestOrigin — a validated wire route teaches the same-origin
+  //      baseUrl default;
+  //   5. the CSRF json-mutation gate — before ANY route handler runs;
+  //   6. await ready — schema before the first store touch;
+  //   7. the route table (wireRoutes above; tick auth and the orgs seam are
+  //      ordinary entries at their old chain positions; the anon-session
+  //      touch happens inside each handler's context() call);
+  //   8. no match → not-found;
+  //   9. withAnonCookie at the single exit — the minted Set-Cookie rides
+  //      every response shape (JSON, error, SSE/stream).
   return async (request) => {
-    maybeSweep();
-    // Per-request inflight bracket: begin once per ephemeral subject this request
-    // touches, end all in a finally so the idle sweep never evicts a session
-    // mid-turn (even a minutes-long stream).
-    const inflight = new Set<string>();
-    const trackInflight = (subject: string): void => {
-      if (inflight.has(subject)) return;
-      beginEphemeralRequest(deps.store, subject);
-      inflight.add(subject);
-    };
-    // Per-request anonymous-session state. This handler closure is shared across
-    // requests, so the minted-cookie state MUST live here (per-invocation) — a
-    // shared one would leak one visitor's session to the next. INVARIANT: one
-    // request resolves to at most ONE anonymous id — `anon.id` caches the first
-    // resolution so a route that calls context() twice on a cookie-less request
-    // can never mint a second id (which would silently split one request across
-    // two subjects and overwrite the Set-Cookie).
-    const anon: { id?: string; setCookie?: string } = {};
-    const context = async (req: Request, venue: RunContext["venue"]): Promise<RunContext> => {
-      const resolved = await deps.principal(req);
-      let principal: Principal;
-      // Host-resolved principals keep the process-wide fallback sessionId; only
-      // anonymous requests fall back to their per-client cookie id (below).
-      let sessionId = req.headers.get("x-vendo-session-id") ?? deps.sessionId;
-      if (resolved === null) {
-        const key = await deps.anonKey;
-        const secure = secureRequest(new URL(req.url), deps.trustedBaseIsHttps);
-        let id = anon.id ?? await verifyAnonCookie(key, req.headers.get("cookie"), secure);
-        if (id === null) {
-          id = randomId();
-          anon.setCookie = await buildAnonCookie(key, id, secure);
-        }
-        anon.id = id;
-        principal = ephemeralPrincipal(`anonymous_${id}`);
-        // 02-store §4: ephemeral subjects never touch disk. Declare this session
-        // ephemeral to the store up front so EVERY subsequent write this turn
-        // routes to the in-memory overlay — including the raw records() paths
-        // (apps, state, app-data) that only self-register on the typed helpers,
-        // and which persist mid-turn before any helper has seen the subject.
-        registerEphemeralSubject(deps.store, principal.subject, deps.sessions.now(), deps.sessions.maxSessions);
-        // 05-guard §2: session/task grants bind to ctx.sessionId. Anonymous
-        // sessions bind per CLIENT (the cookie id), not per PROCESS, so one
-        // visitor's session grant never authorizes another's calls. The explicit
-        // x-vendo-session-id header still wins when the client sets it.
-        if (req.headers.get("x-vendo-session-id") === null) sessionId = `anon_${id}`;
-      } else {
-        const parsed = principalSchema.safeParse(resolved);
-        if (!parsed.success) {
-          throw new VendoError("validation", "principal resolver returned an invalid principal");
-        }
-        // Block-actions design §C: host resolvers mint USER principals only —
-        // org context is derived from membership, never resolved — and the
-        // `vendo:` namespace is reserved for runtime-minted subjects (webhook
-        // trigger principals, org subjects). Both rejections are LOUD: a
-        // resolver colliding with the reserved namespace could otherwise act
-        // as an org or a webhook principal.
-        if (parsed.data.kind !== "user") {
-          throw new VendoError("validation", "principal resolver must mint kind:\"user\" principals; org context is derived from org membership");
-        }
-        if (isReservedSubject(parsed.data.subject)) {
-          throw new VendoError("validation", "principal resolver produced a reserved subject (the vendo: namespace is runtime-minted only)");
-        }
-        principal = parsed.data;
-        // Anonymous→signed-in auto-merge (block-actions design §C): the FIRST
-        // authenticated request still carrying a valid anonymous-session
-        // cookie adopts that session's threads/apps/state into the signed-in
-        // subject (grants, approvals, and connected accounts deliberately do
-        // NOT transfer — consent doesn't change identities), then retires the
-        // cookie. Idempotent: a replay finds nothing to merge and just clears
-        // the cookie again. A merge failure must never take down the request:
-        // the cookie stays, and the next authenticated request retries.
-        if (principal.ephemeral !== true) {
-          const key = await deps.anonKey;
-          const secure = secureRequest(new URL(req.url), deps.trustedBaseIsHttps);
-          const anonId = await verifyAnonCookie(key, req.headers.get("cookie"), secure);
-          if (anonId !== null) {
-            try {
-              const merged = await adoptEphemeralSubject(deps.store, `anonymous_${anonId}`, principal.subject);
-              anon.setCookie = clearedAnonCookie(secure);
-              if (merged !== null) {
-                await deps.guard.report({
-                  id: `aud_${globalThis.crypto.randomUUID()}`,
-                  at: new Date().toISOString(),
-                  kind: "principal",
-                  principal,
-                  venue,
-                  presence: "present",
-                  detail: { event: "anon-merge", from: `anonymous_${anonId}`, ...merged },
-                });
-              }
-            } catch (error) {
-              console.warn(`[vendo] anonymous-session merge failed; will retry next request: ${error instanceof Error ? error.message : String(error)}`);
-            }
-          }
-        }
-      }
-      // ENG-237: touch the session (register == touch) and bracket the request
-      // so the idle sweep can never evict this subject mid-flight. Anonymous
-      // requests registered above; a host-resolved ephemeral principal registers
-      // here (re-touch of an anon subject is idempotent — same clock reading).
-      if (principal.ephemeral === true) {
-        registerEphemeralSubject(deps.store, principal.subject, deps.sessions.now(), deps.sessions.maxSessions);
-        trackInflight(principal.subject);
-      }
-      return {
-        principal,
-        venue,
-        presence: "present",
-        sessionId,
-        requestHeaders: requestHeaders(req),
-      };
-    };
+    await maybeSweep();
+    // Per-request anonymous-session state + the one shared context-resolution
+    // pass (see wire/shared.ts). Both MUST be minted per-invocation — the
+    // handler closure is shared across requests.
+    const anon: AnonSession = {};
+    const context = createContextResolver(deps, anon);
 
     const respond = async (): Promise<Response> => {
     try {
@@ -801,518 +733,24 @@ function createWireHandler(deps: {
       }
       await deps.ready;
 
-      // This dispatch exists only in a development composition. Production
-      // handlers receive no runtimeCapture dependency and fall through to the
-      // ordinary 404, so there is no guarded-but-mounted production endpoint.
-      if (deps.runtimeCapture !== undefined && request.method === "POST" && path === "/dev/remixable-source") {
-        const body = await requestJson(request);
-        // Capture writes .vendo/remixable baselines on the developer's disk, so
-        // it requires a HOST-resolved principal — an anonymous visitor's minted
-        // ephemeral session is not enough, even in a development composition.
-        const captureContext = await context(request, "app");
-        if (captureContext.principal.ephemeral === true) {
-          return json({ error: { code: "blocked", message: "runtime capture requires a host-resolved principal" } }, 401);
-        }
-        if (typeof body["exportable"] !== "boolean") {
-          throw new VendoError("validation", "exportable must be a boolean");
-        }
-        return json(await deps.runtimeCapture.capture({
-          slot: string(body["slot"], "slot"),
-          source: string(body["source"], "source"),
-          exportable: body["exportable"],
-        }));
-      }
+      // The per-request view the route table dispatches on (kill-list B4).
+      // Segments decode lazily so raw-matched pre-routes (proxy, webhooks,
+      // doctor) never decode — preserving the old chain's decode timing.
+      let segmentsCache: string[] | undefined;
+      const wire: WireContext = {
+        request,
+        url,
+        path,
+        get segments() {
+          return (segmentsCache ??= routeSegments(path));
+        },
+        params: {},
+        context: (venue) => context(request, venue),
+        deps,
+      };
 
-      // 06-apps §9 — the documented LOCAL injection seam for in-client approval
-      // records (demos and dev; Cloud's review console mints these in
-      // production). Development compositions only: production handlers fall
-      // through to the ordinary 404, exactly like /dev/remixable-source, so no
-      // production surface can self-approve an app into the host page.
-      if (deps.development && request.method === "POST" && path === "/dev/inclient-approval") {
-        const body = await requestJson(request);
-        // Approving a host-page mount is a HOST trust decision — an anonymous
-        // visitor's minted ephemeral session is not enough, even in dev.
-        const approvalContext = await context(request, "app");
-        if (approvalContext.principal.ephemeral === true) {
-          return json({ error: { code: "blocked", message: "in-client approval injection requires a host-resolved principal" } }, 401);
-        }
-        const approvedBy = body["approvedBy"] === undefined
-          ? "local-dev"
-          : string(body["approvedBy"], "approvedBy");
-        return json(await deps.apps.inClient.approve({
-          appId: string(body["appId"], "appId"),
-          approvedBy,
-        }, approvalContext));
-      }
-
-      // Doctor targets a running dev server. Keep its synthetic mint/echo routes
-      // out of production entirely; in development they expose no credential
-      // material (the echo halves return booleans only).
-      if (path.startsWith("/doctor/") && environment("NODE_ENV") === "production") {
-        throw new VendoError("not-found", "unknown Vendo route");
-      }
-      if (request.method === "GET" && path === "/doctor/present/echo") {
-        return json({
-          ok: request.headers.get("authorization") === DOCTOR_PRESENT_AUTHORIZATION
-            && request.headers.get("cookie") === DOCTOR_PRESENT_COOKIE,
-        });
-      }
-      if (request.method === "GET" && path === "/doctor/act-as/echo") {
-        const resolved = await deps.principal(request);
-        const parsed = principalSchema.safeParse(resolved);
-        const accepted = parsed.success && parsed.data.subject === DOCTOR_ACT_AS_PRINCIPAL.subject;
-        return json({ ok: accepted }, accepted ? 200 : 401);
-      }
-      if (request.method === "POST" && path === "/doctor/present") {
-        const outcome = await deps.doctor.present(await context(request, "chat"));
-        if (doctorProbeOk(outcome)) return json({ ok: true });
-        return json({
-          ok: false,
-          error: {
-            code: "present-credentials-not-forwarded",
-            message: "Present credentials did not reach the host API. Set VENDO_BASE_URL to the running host origin and restart the dev server.",
-          },
-        }, 409);
-      }
-      if (request.method === "POST" && path === "/doctor/act-as") {
-        const outcome = await deps.doctor.actAs();
-        if (doctorProbeOk(outcome)) return json({ ok: true });
-        if (outcome.status === "error" && outcome.error.code === "not-implemented") {
-          return json({
-            ok: false,
-            error: {
-              code: "act-as-not-configured",
-              message: "actAs is not configured; pass createVendo({ actAs }) before enabling away host actions.",
-            },
-          }, 501);
-        }
-        return json({
-          ok: false,
-          error: {
-            code: "act-as-verification-failed",
-            message: "actAs returned no usable AuthMaterial, or the host API did not accept it. Check the matching verifier middleware and principal resolver.",
-          },
-        }, 409);
-      }
-
-      if (request.method === "POST" && path.startsWith("/webhooks/")) {
-        return await deps.automations.webhook(request);
-      }
-      if (request.method === "POST" && path === "/tick") {
-        if (!await tickAuthorized(request)) {
-          return json({ error: { code: "blocked", message: "invalid tick credential" } }, 401);
-        }
-        return json({ runIds: await deps.automations.tick() });
-      }
-      if (request.method === "POST" && path === "/sync/impact") {
-        if (process.env.NODE_ENV === "production") {
-          throw new VendoError("blocked", "sync impact is only available on a dev server");
-        }
-        const body = await requestJson(request);
-        const tools = body["tools"];
-        if (!Array.isArray(tools) || tools.length > 200 || tools.some((tool) => typeof tool !== "string")) {
-          throw new VendoError("validation", "tools must be an array of at most 200 strings");
-        }
-        return json({ impact: await computeImpact(deps.store, tools) });
-      }
-      if (path.startsWith("/proxy/")) {
-        const proxyPath = path.slice("/proxy".length);
-        const proxyUrl = new URL(request.url);
-        proxyUrl.pathname = proxyPath;
-        return await deps.apps.proxy.handler(new Request(proxyUrl, request));
-      }
-
-      const segments = routeSegments(path);
-      const head = segments[0];
-
-      if (request.method === "POST" && path === "/threads") {
-        const body = await requestJson(request);
-        const ctx = await context(request, "chat");
-        void deps.telemetry?.track("agent_run", {});
-        return await deps.agent.stream({
-          ...(body["threadId"] === undefined ? {} : { threadId: string(body["threadId"], "threadId") }),
-          message: body["message"] as never,
-          ctx,
-          // AGENT-3: client disconnect aborts the request, which cancels the
-          // agent loop — provider calls stop instead of running to completion
-          // for a reader that is gone.
-          signal: request.signal,
-        });
-      }
-      if (request.method === "GET" && path === "/threads") {
-        return json(await deps.agent.threads.list(await context(request, "chat")));
-      }
-      if (head === "threads" && segments.length === 2) {
-        const ctx = await context(request, "chat");
-        const id = string(segments[1], "thread id");
-        if (request.method === "GET") {
-          const thread = await deps.agent.threads.get(id, ctx);
-          if (thread === null) throw new VendoError("not-found", `thread not found: ${id}`);
-          return json(thread);
-        }
-        if (request.method === "DELETE") {
-          await deps.agent.threads.delete(id, ctx);
-          return json({});
-        }
-      }
-
-      // Block-actions design §C: `?org=<id>` / body.org switch the approvals
-      // surface to an org's queue — ADMIN-gated (members run; admins approve).
-      if (request.method === "GET" && path === "/approvals") {
-        const ctx = await context(request, "chat");
-        const org = url.searchParams.get("org");
-        const scoped = org === null ? ctx : await deps.orgs.adminContext(ctx, org);
-        return json(await deps.guard.approvals.pending(scoped.principal));
-      }
-      if (request.method === "POST" && path === "/approvals/decide") {
-        const body = await requestJson(request);
-        const ids = Array.isArray(body["ids"]) ? body["ids"].map((id) => string(id, "approval id")) : [];
-        if (ids.length === 0) throw new VendoError("validation", "ids must contain at least one approval id");
-        const decision = approvalDecisionSchema.safeParse(body["decision"]);
-        if (!decision.success) throw new VendoError("validation", "decision is invalid");
-        const ctx = await context(request, "chat");
-        const scoped = body["org"] === undefined ? ctx : await deps.orgs.adminContext(ctx, string(body["org"], "org"));
-        await deps.guard.approvals.decide(ids, decision.data as ApprovalDecision, scoped.principal);
-        return json({});
-      }
-
-      // 04-actions §3 (block-actions design §B) — per-principal connected
-      // accounts. Subject scoping happens HERE: the wire passes exactly the
-      // resolved principal; no caller-supplied subject exists on this surface.
-      if (request.method === "GET" && path === "/connections") {
-        const ctx = await context(request, "chat");
-        return json({ connections: await deps.connections.list(ctx.principal) });
-      }
-      if (request.method === "POST" && path === "/connections/initiate") {
-        const body = await requestJson(request);
-        const ctx = await context(request, "chat");
-        return json(await deps.connections.initiate(ctx.principal, {
-          toolkit: string(body["toolkit"], "toolkit"),
-          ...(body["connector"] === undefined ? {} : { connector: string(body["connector"], "connector") }),
-          ...(body["callbackUrl"] === undefined ? {} : { callbackUrl: string(body["callbackUrl"], "callbackUrl") }),
-        }));
-      }
-      if (head === "connections" && segments.length === 2) {
-        const connectionId = string(segments[1], "connection id");
-        const connector = url.searchParams.get("connector") ?? "composio";
-        const ctx = await context(request, "chat");
-        if (request.method === "GET") {
-          const connection = await deps.connections.status(ctx.principal, connector, connectionId);
-          if (connection === null) throw new VendoError("not-found", `connection not found: ${connectionId}`);
-          return json(connection);
-        }
-        if (request.method === "DELETE") {
-          await deps.connections.disconnect(ctx.principal, connector, connectionId);
-          return json({});
-        }
-      }
-
-      // Same admin-gated `?org=` scoping as approvals: admins manage the org's
-      // standing grants.
-      if (request.method === "GET" && path === "/grants") {
-        const ctx = await context(request, "chat");
-        const org = url.searchParams.get("org");
-        const scoped = org === null ? ctx : await deps.orgs.adminContext(ctx, org);
-        return json(await deps.guard.grants.list(scoped.principal));
-      }
-      if (request.method === "DELETE" && head === "grants" && segments.length === 2) {
-        const ctx = await context(request, "chat");
-        const org = url.searchParams.get("org");
-        const scoped = org === null ? ctx : await deps.orgs.adminContext(ctx, org);
-        await deps.guard.grants.revoke(string(segments[1], "grant id"), scoped.principal);
-        return json({});
-      }
-
-      // Block-actions design §C — org management (key-gated; every deps.orgs
-      // call posture-errors without an entitled VENDO_API_KEY).
-      if (path === "/orgs" && (request.method === "GET" || request.method === "POST")) {
-        const ctx = await context(request, "chat");
-        if (request.method === "GET") return json({ orgs: await deps.orgs.list(ctx.principal), posture: deps.orgs.posture });
-        const body = await requestJson(request);
-        const org = await deps.orgs.create(ctx.principal, string(body["name"], "org name"));
-        await deps.guard.report({
-          id: `aud_${globalThis.crypto.randomUUID()}`,
-          at: new Date().toISOString(),
-          kind: "principal",
-          principal: ctx.principal,
-          venue: ctx.venue,
-          presence: "present",
-          detail: { event: "org-created", org: org.id, name: org.name },
-        });
-        return json(org);
-      }
-      if (head === "orgs" && segments.length >= 2) {
-        const orgId = string(segments[1], "org id");
-        const ctx = await context(request, "chat");
-        if (request.method === "GET" && segments.length === 2) {
-          return json(await deps.orgs.get(ctx.principal, orgId));
-        }
-        if (request.method === "POST" && segments[2] === "members" && segments.length === 3) {
-          const body = await requestJson(request);
-          const member = await deps.orgs.addMember(
-            ctx.principal,
-            orgId,
-            string(body["subject"], "member subject"),
-            (body["role"] === undefined ? "member" : string(body["role"], "role")) as never,
-          );
-          await deps.guard.report({
-            id: `aud_${globalThis.crypto.randomUUID()}`,
-            at: new Date().toISOString(),
-            kind: "principal",
-            principal: ctx.principal,
-            venue: ctx.venue,
-            presence: "present",
-            detail: { event: "org-member-added", org: orgId, subject: member.subject, role: member.role },
-          });
-          return json(member);
-        }
-        if (segments[2] === "members" && segments.length === 4) {
-          const subject = string(segments[3], "member subject");
-          if (request.method === "PATCH") {
-            const body = await requestJson(request);
-            const member = await deps.orgs.setRole(ctx.principal, orgId, subject, string(body["role"], "role") as never);
-            await deps.guard.report({
-              id: `aud_${globalThis.crypto.randomUUID()}`,
-              at: new Date().toISOString(),
-              kind: "principal",
-              principal: ctx.principal,
-              venue: ctx.venue,
-              presence: "present",
-              detail: { event: "org-member-role", org: orgId, subject, role: member.role },
-            });
-            return json(member);
-          }
-          if (request.method === "DELETE") {
-            await deps.orgs.removeMember(ctx.principal, orgId, subject);
-            await deps.guard.report({
-              id: `aud_${globalThis.crypto.randomUUID()}`,
-              at: new Date().toISOString(),
-              kind: "principal",
-              principal: ctx.principal,
-              venue: ctx.venue,
-              presence: "present",
-              detail: { event: "org-member-removed", org: orgId, subject },
-            });
-            return json({});
-          }
-        }
-        if (request.method === "POST" && segments[2] === "apps" && segments.length === 3) {
-          const body = await requestJson(request);
-          const appId = string(body["appId"], "appId");
-          await deps.orgs.transferApp(ctx.principal, orgId, appId);
-          await deps.guard.report({
-            id: `aud_${globalThis.crypto.randomUUID()}`,
-            at: new Date().toISOString(),
-            kind: "principal",
-            principal: ctx.principal,
-            venue: ctx.venue,
-            presence: "present",
-            appId,
-            detail: { event: "org-app-transferred", org: orgId, appId },
-          });
-          return json({});
-        }
-      }
-
-      if (path === "/apps") {
-        const ctx = await context(request, "app");
-        if (request.method === "GET") {
-          // Org-owned apps the caller can run (block-actions design §C) join
-          // the personal listing; memberships() degrades to [] when orgs are
-          // unactivated (paid gate). Listings fan out in parallel.
-          const [own, memberships] = await Promise.all([
-            deps.apps.list(ctx),
-            deps.orgs.memberships(ctx.principal),
-          ]);
-          const orgApps = await Promise.all(memberships.map((membership) => deps.apps.list({
-            ...ctx,
-            principal: orgPrincipal(membership.id, membership.name),
-            actor: ctx.principal,
-          })));
-          return json([...own, ...orgApps.flat()]);
-        }
-        if (request.method === "POST") {
-          const body = await requestJson(request);
-          return json(await deps.apps.create({ prompt: string(body["prompt"], "prompt") }, ctx));
-        }
-      }
-      if (request.method === "POST" && path === "/apps/import") {
-        // The CSRF floor exempts import (binary body), so it must instead require
-        // a non-CORS-safelisted media type — forcing a cross-origin preflight so
-        // a simple credentialed form/text POST cannot silently import (09 §3).
-        const contentType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
-        if (contentType !== "application/octet-stream" && contentType !== "application/vnd.vendo.app") {
-          throw new VendoError("validation", "import requires Content-Type: application/octet-stream");
-        }
-        const ctx = await context(request, "app");
-        return json(await deps.apps.importApp(new Uint8Array(await request.arrayBuffer()), ctx));
-      }
-      if (head === "apps" && segments.length >= 2) {
-        const appId = string(segments[1], "app id");
-        const baseCtx = await context(request, "app");
-        // Org-owned apps (block-actions design §C): re-contextualize a member's
-        // request onto the org principal (actor = the human, for audit). Reads
-        // and calls are member-level ("run"); every mutation needs an admin
-        // ("manage"). Non-org apps pass through unchanged.
-        const operationName = segments[2];
-        const need: "run" | "manage" = request.method === "GET"
-          || (request.method === "POST" && operationName === "call")
-          ? "run"
-          : "manage";
-        const ctx = await deps.orgs.appContext(baseCtx, appId, need);
-        if (segments.length === 2) {
-          if (request.method === "GET") {
-            const app = await deps.apps.get(appId, ctx);
-            if (app === null) throw new VendoError("not-found", `app not found: ${appId}`);
-            return json(app);
-          }
-          if (request.method === "DELETE") {
-            await deps.apps.delete(appId, ctx);
-            return json({});
-          }
-        }
-        const operation = operationName;
-        if (request.method === "GET" && operation === "open" && segments.length === 3) {
-          return json(await deps.apps.open(appId, ctx));
-        }
-        if (request.method === "POST" && operation === "call" && segments.length === 3) {
-          const body = await requestJson(request);
-          return json(await deps.apps.call(appId, string(body["ref"], "ref"), body["args"] as Json, ctx));
-        }
-        if (request.method === "POST" && operation === "edit" && segments.length === 3) {
-          const body = await requestJson(request);
-          return json(await deps.apps.edit(appId, string(body["instruction"], "instruction"), ctx));
-        }
-        if (operation === "history" && segments.length === 3) {
-          if (await deps.apps.get(appId, ctx) === null) throw new VendoError("not-found", `app not found: ${appId}`);
-          if (request.method === "GET") return json(await deps.apps.history(appId).list());
-          if (request.method === "POST") {
-            const body = await requestJson(request);
-            if (body["op"] !== "undo") throw new VendoError("validation", "history op must be undo");
-            return json(await deps.apps.history(appId).undo());
-          }
-        }
-        // 06-apps §8–§9 — additive: the reviewable diff of what this app ships
-        // relative to the captured host baselines, hash-pinned to the version
-        // an in-client approval would cover. Owner-scoped like every app route.
-        if (request.method === "GET" && operation === "ship-diff" && segments.length === 3) {
-          return json(await deps.apps.inClient.shipDiff(appId, ctx));
-        }
-        // 06-apps §8 — additive drift→rebase surface, owner-scoped like every
-        // app route. A rebase rewrites content, so it is only ever invoked
-        // explicitly here or via the vendo_apps_rebase_pin agent tool — drift
-        // detection never auto-rebases.
-        if (request.method === "GET" && operation === "pin-drift" && segments.length === 3) {
-          return json(await deps.apps.pins.drift(appId, ctx));
-        }
-        if (request.method === "POST" && operation === "rebase-pin" && segments.length === 3) {
-          const body = await requestJson(request);
-          return json(await deps.apps.pins.rebase({ appId, slot: string(body["slot"], "slot") }, ctx));
-        }
-        if (request.method === "GET" && operation === "export" && segments.length === 3) {
-          const bytes = await deps.apps.exportApp(appId, ctx);
-          return new Response(bytes as BodyInit, {
-            headers: {
-              "content-type": "application/octet-stream",
-              "content-disposition": `attachment; filename="${appId}.vendoapp"`,
-            },
-          });
-        }
-        if (request.method === "POST" && operation === "fork" && segments.length === 3) {
-          return json(await deps.apps.fork(appId, ctx));
-        }
-      }
-
-      if (request.method === "GET" && path === "/automations") {
-        return json(await deps.automations.list(await context(request, "automation")));
-      }
-      if (head === "automations" && segments.length === 3 && request.method === "POST") {
-        const appId = string(segments[1], "app id");
-        // Org-owned automations: enabling/disabling is managing (admin-gated
-        // through the same org re-contextualization as app mutations, §C);
-        // dry-run is a read-only preview of a run — member-level, like running.
-        const ctx = await deps.orgs.appContext(
-          await context(request, "automation"),
-          appId,
-          segments[2] === "dry-run" ? "run" : "manage",
-        );
-        if (segments[2] === "enable") return json(await deps.automations.enable(appId, ctx));
-        if (segments[2] === "disable") {
-          await deps.automations.disable(appId, ctx);
-          return json({});
-        }
-        if (segments[2] === "dry-run") return json(await deps.automations.dryRun(appId, ctx));
-      }
-
-      if (request.method === "GET" && path === "/runs") {
-        const status = url.searchParams.get("status") ?? undefined;
-        const allowed: RunStatus[] = ["running", "ok", "error", "stopped", "pending-approval"];
-        if (status !== undefined && !allowed.includes(status as RunStatus)) {
-          throw new VendoError("validation", "run status is invalid");
-        }
-        const filter = {
-          ...(url.searchParams.get("appId") === null ? {} : { appId: url.searchParams.get("appId")! }),
-          ...(status === undefined ? {} : { status: status as RunStatus }),
-          ...(url.searchParams.get("cursor") === null ? {} : { cursor: url.searchParams.get("cursor")! }),
-        };
-        return json(await deps.automations.runs.list(filter, await context(request, "automation")));
-      }
-      if (head === "runs" && segments.length >= 2) {
-        const ctx = await context(request, "automation");
-        const runId = string(segments[1], "run id");
-        if (request.method === "GET" && segments.length === 2) {
-          const run = await deps.automations.runs.get(runId, ctx);
-          if (run === null) throw new VendoError("not-found", `run not found: ${runId}`);
-          return json(run);
-        }
-        if (request.method === "POST" && segments[2] === "stop" && segments.length === 3) {
-          await deps.automations.runs.stop(runId, ctx);
-          return json({});
-        }
-      }
-
-      if (request.method === "GET" && path === "/activity") {
-        const ctx = await context(request, "chat");
-        const limitValue = url.searchParams.get("limit");
-        const limit = limitValue === null ? undefined : Number(limitValue);
-        if (limit !== undefined && (!Number.isInteger(limit) || limit <= 0)) {
-          throw new VendoError("validation", "activity limit must be a positive integer");
-        }
-        const activity = await deps.guard.audit.query({
-          principal: ctx.principal,
-          ...(url.searchParams.get("cursor") === null ? {} : { cursor: url.searchParams.get("cursor")! }),
-          ...(limit === undefined ? {} : { limit }),
-        });
-        // 09 §3: the wire returns AuditEvent[] — the block's {events,cursor}
-        // envelope stays internal (the client pages by last event id).
-        return json(activity.events);
-      }
-      if (request.method === "GET" && path === "/status") {
-        await context(request, "chat");
-        return json({
-          posture: deps.guard.status().posture,
-          version: VERSION,
-          blocks: {
-            store: true,
-            agent: true,
-            actions: true,
-            guard: true,
-            apps: true,
-            automations: true,
-            sandbox: deps.sandbox,
-            // 10-mcp §1 — the door is off by default; true only when
-            // createVendo({ mcp: true }) opened it.
-            mcp: deps.mcp,
-            // 04-actions §3 — how per-user connected accounts are brokered:
-            // "byo" (host's own Composio key), "cloud" (VENDO_API_KEY), or off.
-            connections: deps.connections.posture,
-            // Block-actions design §C — org workspaces are key-gated: "cloud"
-            // when VENDO_API_KEY is set (activation still requires the plan's
-            // `orgs` capability), false otherwise.
-            orgs: deps.orgs.posture,
-          },
-        });
-      }
+      const routed = await dispatchRoutes(wireRoutes, wire);
+      if (routed !== undefined) return routed;
 
       throw new VendoError("not-found", "unknown Vendo route");
     } catch (error) {
@@ -1325,72 +763,66 @@ function createWireHandler(deps: {
     };
     // Attach the anon Set-Cookie (if a session was minted this request) at the
     // single exit — covering JSON, error, and SSE/stream responses alike.
-    let released = false;
-    const release = (): void => {
-      if (released) return;
-      released = true;
-      for (const subject of inflight) endEphemeralRequest(deps.store, subject);
-    };
-    let response: Response;
-    try {
-      response = withAnonCookie(await respond(), anon.setCookie);
-    } catch (error) {
-      release();
-      throw error;
-    }
-    if (inflight.size === 0 || !response.body) {
-      release();
-      return response;
-    }
-    // A streamed chat turn keeps producing (and persists the thread in onFinish)
-    // AFTER the handler returns. Hold the inflight refcount until the body
-    // finishes or the client disconnects, so the idle sweep never evicts the
-    // session mid-stream and forces its final ephemeral thread-persist onto disk.
-    const reader = response.body.getReader();
-    const tracked = new ReadableStream<Uint8Array>({
-      async pull(controller) {
-        try {
-          const { done, value } = await reader.read();
-          if (done) {
-            release();
-            controller.close();
-            return;
-          }
-          controller.enqueue(value);
-        } catch (error) {
-          release();
-          controller.error(error);
-        }
-      },
-      cancel(reason) {
-        release();
-        return reader.cancel(reason);
-      },
-    });
-    return new Response(tracked, response);
+    return withAnonCookie(await respond(), anon.setCookie);
   };
 }
 
 /** 09-vendo §2 — compose every live block around the guard choke point. */
 export function createVendo(config: CreateVendoConfig): Vendo {
-  // 02-store §4 default-on encryption: when the host doesn't hand us a store,
-  // the composed default picks up VENDO_STORE_ENCRYPTION_KEY (provisioned into
-  // .env by `vendo init`) so stored secrets are encrypted with zero extra
-  // wiring. An explicitly configured store always wins as-is.
-  const encryptionKey = environment("VENDO_STORE_ENCRYPTION_KEY");
-  const store = config.store
-    ?? createStore(encryptionKey === undefined ? {} : { encryption: { key: encryptionKey } });
-  // 02-store §4 / ENG-237 — ephemeral session policy. Validated like the agent's
-  // context config; defaults are the recommended knobs (see PR body).
+  // 09-vendo §2.1 — one preset or the per-seam trio, never mixed. Checked
+  // before anything is constructed so a miswired config leaks no resources.
+  if (config.auth !== undefined) {
+    const mixed = (["principal", "actAs", "oauth"] as const)
+      .filter((key) => config[key] !== undefined);
+    if (mixed.length > 0) {
+      throw new VendoError(
+        "validation",
+        `createVendo({ auth }) already fills the principal, actAs, and oauth seams from one preset (09-vendo §2.1); remove ${mixed.map((key) => `\`${key}\``).join(", ")} or drop \`auth\` — one preset or the per-seam trio, never mixed.`,
+      );
+    }
+  }
+  // The three seams the identity story fills: from the preset, from the
+  // per-seam trio, or — with neither `auth` nor `principal` — the anonymous
+  // default resolver (every session ephemeral, 00 conventions "identity
+  // optional" / 02-store §4). Absent preset halves leave their seams unset.
+  const resolvePrincipal = config.auth?.principal ?? config.principal ?? (async () => null);
+  const actAsSeam = config.auth === undefined ? config.actAs : config.auth.actAs;
+  const oauthSeam = config.auth === undefined ? config.oauth : config.auth.oauth;
+  // 02-store §4 (kill-list B3) — ephemeral session policy. Validated like the
+  // agent's context config; defaults are the recommended knobs. The store takes
+  // the clock per call (register/sweep), so one time source needs no seam.
+  // Validated FIRST because the hosted session ops derive their touch-debounce
+  // window from the sweep interval.
   const sessionsConfig = validateSessionsConfig(config.sessions);
   const sessionNow = sessionsConfig.now ?? Date.now;
-  // Route the store's session clock (touch/TTL) through the umbrella's clock so
-  // door-side and mid-turn touches share ONE time source (deterministic in tests),
-  // and its default registry cap through maxSessions so store-internal
-  // self-registrations enforce the same ceiling as the umbrella's own registers.
-  setSessionClock(store, sessionNow);
-  setSessionCap(store, sessionsConfig.maxSessions);
+  // Persistence, selected by the adapter rule at this composition seam
+  // (selectStore above): explicit store → VENDO_API_KEY hosted store → the
+  // local createStore default (02-store §4 re-derived: encryption is
+  // production-owned — VENDO_STORE_ENCRYPTION_KEY encrypts at rest; without
+  // it dev stores locally unencrypted while production secret writes fail
+  // closed). The session doors travel with the store: SQL registry locally,
+  // the store wire when hosted.
+  // Touch-debounce window, clamped by BOTH knobs. INVARIANT: the window must
+  // sit well inside the TTL, so continuous traffic always refreshes
+  // touched_at before the sweep cutoff — with sweepIntervalMs/2 alone, a
+  // ttlMs shorter than the sweep interval would let an actively-used
+  // session's stamp go a full window stale, cross the cutoff, and the claim
+  // leg would re-read that SAME stale stamp and erase a live session
+  // mid-use. sweepIntervalMs/2 bounds the wire chatter; ttlMs/4 enforces the
+  // safety margin. ttlMs 0 disables the sweep entirely (runSweep), so the
+  // zero window it produces (every touch rides the wire) is merely
+  // conservative, never wrong.
+  const { store, sessions: sessionOps } = selectStore(
+    config.store,
+    Math.min(
+      Math.floor(sessionsConfig.sweepIntervalMs / 2),
+      Math.floor(sessionsConfig.ttlMs / 4),
+    ),
+  );
   const sandbox = selectSandbox(config.sandbox);
+  // Inference, selected by the adapter rule at this composition seam
+  // (selectModel above) — the one model the agent and apps blocks consume.
+  const inference = selectModel(config.model);
   const ready = store.ensureSchema();
   // Keep eager schema readiness for hosts that reach into composed blocks,
   // while preventing an unhandled rejection before the first handler/emit awaits it.
@@ -1447,6 +879,27 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // that learned origin is UNTRUSTED (baseUrlTrusted:false), so a spoofed Host
   // can never turn it into a credential-exfiltration target (04 §4).
   const configuredBaseUrl = environment("VENDO_BASE_URL");
+  // 09-vendo §2 (install-dx wave 1.1 — design decision 5): a literal
+  // NODE_ENV check, deliberately independent of the broader `development`
+  // flag below (which also honors an explicit config.development escape
+  // hatch for source capture — unrelated to credential trust).
+  const nodeEnv = environment("NODE_ENV");
+  const isDevelopmentEnv = nodeEnv === "development";
+  const isProductionEnv = nodeEnv === "production";
+  // One condition arms BOTH the boot warning and the per-call fail-closed
+  // policy below, so the console.error tests pin exactly what arms refusal.
+  const baseUrlMissingInProduction = configuredBaseUrl === undefined && isProductionEnv;
+  if (baseUrlMissingInProduction) {
+    // Loud, once, at composition — never throws (a host that never makes a
+    // present-mode host tool call must keep booting). The actual refusal
+    // happens per-call below via untrustedOriginPolicy: "fail".
+    console.error(
+      "[vendo] VENDO_BASE_URL is not set in production. Present-mode host tool "
+        + "calls that need to forward the caller's credentials will fail instead "
+        + "of running unauthenticated. Set VENDO_BASE_URL to this deployment's "
+        + "public origin and restart the server.",
+    );
+  }
   const actionsConfig: {
     dir: string;
     connectors?: Connector[];
@@ -1455,14 +908,20 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     baseUrl?: string;
     baseUrlTrusted?: boolean;
     onPresentCredentialsNotForwarded: typeof warnPresentCredentialsNotForwarded;
+    untrustedOriginPolicy?: "warn" | "fail";
     invokeTool?: ToolRegistry["execute"];
   } = {
     dir: ".",
     ...(config.connectors === undefined ? {} : { connectors: config.connectors }),
-    ...(config.actAs === undefined ? {} : { actAs: config.actAs }),
+    ...(actAsSeam === undefined ? {} : { actAs: actAsSeam }),
     ...(config.serverActions === undefined ? {} : { serverActions: config.serverActions }),
     ...(configuredBaseUrl === undefined ? {} : { baseUrl: configuredBaseUrl, baseUrlTrusted: true }),
     onPresentCredentialsNotForwarded: warnPresentCredentialsNotForwarded,
+    // 09-vendo §2 install-dx wave 1.1: production refuses a present-mode call
+    // it can't authenticate rather than quietly dropping the caller's
+    // credentials. Dev/test keep today's warn-and-continue (dev never reaches
+    // "untrusted-host-origin" at all — see onRequestOrigin below).
+    ...(baseUrlMissingInProduction ? { untrustedOriginPolicy: "fail" as const } : {}),
   };
   const actions = createActions(actionsConfig);
   const doctor = {
@@ -1496,7 +955,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   };
   const boundTools = guard.bind(actions);
   // 04 §6: compound steps route through the guard binding — grants, approvals,
-  // breakers, scanners, and audit see every real call; there is no second
+  // breakers, and audit see every real call; there is no second
   // execution path. createActions reads invokeTool at execution time (same
   // pattern as baseUrl above), so assigning after guard.bind is sound.
   actionsConfig.invokeTool = (call, ctx) => boundTools.execute(call, ctx);
@@ -1505,15 +964,16 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const pinBaselines = dotVendoPinBaselines();
   const catalog = mergeRuntimeCatalog(
     runtimeCatalogFromJson(dotVendoFile("catalog.json")),
-    config.catalog,
+    normalizeCatalogConfig(config.catalog),
   );
   const apps = createApps({
     store,
     guard,
     tools: boundTools,
-    model: config.model,
+    model: inference.model,
     catalog,
     pinBaselines,
+    ...(config.paint === undefined ? {} : { paint: config.paint }),
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
     secrets: config.secrets ?? envSecrets(),
@@ -1537,19 +997,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
         ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
       }
     : undefined;
-  // ENG-338 dev-mode ladder: when the host's model came from devModel(), wire
-  // its rider seam into the agent — session rungs (authed Claude/Codex CLI
-  // logins) own the model loop while tools + consent stay on the guard-bound
-  // path. Key rungs resolve to null and run the native loop unchanged. The
-  // controller refuses session rungs outright when NODE_ENV === "production".
-  const devController = devModelController(config.model);
   const agent = createAgent({
-    model: config.model,
+    model: inference.model,
     tools: boundTools,
     guard,
-    ...(devController === null
-      ? {}
-      : { rider: { session: ({ threadId }: { threadId: string }) => devController.chatSession(threadId) } }),
     store,
     ...(system === undefined ? {} : { system }),
     context: {
@@ -1571,13 +1022,13 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       ...(config.agent?.maxInitialTools === undefined ? {} : { maxInitialTools: config.agent.maxInitialTools }),
     },
   });
-  // ENG-237 idle sweep: evict every idle, not-inflight ephemeral session from the
-  // store overlay, then cascade each evicted subject into the agent's in-memory
+  // 02-store §4 (kill-list B3) TTL sweep: erase every idle ephemeral session's
+  // disk rows, then cascade each swept subject into the agent's in-memory
   // threads (store-first — a concurrent request then fails closed at the store
   // rather than finding threads without store state). Disabled when ttlMs is 0.
-  const runSweep = (): void => {
+  const runSweep = async (): Promise<void> => {
     if (sessionsConfig.ttlMs <= 0) return;
-    for (const subject of sweepEphemeralSubjects(store, { idleMs: sessionsConfig.ttlMs })) {
+    for (const subject of await sessionOps.sweep(sessionsConfig.ttlMs, sessionNow())) {
       agent.evictSubject(subject);
     }
   };
@@ -1585,7 +1036,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // engine pattern) so an idle process still reclaims sessions with no traffic;
   // unref'd means it never keeps the event loop alive. Torn down with the store.
   if (sessionsConfig.ttlMs > 0) {
-    const sweepTimer = setInterval(runSweep, sessionsConfig.sweepIntervalMs);
+    const sweepTimer = setInterval(() => {
+      runSweep().catch((error: unknown) => {
+        console.warn(`[vendo] session sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }, sessionsConfig.sweepIntervalMs);
     (sweepTimer as unknown as { unref?: () => void }).unref?.();
     const closeStore = store.close.bind(store);
     store.close = async (): Promise<void> => {
@@ -1600,13 +1055,9 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     store,
     runner: agent.asRunner(),
   });
-  // 04-actions §3 — per-principal connected accounts. A BYO connector's own
-  // connections capability wins (connections must live where its tools
-  // execute); with none, VENDO_API_KEY routes to the Vendo Cloud broker.
-  const connections = createConnections({ connectors: config.connectors ?? [] });
-  // Block-actions design §C — org workspaces: machinery is OSS, activation is
-  // key-gated via the console's /keys/validate (the `orgs` capability).
-  const orgs = createOrgs({ store });
+  // 04-actions §3 — per-principal connected accounts, selected by the adapter
+  // rule at this composition seam (selectConnections above).
+  const connections = selectConnections(config.connections, config.connectors ?? []);
   // 10-mcp §1 — construct the door from the parts already assembled: the SAME
   // guard-bound registry chat/apps/automations use, the guard (its core seam is
   // what the door holds for auth audit), the store (a StoreAdapter for the door's
@@ -1620,10 +1071,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       : undefined;
   let door: McpDoor | undefined;
   if (mcpOptions !== undefined) {
-    if (config.oauth === undefined) {
+    if (oauthSeam === undefined) {
       throw new VendoError(
         "validation",
-        "createVendo({ mcp: true }) requires an `oauth` HostOAuthAdapter (10-mcp §3): the door mints door principals through it and cannot open without one.",
+        "createVendo({ mcp: true }) requires a HostOAuthAdapter (10-mcp §3) — from `oauth` or an `auth` preset carrying one: the door mints door principals through it and cannot open without one.",
       );
     }
     // AppsRuntime.open adds a "resuming" variant AppsPort (tree | http) does not
@@ -1656,7 +1107,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       tools: boundTools,
       guard,
       store,
-      oauth: config.oauth,
+      oauth: oauthSeam,
       apps: appsPort,
       mount: MCP_MOUNT,
       ...(doorBaseUrl === undefined ? {} : { baseUrl: doorBaseUrl }),
@@ -1668,9 +1119,8 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     });
   }
   const sessionId = `session_${globalThis.crypto.randomUUID()}`;
-  // Per-process signing key for anonymous-session cookies (WebCrypto only; see
-  // newAnonKey). Anonymous principals are minted per-CLIENT in the handler.
-  const anonKey = newAnonKey();
+  // Anonymous principals are minted per-CLIENT in the handler (opaque cookie
+  // pointer; the store's vendo_sessions row is the authority — kill-list B3).
   // An https VENDO_BASE_URL means TLS terminates at a trusted proxy and requests
   // arrive here as http — anon cookies must still be Secure/__Host- then.
   const trustedBaseIsHttps = ((): boolean => {
@@ -1686,31 +1136,9 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     || (config.development !== false && environment("NODE_ENV") === "development");
   const developmentPaths = typeof config.development === "object" ? config.development : {};
   const runtimeCapture = development ? createRuntimeCapture(developmentPaths) : null;
-  // ENG-338: pre-spawn the first Claude rider session at dev-server boot (its
-  // spawn+init costs ~12s; the user's first message must not pay it). The
-  // warmup system prompt approximates the loop's (synthetic dev principal);
-  // the adopting thread swaps in its live tool bridge. Fire-and-forget: any
-  // failure just means a cold start on the first message.
-  if (devController !== null && development) {
-    void (async () => {
-      // The warmed Claude session keeps this prompt (adoption never restarts
-      // it), so assemble the SAME brief/catalog system the loop would use.
-      const [descriptors, warmupSystem] = await Promise.all([
-        boundTools.descriptors(),
-        assembleSystemPrompt(guard, {
-          principal: { kind: "user", subject: "vendo_dev_warmup", ephemeral: true },
-          venue: "chat",
-          presence: "present",
-          sessionId: "session_vendo_dev_warmup",
-        }, system, false),
-      ]);
-      devController.warmup({ system: warmupSystem, tools: descriptors });
-    })().catch(() => undefined);
-  }
   const handler = createWireHandler({
-    principal: config.principal,
+    principal: resolvePrincipal,
     ready,
-    anonKey,
     trustedBaseIsHttps,
     sessionId,
     store,
@@ -1720,27 +1148,33 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     apps,
     automations,
     connections,
-    orgs,
     sandbox: sandbox.venue,
+    model: inference.venue,
     doctor,
     mcp: mcpOptions !== undefined,
     development,
     sessions: {
       ttlMs: sessionsConfig.ttlMs,
       sweepIntervalMs: sessionsConfig.sweepIntervalMs,
-      maxSessions: sessionsConfig.maxSessions,
       now: sessionNow,
     },
+    sessionStore: sessionOps,
     sweep: runSweep,
     ...(door === undefined ? {} : { door }),
     ...(runtimeCapture === null ? {} : { runtimeCapture }),
     onRequestOrigin: (origin) => {
       // Same-origin default for route-binding execution (04): no VENDO_BASE_URL
       // → the wire's own origin, learned from the first VALIDATED request and
-      // then fixed. Marked untrusted so credentials never forward to it.
+      // then fixed.
       if (actionsConfig.baseUrl === undefined) {
         actionsConfig.baseUrl = origin;
-        actionsConfig.baseUrlTrusted = false;
+        // 09-vendo §2 install-dx wave 1.1: NODE_ENV=development trusts its own
+        // learned origin — credentials forward to the wire's own route
+        // bindings with zero config. Every other environment (including
+        // NODE_ENV=test) keeps the learned origin UNTRUSTED exactly as
+        // before, so a spoofed Host on any early request can never turn it
+        // into a credential-exfiltration target (04 §4).
+        actionsConfig.baseUrlTrusted = isDevelopmentEnv;
       }
     },
   });
@@ -1757,13 +1191,17 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     automations,
     actions,
     connections,
-    orgs,
     store,
   };
 }
 
 /** 09-vendo §2 — adapt the fetch handler to a Next.js catch-all route module.
-    PATCH joined the wire with the org member role route (ENG-263). */
+    PATCH stays exported even with no PATCH-only wire route left: Next.js
+    405s any method the module does not export before the request ever
+    reaches `vendo.handler`, so dropping it would turn e.g. `PATCH
+    /api/vendo/orgs/:id/members/:subject` into a framework 405 instead of
+    the wire's own `cloud-required` seam (the org routes matched ANY
+    method — orgsRoutes in wire/misc.ts). */
 export function nextVendoHandler(vendo: Vendo): {
   GET(request: Request): Promise<Response>;
   POST(request: Request): Promise<Response>;
@@ -1772,4 +1210,33 @@ export function nextVendoHandler(vendo: Vendo): {
 } {
   const handle = (request: Request): Promise<Response> => vendo.handler(request);
   return { GET: handle, POST: handle, PATCH: handle, DELETE: handle };
+}
+
+/** 10-mcp §5 — adapt the fetch handler to a Next.js `app/.well-known/[...vendo]/
+    route.ts` module. The four discovery documents the door serves (RFC 9728/
+    8414 metadata for its fixed mount, plus the SEP-2127 server card) live at
+    ORIGIN-ROOT paths, outside BASE_PATH — a host's `/api/vendo` catch-all route
+    never sees them, because Next.js dispatches by directory structure, not by
+    the wire's own routing. This file exists so that directory gets a handler
+    too, one that shares DOOR_WELL_KNOWN_PATHS with the wire itself (the SAME
+    set `isDoorPath` matches) instead of a hand-copied allowlist that can drift
+    from it. A request whose pathname is exactly one of those four paths
+    forwards to `vendo.handler` (which independently confirms it's a door path
+    and, if `mcp` is configured, serves it — the check here is only about
+    which requests reach the wire at all); anything else answers 404 with an
+    empty body, mirroring the hand-written route this replaces. With `mcp` left
+    unconfigured, `vendo.handler` still recognizes these four paths but has no
+    door to serve them, so the request falls through to the wire's ordinary
+    not-found response — never a 500. */
+export function wellKnownVendoHandler(vendo: Vendo): {
+  GET(request: Request): Promise<Response>;
+  POST(request: Request): Promise<Response>;
+} {
+  const handle = (request: Request): Promise<Response> => {
+    const { pathname } = new URL(request.url);
+    return DOOR_WELL_KNOWN_PATHS.has(pathname)
+      ? vendo.handler(request)
+      : Promise.resolve(new Response(null, { status: 404 }));
+  };
+  return { GET: handle, POST: handle };
 }

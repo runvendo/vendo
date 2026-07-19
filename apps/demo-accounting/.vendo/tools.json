@@ -2,6 +2,21 @@
   "format": "vendo/tools@1",
   "tools": [
     {
+      "name": "host_createVoiceSession",
+      "description": "Mint an ephemeral OpenAI Realtime client secret for a local voice session (local-demo only; the standing API key never reaches the browser).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "createVoiceSession",
+        "method": "POST",
+        "path": "/api/voice"
+      }
+    },
+    {
       "name": "host_getClient",
       "description": "Fetch one client with document progress, derived status and assigned staff.",
       "inputSchema": {

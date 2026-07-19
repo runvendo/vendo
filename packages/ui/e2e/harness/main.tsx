@@ -1,11 +1,15 @@
-import type {
-  ApprovalDecision,
-  ApprovalRequest,
-  Json,
-  ToolOutcome,
-  Tree,
-  UIPayload,
-  VendoTheme,
+import {
+  compileWirePatchV2,
+  compileWireV2,
+  deriveShapeCard,
+  printWireV2,
+  type ApprovalDecision,
+  type ApprovalRequest,
+  type Json,
+  type ToolOutcome,
+ 
+  type UIPayload,
+  type VendoTheme,
 } from "@vendoai/core";
 import {
   VendoProvider,
@@ -22,16 +26,18 @@ import {
   ApprovalCard,
   AutomationsPanel,
   NoPolicyNotice,
-  OrgsPanel,
   VendoOverlay,
   VendoPage,
   VendoPalette,
   VendoSlot,
   VendoStage,
   VendoThread,
+  VendoToasts,
+  WaitingQueue,
+  vendoToast,
   type VendoCommand,
 } from "../../src/chrome/index.js";
-import { AppFrame, PayloadView, TreeView, registerTreeRenderer, type PayloadRendererProps } from "../../src/tree/index.js";
+import { AppFrame, PayloadView, TreeView } from "../../src/tree/index.js";
 import { browserTreeFixture } from "../fixtures/tree.js";
 import {
   realtimeVoiceDriver,
@@ -496,8 +502,8 @@ export function FurnishedBadge() {
 }
 `;
 
-const jailTree: Tree & { furnishings: Record<string, unknown> } = {
-  formatVersion: "vendo-genui/v1",
+const jailTree: UIPayload & { furnishings: Record<string, unknown> } = {
+  formatVersion: "vendo-genui/v2",
   root: "root",
   nodes: [
     { id: "root", component: "Stack", children: ["before", "furnished", "probe", "thrower", "empty", "after"] },
@@ -594,9 +600,9 @@ export default function PromotedCard({ customer, onRun }) {
 }
 `;
 
-function inClientTree(inClient: Record<string, unknown>): Tree {
+function inClientTree(inClient: Record<string, unknown>): UIPayload {
   return {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
       { id: "root", component: "Stack", children: ["promoted", "sibling"] },
@@ -613,7 +619,7 @@ function inClientTree(inClient: Record<string, unknown>): Tree {
     ],
     components: { PromotedCard: inClientSource },
     ...( { inClient } as object),
-  } as Tree;
+  } as UIPayload;
 }
 
 function InClientScenario() {
@@ -672,8 +678,8 @@ export default function RemixedNetWorthCard() {
 `;
 
 function PinDriftScenario() {
-  const tree: Tree = {
-    formatVersion: "vendo-genui/v1",
+  const tree: UIPayload = {
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
       { id: "root", component: "Stack", children: ["worth", "sibling"] },
@@ -690,7 +696,7 @@ function PinDriftScenario() {
         reason: "baseline-changed",
       }],
     } as object),
-  } as Tree;
+  } as UIPayload;
   return (
     <TreeThemeBoundary>
       <section aria-label="Drifted remixed pin">
@@ -716,6 +722,94 @@ class ScriptedBrowserVoiceDriver implements VoiceDriver {
     });
     return { stop: () => { active = false; } };
   }
+}
+
+/** ENG-229 — a driver that replays an arbitrary event script, so every designed
+ *  stage moment (amplitude, views, reconnect, error) is capturable. */
+class ReplayVoiceDriver implements VoiceDriver {
+  constructor(private readonly script: VoiceDriverEvent[], private readonly mutable = true) {}
+  start(handlers: VoiceDriverHandlers): VoiceSessionHandle {
+    let active = true;
+    queueMicrotask(() => {
+      for (const event of this.script) {
+        if (active) handlers.onEvent(event);
+      }
+    });
+    return {
+      ...(this.mutable ? { setMuted: () => undefined } : {}),
+      stop: () => { active = false; },
+    };
+  }
+}
+
+function voiceViewPayload(id: string, heading: string, body: string): UIPayload {
+  return {
+    formatVersion: "vendo-genui/v2",
+    root: "root",
+    nodes: [
+      { id: "root", component: "Surface", children: ["stack"] },
+      { id: "stack", component: "Stack", props: { gap: 8 }, children: [`${id}-h`, `${id}-b`] },
+      { id: `${id}-h`, component: "Text", props: { text: heading, variant: "heading" } },
+      { id: `${id}-b`, component: "Text", props: { text: body } },
+    ],
+  };
+}
+
+const VOICE_SHOWCASE_SCRIPT: VoiceDriverEvent[] = [
+  { type: "state", state: "listening" },
+  { type: "amplitude", level: 0.6 },
+  { type: "transcript", entry: { id: "v-user", role: "user", text: "What's outstanding this week, and draft the reminders?", final: true } },
+  { type: "transcript", entry: { id: "v-agent", role: "assistant", text: "Six invoices are outstanding — here's the view, and I queued the reminders for your approval.", final: true } },
+  { type: "view", view: { id: "view-outstanding", appId: "app_1", payload: voiceViewPayload("v1", "Outstanding this week", "$18,420 across 6 clients") } },
+  { type: "view", view: { id: "view-reminders", appId: "app_1", payload: voiceViewPayload("v2", "Reminder drafts", "3 drafts ready — sending needs your approval") } },
+];
+
+/** A client whose approvals list is empty — for the drawer capture (the drawer
+ *  auto-yields to pending consent, so the wire fixture's apr_1 would close it). */
+function noApprovalsClient(client: VendoClient): VendoClient {
+  return { ...client, approvals: { ...client.approvals, pending: async () => [] } };
+}
+
+/** Reproduces apps/demo-bank/src/app/vendo/page.tsx: VendoThread and VendoStage
+ *  mount as siblings under one bounded, scrollable flex column (Maple's /vendo
+ *  tab) — the composition where the docs/verification/simplify-v2-wave2
+ *  browser smoke found the voice widget could crowd out the in-conversation
+ *  approval card's buttons at short viewport heights (see
+ *  e2e/voice-approval-overlap.spec.ts, which drives voice active here to
+ *  reproduce it). */
+function ThreadVoiceStackScenario() {
+  const driver = useMemo(() => new ScriptedBrowserVoiceDriver(), []);
+  return (
+    <VendoProvider client={threadClient(baseClient, pendingThread)} components={components} theme={mapleTheme} voice={{ driver }}>
+      <div style={{ height: "calc(100vh - 96px)", minHeight: 0, display: "flex", flexDirection: "column", overflow: "auto" }}>
+        <VendoThread threadId="thr_1" />
+        <VendoStage />
+      </div>
+    </VendoProvider>
+  );
+}
+
+function VoiceShowcaseScenario({ script, approvals = true, theme }: {
+  script: VoiceDriverEvent[];
+  approvals?: boolean;
+  theme?: Partial<VendoTheme>;
+}) {
+  const driver = useMemo(() => new ReplayVoiceDriver(script), [script]);
+  return (
+    <VendoProvider
+      client={approvals ? baseClient : noApprovalsClient(baseClient)}
+      components={components}
+      theme={theme ?? mapleTheme}
+      voice={{ driver }}
+    >
+      <div style={{ height: 640, display: "flex", flexDirection: "column", overflow: "hidden",
+        border: "1px solid var(--vendo-border)", borderRadius: 12 }}>
+        <AutoOpen selector='button[aria-label="Start voice"], .fl-voice-foot button.fl-btn-primary'>
+          <VendoStage />
+        </AutoOpen>
+      </div>
+    </VendoProvider>
+  );
 }
 
 function AutoOpen({ selector, children }: { selector: string; children: ReactNode }) {
@@ -823,7 +917,6 @@ function AppFrameScenario() {
 
 const baseClient = createVendoClient({ baseUrl: "/api/vendo" });
 const unconfiguredClient = createVendoClient({ baseUrl: "/api/vendo", headers: { "x-vendo-force-posture": "unconfigured" } });
-const orgsGatedClient = createVendoClient({ baseUrl: "/api/vendo", headers: { "x-vendo-force-orgs-gated": "1" } });
 
 // A Maple-brand host theme (graphite accent, warm cream canvas) — the same
 // brand the old shell adopted, so the landing reads like the real product.
@@ -881,6 +974,26 @@ const MAPLE_SUGGESTIONS = [
   "Put me on blast in Slack when I order late-night delivery",
 ];
 
+/** ENG-231 — several shipped surfaces mounted on ONE page at once: the palette
+ *  keybinding must stay a singleton (never double-fire), the overlay must open,
+ *  and a filled slot + thread must coexist without style/DOM collisions. */
+function ConcurrentScenario() {
+  return (
+    <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
+      <div style={{ display: "grid", gap: 16, padding: 16 }}>
+        <VendoSlot id="concurrent-slot" pin={{ payload: pinnedViewTree }}>
+          <div>host fallback</div>
+        </VendoSlot>
+        <div style={{ height: 320, display: "flex", flexDirection: "column", border: "1px solid #cad3e0", borderRadius: 12, overflow: "hidden" }}>
+          <VendoThread threadId="thr_1" />
+        </div>
+        <VendoPalette />
+        <VendoOverlay />
+      </div>
+    </VendoProvider>
+  );
+}
+
 function LandingScenario() {
   return (
     <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
@@ -925,8 +1038,8 @@ function StreamCompletionScenario() {
     return () => globalThis.clearTimeout(timer);
   }, []);
   const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
-  const streamingTree: Tree = {
-    formatVersion: "vendo-genui/v1",
+  const streamingTree: UIPayload = {
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [
       { id: "root", component: "Stack", children: ["late"] },
@@ -952,43 +1065,10 @@ function SlotFallbackScenario() {
   );
 }
 
-/**
- * FORMAT-EVOLUTION FIRE DRILL (08-ui §5; 01-core §8). A throwaway second UI
- * format, registered ONLY in this test harness — never in product source. It
- * proves the renderer registry's evolution seam opens in a real browser: a
- * registered drill renderer renders; an unregistered drill tag contains to a
- * notice while v1 trees on the same page keep rendering; and a stored v0 tree
- * renders identically whether or not the drill format is registered.
- */
-const DRILL_FORMAT = "vendo/tree@2-drill";
-
-interface DrillBlock { heading: string; body: string }
-
-const drillPayload = {
-  formatVersion: DRILL_FORMAT,
-  // Deliberately non-tree-shaped (no root/nodes): a future format owns its body.
-  blocks: [
-    { heading: "Quarterly revenue", body: "$4,200 across 3 invoices" },
-    { heading: "Next step", body: "Send the reminder" },
-  ] satisfies DrillBlock[],
-};
-
-/** A throwaway renderer for the drill format's block-list shape. */
-function DrillRenderer({ payload }: PayloadRendererProps) {
-  const blocks = (payload as { blocks?: DrillBlock[] }).blocks ?? [];
-  return (
-    <section aria-label="Drill format surface">
-      {blocks.map((block, index) => (
-        <article key={index}><h3>{block.heading}</h3><p>{block.body}</p></article>
-      ))}
-    </section>
-  );
-}
-
-/** A stable v0 tree used as the "stored old-format record" across both drill
- *  scenarios — its rendering must be byte-for-byte the same registered or not. */
-const storedV1Tree: Tree = {
-  formatVersion: "vendo-genui/v1",
+/** A stored v2 tree rendered beside the freshly compiled wire (v1 is gone;
+ *  stored documents are v2-only). */
+const storedTree: UIPayload = {
+  formatVersion: "vendo-genui/v2",
   root: "root",
   data: { invoice: { total: 4200 } },
   nodes: [
@@ -998,23 +1078,197 @@ const storedV1Tree: Tree = {
   ],
 };
 
-function FormatDrillScenario({ registered }: { registered: boolean }) {
+/**
+ * WAVE 1 GATE (v2 spec §8, docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md):
+ * a hand-written JSX wire compiles IN THE PAGE with the real compiler and
+ * renders through the same PayloadView dispatch as every stored payload —
+ * side-by-side with a stored v1 tree to prove coexistence. Covers queries →
+ * `$path` bindings, host-brand-wins resolution, a jailed generated island,
+ * and a compiler-emitted action dispatching through onAction.
+ */
+const V2_WIRE = `<App name="Cash overview">
+  <Query id="invoice" tool="billing_invoice"/>
+  <Query id="customer" tool="crm_customer"/>
+  <Stack gap={14}>
+    <Text text="Cash overview (compiled from the v2 JSX wire)" variant="heading"/>
+    <HostCard title={customer.name} total={invoice.total}/>
+    <Grid columns={2}>
+      <Card title="Why this renders">
+        <Text text="Wire -> compiler -> vendo-genui/v2 tree -> the shared v1 walk."/>
+      </Card>
+      <RevenueNote/>
+    </Grid>
+    <Button label="Send reminder" onClick="fn:send_reminder"/>
+  </Stack>
+  <Island name="RevenueNote">
+export default function RevenueNote() {
+  return <p>Generated island: reminder drafts are ready.</p>;
+}
+  </Island>
+</App>`;
+
+function TreeV2Scenario() {
+  const [action, setAction] = useState<{ nodeId: string; action: string; payload?: Json }>();
+  const compiled = useMemo(() => compileWireV2(V2_WIRE, { hostComponents: ["HostCard"] }), []);
+  const payload = useMemo(
+    () => ({ ...compiled.tree, components: compiled.components }) as unknown as UIPayload,
+    [compiled],
+  );
+  const onAction = async (request: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome> => {
+    setAction(request);
+    return { status: "ok", output: { recorded: true } };
+  };
   const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
-  // Registration is a real-browser side effect on the module-level registry;
-  // each page load is a fresh module, so `registered` fully controls the seam.
-  if (registered) registerTreeRenderer(DRILL_FORMAT, DrillRenderer);
   return (
-    <div className="format-drill-grid">
-      <section aria-label="Drill payload">
-        <h2>Drill format payload</h2>
-        <PayloadView payload={drillPayload} components={components} onAction={noop} />
-      </section>
-      <section aria-label="Stored v0 tree">
-        <h2>Stored v0 record</h2>
-        <PayloadView payload={storedV1Tree as unknown as UIPayload} components={components} onAction={noop} />
-      </section>
-      <p>Host content after the drill surfaces survived.</p>
-    </div>
+    <TreeThemeBoundary>
+      <div className="format-drill-grid">
+        <section aria-label="v2 wire surface">
+          <h2>vendo-genui/v2 — compiled from the wire</h2>
+          <PayloadView
+            payload={payload}
+            components={components}
+            data={{ invoice: { total: 4200 }, customer: { name: "Ada Lovelace" } }}
+            onAction={onAction}
+          />
+          <output className="recorder" data-testid="v2-compile-recorder">
+            {`compile: complete=${compiled.complete} issues=${compiled.issues.length}`}
+          </output>
+          <output className="recorder" data-testid="v2-action-recorder">
+            {action ? JSON.stringify(action) : "No action recorded"}
+          </output>
+        </section>
+        <section aria-label="Stored tree">
+          <h2>vendo-genui/v2 — stored app</h2>
+          <PayloadView payload={storedTree as unknown as UIPayload} components={components} onAction={noop} />
+        </section>
+      </div>
+    </TreeThemeBoundary>
+  );
+}
+
+/** v2 spec §3 (wave 3) — shape-aware binding: reshape pipes adapt the tool's
+ *  rows without a code island; a mislabeled field is caught at compile when
+ *  shape cards are supplied, and contained at render when they are not. */
+const SHAPE_DATA: Record<string, Json> = {
+  revenue: {
+    rows: [
+      { month: "Jan", revenue: 1240 },
+      { month: "Feb", revenue: 980 },
+      { month: "Mar", revenue: 1495.5 },
+    ],
+  },
+};
+
+const SHAPE_WIRE = `<App name="Revenue by month">
+  <Query id="revenue" tool="metrics_revenue"/>
+  <Stack gap={14}>
+    <Text text="Shape-aware binding: reshape pipes, no code island" variant="heading"/>
+    <Stat label="Total revenue" value={revenue.rows | sum(revenue) | format(currency)}/>
+    <Table caption="Monthly revenue" rows={revenue.rows | format(revenue, currency) | rename(month, Month, revenue, Revenue)}/>
+  </Stack>
+</App>`;
+
+/** The broken-chart class: the model guessed field names ("period"/"amount")
+ *  that the tool's rows don't carry. */
+const SHAPE_WIRE_BROKEN = `<App name="Revenue by month (mis-bound)">
+  <Query id="revenue" tool="metrics_revenue"/>
+  <Stack gap={14}>
+    <Text text="Mis-bound reshape: contained at render, compile error with shape cards" variant="heading"/>
+    <Table caption="Broken binding" rows={revenue.rows | asPoints(period, amount)}/>
+  </Stack>
+</App>`;
+
+function TreeV2ShapeScenario() {
+  const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
+  // The shape card comes straight from the scripted sample — the same
+  // deriveShapeCard path `vendo sync`/the engine uses on recorded responses.
+  const toolShapes = useMemo(
+    () => ({ metrics_revenue: deriveShapeCard("metrics_revenue", [SHAPE_DATA.revenue]).output }),
+    [],
+  );
+  const happy = useMemo(() => compileWireV2(SHAPE_WIRE, { toolShapes }), [toolShapes]);
+  const broken = useMemo(() => compileWireV2(SHAPE_WIRE_BROKEN, { toolShapes }), [toolShapes]);
+  const happyPayload = useMemo(() => happy.tree as unknown as UIPayload, [happy]);
+  const brokenPayload = useMemo(() => broken.tree as unknown as UIPayload, [broken]);
+  return (
+    <TreeThemeBoundary>
+      <div className="format-drill-grid">
+        <section aria-label="Reshaped bindings">
+          <h2>Reshape pipes against the tool shape — wired, no island</h2>
+          <PayloadView payload={happyPayload} components={components} data={SHAPE_DATA} onAction={noop} />
+          <output className="recorder" data-testid="shape-happy-recorder">
+            {`compile: complete=${happy.complete} issues=${happy.issues.length} bindingErrors=${happy.bindingErrors.length}`}
+          </output>
+        </section>
+        <section aria-label="Mis-bound reshape">
+          <h2>Mis-bound fields — compile error + contained notice</h2>
+          <PayloadView payload={brokenPayload} components={components} data={SHAPE_DATA} onAction={noop} />
+          <output className="recorder" data-testid="shape-error-recorder">
+            {JSON.stringify(broken.bindingErrors, null, 1)}
+          </output>
+        </section>
+      </div>
+    </TreeThemeBoundary>
+  );
+}
+
+/** WAVE 4 GATE (v2 spec §§5,8): the ONE edit dialect live — the app prints
+ *  with id anchors, an <Edit> wire patch applies deterministically, and the
+ *  surface re-renders in place. */
+const EDIT_BASE_WIRE = `<App name="Cash overview">
+  <Stack gap={14}>
+    <Text text="Cash overview" variant="heading"/>
+    <Grid columns={2}>
+      <Stat label="Revenue" value="$42k"/>
+      <Card title="Notes">
+        Send the March reminders.
+      </Card>
+    </Grid>
+    <Button label="Remind" onClick="fn:send_reminder"/>
+  </Stack>
+</App>`;
+
+const EDIT_PATCH = `<Edit>
+  <Set id="stat-1" label="Revenue (Q1)" value="$61k" tone="accent"/>
+  <Insert into="grid-1" at={1}><Stat label="Overdue" value="3"/></Insert>
+  <Remove id="button-1"/>
+  <SetName name="Cash overview (edited)"/>
+</Edit>`;
+
+function TreeV2EditScenario() {
+  const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
+  const base = useMemo(() => compileWireV2(EDIT_BASE_WIRE), []);
+  const [patched, setPatched] = useState<ReturnType<typeof compileWirePatchV2>>();
+  const shown = patched ?? base;
+  const payload = useMemo(
+    () => ({ ...shown.tree, components: shown.components }) as unknown as UIPayload,
+    [shown],
+  );
+  return (
+    <TreeThemeBoundary>
+      <div className="format-drill-grid">
+        <section aria-label="Edited surface">
+          <h2>{patched === undefined ? "Base app (compiled from the wire)" : `After the <Edit> patch — ${patched.name}`}</h2>
+          <PayloadView payload={payload} components={components} onAction={noop} />
+          <button
+            type="button"
+            data-testid="apply-edit"
+            onClick={() => setPatched(compileWirePatchV2(EDIT_PATCH, base))}
+          >
+            Apply the &lt;Edit&gt; patch
+          </button>
+          <output className="recorder" data-testid="edit-recorder">
+            {patched === undefined
+              ? "No patch applied"
+              : `patch: complete=${patched.complete} issues=${patched.issues.length} appliedOps=${patched.appliedOps}`}
+          </output>
+        </section>
+        <section aria-label="Model edit context">
+          <h2>The model's edit context (printWireV2, id anchors)</h2>
+          <pre className="recorder" data-testid="edit-context">{printWireV2(base, { includeIds: true })}</pre>
+        </section>
+      </div>
+    </TreeThemeBoundary>
   );
 }
 
@@ -1223,9 +1477,110 @@ function HumanizedThreadScenario() {
   );
 }
 
+/** ENG-225 — a clean thread whose assistant turn carries a fenced code block, so
+ *  the copy affordances (turn copy + code copy) read together in one capture. */
+const affordancesThread: Thread = {
+  id: "thr_affordances",
+  subject: "browser-user",
+  createdAt: NOW,
+  updatedAt: NOW,
+  messages: [
+    {
+      id: "aff_u1",
+      role: "user",
+      parts: [{ type: "text", text: "Give me a snippet that fetches this month's invoices." }],
+    },
+    {
+      id: "aff_a1",
+      role: "assistant",
+      parts: [{
+        type: "text",
+        text: "Here's a snippet that pulls the current month's invoices:\n\n"
+          + "```ts\nconst invoices = await maple.invoices.list({\n  month: \"2026-07\",\n  status: \"outstanding\",\n});\n```\n\n"
+          + "Run it with your sandbox key first.",
+      }],
+    },
+  ],
+};
+
+function affordancesThreadClient(client: VendoClient): VendoClient {
+  return {
+    ...client,
+    threads: {
+      ...client.threads,
+      get: async id => id === affordancesThread.id ? affordancesThread : client.threads.get(id),
+      list: async () => [{ id: affordancesThread.id, title: "Invoice snippet", updatedAt: affordancesThread.updatedAt }],
+    },
+  };
+}
+
+/** ENG-225 — the affordance showcase: copy actions, code copy, drag-drop attach,
+ *  image previews and the connect dock/tray, in a bounded Maple-brand pane. */
+function AffordancesScenario({ theme }: { theme: Partial<VendoTheme> }) {
+  return (
+    <VendoProvider
+      client={affordancesThreadClient(baseClient)}
+      components={components}
+      theme={theme}
+      connectors={[
+        { toolkit: "gmail", label: "Gmail" },
+        { toolkit: "slack", label: "Slack" },
+        { toolkit: "quickbooks", label: "QuickBooks" },
+      ]}
+    >
+      <div style={{ height: 560, display: "flex", flexDirection: "column", overflow: "hidden",
+        border: "1px solid var(--vendo-border)", borderRadius: 12 }}>
+        <VendoThread threadId="thr_affordances" />
+      </div>
+    </VendoProvider>
+  );
+}
+
+/** ENG-225 — the waiting-on-you queue over the wire fixture's pending approval. */
+function WaitingScenario() {
+  return (
+    <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
+      <WaitingQueue pollMs={0} />
+    </VendoProvider>
+  );
+}
+
+/** ENG-225 — the toast stack: an automation delivery, an error, and a sticky
+ *  approval-required card with its in-place Approve. */
+function ToastsScenario() {
+  useEffect(() => {
+    vendoToast({ text: "Invoice watcher ran: 3 reminders drafted and queued for review.", durationMs: 0, actions: [{ label: "View", onAction: () => undefined }] });
+    vendoToast({ text: "Morning digest failed to send — the connected inbox returned an error.", state: "error", durationMs: 0 });
+    vendoToast({ kind: "approval-required", text: "Waiting on you: Send email to finance@example.com", hint: "recorded in Activity", actions: [{ label: "Approve", primary: true, onAction: () => undefined }] });
+  }, []);
+  return (
+    <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
+      <p style={{ fontFamily: "Inter, ui-sans-serif, sans-serif", fontSize: 14, color: "#5b5c63" }}>
+        Host page content — the toasts stack over it, bottom-right.
+      </p>
+      <VendoToasts />
+    </VendoProvider>
+  );
+}
+
+/** ENG-223 — a pinned generated view (a vendo-genui/v2 tree) mounted in the slot
+ *  in place of the host's original hero, through the pin path + error boundary. */
+const pinnedViewTree: UIPayload = {
+  formatVersion: "vendo-genui/v2",
+  root: "root",
+  nodes: [
+    { id: "root", component: "Surface", children: ["stack"] },
+    { id: "stack", component: "Stack", props: { gap: 10 }, children: ["title", "amount", "sub"] },
+    { id: "title", component: "Text", props: { text: "Outstanding this week", variant: "heading" } },
+    { id: "amount", component: "Text", props: { text: "$18,420 across 6 clients" } },
+    { id: "sub", component: "Text", props: { text: "Pinned from a remix — refreshed every morning at 9am." } },
+  ],
+};
+
 function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme>; content: ReactNode; ownProvider?: boolean } {
   switch (pathname) {
     case "/thread": return { title: "Thread — dark theme", theme: darkTheme, content: <VendoThread threadId="thr_1" /> };
+    case "/thread-voice-stack": return { title: "Thread + Voice stage — stacked (Maple /vendo)", content: <ThreadVoiceStackScenario />, ownProvider: true };
     case "/composer": return { title: "Composer (Maple)", content: <ComposerScenario theme={mapleTheme} />, ownProvider: true };
     case "/composer-dark": return { title: "Composer — dark", content: <ComposerScenario theme={darkTheme} />, ownProvider: true };
     case "/thread-bounded": return { title: "Thread — bounded host pane", content: <BoundedThreadScenario />, ownProvider: true };
@@ -1233,6 +1588,8 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/thread-landing": return { title: "Landing (Maple host)", content: <LandingScenario />, ownProvider: true };
     case "/thread-humanized": return { title: "Thread — humanized (host metadata)", content: <HumanizedThreadScenario />, ownProvider: true };
     case "/overlay": return { title: "Overlay", content: <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'><VendoOverlay /></AutoOpen> };
+    case "/overlay-manual": return { title: "Overlay — manual launcher", content: <VendoOverlay /> };
+    case "/concurrent": return { title: "Concurrent surfaces", content: <ConcurrentScenario />, ownProvider: true };
     case "/page": return { title: "Workspace — Apps tab", content: <AutoOpen selector='[role="tab"][aria-controls="vendo-panel-apps"]'><VendoPage /></AutoOpen> };
     case "/page-chat": return { title: "Workspace — Chat (thread sidebar)", theme: mapleTheme, content: <VendoPage /> };
     case "/page-chat-dark": return { title: "Workspace — Chat (dark)", theme: darkTheme, content: <VendoPage /> };
@@ -1240,28 +1597,44 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/palette-host": return { title: "Palette — host input collision", content: <PaletteHostInputScenario /> };
     case "/approval": return { title: "Destructive approval", content: <ApprovalScenario /> };
     case "/activity": return { title: "Activity", content: <ActivityPanel /> };
-    case "/orgs": return { title: "Organizations", content: <OrgsPanel /> };
-    case "/orgs-gated": return {
-      title: "Organizations (key-gated)",
-      ownProvider: true,
-      content: (<VendoProvider client={orgsGatedClient} components={components}><OrgsPanel /></VendoProvider>),
-    };
+    case "/activity-dark": return { title: "Activity — dark", theme: darkTheme, content: <ActivityPanel /> };
     case "/automations": return { title: "Automations", content: <AutomationsPanel /> };
     case "/notice": return { title: "Unconfigured policy", ownProvider: true, content: (<VendoProvider client={unconfiguredClient} components={components}><NoPolicyNotice /></VendoProvider>) };
     case "/stage": return { title: "Voice stage", content: <StageScenario />, ownProvider: true };
     case "/stage-live": return { title: "Voice stage (live)", content: <LiveStageScenario />, ownProvider: true };
+    case "/stage-full": return { title: "Voice stage — views + consent (Maple)", content: <VoiceShowcaseScenario script={VOICE_SHOWCASE_SCRIPT} />, ownProvider: true };
+    case "/stage-full-dark": return { title: "Voice stage — dark", content: <VoiceShowcaseScenario script={VOICE_SHOWCASE_SCRIPT} theme={darkTheme} />, ownProvider: true };
+    case "/stage-drawer": return { title: "Voice stage — transcript drawer", content: <VoiceShowcaseScenario script={VOICE_SHOWCASE_SCRIPT} approvals={false} />, ownProvider: true };
+    case "/stage-reconnecting": return {
+      title: "Voice stage — reconnecting",
+      content: <VoiceShowcaseScenario approvals={false} script={[{ type: "state", state: "listening" }, { type: "transcript", entry: { id: "v-user", role: "user", text: "Keep going with the reminders", final: true } }, { type: "state", state: "reconnecting" }]} />,
+      ownProvider: true,
+    };
+    case "/stage-error": return {
+      title: "Voice stage — error",
+      content: <VoiceShowcaseScenario approvals={false} script={[{ type: "error", error: { message: "Microphone permission was denied — allow the mic and retry." } }]} />,
+      ownProvider: true,
+    };
     case "/tree": return { title: "Tree containment", content: <TreeScenario /> };
     case "/tree-jail": return { title: "Generated component jail", content: <TreeScenario jail /> };
     case "/tree-inclient": return { title: "In-client venue (hash-pinned approval)", content: <InClientScenario /> };
     case "/tree-drift": return { title: "Pin drift (host component updated)", content: <PinDriftScenario /> };
     case "/tree-themed": return { title: "Tree — loud host theme", theme: loudTheme, content: <TreeScenario /> };
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
+    case "/tree-v2": return { title: "vendo-genui/v2 — wire compile + stored render", content: <TreeV2Scenario /> };
+    case "/tree-v2-shape": return { title: "vendo-genui/v2 — shape-aware binding (wave 3)", content: <TreeV2ShapeScenario /> };
+    case "/tree-v2-edit": return { title: "vendo-genui/v2 — one-dialect edit (wave 4)", content: <TreeV2EditScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
-    case "/format-drill-registered": return { title: "Format drill — registered", content: <FormatDrillScenario registered />, ownProvider: true };
-    case "/format-drill-unregistered": return { title: "Format drill — unregistered", content: <FormatDrillScenario registered={false} />, ownProvider: true };
     case "/slot": return { title: "Inline app slot", content: <VendoSlot id="hero" appId="app_1"><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
+    case "/slot-empty": return { title: "Inline slot — empty CTA (Maple)", theme: mapleTheme, content: <><VendoSlot id="hero" /><VendoPalette /></> };
+    case "/slot-empty-dark": return { title: "Inline slot — empty CTA (dark)", theme: darkTheme, content: <><VendoSlot id="hero" /><VendoPalette /></> };
+    case "/slot-pinned": return { title: "Inline slot — pinned component", theme: mapleTheme, content: <VendoSlot id="hero" pin={{ payload: pinnedViewTree }}><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
     case "/slot-fallback": return { title: "Slot pin fallback", content: <SlotFallbackScenario />, ownProvider: true };
     case "/appframe": return { title: "App execution planes", content: <AppFrameScenario /> };
+    case "/affordances": return { title: "Affordances (Maple) — copy, attach, connect dock", content: <AffordancesScenario theme={mapleTheme} />, ownProvider: true };
+    case "/affordances-dark": return { title: "Affordances — dark", content: <AffordancesScenario theme={darkTheme} />, ownProvider: true };
+    case "/waiting": return { title: "Waiting on you", content: <WaitingScenario />, ownProvider: true };
+    case "/toasts": return { title: "Toasts", content: <ToastsScenario />, ownProvider: true };
     default: return { title: "Unknown scenario", content: <p role="alert">Unknown browser scenario: {pathname}</p> };
   }
 }
@@ -1285,7 +1658,7 @@ function Harness() {
     return <div data-scenario="thread-landing" style={{ position: "fixed", inset: 0 }}>{content}</div>;
   }
   return (
-    <main className={`harness-shell${globalThis.location.pathname === "/thread" ? " harness-dark" : ""}`} data-scenario={globalThis.location.pathname.slice(1)}>
+    <main className={`harness-shell${globalThis.location.pathname === "/thread" || globalThis.location.pathname === "/activity-dark" ? " harness-dark" : ""}`} data-scenario={globalThis.location.pathname.slice(1)}>
       <h1 className="harness-heading">{current.title}</h1>
       <div className="harness-surface">{content}</div>
     </main>

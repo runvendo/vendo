@@ -3,6 +3,7 @@ import type { VoiceBallProps, VoiceBallMode } from "fluidkit";
 
 export type VoiceBlobState =
   | "connecting"
+  | "reconnecting"
   | "listening"
   | "thinking"
   | "speaking"
@@ -11,6 +12,7 @@ export type VoiceBlobState =
 
 export interface VoiceBlobProps {
   state: VoiceBlobState;
+  className?: string;
   /** 0..1 live level; drives the ball (mic while listening, agent while speaking). */
   amplitude?: number;
   /** Diameter of the presence in px. */
@@ -28,6 +30,7 @@ let cached: VoiceBallComponent | null | undefined;
  *  reads as a lie. `thinking` is a calm working breathe (idle), not attentive. */
 const MODE: Record<VoiceBlobState, VoiceBallMode> = {
   connecting: "idle",
+  reconnecting: "idle",
   listening: "listening",
   thinking: "idle",
   speaking: "speaking",
@@ -41,7 +44,7 @@ const MODE: Record<VoiceBlobState, VoiceBallMode> = {
  * immediately (and is all reduced-motion ever animates); the ball takes over
  * when the chunk resolves. Muted/error freeze to the disc deliberately.
  */
-export function VoiceBlob({ state, amplitude = 0, size = 96 }: VoiceBlobProps) {
+export function VoiceBlob({ state, className, amplitude = 0, size = 96 }: VoiceBlobProps) {
   const [VoiceBall, setVoiceBall] = useState<VoiceBallComponent | null>(() => cached ?? null);
   const [reduced, setReduced] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -88,7 +91,7 @@ export function VoiceBlob({ state, amplitude = 0, size = 96 }: VoiceBlobProps) {
   return (
     <div
       ref={ref}
-      className={`fl-voice-blob is-${state}`}
+      className={`fl-voice-blob is-${state}${className ? ` ${className}` : ""}`}
       style={{ width: size, height: size }}
       aria-hidden="true"
     >

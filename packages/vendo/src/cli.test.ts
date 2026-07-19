@@ -11,17 +11,21 @@ afterEach(async () => {
 });
 
 describe("vendo CLI commands", () => {
-  it("keeps help aligned with the four-question init and its non-interactive flags", async () => {
+  it("keeps help aligned with the zero-question init and the two human verbs", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
 
     expect(await main(["--help"])).toBe(0);
     const help = log.mock.calls.flat().join("\n");
-    expect(help).toContain("four questions");
+    expect(help).toContain("init [dir]");
+    expect(help).toContain("doctor [dir]");
+    expect(help).toContain("Advanced:");
     expect(help).toContain("--yes");
     expect(help).toContain("--force");
-    expect(help).toContain("--model-import <specifier>");
-    expect(help).toContain("--brief <text>");
+    expect(help).toContain("--agent");
     expect(help).toContain("--json");
+    // The interview flags are gone with the interview.
+    expect(help).not.toContain("--brief <text>");
+    expect(help).not.toContain("Init/refine: module exporting");
 
     log.mockRestore();
   });
@@ -50,30 +54,21 @@ describe("vendo CLI commands", () => {
     expect(log.mock.calls.flat().join("\n")).not.toContain('"framework"'); // init never ran
     expect(await readdir(root)).toEqual([]); // and wrote nothing
 
-    // A value option with a missing value must not swallow the next flag
-    // (Devin review): --dry-run is still reported as unknown.
-    expect(await main(["init", root, "--agent", "--brief", "--dry-run"])).toBe(1);
-    expect(error.mock.calls.flat().join("\n")).toContain("--dry-run");
-
-    // And a missing value before a KNOWN flag is rejected too (Greptile P1):
-    // otherwise init proceeds — writing — with modelImport "--force".
-    expect(await main(["init", root, "--yes", "--model-import", "--force"])).toBe(1);
-    expect(error.mock.calls.flat().join("\n")).toContain("--model-import requires a value");
+    // Retired interview options are rejected loudly, not silently dropped.
+    expect(await main(["init", root, "--agent", "--brief", "text"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--brief");
     expect(await readdir(root)).toEqual([]);
     error.mockRestore();
     log.mockRestore();
   });
 
-  it("init accepts every documented option, including = forms", async () => {
+  it("init accepts every documented option", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const root = await mkdtemp(join(tmpdir(), "vendo-cli-init-known-"));
     cleanup.push(root);
 
-    expect(await main([
-      "init", root, "--agent", "--yes", "--force",
-      "--model-import", "@/lib/ai", "--brief=host brief",
-    ])).toBe(0);
+    expect(await main(["init", root, "--agent", "--yes", "--force"])).toBe(0);
 
     expect(await readdir(root)).toEqual([]); // --agent stayed read-only
     log.mockRestore();
@@ -85,5 +80,61 @@ describe("vendo CLI commands", () => {
     expect(await main(["mcp", "--help"])).toBe(0);
     expect(log.mock.calls.flat().join("\n")).toContain("vendo mcp server-json");
     log.mockRestore();
+  });
+
+  it("wires extract: --apply is required, unknown flags fail loudly, errors route home", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(await main(["--help"])).toBe(0);
+    expect(log.mock.calls.flat().join("\n")).toContain("extract [dir]");
+    expect(log.mock.calls.flat().join("\n")).toContain("--apply <draft.json>");
+
+    // No --apply → loud error, nothing runs (ENG-335 posture).
+    expect(await main(["extract"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--apply <draft.json> is required");
+
+    // `--apply=` (empty value) fails loudly instead of resolving to the cwd.
+    expect(await main(["extract", "--apply="])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--apply requires a value");
+
+    expect(await main(["extract", "--apply", "draft.json", "--dry-run"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("unknown option: --dry-run");
+
+    // A parsed --apply reaches the command: an un-inited dir fails honestly.
+    const root = await mkdtemp(join(tmpdir(), "vendo-cli-extract-"));
+    cleanup.push(root);
+    expect(await main(["extract", root, "--apply", join(root, "draft.json")])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("run `vendo init` first");
+
+    log.mockRestore();
+    error.mockRestore();
+  });
+
+  it("wires eject: --list routes, surface + dir + --force parse, help documents it", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(await main(["--help"])).toBe(0);
+    expect(log.mock.calls.flat().join("\n")).toContain("eject");
+
+    // Routing runs against the workspace @vendoai/ui (built templates).
+    const root = await mkdtemp(join(tmpdir(), "vendo-cli-eject-"));
+    cleanup.push(root);
+    expect(await main(["eject", "--list", root])).toBe(0);
+    expect(log.mock.calls.flat().join("\n")).toContain("thread");
+    expect(log.mock.calls.flat().join("\n")).toContain("activities");
+
+    expect(await main(["eject", "nope", root])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain('unknown surface "nope"');
+
+    // surface + dir + --force all reach runEject: a second forced eject
+    // over an existing directory succeeds instead of refusing.
+    expect(await main(["eject", "thread", root])).toBe(0);
+    expect(await main(["eject", "thread", root])).toBe(1);
+    expect(await main(["eject", "thread", root, "--force"])).toBe(0);
+
+    log.mockRestore();
+    error.mockRestore();
   });
 });

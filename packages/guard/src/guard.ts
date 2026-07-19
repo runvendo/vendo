@@ -26,16 +26,22 @@ import type {
   ToolRegistry,
   VendoRecord,
 } from "@vendoai/core";
-import { PolicyResolver, ruleMatches } from "./policy.js";
+import { PolicyResolver, resolvePolicyConfig, ruleMatches } from "./policy.js";
 import type {
   CreateGuardConfig,
   Judge,
-  Scanner,
+  PolicyConfigObject,
   VendoGuard,
 } from "./types.js";
 
 const GRANTS_COLLECTION = "vendo_grants";
 const APPROVALS_COLLECTION = "vendo_approvals";
+/** One-time transition receipts for approvals (kill-list B5): `decided:<id>` /
+ *  `consumed:<id>` rows in a guard-owned generic collection, written only via
+ *  the store's atomic `insertIfAbsent` (02-store §4) so exactly one caller —
+ *  across processes — wins each transition. Rows carry `refs.subject`, so the
+ *  02-store §5 erase cascade collects them with the rest of the subject's data. */
+const APPROVAL_CLAIMS_COLLECTION = "guard:approval-claims";
 const AUDIT_COLLECTION = "vendo_audit";
 const JUDGE_TIMEOUT_MS = 15_000;
 
@@ -93,24 +99,6 @@ interface AuditExportFilter {
 
 function now(): IsoDateTime {
   return new Date().toISOString();
-}
-
-/**
- * Serializes state transitions on the approval queue within one process. The
- * StoreAdapter seam exposes no compare-and-set, so concurrent guard operations
- * (a single-use consume racing itself, or approve racing deny on the same row)
- * would otherwise both observe a stale `pending`/un-consumed row and both act.
- * A promise chain closes that window for the single-process durability model
- * these blocks assume; a multi-process store owns cross-process atomicity.
- */
-class AsyncLock {
-  #tail: Promise<unknown> = Promise.resolve();
-
-  run<T>(fn: () => Promise<T>): Promise<T> {
-    const result = this.#tail.then(fn, fn);
-    this.#tail = result.catch(() => undefined);
-    return result;
-  }
 }
 
 function makeId(prefix: "grt_" | "apr_" | "aud_"): string {
@@ -179,83 +167,9 @@ function auditData(record: VendoRecord): AuditEvent {
   return record.data as AuditEvent;
 }
 
-/**
- * Rejects `matches` constraint patterns that can backtrack catastrophically:
- * oversize patterns, backreferences, and a quantifier applied to a group that
- * itself contains a quantifier (the classic exponential shape). The check is
- * deliberately fail-safe — odd-but-safe patterns may be rejected; rewrite them.
- * Enforced at grant-mint time (loud validation error) AND match time (fails
- * the constraint) so pre-existing stored grants can't smuggle one in.
- */
-function isUnsafeMatchPattern(pattern: string): boolean {
-  if (pattern.length > 256) return true;
-  if (/\\[1-9]/.test(pattern)) return true;
-  return /\((?:[^()\\]|\\.)*(?:[*+]|\{\d+(?:,\d*)?\})(?:[^()\\]|\\.)*\)(?:[*+?]|\{\d+(?:,\d*)?\})/.test(
-    pattern,
-  );
-}
-
-function resolvePointer(value: unknown, pointer: string): { found: boolean; value?: unknown } {
-  if (pointer === "") return { found: true, value };
-  if (!pointer.startsWith("/")) return { found: false };
-
-  let current = value;
-  for (const encoded of pointer.slice(1).split("/")) {
-    if (/~(?:[^01]|$)/.test(encoded)) return { found: false };
-    const token = encoded.replace(/~1/g, "/").replace(/~0/g, "~");
-    if (typeof current !== "object" || current === null) return { found: false };
-    if (!Object.prototype.hasOwnProperty.call(current, token)) return { found: false };
-    current = (current as Record<string, unknown>)[token];
-  }
-  return { found: true, value: current };
-}
-
 function scopeMatches(scope: GrantScope, args: unknown): boolean {
   if (scope.kind === "tool") return true;
-  if (scope.kind === "exact") return scope.inputHash === exactInputHash(args);
-
-  // Fail closed on an empty constraints array: `every` over nothing is `true`,
-  // which would silently authorize ANY args — a tool-wide wildcard wearing a
-  // "constrained" label the preview implies is narrow. Mint-time validation
-  // rejects this shape too (#decideApprovals), but a pre-existing or injected
-  // stored grant must never authorize on the strength of zero constraints.
-  if (scope.constraints.length === 0) return false;
-
-  return scope.constraints.every((constraint) => {
-    const resolved = resolvePointer(args, constraint.path);
-    if (!resolved.found) return false;
-
-    switch (constraint.op) {
-      case "eq":
-        return resolved.value === constraint.value;
-      case "lte":
-        return (
-          typeof resolved.value === "number" &&
-          typeof constraint.value === "number" &&
-          resolved.value <= constraint.value
-        );
-      case "gte":
-        return (
-          typeof resolved.value === "number" &&
-          typeof constraint.value === "number" &&
-          resolved.value >= constraint.value
-        );
-      case "matches":
-        if (typeof resolved.value !== "string" || typeof constraint.value !== "string") {
-          return false;
-        }
-        // ReDoS bounds: an adversarial pattern or oversized input fails the
-        // constraint instead of stalling the guard process. Length caps alone
-        // don't stop catastrophic backtracking ("^(a+)+$" is 8 chars), so
-        // exponential-blowup shapes are rejected outright.
-        if (isUnsafeMatchPattern(constraint.value) || resolved.value.length > 1024) return false;
-        try {
-          return new RegExp(constraint.value).test(resolved.value);
-        } catch {
-          return false;
-        }
-    }
-  });
+  return scope.inputHash === exactInputHash(args);
 }
 
 function durationMatches(grant: PermissionGrant, ctx: RunContext): boolean {
@@ -309,15 +223,14 @@ function normalizeRememberedScope(scope: GrantScope, request: ApprovalRequest): 
 class GuardImplementation implements VendoGuard {
   readonly #store: StoreAdapter;
   readonly #config: CreateGuardConfig;
+  readonly #policyConfig: PolicyConfigObject | undefined;
   readonly #policy: PolicyResolver;
-  readonly #scanners: Scanner[];
   readonly #maxCallsPerMinute: number;
   readonly #maxWritesPerRun: number;
   readonly #callWindows = new Map<string, number[]>();
   readonly #writeCounts = new Map<string, { count: number; touchedAt: number }>();
   #lastSweepAt = 0;
   readonly #approvalCallbacks = new Set<(id: ApprovalId, approved: boolean) => void>();
-  readonly #approvalLock = new AsyncLock();
 
   readonly approvals = {
     pending: (principal: Principal): Promise<ApprovalRequest[]> =>
@@ -344,8 +257,11 @@ class GuardImplementation implements VendoGuard {
   constructor(config: CreateGuardConfig) {
     this.#store = config.store;
     this.#config = config;
-    this.#policy = new PolicyResolver(config.policy);
-    this.#scanners = config.scanners ?? [];
+    // Compose time, not first call: an unknown preset name (or any other
+    // policy misconfiguration `resolvePolicyConfig` catches) must fail loud
+    // from `createGuard` itself.
+    this.#policyConfig = resolvePolicyConfig(config.policy);
+    this.#policy = new PolicyResolver(this.#policyConfig);
     this.#maxCallsPerMinute = config.breakers?.maxCallsPerMinute ?? 60;
     this.#maxWritesPerRun = config.breakers?.maxWritesPerRun ?? 20;
   }
@@ -389,7 +305,7 @@ class GuardImplementation implements VendoGuard {
   }
 
   /** AGENT-6: deny approvals the conversation abandoned. Rides the same
-   *  locked decide path as an explicit denial (audit + callbacks), but is
+   *  decide path as an explicit denial (audit + callbacks), but is
    *  idempotent: an already-decided (conflict) or unknown/foreign (not-found)
    *  approval already holds the state abandonment wants — only a real store
    *  failure propagates. */
@@ -456,10 +372,6 @@ class GuardImplementation implements VendoGuard {
               },
             };
           }
-
-          if (outcome.status === "ok") {
-            outcome = await this.#scanOutput(outcome, call, ctx);
-          }
         }
 
         const detail: Record<string, unknown> = {};
@@ -483,15 +395,6 @@ class GuardImplementation implements VendoGuard {
         if (connectorAccount !== undefined || actAs !== undefined) {
           outcome = cleaned as ToolOutcome;
         }
-        // Org context (block-actions design §C): org-owned executions carry the
-        // org principal; `actor` is the human member the wire re-contextualized.
-        if (ctx.principal.kind === "org") {
-          detail.org = {
-            subject: ctx.principal.subject,
-            ...(ctx.actor === undefined ? {} : { actor: ctx.actor.subject }),
-          };
-        }
-
         await this.report(
           eventFromContext(ctx, {
             kind: "tool-call",
@@ -508,7 +411,7 @@ class GuardImplementation implements VendoGuard {
   }
 
   status(): { posture: "unconfigured" | "rules" | "judge" | "rules+judge" } {
-    const hasRules = this.#config.policy !== undefined;
+    const hasRules = this.#policyConfig !== undefined;
     const hasJudge = this.#config.judge !== undefined;
     if (hasRules && hasJudge) return { posture: "rules+judge" };
     if (hasRules) return { posture: "rules" };
@@ -682,9 +585,7 @@ class GuardImplementation implements VendoGuard {
     ctx: RunContext,
   ): Promise<DecisionMetadata> {
     // An exact approved replay answers a critical ask (05 §2 stays otherwise:
-    // grants/rules/judge never suppress critical) — but scanners still get the
-    // call below. If a scanner then blocks, the single-use approval is already
-    // consumed: burning it on a blocked call fails closed.
+    // grants/rules/judge never suppress critical).
     let consumedReplay = false;
     if (descriptor.critical === true) {
       consumedReplay = await this.#consumeApprovedCall(call, descriptor, ctx);
@@ -692,9 +593,6 @@ class GuardImplementation implements VendoGuard {
         return { decision: { action: "ask", decidedBy: "critical" } };
       }
     }
-
-    const scannerDecision = await this.#scanInput(call, ctx);
-    if (scannerDecision !== undefined) return scannerDecision;
 
     if (consumedReplay || await this.#consumeApprovedCall(call, descriptor, ctx)) {
       return { decision: { action: "run", decidedBy: "grant" } };
@@ -731,7 +629,7 @@ class GuardImplementation implements VendoGuard {
       });
     }
 
-    const code = this.#config.policy?.code;
+    const code = this.#policyConfig?.code;
     if (code !== undefined) {
       try {
         const decision = code(call, descriptor, ctx);
@@ -812,90 +710,6 @@ class GuardImplementation implements VendoGuard {
     }
   }
 
-  async #scanInput(call: ToolCall, ctx: RunContext): Promise<DecisionMetadata | undefined> {
-    const text = canonicalJson(call.args);
-    for (const scanner of this.#scanners) {
-      if (scanner.on !== "input") continue;
-      try {
-        const result = await scanner.scan({ text, call, ctx });
-        if (result.verdict === "ok") continue;
-        const findings = result.findings ?? [];
-        await this.#reportScannerFinding(scanner.name, findings, call, ctx, result.verdict);
-        if (result.verdict === "block") {
-          return {
-            decision: {
-              action: "block",
-              reason: findings.join("; ") || `${scanner.name} blocked input`,
-              decidedBy: "scanner",
-            },
-            blockAlreadyAudited: true,
-          };
-        }
-      } catch (error) {
-        await this.#reportScannerFinding(
-          scanner.name,
-          [errorMessage(error)],
-          call,
-          ctx,
-          "flag",
-        );
-      }
-    }
-    return undefined;
-  }
-
-  async #scanOutput(
-    original: Extract<ToolOutcome, { status: "ok" }>,
-    call: ToolCall,
-    ctx: RunContext,
-  ): Promise<ToolOutcome> {
-    if (!this.#scanners.some((scanner) => scanner.on === "output")) return original;
-    const text = canonicalJson(original.output);
-    for (const scanner of this.#scanners) {
-      if (scanner.on !== "output") continue;
-      try {
-        const result = await scanner.scan({ text, call, ctx });
-        if (result.verdict === "ok") continue;
-        const findings = result.findings ?? [];
-        await this.#reportScannerFinding(scanner.name, findings, call, ctx, result.verdict);
-        if (result.verdict === "block") {
-          return {
-            status: "blocked",
-            reason: findings.join("; ") || `${scanner.name} blocked output`,
-          };
-        }
-      } catch (error) {
-        await this.#reportScannerFinding(
-          scanner.name,
-          [errorMessage(error)],
-          call,
-          ctx,
-          "flag",
-        );
-      }
-    }
-    return original;
-  }
-
-  async #reportScannerFinding(
-    scanner: string,
-    findings: string[],
-    call: ToolCall,
-    ctx: RunContext,
-    verdict: "flag" | "block",
-  ): Promise<void> {
-    await this.report(
-      eventFromContext(ctx, {
-        kind: "policy-decision",
-        tool: call.tool,
-        inputPreview: inputPreview(call),
-        ...(verdict === "block" ? { outcome: "blocked" as const } : {}),
-        decidedBy: "scanner",
-        detail: { scanner, findings },
-      }),
-    );
-  }
-
   /** The grant that authorized a "run", re-attached for executors that need it
    *  (actions resolves ActAs against ctx.grant on away calls — 04 §4). Approval
    *  replays carry no grantId; away replays re-match, because deciding a parked
@@ -915,52 +729,84 @@ class GuardImplementation implements VendoGuard {
     return (await this.#matchingGrant(call, descriptor, ctx)).grant;
   }
 
+  /** Wins (or loses) an approval's one-time transition by inserting its
+   *  receipt through the store's atomic `insertIfAbsent` — a single statement,
+   *  so exactly one claimant succeeds no matter how many processes race. Fails
+   *  closed when the adapter omits the capability: single-use state cannot be
+   *  guaranteed without database-level CAS (02-store §4). */
+  async #claimApprovalTransition(
+    transition: "decided" | "consumed",
+    approvalId: string,
+    subject: string,
+  ): Promise<boolean> {
+    const atomic = this.#store.records(APPROVAL_CLAIMS_COLLECTION).atomic;
+    if (atomic === undefined) {
+      throw new VendoError(
+        "not-implemented",
+        "approvals need a store with the atomic-revisions capability (RecordStore.atomic, 02-store §4); this adapter omits it, so single-use approval transitions fail closed",
+      );
+    }
+    const receipt = await atomic.insertIfAbsent({
+      id: `${transition}:${approvalId}`,
+      data: { approvalId, transition, at: now() },
+      refs: { subject },
+    });
+    return receipt !== null;
+  }
+
   async #consumeApprovedCall(
     call: ToolCall,
     descriptor: ToolDescriptor,
     ctx: RunContext,
   ): Promise<boolean> {
     const fingerprint = descriptorHash(descriptor);
-    // Claim under the lock: the find and the consuming put must be one
-    // indivisible step, or two concurrent executes of the same approved call
-    // both see no consumedAt and both run.
-    return this.#approvalLock.run(async () => {
-      const store = this.#store.records(APPROVALS_COLLECTION);
-      const records = await listAll(store, {
+    const store = this.#store.records(APPROVALS_COLLECTION);
+    const records = await listAll(store, {
+      refs: { subject: ctx.principal.subject, status: "approved" },
+    });
+    for (const record of records) {
+      const data = approvalData(record);
+      const request = data.request;
+      // A single-use approval re-authorizes exactly the call the user saw, in
+      // exactly the context they saw it. Beyond subject + call identity this
+      // pins (a) the approved inputs — a replay with tampered args never rides
+      // the approval — (b) the frozen descriptor — flipping the same tool from
+      // read to destructive after parking can't ride it either — and (c) the
+      // parked venue/presence/app — a present chat approval can't be replayed
+      // to satisfy an away, app-bound automation call.
+      if (
+        data.status !== "approved" ||
+        data.consumedAt !== undefined ||
+        request.ctx.principal.subject !== ctx.principal.subject ||
+        request.call.id !== call.id ||
+        request.call.tool !== call.tool ||
+        exactInputHash(request.call.args) !== exactInputHash(call.args) ||
+        descriptorHash(request.descriptor) !== fingerprint ||
+        request.ctx.venue !== ctx.venue ||
+        request.ctx.presence !== ctx.presence ||
+        request.ctx.appId !== ctx.appId
+      ) {
+        continue;
+      }
+      // Single-use is enforced by the receipt, not by the consumedAt read
+      // above (that check is only a fast path): the atomic insert has exactly
+      // one winner across processes. A loser falls through to the next
+      // candidate — the same approved call parked twice yields two approvals,
+      // each replayable once, exactly as before.
+      if (!(await this.#claimApprovalTransition("consumed", record.id, ctx.principal.subject))) {
+        continue;
+      }
+      // Observability marker on the row itself; the receipt is the source of
+      // truth, so a crash between the two writes fails closed (the approval
+      // reads un-consumed but can never be claimed again).
+      await store.put({
+        id: record.id,
+        data: { ...data, consumedAt: now() },
         refs: { subject: ctx.principal.subject, status: "approved" },
       });
-      for (const record of records) {
-        const data = approvalData(record);
-        const request = data.request;
-        // A single-use approval re-authorizes exactly the call the user saw, in
-        // exactly the context they saw it. Beyond subject + call identity this
-        // pins (a) the frozen descriptor — so flipping the same tool from read
-        // to destructive after parking can't ride the approval — and (b) the
-        // parked venue/presence/app — so a present chat approval can't be
-        // replayed to satisfy an away, app-bound automation call.
-        if (
-          data.status !== "approved" ||
-          data.consumedAt !== undefined ||
-          request.ctx.principal.subject !== ctx.principal.subject ||
-          request.call.id !== call.id ||
-          request.call.tool !== call.tool ||
-          exactInputHash(request.call.args) !== exactInputHash(call.args) ||
-          descriptorHash(request.descriptor) !== fingerprint ||
-          request.ctx.venue !== ctx.venue ||
-          request.ctx.presence !== ctx.presence ||
-          request.ctx.appId !== ctx.appId
-        ) {
-          continue;
-        }
-        await store.put({
-          id: record.id,
-          data: { ...data, consumedAt: now() },
-          refs: { subject: ctx.principal.subject, status: "approved" },
-        });
-        return true;
-      }
-      return false;
-    });
+      return true;
+    }
+    return false;
   }
 
   async #matchingGrant(
@@ -1056,107 +902,84 @@ class GuardImplementation implements VendoGuard {
     const store = this.#store.records(APPROVALS_COLLECTION);
 
     for (const id of normalizedIds) {
-      // The read-validate-write for one approval must be atomic: without the
-      // lock a concurrent approve and deny both observe the same `pending` row,
-      // yielding contradictory audit records and — worse — a live grant even
-      // when deny wins the stored status.
-      await this.#approvalLock.run(async () => {
-        const record = await store.get(id);
-        if (record === null) {
-          throw new VendoError("not-found", `Approval ${id} was not found`);
-        }
-        const data = approvalData(record);
-        if (data.request.ctx.principal.subject !== principal.subject) {
-          throw new VendoError("not-found", `Approval ${id} was not found`);
-        }
-        if (data.status !== "pending") {
-          throw new VendoError("conflict", `Approval ${id} has already been decided`);
-        }
-        if (decision.approve && decision.remember?.scope.kind === "constrained") {
-          // Validate BEFORE any state changes: a rejected remember must not leave
-          // the approval half-decided.
-          if (decision.remember.scope.constraints.length === 0) {
-            // An empty constraints array makes `scopeMatches` an
-            // every()-over-nothing → true: a tool-wide wildcard masquerading as
-            // the narrow "constrained" grant the preview implies. Reject it.
-            throw new VendoError(
-              "validation",
-              "A constrained grant must declare at least one constraint",
-            );
-          }
-          for (const constraint of decision.remember.scope.constraints) {
-            if (
-              constraint.op === "matches" &&
-              (typeof constraint.value !== "string" || isUnsafeMatchPattern(constraint.value))
-            ) {
-              throw new VendoError(
-                "validation",
-                `Grant constraint pattern for ${constraint.path} is not a safe regular expression`,
-              );
-            }
-          }
-        }
-
-        const decidedAt = now();
-        const status = decision.approve ? "approved" : "denied";
-        await store.put({
-          id,
-          data: { ...data, status, decidedAt },
-          refs: { subject: principal.subject, status },
-        });
-
-        let grant: PermissionGrant | undefined;
-        if (decision.approve && decision.remember !== undefined) {
-          const duration = decision.remember.duration;
-          grant = {
-            id: makeId("grt_") as GrantId,
-            subject: principal.subject,
-            tool: data.request.call.tool,
-            descriptorHash: descriptorHash(data.request.descriptor),
-            scope: normalizeRememberedScope(decision.remember.scope, data.request),
-            duration,
-            ...(duration === "session"
-              ? { contextKey: data.sessionId }
-              : duration === "task"
-                ? { contextKey: data.request.ctx.trigger?.runId ?? data.sessionId }
-                : {}),
-            ...(data.request.ctx.appId === undefined ? {} : { appId: data.request.ctx.appId }),
-            source: normalizedIds.length > 1 ? "batch" : "chat",
-            grantedAt: decidedAt,
-          };
-          const refs: Record<string, string> = {
-            subject: grant.subject,
-            tool: grant.tool,
-          };
-          if (grant.appId !== undefined) refs.app_id = grant.appId;
-          await this.#store.records(GRANTS_COLLECTION).put({
-            id: grant.id,
-            data: grant,
-            refs,
-          });
-        }
-
-        const requestCtx = data.request.ctx;
-        await this.report({
-          id: makeId("aud_"),
-          at: now(),
-          kind: "approval",
-          principal: requestCtx.principal,
-          venue: requestCtx.venue,
-          presence: requestCtx.presence,
-          ...(requestCtx.appId === undefined ? {} : { appId: requestCtx.appId }),
-          ...(requestCtx.trigger === undefined ? {} : { trigger: requestCtx.trigger }),
-          tool: data.request.call.tool,
-          inputPreview: data.request.inputPreview,
-          detail: {
-            approved: decision.approve,
-            ...(grant === undefined ? {} : { grantId: grant.id }),
-          },
-        });
+      const record = await store.get(id);
+      if (record === null) {
+        throw new VendoError("not-found", `Approval ${id} was not found`);
+      }
+      const data = approvalData(record);
+      if (data.request.ctx.principal.subject !== principal.subject) {
+        throw new VendoError("not-found", `Approval ${id} was not found`);
+      }
+      if (data.status !== "pending") {
+        throw new VendoError("conflict", `Approval ${id} has already been decided`);
+      }
+      // pending → decided happens once: the receipt's atomic insert picks a
+      // single winner, so a concurrent approve and deny can never both act —
+      // no contradictory audit records, and no live grant minted for an
+      // approval whose stored status says denied. The loser reports the same
+      // conflict a late decider sees.
+      if (!(await this.#claimApprovalTransition("decided", id, principal.subject))) {
+        throw new VendoError("conflict", `Approval ${id} has already been decided`);
+      }
+      const decidedAt = now();
+      const status = decision.approve ? "approved" : "denied";
+      await store.put({
+        id,
+        data: { ...data, status, decidedAt },
+        refs: { subject: principal.subject, status },
       });
 
-      // Fire callbacks OUTSIDE the lock: a subscriber may re-enter the guard
-      // (e.g. re-execute the resumed call), which would deadlock on the lock.
+      let grant: PermissionGrant | undefined;
+      if (decision.approve && decision.remember !== undefined) {
+        const duration = decision.remember.duration;
+        grant = {
+          id: makeId("grt_") as GrantId,
+          subject: principal.subject,
+          tool: data.request.call.tool,
+          descriptorHash: descriptorHash(data.request.descriptor),
+          scope: normalizeRememberedScope(decision.remember.scope, data.request),
+          duration,
+          ...(duration === "session"
+            ? { contextKey: data.sessionId }
+            : duration === "task"
+              ? { contextKey: data.request.ctx.trigger?.runId ?? data.sessionId }
+              : {}),
+          ...(data.request.ctx.appId === undefined ? {} : { appId: data.request.ctx.appId }),
+          source: normalizedIds.length > 1 ? "batch" : "chat",
+          grantedAt: decidedAt,
+        };
+        const refs: Record<string, string> = {
+          subject: grant.subject,
+          tool: grant.tool,
+        };
+        if (grant.appId !== undefined) refs.app_id = grant.appId;
+        await this.#store.records(GRANTS_COLLECTION).put({
+          id: grant.id,
+          data: grant,
+          refs,
+        });
+      }
+
+      const requestCtx = data.request.ctx;
+      await this.report({
+        id: makeId("aud_"),
+        at: now(),
+        kind: "approval",
+        principal: requestCtx.principal,
+        venue: requestCtx.venue,
+        presence: requestCtx.presence,
+        ...(requestCtx.appId === undefined ? {} : { appId: requestCtx.appId }),
+        ...(requestCtx.trigger === undefined ? {} : { trigger: requestCtx.trigger }),
+        tool: data.request.call.tool,
+        inputPreview: data.request.inputPreview,
+        detail: {
+          approved: decision.approve,
+          ...(grant === undefined ? {} : { grantId: grant.id }),
+        },
+      });
+
+      // A subscriber may re-enter the guard (e.g. re-execute the resumed
+      // call), so callbacks fire only after this approval's writes landed.
       // A returned thenable is awaited so decide() resolves only after
       // resumption work lands — fire-and-forget subscribers would otherwise
       // race the caller (e.g. a store closing under in-flight writes).

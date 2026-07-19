@@ -1,8 +1,7 @@
 import type { BlobStore, RecordStore, StoreAdapter } from "@vendoai/core";
 import { createBlobStore } from "./blobs.js";
-import { dropEncryptionKey, setEncryptionKey, validateEncryptionKey } from "./crypto.js";
+import { dropEncryptionKey, setEncryptionKey, setPlaintextSecretsAllowed, validateEncryptionKey } from "./crypto.js";
 import { createDb, type Db, type StoreConfig } from "./db.js";
-import { dropOverlay } from "./ephemeral.js";
 import { createRecordStore } from "./records.js";
 import { createReservedRecordStore } from "./routing.js";
 import { ensureSchema as migrateSchema } from "./schema.js";
@@ -28,16 +27,15 @@ export function createStore(config: StoreConfig = {}): VendoStore {
   const db = createDb(config);
   const store: VendoStore = {
     records(collection: string): RecordStore {
-      return createReservedRecordStore(store, db, collection) ?? createRecordStore(store, db, collection);
+      return createReservedRecordStore(db, collection) ?? createRecordStore(db, collection);
     },
     blobs(namespace: string): BlobStore {
-      return createBlobStore(store, db, namespace);
+      return createBlobStore(db, namespace);
     },
     async ensureSchema() {
       await migrateSchema(db);
     },
     async close() {
-      dropOverlay(store);
       dropEncryptionKey(store);
       databases.delete(store);
       await db.close();
@@ -48,5 +46,6 @@ export function createStore(config: StoreConfig = {}): VendoStore {
   };
   databases.set(store, db);
   setEncryptionKey(store, encryptionKey);
+  setPlaintextSecretsAllowed(store, encryptionKey === undefined && config.allowUnencryptedSecrets === true);
   return store;
 }

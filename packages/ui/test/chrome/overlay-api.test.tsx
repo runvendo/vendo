@@ -231,6 +231,21 @@ describe("VendoOverlay supported entry API", () => {
     expect((posts[1]!.body as { threadId?: string }).threadId).toBeUndefined();
   });
 
+  it("renders a supplied thread component in place of the built-in VendoThread (eject seam)", () => {
+    function CustomThread() {
+      return <div data-testid="custom-thread">ejected thread</div>;
+    }
+    render(<VendoProvider client={client}><VendoOverlay defaultOpen thread={CustomThread} /></VendoProvider>);
+    expect(screen.getByTestId("custom-thread")).toBeTruthy();
+    // The built-in thread (and its composer) must not render alongside it.
+    expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  });
+
+  it("renders the built-in thread when no thread component is supplied", () => {
+    render(<VendoProvider client={client}><VendoOverlay defaultOpen /></VendoProvider>);
+    expect(screen.getByRole("textbox", { name: "Message" })).toBeTruthy();
+  });
+
   it("skips a display:none restore target instead of swallowing focus", async () => {
     function Host() {
       const overlay = useVendoOverlay();

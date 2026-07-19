@@ -3,11 +3,12 @@
 Runs Vendo's streaming, tool-calling conversation loop against any AI SDK
 `LanguageModel`, with persisted threads and guard-bound tools.
 
-Threads persist through the composed store; without a store the agent keeps
-per-subject threads in process memory. `agent.evictSubject(subject)` drops that
-in-memory state when an ephemeral session is evicted — the umbrella calls it
-for every subject the store's idle sweep returns (store-backed ephemeral
-threads live in the store's overlay and are cascaded there).
+Threads persist through the composed store; without a configured store the
+agent defaults to core's in-memory reference StoreAdapter through the same
+single path. `agent.evictSubject(subject)` list-and-deletes the subject's
+thread rows — the umbrella calls it for every subject the store's idle sweep
+returns (usually a no-op, since the sweep's erase cascade already removed
+those rows).
 
 `stream({ signal })` cancels a turn: the in-flight provider call aborts, no
 further step starts, and the thread stays consistent and resumable (the

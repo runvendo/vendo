@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { useApps } from "../hooks/use-apps.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { isEditableTarget, registerPaletteHotkey, resolveHotkeyMatcher, type PaletteHotkey } from "./palette-hotkey.js";
+import { developmentMode } from "./dev-mode.js";
+import { openVendoConversation } from "./overlay-registry.js";
+import { isEditableTarget, registerPaletteHotkey, registerPaletteOpener, resolveHotkeyMatcher, type PaletteHotkey } from "./palette-hotkey.js";
 import { TakeoverPortal } from "./takeover-portal.js";
 
 export interface VendoCommand {
@@ -45,6 +47,17 @@ export function VendoPalette({ onCommand, hotkey }: { onCommand?(command: VendoC
     restoreFocus();
   }, [restoreFocus]);
 
+  // ENG-223: programmatic open (the VendoSlot CTA seam). Captures the invoking
+  // element first so Escape/close restores focus exactly as the keybinding does.
+  const openPalette = useCallback(() => {
+    setOpen(value => {
+      if (value) return value;
+      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      return true;
+    });
+  }, []);
+  useEffect(() => registerPaletteOpener(openPalette), [openPalette]);
+
   // Read the live open state inside the (stable) shared-listener handler without
   // re-subscribing on every toggle.
   const openRef = useRef(open);
@@ -83,7 +96,24 @@ export function VendoPalette({ onCommand, hotkey }: { onCommand?(command: VendoC
   const select = (command: VendoCommand | undefined) => {
     if (!command) return;
     close();
-    onCommand?.(command);
+    if (onCommand) {
+      onCommand(command);
+      return;
+    }
+    // Self-sufficient default (ui-usage-dx §2 — the palette is an optional
+    // extra, but it must act without a host-written command router):
+    // conversation commands open the mounted overlay via the registry; the
+    // rest need host routing and say so in dev instead of dying silently.
+    if (command.kind === "new-conversation") {
+      const opened = openVendoConversation({ newConversation: true });
+      if (!opened && developmentMode()) {
+        console.warn("[vendo] VendoPalette: \"New conversation\" opens the conversation surface — mount a VendoOverlay for it to land in (or supply onCommand).");
+      }
+      return;
+    }
+    if (developmentMode()) {
+      console.warn(`[vendo] VendoPalette: "${command.label}" needs an onCommand handler to route (kind "${command.kind}").`);
+    }
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {

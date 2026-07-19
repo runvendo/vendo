@@ -6,7 +6,10 @@ import { PolicyNoticeBody } from "./policy-notice-body.js";
 
 import { CHROME_CSS } from "./chrome-css.js";
 
-function ensureChromeStyles(): void {
+/** Inject the chrome stylesheet once. Exported for surfaces that portal OUT of
+    a ChromeRoot's DOM subtree (MorphToast, VendoToasts) and hand-roll their own
+    `.vendo-root` theme boundary on document.body. */
+export function ensureChromeStyles(): void {
   if (typeof document === "undefined" || document.querySelector("style[data-vendo-chrome]")) return;
   const style = document.createElement("style");
   style.dataset.vendoChrome = "";

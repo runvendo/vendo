@@ -1,5 +1,5 @@
-import type { Json, ToolOutcome, Tree, TreeQuery, UIPayload } from "@vendoai/core";
-import { VENDO_TREE_FORMAT } from "@vendoai/core";
+import type { Json, ToolOutcome, TreeQueryV2, UIPayload } from "@vendoai/core";
+import { isPlainObject as isRecord, VENDO_TREE_FORMAT_V2 } from "@vendoai/core";
 
 export interface BridgeContentBlock {
   type: string;
@@ -37,10 +37,6 @@ export interface OpenInProductPayload {
   url: string;
   productName: string;
   appName?: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isPayload(value: unknown): value is UIPayload {
@@ -130,63 +126,22 @@ export async function callApp(
   }
 }
 
-export function decodePointer(path: string): string[] | undefined {
-  if (path === "") return [];
-  if (!path.startsWith("/")) return undefined;
-  const parts = path.slice(1).split("/").map((part) => part.replace(/~1/g, "/").replace(/~0/g, "~"));
-  return parts.some((part) => ["__proto__", "prototype", "constructor"].includes(part))
-    ? undefined
-    : parts;
-}
-
-type JsonContainer = Record<string, Json> | Json[];
-
-function childAt(container: JsonContainer, key: string): Json | undefined {
-  return Array.isArray(container) ? container[Number(key)] : container[key];
-}
-
-function assignChild(container: JsonContainer, key: string, value: Json): boolean {
-  if (!Array.isArray(container)) {
-    container[key] = value;
-    return true;
-  }
-  if (!/^\d+$/.test(key)) return false;
-  container[Number(key)] = value;
-  return true;
-}
-
 export function setQueryData(
   data: Record<string, Json>,
-  query: TreeQuery,
+  query: TreeQueryV2,
   output: Json,
 ): { data: Record<string, Json>; error?: string } {
-  const parts = decodePointer(query.path);
-  if (parts === undefined) return { data, error: `Query "${query.tool}" has an invalid data path.` };
-  if (parts.length === 0) {
-    return isRecord(output)
-      ? { data: structuredClone(output) as Record<string, Json> }
-      : { data, error: `Query "${query.tool}" did not return an object for the root data path.` };
-  }
-
+  // v2 spec §2 — a query's result lives at "/" + name: always a single
+  // top-level key (names are identifier-checked by validateTreeV2). Own-
+  // property define so a hostile name like __proto__ becomes data, never the
+  // prototype.
   const next = structuredClone(data) as Record<string, Json>;
-  let cursor: JsonContainer = next;
-  for (let index = 0; index < parts.length - 1; index += 1) {
-    const part = parts[index]!;
-    const following = parts[index + 1]!;
-    const current = childAt(cursor, part);
-    if (isRecord(current) || Array.isArray(current)) {
-      cursor = current as JsonContainer;
-      continue;
-    }
-    const child: JsonContainer = /^\d+$/.test(following) ? [] : {};
-    if (!assignChild(cursor, part, child)) {
-      return { data, error: `Query "${query.tool}" has a non-numeric array path segment.` };
-    }
-    cursor = child;
-  }
-  if (!assignChild(cursor, parts.at(-1)!, output)) {
-    return { data, error: `Query "${query.tool}" has a non-numeric array path segment.` };
-  }
+  Object.defineProperty(next, query.name, {
+    value: structuredClone(output),
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
   return { data: next };
 }
 
@@ -202,8 +157,8 @@ export async function resolveQueries(
   version: number,
   options: ResolveQueriesOptions,
 ): Promise<void> {
-  if (payload.formatVersion !== VENDO_TREE_FORMAT) return;
-  const tree = payload as unknown as Tree;
+  if (payload.formatVersion !== VENDO_TREE_FORMAT_V2) return;
+  const tree = payload as unknown as { data?: Record<string, Json>; queries?: TreeQueryV2[] };
   const queries = tree.queries ?? [];
   if (queries.length === 0) return;
 

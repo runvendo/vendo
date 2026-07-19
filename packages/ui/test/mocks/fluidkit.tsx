@@ -20,8 +20,8 @@
 // stubs honest against fluidkit 0.5's contract.
 import type { VoiceBallProps, ThinkingProps, MorphSurfaceProps } from "fluidkit";
 
-export function VoiceBall({ size, mode }: VoiceBallProps) {
-  return <span data-fluidkit-stub="voice-ball" data-mode={mode} style={{ width: size, height: size }} />;
+export function VoiceBall({ size, mode, level }: VoiceBallProps) {
+  return <span data-fluidkit-stub="voice-ball" data-mode={mode} data-level={level} style={{ width: size, height: size }} />;
 }
 
 export function Thinking({ label, size }: ThinkingProps) {

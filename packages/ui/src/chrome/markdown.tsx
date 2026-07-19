@@ -1,11 +1,36 @@
-import { memo, useState } from "react";
+import { memo, useRef, useState, type ComponentProps } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useCopyFeedback } from "./clipboard.js";
 import { LONG_TEXT_CAP, truncateHead } from "./truncate.js";
 
 // Module-level so the array reference is stable across (streaming) re-renders —
 // react-markdown re-initializes its pipeline when the plugins prop identity changes.
 const REMARK_PLUGINS = [remarkGfm];
+
+/** ENG-225 — the designed `.fl-codeblock` affordance: every fenced block gets a
+    hover Copy button. The copied text is the block's rendered content, read off
+    the DOM so it matches exactly what the reader sees. */
+function CodeBlock(props: ComponentProps<"pre">) {
+  const pre = useRef<HTMLPreElement>(null);
+  const [copied, copy] = useCopyFeedback();
+  return (
+    <div className="fl-codeblock">
+      <pre {...props} ref={pre} />
+      <button
+        type="button"
+        className="fl-copy"
+        aria-label="Copy code"
+        onClick={() => copy(pre.current?.textContent ?? "")}
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
+// Stable for the same reason as REMARK_PLUGINS.
+const MD_COMPONENTS = { pre: CodeBlock };
 
 /**
  * Assistant text as GitHub-flavored markdown (the `.fl-md` design). react-markdown
@@ -29,7 +54,7 @@ function MarkdownImpl({ text, streaming, restored }: { text: string; streaming?:
   const shown = collapsible && !expanded ? truncateHead(text) : text;
   return (
     <div className={`fl-md${streaming ? " fl-md--streaming" : ""}`}>
-      <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>{shown}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MD_COMPONENTS}>{shown}</ReactMarkdown>
       {collapsible ? (
         <button type="button" className="fl-more" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
           {expanded ? "Show less" : `Show full message (${(text.length / 1000).toFixed(0)}k chars)`}

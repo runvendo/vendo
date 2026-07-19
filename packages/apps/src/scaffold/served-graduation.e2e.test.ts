@@ -8,7 +8,7 @@
  */
 import {
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT,
+  VENDO_TREE_FORMAT_V2,
   type AppDocument,
   type RunContext,
   type ToolRegistry,
@@ -44,7 +44,7 @@ const treeApp = (): AppDocument => ({
   name: "Dashboard",
   ui: "tree",
   tree: {
-    formatVersion: VENDO_TREE_FORMAT,
+    formatVersion: VENDO_TREE_FORMAT_V2,
     root: "root",
     nodes: [
       { id: "root", component: "Stack", source: "prewired", children: ["title", "refresh"] },

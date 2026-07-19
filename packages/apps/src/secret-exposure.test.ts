@@ -83,7 +83,7 @@ const seedServedApp = async (
     name: "Payments",
     ui: "tree",
     tree: {
-      formatVersion: "vendo-genui/v1",
+      formatVersion: "vendo-genui/v2",
       root: "root",
       nodes: [{ id: "root", component: "Text", props: { text: "Payments" } }],
     },

@@ -1,19 +1,21 @@
 ---
-title: "Principals and organizations"
-description: "How Vendo scopes data to users and orgs, merges anonymous sessions on sign-in, reserves the vendo: namespace, and gates org APIs on a Cloud key."
+title: "Principals"
+description: "How Vendo scopes data to users, merges anonymous sessions on sign-in, and reserves the vendo: namespace."
 ---
 
 Every wire request resolves a `Principal` through the `principal(req)` seam
 you pass to `createVendo`. The returned `subject` scopes threads, apps,
 approvals, grants, activity, and runs. This page covers the identity model
-and the two behaviors that ride on it: **anonymous auto-merge** on first
-sign-in, and **organization workspaces** (Cloud-gated).
+and the behavior that rides on it: **anonymous auto-merge** on first
+sign-in.
 
 ## Principal kinds
 
 `Principal.kind` is `"user"` or `"org"`. Your `principal(req)` resolver may
-only return `kind: "user"`. Organization context is derived from membership
-inside Vendo and is never resolved directly by the host.
+only return `kind: "user"` — the wire rejects a resolver-produced `kind:
+"org"` principal loudly, since organization context is a
+[Vendo Cloud](/deploy/vendo-cloud) capability, never something an OSS host
+resolves directly.
 
 ```ts
 principal: async (request) => {
@@ -32,10 +34,13 @@ Two are defined today:
 
 - `vendo:webhook:<source>` — webhook deliveries execute under this subject
   when no principal is otherwise attached to the request.
-- `vendo:org:<orgId>` — the subject for an organization workspace.
+- `vendo:org:<orgId>` — reserved for [Vendo Cloud](/deploy/vendo-cloud)
+  organization workspaces. The OSS wire never mints this subject itself;
+  every `/orgs` route (and any org-scoped query on `/approvals` or
+  `/grants`) answers `cloud-required` (HTTP 402) unconditionally.
 
 A `principal(req)` resolver that returns a `vendo:*` subject, or a
-`kind: "org"` principal, is rejected at the wire with a `blocked` error.
+`kind: "org"` principal, is rejected at the wire with a `validation` error.
 Mint your own subjects under whatever prefix your product uses (for example
 `user:`); leave the `vendo:` prefix alone.
 
@@ -46,9 +51,12 @@ update them to match `vendo:webhook:<source>` instead of the bare
 ## Anonymous sessions
 
 When `principal(req)` returns `null`, Vendo mints an ephemeral session
-principal and carries it in a signed, `httpOnly` cookie scoped to the wire
-base path. Ephemeral principals never write to disk — threads, apps, and
-state live in an in-memory overlay for the life of the process.
+principal and carries it in an opaque `httpOnly` cookie — a random session
+id scoped to the wire base path. The cookie is just a pointer; the session
+row in the database is the authority, so a forged id merely names its own
+empty session. Ephemeral principals write ordinary rows under their anonymous
+subject; a TTL sweep erases sessions idle past `sessions.ttlMs` (default
+30 minutes), rows and all.
 
 ### Auto-merge on sign-in
 
@@ -81,62 +89,15 @@ Nothing on the host side has to change to opt in: as long as
 `principal(req)` returns `null` before the user signs in and a real
 `Principal` afterward, Vendo does the rest.
 
-## Organizations (Cloud-gated)
+## Organizations are a Vendo Cloud capability
 
-Organizations let members share apps, approvals, and grants under one
-subject. They are gated on `VENDO_API_KEY` plus the `orgs` capability on
-that key; without it, the org APIs return `cloud-required` (HTTP 402) and
-`/status` reports `blocks.orgs: false`. The chrome renders an honest
-upgrade state instead of a broken tab.
+Sharing apps, approvals, and grants under one org subject is not an OSS
+wire feature. The self-hosted wire always answers every `/orgs` route —
+and any `/approvals` or `/grants` request carrying an `org` param — with
+`cloud-required` (HTTP 402), regardless of `VENDO_API_KEY`. `/status`
+reports no `orgs` block.
 
-### Roles
-
-Every membership has a role:
-
-- **member** — reads and calls org-owned apps.
-- **admin** — everything a member can do, plus approves grants for the
-  org, manages apps (edit, delete, undo, rebase, enable, disable,
-  transfer), and invites or removes members.
-- **owner** — everything an admin can do, plus promotes and demotes
-  owners. The store refuses to remove the last owner of an org.
-
-### Wire surface
-
-Once the key carries the `orgs` capability, these routes come online (see
-the [HTTP routes reference](/reference/http-routes) for the full table):
-
-- `/orgs` — list, create, delete an organization.
-- `/orgs/:id/members` — invite, list, change role, remove.
-- `/orgs/:id/apps` — transfer an app your user owns into the org.
-
-Approvals and grants take an `?org=<orgId>` query parameter (or `body.org`
-on POSTs) to operate under the org's subject. Only admins and owners can
-approve on behalf of an org; a member trying to approve receives `403`.
-
-### Org-owned runs
-
-When a member opens or calls an org-owned app, the run executes under the
-org principal (`vendo:org:<orgId>`), but `RunContext.actor` carries the
-`Principal` of the human that initiated the run. Grants and approvals
-that the run parks are keyed to the org subject, so the next admin who
-sees them can approve on behalf of everyone.
-
-Audit events on org-context runs carry an extra `detail.org = { subject,
-actor }` block so you can tell which human triggered which org-scoped
-action.
-
-### Enable orgs
-
-1. Set `VENDO_API_KEY` in the host process.
-2. Confirm the key includes the `orgs` capability:
-
-   ```bash
-   vendo cloud validate --key $VENDO_API_KEY
-   ```
-
-3. Open the orgs tab in the chrome, or call `/orgs` directly, to create
-   the workspace and invite members.
-
-See [Vendo Cloud](/deploy/vendo-cloud) for key management and
-[Environment variables](/reference/environment-variables) for the full
-list of entitlements a Cloud key unlocks.
+Organization workspaces live in [Vendo Cloud](/deploy/vendo-cloud), which
+manages its own accounts, members, and keys server-side. See that page for
+the Cloud-side org model (`vendo cloud whoami`, `vendo cloud members`, and
+key scoping by `--org`).

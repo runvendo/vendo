@@ -1,24 +1,14 @@
 import { VendoError } from "@vendoai/core";
-import { createCipheriv, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../backends.test-util.js";
 import { decryptSecret, encryptSecret } from "../crypto.js";
 import { createStore, secretStore, storeSecrets } from "../index.js";
 
 // 02-store §4: "AES-GCM binds ciphertext to the secret name as AAD with
-// envelope versioning." New writes use the v2 envelope (name as AAD); rows
-// written under the legacy v1 envelope (no AAD) keep decrypting; a v2
-// ciphertext swapped between rows or served under the wrong name fails the
-// auth tag instead of decrypting to another secret's value.
-
-/** A legacy pre-AAD envelope, exactly as the v1 encryptor wrote it. */
-function legacyV1Envelope(value: string, key: Buffer): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return `v1:${iv.toString("base64")}:${tag.toString("base64")}:${ciphertext.toString("base64")}`;
-}
+// envelope versioning." A v2 ciphertext swapped between rows or served under
+// the wrong name fails the auth tag instead of decrypting to another
+// secret's value.
 
 describe("02-store §4 — secret-name AAD binding (envelope level)", () => {
   const key = randomBytes(32);
@@ -29,18 +19,12 @@ describe("02-store §4 — secret-name AAD binding (envelope level)", () => {
     expect(() => decryptSecret(sealed, key, "SECRET_B"))
       .toThrow(expect.objectContaining<VendoError>({ code: "validation" }));
   });
-
-  it("still decrypts legacy v1 envelopes (written before AAD) under any name", () => {
-    const sealed = legacyV1Envelope("legacy-value", key);
-    expect(decryptSecret(sealed, key, "WHATEVER_NAME")).toBe("legacy-value");
-  });
 });
 
 for (const backend of backends()) {
   describe(`${backend.name} 02-store §4 — secret-name AAD + envelope versioning (stored)`, () => {
     let made: MadeBackend;
     const key = randomBytes(32).toString("base64");
-    const keyBytes = (): Buffer => Buffer.from(key, "base64");
 
     beforeAll(async () => {
       made = await backend.make();
@@ -87,22 +71,6 @@ for (const backend of backends()) {
       );
       await expect(storeSecrets(made.store).get("AAD_TAMPER"))
         .rejects.toMatchObject<VendoError>({ code: "validation" });
-    });
-
-    it("keeps decrypting legacy v1 rows written before the AAD amendment", async () => {
-      // Simulate a pre-amendment database: the row sits on disk in the v1
-      // envelope (no AAD). Reads must keep working; the row is upgraded to v2
-      // whenever the host next writes it.
-      await made.sql(
-        "INSERT INTO vendo_secrets (name, ciphertext, created_at) VALUES ($1, $2, $3)",
-        ["AAD_LEGACY", legacyV1Envelope("legacy-stored-value", keyBytes()), new Date().toISOString()],
-      );
-      expect(await storeSecrets(made.store).get("AAD_LEGACY")).toBe("legacy-stored-value");
-
-      await secretStore(made.store).set("AAD_LEGACY", "rewritten-value");
-      const row = (await made.sql("SELECT ciphertext FROM vendo_secrets WHERE name = 'AAD_LEGACY'"))[0];
-      expect(String(row?.ciphertext).startsWith("v2:")).toBe(true);
-      expect(await storeSecrets(made.store).get("AAD_LEGACY")).toBe("rewritten-value");
     });
   });
 }

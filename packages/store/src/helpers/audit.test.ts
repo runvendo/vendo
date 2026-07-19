@@ -72,14 +72,14 @@ for (const backend of backends()) {
       expect(seen).toEqual(["aud_page_4", "aud_page_3", "aud_page_2", "aud_page_1", "aud_page_0"]);
     });
 
-    it("appends ephemeral-principal events to memory and serves query() straight from the overlay", async () => {
+    it("appends ephemeral-principal events to disk like any other (kill-list B3)", async () => {
       const ephemeral: Principal = { kind: "user", subject: "sess_audit", ephemeral: true };
       const audit = auditStore(made.store);
       const event = auditFixture("aud_ephemeral_basic", { at: at(40), principal: ephemeral, appId: "app_audit_ephemeral" });
       await audit.append(event);
       expect((await audit.query({ principal: ephemeral })).events).toContainEqual(event);
       const rows = await made.sql("SELECT COUNT(*)::int AS count FROM vendo_audit WHERE subject = $1", [ephemeral.subject]);
-      expect(Number(rows[0]?.["count"])).toBe(0);
+      expect(Number(rows[0]?.["count"])).toBe(1);
     });
 
     it("filters and paginates ephemeral query() by appId, kind, from/to, and cursor", async () => {

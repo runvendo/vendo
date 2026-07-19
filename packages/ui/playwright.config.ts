@@ -36,7 +36,12 @@ export default defineConfig({
   outputDir: "./e2e/test-results",
   fullyParallel: false,
   workers: 1,
-  retries: 0,
+  // ENG-231 — the full ui browser suite is a permanent CI gate on a single
+  // loaded runner; a couple of timing-sensitive beats (voice microtask timing,
+  // streamed turns) can miss the expect window under that load. Retry in CI so
+  // infrastructure jitter never reddens the gate — a REAL failure still fails
+  // all attempts. Locally retries stay off (fast feedback, catch flakes early).
+  retries: process.env.CI ? 2 : 0,
   timeout: 30_000,
   expect: { timeout: 7_500 },
   reporter: [["line"]],

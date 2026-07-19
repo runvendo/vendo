@@ -1,4 +1,4 @@
-import { VENDO_POLICY_FORMAT } from "@vendoai/core";
+import { VENDO_POLICY_FORMAT, VendoError } from "@vendoai/core";
 import type { GuardDecision } from "@vendoai/core";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGuard } from "../src/index.js";
 import { createMemoryStore } from "./fixtures/memory-store.js";
-import { call, context, descriptor } from "./fixtures/tools.js";
+import { alice, call, context, descriptor, FixtureTools } from "./fixtures/tools.js";
 
 const originalCwd = process.cwd();
 const temporaryDirectories: string[] = [];
@@ -282,6 +282,104 @@ describe("policy files, rules, directions, and code", () => {
       approval: { descriptor: { risk: "write" } },
     });
     expect(resolveRisk).toHaveBeenCalledTimes(4);
+  });
+
+  it("expands named presets to rules before evaluation (00-overview decision 8)", async () => {
+    const read = descriptor("read");
+    const write = descriptor("write");
+    const destructive = descriptor("destructive");
+
+    const cautious = createGuard({ store: createMemoryStore(), policy: "cautious" });
+    await expect(cautious.check(call(read.name), read, context())).resolves.toMatchObject({
+      action: "run",
+      decidedBy: "rule",
+    });
+    await expect(cautious.check(call(write.name), write, context())).resolves.toMatchObject({
+      action: "ask",
+      decidedBy: "rule",
+    });
+    await expect(cautious.check(call(destructive.name), destructive, context())).resolves.toMatchObject({
+      action: "ask",
+      decidedBy: "rule",
+    });
+
+    const readonly = createGuard({ store: createMemoryStore(), policy: "readonly" });
+    await expect(readonly.check(call(read.name), read, context())).resolves.toMatchObject({
+      action: "run",
+      decidedBy: "rule",
+    });
+    await expect(readonly.check(call(write.name), write, context())).resolves.toMatchObject({
+      action: "block",
+      decidedBy: "rule",
+    });
+    await expect(readonly.check(call(destructive.name), destructive, context())).resolves.toMatchObject({
+      action: "block",
+      decidedBy: "rule",
+    });
+
+    const autopilot = createGuard({ store: createMemoryStore(), policy: "autopilot" });
+    await expect(autopilot.check(call(read.name), read, context())).resolves.toMatchObject({
+      action: "run",
+      decidedBy: "rule",
+    });
+    await expect(autopilot.check(call(write.name), write, context())).resolves.toMatchObject({
+      action: "run",
+      decidedBy: "rule",
+    });
+    await expect(autopilot.check(call(destructive.name), destructive, context())).resolves.toMatchObject({
+      action: "run",
+      decidedBy: "rule",
+    });
+  });
+
+  it("still fully audits an autopilot-run call, attributed to the rule (not left unconfigured)", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store, policy: "autopilot" });
+    const destructive = descriptor("destructive");
+    const bound = guard.bind(new FixtureTools([destructive]));
+
+    const outcome = await bound.execute(call(destructive.name), context());
+    expect(outcome).toMatchObject({ status: "ok" });
+
+    const { events } = await guard.audit.query({ principal: alice });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      kind: "tool-call",
+      tool: destructive.name,
+      outcome: "ok",
+      decidedBy: "rule",
+    });
+  });
+
+  it("reports autopilot as an explicitly configured posture, not unconfigured", () => {
+    const unconfigured = createGuard({ store: createMemoryStore() });
+    expect(unconfigured.status()).toEqual({ posture: "unconfigured" });
+
+    const autopilot = createGuard({ store: createMemoryStore(), policy: "autopilot" });
+    expect(autopilot.status()).toEqual({ posture: "rules" });
+
+    const cautious = createGuard({ store: createMemoryStore(), policy: "cautious" });
+    expect(cautious.status()).toEqual({ posture: "rules" });
+
+    const readonly = createGuard({ store: createMemoryStore(), policy: "readonly" });
+    expect(readonly.status()).toEqual({ posture: "rules" });
+  });
+
+  it("fails loud at compose time for an unknown policy preset name, naming the valid presets", () => {
+    const create = (): unknown => createGuard({ store: createMemoryStore(), policy: "yolo" as never });
+    expect(create).toThrow(VendoError);
+    let caught: unknown;
+    try {
+      create();
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(VendoError);
+    expect((caught as VendoError).code).toBe("validation");
+    expect((caught as VendoError).message).toContain("yolo");
+    expect((caught as VendoError).message).toContain("cautious");
+    expect((caught as VendoError).message).toContain("readonly");
+    expect((caught as VendoError).message).toContain("autopilot");
   });
 
   it("keeps the descriptor's conservative risk when contextual resolution fails", async () => {

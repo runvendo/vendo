@@ -4,9 +4,14 @@ import {
   writeCloudSession,
   type CloudSession,
 } from "./session.js";
+import { deploymentIdentityHeaders } from "../../deployment-identity.js";
 import { CLI_VERSION } from "../shared.js";
 
 const DEFAULT_CLOUD_URL = "https://console.vendo.run";
+
+export function isVendoKey(key: string): boolean {
+  return /^vnd_[0-9a-f]{40}$/.test(key);
+}
 
 export class CloudError extends Error {
   readonly code: string;
@@ -127,6 +132,12 @@ async function send(
   };
   if (options.body !== undefined) headers["content-type"] = "application/json";
   if (token !== undefined) headers.authorization = `Bearer ${token}`;
+  // The console's shared auth middleware upserts deployment inventory and
+  // meters usage from these headers on real service calls — there is no
+  // heartbeat (shared with the runtime Cloud adapters; deployment-identity.ts).
+  if (options.auth === "key") {
+    Object.assign(headers, await deploymentIdentityHeaders());
+  }
   const response = await (options.fetchImpl ?? fetch)(requestUrl(path, options), {
     method: options.method ?? (options.body === undefined ? "GET" : "POST"),
     headers,

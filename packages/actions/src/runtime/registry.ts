@@ -92,6 +92,19 @@ interface RegistryConfig {
     tool: ToolDescriptor;
     reason: "untrusted-host-origin" | "cross-origin-binding";
   }) => void | Promise<void>;
+  /**
+   * 09-vendo §2 (install-dx wave 1.1): what to do when a present-mode call has
+   * browser auth to forward but the target fails the trusted-origin rule for
+   * "untrusted-host-origin" specifically — NEVER for "cross-origin-binding",
+   * which always stays warn-only (same-origin trust must never extend to a
+   * cross-origin binding). "warn" is today's behavior: fire
+   * `onPresentCredentialsNotForwarded` and run the call unauthenticated.
+   * "fail" runs the hook (the audit warning still records) and then fails the
+   * call closed instead of reaching the host with no credentials — the
+   * umbrella sets this in production so a missing VENDO_BASE_URL surfaces
+   * loudly. Defaults to "warn".
+   */
+  untrustedOriginPolicy?: "warn" | "fail";
   fetch?: typeof fetch;
   /** Inject `.vendo/capabilities.json` directly (tests, non-file hosts); takes precedence over `dir` (04 §1/§6). */
   capabilities?: CapabilitiesFile;
@@ -607,14 +620,25 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
       config.baseUrl,
       config.baseUrlTrusted ?? true,
     );
-    if (!forwardsPresentHeaders && hasInboundAuthHeaders(ctx) && config.onPresentCredentialsNotForwarded !== undefined) {
+    if (!forwardsPresentHeaders && hasInboundAuthHeaders(ctx)) {
       const reason = config.baseUrlTrusted === false
         ? "untrusted-host-origin" as const
         : "cross-origin-binding" as const;
-      try {
-        await config.onPresentCredentialsNotForwarded({ ctx, tool: descriptorOf(tool), reason });
-      } catch {
-        // A warning sink must never turn a host API call into a product failure.
+      if (config.onPresentCredentialsNotForwarded !== undefined) {
+        try {
+          await config.onPresentCredentialsNotForwarded({ ctx, tool: descriptorOf(tool), reason });
+        } catch {
+          // A warning sink must never turn a host API call into a product failure.
+        }
+      }
+      // "untrusted-host-origin" only (09-vendo §2 install-dx wave 1.1):
+      // "cross-origin-binding" always stays warn-only, in every policy.
+      if (reason === "untrusted-host-origin" && config.untrustedOriginPolicy === "fail") {
+        return error(
+          "blocked",
+          `Present credentials for ${call.tool} cannot be forwarded because VENDO_BASE_URL is not set. `
+            + "Set VENDO_BASE_URL to this deployment's public origin and restart the server.",
+        );
       }
     }
     headers = forwardsPresentHeaders ? forwardedHeaders(ctx) : {};

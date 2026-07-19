@@ -17,6 +17,8 @@ gitignored; do not commit foreign repo code or generated run artifacts.
   host-native baselines, generated UI screenshots/GIFs, and latency timings.
   With no repo arguments it discovers repos that have
   `corpus/expectations/<repo>/gallery.json`; there is no hardcoded gate set.
+- `pnpm corpus ai [repo...] [--model <id>]... [--json] [--strict]` runs the AI
+  extraction matrix (see below).
 - `pnpm --filter @vendoai/corpus-harness test` runs the harness unit tests.
 
 Run artifacts are written under `corpus/.repos/.logs/`, with a copy of the
@@ -89,6 +91,49 @@ workspace, runs `pnpm corpus run --json`, writes the scorecard to the job
 summary, appends a trend delta versus the previous run
 (`corpus/scripts/corpus-trend.mjs`), and uploads `scorecard.json` + `.md` +
 per-repo logs as the `corpus-scorecard` artifact (30-day retention).
+
+## AI extraction matrix
+
+`pnpm corpus ai` measures the AI extraction pass (the `vendo init` agent that
+drafts tool descriptions, risk grades, wakes, and the product brief) per repo
+and per model. For each selected repo it runs the normal checkout, bootstrap,
+local-package injection, and `vendo init` (producing the static
+`.vendo/tools.json`), then for each model runs the real extraction flow — the
+staged pipeline (survey → draft-per-surface → cross-check → brief) through the
+Claude Agent SDK harness, then the deterministic applyDraft guards into a
+clean per-model scratch root — and scores the result against
+`corpus/expectations/<repo>/ai-expected.json` (format documented in
+`corpus/expectations/README.md`).
+
+- Repos default to every one with an `ai-expected.json`; pass names to filter.
+- Models: repeat `--model <id>` (or comma-separate) to build the matrix; each
+  run sets `VENDO_EXTRACTION_MODEL` for the harness. With no `--model` flag a
+  single `default` column exercises the harness default (which itself honors a
+  `VENDO_EXTRACTION_MODEL` already present in the environment).
+- Credential: the run needs `ANTHROPIC_API_KEY` or a Claude Code login and
+  fails fast with a clear message when neither is available. The Claude Agent
+  SDK deliberately exists nowhere in the workspace (host-only resolution
+  doctrine, enforced by the dev-riders missing-install test); the matrix
+  provisions a pinned copy into the gitignored `corpus/.repos/.agent-sdk/`
+  cache on first run (needs npm + network once).
+- CI posture: like the other live layers, the AI matrix is never part of
+  `pnpm test` — unit tests cover the scoring rubric with canned drafts, and
+  the matrix itself runs on demand only.
+
+Reading the scoreboard: the run writes `corpus/.repos/.logs/ai-scoreboard.md`
+(and `.json`, also printed with `--json`) with one row per repo × model. The
+Score column is the weighted rubric value (0–1); the Draft, Guards,
+Descriptions, Risk, Wake, and Brief columns show per-dimension sub-scores, and
+Notes lists failing check ids (details live in each run's `checks.json`). A row
+whose draft never parsed (or whose harness errored) is floored at 0 with the
+same check set, so model columns stay comparable. Guard "false refusals" —
+model downgrades the guards blocked but the labels agree with — are surfaced
+in check details as a pipeline signal without failing the run. Staged-pipeline
+degradations (skipped surfaces, failed cross-check) surface as notes, not
+failures. Per-cell artifacts (per-stage outputs under `stages/`, degradation
+notes, resulting overrides.json/brief.md, checks) land under
+`corpus/.repos/.logs/<repo>/ai/<model>/`. Without `--strict` the sweep reports
+failures and exits 0; `--strict` returns nonzero when any run failed.
 
 ## Generation gallery
 

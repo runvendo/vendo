@@ -71,9 +71,9 @@ export const pinComponentName = (slot: string): string => {
 
 /**
  * Blank comment and string/template contents (length-preserving) so export
- * detection never matches commented-out or quoted code. Adapted from sync's
- * `stripComments` (packages/actions/src/sync/common.ts — actions may not be
- * imported here), extended to blank string contents too.
+ * detection never matches commented-out or quoted code. (Adapted from the
+ * `stripComments` helper sync's extraction carried before it moved onto the
+ * TypeScript AST — actions may not be imported here.)
  */
 const blankCommentsAndStrings = (source: string): string => {
   let output = "";

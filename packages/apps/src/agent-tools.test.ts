@@ -26,14 +26,7 @@ const hostTools: ToolRegistry = {
   async execute() { return { status: "error", error: { code: "not-found", message: "missing" } }; },
 };
 
-const generated = JSON.stringify({
-  name: "Tool-built dashboard",
-  tree: {
-    formatVersion: "vendo-genui/v1",
-    root: "root",
-    nodes: [{ id: "root", component: "Text", source: "prewired", props: { text: "Ready" } }],
-  },
-});
+const generated = '<App name="Tool-built dashboard"><Text text="Ready"/></App>';
 
 describe("apps agent tools", () => {
   it("exposes exactly provider-safe draft-2020-12 descriptors with closed object inputs", async () => {
@@ -170,9 +163,7 @@ describe("apps agent tools", () => {
   });
 
   it("surfaces a structured retryable edit failure instead of implying the app changed", async () => {
-    const broken = JSON.stringify({
-      ops: [{ op: "set-prop", nodeId: "missing", prop: "value", value: 1 }],
-    });
+    const broken = '<Edit><Set id="missing" value={1}/></Edit>';
     const runtime = createApps({
       store: memoryStore(),
       guard: guardFixture(),

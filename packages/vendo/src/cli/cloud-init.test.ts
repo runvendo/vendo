@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DevCredential } from "../dev-creds/resolve.js";
-import { runCloudStep } from "./cloud-init.js";
+import { mintStarterAllowance, runCloudStep } from "./cloud-init.js";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -26,18 +26,86 @@ const noKey: DevCredential = { rung: "none" };
 const envKey: DevCredential = { rung: "env-key", provider: "anthropic", envVar: "ANTHROPIC_API_KEY" };
 const goodKey = `vnd_${"a".repeat(40)}`;
 
+describe("mintStarterAllowance", () => {
+  /** A fake logged-in machine: ~/.vendo/cloud-session.json carries the user
+   *  session the contract authenticates with. */
+  async function loggedInHome(): Promise<string> {
+    const home = await tempRoot();
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(join(home, ".vendo"), { recursive: true });
+    await writeFile(
+      join(home, ".vendo", "cloud-session.json"),
+      JSON.stringify({ access_token: "user-jwt", expires_at: Math.floor(Date.now() / 1000) + 3600 }),
+    );
+    return home;
+  }
+
+  it("mints against the documented console contract with user-session auth", async () => {
+    const requests: Array<{ url: string; method: string; authorization: string | null; body: unknown }> = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      requests.push({
+        url: request.url,
+        method: request.method,
+        authorization: request.headers.get("authorization"),
+        body: await request.json(),
+      });
+      return Response.json({ key: goodKey, meter: { runs: { included: 1000, remaining: 1000 } } });
+    }) as unknown as typeof fetch;
+
+    const key = await mintStarterAllowance({
+      apiUrl: "https://cloud.test",
+      env: {},
+      home: await loggedInHome(),
+      fetchImpl,
+    });
+    expect(key).toBe(goodKey);
+    expect(requests[0]).toEqual({
+      url: "https://cloud.test/api/v1/keys",
+      method: "POST",
+      authorization: "Bearer user-jwt",
+      body: { purpose: "dev-mode" },
+    });
+  });
+
+  it("returns null (graceful degradation) when an older console 404s the endpoint", async () => {
+    const fetchImpl = (async () =>
+      Response.json({ error: { code: "not-found", message: "no such route" } }, { status: 404 })
+    ) as unknown as typeof fetch;
+    const key = await mintStarterAllowance({
+      apiUrl: "https://cloud.test",
+      env: {},
+      home: await loggedInHome(),
+      fetchImpl,
+    });
+    expect(key).toBeNull();
+  });
+
+  it("propagates real errors instead of degrading", async () => {
+    const fetchImpl = (async () =>
+      Response.json({ error: { code: "unavailable", message: "Console is down." } }, { status: 503 })
+    ) as unknown as typeof fetch;
+    await expect(mintStarterAllowance({
+      apiUrl: "https://cloud.test",
+      env: {},
+      home: await loggedInHome(),
+      fetchImpl,
+    })).rejects.toThrow(/console is down/i);
+  });
+});
+
 describe("runCloudStep", () => {
-  it("states the plan when VENDO_API_KEY is valid", async () => {
+  it("reports a present, well-formed VENDO_API_KEY", async () => {
     const messages = output();
     const result = await runCloudStep({
       root: await tempRoot(),
       output: messages.sink,
       yes: false,
       credential: envKey,
-      cloudProbe: async () => ({ present: true, ok: true, plan: { id: "pro", name: "Pro", status: "active" }, capabilities: ["sharing"], unlocks: ["x"] }),
+      cloudProbe: async () => ({ present: true, ok: true, unlocks: ["x"] }),
     });
     expect(result.keyValid).toBe(true);
-    expect(messages.logs.some((l) => l.includes("VENDO_API_KEY valid (plan: Pro)"))).toBe(true);
+    expect(messages.logs.some((l) => l.includes("VENDO_API_KEY present and well-formed"))).toBe(true);
   });
 
   it("one calm line + a pointer when no key and the ladder wants one", async () => {
@@ -72,6 +140,42 @@ describe("runCloudStep", () => {
     });
     expect(login).toHaveBeenCalledWith("dev@example.com");
     expect(mint).toHaveBeenCalledOnce();
+    expect(result.wroteEnvLocal).toBe(true);
+    const envLocal = await readFile(join(root, ".env.local"), "utf8");
+    expect(envLocal).toContain(`VENDO_API_KEY=${goodKey}`);
+  });
+
+  it("mints through the REAL default mint path against a mocked console and writes .env.local", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(join(home, ".vendo"), { recursive: true });
+    await writeFile(
+      join(home, ".vendo", "cloud-session.json"),
+      JSON.stringify({ access_token: "user-jwt", expires_at: Math.floor(Date.now() / 1000) + 3600 }),
+    );
+    const consoleFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      expect(request.url).toBe("https://cloud.test/api/v1/keys");
+      expect(request.headers.get("authorization")).toBe("Bearer user-jwt");
+      expect(await request.json()).toEqual({ purpose: "dev-mode" });
+      return Response.json({ key: goodKey, meter: { runs: { included: 1000, remaining: 1000 } } });
+    }) as unknown as typeof fetch;
+
+    const result = await runCloudStep({
+      root,
+      output: output().sink,
+      yes: false,
+      credential: noKey,
+      apiUrl: "https://cloud.test",
+      home,
+      fetchImpl: consoleFetch,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      confirm: async () => true,
+      promptEmail: async () => "dev@example.com",
+      login: async () => 0,
+    });
+    expect(consoleFetch).toHaveBeenCalledOnce();
     expect(result.wroteEnvLocal).toBe(true);
     const envLocal = await readFile(join(root, ".env.local"), "utf8");
     expect(envLocal).toContain(`VENDO_API_KEY=${goodKey}`);
@@ -112,7 +216,26 @@ describe("runCloudStep", () => {
       mint: async () => null,
     });
     expect(result.wroteEnvLocal).toBe(false);
-    expect(messages.errors.some((l) => l.includes("starter allowance is not available yet"))).toBe(true);
+    expect(messages.errors.some((l) => l.includes("does not serve the dev-mode starter allowance"))).toBe(true);
+  });
+
+  it("surfaces a mint failure (e.g. the console's starter-key cap) without throwing out of init", async () => {
+    const messages = output();
+    const result = await runCloudStep({
+      root: await tempRoot(),
+      output: messages.sink,
+      yes: false,
+      credential: noKey,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      confirm: async () => true,
+      promptEmail: async () => "dev@example.com",
+      login: async () => 0,
+      mint: async () => {
+        throw new Error("This organization already has 10 active dev-mode starter keys.");
+      },
+    });
+    expect(result).toEqual({ keyPresent: false, keyValid: false, wroteEnvLocal: false });
+    expect(messages.errors.some((l) => l.includes("10 active dev-mode starter keys"))).toBe(true);
   });
 
   it("does not offer login when the ladder already has a key rung", async () => {

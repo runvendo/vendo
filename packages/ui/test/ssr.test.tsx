@@ -86,7 +86,7 @@ describe("every chrome surface server-renders without a DOM", () => {
     createdAt: "2026-07-11T12:00:00.000Z",
   };
   const noop = async () => ({ status: "ok", output: null } as const);
-  const tree = { formatVersion: "vendo-genui/v1", root: "root", nodes: [{ id: "root", component: "Text", props: { text: "SSR tree" } }] } as const;
+  const tree = { formatVersion: "vendo-genui/v2", root: "root", nodes: [{ id: "root", component: "Text", props: { text: "SSR tree" } }] } as const;
 
   // Each entry is a surface that, without the effects/DOM a browser provides,
   // must still produce markup — proving no unguarded window/document access.

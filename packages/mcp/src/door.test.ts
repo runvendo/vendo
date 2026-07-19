@@ -1221,7 +1221,7 @@ describe("createMcpDoor MCP protocol", () => {
       format: "vendo/app@1",
       id: "app_1",
       name: "Dashboard",
-      tree: { formatVersion: "vendo-genui/v1", root: "root", nodes: [] },
+      tree: { formatVersion: "vendo-genui/v2", root: "root", nodes: [] },
     };
     const apps: AppsPort = {
       async list() { return [app]; },
@@ -1288,11 +1288,11 @@ describe("createMcpDoor MCP protocol", () => {
 
   it("does not send already-resolved tree queries back to the MCP shim", async () => {
     const payload = {
-      formatVersion: "vendo-genui/v1",
+      formatVersion: "vendo-genui/v2",
       root: "root",
       nodes: [],
       data: { total: 42 },
-      queries: [{ path: "/total", tool: "host_total" }],
+      queries: [{ name: "total", tool: "host_total" }],
     };
     const apps: AppsPort = {
       async list() { return []; },
@@ -1306,12 +1306,12 @@ describe("createMcpDoor MCP protocol", () => {
 
     const opened = await connected.client.callTool({ name: "vendo_apps_open", arguments: { appId: "app_1" } });
     expect(opened.structuredContent).toEqual({
-      formatVersion: "vendo-genui/v1",
+      formatVersion: "vendo-genui/v2",
       root: "root",
       nodes: [],
       data: { total: 42 },
     });
-    expect(payload.queries).toEqual([{ path: "/total", tool: "host_total" }]);
+    expect(payload.queries).toEqual([{ name: "total", tool: "host_total" }]);
     await connected.client.close();
   });
 
@@ -1353,7 +1353,7 @@ describe("createMcpDoor MCP protocol", () => {
   it("gives vendo_apps_* door tools full guard treatment with venue mcp", async () => {
     const apps: AppsPort = {
       async list() { return []; },
-      async open() { return { kind: "tree", payload: { formatVersion: "vendo-genui/v1" } }; },
+      async open() { return { kind: "tree", payload: { formatVersion: "vendo-genui/v2" } }; },
       async call() { return { done: true }; },
     };
     const decisions: Array<{ tool: string; venue: string; risk: string }> = [];
@@ -1402,11 +1402,11 @@ describe("createMcpDoor MCP protocol", () => {
 
   it("keeps a registry-owned vendo_apps_* verbatim but attaches the shim _meta and renders its payload (FIX E)", async () => {
     const treePayload = {
-      formatVersion: "vendo-genui/v1",
+      formatVersion: "vendo-genui/v2",
       root: "root",
       nodes: [],
       data: { via: "registry" },
-      queries: [{ path: "/via", tool: "host_source" }],
+      queries: [{ name: "via", tool: "host_source" }],
     };
     const apps: AppsPort = {
       async list() { return []; },
@@ -1455,12 +1455,12 @@ describe("createMcpDoor MCP protocol", () => {
     const before = harness.executions.length;
     const result = await connected.client.callTool({ name: "vendo_apps_open", arguments: {} });
     expect(result.structuredContent).toEqual({
-      formatVersion: "vendo-genui/v1",
+      formatVersion: "vendo-genui/v2",
       root: "root",
       nodes: [],
       data: { via: "registry" },
     });
-    expect(treePayload.queries).toEqual([{ path: "/via", tool: "host_source" }]);
+    expect(treePayload.queries).toEqual([{ name: "via", tool: "host_source" }]);
     expect(harness.executions.length).toBe(before + 1);
     await connected.client.close();
   });

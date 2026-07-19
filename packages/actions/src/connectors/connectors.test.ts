@@ -141,6 +141,63 @@ describe("composioConnector", () => {
     const connector = composioConnector({ apiKey: "secret", baseUrl: server.url });
     await expect(connector.descriptors()).rejects.toThrow("Composio pagination loop");
   });
+
+  it("bare (no apps) fetches the full catalog unscoped, spanning every toolkit", async () => {
+    const seen: URLSearchParams[] = [];
+    const server = await startServer((req, res) => {
+      const url = new URL(req.url ?? "/", "http://stub");
+      seen.push(url.searchParams);
+      res.setHeader("content-type", "application/json");
+      // A single unscoped page carrying tools from multiple, unrelated
+      // toolkits — what Composio's real catalog looks like with no
+      // toolkit_slug filter (docs.composio.dev/toolkits: 1,000+ toolkits).
+      res.end(JSON.stringify({
+        items: [
+          { slug: "SEND_EMAIL", toolkit_slug: "gmail", description: "Send email", input_parameters: {} },
+          { slug: "SEND_MESSAGE", toolkit_slug: "slack", description: "Send a message", input_parameters: {} },
+          { slug: "CREATE_PAGE", toolkit_slug: "notion", description: "Create a page", input_parameters: {} },
+        ],
+      }));
+    });
+    closers.push(server.close);
+
+    const connector = composioConnector({ apiKey: "secret", baseUrl: server.url });
+    const descriptors = await connector.descriptors();
+
+    // One request, no toolkit_slug — the unscoped path — asking for the
+    // API's max page size so the real ~20k-tool catalog stays inside
+    // MAX_PAGES.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.has("toolkit_slug")).toBe(false);
+    expect(seen[0]?.get("limit")).toBe("1000");
+
+    expect(descriptors.map((d) => d.name).sort()).toEqual([
+      "gmail_SEND_EMAIL",
+      "notion_CREATE_PAGE",
+      "slack_SEND_MESSAGE",
+    ]);
+  });
+
+  it("apps still narrows to exactly those toolkits, one scoped request each", async () => {
+    const seen: URLSearchParams[] = [];
+    const server = await startServer((req, res) => {
+      const url = new URL(req.url ?? "/", "http://stub");
+      seen.push(url.searchParams);
+      const toolkit = url.searchParams.get("toolkit_slug");
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        items: [{ slug: `${toolkit?.toUpperCase()}_TOOL`, toolkit_slug: toolkit, description: toolkit, input_parameters: {} }],
+      }));
+    });
+    closers.push(server.close);
+
+    const connector = composioConnector({ apiKey: "secret", apps: ["gmail", "slack"], baseUrl: server.url });
+    const descriptors = await connector.descriptors();
+
+    expect(seen).toHaveLength(2);
+    expect(seen.map((q) => q.get("toolkit_slug")).sort()).toEqual(["gmail", "slack"]);
+    expect(descriptors.map((d) => d.name).sort()).toEqual(["gmail_GMAIL_TOOL", "slack_SLACK_TOOL"]);
+  });
 });
 
 describe("mcpConnector", () => {

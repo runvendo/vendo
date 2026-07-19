@@ -3,15 +3,17 @@ title: "Host components: register branded UI and remix baselines"
 description: "Register branded host components with prop schemas and JSON examples so Vendo's generated apps can select and render your own UI natively."
 ---
 
-Register host component implementations by the same names used in the catalog
-descriptors:
+The shared registry is the current form: one object, keyed by component name,
+that both `createVendo` (as `catalog`) and `<VendoRoot>` (as `components`)
+read — see the [quickstart](/quickstart#the-two-files-you-own). This page
+covers the underlying entry shape and the array form the registry normalizes
+into, which stays available as a back-compat escape hatch.
 
 ```ts
 export interface RegisteredComponent {
   name: string;
   description: string;
-  propsSchema: StandardSchema;
-  propsJsonSchema?: JsonSchema;   // prompt-safe JSON Schema for generation
+  propsSchema?: StandardSchema;   // optional — a schema-less entry is legal
   examples?: string[];            // JSON prop examples shown to the model
   remixable?: boolean;
 }
@@ -21,58 +23,47 @@ export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
 
 Names are PascalCase and unique. Descriptions and prop schemas are generation
 context. Vendo prefers host components when the catalog covers the requested
-UI.
+UI. The model-facing JSON Schema is derived internally from `propsSchema` —
+you never hand-write it, and a schema-less entry is legal: it renders as a
+description-only prompt entry the model infers props for.
 
 ## Register a catalog
 
-Pass the catalog to `createVendo` so its entries flow into the generation
-prompt and the engine validates emitted props against the schema before
-render. Keep each `name` identical to the key you use in the client
-`components` map so `source:"host"` nodes resolve without an alias.
+Pass the registry (or the array form) to `createVendo` so its entries flow
+into the generation prompt and the engine validates emitted props against the
+schema before render. In the registry form, entry names come from the object
+keys, so there is no second client-side map to keep in sync:
 
 ```ts
 import { createVendo } from "@vendoai/vendo/server";
+import type { ComponentRegistry } from "@vendoai/core";
 import { z } from "zod";
+import { SpendingDonut } from "@/components/charts/spending-donut";
 
-const catalog = [
-  {
-    name: "MapleSpendingDonut",
+const registry = {
+  MapleSpendingDonut: {
+    component: SpendingDonut,
     description:
       "Category breakdown of spending. Use when the user asks to see spend by category.",
-    propsSchema: z.object({
+    props: z.object({
       categories: z.array(z.object({ label: z.string(), amount: z.number() })),
       currency: z.string().default("USD"),
     }),
-    propsJsonSchema: {
-      type: "object",
-      properties: {
-        categories: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: { label: { type: "string" }, amount: { type: "number" } },
-            required: ["label", "amount"],
-          },
-        },
-        currency: { type: "string" },
-      },
-      required: ["categories"],
-    },
     examples: [
       '{ "categories": [{ "label": "Groceries", "amount": 412.55 }], "currency": "USD" }',
     ],
   },
-] as const;
+} satisfies ComponentRegistry;
 
-const vendo = createVendo({ model, principal, catalog });
+const vendo = createVendo({ model, catalog: registry });
 ```
 
 - `description` is selection guidance for the model. State when to pick the
   component and when to skip it — hedged copy leads to worse selection.
-- `propsSchema` validates props at render time. Bindings for `$path`,
-  `$state`, and zero-arg actions are exempt from that validation.
-- `propsJsonSchema` is the prompt-safe form the model sees. Keep it
-  serializable so an init or sync flow can reuse the same contract later.
+- `props` (registry form) / `propsSchema` (array form) validates props at
+  render time and is the SAME schema the model-facing JSON Schema derives
+  from — one schema, not two. Bindings for `$path`, `$state`, and zero-arg
+  actions are exempt from that validation.
 - `examples` are JSON strings the model can copy from. One or two concrete
   shapes usually beat a long prose description.
 
@@ -101,15 +92,11 @@ rather than hand-editing the file. A malformed `.vendo/catalog.json` fails
 sync loudly, and `createVendo` logs one actionable error naming the file and
 telling you to rerun `vendo sync`.
 
-### Review AI-authored copy
+### Catalog copy is hand-edited
 
-Sync can optionally draft descriptions and examples for scanned entries. Any
-proposed copy is written to `.vendo/catalog.proposals.json` as a before/after
-diff — nothing enters `.vendo/catalog.json` until you accept it through the
-explicit acceptance API. The runtime never reads the proposals file. Accepted
-copy is pinned to the deterministic basis (export path, prop schema, note)
-so a later rescan that changes the underlying component invalidates the
-accepted copy instead of applying it silently.
+No seam authors catalog copy today. Edit a scanned entry's `description` and
+`examples` directly in `.vendo/catalog.json` — a rescan preserves that copy on
+a still-scanned entry, keeping unchanged reruns byte-identical.
 
 The prewired primitives are `Stack`, `Row`, `Grid`, `Text`, `Skeleton`,
 `Surface`, `Divider`, `Card`, `Button`, `Input`, `Select`, `Table`, `Badge`,

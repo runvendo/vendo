@@ -1,8 +1,104 @@
 # actAs presets
 
-`@vendoai/actions/presets` turns a Vendo principal and captured grant into the
-host credentials used for away automations and MCP calls. Pass the resulting
-`actAs` function to `createVendo`:
+`@vendoai/vendo`'s host-identity presets turn one host auth setup into all
+three identity seams `createVendo` needs: the request→Principal resolver, the
+away/MCP `actAs` seam, and the door's `HostOAuthAdapter`. Start with the
+`auth` key below — the per-seam `actAs` recipes further down are the escape
+hatch for custom composition or hosts without a shipped preset.
+
+## `auth` — one identity story, three seams
+
+Pass a named preset as `auth`; it fills `principal`, `actAs`, and `oauth` from
+one config key (09-vendo §2.1):
+
+```ts
+import { createVendo, authJs } from "@vendoai/vendo/server";
+
+export const vendo = createVendo({ model, auth: authJs() });
+```
+
+Every preset is zero-argument in the standard case — it reads its own
+provider's env variable and derives the principal's `display` from
+name/email session-token claims:
+
+| Preset | Session secret (env) | Session source |
+| --- | --- | --- |
+| `authJs()` | `AUTH_SECRET` | Auth.js session JWE (`@auth/core`) |
+| `clerk()` | `CLERK_SECRET_KEY` (+ optional `CLERK_JWT_KEY`) | `__session` cookie or `Authorization: Bearer` |
+| `supabase()` | `SUPABASE_JWT_SECRET` | `sb-*-auth-token` cookie or `Authorization: Bearer` |
+| `auth0()` | `AUTH0_DOMAIN` / `AUTH0_ISSUER_BASE_URL` (tenant JWKS) | `Authorization: Bearer` |
+| `jwt({ secret })` | none — no vendor env exists for a host-generic scheme, so `secret` is required | `Authorization: Bearer` |
+
+`jwt()` is the one preset that is not zero-argument: a host-owned HS256
+scheme has no vendor-owned env variable to read, so construction throws
+without `jwt({ secret })`.
+
+Every preset accepts the same two options:
+
+```ts
+export interface HostAuthPresetOptions {
+  // Override the provider's env-read secret (or system-equivalent — the
+  // away-token secret for clerk/auth0). Resolves lazily, same shape actAs
+  // presets already use: a literal or a () => string | Promise<string>.
+  secret?: string | (() => string | undefined | Promise<string | undefined>);
+  // Custom subject→user resolution instead of the provider's claims
+  // defaults. `claims` carries the decoded session-token claims where a
+  // token exists ({} for actAs minting and the door's subject lookup).
+  // Returning null means "subject unknown to host": the principal resolver
+  // treats the session as absent, actAs declines the mint, and the door's
+  // subject lookup returns null.
+  user?: (
+    subject: string,
+    claims: Record<string, unknown>,
+  ) => { display?: string; email?: string } | null | Promise<{ display?: string; email?: string } | null>;
+}
+```
+
+A real example, resolving both display and away-execution claims from a
+host's own user table:
+
+```ts
+import { createVendo, authJs } from "@vendoai/vendo/server";
+
+export const vendo = createVendo({
+  model,
+  auth: authJs({
+    secret: () => process.env.AUTH_SECRET,
+    user: async (subject) => {
+      const user = await db.user.findUnique({ where: { id: subject } });
+      if (!user || user.disabled) return null;
+      return { display: user.name, email: user.email };
+    },
+  }),
+});
+```
+
+The other named presets take the exact same shape:
+
+```ts
+export const vendo = createVendo({ model, auth: supabase() });
+export const vendo = createVendo({ model, auth: clerk() });
+export const vendo = createVendo({ model, auth: auth0() });
+export const vendo = createVendo({
+  model,
+  auth: jwt({ secret: () => process.env.HOST_API_JWT_SECRET }),
+});
+```
+
+**Mutually exclusive with the per-seam trio.** Supplying `auth` together with
+any of `principal`, `actAs`, or `oauth` throws `VendoError("validation")` at
+compose time — pick one preset or hand-wire the three seams below, never
+both. Each preset's `actAs` half IS the shipped `@vendoai/actions/presets`
+implementation for that provider (documented in full below); the `oauth`
+half implements the door's identity seam (10-mcp §3).
+
+## Escape hatch: per-seam `actAs` presets
+
+Reach for these when no shipped `auth` preset matches your setup, or when you
+are composing `principal`/`actAs`/`oauth` by hand. `@vendoai/actions/presets`
+turns a Vendo principal and captured grant into the host credentials used for
+away automations and MCP calls. Pass the resulting `actAs` function to
+`createVendo`:
 
 ```ts
 import { createVendo } from "@vendoai/vendo";
@@ -20,7 +116,7 @@ run closed.
 Keep all signing secrets server-only. The preset secret must be the same secret
 the host API verifier uses, never a public or publishable key.
 
-## Auth.js and NextAuth v5
+### Auth.js and NextAuth v5
 
 Install Auth.js alongside the preset. It is an optional peer so hosts that do
 not use Auth.js do not install it.
@@ -55,7 +151,7 @@ export const actAs = authJsPreset({
 defaults are `authjs.session-token` and, with `secureCookie: true`,
 `__Secure-authjs.session-token`.
 
-## Supabase Auth
+### Supabase Auth
 
 Use the project's server-only legacy JWT secret. The preset mints an HS256
 access token offline with `sub`, `role: "authenticated"`, `aud`, `iat`, and
@@ -81,7 +177,7 @@ export const actAs = supabasePreset({
 Do not pass the Supabase anon key or service-role token. Those are complete
 tokens, not the project JWT signing secret.
 
-## Clerk and Auth0
+### Clerk and Auth0
 
 Clerk and Auth0 hold the private keys for their RS256 user sessions, so a host
 cannot honestly mint a provider session offline. Their presets instead issue a
@@ -122,7 +218,7 @@ audience, issued-at, and expiry. `awayAuth.verify(value)` accepts either the
 compact token or the complete `VendoAway ...` authorization value, which also
 makes a mint-and-verify doctor probe straightforward.
 
-### Next.js verifier
+#### Next.js verifier
 
 Install `next` only in a Next.js host; it is an optional peer and is imported
 only when `nextMiddleware` runs.
@@ -163,7 +259,7 @@ export async function GET() {
 Invalid `VendoAway` tokens return 401. `Bearer` and cookie-based provider auth
 pass through for the host's existing verifier.
 
-### Express verifier
+#### Express verifier
 
 Mount the middleware before protected API routes. Verified claims are attached
 to `req.vendoAwayToken`; a malformed or expired away-token returns 401. Like
@@ -194,12 +290,12 @@ declare global {
 }
 ```
 
-## Generic JWT recipes
+### Generic JWT recipes
 
 `genericJwtPreset` covers host-owned HS256 schemes and long-tail providers that
 accept a shared-secret JWT. It always forces `alg: "HS256"`, `iat`, and `exp`.
 
-### Bearer token
+#### Bearer token
 
 ```ts
 import { genericJwtPreset } from "@vendoai/actions/presets";
@@ -220,7 +316,7 @@ export const actAs = genericJwtPreset({
 });
 ```
 
-### Custom header or cookie
+#### Custom header or cookie
 
 ```ts
 export const actAs = genericJwtPreset({
@@ -239,7 +335,7 @@ Clerk/Auth0 away-token pattern above, or implement the same two-sided pattern
 in the host with a dedicated server secret and a distinct authorization
 scheme.
 
-## Cache and rotation controls
+### Cache and rotation controls
 
 All presets default to a five-minute token and a 30-second cache safety margin.
 Use `expiresInSeconds` and `cacheSafetySeconds` to tune them. Secret resolvers

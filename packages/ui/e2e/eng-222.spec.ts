@@ -30,6 +30,10 @@ async function newConversationAppears(page: import("@playwright/test").Page) {
   // harness server may already carry threads minted by an earlier scenario).
   await expect.poll(async () => (await list.count()) >= 1).toBe(true);
   const before = await list.count();
+  // This spec asserts the returning-user landing heading; a first-ever fresh
+  // conversation shows the one-time greeting-as-tutorial instead
+  // (discoverability §6), so mark it already seen for this origin.
+  await page.evaluate(() => localStorage.setItem("vendo:discoverability:greeting", "1"));
   await page.getByRole("button", { name: "New conversation" }).click();
   await expect(page.getByRole("heading", { name: "What can I help you build?" })).toBeVisible();
   await page.getByRole("textbox", { name: "Message" }).fill("Plan my week");

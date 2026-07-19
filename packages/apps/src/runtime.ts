@@ -1,12 +1,13 @@
 import {
+  VENDO_TREE_FORMAT_V2,
   VendoError,
   validateAppDocument,
   type AppDocument,
   type AppId,
-  type ComponentCatalog,
   type Guard,
   type IsoDateTime,
   type Json,
+  type NormalizedCatalog,
   type RunContext,
   type ApprovalId,
   type RiskLabel,
@@ -15,8 +16,8 @@ import {
   type ToolCall,
   type ToolDescriptor,
   type ToolOutcome,
+  type TreeV2,
   type ToolRegistry,
-  type Tree,
   type UIPayload,
   type VendoViewPart,
   type VendoTheme,
@@ -64,7 +65,12 @@ export interface AppsConfig {
   tools: ToolRegistry;
   sandbox?: SandboxAdapter;
   model?: LanguageModel;
-  catalog: ComponentCatalog;
+  /** v2 spec §4 — tier-0 paint lane knob, passed to the generation engine.
+   *  `model` is the no-think switch (a thinking-disabled model instance);
+   *  `disabled` forces single-lane generation. */
+  paint?: GenerationDependencies["paint"];
+  /** The composition-normalized catalog (01 §14): derived schemas included. */
+  catalog: NormalizedCatalog;
   theme?: VendoTheme;
   secrets?: SecretsProvider;
   designRules?: string;
@@ -321,6 +327,7 @@ const generationDependencies = (
   theme: config.theme,
   designRules: config.designRules,
   pinBaselines: config.pinBaselines,
+  ...(config.paint === undefined ? {} : { paint: config.paint }),
   ...(onPartial === undefined ? {} : { onPartial }),
 });
 
@@ -333,8 +340,8 @@ const stripServerAuthoritativeFields = (payload: object): void => {
 };
 
 const pinnedSubtree = (app: AppDocument, componentName: string): unknown[] => {
-  if (app.tree?.formatVersion !== "vendo-genui/v1") return [];
-  const tree = app.tree as unknown as Tree;
+  if (app.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) return [];
+  const tree = app.tree as unknown as TreeV2;
   const included = new Set(tree.nodes.filter((node) => node.component === componentName).map((node) => node.id));
   const pending = [...included];
   while (pending.length > 0) {
@@ -713,7 +720,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       }
       // Mint before generation so every partial already carries its permanent id.
       const appId = `app_${globalThis.crypto.randomUUID()}`;
-      const emit = (payload: Tree): void => {
+      const emit = (payload: TreeV2): void => {
         // 06-apps §§8–9 — the venue verdict and drift report are
         // server-authoritative and a model-written tree must never smuggle
         // either into the live stream: a freshly generated app has no approval
@@ -725,7 +732,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           payload: payload as unknown as UIPayload,
         });
       };
-      let latestTree: Tree | undefined;
+      let latestTree: TreeV2 | undefined;
       const queryApp: AppDocument = {
         format: "vendo/app@1",
         id: appId,
@@ -736,13 +743,18 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         ? undefined
         : createProgressiveQueryResolver(machines, caller, queryApp, ctx, (data) => {
           if (latestTree === undefined) return;
-          emit({ ...structuredClone(latestTree), data, streaming: true } as Tree);
+          emit({ ...structuredClone(latestTree), data, streaming: true } as TreeV2);
         });
       const generated = await engine.create(
         { prompt: input.prompt },
         generationDependencies(config, config.model, input.onView === undefined ? undefined : (partial) => {
-          latestTree = structuredClone(partial.tree);
-          emit(latestTree);
+          // v2 spec §1 — the payload carries islands at payload level (the
+          // renderer lifts them); a mid-stream payload is marked streaming.
+          latestTree = {
+            ...structuredClone(partial.tree),
+            ...(partial.components === undefined ? {} : { components: structuredClone(partial.components) }),
+          } as TreeV2;
+          emit({ ...structuredClone(latestTree), streaming: true } as TreeV2);
           queryResolver?.update(latestTree);
         }),
       );
@@ -753,12 +765,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // Same rule at rest: open() strips before serving, but a model-forged
       // venue or drift field has no business being persisted in the first place.
       if (app.tree !== undefined) stripServerAuthoritativeFields(app.tree);
-      let finalTree: Tree | undefined;
-      if (input.onView !== undefined && app.tree?.formatVersion === "vendo-genui/v1") {
+      let finalTree: TreeV2 | undefined;
+      if (input.onView !== undefined && app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
         finalTree = {
-          ...(structuredClone(app.tree) as unknown as Tree),
+          ...structuredClone(app.tree),
           ...(app.components === undefined ? {} : { components: structuredClone(app.components) }),
-        };
+        } as TreeV2;
         latestTree = structuredClone(finalTree);
         queryResolver?.update(finalTree);
         finalTree.data = await queryResolver?.complete() ?? structuredClone(finalTree.data ?? {});

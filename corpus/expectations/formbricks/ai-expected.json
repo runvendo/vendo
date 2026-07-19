@@ -1,0 +1,725 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "getAuthAll",
+      "method": "GET",
+      "path": "/api/auth/{all}",
+      "risk": "read"
+    },
+    {
+      "name": "postAuthAll",
+      "method": "POST",
+      "path": "/api/auth/{all}",
+      "risk": "write"
+    },
+    {
+      "name": "getAuthSamlAuthorize",
+      "method": "GET",
+      "path": "/api/auth/saml/authorize",
+      "risk": "read"
+    },
+    {
+      "name": "postAuthSamlCallback",
+      "method": "POST",
+      "path": "/api/auth/saml/callback",
+      "risk": "write"
+    },
+    {
+      "name": "postAuthSamlToken",
+      "method": "POST",
+      "path": "/api/auth/saml/token",
+      "risk": "write"
+    },
+    {
+      "name": "getAuthSamlUserinfo",
+      "method": "GET",
+      "path": "/api/auth/saml/userinfo",
+      "risk": "read"
+    },
+    {
+      "name": "getAuthSsoRecoveryComplete",
+      "method": "GET",
+      "path": "/api/auth/sso/recovery/complete",
+      "risk": "read"
+    },
+    {
+      "name": "postBillingStripeWebhook",
+      "method": "POST",
+      "path": "/api/billing/stripe-webhook",
+      "risk": "write"
+    },
+    {
+      "name": "getEnvoyAuthPath",
+      "method": "GET",
+      "path": "/api/envoy-auth/{path}",
+      "risk": "read"
+    },
+    {
+      "name": "postEnvoyAuthPath",
+      "method": "POST",
+      "path": "/api/envoy-auth/{path}",
+      "risk": "write"
+    },
+    {
+      "name": "putEnvoyAuthPath",
+      "method": "PUT",
+      "path": "/api/envoy-auth/{path}",
+      "risk": "write"
+    },
+    {
+      "name": "patchEnvoyAuthPath",
+      "method": "PATCH",
+      "path": "/api/envoy-auth/{path}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteEnvoyAuthPath",
+      "method": "DELETE",
+      "path": "/api/envoy-auth/{path}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getGoogleSheet",
+      "method": "GET",
+      "path": "/api/google-sheet",
+      "risk": "read"
+    },
+    {
+      "name": "getGoogleSheetCallback",
+      "method": "GET",
+      "path": "/api/google-sheet/callback",
+      "risk": "read"
+    },
+    {
+      "name": "postMcp",
+      "method": "POST",
+      "path": "/api/mcp",
+      "risk": "write"
+    },
+    {
+      "name": "getTraefikAuthPath",
+      "method": "GET",
+      "path": "/api/traefik-auth/{path}",
+      "risk": "read"
+    },
+    {
+      "name": "postTraefikAuthPath",
+      "method": "POST",
+      "path": "/api/traefik-auth/{path}",
+      "risk": "write"
+    },
+    {
+      "name": "putTraefikAuthPath",
+      "method": "PUT",
+      "path": "/api/traefik-auth/{path}",
+      "risk": "write"
+    },
+    {
+      "name": "patchTraefikAuthPath",
+      "method": "PATCH",
+      "path": "/api/traefik-auth/{path}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteTraefikAuthPath",
+      "method": "DELETE",
+      "path": "/api/traefik-auth/{path}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postUnifyFeedbackSourcesCsvImport",
+      "method": "POST",
+      "path": "/api/unify-feedback/sources/csv/import",
+      "risk": "write"
+    },
+    {
+      "name": "postV1ClientWorkspaceIdDisplays",
+      "method": "POST",
+      "path": "/api/v1/client/{workspaceId}/displays",
+      "risk": "write"
+    },
+    {
+      "name": "getV1ClientWorkspaceIdDisplaysDisplayIdResponse",
+      "method": "GET",
+      "path": "/api/v1/client/{workspaceId}/displays/{displayId}/response",
+      "risk": "read"
+    },
+    {
+      "name": "getV1ClientWorkspaceIdEnvironment",
+      "method": "GET",
+      "path": "/api/v1/client/{workspaceId}/environment",
+      "risk": "read"
+    },
+    {
+      "name": "postV1ClientWorkspaceIdResponses",
+      "method": "POST",
+      "path": "/api/v1/client/{workspaceId}/responses",
+      "risk": "write"
+    },
+    {
+      "name": "putV1ClientWorkspaceIdResponsesResponseId",
+      "method": "PUT",
+      "path": "/api/v1/client/{workspaceId}/responses/{responseId}",
+      "risk": "write"
+    },
+    {
+      "name": "postV1ClientWorkspaceIdStorage",
+      "method": "POST",
+      "path": "/api/v1/client/{workspaceId}/storage",
+      "risk": "write"
+    },
+    {
+      "name": "postV1ClientWorkspaceIdUser",
+      "method": "POST",
+      "path": "/api/v1/client/{workspaceId}/user",
+      "risk": "write"
+    },
+    {
+      "name": "getV1ClientOg",
+      "method": "GET",
+      "path": "/api/v1/client/og",
+      "risk": "read"
+    },
+    {
+      "name": "getV1IntegrationsAirtable",
+      "method": "GET",
+      "path": "/api/v1/integrations/airtable",
+      "risk": "read"
+    },
+    {
+      "name": "getV1IntegrationsAirtableCallback",
+      "method": "GET",
+      "path": "/api/v1/integrations/airtable/callback",
+      "risk": "read"
+    },
+    {
+      "name": "getV1IntegrationsAirtableTables",
+      "method": "GET",
+      "path": "/api/v1/integrations/airtable/tables",
+      "risk": "read"
+    },
+    {
+      "name": "getV1IntegrationsNotion",
+      "method": "GET",
+      "path": "/api/v1/integrations/notion",
+      "risk": "read"
+    },
+    {
+      "name": "getV1IntegrationsNotionCallback",
+      "method": "GET",
+      "path": "/api/v1/integrations/notion/callback",
+      "risk": "read"
+    },
+    {
+      "name": "getV1IntegrationsSlack",
+      "method": "GET",
+      "path": "/api/v1/integrations/slack",
+      "risk": "read"
+    },
+    {
+      "name": "getV1IntegrationsSlackCallback",
+      "method": "GET",
+      "path": "/api/v1/integrations/slack/callback",
+      "risk": "read"
+    },
+    {
+      "name": "getV1ManagementActionClasses",
+      "method": "GET",
+      "path": "/api/v1/management/action-classes",
+      "risk": "read"
+    },
+    {
+      "name": "postV1ManagementActionClasses",
+      "method": "POST",
+      "path": "/api/v1/management/action-classes",
+      "risk": "write"
+    },
+    {
+      "name": "getV1ManagementActionClassesActionClassId",
+      "method": "GET",
+      "path": "/api/v1/management/action-classes/{actionClassId}",
+      "risk": "read"
+    },
+    {
+      "name": "putV1ManagementActionClassesActionClassId",
+      "method": "PUT",
+      "path": "/api/v1/management/action-classes/{actionClassId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteV1ManagementActionClassesActionClassId",
+      "method": "DELETE",
+      "path": "/api/v1/management/action-classes/{actionClassId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getV1ManagementContactAttributeKeys",
+      "method": "GET",
+      "path": "/api/v1/management/contact-attribute-keys",
+      "risk": "read"
+    },
+    {
+      "name": "postV1ManagementContactAttributeKeys",
+      "method": "POST",
+      "path": "/api/v1/management/contact-attribute-keys",
+      "risk": "write"
+    },
+    {
+      "name": "getV1ManagementContactAttributeKeysContactAttributeKeyId",
+      "method": "GET",
+      "path": "/api/v1/management/contact-attribute-keys/{contactAttributeKeyId}",
+      "risk": "read"
+    },
+    {
+      "name": "putV1ManagementContactAttributeKeysContactAttributeKeyId",
+      "method": "PUT",
+      "path": "/api/v1/management/contact-attribute-keys/{contactAttributeKeyId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteV1ManagementContactAttributeKeysContactAttributeKeyId",
+      "method": "DELETE",
+      "path": "/api/v1/management/contact-attribute-keys/{contactAttributeKeyId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getV1ManagementContactAttributes",
+      "method": "GET",
+      "path": "/api/v1/management/contact-attributes",
+      "risk": "read"
+    },
+    {
+      "name": "getV1ManagementContacts",
+      "method": "GET",
+      "path": "/api/v1/management/contacts",
+      "risk": "read"
+    },
+    {
+      "name": "getV1ManagementContactsContactId",
+      "method": "GET",
+      "path": "/api/v1/management/contacts/{contactId}",
+      "risk": "read"
+    },
+    {
+      "name": "deleteV1ManagementContactsContactId",
+      "method": "DELETE",
+      "path": "/api/v1/management/contacts/{contactId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getV1ManagementMe",
+      "method": "GET",
+      "path": "/api/v1/management/me",
+      "risk": "read"
+    },
+    {
+      "name": "getV1ManagementResponses",
+      "method": "GET",
+      "path": "/api/v1/management/responses",
+      "risk": "read"
+    },
+    {
+      "name": "postV1ManagementResponses",
+      "method": "POST",
+      "path": "/api/v1/management/responses",
+      "risk": "write"
+    },
+    {
+      "name": "getV1ManagementResponsesResponseId",
+      "method": "GET",
+      "path": "/api/v1/management/responses/{responseId}",
+      "risk": "read"
+    },
+    {
+      "name": "putV1ManagementResponsesResponseId",
+      "method": "PUT",
+      "path": "/api/v1/management/responses/{responseId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteV1ManagementResponsesResponseId",
+      "method": "DELETE",
+      "path": "/api/v1/management/responses/{responseId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postV1ManagementStorage",
+      "method": "POST",
+      "path": "/api/v1/management/storage",
+      "risk": "write"
+    },
+    {
+      "name": "getV1ManagementSurveys",
+      "method": "GET",
+      "path": "/api/v1/management/surveys",
+      "risk": "read"
+    },
+    {
+      "name": "postV1ManagementSurveys",
+      "method": "POST",
+      "path": "/api/v1/management/surveys",
+      "risk": "write"
+    },
+    {
+      "name": "getV1ManagementSurveysSurveyId",
+      "method": "GET",
+      "path": "/api/v1/management/surveys/{surveyId}",
+      "risk": "read"
+    },
+    {
+      "name": "putV1ManagementSurveysSurveyId",
+      "method": "PUT",
+      "path": "/api/v1/management/surveys/{surveyId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteV1ManagementSurveysSurveyId",
+      "method": "DELETE",
+      "path": "/api/v1/management/surveys/{surveyId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getV1ManagementSurveysSurveyIdSingleUseIds",
+      "method": "GET",
+      "path": "/api/v1/management/surveys/{surveyId}/singleUseIds",
+      "risk": "read"
+    },
+    {
+      "name": "getV1Webhooks",
+      "method": "GET",
+      "path": "/api/v1/webhooks",
+      "risk": "read"
+    },
+    {
+      "name": "postV1Webhooks",
+      "method": "POST",
+      "path": "/api/v1/webhooks",
+      "risk": "write"
+    },
+    {
+      "name": "getV1WebhooksWebhookId",
+      "method": "GET",
+      "path": "/api/v1/webhooks/{webhookId}",
+      "risk": "read"
+    },
+    {
+      "name": "deleteV1WebhooksWebhookId",
+      "method": "DELETE",
+      "path": "/api/v1/webhooks/{webhookId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postV2ClientWorkspaceIdDisplays",
+      "method": "POST",
+      "path": "/api/v2/client/{workspaceId}/displays",
+      "risk": "write"
+    },
+    {
+      "name": "getV2ClientWorkspaceIdEnvironment",
+      "method": "GET",
+      "path": "/api/v2/client/{workspaceId}/environment",
+      "risk": "read"
+    },
+    {
+      "name": "postV2ClientWorkspaceIdResponses",
+      "method": "POST",
+      "path": "/api/v2/client/{workspaceId}/responses",
+      "risk": "write"
+    },
+    {
+      "name": "putV2ClientWorkspaceIdResponsesResponseId",
+      "method": "PUT",
+      "path": "/api/v2/client/{workspaceId}/responses/{responseId}",
+      "risk": "write"
+    },
+    {
+      "name": "postV2ClientWorkspaceIdStorage",
+      "method": "POST",
+      "path": "/api/v2/client/{workspaceId}/storage",
+      "risk": "write"
+    },
+    {
+      "name": "postV2ClientWorkspaceIdUser",
+      "method": "POST",
+      "path": "/api/v2/client/{workspaceId}/user",
+      "risk": "write"
+    },
+    {
+      "name": "getV2Health",
+      "method": "GET",
+      "path": "/api/v2/health",
+      "risk": "read"
+    },
+    {
+      "name": "getV2ManagementContactAttributeKeys",
+      "method": "GET",
+      "path": "/api/v2/management/contact-attribute-keys",
+      "risk": "read"
+    },
+    {
+      "name": "postV2ManagementContactAttributeKeys",
+      "method": "POST",
+      "path": "/api/v2/management/contact-attribute-keys",
+      "risk": "write"
+    },
+    {
+      "name": "getV2ManagementContactAttributeKeysContactAttributeKeyId",
+      "method": "GET",
+      "path": "/api/v2/management/contact-attribute-keys/{contactAttributeKeyId}",
+      "risk": "read"
+    },
+    {
+      "name": "putV2ManagementContactAttributeKeysContactAttributeKeyId",
+      "method": "PUT",
+      "path": "/api/v2/management/contact-attribute-keys/{contactAttributeKeyId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteV2ManagementContactAttributeKeysContactAttributeKeyId",
+      "method": "DELETE",
+      "path": "/api/v2/management/contact-attribute-keys/{contactAttributeKeyId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postV2ManagementContacts",
+      "method": "POST",
+      "path": "/api/v2/management/contacts",
+      "risk": "write"
+    },
+    {
+      "name": "putV2ManagementContactsBulk",
+      "method": "PUT",
+      "path": "/api/v2/management/contacts/bulk",
+      "risk": "write"
+    },
+    {
+      "name": "getV2ManagementResponses",
+      "method": "GET",
+      "path": "/api/v2/management/responses",
+      "risk": "read"
+    },
+    {
+      "name": "postV2ManagementResponses",
+      "method": "POST",
+      "path": "/api/v2/management/responses",
+      "risk": "write"
+    },
+    {
+      "name": "getV2ManagementResponsesResponseId",
+      "method": "GET",
+      "path": "/api/v2/management/responses/{responseId}",
+      "risk": "read"
+    },
+    {
+      "name": "putV2ManagementResponsesResponseId",
+      "method": "PUT",
+      "path": "/api/v2/management/responses/{responseId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteV2ManagementResponsesResponseId",
+      "method": "DELETE",
+      "path": "/api/v2/management/responses/{responseId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getV2ManagementSurveysSurveyIdContactLinksContactsContactId",
+      "method": "GET",
+      "path": "/api/v2/management/surveys/{surveyId}/contact-links/contacts/{contactId}",
+      "risk": "read"
+    },
+    {
+      "name": "getV2ManagementSurveysSurveyIdContactLinksSegmentsSegmentId",
+      "method": "GET",
+      "path": "/api/v2/management/surveys/{surveyId}/contact-links/segments/{segmentId}",
+      "risk": "read"
+    },
+    {
+      "name": "getV2ManagementWebhooks",
+      "method": "GET",
+      "path": "/api/v2/management/webhooks",
+      "risk": "read"
+    },
+    {
+      "name": "postV2ManagementWebhooks",
+      "method": "POST",
+      "path": "/api/v2/management/webhooks",
+      "risk": "write"
+    },
+    {
+      "name": "getV2ManagementWebhooksWebhookId",
+      "method": "GET",
+      "path": "/api/v2/management/webhooks/{webhookId}",
+      "risk": "read"
+    },
+    {
+      "name": "putV2ManagementWebhooksWebhookId",
+      "method": "PUT",
+      "path": "/api/v2/management/webhooks/{webhookId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteV2ManagementWebhooksWebhookId",
+      "method": "DELETE",
+      "path": "/api/v2/management/webhooks/{webhookId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getV2Me",
+      "method": "GET",
+      "path": "/api/v2/me",
+      "risk": "read"
+    },
+    {
+      "name": "getV2OrganizationsOrganizationIdTeams",
+      "method": "GET",
+      "path": "/api/v2/organizations/{organizationId}/teams",
+      "risk": "read"
+    },
+    {
+      "name": "postV2OrganizationsOrganizationIdTeams",
+      "method": "POST",
+      "path": "/api/v2/organizations/{organizationId}/teams",
+      "risk": "write"
+    },
+    {
+      "name": "getV2OrganizationsOrganizationIdTeamsTeamId",
+      "method": "GET",
+      "path": "/api/v2/organizations/{organizationId}/teams/{teamId}",
+      "risk": "read"
+    },
+    {
+      "name": "putV2OrganizationsOrganizationIdTeamsTeamId",
+      "method": "PUT",
+      "path": "/api/v2/organizations/{organizationId}/teams/{teamId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteV2OrganizationsOrganizationIdTeamsTeamId",
+      "method": "DELETE",
+      "path": "/api/v2/organizations/{organizationId}/teams/{teamId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getV2OrganizationsOrganizationIdUsers",
+      "method": "GET",
+      "path": "/api/v2/organizations/{organizationId}/users",
+      "risk": "read"
+    },
+    {
+      "name": "postV2OrganizationsOrganizationIdUsers",
+      "method": "POST",
+      "path": "/api/v2/organizations/{organizationId}/users",
+      "risk": "write"
+    },
+    {
+      "name": "patchV2OrganizationsOrganizationIdUsers",
+      "method": "PATCH",
+      "path": "/api/v2/organizations/{organizationId}/users",
+      "risk": "write"
+    },
+    {
+      "name": "getV2OrganizationsOrganizationIdWorkspaceTeams",
+      "method": "GET",
+      "path": "/api/v2/organizations/{organizationId}/workspace-teams",
+      "risk": "read"
+    },
+    {
+      "name": "postV2OrganizationsOrganizationIdWorkspaceTeams",
+      "method": "POST",
+      "path": "/api/v2/organizations/{organizationId}/workspace-teams",
+      "risk": "write"
+    },
+    {
+      "name": "putV2OrganizationsOrganizationIdWorkspaceTeams",
+      "method": "PUT",
+      "path": "/api/v2/organizations/{organizationId}/workspace-teams",
+      "risk": "write"
+    },
+    {
+      "name": "deleteV2OrganizationsOrganizationIdWorkspaceTeams",
+      "method": "DELETE",
+      "path": "/api/v2/organizations/{organizationId}/workspace-teams",
+      "risk": "destructive"
+    },
+    {
+      "name": "getV2Roles",
+      "method": "GET",
+      "path": "/api/v2/roles",
+      "risk": "read"
+    },
+    {
+      "name": "getV3ActionClasses",
+      "method": "GET",
+      "path": "/api/v3/action-classes",
+      "risk": "read"
+    },
+    {
+      "name": "getV3ContactAttributeKeys",
+      "method": "GET",
+      "path": "/api/v3/contact-attribute-keys",
+      "risk": "read"
+    },
+    {
+      "name": "postV3FeedbackRecordsToken",
+      "method": "POST",
+      "path": "/api/v3/feedbackRecords/token",
+      "risk": "write"
+    },
+    {
+      "name": "postV3GatewayToken",
+      "method": "POST",
+      "path": "/api/v3/gateway/token",
+      "risk": "write"
+    },
+    {
+      "name": "getV3Surveys",
+      "method": "GET",
+      "path": "/api/v3/surveys",
+      "risk": "read"
+    },
+    {
+      "name": "postV3Surveys",
+      "method": "POST",
+      "path": "/api/v3/surveys",
+      "risk": "write"
+    },
+    {
+      "name": "getV3SurveysSurveyId",
+      "method": "GET",
+      "path": "/api/v3/surveys/{surveyId}",
+      "risk": "read"
+    },
+    {
+      "name": "patchV3SurveysSurveyId",
+      "method": "PATCH",
+      "path": "/api/v3/surveys/{surveyId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteV3SurveysSurveyId",
+      "method": "DELETE",
+      "path": "/api/v3/surveys/{surveyId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postV3SurveysGenerate",
+      "method": "POST",
+      "path": "/api/v3/surveys/generate",
+      "risk": "write"
+    },
+    {
+      "name": "postV3SurveysTemplates",
+      "method": "POST",
+      "path": "/api/v3/surveys/templates",
+      "risk": "write"
+    },
+    {
+      "name": "postV3SurveysValidate",
+      "method": "POST",
+      "path": "/api/v3/surveys/validate",
+      "risk": "write"
+    }
+  ]
+}

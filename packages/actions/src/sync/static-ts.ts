@@ -226,11 +226,17 @@ export function unrecognized(reason: string): ZodSchemaResult {
   return { schema: {}, optional: false, recognized: false, reason };
 }
 
+/** Modifiers that pass the inner schema through unchanged on the wire.
+ * Narrowed (kill-list §B1) to the set the corpus fixtures and the actions
+ * suite actually exercise — measured 2026-07-17 over the pinned rallly tRPC
+ * routers and nextcrm server actions. Anything else fails closed (permissive
+ * schema + note), which is the correct posture for modifiers nobody has
+ * proven against the corpus. */
 const ZOD_PASSTHROUGH_MODIFIERS = new Set([
-  "trim", "refine", "superRefine", "transform", "describe", "brand", "readonly",
-  "regex", "startsWith", "endsWith", "includes", "toLowerCase", "toUpperCase",
-  "catch", "passthrough", "strict", "strip", "positive", "nonnegative", "negative",
-  "nonpositive", "finite", "safe", "step", "multipleOf", "length", "nonempty", "cuid", "cuid2", "ulid", "nanoid",
+  // "describe" is NOT passthrough: it has a real handler below carrying the
+  // description into the derived schema (01 §14 derivation parity).
+  "trim", "refine", "transform", "regex", "toUpperCase", "catch",
+  "positive", "nonnegative", "length", "nonempty", "cuid",
 ]);
 
 export async function zodFromExpression(
@@ -379,6 +385,13 @@ function applyZodModifier(
   const { ts } = extraction;
   switch (method) {
     case "optional": return { ...inner, optional: true };
+    case "describe": {
+      // Descriptions are prompt-load-bearing (04 §1: the derived schema drives
+      // the generation prompt) — carry a static string through instead of
+      // dropping it as a passthrough modifier.
+      const value = call.arguments[0] ? literalValue(extraction, call.arguments[0]) : undefined;
+      return typeof value === "string" ? { ...inner, schema: { ...inner.schema, description: value } } : inner;
+    }
     case "nullish": return { ...inner, optional: true, schema: nullable(inner.schema) };
     case "nullable": return { ...inner, schema: nullable(inner.schema) };
     case "default": {

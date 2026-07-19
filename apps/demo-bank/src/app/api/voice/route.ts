@@ -1,4 +1,4 @@
-import { demoRequestAllowed } from "@/vendo/principal";
+import { demoRequestAllowed } from "@/vendo/request";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
