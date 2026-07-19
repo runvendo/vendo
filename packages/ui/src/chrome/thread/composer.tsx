@@ -285,13 +285,20 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
           {files.map((file, i) => {
             const preview = attachmentPreviews.get(file);
             const read = attachmentReads.get(file);
+            // An errored image renders as the file-style error chip, so its
+            // remove button needs the file-chip placement too.
+            const asFileChip = preview === undefined || read?.status === "error";
             const remove = (
-              <button type="button" className={`fl-att-rm${preview === undefined ? " fl-att-rm-file" : ""}`} aria-label={`Remove ${file.name}`}
+              <button type="button" className={`fl-att-rm${asFileChip ? " fl-att-rm-file" : ""}`} aria-label={`Remove ${file.name}`}
                 onClick={() => setFiles(current => current.filter((_, j) => j !== i))}>×</button>
             );
             // ENG-225 — images preview as the designed thumbnail chip; other
-            // files carry an extension badge plus name and size.
-            if (preview !== undefined) {
+            // files carry an extension badge plus name and size. An image whose
+            // READ failed falls through to the error file-chip below (retry in
+            // place) instead of silently posing as attachable — the object-URL
+            // thumbnail says nothing about whether FileReader could read it
+            // (AI-review catch).
+            if (preview !== undefined && read?.status !== "error") {
               return (
                 <span className="fl-att-img" key={`${file.name}-${i}`}>
                   <img src={preview} alt={file.name} />

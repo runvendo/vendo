@@ -100,7 +100,12 @@ export function MessageList({
           element re-clothes as a bottom-center pill (pure CSS, see the lane
           block in chrome-css). Activating it is the same re-stick as before. */}
       {scroll.showJump ? (
-        <button type="button" className="fl-newbar" onClick={scroll.jumpToLatest}>
+        <button
+          type="button"
+          className="fl-newbar"
+          aria-label={`Jump to latest — ${scroll.unseenCount === 1 ? "1 new reply" : `${scroll.unseenCount} new replies`}`}
+          onClick={scroll.jumpToLatest}
+        >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M12 5v14" /><path d="m19 12-7 7-7-7" />
           </svg>

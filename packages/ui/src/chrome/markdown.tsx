@@ -99,33 +99,66 @@ const MD_COMPONENTS_STREAMING = { ...MD_COMPONENTS, tbody: StreamingTbody };
     while streaming, and only for restored bodies (same gate as collapse —
     a reply the reader just watched arrive stays flat). */
 const SECTION_HEAD = /^(##\s+|###\s+)(.+)$/;
-function splitSections(text: string): { title: string; body: string }[] | null {
+function splitSections(text: string): { title: string; level: 2 | 3; body: string }[] | null {
   const lines = text.split("\n");
-  const sections: { title: string; body: string[] }[] = [{ title: "", body: [] }];
-  let fenced = false;
+  const sections: { title: string; level: 2 | 3; body: string[] }[] = [{ title: "", level: 2, body: [] }];
+  // CommonMark-faithful fence tracking (AI-review catch): a fence closes only
+  // on a run of the SAME character, at least as long as the opener, with
+  // nothing else on the line — a ```-looking line inside a ~~~ block (or a
+  // longer opener's shorter echo) must not flip the state and let a heading
+  // inside code become a section break.
+  let fence: { char: "`" | "~"; len: number } | null = null;
   for (const line of lines) {
-    if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
-    const head = fenced ? null : SECTION_HEAD.exec(line);
-    if (head) sections.push({ title: head[2]!.trim(), body: [] });
+    const run = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (run) {
+      const char = run[1]![0] as "`" | "~";
+      if (!fence) {
+        fence = { char, len: run[1]!.length };
+        sections[sections.length - 1]!.body.push(line);
+        continue;
+      }
+      if (char === fence.char && run[1]!.length >= fence.len && run[2]!.trim().length === 0) {
+        fence = null;
+        sections[sections.length - 1]!.body.push(line);
+        continue;
+      }
+    }
+    const head = fence ? null : SECTION_HEAD.exec(line);
+    if (head) sections.push({ title: head[2]!.trim(), level: head[1]!.startsWith("###") ? 3 : 2, body: [] });
     else sections[sections.length - 1]!.body.push(line);
   }
+  // An unterminated fence means the structure is unreliable — render flat.
+  if (fence) return null;
   // Only worth folding with 2+ real sections; a lone heading reads fine flat.
   if (sections.length < 3) return null;
   return sections
-    .map(section => ({ title: section.title, body: section.body.join("\n").trim() }))
+    .map(section => ({ title: section.title, level: section.level, body: section.body.join("\n").trim() }))
     .filter(section => section.title.length > 0 || section.body.length > 0);
 }
 
-function FoldSection({ title, open: initialOpen, children }: { title: string; open: boolean; children: ReactNode }) {
+/** The fold control shows the heading's TEXT (inline markers stripped so
+    `**Q3** risks` reads "Q3 risks", not raw asterisks) inside a real h2/h3,
+    keeping document-outline semantics (AI-review catch). */
+const stripInline = (title: string) =>
+  title
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/(\*\*|__|[*_~`])/g, "");
+
+function FoldSection({ title, level, open: initialOpen, children }: {
+  title: string; level: 2 | 3; open: boolean; children: ReactNode;
+}) {
   const [open, setOpen] = useState(initialOpen);
+  const Heading = level === 3 ? "h3" : "h2";
   return (
     <section className={`fl-mdsec${open ? " fl-mdsec--open" : ""}`}>
-      <button type="button" className="fl-mdsec-head" aria-expanded={open} onClick={() => setOpen(value => !value)}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="m9 6 6 6-6 6" />
-        </svg>
-        {title}
-      </button>
+      <Heading className="fl-mdsec-h">
+        <button type="button" className="fl-mdsec-head" aria-expanded={open} onClick={() => setOpen(value => !value)}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="m9 6 6 6-6 6" />
+          </svg>
+          {stripInline(title)}
+        </button>
+      </Heading>
       {open ? <div className="fl-mdsec-body">{children}</div> : null}
     </section>
   );
@@ -159,7 +192,7 @@ function MarkdownImpl({ text, streaming, restored }: { text: string; streaming?:
           section.title.length === 0 ? (
             <ReactMarkdown key={index} remarkPlugins={REMARK_PLUGINS} components={components}>{section.body}</ReactMarkdown>
           ) : (
-            <FoldSection key={index} title={section.title} open={index <= 1}>
+            <FoldSection key={index} title={section.title} level={section.level} open={index <= 1}>
               <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>{section.body}</ReactMarkdown>
             </FoldSection>
           ),

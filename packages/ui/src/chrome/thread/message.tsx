@@ -5,7 +5,7 @@ import { useVendoContext } from "../../context.js";
 import { useCopyFeedback } from "../clipboard.js";
 import { toolTitle } from "../humanize.js";
 import { SentAttachment, type FilePart } from "./attachments.js";
-import { assistantText, collapseToolRuns, userText } from "./message-data.js";
+import { assistantText, collapseToolRuns, toolName, userText } from "./message-data.js";
 import { ThreadPart } from "./parts.js";
 
 /** Lane pick 8C — the settled turn's quiet sources row: every completed tool
@@ -24,9 +24,7 @@ function TurnSources({ message, risks }: { message: UIMessage; risks: Map<string
     <div className="fl-sources" aria-label="Sources">
       {sources.map(({ part, count }) => {
         const toolPart = part as Extract<UIMessage["parts"][number], { toolCallId: string }>;
-        const name = toolPart.type === "dynamic-tool"
-          ? (toolPart as { toolName: string }).toolName
-          : toolPart.type.replace(/^tool-/, "");
+        const name = toolName(toolPart);
         return (
           <span className="fl-source" key={toolPart.toolCallId} title="Recorded in Activity">
             <i aria-hidden="true" />

@@ -108,8 +108,12 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks }: 
         <div className="fl-appcard-bar" data-state={streaming ? "building" : "ready"}>
           <span className="fl-appcard-dot" aria-hidden="true" />
           <span className="fl-boot-labels fl-appcard-name">
-            <span className="fl-boot-building">Building your view…</span>
-            <span className="fl-boot-ready">{appTitle(payload) ?? "Your app"}</span>
+            {/* Both labels stay mounted for the renderer lane's crossfade;
+                aria-hidden tracks data-state so screen readers hear only the
+                ACTIVE one (AI-review catch — the CSS-faded label was still
+                announced, including a stale "Building…" after ready). */}
+            <span className="fl-boot-building" aria-hidden={!streaming}>Building your view…</span>
+            <span className="fl-boot-ready" aria-hidden={streaming}>{appTitle(payload) ?? "Your app"}</span>
           </span>
           {/* Lane pick C5 (5A+5D) — the pin lives ON the bar (visible only once
               the view is ready), replacing the old full-width footer row. The
