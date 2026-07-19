@@ -154,16 +154,27 @@ const slotFor = (node: TreeNode, prop: string): SlotCheck | null => {
   if (required !== null) return { kind: "options", required };
   if (DISPLAY_TEXT_PROPS.get(node.component)?.has(prop) === true) return { kind: "display", prop };
   if (node.component === "Table" && prop === "rows") {
-    return { kind: "cells", displayed: literalColumnKeys(node.props?.columns) };
+    const columns = node.props?.columns;
+    // An ABSENT columns prop means the renderer shows every row field (its
+    // default), so every field is checked; a PRESENT but non-literal columns
+    // value (a binding) resolves at runtime to a set this pass cannot see —
+    // defensive skip, matching the json-region discipline.
+    if (columns !== undefined && literalColumnKeys(columns) === null) return null;
+    return { kind: "cells", displayed: literalColumnKeys(columns) };
   }
   return null;
 };
 
-/** A non-scalar shape in a text display slot renders raw JSON braces. */
+/** A non-scalar shape in a text display slot renders raw JSON braces. The
+ *  repair hint matches the kind: template projects OBJECTS to one string;
+ *  arrays reduce through an aggregate (template cannot string an array). */
 const displaySlotMiss = (shape: ShapeType, prop: string): MissReport | null => {
   if (shape.kind !== "object" && shape.kind !== "array") return null;
+  const hint = shape.kind === "object"
+    ? 'project it to one string with | template("…{field}…")'
+    : "reduce it with an aggregate (| count(), | sum(field))";
   return {
-    message: `this binds an ${shape.kind} into the "${prop}" display slot — it renders as raw JSON braces; bind a scalar field instead, or project it to one string with | template("…{field}…") (or an aggregate like | count())`,
+    message: `this binds an ${shape.kind} into the "${prop}" display slot — it renders as raw JSON braces; bind a scalar field instead, or ${hint}`,
     ...(shape.kind === "object" ? { available: Object.keys(shape.fields) } : {}),
   };
 };

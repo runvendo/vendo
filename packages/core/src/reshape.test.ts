@@ -414,6 +414,18 @@ describe("template (object→string projection)", () => {
     expect(findInvalidReshape({ v: { $path: "/q/data", $reshape: [step("template", "a", "{ok.path} text")] } }))
       .toBeNull();
     expect(findInvalidReshape({ v: { $path: "/q/data", $reshape: [step("template")] } })).not.toBeNull();
+    // A stray brace outside placeholders would re-render the exact raw-braces
+    // output the op prevents — closed-grammar violation (cubic review).
+    expect(findInvalidReshape({ v: { $path: "/q/data", $reshape: [step("template", "a", "{ok} of} total")] } }))
+      .not.toBeNull();
+    expect(findInvalidReshape({ v: { $path: "/q/data", $reshape: [step("template", "a", "{{ok}}")] } }))
+      .not.toBeNull();
+  });
+
+  it("scalar form checks placeholder roots like the per-row form (no silent empty render)", () => {
+    const missing = applyReshape({ city: "Oakland" }, [step("template", "{name}!")]);
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.reason).toContain("name");
   });
 
   const deadlinesShape: ShapeType = {

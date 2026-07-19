@@ -1226,6 +1226,11 @@ describe("compileWireV2 display-slot object check (raw-braces class)", () => {
     expect(objectColumn.bindingErrors[0]?.message).not.toContain("assignedTo");
   });
 
+  it("a BOUND (non-literal) columns value skips the cells check — the displayed set resolves at runtime", () => {
+    const result = compile(tableWire("columns={dl.data} rows={dl.data}"), shapes);
+    expect(result.bindingErrors).toEqual([]);
+  });
+
   it("template projections clear the error", () => {
     const result = compile(tableWire(
       'rows={dl.data | template(progress, "{progress.received} of {progress.total}") | template(assignedTo, "{assignedTo.name}")}',

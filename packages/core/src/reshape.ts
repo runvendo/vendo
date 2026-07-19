@@ -78,8 +78,10 @@ const TEMPLATE_PLACEHOLDER = /\{([^{}]*)\}/g;
 const TEMPLATE_PATH = /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/;
 
 /** The dot-paths a template pattern references, or null when the pattern has
- *  no placeholders or a malformed one (the closed-grammar violation — a
- *  placeholder-free template would be hardcoded display data). */
+ *  no placeholders, a malformed one, or stray braces outside placeholders
+ *  (the closed-grammar violation — a placeholder-free template would be
+ *  hardcoded display data, and a leftover brace would re-render the exact
+ *  raw-braces output this op exists to prevent). */
 const templatePaths = (pattern: string): string[][] | null => {
   const paths: string[][] = [];
   for (const match of pattern.matchAll(TEMPLATE_PLACEHOLDER)) {
@@ -87,7 +89,10 @@ const templatePaths = (pattern: string): string[][] | null => {
     if (!TEMPLATE_PATH.test(path)) return null;
     paths.push(path.split("."));
   }
-  return paths.length === 0 ? null : paths;
+  if (paths.length === 0) return null;
+  const residue = pattern.replace(TEMPLATE_PLACEHOLDER, "");
+  if (residue.includes("{") || residue.includes("}")) return null;
+  return paths;
 };
 
 /** Validates ONE step's structure against the closed registry. Returns a
@@ -306,15 +311,22 @@ const applyStep = (value: Json, step: ReshapeStep): ReshapeResult => {
     };
     const nonScalar = (bad: string): ReshapeResult =>
       mismatch(`template placeholder ${bad} does not resolve to a scalar — reference a nested field (e.g. ${bad.slice(0, -1)}.name})`);
+    const roots = [...new Set(paths.map((path) => path[0] as string))];
+    const absentFrom = (record: Record<string, unknown>): string[] =>
+      roots.filter((root) => !Object.prototype.hasOwnProperty.call(record, root));
     if (args.length === 1) {
       if (!isPlainObject(value)) {
         return mismatch("template(pattern) needs a bare object; over rows use template(field, pattern)");
       }
-      const rendered = render(value as Record<string, unknown>);
+      const record = value as Record<string, unknown>;
+      const absent = absentFrom(record);
+      if (absent.length > 0) {
+        return mismatch(`template placeholders reference ${absent.map((root) => `"${root}"`).join(", ")}, absent`);
+      }
+      const rendered = render(record);
       return "bad" in rendered ? nonScalar(rendered.bad) : { ok: true, value: rendered.text };
     }
     const field = args[0] as string;
-    const roots = [...new Set(paths.map((path) => path[0] as string))];
     const templateRow = (row: Record<string, unknown>): ReshapeResult => {
       const rendered = render(row);
       if ("bad" in rendered) return nonScalar(rendered.bad);
@@ -337,7 +349,7 @@ const applyStep = (value: Json, step: ReshapeStep): ReshapeResult => {
     }
     if (isPlainObject(value)) {
       const record = value as Record<string, unknown>;
-      const absent = roots.filter((root) => !Object.prototype.hasOwnProperty.call(record, root));
+      const absent = absentFrom(record);
       if (absent.length > 0) {
         return mismatch(`template placeholders reference ${absent.map((root) => `"${root}"`).join(", ")}, absent`);
       }
