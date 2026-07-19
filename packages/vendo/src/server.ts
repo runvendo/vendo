@@ -13,7 +13,6 @@ import {
   pinBaselineSchema,
   type AppsConfig,
   type AppsRuntime,
-  type MachineSandboxAdapter,
   type PinBaseline,
   type SandboxAdapter,
   type V1SandboxAdapter,
@@ -1031,12 +1030,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(designRules === undefined ? {} : { designRules }),
     secrets: config.secrets ?? envSecrets(),
     ...(sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter }),
-    // execution-v2 — the machine lifecycle's seams: the selected adapter (the
-    // canonical v2 seam; the cast covers the destroy-by-ref amendment Lane A
-    // lands on SandboxAdapter itself, whereupon MachineSandboxAdapter
-    // collapses and the cast goes) and Lane C's env assembly.
+    // execution-v2 — the machine lifecycle's seams: the selected adapter when
+    // it speaks the canonical v2 seam (destroy-by-ref is the marker a
+    // @deprecated V1SandboxAdapter lacks — a v1-only custom adapter gets no
+    // machine lifecycle) and Lane C's env assembly.
     machine: {
-      ...(sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter as MachineSandboxAdapter }),
+      ...(sandbox.adapter !== undefined && "destroy" in sandbox.adapter ? { sandbox: sandbox.adapter } : {}),
       buildEnv: machineEnv,
     },
     ...(environment("VENDO_PROXY_URL") === undefined ? {} : { proxyUrl: environment("VENDO_PROXY_URL") }),
@@ -1266,15 +1265,18 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     reaches `vendo.handler`, so dropping it would turn e.g. `PATCH
     /api/vendo/orgs/:id/members/:subject` into a framework 405 instead of
     the wire's own `cloud-required` seam (the org routes matched ANY
-    method — orgsRoutes in wire/misc.ts). */
+    method — orgsRoutes in wire/misc.ts). PUT carries the box callback
+    surface's durable-row writes (execution-v2 Lane C:
+    PUT /api/vendo/box/rows/:collection/:id). */
 export function nextVendoHandler(vendo: Vendo): {
   GET(request: Request): Promise<Response>;
   POST(request: Request): Promise<Response>;
+  PUT(request: Request): Promise<Response>;
   PATCH(request: Request): Promise<Response>;
   DELETE(request: Request): Promise<Response>;
 } {
   const handle = (request: Request): Promise<Response> => vendo.handler(request);
-  return { GET: handle, POST: handle, PATCH: handle, DELETE: handle };
+  return { GET: handle, POST: handle, PUT: handle, PATCH: handle, DELETE: handle };
 }
 
 /** 10-mcp §5 — adapt the fetch handler to a Next.js `app/.well-known/[...vendo]/

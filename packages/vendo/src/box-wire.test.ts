@@ -65,6 +65,7 @@ function boxSandbox(handler: BoxHandler): SandboxAdapter {
   return {
     async create() { return machine; },
     async resume() { return machine; },
+    async destroy() { /* released */ },
   };
 }
 

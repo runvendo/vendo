@@ -119,6 +119,7 @@ function fakeBox(): { sandbox: SandboxAdapter; setEnv(env: Record<string, string
     sandbox: {
       async create() { return machine; },
       async resume() { return machine; },
+      async destroy() { /* released */ },
     },
     setEnv(env) { boxEnv = env; },
   };

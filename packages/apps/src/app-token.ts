@@ -31,14 +31,15 @@ export const createAppTokens = (store: StoreAdapter): AppTokens => {
   const records = store.records(APP_TOKEN_COLLECTION);
 
   const revoke = async (appId: AppId): Promise<void> => {
-    let cursor: string | undefined;
-    do {
-      const page = await records.list(cursor === undefined
-        ? { refs: { app_id: appId } }
-        : { refs: { app_id: appId }, cursor });
+    // Re-list from the start after each deleted page instead of following the
+    // cursor: deleting mid-pagination can skip rows under an offset-shaped
+    // cursor. Terminates because every pass deletes everything it saw.
+    for (;;) {
+      const page = await records.list({ refs: { app_id: appId } });
+      if (page.records.length === 0) return;
       for (const record of page.records) await records.delete(record.id);
-      cursor = page.cursor;
-    } while (cursor !== undefined);
+      if (page.cursor === undefined) return;
+    }
   };
 
   return {

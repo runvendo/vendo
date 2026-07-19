@@ -1,8 +1,7 @@
 import { VENDO_APP_FORMAT, type AppDocument, type RunContext, type ToolRegistry } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createApps } from "./index.js";
-import type { MachineSandboxAdapter } from "./machine-lifecycle.js";
-import type { SandboxMachine } from "./sandbox.js";
+import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 import { basicLanguageModel, guardFixture, memoryStore, seedAppRow } from "./testing/index.js";
 
 const model = basicLanguageModel();
@@ -35,7 +34,7 @@ type BoxHandler = (request: {
 }) => { status: number; headers?: Record<string, string>; body?: string } | Promise<{ status: number; headers?: Record<string, string>; body?: string }>;
 
 /** A v2 fake whose resumed machines dispatch requests to the given handler. */
-function handlerSandbox(handler: BoxHandler): MachineSandboxAdapter {
+function handlerSandbox(handler: BoxHandler): SandboxAdapter {
   const machine: SandboxMachine = {
     id: "fake_box_v2",
     async request(request) {
