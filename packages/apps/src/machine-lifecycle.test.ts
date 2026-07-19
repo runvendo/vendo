@@ -236,6 +236,117 @@ describe("machine lifecycle: idle auto-sleep", () => {
   });
 });
 
+describe("machine lifecycle: provider snapshot hygiene", () => {
+  it("sleep releases the superseded provider snapshot after the new ref is stored", async () => {
+    const { sandbox, lifecycle, doc } = await setup();
+    const withMachine = await lifecycle.provision(doc);
+    await lifecycle.wake(withMachine);
+
+    const slept = await lifecycle.sleep(withMachine);
+
+    expect(sandbox.destroyed).toEqual([withMachine.machine?.snapshotRef]);
+    expect(sandbox.snapshots.has(slept.machine?.snapshotRef ?? "")).toBe(true);
+  });
+
+  it("a provision that loses a cross-process race keeps the winner's ref and releases its own", async () => {
+    const store = memoryStore();
+    const sandbox = fakeSandboxV2();
+    const timers = fakeClock();
+    const doc = app();
+    await seedAppRow(store, doc, "owner");
+    const winner = { snapshotRef: "fake-v2:winner", provisionedAt: "2026-07-19T01:00:00.000Z" };
+    const lifecycle = createMachineLifecycle({
+      store,
+      sandbox,
+      // Another app server wins the provision race while this one assembles env:
+      // the store row already carries a machine by the time our CAS write runs.
+      buildEnv: async () => {
+        await store.records("vendo_apps").put({
+          id: doc.id,
+          data: { subject: "owner", enabled: false, doc: { ...doc, machine: winner } },
+          refs: { subject: "owner" },
+        });
+        return { PORT: "8080" };
+      },
+      clock: timers.clock,
+    });
+
+    const result = await lifecycle.provision(doc);
+
+    expect(result.machine).toEqual(winner);
+    // The loser's freshly taken snapshot is released, not leaked.
+    expect(sandbox.destroyed).toHaveLength(1);
+    expect(sandbox.destroyed[0]).toMatch(/^fake-v2:snap_/);
+    expect(sandbox.destroyed[0]).not.toBe(winner.snapshotRef);
+  });
+
+  it("destroyMachine destroys a live machine at the provider, not just stops it", async () => {
+    const { sandbox, lifecycle, doc } = await setup();
+    const withMachine = await lifecycle.provision(doc);
+    await lifecycle.wake(withMachine);
+
+    await lifecycle.destroyMachine(withMachine);
+
+    const liveMachine = sandbox.machines.at(-1);
+    expect(liveMachine?.destroyedSelf).toBe(true);
+  });
+});
+
+describe("machine lifecycle: in-flight requests defer auto-sleep", () => {
+  it("does not sleep a machine while a request is in flight", async () => {
+    const store = memoryStore();
+    const timers = fakeClock();
+    const doc = app();
+    await seedAppRow(
+      store,
+      { ...doc, machine: { snapshotRef: "slow:snap", provisionedAt: "2026-07-19T00:00:00.000Z" } },
+      "owner",
+    );
+    let releaseRequest = (): void => undefined;
+    let snapshots = 0;
+    const slowMachine = {
+      id: "slow-machine",
+      request: () =>
+        new Promise<{ status: number; headers: Record<string, string>; body: Uint8Array }>(
+          (resolve) => {
+            releaseRequest = () => resolve({ status: 200, headers: {}, body: new Uint8Array() });
+          },
+        ),
+      snapshot: async () => {
+        snapshots += 1;
+        return `slow:snap_${snapshots}`;
+      },
+      stop: async () => undefined,
+      destroy: async () => undefined,
+    };
+    const lifecycle = createMachineLifecycle({
+      store,
+      sandbox: {
+        create: async () => slowMachine,
+        resume: async () => slowMachine,
+        destroy: async () => undefined,
+      },
+      idleMs: 5 * 60_000,
+      clock: timers.clock,
+    });
+
+    const machine = await lifecycle.wake(doc);
+    const pending = machine.request({ method: "GET", path: "/" });
+
+    // The idle timer fires mid-request: the machine must stay awake, unsnapshotted.
+    await timers.advance(5 * 60_000);
+    expect(lifecycle.peek(doc.id)).toBeDefined();
+    expect(snapshots).toBe(0);
+
+    releaseRequest();
+    await pending;
+    // Once the request completes, the re-armed timer sleeps it normally.
+    await timers.advance(5 * 60_000);
+    expect(lifecycle.peek(doc.id)).toBeUndefined();
+    expect(snapshots).toBe(1);
+  });
+});
+
 describe("machine lifecycle: destroy", () => {
   it("destroys the sandbox and clears the machine field", async () => {
     const { sandbox, lifecycle, doc, stored } = await setup();

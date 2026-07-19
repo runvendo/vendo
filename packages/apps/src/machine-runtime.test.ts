@@ -74,7 +74,11 @@ describe("apps runtime machine surface", () => {
 
     const destroyed = await runtime.machine.destroy(doc.id, ada);
     expect(destroyed.machine).toBeUndefined();
-    expect(sandbox.destroyed).toEqual([slept.machine?.snapshotRef]);
+    // Sleep released the provision-time snapshot; destroy released the slept one.
+    expect(sandbox.destroyed).toEqual([
+      provisionedDoc.machine?.snapshotRef,
+      slept.machine?.snapshotRef,
+    ]);
 
     const stored = await runtime.get(doc.id, ada);
     expect(stored?.machine).toBeUndefined();

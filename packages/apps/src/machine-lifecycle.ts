@@ -61,6 +61,8 @@ interface LiveEntry {
   raw: SandboxMachineV2;
   wrapped: SandboxMachineV2;
   timer?: unknown;
+  /** Requests currently inside the box; auto-sleep defers while any are in flight. */
+  inflight: number;
 }
 
 export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineLifecycle => {
@@ -120,6 +122,13 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
     if (entry === undefined) return;
     if (entry.timer !== undefined) clock.clearTimeout(entry.timer);
     entry.timer = clock.setTimeout(() => {
+      // A request still inside the box means the machine is not idle: a request
+      // outliving idleMs must never be snapshotted mid-flight. Its completion
+      // re-arms; this re-arm only covers a request outliving several idleMs.
+      if ((live.get(appId)?.inflight ?? 0) > 0) {
+        armIdleTimer(appId);
+        return;
+      }
       void sleepById(appId).catch(() => undefined);
     }, idleMs);
   };
@@ -128,8 +137,15 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
   const withIdleTracking = (appId: AppId, raw: SandboxMachineV2): SandboxMachineV2 => ({
     id: raw.id,
     request: async (req) => {
+      const entry = live.get(appId);
+      if (entry !== undefined) entry.inflight += 1;
       armIdleTimer(appId);
-      return raw.request(req);
+      try {
+        return await raw.request(req);
+      } finally {
+        if (entry !== undefined) entry.inflight -= 1;
+        armIdleTimer(appId);
+      }
     },
     snapshot: () => raw.snapshot(),
     stop: () => raw.stop(),
@@ -154,9 +170,20 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
       const snapshotRef = await entry.raw.snapshot();
       // provisionedAt keeps recording provisioning; only the ref moves forward.
       // A machine field cleared by a concurrent destroy stays cleared.
-      return await updateDocument(appId, (doc) => doc.machine === undefined
-        ? doc
-        : { ...doc, machine: { ...doc.machine, snapshotRef } });
+      let superseded: string | undefined;
+      const updated = await updateDocument(appId, (doc) => {
+        if (doc.machine === undefined) return doc;
+        superseded = doc.machine.snapshotRef;
+        return { ...doc, machine: { ...doc.machine, snapshotRef } };
+      });
+      // Snapshots are independent provider resources: release whichever ref
+      // lost — the superseded one normally, or ours if a concurrent destroy
+      // cleared the field while we were snapshotting.
+      const orphan = updated.machine?.snapshotRef === snapshotRef ? superseded : snapshotRef;
+      if (orphan !== undefined && orphan !== updated.machine?.snapshotRef) {
+        await config.sandbox?.destroy(orphan).catch(() => undefined);
+      }
+      return updated;
     } finally {
       await entry.raw.stop().catch(() => undefined);
     }
@@ -176,10 +203,15 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
       try {
         const snapshotRef = await machine.snapshot();
         const provisionedAt = new Date().toISOString();
-        return await updateDocument(app.id, (current) => ({
-          ...current,
-          machine: { snapshotRef, provisionedAt },
-        }));
+        // A CAS retry can re-read a document another app server already
+        // provisioned; the winner's machine stays, and our snapshot is released.
+        const updated = await updateDocument(app.id, (current) => current.machine === undefined
+          ? { ...current, machine: { snapshotRef, provisionedAt } }
+          : current);
+        if (updated.machine?.snapshotRef !== snapshotRef) {
+          await adapter.destroy(snapshotRef).catch(() => undefined);
+        }
+        return updated;
       } finally {
         // Provision ends asleep: the snapshot is the machine until a wake.
         await machine.stop().catch(() => undefined);
@@ -209,7 +241,7 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
       const adapter = requireAdapter();
       const raw = await adapter.resume(doc.machine.snapshotRef);
       const wrapped = withIdleTracking(app.id, raw);
-      live.set(app.id, { raw, wrapped });
+      live.set(app.id, { raw, wrapped, inflight: 0 });
       armIdleTimer(app.id);
       return wrapped;
     })();
@@ -233,12 +265,19 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
     }
     const adapter = requireAdapter();
     const entry = await takeLive(app.id);
-    if (entry !== undefined) await entry.raw.stop().catch(() => undefined);
-    if (doc.machine !== undefined) await adapter.destroy(doc.machine.snapshotRef);
-    return updateDocument(app.id, (current) => {
+    // A live machine is its own provider resource — destroy it, not just stop.
+    if (entry !== undefined) await entry.raw.destroy().catch(() => undefined);
+    // Clear the field FIRST, capturing the ref from the winning write: a sleep
+    // racing this destroy may have just stored a newer ref, and destroying a
+    // stale read's ref would orphan the newer snapshot.
+    let clearedRef: string | undefined;
+    const updated = await updateDocument(app.id, (current) => {
+      clearedRef = current.machine?.snapshotRef;
       const { machine: _machine, ...rest } = current;
       return rest;
     });
+    if (clearedRef !== undefined) await adapter.destroy(clearedRef);
+    return updated;
   };
 
   return {

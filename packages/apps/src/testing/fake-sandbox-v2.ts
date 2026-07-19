@@ -26,6 +26,8 @@ interface FakeSnapshotV2 {
  */
 export class FakeMachineV2 implements SandboxMachineV2 {
   stopped = false;
+  /** True after the live-machine destroy() (distinct from a snapshot-preserving stop). */
+  destroyedSelf = false;
   readonly env: Readonly<Record<string, string>>;
   readonly state: Map<string, string>;
 
@@ -73,6 +75,7 @@ export class FakeMachineV2 implements SandboxMachineV2 {
   /** Live-machine destroy: gone for good; previously taken snapshot refs stay valid. */
   async destroy(): Promise<void> {
     this.stopped = true;
+    this.destroyedSelf = true;
   }
 }
 
