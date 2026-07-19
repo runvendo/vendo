@@ -71,7 +71,7 @@ export const appGenerationModel = (): LanguageModel =>
     '<App name="Bench App">',
     '<Query id="items" tool="host_items_list" input={{}}/>',
     '<Text text="Items"/>',
-    '<Row><Text text={items.name}/><Text text={state.selected}/></Row>',
+    '<Row><Text text={items.items.0.name}/><Text text={state.selected}/></Row>',
     '<Text text="ready"/>',
     "</App>",
   ].join(""));

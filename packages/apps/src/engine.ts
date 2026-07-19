@@ -1,4 +1,5 @@
 import {
+  PREWIRED_COMPONENT_NAMES,
   RESERVED_COMPONENT_NAMES,
   TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
@@ -10,6 +11,8 @@ import {
   VendoError,
   compileWirePatchV2,
   compileWireV2,
+  describeShape,
+  shapeAtPointer,
   printWireV2,
   isPathBinding,
   isStateBinding,
@@ -28,6 +31,14 @@ import {
 import type { LanguageModel } from "ai";
 import { parseModelJson } from "./model-json.js";
 import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "./pins.js";
+
+/** The slice of a tool descriptor generation needs: prompt context and the
+ *  query-tool existence check. */
+export interface HostToolInfo {
+  name: string;
+  description: string;
+  risk: string;
+}
 
 /** v2 spec §§1,4 — a compiled prefix of the streaming wire: always a
  *  validateTreeV2-passing tree (valid-while-partial) plus the islands
@@ -48,6 +59,10 @@ export interface GenerationDependencies {
   /** v2 spec §3 — shape-card outputs keyed by tool; when present, create and
    *  edit compiles type-check bindings and surface shape-mismatch repair. */
   toolShapes?: Readonly<Record<string, ShapeType>>;
+  /** The host tools queries may name. When present they are listed in the
+   *  generation prompt and a query naming any other tool is a validation
+   *  error routed to repair (verify-v2: the model invents tool names). */
+  tools?: readonly HostToolInfo[];
   /** 06-apps §5 — additive, optional partial-tree streaming seam. */
   onPartial?: (partial: GeneratedPartial) => void | Promise<void>;
   /**
@@ -100,7 +115,7 @@ const AMBIGUOUS_SERVER_TERM = /\b(api|http|web app|function|external|secret)\b/g
 const VISIBLE_ELEMENT_LABEL = /^(?:\w+\s+)?(card|button|badge|chip|header|heading|title|label|caption|text|list|table|column|row|cell|section|panel|chart|graph|icon|field|tab|menu|toolbar|sidebar|footer|banner|tile|widget)s?\b/i;
 const SERVER_COMPUTED_INSTRUCTION = /\b(server-computed|computed (?:view|tree)|render(?:ed)? on the server)\b/i;
 const FULL_WEB_APP_INSTRUCTION = /\b(full web app|served web app|custom client|ui:? ?http)\b/i;
-const reserved = new Set<string>(RESERVED_COMPONENT_NAMES);
+const reserved = new Set<string>(PREWIRED_COMPONENT_NAMES);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -190,16 +205,32 @@ const wireContractSections = (deps: GenerationDependencies): GenerationPromptSec
 }, {
   id: "tree-contract",
   content: `WIRE DIALECT (vendo-genui/v2):
-- Emit exactly one <App name="..."> element containing the whole app. Positional nesting expresses the tree; NEVER emit id attributes — the compiler mints stable ids.
+- Emit exactly one <App name="..."> element containing the whole app. No HTML/JSX comments anywhere — emit only elements. Positional nesting expresses the tree; NEVER emit id attributes — the compiler mints stable ids.
 - <Query id="queryName" tool="tool_name" input={{...}}/> declarations come FIRST inside <App>, before layout, so data fetching starts while the rest streams. A query result lives at the query's name; bind it into props with expressions like value={queryName} or value={queryName.field.path}.
-- Attribute values: "string", {42}, {true}, bare attribute for true, {{...}} objects, {[...]} arrays, and query bindings {queryName.path.segments}.
+- Attribute values: "string", {42}, {true}, bare attribute for true, {{...}} objects, {[...]} arrays, and query bindings {queryName.path.segments}. Bindings are PLAIN FIELD REFERENCES ONLY — no arithmetic, no function/method calls (.filter/.map/.length), no bracket indexing (address array elements with dot-numeric segments, e.g. {accounts.data.0.sparkline}), no string concatenation. If a value would need computing, bind the closest raw field instead and let the component render it. There is NO string interpolation: never write {reference} inside a \"string\" attribute — bind the whole prop to one {reference} or use separate Text nodes.
 - Components resolve host catalog -> prewired primitives -> your <Island> components; the host brand wins a name collision. Prewired primitives: ${RESERVED_COMPONENT_NAMES.join(", ")}, Card, Button, Input, Select, Table, Badge, Stat, Tabs.
-- Prefer a host catalog component whenever it covers the need, with its exact name and props schema. Matching the host brand is a hard goal.
+- COMPOSE the app from host catalog and prewired components bound to query data. Prefer a host catalog component whenever it covers the need, with its exact name and props schema; use Stat/Card/Table/Badge and layout primitives for everything else. Matching the host brand is a hard goal.
+- Never hardcode business data (invoices, balances, metrics, rows). Every number, label, and row the user sees must come from a <Query> binding; if no tool provides it, leave the region out rather than inventing data.
 - Actions are on* attributes naming a host tool or fn:<name> (name matches [A-Za-z_][A-Za-z0-9_-]*), e.g. onClick="host_tool" or onRun="fn:submit". A rung-1 app has no server, so never use fn: on create.
-- Generated components are top-level <Island name="PascalName">raw TSX with a default export</Island>, referenced as <PascalName/>. No JSON escaping — write plain TSX.
+- <Island> generated components are a LAST RESORT: one small, self-contained visual piece that no catalog or prewired component can express (a custom chart, a novel visualization). NEVER put the whole app, layout, data, or fetching inside an island. Island content is top-level <Island name="PascalName">raw TSX with an \`export default\`</Island>, referenced as <PascalName/> — plain source, never wrapped in braces, template literals, or fences.
 - Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} islands, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per island, ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes of island source total.`,
-}, ...generationPromptSections(deps).filter(({ id }) =>
+}, ...hostToolSections(deps),
+...generationPromptSections(deps).filter(({ id }) =>
   id === "component-styling" || id === "catalog" || id === "theme" || id === "design-rules")];
+
+/** verify-v2 fixes — the tools a query may name, and (v2 spec §3) the shape
+ *  cards the model must bind against. Without the tool list the model invents
+ *  tool names; without shapes it binds blind (the broken-chart class). */
+const hostToolSections = (deps: GenerationDependencies): GenerationPromptSection[] => [
+  ...(deps.tools === undefined || deps.tools.length === 0 ? [] : [{
+    id: "catalog" as const,
+    content: `HOST TOOLS (the ONLY tools a <Query> or action may name — anything else is a validation error):\n${deps.tools.map(({ name, description, risk }) => `- ${name} [${risk}]: ${description}`).join("\n")}`,
+  }]),
+  ...(deps.toolShapes === undefined || Object.keys(deps.toolShapes).length === 0 ? [] : [{
+    id: "catalog" as const,
+    content: `TOOL RESPONSE SHAPES (bind only to fields that exist; a binding outside these shapes fails validation):\n${Object.entries(deps.toolShapes).map(([tool, shape]) => `- ${tool}: ${describeShape(shape)}`).join("\n")}`,
+  }]),
+];
 
 const wireContract = (deps: GenerationDependencies): string =>
   composePromptSections(wireContractSections(deps));
@@ -248,7 +279,7 @@ const streamWire = async (
   const flush = (): void => {
     if (deps.onPartial === undefined) return;
     lastFlushAt = Date.now();
-    const compiled = compileWireV2(extractWire(text), { hostComponents });
+    const compiled = compileWireV2(extractWire(text), { hostComponents, ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }) });
     const partial: GeneratedPartial = {
       tree: compiled.tree,
       ...(compiled.name === undefined ? {} : { name: compiled.name }),
@@ -294,15 +325,147 @@ const streamWire = async (
       schedule();
     }
     await finishPartials();
-    return { compiled: compileWireV2(extractWire(text), { hostComponents }), issues: [] };
+    return { compiled: compileWireV2(extractWire(text), { hostComponents, ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }) }), issues: [] };
   } catch (error) {
     await finishPartials();
     return { issues: [`model generation failed: ${error instanceof Error ? error.message : "unknown error"}`] };
   }
 };
 
+/** verify-v2 fixes — models wrap island TSX in a JSX template-literal
+ *  expression (`{`…`}`) despite instructions; strip it deterministically,
+ *  the way {@link extractWire} strips fences. */
+const ISLAND_WRAPPER = /^\{\s*`([\s\S]*)`\s*\}$/;
+const normalizeIslandSource = (source: string): string => {
+  const trimmed = source.trim();
+  const match = ISLAND_WRAPPER.exec(trimmed);
+  return match === null ? trimmed : (match[1] as string).trim();
+};
+
+/** TSX syntax gate for island sources. esbuild loads lazily (same pattern as
+ *  the "ai" import); when unavailable the syntax check is skipped and the
+ *  default-export check still applies. */
+const esbuildTransform = (async () => {
+  try {
+    const esbuild = await import("esbuild");
+    return (source: string) => void esbuild.transformSync(source, { loader: "tsx" });
+  } catch {
+    return undefined;
+  }
+})();
+
+/** verify-v2 fixes — a broken island must never persist: it renders as a
+ *  contained error instead of an app. Checked at create, routed to repair. */
+const islandIssues = async (components: Record<string, string>): Promise<string[]> => {
+  const issues: string[] = [];
+  const transform = await esbuildTransform;
+  for (const [name, source] of Object.entries(components)) {
+    if (!hasDefaultExport(source)) {
+      issues.push(`island "${name}" must be plain TSX with an \`export default\` component — no braces, template literals, or fences around the source`);
+      continue;
+    }
+    if (transform === undefined) continue;
+    try {
+      transform(source);
+    } catch (error) {
+      issues.push(`island "${name}" is not valid TSX: ${error instanceof Error ? error.message.split("\n")[0] : "syntax error"}`);
+    }
+  }
+  return issues;
+};
+
+
+/** Conservative kind check between a bound field's shape and the host prop's
+ *  declared JSON-schema type: only CLEAR mismatches flag (an array of objects
+ *  where number[] is expected renders an empty chart — the verify-v2 class);
+ *  unknown shapes/schemas stay silent. */
+const shapeSchemaMismatch = (shape: ShapeType, schema: Record<string, unknown>): string | null => {
+  const type = typeof schema.type === "string" ? schema.type : undefined;
+  if (type === undefined || shape.kind === "json") return null;
+  if (type === "array") {
+    if (shape.kind !== "array") return `expected an array, the bound field is ${shape.kind}`;
+    const items = schema.items;
+    return isRecord(items) ? shapeSchemaMismatch(shape.items, items) : null;
+  }
+  if (type === "number" || type === "integer") {
+    return shape.kind === "number" ? null : `expected a number, the bound field is ${shape.kind}`;
+  }
+  if (type === "string") return shape.kind === "string" ? null : `expected a string, the bound field is ${shape.kind}`;
+  if (type === "boolean") return shape.kind === "boolean" ? null : `expected a boolean, the bound field is ${shape.kind}`;
+  if (type === "object") return shape.kind === "object" ? null : `expected an object, the bound field is ${shape.kind}`;
+  return null;
+};
+
+/** verify-v2 fixes — with tool shapes AND the catalog's prop schemas both in
+ *  hand, a top-level `$path` prop on a host node can be kind-checked end to
+ *  end. Existence is shape-check.ts's job; this catches the type mismatches
+ *  that render silently broken (empty chart, blank stat). */
+const bindingKindIssues = (
+  compiled: WireCompileResult,
+  deps: GenerationDependencies,
+): string[] => {
+  if (deps.toolShapes === undefined) return [];
+  const issues: string[] = [];
+  const queryTool = new Map((compiled.tree.queries ?? []).map((query) => [query.name, query.tool]));
+  const hostSchemas = new Map(deps.catalog.map((component) => [component.name, component.propsJsonSchema]));
+  for (const node of compiled.tree.nodes) {
+    if (node.source !== "host" || node.props === undefined) continue;
+    const schema = hostSchemas.get(node.component);
+    const properties = isRecord(schema) && isRecord(schema.properties) ? schema.properties : undefined;
+    if (properties === undefined) continue;
+    for (const [prop, value] of Object.entries(node.props)) {
+      if (!isPathBinding(value)) continue;
+      const [, queryName = "", ...rest] = value.$path.split("/");
+      const tool = queryTool.get(queryName);
+      const toolShape = tool === undefined ? undefined : deps.toolShapes[tool];
+      if (toolShape === undefined) continue;
+      const bound = shapeAtPointer(toolShape, rest.length === 0 ? "" : `/${rest.join("/")}`);
+      if (bound === undefined) continue;
+      const propSchema = properties[prop];
+      if (!isRecord(propSchema)) continue;
+      const mismatch = shapeSchemaMismatch(bound, propSchema);
+      if (mismatch !== null) {
+        issues.push(`node "${node.id}" prop "${prop}" binds ${value.$path}: ${mismatch} — bind a field whose shape matches the component's prop type`);
+      }
+    }
+  }
+  return issues;
+};
+
+/** verify-v2 fixes — models write "Total: {metric.total}" inside STRING
+ *  attributes; the wire has no string interpolation, so the braces render
+ *  literally. Any string prop embedding a declared query reference is a
+ *  repair-routed error. */
+const interpolationIssues = (compiled: WireCompileResult): string[] => {
+  const queryNames = (compiled.tree.queries ?? []).map((query) => query.name);
+  if (queryNames.length === 0) return [];
+  const pattern = new RegExp(`\\{(?:${queryNames.join("|")})(?:\\.[A-Za-z0-9_]+)*\\}`);
+  const issues: string[] = [];
+  const walk = (nodeId: string, prop: string, value: unknown): void => {
+    if (typeof value === "string") {
+      if (pattern.test(value)) {
+        issues.push(`node "${nodeId}" prop "${prop}" embeds a binding inside a string — string interpolation is unsupported; bind the prop to a single {reference} or split the text into separate Text nodes`);
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(nodeId, prop, item);
+      return;
+    }
+    if (isRecord(value)) {
+      for (const child of Object.values(value)) walk(nodeId, prop, child);
+    }
+  };
+  for (const node of compiled.tree.nodes) {
+    for (const [prop, value] of Object.entries(node.props ?? {})) walk(node.id, prop, value);
+  }
+  return issues;
+};
+
 /** v2 create validation: the compile must be complete and clean, the tree
- *  catalog-consistent and renderable, and the assembled document valid. */
+ *  catalog-consistent and renderable, islands syntactically sound, queries
+ *  aimed at real host tools, bindings shape-checked, and the assembled
+ *  document valid. */
 const validateCompiledCreate = async (
   compiled: WireCompileResult,
   deps: GenerationDependencies,
@@ -312,7 +475,23 @@ const validateCompiledCreate = async (
   issues.push(...compiled.issues.map(({ code, message }) => `wire ${code}: ${message}`));
   const name = compiled.name?.trim() ?? "";
   if (name === "") issues.push('App must carry a non-empty name="..." attribute');
-  const components = Object.keys(compiled.components).length === 0 ? undefined : compiled.components;
+  const normalized = Object.fromEntries(
+    Object.entries(compiled.components).map(([islandName, source]) => [islandName, normalizeIslandSource(source)]),
+  );
+  const components = Object.keys(normalized).length === 0 ? undefined : normalized;
+  issues.push(...await islandIssues(normalized));
+  if (deps.tools !== undefined) {
+    const known = new Set(deps.tools.map((tool) => tool.name));
+    for (const query of compiled.tree.queries ?? []) {
+      if (!query.tool.startsWith("fn:") && !known.has(query.tool)) {
+        issues.push(`query "${query.name}" names unknown tool "${query.tool}"; the host tools are: ${[...known].join(", ")}`);
+      }
+    }
+  }
+  issues.push(...compiled.bindingErrors.map((error) =>
+    `binding ${error.path} on node "${error.nodeId}" prop "${error.prop}": ${error.message}${error.available === undefined ? "" : ` (available: ${error.available.join(", ")})`}`));
+  issues.push(...bindingKindIssues(compiled, deps));
+  issues.push(...interpolationIssues(compiled));
   issues.push(...await catalogIssues(compiled.tree, components, deps.catalog));
   issues.push(...rootedRenderIssues(compiled.tree));
   if (issues.length > 0) return { issues };
@@ -797,7 +976,7 @@ export const modelEngine: GenerationEngine = {
         onPartial: (partial) => partial.tree.nodes.length < residentNodes ? undefined : forward(partial),
       };
     let issues: string[] = [];
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
       const output = await streamWire(
         fullLaneDeps,
         wireContract(deps),

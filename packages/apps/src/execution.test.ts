@@ -243,7 +243,10 @@ describe("apps execution", () => {
       answer: { tool: "host_ok", args: { n: 1 } },
       invoices: { tool: "host_ok", args: { n: 2 } },
     });
-    expect(guard.approvals).toHaveLength(1);
+    // Two parks for host_away: create-time shape SAMPLING asked first (the
+    // same read the app's query performs moments later; ask-on-read policy
+    // means both park), then the open-path query itself.
+    expect(guard.approvals).toHaveLength(2);
   });
 
   it("runs open queries concurrently and contains individual errors", async () => {

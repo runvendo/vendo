@@ -223,10 +223,21 @@ describe("generation engine through createApps", () => {
       '<App name="Bound metric"><Query id="headline" tool="host_headline"/>',
       '<MetricCard label={headline.label} value={state.selectedValue} onSelect="selectMetric"/></App>',
     ].join("");
+    const bindingTools: ToolRegistry = {
+      async descriptors() {
+        return [{
+          name: "host_headline",
+          description: "Headline metric",
+          inputSchema: { type: "object" },
+          risk: "read",
+        }];
+      },
+      async execute() { return { status: "ok", output: { label: "Revenue" } }; },
+    };
     const runtime = createApps({
       store: memoryStore(),
       guard: guardFixture(),
-      tools,
+      tools: bindingTools,
       catalog,
       model: scriptedLanguageModel(boundProps),
     });
@@ -1128,7 +1139,14 @@ describe("v2 wire create", () => {
       '<MetricCard label="Revenue" value={metric}/></Stack></App>',
     ];
     const queryTools: ToolRegistry = {
-      async descriptors() { return []; },
+      async descriptors() {
+        return [{
+          name: "host_metric",
+          description: "Revenue metric",
+          inputSchema: { type: "object" },
+          risk: "read",
+        }];
+      },
       async execute(call) {
         return call.tool === "host_metric"
           ? { status: "ok", output: "$42k" }
@@ -1248,7 +1266,7 @@ describe("tier0-wired create (two lanes)", () => {
     );
 
     expect(document.name).toBe("Instant board");
-    expect(calls).toBe(3); // tier-0 + full lane attempt + one repair attempt
+    expect(calls).toBe(4); // tier-0 + full lane attempt + two repair attempts
   });
 
   it("skips the paint lane without a streaming consumer and when disabled", async () => {
@@ -1340,5 +1358,241 @@ describe("tier-2 hot-swap never regresses the resident paint", () => {
     const residentSize = 3;
     const afterResident = partials.slice(partials.indexOf(residentSize) + 1);
     expect(afterResident.every((count) => count >= residentSize)).toBe(true);
+  });
+});
+
+describe("v2 create integration guards (verify-v2 findings)", () => {
+  const guardDeps = (model: unknown, extra: Record<string, unknown> = {}) => ({
+    model,
+    catalog,
+    ...extra,
+  }) as unknown as Parameters<typeof modelEngine.create>[1];
+
+  it("strips a template-literal island wrapper and persists plain TSX", async () => {
+    const wire = [
+      '<App name="Wrapped"><Note/>',
+      "<Island name=\"Note\">\n{`\nexport default function Note() { return <p>hi</p>; }\n`}\n</Island></App>",
+    ].join("");
+    const document = await modelEngine.create(
+      { prompt: "Build it" },
+      guardDeps(scriptedLanguageModel(wire)),
+    );
+    expect(document.components?.Note).toBe("export default function Note() { return <p>hi</p>; }");
+  });
+
+  it("repairs an island without a default export instead of persisting it", async () => {
+    const broken = '<App name="NoExport"><Note/><Island name="Note">const nope = 1;</Island></App>';
+    const fixed = '<App name="NoExport"><Note/><Island name="Note">export default function Note() { return <p>ok</p>; }</Island></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? broken : fixed;
+    });
+    const document = await modelEngine.create({ prompt: "Build it" }, guardDeps(model));
+    expect(document.components?.Note).toContain("export default");
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("REPAIR_THESE_ISSUES");
+    expect(prompts[1]).toContain("Note");
+  });
+
+  it("repairs a syntactically-broken island instead of persisting it", async () => {
+    const broken = '<App name="Syntax"><Note/><Island name="Note">export default function Note() { return <p>oops</p>; </Island></App>';
+    const fixed = '<App name="Syntax"><Note/><Island name="Note">export default function Note() { return <p>ok</p>; }</Island></App>';
+    let calls = 0;
+    const model = scriptedLanguageModel(() => {
+      calls += 1;
+      return calls === 1 ? broken : fixed;
+    });
+    const document = await modelEngine.create({ prompt: "Build it" }, guardDeps(model));
+    expect(document.components?.Note).toContain("return <p>ok</p>");
+    expect(calls).toBe(2);
+  });
+
+  it("rejects a query naming a tool absent from the host registry and repairs", async () => {
+    const invented = '<App name="Tools"><Query id="rev" tool="get_revenue_history"/><MetricCard label="Revenue" value={rev}/></App>';
+    const valid = '<App name="Tools"><Query id="rev" tool="host_metric"/><MetricCard label="Revenue" value={rev}/></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? invented : valid;
+    });
+    const document = await modelEngine.create(
+      { prompt: "Build it" },
+      guardDeps(model, { tools: [{ name: "host_metric", description: "Revenue metric", risk: "read" }] }),
+    );
+    expect((document.tree as { queries?: Array<{ tool: string }> }).queries).toEqual([
+      { name: "rev", tool: "host_metric" },
+    ]);
+    expect(prompts[1]).toContain("unknown tool");
+    expect(prompts[1]).toContain("get_revenue_history");
+  });
+
+  it("routes shape-check binding errors to repair", async () => {
+    const wrong = '<App name="Shape"><Query id="metric" tool="host_metric"/><MetricCard label="Revenue" value={metric.missing_field}/></App>';
+    const right = '<App name="Shape"><Query id="metric" tool="host_metric"/><MetricCard label="Revenue" value={metric.total}/></App>';
+    let calls = 0;
+    const model = scriptedLanguageModel(() => {
+      calls += 1;
+      return calls === 1 ? wrong : right;
+    });
+    const document = await modelEngine.create(
+      { prompt: "Build it" },
+      guardDeps(model, {
+        tools: [{ name: "host_metric", description: "Revenue metric", risk: "read" }],
+        toolShapes: { host_metric: { kind: "object", fields: { total: { kind: "string" } } } },
+      }),
+    );
+    expect(calls).toBe(2);
+    expect((document.tree as { nodes: Array<{ props?: Record<string, unknown> }> }).nodes.at(-1)?.props?.value)
+      .toEqual({ $path: "/metric/total" });
+  });
+
+  it("lists host tools and response shapes in the create prompt and steers composition-first", async () => {
+    let captured = "";
+    const model = scriptedLanguageModel((call) => {
+      captured = promptText(call);
+      return validCreate();
+    });
+    await modelEngine.create(
+      { prompt: "Build it" },
+      guardDeps(model, {
+        tools: [{ name: "host_metric", description: "Revenue metric", risk: "read" }],
+        toolShapes: { host_metric: { kind: "object", fields: { total: { kind: "string" } } } },
+      }),
+    );
+    expect(captured).toContain("HOST TOOLS");
+    expect(captured).toContain("host_metric");
+    expect(captured).toContain("Revenue metric");
+    expect(captured).toContain("TOOL RESPONSE SHAPES");
+    expect(captured).toContain("total");
+    expect(captured).toContain("LAST RESORT");
+    expect(captured).toContain("Never hardcode");
+  });
+});
+
+describe("runtime tool-shape wiring", () => {
+  it("samples read tools once and feeds names + response shapes into generation", async () => {
+    const executed: string[] = [];
+    const shapeTools: ToolRegistry = {
+      async descriptors() {
+        return [
+          {
+            name: "host_metric",
+            description: "Revenue metric",
+            inputSchema: { type: "object", properties: {}, additionalProperties: false },
+            risk: "read",
+          },
+          {
+            name: "host_delete",
+            description: "Delete something",
+            inputSchema: { type: "object", properties: {}, additionalProperties: false },
+            risk: "destructive",
+          },
+        ];
+      },
+      async execute(call) {
+        executed.push(call.tool);
+        return { status: "ok", output: { total: 42, currency: "USD" } };
+      },
+    };
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return '<App name="Shaped"><Query id="metric" tool="host_metric"/><MetricCard label="Revenue" value={metric.currency}/></App>';
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools: shapeTools,
+      catalog,
+      model,
+    });
+
+    await runtime.create({ prompt: "Show revenue" }, ctx);
+    await runtime.create({ prompt: "Show revenue again" }, ctx);
+
+    // Only the read tool is sampled, and only once across creates.
+    expect(executed).toEqual(["host_metric"]);
+    expect(prompts[0]).toContain("HOST TOOLS");
+    expect(prompts[0]).toContain("host_delete");
+    expect(prompts[0]).toContain("TOOL RESPONSE SHAPES");
+    expect(prompts[0]).toContain("currency");
+  });
+});
+
+describe("branded prewired components validate on create", () => {
+  it("accepts Card/Stat/Badge/Table/Button as prewired (compiler and validator agree)", async () => {
+    const wire = [
+      '<App name="Branded"><Stack>',
+      '<Stat label="Overdue" value="3"/><Badge label="Late"/>',
+      '<Card title="Invoices"><Table rows={[]}/></Card>',
+      '<Button label="Remind"/>',
+      "</Stack></App>",
+    ].join("");
+    const document = await modelEngine.create(
+      { prompt: "Build it" },
+      { model: scriptedLanguageModel(wire), catalog } as unknown as Parameters<typeof modelEngine.create>[1],
+    );
+    const sources = (document.tree as { nodes: Array<{ component: string; source?: string }> }).nodes
+      .map((node) => [node.component, node.source]);
+    expect(sources).toContainEqual(["Stat", "prewired"]);
+    expect(sources).toContainEqual(["Card", "prewired"]);
+  });
+});
+
+describe("binding kind vs host prop schema", () => {
+  it("repairs a binding whose field shape mismatches the prop's declared type", async () => {
+    const wrong = '<App name="Chart"><Query id="cashflow" tool="host_cashflow"/><MetricCard label="Revenue" value={cashflow.rows}/></App>';
+    const right = '<App name="Chart"><Query id="cashflow" tool="host_cashflow"/><MetricCard label="Revenue" value={cashflow.total}/></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? wrong : right;
+    });
+    const document = await modelEngine.create(
+      { prompt: "Build it" },
+      {
+        model,
+        catalog,
+        tools: [{ name: "host_cashflow", description: "Cashflow", risk: "read" }],
+        toolShapes: {
+          host_cashflow: {
+            kind: "object",
+            fields: {
+              total: { kind: "string" },
+              rows: { kind: "array", items: { kind: "object", fields: { label: { kind: "string" } } } },
+            },
+          },
+        },
+      } as unknown as Parameters<typeof modelEngine.create>[1],
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("expected a string, the bound field is array");
+    expect((document.tree as { nodes: Array<{ props?: Record<string, unknown> }> }).nodes.at(-1)?.props?.value)
+      .toEqual({ $path: "/cashflow/total" });
+  });
+});
+
+describe("string interpolation guard", () => {
+  it("repairs a binding embedded inside a string attribute", async () => {
+    const wrong = '<App name="Interp"><Query id="metric" tool="host_metric"/><MetricCard label="Total: {metric.total}" value={metric.total}/></App>';
+    const right = '<App name="Interp"><Query id="metric" tool="host_metric"/><MetricCard label="Total" value={metric.total}/></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? wrong : right;
+    });
+    const document = await modelEngine.create(
+      { prompt: "Build it" },
+      {
+        model,
+        catalog,
+        tools: [{ name: "host_metric", description: "Metric", risk: "read" }],
+      } as unknown as Parameters<typeof modelEngine.create>[1],
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("string interpolation is unsupported");
+    expect((document.tree as { nodes: Array<{ props?: Record<string, unknown> }> }).nodes.at(-1)?.props?.label)
+      .toBe("Total");
   });
 });

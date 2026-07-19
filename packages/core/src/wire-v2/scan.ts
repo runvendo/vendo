@@ -151,7 +151,7 @@ export const collectText = (state: CompileState): string => {
   while (state.index < state.source.length) {
     if (state.source[state.index] === "<") {
       const next = state.source[state.index + 1];
-      if (next === undefined || next === "/" || NAME_CHAR.test(next)) break;
+      if (next === undefined || next === "/" || next === "!" || NAME_CHAR.test(next)) break;
     }
     state.index += 1;
   }

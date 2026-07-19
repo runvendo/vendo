@@ -52,6 +52,7 @@
   },
   "dependencies": {
     "@vendoai/core": "workspace:*",
+    "esbuild": "^0.25.0",
     "fflate": "^0.8.2",
     "zod": "^3.25.0"
   },
