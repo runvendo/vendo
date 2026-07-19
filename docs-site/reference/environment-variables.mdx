@@ -20,7 +20,7 @@ description: "Every environment variable Vendo reads across host process, sandbo
 | `NODE_ENV=production` | disables build and development telemetry at runtime |
 | `E2B_API_KEY` | default key read by the E2B SDK when `e2bSandbox` receives no explicit `apiKey`; also auto-selects the E2B execution venue in `createVendo` when no `sandbox:` is passed and the optional `e2b` package is installed |
 | `VERCEL`, `CF_PAGES`, `AWS_LAMBDA_FUNCTION_NAME` | prevent the default PGlite store from opening on an ephemeral serverless filesystem; pass a Postgres URL instead |
-| `VENDO_STORE_ENCRYPTION_KEY` | 32-byte base64 key the default composition uses to encrypt secret values in `vendo_secrets`; provisioned by `vendo init` and read when no store is passed to `createVendo`. An explicitly configured store ignores it |
+| `VENDO_STORE_ENCRYPTION_KEY` | 32-byte base64 key the default composition uses to encrypt secret values in `vendo_secrets`; read when no store is passed to `createVendo`. An explicitly configured store ignores it |
 | `VENDO_DEV_CREDENTIAL` | pins a [dev-mode credential ladder](/connect/dev-mode) rung: `env-key`, `claude`, `codex`, `vendo`, or `none`. Ignored when `NODE_ENV=production` for session rungs |
 | `VENDO_DEV_ALLOW_SESSIONS` | set to `1` to consent to riding Claude Code or Codex CLI logins in non-interactive setups (CI, agents). Equivalent to the interactive consent `vendo init` records in `.vendo/data/dev-credential.json` |
 | `ANTHROPIC_API_KEY` · `OPENAI_API_KEY` · `GOOGLE_GENERATIVE_AI_API_KEY` | first-preferred rung of the dev-mode credential ladder read by `devModel()`; when set, `@vendoai/vendo/server` uses the matching `@ai-sdk/*@^3` provider installed in your app for the full native tool loop |

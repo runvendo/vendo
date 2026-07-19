@@ -1,10 +1,11 @@
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { isVendoKey } from "./cli/cloud/client.js";
 import { runCloud } from "./cli/cloud/index.js";
 import { runDoctor } from "./cli/doctor.js";
 import { runEject } from "./cli/eject.js";
 import { runExtractApply } from "./cli/extract/apply.js";
-import { runInit } from "./cli/init.js";
+import { runInit, type InitOptions } from "./cli/init.js";
 import { runMcp } from "./cli/mcp/index.js";
 import { runPlayground } from "./cli/playground.js";
 import { runRefineCommand } from "./cli/refine.js";
@@ -33,6 +34,12 @@ Options:
   --apply <draft.json>       Extract only: draft file an external agent produced from the plan's aiPolish contract
   --yes                      Init: skip the cloud-login offer; refine: approve displayed diffs; doctor: auto-start the dev server
   --force                    Init/server-json: overwrite owned or generated files; eject: overwrite an ejected dir
+  --auth <preset>            Init only: wire this auth preset without asking (authJs, clerk, supabase, auth0, jwt, none)
+  --framework <name>         Init only: override framework detection (next, express) — required non-interactively when detection fails
+  --cloud-key <key>          Init only: write this Vendo Cloud key to .env.local instead of the login offer
+  --byo                      Init only: decline the Vendo Cloud offer (bring your own model key)
+  --ai-polish                Init only: consent to the AI extraction pass without a prompt (works non-interactively)
+  --theme <slot=value>       Init only: answer an uncertain theme slot without the review prompt (repeatable)
   --list                     Eject only: show the ejectable surfaces
   --model-import <specifier> Refine only: module exporting the host's ai-SDK model
   --ask <text>               Refine only: interview answer (repeatable) for non-interactive runs
@@ -62,8 +69,12 @@ function options(args: string[], name: string): string[] {
   return values;
 }
 
-const INIT_FLAGS = new Set(["--agent", "--yes", "--force"]);
-const INIT_VALUE_OPTIONS: string[] = [];
+const INIT_FLAGS = new Set(["--agent", "--yes", "--force", "--byo", "--ai-polish"]);
+const INIT_VALUE_OPTIONS = ["--auth", "--framework", "--cloud-key", "--theme"];
+/** Agent-install-dx: every init wizard question has a value-flag answer; a
+    bad value fails as loudly as an unknown flag, with the valid choices. */
+const INIT_AUTH_VALUES = ["authJs", "clerk", "supabase", "auth0", "jwt", "none"];
+const INIT_FRAMEWORK_VALUES = ["next", "express"];
 const EXTRACT_FLAGS = new Set(["--force"]);
 const EXTRACT_VALUE_OPTIONS = ["--apply"];
 
@@ -120,7 +131,8 @@ function playgroundOptionErrors(args: string[]): { errors: string[]; port?: numb
 
 function target(args: string[]): string {
   const optionValues = new Set<string>();
-  for (const name of ["--model-import", "--url", "--brief", "--key", "--api-url", "--ask", "--apply"]) {
+  for (const name of ["--model-import", "--url", "--brief", "--key", "--api-url", "--ask", "--apply",
+    "--auth", "--framework", "--cloud-key", "--theme"]) {
     for (let index = 0; index < args.length; index += 1) {
       if (args[index] === name && args[index + 1] !== undefined) optionValues.add(args[index + 1]!);
     }
@@ -142,6 +154,26 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "mcp") return runMcp(args);
   if (command === "init") {
     const problems = optionErrors(args, INIT_FLAGS, INIT_VALUE_OPTIONS);
+    const auth = option(args, "--auth");
+    if (auth !== undefined && !INIT_AUTH_VALUES.includes(auth)) {
+      problems.push(`--auth must be one of ${INIT_AUTH_VALUES.join(", ")} (example: vendo init --auth clerk)`);
+    }
+    const framework = option(args, "--framework");
+    if (framework !== undefined && !INIT_FRAMEWORK_VALUES.includes(framework)) {
+      problems.push("--framework must be next or express (example: vendo init --framework next)");
+    }
+    const cloudKey = option(args, "--cloud-key");
+    if (cloudKey !== undefined && !isVendoKey(cloudKey)) {
+      problems.push("--cloud-key must be a Vendo Cloud key (vnd_ + 40 hex; `vendo cloud login` issues one)");
+    }
+    if (cloudKey !== undefined && args.includes("--byo")) {
+      problems.push("--cloud-key and --byo answer the same question — pass one or the other");
+    }
+    const themePairs = options(args, "--theme");
+    const badTheme = themePairs.find((pair) => !/^[A-Za-z]+=./.test(pair));
+    if (badTheme !== undefined) {
+      problems.push(`--theme takes slot=value (example: vendo init --theme accent=#7c3bed), got ${JSON.stringify(badTheme)}`);
+    }
     if (problems.length > 0) {
       console.error(`vendo init: ${problems.join("; ")}\n\n${HELP}`);
       return 1;
@@ -151,6 +183,17 @@ export async function main(argv: string[]): Promise<number> {
       agent: args.includes("--agent"),
       yes: args.includes("--yes"),
       force: args.includes("--force"),
+      ...(auth === undefined ? {} : { auth: auth as InitOptions["auth"] }),
+      ...(framework === undefined ? {} : { framework: framework as InitOptions["framework"] }),
+      ...(cloudKey === undefined ? {} : { cloudKey }),
+      ...(args.includes("--byo") ? { byo: true } : {}),
+      ...(args.includes("--ai-polish") ? { aiPolish: true } : {}),
+      ...(themePairs.length === 0 ? {} : {
+        themeAnswers: Object.fromEntries(themePairs.map((pair) => {
+          const at = pair.indexOf("=");
+          return [pair.slice(0, at), pair.slice(at + 1)];
+        })),
+      }),
     });
   }
   if (command === "extract") {

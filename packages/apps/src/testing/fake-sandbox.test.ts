@@ -112,6 +112,25 @@ describe("fakeSandbox v2 seam semantics", () => {
     await expect(fakeSandbox().resume("fake:snap_nope")).rejects.toThrow(/Unknown fake sandbox snapshot/);
   });
 
+  it("adapter.destroy(ref) deletes a sleeping machine's snapshot without resuming it", async () => {
+    const adapter = fakeSandbox();
+    const machine = await adapter.create({ env: { PORT: "8080" } });
+    const ref = await machine.snapshot();
+    await machine.stop();
+
+    const countBefore = adapter.machines.size;
+    await adapter.destroy(ref);
+    // nothing was resumed to do the destroying
+    expect(adapter.machines.size).toBe(countBefore);
+    await expect(adapter.resume(ref)).rejects.toThrow(/Unknown fake sandbox snapshot/);
+    // destroying an already-destroyed (or never-minted) ref is a no-op
+    await expect(adapter.destroy(ref)).resolves.toBeUndefined();
+  });
+
+  it("adapter.destroy rejects a ref from another provider", async () => {
+    await expect(fakeSandbox().destroy("e2b:v2:whatever")).rejects.toThrow(/fake sandbox snapshot ref/);
+  });
+
   it("keeps the v1 compat surface working: files, exec, and egress simulation", async () => {
     const adapter = fakeSandbox();
     const machine = await adapter.create({

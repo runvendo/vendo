@@ -19,6 +19,9 @@ gitignored; do not commit foreign repo code or generated run artifacts.
   `corpus/expectations/<repo>/gallery.json`; there is no hardcoded gate set.
 - `pnpm corpus ai [repo...] [--model <id>]... [--json] [--strict]` runs the AI
   extraction matrix (see below).
+- `pnpm corpus install-eval [fixture...] [--model <id>] [--dry-run] [--json]
+  [--strict] [--turn-budget <n>] [--time-budget-ms <ms>] [--max-budget-usd <usd>]`
+  runs the agent-install eval (see below).
 - `pnpm --filter @vendoai/corpus-harness test` runs the harness unit tests.
 
 Run artifacts are written under `corpus/.repos/.logs/`, with a copy of the
@@ -134,6 +137,78 @@ failures. Per-cell artifacts (per-stage outputs under `stages/`, degradation
 notes, resulting overrides.json/brief.md, checks) land under
 `corpus/.repos/.logs/<repo>/ai/<model>/`. Without `--strict` the sweep reports
 failures and exits 0; `--strict` returns nonzero when any run failed.
+
+## Agent-install eval
+
+`pnpm corpus install-eval` proves a real coding agent can install Vendo from
+the docs' copy-paste prompt alone (agent-install DX design 2026-07-19
+§Testing). Per fixture it:
+
+1. Copies the fixture source (`invoify` — external pinned corpus repo,
+   cloned through the normal manifest-pin machinery — plus `express-host`,
+   `apps/demo-bank`, `apps/demo-accounting`) to a clean directory under
+   `corpus/.repos/.install-eval/` with the Vendo footprint stripped: no
+   `.vendo/`, no vendoai/@vendoai dependency or override, no lockfile, no
+   CLAUDE.md/AGENTS.md/.claude (a clean host repo carries none of that), then
+   snapshots it as a one-commit git repo so agent edits stay diffable.
+   **Known limit (read demo rows accordingly): the demo apps' source still
+   imports Vendo** — de-integrating their app code would be a
+   hand-maintained fork — so those rows measure "restore an install whose
+   deps and contract are gone". `invoify` is a truly pre-Vendo host and
+   `express-host` is the closest local one. Of the other external corpus
+   repos, the deep-tier ones (umami, skateshop, papermark, teable, twenty)
+   need dockerized Postgres/Redis + seeds for their dev servers and the
+   remaining broad-tier ones need real third-party env (Clerk, GitHub
+   OAuth, Shopify, ClickHouse) or have no dev-server recipe, so they stay
+   out until fixture prep grows the corpus bootstrap/database machinery
+   (documented in `harness/src/install-eval/fixtures.ts`).
+2. Serves a minimal local npm registry: Vendo packages resolve from
+   `pnpm pack`ed workspace tarballs (cached in
+   `corpus/.repos/.install-eval-tarballs/`), every other request 302s to
+   registry.npmjs.org. The fixture's `.npmrc` points `registry=` at it, so
+   the agent's own `npm install vendoai` lands on the local build. (The
+   injector's overrides trick cannot work here: npm rejects a direct install
+   of an overridden package with EOVERRIDE.)
+3. Runs headless Claude Code (`claude -p <prompt> --output-format
+   stream-json`) cwd'd into the fixture with ONLY the copy-paste prompt,
+   read from `docs-site/install.mdx` at runtime so drift is impossible.
+   Budgets: `--max-budget-usd` (CLI-enforced, default 10) and a wall-clock
+   kill (default 20 min); the turn budget (default 40) is a scoring
+   threshold — the 2.1.x CLI has no turn-cap flag. `--setting-sources
+   project` keeps the machine's user-level CLAUDE.md/skills out of the
+   measurement, and `VENDO_API_KEY` is dropped from the agent's environment
+   so a machine key cannot short-circuit the account-consent metric. The
+   full stream-json transcript lands in
+   `corpus/.repos/.logs/<fixture>/install-eval.transcript.jsonl`.
+4. Scores machine-derived metrics: `doctor_green` (the harness boots the
+   fixture dev server and runs the fixture's own `node_modules/.bin/vendo
+   doctor . --json` itself — the agent's claim is never trusted), turn
+   count/cost/duration from the transcript, `asked_before_account`
+   (no cloud-login/key-mint/signup tool call without a preceding
+   account-topic question or AskUserQuestion), and playbook violations:
+   hand-wrote regenerated scaffold files (`.vendo/tools.json`, `theme.json`,
+   `catalog.json`, or creating the route/registry/.vendo before any
+   `vendo init`), invented tools (overrides/policy naming tools absent from
+   `tools.json`), skipped star ask. These transcript checks are documented
+   regex heuristics — triage signals to read against the transcript, not
+   ground truth; doctor-green and turns are exact.
+5. Writes the matrix report to `corpus/reports/install-eval-<runId>.md` and
+   `.json` — commit the report of a live run as evidence in the PR that
+   acts on it. The footer restates the spec rule: new failure modes get a
+   doctor error code plus a verify-page section before they may be called
+   fixed.
+
+Cost and CI posture: a live run spends real model money — budget-capped at
+`--max-budget-usd` (default 10 USD) per fixture, so a full four-fixture
+matrix is ≤ 40 USD worst-case and typically an order less on sonnet
+(observed corpus installs land in low single-digit dollars per fixture; a
+haiku smoke is cents). The eval is therefore never part of `pnpm test`,
+turbo pipelines, or any workflow — on-demand only, exactly like `corpus ai`
+and `gallery`. `--dry-run` exercises the entire pipeline (fixture prep,
+tarball pack, local registry, scoring, report) against the canned transcript
+in `corpus/harness/test/fixtures/install-eval/` without invoking the agent
+or doctor, and the unit tests cover every scoring heuristic with canned
+events.
 
 ## Generation gallery
 

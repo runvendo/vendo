@@ -38,6 +38,9 @@ const responseHeaders = (headers: Headers): Record<string, string> =>
 interface E2BSnapshotState {
   version: 2;
   snapshotId: string;
+  /** The sandbox the snapshot was taken from, so adapter.destroy(ref) can
+      also reap it when it was left paused by the sleep flow. */
+  sourceSandboxId?: string;
   allowedDomains?: string[];
   port: number;
 }
@@ -49,12 +52,14 @@ const parsePort = (env: Record<string, string>): number => {
 
 const encodeSnapshotRef = (
   snapshotId: string,
+  sourceSandboxId: string,
   allowedDomains: string[] | undefined,
   port: number,
 ): string =>
   `${SNAPSHOT_REF_PREFIX}${Buffer.from(JSON.stringify({
     version: 2,
     snapshotId,
+    sourceSandboxId,
     ...(allowedDomains === undefined ? {} : { allowedDomains: [...allowedDomains] }),
     port,
   } satisfies E2BSnapshotState)).toString("base64url")}`;
@@ -80,8 +85,13 @@ const decodeSnapshotRef = (snapshotRef: string): Omit<E2BSnapshotState, "version
       }
       if (!validPort(state.port)) throw new Error("invalid port");
       if (!validDomains(state.allowedDomains)) throw new Error("invalid allowedDomains policy");
+      if (state.sourceSandboxId !== undefined
+        && (typeof state.sourceSandboxId !== "string" || state.sourceSandboxId.length === 0)) {
+        throw new Error("invalid source sandbox id");
+      }
       return {
         snapshotId: state.snapshotId,
+        ...(state.sourceSandboxId === undefined ? {} : { sourceSandboxId: state.sourceSandboxId }),
         ...(state.allowedDomains === undefined ? {} : { allowedDomains: [...state.allowedDomains] }),
         port: state.port,
       };
@@ -176,7 +186,7 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
       },
       async snapshot() {
         const snapshot = await sandbox.createSnapshot();
-        return encodeSnapshotRef(snapshot.snapshotId, state.allowedDomains, state.port);
+        return encodeSnapshotRef(snapshot.snapshotId, sandbox.sandboxId, state.allowedDomains, state.port);
       },
       async stop() {
         if (destroying !== undefined) {
@@ -260,6 +270,27 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
         timeoutMs,
         ...networkOptions(state.allowedDomains, ALL_TRAFFIC),
       }), state);
+    },
+    async destroy(snapshotRef) {
+      const state = decodeSnapshotRef(snapshotRef);
+      const { NotFoundError, Sandbox } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "e2b");
+      const apiOptions = options.apiKey === undefined ? {} : { apiKey: options.apiKey };
+      // Best-effort reap of the sandbox the sleep flow left paused behind this
+      // ref (recorded by v2 refs; absent from retired v1 refs). It is usually
+      // already gone — the machine's own destroy() killed it — so any failure
+      // here is not this call's problem.
+      if (state.sourceSandboxId !== undefined) {
+        await Sandbox.kill(state.sourceSandboxId, apiOptions).catch(() => undefined);
+      }
+      try {
+        await Sandbox.deleteSnapshot(state.snapshotId, apiOptions);
+      } catch (error) {
+        // Idempotent by seam contract: already-deleted state is a no-op. The
+        // name fallback covers an SDK bump or bundler duplicating the class.
+        const notFound = error instanceof NotFoundError
+          || (error instanceof Error && error.name === "NotFoundError");
+        if (!notFound) throw error;
+      }
     },
   };
 };

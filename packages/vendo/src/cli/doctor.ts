@@ -10,6 +10,7 @@ import {
   type CloudDoctorResult,
   type LiveTurnResult,
 } from "./doctor-live.js";
+import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { detectFramework, detectVendoWiring } from "./framework.js";
 import { walk } from "./theme/walk.js";
@@ -42,7 +43,17 @@ export interface DoctorOptions {
 }
 
 type CheckStatus = "ok" | "broken" | "warning";
-interface DoctorCheck { status: CheckStatus; message: string; }
+/** Agent-install DX (design 2026-07-19 §CLI-3) — every check carries a stable
+ *  id; failures and warnings additionally carry the registry error_code and a
+ *  full fix_ref URL. Passing checks carry neither: a pass has no failure mode
+ *  to anchor, so agents filter `status !== "ok"` and follow fix_ref. */
+interface DoctorCheck {
+  id: string;
+  status: CheckStatus;
+  message: string;
+  error_code?: DoctorErrorCode;
+  fix_ref?: string;
+}
 
 async function askYesNo(question: string, defaultYes = false): Promise<boolean> {
   if (!stdin.isTTY || !stdout.isTTY) return false;
@@ -101,24 +112,26 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   // In --json mode nothing but the final object may reach stdout; human lines
   // are suppressed and the same information rides the checks array instead.
   const note = (message: string): void => { if (!json) output.log(message); };
-  const pass = (message: string): void => { checks.push({ status: "ok", message }); if (!json) output.log(`ok: ${message}`); };
-  const fail = (message: string): void => { failures += 1; checks.push({ status: "broken", message }); if (!json) output.error(`broken: ${message}`); };
-  const warn = (message: string): void => { warnings += 1; checks.push({ status: "warning", message }); if (!json) output.error(`warning: ${message}`); };
+  // Human lines stay exactly as before (the fix_ref URL is a machine
+  // affordance; --json is the agent surface, so no per-line URL noise here).
+  const pass = (id: string, message: string): void => { checks.push({ id, status: "ok", message }); if (!json) output.log(`ok: ${message}`); };
+  const fail = (id: string, code: DoctorErrorCode, message: string): void => { failures += 1; checks.push({ id, status: "broken", message, error_code: code, fix_ref: doctorFixRef(code) }); if (!json) output.error(`broken: ${message}`); };
+  const warn = (id: string, code: DoctorErrorCode, message: string): void => { warnings += 1; checks.push({ id, status: "warning", message, error_code: code, fix_ref: doctorFixRef(code) }); if (!json) output.error(`warning: ${message}`); };
 
   const framework = await detectFramework(root);
   if (framework === "express") {
     const wiring = await detectVendoWiring(root);
-    if (wiring.server) pass("Express server is wired");
-    else fail("Express server is not wired with createVendo from @vendoai/vendo/server");
-    if (wiring.client) pass("<VendoRoot> wraps the client");
-    else fail("Express client is not wrapped in <VendoRoot>");
+    if (wiring.server) pass("wiring/express-server", "Express server is wired");
+    else fail("wiring/express-server", "E-WIRE-001", "Express server is not wired with createVendo from @vendoai/vendo/server");
+    if (wiring.client) pass("wiring/express-client", "<VendoRoot> wraps the client");
+    else fail("wiring/express-client", "E-WIRE-002", "Express client is not wrapped in <VendoRoot>");
   } else {
     const routeCandidates = [
       join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
       join(root, "src", "app", "api", "vendo", "[...vendo]", "route.ts"),
     ];
-    if ((await Promise.all(routeCandidates.map(exists))).some(Boolean)) pass("catch-all handler is wired");
-    else fail("missing app/api/vendo/[...vendo]/route.ts");
+    if ((await Promise.all(routeCandidates.map(exists))).some(Boolean)) pass("wiring/next-route", "catch-all handler is wired");
+    else fail("wiring/next-route", "E-WIRE-003", "missing app/api/vendo/[...vendo]/route.ts");
 
     const layoutCandidates = [join(root, "app", "layout.tsx"), join(root, "src", "app", "layout.tsx")];
     let rootWired = false;
@@ -129,18 +142,18 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
         // Try the other layout convention.
       }
     }
-    if (rootWired) pass("<VendoRoot> wraps the app");
-    else fail("root layout is not wrapped in <VendoRoot>");
+    if (rootWired) pass("wiring/next-root", "<VendoRoot> wraps the app");
+    else fail("wiring/next-root", "E-WIRE-004", "root layout is not wrapped in <VendoRoot>");
   }
 
-  if (await hasDependency(root)) pass("@vendoai/vendo dependency is declared");
-  else fail("@vendoai/vendo (or vendoai alias) is not declared");
+  if (await hasDependency(root)) pass("wiring/dependency", "@vendoai/vendo dependency is declared");
+  else fail("wiring/dependency", "E-WIRE-005", "@vendoai/vendo (or vendoai alias) is not declared");
 
   for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) {
-    if (await exists(join(root, ".vendo", file))) pass(`.vendo/${file}`);
-    else fail(`missing .vendo/${file}`);
+    if (await exists(join(root, ".vendo", file))) pass(`config/${file}`, `.vendo/${file}`);
+    else fail(`config/${file}`, "E-CFG-001", `missing .vendo/${file}`);
   }
-  if (!await exists(join(root, ".vendo", "data", ".gitignore"))) warn(".vendo/data/.gitignore is missing");
+  if (!await exists(join(root, ".vendo", "data", ".gitignore"))) warn("config/data-gitignore", "E-CFG-002", ".vendo/data/.gitignore is missing");
 
   // §4 customization ladder — ejected chrome drift. The ejected pixels are the
   // host's code, so a version gap is awareness (warn), never breakage (fail):
@@ -161,9 +174,9 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
         continue;
       }
       if (ejected.version === uiVersion) {
-        pass(`ejected ${ejected.surface} matches @vendoai/ui v${uiVersion}`);
+        pass(`eject/${ejected.surface}`, `ejected ${ejected.surface} matches @vendoai/ui v${uiVersion}`);
       } else {
-        warn(`ejected ${ejected.surface} came from @vendoai/ui v${ejected.version} but v${uiVersion} is installed — review the changelog (https://github.com/runvendo/vendo/releases) and \`vendo eject ${ejected.surface} --force\` if you want the new presentation`);
+        warn(`eject/${ejected.surface}`, "E-UI-001", `ejected ${ejected.surface} came from @vendoai/ui v${ejected.version} but v${uiVersion} is installed — review the changelog (https://github.com/runvendo/vendo/releases) and \`vendo eject ${ejected.surface} --force\` if you want the new presentation`);
       }
     }
   }
@@ -190,8 +203,8 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
         const start = options.startDevServer
           ?? ((o) => startDevServerForProbe(o));
         const started = await start({ root, statusUrl, env, fetchImpl });
-        if (started.ok) { devServerStop = started.stop; pass("started the dev server for the probe"); }
-        else warn("could not start the dev server for the probe; start it yourself (e.g. `npm run dev`) and re-run `vendo doctor`");
+        if (started.ok) { devServerStop = started.stop; pass("dev/start", "started the dev server for the probe"); }
+        else warn("dev/start", "E-DEV-001", "could not start the dev server for the probe; start it yourself (e.g. `npm run dev`) and re-run `vendo doctor`");
       }
     }
   }
@@ -210,31 +223,31 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     };
     if (!response.ok || typeof body.posture !== "string" || typeof body.version !== "string"
       || typeof body.blocks !== "object" || body.blocks === null) {
-      fail(`/status returned an invalid composition response (${response.status})`);
+      fail("live/status", "E-LIVE-001", `/status returned an invalid composition response (${response.status})`);
     } else {
-      pass(`/status live round-trip (${body.version}, ${body.posture})`);
+      pass("live/status", `/status live round-trip (${body.version}, ${body.posture})`);
       liveComposition = true;
       // 10-mcp §1 — the door flag lives under blocks.mcp.
       mcpEnabled = body.blocks.mcp === true;
       sandboxVenue = body.blocks.sandbox;
       if (sandboxVenue === "e2b" || sandboxVenue === "cloud" || sandboxVenue === "custom") {
-        pass(`execution venue: ${sandboxVenue}`);
+        pass("live/venue", `execution venue: ${sandboxVenue}`);
       } else if (sandboxVenue === false) {
-        warn("install the e2b package and set E2B_API_KEY, or set VENDO_API_KEY for the managed Cloud sandbox, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable");
+        warn("live/venue", "E-LIVE-004", "install the e2b package and set E2B_API_KEY, or set VENDO_API_KEY for the managed Cloud sandbox, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable");
       } else if (sandboxVenue === undefined) {
         // Older hosts predate blocks.sandbox — version skew, not a broken install.
-        warn("host /status does not report an execution venue; upgrade @vendoai/vendo to enable the venue check");
+        warn("live/venue", "E-LIVE-005", "host /status does not report an execution venue; upgrade @vendoai/vendo to enable the venue check");
       } else {
-        fail("/status returned an invalid execution venue");
+        fail("live/venue", "E-LIVE-003", "/status returned an invalid execution venue");
       }
     }
   } catch {
-    fail(`/status is unreachable at ${statusUrl}/status`);
+    fail("live/status", "E-LIVE-002", `/status is unreachable at ${statusUrl}/status`);
   }
 
   if (!liveComposition) {
-    fail(`present credential probe cannot run; start the dev server at ${statusUrl} and retry`);
-    fail(`cannot probe actAs; start the dev server at ${statusUrl} and retry`);
+    fail("auth/present", "E-AUTH-003", `present credential probe cannot run; start the dev server at ${statusUrl} and retry`);
+    fail("auth/act-as", "E-AUTH-006", `cannot probe actAs; start the dev server at ${statusUrl} and retry`);
   } else {
     try {
       const response = await fetchImpl(`${statusUrl}/doctor/present`, {
@@ -249,12 +262,12 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       });
       const body = await probeBody(response);
       if (response.ok && body.ok === true) {
-        pass("present credentials reach the host API");
+        pass("auth/present", "present credentials reach the host API");
       } else {
-        fail("present credentials did not reach the host API; set VENDO_BASE_URL to the running host origin and restart the dev server");
+        fail("auth/present", "E-AUTH-001", "present credentials did not reach the host API; set VENDO_BASE_URL to the running host origin and restart the dev server");
       }
     } catch {
-      fail(`present credential probe is unreachable at ${statusUrl}/doctor/present; restart the dev server and verify VENDO_BASE_URL`);
+      fail("auth/present", "E-AUTH-002", `present credential probe is unreachable at ${statusUrl}/doctor/present; restart the dev server and verify VENDO_BASE_URL`);
     }
 
     try {
@@ -265,14 +278,14 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       });
       const body = await probeBody(response);
       if (response.ok && body.ok === true) {
-        pass("actAs mint + host verification live round-trip");
+        pass("auth/act-as", "actAs mint + host verification live round-trip");
       } else if (body.error?.code === "act-as-not-configured") {
-        warn("actAs is not configured; pass createVendo({ actAs }) before enabling away host actions");
+        warn("auth/act-as", "E-AUTH-007", "actAs is not configured; pass createVendo({ actAs }) before enabling away host actions");
       } else {
-        fail("actAs mint + host verification failed; check createVendo({ actAs }), its verifier middleware, and the host principal resolver");
+        fail("auth/act-as", "E-AUTH-004", "actAs mint + host verification failed; check createVendo({ actAs }), its verifier middleware, and the host principal resolver");
       }
     } catch {
-      fail(`actAs probe is unreachable at ${statusUrl}/doctor/act-as; restart the dev server and check createVendo({ actAs })`);
+      fail("auth/act-as", "E-AUTH-005", `actAs probe is unreachable at ${statusUrl}/doctor/act-as; restart the dev server and check createVendo({ actAs })`);
     }
   }
 
@@ -282,27 +295,33 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   if (mcpEnabled) {
     const origin = new URL(statusUrl).origin;
     const mountPath = `${new URL(statusUrl).pathname.replace(/\/$/, "")}/mcp`;
-    const resolves = async (url: string, valid: (body: Record<string, unknown>) => boolean, label: string): Promise<void> => {
+    const resolves = async (id: string, code: DoctorErrorCode, url: string, valid: (body: Record<string, unknown>) => boolean, label: string): Promise<void> => {
       try {
         const response = await fetchImpl(url, { headers: { accept: "application/json" } });
         const body = await response.json() as Record<string, unknown>;
-        if (response.ok && valid(body)) pass(label);
-        else fail(`${label} (${response.status})`);
+        if (response.ok && valid(body)) pass(id, label);
+        else fail(id, code, `${label} (${response.status})`);
       } catch {
-        fail(`${label} is unreachable`);
+        fail(id, code, `${label} is unreachable`);
       }
     };
     await resolves(
+      "mcp/protected-resource",
+      "E-MCP-001",
       `${origin}/.well-known/oauth-protected-resource${mountPath}`,
       (body) => typeof body.resource === "string",
       "MCP protected-resource metadata resolves",
     );
     await resolves(
+      "mcp/authorization-server",
+      "E-MCP-002",
       `${origin}/.well-known/oauth-authorization-server${mountPath}`,
       (body) => typeof body.issuer === "string",
       "MCP authorization-server metadata resolves",
     );
     await resolves(
+      "mcp/server-card",
+      "E-MCP-003",
       `${origin}/.well-known/mcp/server-card.json`,
       (body) => typeof body.name === "string" && Array.isArray(body.transports),
       "MCP server card parses",
@@ -315,24 +334,24 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       try {
         const server = JSON.parse(serverJson) as unknown;
         const errors = validateRegistryServer(server);
-        if (errors.length === 0) pass("server.json matches MCP registry discovery requirements");
-        else fail(`server.json is invalid: ${errors.join("; ")}`);
+        if (errors.length === 0) pass("mcp/server-json", "server.json matches MCP registry discovery requirements");
+        else fail("mcp/server-json", "E-MCP-004", `server.json is invalid: ${errors.join("; ")}`);
 
         const liveDoorUrl = `${origin}${mountPath}`;
         if (remoteUrls(server).some((remote) => sameUrl(remote, liveDoorUrl))) {
-          pass("server.json remote agrees with the live MCP door");
+          pass("mcp/server-json-remote", "server.json remote agrees with the live MCP door");
         } else {
-          fail(`server.json remote does not match the live MCP door ${liveDoorUrl}`);
+          fail("mcp/server-json-remote", "E-MCP-005", `server.json remote does not match the live MCP door ${liveDoorUrl}`);
         }
       } catch {
-        fail("server.json is invalid JSON");
+        fail("mcp/server-json", "E-MCP-006", "server.json is invalid JSON");
       }
     }
 
     const localChallenge = await readOptional(join(root, "public", ".well-known", "mcp-registry-auth"));
     if (localChallenge !== null) {
-      if (localChallenge.trim().startsWith("v=MCPv1")) pass("local MCP registry auth challenge parses");
-      else fail("local MCP registry auth challenge must start with v=MCPv1");
+      if (localChallenge.trim().startsWith("v=MCPv1")) pass("mcp/registry-auth-local", "local MCP registry auth challenge parses");
+      else fail("mcp/registry-auth-local", "E-MCP-007", "local MCP registry auth challenge must start with v=MCPv1");
     }
     try {
       const response = await fetchImpl(`${origin}/.well-known/mcp-registry-auth`, {
@@ -340,8 +359,8 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       });
       if (response.ok) {
         const challenge = await response.text();
-        if (challenge.trim().startsWith("v=MCPv1")) pass("MCP registry auth challenge parses");
-        else fail("MCP registry auth challenge must start with v=MCPv1");
+        if (challenge.trim().startsWith("v=MCPv1")) pass("mcp/registry-auth-live", "MCP registry auth challenge parses");
+        else fail("mcp/registry-auth-live", "E-MCP-008", "MCP registry auth challenge must start with v=MCPv1");
       }
     } catch {
       // The HTTP proof is optional; DNS verification may be in use instead.
@@ -361,23 +380,23 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       env,
     })))(statusUrl);
     if (liveTurn.ok) {
-      pass(`live model turn answered over ${liveTurn.credential} (${liveTurn.elapsedMs}ms)`);
+      pass("turn/model", `live model turn answered over ${liveTurn.credential} (${liveTurn.elapsedMs}ms)`);
       if (liveTurn.reply !== undefined) note(`\n  ${liveTurn.reply.trim()}\n`);
     } else {
-      fail(`live model turn did not answer over ${liveTurn.credential}: ${liveTurn.error ?? "no reply"}`);
+      fail("turn/model", "E-TURN-001", `live model turn did not answer over ${liveTurn.credential}: ${liveTurn.error ?? "no reply"}`);
     }
   } else {
     liveTurn = { attempted: false, ok: false, rung: "none", credential: "n/a", elapsedMs: 0, error: "dev server unreachable" };
-    fail(`live model turn cannot run; start the dev server at ${statusUrl} and retry`);
+    fail("turn/model", "E-TURN-002", `live model turn cannot run; start the dev server at ${statusUrl} and retry`);
   }
 
   // VENDO_API_KEY local shape check + what Cloud unlocks (design §5-6). Key
   // problems surface on the first real service call — no validate round-trip.
   const cloud = await (options.cloudProbe ?? ((o) => cloudDoctor(o)))({ env });
   if (cloud.present && cloud.ok) {
-    pass("Vendo Cloud key present and well-formed");
+    pass("cloud/key", "Vendo Cloud key present and well-formed");
   } else if (cloud.present) {
-    warn(`VENDO_API_KEY is set but not usable: ${cloud.error ?? "malformed"}`);
+    warn("cloud/key", "E-CLOUD-001", `VENDO_API_KEY is set but not usable: ${cloud.error ?? "malformed"}`);
   } else {
     note(`Vendo Cloud (optional): no VENDO_API_KEY. A key unlocks ${cloud.unlocks.join("; ")}. Run \`vendo cloud login\` to start.`);
   }

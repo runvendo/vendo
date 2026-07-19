@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-19T14:36:02.915Z",
+  "runId": "2026-07-19T14-36-02-915Z",
+  "mode": "live",
+  "model": "sonnet",
+  "promptSource": "docs-site/install.mdx",
+  "prompt": "Install Vendo in this repo. Read https://vendo.run/agents.md and follow\nit exactly. Use `vendo init` for scaffolding. Don't hand-write what it\ngenerates. Ask me before creating any account or key. You're done when\n`vendo doctor --json` reports all green.",
+  "fixtures": [
+    {
+      "fixture": "express-host",
+      "doctor": {
+        "ran": true,
+        "green": false,
+        "failingCodes": [
+          "E-CFG-001",
+          "E-CFG-001",
+          "E-CFG-001",
+          "E-CFG-001",
+          "E-CFG-001",
+          "E-TURN-001"
+        ]
+      },
+      "turns": 29,
+      "turnBudget": 40,
+      "withinTurnBudget": true,
+      "costUsd": 0.8742355999999998,
+      "durationMs": 289769,
+      "askedBeforeAccount": {
+        "pass": true,
+        "accountActions": [],
+        "askEvidence": [
+          "Before going further, I found something that needs your attention.\n\n**Two issues so far:**\n\n1. **`https://vendo.run/agents.md` doesn't exist** (404). I found th",
+          "Before going further, I found something that needs your attention.\n\n**Two issues so far:**\n\n1. **`https://vendo.run/agents.md` doesn't exist** (404). I found th"
+        ]
+      },
+      "violations": [
+        {
+          "id": "skipped-star-ask",
+          "detail": "transcript never asks the human about starring runvendo/vendo"
+        }
+      ],
+      "agentExit": {
+        "code": 0,
+        "timedOut": false
+      }
+    },
+    {
+      "fixture": "demo-bank",
+      "doctor": {
+        "ran": true,
+        "green": true,
+        "failingCodes": []
+      },
+      "turns": 102,
+      "turnBudget": 40,
+      "withinTurnBudget": false,
+      "costUsd": 4.9038479000000015,
+      "durationMs": 879179,
+      "askedBeforeAccount": {
+        "pass": true,
+        "accountActions": [],
+        "askEvidence": []
+      },
+      "violations": [
+        {
+          "id": "skipped-star-ask",
+          "detail": "transcript never asks the human about starring runvendo/vendo"
+        }
+      ],
+      "agentExit": {
+        "code": 0,
+        "timedOut": false
+      }
+    }
+  ],
+  "summary": {
+    "fixtureCount": 2,
+    "doctorGreen": 1,
+    "cleanRuns": 0
+  }
+}

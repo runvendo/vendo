@@ -57,8 +57,8 @@ export {
   type InferenceResolver,
 } from "./box-env.js";
 // execution-v2 Lane B — the machine lifecycle over the canonical seam.
-// MachineSandboxAdapter is the seam plus the locked destroy-by-ref amendment;
-// it collapses to SandboxAdapter when Lane A lands the method on the seam.
+// (MachineSandboxAdapter has collapsed to a deprecated alias of SandboxAdapter
+// now that destroy-by-ref lives on the seam itself.)
 export {
   createMachineLifecycle,
   type BuildMachineEnv,

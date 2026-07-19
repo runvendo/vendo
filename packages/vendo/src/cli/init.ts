@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -15,7 +16,7 @@ import { stdin, stdout } from "node:process";
 import type { VendoTheme } from "@vendoai/core";
 import type { Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
-import { runCloudStep, type CloudStepOptions } from "./cloud-init.js";
+import { AUTH_MD_URL, runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
 import { APPLY_COMMAND, composeDelegatedInstructions, EXTRACTION_DRAFT_JSON_SCHEMA } from "./extract/delegate.js";
 import { askYesNo, runAiExtraction, type AiExtractionOptions } from "./extract/extraction.js";
 import type { StaticTool } from "./extract/stages.js";
@@ -58,6 +59,8 @@ import {
  */
 
 const DEFAULT_RADIUS = { small: "4px", large: "12px" } as const;
+
+const BRIEF_PLACEHOLDER = "Describe this product, its users, and the jobs the agent should help them complete.\n";
 
 function toVendoTheme(slots: ThemeSlotValues): VendoTheme {
   const deriveRadius = (factor: number, fallback: string): string => {
@@ -119,6 +122,24 @@ export interface InitOptions {
   agent?: boolean;
   yes?: boolean;
   force?: boolean;
+  /** Agent-install-dx value flags: each one answers exactly one wizard
+      question, so a non-interactive run never needs the prompt it replaces. */
+  /** --auth: the auth answer — wires like the equivalent interactive pick. */
+  auth?: AuthPresetName | "jwt" | "none";
+  /** --framework: detection override; required non-interactively when
+      detection comes back "unknown" (there is no safe default to guess).
+      "unknown" is excluded: an override that answers nothing would silently
+      bypass the non-interactive framework guard. */
+  framework?: Exclude<HostFramework, "unknown">;
+  /** --cloud-key: answer the cloud-login offer with an existing key — landed
+      in .env.local exactly where the mint would put it. */
+  cloudKey?: string;
+  /** --byo: answer the cloud-login offer with "no — bring my own key". */
+  byo?: boolean;
+  /** --ai-polish: consent to the AI extraction pass without the prompt. */
+  aiPolish?: boolean;
+  /** --theme slot=value answers for the uncertain-slot review. */
+  themeAnswers?: Record<string, string>;
   output?: Output;
   telemetry?: {
     home?: string;
@@ -144,6 +165,11 @@ export interface InitOptions {
   /** Test seam: interactivity override for the auth confirm (default: TTY),
       mirroring runAiExtraction's `interactive`. */
   interactive?: boolean;
+  /** Test seam: the star ask — the ONE consent question that ends a fully
+      successful interactive run. Mirrors the auth confirm's shape. */
+  confirmStar?: (question: string, defaultYes: boolean) => Promise<boolean>;
+  /** Test seam: the gh spawn behind a "yes" to the star ask. */
+  spawnStar?: (command: string, args: string[]) => StarProcess;
   /** Test seam: the theme LLM pass's model; default rides the refine seam. */
   themeModel?: () => Promise<LanguageModel>;
   /** Uncertain-slot review — asked ONLY when the model reports uncertainty. */
@@ -359,10 +385,17 @@ async function pickScaffoldAuth(
 async function resolveScaffoldAuth(
   root: string,
   compositionPath: string,
+  authAnswer: AuthPresetName | "jwt" | "none" | undefined,
   confirmAuth: ConfirmAuth | undefined,
   selectAuth: SelectAuth | undefined,
 ): Promise<{ wired: AuthMatch | null; advice: string | null }> {
   const detection = await detectAuthPreset(root);
+  // --auth answers the confirm AND the picker in one flag: route it through
+  // the picker path so a flag answer and an interactive pick wire identically
+  // (detection-accept, install hint, jwt recipe, none advisory).
+  if (authAnswer !== undefined) {
+    return pickScaffoldAuth(detection, compositionPath, async () => authAnswer);
+  }
   if (confirmAuth === undefined) {
     return { wired: detection.wired, advice: authAdvisory(detection, compositionPath) };
   }
@@ -822,11 +855,114 @@ async function vendoRootPasteLines(root: string, framework: HostFramework, withR
   return [`In ${layout}:`, ...importLines.map((line) => `  ${line}`), `  … then wrap: ${wrap}`];
 }
 
-async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, selectAuth?: SelectAuth): Promise<{ plan: InitPlan; changes: PlannedChange[]; manualSteps: string[]; authAdvice: string | null }> {
+/** The repo-specific agent tail (agent-install-dx): a non-interactive
+    scaffold run is agent-driven, so the run ends with plain deterministic
+    pointers — the wired auth preset and what is still stubbed about it, the
+    exact files left to hand-edit (derived from what THIS run wrote, never
+    canned prose), and the one doctor command that gates "done". A pointer to
+    work, not documentation: the playbook carries the teaching. */
+async function agentTailLines(args: {
+  root: string;
+  framework: HostFramework;
+  registryPath: string | null;
+  compositionPath: string | null;
+  authWired: AuthMatch | null;
+  /** No model credential resolved this run — the tail points the agent at
+      the auth.md key flow (Agent Install DX, Layer 2). */
+  cloudKeyMissing: boolean;
+}): Promise<string[]> {
+  const lines: string[] = [];
+  // Auth is a tail fact only when a composition was created this run — a
+  // re-run against an existing composition changed nothing about auth.
+  if (args.compositionPath !== null) {
+    if (args.authWired === null) {
+      lines.push("auth: none wired — sessions stay anonymous until a preset is added");
+    } else if (args.authWired.source === "picked") {
+      lines.push(`auth: ${args.authWired.preset}() wired — stubbed: ${args.authWired.dependency} is not in package.json; install it before the first authenticated run`);
+    } else {
+      lines.push(`auth: ${args.authWired.preset}() wired (detected ${args.authWired.dependency})`);
+    }
+  }
+  if (args.registryPath !== null) {
+    lines.push(`edit ${args.registryPath} — register the components the agent may render (generated empty)`);
+  }
+  if (args.compositionPath !== null && args.authWired === null) {
+    lines.push(`edit ${args.compositionPath} — add the auth preset named in the advisory above when the host has auth`);
+  }
+  if (args.framework === "express") {
+    // No exact entry file exists to name on Express — point at the printed
+    // wiring lines instead of guessing a path.
+    lines.push("edit your server and client entries — paste the mountVendo() and <VendoRoot> lines above");
+  } else {
+    const layout = relative(args.root, join(await appDirectory(args.root), "layout.tsx"));
+    lines.push(`edit ${layout} — wrap the app in the <VendoRoot> lines above`);
+  }
+  if (await readOptional(join(args.root, ".vendo", "brief.md")) === BRIEF_PLACEHOLDER) {
+    lines.push(`edit ${join(".vendo", "brief.md")} — replace the placeholder with what this product does and for whom`);
+  }
+  if (args.cloudKeyMissing) {
+    lines.push(`cloud key: none — for Vendo Cloud, fetch ${AUTH_MD_URL} and run \`vendo cloud device-login\` (your human approves a code in the browser; the key lands in .env.local), then re-run init or pass --cloud-key <key>; --byo with a provider key also works`);
+  }
+  lines.push("gate: run `vendo doctor --json` — done when every check reports green");
+  return lines;
+}
+
+/** The slice of the spawned gh process the star step observes (injectable —
+    tests drive it with a plain EventEmitter). */
+export interface StarProcess {
+  on(event: "error", listener: (error: Error) => void): unknown;
+  on(event: "exit", listener: (code: number | null) => void): unknown;
+}
+
+const STAR_REPO = "runvendo/vendo";
+const STAR_REPO_URL = `https://github.com/${STAR_REPO}`;
+
+/** Star the repo via gh (agent-install-dx §CLI-5). Every failure mode — gh
+    not installed (spawn error), a non-zero exit, a throwing seam, or a gh
+    that hangs past `timeoutMs` — is plain `false`: the caller prints the
+    repo URL instead, one line, no error noise. Exported for the timeout's
+    direct unit test only. */
+export function starViaGh(spawnStar: NonNullable<InitOptions["spawnStar"]>, timeoutMs = 5_000): Promise<boolean> {
+  return new Promise((resolveStar) => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const settle = (starred: boolean): void => {
+      if (timer !== null) clearTimeout(timer);
+      resolveStar(starred);
+    };
+    let child: StarProcess;
+    try {
+      child = spawnStar("gh", ["api", "-X", "PUT", `user/starred/${STAR_REPO}`]);
+    } catch {
+      settle(false);
+      return;
+    }
+    timer = setTimeout(() => settle(false), timeoutMs);
+    timer.unref?.();
+    child.on("error", () => settle(false));
+    child.on("exit", (code) => settle(code === 0));
+  });
+}
+
+async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, selectAuth?: SelectAuth): Promise<{
+  plan: InitPlan;
+  changes: PlannedChange[];
+  manualSteps: string[];
+  authAdvice: string | null;
+  /** What the fresh composition wired (agent-tail fact); null when no
+      composition was created this run OR it stayed anonymous. */
+  authWired: AuthMatch | null;
+  /** Relative path of the composition created THIS run; null otherwise. */
+  compositionPath: string | null;
+  /** Relative path of the registry generated THIS run; null otherwise. */
+  registryPath: string | null;
+}> {
   const root = resolve(options.targetDir);
-  const framework = await detectFramework(root);
+  const framework = options.framework ?? await detectFramework(root);
   const changes: PlannedChange[] = [];
   let authAdvice: string | null = null;
+  let authWired: AuthMatch | null = null;
+  let compositionPath: string | null = null;
+  let registryPath: string | null = null;
   let withRegistry = false;
 
   if (framework === "express") {
@@ -852,16 +988,19 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
         const path = relative(root, registryFile);
         const registryAfter = registrySource(typescript ? "tsx" : "mjs");
         changes.push({ absolute: registryFile, path, before: null, after: registryAfter, diff: diff(path, null, registryAfter) });
+        registryPath = path;
       }
       if (scaffolding) {
         const path = relative(root, server);
         // Detect + confirm happens only here — fresh composition creation —
         // so a re-run before the manual <VendoRoot> paste neither asks nor
         // re-fires the advisory after "Already wired".
-        const auth = await resolveScaffoldAuth(root, path, confirmAuth, selectAuth);
+        const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
         const serverAfter = expressServerSource(typescript, auth.wired);
         changes.push({ absolute: server, path, before: null, after: serverAfter, diff: diff(path, null, serverAfter) });
         authAdvice = auth.advice;
+        authWired = auth.wired;
+        compositionPath = path;
       }
       withRegistry = registryBefore !== null || registryPlanned;
     }
@@ -884,6 +1023,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
       const path = relative(root, registryFile);
       const registryAfter = registrySource("tsx");
       changes.push({ absolute: registryFile, path, before: null, after: registryAfter, diff: diff(path, null, registryAfter) });
+      registryPath = path;
     }
     withRegistry = registryBefore !== null || registryPlanned;
     // The registration map regenerates whenever the detected "use server"
@@ -899,11 +1039,13 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     if (routeBefore === null) {
       const path = relative(root, route);
       // Detect + confirm happens only on fresh composition creation.
-      const auth = await resolveScaffoldAuth(root, path, confirmAuth, selectAuth);
+      const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
       const registrySpecifier = relative(dirname(route), join(dirname(app), "vendo", "registry")).split(sep).join("/");
       const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired, registrySpecifier });
       changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
       authAdvice = auth.advice;
+      authWired = auth.wired;
+      compositionPath = path;
     } else if (registrations.length > 0) {
       // The route already exists but server actions appeared since it was
       // generated: wire the registration map into the existing createVendo so
@@ -958,6 +1100,9 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     changes,
     manualSteps,
     authAdvice,
+    authWired,
+    compositionPath,
+    registryPath,
     plan: {
       framework,
       root,
@@ -1043,17 +1188,38 @@ export async function runInit(options: InitOptions): Promise<number> {
   // accept the detected default silently — the same interactivity posture as
   // the AI-polish consent.
   const interactive = options.interactive ?? (Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
+  // An undetectable framework has NO safe default: a non-interactive run
+  // (agents) errors with the exact flag instead of guessing the Next layout
+  // into an unknown host. Interactive runs keep today's fall-through.
+  if (options.framework === undefined && (options.yes === true || !interactive)
+    && await detectFramework(root) === "unknown") {
+    output.error(
+      "Framework not detected (no next or express dependency in package.json) and this run cannot ask. " +
+      "Pass --framework. Example: vendo init --yes --framework next",
+    );
+    return 1;
+  }
+  // (No stdin-TTY guard on these defaults, unlike the star ask's: an unshown
+  // auth confirm resolving its default just wires the detected preset — the
+  // very accept the non-interactive path performs silently anyway.)
   const confirmAuth = options.yes === true || !interactive
     ? undefined
     : (options.confirmAuth ?? (pretty === null ? askYesNo : pretty.confirm));
   const selectAuth = options.yes === true || !interactive
     ? undefined
     : (options.selectAuth ?? (pretty === null ? plainSelect : pretty.select));
-  const { plan, changes, manualSteps, authAdvice } = await buildPlan(options, confirmAuth, selectAuth);
+  const { plan, changes, manualSteps, authAdvice, authWired, compositionPath, registryPath } = await buildPlan(options, confirmAuth, selectAuth);
   const telemetry = telemetryFor(options, output);
   await telemetry.track("init_started", { framework: plan.framework });
 
   try {
+    // --cloud-key: the flag answer to the cloud-login offer — the supplied
+    // key lands exactly where the mint would (.env.local), so the merge
+    // below picks it up and the offer never fires.
+    if (options.cloudKey !== undefined) {
+      await upsertEnvLocal(root, "VENDO_API_KEY", options.cloudKey);
+      output.log("Wrote VENDO_API_KEY to .env.local (--cloud-key).");
+    }
     // Key first (product order fix): the model-credential story — env keys,
     // else the Vendo Cloud offer — runs BEFORE the AI-assisted passes, so a
     // starter key minted here powers the SAME run's theme model pass and AI
@@ -1077,7 +1243,11 @@ export async function runInit(options: InitOptions): Promise<number> {
     const cloud = await runCloudStep({
       root,
       output,
+      // --byo answers the offer with "no" AND suppresses the agent-path
+      // auth.md pointer (an explicit BYO choice is final); --yes skips the
+      // prompt but still gets the pointer so an agent can mint in-band.
       yes: options.yes === true,
+      byo: options.byo === true,
       credential,
       // The RUN's env, not process.env: a programmatic caller's key must be
       // what the probe and the mint see (seams in options.cloud still win).
@@ -1127,7 +1297,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     );
     await writeIfMissing(
       join(root, ".vendo", "brief.md"),
-      "Describe this product, its users, and the jobs the agent should help them complete.\n",
+      BRIEF_PLACEHOLDER,
       options.force === true,
     );
     // Exact-or-model theme extraction (§B2). Skipped entirely when a
@@ -1140,9 +1310,21 @@ export async function runInit(options: InitOptions): Promise<number> {
         resolveModel: options.themeModel ?? themeModelResolver(root, effectiveEnv),
       });
       pretty?.stopSpin();
-      if (summary.uncertain.length > 0 && options.yes !== true) {
-        const overrides = await (options.themeReview ?? defaultThemeReview)(summary);
-        for (const [slot, raw] of Object.entries(overrides)) {
+      // --theme answers land first; the review prompt then covers only the
+      // uncertain slots the flags left unanswered (non-interactive runs keep
+      // the extracted values for those, exactly as before).
+      const answers: Record<string, string> = { ...(options.themeAnswers ?? {}) };
+      const unanswered = summary.uncertain.filter((entry) => !Object.hasOwn(answers, entry.slot));
+      if (unanswered.length > 0 && options.yes !== true) {
+        const reviewed = await (options.themeReview ?? defaultThemeReview)(
+          unanswered.length === summary.uncertain.length ? summary : { ...summary, uncertain: unanswered },
+        );
+        for (const [slot, raw] of Object.entries(reviewed)) {
+          if (!Object.hasOwn(answers, slot)) answers[slot] = raw;
+        }
+      }
+      if (Object.keys(answers).length > 0) {
+        for (const [slot, raw] of Object.entries(answers)) {
           if (!Object.hasOwn(summary.slots, slot)) {
             output.error(`ignored unknown theme slot ${JSON.stringify(slot)}`);
             continue;
@@ -1213,6 +1395,9 @@ export async function runInit(options: InitOptions): Promise<number> {
       output,
       env: effectiveEnv,
       yes: options.yes === true,
+      // --ai-polish IS the consent: no prompt, and non-interactive runs
+      // stop skipping.
+      ...(options.aiPolish === true ? { consent: true } : {}),
       ...(options.force === true ? { force: true } : {}),
       ...(pretty === null ? {} : { confirm: pretty.confirm }),
       ...(options.extract ?? {}),
@@ -1240,6 +1425,43 @@ export async function runInit(options: InitOptions): Promise<number> {
     for (const line of manualSteps) output.log(`  ${line}`);
     output.log("\nThen start your dev server — the agent is live in your app.");
     output.log("Verify everything: `npx vendo doctor` (it can start the server and run a live turn).");
+
+    // Agent tail (agent-install-dx): the --yes-or-non-TTY path is agent-driven
+    // — the run's FINAL block is the repo-specific pointers an agent parses.
+    // Interactive human runs keep the clack-style output untouched; --agent
+    // never reaches here (its read-only JSON plan returned above).
+    if (options.yes === true || !interactive) {
+      output.log("\nAgent tail:");
+      const tail = await agentTailLines({ root, framework: plan.framework, registryPath, compositionPath, authWired, cloudKeyMissing: credential.rung === "none" });
+      for (const line of tail) output.log(`  ${line}`);
+    } else {
+      // Star ask (agent-install-dx §CLI-5): the interactive success screen
+      // ends with ONE consent question — never shown non-interactively (the
+      // playbook owns the agent-path ask; deterministic runs stay that way),
+      // and never fatal: nothing in this step can change init's exit code.
+      // Yes stars via gh; any failure degrades to the repo URL, one line.
+      // No does nothing — no guilt text.
+      try {
+        // Consent guard: an unshown prompt is NEVER a yes. On a non-TTY
+        // stdin (programmatic `interactive: true`, `init < file`) both real
+        // confirms would resolve the default — pretty.confirm returns it,
+        // askYesNo would block — and starring is an account action, so the
+        // answer without a real keyboard is false, regardless of path.
+        const confirmStar = options.confirmStar
+          ?? (async (question: string, defaultYes: boolean) =>
+            stdin.isTTY === true
+              ? (pretty === null ? askYesNo : pretty.confirm)(question, defaultYes)
+              : false);
+        if (await confirmStar(`Star ${STAR_REPO} to support the project?`, true)) {
+          const starred = await starViaGh(
+            options.spawnStar ?? ((command, args) => spawn(command, args, { stdio: "ignore" })),
+          );
+          if (!starred) output.log(`Star it anytime: ${STAR_REPO_URL}`);
+        }
+      } catch {
+        // The ask is best-effort by design; init already succeeded.
+      }
+    }
     pretty?.done(Date.now() - started, true);
     return 0;
   } catch (error) {
