@@ -82,11 +82,25 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
   // switches the hook to another thread, re-arm the stick and forget the
   // previous thread's growth baseline — otherwise a scroll-up in the old
   // thread would keep the new one from opening at its latest turn.
+  const previousThreadKeyRef = useRef(threadKey);
   useEffect(() => {
+    const previousKey = previousThreadKeyRef.current;
+    previousThreadKeyRef.current = threadKey;
+    // ENG-222 id mint is NOT a thread switch: a conversation started without
+    // an id gets its server-minted thr_ fed back mid-first-stream (VendoPage's
+    // onThreadId loop), flipping this key while the reader is mid-read. The
+    // messages are the same conversation — re-arming here zeroes the growth
+    // baseline (previousHeight === 0 reads as "at bottom by definition"), so
+    // the next streamed chunk yanks a reader who had scrolled up. Slow runners
+    // hit this deterministically ("streaming must never yank" conformance).
+    if (previousKey === undefined && threadKey !== undefined && messages.length > 0) return;
     stuckRef.current = true;
     lastScrollHeightRef.current = 0;
     setUnseen(false);
     setUnseenCount(0);
+    // messages.length is deliberately unlisted: this effect keys on identity
+    // changes only, and the mint guard needs the length at flip time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadKey]);
 
   const atBottom = (node: HTMLElement) =>
