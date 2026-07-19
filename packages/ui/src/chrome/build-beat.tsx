@@ -103,11 +103,11 @@ export function toolPresentation(name: string, args?: unknown, meta?: ToolMeta):
   } else if (toolkit === "gmail" && typeof flat.to === "string") {
     description ??= `Vendo will send this email as you${trigger ? `, ${trigger}` : ""}.`;
     sub = `Emails ${flat.to} as you`;
-    consequence = {
-      pre: "Vendo will email ",
-      target: flat.to,
-      post: trigger ? `, ${trigger} — as you.` : " — now, as you.",
-    };
+    // No consequence for Gmail: the email's subject/body/copied recipients ARE
+    // the message, and a sentence naming only `to` would fold them out of
+    // sight. The fold is only earned when the sentence carries the full
+    // content (the Slack branch above) — otherwise the card keeps its open
+    // fields so the user reviews the real inputs before approving.
   }
   return { title, eyebrow, description, sub, toolkit, logoUrl, consequence };
 }
@@ -134,10 +134,13 @@ export function StatusRibbon({ part, stepIndex, stepTotal, risk = "read" }: {
   // new step restarts the clock. Interval only mounts when motion is allowed —
   // the ribbon is short-lived, but a reduced-motion reader gets a quiet label.
   const startRef = useRef<{ id: string; t0: number }>({ id: part.toolCallId, t0: Date.now() });
+  const [elapsed, setElapsed] = useState(0);
   if (startRef.current.id !== part.toolCallId) {
     startRef.current = { id: part.toolCallId, t0: Date.now() };
+    // Render-phase reset so the new call never flashes the previous clock
+    // for the first interval tick.
+    setElapsed(0);
   }
-  const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const timer = setInterval(() => {

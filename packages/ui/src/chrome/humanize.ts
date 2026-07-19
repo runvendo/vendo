@@ -50,10 +50,15 @@ export function toolTitle(name: string, meta?: ToolMeta): string {
   return label ? label : humanizeToolName(name);
 }
 
-/** Proper-case display name for a toolkit slug ("slack" → "Slack"). The
-    brand-forward connect surfaces (lane pick 2-A) never show the raw slug. */
+/** Proper-case display name for a toolkit slug ("slack" → "Slack",
+    "google_calendar" → "Google Calendar"). The brand-forward connect surfaces
+    (lane pick 2-A) never show the raw slug. */
 export function toolkitDisplayName(toolkit: string): string {
-  return toolkit ? toolkit.charAt(0).toUpperCase() + toolkit.slice(1) : toolkit;
+  return toolkit
+    .split(/[-_\s]+/)
+    .filter(word => word.length > 0)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ") || toolkit;
 }
 
 function formatValue(value: unknown): string {

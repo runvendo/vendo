@@ -29,7 +29,9 @@ export function ConnectCard({ connector, toolkit, message, onConnected }: Connec
   const { client, connectors } = useVendoContext();
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string>();
-  const [logoFailed, setLogoFailed] = useState(false);
+  // Keyed to the toolkit so a failed mark for one toolkit never suppresses
+  // branding after the prop changes.
+  const [logoFailedFor, setLogoFailedFor] = useState<string>();
   const cancelled = useRef(false);
   useEffect(() => () => {
     cancelled.current = true;
@@ -39,7 +41,7 @@ export function ConnectCard({ connector, toolkit, message, onConnected }: Connec
   // the connect dock); otherwise the proper-cased toolkit.
   const option = connectors.find(candidate => candidate.toolkit === toolkit);
   const displayName = option?.label ?? toolkitDisplayName(toolkit);
-  const logoUrl = logoFailed ? undefined : toolkitLogoUrl(toolkit);
+  const logoUrl = logoFailedFor === toolkit ? undefined : toolkitLogoUrl(toolkit);
 
   const connect = async () => {
     setPhase("connecting");
@@ -69,7 +71,7 @@ export function ConnectCard({ connector, toolkit, message, onConnected }: Connec
                 width={16}
                 height={16}
                 style={{ display: "block", objectFit: "contain" }}
-                onError={() => setLogoFailed(true)}
+                onError={() => setLogoFailedFor(toolkit)}
               />
             ) : (
               <svg

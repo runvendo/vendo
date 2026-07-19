@@ -65,8 +65,9 @@ export function MorphToast({ startRect, title, sub, logoUrl, theme, holdMs, dock
     const raf = requestAnimationFrame(() => requestAnimationFrame(() => setSettled(true)));
     const travel = reduced ? 0 : 640;
     // Whether this morph docks is decided when the hold elapses (the anchor's
-    // rect is read fresh then), but the hold LENGTH needs a decision up front:
-    // probe once — a page whose anchor mounts mid-hold simply fades this time.
+    // rect is read fresh then, so it CAN dock even if the anchor mounted
+    // mid-hold). The probe here only picks the hold LENGTH up front — an
+    // anchor that appears mid-hold docks after the longer fade-length hold.
     const willDock = !reduced
       && typeof document !== "undefined"
       && (dockToRef.current ? dockToRef.current() !== undefined : activityAnchorRect() !== undefined);

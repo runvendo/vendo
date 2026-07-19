@@ -48,12 +48,14 @@ export function ApprovalSheet({ children, label }: {
       }
       if (event.key !== "Tab") return;
       const focusables = sheet.querySelectorAll<HTMLElement>(
-        'button, input, [href], select, textarea, [tabindex]:not([tabindex="-1"])',
+        'button, input, [href], select, textarea, summary, [tabindex]:not([tabindex="-1"])',
       );
       if (focusables.length === 0) return;
       const first = focusables[0]!;
       const last = focusables[focusables.length - 1]!;
-      if (event.shiftKey && document.activeElement === first) {
+      // The sheet itself (tabIndex -1) holds initial focus — it counts as the
+      // leading boundary so Shift+Tab can never walk out into the host page.
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === sheet)) {
         event.preventDefault();
         last.focus();
       } else if (!event.shiftKey && document.activeElement === last) {
