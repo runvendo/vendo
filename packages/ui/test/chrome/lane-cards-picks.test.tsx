@@ -37,7 +37,7 @@ describe("lane-cards picks", () => {
     cleanup();
     vi.restoreAllMocks();
     vi.useRealTimers();
-    await wire.close();
+    await wire?.close();
   });
 
   it("1-A: synthesizes a structured consequence from the real Slack inputs", () => {
@@ -51,6 +51,14 @@ describe("lane-cards picks", () => {
     });
     // Unknown toolkits synthesize nothing — the card keeps its fields layout.
     expect(toolPresentation("host_delete_invoice", { invoiceId: "inv_42" }).consequence).toBeUndefined();
+    // Gmail synthesizes nothing either (PR #391 P1): a sentence naming only
+    // `to` would fold the subject/body/copied recipients out of sight, so the
+    // card keeps every input in plain view.
+    expect(toolPresentation("gmail_GMAIL_SEND_EMAIL", {
+      to: "alice@example.com",
+      subject: "Q3 renewals digest",
+      body: "Northwind and Contoso renew this month.",
+    }).consequence).toBeUndefined();
   });
 
   it("1-A: leads with the consequence and folds the real inputs behind Details", () => {
@@ -95,6 +103,8 @@ describe("lane-cards picks", () => {
   it("2-A: toolkit display names are proper-cased", () => {
     expect(toolkitDisplayName("slack")).toBe("Slack");
     expect(toolkitDisplayName("gmail")).toBe("Gmail");
+    expect(toolkitDisplayName("google_calendar")).toBe("Google Calendar");
+    expect(toolkitDisplayName("azure-devops")).toBe("Azure Devops");
   });
 
   it("2-A: the host's catalog label wins over the capitalized toolkit", () => {
