@@ -25,14 +25,19 @@ export function UserText({ text, restored }: { text: string; restored?: boolean 
   const [expanded, setExpanded] = useState(false);
   const collapsible = restored === true && text.length > LONG_TEXT_CAP;
   const shown = collapsible && !expanded ? truncateHead(text) : text;
+  if (!collapsible) return <div className="fl-usertext">{text}</div>;
+  // Lane pick 3D — the collapsed head sits under a gradient fade with a
+  // centered pill (GitHub-fold style) instead of a hard cut + inline link:
+  // the fade shows the content continues, and the control sits where the
+  // eye stops. Expanded keeps the pill below for symmetry.
   return (
-    <div className="fl-usertext">
-      {shown}
-      {collapsible ? (
-        <button type="button" className="fl-more" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
+    <div className={`fl-fold${expanded ? " fl-fold--open" : ""}`}>
+      <div className="fl-usertext">{shown}</div>
+      <div className="fl-fold-veil">
+        <button type="button" className="fl-more fl-fold-pill" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
           {expanded ? "Show less" : `Show full message (${(text.length / 1000).toFixed(0)}k chars)`}
         </button>
-      ) : null}
+      </div>
     </div>
   );
 }
@@ -66,10 +71,12 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks }: 
     return <SentAttachment part={part} />;
   }
   if (isToolUIPart(part)) {
-    // The in-thread presentation is a human build "beat" (label from the
-    // ENG-216 pipeline: host metadata, else the prettified id — never the
-    // raw slug or lifecycle string). The mechanical record stays in the
-    // Activity panel. Collapsed runs carry their repeat count.
+    // Lane pick C1 — live progress moved to the StatusRibbon above the
+    // composer, so working/done calls leave NO transcript line (the
+    // mechanical record stays in the Activity panel). A FAILED call is
+    // content, not progress: it keeps the error beat so the failure stays
+    // readable after the turn settles.
+    if (part.state !== "output-error") return null;
     const risk = risks.get(part.toolCallId) ?? "read";
     return <BuildBeat part={part} risk={risk} count={count} />;
   }
@@ -101,6 +108,22 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks }: 
             <span className="fl-boot-building">Building your view…</span>
             <span className="fl-boot-ready">{appTitle(payload) ?? "Your app"}</span>
           </span>
+          {/* Lane pick C5 (5A+5D) — the pin lives ON the bar (visible only once
+              the view is ready), replacing the old full-width footer row. The
+              renderer lane's data-state/label/hairline markup above is the
+              shared contract and stays untouched. */}
+          {!streaming && onPin ? (
+            <button
+              type="button"
+              className="fl-barpin"
+              onClick={() => onPin({ appId, payload })}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
+              </svg>
+              Pin to dashboard
+            </button>
+          ) : null}
           <span className="fl-boot-hairline" aria-hidden="true" />
         </div>
         <div className="fl-appcard-body">
@@ -110,20 +133,6 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks }: 
             onAction={({ action, payload: actionPayload }) => client.apps.call(appId, action, actionPayload ?? {})}
           />
         </div>
-        {!streaming && onPin ? (
-          <div className="fl-appcard-foot">
-            <button
-              type="button"
-              className="fl-btn fl-btn-primary fl-appcard-pin"
-              onClick={() => onPin({ appId, payload })}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
-              </svg>
-              Pin to dashboard
-            </button>
-          </div>
-        ) : null}
       </div>
     );
   }

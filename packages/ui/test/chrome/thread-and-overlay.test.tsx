@@ -39,15 +39,17 @@ describe("VendoThread and VendoOverlay exports", () => {
     // it can queue a follow-up and never dumps focus to <body>).
     expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).disabled).toBe(false);
     await act(async () => release());
-    // The thread speaks in the product's voice: the tool call renders as a
-    // human BEAT whose label comes from the ENG-216 pipeline (host metadata,
-    // else the prettified id — "Email send", never the raw slug). The raw
-    // name stays discoverable via data-vendo-tool; risk rides the data attr.
+    // The thread speaks in the product's voice: the active tool call narrates
+    // on the STATUS RIBBON (lane pick C1) with the ENG-216 humanized label
+    // ("Email send", never the raw slug). The raw name stays discoverable via
+    // data-vendo-tool; risk rides the data attr — same machine affordance the
+    // old in-transcript beat carried.
     await screen.findAllByText(/Email send/);
-    const beat = document.querySelector("[data-vendo-tool='host_email_send']");
-    expect(beat).toBeTruthy();
-    expect(beat?.textContent).toContain("Email send");
-    expect(beat?.getAttribute("data-vendo-approval")).toBe("write");
+    const ribbon = document.querySelector("[data-vendo-tool='host_email_send']");
+    expect(ribbon).toBeTruthy();
+    expect(ribbon?.classList.contains("fl-ribbon")).toBe(true);
+    expect(ribbon?.textContent).toContain("Email send");
+    expect(ribbon?.getAttribute("data-vendo-approval")).toBe("write");
     const card = await screen.findByLabelText("Approval for Email send");
     expect(card.textContent).toContain("a@example.com");
     expect(card.textContent).toContain(
