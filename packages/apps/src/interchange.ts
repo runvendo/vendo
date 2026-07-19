@@ -32,6 +32,7 @@ const APP_DOCUMENT_FIELDS = [
   "components",
   "storage",
   "server",
+  "machine",
   "trigger",
   "egress",
   "secrets",
@@ -82,11 +83,14 @@ const allowedDocumentFields = (
   return copy;
 };
 
+// execution-v2 — a machine ref never crosses the interchange boundary: export
+// never writes one, and import strips one a document tries to smuggle in (an
+// imported app re-graduates on its own).
 const withoutExportIdentity = (app: AppDocument): Omit<AppDocument, "id"> =>
-  allowedDocumentFields(app, new Set(["id", "server", "forkedFrom"])) as Omit<AppDocument, "id">;
+  allowedDocumentFields(app, new Set(["id", "server", "machine", "forkedFrom"])) as Omit<AppDocument, "id">;
 
 const withFreshIdentity = (input: unknown, id: AppId): Record<string, unknown> => {
-  const copy = allowedDocumentFields(input, new Set(["id", "server", "forkedFrom"]));
+  const copy = allowedDocumentFields(input, new Set(["id", "server", "machine", "forkedFrom"]));
   copy.id = id;
   return copy;
 };
