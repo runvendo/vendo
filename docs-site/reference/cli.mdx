@@ -57,10 +57,10 @@ Options:
   `model` (default `@/lib/ai` for Next.js and `./ai` for Express).
 - `--brief <text>` supplies the product brief written to `.vendo/brief.md`.
 
-Init rejects options it does not recognize and exits 1 before doing anything,
-so a flag the installed CLI does not support (for example `--agent` on an
-older version) can never be silently dropped and turn a read-only request
-into a writing init.
+Init rejects options it does not recognize and exits 1 before doing anything.
+This means a flag the installed CLI does not support (for example `--agent`
+on an older version) can never be silently dropped and turn a read-only
+request into a writing init.
 
 When the host repo has a `.claude/` directory and no
 `.claude/skills/vendo-setup/SKILL.md`, init also offers (through the same
