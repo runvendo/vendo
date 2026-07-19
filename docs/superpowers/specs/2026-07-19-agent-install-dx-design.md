@@ -110,7 +110,7 @@ existing mint/gateway path:
 - **Copy-paste prompt block** on the docs install page and README:
 
   > Install Vendo in this repo. Read https://vendo.run/agents.md and follow
-  > it exactly. Use `vendo init` for scaffolding — don't hand-write what it
+  > it exactly. Use `vendo init` for scaffolding. Don't hand-write what it
   > generates. Ask me before creating any account or key. You're done when
   > `vendo doctor --json` reports all green.
 

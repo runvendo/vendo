@@ -45,12 +45,10 @@ their subject; a TTL sweep erases idle sessions.
 
 ## Encryption is on by default
 
-`vendo init` provisions a 32-byte base64 key at `VENDO_STORE_ENCRYPTION_KEY`
-in your host `.env`. The default composition reads it when no store is passed
-to `createVendo`, so secret values in `vendo_secrets` are encrypted at rest
-without extra wiring. The key is append-safe: `vendo init` never regenerates
-it, even with `--force`. Do not rotate the key by hand — losing it makes
-existing secrets unreadable.
+Set a 32-byte base64 key at `VENDO_STORE_ENCRYPTION_KEY` in your host `.env`.
+The default composition reads it when no store is passed to `createVendo`, so
+secret values in `vendo_secrets` are encrypted at rest without extra wiring. Do
+not rotate the key by hand — losing it makes existing secrets unreadable.
 
 An explicitly configured store always wins. If you pass
 `store: createStore({ encryption: { key } })` to `createVendo`, the environment

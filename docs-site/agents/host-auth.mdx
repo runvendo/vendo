@@ -1,0 +1,115 @@
+---
+title: "Host auth for agents"
+description: "The auth presets vendo init can wire, how to detect which one a host repo uses, exact wiring per preset, and when to ask the human."
+---
+
+One `auth` key fills all three identity seams `createVendo` needs: the
+request-to-principal resolver, the away/MCP `actAs` seam, and the MCP door's
+OAuth adapter. `vendo init --auth <preset>` answers the auth question
+non-interactively. The presets are the zero-argument exports of
+`@vendoai/vendo/server`: `authJs()`, `clerk()`, `supabase()`, `auth0()`, plus
+`jwt({ secret })` and `none`.
+
+## Detect which one the host uses
+
+Init detects from `package.json` (dependencies and devDependencies):
+
+| Dependency matches | Preset | Runtime SDK the preset lazy-loads |
+| --- | --- | --- |
+| `next-auth` or `@auth/*` | `authJs` | `@auth/core` |
+| `@clerk/*` | `clerk` | `@clerk/backend` |
+| `@supabase/*` | `supabase` | `jose` |
+| `@auth0/*` | `auth0` | `jose` |
+
+Cross-check with env and file signals before passing `--auth`:
+
+- **authJs:** `AUTH_SECRET` in `.env*`, an `auth.ts`/`auth.config.ts`, or an
+  `app/api/auth/[...nextauth]` route.
+- **clerk:** `CLERK_SECRET_KEY` / `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` in
+  `.env*`, `<ClerkProvider>` in the layout, `clerkMiddleware` in
+  `middleware.ts`.
+- **supabase:** `SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_URL` or
+  `SUPABASE_JWT_SECRET` in `.env*`, a `lib/supabase*` client module.
+- **auth0:** `AUTH0_DOMAIN` or `AUTH0_ISSUER_BASE_URL` in `.env*`.
+- **jwt:** none of the above, but the host's API verifies its own
+  `Authorization: Bearer` HS256 tokens with a shared secret.
+
+Exactly one detected family: pass its preset (interactive init would confirm
+it; `--auth` is that confirmation). Zero or several: init stays anonymous and
+prints one advisory line naming the exact line to add later; see "when to
+ask" below.
+
+## What init scaffolds vs what you hand-wire
+
+When init creates the composition (the Next catch-all route or
+`vendo/server.ts` on Express), `--auth <preset>` writes the `auth:
+<preset>()` line into it. On a re-run against an existing composition, init
+changes nothing about auth; you add the one line yourself.
+
+- `--auth authJs|clerk|supabase|auth0` with the SDK detected: fully wired,
+  nothing stubbed.
+- Same flag without the SDK in `package.json`: wired, plus a stub: install
+  the runtime package from the table above (`npm install @auth/core`, etc.)
+  before the first authenticated run. The preset fails loud until then, and
+  the agent tail repeats this.
+- `--auth jwt`: nothing is wired. `jwt()` cannot be zero-argument (no vendor
+  env var exists for a host-owned scheme); init prints the recipe and you add
+  `auth: jwt({ secret: () => process.env.YOUR_SIGNING_SECRET })` by hand.
+- `--auth none`: the composition gets `principal: async () => null`; every
+  session is anonymous until a preset line replaces it.
+
+## Per-preset wiring
+
+Every preset is zero-argument in the standard case: it reads its provider's
+env variable and derives the principal's display from session-token claims.
+Verify the env variable exists; that is the whole hand-wiring for present
+calls.
+
+| Preset | Reads (env) | Session source |
+| --- | --- | --- |
+| `authJs()` | `AUTH_SECRET` | Auth.js session JWE |
+| `clerk()` | `CLERK_SECRET_KEY` (+ optional `CLERK_JWT_KEY`) | `__session` cookie or `Authorization: Bearer` |
+| `supabase()` | `SUPABASE_JWT_SECRET` (HS256) and/or `SUPABASE_URL` (ES256 via GoTrue JWKS) | `sb-*-auth-token` cookie or `Authorization: Bearer` |
+| `auth0()` | `AUTH0_DOMAIN` or `AUTH0_ISSUER_BASE_URL` (tenant JWKS) | `Authorization: Bearer` |
+| `jwt({ secret })` | none; `secret` is required | `Authorization: Bearer` |
+
+Notes that matter in practice:
+
+- **supabase:** never use the anon key or a service-role token as the secret;
+  they are complete tokens, not the signing secret. Hosted projects on newer
+  signing keys use ES256; setting `SUPABASE_URL` is enough for that path (the
+  preset verifies against `<url>/auth/v1/.well-known/jwks.json`, via `jose`).
+- **clerk / auth0 away execution:** the provider holds the session signing
+  keys, so away (user-not-present) calls use a host-owned `VendoAway` token
+  instead. That needs `VENDO_AWAY_TOKEN_SECRET` (generate with
+  `openssl rand -base64 32`; ask your human before creating secrets) set for
+  both the Vendo runtime and the host API, plus the preset's verifier
+  middleware on the host API. Present calls work without any of this; doctor
+  reports the gap as `E-AUTH-007`/`E-AUTH-004` only when away wiring is
+  expected. Full recipes: [actAs presets](/connect/act-as-presets).
+- **Custom identity mapping:** every preset accepts `{ secret, user }`
+  options; `user: (subject, claims) => ({ display, email }) | null` resolves
+  identity from the host's own user table and returning `null` means "subject
+  unknown", failing closed.
+
+## When to ask the human
+
+Relay the decision instead of guessing when:
+
+- **Several providers are detected** (for example `next-auth` and
+  `@supabase/*` both present; one may be auth, the other just a database
+  client). Name what you found and ask which one signs the app's sessions.
+- **No provider is detected** but the app clearly has login. Ask whether it is
+  a host-owned JWT scheme (`--auth jwt` + the recipe) or something Vendo has
+  no preset for (hand-wire the `principal`/`actAs`/`oauth` trio per
+  [actAs presets](/connect/act-as-presets)).
+- **A secret has to be created** (`VENDO_AWAY_TOKEN_SECRET`, a `jwt` signing
+  secret): confirm before generating and never invent values for provider
+  keys.
+- **Anonymous is a real option.** `--auth none` is a valid ship for products
+  without login; confirm the host actually has no user identity before
+  settling for it.
+
+Verification: `vendo doctor --json` probes both seams live: present
+credentials (`E-AUTH-001..003`) and the actAs mint + verify round-trip
+(`E-AUTH-004..007`). See [verify](/agents/verify).
