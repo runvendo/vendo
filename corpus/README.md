@@ -199,8 +199,8 @@ the docs' copy-paste prompt alone (agent-install DX design 2026-07-19
    fixed.
 
 Cost and CI posture: a live run spends real model money — budget-capped at
-`--max-budget-usd` (default 10 USD) per fixture, so a full three-fixture
-matrix is ≤ 30 USD worst-case and typically an order less on sonnet
+`--max-budget-usd` (default 10 USD) per fixture, so a full four-fixture
+matrix is ≤ 40 USD worst-case and typically an order less on sonnet
 (observed corpus installs land in low single-digit dollars per fixture; a
 haiku smoke is cents). The eval is therefore never part of `pnpm test`,
 turbo pipelines, or any workflow — on-demand only, exactly like `corpus ai`

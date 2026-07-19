@@ -55,35 +55,56 @@ export function agentEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return env;
 }
 
+/** Kill the agent's whole process group (SIGTERM, then SIGKILL escalation):
+ * claude's grandchildren — an `npm install`, a dev server it booted — must
+ * not outlive the budget, or an orphaned server on the fixture's fixed port
+ * could answer the harness's later doctor probe and fake a green. */
+function killProcessGroup(child: ReturnType<typeof spawn>, signal: NodeJS.Signals): void {
+  try {
+    if (child.pid !== undefined) process.kill(-child.pid, signal);
+    else child.kill(signal);
+  } catch {
+    child.kill(signal);
+  }
+}
+
 export async function runInstallAgent(options: RunInstallAgentOptions): Promise<InstallAgentResult> {
   const claudeBin = options.claudeBin ?? "claude";
   const args = buildClaudeArgs(options);
   await mkdir(path.dirname(options.transcriptPath), { recursive: true });
   const transcript = createWriteStream(options.transcriptPath);
+  // stderr goes to its own log so the transcript stays pure JSONL.
+  const stderrLog = createWriteStream(`${options.transcriptPath}.stderr.log`);
 
   return new Promise<InstallAgentResult>((resolve, reject) => {
     const child = spawn(claudeBin, args, {
       cwd: options.cwd,
       env: agentEnv(options.env ?? process.env),
       stdio: ["ignore", "pipe", "pipe"],
+      detached: true,
     });
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGTERM");
-      setTimeout(() => { child.kill("SIGKILL"); }, 10_000).unref();
+      killProcessGroup(child, "SIGTERM");
+      setTimeout(() => { killProcessGroup(child, "SIGKILL"); }, 10_000).unref();
     }, options.timeBudgetMs);
-
-    child.stdout.pipe(transcript, { end: false });
-    child.stderr.pipe(transcript, { end: false });
-    child.on("error", (error) => {
+    const finish = (): void => {
       clearTimeout(timer);
       transcript.end();
+      stderrLog.end();
+    };
+
+    child.stdout.pipe(transcript, { end: false });
+    child.stderr.pipe(stderrLog, { end: false });
+    child.on("error", (error) => {
+      finish();
       reject(error);
     });
     child.on("close", (code) => {
-      clearTimeout(timer);
-      transcript.end();
+      finish();
+      // The agent is done; sweep any process-group stragglers regardless.
+      killProcessGroup(child, "SIGKILL");
       resolve({ code, timedOut, command: `${claudeBin} ${args.map((arg) => (arg.includes(" ") ? JSON.stringify(arg) : arg)).join(" ")}` });
     });
   });

@@ -16,6 +16,7 @@ import type { DoctorOutcome } from "./score.js";
 
 const CLI_MISSING_CODE = "vendo-cli-missing";
 const SERVER_UNREACHABLE_CODE = "dev-server-unreachable";
+const PORT_OCCUPIED_CODE = "port-already-occupied";
 
 async function pathExists(file: string): Promise<boolean> {
   return access(file).then(() => true, () => false);
@@ -57,6 +58,7 @@ function startDevServer(
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk: string) => { chunks.push(chunk); });
   child.stderr.on("data", (chunk: string) => { chunks.push(chunk); });
+  child.on("error", (error) => { chunks.push(`[install-eval] dev server spawn error: ${error.message}\n`); });
 
   return {
     async stop() {
@@ -127,12 +129,27 @@ export function doctorOutcomeFromReport(report: DoctorJsonReport | null, exitCod
   };
 }
 
+/** True when something already answers on the fixture's dev-server port.
+ * Checked BEFORE the harness boots its own server: a leftover process (an
+ * agent-booted dev server that survived its run, a neighboring app on the
+ * fixed port) would otherwise answer the doctor probe and fake a green. */
+export async function isPortOccupied(readinessUrl: string, fetchImpl: typeof fetch): Promise<boolean> {
+  try {
+    await fetchImpl(readinessUrl, { signal: AbortSignal.timeout(2_000) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export interface RunFixtureDoctorOptions {
   fixture: InstallEvalFixture;
   fixtureDir: string;
   logsDir: string;
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
+  /** Test seam for the pre-boot port guard. */
+  checkPortOccupied?: (readinessUrl: string, fetchImpl: typeof fetch) => Promise<boolean>;
 }
 
 export async function runFixtureDoctor(options: RunFixtureDoctorOptions): Promise<DoctorOutcome> {
@@ -165,6 +182,17 @@ export async function runFixtureDoctor(options: RunFixtureDoctorOptions): Promis
       green: false,
       failingCodes: [CLI_MISSING_CODE],
       detail: "no vendo CLI in the fixture's node_modules — the agent never completed the package install.",
+    };
+  }
+
+  const occupied = await (options.checkPortOccupied ?? isPortOccupied)(options.fixture.devServer.readinessUrl, fetchImpl);
+  if (occupied) {
+    return {
+      ran: false,
+      green: false,
+      failingCodes: [PORT_OCCUPIED_CODE],
+      detail: `something already answers at ${options.fixture.devServer.readinessUrl} before the harness booted its dev server — `
+        + "a stray process could fake a green doctor; kill it and re-run.",
     };
   }
 
