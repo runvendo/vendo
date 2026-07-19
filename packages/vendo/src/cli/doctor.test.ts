@@ -222,7 +222,7 @@ describe("vendo doctor", () => {
     expect(fetchImpl.mock.calls[2]?.[0]).toBe("http://localhost:3000/api/vendo/doctor/act-as");
   });
 
-  it.each(["e2b", "modal", "custom"] as const)("reports a lit %s execution venue", async (sandbox) => {
+  it.each(["e2b", "cloud", "custom"] as const)("reports a lit %s execution venue", async (sandbox) => {
     const messages = output();
     expect(await doctor({
       targetDir: await healthy(),
@@ -242,7 +242,7 @@ describe("vendo doctor", () => {
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
     expect(messages.errors).toContain(
-      "warning: install the e2b package and set E2B_API_KEY, or install modal and set MODAL_TOKEN_ID+MODAL_TOKEN_SECRET, or set VENDO_API_KEY for the managed Cloud sandbox, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable",
+      "warning: install the e2b package and set E2B_API_KEY, or set VENDO_API_KEY for the managed Cloud sandbox, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable",
     );
     expect(messages.logs).toContain(
       "Ladder: execution venue is checked above; actAs for away host actions; connectors for external tools.",

@@ -38,6 +38,7 @@ import {
 import {
   instructionRequiresServer,
   modelEngine,
+  prewarmModels,
   type CodeFileEdit,
   type GenerationDependencies,
   type GenerationEngine,
@@ -46,6 +47,12 @@ import { createAppHistory } from "./history.js";
 import { createInClientApprovals, type InClientVerdict } from "./inclient.js";
 import { createAppInterchange } from "./interchange.js";
 import { createMachineSessions } from "./machine.js";
+import {
+  createMachineLifecycle,
+  type BuildMachineEnv,
+  type LifecycleClock,
+  type MachineSandboxAdapter,
+} from "./machine-lifecycle.js";
 import { createAppOpener, createProgressiveQueryResolver } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
 import { detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
@@ -54,8 +61,8 @@ import { createRunTokenGate } from "./run-token-gate.js";
 import { createSecretExposure, type SecretExposureGrant } from "./secret-exposure.js";
 import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
 import { appVersionHash } from "./version-hash.js";
-import type { SandboxAdapter } from "./sandbox.js";
-import type { SandboxMachine } from "./sandbox.js";
+import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
+import { toV1SandboxAdapter, type V1SandboxAdapter, type V1SandboxMachine } from "./sandbox-v1-compat.js";
 import { FETCH_SHIM_BOOT_PRELUDE, FETCH_SHIM_PATH, FETCH_SHIM_SOURCE } from "./scaffold/fetch-shim.js";
 import { servedAppScaffold } from "./scaffold/index.js";
 import type { IpResolver } from "./ssrf.js";
@@ -65,7 +72,21 @@ export interface AppsConfig {
   store: StoreAdapter;
   guard: Guard;
   tools: ToolRegistry;
-  sandbox?: SandboxAdapter;
+  sandbox?: SandboxAdapter | V1SandboxAdapter;
+  /**
+   * execution-v2 — machine lifecycle seams. `sandbox` here is the v2 adapter
+   * (Lane A's shrunk seam); `buildEnv` is Lane C's env assembly, injected so
+   * the lanes do not collide. No adapter → layer-2 lifecycle operations fail
+   * with the existing sandbox-unavailable VendoError; layer-1 apps are
+   * unaffected.
+   */
+  machine?: {
+    sandbox?: MachineSandboxAdapter;
+    buildEnv?: BuildMachineEnv;
+    template?: string;
+    idleMs?: number;
+    clock?: LifecycleClock;
+  };
   model?: LanguageModel;
   /** v2 spec §4 — tier-0 paint lane knob, passed to the generation engine.
    *  `model` is the no-think switch (a thinking-disabled model instance);
@@ -175,6 +196,10 @@ export interface AppsRuntime {
     /** Additive per-call stream hook used by the agent bridge. */
     onView?: (part: VendoViewPart) => void;
   }, ctx: RunContext): Promise<AppDocument>;
+  /** Speed lane — best-effort page-open warm-up of the generation model(s)
+   *  (full + paint), so the first create reuses a live connection. Safe to
+   *  call on surface mount; never throws. */
+  prewarm(): Promise<void>;
   get(appId: AppId, ctx: RunContext): Promise<AppDocument | null>;
   list(ctx: RunContext): Promise<AppDocument[]>;
   delete(appId: AppId, ctx: RunContext): Promise<void>;
@@ -220,6 +245,24 @@ export interface AppsRuntime {
   pins: {
     drift(appId: AppId, ctx: RunContext): Promise<PinDrift[]>;
     rebase(input: { appId: AppId; slot: string }, ctx: RunContext): Promise<PinRebaseResult>;
+  };
+  /**
+   * execution-v2 — additive machine lifecycle surface (same additive precedent
+   * as `inClient`/`pins`/`secrets`). An app with no `machine` on its document
+   * is a layer-1 tree app; presence of `machine` means layer 2+ — the layer is
+   * always derived from presence, never stored. Wake single-flight and idle
+   * auto-sleep live in-process; a multi-instance host can wake one app twice
+   * (known v2 limit — the last sleep's CAS wins).
+   */
+  machine: {
+    /** Create the machine from the base template, snapshot it, store the ref. Idempotent. */
+    provision(appId: AppId, ctx: RunContext): Promise<AppDocument>;
+    /** Resume the stored snapshot; concurrent wakes coalesce to one machine. */
+    wake(appId: AppId, ctx: RunContext): Promise<SandboxMachine>;
+    /** Snapshot the live machine, store the new ref, stop it. No-op when not awake. */
+    sleep(appId: AppId, ctx: RunContext): Promise<AppDocument>;
+    /** Destroy the sandbox and clear the document's machine field (de-graduation). */
+    destroy(appId: AppId, ctx: RunContext): Promise<AppDocument>;
   };
   /**
    * ENG-345 — additive guarded per-secret in-sandbox exposure surface (same
@@ -425,6 +468,13 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       }),
   });
 
+  // execution-v2 — the v2 machine lifecycle (provision/wake/sleep/destroy)
+  // stands beside the v1 session cache until the v1 execution path is removed.
+  const lifecycle = createMachineLifecycle({
+    store: config.store,
+    ...config.machine,
+  });
+
   const owned = async (appId: AppId, subject: string): Promise<AppDocument | null> => {
     const record = await apps.get(appId);
     if (record === null || record.refs?.subject !== subject) return null;
@@ -552,7 +602,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   ];
 
   const syntaxCheck = async (
-    machine: SandboxMachine,
+    machine: V1SandboxMachine,
     file: CodeFileEdit,
   ): Promise<string | undefined> => {
     if (!/\.[cm]?[jt]s$/i.test(file.path)) return undefined;
@@ -698,7 +748,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   };
 
   const reportLifecycle = async (
-    operation: "create" | "delete" | "fork" | "in-client-approve" | "pin-rebase",
+    operation: "create" | "delete" | "fork" | "in-client-approve" | "pin-rebase" | "machine-provision" | "machine-destroy",
     appId: AppId,
     ctx: RunContext,
     extra: Record<string, Json> = {},
@@ -763,6 +813,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   };
 
   const runtime: AppsRuntime = {
+    async prewarm() {
+      const models = [config.model, config.paint?.model].filter(
+        (model): model is LanguageModel => model !== undefined,
+      );
+      if (models.length > 0) await prewarmModels(models);
+    },
     async create(input, ctx) {
       if (config.model === undefined) {
         throw new VendoError("not-implemented", "generation requires a model");
@@ -851,6 +907,8 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     async delete(appId, ctx) {
       const app = await requireOwned(appId, ctx.principal.subject);
       await machines.stop(appId);
+      // execution-v2 — deleting the app destroys its machine (sandbox + snapshot).
+      await lifecycle.destroyMachine(app);
       await data.clear(app, ctx.principal.subject, await history.documents(appId));
       await history.clear(appId);
       await inClientApprovals.clear(appId);
@@ -866,8 +924,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         id: `app_${globalThis.crypto.randomUUID()}`,
         forkedFrom: source.id,
       };
+      // execution-v2 — a fork never carries the machine; the copy re-graduates
+      // on its own.
+      delete fork.machine;
       if (source.server !== undefined && config.sandbox !== undefined) {
-        const machine = await config.sandbox.resume(source.server);
+        const machine = await toV1SandboxAdapter(config.sandbox).resume(source.server);
         try {
           fork.server = await machine.snapshot();
         } finally {
@@ -1183,6 +1244,30 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           baseHash: baseline.hash,
           replayed,
         };
+      },
+    },
+
+    machine: {
+      async provision(appId, ctx) {
+        const app = await requireOwned(appId, ctx.principal.subject);
+        const alreadyProvisioned = app.machine !== undefined;
+        const provisioned = await lifecycle.provision(app);
+        if (!alreadyProvisioned) await reportLifecycle("machine-provision", appId, ctx);
+        return provisioned;
+      },
+      async wake(appId, ctx) {
+        const app = await requireOwned(appId, ctx.principal.subject);
+        return lifecycle.wake(app);
+      },
+      async sleep(appId, ctx) {
+        const app = await requireOwned(appId, ctx.principal.subject);
+        return lifecycle.sleep(app);
+      },
+      async destroy(appId, ctx) {
+        const app = await requireOwned(appId, ctx.principal.subject);
+        const cleared = await lifecycle.destroyMachine(app);
+        if (app.machine !== undefined) await reportLifecycle("machine-destroy", appId, ctx);
+        return cleared;
       },
     },
 

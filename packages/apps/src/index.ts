@@ -1,8 +1,11 @@
 /** @vendoai/apps — the app artifact and engine (docs/contracts/06-apps.md).
  *
- * The package root exports exactly the 06 §1 public API plus the block-plan's
- * flagged additions (AppsConfig.proxyUrl/pinBaselines/egressTransport,
- * AppsRuntime.proxy, SandboxMachine.url?, create-spec egress?,
+ * The sandbox seam is the execution-v2 shape (sandbox.ts); the archived v1
+ * seam survives only as the deprecated V1Sandbox* transition surface below,
+ * deleted with the last v1 path (see sandbox-v1-compat.ts header).
+ * The package root otherwise exports exactly the 06 §1 public API plus the
+ * block-plan's flagged additions (AppsConfig.proxyUrl/pinBaselines/
+ * egressTransport, AppsRuntime.proxy,
  * substituteSecretHandles/hostAllowed), the ENG-259 SSRF egress guard
  * (checkEgressUrl, isBlockedAddress) exposed for reuse, the ENG-288 M4
  * in-client trust-axis surface (06 §9): AppsRuntime.inClient, ship-diff
@@ -31,6 +34,23 @@ export {
   type SecretExposureGrant,
 } from "./secret-exposure.js";
 export type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
+// execution-v2 Lane B — the machine lifecycle over the canonical seam.
+// MachineSandboxAdapter is the seam plus the locked destroy-by-ref amendment;
+// it collapses to SandboxAdapter when Lane A lands the method on the seam.
+export {
+  createMachineLifecycle,
+  type BuildMachineEnv,
+  type LifecycleClock,
+  type MachineLifecycle,
+  type MachineLifecycleConfig,
+  type MachineSandboxAdapter,
+} from "./machine-lifecycle.js";
+export {
+  toV1SandboxAdapter,
+  type V1SandboxAdapter,
+  type V1SandboxCreateSpec,
+  type V1SandboxMachine,
+} from "./sandbox-v1-compat.js";
 export {
   shareSnapshotSchema,
   publishRecordSchema,

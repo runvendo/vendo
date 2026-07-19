@@ -3,7 +3,7 @@ import { componentMapError } from "./component-map.js";
 import { safeErrorMessage } from "./errors.js";
 import { FN_REFERENCE_PATTERN, collectActionReferences } from "./fn-references.js";
 import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT_V2 } from "./formats.js";
-import { appIdSchema, type AppId } from "./ids.js";
+import { appIdSchema, isoDateTimeSchema, type AppId, type IsoDateTime } from "./ids.js";
 import { TOOL_NAME_PATTERN } from "./tools.js";
 import { validateTreeV2 } from "./tree-v2.js";
 import { triggerSchema, type Trigger } from "./triggers.js";
@@ -35,6 +35,23 @@ export const pinSchema = z.object({
   base: z.string(),
 }).passthrough() satisfies z.ZodType<Pin>;
 
+/**
+ * execution-v2 — the app's persistent machine. Presence means layer 2+; an app
+ * with no machine is a layer-1 tree app. The layer itself is always derived
+ * from presence (and, for layer 3, from what the box serves), never stored.
+ */
+export interface AppMachine {
+  /** Provider-prefixed snapshot reference (e.g. "e2b:snap_x91"), opaque past the colon. */
+  snapshotRef: string;
+  provisionedAt: IsoDateTime;
+}
+
+/** execution-v2 */
+export const appMachineSchema = z.object({
+  snapshotRef: z.string(),
+  provisionedAt: isoDateTimeSchema,
+}).passthrough() satisfies z.ZodType<AppMachine>;
+
 /** 01-core §9 */
 export interface AppDocument {
   format: typeof VENDO_APP_FORMAT;
@@ -46,6 +63,7 @@ export interface AppDocument {
   components?: Record<string, string>;
   storage?: Record<string, StorageDecl>;
   server?: string;
+  machine?: AppMachine;
   trigger?: Trigger;
   egress?: string[];
   secrets?: string[];
@@ -71,6 +89,7 @@ export const appDocumentSchema = z.object({
   components: z.record(z.string()).optional(),
   storage: z.record(storageDeclSchema).optional(),
   server: z.string().optional(),
+  machine: appMachineSchema.optional(),
   trigger: triggerSchema.optional(),
   egress: z.array(z.string()).optional(),
   secrets: z.array(z.string()).optional(),
@@ -191,6 +210,9 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
 
   if (app.server !== undefined && !SERVER_REFERENCE_PATTERN.test(app.server)) {
     return fail("validation", `invalid server reference "${app.server}"`);
+  }
+  if (app.machine !== undefined && !SERVER_REFERENCE_PATTERN.test(app.machine.snapshotRef)) {
+    return fail("validation", `invalid machine snapshot reference "${app.machine.snapshotRef}"`);
   }
   for (const pin of app.pins ?? []) {
     if (pin.slot.length === 0) {
