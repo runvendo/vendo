@@ -89,11 +89,20 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
     // ENG-222 id mint is NOT a thread switch: a conversation started without
     // an id gets its server-minted thr_ fed back mid-first-stream (VendoPage's
     // onThreadId loop), flipping this key while the reader is mid-read. The
-    // messages are the same conversation — re-arming here zeroes the growth
-    // baseline (previousHeight === 0 reads as "at bottom by definition"), so
-    // the next streamed chunk yanks a reader who had scrolled up. Slow runners
-    // hit this deterministically ("streaming must never yank" conformance).
-    if (previousKey === undefined && threadKey !== undefined && messages.length > 0) return;
+    // messages are the same conversation — KEEP the growth baseline: zeroing
+    // it makes previousHeight === 0 read as "at bottom by definition", so the
+    // next streamed chunk yanks a reader who had scrolled up (deterministic on
+    // slow runners — the "streaming must never yank" conformance failure).
+    // Re-arm the stick and clear the bar though: with the real baseline
+    // intact, the next mutation's previous-height guard releases a genuinely
+    // scrolled-up reader, while a bottom reader stays pinned instead of
+    // leaking a transient new-replies bar.
+    if (previousKey === undefined && threadKey !== undefined && messages.length > 0) {
+      stuckRef.current = true;
+      setUnseen(false);
+      setUnseenCount(0);
+      return;
+    }
     stuckRef.current = true;
     lastScrollHeightRef.current = 0;
     setUnseen(false);
@@ -147,7 +156,12 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
     // puts it well above. Release the stick here instead of yanking.
     const atPreviousBottom = previousHeight === 0
       || previousHeight - node.scrollTop - node.clientHeight <= BOTTOM_SLACK_PX;
-    if (stuckRef.current && !atPreviousBottom) stuckRef.current = false;
+    // …unless they are at the CURRENT bottom: when content SHRINKS (a connect
+    // card or generated view swaps out), scrollTop can no longer equal the old
+    // taller bottom, and the previous-height test alone misreads the reader as
+    // scrolled-up — releasing the stick and leaking a new-replies bar on the
+    // next turn even though they never moved. At-current-bottom is at bottom.
+    if (stuckRef.current && !atPreviousBottom && !atBottom(node)) stuckRef.current = false;
     if (stuckRef.current) {
       node.scrollTop = node.scrollHeight;
       seenLengthRef.current = messages.length;
@@ -175,7 +189,7 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
       const atPreviousBottom = previousHeight === 0
         || previousHeight - node.scrollTop - node.clientHeight <= BOTTOM_SLACK_PX;
       lastScrollHeightRef.current = node.scrollHeight;
-      if (stuckRef.current && !atPreviousBottom) stuckRef.current = false;
+      if (stuckRef.current && !atPreviousBottom && !atBottom(node)) stuckRef.current = false;
       if (stuckRef.current) node.scrollTop = node.scrollHeight;
     });
     for (const child of Array.from(node.children)) observer.observe(child);
