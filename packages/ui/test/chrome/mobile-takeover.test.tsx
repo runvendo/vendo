@@ -141,23 +141,28 @@ describe("mobile takeover (ENG-228)", () => {
     expect(container.contains(page)).toBe(true);
   });
 
-  it("stamps fl-takeover on the open palette and portals it over the host", async () => {
+  // One-surface ⌘K (ui-lane-entry pick P-C): the palette no longer renders a
+  // dialog — the keybinding opens the conversation overlay itself.
+  it("routes ⌘K to the overlay, takeover-stamped and portaled on mobile", async () => {
     installMatchMedia(true);
-    const { container } = render(<VendoProvider client={client}><VendoPalette /></VendoProvider>);
+    const { container } = render(
+      <VendoProvider client={client}><VendoPalette /><VendoOverlay launcher="none" /></VendoProvider>,
+    );
     fireEvent.keyDown(globalThis, { key: "k", ctrlKey: true });
-    const dialog = await screen.findByRole("dialog", { name: "Vendo command palette" });
+    const dialog = await screen.findByRole("dialog", { name: "Vendo assistant" });
     expect(dialog.classList.contains("fl-takeover")).toBe(true);
     expect(container.contains(dialog)).toBe(false);
     expect(dialog.closest(".fl-overlay-portal")!.parentElement).toBe(document.body);
   });
 
-  it("keeps the desktop palette in-tree", async () => {
+  it("routes desktop ⌘K to the overlay without the takeover stamp", async () => {
     installMatchMedia(false);
-    const { container } = render(<VendoProvider client={client}><VendoPalette /></VendoProvider>);
+    render(
+      <VendoProvider client={client}><VendoPalette /><VendoOverlay launcher="none" /></VendoProvider>,
+    );
     fireEvent.keyDown(globalThis, { key: "k", ctrlKey: true });
-    const dialog = await screen.findByRole("dialog", { name: "Vendo command palette" });
+    const dialog = await screen.findByRole("dialog", { name: "Vendo assistant" });
     expect(dialog.classList.contains("fl-takeover")).toBe(false);
-    expect(container.contains(dialog)).toBe(true);
   });
 
   it("wires the virtual keyboard inset into --fl-kb-inset and tracks visualViewport resizes", async () => {
@@ -190,7 +195,7 @@ describe("mobile takeover (ENG-228)", () => {
     late.remove();
   });
 
-  it("keeps a palette opened above the overlay interactive (modal portals are never inerted)", async () => {
+  it("⌘K toggles an already-open overlay closed (one surface, no second modal)", async () => {
     installMatchMedia(true);
     render(
       <VendoProvider client={client}>
@@ -200,15 +205,11 @@ describe("mobile takeover (ENG-228)", () => {
     );
     expect(panel()).toBeTruthy();
     fireEvent.keyDown(globalThis, { key: "k", ctrlKey: true });
-    const dialog = await screen.findByRole("dialog", { name: "Vendo command palette" });
-    // Prove the observer has processed the mutation batch: a plain late child
-    // IS inerted...
-    const late = document.createElement("div");
-    document.body.appendChild(late);
-    await waitFor(() => expect(late.hasAttribute("inert")).toBe(true));
-    // ...while the palette's modal portal must stay interactive.
-    expect(dialog.closest("[inert]")).toBeNull();
-    late.remove();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull());
+    // No palette dialog ever mounts — the keybinding owns ONE surface.
+    expect(screen.queryByRole("dialog", { name: "Vendo command palette" })).toBeNull();
+    fireEvent.keyDown(globalThis, { key: "k", ctrlKey: true });
+    expect(await screen.findByRole("dialog", { name: "Vendo assistant" })).toBeTruthy();
   });
 
   it("does not track the keyboard on desktop", () => {

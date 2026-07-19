@@ -1,241 +1,100 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo } from "react";
 import { useApps } from "../hooks/use-apps.js";
-import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
-import { ChromeRoot } from "./chrome-root.js";
 import { developmentMode } from "./dev-mode.js";
-import { openVendoConversation } from "./overlay-registry.js";
+import {
+  openVendoConversation,
+  registerConversationCommands,
+  type VendoCommand,
+} from "./overlay-registry.js";
 import { isEditableTarget, registerPaletteHotkey, registerPaletteOpener, resolveHotkeyMatcher, type PaletteHotkey } from "./palette-hotkey.js";
-import { TakeoverPortal } from "./takeover-portal.js";
 
-export interface VendoCommand {
-  id: string;
-  label: string;
-  kind: "new-conversation" | "open-app" | "show-activity";
-  appId?: string;
-}
+// Compatibility re-export: the command shape moved to the overlay registry
+// (the overlay renders the commands now), but hosts import it from here.
+export type { VendoCommand } from "./overlay-registry.js";
 
-const FOCUSABLE = "button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex='-1'])";
-
-/** 08-ui §4 — global keyboard command palette with an ARIA combobox.
+/** 08-ui §4 — the ⌘K entry point, one-surface edition (ui-lane-entry pick P-C).
  *
- * The keybinding is a host-collision-safe singleton (ENG-222): one shared
- * document listener no matter how many palettes mount, a configurable/disable-
- * able `hotkey` chord, and it never steals a keystroke from a focused host
- * input while the palette is closed. */
+ * The palette no longer renders a dialog of its own: ⌘K opens the SAME
+ * conversation overlay the launcher opens (toggling it closed on a second
+ * press), and the palette's commands render as the overlay's chip strip above
+ * the composer. Typed text that matches no command was never anything but a
+ * question — now it simply IS the message, so the "No matching commands" dead
+ * end no longer exists.
+ *
+ * What remains here is everything that made VendoPalette safe to drop into a
+ * host, unchanged in behavior:
+ * - the host-collision-safe singleton keybinding (ENG-222): one shared
+ *   document listener no matter how many palettes mount, a configurable /
+ *   disable-able `hotkey` chord, and no keystroke stolen from a focused host
+ *   input;
+ * - the programmatic opener seam (ENG-223): `openVendoPalette()` still works
+ *   and now opens the conversation surface;
+ * - command routing: a host `onCommand` receives every chip activation;
+ *   without one, conversation commands self-route through the overlay
+ *   registry and the rest hint in dev instead of dying silently.
+ */
 export function VendoPalette({ onCommand, hotkey }: { onCommand?(command: VendoCommand): void; hotkey?: PaletteHotkey }) {
   const { apps } = useApps();
-  const takeover = useMobileTakeover();
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
-  const input = useRef<HTMLInputElement>(null);
-  const dialog = useRef<HTMLDivElement>(null);
-  const opener = useRef<HTMLElement | null>(null);
   const commands = useMemo<VendoCommand[]>(() => [
     { id: "new-conversation", label: "New conversation", kind: "new-conversation" },
     ...apps.map(app => ({ id: `open-${app.id}`, label: `Open ${app.name}`, kind: "open-app" as const, appId: app.id })),
     { id: "show-activity", label: "Show activity", kind: "show-activity" },
   ], [apps]);
-  const visible = useMemo(() => commands.filter(command => command.label.toLowerCase().includes(query.toLowerCase())), [commands, query]);
 
-  const restoreFocus = useCallback(() => {
-    queueMicrotask(() => opener.current?.focus());
-  }, []);
+  // Publish the command set for the overlay's chip strip. Routing preserves
+  // the old select() semantics exactly — host onCommand wins outright; the
+  // self-sufficient default opens a fresh conversation in the mounted overlay.
+  useEffect(() => registerConversationCommands({
+    commands,
+    select(command) {
+      if (onCommand) {
+        onCommand(command);
+        return;
+      }
+      if (command.kind === "new-conversation") {
+        const opened = openVendoConversation({ newConversation: true });
+        if (!opened && developmentMode()) {
+          console.warn("[vendo] VendoPalette: \"New conversation\" opens the conversation surface — mount a VendoOverlay for it to land in (or supply onCommand).");
+        }
+        return;
+      }
+      if (developmentMode()) {
+        console.warn(`[vendo] VendoPalette: "${command.label}" needs an onCommand handler to route (kind "${command.kind}").`);
+      }
+    },
+  }), [commands, onCommand]);
 
-  const close = useCallback(() => {
-    setOpen(false);
-    restoreFocus();
-  }, [restoreFocus]);
+  // ENG-223 — the programmatic opener seam. Open-only (no toggle): a CTA that
+  // finds the surface already open should leave it open, not dismiss it.
+  useEffect(() => registerPaletteOpener(() => {
+    const opened = openVendoConversation();
+    if (!opened && developmentMode()) {
+      console.warn("[vendo] VendoPalette: nothing to open — mount a VendoOverlay for the conversation surface to land in.");
+    }
+  }), []);
 
-  // ENG-223: programmatic open (the VendoSlot CTA seam). Captures the invoking
-  // element first so Escape/close restores focus exactly as the keybinding does.
-  const openPalette = useCallback(() => {
-    setOpen(value => {
-      if (value) return value;
-      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      return true;
-    });
-  }, []);
-  useEffect(() => registerPaletteOpener(openPalette), [openPalette]);
-
-  // Read the live open state inside the (stable) shared-listener handler without
-  // re-subscribing on every toggle.
-  const openRef = useRef(open);
-  openRef.current = open;
+  // The singleton keybinding (ENG-222). ⌘K TOGGLES the overlay — the
+  // one-surface replacement for the old dialog toggle. The editable-target
+  // guard is unconditional now (the palette no longer tracks an open state);
+  // closing from inside the overlay's composer stays on Escape.
   const matcher = useMemo(() => resolveHotkeyMatcher(hotkey), [hotkey]);
   useEffect(() => {
     if (hotkey === false) return;
     const handler = (event: globalThis.KeyboardEvent) => {
       if (!matcher(event)) return;
-      // Host-collision safety: while closed, never steal a keystroke the host
-      // meant for its own focused input (its ⌘K, find-in-field, etc.).
-      if (!openRef.current && isEditableTarget(event.target)) return;
+      // Never steal a keystroke a HOST input owns — but the overlay's own
+      // composer is ours: ⌘K from inside the open surface toggles it closed
+      // (the old dialog's while-open behavior, one-surface edition).
+      const insideOverlay = event.target instanceof HTMLElement && event.target.closest("#vendo-overlay-dialog") !== null;
+      if (isEditableTarget(event.target) && !insideOverlay) return;
       event.preventDefault();
-      setOpen(value => {
-        if (value) {
-          restoreFocus();
-          return false;
-        }
-        opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        return true;
-      });
+      const opened = openVendoConversation({ toggle: true });
+      if (!opened && developmentMode()) {
+        console.warn("[vendo] VendoPalette: ⌘K opens the conversation surface — mount a VendoOverlay for it to land in.");
+      }
     };
     return registerPaletteHotkey(handler);
-  }, [matcher, hotkey, restoreFocus]);
+  }, [matcher, hotkey]);
 
-  useEffect(() => {
-    if (open) {
-      setQuery("");
-      setActive(0);
-      queueMicrotask(() => input.current?.focus());
-    }
-  }, [open]);
-
-  useEffect(() => setActive(index => Math.min(index, Math.max(visible.length - 1, 0))), [visible.length]);
-
-  const select = (command: VendoCommand | undefined) => {
-    if (!command) return;
-    close();
-    if (onCommand) {
-      onCommand(command);
-      return;
-    }
-    // Self-sufficient default (ui-usage-dx §2 — the palette is an optional
-    // extra, but it must act without a host-written command router):
-    // conversation commands open the mounted overlay via the registry; the
-    // rest need host routing and say so in dev instead of dying silently.
-    if (command.kind === "new-conversation") {
-      const opened = openVendoConversation({ newConversation: true });
-      if (!opened && developmentMode()) {
-        console.warn("[vendo] VendoPalette: \"New conversation\" opens the conversation surface — mount a VendoOverlay for it to land in (or supply onCommand).");
-      }
-      return;
-    }
-    if (developmentMode()) {
-      console.warn(`[vendo] VendoPalette: "${command.label}" needs an onCommand handler to route (kind "${command.kind}").`);
-    }
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      close();
-      return;
-    }
-    if (event.key === "Tab") {
-      const focusable = [...(dialog.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])];
-      if (focusable.length === 0) return;
-      const first = focusable[0]!;
-      const last = focusable.at(-1)!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-      return;
-    }
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setActive(index => visible.length ? (index + 1) % visible.length : 0);
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setActive(index => visible.length ? (index - 1 + visible.length) % visible.length : 0);
-    } else if (event.key === "Enter") {
-      event.preventDefault();
-      select(visible[active]);
-    }
-  };
-
-  return (
-    <ChromeRoot>
-      {open ? (
-        // ENG-228: in takeover the fixed scrim portals to body — a transformed
-        // host ancestor would otherwise capture it and confine the palette.
-        <TakeoverPortal active={takeover.active}>
-        <div
-          ref={dialog}
-          className={`fl-overlay-scrim${takeover.active ? " fl-takeover" : ""}`}
-          role="dialog"
-          aria-modal="true"
-          aria-label="Vendo command palette"
-          onKeyDown={onKeyDown}
-          onMouseDown={event => { if (event.target === event.currentTarget) close(); }}
-          // ENG-228: in takeover the palette pins to the top edge (inside the
-          // safe area) at full width, with the bottom padding tracking the
-          // virtual keyboard so the visible list is never hidden behind it.
-          style={takeover.active
-            ? {
-              display: "grid",
-              alignContent: "start",
-              padding: "calc(10px + env(safe-area-inset-top, 0px)) calc(10px + env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px) + var(--fl-kb-inset, 0px)) calc(10px + env(safe-area-inset-left, 0px))",
-              ...takeover.style,
-            }
-            : { display: "grid", padding: 18, placeItems: "center" }}
-        >
-          <div className="fl-picker" style={takeover.active ? { maxWidth: "none", width: "100%" } : { alignSelf: "center", maxWidth: 560 }}>
-            <label>
-              <span className="fl-picker-group" style={{ display: "block", margin: "0 2px 9px" }}>Command</span>
-              <input
-                ref={input}
-                className="fl-picker-search"
-                role="combobox"
-                aria-expanded="true"
-                aria-controls="vendo-command-list"
-                aria-autocomplete="list"
-                aria-activedescendant={visible[active] ? `vendo-command-${visible[active]!.id}` : undefined}
-                value={query}
-                onChange={event => { setQuery(event.currentTarget.value); setActive(0); }}
-              />
-            </label>
-            <ul
-              id="vendo-command-list"
-              className="fl-picker-grid"
-              role="listbox"
-              style={{ gridTemplateColumns: "1fr", listStyle: "none", marginTop: 8 }}
-            >
-              {visible.map((command, index) => (
-                <li
-                  id={`vendo-command-${command.id}`}
-                  className="fl-picker-item fl-option"
-                  role="option"
-                  aria-selected={index === active}
-                  key={command.id}
-                  onMouseDown={event => event.preventDefault()}
-                  onClick={() => select(command)}
-                  style={index === active
-                    ? { background: "var(--vendo-accent-soft)", borderColor: "var(--vendo-border-strong)", cursor: "pointer" }
-                    : { cursor: "pointer" }}
-                >
-                  <span className="fl-picker-ic" aria-hidden="true">
-                    {command.kind === "new-conversation" ? (
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 5v14M5 12h14" />
-                      </svg>
-                    ) : command.kind === "open-app" ? (
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect width="7" height="7" x="3" y="3" rx="1" />
-                        <rect width="7" height="7" x="14" y="3" rx="1" />
-                        <rect width="7" height="7" x="3" y="14" rx="1" />
-                        <rect width="7" height="7" x="14" y="14" rx="1" />
-                      </svg>
-                    ) : (
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M3 3v18h18" />
-                        <path d="m7 16 4-5 4 3 4-7" />
-                      </svg>
-                    )}
-                  </span>
-                  <span className="fl-picker-nm">{command.label}</span>
-                </li>
-              ))}
-              {visible.length === 0 ? <li className="fl-auto-sub">No matching commands</li> : null}
-            </ul>
-          </div>
-        </div>
-        </TakeoverPortal>
-      ) : null}
-    </ChromeRoot>
-  );
+  return null;
 }
