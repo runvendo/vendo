@@ -738,6 +738,74 @@ describe("vendo init (zero-question)", () => {
     expect(theme.colors.accentText).toBe("#000000");
   });
 
+  it("the cloud step honors the run's env: a supplied VENDO_API_KEY skips the offer", async () => {
+    const root = await fixture();
+    const sink = output();
+    let offered = 0;
+    // No cloudProbe stub: the default probe must see the RUN's env (not
+    // process.env) and report the programmatically supplied key.
+    expect(await runInit({
+      targetDir: root,
+      output: sink.output,
+      env: { VENDO_API_KEY: `vnd_${"b".repeat(40)}` },
+      themeModel: themeModelOf({ slots: {} }),
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+      cloud: {
+        confirm: async () => {
+          offered += 1;
+          return false;
+        },
+      },
+    })).toBe(0);
+    expect(offered).toBe(0);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Vendo Cloud: VENDO_API_KEY present and well-formed.");
+    expect(logs).not.toContain("No model key yet");
+  });
+
+  it("a starter key from a PRIOR run's .env.local counts: no offer, and the theme pass sees it", async () => {
+    const root = await fixture();
+    const key = `vnd_${"d".repeat(40)}`;
+    await writeFile(join(root, ".env.local"), `VENDO_API_KEY=${key}\n`);
+    // The canned gateway again: proves the DEFAULT theme resolver received
+    // the .env.local key without any mint happening this run.
+    const seen: Array<string | undefined> = [];
+    const gateway = createServer((request, response) => {
+      seen.push(request.headers["x-api-key"] as string | undefined);
+      response.statusCode = 401;
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "rejected by test gateway" } }));
+    });
+    await new Promise<void>((resolveListen) => gateway.listen(0, "127.0.0.1", resolveListen));
+    const port = (gateway.address() as AddressInfo).port;
+
+    const sink = output();
+    let offered = 0;
+    try {
+      expect(await runInit({
+        targetDir: root,
+        output: sink.output,
+        env: { VENDO_CLOUD_URL: `http://127.0.0.1:${port}` },
+        telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+        cloud: {
+          confirm: async () => {
+            offered += 1;
+            return false;
+          },
+        },
+      })).toBe(0);
+    } finally {
+      await new Promise<void>((resolveClose) => gateway.close(() => resolveClose()));
+    }
+
+    expect(offered).toBe(0);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Vendo Cloud: VENDO_API_KEY present and well-formed.");
+    expect(logs).not.toContain("No model key yet");
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen[0]).toBe(key);
+  });
+
   it("emits a read-only agent plan with code changes, extraction, and paste steps", async () => {
     const root = await fixture();
     const before = await tree(root);

@@ -298,33 +298,54 @@ export function createPrettyOutput(
           input.setRawMode?.(false);
           input.pause?.();
         };
+        // Raw input arrives as arbitrary chunks - a paste ("2\r"), fast
+        // typing, or an escape sequence split across reads. Buffer and
+        // consume COMPLETE key sequences, handling several keys per chunk;
+        // an incomplete escape sequence waits for the next chunk.
+        let pending = "";
+        const move = (delta: number): void => {
+          index = (index + options.length + delta) % options.length;
+          redraw();
+        };
         const onData = (chunk: Buffer | string): void => {
-          const text = String(chunk);
-          if (text === "\u0003") { // Ctrl+C
-            cleanup();
-            write("\n");
-            process.exit(130);
-          }
-          if (text === "\r" || text === "\n") {
-            cleanup();
-            resolveChoice(index);
-            return;
-          }
-          if (text === `${ESC}[A` || text === `${ESC}[D`) {
-            index = (index + options.length - 1) % options.length;
-            redraw();
-            return;
-          }
-          if (text === `${ESC}[B` || text === `${ESC}[C`) {
-            index = (index + 1) % options.length;
-            redraw();
-            return;
-          }
-          // Number keys pick directly (the arrows-free fallback).
-          if (/^[1-9]$/.test(text) && Number(text) <= options.length) {
-            index = Number(text) - 1;
-            cleanup();
-            resolveChoice(index);
+          pending += String(chunk);
+          while (pending.length > 0) {
+            // A full CSI (ESC [ ... final byte) or SS3 (ESC O A-D) sequence.
+            const sequence = /^\u001b(?:\[[0-9;]*[@-~]|O[A-D])/.exec(pending)?.[0];
+            if (sequence !== undefined) {
+              pending = pending.slice(sequence.length);
+              const final = sequence[sequence.length - 1]!;
+              if (final === "A" || final === "D") move(-1);
+              else if (final === "B" || final === "C") move(1);
+              continue;
+            }
+            if (pending.startsWith(ESC)) {
+              // A prefix of a sequence still in flight waits for more bytes;
+              // any other escape is dropped.
+              if (/^\u001b(?:\[[0-9;]*|O)?$/.test(pending)) return;
+              pending = pending.slice(1);
+              continue;
+            }
+            const key = pending[0]!;
+            pending = pending.slice(1);
+            if (key === "\u0003") { // Ctrl+C
+              cleanup();
+              write("\n");
+              process.exit(130);
+            }
+            if (key === "\r" || key === "\n") {
+              cleanup();
+              resolveChoice(index);
+              return;
+            }
+            // Number keys pick directly (the arrows-free fallback).
+            if (/^[1-9]$/.test(key) && Number(key) <= options.length) {
+              index = Number(key) - 1;
+              cleanup();
+              resolveChoice(index);
+              return;
+            }
+            // Other printable bytes are ignored.
           }
         };
         input.setRawMode?.(true);

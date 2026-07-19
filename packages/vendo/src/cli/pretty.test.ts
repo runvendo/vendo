@@ -231,6 +231,47 @@ describe("createPrettyOutput (visual system)", () => {
     expect(out.plain()).not.toContain("Log in");
   });
 
+  it("select: one pasted chunk containing '2\\r' picks option 2", async () => {
+    const out = sink();
+    const keys = fakeInput();
+    const pretty = createPrettyOutput(out.write, keys.input);
+    const choice = pretty.select("Which auth should Vendo wire?", [
+      { value: "none", label: "none" },
+      { value: "authJs", label: "authJs()" },
+      { value: "jwt", label: "jwt" },
+    ]);
+    keys.press("2\r");
+    expect(await choice).toBe("authJs");
+  });
+
+  it("select: several keys in one chunk are all consumed (two arrow-downs move twice)", async () => {
+    const out = sink();
+    const keys = fakeInput();
+    const pretty = createPrettyOutput(out.write, keys.input);
+    const choice = pretty.select("Which auth should Vendo wire?", [
+      { value: "none", label: "none" },
+      { value: "authJs", label: "authJs()" },
+      { value: "jwt", label: "jwt" },
+    ]);
+    keys.press("\u001b[B\u001b[B");
+    keys.press("\r");
+    expect(await choice).toBe("jwt");
+  });
+
+  it("select: an escape sequence split across chunks still moves", async () => {
+    const out = sink();
+    const keys = fakeInput();
+    const pretty = createPrettyOutput(out.write, keys.input);
+    const choice = pretty.select("Which auth should Vendo wire?", [
+      { value: "none", label: "none" },
+      { value: "authJs", label: "authJs()" },
+    ]);
+    keys.press("\u001b");
+    keys.press("[B");
+    keys.press("\r");
+    expect(await choice).toBe("authJs");
+  });
+
   it("select returns the default option without prompting when stdin is not a TTY", async () => {
     const out = sink();
     const pretty = createPrettyOutput(out.write, {

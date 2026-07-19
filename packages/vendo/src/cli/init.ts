@@ -19,7 +19,7 @@ import { runCloudStep, type CloudStepOptions } from "./cloud-init.js";
 import { APPLY_COMMAND, composeDelegatedInstructions, EXTRACTION_DRAFT_JSON_SCHEMA } from "./extract/delegate.js";
 import { askYesNo, runAiExtraction, type AiExtractionOptions } from "./extract/extraction.js";
 import type { StaticTool } from "./extract/stages.js";
-import { resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
+import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
 import { createPrettyOutput, plainSelect, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
 import { devModel, NO_CREDENTIAL_MESSAGE } from "../dev-creds/model.js";
@@ -1059,7 +1059,18 @@ export async function runInit(options: InitOptions): Promise<number> {
     // starter key minted here powers the SAME run's theme model pass and AI
     // polish instead of those passes reporting "no model" while the offer
     // waits below them. --yes / non-interactive semantics are unchanged.
-    let credential = await (options.resolveCredential ?? resolveDevCredential)({ env });
+    // Dev keys may live in .env.local rather than this process's env — a
+    // PRIOR run's minted starter key, or hand-added provider keys. Merge
+    // them into the env every credential consumer reads (credential ladder,
+    // cloud step, theme model pass, AI polish); an explicit env value
+    // always wins over .env.local.
+    let effectiveEnv = env;
+    for (const name of [...ENV_KEY_VARS.map((entry) => entry.envVar), "VENDO_API_KEY"]) {
+      if ((env[name] ?? "").trim() !== "") continue;
+      const stored = await envLocalValue(root, name);
+      if (stored !== null) effectiveEnv = { ...effectiveEnv, [name]: stored };
+    }
+    let credential = await (options.resolveCredential ?? resolveDevCredential)({ env: effectiveEnv });
     if (credential.rung === "env-key") {
       output.log(`Model: ${describeDevCredential(credential)} — production uses this same key server-side.`);
     }
@@ -1068,17 +1079,18 @@ export async function runInit(options: InitOptions): Promise<number> {
       output,
       yes: options.yes === true,
       credential,
+      // The RUN's env, not process.env: a programmatic caller's key must be
+      // what the probe and the mint see (seams in options.cloud still win).
+      env: effectiveEnv,
       ...(pretty === null ? {} : { confirm: pretty.confirm }),
       ...(options.cloud ?? {}),
     });
-    // Same-run pickup: a freshly minted starter key lands in .env.local, not
-    // in this process's env — merge it into the env every credential consumer
-    // below reads (theme model pass, AI polish, the end-of-run reminder).
-    let effectiveEnv = env;
+    // Same-run pickup: a starter key minted just now lands in .env.local —
+    // merge it the same way so THIS run's passes already benefit.
     if (cloud.wroteEnvLocal) {
       const minted = await envLocalValue(root, "VENDO_API_KEY");
       if (minted !== null) {
-        effectiveEnv = { ...env, VENDO_API_KEY: minted };
+        effectiveEnv = { ...effectiveEnv, VENDO_API_KEY: minted };
         credential = await (options.resolveCredential ?? resolveDevCredential)({ env: effectiveEnv });
       }
     }
