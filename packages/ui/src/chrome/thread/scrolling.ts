@@ -122,8 +122,18 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
   useEffect(() => {
     const node = listRef.current;
     if (!node) return;
-    const grew = node.scrollHeight > lastScrollHeightRef.current;
+    const previousHeight = lastScrollHeightRef.current;
+    const grew = node.scrollHeight > previousHeight;
     lastScrollHeightRef.current = node.scrollHeight;
+    // The scroll event that releases the stick is ASYNC: a reader who just
+    // scrolled up can have content land before onScroll flips stuckRef, and
+    // trusting the stale ref would yank them back down ("streaming must never
+    // yank"). Their position against the PREVIOUS content height is ground
+    // truth: stuck growth leaves scrollTop at the old bottom; a scroll-up
+    // puts it well above. Release the stick here instead of yanking.
+    const atPreviousBottom = previousHeight === 0
+      || previousHeight - node.scrollTop - node.clientHeight <= BOTTOM_SLACK_PX;
+    if (stuckRef.current && !atPreviousBottom) stuckRef.current = false;
     if (stuckRef.current) {
       node.scrollTop = node.scrollHeight;
       seenLengthRef.current = messages.length;
@@ -145,7 +155,13 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
     const node = listRef.current;
     if (!node || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
+      // Same async-scroll-event guard as the messages effect: only re-stick a
+      // reader who was actually at the bottom of the previous content.
+      const previousHeight = lastScrollHeightRef.current;
+      const atPreviousBottom = previousHeight === 0
+        || previousHeight - node.scrollTop - node.clientHeight <= BOTTOM_SLACK_PX;
       lastScrollHeightRef.current = node.scrollHeight;
+      if (stuckRef.current && !atPreviousBottom) stuckRef.current = false;
       if (stuckRef.current) node.scrollTop = node.scrollHeight;
     });
     for (const child of Array.from(node.children)) observer.observe(child);
