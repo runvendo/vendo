@@ -105,10 +105,14 @@ describe("e2bSandbox", () => {
 
     expect(sdk.sandbox.pause).not.toHaveBeenCalled();
     await machine.stop();
+    await machine.stop(); // idempotent: the provider sees ONE pause
     expect(sdk.sandbox.pause).toHaveBeenCalledOnce();
     expect(sdk.sandbox.kill).not.toHaveBeenCalled();
     await machine.destroy();
+    await machine.destroy(); // idempotent: the provider sees ONE kill
     expect(sdk.sandbox.kill).toHaveBeenCalledOnce();
+    await machine.stop(); // sleeping a destroyed machine is a no-op, not a second pause
+    expect(sdk.sandbox.pause).toHaveBeenCalledOnce();
   });
 
   it("parses only e2b refs and boots an independent machine from a snapshot", async () => {

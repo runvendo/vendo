@@ -143,6 +143,12 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
     state: { allowedDomains?: string[] | undefined; port: number },
   ): SandboxMachine => {
     const baseUrl = (port: number): string => `https://${sandbox.getHost(port)}`;
+    // Seam rule: sleeping or destroying twice is not an error. Guarded here so
+    // idempotence never depends on how a given e2b SDK version treats a second
+    // pause()/kill() (a paused machine is never unpaused in place — resume()
+    // always boots a new sandbox — so the flags can only move forward).
+    let paused = false;
+    let killed = false;
 
     return {
       id: sandbox.sandboxId,
@@ -167,10 +173,14 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
         return encodeSnapshotRef(snapshot.snapshotId, state.allowedDomains, state.port);
       },
       async stop() {
+        if (paused || killed) return;
         await sandbox.pause();
+        paused = true;
       },
       async destroy() {
+        if (killed) return;
         await sandbox.kill();
+        killed = true;
       },
       // ——— adapter-private below this line (bootstrap/diagnostics + v1 compat) ———
       async exec(cmd: string, execOptions?: { cwd?: string; timeoutMs?: number }) {
