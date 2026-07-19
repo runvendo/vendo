@@ -526,6 +526,21 @@ describe("vendo init (zero-question)", () => {
     expect(logs).not.toContain("No model key yet");
   });
 
+  it("--cloud-key upserts into an existing .env.local without dropping unrelated lines", async () => {
+    const root = await fixture();
+    await writeFile(join(root, ".env.local"), "FOO=bar\n");
+    const key = `vnd_${"f".repeat(40)}`;
+    // No cloudProbe stub: the default probe sees the flag-landed key, so the
+    // offer (which would throw here) never fires.
+    expect(await run(root, output(), {
+      cloudKey: key,
+      cloud: { confirm: async () => { throw new Error("offered"); } },
+    })).toBe(0);
+    const envLocal = await readFile(join(root, ".env.local"), "utf8");
+    expect(envLocal).toContain("FOO=bar");
+    expect(envLocal).toContain(`VENDO_API_KEY=${key}`);
+  });
+
   it("--byo declines the Cloud offer explicitly: no question, no mint, just the pointer", async () => {
     const root = await fixture();
     const sink = output();

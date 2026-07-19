@@ -124,8 +124,10 @@ export interface InitOptions {
   /** --auth: the auth answer — wires like the equivalent interactive pick. */
   auth?: AuthPresetName | "jwt" | "none";
   /** --framework: detection override; required non-interactively when
-      detection comes back "unknown" (there is no safe default to guess). */
-  framework?: HostFramework;
+      detection comes back "unknown" (there is no safe default to guess).
+      "unknown" is excluded: an override that answers nothing would silently
+      bypass the non-interactive framework guard. */
+  framework?: Exclude<HostFramework, "unknown">;
   /** --cloud-key: answer the cloud-login offer with an existing key — landed
       in .env.local exactly where the mint would put it. */
   cloudKey?: string;
