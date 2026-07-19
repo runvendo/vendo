@@ -505,6 +505,28 @@ describe("vendo init (zero-question)", () => {
     expect(sink.logs[sink.logs.length - 1]).toContain("green");
   });
 
+  // Agent-install-dx Layer 2 (key-mint integration): a keyless run's tail
+  // carries the complete in-band key story — the auth.md discovery URL, the
+  // device-login ceremony, and both flag fallbacks — so the agent never
+  // detours to a browser signup it can't drive.
+  it("a keyless run's tail points at the auth.md key flow; a run with a key stays silent about it", async () => {
+    const keyless = await fixture();
+    const keylessSink = output();
+    expect(await run(keyless, keylessSink)).toBe(0);
+    const keylessTail = keylessSink.logs.join("\n").split("Agent tail:")[1]!;
+    expect(keylessTail).toContain("cloud key: none");
+    expect(keylessTail).toContain("https://vendo.run/auth.md");
+    expect(keylessTail).toContain("vendo cloud device-login");
+    expect(keylessTail).toContain("--cloud-key");
+    expect(keylessTail).toContain("--byo");
+
+    const keyed = await fixture();
+    const keyedSink = output();
+    expect(await run(keyed, keyedSink, { env: { ANTHROPIC_API_KEY: "sk-ant-test" } })).toBe(0);
+    const keyedTail = keyedSink.logs.join("\n").split("Agent tail:")[1]!;
+    expect(keyedTail).not.toContain("cloud key: none");
+  });
+
   it("the tail states auth stubs honestly: anonymous scaffolds point at the composition, a picked preset names its missing SDK", async () => {
     // No auth dependency: the tail says so and points the hand-edit at the
     // generated composition file.

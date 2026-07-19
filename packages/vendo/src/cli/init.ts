@@ -16,7 +16,7 @@ import { stdin, stdout } from "node:process";
 import type { VendoTheme } from "@vendoai/core";
 import type { Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
-import { runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
+import { AUTH_MD_URL, runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
 import { APPLY_COMMAND, composeDelegatedInstructions, EXTRACTION_DRAFT_JSON_SCHEMA } from "./extract/delegate.js";
 import { askYesNo, runAiExtraction, type AiExtractionOptions } from "./extract/extraction.js";
 import type { StaticTool } from "./extract/stages.js";
@@ -867,6 +867,9 @@ async function agentTailLines(args: {
   registryPath: string | null;
   compositionPath: string | null;
   authWired: AuthMatch | null;
+  /** No model credential resolved this run — the tail points the agent at
+      the auth.md key flow (Agent Install DX, Layer 2). */
+  cloudKeyMissing: boolean;
 }): Promise<string[]> {
   const lines: string[] = [];
   // Auth is a tail fact only when a composition was created this run — a
@@ -896,6 +899,9 @@ async function agentTailLines(args: {
   }
   if (await readOptional(join(args.root, ".vendo", "brief.md")) === BRIEF_PLACEHOLDER) {
     lines.push(`edit ${join(".vendo", "brief.md")} — replace the placeholder with what this product does and for whom`);
+  }
+  if (args.cloudKeyMissing) {
+    lines.push(`cloud key: none — for Vendo Cloud, fetch ${AUTH_MD_URL} and run \`vendo cloud device-login\` (your human approves a code in the browser; the key lands in .env.local), then re-run init or pass --cloud-key <key>; --byo with a provider key also works`);
   }
   lines.push("gate: run `vendo doctor --json` — done when every check reports green");
   return lines;
@@ -1237,9 +1243,11 @@ export async function runInit(options: InitOptions): Promise<number> {
     const cloud = await runCloudStep({
       root,
       output,
-      // --byo answers the offer with "no" — the same skip as --yes, scoped
-      // to the cloud step only.
-      yes: options.yes === true || options.byo === true,
+      // --byo answers the offer with "no" AND suppresses the agent-path
+      // auth.md pointer (an explicit BYO choice is final); --yes skips the
+      // prompt but still gets the pointer so an agent can mint in-band.
+      yes: options.yes === true,
+      byo: options.byo === true,
       credential,
       // The RUN's env, not process.env: a programmatic caller's key must be
       // what the probe and the mint see (seams in options.cloud still win).
@@ -1424,7 +1432,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     // never reaches here (its read-only JSON plan returned above).
     if (options.yes === true || !interactive) {
       output.log("\nAgent tail:");
-      const tail = await agentTailLines({ root, framework: plan.framework, registryPath, compositionPath, authWired });
+      const tail = await agentTailLines({ root, framework: plan.framework, registryPath, compositionPath, authWired, cloudKeyMissing: credential.rung === "none" });
       for (const line of tail) output.log(`  ${line}`);
     } else {
       // Star ask (agent-install-dx §CLI-5): the interactive success screen
