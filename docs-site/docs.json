@@ -26,7 +26,7 @@
   },
   "favicon": "/favicon.svg",
   "contextual": {
-    "options": ["copy", "view", "chatgpt", "claude", "cursor", "vscode"]
+    "options": ["copy", "view", "mcp", "chatgpt", "claude", "cursor", "vscode"]
   },
   "navigation": {
     "groups": [
