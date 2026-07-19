@@ -28,3 +28,21 @@ resolution), which is when the workspace can render it.
 | C13 | a form to update a client's filing deadline [honesty branch: no deadline-update tool] | PASS | not captured (run crashed between create and capture; artifact = the single first attempt, judged on resume) | HONESTY branch handled correctly: form scaffold (Client Select populated with all 12 real clients via asOptions, date input) + explicit disclaimer rendered to the user: "This action is not available: no host tool supports updating a client's filing deadline." NO fake submit button, no fabricated update path, no error box. Tree confirms queries=host_listClients only. |
 | C14 | compare document completion rates across staff members | FAIL | ~17s | Three defects: (1) STAFF MEMBER and ROLE columns render "—" on ALL 12 rows — tree binds `assignee.name`/`assignee.role` but host_listClients doesn't resolve that path (C2/C5 proved staff data IS reachable), so the one dimension the prompt is about is blank; (2) no per-staff aggregation or completion RATE anywhere — flat per-client table, comparison never answered; (3) [chart] prompt, zero chart. Classes: broken-binding-empty-column, missing-aggregation, missing-chart. |
 | C15 | an end-of-week status report I can send to the team | PASS | ~16s | Genuine 4-section report: missing-docs hero (8 of 12) + 38/21/59 doc stats + nearest-deadline card (Blue Bottle Coffee, Jul 22, 2026) + full client status table (Assigned To RESOLVED via template op "{assignee.name}" — works where C14's dotted column key failed) + at-risk table + recent activity, all dates formatted, zero raw braces, no error box. Action-honesty OK: no fabricated "send" — caption honestly reframes as "ready to share with your team". Blemishes: "At-Risk Clients" section is the full deadlines list incl. complete clients (status column shows truth, C8-class blemish); recurring raw enums (missing_docs, s_corp). |
+
+## Summary — Cadence half
+
+**9/15 PASS** (C1, C2, C4, C6, C8, C11, C12, C13, C15) · **6 FAIL** (C3, C5, C7, C9, C10, C14).
+
+Fails grouped by class:
+- **impossible-prompt-fabrication** (2): C9 payroll, C10 invoice aging — both relabeled real document-collection data as the requested domain with ZERO disclaimer. The engine's honesty behavior is inconsistent: C13 (no deadline-update tool) produced a perfect explicit disclaimer, while C9/C10 fabricated. Honesty seems to trigger when the *action* is missing but not when the *data domain* is missing.
+- **missing-aggregation** (2): C5 workload, C14 staff completion rates — both "compare/count across staff" prompts degraded to a flat per-client table; the asked question is never answered. C14 additionally **missing-chart** (only [chart]-category fail class hit twice via these).
+- **dead-control** (2): C3, C7 — rendered filter tabs that do nothing on click.
+- **broken-binding-empty-column** (1): C14 — `assignee.name`/`assignee.role` dotted column keys resolve to "—" on all rows, while C15 proves the same data resolves via the `template` op "{assignee.name}" (dialect inconsistency: dotted keys in Table columns vs template braces).
+- **layout-containment-clip** (2 occurrences): C3, C10 — table squeezed to a fraction of width, date column clipped unreadable.
+- **raw-ISO-date** (1): C7 hero.
+
+Cross-cutting **ENGINE FINDING** (affects passes too): approved actions stall at "Running" after approval — C4 and C11 sends were approved in the workspace but the client thread never received the message. Approval-gating fires correctly; post-approval resumption is broken.
+
+Timing (submit → app tree on wire, 2s poll resolution): p50 = **~8s** over the 14 captured timings (2, 4, 4, ~5, 6, ~8, 8, 8, 12, ~16, ~17, ~35, 36, 39s). C13 timing not captured — the original run crashed between create and capture; its single first-attempt artifact was judged on resume (no regeneration).
+
+Run integrity: one attempt per prompt, zero tuning, zero code changes — branch contains evidence commits only.
