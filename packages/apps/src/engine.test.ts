@@ -1541,6 +1541,11 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     expect(captured).toContain("total");
     expect(captured).toContain("LAST RESORT");
     expect(captured).toContain("Never hardcode");
+    // vendo-v2-cells — the display-cell contract rides with the shapes:
+    // object cells project via template, date/cents display columns MUST format.
+    expect(captured).toContain("RESHAPE PIPES");
+    expect(captured).toContain("template(");
+    expect(captured).toContain("MUST carry a format step");
   });
 });
 
