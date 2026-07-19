@@ -274,6 +274,39 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   0%   { opacity: 1; transform: none; }
   100% { opacity: 0; transform: scale(1.015); } }
 
+/* Fill reveal (pick A, ui-lane-renderer 2026-07-19): a shape-derived
+   silhouette already holds the incoming view's approximate geometry, so its
+   arrival crossfades in place — no rise, no settle. Placed AFTER the .fl-reveal
+   rules so the equal-specificity override wins by order. */
+@media (prefers-reduced-motion: no-preference) {
+  .fl-reveal-fill:has(.fl-reveal-exit) .fl-reveal-enter { animation: fl-fill-in .45s ease both; }
+  .fl-reveal-fill .fl-reveal-exit { animation: fl-fill-out .45s ease both; }
+}
+@keyframes fl-fill-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fl-fill-out { from { opacity: 1; } to { opacity: 0; } }
+
+/* App boot bar (pick C, V2 indeterminate sweep): while a generated view is
+   still forming, the appcard bar narrates — the dot pulses (fl-beat-orb), the
+   label reads "Building your view…", and a short accent segment sweeps along
+   the bar's bottom edge. On ready the label pair crossfades to the app name
+   and the sweep fades. Honest by design: no fake percentage, no completion
+   jump. The label pair shares one grid cell so the swap never remounts. */
+.fl-appcard-bar { position: relative; }
+.fl-boot-labels { position: relative; display: grid; min-width: 0; flex: 1; }
+.fl-boot-labels > span { grid-area: 1 / 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: opacity .3s ease; }
+.fl-appcard-bar[data-state="building"] .fl-boot-ready { opacity: 0; }
+.fl-appcard-bar[data-state="ready"] .fl-boot-building { opacity: 0; }
+.fl-boot-building { color: var(--vendo-fg-muted); font-weight: 500; }
+.fl-boot-hairline { position: absolute; left: 0; bottom: -1px; z-index: 1; width: 26%; height: 2px;
+  border-radius: 2px; background: var(--vendo-accent); opacity: 0; transition: opacity .5s ease; }
+.fl-appcard-bar[data-state="building"] .fl-boot-hairline { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-appcard-bar[data-state="building"] .fl-appcard-dot { animation: fl-beat-orb 1.6s ease-in-out infinite; }
+  .fl-appcard-bar[data-state="building"] .fl-boot-hairline { animation: fl-boot-sweep 1.5s cubic-bezier(.45, .05, .55, .95) infinite; }
+}
+@keyframes fl-boot-sweep { from { transform: translateX(-110%); } to { transform: translateX(495%); } }
+
 /* Working indicator — fluidkit metaball droplets (ENG-205); inherits the muted
    foreground as the flat-material fill. The .fl-typing dots below are its
    first-paint and no-fluidkit fallback. */
@@ -944,6 +977,14 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
    treatment (it shares .fl-overlay-close), only the horizontal offset differs.
    Offsets = close's right + close's width + a 6px gap, per pointer density. */
 .fl-overlay-new { right: 46px; }
+/* Compact when empty (ui-lane-entry pick P-C): while the thread shows its
+   landing (no conversation yet), the panel is a small box — greeting, command
+   chips, composer, no dead glass — and animates to full height the moment the
+   first turn lands (the landing swaps to the message list, :has stops
+   matching). Browsers without :has() simply keep the full-size panel. */
+.fl-overlay-panel { transition: height .45s cubic-bezier(.22, 1, .36, 1); }
+.fl-overlay-panel:has(.fl-landing) { height: min(360px, 80vh); }
+.fl-overlay-panel:has(.fl-landing) .fl-landing { padding-top: 34px; }
 @keyframes fl-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes fl-overlay-stretch {
   from { transform: translate(-50%, -50%) scaleX(.06) scaleY(.7); opacity: .4; }
@@ -961,6 +1002,9 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   .fl-glass-shimmer, .fl-glass-dot { animation: none; }
   .fl-picker-item.is-just-connected, .fl-picker-item.is-just-connected .fl-picker-on { animation: none; }
   .fl-msglist-wrap, .fl-jump, .fl-md--streaming > * { animation: none; opacity: 1; }
+  /* The launcher blob rests as a plain circle; the panel resize snaps. */
+  .fl-launcher-blob { animation: none; border-radius: 50%; }
+  .fl-overlay-panel { transition: none; }
 }
 
 /* ---------- full-screen mobile takeover (<768px, Intercom pattern) ---------- */
@@ -987,6 +1031,13 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   right: calc(12px + env(safe-area-inset-right, 0px)); }
 .fl-overlay-panel.fl-takeover .fl-overlay-new {
   right: calc(46px + env(safe-area-inset-right, 0px)); }
+/* Mobile mirror of compact-when-empty: the takeover starts as a bottom sheet
+   (host page visible behind the scrim) and becomes the full-bleed takeover
+   once a conversation is running. */
+.fl-overlay-panel.fl-takeover:has(.fl-landing) { top: auto; bottom: 0; height: auto; max-height: 62%;
+  border-top: 1px solid var(--vendo-border-strong);
+  border-radius: var(--vendo-radius-lg) var(--vendo-radius-lg) 0 0; }
+.fl-overlay-panel.fl-takeover:has(.fl-landing) .fl-landing { padding-top: 18px; }
 .fl-page.fl-takeover { position: fixed; inset: 0; z-index: 2147483001; isolation: isolate;
   background: var(--vendo-bg);
   padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
@@ -1008,6 +1059,9 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   .fl-jump { width: 44px; height: 44px; }
   .fl-overlay-close { width: 44px; height: 44px; }
   .fl-overlay-new { right: 62px; }
+  .fl-cmd-chip { min-height: 38px; }
+  .fl-invite-chip { width: 100%; min-height: 44px; justify-content: center; display: inline-flex; align-items: center; }
+  .fl-invite-chips { align-self: stretch; align-items: stretch; max-width: none; padding: 0 8px; }
   /* The grown close button keeps its visual position under the notch. */
   .fl-overlay-panel.fl-takeover .fl-overlay-close {
     top: calc(4px + env(safe-area-inset-top, 0px));
@@ -1015,6 +1069,21 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   .fl-overlay-panel.fl-takeover .fl-overlay-new {
     right: calc(54px + env(safe-area-inset-right, 0px)); }
 }
+
+/* ---------- conversation command strip (one-surface \u2318K, pick P-C) ---------- */
+/* The palette's commands, rendered by the overlay as chips pinned above the
+   composer. Anything typed that matches no chip is simply the message. */
+.fl-cmdstrip { display: flex; gap: 7px; padding: 0 14px 9px; overflow-x: auto;
+  scrollbar-width: none; flex-shrink: 0; }
+.fl-cmdstrip::-webkit-scrollbar { display: none; }
+.fl-landing .fl-cmdstrip { padding: 0 0 4px; flex-wrap: wrap; justify-content: center; overflow: visible; }
+.fl-cmd-chip { display: inline-flex; align-items: center; gap: 6px; flex: none;
+  border: 1px solid var(--vendo-border); border-radius: 999px; padding: 7px 12px;
+  background: var(--vendo-surface); font: 500 12px/1 var(--vendo-font); color: var(--vendo-fg-muted);
+  cursor: pointer; transition: color .12s, border-color .12s, transform .12s; }
+.fl-cmd-chip:hover { color: var(--vendo-fg); border-color: var(--vendo-border-strong); transform: translateY(-1px); }
+.fl-cmd-chip:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
+.fl-cmd-chip svg { flex: none; }
 
 .fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--vendo-border);
   border-radius: 999px; padding: 10px 15px; font-size: 13px; font-weight: 600; color: var(--vendo-fg);
@@ -1028,6 +1097,20 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 2147482999; }
 .fl-launcher[data-vendo-launcher="bottom-right"] { right: calc(20px + env(safe-area-inset-right, 0px)); }
 .fl-launcher[data-vendo-launcher="bottom-left"] { left: calc(20px + env(safe-area-inset-left, 0px)); }
+
+/* The launcher mark (ui-lane-entry pick L-B): an accent-colored blob that
+   continuously morphs shape — the recognition cue, in place of any glyph or
+   product name. Quickens on hover; a static circle under reduced motion. */
+.fl-launcher-blob { width: 20px; height: 20px; flex: none; background: var(--vendo-accent);
+  animation: fl-blob-morph 7s ease-in-out infinite; }
+.fl-launcher:hover .fl-launcher-blob { animation-duration: 2.4s; }
+@keyframes fl-blob-morph {
+  0%, 100% { border-radius: 58% 42% 55% 45% / 48% 55% 45% 52%; transform: rotate(0deg) scale(1); }
+  25% { border-radius: 45% 55% 48% 52% / 58% 42% 58% 42%; transform: rotate(12deg) scale(1.05); }
+  50% { border-radius: 52% 48% 42% 58% / 45% 52% 48% 55%; transform: rotate(-8deg) scale(.96); }
+  75% { border-radius: 42% 58% 55% 45% / 52% 48% 55% 45%; transform: rotate(6deg) scale(1.03); } }
+/* Blob-only orb: the host cleared the label (launcher.label: null). */
+.fl-launcher[data-vendo-launcher-bare] { padding: 11px; gap: 0; border-radius: 50%; }
 
 /* The whisper (ui-usage-dx §6): first eligible visit only — one gentle pulse
    on the pill plus a small ~6s caption. The pulse is motion-gated (reduced
@@ -1116,6 +1199,44 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-slot-ghost:hover .fl-slot-cta { background: color-mix(in srgb, var(--vendo-bg) 16%, transparent); }
 .fl-slot-cta svg { margin-bottom: 2px; opacity: .85; }
 .fl-slot-cta small { font-weight: 400; font-size: 11.5px; color: var(--vendo-fg-muted); }
+
+/* ---- empty-state invitation (ui-lane-entry pick S-A\u00d7S-D) ----
+   Accent-washed surface carrying real copy, up to three concrete suggestion
+   chips, and a primary CTA. The skeleton stays faintly behind (a view goes
+   here); no icon by default. */
+.fl-slot-invite { cursor: default;
+  border-color: color-mix(in srgb, var(--vendo-accent) 22%, var(--vendo-border));
+  background: linear-gradient(155deg, color-mix(in srgb, var(--vendo-accent) 7%, var(--vendo-surface)),
+    color-mix(in srgb, var(--vendo-accent) 2%, var(--vendo-surface)) 55%); }
+.fl-slot-invite:hover { border-color: color-mix(in srgb, var(--vendo-accent) 40%, var(--vendo-border)); }
+.fl-slot-invite .fl-slot-skel { opacity: .35; }
+.fl-slot-invite .fl-slot-cta { gap: 8px; background: none; cursor: default; }
+.fl-invite-mark { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center;
+  color: var(--vendo-fg); opacity: .85; }
+.fl-invite-mark-tile { background: var(--vendo-accent); color: var(--vendo-accent-fg);
+  opacity: 1; box-shadow: var(--vendo-shadow); }
+.fl-invite-title { font: 600 14px/1 var(--vendo-font); color: var(--vendo-fg); }
+.fl-invite-sub { font-weight: 400; font-size: 11.5px; color: var(--vendo-fg-muted); text-align: center;
+  max-width: 82%; line-height: 1.4; }
+.fl-invite-try { font: 600 10.5px/1 var(--vendo-font); letter-spacing: .05em; text-transform: uppercase;
+  color: var(--vendo-fg-muted); margin-top: 2px; }
+.fl-invite-chips { display: flex; flex-direction: column; gap: 7px; align-items: center; max-width: 92%; }
+.fl-invite-chip { border: 1px solid var(--vendo-border); border-radius: 999px; padding: 8px 14px;
+  background: var(--vendo-surface); font: 500 12px/1.2 var(--vendo-font); color: var(--vendo-fg);
+  cursor: pointer; box-shadow: var(--vendo-shadow); transition: border-color .12s, transform .12s; }
+.fl-invite-chip:hover { border-color: color-mix(in srgb, var(--vendo-accent) 40%, var(--vendo-border));
+  transform: translateY(-1px); }
+.fl-invite-chip:focus-visible, .fl-invite-btn:focus-visible, .fl-invite-own:focus-visible {
+  outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
+.fl-invite-btn { margin-top: 6px; display: inline-flex; align-items: center; gap: 7px; border: 0;
+  border-radius: 9px; padding: 9px 16px; background: var(--vendo-accent); color: var(--vendo-accent-fg);
+  font: 600 12.5px/1 var(--vendo-font); cursor: pointer; box-shadow: var(--vendo-shadow);
+  transition: opacity .14s, transform .14s; }
+.fl-invite-btn:hover { opacity: .9; transform: translateY(-1px); }
+.fl-invite-own { margin-top: 4px; border: 0; background: transparent; cursor: pointer;
+  font: 500 11.5px/1 var(--vendo-font); color: var(--vendo-fg-muted);
+  text-decoration: underline; text-underline-offset: 3px; }
+.fl-invite-own:hover { color: var(--vendo-fg); }
 
 /* ---- remix affordance (ui-usage-dx §2 — remix folds into Slot as a flag) ----
    Hover-revealed over the slot's content: the filled state (.fl-slot) and the

@@ -101,9 +101,9 @@ export function Skeleton(props: { width?: string | number; height?: string | num
         height: props.height ?? "var(--vendo-skeleton-height, 16px)",
         minHeight: props.height ?? "var(--vendo-skeleton-height, 16px)",
         background: `linear-gradient(100deg,
-          color-mix(in srgb, var(--vendo-color-accent, #2f5af5) 10%, transparent) 30%,
-          color-mix(in srgb, var(--vendo-color-accent, #2f5af5) 22%, transparent) 50%,
-          color-mix(in srgb, var(--vendo-color-accent, #2f5af5) 10%, transparent) 70%)`,
+          color-mix(in srgb, var(--vendo-color-accent, #111111) 10%, transparent) 30%,
+          color-mix(in srgb, var(--vendo-color-accent, #111111) 22%, transparent) 50%,
+          color-mix(in srgb, var(--vendo-color-accent, #111111) 10%, transparent) 70%)`,
         backgroundSize: "200% 100%",
         borderRadius: "var(--vendo-radius-medium, 10px)",
       }}

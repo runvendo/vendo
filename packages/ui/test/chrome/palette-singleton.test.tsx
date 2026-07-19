@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
-import { VendoPalette } from "../../src/chrome/index.js";
+import { VendoOverlay, VendoPalette } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
 // ENG-222 — the command palette's keybinding must be a host-collision-safe
@@ -24,19 +24,21 @@ describe("VendoPalette singleton, host-collision-safe keybinding", () => {
     await wire.close();
   });
 
-  it("toggles exactly one palette on the shared keybinding even when two mount", async () => {
+  it("delivers the shared keybinding exactly once even when two palettes mount", async () => {
     render(
       <VendoProvider client={client}>
         <button type="button">Opener</button>
         <VendoPalette />
         <VendoPalette />
+        <VendoOverlay launcher="none" />
       </VendoProvider>,
     );
     screen.getByRole("button", { name: "Opener" }).focus();
     fireEvent.keyDown(globalThis, { key: "k", metaKey: true });
-    // Two independent global listeners (the pre-ENG-222 bug) would open BOTH
-    // palettes on a single press. The singleton opens exactly one.
-    const dialogs = await screen.findAllByRole("dialog", { name: "Vendo command palette" });
+    // The keybinding TOGGLES the one-surface overlay: double delivery (the
+    // pre-ENG-222 bug) would toggle twice and leave it closed. Exactly one
+    // delivery leaves exactly one open dialog.
+    const dialogs = await screen.findAllByRole("dialog", { name: "Vendo assistant" });
     expect(dialogs).toHaveLength(1);
   });
 
@@ -51,7 +53,7 @@ describe("VendoPalette singleton, host-collision-safe keybinding", () => {
     hostInput.focus();
     fireEvent.keyDown(hostInput, { key: "k", metaKey: true });
     // The host keeps its own ⌘K inside its own field.
-    expect(screen.queryByRole("dialog", { name: "Vendo command palette" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull();
     expect(document.activeElement).toBe(hostInput);
   });
 
@@ -60,31 +62,33 @@ describe("VendoPalette singleton, host-collision-safe keybinding", () => {
       <VendoProvider client={client}>
         <button type="button">Opener</button>
         <VendoPalette hotkey={{ key: "j", meta: true }} />
+        <VendoOverlay launcher="none" />
       </VendoProvider>,
     );
     screen.getByRole("button", { name: "Opener" }).focus();
-    // The default ⌘K no longer opens a palette bound to ⌘J.
+    // The default ⌘K no longer opens a surface bound to ⌘J.
     fireEvent.keyDown(globalThis, { key: "k", metaKey: true });
-    expect(screen.queryByRole("dialog", { name: "Vendo command palette" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull();
     // The configured chord opens it.
     fireEvent.keyDown(globalThis, { key: "j", metaKey: true });
-    const dialog = await screen.findByRole("dialog", { name: "Vendo command palette" });
+    const dialog = await screen.findByRole("dialog", { name: "Vendo assistant" });
     expect(dialog).toBeTruthy();
-    // Close it before disabling (disabling stops the keybinding, it doesn't close
-    // an already-open palette).
+    // Close it before disabling (disabling stops the keybinding, it doesn't
+    // close an already-open surface).
     fireEvent.keyDown(dialog, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Vendo command palette" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull());
 
     // Disabling the keybinding leaves no keyboard opener at all.
     rerender(
       <VendoProvider client={client}>
         <button type="button">Opener</button>
         <VendoPalette hotkey={false} />
+        <VendoOverlay launcher="none" />
       </VendoProvider>,
     );
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Vendo command palette" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull());
     fireEvent.keyDown(globalThis, { key: "k", metaKey: true });
     fireEvent.keyDown(globalThis, { key: "j", metaKey: true });
-    expect(screen.queryByRole("dialog", { name: "Vendo command palette" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull();
   });
 });

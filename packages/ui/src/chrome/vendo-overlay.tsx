@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type ComponentType, type CSSProperties, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useVendoDiscoverability, useVendoTheme } from "../context.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { themeCssVariables } from "../theme.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "./discoverability.js";
-import { deliverPrefill, PrefillScopeContext, registerOverlayOpener } from "./overlay-registry.js";
+import { deliverPrefill, getConversationCommands, PrefillScopeContext, registerOverlayOpener, subscribeConversationCommands, type VendoCommand } from "./overlay-registry.js";
 import { VendoThread, type VendoThreadProps } from "./thread/index.js";
 
 const FOCUSABLE = "button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex='-1'])";
@@ -18,11 +18,21 @@ export interface VendoOverlayProps {
   /** Fires for every open/close request: launcher click, close button, Escape, scrim click, or programmatic toggles. */
   onOpenChange?(open: boolean): void;
   /**
-   * Built-in launcher placement. The default is a fixed, brand-styled pill in
-   * the given viewport corner; pass `"none"` to hide it and drive the overlay
-   * programmatically (via `open`/`onOpenChange` or the `useVendoOverlay` hook).
+   * Built-in launcher placement and content. The default is a fixed pill in
+   * the given viewport corner carrying the morphing accent blob and a
+   * WHITE-LABEL text — "AI agent", never a product name (ui-lane-entry). Pass
+   * `"none"` to hide it and drive the overlay programmatically (via
+   * `open`/`onOpenChange` or the `useVendoOverlay` hook), or the object form
+   * to customize: `label` accepts any host string (`null` collapses the pill
+   * to a blob-only orb) and `icon` swaps the blob for a host element.
    */
-  launcher?: "bottom-right" | "bottom-left" | "none";
+  launcher?: "bottom-right" | "bottom-left" | "none" | {
+    position?: "bottom-right" | "bottom-left";
+    /** Pill text. Default "AI agent"; `null` renders the blob-only orb. */
+    label?: string | null;
+    /** Replaces the morph-blob mark (a host logo, custom glyph, …). */
+    icon?: ReactNode;
+  };
   /**
    * Change to discard the current conversation and start a fresh thread
    * (ENG-221). `useVendoOverlay().newConversation()` drives this for you;
@@ -58,6 +68,29 @@ export interface VendoOverlayProps {
 /** Whisper caption duration — long enough to read two short lines, short
  *  enough to stay ambient (~6s per the §6 decision). */
 const WHISPER_MS = 6000;
+
+/** The per-kind glyph on a command chip (mirrors the old palette row icons). */
+function CommandGlyph({ kind }: { kind: VendoCommand["kind"] }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {kind === "new-conversation" ? (
+        <path d="M12 5v14M5 12h14" />
+      ) : kind === "open-app" ? (
+        <>
+          <rect width="7" height="7" x="3" y="3" rx="1" />
+          <rect width="7" height="7" x="14" y="3" rx="1" />
+          <rect width="7" height="7" x="3" y="14" rx="1" />
+          <rect width="7" height="7" x="14" y="14" rx="1" />
+        </>
+      ) : (
+        <>
+          <path d="M3 3v18h18" />
+          <path d="m7 16 4-5 4 3 4-7" />
+        </>
+      )}
+    </svg>
+  );
+}
 
 /** display:none/visibility:hidden elements silently swallow focus() — skip them. */
 function canReceiveFocus(element: HTMLElement | null): element is HTMLElement {
@@ -97,6 +130,27 @@ export function VendoOverlay({
   const takeover = useMobileTakeover();
   const providerDial = useVendoDiscoverability();
   const dial = discoverability ?? providerDial;
+  // Launcher normalization: string forms keep their exact old meaning; the
+  // object form adds white-label text/icon control. Default label is "AI
+  // agent" — deliberately not a product name (white-label rule).
+  const launcherConfig = typeof launcher === "object" ? launcher : {};
+  const launcherPosition: "bottom-right" | "bottom-left" =
+    typeof launcher === "string" && launcher !== "none" ? launcher : launcherConfig.position ?? "bottom-right";
+  const launcherHidden = launcher === "none";
+  const launcherLabel = launcherConfig.label === undefined ? "AI agent" : launcherConfig.label;
+  // The palette's command set renders as a chip strip above the composer —
+  // the one-surface replacement for the palette dialog (pick P-C).
+  const commandSet = useSyncExternalStore(subscribeConversationCommands, getConversationCommands, getConversationCommands);
+  const commandStrip = commandSet && commandSet.commands.length > 0 ? (
+    <div className="fl-cmdstrip" role="toolbar" aria-label="Commands">
+      {commandSet.commands.map(command => (
+        <button key={command.id} type="button" className="fl-cmd-chip" onClick={() => commandSet.select(command)}>
+          <CommandGlyph kind={command.kind} />
+          {command.label}
+        </button>
+      ))}
+    </div>
+  ) : null;
   // ui-usage-dx §6 — the whisper: the first time a user actually faces the
   // pill, it pulses once and a small caption says the app can be reshaped,
   // then never again (fire-once store). Arming is REACTIVE, not mount-frozen
@@ -106,13 +160,13 @@ export function VendoOverlay({
   // closed) is the first showing, and only that showing burns it.
   const [whisperActive, setWhisperActive] = useState(false);
   useEffect(() => {
-    if (whisperActive || open || launcher === "none" || dial === "quiet") return;
+    if (whisperActive || open || launcherHidden || dial === "quiet") return;
     if (hasSeen("whisper")) return;
     // Seen is recorded on first SHOWING, not on dismiss: a reload
     // mid-animation must never replay the whisper.
     markSeen("whisper");
     setWhisperActive(true);
-  }, [whisperActive, open, launcher, dial]);
+  }, [whisperActive, open, launcherHidden, dial]);
   // The whisper ends after ~6s — or the instant the overlay opens, because
   // the user has found the entry point it exists to point at.
   useEffect(() => {
@@ -224,6 +278,12 @@ export function VendoOverlay({
   // the epoch bump remounts the thread, and only the fresh composer may
   // drain the prompt (a live delivery would hand it to the one unmounting).
   useEffect(() => registerOverlayOpener(options => {
+    // The one-surface ⌘K path: a toggle request closes an open overlay instead
+    // of no-opping; every other affordance strictly opens.
+    if (options?.toggle === true && open) {
+      setOpen(false);
+      return;
+    }
     setOpen(true);
     const fresh = options?.newConversation === true;
     if (fresh) setConversationEpoch(epoch => epoch + 1);
@@ -233,7 +293,7 @@ export function VendoOverlay({
         { scope: prefillScope.current, defer: fresh },
       );
     }
-  }), [setOpen]);
+  }), [setOpen, open]);
 
   const newConversation = () => {
     setConversationEpoch(epoch => epoch + 1);
@@ -313,7 +373,7 @@ export function VendoOverlay({
           <span className="fl-sr-only">Close</span>
         </button>
         <PrefillScopeContext.Provider value={prefillScope.current}>
-          <Thread key={`${conversationKey ?? 0}:${conversationEpoch}`} discoverability={dial} firstRunGreeting={greeting} />
+          <Thread key={`${conversationKey ?? 0}:${conversationEpoch}`} discoverability={dial} firstRunGreeting={greeting} composerAccessory={commandStrip} />
         </PrefillScopeContext.Provider>
       </div>
     </div>,
@@ -322,31 +382,32 @@ export function VendoOverlay({
 
   return (
     <ChromeRoot>
-      {launcher === "none" ? null : (
+      {launcherHidden ? null : (
         <button
           ref={launcherRef}
           className="fl-launcher"
-          data-vendo-launcher={launcher}
+          data-vendo-launcher={launcherPosition}
+          // Blob-only orb when the host clears the label (`label: null`).
+          {...(launcherLabel === null ? { "data-vendo-launcher-bare": "" } : {})}
           // Present only while the whisper is live: keys the one-time pulse
           // (suppressed under prefers-reduced-motion — the caption still shows).
           {...(whisperActive && !open ? { "data-vendo-whisper": "" } : {})}
           type="button"
           aria-expanded={open}
           aria-controls="vendo-overlay-dialog"
+          // The visible label names the button; the orb needs an explicit one.
+          {...(launcherLabel === null ? { "aria-label": "AI agent" } : {})}
           onClick={() => setOpen(!open)}
         >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3Z" />
-            <path d="m18 14 .8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14Z" />
-          </svg>
-          Vendo
+          {launcherConfig.icon ?? <span className="fl-launcher-blob" aria-hidden="true" />}
+          {launcherLabel}
         </button>
       )}
       {/* The whisper caption rides above the pill and auto-dismisses; opening
           the overlay ends it early (it has done its job). role="status" keeps
           it polite for assistive tech. */}
-      {launcher !== "none" && whisperActive && !open ? (
-        <div className="fl-whisper" data-vendo-launcher={launcher} role="status">
+      {!launcherHidden && whisperActive && !open ? (
+        <div className="fl-whisper" data-vendo-launcher={launcherPosition} role="status">
           <strong>You can reshape this app</strong>
           <span>Ask Vendo to build the view you need.</span>
         </div>

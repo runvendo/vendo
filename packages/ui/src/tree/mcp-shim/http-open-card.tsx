@@ -22,7 +22,7 @@ const markStyle: CSSProperties = {
   height: 42,
   borderRadius: "var(--vendo-radius-medium, 12px)",
   color: "var(--vendo-color-accent-text, #ffffff)",
-  background: "var(--vendo-color-accent, #2f5af5)",
+  background: "var(--vendo-color-accent, #111111)",
   fontWeight: 750,
   letterSpacing: "-0.04em",
 };
@@ -57,7 +57,7 @@ const linkStyle: CSSProperties = {
   padding: "0 var(--vendo-space-large, 18px)",
   borderRadius: "var(--vendo-radius-medium, 10px)",
   color: "var(--vendo-color-accent-text, #ffffff)",
-  background: "var(--vendo-color-accent, #2f5af5)",
+  background: "var(--vendo-color-accent, #111111)",
   fontWeight: 650,
   textDecoration: "none",
 };
