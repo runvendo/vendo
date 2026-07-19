@@ -92,8 +92,9 @@ describe("machine lifecycle: provision", () => {
     const machine = sandbox.machines[0];
     expect(machine?.template).toBe("vendo-base-v2");
     expect(machine?.env).toEqual({ PORT: "8080", VENDO_STORE_URL: "http://host/store" });
-    // Provision leaves a sleeping snapshot, not a running machine.
-    expect(machine?.stopped).toBe(true);
+    // Provision leaves a sleeping snapshot, not a running machine — and the
+    // source machine is destroyed at the provider (snapshot leaves it running).
+    expect(machine?.destroyedSelf).toBe(true);
     expect(lifecycle.peek(doc.id)).toBeUndefined();
   });
 
@@ -246,6 +247,8 @@ describe("machine lifecycle: provider snapshot hygiene", () => {
 
     expect(sandbox.destroyed).toEqual([withMachine.machine?.snapshotRef]);
     expect(sandbox.snapshots.has(slept.machine?.snapshotRef ?? "")).toBe(true);
+    // The live source machine is destroyed after checkpoint, never left paused.
+    expect(sandbox.machines.at(-1)?.destroyedSelf).toBe(true);
   });
 
   it("a provision that loses a cross-process race keeps the winner's ref and releases its own", async () => {

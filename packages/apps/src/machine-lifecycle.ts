@@ -196,7 +196,10 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
       }
       return updated;
     } finally {
-      await entry.raw.stop().catch(() => undefined);
+      // snapshot() leaves the source machine RUNNING (e2b semantics): the
+      // checkpoint is what survives, so the live source is destroyed — a mere
+      // stop would leave a paused provider resource lingering beside the ref.
+      await entry.raw.destroy().catch(() => undefined);
     }
   };
 
@@ -224,8 +227,9 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
         }
         return updated;
       } finally {
-        // Provision ends asleep: the snapshot is the machine until a wake.
-        await machine.stop().catch(() => undefined);
+        // Provision ends asleep: the snapshot IS the machine until a wake, and
+        // snapshot() leaves the source running — destroy it, don't just stop.
+        await machine.destroy().catch(() => undefined);
       }
     })();
     provisioning.set(app.id, run);
