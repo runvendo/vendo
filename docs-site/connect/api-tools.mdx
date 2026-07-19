@@ -1,14 +1,14 @@
 ---
 title: "Tools from your API"
-description: "How Vendo sync extracts OpenAPI, tRPC, GraphQL, and host routes into .vendo/tools.json and runs them as the signed-in user under guard."
+description: "How Vendo sync extracts OpenAPI, tRPC, GraphQL, Next.js server actions, and host routes into .vendo/tools.json and runs them under guard."
 ---
 
 Vendo sync extracts OpenAPI operations, tRPC procedures, GraphQL operations,
-and host routes into `.vendo/tools.json`. Extraction runs during build and
-development so the tool surface does not drift.
+Next.js server actions, and host routes into `.vendo/tools.json`. Extraction
+runs during build and development so the tool surface does not drift.
 
 Extractors run in a fixed order: OpenAPI first, then tRPC, then GraphQL, then
-the route scan. Each extractor decides whether it applies to your app; the ones
+server actions, then the route scan. Each extractor decides whether it applies to your app; the ones
 that do not detect anything are skipped. When the tRPC or GraphQL extractor
 emits tools for a mount, any catch-all route under that mount (for example
 `/api/trpc/[trpc]` or `/api/graphql/[...slug]`) is dropped from the route scan
@@ -173,6 +173,103 @@ The GraphQL extractor loads both the `graphql` and TypeScript packages from
 your app's own `node_modules`. If either is missing, GraphQL extraction is
 skipped with a warning and no GraphQL tools are emitted — extraction never
 fails your build.
+
+## Next.js server actions
+
+If your Next.js app declares server actions, sync extracts each exported
+action as its own tool. The extractor statically scans modules that begin with
+`"use server"` and any inline `"use server"` directives — no host code runs.
+Every named export of a module-scoped `"use server"` file becomes a candidate
+tool.
+
+```json
+{
+  "name": "host_actions_boards_delete_board",
+  "description": "actions/boards#deleteBoard",
+  "inputSchema": {
+    "type": "object",
+    "properties": { "id": { "type": "string" } },
+    "required": ["id"]
+  },
+  "risk": "destructive",
+  "binding": {
+    "kind": "server-action",
+    "module": "app/actions/boards.ts",
+    "exportName": "deleteBoard",
+    "params": ["id"]
+  }
+}
+```
+
+The binding records the root-relative module path, the export name, and the
+ordered parameter names. `module#exportName` is the tool identity. At runtime
+Vendo maps the arguments object onto positional parameters and returns the
+action's return value on the JSON wire.
+
+### Input schemas
+
+Vendo interprets input schemas where they can be resolved statically:
+
+- Zod validators declared with `z.infer<typeof Schema>`, `z.input<typeof
+  Schema>`, or `z.output<typeof Schema>` type annotations — including imported
+  schemas resolved across files.
+- `createSafeAction(schema, handler)` from `next-safe-action` — unwrapped to a
+  single `data` parameter shaped by the schema.
+- Plain TypeScript primitives, object literals, and unions on parameter
+  annotations.
+
+Anything the extractor cannot recognize fails closed to a permissive parameter
+with a note, so the tool still surfaces without blocking your build.
+
+### Wrappers
+
+The extractor unwraps two recognized patterns when the export remains an
+importable callable:
+
+- `cache(fn)` from React.
+- `createSafeAction(schema, handler)` from `next-safe-action`.
+
+### Risk labels
+
+Server actions default to `write`. A read-shaped name never earns `read`,
+because a server action is a mutation seam. The destructive word list
+(`delete`, `remove`, `cancel`, `send`, `invite`, and similar verbs) can lift
+an action to `destructive` — the same rules that apply to route and tRPC
+tools.
+
+### Disabled cases
+
+The extractor fails closed and emits `disabled: true` with a note in two
+cases:
+
+- **Inline server actions.** A `"use server"` directive inside a
+  component-scoped function is real surface, but the function is not
+  importable by module path. Hoist the action into a module-level `"use
+  server"` file to promote it into a working tool.
+- **Unclassifiable exports.** When the export is not a callable Vendo can
+  bind (for example, a re-exported object or a value with no stable
+  signature), it is emitted disabled with `risk: "destructive"` so you can
+  promote it explicitly through overrides.
+
+### Execution
+
+`vendo init` generates an actions registration map beside your handler route
+and wires it into `createVendo({ serverActions })`. The map imports every
+detected action module keyed by `"<module>#<exportName>"`, so Vendo can
+dispatch calls through the map at runtime. The map regenerates deterministically
+when the detected surface changes; re-running `vendo init` on an unchanged
+surface leaves an empty diff. If the last action disappears, the map is
+emptied — never deleted — so your route keeps compiling.
+
+When the map lacks an entry for an action, or the registered value is not a
+function, execution fails closed with a clear `not-implemented` error and no
+work is performed. Server actions are present-only: away calls and MCP venues
+fail closed because there is no HTTP seam to attach `actAs` credentials to.
+
+The extractor loads the TypeScript compiler from your app's own
+`node_modules`. If TypeScript is not available, server-action extraction is
+skipped with a warning and no server-action tools are emitted — extraction
+never fails your build.
 
 ## Durable overrides
 

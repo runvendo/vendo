@@ -23,6 +23,14 @@ Critical-tool risk answers land in `.vendo/overrides.json` and remain
 authoritative across future sync runs. Init also writes policy, product brief,
 theme, and the PGlite ignore entry where applicable.
 
+When the scan detects Next.js server actions, init also generates an actions
+registration map beside the handler route and wires it into
+`createVendo({ serverActions })`. The map imports every detected action module
+so Vendo can dispatch calls in process. It regenerates deterministically on
+each run, so re-running `vendo init` on an unchanged surface leaves an empty
+diff. See [Tools from your API](/connect/api-tools#next-js-server-actions) for
+the runtime rules.
+
 Init also proposes `predev` and `prebuild` hooks in `package.json` so
 extraction runs alongside your dev and build:
 
