@@ -1,0 +1,2291 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "activateSkill",
+      "kind": "graphql",
+      "operation": "activateSkill",
+      "risk": "write"
+    },
+    {
+      "name": "activateWorkflowVersion",
+      "kind": "graphql",
+      "operation": "activateWorkflowVersion",
+      "risk": "write"
+    },
+    {
+      "name": "activateWorkspace",
+      "kind": "graphql",
+      "operation": "activateWorkspace",
+      "risk": "write"
+    },
+    {
+      "name": "addAiProvider",
+      "kind": "graphql",
+      "operation": "addAiProvider",
+      "risk": "write"
+    },
+    {
+      "name": "addModelToProvider",
+      "kind": "graphql",
+      "operation": "addModelToProvider",
+      "risk": "write"
+    },
+    {
+      "name": "addQueryToEventStream",
+      "kind": "graphql",
+      "operation": "addQueryToEventStream",
+      "risk": "write"
+    },
+    {
+      "name": "adminPanelRecentUsers",
+      "kind": "graphql",
+      "operation": "adminPanelRecentUsers",
+      "risk": "write"
+    },
+    {
+      "name": "adminPanelTopWorkspaces",
+      "kind": "graphql",
+      "operation": "adminPanelTopWorkspaces",
+      "risk": "write"
+    },
+    {
+      "name": "agentTurns",
+      "kind": "graphql",
+      "operation": "agentTurns",
+      "risk": "write"
+    },
+    {
+      "name": "apiKey",
+      "kind": "graphql",
+      "operation": "apiKey",
+      "risk": "write"
+    },
+    {
+      "name": "apiKeys",
+      "kind": "graphql",
+      "operation": "apiKeys",
+      "risk": "write"
+    },
+    {
+      "name": "applicationConnectionProviders",
+      "kind": "graphql",
+      "operation": "applicationConnectionProviders",
+      "risk": "write"
+    },
+    {
+      "name": "applicationRegistrationTarballUrl",
+      "kind": "graphql",
+      "operation": "applicationRegistrationTarballUrl",
+      "risk": "write"
+    },
+    {
+      "name": "archiveChatThread",
+      "kind": "graphql",
+      "operation": "archiveChatThread",
+      "risk": "write"
+    },
+    {
+      "name": "assignRoleToAgent",
+      "kind": "graphql",
+      "operation": "assignRoleToAgent",
+      "risk": "write"
+    },
+    {
+      "name": "assignRoleToApiKey",
+      "kind": "graphql",
+      "operation": "assignRoleToApiKey",
+      "risk": "write"
+    },
+    {
+      "name": "authorizeApp",
+      "kind": "graphql",
+      "operation": "authorizeApp",
+      "risk": "write"
+    },
+    {
+      "name": "barChartData",
+      "kind": "graphql",
+      "operation": "barChartData",
+      "risk": "write"
+    },
+    {
+      "name": "billingPortalSession",
+      "kind": "graphql",
+      "operation": "billingPortalSession",
+      "risk": "write"
+    },
+    {
+      "name": "cancelSwitchBillingInterval",
+      "kind": "graphql",
+      "operation": "cancelSwitchBillingInterval",
+      "risk": "write"
+    },
+    {
+      "name": "cancelSwitchBillingPlan",
+      "kind": "graphql",
+      "operation": "cancelSwitchBillingPlan",
+      "risk": "write"
+    },
+    {
+      "name": "cancelSwitchResourceCreditPrice",
+      "kind": "graphql",
+      "operation": "cancelSwitchResourceCreditPrice",
+      "risk": "write"
+    },
+    {
+      "name": "chatMessages",
+      "kind": "graphql",
+      "operation": "chatMessages",
+      "risk": "write"
+    },
+    {
+      "name": "chatStreamCatchupChunks",
+      "kind": "graphql",
+      "operation": "chatStreamCatchupChunks",
+      "risk": "write"
+    },
+    {
+      "name": "chatThread",
+      "kind": "graphql",
+      "operation": "chatThread",
+      "risk": "write"
+    },
+    {
+      "name": "chatThreads",
+      "kind": "graphql",
+      "operation": "chatThreads",
+      "risk": "write"
+    },
+    {
+      "name": "checkCustomDomainValidRecords",
+      "kind": "graphql",
+      "operation": "checkCustomDomainValidRecords",
+      "risk": "write"
+    },
+    {
+      "name": "checkPublicDomainValidRecords",
+      "kind": "graphql",
+      "operation": "checkPublicDomainValidRecords",
+      "risk": "write"
+    },
+    {
+      "name": "checkUserExists",
+      "kind": "graphql",
+      "operation": "checkUserExists",
+      "risk": "write"
+    },
+    {
+      "name": "checkWorkspaceInviteHashIsValid",
+      "kind": "graphql",
+      "operation": "checkWorkspaceInviteHashIsValid",
+      "risk": "write"
+    },
+    {
+      "name": "checkoutSession",
+      "kind": "graphql",
+      "operation": "checkoutSession",
+      "risk": "write"
+    },
+    {
+      "name": "clearMaintenanceMode",
+      "kind": "graphql",
+      "operation": "clearMaintenanceMode",
+      "risk": "write"
+    },
+    {
+      "name": "commandMenuItem",
+      "kind": "graphql",
+      "operation": "commandMenuItem",
+      "risk": "write"
+    },
+    {
+      "name": "commandMenuItems",
+      "kind": "graphql",
+      "operation": "commandMenuItems",
+      "risk": "write"
+    },
+    {
+      "name": "computeStepOutputSchema",
+      "kind": "graphql",
+      "operation": "computeStepOutputSchema",
+      "risk": "write"
+    },
+    {
+      "name": "createApiKey",
+      "kind": "graphql",
+      "operation": "createApiKey",
+      "risk": "write"
+    },
+    {
+      "name": "createApplicationRegistration",
+      "kind": "graphql",
+      "operation": "createApplicationRegistration",
+      "risk": "write"
+    },
+    {
+      "name": "createApplicationRegistrationVariable",
+      "kind": "graphql",
+      "operation": "createApplicationRegistrationVariable",
+      "risk": "write"
+    },
+    {
+      "name": "createApprovedAccessDomain",
+      "kind": "graphql",
+      "operation": "createApprovedAccessDomain",
+      "risk": "write"
+    },
+    {
+      "name": "createChatThread",
+      "kind": "graphql",
+      "operation": "createChatThread",
+      "risk": "write"
+    },
+    {
+      "name": "createCommandMenuItem",
+      "kind": "graphql",
+      "operation": "createCommandMenuItem",
+      "risk": "write"
+    },
+    {
+      "name": "createDatabaseConfigVariable",
+      "kind": "graphql",
+      "operation": "createDatabaseConfigVariable",
+      "risk": "write"
+    },
+    {
+      "name": "createDevelopmentApplication",
+      "kind": "graphql",
+      "operation": "createDevelopmentApplication",
+      "risk": "write"
+    },
+    {
+      "name": "createDraftFromWorkflowVersion",
+      "kind": "graphql",
+      "operation": "createDraftFromWorkflowVersion",
+      "risk": "write"
+    },
+    {
+      "name": "createEmailGroupChannel",
+      "kind": "graphql",
+      "operation": "createEmailGroupChannel",
+      "risk": "write"
+    },
+    {
+      "name": "createEmailingDomain",
+      "kind": "graphql",
+      "operation": "createEmailingDomain",
+      "risk": "write"
+    },
+    {
+      "name": "createFrontComponent",
+      "kind": "graphql",
+      "operation": "createFrontComponent",
+      "risk": "write"
+    },
+    {
+      "name": "createManyNavigationMenuItems",
+      "kind": "graphql",
+      "operation": "createManyNavigationMenuItems",
+      "risk": "write"
+    },
+    {
+      "name": "createManyViewFieldGroups",
+      "kind": "graphql",
+      "operation": "createManyViewFieldGroups",
+      "risk": "write"
+    },
+    {
+      "name": "createManyViewFields",
+      "kind": "graphql",
+      "operation": "createManyViewFields",
+      "risk": "write"
+    },
+    {
+      "name": "createManyViewGroups",
+      "kind": "graphql",
+      "operation": "createManyViewGroups",
+      "risk": "write"
+    },
+    {
+      "name": "createNavigationMenuItem",
+      "kind": "graphql",
+      "operation": "createNavigationMenuItem",
+      "risk": "write"
+    },
+    {
+      "name": "createOIDCIdentityProvider",
+      "kind": "graphql",
+      "operation": "createOIDCIdentityProvider",
+      "risk": "write"
+    },
+    {
+      "name": "createObjectEvent",
+      "kind": "graphql",
+      "operation": "createObjectEvent",
+      "risk": "write"
+    },
+    {
+      "name": "createOneAgent",
+      "kind": "graphql",
+      "operation": "createOneAgent",
+      "risk": "write"
+    },
+    {
+      "name": "createOneField",
+      "kind": "graphql",
+      "operation": "createOneField",
+      "risk": "write"
+    },
+    {
+      "name": "createOneIndex",
+      "kind": "graphql",
+      "operation": "createOneIndex",
+      "risk": "write"
+    },
+    {
+      "name": "createOneLogicFunction",
+      "kind": "graphql",
+      "operation": "createOneLogicFunction",
+      "risk": "write"
+    },
+    {
+      "name": "createOneObject",
+      "kind": "graphql",
+      "operation": "createOneObject",
+      "risk": "write"
+    },
+    {
+      "name": "createOneRole",
+      "kind": "graphql",
+      "operation": "createOneRole",
+      "risk": "write"
+    },
+    {
+      "name": "createPageLayout",
+      "kind": "graphql",
+      "operation": "createPageLayout",
+      "risk": "write"
+    },
+    {
+      "name": "createPageLayoutTab",
+      "kind": "graphql",
+      "operation": "createPageLayoutTab",
+      "risk": "write"
+    },
+    {
+      "name": "createPageLayoutWidget",
+      "kind": "graphql",
+      "operation": "createPageLayoutWidget",
+      "risk": "write"
+    },
+    {
+      "name": "createPublicDomain",
+      "kind": "graphql",
+      "operation": "createPublicDomain",
+      "risk": "write"
+    },
+    {
+      "name": "createSAMLIdentityProvider",
+      "kind": "graphql",
+      "operation": "createSAMLIdentityProvider",
+      "risk": "write"
+    },
+    {
+      "name": "createSkill",
+      "kind": "graphql",
+      "operation": "createSkill",
+      "risk": "write"
+    },
+    {
+      "name": "createView",
+      "kind": "graphql",
+      "operation": "createView",
+      "risk": "write"
+    },
+    {
+      "name": "createViewField",
+      "kind": "graphql",
+      "operation": "createViewField",
+      "risk": "write"
+    },
+    {
+      "name": "createViewFieldGroup",
+      "kind": "graphql",
+      "operation": "createViewFieldGroup",
+      "risk": "write"
+    },
+    {
+      "name": "createViewFilter",
+      "kind": "graphql",
+      "operation": "createViewFilter",
+      "risk": "write"
+    },
+    {
+      "name": "createViewFilterGroup",
+      "kind": "graphql",
+      "operation": "createViewFilterGroup",
+      "risk": "write"
+    },
+    {
+      "name": "createViewGroup",
+      "kind": "graphql",
+      "operation": "createViewGroup",
+      "risk": "write"
+    },
+    {
+      "name": "createViewSort",
+      "kind": "graphql",
+      "operation": "createViewSort",
+      "risk": "write"
+    },
+    {
+      "name": "createWebhook",
+      "kind": "graphql",
+      "operation": "createWebhook",
+      "risk": "write"
+    },
+    {
+      "name": "createWorkflowVersionEdge",
+      "kind": "graphql",
+      "operation": "createWorkflowVersionEdge",
+      "risk": "write"
+    },
+    {
+      "name": "createWorkflowVersionStep",
+      "kind": "graphql",
+      "operation": "createWorkflowVersionStep",
+      "risk": "write"
+    },
+    {
+      "name": "currentUser",
+      "kind": "graphql",
+      "operation": "currentUser",
+      "risk": "write"
+    },
+    {
+      "name": "currentWorkspace",
+      "kind": "graphql",
+      "operation": "currentWorkspace",
+      "risk": "write"
+    },
+    {
+      "name": "deactivateSkill",
+      "kind": "graphql",
+      "operation": "deactivateSkill",
+      "risk": "write"
+    },
+    {
+      "name": "deactivateWorkflowVersion",
+      "kind": "graphql",
+      "operation": "deactivateWorkflowVersion",
+      "risk": "write"
+    },
+    {
+      "name": "deleteApplicationRegistration",
+      "kind": "graphql",
+      "operation": "deleteApplicationRegistration",
+      "risk": "write"
+    },
+    {
+      "name": "deleteApplicationRegistrationVariable",
+      "kind": "graphql",
+      "operation": "deleteApplicationRegistrationVariable",
+      "risk": "write"
+    },
+    {
+      "name": "deleteApprovedAccessDomain",
+      "kind": "graphql",
+      "operation": "deleteApprovedAccessDomain",
+      "risk": "write"
+    },
+    {
+      "name": "deleteChatThread",
+      "kind": "graphql",
+      "operation": "deleteChatThread",
+      "risk": "write"
+    },
+    {
+      "name": "deleteCommandMenuItem",
+      "kind": "graphql",
+      "operation": "deleteCommandMenuItem",
+      "risk": "write"
+    },
+    {
+      "name": "deleteConnectedAccount",
+      "kind": "graphql",
+      "operation": "deleteConnectedAccount",
+      "risk": "write"
+    },
+    {
+      "name": "deleteCurrentWorkspace",
+      "kind": "graphql",
+      "operation": "deleteCurrentWorkspace",
+      "risk": "write"
+    },
+    {
+      "name": "deleteDatabaseConfigVariable",
+      "kind": "graphql",
+      "operation": "deleteDatabaseConfigVariable",
+      "risk": "write"
+    },
+    {
+      "name": "deleteEmailGroupChannel",
+      "kind": "graphql",
+      "operation": "deleteEmailGroupChannel",
+      "risk": "write"
+    },
+    {
+      "name": "deleteEmailingDomain",
+      "kind": "graphql",
+      "operation": "deleteEmailingDomain",
+      "risk": "write"
+    },
+    {
+      "name": "deleteFrontComponent",
+      "kind": "graphql",
+      "operation": "deleteFrontComponent",
+      "risk": "write"
+    },
+    {
+      "name": "deleteJobs",
+      "kind": "graphql",
+      "operation": "deleteJobs",
+      "risk": "write"
+    },
+    {
+      "name": "deleteManyNavigationMenuItems",
+      "kind": "graphql",
+      "operation": "deleteManyNavigationMenuItems",
+      "risk": "write"
+    },
+    {
+      "name": "deleteNavigationMenuItem",
+      "kind": "graphql",
+      "operation": "deleteNavigationMenuItem",
+      "risk": "write"
+    },
+    {
+      "name": "deleteOneAgent",
+      "kind": "graphql",
+      "operation": "deleteOneAgent",
+      "risk": "write"
+    },
+    {
+      "name": "deleteOneField",
+      "kind": "graphql",
+      "operation": "deleteOneField",
+      "risk": "write"
+    },
+    {
+      "name": "deleteOneIndex",
+      "kind": "graphql",
+      "operation": "deleteOneIndex",
+      "risk": "write"
+    },
+    {
+      "name": "deleteOneLogicFunction",
+      "kind": "graphql",
+      "operation": "deleteOneLogicFunction",
+      "risk": "write"
+    },
+    {
+      "name": "deleteOneObject",
+      "kind": "graphql",
+      "operation": "deleteOneObject",
+      "risk": "write"
+    },
+    {
+      "name": "deleteOneRole",
+      "kind": "graphql",
+      "operation": "deleteOneRole",
+      "risk": "write"
+    },
+    {
+      "name": "deletePublicDomain",
+      "kind": "graphql",
+      "operation": "deletePublicDomain",
+      "risk": "write"
+    },
+    {
+      "name": "deleteQueuedChatMessage",
+      "kind": "graphql",
+      "operation": "deleteQueuedChatMessage",
+      "risk": "write"
+    },
+    {
+      "name": "deleteSSOIdentityProvider",
+      "kind": "graphql",
+      "operation": "deleteSSOIdentityProvider",
+      "risk": "write"
+    },
+    {
+      "name": "deleteSkill",
+      "kind": "graphql",
+      "operation": "deleteSkill",
+      "risk": "write"
+    },
+    {
+      "name": "deleteTwoFactorAuthenticationMethod",
+      "kind": "graphql",
+      "operation": "deleteTwoFactorAuthenticationMethod",
+      "risk": "write"
+    },
+    {
+      "name": "deleteUser",
+      "kind": "graphql",
+      "operation": "deleteUser",
+      "risk": "destructive"
+    },
+    {
+      "name": "deleteUserFromWorkspace",
+      "kind": "graphql",
+      "operation": "deleteUserFromWorkspace",
+      "risk": "write"
+    },
+    {
+      "name": "deleteView",
+      "kind": "graphql",
+      "operation": "deleteView",
+      "risk": "write"
+    },
+    {
+      "name": "deleteViewField",
+      "kind": "graphql",
+      "operation": "deleteViewField",
+      "risk": "write"
+    },
+    {
+      "name": "deleteViewFieldGroup",
+      "kind": "graphql",
+      "operation": "deleteViewFieldGroup",
+      "risk": "write"
+    },
+    {
+      "name": "deleteViewFilter",
+      "kind": "graphql",
+      "operation": "deleteViewFilter",
+      "risk": "write"
+    },
+    {
+      "name": "deleteViewFilterGroup",
+      "kind": "graphql",
+      "operation": "deleteViewFilterGroup",
+      "risk": "write"
+    },
+    {
+      "name": "deleteViewGroup",
+      "kind": "graphql",
+      "operation": "deleteViewGroup",
+      "risk": "write"
+    },
+    {
+      "name": "deleteViewSort",
+      "kind": "graphql",
+      "operation": "deleteViewSort",
+      "risk": "write"
+    },
+    {
+      "name": "deleteWebhook",
+      "kind": "graphql",
+      "operation": "deleteWebhook",
+      "risk": "write"
+    },
+    {
+      "name": "deleteWorkflowVersionEdge",
+      "kind": "graphql",
+      "operation": "deleteWorkflowVersionEdge",
+      "risk": "write"
+    },
+    {
+      "name": "deleteWorkflowVersionStep",
+      "kind": "graphql",
+      "operation": "deleteWorkflowVersionStep",
+      "risk": "write"
+    },
+    {
+      "name": "deleteWorkspaceInvitation",
+      "kind": "graphql",
+      "operation": "deleteWorkspaceInvitation",
+      "risk": "write"
+    },
+    {
+      "name": "destroyPageLayout",
+      "kind": "graphql",
+      "operation": "destroyPageLayout",
+      "risk": "destructive"
+    },
+    {
+      "name": "destroyPageLayoutTab",
+      "kind": "graphql",
+      "operation": "destroyPageLayoutTab",
+      "risk": "write"
+    },
+    {
+      "name": "destroyPageLayoutWidget",
+      "kind": "graphql",
+      "operation": "destroyPageLayoutWidget",
+      "risk": "write"
+    },
+    {
+      "name": "destroyView",
+      "kind": "graphql",
+      "operation": "destroyView",
+      "risk": "write"
+    },
+    {
+      "name": "destroyViewField",
+      "kind": "graphql",
+      "operation": "destroyViewField",
+      "risk": "write"
+    },
+    {
+      "name": "destroyViewFieldGroup",
+      "kind": "graphql",
+      "operation": "destroyViewFieldGroup",
+      "risk": "write"
+    },
+    {
+      "name": "destroyViewFilter",
+      "kind": "graphql",
+      "operation": "destroyViewFilter",
+      "risk": "write"
+    },
+    {
+      "name": "destroyViewFilterGroup",
+      "kind": "graphql",
+      "operation": "destroyViewFilterGroup",
+      "risk": "write"
+    },
+    {
+      "name": "destroyViewGroup",
+      "kind": "graphql",
+      "operation": "destroyViewGroup",
+      "risk": "write"
+    },
+    {
+      "name": "destroyViewSort",
+      "kind": "graphql",
+      "operation": "destroyViewSort",
+      "risk": "write"
+    },
+    {
+      "name": "dismissMaintenanceModeBanner",
+      "kind": "graphql",
+      "operation": "dismissMaintenanceModeBanner",
+      "risk": "write"
+    },
+    {
+      "name": "dismissReconnectAccountBanner",
+      "kind": "graphql",
+      "operation": "dismissReconnectAccountBanner",
+      "risk": "write"
+    },
+    {
+      "name": "duplicateDashboard",
+      "kind": "graphql",
+      "operation": "duplicateDashboard",
+      "risk": "write"
+    },
+    {
+      "name": "duplicateWorkflow",
+      "kind": "graphql",
+      "operation": "duplicateWorkflow",
+      "risk": "write"
+    },
+    {
+      "name": "duplicateWorkflowVersionStep",
+      "kind": "graphql",
+      "operation": "duplicateWorkflowVersionStep",
+      "risk": "write"
+    },
+    {
+      "name": "editSSOIdentityProvider",
+      "kind": "graphql",
+      "operation": "editSSOIdentityProvider",
+      "risk": "write"
+    },
+    {
+      "name": "emailPasswordResetLink",
+      "kind": "graphql",
+      "operation": "emailPasswordResetLink",
+      "risk": "write"
+    },
+    {
+      "name": "endSubscriptionTrialPeriod",
+      "kind": "graphql",
+      "operation": "endSubscriptionTrialPeriod",
+      "risk": "write"
+    },
+    {
+      "name": "enterpriseCheckoutSession",
+      "kind": "graphql",
+      "operation": "enterpriseCheckoutSession",
+      "risk": "write"
+    },
+    {
+      "name": "enterprisePortalSession",
+      "kind": "graphql",
+      "operation": "enterprisePortalSession",
+      "risk": "write"
+    },
+    {
+      "name": "enterpriseSubscriptionStatus",
+      "kind": "graphql",
+      "operation": "enterpriseSubscriptionStatus",
+      "risk": "write"
+    },
+    {
+      "name": "evaluateAgentTurn",
+      "kind": "graphql",
+      "operation": "evaluateAgentTurn",
+      "risk": "write"
+    },
+    {
+      "name": "eventLogs",
+      "kind": "graphql",
+      "operation": "eventLogs",
+      "risk": "write"
+    },
+    {
+      "name": "executeOneLogicFunction",
+      "kind": "graphql",
+      "operation": "executeOneLogicFunction",
+      "risk": "write"
+    },
+    {
+      "name": "findAdminApplicationRegistrationVariables",
+      "kind": "graphql",
+      "operation": "findAdminApplicationRegistrationVariables",
+      "risk": "read"
+    },
+    {
+      "name": "findAllApplicationRegistrations",
+      "kind": "graphql",
+      "operation": "findAllApplicationRegistrations",
+      "risk": "read"
+    },
+    {
+      "name": "findApplicationRegistrationByClientId",
+      "kind": "graphql",
+      "operation": "findApplicationRegistrationByClientId",
+      "risk": "read"
+    },
+    {
+      "name": "findApplicationRegistrationByUniversalIdentifier",
+      "kind": "graphql",
+      "operation": "findApplicationRegistrationByUniversalIdentifier",
+      "risk": "read"
+    },
+    {
+      "name": "findApplicationRegistrationStats",
+      "kind": "graphql",
+      "operation": "findApplicationRegistrationStats",
+      "risk": "read"
+    },
+    {
+      "name": "findApplicationRegistrationVariables",
+      "kind": "graphql",
+      "operation": "findApplicationRegistrationVariables",
+      "risk": "read"
+    },
+    {
+      "name": "findManyAgents",
+      "kind": "graphql",
+      "operation": "findManyAgents",
+      "risk": "read"
+    },
+    {
+      "name": "findManyApplicationRegistrations",
+      "kind": "graphql",
+      "operation": "findManyApplicationRegistrations",
+      "risk": "read"
+    },
+    {
+      "name": "findManyApplications",
+      "kind": "graphql",
+      "operation": "findManyApplications",
+      "risk": "read"
+    },
+    {
+      "name": "findManyLogicFunctions",
+      "kind": "graphql",
+      "operation": "findManyLogicFunctions",
+      "risk": "read"
+    },
+    {
+      "name": "findManyMarketplaceApps",
+      "kind": "graphql",
+      "operation": "findManyMarketplaceApps",
+      "risk": "read"
+    },
+    {
+      "name": "findManyPublicDomains",
+      "kind": "graphql",
+      "operation": "findManyPublicDomains",
+      "risk": "read"
+    },
+    {
+      "name": "findMarketplaceAppDetail",
+      "kind": "graphql",
+      "operation": "findMarketplaceAppDetail",
+      "risk": "read"
+    },
+    {
+      "name": "findOneAdminApplicationRegistration",
+      "kind": "graphql",
+      "operation": "findOneAdminApplicationRegistration",
+      "risk": "read"
+    },
+    {
+      "name": "findOneAgent",
+      "kind": "graphql",
+      "operation": "findOneAgent",
+      "risk": "read"
+    },
+    {
+      "name": "findOneApplication",
+      "kind": "graphql",
+      "operation": "findOneApplication",
+      "risk": "read"
+    },
+    {
+      "name": "findOneApplicationRegistration",
+      "kind": "graphql",
+      "operation": "findOneApplicationRegistration",
+      "risk": "read"
+    },
+    {
+      "name": "findOneLogicFunction",
+      "kind": "graphql",
+      "operation": "findOneLogicFunction",
+      "risk": "read"
+    },
+    {
+      "name": "findWorkspaceAiStats",
+      "kind": "graphql",
+      "operation": "findWorkspaceAiStats",
+      "risk": "read"
+    },
+    {
+      "name": "findWorkspaceFromInviteHash",
+      "kind": "graphql",
+      "operation": "findWorkspaceFromInviteHash",
+      "risk": "write"
+    },
+    {
+      "name": "findWorkspaceInvitations",
+      "kind": "graphql",
+      "operation": "findWorkspaceInvitations",
+      "risk": "read"
+    },
+    {
+      "name": "frontComponent",
+      "kind": "graphql",
+      "operation": "frontComponent",
+      "risk": "write"
+    },
+    {
+      "name": "frontComponents",
+      "kind": "graphql",
+      "operation": "frontComponents",
+      "risk": "write"
+    },
+    {
+      "name": "generateApiKeyToken",
+      "kind": "graphql",
+      "operation": "generateApiKeyToken",
+      "risk": "write"
+    },
+    {
+      "name": "generateApplicationToken",
+      "kind": "graphql",
+      "operation": "generateApplicationToken",
+      "risk": "write"
+    },
+    {
+      "name": "generatePlaygroundToken",
+      "kind": "graphql",
+      "operation": "generatePlaygroundToken",
+      "risk": "write"
+    },
+    {
+      "name": "generateTransientToken",
+      "kind": "graphql",
+      "operation": "generateTransientToken",
+      "risk": "write"
+    },
+    {
+      "name": "getAddressDetails",
+      "kind": "graphql",
+      "operation": "getAddressDetails",
+      "risk": "read"
+    },
+    {
+      "name": "getAdminAiModels",
+      "kind": "graphql",
+      "operation": "getAdminAiModels",
+      "risk": "read"
+    },
+    {
+      "name": "getAdminAiUsageByWorkspace",
+      "kind": "graphql",
+      "operation": "getAdminAiUsageByWorkspace",
+      "risk": "read"
+    },
+    {
+      "name": "getAdminChatThreadMessages",
+      "kind": "graphql",
+      "operation": "getAdminChatThreadMessages",
+      "risk": "read"
+    },
+    {
+      "name": "getAdminWorkspaceChatThreads",
+      "kind": "graphql",
+      "operation": "getAdminWorkspaceChatThreads",
+      "risk": "read"
+    },
+    {
+      "name": "getAiProviders",
+      "kind": "graphql",
+      "operation": "getAiProviders",
+      "risk": "read"
+    },
+    {
+      "name": "getAiSystemPromptPreview",
+      "kind": "graphql",
+      "operation": "getAiSystemPromptPreview",
+      "risk": "read"
+    },
+    {
+      "name": "getApprovedAccessDomains",
+      "kind": "graphql",
+      "operation": "getApprovedAccessDomains",
+      "risk": "read"
+    },
+    {
+      "name": "getAuthTokensFromLoginToken",
+      "kind": "graphql",
+      "operation": "getAuthTokensFromLoginToken",
+      "risk": "write"
+    },
+    {
+      "name": "getAuthTokensFromOTP",
+      "kind": "graphql",
+      "operation": "getAuthTokensFromOTP",
+      "risk": "write"
+    },
+    {
+      "name": "getAuthorizationUrlForSSO",
+      "kind": "graphql",
+      "operation": "getAuthorizationUrlForSSO",
+      "risk": "write"
+    },
+    {
+      "name": "getAutoCompleteAddress",
+      "kind": "graphql",
+      "operation": "getAutoCompleteAddress",
+      "risk": "read"
+    },
+    {
+      "name": "getAvailablePackages",
+      "kind": "graphql",
+      "operation": "getAvailablePackages",
+      "risk": "read"
+    },
+    {
+      "name": "getConfigVariablesGrouped",
+      "kind": "graphql",
+      "operation": "getConfigVariablesGrouped",
+      "risk": "read"
+    },
+    {
+      "name": "getConnectedImapSmtpCaldavAccount",
+      "kind": "graphql",
+      "operation": "getConnectedImapSmtpCaldavAccount",
+      "risk": "read"
+    },
+    {
+      "name": "getDatabaseConfigVariable",
+      "kind": "graphql",
+      "operation": "getDatabaseConfigVariable",
+      "risk": "read"
+    },
+    {
+      "name": "getEmailingDomains",
+      "kind": "graphql",
+      "operation": "getEmailingDomains",
+      "risk": "read"
+    },
+    {
+      "name": "getIndicatorHealthStatus",
+      "kind": "graphql",
+      "operation": "getIndicatorHealthStatus",
+      "risk": "read"
+    },
+    {
+      "name": "getInstanceAndAllWorkspacesUpgradeStatus",
+      "kind": "graphql",
+      "operation": "getInstanceAndAllWorkspacesUpgradeStatus",
+      "risk": "read"
+    },
+    {
+      "name": "getLogicFunctionSourceCode",
+      "kind": "graphql",
+      "operation": "getLogicFunctionSourceCode",
+      "risk": "read"
+    },
+    {
+      "name": "getLoginTokenFromCredentials",
+      "kind": "graphql",
+      "operation": "getLoginTokenFromCredentials",
+      "risk": "write"
+    },
+    {
+      "name": "getMaintenanceMode",
+      "kind": "graphql",
+      "operation": "getMaintenanceMode",
+      "risk": "read"
+    },
+    {
+      "name": "getModelsDevProviders",
+      "kind": "graphql",
+      "operation": "getModelsDevProviders",
+      "risk": "read"
+    },
+    {
+      "name": "getModelsDevSuggestions",
+      "kind": "graphql",
+      "operation": "getModelsDevSuggestions",
+      "risk": "read"
+    },
+    {
+      "name": "getPageLayout",
+      "kind": "graphql",
+      "operation": "getPageLayout",
+      "risk": "read"
+    },
+    {
+      "name": "getPageLayoutTab",
+      "kind": "graphql",
+      "operation": "getPageLayoutTab",
+      "risk": "read"
+    },
+    {
+      "name": "getPageLayoutTabs",
+      "kind": "graphql",
+      "operation": "getPageLayoutTabs",
+      "risk": "read"
+    },
+    {
+      "name": "getPageLayoutWidget",
+      "kind": "graphql",
+      "operation": "getPageLayoutWidget",
+      "risk": "read"
+    },
+    {
+      "name": "getPageLayoutWidgets",
+      "kind": "graphql",
+      "operation": "getPageLayoutWidgets",
+      "risk": "read"
+    },
+    {
+      "name": "getPageLayouts",
+      "kind": "graphql",
+      "operation": "getPageLayouts",
+      "risk": "read"
+    },
+    {
+      "name": "getPublicWorkspaceDataByDomain",
+      "kind": "graphql",
+      "operation": "getPublicWorkspaceDataByDomain",
+      "risk": "read"
+    },
+    {
+      "name": "getPublicWorkspaceDataById",
+      "kind": "graphql",
+      "operation": "getPublicWorkspaceDataById",
+      "risk": "read"
+    },
+    {
+      "name": "getQueueJobs",
+      "kind": "graphql",
+      "operation": "getQueueJobs",
+      "risk": "read"
+    },
+    {
+      "name": "getQueueMetrics",
+      "kind": "graphql",
+      "operation": "getQueueMetrics",
+      "risk": "read"
+    },
+    {
+      "name": "getResourceCreditUsage",
+      "kind": "graphql",
+      "operation": "getResourceCreditUsage",
+      "risk": "read"
+    },
+    {
+      "name": "getRoles",
+      "kind": "graphql",
+      "operation": "getRoles",
+      "risk": "read"
+    },
+    {
+      "name": "getSSOIdentityProviders",
+      "kind": "graphql",
+      "operation": "getSSOIdentityProviders",
+      "risk": "read"
+    },
+    {
+      "name": "getSigningKeys",
+      "kind": "graphql",
+      "operation": "getSigningKeys",
+      "risk": "read"
+    },
+    {
+      "name": "getSystemHealthStatus",
+      "kind": "graphql",
+      "operation": "getSystemHealthStatus",
+      "risk": "read"
+    },
+    {
+      "name": "getTimelineCalendarEventsFromCompanyId",
+      "kind": "graphql",
+      "operation": "getTimelineCalendarEventsFromCompanyId",
+      "risk": "read"
+    },
+    {
+      "name": "getTimelineCalendarEventsFromOpportunityId",
+      "kind": "graphql",
+      "operation": "getTimelineCalendarEventsFromOpportunityId",
+      "risk": "read"
+    },
+    {
+      "name": "getTimelineCalendarEventsFromPersonId",
+      "kind": "graphql",
+      "operation": "getTimelineCalendarEventsFromPersonId",
+      "risk": "read"
+    },
+    {
+      "name": "getTimelineThreadsFromCompanyId",
+      "kind": "graphql",
+      "operation": "getTimelineThreadsFromCompanyId",
+      "risk": "read"
+    },
+    {
+      "name": "getTimelineThreadsFromOpportunityId",
+      "kind": "graphql",
+      "operation": "getTimelineThreadsFromOpportunityId",
+      "risk": "read"
+    },
+    {
+      "name": "getTimelineThreadsFromPersonId",
+      "kind": "graphql",
+      "operation": "getTimelineThreadsFromPersonId",
+      "risk": "read"
+    },
+    {
+      "name": "getToolIndex",
+      "kind": "graphql",
+      "operation": "getToolIndex",
+      "risk": "read"
+    },
+    {
+      "name": "getToolInputSchema",
+      "kind": "graphql",
+      "operation": "getToolInputSchema",
+      "risk": "read"
+    },
+    {
+      "name": "getUpgradeStatus",
+      "kind": "graphql",
+      "operation": "getUpgradeStatus",
+      "risk": "read"
+    },
+    {
+      "name": "getUsageAnalytics",
+      "kind": "graphql",
+      "operation": "getUsageAnalytics",
+      "risk": "read"
+    },
+    {
+      "name": "getView",
+      "kind": "graphql",
+      "operation": "getView",
+      "risk": "read"
+    },
+    {
+      "name": "getViewField",
+      "kind": "graphql",
+      "operation": "getViewField",
+      "risk": "read"
+    },
+    {
+      "name": "getViewFieldGroup",
+      "kind": "graphql",
+      "operation": "getViewFieldGroup",
+      "risk": "read"
+    },
+    {
+      "name": "getViewFieldGroups",
+      "kind": "graphql",
+      "operation": "getViewFieldGroups",
+      "risk": "read"
+    },
+    {
+      "name": "getViewFields",
+      "kind": "graphql",
+      "operation": "getViewFields",
+      "risk": "read"
+    },
+    {
+      "name": "getViewFilter",
+      "kind": "graphql",
+      "operation": "getViewFilter",
+      "risk": "read"
+    },
+    {
+      "name": "getViewFilterGroup",
+      "kind": "graphql",
+      "operation": "getViewFilterGroup",
+      "risk": "read"
+    },
+    {
+      "name": "getViewFilterGroups",
+      "kind": "graphql",
+      "operation": "getViewFilterGroups",
+      "risk": "read"
+    },
+    {
+      "name": "getViewFilters",
+      "kind": "graphql",
+      "operation": "getViewFilters",
+      "risk": "read"
+    },
+    {
+      "name": "getViewGroup",
+      "kind": "graphql",
+      "operation": "getViewGroup",
+      "risk": "read"
+    },
+    {
+      "name": "getViewGroups",
+      "kind": "graphql",
+      "operation": "getViewGroups",
+      "risk": "read"
+    },
+    {
+      "name": "getViewSort",
+      "kind": "graphql",
+      "operation": "getViewSort",
+      "risk": "read"
+    },
+    {
+      "name": "getViewSorts",
+      "kind": "graphql",
+      "operation": "getViewSorts",
+      "risk": "read"
+    },
+    {
+      "name": "getViews",
+      "kind": "graphql",
+      "operation": "getViews",
+      "risk": "read"
+    },
+    {
+      "name": "impersonate",
+      "kind": "graphql",
+      "operation": "impersonate",
+      "risk": "write"
+    },
+    {
+      "name": "initiateOTPProvisioning",
+      "kind": "graphql",
+      "operation": "initiateOTPProvisioning",
+      "risk": "write"
+    },
+    {
+      "name": "initiateOTPProvisioningForAuthenticatedUser",
+      "kind": "graphql",
+      "operation": "initiateOTPProvisioningForAuthenticatedUser",
+      "risk": "write"
+    },
+    {
+      "name": "installApplication",
+      "kind": "graphql",
+      "operation": "installApplication",
+      "risk": "write"
+    },
+    {
+      "name": "installMarketplaceApp",
+      "kind": "graphql",
+      "operation": "installMarketplaceApp",
+      "risk": "write"
+    },
+    {
+      "name": "isMaintenanceModeBannerDismissed",
+      "kind": "graphql",
+      "operation": "isMaintenanceModeBannerDismissed",
+      "risk": "write"
+    },
+    {
+      "name": "lineChartData",
+      "kind": "graphql",
+      "operation": "lineChartData",
+      "risk": "write"
+    },
+    {
+      "name": "listPlans",
+      "kind": "graphql",
+      "operation": "listPlans",
+      "risk": "read"
+    },
+    {
+      "name": "logicFunctionLogs",
+      "kind": "graphql",
+      "operation": "logicFunctionLogs",
+      "risk": "write"
+    },
+    {
+      "name": "minimalMetadata",
+      "kind": "graphql",
+      "operation": "minimalMetadata",
+      "risk": "write"
+    },
+    {
+      "name": "myCalendarChannels",
+      "kind": "graphql",
+      "operation": "myCalendarChannels",
+      "risk": "write"
+    },
+    {
+      "name": "myConnectedAccounts",
+      "kind": "graphql",
+      "operation": "myConnectedAccounts",
+      "risk": "write"
+    },
+    {
+      "name": "myMessageChannels",
+      "kind": "graphql",
+      "operation": "myMessageChannels",
+      "risk": "write"
+    },
+    {
+      "name": "myMessageFolders",
+      "kind": "graphql",
+      "operation": "myMessageFolders",
+      "risk": "write"
+    },
+    {
+      "name": "navigationMenuItem",
+      "kind": "graphql",
+      "operation": "navigationMenuItem",
+      "risk": "write"
+    },
+    {
+      "name": "navigationMenuItems",
+      "kind": "graphql",
+      "operation": "navigationMenuItems",
+      "risk": "write"
+    },
+    {
+      "name": "objectRecordCounts",
+      "kind": "graphql",
+      "operation": "objectRecordCounts",
+      "risk": "write"
+    },
+    {
+      "name": "onAgentChatEvent",
+      "kind": "graphql",
+      "operation": "onAgentChatEvent",
+      "risk": "write"
+    },
+    {
+      "name": "onEventSubscription",
+      "kind": "graphql",
+      "operation": "onEventSubscription",
+      "risk": "destructive"
+    },
+    {
+      "name": "pieChartData",
+      "kind": "graphql",
+      "operation": "pieChartData",
+      "risk": "write"
+    },
+    {
+      "name": "refreshEnterpriseValidityToken",
+      "kind": "graphql",
+      "operation": "refreshEnterpriseValidityToken",
+      "risk": "write"
+    },
+    {
+      "name": "refreshUpgradeStatus",
+      "kind": "graphql",
+      "operation": "refreshUpgradeStatus",
+      "risk": "write"
+    },
+    {
+      "name": "removeAiProvider",
+      "kind": "graphql",
+      "operation": "removeAiProvider",
+      "risk": "write"
+    },
+    {
+      "name": "removeModelFromProvider",
+      "kind": "graphql",
+      "operation": "removeModelFromProvider",
+      "risk": "write"
+    },
+    {
+      "name": "removeQueryFromEventStream",
+      "kind": "graphql",
+      "operation": "removeQueryFromEventStream",
+      "risk": "write"
+    },
+    {
+      "name": "removeRoleFromAgent",
+      "kind": "graphql",
+      "operation": "removeRoleFromAgent",
+      "risk": "write"
+    },
+    {
+      "name": "renameChatThread",
+      "kind": "graphql",
+      "operation": "renameChatThread",
+      "risk": "write"
+    },
+    {
+      "name": "renewApplicationToken",
+      "kind": "graphql",
+      "operation": "renewApplicationToken",
+      "risk": "write"
+    },
+    {
+      "name": "renewToken",
+      "kind": "graphql",
+      "operation": "renewToken",
+      "risk": "write"
+    },
+    {
+      "name": "resendEmailVerificationToken",
+      "kind": "graphql",
+      "operation": "resendEmailVerificationToken",
+      "risk": "write"
+    },
+    {
+      "name": "resendWorkspaceInvitation",
+      "kind": "graphql",
+      "operation": "resendWorkspaceInvitation",
+      "risk": "write"
+    },
+    {
+      "name": "resetPageLayoutTabToDefault",
+      "kind": "graphql",
+      "operation": "resetPageLayoutTabToDefault",
+      "risk": "write"
+    },
+    {
+      "name": "resetPageLayoutToDefault",
+      "kind": "graphql",
+      "operation": "resetPageLayoutToDefault",
+      "risk": "write"
+    },
+    {
+      "name": "resetPageLayoutWidgetToDefault",
+      "kind": "graphql",
+      "operation": "resetPageLayoutWidgetToDefault",
+      "risk": "write"
+    },
+    {
+      "name": "retryJobs",
+      "kind": "graphql",
+      "operation": "retryJobs",
+      "risk": "write"
+    },
+    {
+      "name": "revokeApiKey",
+      "kind": "graphql",
+      "operation": "revokeApiKey",
+      "risk": "destructive"
+    },
+    {
+      "name": "revokeSigningKey",
+      "kind": "graphql",
+      "operation": "revokeSigningKey",
+      "risk": "write"
+    },
+    {
+      "name": "rotateApplicationRegistrationClientSecret",
+      "kind": "graphql",
+      "operation": "rotateApplicationRegistrationClientSecret",
+      "risk": "write"
+    },
+    {
+      "name": "runEvaluationInput",
+      "kind": "graphql",
+      "operation": "runEvaluationInput",
+      "risk": "write"
+    },
+    {
+      "name": "runWorkflowVersion",
+      "kind": "graphql",
+      "operation": "runWorkflowVersion",
+      "risk": "write"
+    },
+    {
+      "name": "runWorkspaceMigration",
+      "kind": "graphql",
+      "operation": "runWorkspaceMigration",
+      "risk": "write"
+    },
+    {
+      "name": "saveImapSmtpCaldavAccount",
+      "kind": "graphql",
+      "operation": "saveImapSmtpCaldavAccount",
+      "risk": "write"
+    },
+    {
+      "name": "search",
+      "kind": "graphql",
+      "operation": "search",
+      "risk": "read"
+    },
+    {
+      "name": "sendChatMessage",
+      "kind": "graphql",
+      "operation": "sendChatMessage",
+      "risk": "write"
+    },
+    {
+      "name": "sendEmail",
+      "kind": "graphql",
+      "operation": "sendEmail",
+      "risk": "destructive"
+    },
+    {
+      "name": "sendEmailViaEmailingDomain",
+      "kind": "graphql",
+      "operation": "sendEmailViaEmailingDomain",
+      "risk": "write"
+    },
+    {
+      "name": "sendInvitations",
+      "kind": "graphql",
+      "operation": "sendInvitations",
+      "risk": "write"
+    },
+    {
+      "name": "setAdminAiModelEnabled",
+      "kind": "graphql",
+      "operation": "setAdminAiModelEnabled",
+      "risk": "write"
+    },
+    {
+      "name": "setAdminAiModelRecommended",
+      "kind": "graphql",
+      "operation": "setAdminAiModelRecommended",
+      "risk": "write"
+    },
+    {
+      "name": "setAdminAiModelsEnabled",
+      "kind": "graphql",
+      "operation": "setAdminAiModelsEnabled",
+      "risk": "write"
+    },
+    {
+      "name": "setAdminAiModelsRecommended",
+      "kind": "graphql",
+      "operation": "setAdminAiModelsRecommended",
+      "risk": "write"
+    },
+    {
+      "name": "setAdminDefaultAiModel",
+      "kind": "graphql",
+      "operation": "setAdminDefaultAiModel",
+      "risk": "write"
+    },
+    {
+      "name": "setEnterpriseKey",
+      "kind": "graphql",
+      "operation": "setEnterpriseKey",
+      "risk": "write"
+    },
+    {
+      "name": "setMaintenanceMode",
+      "kind": "graphql",
+      "operation": "setMaintenanceMode",
+      "risk": "write"
+    },
+    {
+      "name": "setResourceCreditSubscriptionPrice",
+      "kind": "graphql",
+      "operation": "setResourceCreditSubscriptionPrice",
+      "risk": "write"
+    },
+    {
+      "name": "signIn",
+      "kind": "graphql",
+      "operation": "signIn",
+      "risk": "write"
+    },
+    {
+      "name": "signUp",
+      "kind": "graphql",
+      "operation": "signUp",
+      "risk": "write"
+    },
+    {
+      "name": "signUpInNewWorkspace",
+      "kind": "graphql",
+      "operation": "signUpInNewWorkspace",
+      "risk": "write"
+    },
+    {
+      "name": "signUpInWorkspace",
+      "kind": "graphql",
+      "operation": "signUpInWorkspace",
+      "risk": "write"
+    },
+    {
+      "name": "skill",
+      "kind": "graphql",
+      "operation": "skill",
+      "risk": "write"
+    },
+    {
+      "name": "skills",
+      "kind": "graphql",
+      "operation": "skills",
+      "risk": "write"
+    },
+    {
+      "name": "skipBookOnboardingStep",
+      "kind": "graphql",
+      "operation": "skipBookOnboardingStep",
+      "risk": "write"
+    },
+    {
+      "name": "skipSyncEmailOnboardingStep",
+      "kind": "graphql",
+      "operation": "skipSyncEmailOnboardingStep",
+      "risk": "write"
+    },
+    {
+      "name": "startChannelSync",
+      "kind": "graphql",
+      "operation": "startChannelSync",
+      "risk": "write"
+    },
+    {
+      "name": "stopAgentChatStream",
+      "kind": "graphql",
+      "operation": "stopAgentChatStream",
+      "risk": "write"
+    },
+    {
+      "name": "stopWorkflowRun",
+      "kind": "graphql",
+      "operation": "stopWorkflowRun",
+      "risk": "write"
+    },
+    {
+      "name": "submitFormStep",
+      "kind": "graphql",
+      "operation": "submitFormStep",
+      "risk": "write"
+    },
+    {
+      "name": "switchBillingPlan",
+      "kind": "graphql",
+      "operation": "switchBillingPlan",
+      "risk": "write"
+    },
+    {
+      "name": "switchSubscriptionInterval",
+      "kind": "graphql",
+      "operation": "switchSubscriptionInterval",
+      "risk": "write"
+    },
+    {
+      "name": "syncApplication",
+      "kind": "graphql",
+      "operation": "syncApplication",
+      "risk": "write"
+    },
+    {
+      "name": "syncMarketplaceCatalog",
+      "kind": "graphql",
+      "operation": "syncMarketplaceCatalog",
+      "risk": "write"
+    },
+    {
+      "name": "testHttpRequest",
+      "kind": "graphql",
+      "operation": "testHttpRequest",
+      "risk": "write"
+    },
+    {
+      "name": "trackAnalytics",
+      "kind": "graphql",
+      "operation": "trackAnalytics",
+      "risk": "write"
+    },
+    {
+      "name": "transferApplicationRegistrationOwnership",
+      "kind": "graphql",
+      "operation": "transferApplicationRegistrationOwnership",
+      "risk": "write"
+    },
+    {
+      "name": "unarchiveChatThread",
+      "kind": "graphql",
+      "operation": "unarchiveChatThread",
+      "risk": "write"
+    },
+    {
+      "name": "uninstallApplication",
+      "kind": "graphql",
+      "operation": "uninstallApplication",
+      "risk": "write"
+    },
+    {
+      "name": "updateAdminApplicationRegistrationVariable",
+      "kind": "graphql",
+      "operation": "updateAdminApplicationRegistrationVariable",
+      "risk": "write"
+    },
+    {
+      "name": "updateApiKey",
+      "kind": "graphql",
+      "operation": "updateApiKey",
+      "risk": "write"
+    },
+    {
+      "name": "updateApplicationRegistration",
+      "kind": "graphql",
+      "operation": "updateApplicationRegistration",
+      "risk": "write"
+    },
+    {
+      "name": "updateApplicationRegistrationVariable",
+      "kind": "graphql",
+      "operation": "updateApplicationRegistrationVariable",
+      "risk": "write"
+    },
+    {
+      "name": "updateCalendarChannel",
+      "kind": "graphql",
+      "operation": "updateCalendarChannel",
+      "risk": "write"
+    },
+    {
+      "name": "updateCommandMenuItem",
+      "kind": "graphql",
+      "operation": "updateCommandMenuItem",
+      "risk": "write"
+    },
+    {
+      "name": "updateDatabaseConfigVariable",
+      "kind": "graphql",
+      "operation": "updateDatabaseConfigVariable",
+      "risk": "write"
+    },
+    {
+      "name": "updateFrontComponent",
+      "kind": "graphql",
+      "operation": "updateFrontComponent",
+      "risk": "write"
+    },
+    {
+      "name": "updateLabPublicFeatureFlag",
+      "kind": "graphql",
+      "operation": "updateLabPublicFeatureFlag",
+      "risk": "write"
+    },
+    {
+      "name": "updateManyNavigationMenuItems",
+      "kind": "graphql",
+      "operation": "updateManyNavigationMenuItems",
+      "risk": "write"
+    },
+    {
+      "name": "updateManyViewGroups",
+      "kind": "graphql",
+      "operation": "updateManyViewGroups",
+      "risk": "write"
+    },
+    {
+      "name": "updateMessageChannel",
+      "kind": "graphql",
+      "operation": "updateMessageChannel",
+      "risk": "write"
+    },
+    {
+      "name": "updateMessageFolder",
+      "kind": "graphql",
+      "operation": "updateMessageFolder",
+      "risk": "write"
+    },
+    {
+      "name": "updateMessageFolders",
+      "kind": "graphql",
+      "operation": "updateMessageFolders",
+      "risk": "write"
+    },
+    {
+      "name": "updateNavigationMenuItem",
+      "kind": "graphql",
+      "operation": "updateNavigationMenuItem",
+      "risk": "write"
+    },
+    {
+      "name": "updateOneAgent",
+      "kind": "graphql",
+      "operation": "updateOneAgent",
+      "risk": "write"
+    },
+    {
+      "name": "updateOneApplicationVariable",
+      "kind": "graphql",
+      "operation": "updateOneApplicationVariable",
+      "risk": "write"
+    },
+    {
+      "name": "updateOneField",
+      "kind": "graphql",
+      "operation": "updateOneField",
+      "risk": "write"
+    },
+    {
+      "name": "updateOneLogicFunction",
+      "kind": "graphql",
+      "operation": "updateOneLogicFunction",
+      "risk": "write"
+    },
+    {
+      "name": "updateOneObject",
+      "kind": "graphql",
+      "operation": "updateOneObject",
+      "risk": "write"
+    },
+    {
+      "name": "updateOneRole",
+      "kind": "graphql",
+      "operation": "updateOneRole",
+      "risk": "write"
+    },
+    {
+      "name": "updatePageLayout",
+      "kind": "graphql",
+      "operation": "updatePageLayout",
+      "risk": "write"
+    },
+    {
+      "name": "updatePageLayoutTab",
+      "kind": "graphql",
+      "operation": "updatePageLayoutTab",
+      "risk": "write"
+    },
+    {
+      "name": "updatePageLayoutWidget",
+      "kind": "graphql",
+      "operation": "updatePageLayoutWidget",
+      "risk": "write"
+    },
+    {
+      "name": "updatePageLayoutWithTabsAndWidgets",
+      "kind": "graphql",
+      "operation": "updatePageLayoutWithTabsAndWidgets",
+      "risk": "write"
+    },
+    {
+      "name": "updatePasswordViaResetToken",
+      "kind": "graphql",
+      "operation": "updatePasswordViaResetToken",
+      "risk": "write"
+    },
+    {
+      "name": "updatePublicDomain",
+      "kind": "graphql",
+      "operation": "updatePublicDomain",
+      "risk": "write"
+    },
+    {
+      "name": "updateSkill",
+      "kind": "graphql",
+      "operation": "updateSkill",
+      "risk": "write"
+    },
+    {
+      "name": "updateUserEmail",
+      "kind": "graphql",
+      "operation": "updateUserEmail",
+      "risk": "write"
+    },
+    {
+      "name": "updateView",
+      "kind": "graphql",
+      "operation": "updateView",
+      "risk": "write"
+    },
+    {
+      "name": "updateViewField",
+      "kind": "graphql",
+      "operation": "updateViewField",
+      "risk": "write"
+    },
+    {
+      "name": "updateViewFieldGroup",
+      "kind": "graphql",
+      "operation": "updateViewFieldGroup",
+      "risk": "write"
+    },
+    {
+      "name": "updateViewFilter",
+      "kind": "graphql",
+      "operation": "updateViewFilter",
+      "risk": "write"
+    },
+    {
+      "name": "updateViewFilterGroup",
+      "kind": "graphql",
+      "operation": "updateViewFilterGroup",
+      "risk": "write"
+    },
+    {
+      "name": "updateViewGroup",
+      "kind": "graphql",
+      "operation": "updateViewGroup",
+      "risk": "write"
+    },
+    {
+      "name": "updateViewSort",
+      "kind": "graphql",
+      "operation": "updateViewSort",
+      "risk": "write"
+    },
+    {
+      "name": "updateWebhook",
+      "kind": "graphql",
+      "operation": "updateWebhook",
+      "risk": "write"
+    },
+    {
+      "name": "updateWorkflowRunStep",
+      "kind": "graphql",
+      "operation": "updateWorkflowRunStep",
+      "risk": "write"
+    },
+    {
+      "name": "updateWorkflowVersionPositions",
+      "kind": "graphql",
+      "operation": "updateWorkflowVersionPositions",
+      "risk": "write"
+    },
+    {
+      "name": "updateWorkflowVersionStep",
+      "kind": "graphql",
+      "operation": "updateWorkflowVersionStep",
+      "risk": "write"
+    },
+    {
+      "name": "updateWorkspace",
+      "kind": "graphql",
+      "operation": "updateWorkspace",
+      "risk": "write"
+    },
+    {
+      "name": "updateWorkspaceFeatureFlag",
+      "kind": "graphql",
+      "operation": "updateWorkspaceFeatureFlag",
+      "risk": "write"
+    },
+    {
+      "name": "updateWorkspaceMemberRole",
+      "kind": "graphql",
+      "operation": "updateWorkspaceMemberRole",
+      "risk": "write"
+    },
+    {
+      "name": "updateWorkspaceMemberSettings",
+      "kind": "graphql",
+      "operation": "updateWorkspaceMemberSettings",
+      "risk": "write"
+    },
+    {
+      "name": "upgradeApplication",
+      "kind": "graphql",
+      "operation": "upgradeApplication",
+      "risk": "write"
+    },
+    {
+      "name": "uploadAiChatFile",
+      "kind": "graphql",
+      "operation": "uploadAiChatFile",
+      "risk": "write"
+    },
+    {
+      "name": "uploadAppTarball",
+      "kind": "graphql",
+      "operation": "uploadAppTarball",
+      "risk": "write"
+    },
+    {
+      "name": "uploadApplicationFile",
+      "kind": "graphql",
+      "operation": "uploadApplicationFile",
+      "risk": "write"
+    },
+    {
+      "name": "uploadEmailAttachmentFile",
+      "kind": "graphql",
+      "operation": "uploadEmailAttachmentFile",
+      "risk": "write"
+    },
+    {
+      "name": "uploadFilesFieldFile",
+      "kind": "graphql",
+      "operation": "uploadFilesFieldFile",
+      "risk": "write"
+    },
+    {
+      "name": "uploadFilesFieldFileByUniversalIdentifier",
+      "kind": "graphql",
+      "operation": "uploadFilesFieldFileByUniversalIdentifier",
+      "risk": "write"
+    },
+    {
+      "name": "uploadWorkflowFile",
+      "kind": "graphql",
+      "operation": "uploadWorkflowFile",
+      "risk": "write"
+    },
+    {
+      "name": "uploadWorkspaceLogo",
+      "kind": "graphql",
+      "operation": "uploadWorkspaceLogo",
+      "risk": "write"
+    },
+    {
+      "name": "uploadWorkspaceMemberProfilePicture",
+      "kind": "graphql",
+      "operation": "uploadWorkspaceMemberProfilePicture",
+      "risk": "write"
+    },
+    {
+      "name": "upsertFieldPermissions",
+      "kind": "graphql",
+      "operation": "upsertFieldPermissions",
+      "risk": "write"
+    },
+    {
+      "name": "upsertFieldsWidget",
+      "kind": "graphql",
+      "operation": "upsertFieldsWidget",
+      "risk": "write"
+    },
+    {
+      "name": "upsertObjectPermissions",
+      "kind": "graphql",
+      "operation": "upsertObjectPermissions",
+      "risk": "write"
+    },
+    {
+      "name": "upsertPermissionFlags",
+      "kind": "graphql",
+      "operation": "upsertPermissionFlags",
+      "risk": "write"
+    },
+    {
+      "name": "upsertRowLevelPermissionPredicates",
+      "kind": "graphql",
+      "operation": "upsertRowLevelPermissionPredicates",
+      "risk": "write"
+    },
+    {
+      "name": "upsertViewWidget",
+      "kind": "graphql",
+      "operation": "upsertViewWidget",
+      "risk": "write"
+    },
+    {
+      "name": "userLookupAdminPanel",
+      "kind": "graphql",
+      "operation": "userLookupAdminPanel",
+      "risk": "write"
+    },
+    {
+      "name": "validateApprovedAccessDomain",
+      "kind": "graphql",
+      "operation": "validateApprovedAccessDomain",
+      "risk": "write"
+    },
+    {
+      "name": "validatePasswordResetToken",
+      "kind": "graphql",
+      "operation": "validatePasswordResetToken",
+      "risk": "write"
+    },
+    {
+      "name": "verifyEmailAndGetLoginToken",
+      "kind": "graphql",
+      "operation": "verifyEmailAndGetLoginToken",
+      "risk": "write"
+    },
+    {
+      "name": "verifyEmailAndGetWorkspaceAgnosticToken",
+      "kind": "graphql",
+      "operation": "verifyEmailAndGetWorkspaceAgnosticToken",
+      "risk": "write"
+    },
+    {
+      "name": "verifyEmailingDomain",
+      "kind": "graphql",
+      "operation": "verifyEmailingDomain",
+      "risk": "write"
+    },
+    {
+      "name": "verifyTwoFactorAuthenticationMethodForAuthenticatedUser",
+      "kind": "graphql",
+      "operation": "verifyTwoFactorAuthenticationMethodForAuthenticatedUser",
+      "risk": "write"
+    },
+    {
+      "name": "versionInfo",
+      "kind": "graphql",
+      "operation": "versionInfo",
+      "risk": "write"
+    },
+    {
+      "name": "webhook",
+      "kind": "graphql",
+      "operation": "webhook",
+      "risk": "write"
+    },
+    {
+      "name": "webhooks",
+      "kind": "graphql",
+      "operation": "webhooks",
+      "risk": "write"
+    },
+    {
+      "name": "workflowStepConnectedAccountHandle",
+      "kind": "graphql",
+      "operation": "workflowStepConnectedAccountHandle",
+      "risk": "write"
+    },
+    {
+      "name": "workspaceBillingAdminPanel",
+      "kind": "graphql",
+      "operation": "workspaceBillingAdminPanel",
+      "risk": "write"
+    },
+    {
+      "name": "workspaceLookupAdminPanel",
+      "kind": "graphql",
+      "operation": "workspaceLookupAdminPanel",
+      "risk": "write"
+    }
+  ]
+}

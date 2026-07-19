@@ -1,0 +1,887 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "getAdminTeams",
+      "method": "GET",
+      "path": "/api/admin/teams",
+      "risk": "read"
+    },
+    {
+      "name": "getAdminUsers",
+      "method": "GET",
+      "path": "/api/admin/users",
+      "risk": "read"
+    },
+    {
+      "name": "getAdminWebsites",
+      "method": "GET",
+      "path": "/api/admin/websites",
+      "risk": "read"
+    },
+    {
+      "name": "postAuthLogin",
+      "method": "POST",
+      "path": "/api/auth/login",
+      "risk": "write"
+    },
+    {
+      "name": "postAuthLogout",
+      "method": "POST",
+      "path": "/api/auth/logout",
+      "risk": "write"
+    },
+    {
+      "name": "postAuthSso",
+      "method": "POST",
+      "path": "/api/auth/sso",
+      "risk": "write"
+    },
+    {
+      "name": "postAuthVerify",
+      "method": "POST",
+      "path": "/api/auth/verify",
+      "risk": "write"
+    },
+    {
+      "name": "postBatch",
+      "method": "POST",
+      "path": "/api/batch",
+      "risk": "write"
+    },
+    {
+      "name": "getBoards",
+      "method": "GET",
+      "path": "/api/boards",
+      "risk": "read"
+    },
+    {
+      "name": "postBoards",
+      "method": "POST",
+      "path": "/api/boards",
+      "risk": "write"
+    },
+    {
+      "name": "getBoardsBoardId",
+      "method": "GET",
+      "path": "/api/boards/{boardId}",
+      "risk": "read"
+    },
+    {
+      "name": "postBoardsBoardId",
+      "method": "POST",
+      "path": "/api/boards/{boardId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteBoardsBoardId",
+      "method": "DELETE",
+      "path": "/api/boards/{boardId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getBoardsBoardIdShares",
+      "method": "GET",
+      "path": "/api/boards/{boardId}/shares",
+      "risk": "read"
+    },
+    {
+      "name": "postBoardsBoardIdShares",
+      "method": "POST",
+      "path": "/api/boards/{boardId}/shares",
+      "risk": "write"
+    },
+    {
+      "name": "getConfig",
+      "method": "GET",
+      "path": "/api/config",
+      "risk": "read"
+    },
+    {
+      "name": "getDashboard",
+      "method": "GET",
+      "path": "/api/dashboard",
+      "risk": "read"
+    },
+    {
+      "name": "postDashboard",
+      "method": "POST",
+      "path": "/api/dashboard",
+      "risk": "write"
+    },
+    {
+      "name": "getHeartbeat",
+      "method": "GET",
+      "path": "/api/heartbeat",
+      "risk": "read"
+    },
+    {
+      "name": "getLinks",
+      "method": "GET",
+      "path": "/api/links",
+      "risk": "read"
+    },
+    {
+      "name": "postLinks",
+      "method": "POST",
+      "path": "/api/links",
+      "risk": "write"
+    },
+    {
+      "name": "getLinksLinkId",
+      "method": "GET",
+      "path": "/api/links/{linkId}",
+      "risk": "read"
+    },
+    {
+      "name": "postLinksLinkId",
+      "method": "POST",
+      "path": "/api/links/{linkId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteLinksLinkId",
+      "method": "DELETE",
+      "path": "/api/links/{linkId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getLinksLinkIdShares",
+      "method": "GET",
+      "path": "/api/links/{linkId}/shares",
+      "risk": "read"
+    },
+    {
+      "name": "postLinksLinkIdShares",
+      "method": "POST",
+      "path": "/api/links/{linkId}/shares",
+      "risk": "write"
+    },
+    {
+      "name": "getMe",
+      "method": "GET",
+      "path": "/api/me",
+      "risk": "read"
+    },
+    {
+      "name": "postMePassword",
+      "method": "POST",
+      "path": "/api/me/password",
+      "risk": "write"
+    },
+    {
+      "name": "getMeTeams",
+      "method": "GET",
+      "path": "/api/me/teams",
+      "risk": "read"
+    },
+    {
+      "name": "getMeWebsites",
+      "method": "GET",
+      "path": "/api/me/websites",
+      "risk": "read"
+    },
+    {
+      "name": "getPixels",
+      "method": "GET",
+      "path": "/api/pixels",
+      "risk": "read"
+    },
+    {
+      "name": "postPixels",
+      "method": "POST",
+      "path": "/api/pixels",
+      "risk": "write"
+    },
+    {
+      "name": "getPixelsPixelId",
+      "method": "GET",
+      "path": "/api/pixels/{pixelId}",
+      "risk": "read"
+    },
+    {
+      "name": "postPixelsPixelId",
+      "method": "POST",
+      "path": "/api/pixels/{pixelId}",
+      "risk": "write"
+    },
+    {
+      "name": "deletePixelsPixelId",
+      "method": "DELETE",
+      "path": "/api/pixels/{pixelId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getPixelsPixelIdShares",
+      "method": "GET",
+      "path": "/api/pixels/{pixelId}/shares",
+      "risk": "read"
+    },
+    {
+      "name": "postPixelsPixelIdShares",
+      "method": "POST",
+      "path": "/api/pixels/{pixelId}/shares",
+      "risk": "write"
+    },
+    {
+      "name": "getRealtimeWebsiteId",
+      "method": "GET",
+      "path": "/api/realtime/{websiteId}",
+      "risk": "read"
+    },
+    {
+      "name": "postRecord",
+      "method": "POST",
+      "path": "/api/record",
+      "risk": "write"
+    },
+    {
+      "name": "getReports",
+      "method": "GET",
+      "path": "/api/reports",
+      "risk": "read"
+    },
+    {
+      "name": "postReports",
+      "method": "POST",
+      "path": "/api/reports",
+      "risk": "write"
+    },
+    {
+      "name": "getReportsReportId",
+      "method": "GET",
+      "path": "/api/reports/{reportId}",
+      "risk": "read"
+    },
+    {
+      "name": "postReportsReportId",
+      "method": "POST",
+      "path": "/api/reports/{reportId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteReportsReportId",
+      "method": "DELETE",
+      "path": "/api/reports/{reportId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postReportsAttribution",
+      "method": "POST",
+      "path": "/api/reports/attribution",
+      "risk": "write"
+    },
+    {
+      "name": "postReportsBreakdown",
+      "method": "POST",
+      "path": "/api/reports/breakdown",
+      "risk": "write"
+    },
+    {
+      "name": "postReportsFunnel",
+      "method": "POST",
+      "path": "/api/reports/funnel",
+      "risk": "write"
+    },
+    {
+      "name": "postReportsGoal",
+      "method": "POST",
+      "path": "/api/reports/goal",
+      "risk": "write"
+    },
+    {
+      "name": "postReportsHeatmap",
+      "method": "POST",
+      "path": "/api/reports/heatmap",
+      "risk": "write"
+    },
+    {
+      "name": "postReportsJourney",
+      "method": "POST",
+      "path": "/api/reports/journey",
+      "risk": "write"
+    },
+    {
+      "name": "postReportsPerformance",
+      "method": "POST",
+      "path": "/api/reports/performance",
+      "risk": "write"
+    },
+    {
+      "name": "postReportsRetention",
+      "method": "POST",
+      "path": "/api/reports/retention",
+      "risk": "write"
+    },
+    {
+      "name": "postReportsRevenue",
+      "method": "POST",
+      "path": "/api/reports/revenue",
+      "risk": "write"
+    },
+    {
+      "name": "postReportsUtm",
+      "method": "POST",
+      "path": "/api/reports/utm",
+      "risk": "write"
+    },
+    {
+      "name": "getScriptsTelemetry",
+      "method": "GET",
+      "path": "/api/scripts/telemetry",
+      "risk": "read"
+    },
+    {
+      "name": "postSend",
+      "method": "POST",
+      "path": "/api/send",
+      "risk": "destructive"
+    },
+    {
+      "name": "postShare",
+      "method": "POST",
+      "path": "/api/share",
+      "risk": "write"
+    },
+    {
+      "name": "getShareSlug",
+      "method": "GET",
+      "path": "/api/share/{slug}",
+      "risk": "read"
+    },
+    {
+      "name": "getShareIdShareId",
+      "method": "GET",
+      "path": "/api/share/id/{shareId}",
+      "risk": "read"
+    },
+    {
+      "name": "postShareIdShareId",
+      "method": "POST",
+      "path": "/api/share/id/{shareId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteShareIdShareId",
+      "method": "DELETE",
+      "path": "/api/share/id/{shareId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getTeams",
+      "method": "GET",
+      "path": "/api/teams",
+      "risk": "read"
+    },
+    {
+      "name": "postTeams",
+      "method": "POST",
+      "path": "/api/teams",
+      "risk": "write"
+    },
+    {
+      "name": "getTeamsTeamId",
+      "method": "GET",
+      "path": "/api/teams/{teamId}",
+      "risk": "read"
+    },
+    {
+      "name": "postTeamsTeamId",
+      "method": "POST",
+      "path": "/api/teams/{teamId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteTeamsTeamId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getTeamsTeamIdBoards",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/boards",
+      "risk": "read"
+    },
+    {
+      "name": "getTeamsTeamIdLinks",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/links",
+      "risk": "read"
+    },
+    {
+      "name": "getTeamsTeamIdPixels",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/pixels",
+      "risk": "read"
+    },
+    {
+      "name": "getTeamsTeamIdUsers",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/users",
+      "risk": "read"
+    },
+    {
+      "name": "postTeamsTeamIdUsers",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/users",
+      "risk": "write"
+    },
+    {
+      "name": "getTeamsTeamIdUsersUserId",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/users/{userId}",
+      "risk": "read"
+    },
+    {
+      "name": "postTeamsTeamIdUsersUserId",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/users/{userId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdUsersUserId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/users/{userId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getTeamsTeamIdWebsites",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/websites",
+      "risk": "read"
+    },
+    {
+      "name": "postTeamsJoin",
+      "method": "POST",
+      "path": "/api/teams/join",
+      "risk": "write"
+    },
+    {
+      "name": "postUsers",
+      "method": "POST",
+      "path": "/api/users",
+      "risk": "write"
+    },
+    {
+      "name": "getUsersUserId",
+      "method": "GET",
+      "path": "/api/users/{userId}",
+      "risk": "read"
+    },
+    {
+      "name": "postUsersUserId",
+      "method": "POST",
+      "path": "/api/users/{userId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteUsersUserId",
+      "method": "DELETE",
+      "path": "/api/users/{userId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getUsersUserIdTeams",
+      "method": "GET",
+      "path": "/api/users/{userId}/teams",
+      "risk": "read"
+    },
+    {
+      "name": "getUsersUserIdWebsites",
+      "method": "GET",
+      "path": "/api/users/{userId}/websites",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsites",
+      "method": "GET",
+      "path": "/api/websites",
+      "risk": "read"
+    },
+    {
+      "name": "postWebsites",
+      "method": "POST",
+      "path": "/api/websites",
+      "risk": "write"
+    },
+    {
+      "name": "getWebsitesWebsiteId",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}",
+      "risk": "read"
+    },
+    {
+      "name": "postWebsitesWebsiteId",
+      "method": "POST",
+      "path": "/api/websites/{websiteId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteWebsitesWebsiteId",
+      "method": "DELETE",
+      "path": "/api/websites/{websiteId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getWebsitesWebsiteIdActive",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/active",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdDaterange",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/daterange",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventData",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivot",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data-pivot",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivotArraySeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data-pivot/array-series",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivotDateSeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data-pivot/date-series",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivotNumericSeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data-pivot/numeric-series",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivotNumericStats",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data-pivot/numeric-stats",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivotPropertySeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data-pivot/property-series",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataEventId",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data/{eventId}",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataEvents",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data/events",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataFields",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data/fields",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataProperties",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data/properties",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataStats",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data/stats",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataValues",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data/values",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEvents",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/events",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventsSeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/events/series",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventsStats",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/events/stats",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdExport",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/export",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdMetrics",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/metrics",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdMetricsExpanded",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/metrics/expanded",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdPageviews",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/pageviews",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdRecorder",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/recorder",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdReplays",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/replays",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdReplaysReplayId",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/replays/{replayId}",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdReplaysSaved",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/replays/saved",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdReplaysSavedReplayId",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/replays/saved/{replayId}",
+      "risk": "read"
+    },
+    {
+      "name": "postWebsitesWebsiteIdReplaysSavedReplayId",
+      "method": "POST",
+      "path": "/api/websites/{websiteId}/replays/saved/{replayId}",
+      "risk": "write"
+    },
+    {
+      "name": "getWebsitesWebsiteIdReports",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/reports",
+      "risk": "read"
+    },
+    {
+      "name": "postWebsitesWebsiteIdReset",
+      "method": "POST",
+      "path": "/api/websites/{websiteId}/reset",
+      "risk": "destructive"
+    },
+    {
+      "name": "getWebsitesWebsiteIdRevenueChart",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/revenue/chart",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdRevenueMetrics",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/revenue/metrics",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdRevenueSessions",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/revenue/sessions",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdRevenueStats",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/revenue/stats",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSegments",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/segments",
+      "risk": "read"
+    },
+    {
+      "name": "postWebsitesWebsiteIdSegments",
+      "method": "POST",
+      "path": "/api/websites/{websiteId}/segments",
+      "risk": "write"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSegmentsSegmentId",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/segments/{segmentId}",
+      "risk": "read"
+    },
+    {
+      "name": "postWebsitesWebsiteIdSegmentsSegmentId",
+      "method": "POST",
+      "path": "/api/websites/{websiteId}/segments/{segmentId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteWebsitesWebsiteIdSegmentsSegmentId",
+      "method": "DELETE",
+      "path": "/api/websites/{websiteId}/segments/{segmentId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataPivot",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data-pivot",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataArraySeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data/array-series",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataDateSeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data/date-series",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataNumericSeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data/numeric-series",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataNumericStats",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data/numeric-stats",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataProperties",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data/properties",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataPropertySeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data/property-series",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataStats",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data/stats",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataValues",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data/values",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessions",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/sessions",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsSessionId",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/sessions/{sessionId}",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsSessionIdActivity",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/sessions/{sessionId}/activity",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsSessionIdProperties",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/sessions/{sessionId}/properties",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsSessionIdReplays",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/sessions/{sessionId}/replays",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsStats",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/sessions/stats",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsWeekly",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/sessions/weekly",
+      "risk": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdShares",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/shares",
+      "risk": "read"
+    },
+    {
+      "name": "postWebsitesWebsiteIdShares",
+      "method": "POST",
+      "path": "/api/websites/{websiteId}/shares",
+      "risk": "write"
+    },
+    {
+      "name": "getWebsitesWebsiteIdStats",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/stats",
+      "risk": "read"
+    },
+    {
+      "name": "postWebsitesWebsiteIdTransfer",
+      "method": "POST",
+      "path": "/api/websites/{websiteId}/transfer",
+      "risk": "destructive"
+    },
+    {
+      "name": "getWebsitesWebsiteIdValues",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/values",
+      "risk": "read"
+    }
+  ]
+}

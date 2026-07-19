@@ -9,11 +9,11 @@ import { ActivityPanel } from "./activity-panel.js";
 import { AutomationsPanel } from "./automations-panel.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
-import { OrgsPanel } from "./orgs-panel.js";
 import { TakeoverPortal } from "./takeover-portal.js";
-import { VendoThread } from "./vendo-thread.js";
+import { VendoThread } from "./thread/index.js";
+import { WaitingQueue } from "./waiting-queue.js";
 
-const TABS = ["chat", "apps", "automations", "accounts", "orgs", "activity"] as const;
+const TABS = ["chat", "apps", "automations", "accounts", "activity"] as const;
 type Tab = typeof TABS[number];
 
 function title(tab: Tab): string {
@@ -22,7 +22,7 @@ function title(tab: Tab): string {
 
 function ChatWorkspace() {
   const takeover = useMobileTakeover();
-  const { threads, refresh } = useThreads();
+  const { threads, isLoading, error: threadsError, refresh } = useThreads();
   const [selected, setSelected] = useState<string>();
   // ENG-222 — the thr_ the server mints for a "New conversation" turn. Tracked
   // separately from `selected` (which drives VendoThread's threadId prop) so a
@@ -79,7 +79,32 @@ function ChatWorkspace() {
           >{thread.title}</button>
         ))}
       </nav>
-      <VendoThread threadId={selected} onThreadId={onThreadId} />
+      {/* ENG-225 — the waiting-on-you strip parks above the live conversation;
+          it renders nothing while no approvals are pending. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+        <WaitingQueue />
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          {/* Discoverability gate (§6): this thread mounts with threadId
+              undefined BEFORE the list resolves, and the auto-select effect
+              lands a render later — both transients would burn (or flash) the
+              one-time greeting for a returning user who is about to be snapped
+              to their latest conversation. Hold the dial quiet until the
+              surface has SETTLED on a genuinely fresh thread: list resolved
+              with no conversations (a FAILED list proves nothing — the empty
+              array is just the initial value, so an error keeps the gate
+              shut), or an explicit user choice (userChose is set
+              synchronously before the click's re-render). */}
+          <VendoThread
+            threadId={selected}
+            onThreadId={onThreadId}
+            discoverability={
+              userChose.current || (!isLoading && threadsError === undefined && threads.length === 0)
+                ? undefined
+                : "quiet"
+            }
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -217,7 +242,6 @@ export function VendoPage() {
             {tab === "apps" ? <AppsWorkspace /> : null}
             {tab === "automations" ? <AutomationsPanel /> : null}
             {tab === "accounts" ? <ConnectedAccountsPanel /> : null}
-            {tab === "orgs" ? <OrgsPanel /> : null}
             {tab === "activity" ? <ActivityPanel /> : null}
           </section>
         </div>

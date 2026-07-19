@@ -15,7 +15,7 @@ run is a separate explicit command.
   measurement loop.
 - `src/budgets.ts` — load `budgets.json`, compare measured p95 against ceilings.
 - `src/report.ts` — JSON envelope, markdown tables, terminal summary.
-- `src/trees.ts` — synthetic `vendo-genui/v1` tree generator (exact node counts,
+- `src/trees.ts` — synthetic `vendo-genui/v2` tree generator (exact node counts,
   realistic props, `$path`/`$state` bindings, ≤16 queries).
 - `src/fixtures/` — minimal replicas of the `@vendoai/apps` testing fixtures
   (scripted model, memory store, tool registry). Those fixtures are not exported
@@ -51,7 +51,7 @@ Deterministic (CI-gated):
 
 | Suite | Measures |
 | --- | --- |
-| `tree-validate` | `@vendoai/core` `validateTree` at 10 / 100 / 1000 / 5000 nodes (5000 = the 01 §8 cap). |
+| `tree-validate` | `@vendoai/core` `validateTreeV2` at 10 / 100 / 1000 / 5000 nodes (5000 = the 01 §8 cap). |
 | `tree-render` | `@vendoai/ui` `TreeView` via `react-dom/server` `renderToString`; render-only and validate+render per size. Prewired primitives only, so no jsdom is needed. |
 | `store` | `@vendoai/store` on PGlite (temp dir): record `put`/`get`/`list`, N=200. Also runs the Postgres leg when `POSTGRES_URL` is set (the 02 gating convention); the Postgres leg is not budget-gated. |
 | `guard-call` | `createGuard` over PGlite, `guard.bind()` a no-op registry, N calls through the bound registry — the 05 §2 decide → execute → report choke point, with an audit row written per call. |

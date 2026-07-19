@@ -1,20 +1,23 @@
 import {
+  VENDO_TREE_FORMAT_V2,
   VendoError,
   validateAppDocument,
   type AppDocument,
   type AppId,
-  type ComponentCatalog,
   type Guard,
   type IsoDateTime,
   type Json,
+  type NormalizedCatalog,
   type RunContext,
+  type ApprovalId,
   type RiskLabel,
   type SecretsProvider,
   type StoreAdapter,
   type ToolCall,
+  type ToolDescriptor,
   type ToolOutcome,
+  type TreeV2,
   type ToolRegistry,
-  type Tree,
   type UIPayload,
   type VendoViewPart,
   type VendoTheme,
@@ -46,6 +49,7 @@ import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRe
 import { detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
 import { createRunTokenGate } from "./run-token-gate.js";
+import { createSecretExposure, type SecretExposureGrant } from "./secret-exposure.js";
 import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
 import { appVersionHash } from "./version-hash.js";
 import type { SandboxAdapter } from "./sandbox.js";
@@ -61,7 +65,12 @@ export interface AppsConfig {
   tools: ToolRegistry;
   sandbox?: SandboxAdapter;
   model?: LanguageModel;
-  catalog: ComponentCatalog;
+  /** v2 spec §4 — tier-0 paint lane knob, passed to the generation engine.
+   *  `model` is the no-think switch (a thinking-disabled model instance);
+   *  `disabled` forces single-lane generation. */
+  paint?: GenerationDependencies["paint"];
+  /** The composition-normalized catalog (01 §14): derived schemas included. */
+  catalog: NormalizedCatalog;
   theme?: VendoTheme;
   secrets?: SecretsProvider;
   designRules?: string;
@@ -111,6 +120,24 @@ export type OpenSurface =
 export interface AppsProxy {
   handler(request: Request): Promise<Response>;
 }
+
+/**
+ * ENG-345 — the in-sandbox status of one declared secret for one app.
+ * `handle` is the Option B default; `exposed` means an active owner-approved
+ * grant places its real value in the sandbox env; `pending` means a flip-on is
+ * parked awaiting the high-risk guard approval.
+ */
+export interface SecretExposureState {
+  secretName: string;
+  status: "handle" | "pending" | "exposed";
+  approvalId?: ApprovalId;
+}
+
+/** ENG-345 — the outcome of a setExposure() call. */
+export type SetExposureResult =
+  | { status: "handles" }
+  | { status: "exposed" }
+  | { status: "pending-approval"; approvalId: ApprovalId };
 
 /**
  * 06-apps §8 — the outcome of one pin rebase. `failed` persists NOTHING: the
@@ -191,6 +218,30 @@ export interface AppsRuntime {
   pins: {
     drift(appId: AppId, ctx: RunContext): Promise<PinDrift[]>;
     rebase(input: { appId: AppId; slot: string }, ctx: RunContext): Promise<PinRebaseResult>;
+  };
+  /**
+   * ENG-345 — additive guarded per-secret in-sandbox exposure surface (same
+   * additive precedent as `inClient`/`pins`, not part of the frozen §1 method
+   * table). Option B (handles + egress substitution) stays the default; this is
+   * the exception path, off by default, per-secret × per-app, OWNER-ONLY, and
+   * gated by the guard's existing high-risk approval flow. The grant NEVER
+   * travels with a copy: it lives in its own store collection keyed by the app
+   * id, so exportApp/importApp/fork/share/publish (all of which mint or copy a
+   * fresh app id) can never carry it. Requires a docs/contracts/06-apps.md §4.3
+   * amendment (parked, Yousef-gated).
+   */
+  secrets: {
+    /** Current in-sandbox status of every declared secret for one app (owner-only). */
+    exposure(appId: AppId, ctx: RunContext): Promise<SecretExposureState[]>;
+    /**
+     * Flip one secret's in-sandbox exposure. Turning ON routes through the
+     * guard's high-risk approval flow and returns `pending-approval` until the
+     * owner decides it; turning OFF reverts to handles immediately.
+     */
+    setExposure(
+      input: { appId: AppId; secretName: string; expose: boolean },
+      ctx: RunContext,
+    ): Promise<SetExposureResult>;
   };
 }
 
@@ -276,6 +327,7 @@ const generationDependencies = (
   theme: config.theme,
   designRules: config.designRules,
   pinBaselines: config.pinBaselines,
+  ...(config.paint === undefined ? {} : { paint: config.paint }),
   ...(onPartial === undefined ? {} : { onPartial }),
 });
 
@@ -288,8 +340,8 @@ const stripServerAuthoritativeFields = (payload: object): void => {
 };
 
 const pinnedSubtree = (app: AppDocument, componentName: string): unknown[] => {
-  if (app.tree?.formatVersion !== "vendo-genui/v1") return [];
-  const tree = app.tree as unknown as Tree;
+  if (app.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) return [];
+  const tree = app.tree as unknown as TreeV2;
   const included = new Set(tree.nodes.filter((node) => node.component === componentName).map((node) => node.id));
   const pending = [...included];
   while (pending.length > 0) {
@@ -327,11 +379,46 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   // ENG-251 — one anti-replay gate shared by the machine cache (which burns a
   // run's jti on teardown) and the proxy (which rejects a burned jti).
   const consumedRunTokens = createRunTokenGate();
+  // ENG-345 — per-secret × per-app in-sandbox exposure grants. A dedicated store
+  // collection, NEVER part of the app document, so no copy path can carry it.
+  const exposure = createSecretExposure(config.store);
+
+  const reportGuard = async (
+    kind: "app-lifecycle",
+    principalSubject: string,
+    appId: AppId,
+    ctx: Pick<RunContext, "venue" | "presence"> & { trigger?: RunContext["trigger"] },
+    detail: Record<string, Json>,
+  ): Promise<void> => {
+    await config.guard.report({
+      id: `aud_${globalThis.crypto.randomUUID()}`,
+      at: new Date().toISOString(),
+      kind,
+      principal: { kind: "user", subject: principalSubject },
+      venue: ctx.venue,
+      presence: ctx.presence,
+      appId,
+      ...(ctx.trigger === undefined ? {} : { trigger: { ...ctx.trigger } }),
+      outcome: "ok",
+      detail,
+    });
+  };
+
   const machines = createMachineSessions({
     sandbox: config.sandbox,
     proxyUrl: config.proxyUrl,
     tokenSecret,
     consumedRunTokens,
+    // ENG-345 — the machine cache injects a REAL value only for a secret with an
+    // active grant, and audits one exposed-run event per run. Same SecretsProvider
+    // seam the egress proxy uses; without it every secret stays a handle.
+    ...(config.secrets === undefined ? {} : { secrets: config.secrets }),
+    resolveExposedSecrets: (app) => exposure.activeNames(app.id),
+    reportExposedRun: (app, ctx, secrets) =>
+      reportGuard("app-lifecycle", ctx.principal.subject, app.id, ctx, {
+        operation: "secret-exposed-run",
+        secrets,
+      }),
   });
 
   const owned = async (appId: AppId, subject: string): Promise<AppDocument | null> => {
@@ -354,6 +441,57 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     pinBaselines: config.pinBaselines,
     requireOwned,
   });
+
+  // ENG-345 — turning a secret ON is a HIGH-RISK approval reusing the guard's
+  // existing critical-approval flow: check() with a critical descriptor parks an
+  // approval, and this subscription commits the parked exposure grant only when
+  // that approval is decided approved. Denial (or any non-approval) reverts it.
+  // This is the SAME onApprovalDecision seam automations use to resume a parked
+  // run — no parallel approval mechanism is introduced.
+  const EXPOSURE_TOOL = "vendo_secret_expose";
+  const exposureDescriptor = (): ToolDescriptor => ({
+    name: EXPOSURE_TOOL,
+    description: "Expose a declared secret's real value inside this app's sandbox (high-risk, owner-only).",
+    inputSchema: {
+      type: "object",
+      properties: { appId: { type: "string" }, secretName: { type: "string" } },
+      required: ["appId", "secretName"],
+    },
+    risk: "destructive",
+    critical: true,
+  });
+  // Stable across the park/approve phases so the real guard's approved-replay
+  // match (subject + call id + args + descriptor + venue/presence/app) lines up.
+  const exposureCall = (appId: AppId, secretName: string): ToolCall => ({
+    id: `call_expose_${appId}_${secretName}`,
+    tool: EXPOSURE_TOOL,
+    args: { appId, secretName },
+  });
+
+  const commitExposure = async (grant: SecretExposureGrant): Promise<void> => {
+    await exposure.activate(grant.appId, grant.secretName);
+    // Re-boot the machine so the next run's env reflects the new grant state.
+    await machines.evict(grant.appId);
+    await reportGuard("app-lifecycle", grant.owner, grant.appId, { venue: "app", presence: "present" }, {
+      operation: "secret-exposure-set",
+      secretName: grant.secretName,
+      expose: true,
+    });
+  };
+
+  const onApprovalDecision = async (id: ApprovalId, approved: boolean): Promise<void> => {
+    const parked = await exposure.byApproval(id);
+    for (const grant of parked) {
+      if (grant.status !== "pending") continue;
+      if (approved) {
+        await commitExposure(grant);
+      } else {
+        // Denied high-risk approval leaves the secret a handle (fail closed).
+        await exposure.revoke(grant.appId, grant.secretName);
+      }
+    }
+  };
+  config.guard.onApprovalDecision((id, approved) => onApprovalDecision(id, approved));
 
   const inClientApprovals = createInClientApprovals(config.store);
   const caller = createAppCaller(machines, config.tools);
@@ -582,7 +720,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       }
       // Mint before generation so every partial already carries its permanent id.
       const appId = `app_${globalThis.crypto.randomUUID()}`;
-      const emit = (payload: Tree): void => {
+      const emit = (payload: TreeV2): void => {
         // 06-apps §§8–9 — the venue verdict and drift report are
         // server-authoritative and a model-written tree must never smuggle
         // either into the live stream: a freshly generated app has no approval
@@ -594,7 +732,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           payload: payload as unknown as UIPayload,
         });
       };
-      let latestTree: Tree | undefined;
+      let latestTree: TreeV2 | undefined;
       const queryApp: AppDocument = {
         format: "vendo/app@1",
         id: appId,
@@ -605,13 +743,18 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         ? undefined
         : createProgressiveQueryResolver(machines, caller, queryApp, ctx, (data) => {
           if (latestTree === undefined) return;
-          emit({ ...structuredClone(latestTree), data, streaming: true } as Tree);
+          emit({ ...structuredClone(latestTree), data, streaming: true } as TreeV2);
         });
       const generated = await engine.create(
         { prompt: input.prompt },
         generationDependencies(config, config.model, input.onView === undefined ? undefined : (partial) => {
-          latestTree = structuredClone(partial.tree);
-          emit(latestTree);
+          // v2 spec §1 — the payload carries islands at payload level (the
+          // renderer lifts them); a mid-stream payload is marked streaming.
+          latestTree = {
+            ...structuredClone(partial.tree),
+            ...(partial.components === undefined ? {} : { components: structuredClone(partial.components) }),
+          } as TreeV2;
+          emit({ ...structuredClone(latestTree), streaming: true } as TreeV2);
           queryResolver?.update(latestTree);
         }),
       );
@@ -622,12 +765,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // Same rule at rest: open() strips before serving, but a model-forged
       // venue or drift field has no business being persisted in the first place.
       if (app.tree !== undefined) stripServerAuthoritativeFields(app.tree);
-      let finalTree: Tree | undefined;
-      if (input.onView !== undefined && app.tree?.formatVersion === "vendo-genui/v1") {
+      let finalTree: TreeV2 | undefined;
+      if (input.onView !== undefined && app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
         finalTree = {
-          ...(structuredClone(app.tree) as unknown as Tree),
+          ...structuredClone(app.tree),
           ...(app.components === undefined ? {} : { components: structuredClone(app.components) }),
-        };
+        } as TreeV2;
         latestTree = structuredClone(finalTree);
         queryResolver?.update(finalTree);
         finalTree.data = await queryResolver?.complete() ?? structuredClone(finalTree.data ?? {});
@@ -662,6 +805,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       await data.clear(app, ctx.principal.subject, await history.documents(appId));
       await history.clear(appId);
       await inClientApprovals.clear(appId);
+      await exposure.clearForApp(appId);
       await apps.delete(appId);
       await reportLifecycle("delete", appId, ctx);
     },
@@ -990,6 +1134,84 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           baseHash: baseline.hash,
           replayed,
         };
+      },
+    },
+
+    secrets: {
+      async exposure(appId, ctx) {
+        const app = await requireOwned(appId, ctx.principal.subject); // owner-only read
+        const grants = new Map((await exposure.list(appId)).map((grant) => [grant.secretName, grant]));
+        return (app.secrets ?? []).map((secretName) => {
+          const grant = grants.get(secretName);
+          if (grant === undefined) return { secretName, status: "handle" as const };
+          return grant.status === "active"
+            ? { secretName, status: "exposed" as const }
+            : { secretName, status: "pending" as const, approvalId: grant.approvalId };
+        });
+      },
+
+      async setExposure(input, ctx) {
+        // Owner-only: requireOwned throws not-found for any non-owner principal.
+        const app = await requireOwned(input.appId, ctx.principal.subject);
+        if (!(app.secrets ?? []).includes(input.secretName)) {
+          throw new VendoError("validation", `secret not declared by app: ${input.secretName}`);
+        }
+
+        if (input.expose === false) {
+          // Turning OFF is safe — revert to the Option B handle default at once.
+          await exposure.revoke(input.appId, input.secretName);
+          await machines.evict(input.appId);
+          await reportGuard("app-lifecycle", ctx.principal.subject, input.appId, ctx, {
+            operation: "secret-exposure-set",
+            secretName: input.secretName,
+            expose: false,
+          });
+          return { status: "handles" };
+        }
+
+        // Turning ON is HIGH-RISK: route through the guard's existing critical
+        // approval flow. appId is pinned in the guard ctx so the parked approval
+        // is app-scoped (and, for the real guard, so an approved replay matches).
+        const guardCtx: RunContext = { ...ctx, appId: input.appId };
+        const decision = await config.guard.check(
+          exposureCall(input.appId, input.secretName),
+          exposureDescriptor(),
+          guardCtx,
+        );
+        if (decision.action === "block") {
+          throw new VendoError("blocked", decision.reason);
+        }
+        if (decision.action === "run") {
+          // A pre-approved replay already cleared the high-risk gate — commit now.
+          const approvalId: ApprovalId = decision.grantId === undefined
+            ? `apr_replayed_${globalThis.crypto.randomUUID()}`
+            : `apr_${decision.grantId}`;
+          await exposure.putPending({
+            appId: input.appId,
+            secretName: input.secretName,
+            owner: ctx.principal.subject,
+            approvalId,
+            requestedAt: new Date().toISOString(),
+          });
+          await exposure.activate(input.appId, input.secretName);
+          await machines.evict(input.appId);
+          await reportGuard("app-lifecycle", ctx.principal.subject, input.appId, ctx, {
+            operation: "secret-exposure-set",
+            secretName: input.secretName,
+            expose: true,
+          });
+          return { status: "exposed" };
+        }
+        // Parked: record the pending grant against this approval; it flips to
+        // active only when onApprovalDecision fires with approved=true.
+        await exposure.putPending({
+          appId: input.appId,
+          secretName: input.secretName,
+          owner: ctx.principal.subject,
+          approvalId: decision.approval.id,
+          requestedAt: new Date().toISOString(),
+        });
+        return { status: "pending-approval", approvalId: decision.approval.id };
       },
     },
 

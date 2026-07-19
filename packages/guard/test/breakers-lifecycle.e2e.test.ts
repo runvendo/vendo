@@ -24,7 +24,7 @@ afterEach(async () => {
   await Promise.all(stores.splice(0).map((value) => value.close()));
 });
 
-describe("grant descriptorHash drift → lapse → re-approval (05 §2 step 3, core §5)", () => {
+describe("grant descriptorHash drift → lapse → re-approval (05 §2 step 2, core §5)", () => {
   it("lapses the minted grant on drift, forces re-approval, and lands both grants in vendo_grants", async () => {
     const sqlStore = await store();
     const guard = createGuard({

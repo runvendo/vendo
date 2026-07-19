@@ -1,5 +1,4 @@
-import { VendoError, type Json, type Principal, type ThreadId } from "@vendoai/core";
-import { overlayFor, registerEphemeralSubject, snapshot } from "../ephemeral.js";
+import type { Json, Principal, ThreadId } from "@vendoai/core";
 import { dbFor, type VendoStore } from "../store.js";
 import type { ThreadRow } from "./types.js";
 import { putThreadRow, threadFromRow } from "./rows.js";
@@ -14,41 +13,18 @@ export function threadStore(store: VendoStore): {
   delete(principal: Principal, id: ThreadId): Promise<void>;
 } {
   const db = dbFor(store);
-  const overlay = overlayFor(store);
   return {
     async put(principal, thread) {
       const parsed = parseThreadData({ subject: principal.subject, messages: thread.messages }, thread.id);
-      const now = new Date().toISOString();
-      if (principal.ephemeral === true) {
-        registerEphemeralSubject(store, principal.subject);
-        const prior = overlay.threads.get(thread.id);
-        // Threads never cross subjects (03 §5): refuse an overlay id already owned
-        // by another subject, mirroring putThreadRow's guarded SQL upsert.
-        if (prior !== undefined && prior.subject !== parsed.subject) {
-          throw new VendoError("conflict", `thread ${thread.id} belongs to another subject`);
-        }
-        const row: ThreadRow = {
-          id: thread.id,
-          subject: parsed.subject,
-          messages: parsed.messages,
-          createdAt: prior?.createdAt ?? now,
-          updatedAt: now,
-          revision: String(BigInt(prior?.revision ?? "0") + 1n),
-        };
-        overlay.threads.set(thread.id, snapshot(row));
-        return snapshot(row);
-      }
+      // Threads never cross subjects (03 §5): the guarded upsert refuses a
+      // foreign-owned id atomically.
       return putThreadRow(db, {
         id: thread.id,
         subject: parsed.subject,
         messages: parsed.messages,
-      }, now);
+      });
     },
     async get(principal, id) {
-      if (principal.ephemeral === true) {
-        const row = overlay.threads.get(id);
-        return row?.subject === principal.subject ? snapshot(row) : null;
-      }
       const result = await db.query(
         `SELECT id, subject, messages, title, created_at, updated_at, revision FROM vendo_threads
          WHERE id = $1 AND subject = $2`,
@@ -57,12 +33,6 @@ export function threadStore(store: VendoStore): {
       return result.rows[0] ? threadFromRow(result.rows[0]) : null;
     },
     async list(principal) {
-      if (principal.ephemeral === true) {
-        return [...overlay.threads.values()]
-          .filter((row) => row.subject === principal.subject)
-          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
-          .map(({ id, createdAt, updatedAt }) => snapshot({ id, createdAt, updatedAt }));
-      }
       const result = await db.query(
         `SELECT id, created_at, updated_at FROM vendo_threads WHERE subject = $1
          ORDER BY updated_at DESC, id DESC`,
@@ -75,11 +45,6 @@ export function threadStore(store: VendoStore): {
       }));
     },
     async delete(principal, id) {
-      if (principal.ephemeral === true) {
-        const row = overlay.threads.get(id);
-        if (row?.subject === principal.subject) overlay.threads.delete(id);
-        return;
-      }
       await db.query("DELETE FROM vendo_threads WHERE id = $1 AND subject = $2", [id, principal.subject]);
     },
   };

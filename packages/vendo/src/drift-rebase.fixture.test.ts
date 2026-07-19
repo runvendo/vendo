@@ -105,8 +105,8 @@ export const hostCatalog = [{
     // ONE host process lifetime: fork the pin and edit the fork.
     const vendo = createVendo({
       model: scriptedModel([
-        JSON.stringify({ ops: [{ op: "fork-pin", slot, nodeId: "worth", parentId: "root" }] }),
-        JSON.stringify({ ops: [{ op: "add-component", name: componentName, source: remixedSource }] }),
+        `<Edit><ForkPin slot="${slot}" into="root"/></Edit>`,
+        `<Edit><Island name="${componentName}">${remixedSource}</Island></Edit>`,
       ]),
       principal: async () => principal,
       store,
@@ -118,7 +118,7 @@ export const hostCatalog = [{
       name: "Maple overview",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Stack", source: "prewired" }],
       },
@@ -153,13 +153,7 @@ export const hostCatalog = [{
     const redeployed = createVendo({
       model: scriptedModel([
         // The rebase replays the ONE recorded pin intent through the model.
-        JSON.stringify({
-          ops: [{
-            op: "add-component",
-            name: componentName,
-            source: newBaseline.source.replace("$1.2M", "$1.2M — remixed"),
-          }],
-        }),
+        `<Edit><Island name="${componentName}">${newBaseline.source.replace("$1.2M", "$1.2M — remixed")}</Island></Edit>`,
       ]),
       principal: async () => principal,
       store,

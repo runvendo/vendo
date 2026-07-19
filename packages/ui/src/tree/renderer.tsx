@@ -1,14 +1,19 @@
 import {
+  RESERVED_COMPONENT_NAMES,
+  TREE_MAX_COMPONENT_SOURCE_CHARS,
+  TREE_MAX_GENERATED_COMPONENTS,
+  TREE_MAX_TOTAL_COMPONENT_CHARS,
+  applyReshape,
   isPathBinding,
   isStateBinding,
-  validateTree,
-  VENDO_TREE_FORMAT,
+  VENDO_TREE_FORMAT_V2,
   type Json,
+  type PathBinding,
   type ToolOutcome,
-  type Tree,
   type TreeNode,
   type UIPayload,
 } from "@vendoai/core";
+import { convertV2Payload } from "./renderer-v2.js";
 import {
   useCallback,
   useMemo,
@@ -29,7 +34,7 @@ import { ContainedNotice } from "./notice.js";
 import { PREWIRED_COMPONENTS, Skeleton } from "./primitives.js";
 
 export interface TreeViewProps {
-  tree: Tree;
+  tree: WalkTree;
   components: Record<string, ComponentType>;
   data?: Record<string, Json>;
   onAction(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
@@ -56,11 +61,103 @@ export function registerTreeRenderer(formatVersion: string, component: PayloadRe
   rendererRegistry.set(formatVersion, component);
 }
 
-function VendoTreeRenderer({ payload, ...props }: PayloadRendererProps) {
-  return <TreeView tree={payload as unknown as Tree} {...props} />;
+/**
+ * v2 spec §6 — the walk's input: the SHARED render mechanics' tree shape
+ * (nodes, path-keyed resolved queries, grafted components, payload extras).
+ * The v1 format surface around it is gone; renderer-v2 converts the
+ * canonical v2 tree into this shape (named queries → "/" + name pointers).
+ */
+export interface WalkTree {
+  root: string;
+  nodes: TreeNode[];
+  data?: Record<string, Json>;
+  queries?: Array<{ path: string; tool: string; input?: Record<string, Json> }>;
+  components?: Record<string, string>;
 }
 
-registerTreeRenderer(VENDO_TREE_FORMAT, VendoTreeRenderer);
+type WalkValidation =
+  | { ok: true; tree: WalkTree }
+  | { ok: false; error: { code: "provision"; message: string } };
+
+const walkFail = (message: string): WalkValidation => ({ ok: false, error: { code: "provision", message } });
+
+const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** The structural render-gate the v1 validator used to provide (per-render
+ *  hot path): ids unique and rooted, node shapes sane, generated components
+ *  present. Format-tag checks live one layer up (PayloadView dispatch +
+ *  validateTreeV2 in renderer-v2). */
+const validateWalkTree = (input: WalkTree): WalkValidation => {
+  const ids = new Set<string>();
+  if (!Array.isArray(input.nodes)) return walkFail("nodes must be an array");
+  for (const node of input.nodes) {
+    if (!isPlainRecord(node)) return walkFail("each node must be an object");
+    if (typeof node.id !== "string" || node.id.length === 0) return walkFail("each node must have a non-empty string id");
+    if (typeof node.component !== "string") return walkFail(`node "${node.id}" must have a string component`);
+    if (node.source !== undefined && !["prewired", "host", "generated"].includes(node.source as string)) {
+      return walkFail(`node "${node.id}" has an invalid source`);
+    }
+    if (node.children !== undefined
+      && (!Array.isArray(node.children) || !node.children.every((child) => typeof child === "string"))) {
+      return walkFail(`node "${node.id}" children must be an array of strings`);
+    }
+    if (node.props !== undefined && !isPlainRecord(node.props)) return walkFail(`node "${node.id}" props must be a plain object`);
+    if (ids.has(node.id)) return walkFail(`duplicate node id "${node.id}"`);
+    ids.add(node.id);
+  }
+  const components = input.components ?? {};
+  // The jail-compile bounds the v1 walk enforced per render survive here:
+  // reserved names can never be shadowed and the §8 component caps hold even
+  // for payloads that bypassed document validation (direct TreeView input).
+  const names = Object.keys(components);
+  if (names.length > TREE_MAX_GENERATED_COMPONENTS) {
+    return walkFail(`too many generated components (max ${TREE_MAX_GENERATED_COMPONENTS})`);
+  }
+  let totalChars = 0;
+  for (const name of names) {
+    if ((RESERVED_COMPONENT_NAMES as readonly string[]).includes(name)) {
+      return walkFail(`generated component "${name}" shadows a reserved primitive name`);
+    }
+    const source = components[name];
+    if (typeof source !== "string") return walkFail(`generated component "${name}" source must be a string`);
+    if (source.length > TREE_MAX_COMPONENT_SOURCE_CHARS) {
+      return walkFail(`generated component "${name}" source is too large`);
+    }
+    totalChars += source.length;
+  }
+  if (totalChars > TREE_MAX_TOTAL_COMPONENT_CHARS) {
+    return walkFail("generated component sources exceed the total size cap");
+  }
+  for (const node of input.nodes) {
+    if (node.source === "generated" && !Object.prototype.hasOwnProperty.call(components, node.component)) {
+      return walkFail(`node "${node.id}" references generated component "${node.component}" with no definition in components`);
+    }
+  }
+  if (typeof input.root !== "string" || !ids.has(input.root)) {
+    return walkFail(`root "${String(input.root)}" does not match any node id`);
+  }
+  return { ok: true, tree: input };
+};
+
+/** v2 spec §1 — a validated v2 payload converts to the v1 tree shape and
+ *  walks the SAME TreeView (renderer-v2.tsx documents the mapping). The
+ *  registration lives here, in PayloadView's own module: the package is
+ *  `sideEffects: false`, so a registration-only import would be tree-shaken
+ *  out of host bundles. */
+function VendoTreeV2Renderer({ payload, ...props }: PayloadRendererProps) {
+  const converted = useMemo(() => convertV2Payload(payload), [payload]);
+  if (!converted.ok) {
+    return (
+      <ContainedNotice label="Invalid UI tree" code={converted.error.code}>
+        {`${converted.error.code}: ${converted.error.message}`}
+      </ContainedNotice>
+    );
+  }
+  return <TreeView tree={converted.tree} {...props} />;
+}
+
+registerTreeRenderer(VENDO_TREE_FORMAT_V2, VendoTreeV2Renderer);
 
 /** 01-core §8 — renderer dispatch is exclusively by the payload tag. */
 export function PayloadView(props: PayloadRendererProps) {
@@ -89,31 +186,81 @@ export function isActionBinding(value: unknown): value is ActionBinding {
 
 type BoundMode = "host" | "jail";
 
+/** v2 spec §3 — apply a binding's `$reshape` chain to the resolved value.
+ *  `applyReshape` is total: absent data passes through (loading is not a
+ *  mismatch); a real mismatch reports through `onMismatch` and binds
+ *  `undefined`, and the node renders the contained data-shape notice. */
+function resolveReshaped(
+  resolved: Json | undefined,
+  steps: PathBinding["$reshape"],
+  onMismatch?: (reason: string) => void,
+): unknown {
+  if (steps === undefined) return resolved;
+  const reshaped = applyReshape(resolved, steps);
+  if (!reshaped.ok) {
+    onMismatch?.(reshaped.reason);
+    return undefined;
+  }
+  return reshaped.value;
+}
+
 function bindValue(
   value: unknown,
   mode: BoundMode,
   data: Record<string, Json>,
   state: Record<string, Json>,
   action: (name: string, payload?: Json) => Promise<ToolOutcome>,
+  onMismatch?: (reason: string) => void,
 ): unknown {
-  if (isPathBinding(value)) return resolvePointer(data, value.$path);
-  if (isStateBinding(value)) return state[value.$state];
+  if (isPathBinding(value)) return resolveReshaped(resolvePointer(data, value.$path), value.$reshape, onMismatch);
+  if (isStateBinding(value)) return resolveReshaped(state[value.$state] as Json | undefined, value.$reshape, onMismatch);
   if (isActionBinding(value)) {
-    const payload = bindValue(value.payload, mode, data, state, action) as Json;
+    const payload = bindValue(value.payload, mode, data, state, action, onMismatch) as Json;
     if (mode === "jail") {
       return { $action: value.$action, ...(value.payload === undefined ? {} : { payload }) };
     }
     return () => action(value.$action, value.payload === undefined ? undefined : payload);
   }
-  if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action));
+  if (Array.isArray(value)) return value.map((item) => bindValue(item, mode, data, state, action, onMismatch));
   if (typeof value === "object" && value !== null) {
     return Object.fromEntries(Object.entries(value).map(([key, child]) => [
       key,
-      bindValue(child, mode, data, state, action),
+      bindValue(child, mode, data, state, action, onMismatch),
     ]));
   }
   return value;
 }
+
+/** Binds a node's props, reporting the first reshape mismatch with its prop
+ *  name (v2 spec §3 — the region shows one contained notice, not a broken
+ *  component). */
+function bindProps(
+  props: Record<string, Json> | undefined,
+  mode: BoundMode,
+  data: Record<string, Json>,
+  state: Record<string, Json>,
+  action: (name: string, payload?: Json) => Promise<ToolOutcome>,
+): { bound: Record<string, unknown> | undefined; mismatch: string | null } {
+  if (props === undefined) return { bound: undefined, mismatch: null };
+  let mismatch: string | null = null;
+  let currentProp = "";
+  const onMismatch = (reason: string): void => {
+    if (mismatch === null) mismatch = `prop "${currentProp}": ${reason}`;
+  };
+  const bound = Object.fromEntries(Object.entries(props).map(([key, child]) => {
+    currentProp = key;
+    return [key, bindValue(child, mode, data, state, action, onMismatch)];
+  }));
+  return { bound, mismatch };
+}
+
+/** v2 spec §3 — the contained data-shape notice: the region says the data
+ *  didn't match instead of mounting the component with garbage props. */
+const dataShapeNotice = (mismatch: string): ReactNode => (
+  <ContainedNotice label="Data shape">
+    {`The data didn't match this component's binding — ${mismatch}.`}
+  </ContainedNotice>
+);
 
 function outcomeNotice(outcome: ToolOutcome | undefined): ReactNode {
   if (!outcome || outcome.status === "ok") return null;
@@ -177,7 +324,7 @@ interface NodeRendererProps {
 
 const EMPTY_LAYOUT_COMPONENTS = new Set(["Stack", "Row", "Grid"]);
 
-const hasRenderableTreeContent = (tree: Tree): boolean => {
+const hasRenderableTreeContent = (tree: WalkTree): boolean => {
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
   const pending = [tree.root];
   const visited = new Set<string>();
@@ -240,41 +387,41 @@ function NodeRenderer(props: NodeRendererProps) {
       // 06-apps §9 — the approved venue: this exact version's content hash
       // matched a stored approval, so generated code mounts in the host page.
       // The jail element stays wired as the drop-back for any mount failure.
-      const bound = node.props === undefined
-        ? undefined
-        : bindValue(node.props, "host", props.data, props.state, invoke) as Record<string, unknown>;
-      const jailFallback = (
-        <JailedComponent
-          name={node.component}
-          source={source}
-          props={node.props === undefined
-            ? undefined
-            : bindValue(node.props, "jail", props.data, props.state, invoke) as Record<string, unknown>}
-          furnishing={props.furnishings[node.component]}
-          themeVars={props.themeVars}
-          onAction={invoke}
-          onStateSet={props.setViewState}
-        />
-      );
-      content = (
-        <>
-          <InClientMount
+      const hostBind = bindProps(node.props, "host", props.data, props.state, invoke);
+      const jailBind = bindProps(node.props, "jail", props.data, props.state, invoke);
+      const mismatch = hostBind.mismatch ?? jailBind.mismatch;
+      if (mismatch !== null) {
+        content = <>{dataShapeNotice(mismatch)}{children}</>;
+      } else {
+        const jailFallback = (
+          <JailedComponent
             name={node.component}
             source={source}
-            props={bound}
+            props={jailBind.bound}
             furnishing={props.furnishings[node.component]}
-            fallback={jailFallback}
+            themeVars={props.themeVars}
             onAction={invoke}
             onStateSet={props.setViewState}
           />
-          {children}
-        </>
-      );
+        );
+        content = (
+          <>
+            <InClientMount
+              name={node.component}
+              source={source}
+              props={hostBind.bound}
+              furnishing={props.furnishings[node.component]}
+              fallback={jailFallback}
+              onAction={invoke}
+              onStateSet={props.setViewState}
+            />
+            {children}
+          </>
+        );
+      }
     } else {
-      const bound = node.props === undefined
-        ? undefined
-        : bindValue(node.props, "jail", props.data, props.state, invoke) as Record<string, unknown>;
-      content = (
+      const { bound, mismatch } = bindProps(node.props, "jail", props.data, props.state, invoke);
+      content = mismatch !== null ? <>{dataShapeNotice(mismatch)}{children}</> : (
         <>
           <JailedComponent
             name={node.component}
@@ -295,7 +442,10 @@ function NodeRenderer(props: NodeRendererProps) {
   } else {
     const primitive = PREWIRED_COMPONENTS[node.component];
     const host = props.components[node.component] as ComponentType<Record<string, unknown>> | undefined;
-    const Implementation = primitive ?? host;
+    // v2 spec §2 — an explicit `source: "host"` resolution means the host
+    // brand won the name; only an undefined source keeps the historical
+    // primitive-first order.
+    const Implementation = node.source === "host" ? host ?? primitive : primitive ?? host;
     if (!Implementation) {
       content = (
         <ContainedNotice label="Unknown component">
@@ -303,8 +453,13 @@ function NodeRenderer(props: NodeRendererProps) {
         </ContainedNotice>
       );
     } else {
-      const bound = bindValue(node.props ?? {}, "host", props.data, props.state, invoke) as Record<string, unknown>;
-      content = <Implementation {...bound}>{children}</Implementation>;
+      const { bound, mismatch } = bindProps(node.props ?? {}, "host", props.data, props.state, invoke);
+      // The notice replaces only the mis-bound component, never its subtree —
+      // a container (Stack/Grid) with one bad prop must not swallow its valid
+      // children (same containment scope as the generated paths above).
+      content = mismatch !== null
+        ? <>{dataShapeNotice(mismatch)}{children}</>
+        : <Implementation {...bound}>{children}</Implementation>;
     }
   }
 
@@ -318,7 +473,7 @@ function NodeRenderer(props: NodeRendererProps) {
 }
 
 /**
- * 08-ui §5 — render a validated `vendo-genui/v1` tree.
+ * 08-ui §5 — render a validated walk tree (the shared render mechanics, v2 spec §6).
  *
  * `$state` is local to this TreeView. Generated code can write through its
  * in-jail `vendo.setState(key, value)` bridge; `onStateChange`, when supplied,
@@ -333,12 +488,12 @@ function StatefulTreeView({
 }: TreeViewProps) {
   const theme = useVendoThemeOrDefault();
   const themeVars = useMemo(() => themeCssVariables(theme), [theme]);
-  const streaming = (tree as Tree & { streaming?: unknown }).streaming === true;
-  const furnishings = (tree as Tree & { furnishings?: Record<string, JailFurnishing> }).furnishings ?? {};
-  const inClient = (tree as Tree & { inClient?: InClientVenue }).inClient;
+  const streaming = (tree as WalkTree & { streaming?: unknown }).streaming === true;
+  const furnishings = (tree as WalkTree & { furnishings?: Record<string, JailFurnishing> }).furnishings ?? {};
+  const inClient = (tree as WalkTree & { inClient?: InClientVenue }).inClient;
   // Tolerate a malformed field (like every other payload extra): only an
   // array of well-formed entries renders the notice.
-  const pinDriftRaw = (tree as Tree & { pinDrift?: unknown }).pinDrift;
+  const pinDriftRaw = (tree as WalkTree & { pinDrift?: unknown }).pinDrift;
   const pinDrift = (Array.isArray(pinDriftRaw) ? pinDriftRaw : [])
     .filter((entry): entry is PinDrift =>
       typeof entry === "object" && entry !== null && typeof (entry as PinDrift).slot === "string");
@@ -348,7 +503,7 @@ function StatefulTreeView({
   // A partial stream may close a generated node before its top-level source
   // string closes. Supply validator-only placeholders, then keep the real map
   // empty so NodeRenderer paints a skeleton until the source arrives.
-  const validation = validateTree(streaming ? {
+  const validation = validateWalkTree(streaming ? {
     ...tree,
     components: Object.fromEntries([
       ...Object.entries(tree.components ?? {}),

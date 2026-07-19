@@ -1,0 +1,80 @@
+# Auto-merge Mintlify docs PRs (Yousef, 2026-07-18).
+#
+# Mintlify's docs agent opens PRs as mintlify[bot] on in-repo mintlify/*
+# branches, touching only docs-site/**. Those merge themselves once every
+# other check on the head SHA has finished green. Two guards keep this
+# narrow: the author must be mintlify[bot], and the diff must stay entirely
+# inside docs-site/ — a bot PR touching anything else is left for humans.
+#
+# The wait loop polls check-runs + commit statuses itself (instead of GitHub
+# native auto-merge, which would merge instantly because main has no required
+# checks; instead of `gh pr checks --watch`, which would deadlock waiting on
+# this very job). Success/neutral/skipped pass; any failure aborts without
+# merging.
+name: mintlify-automerge
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: mintlify-automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  automerge:
+    name: automerge
+    if: github.event.pull_request.user.login == 'mintlify[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Guard: diff is docs-site/** only
+        run: |
+          outside=$(gh api "repos/$REPO/pulls/$PR/files" --paginate \
+            --jq '.[].filename | select(startswith("docs-site/") | not)')
+          if [ -n "$outside" ]; then
+            echo "Not docs-site-only; leaving for humans:"
+            echo "$outside"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+        id: guard
+
+      - name: Wait for every other check on the head SHA
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          # Give slow-dispatching suites time to register before we trust
+          # "nothing pending" (this repo's check suites sometimes lag).
+          sleep 120
+          for i in $(seq 1 80); do
+            runs=$(gh api "repos/$REPO/commits/$SHA/check-runs" --paginate \
+              --jq '[.check_runs[] | select(.name != "automerge")]')
+            statuses=$(gh api "repos/$REPO/commits/$SHA/status" --jq '.statuses')
+            pending=$(jq -n --argjson r "$runs" --argjson s "$statuses" \
+              '([$r[] | select(.status != "completed")] + [$s[] | select(.state == "pending")]) | length')
+            failed=$(jq -n --argjson r "$runs" --argjson s "$statuses" \
+              '([$r[] | select(.conclusion and (.conclusion | IN("success","neutral","skipped") | not))] + [$s[] | select(.state | IN("failure","error"))]) | length')
+            total=$(jq -n --argjson r "$runs" --argjson s "$statuses" '($r + $s) | length')
+            echo "checks: total=$total pending=$pending failed=$failed"
+            if [ "$failed" -gt 0 ]; then
+              echo "A check failed — not merging."; exit 1
+            fi
+            if [ "$total" -gt 0 ] && [ "$pending" -eq 0 ]; then
+              echo "All green."; exit 0
+            fi
+            sleep 60
+          done
+          echo "Timed out waiting for checks."; exit 1
+
+      - name: Merge
+        if: steps.guard.outputs.skip != 'true'
+        run: gh pr merge "$PR" --squash --delete-branch

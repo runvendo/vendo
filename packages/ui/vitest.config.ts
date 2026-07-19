@@ -15,6 +15,16 @@ export default defineConfig({
     environment: "jsdom",
     include: ["test/**/*.test.ts?(x)"],
     setupFiles: ["test/setup.ts"],
+    // Flake floor for the chrome streaming suite. These tests drive a turn and
+    // then await streamed UI (the sidebar refresh, the retry banner, "Turn
+    // complete"), each guarded by its own generous `waitFor`/`findBy` window.
+    // Under the CI coverage (v8) job those settles legitimately run past
+    // vitest's 5s default testTimeout, so the per-test cap — not the inner
+    // waits — was killing them ("Unable to find role=button 'Fixture thread' /
+    // 'Retry'"). A test cap comfortably above the inner waits lets those
+    // windows actually apply; passing tests still resolve the instant their
+    // condition is met, so this only adds headroom under load.
+    testTimeout: 30000,
   },
   resolve: {
     alias: {

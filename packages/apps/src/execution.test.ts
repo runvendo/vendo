@@ -80,7 +80,7 @@ describe("apps execution", () => {
       pins: [{ slot: baseline.slot, base: baseline.hash }],
       components: { [componentName]: baseline.source },
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: componentName, source: "generated" }],
       },
@@ -115,12 +115,14 @@ describe("apps execution", () => {
     await putApp(store, {
       ...created,
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Text" }],
+        // v2 queries name identifiers; "__proto__"/"constructor" are the
+        // grammar-legal hostile names (deep pointers are inexpressible).
         queries: [
-          { path: "/__proto__/polluted", tool: "host_ok" },
-          { path: "/constructor/prototype/polluted", tool: "host_ok" },
+          { name: "__proto__", tool: "host_ok" },
+          { name: "constructor", tool: "host_ok" },
         ],
       },
     });
@@ -133,53 +135,11 @@ describe("apps execution", () => {
     expect(surface.payload.data).toEqual({});
   });
 
-  it("caps array query indices and safely replaces the whole data model", async () => {
-    const replacement = JSON.parse(
-      '{"fresh":true,"arr":[],"__proto__":{"polluted":true},"constructor":{"polluted":true}}',
-    ) as Record<string, unknown>;
-    const rawTools: ToolRegistry = {
-      async descriptors() {
-        return [
-          { name: "host_replace", description: "Replace data", inputSchema: { type: "object" }, risk: "read" },
-          { name: "host_sparse", description: "Write sparse data", inputSchema: { type: "object" }, risk: "read" },
-        ];
-      },
-      async execute(call) {
-        return { status: "ok", output: call.tool === "host_replace" ? replacement : "too-far" };
-      },
-    };
-    const guard = guardFixture();
-    const store = memoryStore();
-    const runtime = createApps({ store, guard, tools: bindTools(guard, rawTools), catalog: [], model });
-    const created = await runtime.create({ prompt: "Bounded data" }, ctx());
-    await putApp(store, {
-      ...created,
-      tree: {
-        formatVersion: "vendo-genui/v1",
-        root: "root",
-        nodes: [{ id: "root", component: "Text" }],
-        data: { stale: true, arr: ["old"] },
-        queries: [
-          { path: "", tool: "host_replace" },
-          { path: "/arr/999999999", tool: "host_sparse" },
-        ],
-      },
-    });
-
-    const surface = await runtime.open(created.id, ctx());
-
-    if (surface.kind !== "tree") throw new Error("Expected tree surface");
-    expect(surface.payload.data).toEqual({ fresh: true, arr: [] });
-    expect((surface.payload.data as { arr: unknown[] }).arr).toHaveLength(0);
-    expect(Object.getPrototypeOf(surface.payload.data as object)).toBe(Object.prototype);
-    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
-  });
-
   it("calls fn refs through the machine and contains envelope violations", async () => {
     const sandbox = fakeSandbox();
     const machineApp: MachineApp = (request) => {
       if (request.path === "/fn/total") return jsonResponse({ result: 42 });
-      if (request.path === "/fn/both") return jsonResponse({ result: 1, ui: { formatVersion: "vendo-genui/v1" } });
+      if (request.path === "/fn/both") return jsonResponse({ result: 1, ui: { formatVersion: "vendo-genui/v2" } });
       if (request.path === "/fn/bare") return jsonResponse({ total: 42 });
       if (request.path === "/fn/result_ui") return jsonResponse({ result: { ui: "ordinary data" } });
       return jsonResponse({ error: { code: "missing", message: "No function" } }, 404);
@@ -220,7 +180,7 @@ describe("apps execution", () => {
 
   it("accepts a validated rung-3 ui result while open stays on the instant path", async () => {
     const ui = {
-      formatVersion: "vendo-genui/v1",
+      formatVersion: "vendo-genui/v2",
       root: "view",
       nodes: [{ id: "view", component: "Text", props: { text: "Computed" } }],
     } as const;
@@ -263,14 +223,14 @@ describe("apps execution", () => {
     await putApp(store, {
       ...created,
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Text" }],
-        data: { retained: true, invoices: [{ total: 0 }] },
+        data: { retained: true },
         queries: [
-          { path: "/answer", tool: "host_ok", input: { n: 1 } },
-          { path: "/invoices/0/total", tool: "host_ok", input: { n: 2 } },
-          { path: "/private", tool: "host_away", input: {} },
+          { name: "answer", tool: "host_ok", input: { n: 1 } },
+          { name: "invoices", tool: "host_ok", input: { n: 2 } },
+          { name: "private", tool: "host_away", input: {} },
         ],
       },
     });
@@ -281,12 +241,12 @@ describe("apps execution", () => {
     expect(surface.payload.data).toEqual({
       retained: true,
       answer: { tool: "host_ok", args: { n: 1 } },
-      invoices: [{ total: { tool: "host_ok", args: { n: 2 } } }],
+      invoices: { tool: "host_ok", args: { n: 2 } },
     });
     expect(guard.approvals).toHaveLength(1);
   });
 
-  it("runs open queries concurrently, contains individual errors, and preserves source-order last writes", async () => {
+  it("runs open queries concurrently and contains individual errors", async () => {
     let releaseSlow: (() => void) | undefined;
     const slow = new Promise<void>((resolve) => { releaseSlow = resolve; });
     const started: string[] = [];
@@ -309,13 +269,13 @@ describe("apps execution", () => {
     await putApp(store, {
       ...created,
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Text" }],
         queries: [
-          { path: "/shared", tool: "host_slow" },
-          { path: "/shared", tool: "host_fast" },
-          { path: "/ignored", tool: "host_error" },
+          { name: "slow", tool: "host_slow" },
+          { name: "fast", tool: "host_fast" },
+          { name: "ignored", tool: "host_error" },
         ],
       },
     });
@@ -325,7 +285,7 @@ describe("apps execution", () => {
     releaseSlow?.();
     const surface = await opening;
 
-    expect(surface).toMatchObject({ kind: "tree", payload: { data: { shared: "second" } } });
+    expect(surface).toMatchObject({ kind: "tree", payload: { data: { slow: "first", fast: "second" } } });
     if (surface.kind !== "tree") throw new Error("Expected a tree surface");
     expect(surface.payload.data).not.toHaveProperty("ignored");
   });
@@ -333,7 +293,7 @@ describe("apps execution", () => {
   it("contains a query fn ui envelope instead of replacing the open surface", async () => {
     const sandbox = fakeSandbox({
       app: () => jsonResponse({
-        ui: { formatVersion: "vendo-genui/v1", root: "new", nodes: [{ id: "new", component: "Text" }] },
+        ui: { formatVersion: "vendo-genui/v2", root: "new", nodes: [{ id: "new", component: "Text" }] },
       }),
     });
     const seed = await sandbox.create({ env: {} });
@@ -345,11 +305,11 @@ describe("apps execution", () => {
       ...created,
       server,
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Text" }],
         data: { retained: true },
-        queries: [{ path: "/replacement", tool: "fn:view", input: {} }],
+        queries: [{ name: "replacement", tool: "fn:view", input: {} }],
       },
     });
 

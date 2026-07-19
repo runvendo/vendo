@@ -37,8 +37,11 @@ jobs:
       # ratcheted line-coverage floor (coverage.thresholds.lines in its vitest
       # config); a drop below the floor fails the build. This is the required
       # coverage gate — it supersedes a bare `pnpm test`.
+      # --concurrency=4 bounds turbo's cross-package parallelism: unbounded
+      # parallelism oversubscribes the runner's CPUs and flakes the
+      # live-Next-server suites (see PR #340).
       - name: Test with coverage (PGlite + PostgreSQL)
-        run: pnpm test:coverage
+        run: pnpm exec turbo run test:coverage --concurrency=4
         env:
           POSTGRES_URL: postgres://vendo:vendo@localhost:5432/vendo_test
       - run: pnpm typecheck
@@ -128,6 +131,36 @@ jobs:
       - run: pnpm --filter @vendoai/ui exec playwright install --with-deps chromium
       - name: MCP Apps shim semantic contract
         run: pnpm --filter @vendoai/ui test:mcp-shim
+      # ENG-231 — the permanent solidity + stress gate over the localhost wire
+      # fixture: the stress spec (mid-stream kill, phone viewports, rapid
+      # open/close, multi-turn persistence, concurrent surfaces, dark-brand)
+      # plus the solidity axes it consolidates — long threads, scroll +
+      # jump-to-latest, theme-token effectiveness / dark derivation, the bounded
+      # height chain — and the two feature-verification suites (affordances +
+      # voice). Scoped to this CI-hardened set on purpose: the axe / keyboard /
+      # screenshot / raw-interaction legacy specs stay the LOCAL pre-PR gate
+      # (per the UI-LAW browser-verification step) because headless CI mis-
+      # resolves :focus-visible outlines and light-dark(), which those specs
+      # assert directly. The full suite still runs locally via `test:browser`.
+      # `test:browser` (not `exec playwright test`) so the pretest:browser hook
+      # builds the gitignored jail runtime first; extra args pass through to
+      # playwright as the file list.
+      - name: UI solidity + stress suite
+        run: >-
+          pnpm --filter @vendoai/ui test:browser
+          e2e/stress.spec.ts
+          e2e/scroll-management.spec.ts
+          e2e/extreme-content.spec.ts
+          e2e/theme.spec.ts
+          e2e/height-chain.spec.ts
+          e2e/verification-eng225.spec.ts
+          e2e/verification-eng229.spec.ts
+      - if: failure()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
+        with:
+          name: ui-browser-playwright-trace
+          path: packages/ui/e2e/test-results
+          retention-days: 7
 
   # Cadence's Supabase Auth suite (ENG-260): boots `supabase start` (Docker)
   # and runs demo-accounting's full test suite — the /login password grant
@@ -176,15 +209,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # npm permanently retired the legacy audit endpoints on 2026-07-15 (HTTP
-      # 410); `pnpm audit` only queries the replacement bulk-advisory endpoint
-      # from pnpm 11 (pnpm/pnpm#11265). The repo pins pnpm 9 via packageManager
-      # and pnpm 11 auto-delegates to that pin, so strip the field in this
-      # throwaway checkout before auditing. 11.10.0 is the newest release that
-      # clears the .npmrc minimumReleaseAge window. Remove this workaround when
-      # the repo itself moves to pnpm 11 (tracked in Linear).
-      - run: |
-          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));delete p.packageManager;fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
-          npx -y pnpm@11.10.0 audit --prod --audit-level high
+      # 410); `pnpm audit` queries the replacement bulk-advisory endpoint from
+      # pnpm 11 (pnpm/pnpm#11265), which the repo now pins via packageManager.
+      - run: pnpm audit --prod --audit-level high
 
   # Reminder that a user-facing change should ship a changeset. NON-BLOCKING by
   # design (the fleet auto-merges): this job is not a required check and its one

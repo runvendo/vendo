@@ -51,7 +51,7 @@ function toolCallTurn(
 function generationTurn(dialect: unknown, id = "gen_1"): LanguageModelV3StreamPart[] {
   return [
     { type: "text-start", id },
-    { type: "text-delta", id, delta: JSON.stringify(dialect) },
+    { type: "text-delta", id, delta: typeof dialect === "string" ? dialect : JSON.stringify(dialect) },
     { type: "text-end", id },
     { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
   ];

@@ -21,8 +21,15 @@ export {
   type EditResult,
   type OpenSurface,
   type PinRebaseResult,
+  type SecretExposureState,
+  type SetExposureResult,
   type VersionEntry,
 } from "./runtime.js";
+export {
+  createSecretExposure,
+  type SecretExposure,
+  type SecretExposureGrant,
+} from "./secret-exposure.js";
 export type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 export {
   shareSnapshotSchema,

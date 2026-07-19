@@ -110,15 +110,6 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
       list: () => readJson("/grants"),
       revoke: id => json(`/grants/${idPath(id)}`, "DELETE"),
     },
-    orgs: {
-      list: () => readJson("/orgs"),
-      create: name => json("/orgs", "POST", { name }),
-      get: id => readJson(`/orgs/${idPath(id)}`),
-      addMember: (id, subject, role) =>
-        json(`/orgs/${idPath(id)}/members`, "POST", { subject, ...(role === undefined ? {} : { role }) }),
-      setRole: (id, subject, role) => json(`/orgs/${idPath(id)}/members/${idPath(subject)}`, "PATCH", { role }),
-      removeMember: (id, subject) => json(`/orgs/${idPath(id)}/members/${idPath(subject)}`, "DELETE"),
-    },
     connections: {
       list: async () => (await readJson<{ connections: ConnectionAccount[] }>("/connections")).connections,
       initiate: input => json("/connections/initiate", "POST", input),

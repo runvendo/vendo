@@ -37,10 +37,8 @@ stream over SSE.
 | `/connections` | GET | connected accounts owned by the caller |
 | `/connections/initiate` | POST | `{ toolkit, connector?, callbackUrl? }` → `{ id, connector, redirectUrl }`; refused for ephemeral and synthetic (`webhook:` / `vendo:`) subjects |
 | `/connections/:id?connector=` | GET · DELETE | status (poll while connecting) · disconnect through the broker |
-| `/orgs` · `/orgs/:id` | GET · POST · DELETE | list · create · delete an organization (Cloud-gated) |
-| `/orgs/:id/members` · `/orgs/:id/members/:subject` | GET · POST · PATCH · DELETE | list members · invite · change role · remove |
-| `/orgs/:id/apps` | POST | transfer a user-owned app into the org |
-| `/status` | GET | `{ posture, version, blocks: {...} }`, includes `blocks.mcp: true` when the door is open, `blocks.orgs: true` when a Cloud key with the `orgs` capability is configured, `blocks.sandbox` reporting the execution venue (`"e2b"`, `"modal"`, `"custom"`, or `false` when none is wired), and `blocks.connections` reporting the connected-accounts broker posture (`"byo"`, `"cloud"`, or `false`) |
+| `/orgs` · `/orgs/:id` and every other `/orgs/*` path | any | always `cloud-required` (`402`) — organizations are a [Vendo Cloud](/deploy/vendo-cloud) capability, not an OSS wire route |
+| `/status` | GET | `{ posture, version, blocks: {...} }`, includes `blocks.mcp: true` when the door is open, `blocks.sandbox` reporting the execution venue (`"e2b"`, `"modal"`, `"custom"`, or `false` when none is wired), and `blocks.connections` reporting the connected-accounts broker posture (`"byo"`, `"cloud"`, or `false`) |
 | `/sync/impact` | POST | dev-only. `{ tools: string[] }` → per-tool reference counts across enabled apps, enabled automations, and active standing grants. Accepts up to 200 tool names per call and returns `404` in production |
 
 ## Development routes
@@ -97,13 +95,11 @@ unauthenticated.
 
 ## Organization context
 
-Approvals and grants take an optional `?org=<orgId>` query parameter (or
-`body.org` on POSTs) to operate under an organization's subject instead of
-the caller's user subject. Members of the org may list; admins and owners
-may decide, grant, or revoke. Non-members see `404`; members without the
-required role see `403`. Without an entitled `VENDO_API_KEY`, the entire
-`/orgs` route family and every `?org=` variant return `cloud-required`
-(`402`). See [Principals and organizations](/deploy/principals-and-orgs).
+Organizations are a [Vendo Cloud](/deploy/vendo-cloud) capability, not an
+OSS wire feature. The entire `/orgs` route family, and an `?org=<orgId>`
+query parameter (or `body.org`) on `/approvals` or `/grants`, always return
+`cloud-required` (`402`) — regardless of `VENDO_API_KEY`. See
+[Principals](/deploy/principals-and-orgs).
 
 ## Errors and CSRF
 

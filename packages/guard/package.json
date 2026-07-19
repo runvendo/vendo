@@ -1,7 +1,7 @@
 {
   "name": "@vendoai/guard",
   "version": "0.3.0",
-  "description": "Vendo's policy core at one choke point: guard.bind, approvals, grants, audit, Vendo Auto judge, breakers, scanners.",
+  "description": "Vendo's policy core at one choke point: guard.bind, approvals, grants, audit, Vendo Auto judge, breakers.",
   "keywords": [
     "ai",
     "agent",
@@ -45,7 +45,7 @@
   },
   "dependencies": {
     "@vendoai/core": "workspace:*",
-    "zod": "^3.24.0"
+    "zod": "^3.25.0"
   },
   "peerDependencies": {
     "ai": ">=6.0.0 <7"

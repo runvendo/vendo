@@ -124,7 +124,11 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
    tool panels, approvals, connect cards, turns alike. Render-view slots are
    excluded: FluidReveal already morphs those. */
 @media (prefers-reduced-motion: no-preference) {
-  .fl-msglist > :not(.fl-reveal) { animation: fl-item-in .32s cubic-bezier(.22, 1, .36, 1) both; }
+  /* ENG-218 — entrance-animation gating on restore: turns present when a long
+     thread is reopened carry .fl-no-entrance (set in chrome/thread), so only
+     turns that ARRIVE after restore (streamed replies, sends) run the rise.
+     A reopened 200-turn thread no longer fires 200 animations on first paint. */
+  .fl-msglist > :not(.fl-reveal):not(.fl-no-entrance) { animation: fl-item-in .32s cubic-bezier(.22, 1, .36, 1) both; }
 }
 /* Opacity+transform only — blur would force per-element rasterization, and a
    reopened 200-item thread runs every entrance at once on first paint. */
@@ -132,6 +136,18 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: none; } }
 @keyframes fl-fade-in { from { opacity: 0; } to { opacity: 1; } }
+/* ENG-218 — "show N earlier messages": reveals the deferred head of a windowed
+   long thread. Sits at the top of the list, centered, quiet until hovered. */
+.fl-load-older { align-self: center; margin: 2px auto 4px; padding: 5px 12px; cursor: pointer;
+  font: inherit; font-size: .82em; color: var(--vendo-fg-muted); background: var(--vendo-glass);
+  border: 1px solid var(--vendo-border); border-radius: 999px; transition: color .12s, border-color .12s; }
+.fl-load-older:hover { color: var(--vendo-fg); border-color: var(--vendo-border-strong); }
+/* ENG-218 — expand/collapse control for a huge single message (assistant or
+   user). Reads as a quiet inline text button under the truncated body. */
+.fl-more { display: inline-block; margin-top: 6px; padding: 0; cursor: pointer; font: inherit;
+  font-size: .88em; font-weight: 550; color: var(--vendo-accent); background: none; border: 0;
+  text-decoration: underline; text-underline-offset: 2px; }
+.fl-turn-user .fl-more { color: inherit; opacity: .8; }
 /* Visually-hidden live region — announces only the settled assistant turn. */
 .fl-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
@@ -716,6 +732,27 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-act-denied { color: var(--vendo-fg-muted); }
 .fl-act-spin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
   border: 2px solid var(--vendo-border-strong); border-top-color: var(--vendo-fg-muted); animation: fl-spin .8s linear infinite; }
+.fl-act-table { border-collapse: collapse; display: block; width: 100%; }
+.fl-act-cap { display: block; width: 100%; padding: 9px 13px 3px; text-align: left;
+  color: var(--vendo-fg-muted); font-weight: 500; font-size: 11.5px; }
+.fl-act-thead, .fl-act-tbody { display: block; }
+.fl-act-grid { display: grid; grid-template-columns: 1.5fr 1.4fr 1fr 1.05fr; gap: 10px;
+  align-items: start; padding: 9px 13px; border-bottom: 1px solid var(--vendo-border); }
+.fl-act-tbody .fl-act-grid:last-child { border-bottom: 0; }
+.fl-act-th { text-align: left; font-weight: 600; font-size: 10.5px; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--vendo-fg-muted); }
+.fl-act-cell { min-width: 0; font-size: 12.5px; }
+.fl-act-kind { display: inline-block; margin-right: 7px; padding: 1px 7px; border-radius: 999px;
+  background: var(--vendo-accent-soft); border: 1px solid var(--vendo-border); color: var(--vendo-fg-muted);
+  font-size: 10px; font-weight: 600; letter-spacing: .02em; vertical-align: 1px; }
+.fl-act-action { font-weight: 550; }
+.fl-act-detail { color: var(--vendo-fg-muted); font-size: 11.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-act-when { color: var(--vendo-fg-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fl-act-outcome { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.fl-act-by { margin-top: 2px; color: var(--vendo-fg-muted); font-size: 10.5px; }
+.fl-act-foot { display: flex; align-items: center; padding: 10px 13px; }
+.fl-act-end { margin: 0; color: var(--vendo-fg-muted); font-size: 11.5px; }
 .fl-act-peek { margin: -2px 13px 9px 36px; border: 1px solid var(--vendo-border); border-radius: 9px; overflow: hidden; }
 .fl-act-peek-row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 10px; font-size: 11.5px;
   border-bottom: 1px solid var(--vendo-border); }
@@ -769,6 +806,13 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-landing { display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 16px; flex: 1; padding: 30px; text-align: center; }
 .fl-greet { margin: 0; font-family: var(--vendo-heading-font); font-size: calc(var(--vendo-base-size) * 1.533); font-weight: 600; letter-spacing: -.022em; }
+/* Greeting-as-tutorial (ui-usage-dx §6): the one-time first message reads as
+   the agent speaking — left-aligned assistant typography with its prompt chips
+   beneath — inside the otherwise-centered landing. */
+.fl-greeting { display: flex; flex-direction: column; gap: 14px; align-self: stretch;
+  max-width: 560px; margin: 0 auto; text-align: left; }
+.fl-greeting-intro { margin: 0; line-height: 1.65; font-size: var(--vendo-text-body); letter-spacing: -.006em; }
+.fl-greeting .fl-chips { justify-content: flex-start; }
 .fl-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .fl-chip { border: 1px solid var(--vendo-border); background: var(--vendo-glass-strong);
   -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
@@ -985,6 +1029,31 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-launcher[data-vendo-launcher="bottom-right"] { right: calc(20px + env(safe-area-inset-right, 0px)); }
 .fl-launcher[data-vendo-launcher="bottom-left"] { left: calc(20px + env(safe-area-inset-left, 0px)); }
 
+/* The whisper (ui-usage-dx §6): first eligible visit only — one gentle pulse
+   on the pill plus a small ~6s caption. The pulse is motion-gated (reduced
+   motion keeps the caption, drops the pulse); fire-once is enforced in JS. */
+@media (prefers-reduced-motion: no-preference) {
+  .fl-launcher[data-vendo-whisper] { animation: fl-whisper-pulse 1.8s ease-out .5s 1 both; }
+  .fl-whisper { animation: fl-whisper-in .4s ease-out both; }
+}
+@keyframes fl-whisper-pulse {
+  0% { box-shadow: var(--vendo-shadow), 0 0 0 0 color-mix(in srgb, var(--vendo-accent) 45%, transparent); }
+  70% { box-shadow: var(--vendo-shadow), 0 0 0 14px color-mix(in srgb, var(--vendo-accent) 0%, transparent); }
+  100% { box-shadow: var(--vendo-shadow), 0 0 0 0 transparent; }
+}
+@keyframes fl-whisper-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.fl-whisper { display: flex; flex-direction: column; gap: 3px; max-width: 250px; padding: 11px 14px;
+  border: 1px solid var(--vendo-border); border-radius: 14px; background: var(--vendo-glass-strong);
+  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  box-shadow: var(--vendo-shadow); font-size: 12.5px; line-height: 1.45; }
+.fl-whisper strong { font-weight: 600; font-size: 13px; color: var(--vendo-fg); }
+.fl-whisper span { color: var(--vendo-fg-muted); }
+/* Fixed variants sit just above the pill, matching its corner. */
+.fl-whisper[data-vendo-launcher="bottom-right"], .fl-whisper[data-vendo-launcher="bottom-left"] {
+  position: fixed; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); z-index: 2147482999; }
+.fl-whisper[data-vendo-launcher="bottom-right"] { right: calc(20px + env(safe-area-inset-right, 0px)); }
+.fl-whisper[data-vendo-launcher="bottom-left"] { left: calc(20px + env(safe-area-inset-left, 0px)); }
+
 /* ---------- page + tabs + slot ---------- */
 /* The Page surface is ingrained: the chat IS the page (no card-in-card). Tabs are
    a quiet underline row, the body fills the height, only the message list scrolls. */
@@ -1029,6 +1098,10 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
   color: var(--vendo-fg-muted); text-align: left; transition: border-color .14s, box-shadow .14s; }
 .fl-slot-ghost:hover { border-color: var(--vendo-border-strong); box-shadow: var(--vendo-shadow); }
+/* The empty-state ghost is a real button (ENG-223): strip the UA button chrome
+   so it reads exactly like the div variant, and give the CTA a visible focus ring. */
+.fl-slot-ghost-cta { font: inherit; appearance: none; -webkit-appearance: none; }
+.fl-slot-ghost-cta:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
 .fl-slot-skel { flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 118px;
   opacity: .5; filter: blur(.3px); -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent);
   mask-image: linear-gradient(180deg, #000 30%, transparent); }
@@ -1043,6 +1116,22 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-slot-ghost:hover .fl-slot-cta { background: color-mix(in srgb, var(--vendo-bg) 16%, transparent); }
 .fl-slot-cta svg { margin-bottom: 2px; opacity: .85; }
 .fl-slot-cta small { font-weight: 400; font-size: 11.5px; color: var(--vendo-fg-muted); }
+
+/* ---- remix affordance (ui-usage-dx §2 — remix folds into Slot as a flag) ----
+   Hover-revealed over the slot's content: the filled state (.fl-slot) and the
+   host-original state (the [data-vendo-slot] inline wrapper) share one rule.
+   Focus reveals it too, so it stays keyboard-reachable. */
+.fl-slot-remix { position: absolute; top: 10px; right: 10px; z-index: 6;
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px;
+  border: 1px solid var(--vendo-border); border-radius: 9px;
+  background: color-mix(in srgb, var(--vendo-surface) 92%, transparent);
+  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  color: var(--vendo-fg-muted); font: 600 11.5px/1 var(--vendo-font-family);
+  box-shadow: var(--vendo-shadow); cursor: pointer;
+  opacity: 0; pointer-events: none; transition: opacity .15s, color .15s; }
+[data-vendo-slot]:hover .fl-slot-remix, .fl-slot-remix:focus-visible { opacity: 1; pointer-events: auto; }
+.fl-slot-remix:hover { color: var(--vendo-fg); }
+.fl-slot-remix:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
 
 /* ---- filled state + overflow menu ---- */
 .fl-slot-filled { position: relative; flex: 1; }
@@ -1140,6 +1229,8 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 /* ---------- realtime voice stage (ENG-185) ---------- */
 /* The stage fills the surface that launched it. The blob head is pinned; the
    feed scrolls beneath it; the caption + footer stay anchored at the bottom. */
+.fl-voice-root { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.fl-voice-root > .fl-voice-stage { flex: 1; }
 .fl-voice-stage { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0;
   animation: fl-voice-rise .42s cubic-bezier(.22, 1, .36, 1) both; }
 @keyframes fl-voice-rise { from { opacity: 0; transform: translateY(18px) scale(.985); }

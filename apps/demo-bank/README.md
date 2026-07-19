@@ -39,13 +39,13 @@ required in production, as is `AUTH_SECRET`). Sign in at `/login`; sign out at
 `/api/auth/signout`. Pages redirect to `/login` and the bank API answers 401
 without a session (`src/proxy.ts`).
 
-The Auth.js session is the identity for everything: the Vendo principal is the
-session's user id (`src/vendo/principal.ts`), the MCP OAuth adapter resolves
-the same session, and away execution mints REAL session tokens for the
-granting user through the `@vendoai/actions/presets` Auth.js preset with the
-host's own `AUTH_SECRET` (`actAsMapleUser` in `src/vendo/auth.ts`). Present
-execution forwards the signed-in user's cookie to `VENDO_BASE_URL`. Secrets
-must never be committed.
+The Auth.js session is the identity for everything, wired with one config key
+— `auth: authJs({ secret: authSecret, user })` in `src/vendo/server.ts`: the
+Vendo principal is the session's user id, the MCP OAuth adapter resolves the
+same session, and away execution mints REAL session tokens for the granting
+user through the same Auth.js preset with the host's own `AUTH_SECRET`.
+Present execution forwards the signed-in user's cookie to `VENDO_BASE_URL`.
+Secrets must never be committed.
 
 ## Architecture
 

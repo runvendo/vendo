@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "getAuthNextauth",
+      "method": "GET",
+      "path": "/api/auth/{nextauth}",
+      "risk": "read"
+    },
+    {
+      "name": "postAuthNextauth",
+      "method": "POST",
+      "path": "/api/auth/{nextauth}",
+      "risk": "write"
+    },
+    {
+      "name": "getOg",
+      "method": "GET",
+      "path": "/api/og",
+      "risk": "read"
+    },
+    {
+      "name": "getPosts",
+      "method": "GET",
+      "path": "/api/posts",
+      "risk": "read"
+    },
+    {
+      "name": "postPosts",
+      "method": "POST",
+      "path": "/api/posts",
+      "risk": "write"
+    },
+    {
+      "name": "patchPostsPostId",
+      "method": "PATCH",
+      "path": "/api/posts/{postId}",
+      "risk": "write"
+    },
+    {
+      "name": "deletePostsPostId",
+      "method": "DELETE",
+      "path": "/api/posts/{postId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "patchUsersUserId",
+      "method": "PATCH",
+      "path": "/api/users/{userId}",
+      "risk": "write"
+    },
+    {
+      "name": "getUsersStripe",
+      "method": "GET",
+      "path": "/api/users/stripe",
+      "risk": "read"
+    },
+    {
+      "name": "postWebhooksStripe",
+      "method": "POST",
+      "path": "/api/webhooks/stripe",
+      "risk": "write"
+    }
+  ]
+}

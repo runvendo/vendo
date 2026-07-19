@@ -1,19 +1,34 @@
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
-import { validateTree, type Json, type ToolOutcome, type Tree } from "@vendoai/core";
-import { TreeView } from "@vendoai/ui/tree";
+import { validateTreeV2, type Json, type ToolOutcome, type TreeV2 } from "@vendoai/core";
+import { TreeView, type WalkTree } from "@vendoai/ui/tree";
 import { measure, summarize } from "../stats.js";
 import { syntheticTree, TREE_SIZES } from "../trees.js";
 import type { Suite, SuiteResult } from "../types.js";
 
 const noAction = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
-const renderTree = (tree: Tree): string =>
+/** The walk input the v2 renderer produces: named queries become "/" + name
+ *  pointers (pre-converted here so the render-only case times the walk). */
+const toWalkTree = (tree: TreeV2): WalkTree => ({
+  root: tree.root,
+  nodes: tree.nodes,
+  ...(tree.data === undefined ? {} : { data: tree.data }),
+  ...(tree.queries === undefined ? {} : {
+    queries: tree.queries.map((query) => ({
+      path: `/${query.name}`,
+      tool: query.tool,
+      ...(query.input === undefined ? {} : { input: query.input }),
+    })),
+  }),
+});
+
+const renderTree = (walkTree: WalkTree): string =>
   renderToString(
     createElement(TreeView, {
-      tree,
+      tree: walkTree,
       components: {},
-      data: tree.data as Record<string, Json> | undefined,
+      data: walkTree.data as Record<string, Json> | undefined,
       onAction: noAction,
     }),
   );
@@ -30,13 +45,14 @@ export const treeRenderSuite: Suite = {
     const cases = [];
     for (const size of TREE_SIZES) {
       const tree = syntheticTree(size);
+      const walkTree = toWalkTree(tree);
       const big = size >= 1000;
 
       const renderOnly = await measure({
         warmup: big ? 3 : 10,
         iterations: big ? 30 : 100,
         fn: () => {
-          renderTree(tree);
+          renderTree(walkTree);
         },
       });
       cases.push(summarize(`render-${size}`, renderOnly));
@@ -45,9 +61,9 @@ export const treeRenderSuite: Suite = {
         warmup: big ? 3 : 10,
         iterations: big ? 30 : 100,
         fn: () => {
-          const result = validateTree(tree);
-          if (!result.ok) throw new Error(`validateTree failed at ${size}`);
-          renderTree(result.tree);
+          const result = validateTreeV2(tree);
+          if (!result.ok) throw new Error(`validateTreeV2 failed at ${size}`);
+          renderTree(toWalkTree(result.tree));
         },
       });
       cases.push(summarize(`validate+render-${size}`, validateRender));

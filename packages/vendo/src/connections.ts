@@ -1,5 +1,6 @@
 import { VendoError, type Principal } from "@vendoai/core";
 import type { Connector, ConnectorAccount, ConnectorConnections } from "@vendoai/actions";
+import { deploymentIdentityHeaders } from "./deployment-identity.js";
 
 /** Subjects the runtime mints for machine principals (automations webhook
  * triggers today; the reserved `vendo:` namespace going forward). A synthetic
@@ -20,12 +21,12 @@ export interface InitiatedConnection {
 }
 
 /** 04-actions §3 (block-actions design §B) — the umbrella's per-principal
- * connected-accounts surface. Composio is the sole broker; two postures:
+ * connected-accounts surface. Which implementation composes is decided at the
+ * seam, never in here (adapter rule — see selectConnections in server.ts).
+ * Composio is the sole broker; two postures:
  *   - "byo": the host's own connector (its Composio key) carries connections;
- *   - "cloud": with VENDO_API_KEY and no BYO capability, connections ride the
- *     Vendo Cloud broker endpoint using Vendo's Composio credentials — cloud
- *     users bring zero keys. A BYO connector always wins when both are
- *     present, because connections must live where the connector executes.
+ *   - "cloud": connections ride the Vendo Cloud broker endpoint using Vendo's
+ *     Composio credentials — cloud users bring zero keys.
  * Subject scoping IS the security model: every call passes exactly the
  * resolved principal's subject; no caller-supplied subject exists on the wire. */
 export interface ConnectionsService {
@@ -58,7 +59,25 @@ function guardCallbackUrl(callbackUrl: string | undefined): void {
   }
 }
 
-function byoService(brokers: Array<{ name: string; connections: ConnectorConnections }>): ConnectionsService {
+/** The BYO capability predicate — the same test the composition seam selects
+ * on and byoConnections builds brokers from. */
+export function hasConnections(
+  connector: Connector,
+): connector is Connector & { connections: ConnectorConnections } {
+  return connector.connections !== undefined;
+}
+
+/** The BYO adapter: connections live on the host's own connector(s), because
+ * they must live where the connector executes. Built from every passed
+ * connector that carries a connections capability. */
+export function byoConnections(connectors: Connector[]): ConnectionsService {
+  const brokers = connectors
+    .filter(hasConnections)
+    .map((connector) => ({ name: connector.name, connections: connector.connections }));
+  if (brokers.length === 0) {
+    throw new VendoError("validation", "byoConnections requires at least one connector with a connections capability");
+  }
+
   function broker(name?: string): { name: string; connections: ConnectorConnections } {
     if (name === undefined) return brokers[0]!;
     const found = brokers.find((candidate) => candidate.name === name);
@@ -90,24 +109,30 @@ function byoService(brokers: Array<{ name: string; connections: ConnectorConnect
   };
 }
 
-interface CloudOptions {
+export interface CloudConnectionsOptions {
   apiKey: string;
-  baseUrl: string;
-  fetch: typeof fetch;
+  /** Defaults to the Vendo console; the composition seam passes VENDO_CLOUD_URL. */
+  baseUrl?: string;
+  fetch?: typeof fetch;
 }
 
-/** The OSS side of the zero-key cloud seam: same surface, brokered by the
- * Vendo Cloud console (which holds Vendo's Composio credentials). The console
- * implementation is out of scope here; this defines the wire it must serve. */
-function cloudService(options: CloudOptions): ConnectionsService {
-  const base = options.baseUrl.replace(/\/$/, "");
+/** The Cloud adapter — the OSS side of the zero-key cloud seam: same surface,
+ * brokered by the Vendo Cloud console (which holds Vendo's Composio
+ * credentials). The console implementation is out of scope here; this defines
+ * the wire it must serve. */
+export function cloudConnections(options: CloudConnectionsOptions): ConnectionsService {
+  const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
+  const fetchImpl = options.fetch ?? globalThis.fetch;
 
   async function cloudFetch(path: string, init?: RequestInit): Promise<unknown> {
-    const response = await options.fetch(`${base}${path}`, {
+    const response = await fetchImpl(`${base}${path}`, {
       ...init,
       headers: {
         authorization: `Bearer ${options.apiKey}`,
         accept: "application/json",
+        // Interaction model: key-authed Cloud requests carry the deployment
+        // identity; the console meters usage from real traffic.
+        ...(await deploymentIdentityHeaders()),
         ...(init?.body === undefined ? {} : { "content-type": "application/json" }),
         ...init?.headers,
       },
@@ -133,13 +158,13 @@ function cloudService(options: CloudOptions): ConnectionsService {
   return {
     posture: "cloud",
     async list(principal) {
-      const payload = await cloudFetch(`/v1/connections?${subjectQuery(principal)}`) as { connections?: unknown };
+      const payload = await cloudFetch(`/api/v1/connections?${subjectQuery(principal)}`) as { connections?: unknown };
       return Array.isArray(payload.connections) ? (payload.connections as ConnectorAccount[]) : [];
     },
     async initiate(principal, options) {
       guardInitiatePrincipal(principal);
       guardCallbackUrl(options.callbackUrl);
-      const payload = await cloudFetch("/v1/connections/initiate", {
+      const payload = await cloudFetch("/api/v1/connections/initiate", {
         method: "POST",
         body: JSON.stringify({
           subject: principal.subject,
@@ -159,22 +184,22 @@ function cloudService(options: CloudOptions): ConnectionsService {
     },
     async status(principal, connector, connectionId) {
       const payload = await cloudFetch(
-        `/v1/connections/${encodeURIComponent(connectionId)}?${subjectQuery(principal)}&connector=${encodeURIComponent(connector)}`,
+        `/api/v1/connections/${encodeURIComponent(connectionId)}?${subjectQuery(principal)}&connector=${encodeURIComponent(connector)}`,
       ) as { connection?: unknown };
       return (payload.connection as ConnectorAccount | undefined) ?? null;
     },
     async disconnect(principal, connector, connectionId) {
       await cloudFetch(
-        `/v1/connections/${encodeURIComponent(connectionId)}?${subjectQuery(principal)}&connector=${encodeURIComponent(connector)}`,
+        `/api/v1/connections/${encodeURIComponent(connectionId)}?${subjectQuery(principal)}&connector=${encodeURIComponent(connector)}`,
         { method: "DELETE" },
       );
     },
   };
 }
 
-/** The no-broker posture: listing is honestly empty (the panel renders an
- * empty state), any mutation explains what to configure. */
-function unconfiguredService(): ConnectionsService {
+/** The no-broker fallback adapter: listing is honestly empty (the panel
+ * renders an empty state), any mutation explains what to configure. */
+export function unconfiguredConnections(): ConnectionsService {
   const refuse = (): never => {
     throw new VendoError(
       "not-implemented",
@@ -188,28 +213,4 @@ function unconfiguredService(): ConnectionsService {
     status: async () => refuse(),
     disconnect: async () => refuse(),
   };
-}
-
-export function createConnections(options: {
-  connectors: Connector[];
-  env?: Record<string, string | undefined>;
-  fetch?: typeof fetch;
-}): ConnectionsService {
-  const env = options.env ?? (typeof process === "undefined" ? {} : process.env);
-  const brokers = options.connectors
-    .filter((connector): connector is Connector & { connections: ConnectorConnections } =>
-      connector.connections !== undefined)
-    .map((connector) => ({ name: connector.name, connections: connector.connections }));
-  if (brokers.length > 0) return byoService(brokers);
-
-  const apiKey = env.VENDO_API_KEY;
-  if (typeof apiKey === "string" && apiKey.length > 0) {
-    return cloudService({
-      apiKey,
-      baseUrl: env.VENDO_CLOUD_URL ?? "https://console.vendo.run",
-      fetch: options.fetch ?? globalThis.fetch,
-    });
-  }
-
-  return unconfiguredService();
 }

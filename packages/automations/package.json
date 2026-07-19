@@ -47,7 +47,7 @@
     "@vendoai/core": "workspace:*",
     "croner": "^9.0.0",
     "jsonata": "^2.0.5",
-    "zod": "^3.24.0"
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

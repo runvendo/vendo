@@ -36,7 +36,6 @@ affordance without losing the last good `data`.
 | `useApprovals()` | pending approval requests |
 | `useGrants()` | active standing grants |
 | `useConnections()` | connected accounts by connector |
-| `useOrgs()` | organizations and the current selection |
 | `useAutomations()` | automations and their enablement state |
 | `useActivity()` | audit events, self-scoped |
 | `useVendoStatus()` | posture, version, and block wiring from `/status` |
@@ -105,7 +104,34 @@ export function ThreadList({ onSelect }: { onSelect: (id: string) => void }) {
 ```
 
 Pair with `useVendoThread(threadId)` to drive the streaming turn for the
-selected conversation.
+selected conversation. Alongside `messages`, `send`, `stop`, `regenerate`,
+`clearError`, and `error`, the hook returns `setMessages`. Use it to
+implement edit-last in a custom composer: drop the last user turn (and
+anything after) from the transcript, then refill your input from that
+message so re-sending amends the turn instead of duplicating it. This is
+the same flow the shipped chrome's **Edit** affordance uses. Sends issued
+while a turn is streaming queue and auto-send when the reply finishes,
+matching the built-in composer.
+
+```tsx
+"use client";
+
+import { useVendoThread } from "@vendoai/ui";
+
+export function EditLastButton() {
+  const { messages, setMessages } = useVendoThread();
+
+  function editLast() {
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (!lastUser) return;
+    const cut = messages.indexOf(lastUser);
+    setMessages(messages.slice(0, cut));
+    // refill your own composer input with lastUser.content
+  }
+
+  return <button onClick={editLast}>Edit last</button>;
+}
+```
 
 ## Apps export and import
 

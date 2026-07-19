@@ -32,6 +32,30 @@ function dispatch(event: KeyboardEvent): void {
   stack[stack.length - 1]?.(event);
 }
 
+/** Programmatic open, singleton-scoped like the keybinding (ENG-223). A palette
+ * registers its own opener on mount; `openVendoPalette()` opens the most-recently
+ * mounted one — the seam the VendoSlot empty-state CTA uses to open the palette
+ * without simulating a keystroke. LIFO mirrors the hotkey stack. */
+type Opener = () => void;
+const openers: Opener[] = [];
+
+export function registerPaletteOpener(open: Opener): () => void {
+  openers.push(open);
+  return () => {
+    const index = openers.lastIndexOf(open);
+    if (index >= 0) openers.splice(index, 1);
+  };
+}
+
+/** Open the most-recently-mounted palette. Returns `false` when none is mounted,
+ * so callers can fall back (the CTA is a no-op rather than a dead click). */
+export function openVendoPalette(): boolean {
+  const top = openers[openers.length - 1];
+  if (!top) return false;
+  top();
+  return true;
+}
+
 /** Subscribe a palette to the shared keybinding; returns an unsubscribe. The
  * single document listener is attached on the first subscriber and removed when
  * the last one leaves. */
