@@ -53,11 +53,18 @@ import {
   type LifecycleClock,
   type MachineSandboxAdapter,
 } from "./machine-lifecycle.js";
+import { createFnCaller } from "./fn.js";
 import { createAppOpener, createProgressiveQueryResolver } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
 import { detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
 import { createRunTokenGate } from "./run-token-gate.js";
+import {
+  createScheduleEngine,
+  type AppScheduleState,
+  type AppScheduleStatus,
+  type ScheduleTickReport,
+} from "./schedules.js";
 import { createSecretExposure, type SecretExposureGrant } from "./secret-exposure.js";
 import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
 import { appVersionHash } from "./version-hash.js";
@@ -290,6 +297,20 @@ export interface AppsRuntime {
     sleep(appId: AppId, ctx: RunContext): Promise<AppDocument>;
     /** Destroy the sandbox and clear the document's machine field (de-graduation). */
     destroy(appId: AppId, ctx: RunContext): Promise<AppDocument>;
+  };
+  /**
+   * execution-v2 Wave 2 Lane D — additive BYO schedule-execution surface (same
+   * additive precedent as `machine`/`box`). `tick` is what the host's
+   * authenticated scheduler endpoint calls on every external-cron hit: it
+   * fires due `vendo.json` schedules exactly once per cron window (see
+   * schedules.ts for the store-claimed idempotency rule). `sync` is the
+   * owner-scoped manifest re-read (the Wave-3 in-box agent's edit-complete
+   * hook); `report` feeds the doctor's machine/schedule reporting.
+   */
+  schedules: {
+    tick(at?: Date): Promise<ScheduleTickReport>;
+    sync(appId: AppId, ctx: RunContext): Promise<AppScheduleState>;
+    report(): Promise<AppScheduleStatus[]>;
   };
   /**
    * ENG-345 — additive guarded per-secret in-sandbox exposure surface (same
@@ -575,7 +596,18 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   config.guard.onApprovalDecision((id, approved) => onApprovalDecision(id, approved));
 
   const inClientApprovals = createInClientApprovals(config.store);
-  const caller = createAppCaller(machines, config.tools);
+  // execution-v2 Lane D — fn: refs on a machine-bearing app resolve over the
+  // v2 box door (the same wake Lane C's wire proxy rides); the wrap leaves
+  // every other ref on the existing caller. Queries hit this at open(),
+  // actions at call().
+  const fnCaller = createFnCaller({ wake: (app) => lifecycle.wake(app) });
+  const scheduleEngine = createScheduleEngine({
+    store: config.store,
+    lifecycle,
+    callFn: fnCaller.callFn,
+    audit: (event) => config.guard.report(event),
+  });
+  const caller = fnCaller.wrap(createAppCaller(machines, config.tools));
   const opener = createAppOpener(
     machines,
     caller,
@@ -936,6 +968,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       await machines.stop(appId);
       // execution-v2 — deleting the app destroys its machine (sandbox + snapshot).
       await lifecycle.destroyMachine(app);
+      await scheduleEngine.clearForApp(appId);
       await data.clear(app, ctx.principal.subject, await history.documents(appId));
       await history.clear(appId);
       await inClientApprovals.clear(appId);
@@ -1293,9 +1326,20 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       async destroy(appId, ctx) {
         const app = await requireOwned(appId, ctx.principal.subject);
         const cleared = await lifecycle.destroyMachine(app);
+        // De-graduation retires the cached schedule state with the machine.
+        await scheduleEngine.clearForApp(appId);
         if (app.machine !== undefined) await reportLifecycle("machine-destroy", appId, ctx);
         return cleared;
       },
+    },
+
+    schedules: {
+      tick: (at) => scheduleEngine.tick(at),
+      async sync(appId, ctx) {
+        const app = await requireOwned(appId, ctx.principal.subject);
+        return scheduleEngine.syncManifest(app);
+      },
+      report: () => scheduleEngine.report(),
     },
 
     secrets: {

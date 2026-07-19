@@ -746,6 +746,9 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../core
+      croner:
+        specifier: ^9.0.0
+        version: 9.1.0
       esbuild:
         specifier: ^0.25.0
         version: 0.25.12

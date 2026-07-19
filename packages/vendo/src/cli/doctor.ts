@@ -367,6 +367,51 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     }
   }
 
+  // execution-v2 Lane D — machine + schedule REPORTING (no new subcommand):
+  // which apps carry a machine, whether a schedule caller is configured for
+  // the authenticated /tick surface, and each schedule's last-fired time.
+  // /doctor/machines is a dev-only route, so an unreachable or older host
+  // simply skips the section (reporting must never break doctor).
+  if (liveComposition) {
+    try {
+      const response = await fetchImpl(`${statusUrl}/doctor/machines`, { headers: { accept: "application/json" } });
+      if (response.ok) {
+        const body = await response.json() as {
+          scheduleCallerConfigured?: unknown;
+          machines?: Array<{
+            appId?: string;
+            name?: string;
+            awake?: boolean;
+            schedules?: Array<{ cron?: string; fn?: string; lastFiredAt?: string; lastStatus?: string }>;
+          }>;
+        };
+        const machines = Array.isArray(body.machines) ? body.machines : [];
+        pass("machines/apps", machines.length === 0
+          ? "no machine-bearing apps"
+          : `${machines.length} machine-bearing app${machines.length === 1 ? "" : "s"}`);
+        for (const machine of machines) {
+          note(`  ${machine.appId ?? "?"} (${machine.name ?? "unnamed"}): ${machine.awake === true ? "awake" : "asleep"}`);
+          for (const schedule of machine.schedules ?? []) {
+            const lastFired = schedule.lastFiredAt === undefined
+              ? "never fired"
+              : `last fired ${schedule.lastFiredAt}${schedule.lastStatus === "error" ? " (error)" : ""}`;
+            note(`    ${schedule.cron ?? "?"} -> POST /fn/${schedule.fn ?? "?"} — ${lastFired}`);
+          }
+        }
+        const declaresSchedules = machines.some((machine) => (machine.schedules?.length ?? 0) > 0);
+        if (body.scheduleCallerConfigured === true) {
+          pass("machines/schedule-caller", "schedule caller configured (VENDO_TICK_SECRET); point an external cron at POST /tick");
+        } else if (declaresSchedules) {
+          warn("machines/schedule-caller", "E-SCHED-001", "apps declare vendo.json schedules but no schedule caller is configured — set VENDO_TICK_SECRET and point an external cron (Vercel cron, GitHub Actions, crontab) at POST /api/vendo/tick");
+        } else if (machines.length > 0) {
+          note("  no schedule caller configured (VENDO_TICK_SECRET unset) — needed once an app declares vendo.json schedules");
+        }
+      }
+    } catch {
+      // Reporting only — an unreachable machines route never fails doctor.
+    }
+  }
+
   note("Ladder: execution venue is checked above; actAs for away host actions; connectors for external tools.");
 
   // One real model turn through the wired route (design §5). Exit 0 == a user

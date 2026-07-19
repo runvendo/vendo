@@ -374,6 +374,23 @@ does not start with `v=MCPv1`, usually a stale or hand-edited deployed copy.
 [E-MCP-007](#E-MCP-007)); DNS verification is an alternative to serving it
 over HTTP.
 
+## Machine schedules
+
+### E-SCHED-001 {#E-SCHED-001}
+
+**Symptom (warning):** Apps declare `vendo.json` schedules but no schedule
+caller is configured.
+
+**Cause:** At least one machine-bearing app's `vendo.json` declares a
+schedule, but `VENDO_TICK_SECRET` is not set, so nothing can hit the
+authenticated `POST /api/vendo/tick` surface and the schedules never fire.
+
+**Fix:** Set `VENDO_TICK_SECRET` to a random secret in the server environment,
+then point any external cron — Vercel cron, a GitHub Actions schedule, or
+crontab — at `POST <base>/tick` with the header
+`Authorization: Bearer $VENDO_TICK_SECRET`. Every hit fires due schedules
+exactly once per cron window; a double-hit is a safe no-op.
+
 ## Live model turn
 
 ### E-TURN-001 {#E-TURN-001}

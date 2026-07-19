@@ -98,6 +98,9 @@ function successfulProbeFetch(
     }
     if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
     if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
+    if (url.endsWith("/doctor/machines")) {
+      return Response.json({ scheduleCallerConfigured: false, machines: [] });
+    }
     return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
   });
 }
@@ -216,10 +219,69 @@ describe("vendo doctor", () => {
       output: { log() {}, error() {} },
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
     expect(fetchImpl.mock.calls[0]?.[0]).toBe("http://localhost:3000/api/vendo/status");
     expect(fetchImpl.mock.calls[1]?.[0]).toBe("http://localhost:3000/api/vendo/doctor/present");
     expect(fetchImpl.mock.calls[2]?.[0]).toBe("http://localhost:3000/api/vendo/doctor/act-as");
+    expect(fetchImpl.mock.calls[3]?.[0]).toBe("http://localhost:3000/api/vendo/doctor/machines");
+  });
+
+  // execution-v2 Lane D — machine/schedule reporting (dev-only wire surface).
+  it("reports machine-bearing apps and warns when schedules have no caller", async () => {
+    const fetchImpl = successfulProbeFetch();
+    fetchImpl.mockImplementation(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/status")) {
+        return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { store: true, sandbox: "e2b" } });
+      }
+      if (url.endsWith("/doctor/present") || url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
+      if (url.endsWith("/doctor/machines")) {
+        return Response.json({
+          scheduleCallerConfigured: false,
+          machines: [{
+            appId: "app_cron",
+            name: "Cron app",
+            awake: false,
+            schedules: [{ cron: "0 8 * * *", fn: "chase", lastFiredAt: "2026-07-19T08:00:00.000Z" }],
+          }],
+        });
+      }
+      return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
+    });
+    const messages = output();
+    expect(await doctor({
+      targetDir: await healthy(),
+      fetchImpl,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0); // reporting only — a missing caller warns, never fails
+    expect(messages.logs).toContain("ok: 1 machine-bearing app");
+    expect(messages.logs.join("\n")).toContain("0 8 * * * -> POST /fn/chase — last fired 2026-07-19T08:00:00.000Z");
+    expect(messages.errors.join("\n")).toContain("set VENDO_TICK_SECRET");
+  });
+
+  it("passes the schedule-caller check when the tick secret is configured", async () => {
+    const fetchImpl = successfulProbeFetch();
+    fetchImpl.mockImplementation(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/status")) {
+        return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { store: true, sandbox: "e2b" } });
+      }
+      if (url.endsWith("/doctor/present") || url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
+      if (url.endsWith("/doctor/machines")) {
+        return Response.json({ scheduleCallerConfigured: true, machines: [{ appId: "app_cron", name: "Cron app", awake: true, schedules: [] }] });
+      }
+      return Response.json({ error: { message: "unexpected probe" } }, { status: 404 });
+    });
+    const messages = output();
+    expect(await doctor({
+      targetDir: await healthy(),
+      fetchImpl,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.errors).toEqual([]);
+    expect(messages.logs.join("\n")).toContain("schedule caller configured");
   });
 
   it.each(["e2b", "cloud", "custom"] as const)("reports a lit %s execution venue", async (sandbox) => {
