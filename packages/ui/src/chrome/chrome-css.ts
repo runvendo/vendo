@@ -1813,12 +1813,17 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   border-radius: 6px; font: 600 11px/1.2 var(--vendo-font); color: var(--vendo-accent); }
 .fl-queued-now:hover { background: var(--vendo-accent-soft); }
 
-/* 2C — focus bloom: hint row exists only while the composer holds focus. */
+/* 2C — focus bloom: hint row exists only while the TEXTAREA holds focus. The
+   typing hints are a typing affordance — keying it off :focus-within grew the
+   bar the instant ANY composer button was pressed, which shifted the icon row
+   upward between mousedown and mouseup and turned the press into a dead click
+   (dock/attach/send all moved out from under the pointer; caught by the e2e
+   "affordances — dark" conformance spec). */
 .fl-hintrow { display: flex; align-items: center; gap: 12px; padding: 0 2px;
   font: 500 11px/1.4 var(--vendo-font); color: var(--vendo-fg-muted);
   max-height: 0; opacity: 0; overflow: hidden; margin: 0;
   transition: max-height .18s ease, opacity .18s ease, margin .18s ease; }
-.fl-composer:focus-within .fl-hintrow { max-height: 22px; opacity: 1; margin-top: 2px; }
+.fl-composer:has(textarea:focus) .fl-hintrow { max-height: 22px; opacity: 1; margin-top: 2px; }
 .fl-kbd { font: 600 10px/1 var(--vendo-font-mono); border: 1px solid var(--vendo-border);
   border-bottom-width: 2px; border-radius: 4px; padding: 2px 4px; color: var(--vendo-fg-muted); }
 

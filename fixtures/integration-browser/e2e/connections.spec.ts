@@ -56,7 +56,10 @@ test("in-flow connect card: connect-required → connect → automatic retry exe
   await popup?.close().catch(() => undefined);
 
   // The retry executed the REAL connector call through the fresh connection.
-  await expect(page.getByText("Sent the email.")).toBeVisible({ timeout: 20_000 });
+  // Scoped to the thread: the approval→toast morph card carries the same text
+  // while it flies (a deliberate visual clone) — an unscoped getByText can catch
+  // it mid-flight on slow runners and trip strict mode.
+  await expect(page.locator(".fl-msglist").getByText("Sent the email.")).toBeVisible({ timeout: 20_000 });
   // ENG-216 — the chip renders the humanized tool label (host metadata absent →
   // humanizeToolName("gmail_GMAIL_SEND_EMAIL")), never the raw slug or "Tool:" prefix.
   await expect(page.getByText("Gmail send email").last()).toBeVisible({ timeout: 10_000 });

@@ -56,7 +56,8 @@ test("descriptor drift explains the replacement approval and Activity event", as
   await firstApproval.getByRole("radio", { name: "The whole tool" }).check();
   await firstApproval.getByRole("radio", { name: "Standing" }).check();
   await firstApproval.getByRole("button", { name: "Approve" }).click();
-  await expect(page.getByText("Deleted the first invoice.")).toBeVisible();
+  // Thread-scoped: the morph card clones this text mid-flight (strict mode).
+  await expect(page.locator(".fl-msglist").getByText("Deleted the first invoice.")).toBeVisible();
 
   const drifted = await request.post("/__test/descriptor-drift", { data: { tool: TOOL } });
   expect(drifted.ok()).toBeTruthy();
