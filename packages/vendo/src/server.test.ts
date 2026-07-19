@@ -1741,7 +1741,9 @@ describe("09 §2 apps composition", () => {
     // v2 JSX wire: `value={metrics.value}` compiles to the runtime binding
     // { $path: "/metrics/value" } (a ghost binding renders as absent data —
     // wire-v2/compile.ts); the bad case is a plain string attribute.
-    const bound = '<App name="Disk binding app"><Query id="metrics" tool="metrics.read"/><DiskMetric value={metrics.value}/></App>';
+    // The query names a REAL registry tool: query tools are now validated
+    // against the live descriptor list at create (verify-v2 fixes).
+    const bound = '<App name="Disk binding app"><Query id="metrics" tool="vendo_apps_data_list"/><DiskMetric value={metrics.value}/></App>';
     const bad = '<App name="Disk binding app"><DiskMetric value="not a number"/></App>';
     const outputs = [
       bound,
