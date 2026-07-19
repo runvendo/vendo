@@ -24,6 +24,14 @@ export interface SandboxAdapter {
 
   /** Restore a machine from a provider-prefixed opaque snapshot reference (e.g. "e2b:…"). */
   resume(snapshotRef: string): Promise<SandboxMachine>;
+
+  /**
+   * Destroy a SLEEPING machine by its snapshot reference without resuming it:
+   * afterwards resume(snapshotRef) fails and the provider holds no state for
+   * it. Idempotent — a ref whose state is already gone is a no-op; a ref from
+   * another provider rejects.
+   */
+  destroy(snapshotRef: string): Promise<void>;
 }
 
 export interface SandboxMachine {
