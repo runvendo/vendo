@@ -19,7 +19,7 @@ no error-box/blob/raw-braces. No tuning between runs — fails reported as fails
 
 **2/6 PASS (both with caveats), 4/6 FAIL.** The #381 fixes generalize on
 *composition and grounding*: 5/6 apps were real prewired compositions (zero
-raw-brace blobs, zero jail `{\`...\`}` errors on the bank host), query tools
+raw-brace blobs, zero jail backtick-wrapper errors on the bank host), query tools
 stayed inside the live registry, and #4 grounded an absent concept (invoices)
 to real host data instead of inventing tools. They do NOT generalize on the
 *component prop contract*: the dominant failure class (#1 caveat, #2, #3, #6)
