@@ -28,10 +28,11 @@ import type { InClientVenue, PinDrift } from "../wire-types.js";
 import { resolvePointer } from "./bindings.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { FluidReveal } from "./fluid-reveal.js";
+import { deriveFormShape, FormingSkeleton } from "./forming-skeleton.js";
 import { InClientMount } from "./host-mount.js";
 import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
-import { PREWIRED_COMPONENTS, Skeleton } from "./primitives.js";
+import { PREWIRED_COMPONENTS } from "./primitives.js";
 
 export interface TreeViewProps {
   tree: WalkTree;
@@ -352,7 +353,7 @@ function NodeRenderer(props: NodeRendererProps) {
   if (!node) {
     return (
       <span data-dangling-node={props.nodeId} style={{ display: "block", width: "100%" }}>
-        <Skeleton height="72px" />
+        <FormingSkeleton name={props.nodeId} />
       </span>
     );
   }
@@ -376,7 +377,7 @@ function NodeRenderer(props: NodeRendererProps) {
     if (source === undefined) {
       content = props.streaming ? (
         <span data-streaming-component={node.component} style={{ display: "block", width: "100%" }}>
-          <Skeleton height="72px" />
+          <FormingSkeleton name={node.component} />
         </span>
       ) : (
         <ContainedNotice label="Unknown generated component">
@@ -438,7 +439,17 @@ function NodeRenderer(props: NodeRendererProps) {
     }
     // ENG-205 render-slot morph: the streaming placeholder and the arrived
     // component share this wrapper, so the swap morphs instead of popping.
-    content = <FluidReveal stateKey={revealKey}>{content}</FluidReveal>;
+    // Pick A: a shape-derived silhouette already holds (approximately) the
+    // final geometry, so its reveal crossfades in place (.fl-reveal-fill)
+    // instead of running the rise/settle morph; slab fallbacks keep the morph.
+    content = (
+      <FluidReveal
+        stateKey={revealKey}
+        className={deriveFormShape(node.component) === "slab" ? undefined : "fl-reveal-fill"}
+      >
+        {content}
+      </FluidReveal>
+    );
   } else {
     const primitive = PREWIRED_COMPONENTS[node.component];
     const host = props.components[node.component] as ComponentType<Record<string, unknown>> | undefined;

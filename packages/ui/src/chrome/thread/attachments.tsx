@@ -1,16 +1,30 @@
 import type { UIMessage } from "ai";
 
-/** A picked File → an ai-SDK FileUIPart (data URL) so it can ride the turn. */
-export function fileToPart(file: File): Promise<{ type: "file"; mediaType: string; filename: string; url: string }> {
+/** A picked File → an ai-SDK FileUIPart (data URL) so it can ride the turn.
+    Lane pick 2F — the optional `onProgress` (0..1) feeds the chip's read ring:
+    attachments are now read eagerly at attach time (progress visible, failures
+    surfaced per-chip with retry) instead of silently at send time. */
+export function fileToPart(
+  file: File,
+  onProgress?: (fraction: number) => void,
+): Promise<{ type: "file"; mediaType: string; filename: string; url: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(reader.error ?? new Error("file read failed"));
-    reader.onload = () => resolve({
-      type: "file",
-      mediaType: file.type || "application/octet-stream",
-      filename: file.name,
-      url: String(reader.result),
-    });
+    if (onProgress) {
+      reader.onprogress = event => {
+        if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total);
+      };
+    }
+    reader.onload = () => {
+      onProgress?.(1);
+      resolve({
+        type: "file",
+        mediaType: file.type || "application/octet-stream",
+        filename: file.name,
+        url: String(reader.result),
+      });
+    };
     reader.readAsDataURL(file);
   });
 }

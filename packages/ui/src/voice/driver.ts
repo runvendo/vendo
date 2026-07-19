@@ -30,11 +30,26 @@ export interface VoiceSessionView {
   payload: UIPayload;
 }
 
+/** Voice-lane composite (2026-07-19) — a connector call ended `connect-required`
+    mid-session; the stage docks the ConnectCard in the consent slot (Cn-A). */
+export interface VoiceConnectRequest {
+  /** Stable per tool call, so the stage renders one card per blocked call. */
+  id: string;
+  toolkit: string;
+  connector: string;
+  message: string;
+}
+
 export type KnownVoiceDriverEvent =
   | { type: "state"; state: VoiceSessionState }
   | { type: "transcript"; entry: VoiceTranscriptEntry }
   | { type: "amplitude"; level: number }
   | { type: "view"; view: VoiceSessionView }
+  /** A recognized spoken decision ("approve"/"decline") — drives the consent
+      bar's spoken-yes register (C-A). Advisory: the guard still records the
+      decision the stage submits. */
+  | { type: "intent"; intent: "approve" | "decline" }
+  | { type: "connect"; connect: VoiceConnectRequest }
   | { type: "error"; error: VoiceDriverError };
 
 /**
@@ -58,6 +73,9 @@ export interface VoiceToolCall {
 export interface VoiceActSession {
   /** Land a rendered view in the stage's session feed. */
   emitView(view: VoiceSessionView): void;
+  /** Surface a connect-required outcome so the stage can dock the ConnectCard
+      (voice-lane Cn-A). Optional: older drivers simply never forward it. */
+  emitConnect?(connect: VoiceConnectRequest): void;
 }
 
 /** ENG-319 — the realtime tool-call bridge seam: `tools` ride the provider

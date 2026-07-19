@@ -7,9 +7,18 @@ import { fileExt, fileToPart, formatBytes } from "./attachments.js";
 /** The message shape the composer commits — mirrors useVendoThread.sendMessage. */
 type OutgoingMessage = { text: string; files?: Awaited<ReturnType<typeof fileToPart>>[] };
 
+/** Lane pick 2F — one attachment's eager-read lifecycle (drives the chip ring). */
+type AttachmentRead = {
+  status: "reading" | "ready" | "error";
+  /** 0..1 read progress; meaningful while `reading`. */
+  progress: number;
+  part?: Awaited<ReturnType<typeof fileToPart>>;
+};
+
 /** ENG-225 — drag-drop attach: only reacts to drags that actually carry files
-    (text selections dragged across the composer must not flash the drop zone). */
-const dragHasFiles = (event: React.DragEvent) =>
+    (text selections dragged across the composer must not flash the drop zone).
+    Exported for the thread-level drop surface (lane pick 2E). */
+export const dragHasFiles = (event: React.DragEvent) =>
   Array.from(event.dataTransfer?.types ?? []).includes("Files");
 
 /** All composer state and send/queue mechanics, lifted to the thread level so
@@ -53,6 +62,58 @@ export function useComposer({ busy, sendMessage }: {
   useEffect(() => () => {
     for (const url of previewsRef.current.values()) URL.revokeObjectURL(url);
   }, []);
+  // Lane pick 2F — attachments read EAGERLY at attach time. Each file's read
+  // progress (FileReader onprogress) drives the chip ring; a failed read marks
+  // that chip (inline retry) instead of surfacing only as a text line at send.
+  // The finished part is cached so send doesn't re-read. Keyed by File identity,
+  // mirroring the previews map; entries leave with their file.
+  const [attachmentReads, setAttachmentReads] = useState<Map<File, AttachmentRead>>(new Map());
+  const readsRef = useRef(attachmentReads);
+  readsRef.current = attachmentReads;
+  const startRead = (file: File) => {
+    setAttachmentReads(prev => {
+      const next = new Map(prev);
+      next.set(file, { status: "reading", progress: 0 });
+      return next;
+    });
+    fileToPart(file, fraction => {
+      setAttachmentReads(prev => {
+        const current = prev.get(file);
+        if (!current || current.status !== "reading") return prev;
+        const next = new Map(prev);
+        next.set(file, { ...current, progress: fraction });
+        return next;
+      });
+    }).then(
+      part => setAttachmentReads(prev => {
+        if (!prev.has(file)) return prev;
+        const next = new Map(prev);
+        next.set(file, { status: "ready", progress: 1, part });
+        return next;
+      }),
+      () => setAttachmentReads(prev => {
+        if (!prev.has(file)) return prev;
+        const next = new Map(prev);
+        next.set(file, { status: "error", progress: 0 });
+        return next;
+      }),
+    );
+  };
+  useEffect(() => {
+    setAttachmentReads(prev => {
+      const next = new Map<File, AttachmentRead>();
+      for (const file of files) {
+        const existing = prev.get(file);
+        if (existing) next.set(file, existing);
+      }
+      return next.size === prev.size && files.every(f => prev.has(f)) ? prev : next;
+    });
+    for (const file of files) {
+      if (!readsRef.current.has(file)) startRead(file);
+    }
+    // startRead closes over stable setters only; files is the real trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files]);
   // ENG-225 — the connect dock's liquid tray, anchored over the composer.
   const [dockOpen, setDockOpen] = useState(false);
   const dockButtonRef = useRef<HTMLButtonElement>(null);
@@ -63,13 +124,17 @@ export function useComposer({ busy, sendMessage }: {
   const [queued, setQueued] = useState<{ text: string; files: File[] } | null>(null);
   const [attachError, setAttachError] = useState<string>();
 
-  // ENG-215 — commit a turn to the transport (reads any attachments first). Used
-  // both by an immediate send and by the deferred flush of a queued message.
+  // ENG-215 — commit a turn to the transport (attachment parts come from the
+  // eager-read cache when ready, else a fresh read). Used both by an immediate
+  // send and by the deferred flush of a queued message.
   const dispatch = (text: string, pending: File[]) => {
     void (async () => {
       let parts: Awaited<ReturnType<typeof fileToPart>>[];
       try {
-        parts = await Promise.all(pending.map(fileToPart));
+        parts = await Promise.all(pending.map(file => {
+          const cached = readsRef.current.get(file);
+          return cached?.status === "ready" && cached.part ? Promise.resolve(cached.part) : fileToPart(file);
+        }));
       } catch (reason) {
         // A file read failed — surface it and restore the message so it never
         // vanishes silently.
@@ -158,7 +223,8 @@ export function useComposer({ busy, sendMessage }: {
 
   return {
     draft, setDraft, files, setFiles, dragDepth, setDragDepth,
-    attachmentPreviews, dockOpen, setDockOpen, dockButtonRef,
+    attachmentPreviews, attachmentReads, retryRead: startRead,
+    dockOpen, setDockOpen, dockButtonRef,
     queued, setQueued, attachError, fileRef, textareaRef, send,
   };
 }
@@ -178,8 +244,9 @@ export interface ComposerProps {
 /** The message composer (08-ui §4): attachments, drag-drop, queueing, dock. */
 export function Composer({ composer, busy, status, errorMessage, onStop, onVoice }: ComposerProps) {
   const {
-    draft, setDraft, files, setFiles, dragDepth, setDragDepth,
-    attachmentPreviews, dockOpen, setDockOpen, dockButtonRef,
+    draft, setDraft, files, setFiles,
+    attachmentPreviews, attachmentReads, retryRead,
+    dockOpen, setDockOpen, dockButtonRef,
     queued, setQueued, attachError, fileRef, textareaRef, send,
   } = composer;
   return (
@@ -193,36 +260,23 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
           }}
         />
       ) : null}
+    {/* Lane pick 2E — drag-drop moved UP to the whole thread surface (see
+        VendoThread): the bar itself no longer owns enter/leave/drop. */}
     <form
-      className={`fl-composer${dragDepth > 0 ? " fl-composer-drag" : ""}`}
+      className="fl-composer"
       aria-label="Message composer"
       onSubmit={event => { event.preventDefault(); send(); }}
-      onDragEnter={event => {
-        if (!dragHasFiles(event)) return;
-        event.preventDefault();
-        setDragDepth(depth => depth + 1);
-      }}
-      onDragOver={event => {
-        if (dragHasFiles(event)) event.preventDefault();
-      }}
-      onDragLeave={event => {
-        if (dragHasFiles(event)) setDragDepth(depth => Math.max(0, depth - 1));
-      }}
-      onDrop={event => {
-        if (!dragHasFiles(event)) return;
-        event.preventDefault();
-        setDragDepth(0);
-        const dropped = Array.from(event.dataTransfer.files);
-        if (dropped.length > 0) setFiles(current => [...current, ...dropped]);
-      }}
     >
-      {dragDepth > 0 ? <div className="fl-drop">Drop files to attach</div> : null}
       {attachError ? <div className="fl-att-error" role="alert">{attachError}</div> : null}
       {queued ? (
         <div className="fl-queued" role="status" aria-live="polite">
           <span className="fl-queued-tag">Queued</span>
           <span className="fl-queued-text">{queued.text || `${queued.files.length} attachment(s)`}</span>
           <span className="fl-queued-hint">sends when the reply finishes</span>
+          {/* Lane pick 2B — Send now: stop the stream; the ENG-215 busy-edge
+              flush then dispatches this queued slot immediately. One code
+              path for both the polite wait and the deliberate interrupt. */}
+          <button type="button" className="fl-queued-now" onClick={onStop}>Send now</button>
           <button type="button" className="fl-att-rm fl-queued-rm" aria-label="Cancel queued message" onClick={() => setQueued(null)}>×</button>
         </div>
       ) : null}
@@ -230,13 +284,21 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
         <div className="fl-att-chips">
           {files.map((file, i) => {
             const preview = attachmentPreviews.get(file);
+            const read = attachmentReads.get(file);
+            // An errored image renders as the file-style error chip, so its
+            // remove button needs the file-chip placement too.
+            const asFileChip = preview === undefined || read?.status === "error";
             const remove = (
-              <button type="button" className={`fl-att-rm${preview === undefined ? " fl-att-rm-file" : ""}`} aria-label={`Remove ${file.name}`}
+              <button type="button" className={`fl-att-rm${asFileChip ? " fl-att-rm-file" : ""}`} aria-label={`Remove ${file.name}`}
                 onClick={() => setFiles(current => current.filter((_, j) => j !== i))}>×</button>
             );
             // ENG-225 — images preview as the designed thumbnail chip; other
-            // files carry an extension badge plus name and size.
-            if (preview !== undefined) {
+            // files carry an extension badge plus name and size. An image whose
+            // READ failed falls through to the error file-chip below (retry in
+            // place) instead of silently posing as attachable — the object-URL
+            // thumbnail says nothing about whether FileReader could read it
+            // (AI-review catch).
+            if (preview !== undefined && read?.status !== "error") {
               return (
                 <span className="fl-att-img" key={`${file.name}-${i}`}>
                   <img src={preview} alt={file.name} />
@@ -244,12 +306,33 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
                 </span>
               );
             }
+            // Lane pick 2F — the chip narrates its read: progress ring while
+            // reading, error + inline retry on failure, quiet size when ready.
+            const failed = read?.status === "error";
+            const reading = read?.status === "reading";
+            const ring = 2 * Math.PI * 7;
             return (
-              <span className="fl-att-file" key={`${file.name}-${i}`}>
-                <span className="fl-att-ext" aria-hidden="true">{fileExt(file.name)}</span>
+              <span className={`fl-att-file${failed ? " fl-att-file--error" : ""}`} key={`${file.name}-${i}`}>
+                {reading ? (
+                  <span className="fl-att-ring" aria-hidden="true">
+                    <svg width="18" height="18" viewBox="0 0 18 18">
+                      <circle className="fl-att-ring-bg" cx="9" cy="9" r="7" />
+                      <circle className="fl-att-ring-fg" cx="9" cy="9" r="7"
+                        strokeDasharray={ring} strokeDashoffset={ring * (1 - (read?.progress ?? 0))} />
+                    </svg>
+                  </span>
+                ) : (
+                  <span className="fl-att-ext" aria-hidden="true">{fileExt(file.name)}</span>
+                )}
                 <span className="fl-att-meta">
                   <span className="fl-att-name">{file.name}</span>
-                  <small>{formatBytes(file.size)}</small>
+                  {failed ? (
+                    <small className="fl-att-fail" role="alert">
+                      couldn&rsquo;t read — <button type="button" className="fl-att-retry" onClick={() => retryRead(file)}>retry</button>
+                    </small>
+                  ) : (
+                    <small>{reading ? "reading…" : formatBytes(file.size)}</small>
+                  )}
                 </span>
                 {remove}
               </span>
@@ -303,6 +386,14 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
           </svg>
           <span className="fl-sr-only">Send</span>
         </button>
+      </div>
+      {/* Lane pick 2C — focus bloom: a one-line hint row that exists only
+          while the composer holds focus (pure CSS via :focus-within). Teaches
+          the hidden powers exactly when attention is on the bar. */}
+      <div className="fl-hintrow" aria-hidden="true">
+        <span><kbd className="fl-kbd">⇧↵</kbd> new line</span>
+        <span><kbd className="fl-kbd">⌘K</kbd> commands</span>
+        <span>drop files anywhere</span>
       </div>
       <span role="status" aria-live="polite" className="fl-sr-only">
         {errorMessage !== undefined ? `error: ${errorMessage}` : status}

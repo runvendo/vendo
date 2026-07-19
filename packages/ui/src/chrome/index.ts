@@ -2,6 +2,7 @@
 export { ActivityPanel } from "./activity-panel.js";
 export { VendoActivities, type VendoActivitiesProps } from "./vendo-activities.js";
 export { ApprovalCard, type ApprovalCardProps } from "./approval-card.js";
+export { ApprovalSheet } from "./approval-sheet.js";
 export { AutomationsPanel } from "./automations-panel.js";
 export { ConnectCard, type ConnectCardProps } from "./connect-card.js";
 export { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
@@ -23,14 +24,23 @@ export { VendoStage } from "../voice/stage.js";
     (scripts/eject-templates-lib.mjs enforces this list at build). Exported
     deliberately — ejected chrome keeps data/wire logic as a package
     dependency and only forks pixels (§4 customization ladder). */
-export { describeActivity, formatAuditTime, outcomeLabel, type OutcomeTone } from "./activity-semantics.js";
-export { BuildBeat, toolPresentation } from "./build-beat.js";
+export { ActivityLedger, OutcomeIcon } from "./activity-ledger.js";
+export {
+  describeActivity,
+  formatAuditTime,
+  formatRelativeAuditTime,
+  kindGlyph,
+  outcomeLabel,
+  type ActivityGlyph,
+  type OutcomeTone,
+} from "./activity-semantics.js";
+export { BuildBeat, StatusRibbon, toolPresentation } from "./build-beat.js";
 export { ChromeRoot } from "./chrome-root.js";
 export { useCopyFeedback } from "./clipboard.js";
 export { ConnectDockButton, ConnectTray } from "./connect-dock.js";
 export { FluidThinking } from "./fluid-thinking.js";
-export { previewArgs } from "./humanize.js";
+export { previewArgs, toolTitle } from "./humanize.js";
 export { Markdown } from "./markdown.js";
-export { MorphToast, type MorphToastProps } from "./morph-toast.js";
+export { ACTIVITY_ANCHOR_ATTRIBUTE, ACTIVITY_BUMP_EVENT, MorphToast, type MorphToastProps } from "./morph-toast.js";
 export { PrefillScopeContext, registerPrefillConsumer } from "./overlay-registry.js";
 export { LONG_TEXT_CAP, truncateHead } from "./truncate.js";

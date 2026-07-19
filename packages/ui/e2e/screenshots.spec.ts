@@ -5,7 +5,7 @@ const shots = [
   { scenario: "thread", file: "thread-dark", ready: 'article[aria-label="Approval for Email send"]' },
   { scenario: "overlay", file: "overlay", ready: '[role="dialog"][aria-label="Vendo assistant"]' },
   { scenario: "page", file: "page", ready: '[role="tab"][aria-selected="true"]' },
-  { scenario: "palette", file: "palette", ready: '[role="dialog"][aria-label="Vendo command palette"]' },
+  { scenario: "palette", file: "palette", ready: '[role="dialog"][aria-label="Vendo assistant"]' },
   { scenario: "approval", file: "approval", ready: 'article[aria-label="Approval for Delete invoice"]' },
   { scenario: "thread-humanized", file: "thread-humanized", ready: 'article[aria-label="Approval for Transfer funds"]' },
   { scenario: "activity", file: "activity", ready: 'table[aria-describedby], table' },

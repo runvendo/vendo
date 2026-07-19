@@ -7,10 +7,12 @@ export interface VoiceConsentProps {
   listening: boolean;
   busy: boolean;
   error?: string;
+  /** C-A spoken-yes — a recognized spoken decision; flips the hint to "heard". */
+  intent?: "approve" | "decline" | null;
   onDecide(request: ApprovalRequest, approve: boolean): void;
 }
 
-export function VoiceConsent({ request, receipt, listening, busy, error, onDecide }: VoiceConsentProps) {
+export function VoiceConsent({ request, receipt, listening, busy, error, intent, onDecide }: VoiceConsentProps) {
   if (!request && receipt) {
     return (
       <div
@@ -70,6 +72,18 @@ export function VoiceConsent({ request, receipt, listening, busy, error, onDecid
         <span className="fl-voice-consent-title">{title}</span>
         {fact ? <span className="fl-voice-consent-fact">{fact}</span> : null}
         {critical ? <span className="fl-voice-consent-warn">Confirm this action by hand</span> : null}
+        {!critical && listening ? (
+          intent === "approve" ? (
+            <span className="fl-voice-consent-hint is-heard" role="status">&ldquo;Approve&rdquo; heard ✓</span>
+          ) : intent === "decline" ? (
+            <span className="fl-voice-consent-hint is-heard" role="status">&ldquo;Decline&rdquo; heard ✓</span>
+          ) : (
+            <span className="fl-voice-consent-hint">
+              Say &ldquo;approve&rdquo; — or tap
+              <span className="fl-voice-eq" aria-hidden="true"><i /><i /><i /></span>
+            </span>
+          )
+        ) : null}
         {error ? <span className="fl-tool-err" role="alert">{error}</span> : null}
       </div>
       <div className="fl-voice-consent-actions">
@@ -103,7 +117,9 @@ function approvalFact(request: ApprovalRequest): string | undefined {
   return preview.length > 120 ? `${preview.slice(0, 117)}…` : preview;
 }
 
-function isAutomation(request: ApprovalRequest): boolean {
+/** Exported for the stage's spoken-yes guard: automation requests use the rich
+    card register with NO spoken affordance, so an intent must never decide one. */
+export function isAutomation(request: ApprovalRequest): boolean {
   return request.ctx.venue === "automation" || [request.descriptor.name, request.descriptor.description, request.call.tool]
     .some((value) => /automation|schedule|recurring/i.test(value));
 }

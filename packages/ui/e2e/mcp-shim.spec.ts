@@ -209,7 +209,7 @@ test("generated MCP Apps shim carries the Maple theme through the generated-comp
     .frameLocator('iframe[title="Generated Vendo component"]');
   await expect(unbrandedGenerated.locator("[data-theme-proof]")).toBeVisible();
   await expect.poll(() => unbrandedGenerated.locator("html").evaluate((element) =>
-    getComputedStyle(element).getPropertyValue("--vendo-color-accent").trim())).toBe("#2f5af5");
+    getComputedStyle(element).getPropertyValue("--vendo-color-accent").trim())).toBe("#111111");
   await page.locator("#shim-frame").screenshot({
     path: fileURLToPath(new URL("eng-274-theme-unbranded.png", screenshotDir)),
     animations: "disabled",

@@ -133,7 +133,9 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
 
   it("automatically renders the notice on every standalone chrome surface", async () => {
     wire.state.posture = "unconfigured";
-    const surfaces = [<ActivityPanel />, <AutomationsPanel />, <VendoPalette />, <VendoStage />];
+    // VendoPalette is headless now (one-surface ⌘K, ui-lane-entry): it renders
+    // no chrome of its own, so it is no longer a notice-bearing surface.
+    const surfaces = [<ActivityPanel />, <AutomationsPanel />, <VendoStage />];
 
     for (const surface of surfaces) {
       render(<VendoProvider client={client}>{surface}</VendoProvider>);
@@ -158,7 +160,7 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
         <VendoPage />
       </VendoProvider>,
     );
-    await waitFor(() => expect(wire.requests.filter(request => request.path === "/status").length).toBeGreaterThanOrEqual(5));
+    await waitFor(() => expect(wire.requests.filter(request => request.path === "/status").length).toBeGreaterThanOrEqual(4));
     expect(screen.queryByRole("region", { name: "Vendo is running without a policy" })).toBeNull();
   });
 });

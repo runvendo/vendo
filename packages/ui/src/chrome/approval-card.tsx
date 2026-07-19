@@ -70,8 +70,14 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
   const presentation = toolPresentation(approval.descriptor.name, approval.call.args, meta);
   const title = presentation.title;
   const description = (presentation.description ?? approval.descriptor.description).trim();
-  const showDescription = description.length > 0 && description !== title;
   const fields = flatFields(approval.call.args);
+  // Lane pick 1-A — consequence-first: when the presentation can truthfully
+  // say what approving does in one sentence, that sentence leads and the raw
+  // fields fold behind a "Details" disclosure (still the same real inputs,
+  // one tap away). Critical/destructive asks are exempt: maximum scrutiny
+  // keeps every input in plain sight.
+  const consequence = !critical ? presentation.consequence : undefined;
+  const showDescription = !consequence && description.length > 0 && description !== title;
 
   const decide = async (approve: boolean) => {
     const decision: ApprovalDecision = { approve };
@@ -141,24 +147,43 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
             {approval.descriptor.risk}
           </span>
         </div>
-        {fields ? (
-          <dl className="fl-approval-fields" aria-label="Real tool inputs" style={{ display: "grid", gap: "7px", margin: 0 }}>
-            {fields.map(([key, value]) => (
-              <div className="fl-approval-field" key={key}>
-                <dt>{key}</dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : (
-          <pre
-            className="fl-approval-fields"
-            aria-label="Real tool inputs"
-            style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-          >
-            {approval.inputPreview}
-          </pre>
-        )}
+        {consequence ? (
+          <p className="fl-approval-consequence-line">
+            {consequence.pre}
+            {consequence.artifact !== undefined ? <strong>{consequence.artifact}</strong> : null}
+            {consequence.mid}
+            {consequence.target !== undefined ? <strong>{consequence.target}</strong> : null}
+            {consequence.post}
+          </p>
+        ) : null}
+        {(() => {
+          const inputs = fields ? (
+            <dl className="fl-approval-fields" aria-label="Real tool inputs" style={{ display: "grid", gap: "7px", margin: 0 }}>
+              {fields.map(([key, value]) => (
+                <div className="fl-approval-field" key={key}>
+                  <dt>{key}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <pre
+              className="fl-approval-fields"
+              aria-label="Real tool inputs"
+              style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+            >
+              {approval.inputPreview}
+            </pre>
+          );
+          // The consequence sentence carries the meaning; the mechanical rows
+          // fold but never leave the DOM (the a11y contract keeps its name).
+          return consequence ? (
+            <details className="fl-approval-details">
+              <summary>Details — real inputs</summary>
+              {inputs}
+            </details>
+          ) : inputs;
+        })()}
         {showContext ? (
           <div className="fl-approval-more" style={{ marginTop: "8px" }}>
             Runs as you · {VENUE_LABEL[approval.ctx.venue] ?? approval.ctx.venue}

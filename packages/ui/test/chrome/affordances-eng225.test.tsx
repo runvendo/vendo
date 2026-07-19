@@ -72,14 +72,17 @@ describe("drag-drop attach + previews (ENG-225)", () => {
 
     const file = new File(["hello"], "notes.txt", { type: "text/plain" });
     fireEvent.dragEnter(composer, dragPayload([file]));
-    expect(view.container.querySelector(".fl-drop")).toBeTruthy();
-    expect(composer.classList.contains("fl-composer-drag")).toBe(true);
+    // Lane pick 2E — the drop surface is the WHOLE thread now: the overlay is
+    // the thread-level card (the composer no longer carries a drag class).
+    expect(view.container.querySelector(".fl-drop--thread")).toBeTruthy();
 
     fireEvent.drop(composer, dragPayload([file]));
     expect(view.container.querySelector(".fl-drop")).toBeNull();
-    // Non-image chip: extension badge + name + size.
+    // Non-image chip: extension badge + name + size. Lane pick 2F reads the
+    // file eagerly on attach (ring while reading), so wait for the settled
+    // ready chip before asserting the badge.
     await screen.findByText("notes.txt");
-    expect(view.container.querySelector(".fl-att-ext")?.textContent).toBe("TXT");
+    await waitFor(() => expect(view.container.querySelector(".fl-att-ext")?.textContent).toBe("TXT"));
     expect(view.container.querySelector(".fl-att-file")).toBeTruthy();
   });
 

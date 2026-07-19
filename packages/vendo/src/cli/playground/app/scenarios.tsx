@@ -6,7 +6,7 @@
  */
 import type { DirectorScript } from "@vendoai/ui";
 import { VendoActivities, VendoOverlay, VendoPage, VendoSlot, VendoThread } from "@vendoai/ui/chrome";
-import type { ReactElement } from "react";
+import { useMemo, type ReactElement } from "react";
 import {
   approvalScript,
   brokenViewPayload,
@@ -52,6 +52,24 @@ function HostOriginalCard() {
         Vendo falls back to exactly this markup — the host surface is never sacrificed.
       </div>
     </div>
+  );
+}
+
+/** The phone-viewport iframe. Its src is fixed at mount (carrying the theme
+ * the page loaded with); later theme edits stream in over postMessage from the
+ * harness, so slider scrubbing never reloads the frame. */
+function PhoneEmbed() {
+  const src = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    params.set("embed", "1");
+    return `/?${params.toString()}#overlay-open`;
+  }, []);
+  return (
+    <iframe
+      title="Vendo playground — phone viewport"
+      src={src}
+      style={{ width: "100%", height: "100%", border: "none" }}
+    />
   );
 }
 
@@ -200,11 +218,7 @@ export const scenarios: PlaygroundScenario[] = [
             background: "#fff",
           }}
         >
-          <iframe
-            title="Vendo playground — phone viewport"
-            src="/?embed=1#overlay-open"
-            style={{ width: "100%", height: "100%", border: "none" }}
-          />
+          <PhoneEmbed />
         </div>
       </div>
     ),

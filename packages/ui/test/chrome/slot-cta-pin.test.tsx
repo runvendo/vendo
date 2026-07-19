@@ -3,7 +3,7 @@ import type { UIPayload } from "@vendoai/core";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
-import { VendoPalette, VendoSlot } from "../../src/chrome/index.js";
+import { VendoOverlay, VendoPalette, VendoSlot } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
 /** A minimal pinned generated view — a vendo-genui/v2 tree of a single Text
@@ -43,24 +43,49 @@ describe("VendoSlot empty-state CTA + pinned-component path (ENG-223)", () => {
     expect(onAuthor).toHaveBeenCalledWith("hero");
   });
 
-  it("opens a mounted palette by default when the CTA has no onAuthor", async () => {
+  it("opens the conversation overlay by default when the CTA has no onAuthor", async () => {
     render(
       <VendoProvider client={client}>
         <VendoSlot id="hero" />
-        <VendoPalette />
+        <VendoOverlay launcher="none" />
       </VendoProvider>,
     );
-    await waitFor(() => expect(wire.requests.some(request => request.path === "/apps")).toBe(true));
-    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /design a view/i }));
-    expect(await screen.findByRole("combobox")).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "Vendo assistant" })).toBeTruthy();
   });
 
-  it("keeps the default CTA a safe no-op when no palette is mounted", () => {
+  it("suggestion chips prefill the conversation composer — never send", async () => {
+    render(
+      <VendoProvider client={client}>
+        <VendoSlot id="hero" emptyState={{ suggestions: ["Track my upcoming renewals"] }} />
+        <VendoOverlay launcher="none" />
+      </VendoProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Track my upcoming renewals" }));
+    await screen.findByRole("dialog", { name: "Vendo assistant" });
+    const composer = await screen.findByRole("textbox", { name: /message/i });
+    await waitFor(() => expect((composer as HTMLTextAreaElement).value).toBe("Track my upcoming renewals"));
+    // Prefill only: nothing was sent over the wire.
+    expect(wire.requests.some(request => request.path === "/threads")).toBe(false);
+  });
+
+  it("renders the host-configurable invitation copy", () => {
+    render(
+      <VendoProvider client={client}>
+        <VendoSlot id="hero" emptyState={{ title: "Build your corner", subtitle: "any view you can describe", ctaLabel: "Start" }} />
+      </VendoProvider>,
+    );
+    expect(screen.getByText("Build your corner")).toBeTruthy();
+    expect(screen.getByText("any view you can describe")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Start" })).toBeTruthy();
+  });
+
+  it("keeps the default CTA a safe no-op when no overlay or palette is mounted", () => {
     render(<VendoProvider client={client}><VendoSlot id="hero" /></VendoProvider>);
     const cta = screen.getByRole("button", { name: /design a view/i });
     expect(() => fireEvent.click(cta)).not.toThrow();
-    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull();
   });
 
   it("mounts a pinned component in the slot, in place of the host children", async () => {

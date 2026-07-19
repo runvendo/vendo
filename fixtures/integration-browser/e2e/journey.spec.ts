@@ -70,7 +70,8 @@ test("J7: chat streams, destructive approval executes for real, useApps lists th
   await approval.getByRole("button", { name: "Approve" }).click();
 
   // UI reflects completion...
-  await expect(page.getByText("Deleted the invoice.")).toBeVisible();
+  // Thread-scoped: the morph card clones this text mid-flight (strict mode).
+  await expect(page.locator(".fl-msglist").getByText("Deleted the invoice.")).toBeVisible();
   // ENG-216 — chip shows the humanized tool label, never the raw slug / "Tool:" prefix.
   await expect(page.getByText("Invoices delete").last()).toBeVisible({ timeout: 10_000 });
   // ...and the REAL side effect landed on the host app.

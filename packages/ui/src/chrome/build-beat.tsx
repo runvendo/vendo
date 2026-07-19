@@ -1,4 +1,5 @@
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
+import { useEffect, useRef, useState } from "react";
 import { useVendoContext } from "../context.js";
 import { toolTitle, type ToolMeta } from "./humanize.js";
 
@@ -54,6 +55,21 @@ export interface ToolPresentation {
   sub?: string;
   toolkit?: string;
   logoUrl?: string;
+  /** Lane pick 1-A — the consequence-first sentence, structured so the card
+      can emphasize the artifact and target. Synthesized ONLY from the real
+      inputs (same honesty rule as `description`); absent when the inputs
+      don't support a truthful sentence, in which case the card keeps its
+      always-open fields layout. */
+  consequence?: ToolConsequence;
+}
+
+/** "Vendo will post ‹artifact› to ‹target› — now, as you." in parts. */
+export interface ToolConsequence {
+  pre: string;
+  artifact?: string;
+  mid?: string;
+  target?: string;
+  post: string;
 }
 
 export function toolPresentation(name: string, args?: unknown, meta?: ToolMeta): ToolPresentation {
@@ -69,16 +85,87 @@ export function toolPresentation(name: string, args?: unknown, meta?: ToolMeta):
 
   let description = meta?.description;
   let sub: string | undefined;
+  let consequence: ToolConsequence | undefined;
   if (toolkit === "slack" && typeof flat.channel === "string") {
     description ??= trigger
       ? `Vendo will post to ${flat.channel} on your behalf, ${trigger}. It runs as you, and you can pause it anytime.`
       : `Vendo will post to ${flat.channel} on your behalf, running as you.`;
     sub = trigger ? `Posts to ${flat.channel} ${trigger}` : `Posts to ${flat.channel} as you`;
+    if (typeof flat.message === "string" && flat.message.trim().length > 0) {
+      consequence = {
+        pre: "Vendo will post ",
+        artifact: `“${flat.message}”`,
+        mid: " to ",
+        target: flat.channel,
+        post: trigger ? `, ${trigger} — as you.` : " — now, as you.",
+      };
+    }
   } else if (toolkit === "gmail" && typeof flat.to === "string") {
     description ??= `Vendo will send this email as you${trigger ? `, ${trigger}` : ""}.`;
     sub = `Emails ${flat.to} as you`;
+    // No consequence for Gmail: the email's subject/body/copied recipients ARE
+    // the message, and a sentence naming only `to` would fold them out of
+    // sight. The fold is only earned when the sentence carries the full
+    // content (the Slack branch above) — otherwise the card keeps its open
+    // fields so the user reviews the real inputs before approving.
   }
-  return { title, eyebrow, description, sub, toolkit, logoUrl };
+  return { title, eyebrow, description, sub, toolkit, logoUrl, consequence };
+}
+
+/** Lane pick C1 (1A+1D) — the live status ribbon. While a turn works, ONE
+    surface above the composer narrates the build: the humanized label of the
+    active tool call, a live elapsed clock, and a "step N of M" counter. The
+    transcript stays beat-free (only errored calls still leave a line — a
+    failure is content, not progress). Label changes crossfade via the
+    .fl-ribbon-label key remount; the elapsed clock resets per tool call. */
+export function StatusRibbon({ part, stepIndex, stepTotal, risk = "read" }: {
+  part: AnyToolPart;
+  /** 1-based index of the active call within the turn's tool calls. */
+  stepIndex: number;
+  stepTotal: number;
+  /** Rides the data attr (parity with the old beat's machine affordance). */
+  risk?: string;
+}) {
+  const { tools } = useVendoContext();
+  const name = rawToolName(part);
+  const label = toolTitle(name, tools[name]);
+  const waiting = part.state === "approval-requested";
+  // Elapsed ticks while this call is the active one; keyed to the call id so a
+  // new step restarts the clock. Interval only mounts when motion is allowed —
+  // the ribbon is short-lived, but a reduced-motion reader gets a quiet label.
+  const startRef = useRef<{ id: string; t0: number }>({ id: part.toolCallId, t0: Date.now() });
+  const [elapsed, setElapsed] = useState(0);
+  if (startRef.current.id !== part.toolCallId) {
+    startRef.current = { id: part.toolCallId, t0: Date.now() };
+    // Render-phase reset so the new call never flashes the previous clock
+    // for the first interval tick.
+    setElapsed(0);
+  }
+  useEffect(() => {
+    if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = setInterval(() => {
+      setElapsed((Date.now() - startRef.current.t0) / 1000);
+    }, 100);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <div
+      className="fl-ribbon"
+      role="status"
+      aria-live="polite"
+      data-vendo-tool={name}
+      data-vendo-approval={risk}
+      title={name}
+    >
+      <span className="fl-beat-orb" aria-hidden="true" />
+      <span className="fl-ribbon-label" key={part.toolCallId}>
+        {label}
+        {waiting ? " — waiting for your approval" : "…"}
+      </span>
+      {elapsed >= 0.1 ? <span className="fl-ribbon-time" aria-hidden="true">{elapsed.toFixed(1)}s</span> : null}
+      {stepTotal > 1 ? <span className="fl-ribbon-count">step {stepIndex} of {stepTotal}</span> : null}
+    </div>
+  );
 }
 
 export function BuildBeat({

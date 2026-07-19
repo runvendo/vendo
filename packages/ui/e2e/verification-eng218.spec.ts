@@ -60,9 +60,10 @@ test("jump-to-latest under streaming load", async ({ page }) => {
   const first = await list.evaluate(node => node.scrollHeight);
   await expect.poll(async () => list.evaluate(node => node.scrollHeight), { timeout: 15000 })
     .toBeGreaterThan(first + 60);
-  // Reader scrolls up mid-stream; the pill surfaces as new content lands.
+  // Reader scrolls up mid-stream; the new-replies bar (lane pick 3A) surfaces
+  // as new content lands.
   await list.evaluate(node => { node.scrollTop = 0; });
-  const jump = page.getByRole("button", { name: "Jump to latest" });
+  const jump = page.locator(".fl-newbar");
   await expect(jump).toBeVisible({ timeout: 15000 });
   await page.screenshot({ path: shotPath("05-jump-to-latest-under-load"), fullPage: false, animations: "disabled" });
   await jump.click();

@@ -41,7 +41,14 @@ const VALUE_EXPORTS = [
   "describeActivity",
   "formatAuditTime",
   "outcomeLabel",
+  // ui-lane-panels pick B — the shared icon-ledger rows (ActivityPanel +
+  // VendoActivities render through them; ejected activities fork them).
+  "ActivityLedger",
+  "OutcomeIcon",
+  "formatRelativeAuditTime",
+  "kindGlyph",
   "BuildBeat",
+  "StatusRibbon",
   "toolPresentation",
   "ChromeRoot",
   "useCopyFeedback",
@@ -49,6 +56,7 @@ const VALUE_EXPORTS = [
   "ConnectTray",
   "FluidThinking",
   "previewArgs",
+  "toolTitle",
   "Markdown",
   "MorphToast",
   "PrefillScopeContext",
@@ -62,6 +70,12 @@ const VALUE_EXPORTS = [
   "defaultVendoGreeting",
   "hasSeen",
   "markSeen",
+  // ui-lane-cards picks — the mobile approval sheet (1-H) and the morph's
+  // Activity-dock seam (4-C): the anchor attribute a host stamps and the
+  // bump event its badge listens for.
+  "ApprovalSheet",
+  "ACTIVITY_ANCHOR_ATTRIBUTE",
+  "ACTIVITY_BUMP_EVENT",
 ] as const;
 
 const TYPE_EXPORTS = [
@@ -82,6 +96,7 @@ const TYPE_EXPORTS = [
   "VendoThreadProps",
   "MorphToastProps",
   "OutcomeTone",
+  "ActivityGlyph",
   // Discoverability (ui-usage-dx §6) — the dial + greeting config shapes.
   "VendoDiscoverability",
   "VendoGreeting",
