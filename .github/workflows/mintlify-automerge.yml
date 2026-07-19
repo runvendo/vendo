@@ -27,7 +27,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: mintlify-automerge
+  group: mintlify-automerge-${{ github.event.pull_request.number || 'sweep' }}
   cancel-in-progress: false
 
 jobs:
@@ -92,10 +92,15 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           gh pr list --repo "$REPO" --author 'app/mintlify' --state merged --limit 30 \
-            --json headRefName --jq '.[].headRefName | select(startswith("mintlify/"))' |
-          while read -r branch; do
-            if gh api "repos/$REPO/git/refs/heads/$branch" --silent 2>/dev/null; then
-              echo "Deleting merged branch $branch"
-              gh api -X DELETE "repos/$REPO/git/refs/heads/$branch" || true
+            --json headRefName,headRefOid \
+            --jq '.[] | select(.headRefName | startswith("mintlify/")) | "\(.headRefName) \(.headRefOid)"' |
+          while read -r branch merged_sha; do
+            # Exact-match ref lookup (git/ref, not git/refs, which prefix-matches).
+            current_sha=$(gh api "repos/$REPO/git/ref/heads/$branch" --jq .object.sha 2>/dev/null) || continue
+            if [ "$current_sha" != "$merged_sha" ]; then
+              echo "Branch $branch moved since its PR merged; leaving it."
+              continue
             fi
+            echo "Deleting merged branch $branch"
+            gh api -X DELETE "repos/$REPO/git/refs/heads/$branch" || true
           done
