@@ -7,6 +7,28 @@ description: "Weekly release notes covering new Vendo features, product updates,
 
 ## New features
 
+**Configurable palette keybinding.** `VendoPalette` now accepts an optional
+`hotkey` prop so hosts can retune or hand off the keyboard opener. Pass a
+chord (`{ key: "k", meta: true }`), a custom matcher `(e) => boolean`, or
+`false` to disable the built-in opener entirely and wire your own:
+
+```tsx
+import { VendoPalette } from "@vendoai/ui";
+
+// Rebind to Ctrl+/, leaving ⌘K for the host app.
+<VendoPalette hotkey={{ key: "/", ctrl: true }} />
+
+// Or turn the built-in opener off and drive it yourself.
+<VendoPalette hotkey={false} />
+```
+
+All mounted palettes now share a single `keydown` listener, and the keystroke
+routes to the most-recently-mounted palette. Mounting the palette in more
+than one place no longer double-toggles on a single press. While the palette
+is closed, the shortcut is also ignored when focus is in a host `input`,
+`textarea`, `select`, or `contenteditable`, so your app keeps its own ⌘K
+inside its own fields.
+
 **Humanized tool chips and approval cards.** `@vendoai/ui` chrome now shows
 friendly labels and readable argument previews instead of raw tool slugs,
 ai-SDK lifecycle strings, or raw JSON. `VendoProvider` accepts an optional
@@ -17,6 +39,22 @@ previews when no metadata is supplied, collapses consecutive identical
 chips into a single entry with an `×N` count, and no longer prints a
 fabricated context byline on the in-thread approval card. See
 [Tool labels](/connect/tool-labels).
+
+## Fixes
+
+**Thread sidebar refreshes on new conversation.** `VendoPage`'s chat sidebar
+now surfaces and highlights a conversation started via **New conversation**
+as soon as the server mints its `thr_` id. `VendoThread` also gains an
+optional `onThreadId` callback that fires with the effective thread id, so
+headless hosts can mirror the same refresh into their own UI:
+
+```tsx
+<VendoThread onThreadId={(id) => console.log("active thread", id)} />
+```
+
+An explicit selection is now immune to the default-select effect, so the
+first turn after **New conversation** always posts against the newly minted
+thread instead of the previously selected one.
 
 </Update>
 
