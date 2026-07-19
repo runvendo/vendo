@@ -23,10 +23,12 @@ test("empty-state CTA — dark", async ({ page }) => {
   await page.screenshot({ path: shotPath("02-empty-cta-dark"), fullPage: false, animations: "disabled" });
 });
 
-test("CTA activated — opens the command palette", async ({ page }) => {
+test("CTA activated — opens the conversation surface", async ({ page }) => {
+  // One-surface model (ui-lane-entry pick P-C): the slot CTA opens the
+  // conversation overlay with the composer focused.
   await openScenario(page, "slot-empty");
   await page.getByRole("button", { name: /design a view/i }).click();
-  await expect(page.getByRole("dialog", { name: "Vendo command palette" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
   await page.screenshot({ path: shotPath("03-cta-activated-palette"), fullPage: false, animations: "disabled" });
 });
 

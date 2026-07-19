@@ -58,8 +58,9 @@ describe("tool beat humanization", () => {
         <VendoThread threadId={thread.id} />
       </VendoProvider>,
     );
-    // Wait for the loaded thread's build beats to render, independent of label text.
-    await waitFor(() => expect(document.querySelector(".fl-beat")).toBeTruthy(), { timeout: 15_000 });
+    // Lane pick C1/8C — settled tool calls surface as the turn's sources row
+    // (the beat stack left the transcript). Wait for the chips, label-agnostic.
+    await waitFor(() => expect(document.querySelector(".fl-source")).toBeTruthy(), { timeout: 15_000 });
   }
 
   it("renders a humanized fallback label and no lifecycle string on the beat", { timeout: 20_000 }, async () => {

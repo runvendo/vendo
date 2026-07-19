@@ -2,10 +2,13 @@ import type { ApprovalRequest, Json, RiskLabel, VendoViewPart } from "@vendoai/c
 import { isToolUIPart, type UIMessage } from "ai";
 import { useState } from "react";
 import { useVendoContext } from "../../context.js";
+import { useMobileTakeover } from "../../hooks/use-mobile-takeover.js";
 import { PayloadView } from "../../tree/renderer.js";
 import { ApprovalCard } from "../approval-card.js";
+import { ApprovalSheet } from "../approval-sheet.js";
 import { BuildBeat, toolPresentation } from "../build-beat.js";
 import { ConnectCard } from "../connect-card.js";
+import { toolTitle } from "../humanize.js";
 import { Markdown } from "../markdown.js";
 import type { MorphToastProps } from "../morph-toast.js";
 import { LONG_TEXT_CAP, truncateHead } from "../truncate.js";
@@ -25,14 +28,19 @@ export function UserText({ text, restored }: { text: string; restored?: boolean 
   const [expanded, setExpanded] = useState(false);
   const collapsible = restored === true && text.length > LONG_TEXT_CAP;
   const shown = collapsible && !expanded ? truncateHead(text) : text;
+  if (!collapsible) return <div className="fl-usertext">{text}</div>;
+  // Lane pick 3D — the collapsed head sits under a gradient fade with a
+  // centered pill (GitHub-fold style) instead of a hard cut + inline link:
+  // the fade shows the content continues, and the control sits where the
+  // eye stops. Expanded keeps the pill below for symmetry.
   return (
-    <div className="fl-usertext">
-      {shown}
-      {collapsible ? (
-        <button type="button" className="fl-more" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
+    <div className={`fl-fold${expanded ? " fl-fold--open" : ""}`}>
+      <div className="fl-usertext">{shown}</div>
+      <div className="fl-fold-veil">
+        <button type="button" className="fl-more fl-fold-pill" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
           {expanded ? "Show less" : `Show full message (${(text.length / 1000).toFixed(0)}k chars)`}
         </button>
-      ) : null}
+      </div>
     </div>
   );
 }
@@ -66,10 +74,12 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks }: 
     return <SentAttachment part={part} />;
   }
   if (isToolUIPart(part)) {
-    // The in-thread presentation is a human build "beat" (label from the
-    // ENG-216 pipeline: host metadata, else the prettified id — never the
-    // raw slug or lifecycle string). The mechanical record stays in the
-    // Activity panel. Collapsed runs carry their repeat count.
+    // Lane pick C1 — live progress moved to the StatusRibbon above the
+    // composer, so working/done calls leave NO transcript line (the
+    // mechanical record stays in the Activity panel). A FAILED call is
+    // content, not progress: it keeps the error beat so the failure stays
+    // readable after the turn settles.
+    if (part.state !== "output-error") return null;
     const risk = risks.get(part.toolCallId) ?? "read";
     return <BuildBeat part={part} risk={risk} count={count} />;
   }
@@ -92,9 +102,36 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks }: 
       // frame — so it reads as a distinct piece of software, not loose
       // content bleeding into the surrounding chat text.
       <div className="fl-uihost fl-appcard" key={`${partKey}-${appId}`}>
-        <div className="fl-appcard-bar">
+        {/* Pick C (ui-lane-renderer): the bar narrates forming → live. The
+            data-state contract ("building" | "ready") is shared with the
+            thread lane; the label pair stays mounted so the swap crossfades. */}
+        <div className="fl-appcard-bar" data-state={streaming ? "building" : "ready"}>
           <span className="fl-appcard-dot" aria-hidden="true" />
-          <span className="fl-appcard-name">{appTitle(payload) ?? "Your app"}</span>
+          <span className="fl-boot-labels fl-appcard-name">
+            {/* Both labels stay mounted for the renderer lane's crossfade;
+                aria-hidden tracks data-state so screen readers hear only the
+                ACTIVE one (AI-review catch — the CSS-faded label was still
+                announced, including a stale "Building…" after ready). */}
+            <span className="fl-boot-building" aria-hidden={!streaming}>Building your view…</span>
+            <span className="fl-boot-ready" aria-hidden={streaming}>{appTitle(payload) ?? "Your app"}</span>
+          </span>
+          {/* Lane pick C5 (5A+5D) — the pin lives ON the bar (visible only once
+              the view is ready), replacing the old full-width footer row. The
+              renderer lane's data-state/label/hairline markup above is the
+              shared contract and stays untouched. */}
+          {!streaming && onPin ? (
+            <button
+              type="button"
+              className="fl-barpin"
+              onClick={() => onPin({ appId, payload })}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
+              </svg>
+              Pin to dashboard
+            </button>
+          ) : null}
+          <span className="fl-boot-hairline" aria-hidden="true" />
         </div>
         <div className="fl-appcard-body">
           <PayloadView
@@ -103,20 +140,6 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks }: 
             onAction={({ action, payload: actionPayload }) => client.apps.call(appId, action, actionPayload ?? {})}
           />
         </div>
-        {!streaming && onPin ? (
-          <div className="fl-appcard-foot">
-            <button
-              type="button"
-              className="fl-btn fl-btn-primary fl-appcard-pin"
-              onClick={() => onPin({ appId, payload })}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
-              </svg>
-              Pin to dashboard
-            </button>
-          </div>
-        ) : null}
       </div>
     );
   }
@@ -138,9 +161,13 @@ export function ThreadApprovals({ approvals, risks, guardApprovals, cardRefs, re
   onMorph: (morph: Omit<MorphToastProps, "onDone">) => void;
 }) {
   const { client, theme, tools } = useVendoContext();
+  // Lane pick 1-H — below the mobile breakpoint the NEWEST parked approval
+  // presents as a bottom sheet (thumb-zone consent); older parked ones stay
+  // in-list behind it so the thread record is complete when the sheet closes.
+  const mobile = useMobileTakeover().active;
   return (
     <>
-      {approvals.map(part => {
+      {approvals.map((part, index) => {
         const risk = risks.get(part.toolCallId) ?? "read";
         const input = "input" in part ? part.input : undefined;
         const guardApproval = guardApprovals.get(part.toolCallId);
@@ -166,7 +193,8 @@ export function ThreadApprovals({ approvals, risks, guardApprovals, cardRefs, re
           createdAt: SYNTHESIZED_CREATED_AT,
         };
         const guardApprovalId = guardApproval?.approvalId;
-        return (
+        const asSheet = mobile && index === approvals.length - 1;
+        const card = (
           <div key={part.approval.id} ref={element => { cardRefs.current.set(part.approval.id, element); }}>
             <ApprovalCard
               approval={approval}
@@ -202,6 +230,11 @@ export function ThreadApprovals({ approvals, risks, guardApprovals, cardRefs, re
             />
           </div>
         );
+        return asSheet ? (
+          <ApprovalSheet key={part.approval.id} label={`Approval for ${toolTitle(name, tools[name])}`}>
+            {card}
+          </ApprovalSheet>
+        ) : card;
       })}
     </>
   );

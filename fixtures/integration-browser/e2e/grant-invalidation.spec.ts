@@ -56,7 +56,8 @@ test("descriptor drift explains the replacement approval and Activity event", as
   await firstApproval.getByRole("radio", { name: "The whole tool" }).check();
   await firstApproval.getByRole("radio", { name: "Standing" }).check();
   await firstApproval.getByRole("button", { name: "Approve" }).click();
-  await expect(page.getByText("Deleted the first invoice.")).toBeVisible();
+  // Thread-scoped: the morph card clones this text mid-flight (strict mode).
+  await expect(page.locator(".fl-msglist").getByText("Deleted the first invoice.")).toBeVisible();
 
   const drifted = await request.post("/__test/descriptor-drift", { data: { tool: TOOL } });
   expect(drifted.ok()).toBeTruthy();
@@ -96,10 +97,12 @@ test("descriptor drift explains the replacement approval and Activity event", as
   await retain(committedApproval, "approval-card-invalidated-grant.png");
 
   const activity = page.getByRole("region", { name: "Activity" });
-  // The rebuilt activity panel (ENG-224) speaks in humanized labels: the kind
-  // reads "Policy", the action names the humanized tool, and the outcome reads
-  // "Awaiting approval" rather than the raw wire enums.
-  const event = activity.getByRole("row").filter({ hasText: "Policy" })
+  // The icon-ledger activity panel (ENG-224 + ui-lane-panels pick B) speaks in
+  // humanized labels: rows are list items, the kind is the glyph disc's
+  // accessible name ("Policy"), the action names the humanized tool, and the
+  // outcome reads "Awaiting approval" rather than the raw wire enums.
+  const event = activity.getByRole("listitem")
+    .filter({ has: page.getByRole("img", { name: "Policy" }) })
     .filter({ hasText: TOOL_LABEL }).filter({ hasText: "Awaiting approval" });
   await expect(event).toBeVisible();
   await retain(activity, "activity-grant-invalidated-event.png");

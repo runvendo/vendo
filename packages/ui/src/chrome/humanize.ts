@@ -50,6 +50,32 @@ export function toolTitle(name: string, meta?: ToolMeta): string {
   return label ? label : humanizeToolName(name);
 }
 
+/** Well-known toolkit slugs whose display name is not just proper-casing
+    ("googlecalendar" → "Google Calendar"). One table for every chrome surface
+    (connect card/dock/tray, connected accounts) so names can't drift. */
+const TOOLKIT_DISPLAY: Record<string, string> = {
+  slack: "Slack",
+  github: "GitHub",
+  gmail: "Gmail",
+  notion: "Notion",
+  linear: "Linear",
+  googlecalendar: "Google Calendar",
+};
+
+/** Display name for a toolkit slug: the known-brand table first (separator-less
+    slugs like "googlecalendar" can't be recovered by splitting), then a
+    separator-splitting proper-caser ("google_calendar" → "Google Calendar").
+    The brand-forward connect surfaces (lane pick 2-A) never show the raw slug. */
+export function toolkitDisplayName(toolkit: string): string {
+  const known = TOOLKIT_DISPLAY[toolkit.toLowerCase().replace(/[-_\s]+/g, "")];
+  if (known) return known;
+  return toolkit
+    .split(/[-_\s]+/)
+    .filter(word => word.length > 0)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ") || toolkit;
+}
+
 function formatValue(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);

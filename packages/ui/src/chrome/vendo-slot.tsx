@@ -7,6 +7,7 @@ import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { developmentMode } from "./dev-mode.js";
+import { defaultSlotSuggestions } from "./discoverability.js";
 import { openVendoConversation } from "./overlay-registry.js";
 import { openVendoPalette } from "./palette-hotkey.js";
 
@@ -74,7 +75,7 @@ export interface VendoSlotPin {
  *  the original `children` as the visible recovery path (06-apps §8). Without any
  *  of the three, the children render UNTOUCHED (no wrapper — hosts may inline
  *  slots anywhere). */
-export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, remixPrompt, discover = true, children }: {
+export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, remixPrompt, discover = true, emptyState, children }: {
   id: string;
   appId?: string;
   pin?: VendoSlotPin;
@@ -94,6 +95,25 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
   /** Override for the remix request; defaults to a prompt naming the slot's
    *  registered component. */
   remixPrompt?: string;
+  /** Empty-state invitation config (ui-lane-entry pick S-A×S-D). Every string
+   *  is host-customizable with white-label defaults; suggestions are 3
+   *  host-aware prompts (generic fallbacks otherwise) whose tap PREFILLS the
+   *  conversation composer — never sends. */
+  emptyState?: {
+    /** Default "This space builds itself". */
+    title?: string;
+    /** Default "describe a view — it renders here, live on your data". */
+    subtitle?: string;
+    /** Up to 3 prompt chips. Default: generic view-authoring prompts. */
+    suggestions?: string[];
+    /** Primary button label (layout "button"). Default "Design a view". */
+    ctaLabel?: string;
+    /** "button" (chips + primary CTA, default) or "chips-first" (chips are
+     *  the actions; a quiet "or describe your own…" link opens the composer). */
+    layout?: "button" | "chips-first";
+    /** Optional mark above the title. Default "none" (Yousef's pick). */
+    mark?: "none" | "sparkle" | "tile";
+  };
   children?: ReactNode;
 }) {
   const { components } = useVendoContext();
@@ -117,7 +137,21 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
       onAuthor(id);
       return;
     }
-    openVendoPalette();
+    // One-surface model (pick P-C): authoring opens the conversation overlay
+    // with the composer focused. The palette-opener fallback keeps hosts that
+    // mounted only a VendoPalette (custom onCommand routing) working.
+    if (!openVendoConversation()) openVendoPalette();
+  };
+
+  // Suggestion chips prefill the composer — never send (safe on any prompt).
+  // No palette-opener fallback here: it cannot carry the prompt, so it would
+  // open an empty surface and silently drop the chip's text (cubic PR#391
+  // finding). Without an overlay the chip is a dev-warned no-op instead.
+  const suggest = (prompt: string) => {
+    const opened = openVendoConversation({ prompt, send: false });
+    if (!opened && developmentMode()) {
+      console.warn(`[vendo] VendoSlot "${id}": suggestions open the conversation surface — mount a VendoOverlay for them to land in.`);
+    }
   };
 
   const startRemix = () => {
@@ -151,21 +185,53 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
         </div>
       );
     }
+    // The invitation (pick S-A×S-D): accent-washed surface, real copy, up to
+    // three concrete suggestion chips, and (layout "button") a primary CTA.
+    // The skeleton stays behind at low opacity so it still reads as "a view
+    // goes here". No icon by default.
+    const invite = {
+      title: emptyState?.title ?? "This space builds itself",
+      subtitle: emptyState?.subtitle ?? "describe a view — it renders here, live on your data",
+      suggestions: (emptyState?.suggestions ?? defaultSlotSuggestions).slice(0, 3),
+      ctaLabel: emptyState?.ctaLabel ?? "Design a view",
+      layout: emptyState?.layout ?? "button",
+      mark: emptyState?.mark ?? "none",
+    };
     return (
       <ChromeRoot>
         <div className="fl-slot" data-vendo-slot={id}>
-          <button
-            type="button"
-            className="fl-slot-ghost fl-slot-ghost-cta"
-            aria-label="Design a view — describe it, I'll render it"
-            onClick={author}
-          >
+          <div className="fl-slot-ghost fl-slot-invite">
             <GhostSkeleton />
-            <span className="fl-slot-cta">
-              <span className="fl-slot-cta-label">Design a view</span>
-              <small>describe it, I'll render it</small>
-            </span>
-          </button>
+            <div className="fl-slot-cta" role="group" aria-label={invite.title}>
+              {invite.mark !== "none" ? (
+                <span className={`fl-invite-mark${invite.mark === "tile" ? " fl-invite-mark-tile" : ""}`} aria-hidden="true">
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3Z" />
+                    <path d="m18 14 .8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14Z" />
+                  </svg>
+                </span>
+              ) : null}
+              <span className="fl-invite-title">{invite.title}</span>
+              <small className="fl-invite-sub">{invite.subtitle}</small>
+              {invite.suggestions.length > 0 ? (
+                <>
+                  <span className="fl-invite-try">Try one</span>
+                  <div className="fl-invite-chips">
+                    {invite.suggestions.map((prompt, i) => (
+                      <button type="button" className="fl-invite-chip" key={`${i}-${prompt}`} onClick={() => suggest(prompt)}>
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : null}
+              {invite.layout === "button" ? (
+                <button type="button" className="fl-invite-btn" onClick={author}>{invite.ctaLabel}</button>
+              ) : (
+                <button type="button" className="fl-invite-own" onClick={author}>or describe your own…</button>
+              )}
+            </div>
+          </div>
         </div>
       </ChromeRoot>
     );

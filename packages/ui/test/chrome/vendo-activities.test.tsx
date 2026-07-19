@@ -96,6 +96,20 @@ describe("VendoActivities", () => {
     expect(await screen.findByRole("region", { name: "Vendo activity" })).toBeTruthy();
   });
 
+  it("pages multiple approvals as one card and advances on decide", async () => {
+    wire.state.approvals = [...wire.state.approvals, raisedApproval()];
+    mount();
+    // One card at a time with pager chrome — never a stack.
+    expect(await screen.findByLabelText("Approval for Email send")).toBeTruthy();
+    expect(screen.getAllByLabelText(/^Approval for/)).toHaveLength(1);
+    expect(screen.getByText("· 1 of 2")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    // The next approval slides into place; with one left the pager chrome drops.
+    await waitFor(() => expect(screen.queryByText("· 1 of 2")).toBeNull());
+    expect(await screen.findByLabelText("Approval for Email send")).toBeTruthy();
+    expect(screen.getAllByLabelText(/^Approval for/)).toHaveLength(1);
+  });
+
   it("polls so an approval raised elsewhere appears without a remount", async () => {
     wire.state.approvals = [];
     mount({ pollMs: 40 });

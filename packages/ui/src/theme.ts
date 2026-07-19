@@ -15,7 +15,7 @@ export const defaultVendoTheme: VendoTheme = {
     surface: "#f7f7f8",
     text: "#1a1a1e",
     muted: "#6b6b76",
-    accent: "#2f5af5",
+    accent: "#111111",
     accentText: "#ffffff",
     danger: "#c62f2f",
     border: "#e3e3e8",

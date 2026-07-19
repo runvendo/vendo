@@ -27,7 +27,7 @@ for (const scenario of chromeScenarios) {
     if (scenario === "thread") await expect(page.getByLabel("Approval for Email send")).toBeVisible();
     if (scenario === "overlay") await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
     if (scenario === "page") await expect(page.getByRole("tab", { name: "Apps" })).toHaveAttribute("aria-selected", "true");
-    if (scenario === "palette") await expect(page.getByRole("dialog", { name: "Vendo command palette" })).toBeVisible();
+    if (scenario === "palette") await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
     if (scenario === "activity") await expect(page.getByText("Invoices list").first()).toBeVisible();
     if (scenario === "automations") await expect(page.getByRole("switch")).toBeVisible();
     if (scenario === "notice") await expect(page.getByRole("region", { name: "Vendo is running without a policy" })).toBeVisible();

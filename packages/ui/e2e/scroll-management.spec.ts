@@ -8,8 +8,9 @@ import { openScenario } from "./helpers.js";
  * server's paced `[stream-long]` turn so every behavior is observed MID-stream
  * in a real browser: the list follows streamed content while the reader is at
  * the bottom, releases the moment they scroll up (no yanking), surfaces the
- * stylesheet's .fl-jump pill when unseen content lands, and re-sticks when the
- * pill is activated.
+ * new-replies bar (lane pick 3A — count + snippet docked on the composer edge,
+ * replacing the old .fl-jump circle) when unseen content lands, and re-sticks
+ * when the bar is activated.
  */
 
 const msglist = (page: Page) => page.locator(".fl-msglist");
@@ -68,9 +69,11 @@ test("scrolling up mid-stream releases the stick and raises jump-to-latest; the 
     .toBeGreaterThan(parked.scrollHeight + 100);
   expect((await scrollState(page)).scrollTop, "streaming must never yank a reader who scrolled up").toBeLessThanOrEqual(1);
 
-  // The unseen streamed content surfaces the pill; activating it re-sticks.
-  const jump = page.getByRole("button", { name: "Jump to latest" });
+  // The unseen streamed content surfaces the new-replies bar (its accessible
+  // name IS its live content — count + snippet); activating it re-sticks.
+  const jump = page.locator(".fl-newbar");
   await expect(jump).toBeVisible();
+  await expect(jump).toHaveText(/new repl(y|ies)/);
   await jump.click();
   await expect.poll(async () => (await scrollState(page)).gap).toBeLessThanOrEqual(32);
   await expect(jump).toBeHidden();
@@ -80,11 +83,11 @@ test("scrolling up mid-stream releases the stick and raises jump-to-latest; the 
   expect((await scrollState(page)).gap).toBeLessThanOrEqual(32);
 });
 
-test("scrolling up without new content shows no pill", async ({ page }) => {
+test("scrolling up without new content shows no bar", async ({ page }) => {
   await expect.poll(async () => (await scrollState(page)).gap).toBeLessThanOrEqual(32);
   await msglist(page).evaluate(node => { node.scrollTop = 0; });
   await page.waitForTimeout(400);
-  await expect(page.getByRole("button", { name: "Jump to latest" })).toBeHidden();
+  await expect(page.locator(".fl-newbar")).toBeHidden();
 });
 
 test("switching threads re-arms the stick — the new thread opens at its latest turn", async ({ page }) => {
@@ -102,5 +105,5 @@ test("switching threads re-arms the stick — the new thread opens at its latest
     message: "a freshly loaded thread must open at its latest turn even after a scroll-up in the previous one",
   }).toBeLessThanOrEqual(32);
   expect((await scrollState(page)).scrollTop).toBeGreaterThan(0);
-  await expect(page.getByRole("button", { name: "Jump to latest" })).toBeHidden();
+  await expect(page.locator(".fl-newbar")).toBeHidden();
 });

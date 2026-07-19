@@ -9,7 +9,7 @@
     recorded decision (05 §1). No new server surface, no contract change. */
 import { DefaultChatTransport, isToolUIPart, readUIMessageStream, type UIMessage } from "ai";
 import type { VendoClient } from "../client.js";
-import type { VoiceSessionView, VoiceToolBridge } from "./driver.js";
+import type { VoiceConnectRequest, VoiceSessionView, VoiceToolBridge } from "./driver.js";
 
 const THREAD_ID_HEADER = "x-vendo-thread-id";
 const THREAD_ID_PATTERN = /^thr_.+$/;
@@ -79,6 +79,28 @@ function viewsOf(message: UIMessage, turn: number): VoiceSessionView[] {
     });
   });
   return views;
+}
+
+/** Voice-lane Cn-A — connector calls that ended `connect-required`, mirroring
+    ThreadConnectRequests' detection (04-actions §3): the typed outcome on the
+    native tool part is the source of truth. */
+function connectRequestsOf(message: UIMessage): VoiceConnectRequest[] {
+  return message.parts
+    .filter(isToolUIPart)
+    .flatMap((part) => {
+      if (part.state !== "output-available") return [];
+      const output = part.output as { status?: unknown; connect?: unknown } | undefined;
+      const connect = output?.status === "connect-required"
+        ? output.connect as { connector?: unknown; toolkit?: unknown; message?: unknown } | undefined
+        : undefined;
+      if (typeof connect?.connector !== "string" || typeof connect.toolkit !== "string") return [];
+      return [{
+        id: `connect-${part.toolCallId}`,
+        connector: connect.connector,
+        toolkit: connect.toolkit,
+        message: typeof connect.message === "string" ? connect.message : `Connect ${connect.toolkit} to continue.`,
+      }];
+    });
 }
 
 function pendingApprovalsOf(message: UIMessage): PendingApproval[] {
@@ -180,6 +202,22 @@ export function createVoiceActBridge(options: VoiceActBridgeOptions): VoiceToolB
     return false;
   }
 
+  /** Voice-lane Cn-A — the stage's docked ConnectCard runs the OAuth loop;
+      here we only wait for the toolkit's connection to report `active`, then
+      resume the turn so the blocked call re-executes. Same pacing knobs as
+      approvals; times out to "not connected". */
+  async function waitForConnection(toolkit: string): Promise<boolean> {
+    const deadline = Date.now() + approvalTimeoutMs;
+    while (Date.now() < deadline) {
+      const accounts = await client.connections.list().catch(() => undefined);
+      if (accounts?.some((account) => account.toolkit === toolkit && account.status === "active")) {
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, decidePollMs));
+    }
+    return false;
+  }
+
   return {
     tools: [VENDO_ACT_TOOL],
     async onToolCall(call, session) {
@@ -209,7 +247,38 @@ export function createVoiceActBridge(options: VoiceActBridgeOptions): VoiceToolB
       emitViews(assistant);
 
       let unanswered = 0;
+      let unconnected = 0;
+      const surfacedConnects = new Set<string>();
       for (let resume = 0; resume < MAX_RESUMES; resume += 1) {
+        // Cn-A: connector calls blocked on a connection — dock the card on the
+        // stage, wait for the account to go active, then resume the turn.
+        const connects = connectRequestsOf(assistant).filter((c) => !surfacedConnects.has(c.id));
+        if (connects.length > 0) {
+          for (const connect of connects) {
+            surfacedConnects.add(connect.id);
+            session.emitConnect?.(connect);
+          }
+          let allConnected = true;
+          for (const connect of connects) {
+            // Count only the waits that actually failed — a mixed batch must
+            // not report already-connected accounts as still blocked.
+            if (!(await waitForConnection(connect.toolkit))) {
+              allConnected = false;
+              unconnected += 1;
+            }
+          }
+          if (allConnected) {
+            messages.push({
+              id: `voice-act-${turn}-connect-${resume}`,
+              role: "user",
+              parts: [{ type: "text", text: "The account is connected now — retry what was blocked." }],
+            });
+            assistant = await runTurn();
+            messages.push(assistant);
+            emitViews(assistant);
+            continue;
+          }
+        }
         const pending = pendingApprovalsOf(assistant);
         if (pending.length === 0) break;
         // The guard's parked records are already on the consent bar via the
@@ -236,10 +305,14 @@ export function createVoiceActBridge(options: VoiceActBridgeOptions): VoiceToolB
       }
 
       const spoken = textOf(assistant);
+      const notes = [
+        ...(unanswered > 0 ? [`${unanswered} permission request(s) went unanswered and were not executed.`] : []),
+        ...(unconnected > 0 ? [`${unconnected} action(s) are waiting on an account connection and were not executed.`] : []),
+      ];
       return {
         result: spoken.length > 0 ? spoken : "Done.",
         viewsShown: emitted.size,
-        ...(unanswered > 0 ? { note: `${unanswered} permission request(s) went unanswered and were not executed.` } : {}),
+        ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
       };
     },
   };

@@ -27,6 +27,16 @@ export const defaultVendoGreeting: VendoGreeting = {
   prompts: ["What can you do here?", "Rebuild this page around what I use most"],
 };
 
+/** Fallback suggestion chips for the VendoSlot empty-state invitation
+ *  (ui-lane-entry pick S-A×S-D) when the host supplies none — generic
+ *  view-authoring starts, white-label like everything else. Hosts should
+ *  replace these with host-aware prompts (`.vendo/greeting.json` pipeline). */
+export const defaultSlotSuggestions: string[] = [
+  "Track the things I check most",
+  "Summarize what's on this page",
+  "A morning digest of what changed",
+];
+
 const PREFIX = "vendo:discoverability:";
 
 function storage(): Storage | null {

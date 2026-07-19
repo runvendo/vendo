@@ -71,15 +71,45 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
   const stuckRef = useRef(true);
   const lastScrollHeightRef = useRef(0);
   const [unseen, setUnseen] = useState(false);
+  // Lane pick 3A — the jump affordance grew into a bar with a COUNT of turns
+  // that landed while scrolled away and a snippet of the newest text. Count =
+  // messages appended since the stick released; snippet = the latest turn's
+  // trailing text (best-effort, purely presentational).
+  const [unseenCount, setUnseenCount] = useState(0);
+  const seenLengthRef = useRef(messages.length);
 
   // A different conversation is a different reader position: when the caller
   // switches the hook to another thread, re-arm the stick and forget the
   // previous thread's growth baseline — otherwise a scroll-up in the old
   // thread would keep the new one from opening at its latest turn.
+  const previousThreadKeyRef = useRef(threadKey);
   useEffect(() => {
+    const previousKey = previousThreadKeyRef.current;
+    previousThreadKeyRef.current = threadKey;
+    // ENG-222 id mint is NOT a thread switch: a conversation started without
+    // an id gets its server-minted thr_ fed back mid-first-stream (VendoPage's
+    // onThreadId loop), flipping this key while the reader is mid-read. The
+    // messages are the same conversation — KEEP the growth baseline: zeroing
+    // it makes previousHeight === 0 read as "at bottom by definition", so the
+    // next streamed chunk yanks a reader who had scrolled up (deterministic on
+    // slow runners — the "streaming must never yank" conformance failure).
+    // Re-arm the stick and clear the bar though: with the real baseline
+    // intact, the next mutation's previous-height guard releases a genuinely
+    // scrolled-up reader, while a bottom reader stays pinned instead of
+    // leaking a transient new-replies bar.
+    if (previousKey === undefined && threadKey !== undefined && messages.length > 0) {
+      stuckRef.current = true;
+      setUnseen(false);
+      setUnseenCount(0);
+      return;
+    }
     stuckRef.current = true;
     lastScrollHeightRef.current = 0;
     setUnseen(false);
+    setUnseenCount(0);
+    // messages.length is deliberately unlisted: this effect keys on identity
+    // changes only, and the mint guard needs the length at flip time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadKey]);
 
   const atBottom = (node: HTMLElement) =>
@@ -91,7 +121,11 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
     // Both user scrolls and our own programmatic sticks land here; either way
     // the reader's actual position is the single source of truth.
     stuckRef.current = atBottom(node);
-    if (stuckRef.current) setUnseen(false);
+    if (stuckRef.current) {
+      setUnseen(false);
+      setUnseenCount(0);
+      seenLengthRef.current = messages.length;
+    }
   };
 
   const jumpToLatest = () => {
@@ -99,6 +133,8 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
     if (!node) return;
     stuckRef.current = true;
     setUnseen(false);
+    setUnseenCount(0);
+    seenLengthRef.current = messages.length;
     node.scrollTop = node.scrollHeight;
   };
 
@@ -109,12 +145,29 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
   useEffect(() => {
     const node = listRef.current;
     if (!node) return;
-    const grew = node.scrollHeight > lastScrollHeightRef.current;
+    const previousHeight = lastScrollHeightRef.current;
+    const grew = node.scrollHeight > previousHeight;
     lastScrollHeightRef.current = node.scrollHeight;
+    // The scroll event that releases the stick is ASYNC: a reader who just
+    // scrolled up can have content land before onScroll flips stuckRef, and
+    // trusting the stale ref would yank them back down ("streaming must never
+    // yank"). Their position against the PREVIOUS content height is ground
+    // truth: stuck growth leaves scrollTop at the old bottom; a scroll-up
+    // puts it well above. Release the stick here instead of yanking.
+    const atPreviousBottom = previousHeight === 0
+      || previousHeight - node.scrollTop - node.clientHeight <= BOTTOM_SLACK_PX;
+    // …unless they are at the CURRENT bottom: when content SHRINKS (a connect
+    // card or generated view swaps out), scrollTop can no longer equal the old
+    // taller bottom, and the previous-height test alone misreads the reader as
+    // scrolled-up — releasing the stick and leaking a new-replies bar on the
+    // next turn even though they never moved. At-current-bottom is at bottom.
+    if (stuckRef.current && !atPreviousBottom && !atBottom(node)) stuckRef.current = false;
     if (stuckRef.current) {
       node.scrollTop = node.scrollHeight;
+      seenLengthRef.current = messages.length;
     } else if (grew) {
       setUnseen(true);
+      setUnseenCount(Math.max(1, messages.length - seenLengthRef.current));
     }
     // contentRevision — ENG-215: turn-actions (Edit/Regenerate) mount below the
     // last turn the instant a stream settles (busy→false), adding height AFTER
@@ -130,7 +183,13 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
     const node = listRef.current;
     if (!node || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
+      // Same async-scroll-event guard as the messages effect: only re-stick a
+      // reader who was actually at the bottom of the previous content.
+      const previousHeight = lastScrollHeightRef.current;
+      const atPreviousBottom = previousHeight === 0
+        || previousHeight - node.scrollTop - node.clientHeight <= BOTTOM_SLACK_PX;
       lastScrollHeightRef.current = node.scrollHeight;
+      if (stuckRef.current && !atPreviousBottom && !atBottom(node)) stuckRef.current = false;
       if (stuckRef.current) node.scrollTop = node.scrollHeight;
     });
     for (const child of Array.from(node.children)) observer.observe(child);
@@ -144,5 +203,16 @@ export function useStickToBottom(messages: UIMessage[], threadKey?: string, cont
     };
   }, []);
 
-  return { listRef, onScroll, jumpToLatest, showJump: unseen };
+  // 3A snippet: trailing text of the newest message (bounded; presentational).
+  const lastMessage = messages.at(-1);
+  const snippet = unseen && lastMessage
+    ? lastMessage.parts
+        .filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
+        .map(part => part.text)
+        .join(" ")
+        .trim()
+        .slice(0, 120)
+    : "";
+
+  return { listRef, onScroll, jumpToLatest, showJump: unseen, unseenCount, snippet };
 }

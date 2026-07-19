@@ -2,20 +2,35 @@ import { isToolUIPart } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVendoDiscoverability, useVendoGreeting } from "../../context.js";
 import { useVendoThread } from "../../hooks/use-vendo-thread.js";
+import { StatusRibbon } from "../build-beat.js";
 import { ChromeRoot } from "../chrome-root.js";
 import { defaultVendoGreeting, hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "../discoverability.js";
 import { MorphToast, type MorphToastProps } from "../morph-toast.js";
-import { Composer, useComposer } from "./composer.js";
+import { Composer, dragHasFiles, useComposer } from "./composer.js";
 import { MessageList } from "./message-list.js";
 import { useMessageWindow, useStickToBottom } from "./scrolling.js";
 import { approvalByCall, riskByCall, userText } from "./message-data.js";
+
+/** Lane pick 4B — a rich landing suggestion: two-line starter card. */
+export interface VendoSuggestionCard {
+  /** Card headline (verb-first reads best: "Build a view"). */
+  title: string;
+  /** One concrete outcome line under the title. */
+  description: string;
+  /** Sent as the message on tap; defaults to the title. */
+  prompt?: string;
+  /** Optional host-supplied leading icon node. */
+  icon?: import("react").ReactNode;
+}
 
 export interface VendoThreadProps {
   threadId?: string;
   /** Landing headline shown above the composer while the thread is empty. */
   greeting?: string;
-  /** Starter prompts shown as chips on the empty landing; clicking sends one. */
-  suggestions?: string[];
+  /** Starter prompts on the empty landing; clicking sends one. Lane pick 4B —
+   * a plain string keeps today's pill chip; the object form renders a two-line
+   * starter card (title + concrete outcome, optional icon) with more scent. */
+  suggestions?: (string | VendoSuggestionCard)[];
   /** Show a mic affordance in the composer that launches the host's voice surface. */
   onVoice?: () => void;
   /** ENG-222 — fires with the effective thread id once it is known, including
@@ -29,6 +44,10 @@ export interface VendoThreadProps {
    * provider's `greeting`. Distinct from `greeting` above (the returning-user
    * landing headline) — this one renders once per user, ever. */
   firstRunGreeting?: VendoGreeting;
+  /** Rendered directly above the composer in both landing and conversation
+   * layouts — the seam VendoOverlay uses for its command chip strip (the
+   * one-surface ⌘K design). Presentation-only; the thread never reads it. */
+  composerAccessory?: import("react").ReactNode;
 }
 
 /** 08-ui §4 — conversation chrome over the headless thread transport. */
@@ -40,6 +59,7 @@ export function VendoThread({
   onThreadId,
   discoverability,
   firstRunGreeting,
+  composerAccessory,
 }: VendoThreadProps) {
   const thread = useVendoThread(threadId);
   // ui-usage-dx §6 — greeting-as-tutorial: the user's FIRST-ever conversation
@@ -228,10 +248,70 @@ export function VendoThread({
 
   const approvals = thread.messages.flatMap(message => message.parts).filter(isToolUIPart).filter(part => part.state === "approval-requested");
 
+  // Lane pick C1 — the live status ribbon: while the turn works through tool
+  // calls (and no text has started flowing), the ACTIVE call narrates above
+  // the composer — label · elapsed · step N of M. The transcript stays
+  // beat-free (parts.tsx renders only errored calls). Once text streams the
+  // ribbon yields the floor to the caret choreography.
+  const activeToolParts = (activeAssistant?.parts ?? []).filter(isToolUIPart);
+  const liveToolPart = [...activeToolParts].reverse()
+    .find(part => part.state !== "output-available" && part.state !== "output-error");
+  // A turn parked on an approval is not "busy" (the stream yielded), but the
+  // pause still narrates: the ribbon holds "— waiting for your approval" while
+  // the card sits in the transcript.
+  const awaitingApprovalPart = activeToolParts.find(part => part.state === "approval-requested");
+  const activeToolPart = busy && !assistantHasVisibleText
+    ? liveToolPart ?? (activeToolParts.length > 0 && !caretShowing ? activeToolParts.at(-1) : undefined)
+    : awaitingApprovalPart;
+  const ribbon = activeToolPart ? (
+    <StatusRibbon
+      part={activeToolPart}
+      stepIndex={activeToolParts.indexOf(activeToolPart) + 1}
+      stepTotal={activeToolParts.length}
+      risk={risks.get(activeToolPart.toolCallId) ?? "read"}
+    />
+  ) : null;
+
+  // Lane pick 2E — the WHOLE thread surface is the drop target (the composer
+  // bar no longer owns drag): a huge, overshoot-proof zone with a centered
+  // card naming what will happen. Depth counter as before (child crossings).
+  const { dragDepth, setDragDepth, setFiles } = composerApi;
+  const dropProps = {
+    onDragEnter: (event: React.DragEvent) => {
+      if (!dragHasFiles(event)) return;
+      event.preventDefault();
+      setDragDepth(depth => depth + 1);
+    },
+    onDragOver: (event: React.DragEvent) => {
+      if (dragHasFiles(event)) event.preventDefault();
+    },
+    onDragLeave: (event: React.DragEvent) => {
+      if (dragHasFiles(event)) setDragDepth(depth => Math.max(0, depth - 1));
+    },
+    onDrop: (event: React.DragEvent) => {
+      if (!dragHasFiles(event)) return;
+      event.preventDefault();
+      setDragDepth(0);
+      const dropped = Array.from(event.dataTransfer.files);
+      if (dropped.length > 0) setFiles(current => [...current, ...dropped]);
+    },
+  };
+  const dropOverlay = dragDepth > 0 ? (
+    <div className="fl-drop fl-drop--thread">
+      <div className="fl-drop-card">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+        </svg>
+        Drop files to attach to your message
+      </div>
+    </div>
+  ) : null;
+
   if (landing) {
     return (
       <ChromeRoot>
-        <div className="fl-thread" role="region" aria-label="Vendo conversation">
+        <div className="fl-thread" role="region" aria-label="Vendo conversation" {...dropProps}>
+          {dropOverlay}
           <div className="fl-landing">
             {tutorialActive ? (
               // The one-time tutorial replaces the headline (and the host's
@@ -259,13 +339,41 @@ export function VendoThread({
               <h1 className="fl-greet">{greeting}</h1>
             )}
             {errorBanner}
+            {composerAccessory}
             <div className="fl-landing-composer">{composer}</div>
             {!tutorialActive && suggestions.length > 0 ? (
-              <div className="fl-chips">
-                {suggestions.map((text, i) => (
-                  <button type="button" className="fl-chip" key={`${i}-${text}`} onClick={() => send(text)}>{text}</button>
-                ))}
-              </div>
+              // Lane pick 4B — object suggestions render as two-line starter
+              // cards (title + concrete outcome, optional host icon); plain
+              // strings keep the pill chip. A MIXED array renders both
+              // containers (cards grid, then a chips row) so string entries
+              // never stretch as grid cells (AI-review catch). Both send on
+              // tap, unchanged.
+              <>
+                {suggestions.some(s => typeof s !== "string") ? (
+                  <div className="fl-cards">
+                    {suggestions.flatMap((suggestion, i) => {
+                      if (typeof suggestion === "string") return [];
+                      const prompt = suggestion.prompt ?? suggestion.title;
+                      return [(
+                        <button type="button" className="fl-card" key={`${i}-${suggestion.title}`} onClick={() => send(prompt)}>
+                          {suggestion.icon}
+                          <b>{suggestion.title}</b>
+                          <span>{suggestion.description}</span>
+                        </button>
+                      )];
+                    })}
+                  </div>
+                ) : null}
+                {suggestions.some(s => typeof s === "string") ? (
+                  <div className="fl-chips">
+                    {suggestions.flatMap((text, i) => (
+                      typeof text === "string"
+                        ? [<button type="button" className="fl-chip" key={`${i}-${text}`} onClick={() => send(text)}>{text}</button>]
+                        : []
+                    ))}
+                  </div>
+                ) : null}
+              </>
             ) : null}
           </div>
         </div>
@@ -275,7 +383,8 @@ export function VendoThread({
 
   return (
     <ChromeRoot>
-      <div className="fl-thread" role="region" aria-label="Vendo conversation">
+      <div className="fl-thread" role="region" aria-label="Vendo conversation" {...dropProps}>
+        {dropOverlay}
         <MessageList
           scroll={scroll}
           messageWindow={messageWindow}
@@ -298,6 +407,8 @@ export function VendoThread({
           working={working}
         />
         {errorBanner}
+        {composerAccessory}
+        {ribbon}
         {composer}
       </div>
       {morph ? <MorphToast {...morph} onDone={() => setMorph(null)} /> : null}

@@ -42,28 +42,29 @@ describe("VendoStage", () => {
     expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
   });
 
-  it("keeps only the latest user and assistant captions and dims settled lines", () => {
+  it("rolls the last three transcript lines as an aged ticker (S-C)", () => {
     const driver = new ScriptedVoiceDriver();
     renderStage(driver);
     fireEvent.click(screen.getByRole("button", { name: "Start voice" }));
 
     act(() => {
-      driver.emit({ type: "transcript", entry: { id: "u1", role: "user", text: "Older question", final: true } });
+      driver.emit({ type: "transcript", entry: { id: "u1", role: "user", text: "Oldest question", final: true } });
       driver.emit({ type: "transcript", entry: { id: "a1", role: "assistant", text: "Older answer", final: true } });
       driver.emit({ type: "transcript", entry: { id: "u2", role: "user", text: "Latest question", final: false } });
       driver.emit({ type: "transcript", entry: { id: "a2", role: "assistant", text: "Latest answer", final: false } });
     });
 
     const captions = screen.getByLabelText("Live captions");
-    expect(captions.textContent).toBe("Latest questionLatest answer");
-    expect(screen.getByText("Latest question").classList.contains("is-settled")).toBe(false);
+    // Last THREE lines, oldest first — the very first line has rolled away.
+    expect(captions.textContent).toBe("Older answerLatest questionLatest answer");
+    expect(screen.getByText("Latest answer").classList.contains("is-age-0")).toBe(true);
+    expect(screen.getByText("Latest question").classList.contains("is-age-1")).toBe(true);
+    expect(screen.getByText("Older answer").classList.contains("is-age-2")).toBe(true);
     expect(screen.getByText("Latest answer").classList.contains("is-settled")).toBe(false);
 
     act(() => {
-      driver.emit({ type: "transcript", entry: { id: "u2", role: "user", text: "Latest question", final: true } });
       driver.emit({ type: "transcript", entry: { id: "a2", role: "assistant", text: "Latest answer", final: true } });
     });
-    expect(screen.getByText("Latest question").classList.contains("is-settled")).toBe(true);
     expect(screen.getByText("Latest answer").classList.contains("is-settled")).toBe(true);
   });
 
@@ -220,6 +221,112 @@ describe("VendoStage", () => {
     expect(document.querySelectorAll(".fl-voice-slide")).toHaveLength(2);
   });
 
+  it("docks the presence into the corner pill once a view lands (P-C)", () => {
+    const driver = new ScriptedVoiceDriver();
+    renderStage(driver);
+    fireEvent.click(screen.getByRole("button", { name: "Start voice" }));
+    act(() => driver.emit({ type: "state", state: "speaking" }));
+
+    const stage = document.querySelector(".fl-voice-stage");
+    expect(stage?.classList.contains("is-docked")).toBe(false);
+    expect((document.querySelector(".fl-voice-blob") as HTMLElement).style.width).toBe("96px");
+
+    act(() => driver.emit({ type: "view", view: textView("view-1", "app_1", "First view") }));
+    expect(stage?.classList.contains("is-docked")).toBe(true);
+    // The ball REMOUNTS at the pill diameter — never a scaled svg.
+    expect((document.querySelector(".fl-voice-blob") as HTMLElement).style.width).toBe("30px");
+    // The ticker re-anchors to the stage (the head is now the absolute pill).
+    expect(screen.getByLabelText("Live captions").parentElement).toBe(stage);
+  });
+
+  it("renders idle suggestion chips and a tap starts voice (S-E)", () => {
+    const driver = new ScriptedVoiceDriver();
+    renderStage(driver, { suggestions: ["What's outstanding this week?", "How did June close?"] });
+
+    const chips = screen.getByRole("group", { name: "Suggestions" });
+    expect(within(chips).getAllByRole("button")).toHaveLength(2);
+    expect(within(chips).getByText("or just start talking")).toBeTruthy();
+
+    fireEvent.click(within(chips).getByRole("button", { name: "What's outstanding this week?" }));
+    expect(driver.starts).toBe(1);
+    // Session started — the invitation leaves with idle.
+    expect(screen.queryByRole("group", { name: "Suggestions" })).toBeNull();
+  });
+
+  it("offers the spoken-yes affordance and a heard intent decides the act-tier bar (C-A)", async () => {
+    const driver = new ScriptedVoiceDriver();
+    const decide = vi.fn(async () => undefined);
+    renderStage(driver, { client: testClient({ pending: async () => [actApproval], decide }) });
+    fireEvent.click(screen.getByRole("button", { name: "Start voice" }));
+    act(() => driver.emit({ type: "state", state: "listening" }));
+
+    await screen.findByRole("button", { name: "Approve" });
+    expect(screen.getByText(/Say .approve. — or tap/)).toBeTruthy();
+
+    act(() => driver.emit({ type: "intent", intent: "approve" }));
+    await waitFor(() => expect(decide).toHaveBeenCalledWith("apr_act", { approve: true }));
+  });
+
+  it("discards a spoken intent that arrives before any approval exists (P0)", async () => {
+    const driver = new ScriptedVoiceDriver();
+    const decide = vi.fn(async () => undefined);
+    const pending = deferred<ApprovalRequest[]>();
+    renderStage(driver, { client: testClient({ pending: () => pending.promise, decide }) });
+    fireEvent.click(screen.getByRole("button", { name: "Start voice" }));
+    act(() => driver.emit({ type: "state", state: "listening" }));
+
+    // The user says "approve" while NOTHING is pending — the intent must die here.
+    act(() => driver.emit({ type: "intent", intent: "approve" }));
+    // An unrelated approval lands afterwards; the stale intent must not decide it.
+    await act(async () => pending.resolve([actApproval]));
+    await screen.findByRole("button", { name: "Approve" });
+    expect(decide).not.toHaveBeenCalled();
+  });
+
+  it("never voice-decides an automation request — rich card, no spoken affordance", async () => {
+    const driver = new ScriptedVoiceDriver();
+    const decide = vi.fn(async () => undefined);
+    renderStage(driver, { client: testClient({ pending: async () => [automationApproval], decide }) });
+    fireEvent.click(screen.getByRole("button", { name: "Start voice" }));
+    act(() => driver.emit({ type: "state", state: "listening" }));
+
+    await screen.findByLabelText("Approval for Schedule weekly report");
+    act(() => driver.emit({ type: "intent", intent: "approve" }));
+    await waitFor(() => expect(screen.getByLabelText("Approval for Schedule weekly report")).toBeTruthy());
+    expect(decide).not.toHaveBeenCalled();
+  });
+
+  it("keeps criticals hand-only — a spoken approve never decides them", async () => {
+    const driver = new ScriptedVoiceDriver();
+    const decide = vi.fn(async () => undefined);
+    renderStage(driver, { client: testClient({ pending: async () => [criticalApproval], decide }) });
+    fireEvent.click(screen.getByRole("button", { name: "Start voice" }));
+    act(() => driver.emit({ type: "state", state: "listening" }));
+
+    await screen.findByRole("button", { name: "Confirm — Delete invoice" });
+    expect(screen.queryByText(/Say .approve. — or tap/)).toBeNull();
+
+    act(() => driver.emit({ type: "intent", intent: "approve" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Confirm — Delete invoice" })).toBeTruthy());
+    expect(decide).not.toHaveBeenCalled();
+  });
+
+  it("docks the ConnectCard when a connector call needs an account (Cn-A)", () => {
+    const driver = new ScriptedVoiceDriver();
+    renderStage(driver);
+    fireEvent.click(screen.getByRole("button", { name: "Start voice" }));
+
+    act(() => driver.emit({
+      type: "connect",
+      connect: { id: "connect-call-1", toolkit: "Slack", connector: "slack", message: "Sending Slack messages needs a connected Slack account." },
+    }));
+
+    const slot = document.querySelector(".fl-voice-connect");
+    expect(slot).toBeTruthy();
+    expect(within(slot as HTMLElement).getByRole("button", { name: "Connect Slack" })).toBeTruthy();
+    expect(slot?.textContent).toContain("Sending Slack messages needs a connected Slack account.");
+  });
+
   it("plays the leaving settle before handing control back to the host", () => {
     vi.useFakeTimers();
     const driver = new ScriptedVoiceDriver();
@@ -267,10 +374,11 @@ function renderStage(driver: ScriptedVoiceDriver, options: {
   client?: VendoClient;
   components?: Record<string, ComponentType>;
   onSessionEnd?: () => void;
+  suggestions?: string[];
 } = {}) {
   return render(
     <VendoProvider client={options.client ?? testClient()} components={options.components} voice={{ driver }}>
-      <VendoStage onSessionEnd={options.onSessionEnd} />
+      <VendoStage onSessionEnd={options.onSessionEnd} suggestions={options.suggestions} />
     </VendoProvider>,
   );
 }
