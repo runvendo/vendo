@@ -95,29 +95,92 @@ const splitPath = (path: string): { query: string; pointer: string } | null => {
   return { query: path.slice(1, nextSlash), pointer: path.slice(nextSlash) };
 };
 
+/** The prewired props whose bound value must be `[{value, label}]` items (a
+ *  bare `string[]` is also fine), with the item fields that component requires.
+ *  A fetched object array lacking a required field renders blank options/tabs —
+ *  the projection gap {@link optionItemMiss} routes to
+ *  `| asOptions(valueField, labelField)` repair. Select labels are optional;
+ *  Tabs need both (a labelless tab is a blank button). */
+const OPTION_ITEM_PROPS: ReadonlyMap<string, { props: ReadonlySet<string>; required: readonly string[] }> = new Map([
+  ["Select", { props: new Set(["options"]), required: ["value"] }],
+  ["Tabs", { props: new Set(["tabs", "items"]), required: ["value", "label"] }],
+]);
+
+/** The item fields the component's option prop requires, or null when
+ *  (component, prop) is not an option target. */
+const optionRequired = (component: string, prop: string): readonly string[] | null => {
+  const entry = OPTION_ITEM_PROPS.get(component);
+  return entry !== undefined && entry.props.has(prop) ? entry.required : null;
+};
+
+/** A resolved shape feeding an option prop must be a `string[]` or an object
+ *  array carrying the fields that component's items need: Select items are
+ *  `{value, label?}` (value required), Tabs items `{value, label}` (both
+ *  required — a labelless tab renders a blank button). An object array missing
+ *  a required field is the blank-option class; anything else (scalar, json,
+ *  non-array) stays defensive. */
+const optionItemMiss = (shape: ShapeType, required: readonly string[]): MissReport | null => {
+  if (shape.kind !== "array") return null;
+  const items = shape.items;
+  if (items.kind !== "object") return null;
+  const missing = required.filter((field) => !Object.prototype.hasOwnProperty.call(items.fields, field));
+  if (missing.length === 0) return null;
+  const available = Object.keys(items.fields);
+  return {
+    message: `this binds an array of {${available.join(", ")}}, missing ${missing.map((field) => `"${field}"`).join(", ")}, but the list prop needs [{value, label}] items — project it with | asOptions(valueField, labelField) (e.g. | asOptions(id, name))`,
+    available,
+  };
+};
+
+type BindingCheck =
+  | { status: "miss"; query: string; tool: string; report: MissReport }
+  /** Resolved cleanly; `shape` is null for unknown/defensive regions. */
+  | { status: "ok"; query?: string; tool?: string; shape: ShapeType | null };
+
 const checkBinding = (
   binding: { $path: string; $reshape?: ReshapeStep[] },
   queryTools: ReadonlyMap<string, string>,
   toolShapes: Readonly<Record<string, ShapeType>>,
-): { query: string; tool: string; report: MissReport } | null => {
+): BindingCheck => {
   const split = splitPath(binding.$path);
-  if (split === null) return null;
+  if (split === null) return { status: "ok", shape: null };
   const tool = queryTools.get(split.query);
-  if (tool === undefined) return null; // undeclared/dropped query — wave-1 layers own that
+  if (tool === undefined) return { status: "ok", shape: null }; // undeclared/dropped query — wave-1 layers own that
   const toolShape = Object.prototype.hasOwnProperty.call(toolShapes, tool)
     ? (toolShapes as Record<string, ShapeType | undefined>)[tool]
     : undefined;
-  if (toolShape === undefined) return null; // no shape card — Json, defensive
+  if (toolShape === undefined) return { status: "ok", shape: null }; // no shape card — Json, defensive
   const walked = walkPointer(toolShape, split.pointer);
-  if (walked.miss !== null) return { query: split.query, tool, report: walked.miss };
-  if (walked.shape === null) return null;
+  if (walked.miss !== null) return { status: "miss", query: split.query, tool, report: walked.miss };
+  if (walked.shape === null) return { status: "ok", query: split.query, tool, shape: null };
   let current = walked.shape;
   for (const step of binding.$reshape ?? []) {
     const flowed = reshapeShape(current, step);
-    if (!flowed.ok) return { query: split.query, tool, report: flowed.error };
+    if (!flowed.ok) return { status: "miss", query: split.query, tool, report: flowed.error };
     current = flowed.shape;
   }
-  return null;
+  return { status: "ok", query: split.query, tool, shape: current };
+};
+
+const pushMiss = (
+  errors: BindingShapeError[],
+  nodeId: string,
+  prop: string,
+  query: string,
+  tool: string,
+  path: string,
+  report: MissReport,
+): void => {
+  errors.push({
+    nodeId,
+    prop,
+    query,
+    tool,
+    path,
+    message: report.message,
+    ...(report.missing === undefined ? {} : { missing: report.missing }),
+    ...(report.available === undefined ? {} : { available: report.available }),
+  });
 };
 
 const collectFromValue = (
@@ -127,30 +190,34 @@ const collectFromValue = (
   queryTools: ReadonlyMap<string, string>,
   toolShapes: Readonly<Record<string, ShapeType>>,
   errors: BindingShapeError[],
+  /** The item fields required when this value is the whole value of a prewired
+   *  option prop (Select.options, Tabs.tabs); null otherwise. A nested binding
+   *  inside a literal is not the option list, so it descends with null. */
+  requiredFields: readonly string[] | null,
 ): void => {
   if (Array.isArray(value)) {
-    for (const item of value) collectFromValue(item, nodeId, prop, queryTools, toolShapes, errors);
+    // A literal option array (`options={[{value,label}]}`) is already shaped;
+    // only its inner bindings are checked, never as the option list itself.
+    for (const item of value) collectFromValue(item, nodeId, prop, queryTools, toolShapes, errors, null);
     return;
   }
   if (!isPlainObject(value)) return;
   if (isPathBinding(value)) {
-    const violation = checkBinding(value, queryTools, toolShapes);
-    if (violation !== null) {
-      errors.push({
-        nodeId,
-        prop,
-        query: violation.query,
-        tool: violation.tool,
-        path: value.$path,
-        message: violation.report.message,
-        ...(violation.report.missing === undefined ? {} : { missing: violation.report.missing }),
-        ...(violation.report.available === undefined ? {} : { available: violation.report.available }),
-      });
+    const check = checkBinding(value, queryTools, toolShapes);
+    if (check.status === "miss") {
+      pushMiss(errors, nodeId, prop, check.query, check.tool, value.$path, check.report);
+      return;
+    }
+    if (requiredFields !== null && check.shape !== null && check.tool !== undefined && check.query !== undefined) {
+      const optionMiss = optionItemMiss(check.shape, requiredFields);
+      if (optionMiss !== null) {
+        pushMiss(errors, nodeId, prop, check.query, check.tool, value.$path, optionMiss);
+      }
     }
     return; // a binding's $reshape/$path members hold no nested bindings
   }
   for (const child of Object.values(value)) {
-    collectFromValue(child, nodeId, prop, queryTools, toolShapes, errors);
+    collectFromValue(child, nodeId, prop, queryTools, toolShapes, errors, null);
   }
 };
 
@@ -169,7 +236,7 @@ export const checkBindingShapes = (
   for (const node of nodes) {
     if (node.props === undefined) continue;
     for (const [prop, value] of Object.entries(node.props)) {
-      collectFromValue(value, node.id, prop, queryTools, toolShapes, errors);
+      collectFromValue(value, node.id, prop, queryTools, toolShapes, errors, optionRequired(node.component, prop));
     }
   }
   return errors;
