@@ -106,9 +106,10 @@ export const devRoutes: RouteEntry[] = [
 ];
 
 /** The machine-facing surfaces: webhook ingress, the authenticated scheduler
-    tick, the dev-only sync impact probe, and the apps proxy mount. All match
-    on the RAW path (prefix or exact) ahead of any segment decoding, exactly
-    like the old chain. */
+    tick, and the dev-only sync impact probe. All match on the RAW path
+    (prefix or exact) ahead of any segment decoding, exactly like the old
+    chain. (The v1 run-token apps proxy mount died with execution-v2 Wave 1.5;
+    the box callback surface at /box/ is its replacement.) */
 export const systemRoutes: RouteEntry[] = [
   prefixRoute("POST", "/webhooks/", async ({ request, deps }) => {
     return await deps.automations.webhook(request);
@@ -120,11 +121,23 @@ export const systemRoutes: RouteEntry[] = [
     // execution-v2 Lane D — one authenticated tick drives BOTH schedulers: the
     // automations engine and the machine-app vendo.json schedules (additive
     // `schedules` field). Point any external cron here (Vercel cron, GitHub
-    // Actions, crontab); the Cloud broker calls this same surface.
+    // Actions, crontab); the Cloud broker calls this same surface. The engines
+    // settle independently so one failing can never suppress the other; any
+    // failure still answers 500 so a retrying cron comes back (both engines
+    // are idempotent within their windows).
+    const [runs, schedules] = await Promise.allSettled([
+      deps.automations.tick(),
+      deps.apps.schedules.tick(),
+    ]);
+    const errors = [
+      ...(runs.status === "rejected" ? [`automations: ${runs.reason instanceof Error ? runs.reason.message : "tick failed"}`] : []),
+      ...(schedules.status === "rejected" ? [`schedules: ${schedules.reason instanceof Error ? schedules.reason.message : "tick failed"}`] : []),
+    ];
     return json({
-      runIds: await deps.automations.tick(),
-      schedules: await deps.apps.schedules.tick(),
-    });
+      ...(runs.status === "fulfilled" ? { runIds: runs.value } : {}),
+      ...(schedules.status === "fulfilled" ? { schedules: schedules.value } : {}),
+      ...(errors.length === 0 ? {} : { errors }),
+    }, errors.length === 0 ? 200 : 500);
   }),
   route("POST", "/sync/impact", async ({ request, deps }) => {
     if (environment("NODE_ENV") === "production") {
@@ -136,12 +149,6 @@ export const systemRoutes: RouteEntry[] = [
       throw new VendoError("validation", "tools must be an array of at most 200 strings");
     }
     return json({ impact: await computeImpact(deps.store, tools) });
-  }),
-  prefixRoute("*", "/proxy/", async ({ request, path, deps }) => {
-    const proxyPath = path.slice("/proxy".length);
-    const proxyUrl = new URL(request.url);
-    proxyUrl.pathname = proxyPath;
-    return await deps.apps.proxy.handler(new Request(proxyUrl, request));
   }),
 ];
 

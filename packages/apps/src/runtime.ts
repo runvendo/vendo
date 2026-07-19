@@ -39,14 +39,12 @@ import {
   instructionRequiresServer,
   modelEngine,
   prewarmModels,
-  type CodeFileEdit,
   type GenerationDependencies,
   type GenerationEngine,
 } from "./engine.js";
 import { createAppHistory } from "./history.js";
 import { createInClientApprovals, type InClientVerdict } from "./inclient.js";
 import { createAppInterchange } from "./interchange.js";
-import { createMachineSessions } from "./machine.js";
 import {
   createMachineLifecycle,
   type BuildMachineEnv,
@@ -57,8 +55,6 @@ import { createFnCaller } from "./fn.js";
 import { createAppOpener, createProgressiveQueryResolver } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
 import { detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
-import { createAppsProxy } from "./proxy.js";
-import { createRunTokenGate } from "./run-token-gate.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "./redaction.js";
 import {
   boxAllowlist,
@@ -75,20 +71,15 @@ import {
 import { createSecretExposure, type SecretExposureGrant } from "./secret-exposure.js";
 import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
 import { appVersionHash } from "./version-hash.js";
-import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
-import { toV1SandboxAdapter, type V1SandboxAdapter, type V1SandboxMachine } from "./sandbox-v1-compat.js";
-import { FETCH_SHIM_BOOT_PRELUDE, FETCH_SHIM_PATH, FETCH_SHIM_SOURCE } from "./scaffold/fetch-shim.js";
-import { servedAppScaffold } from "./scaffold/index.js";
-import type { IpResolver } from "./ssrf.js";
+import type { SandboxMachine } from "./sandbox.js";
 
 /** 06-apps §1 plus block-plan decisions 3–4. */
 export interface AppsConfig {
   store: StoreAdapter;
   guard: Guard;
   tools: ToolRegistry;
-  sandbox?: SandboxAdapter | V1SandboxAdapter;
   /**
-   * execution-v2 — machine lifecycle seams. `sandbox` here is the v2 adapter
+   * execution-v2 — machine lifecycle seams. `sandbox` is the v2 adapter
    * (Lane A's shrunk seam); `buildEnv` is Lane C's env assembly, injected so
    * the lanes do not collide. No adapter → layer-2 lifecycle operations fail
    * with the existing sandbox-unavailable VendoError; layer-1 apps are
@@ -119,14 +110,7 @@ export interface AppsConfig {
   theme?: VendoTheme;
   secrets?: SecretsProvider;
   designRules?: string;
-  proxyUrl?: string;
   pinBaselines?: PinBaseline[];
-  /**
-   * ENG-259 — advanced egress seam for the allowlisted secret-egress proxy (§4.3).
-   * Defaults are zero-config on Node: global fetch + node:dns. A non-Node host (edge)
-   * or a test injects its own transport/resolver here.
-   */
-  egressTransport?: { fetch?: typeof globalThis.fetch; resolveIp?: IpResolver };
 }
 
 /** 06-apps §1 */
@@ -160,11 +144,6 @@ export type OpenSurface =
   | { kind: "tree"; payload: UIPayload; components?: Record<string, string> }
   | { kind: "http"; url: string }
   | { kind: "resuming"; cover?: string };
-
-/** Plan decision 3 — handler mounted by the umbrella at the configured proxy URL. */
-export interface AppsProxy {
-  handler(request: Request): Promise<Response>;
-}
 
 /** execution-v2 Lane C — one HTTP request across the skin of the box (the
  * shape SandboxMachine.request speaks, named at the runtime surface). */
@@ -254,7 +233,6 @@ export interface AppsRuntime {
   /** Contextual policy projection for Vendo-owned agent tools. Undefined means
    * the static descriptor remains authoritative. */
   agentToolRisk(call: ToolCall, ctx: RunContext): Promise<RiskLabel | undefined>;
-  proxy: AppsProxy;
   /**
    * execution-v2 skin contract (Lane C) — the box door the wire's fn proxy
    * route rides: wake the app's machine on demand and proxy ONE HTTP request
@@ -377,53 +355,6 @@ const allRecords = async (
   return records;
 };
 
-/** True (exit 0) when something answers HTTP on $PORT. fetch resolves on any
-    HTTP response, so a 404 still proves a listener. */
-const PROBE_SNIPPET =
-  "node -e 'fetch(\"http://127.0.0.1:\"+(process.env.PORT||\"8080\")+\"/\").then(()=>process.exit(0),()=>process.exit(1))'";
-
-/** Stop the server THIS runtime started in an earlier edit (recorded in
-    /tmp/vendo-app.pid), then wait for $PORT to free. Provider-started
-    processes (Modal's create command) carry no pid file and are left alone. */
-const STOP_OWNED_SERVER_SNIPPET = [
-  "if [ -f /tmp/vendo-app.pid ]; then",
-  "  kill -- \"-$(cat /tmp/vendo-app.pid)\" 2>/dev/null || true",
-  "  kill \"$(cat /tmp/vendo-app.pid)\" 2>/dev/null || true",
-  "  rm -f /tmp/vendo-app.pid",
-  `  i=0; while [ $i -lt 20 ] && ${PROBE_SNIPPET}; do i=$((i+1)); sleep 0.1; done`,
-  "fi",
-].join("\n");
-
-/**
- * 06-apps §4.1 — the machine IS the server: a rung ≥2 snapshot must capture a
- * machine that answers on $PORT, because `fn:` calls resume that snapshot and
- * POST to it. E2B resumes a MEMORY image, so only a process serving at
- * snapshot time serves after resume; Modal instead re-runs its create command
- * (which waits for /app/start.sh or /app/server.js) on every disk-image
- * resume. This snippet makes both true from the provider-neutral seam:
- * restart the runtime-owned server so the just-written files take effect,
- * leave a provider-started listener alone, and boot the conventional entry
- * (/app/start.sh, else /app/server.js) when nothing serves. `setsid` puts the
- * server in its own process group so a later edit can stop it cleanly.
- */
-const ENSURE_SERVING_COMMAND = [
-  STOP_OWNED_SERVER_SNIPPET,
-  `if ${PROBE_SNIPPET}; then exit 0; fi`,
-  // ENG-290 M4 — the rung-2/3 boot convention loads the egress fetch shim into
-  // every node process the entry spawns (NODE_OPTIONS propagates to children).
-  FETCH_SHIM_BOOT_PRELUDE,
-  "if [ -f /app/start.sh ]; then",
-  "  nohup setsid sh /app/start.sh >/tmp/vendo-app.log 2>&1 & echo $! >/tmp/vendo-app.pid",
-  "elif [ -f /app/server.js ]; then",
-  "  nohup setsid node /app/server.js >/tmp/vendo-app.log 2>&1 & echo $! >/tmp/vendo-app.pid",
-  "else",
-  "  echo 'no /app/start.sh or /app/server.js to serve $PORT' >&2; exit 1",
-  "fi",
-  `i=0; while [ $i -lt 50 ]; do ${PROBE_SNIPPET} && exit 0; i=$((i+1)); sleep 0.1; done`,
-  "cat /tmp/vendo-app.log >&2",
-  "exit 1",
-].join("\n");
-
 const rungFor = (
   app: AppDocument,
   declared?: VersionEntry["rung"],
@@ -493,10 +424,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const apps = config.store.records("vendo_apps");
   const data = createAppData(config.store);
   const history = createAppHistory(config.store);
-  const tokenSecret = globalThis.crypto.getRandomValues(new Uint8Array(32));
-  // ENG-251 — one anti-replay gate shared by the machine cache (which burns a
-  // run's jti on teardown) and the proxy (which rejects a burned jti).
-  const consumedRunTokens = createRunTokenGate();
   // ENG-345 — per-secret × per-app in-sandbox exposure grants. A dedicated store
   // collection, NEVER part of the app document, so no copy path can carry it.
   const exposure = createSecretExposure(config.store);
@@ -525,25 +452,8 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     });
   };
 
-  const machines = createMachineSessions({
-    sandbox: config.sandbox,
-    proxyUrl: config.proxyUrl,
-    tokenSecret,
-    consumedRunTokens,
-    // ENG-345 — the machine cache injects a REAL value only for a secret with an
-    // active grant, and audits one exposed-run event per run. Same SecretsProvider
-    // seam the egress proxy uses; without it every secret stays a handle.
-    ...(config.secrets === undefined ? {} : { secrets: config.secrets }),
-    resolveExposedSecrets: (app) => exposure.activeNames(app.id),
-    reportExposedRun: (app, ctx, secrets) =>
-      reportGuard("app-lifecycle", ctx.principal.subject, app.id, ctx, {
-        operation: "secret-exposed-run",
-        secrets,
-      }),
-  });
-
-  // execution-v2 — the v2 machine lifecycle (provision/wake/sleep/destroy)
-  // stands beside the v1 session cache until the v1 execution path is removed.
+  // execution-v2 — the v2 machine lifecycle (provision/wake/sleep/destroy);
+  // the v1 MachineSessions cache is deleted.
   const { implicitDomains, buildEnv: hostBuildEnv, ...machineConfig } = config.machine ?? {};
   const implicitEgress = (implicitDomains ?? [])
     .map(normalizeEgressDomain)
@@ -580,8 +490,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const interchange = createAppInterchange({
     store: config.store,
     guard: config.guard,
-    sandbox: config.sandbox,
-    machines,
     pinBaselines: config.pinBaselines,
     requireOwned,
   });
@@ -614,13 +522,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
   const commitExposure = async (grant: SecretExposureGrant): Promise<void> => {
     await exposure.activate(grant.appId, grant.secretName);
-    // Re-boot the machine so the next run's env reflects the new grant state.
     // Known v2 limit: a machine PROVISIONED before this grant keeps its
     // provision-time env — a memory snapshot resumes already-started
     // processes, so env can only change at a fresh provision (and Wave 3's
     // in-box edit loop, which restarts the server, is where re-injection
-    // lands). The eviction below covers the v1 session cache.
-    await machines.evict(grant.appId);
+    // lands).
     await reportGuard("app-lifecycle", grant.owner, grant.appId, { venue: "app", presence: "present" }, {
       operation: "secret-exposure-set",
       secretName: grant.secretName,
@@ -792,25 +698,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     callFn: fnCaller.callFn,
     audit: (event) => config.guard.report(event),
   });
-  const caller = fnCaller.wrap(createAppCaller(machines, config.tools));
+  const caller = fnCaller.wrap(createAppCaller(config.tools));
   const opener = createAppOpener(
-    machines,
     caller,
-    config.store,
     config.pinBaselines,
     (doc) => inClientApprovals.venueStateFor(doc),
   );
-  const proxy = createAppsProxy({
-    tokenSecret,
-    tools: config.tools,
-    data,
-    owns: async (appId, subject) => await owned(appId, subject) !== null,
-    loadApp: owned,
-    ...(config.secrets === undefined ? {} : { secrets: config.secrets }),
-    ...(config.egressTransport?.fetch === undefined ? {} : { fetch: config.egressTransport.fetch }),
-    ...(config.egressTransport?.resolveIp === undefined ? {} : { resolveIp: config.egressTransport.resolveIp }),
-    consumedRunTokens,
-  });
 
   // 06-apps §8 — every edit result over a drifted app carries the drift report,
   // so an agent or host editing a stale fork hears about it at edit time.
@@ -844,121 +737,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const appendIssues = (current: string[], next: string[]): string[] => [
     ...new Set([...current, ...next]),
   ];
-
-  const syntaxCheck = async (
-    machine: V1SandboxMachine,
-    file: CodeFileEdit,
-  ): Promise<string | undefined> => {
-    if (!/\.[cm]?[jt]s$/i.test(file.path)) return undefined;
-    const result = await machine.exec(`node --check '${file.path}'`, { cwd: "/app", timeoutMs: 10_000 });
-    if (result.code === 0) return undefined;
-    const detail = result.stderr.trim() || result.stdout.trim() || `node --check exited ${result.code}`;
-    return `${file.path}: ${detail}`;
-  };
-
-  const applyCodeFiles = async (
-    app: AppDocument,
-    files: CodeFileEdit[],
-    rung: VersionEntry["rung"],
-    ctx: RunContext,
-  ): Promise<{ server?: string; cover?: Uint8Array; issues: string[] }> => {
-    const graduatesToHttp = rung === 4 && app.ui !== "http";
-    try {
-      return await machines.withFork(
-        app,
-        ctx,
-        async ({ machine }) => {
-          try {
-            if (rung === 4 && machine.url === undefined) {
-              return { issues: ["sandbox-unavailable: adapter cannot serve http apps"] };
-            }
-            if (graduatesToHttp) {
-              const scaffold = servedAppScaffold(app);
-              const scaffoldPaths = new Set(scaffold.map((file) => file.path));
-              const collision = files.find((file) => scaffoldPaths.has(file.path));
-              if (collision !== undefined) {
-                return {
-                  issues: [`initial rung-4 graduation cannot replace scaffold file "${collision.path}"; edit it after graduation`],
-                };
-              }
-              for (const file of scaffold) {
-                await machine.files.write(file.path, file.content);
-              }
-            }
-            for (const file of files) await machine.files.write(file.path, file.content);
-            // ENG-290 M4 — make sure the egress fetch shim exists on this fork:
-            // a fresh machine carries it from create, but a fork resumed from a
-            // pre-shim snapshot needs it written before the boot prelude can
-            // require it. Written AFTER the model's files so the runtime-owned
-            // shim always wins (it is part of the boot convention, not app code).
-            await machine.files.write(FETCH_SHIM_PATH, FETCH_SHIM_SOURCE);
-            const issues: string[] = [];
-            for (const file of files) {
-              const issue = await syntaxCheck(machine, file);
-              if (issue !== undefined) issues.push(issue);
-            }
-            if (issues.length > 0) {
-              return { issues };
-            }
-            if (graduatesToHttp) {
-              // A graduation fork resumed from a serving rung-2/3 snapshot still
-              // carries that old server (E2B memory resume); stop it first or the
-              // scaffold loses the $PORT race and the "ready" probe would bless
-              // the OLD process into the rung-4 snapshot.
-              const started = await machine.exec(
-                `${STOP_OWNED_SERVER_SNIPPET}\n${FETCH_SHIM_BOOT_PRELUDE}\n`
-                + "nohup setsid sh /app/start.sh >/tmp/vendo-app.log 2>&1 & echo $! >/tmp/vendo-app.pid",
-                // The stop-owned prelude probes $PORT with short node spawns
-                // (~0.5s each on a cold machine); 10s aborted mid-loop live.
-                { cwd: "/app", timeoutMs: 30_000 },
-              );
-              if (started.code !== 0) {
-                const detail = started.stderr.trim() || started.stdout.trim() || `start command exited ${started.code}`;
-                return { issues: [`served-app scaffold failed to start: ${detail}`] };
-              }
-              // The backgrounded start always exits 0; only a served response
-              // proves the scaffold is actually listening (Devin, PR #243) —
-              // otherwise the snapshot and cover would capture a dead machine.
-              const ready = await machine.exec(
-                "i=0; while [ $i -lt 50 ]; do"
-                + " node -e \"fetch('http://127.0.0.1:'+(process.env.PORT||'8080')+'/').then(()=>process.exit(0),()=>process.exit(1))\""
-                + " && exit 0; i=$((i+1)); sleep 0.1; done; cat /tmp/vendo-app.log >&2; exit 1",
-                // 50 probes are ~30s of real node spawns on a live machine, so
-                // the exec budget must outlive the loop, not race it.
-                { cwd: "/app", timeoutMs: 45_000 },
-              );
-              if (ready.code !== 0) {
-                const detail = ready.stderr.trim() || ready.stdout.trim() || "no response on $PORT";
-                return { issues: [`served-app scaffold did not become ready: ${detail}`] };
-              }
-            } else {
-              // Rungs 2–3 (and re-edits of an already-served app): the snapshot
-              // must capture a machine that serves $PORT, or every later fn:
-              // call resumes a dead machine. See ENSURE_SERVING_COMMAND.
-              const serving = await machine.exec(ENSURE_SERVING_COMMAND, { cwd: "/app", timeoutMs: 60_000 });
-              if (serving.code !== 0) {
-                const detail = serving.stderr.trim() || serving.stdout.trim() || "no listener on $PORT";
-                return { issues: [`app server is not serving on $PORT after this edit: ${detail}`] };
-              }
-            }
-            const cover = rung === 4 && machine.screenshot !== undefined
-              ? await machine.screenshot()
-              : undefined;
-            const server = await machine.snapshot();
-            return cover === undefined ? { server, issues: [] } : { server, cover, issues: [] };
-          } catch (error) {
-            return { issues: [error instanceof Error ? error.message : "machine edit failed"] };
-          } finally {
-            await machine.stop().catch(() => undefined);
-          }
-        },
-      );
-    } catch (error) {
-      return {
-        issues: [error instanceof Error ? error.message : "sandbox machine unavailable"],
-      };
-    }
-  };
 
   const persistEdit = async (
     previous: AppDocument,
@@ -1099,7 +877,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       };
       const queryResolver = input.onView === undefined
         ? undefined
-        : createProgressiveQueryResolver(machines, caller, queryApp, ctx, (data) => {
+        : createProgressiveQueryResolver(caller, queryApp, ctx, (data) => {
           if (latestTree === undefined) return;
           emit({ ...structuredClone(latestTree), data, streaming: true } as TreeV2);
         });
@@ -1162,7 +940,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     async delete(appId, ctx) {
       const app = await requireOwned(appId, ctx.principal.subject);
-      await machines.stop(appId);
       // execution-v2 — deleting the app destroys its machine (sandbox + snapshot).
       await lifecycle.destroyMachine(app);
       await scheduleEngine.clearForApp(appId);
@@ -1182,22 +959,13 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         id: `app_${globalThis.crypto.randomUUID()}`,
         forkedFrom: source.id,
       };
-      // execution-v2 — a fork never carries the machine; the copy re-graduates
-      // on its own.
+      // execution-v2 — a fork never carries the machine (or the retired v1
+      // server snapshot); the copy re-graduates on its own.
       delete fork.machine;
       // Lane E grant hygiene — egress approval never travels with a copy; the
       // fork re-approves its declaration.
       delete fork.egressApproved;
-      if (source.server !== undefined && config.sandbox !== undefined) {
-        const machine = await toV1SandboxAdapter(config.sandbox).resume(source.server);
-        try {
-          fork.server = await machine.snapshot();
-        } finally {
-          await machine.stop().catch(() => undefined);
-        }
-      } else {
-        delete fork.server;
-      }
+      delete fork.server;
       await apps.put(appRecordInput(fork, ctx.principal.subject));
       await reportLifecycle("fork", fork.id, ctx, { sourceAppId: source.id });
       return structuredClone(fork);
@@ -1222,13 +990,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         throw new VendoError("not-implemented", "generation requires a model");
       }
       const previous = await requireOwned(appId, ctx.principal.subject);
-      const requiresServer = instructionRequiresServer(previous, instruction);
-      if (requiresServer && !machines.available()) {
-        return failedEdit(previous, instruction, [
-          "sandbox-unavailable: this edit requires server execution",
-        ], false);
-      }
-
       let repairIssues: string[] | undefined;
       let collectedIssues: string[] = [];
       for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -1263,43 +1024,13 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           });
         }
 
-        // The contextual guard decision ran before generation. If the engine
-        // ever violates the tree dialect and emits code for a call classified
-        // read-class, stop before touching a machine or persisting anything.
-        if (!requiresServer) {
-          return failedEdit(previous, instruction, [
-            "approval-required: a tree-classified edit unexpectedly produced server code",
-          ]);
-        }
-
-        const applied = await applyCodeFiles(previous, generated.files, generated.rung, ctx);
-        if (applied.server === undefined) {
-          collectedIssues = appendIssues(collectedIssues, applied.issues);
-          repairIssues = collectedIssues;
-          continue;
-        }
-        const app: AppDocument = {
-          ...structuredClone(previous),
-          server: applied.server,
-          ...(generated.rung === 4 ? { ui: "http" } : {}),
-        };
-        const validation = validateAppDocument(app);
-        if (!validation.ok) {
-          return failedEdit(previous, instruction, [validation.error.message]);
-        }
-        const version: VersionEntry = {
-          at: new Date().toISOString(),
-          intent: instruction,
-          rung: rungFor(app, generated.rung),
-        };
-        const persisted = await persistEdit(previous, app, version, ctx.principal.subject);
-        if (applied.cover !== undefined) {
-          await config.store.blobs(`app:${app.id}`).put("cover.png", applied.cover, {
-            contentType: "image/png",
-          });
-        }
-        await machines.evict(appId);
-        return withPinDrift({ app: persisted, version: { ...version } });
+        // execution-v2 — the v1 code-edit application path (fork, write files,
+        // probe $PORT, snapshot) is deleted; server code lands via the in-box
+        // agent in a later wave. A code-kind result is a terminal failure, not
+        // a repair loop: re-generating cannot change what this build can apply.
+        return failedEdit(previous, instruction, [
+          "not-implemented: server code edits ride the execution-v2 in-box agent; this build applies tree edits only",
+        ], false);
       }
       return failedEdit(
         previous,
@@ -1322,11 +1053,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       const surface = history.surface(appId);
       return Object.freeze({
         list: () => surface.list(),
-        undo: async () => {
-          const restored = await surface.undo();
-          await machines.evict(appId);
-          return restored;
-        },
+        undo: () => surface.undo(),
       });
     },
 
@@ -1336,9 +1063,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     async call(appId, ref, args, ctx) {
       const app = await requireOwned(appId, ctx.principal.subject);
-      // Only fn: refs reach the machine and need a run token; a host-tool ref goes
-      // straight to the guard-bound registry, so don't pay for HMAC signing there.
-      // The fn: path mints its own token via machines.withMachine when none is passed.
+      // A host-tool ref goes straight to the guard-bound registry; an fn: ref
+      // settles as a contained not-implemented outcome until the v2 in-runtime
+      // fn path lands (see call.ts).
       return caller.call(app, ref, args, ctx);
     },
 
@@ -1577,7 +1304,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         if (input.expose === false) {
           // Turning OFF is safe — revert to the Option B handle default at once.
           await exposure.revoke(input.appId, input.secretName);
-          await machines.evict(input.appId);
           await reportGuard("app-lifecycle", ctx.principal.subject, input.appId, ctx, {
             operation: "secret-exposure-set",
             secretName: input.secretName,
@@ -1611,7 +1337,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             requestedAt: new Date().toISOString(),
           });
           await exposure.activate(input.appId, input.secretName);
-          await machines.evict(input.appId);
           await reportGuard("app-lifecycle", ctx.principal.subject, input.appId, ctx, {
             operation: "secret-exposure-set",
             secretName: input.secretName,
@@ -1631,8 +1356,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         return { status: "pending-approval", approvalId: decision.approval.id };
       },
     },
-
-    proxy,
 
     box: {
       // v2 only: the fn door rides the machine lifecycle's wake — an

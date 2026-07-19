@@ -24,7 +24,7 @@ import type {
 import { createStore, type VendoStore } from "@vendoai/store";
 import { createGuard, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createActions } from "@vendoai/actions";
-import { createApps, type AppsRuntime, type SandboxAdapter, type V1SandboxAdapter } from "@vendoai/apps";
+import { createApps, type AppsRuntime } from "@vendoai/apps";
 import { createAutomations, type AutomationsEngine } from "@vendoai/automations";
 
 export const fixtureBaseUrl = (): string => inject("fixtureBaseUrl");
@@ -142,7 +142,12 @@ export interface StackOptions {
   runnerFrom?: (parts: { guard: VendoGuard; bound: ToolRegistry; store: VendoStore }) => AgentRunner;
   now?: () => Date;
   policy?: PolicyConfig;
-  sandbox?: SandboxAdapter | V1SandboxAdapter;
+  /** Wrap the guard-bound registry with fixture-local in-process tools (e.g.
+   *  a blocking hold tool) AFTER binding — the wrapped extras bypass the
+   *  guard on purpose; authority stays under test for the real host tools.
+   *  (The v1 fn:-step sandbox vehicle died with execution-v2 Wave 1.5; fn
+   *  execution returns over the box door with the fn/schedules lane.) */
+  wrapTools?: (bound: ToolRegistry) => ToolRegistry;
 }
 
 export async function createStack(options: StackOptions = {}): Promise<Stack> {
@@ -156,13 +161,12 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     actAs: fixtureActAs,
     fetch: fixtureFetch,
   });
-  const bound = guard.bind(actions);
+  const bound = options.wrapTools === undefined ? guard.bind(actions) : options.wrapTools(guard.bind(actions));
   const apps = createApps({
     store,
     guard,
     tools: bound,
     catalog: [],
-    ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
   });
   const runner = options.runnerFrom === undefined
     ? options.runner

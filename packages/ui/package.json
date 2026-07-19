@@ -51,7 +51,6 @@
   ],
   "scripts": {
     "build:jail": "node scripts/build-jail-runtime.mjs",
-    "build:served-renderer": "node scripts/build-served-app-renderer.mjs",
     "prebuild": "pnpm run build:jail",
     "build": "tsc -p tsconfig.json",
     "postbuild": "node scripts/build-eject-templates.mjs",
@@ -64,6 +63,7 @@
     "test:browser": "playwright test",
     "test:mcp-shim": "playwright test --config e2e/mcp-shim.config.ts",
     "build:mcp-shim": "node scripts/build-mcp-app-shim.mjs",
+    "build:onest-font": "node scripts/build-onest-font.mjs",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {

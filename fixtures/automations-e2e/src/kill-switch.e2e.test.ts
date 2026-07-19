@@ -1,13 +1,30 @@
-/** 07 §1 runs.stop — the kill switch. A run held mid-flight (inside a fn:
- * step against an in-process machine) is cancelled best-effort: it is marked
+/** 07 §1 runs.stop — the kill switch. A run held mid-flight (inside a
+ * blocking in-process step tool) is cancelled best-effort: it is marked
  * "stopped" with finishedAt set, steps after the stop never execute, stop is
  * owner-scoped, and a terminal run cannot be stopped again.
+ * (The hold vehicle was an fn: step against a v1 in-process machine; that
+ * path died with execution-v2 Wave 1.5, so the hold now rides a fixture-local
+ * wrapped tool — the run mechanics under test are unchanged.)
  */
 import { beforeEach, describe, expect, it } from "vitest";
-import type { Json } from "@vendoai/core";
+import type { ToolRegistry } from "@vendoai/core";
 import { automationDoc, createStack, ownerCtx, resetFixture } from "./harness.js";
 import { ADA, BOB, fixtureInvoices, enableAndApprove } from "./support.js";
-import { fnSandbox } from "./fn-sandbox.js";
+
+/** Wrap the bound registry with an in-process `hold` tool that blocks until released. */
+const withHoldTool = (hold: () => Promise<void>) => (bound: ToolRegistry): ToolRegistry => ({
+  async descriptors() {
+    return [
+      ...await bound.descriptors(),
+      { name: "hold", description: "Block until released", inputSchema: { type: "object" }, risk: "read" },
+    ];
+  },
+  async execute(call, ctx) {
+    if (call.tool !== "hold") return bound.execute(call, ctx);
+    await hold();
+    return { status: "ok", output: { held: true } };
+  },
+});
 
 describe("kill switch (runs.stop)", () => {
   beforeEach(resetFixture);
@@ -19,13 +36,9 @@ describe("kill switch (runs.stop)", () => {
     const started = new Promise<void>((resolve) => { signalStarted = resolve; });
 
     const stack = await createStack({
-      sandbox: fnSandbox(async (name) => {
-        if (name === "hold") {
-          signalStarted();
-          await held;
-          return { status: 200, body: { ok: true } as Json };
-        }
-        return { status: 404, body: { error: { code: "not-found", message: name } } as Json };
+      wrapTools: withHoldTool(async () => {
+        signalStarted();
+        await held;
       }),
     });
     try {
@@ -39,7 +52,7 @@ describe("kill switch (runs.stop)", () => {
             run: {
               kind: "steps",
               steps: [
-                { id: "hold", tool: "fn:hold", args: {} },
+                { id: "hold", tool: "hold", args: {} },
                 {
                   id: "record",
                   tool: "host_invoices_create",
@@ -49,7 +62,6 @@ describe("kill switch (runs.stop)", () => {
             },
           },
         }),
-        server: "fake:snap",
       });
       await enableAndApprove(stack, appId, ctx);
 

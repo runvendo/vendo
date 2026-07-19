@@ -49,7 +49,7 @@ const codeEdit = JSON.stringify({
 });
 
 describe(".vendoapp interchange through createApps", () => {
-  it("round-trips a copy with fresh ownership, empty data, and a rebuilt machine", async () => {
+  it("round-trips a copy with fresh ownership and empty data", async () => {
     const store = memoryStore();
     const guard = guardFixture({ grants: [{
       id: "grt_source",
@@ -62,22 +62,11 @@ describe(".vendoapp interchange through createApps", () => {
       source: "chat",
       grantedAt: "2026-07-11T12:00:00.000Z",
     }] });
-    const sandbox = fakeSandbox();
-    const runtime = createApps({
-      store,
-      guard,
-      tools,
-      sandbox,
-      catalog: [],
-      model: scriptedLanguageModel(codeEdit),
-    });
+    const runtime = createApps({ store, guard, tools, catalog: [] });
     const ada = context("user_ada");
     const grace = context("user_grace");
-    const importedSource = await runtime.importApp(document({ forkedFrom: "app_template" }), ada);
-    guard.grants[0] = { ...guard.grants[0]!, appId: importedSource.id };
-    const edited = await runtime.edit(importedSource.id, "Build a server backend", ada);
-    expect(edited.issues).toBeUndefined();
-    const source = edited.app;
+    const source = await runtime.importApp(document({ forkedFrom: "app_template" }), ada);
+    guard.grants[0] = { ...guard.grants[0]!, appId: source.id };
     await store.records(`app:${source.id}:invoices`).put({ id: "invoice_1", data: { total: 42 } });
     await store.records("vendo_state").put({
       id: `${source.id}:user_ada`,
@@ -90,8 +79,6 @@ describe(".vendoapp interchange through createApps", () => {
 
     expect(copy.id).not.toBe(source.id);
     expect(copy.id).toMatch(/^app_/);
-    expect(copy.server).toMatch(/^fake:snap_/);
-    expect(copy.server).not.toBe(source.server);
     expect(copy.forkedFrom).toBeUndefined();
     expect(copy.storage).toEqual(source.storage);
     expect(await runtime.get(copy.id, grace)).toEqual(copy);
@@ -101,37 +88,26 @@ describe(".vendoapp interchange through createApps", () => {
     expect(await store.records("vendo_state").get(`${copy.id}:user_grace`)).toBeNull();
     expect(guard.grants).toHaveLength(1);
     expect(guard.grants.some((grant) => grant.appId === copy.id)).toBe(false);
-
-    const rebuilt = [...sandbox.machines.values()].at(-1)!;
-    expect(rebuilt.env.PORT).toBe("8080");
-    expect(decoder.decode(await rebuilt.files.read("/app/server.js"))).toBe("export const ready = true;");
-    expect(rebuilt.fileContents.has("/app/node_modules/cache/index.js")).toBe(false);
     expect(guard.audit.filter((event) => event.detail?.operation === "export")).toHaveLength(1);
     expect(guard.audit.filter((event) => event.detail?.operation === "import")).toHaveLength(2);
   });
 
-  it("exports only the document and filtered app directory without identity or lineage", async () => {
+  it("exports only the document, without identity, lineage, or machine state", async () => {
     const store = memoryStore();
-    const sandbox = fakeSandbox();
-    const runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      sandbox,
-      catalog: [],
-      model: scriptedLanguageModel(codeEdit),
-    });
+    const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [] });
     const ctx = context("user_ada");
-    const source = await runtime.importApp(document({ forkedFrom: "app_template" }), ctx);
-    const edited = await runtime.edit(source.id, "Build a server backend", ctx);
+    // A persisted pre-v2 document may still carry a retired v1 server ref;
+    // export is document-only and never writes it (or any app/ directory).
+    const legacy = document({ id: "app_legacy", forkedFrom: "app_template", server: "fake:snap_legacy" });
+    await seedAppRow(store, legacy, "user_ada");
 
-    const archive = unzipSync(await runtime.exportApp(edited.app.id, ctx));
-    expect(Object.keys(archive).sort()).toEqual(["app.json", "app/server.js"]);
+    const archive = unzipSync(await runtime.exportApp("app_legacy", ctx));
+    expect(Object.keys(archive)).toEqual(["app.json"]);
     const exported = JSON.parse(decoder.decode(archive["app.json"])) as Record<string, unknown>;
     expect(exported).not.toHaveProperty("id");
     expect(exported).not.toHaveProperty("server");
     expect(exported).not.toHaveProperty("forkedFrom");
-    expect(exported.storage).toEqual(edited.app.storage);
+    expect(exported.storage).toEqual(legacy.storage);
   });
 
   it("drops unknown authority and data fields on both import and export", async () => {
@@ -247,90 +223,23 @@ describe(".vendoapp interchange through createApps", () => {
     });
   });
 
-  it("provisions imported app directories with the full §4.2 run environment", async () => {
-    // ENG-347 — the rebuilt machine must carry the SAME run env the create/edit
-    // path injects (PORT + proxy URL + run token + declared secret handles), or
-    // the egress fetch shim declines to install and the imported rung-2/3 app
-    // cannot reach host tools or the egress endpoint until it is re-edited.
-    const base = fakeSandbox();
-    let createSpec: Parameters<SandboxAdapter["create"]>[0] | undefined;
-    const sandbox: SandboxAdapter = {
-      async create(spec) {
-        createSpec = spec;
-        return base.create(spec);
-      },
-      resume: (ref) => base.resume(ref),
-    };
-    const runtime = createApps({
-      store: memoryStore(),
-      guard: guardFixture(),
-      tools,
-      sandbox,
-      catalog: [],
-      proxyUrl: "https://proxy.test",
-    });
-    const { id: _id, ...exported } = document({
-      secrets: ["STRIPE_KEY"],
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [{
-          id: "root",
-          component: "Button",
-          props: { onClick: { action: "fn:send_invoice" } },
-        }],
-      },
-    });
-    const archive = zipSync({
-      "app.json": encoder.encode(JSON.stringify(exported)),
-      "app/server.js": encoder.encode("export const ready = true;"),
-    });
-
-    await runtime.importApp(archive, context("user_ada"));
-
-    expect(createSpec?.env.PORT).toBe("8080");
-    expect(createSpec?.env.VENDO_PROXY_URL).toBe("https://proxy.test");
-    expect(createSpec?.env.VENDO_RUN_TOKEN).toMatch(/.+/);
-    // Declared secrets are injected as handles, never values (§4.3).
-    expect(createSpec?.env.STRIPE_KEY).toMatch(/^vendo-secret:STRIPE_KEY:/);
-  });
-
-  it("lets an imported rung-2/3 app reach tools/egress without a subsequent edit", async () => {
-    // ENG-347 — resuming the imported snapshot must yield a machine whose env
-    // still carries the proxy URL + run token the fetch shim needs, so the
-    // imported app can call the proxy without first being re-edited.
-    const sandbox = fakeSandbox();
-    const runtime = createApps({
-      store: memoryStore(),
-      guard: guardFixture(),
-      tools,
-      sandbox,
-      catalog: [],
-      proxyUrl: "https://proxy.test",
-    });
-    const { id: _id, ...exported } = document({
-      tree: {
-        formatVersion: "vendo-genui/v2",
-        root: "root",
-        nodes: [{
-          id: "root",
-          component: "Button",
-          props: { onClick: { action: "fn:send_invoice" } },
-        }],
-      },
-    });
+  it("ignores an archived app directory: import is document-only and the copy re-graduates", async () => {
+    const guard = guardFixture();
+    const runtime = createApps({ store: memoryStore(), guard, tools, catalog: [] });
+    const { id: _id, ...exported } = document();
     const archive = zipSync({
       "app.json": encoder.encode(JSON.stringify(exported)),
       "app/server.js": encoder.encode("export const ready = true;"),
     });
 
     const imported = await runtime.importApp(archive, context("user_ada"));
-    const outcome = await runtime.call(imported.id, "fn:send_invoice", {}, context("user_ada"));
 
-    expect(outcome.status).toBe("ok");
-    const resumed = [...sandbox.machines.values()].at(-1)!;
-    expect(resumed.env.VENDO_PROXY_URL).toBe("https://proxy.test");
-    expect(resumed.env.VENDO_RUN_TOKEN).toMatch(/.+/);
+    expect(imported.server).toBeUndefined();
+    expect(imported.machine).toBeUndefined();
+    expect(guard.audit.at(-1)?.detail).toMatchObject({
+      operation: "import",
+      appDirectory: "ignored",
+    });
   });
 
   it("fails rather than stripping fn surfaces when app files cannot be rebuilt", async () => {
@@ -357,24 +266,6 @@ describe(".vendoapp interchange through createApps", () => {
     await expect(runtime.importApp(archive, context("user_ada"))).rejects.toMatchObject({
       code: "validation",
       message: expect.stringContaining("fn: references require a machine"),
-    });
-  });
-
-  it("imports machine-independent app files without a sandbox and audits containment", async () => {
-    const guard = guardFixture();
-    const runtime = createApps({ store: memoryStore(), guard, tools, catalog: [] });
-    const { id: _id, ...exported } = document();
-    const archive = zipSync({
-      "app.json": encoder.encode(JSON.stringify(exported)),
-      "app/server.js": encoder.encode("export const ready = true;"),
-    });
-
-    const imported = await runtime.importApp(archive, context("user_ada"));
-
-    expect(imported.server).toBeUndefined();
-    expect(guard.audit.at(-1)?.detail).toMatchObject({
-      operation: "import",
-      appDirectory: "contained-without-sandbox",
     });
   });
 
