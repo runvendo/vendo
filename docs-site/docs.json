@@ -43,6 +43,10 @@
         "pages": ["connect/vendo-init", "connect/dev-mode", "connect/api-tools", "connect/act-as-presets", "connect/host-components", "connect/theming", "connect/tool-labels", "connect/instructions"]
       },
       {
+        "group": "UI",
+        "pages": ["ui/components"]
+      },
+      {
         "group": "Capabilities",
         "pages": ["capabilities/integrations", "capabilities/connected-accounts", "capabilities/compound-tools", "capabilities/mcp", "capabilities/mcp-registry", "capabilities/voice"]
       },

@@ -1,0 +1,70 @@
+---
+title: "UI components"
+description: "The shipped Vendo chrome — overlay, thread, activities, slot, and page surfaces — with a live playground you can explore without a model key."
+---
+
+Vendo ships a complete set of brand-native chrome components. Every surface
+derives its colors, typography, radius, density, and motion from your
+[VendoTheme tokens](/connect/theming), so the same components render on-brand
+in any host product.
+
+## Try every surface live
+
+The hosted playground below renders each surface against scripted data — no
+model key, no database, nothing to install. Use the **Theme** button inside it
+to edit every theme token live, copy a ready `.vendo/theme.json`, and share a
+themed link.
+
+<iframe
+  src="https://vendo.run/playground"
+  title="Vendo playground — every surface, scripted data, no model key"
+  width="100%"
+  height="720"
+  style={{ border: "1px solid #e5e5e5", borderRadius: "12px" }}
+/>
+
+If the embed does not load, open
+[vendo.run/playground](https://vendo.run/playground) directly, or run it
+locally with `npx vendoai playground`.
+
+## The surfaces
+
+### Overlay
+
+The default drop-in: a themed launcher pill that opens a floating conversation
+overlay over your product. On phones it becomes an Intercom-style full-bleed
+takeover with safe-area and keyboard handling. One component, zero layout
+changes to your app.
+
+### Thread
+
+The bare conversation surface — composer, streaming replies, tool beats,
+approval cards, connect cards, and generated views arriving inline. Use it
+when you want the conversation embedded in your own layout instead of an
+overlay.
+
+### Activities
+
+The approvals queue and humanized activity feed as a host-placeable piece:
+pending approvals render as actionable cards on top, recent agent activity
+below. Drop it into your own settings or admin pages.
+
+### Slot
+
+A placeholder in your product that users can fill with their own generated
+view. Empty, it shows a quiet ghost with a "Design a view" call to action;
+filled, it renders the pinned view; broken, it falls back to your original
+markup — never a blank hole.
+
+### Page
+
+The full workspace console: conversation history, the waiting-on-you approval
+strip, apps, automations, connected accounts, and activity in one routed
+surface. Mount it on a dedicated route like `/assistant`.
+
+## Theming
+
+Every component above re-themes from one token file. Extract it with
+`vendo init`, or hand-edit `.vendo/theme.json` — the playground's theme editor
+emits a valid file from whatever look you land on. See
+[Theming](/connect/theming) for the full token reference.
