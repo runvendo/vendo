@@ -13,9 +13,10 @@
  *           PENDING outcome relays; nothing bypasses the guard)
  *     → a second tree-side fn call reads the row back through the box.
  *
- * Provisioning (machine ref on the document, wake-on-schedule) is Lane B; this
- * journey stands in for it exactly where Lane B will call Lane C's seams:
- * createAppTokens().mint at provision and buildEnv for the box environment.
+ * Provisioning runs through Lane B's real machine lifecycle
+ * (apps.machine.provision → the composed env assembler → snapshot); the
+ * journey then pins its own bearer + env so the fake box acts on a KNOWN
+ * provision-time environment.
  *
  * Presence model: box callbacks run AWAY (the box acts for the owner without
  * the owner in the loop — the automations model), so the guard's 05 §6 rule
