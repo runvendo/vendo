@@ -1,11 +1,40 @@
-import { describe, expect, it } from "vitest";
 import type { AuditEvent } from "@vendoai/core";
+import { describe, expect, it } from "vitest";
 import {
   describeActivity,
   formatAuditTime,
+  formatRelativeAuditTime,
+  kindGlyph,
   outcomeLabel,
 } from "../../src/chrome/activity-semantics.js";
 
+describe("formatRelativeAuditTime", () => {
+  const now = new Date("2026-07-18T10:00:00.000Z");
+  it("maps elapsed time to human buckets, deterministically from `now`", () => {
+    expect(formatRelativeAuditTime("2026-07-18T09:59:40.000Z", now)).toBe("just now");
+    expect(formatRelativeAuditTime("2026-07-18T09:06:00.000Z", now)).toBe("54m ago");
+    expect(formatRelativeAuditTime("2026-07-18T08:00:00.000Z", now)).toBe("2h ago");
+    expect(formatRelativeAuditTime("2026-07-17T08:00:00.000Z", now)).toBe("yesterday");
+  });
+  it("falls back to the absolute string beyond 48h, for the future, and for junk", () => {
+    expect(formatRelativeAuditTime("2026-07-11T12:00:00.000Z", now)).toBe("Jul 11, 2026, 12:00 PM");
+    expect(formatRelativeAuditTime("2026-07-19T10:00:00.000Z", now)).toBe("Jul 19, 2026, 10:00 AM");
+    expect(formatRelativeAuditTime("not-a-date", now)).toBe("not-a-date");
+  });
+});
+
+describe("kindGlyph", () => {
+  it("maps every audit kind to a ledger glyph", () => {
+    expect(kindGlyph("tool-call")).toBe("wrench");
+    expect(kindGlyph("run")).toBe("zap");
+    expect(kindGlyph("approval")).toBe("shield");
+    expect(kindGlyph("policy-decision")).toBe("shield");
+    expect(kindGlyph("app-lifecycle")).toBe("box");
+    expect(kindGlyph("share")).toBe("box");
+    expect(kindGlyph("door-auth")).toBe("wrench");
+    expect(kindGlyph("principal")).toBe("wrench");
+  });
+});
 function event(overrides: Partial<AuditEvent>): AuditEvent {
   return {
     id: "aud_1",

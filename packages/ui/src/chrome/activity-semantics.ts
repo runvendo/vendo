@@ -32,6 +32,43 @@ export function formatAuditTime(iso: string): string {
   return `${month} ${day}, ${year}, ${hours}:${minutes} ${meridiem}`;
 }
 
+/** Format an ISO instant relative to `now` — "just now", "54m ago", "2h ago",
+    "yesterday" — falling back to the absolute `formatAuditTime` string beyond
+    48 hours (or for unparseable/future instants). `now` is an argument, never
+    read from the clock here, so every mapping stays deterministic in tests. */
+export function formatRelativeAuditTime(iso: string, now: Date): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const elapsed = now.getTime() - date.getTime();
+  if (elapsed < 0) return formatAuditTime(iso);
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  if (hours < 48) return "yesterday";
+  return formatAuditTime(iso);
+}
+
+/** The glyph disc an activity row leads with (ui-lane-panels pick B). */
+export type ActivityGlyph = "wrench" | "zap" | "shield" | "box";
+
+const KIND_GLYPH: Record<AuditEvent["kind"], ActivityGlyph> = {
+  "tool-call": "wrench",
+  run: "zap",
+  approval: "shield",
+  "policy-decision": "shield",
+  "app-lifecycle": "box",
+  share: "box",
+  "door-auth": "wrench",
+  principal: "wrench",
+};
+
+/** Map an audit kind to its ledger glyph; unknown kinds read as a tool. */
+export function kindGlyph(kind: AuditEvent["kind"]): ActivityGlyph {
+  return KIND_GLYPH[kind] ?? "wrench";
+}
+
 /** The tone the outcome pill/icon renders with (drives colour + glyph). */
 export type OutcomeTone = "ok" | "error" | "pending" | "running" | "blocked" | "connect";
 

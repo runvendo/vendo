@@ -41,6 +41,12 @@ const VALUE_EXPORTS = [
   "describeActivity",
   "formatAuditTime",
   "outcomeLabel",
+  // ui-lane-panels pick B — the shared icon-ledger rows (ActivityPanel +
+  // VendoActivities render through them; ejected activities fork them).
+  "ActivityLedger",
+  "OutcomeIcon",
+  "formatRelativeAuditTime",
+  "kindGlyph",
   "BuildBeat",
   "toolPresentation",
   "ChromeRoot",
@@ -82,6 +88,7 @@ const TYPE_EXPORTS = [
   "VendoThreadProps",
   "MorphToastProps",
   "OutcomeTone",
+  "ActivityGlyph",
   // Discoverability (ui-usage-dx §6) — the dial + greeting config shapes.
   "VendoDiscoverability",
   "VendoGreeting",
