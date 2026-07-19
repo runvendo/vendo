@@ -340,7 +340,11 @@ would have gotten an answer, nonzero means the turn failed. It also validates
 When nothing is listening on the dev port, `doctor` offers to start the dev
 server for the probe (or pass `--yes` to start it non-interactively). `--json`
 prints one machine-readable object — `checks`, `liveTurn`, `cloud`, and the
-exit code — for scripts and agents.
+exit code — for scripts and agents. Every check carries a stable `id`; failing
+and warning checks additionally carry a registry `error_code` (e.g.
+`E-AUTH-001`) and a `fix_ref` URL into `https://vendo.run/agents/verify` with
+the installed version as a query param, so an agent's remediation loop is:
+doctor → read `fix_ref` → fix → repeat.
 
 `sync` extracts the host API and remix baselines. In strict mode, breaking
 extraction changes exit with code 2.

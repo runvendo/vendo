@@ -9,7 +9,9 @@ import type { VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "../server.js";
+import { doctorErrorCodes, doctorFixRef } from "./doctor-codes.js";
 import { runDoctor } from "./doctor.js";
+import { CLI_VERSION } from "./shared.js";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -633,6 +635,103 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     });
     expect(messages.logs.some((line) => line.includes("ejected thread matches @vendoai/ui v0.3.0"))).toBe(true);
     expect(messages.errors.some((line) => line.includes("ejected"))).toBe(false);
+  });
+});
+
+/** Agent-install DX (design 2026-07-19 §CLI-3) — every check carries a stable
+ *  id; failures and warnings additionally carry a registry `error_code` and a
+ *  full `fix_ref` URL into vendo.run/agents/verify. Passing checks carry
+ *  neither (nothing to fix). */
+describe("vendo doctor error codes + fix_refs", () => {
+  interface CodedCheck {
+    id: string;
+    status: string;
+    message: string;
+    error_code?: string;
+    fix_ref?: string;
+  }
+
+  async function jsonChecks(options: Parameters<typeof runDoctor>[0]): Promise<{ exit: number; report: { exit: number; wired: boolean; checks: CodedCheck[] } }> {
+    const logs: string[] = [];
+    const exit = await doctor({
+      json: true,
+      output: { log: (m) => logs.push(m), error: () => {} },
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+      ...options,
+    });
+    return { exit, report: JSON.parse(logs[0]!) as { exit: number; wired: boolean; checks: CodedCheck[] } };
+  }
+
+  it("stamps every failing check with a registered error_code and a full fix_ref URL", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-doctor-codes-broken-"));
+    cleanup.push(() => rm(root, { recursive: true, force: true }));
+    const { exit, report } = await jsonChecks({
+      targetDir: root,
+      fetchImpl: vi.fn().mockRejectedValue(new Error("offline")),
+      liveTurn: undefined, // exercise the real skip path (server unreachable)
+    });
+    expect(exit).toBe(1);
+    expect(report.exit).toBe(1);
+    const failures = report.checks.filter((check) => check.status !== "ok");
+    expect(failures.length).toBeGreaterThan(0);
+    for (const check of failures) {
+      expect(check.id).toBeTruthy();
+      expect(check.error_code).toMatch(/^E-[A-Z]+-\d{3}$/);
+      expect(doctorErrorCodes).toContain(check.error_code);
+      expect(check.fix_ref).toBe(`https://vendo.run/agents/verify?v=${CLI_VERSION}#${check.error_code}`);
+    }
+    // The remediation surface is broad: wiring, config, live probes, auth, turn.
+    const codes = new Set(failures.map((check) => check.error_code));
+    expect(codes.size).toBeGreaterThan(4);
+  });
+
+  it("keeps passing checks lean: id always, no error_code or fix_ref", async () => {
+    const { exit, report } = await jsonChecks({
+      targetDir: await healthy(),
+      fetchImpl: successfulProbeFetch(),
+    });
+    expect(exit).toBe(0);
+    expect(report.wired).toBe(true);
+    expect(report.checks.length).toBeGreaterThan(0);
+    for (const check of report.checks) {
+      expect(check.status).toBe("ok");
+      expect(check.id).toBeTruthy();
+      expect(check).not.toHaveProperty("error_code");
+      expect(check).not.toHaveProperty("fix_ref");
+    }
+  });
+
+  it("stamps warnings with codes too without flipping the exit", async () => {
+    const { exit, report } = await jsonChecks({
+      targetDir: await healthy(),
+      fetchImpl: successfulProbeFetch(),
+      cloudProbe: async () => ({ present: true, ok: false, unlocks: ["x"], error: "revoked" }),
+    });
+    expect(exit).toBe(0);
+    const warning = report.checks.find((check) => check.status === "warning");
+    expect(warning).toMatchObject({
+      id: "cloud/key",
+      error_code: "E-CLOUD-001",
+      fix_ref: doctorFixRef("E-CLOUD-001"),
+    });
+  });
+
+  it("exits nonzero while any single check fails", async () => {
+    const root = await healthy();
+    await rm(join(root, ".vendo", "brief.md"));
+    const { exit, report } = await jsonChecks({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+    });
+    expect(exit).toBe(1);
+    expect(report.wired).toBe(false);
+    const broken = report.checks.filter((check) => check.status === "broken");
+    expect(broken).toHaveLength(1);
+    expect(broken[0]).toMatchObject({
+      id: "config/brief.md",
+      error_code: "E-CFG-001",
+      fix_ref: doctorFixRef("E-CFG-001"),
+    });
   });
 });
 
