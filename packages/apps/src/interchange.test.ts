@@ -356,7 +356,7 @@ describe(".vendoapp interchange through createApps", () => {
 
     await expect(runtime.importApp(archive, context("user_ada"))).rejects.toMatchObject({
       code: "validation",
-      message: expect.stringContaining("fn: references require an app server"),
+      message: expect.stringContaining("fn: references require a machine"),
     });
   });
 

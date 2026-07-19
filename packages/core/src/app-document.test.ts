@@ -312,13 +312,18 @@ describe("validateAppDocument with vendo-genui/v2 trees", () => {
     expectValidation({ ...v2Minimal(), components: { "not-pascal": "x" } });
   });
 
-  it("requires a server for fn: v2 query tools and prop actions", () => {
+  it("requires a machine (or legacy server) for fn: v2 query tools and prop actions", () => {
     const withQuery = {
       ...v2Minimal(),
       tree: { ...v2Minimal().tree, queries: [{ name: "load", tool: "fn:load" }] },
     };
-    expectValidationMessage(withQuery, "fn: references require an app server");
+    expectValidationMessage(withQuery, "fn: references require a machine (or legacy app server)");
     expect(validateAppDocument({ ...withQuery, server: "e2b:snap_ok" }).ok).toBe(true);
+    // execution-v2: the v2 machine satisfies the presence rule the same way.
+    expect(validateAppDocument({
+      ...withQuery,
+      machine: { snapshotRef: "e2b:v2:snap_ok", provisionedAt: "2026-07-19T00:00:00.000Z" },
+    }).ok).toBe(true);
     expectValidationMessage(
       {
         ...v2Minimal(),
@@ -327,7 +332,7 @@ describe("validateAppDocument with vendo-genui/v2 trees", () => {
           nodes: [{ id: "root", component: "Button", props: { nested: [{ action: "fn:click" }] } }],
         },
       },
-      "fn: references require an app server",
+      "fn: references require a machine (or legacy app server)",
     );
   });
 

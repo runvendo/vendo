@@ -42,6 +42,7 @@ describe("doctor error-code registry", () => {
         "E-MCP-006": "server.json is invalid JSON",
         "E-MCP-007": "the local MCP registry auth challenge is malformed",
         "E-MCP-008": "the live MCP registry auth challenge is malformed",
+        "E-SCHED-001": "apps declare vendo.json schedules but no schedule caller is configured",
         "E-TURN-001": "the live model turn did not answer",
         "E-TURN-002": "the live model turn cannot run while the dev server is down",
         "E-UI-001": "an ejected surface predates the installed @vendoai/ui",

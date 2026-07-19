@@ -16,6 +16,33 @@ Schedules support exactly one of a five-field `cron`, a duration such as
 `15m`, or a one-shot UTC timestamp. Cron evaluates in UTC. If the host misses a
 window, the next tick fires once and never back-fills.
 
+The bearer is the host-configured `VENDO_TICK_SECRET`. Point any external cron
+at it — Vercel cron, a GitHub Actions schedule, or crontab — as often as you
+like: firing is idempotent within a cron window, so a double-hit never
+double-runs anything.
+
+## Machine app schedules
+
+The same tick drives graduated apps' machines. An app whose box ships a
+`vendo.json` manifest declaring schedules —
+
+```json
+{ "schedules": [{ "cron": "0 8 * * *", "fn": "chaseInvoices" }] }
+```
+
+— gets each due target fired as `POST /fn/<name>` on its machine: the tick
+wakes the machine, posts the fn as the app owner's away execution, records
+last-fired state, and the machine goes back to sleep on the normal idle
+policy. Due-ness is computed from store-cached state, so a tick never wakes a
+machine with nothing due. The response's additive `schedules` field reports
+what fired.
+
+The host learns a box's schedules by reading `vendo.json` over the machine
+door whenever the machine is awake at tick time (and once, on the first tick
+after graduation). A manifest edited while the machine sleeps is picked up the
+next time it is awake. `vendo doctor` reports machine-bearing apps, whether a
+schedule caller is configured, and last-fired times.
+
 ## Host events
 
 Emit from the host code path that owns the event:
