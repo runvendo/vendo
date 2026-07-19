@@ -19,7 +19,6 @@ description: "Every environment variable Vendo reads across host process, sandbo
 | `CI` | disables telemetry |
 | `NODE_ENV=production` | disables build and development telemetry at runtime |
 | `E2B_API_KEY` | default key read by the E2B SDK when `e2bSandbox` receives no explicit `apiKey`; also auto-selects the E2B execution venue in `createVendo` when no `sandbox:` is passed and the optional `e2b` package is installed |
-| `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET` | together auto-select the Modal execution venue in `createVendo` when no `sandbox:` is passed, `E2B_API_KEY` is unset, and the optional `modal` package is installed |
 | `VERCEL`, `CF_PAGES`, `AWS_LAMBDA_FUNCTION_NAME` | prevent the default PGlite store from opening on an ephemeral serverless filesystem; pass a Postgres URL instead |
 | `VENDO_STORE_ENCRYPTION_KEY` | 32-byte base64 key the default composition uses to encrypt secret values in `vendo_secrets`; provisioned by `vendo init` and read when no store is passed to `createVendo`. An explicitly configured store ignores it |
 | `VENDO_DEV_CREDENTIAL` | pins a [dev-mode credential ladder](/connect/dev-mode) rung: `env-key`, `claude`, `codex`, `vendo`, or `none`. Ignored when `NODE_ENV=production` for session rungs |
@@ -66,8 +65,7 @@ Records reject unknown or empty `refs` keys with `400`.
 
 Vendo receives an AI SDK `LanguageModel`; model provider keys are configured by
 that provider, not selected by a Vendo environment-variable ladder. Connector
-keys are passed to connector constructors. Modal credentials are passed to
-`modalSandbox({ tokenId, tokenSecret })`. The hosted `vendoSandbox()` adapter
+keys are passed to connector constructors. The hosted `vendoSandbox()` adapter
 reads `VENDO_API_KEY` and `VENDO_CLOUD_URL` from the process; see
 [Vendo Cloud](/deploy/vendo-cloud) for the full setup.
 

@@ -1,5 +1,4 @@
 import type { SandboxAdapter, SandboxMachine } from "../sandbox.js";
-import type { V1SandboxCreateSpec } from "../sandbox-v1-compat.js";
 
 export interface MachineRequest {
   method: string;
@@ -38,11 +37,17 @@ export interface FakeExecCall {
   opts?: { cwd?: string; timeoutMs?: number };
 }
 
-/** The v2 create spec plus the deprecated v1 compat extras the fake still models. */
-export interface FakeCreateSpec extends Pick<V1SandboxCreateSpec, "files" | "egress"> {
+/** The v2 create spec plus the deprecated v1 compat extras the fake still
+    models (kept local so the fake never depends on the temporary
+    sandbox-v1-compat module; both extras die with the v1 paths). */
+export interface FakeCreateSpec {
   template?: string;
   env: Record<string, string>;
   allowedDomains?: string[];
+  /** @deprecated v1 initial-files seeding; the in-box agent replaced it. */
+  files?: Record<string, Uint8Array | string>;
+  /** @deprecated v1 name for allowedDomains. */
+  egress?: string[];
 }
 
 interface FakeSnapshot {
@@ -170,15 +175,21 @@ export class FakeSandboxMachine implements SandboxMachine {
   }
 
   readonly files = {
+    // Reads stay available after stop/destroy on purpose: the fake doubles as
+    // a post-mortem probe for tests asserting what a torn-down machine held.
+    // Every OPERATION (write/list/exec/screenshot/url/request/snapshot) is
+    // lifecycle-guarded like a real provider.
     read: async (path: string): Promise<Uint8Array> => {
       const bytes = this.fileContents.get(path);
       if (bytes === undefined) throw new Error(`Unknown fake sandbox file: ${path}`);
       return bytes.slice();
     },
     write: async (path: string, bytes: Uint8Array | string): Promise<void> => {
+      this.ensureRunning("write a file");
       this.fileContents.set(path, toBytes(bytes));
     },
     list: async (dir: string): Promise<string[]> => {
+      this.ensureRunning("list files");
       const prefix = dir === "" || dir === "/" ? "" : `${dir.replace(/\/$/, "")}/`;
       return [...new Set(
         [...this.fileContents.keys()]
@@ -205,6 +216,7 @@ export class FakeSandboxMachine implements SandboxMachine {
   }
 
   async exec(cmd: string, opts?: { cwd?: string; timeoutMs?: number }): Promise<FakeExecResult> {
+    this.ensureRunning("exec a command");
     this.commands.push(opts === undefined ? { cmd } : { cmd, opts: { ...opts } });
     const programmed = this.execResults.shift();
     if (programmed !== undefined) return programmed;
@@ -242,10 +254,12 @@ export class FakeSandboxMachine implements SandboxMachine {
   }
 
   async screenshot(): Promise<Uint8Array> {
+    this.ensureRunning("capture a screenshot");
     return onePixelPng.slice();
   }
 
   async url(port: number): Promise<string> {
+    this.ensureRunning("resolve a serving URL");
     return `http://fake-machine-${this.id}.local:${port}`;
   }
 

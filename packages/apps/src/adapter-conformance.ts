@@ -91,7 +91,9 @@ export const sandboxAdapterConformance = (
       expect(decoder.decode(echoed.body)).toBe("round-trip");
 
       const snapshotRef = await created.snapshot();
-      expect(snapshotRef).toMatch(/^[a-z][a-z0-9-]*:.+/);
+      // The seam requires provider-prefixed refs (e.g. "e2b:…"); the prefix
+      // spelling beyond that is the provider's business.
+      expect(snapshotRef).toMatch(/^[A-Za-z][A-Za-z0-9_-]*:.+/);
 
       await created.stop();
       await created.stop(); // sleeping twice is not an error

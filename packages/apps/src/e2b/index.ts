@@ -1,6 +1,5 @@
 import { VendoError } from "@vendoai/core";
 import type { SandboxAdapter, SandboxMachine } from "../sandbox.js";
-import type { V1SandboxCreateSpec } from "../sandbox-v1-compat.js";
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_PORT = 8080;
@@ -18,11 +17,17 @@ export interface E2BSandboxOptions {
 type E2BMachine = InstanceType<typeof import("e2b").Sandbox>;
 
 /** The v2 create spec plus the deprecated v1 compat extras this adapter still
-    honors for the dying v1 call sites (see sandbox-v1-compat.ts header). */
-type E2BCreateSpec = Pick<V1SandboxCreateSpec, "files" | "egress"> & {
+    honors for the dying v1 call sites (kept local so this adapter never
+    depends on the temporary sandbox-v1-compat module; both extras die with
+    the v1 paths). */
+type E2BCreateSpec = {
   template?: string;
   env: Record<string, string>;
   allowedDomains?: string[];
+  /** @deprecated v1 initial-files seeding; the in-box agent replaced it. */
+  files?: Record<string, Uint8Array | string>;
+  /** @deprecated v1 name for allowedDomains. */
+  egress?: string[];
 };
 
 const toArrayBuffer = (value: Uint8Array): ArrayBuffer => value.slice().buffer as ArrayBuffer;
@@ -143,12 +148,13 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
     state: { allowedDomains?: string[] | undefined; port: number },
   ): SandboxMachine => {
     const baseUrl = (port: number): string => `https://${sandbox.getHost(port)}`;
-    // Seam rule: sleeping or destroying twice is not an error. Guarded here so
-    // idempotence never depends on how a given e2b SDK version treats a second
-    // pause()/kill() (a paused machine is never unpaused in place — resume()
-    // always boots a new sandbox — so the flags can only move forward).
-    let paused = false;
-    let killed = false;
+    // Seam rule: sleeping or destroying twice is not an error, and destroy is
+    // final. The one-shot promises make that hold under concurrency too —
+    // each transition is assigned synchronously, so racing callers share one
+    // provider call instead of issuing duplicate pause()/kill()s, and a
+    // destroy during an in-flight pause serializes after it.
+    let sleeping: Promise<void> | undefined;
+    let destroying: Promise<void> | undefined;
 
     return {
       id: sandbox.sandboxId,
@@ -173,14 +179,19 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
         return encodeSnapshotRef(snapshot.snapshotId, state.allowedDomains, state.port);
       },
       async stop() {
-        if (paused || killed) return;
-        await sandbox.pause();
-        paused = true;
+        if (destroying !== undefined) {
+          await destroying;
+          return;
+        }
+        sleeping ??= sandbox.pause().then(() => undefined);
+        await sleeping;
       },
       async destroy() {
-        if (killed) return;
-        await sandbox.kill();
-        killed = true;
+        destroying ??= (sleeping ?? Promise.resolve())
+          .catch(() => undefined)
+          .then(() => sandbox.kill())
+          .then(() => undefined);
+        await destroying;
       },
       // ——— adapter-private below this line (bootstrap/diagnostics + v1 compat) ———
       async exec(cmd: string, execOptions?: { cwd?: string; timeoutMs?: number }) {

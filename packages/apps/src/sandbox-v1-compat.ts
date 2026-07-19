@@ -8,7 +8,8 @@
  *
  * These are the archived v1 seam shapes (docs/archive/contracts/06-apps.md
  * §3-4) kept only so the dying v1 code paths keep compiling and behaving
- * until their owning lanes replace them. Nothing new may import this module.
+ * until their owning lanes replace them. Only those dying paths (and their
+ * tests/fixtures) may import this module — nothing new depends on it.
  */
 import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 
@@ -63,11 +64,18 @@ const wrapV1Machine = (machine: V1SandboxMachine | SandboxMachine): V1SandboxMac
   // gone" (evict, post-snapshot teardown). v2 stop() is a snapshot-preserving
   // sleep, so passing it through would strand paused provider machines nobody
   // resumes. The adapter-private exec/files the in-repo adapters still carry
-  // are reached through the same pass-through.
+  // are reached through the same pass-through; a v2-only adapter without them
+  // fails loudly at the access, not with "not a function" downstream.
   return new Proxy(machine, {
     get(target, property, receiver) {
       if (property === "stop") return () => target.destroy();
-      return Reflect.get(target, property, receiver);
+      const value = Reflect.get(target, property, target);
+      if ((property === "exec" || property === "files") && value === undefined) {
+        throw new Error(`sandbox machine ${target.id} has no adapter-private ${property}; this v2-only adapter cannot drive the retiring v1 ${property} paths (they end with execution-v2 Wave 1)`);
+      }
+      // Bind with the real machine as receiver so class-based adapters using
+      // #private fields or brand checks survive the proxy hop.
+      return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : (value as unknown);
     },
   }) as unknown as V1SandboxMachine;
 };
@@ -81,7 +89,11 @@ const wrapV1Machine = (machine: V1SandboxMachine | SandboxMachine): V1SandboxMac
 export const toV1SandboxAdapter = (
   adapter: SandboxAdapter | V1SandboxAdapter,
 ): V1SandboxAdapter => ({
+  // The v1 egress field is republished as the v2 spec's allowedDomains so a
+  // v2-only adapter that never heard of `egress` still enforces the policy.
   create: async (spec) =>
-    wrapV1Machine(await (adapter as V1SandboxAdapter).create(spec)),
+    wrapV1Machine(await (adapter as V1SandboxAdapter).create(
+      spec.egress === undefined ? spec : { allowedDomains: [...spec.egress], ...spec } as V1SandboxCreateSpec,
+    )),
   resume: async (snapshotRef) => wrapV1Machine(await adapter.resume(snapshotRef)),
 });
