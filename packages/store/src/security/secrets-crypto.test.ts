@@ -7,8 +7,8 @@ import { decryptSecret, encryptSecret, validateEncryptionKey } from "../crypto.j
 // Secrets are the highest-value rows in the store; this pins the guarantees that
 // make the ciphertext safe at rest: authenticated encryption, per-message random
 // IVs, integrity on both ciphertext and tag, and a generic (oracle-free) error.
-// The secret NAME rides as AAD in the v2 envelope; the name-binding and legacy
-// v1 legs live in secrets-aad.conformance.test.ts.
+// The secret NAME rides as AAD in the v2 envelope; the name-binding leg lives in
+// secrets-aad.conformance.test.ts.
 
 const key = (): Buffer => randomBytes(32);
 const NAME = "API_TOKEN";
@@ -121,7 +121,7 @@ describe("validateEncryptionKey", () => {
     }
   });
 
-  it("rejects non-base64 / non-canonical strings", () => {
+  it("rejects non-base64 strings", () => {
     for (const value of ["not valid base64 !!!", "@@@@", "====", "  "]) {
       expect(() => validateEncryptionKey(value)).toThrow(VendoError);
     }

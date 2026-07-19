@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
  * jail (whose module space is React plus captured sub-sources, and whose CSS is
  * the captured app-root stylesheet, not the compiled Tailwind bundle). The
  * container (`net-worth-card.tsx`) feeds it live data; the registration in
- * `src/vendo/host-components.tsx` feeds it seed-matching sampleProps.
+ * `src/vendo/registry.tsx` feeds it seed-matching sampleProps.
  */
 
 export type NetWorthRange = "1W" | "1M" | "3M" | "1Y" | "All"

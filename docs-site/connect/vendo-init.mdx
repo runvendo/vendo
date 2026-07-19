@@ -48,8 +48,10 @@ exists), preserves your existing formatting, and only writes if you approve
 the diff.
 
 Init also creates or appends `VENDO_BASE_URL=http://localhost:3000` to
-`.env.example` with a comment explaining that present-mode credential
-forwarding is disabled without it. The write is idempotent — existing lines
+`.env.example` with a comment explaining the trust semantics: development
+trusts the request's own origin automatically, while production fails loud
+without the variable set (a credential-forwarding call errors instead of
+silently running unauthenticated). The write is idempotent — existing lines
 are preserved — so it is safe to run `vendo init` again.
 
 One of those questions is whether to open the [MCP door](/capabilities/mcp).

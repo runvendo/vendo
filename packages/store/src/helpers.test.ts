@@ -92,20 +92,20 @@ for (const backend of backends()) {
         contextKey: "sess_ctx_1",
         expiresAt: at(59),
       });
-      const constrained = grantFixture("grt_constrained", {
-        scope: { kind: "constrained", constraints: [{ path: "/amount", op: "lte", value: 100 }] },
+      const tool = grantFixture("grt_tool", {
+        scope: { kind: "tool" },
         duration: "task",
         contextKey: "task_ctx_1",
       });
       await grants.create(persistentPrincipal, exact);
-      await grants.create(persistentPrincipal, constrained);
+      await grants.create(persistentPrincipal, tool);
       // Typed-helper read is byte-for-byte the core shape (scope union, contextKey, expiresAt all preserved).
       expect(permissionGrantSchema.parse(await grants.get("grt_exact"))).toEqual(exact);
-      expect(permissionGrantSchema.parse(await grants.get("grt_constrained"))).toEqual(constrained);
+      expect(permissionGrantSchema.parse(await grants.get("grt_tool"))).toEqual(tool);
       // The same rows read back identically through the routed vendo_grants collection.
       const routed = made.store.records("vendo_grants");
       expect(permissionGrantSchema.parse((await routed.get("grt_exact"))?.data)).toEqual(exact);
-      expect(permissionGrantSchema.parse((await routed.get("grt_constrained"))?.data)).toEqual(constrained);
+      expect(permissionGrantSchema.parse((await routed.get("grt_tool"))?.data)).toEqual(tool);
       // Authoritative columns are derived from the grant, not the caller.
       expect(await made.sql("SELECT scope, duration, context_key FROM vendo_grants WHERE id = 'grt_exact'"))
         .toEqual([{ scope: exact.scope, duration: "session", context_key: "sess_ctx_1" }]);

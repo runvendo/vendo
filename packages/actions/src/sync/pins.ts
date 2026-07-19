@@ -9,13 +9,13 @@ import {
   type UnresolvedPin,
   type UnresolvedPinReason,
 } from "../formats.js";
+import type TS from "typescript";
 import {
   importReferenceFor,
   isInside,
+  parseModuleSource,
   resolveImportSource,
-  splitTopLevel,
-  stripComments,
-  topLevelObjectLiteral,
+  visitNodes,
   walk,
 } from "./common.js";
 
@@ -39,6 +39,9 @@ interface PinRegistration {
   invalidSampleProps: boolean;
   /** Offset of the registration object literal's opening brace in its module source. */
   at: number;
+  /** True when the literal also carries a `path` field — a router-table entry,
+   * never offered for remix wrapping. */
+  routerTable: boolean;
 }
 
 export interface PinCaptureResult {
@@ -50,168 +53,125 @@ export interface PinCaptureResult {
 
 const RUNTIME_CAPTURE_HINT = "run the host in dev with Vendo mounted to runtime-capture it";
 
-class StaticValueParser {
-  private index = 0;
+const INVALID_STATIC_VALUE = Symbol("invalid-static-value");
 
-  constructor(private readonly source: string) {}
-
-  parse(): unknown {
-    const value = this.value();
-    this.space();
-    if (this.index !== this.source.length) throw new Error("unexpected trailing input");
-    return value;
+/** Statically evaluate an expression to a JSON-compatible value: string,
+ * number, boolean, and null literals, plus object and array literals of the
+ * same. Anything dynamic — identifiers, calls, spreads, templates — is
+ * invalid; sampleProps must be a value the runtime can replay verbatim. */
+function staticJsonValue(ts: typeof TS, expression: TS.Expression): unknown {
+  if (ts.isStringLiteral(expression)) return expression.text;
+  if (ts.isNumericLiteral(expression)) {
+    const value = Number(expression.text);
+    return Number.isFinite(value) ? value : INVALID_STATIC_VALUE;
   }
-
-  private space(): void {
-    while (/\s/u.test(this.source[this.index] ?? "")) this.index += 1;
+  if (ts.isPrefixUnaryExpression(expression)
+    && expression.operator === ts.SyntaxKind.MinusToken
+    && ts.isNumericLiteral(expression.operand)) {
+    const value = -Number(expression.operand.text);
+    return Number.isFinite(value) ? value : INVALID_STATIC_VALUE;
   }
-
-  private value(): unknown {
-    this.space();
-    const character = this.source[this.index];
-    if (character === "{" ) return this.object();
-    if (character === "[") return this.array();
-    if (character === "\"" || character === "'") return this.string();
-    const rest = this.source.slice(this.index);
-    for (const [literal, value] of [["true", true], ["false", false], ["null", null]] as const) {
-      if (rest.startsWith(literal) && !/[A-Za-z0-9_$]/u.test(rest[literal.length] ?? "")) {
-        this.index += literal.length;
-        return value;
-      }
-    }
-    const number = rest.match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/u)?.[0];
-    if (number !== undefined) {
-      this.index += number.length;
-      const value = Number(number);
-      if (Number.isFinite(value)) return value;
-    }
-    throw new Error("sampleProps must be a static JSON-compatible value");
-  }
-
-  private string(): string {
-    const quote = this.source[this.index++];
-    let value = "";
-    while (this.index < this.source.length) {
-      const character = this.source[this.index++];
-      if (character === quote) return value;
-      if (character !== "\\") {
-        value += character;
-        continue;
-      }
-      const escaped = this.source[this.index++];
-      const simple: Record<string, string> = {
-        "\"": "\"", "'": "'", "\\": "\\", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t",
-      };
-      if (escaped !== undefined && simple[escaped] !== undefined) {
-        value += simple[escaped];
-        continue;
-      }
-      if (escaped === "u") {
-        const hex = this.source.slice(this.index, this.index + 4);
-        if (!/^[0-9a-f]{4}$/iu.test(hex)) throw new Error("invalid unicode escape");
-        value += String.fromCharCode(Number.parseInt(hex, 16));
-        this.index += 4;
-        continue;
-      }
-      throw new Error("unsupported string escape");
-    }
-    throw new Error("unterminated string");
-  }
-
-  private key(): string {
-    this.space();
-    if (this.source[this.index] === "\"" || this.source[this.index] === "'") return this.string();
-    const identifier = this.source.slice(this.index).match(/^[A-Za-z_$][\w$]*/u)?.[0];
-    if (identifier === undefined) throw new Error("object keys must be static");
-    this.index += identifier.length;
-    return identifier;
-  }
-
-  private object(): Record<string, unknown> {
-    this.index += 1;
+  if (expression.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (expression.kind === ts.SyntaxKind.FalseKeyword) return false;
+  if (expression.kind === ts.SyntaxKind.NullKeyword) return null;
+  if (ts.isObjectLiteralExpression(expression)) {
     const value = Object.create(null) as Record<string, unknown>;
-    this.space();
-    while (this.source[this.index] !== "}") {
-      const key = this.key();
-      this.space();
-      if (this.source[this.index++] !== ":") throw new Error("object property needs a colon");
-      value[key] = this.value();
-      this.space();
-      if (this.source[this.index] === "}") break;
-      if (this.source[this.index++] !== ",") throw new Error("object properties need commas");
-      this.space();
-      if (this.source[this.index] === "}") break;
+    for (const property of expression.properties) {
+      if (!ts.isPropertyAssignment(property)) return INVALID_STATIC_VALUE;
+      const name = property.name;
+      if (!ts.isIdentifier(name) && !ts.isStringLiteral(name)) return INVALID_STATIC_VALUE;
+      const item = staticJsonValue(ts, property.initializer);
+      if (item === INVALID_STATIC_VALUE) return INVALID_STATIC_VALUE;
+      value[name.text] = item;
     }
-    if (this.source[this.index++] !== "}") throw new Error("unterminated object");
     return value;
   }
-
-  private array(): unknown[] {
-    this.index += 1;
+  if (ts.isArrayLiteralExpression(expression)) {
     const value: unknown[] = [];
-    this.space();
-    while (this.source[this.index] !== "]") {
-      value.push(this.value());
-      this.space();
-      if (this.source[this.index] === "]") break;
-      if (this.source[this.index++] !== ",") throw new Error("array items need commas");
-      this.space();
-      if (this.source[this.index] === "]") break;
+    for (const element of expression.elements) {
+      if (ts.isSpreadElement(element) || ts.isOmittedExpression(element)) return INVALID_STATIC_VALUE;
+      const item = staticJsonValue(ts, element);
+      if (item === INVALID_STATIC_VALUE) return INVALID_STATIC_VALUE;
+      value.push(item);
     }
-    if (this.source[this.index++] !== "]") throw new Error("unterminated array");
     return value;
   }
+  return INVALID_STATIC_VALUE;
 }
 
-function staticSampleProps(source: string): Record<string, unknown> | null {
-  try {
-    const parsed = new StaticValueParser(source).parse();
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : null;
-  } catch {
-    return null;
-  }
+function staticSampleProps(ts: typeof TS, expression: TS.Expression): Record<string, unknown> | null {
+  const parsed = staticJsonValue(ts, expression);
+  return parsed !== INVALID_STATIC_VALUE && typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : null;
 }
 
-function registrationFromBody(body: string, helperMarked: boolean, at: number): PinRegistration | null {
+function propertyName(ts: typeof TS, property: TS.ObjectLiteralElementLike): string | null {
+  if (!ts.isPropertyAssignment(property)) return null;
+  const name = property.name;
+  return ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text : null;
+}
+
+/** The registration is `remixable(…)`'s first argument. */
+function isRemixableHelperArgument(ts: typeof TS, literal: TS.ObjectLiteralExpression): boolean {
+  const parent = literal.parent;
+  if (!ts.isCallExpression(parent) || parent.arguments[0] !== literal) return false;
+  const callee = parent.expression;
+  if (ts.isIdentifier(callee)) return callee.text === "remixable";
+  return ts.isPropertyAccessExpression(callee) && callee.name.text === "remixable";
+}
+
+function registrationFromLiteral(ts: typeof TS, sf: TS.SourceFile, literal: TS.ObjectLiteralExpression): PinRegistration | null {
   let slot: string | undefined;
   let component: string | undefined;
-  let remixable = helperMarked;
+  let remixable = isRemixableHelperArgument(ts, literal);
   let exportable = false;
+  let routerTable = false;
   let sampleProps: Record<string, unknown> | undefined;
   let invalidSampleProps = false;
-  for (const rawField of splitTopLevel(body)) {
-    const field = rawField.trim();
-    const nameMatch = field.match(/^(?:["']name["']|name)\s*:\s*["']([^"']+)["']\s*$/su);
-    if (nameMatch?.[1]) slot = nameMatch[1];
-    const componentMatch = field.match(/^(?:["']component["']|component)\s*:\s*(.+)$/su);
-    if (componentMatch?.[1]) component = componentMatch[1].trim();
-    if (/^(?:["']remixable["']|remixable)\s*:\s*true\s*$/su.test(field)) remixable = true;
-    if (/^(?:["']exportable["']|exportable)\s*:\s*true\s*$/su.test(field)) exportable = true;
-    const sampleMatch = field.match(/^(?:["']sampleProps["']|sampleProps)\s*:\s*([\s\S]+)$/u);
-    if (sampleMatch?.[1] !== undefined) {
-      const parsed = staticSampleProps(sampleMatch[1]);
+  for (const property of literal.properties) {
+    const name = propertyName(ts, property);
+    if (name === null || !ts.isPropertyAssignment(property)) continue;
+    const initializer = property.initializer;
+    if (name === "name" && ts.isStringLiteral(initializer) && initializer.text.length > 0) slot = initializer.text;
+    if (name === "component") component = initializer.getText(sf).trim();
+    if (name === "remixable" && initializer.kind === ts.SyntaxKind.TrueKeyword) remixable = true;
+    if (name === "exportable" && initializer.kind === ts.SyntaxKind.TrueKeyword) exportable = true;
+    if (name === "path") routerTable = true;
+    if (name === "sampleProps") {
+      const parsed = staticSampleProps(ts, initializer);
       if (parsed === null) invalidSampleProps = true;
       else sampleProps = parsed;
     }
   }
   return slot && component
-    ? { slot, component, remixable, exportable, invalidSampleProps, at, ...(sampleProps === undefined ? {} : { sampleProps }) }
+    ? {
+        slot,
+        component,
+        remixable,
+        exportable,
+        invalidSampleProps,
+        at: literal.getStart(sf),
+        routerTable,
+        ...(sampleProps === undefined ? {} : { sampleProps }),
+      }
     : null;
 }
 
 /** Every `{ name, component }` registration literal in one module, remixable or not. */
-function registrations(source: string): PinRegistration[] {
+function registrations(source: string, fileName?: string): PinRegistration[] {
+  // A registration needs a `component` property; the token's absence is a
+  // cheap skip that avoids parsing every walked module.
+  if (!source.includes("component")) return [];
+  const parsed = parseModuleSource(source, fileName);
+  if (!parsed) return [];
+  const { ts, sf } = parsed;
   const found: PinRegistration[] = [];
-  for (let index = 0; index < source.length; index += 1) {
-    if (source[index] !== "{") continue;
-    const body = topLevelObjectLiteral(source, index);
-    if (!body) continue;
-    const helperMarked = /\bremixable\s*\(\s*$/.test(source.slice(Math.max(0, index - 80), index));
-    const registration = registrationFromBody(body, helperMarked, index);
+  visitNodes(ts, sf, (node) => {
+    if (!ts.isObjectLiteralExpression(node)) return;
+    const registration = registrationFromLiteral(ts, sf, node);
     if (registration) found.push(registration);
-  }
+  });
   return found;
 }
 
@@ -219,22 +179,27 @@ function portablePath(root: string, file: string): string {
   return path.relative(root, file).split(path.sep).join("/");
 }
 
-function importSpecifiers(source: string): string[] {
-  // `[^;\n]*` keeps the type-erasure line-scoped: in a semicolon-free module a
-  // newline-spanning `[^;]*` would greedily erase everything after the first
-  // `import type` — including real stylesheet and component imports.
-  const withoutTypes = stripComments(source)
-    .replace(/\bimport\s+type\b[^;\n]*(?:;|$)/gmu, "")
-    .replace(/\bexport\s+type\b[^;\n]*(?:;|$)/gmu, "");
+function importSpecifiers(source: string, fileName?: string): string[] {
+  const parsed = parseModuleSource(source, fileName);
+  if (!parsed) return [];
+  const { ts, sf } = parsed;
   const found: Array<{ at: number; specifier: string }> = [];
-  const staticImport = /\bimport\s+(?:[^"'`;]*?\s+from\s+)?["']([^"']+)["']/gmu;
-  const reExport = /\bexport\s+[^"'`;]*?\s+from\s+["']([^"']+)["']/gmu;
-  const dynamicImport = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/gmu;
-  for (const pattern of [staticImport, reExport, dynamicImport]) {
-    for (const match of withoutTypes.matchAll(pattern)) {
-      if (match[1] !== undefined && match.index !== undefined) found.push({ at: match.index, specifier: match[1] });
+  for (const statement of sf.statements) {
+    if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)
+      && statement.importClause?.isTypeOnly !== true) {
+      found.push({ at: statement.getStart(sf), specifier: statement.moduleSpecifier.text });
+    }
+    if (ts.isExportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)
+      && !statement.isTypeOnly) {
+      found.push({ at: statement.getStart(sf), specifier: statement.moduleSpecifier.text });
     }
   }
+  visitNodes(ts, sf, (node) => {
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      const [argument] = node.arguments;
+      if (argument && ts.isStringLiteral(argument)) found.push({ at: node.getStart(sf), specifier: argument.text });
+    }
+  });
   found.sort((left, right) => left.at - right.at || left.specifier.localeCompare(right.specifier));
   return [...new Set(found.map(({ specifier }) => specifier))];
 }
@@ -276,7 +241,7 @@ async function captureRootStyles(
   const seen = new Set<string>();
   for (const rootFile of files.filter((file) => ROOT_FILE.test(portablePath(root, file)))) {
     const source = await fs.readFile(rootFile, "utf8");
-    for (const specifier of importSpecifiers(source).filter((value) => /\.css$/iu.test(value))) {
+    for (const specifier of importSpecifiers(source, rootFile).filter((value) => /\.css$/iu.test(value))) {
       const resolved = await resolveImportSource(rootFile, specifier, root);
       if (resolved === null) {
         warnings.push(`host app root ${portablePath(root, rootFile)} stylesheet import ${specifier} could not be resolved`);
@@ -324,7 +289,7 @@ async function captureSubSources(
   while (queue.length > 0) {
     const task = queue.shift()!;
     const imports = task.id === null ? sourceImports : captured.get(task.id)!.imports;
-    for (const specifier of importSpecifiers(task.source)) {
+    for (const specifier of importSpecifiers(task.source, task.file)) {
       if (BLESSED_JAIL_MODULES.has(specifier)) continue;
       const importer = task.id ?? portablePath(realRoot, primaryFile);
       if (/\.css(?:$|\?)/iu.test(specifier)) {
@@ -407,7 +372,7 @@ export async function capturePins(
 
   for (const file of files) {
     const source = await fs.readFile(file, "utf8");
-    for (const registration of registrations(source).filter((candidate) => candidate.remixable)) {
+    for (const registration of registrations(source, file).filter((candidate) => candidate.remixable)) {
       if (seenSlots.has(registration.slot)) {
         result.warnings.push(`remixable slot ${registration.slot} is registered more than once; kept the first registration`);
         continue;
@@ -541,12 +506,11 @@ export async function scanRemixRegistrations(root: string): Promise<RemixRegistr
   const files = await walk(root, (relativePath) => /\.(?:[cm]?[jt]sx?)$/u.test(relativePath) && !/\.d\.ts$/u.test(relativePath));
   for (const file of files) {
     const source = await fs.readFile(file, "utf8");
-    for (const registration of registrations(source)) {
+    for (const registration of registrations(source, file)) {
       if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?$/.test(registration.component)) continue;
       // A `path` field marks a router table (`{ path, name, component }`), not a
       // host component registration — never offer to wrap those.
-      const body = topLevelObjectLiteral(source, registration.at);
-      if (body && splitTopLevel(body).some((field) => /^(?:["']path["']|path)\s*:/u.test(field.trim()))) continue;
+      if (registration.routerTable) continue;
       const reference = await importReferenceFor(source, registration.component);
       if (!reference) continue;
       const resolved = await resolveImportSource(file, reference.specifier, root, reference.imported);

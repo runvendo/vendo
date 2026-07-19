@@ -19,9 +19,14 @@ export {
 export { scanRemixRegistrations, type RemixRegistrationSite } from "./sync/pins.js";
 export { scanComponentCatalog, type CatalogScanResult } from "./sync/catalog-scan.js";
 export { mergeCatalogEntries, readCatalogFile, writeCatalog } from "./sync/catalog.js";
+// The static zod → JSON Schema interpreter (04 §1). Exported so the
+// composition can pin static/runtime derivation parity in tests — sync's
+// static output feeds the ajv-compiled disk validator while the runtime
+// derives from the live zod object, and the two must agree.
 export {
-  acceptCatalogProposals,
-  proposeCatalogCopy,
-  type CatalogCopyGenerator,
-  type CatalogCopyRequest,
-} from "./sync/catalog-ai.js";
+  parseModule,
+  zodFromExpression,
+  type FileModule,
+  type StaticExtraction,
+  type ZodSchemaResult,
+} from "./sync/static-ts.js";

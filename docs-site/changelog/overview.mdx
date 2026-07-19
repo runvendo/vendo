@@ -3,6 +3,23 @@ title: "Vendo product changelog"
 description: "Weekly release notes covering new Vendo features, product updates, MCP door capabilities, and bug fixes shipped to the SDK and runtime."
 ---
 
+<Update label="July 17, 2026" description="Week of July 14 – July 20">
+
+## New features
+
+**Humanized tool chips and approval cards.** `@vendoai/ui` chrome now shows
+friendly labels and readable argument previews instead of raw tool slugs,
+ai-SDK lifecycle strings, or raw JSON. `VendoProvider` accepts an optional
+`tools` prop (`ToolMetaMap`) with per-tool `label`, `description`, and
+`summarize(args)`; the new `useVendoTools()` hook exposes the same map to
+custom surfaces. Chrome falls back to prettified ids and `Key: value`
+previews when no metadata is supplied, collapses consecutive identical
+chips into a single entry with an `×N` count, and no longer prints a
+fabricated context byline on the in-thread approval card. See
+[Tool labels](/connect/tool-labels).
+
+</Update>
+
 <Update label="July 16, 2026" description="Week of July 14 – July 20">
 
 ## New features
@@ -13,6 +30,20 @@ serialized background polling that pauses in hidden tabs. `useThreads`
 brings headless parity with `VendoOverlay`, and `useApps` gains
 `export(appId)` and `import(bytes)` for round-tripping an `AppDocument`
 through the wire. See [Headless hooks](/reference/hooks).
+
+**Composer autogrow, type-while-streaming, edit, and regenerate.** The
+shipped chrome composer now grows with its content up to a 200px cap, then
+scrolls internally, so a long paste is no longer clipped to one line. The
+textarea stays enabled while a turn is streaming — a Send issued mid-turn
+shows as a cancelable **Queued** pill above the input and auto-sends the
+instant the reply finishes. Stop remains the explicit interrupt. Because
+the textarea no longer disables mid-turn, focus stays put and Escape and
+the overlay focus trap keep working. An **Edit** affordance on the last
+user turn drops that turn (and anything after) and refills the composer, so
+re-sending amends instead of duplicates. A **Regenerate** affordance on the
+last assistant turn re-issues from the preserved user message.
+Headless callers of `useVendoThread` get a new `setMessages` on the hook
+return that backs the same edit flow. See [Headless hooks](/reference/hooks#threads).
 
 </Update>
 
@@ -53,21 +84,10 @@ as long as your `principal(req)` returns `null` before sign-in and a real
 principal after, Vendo does the merge. See
 [Principals and organizations](/deploy/principals-and-orgs).
 
-**Organization workspaces (Cloud-gated).** New `/orgs` routes let admins
-create an organization, invite members with `owner`, `admin`, or `member`
-roles, and transfer apps into shared ownership. Org-owned runs execute
-under `vendo:org:<orgId>` while `RunContext.actor` records the human that
-triggered the run. Approvals and grants accept `?org=<orgId>` to operate
-under the org's subject. The route family is gated on `VENDO_API_KEY`
-with the new `orgs` capability; without it, `/status` reports
-`blocks.orgs: false` and the chrome renders an upgrade state. See
-[Principals and organizations](/deploy/principals-and-orgs).
-
 **Reserved `vendo:` subject namespace.** Webhook deliveries now execute
-under `vendo:webhook:<source>` and organization workspaces under
-`vendo:org:<orgId>`. `principal(req)` resolvers that return a `vendo:*`
-subject or `kind: "org"` are rejected at the wire — those identities are
-Vendo-owned. Update audit readers that filter on the bare
+under `vendo:webhook:<source>`. `principal(req)` resolvers that return a
+`vendo:*` subject or `kind: "org"` are rejected at the wire — those
+identities are Vendo-owned. Update audit readers that filter on the bare
 `webhook:<source>` form to match the new prefix. See
 [Principals and organizations](/deploy/principals-and-orgs).
 

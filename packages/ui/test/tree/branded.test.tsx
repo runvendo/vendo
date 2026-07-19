@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { VENDO_TREE_FORMAT, type Tree, type ToolOutcome } from "@vendoai/core";
+import { VENDO_TREE_FORMAT_V2, type ToolOutcome, type UIPayload } from "@vendoai/core";
 import { defaultVendoTheme, themeCssVariables } from "../../src/theme.js";
 import {
   Badge,
@@ -166,8 +166,8 @@ describe("branded primitive registration", () => {
   });
 
   it("renders all eight outside the generated-component jail", () => {
-    const tree: Tree = {
-      formatVersion: VENDO_TREE_FORMAT,
+    const tree: UIPayload = {
+      formatVersion: VENDO_TREE_FORMAT_V2,
       root: "root",
       nodes: [
         { id: "root", component: "Stack", children: ["card", "button", "input", "select", "table", "badge", "stat", "tabs"] },
@@ -192,8 +192,8 @@ describe("branded primitive registration", () => {
 
   it("passes interactive action bindings through the existing renderer chokepoint", () => {
     const onAction = vi.fn(ok);
-    const tree: Tree = {
-      formatVersion: VENDO_TREE_FORMAT,
+    const tree: UIPayload = {
+      formatVersion: VENDO_TREE_FORMAT_V2,
       root: "root",
       nodes: [
         { id: "root", component: "Tabs", source: "prewired", props: {

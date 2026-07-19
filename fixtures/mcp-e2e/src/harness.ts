@@ -92,7 +92,7 @@ const fixtureApp: AppDocument = {
   name: "MCP invoice fixture",
   description: "A rung-1 app served through the MCP Apps ride-along.",
   tree: {
-    formatVersion: "vendo-genui/v1",
+    formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [{ id: "root", component: "Text", props: { children: "Invoice fixture" } }],
     data: { fixture: true },

@@ -464,43 +464,50 @@ describe("agent threads", () => {
     });
   });
 
-  it("lets two subjects privately use the same thread id in MEMORY mode (no store)", async () => {
-    // With no store, threads live in per-subject maps: the same id is two distinct
-    // private threads — no conflict, no leak. This pins the intentional divergence
-    // from the store path (where the bare-id row forces cross-subject refusal).
+  it("gives a no-store agent the SAME cross-subject thread-id conflict as a store-backed one (kill-list B5)", async () => {
+    // Pre-B5, no `store` meant private per-subject Maps: the same id was two
+    // distinct, silently-diverging threads. B5 collapsed that onto the store
+    // path — a no-store agent now defaults internally to core's in-memory
+    // StoreAdapter (@vendoai/core/conformance) — so id ownership is exactly as
+    // shared, and Bob reusing Alice's id is refused exactly as it would be
+    // against a real store (see "refuses to reuse another subject's persisted
+    // thread id" above).
     const guard = testGuard({});
     const tools = boundRegistry({}, guard);
     const agent = createAgent({
-      model: scriptedModel([
-        textTurn("Alice reply.", "text_alice"),
-        textTurn("Bob reply.", "text_bob"),
-      ]),
+      model: scriptedModel([textTurn("Alice reply.", "text_alice")]),
       tools,
       guard,
-      // no store
+      // no store — exercises the internal default
     });
     const alice = ctx({ principal: { kind: "user", subject: "alice" }, sessionId: "sa" });
     const bob = ctx({ principal: { kind: "user", subject: "bob" }, sessionId: "sb" });
     const sharedId = "thr_shared_id";
 
     await readSse(await agent.stream({ threadId: sharedId, message: userMessage("m_a", "Hi from Alice"), ctx: alice }));
-    // Bob reusing the SAME id does NOT conflict and does NOT see Alice's thread.
-    await readSse(await agent.stream({ threadId: sharedId, message: userMessage("m_b", "Hi from Bob"), ctx: bob }));
+
+    // Bob streaming to Alice's id is refused outright, same as the store-backed conflict test.
+    await expect(agent.stream({
+      threadId: sharedId,
+      message: userMessage("m_b", "Take over"),
+      ctx: bob,
+    })).rejects.toMatchObject({ code: "conflict" });
 
     const aliceThread = await agent.threads.get(sharedId, alice);
-    const bobThread = await agent.threads.get(sharedId, bob);
     expect(assistantText(aliceThread!.messages)).toContain("Alice reply.");
-    expect(assistantText(aliceThread!.messages)).not.toContain("Bob reply.");
-    expect(assistantText(bobThread!.messages)).toContain("Bob reply.");
-    expect(assistantText(bobThread!.messages)).not.toContain("Alice reply.");
     expect(aliceThread!.messages.some((m) => m.id === "m_b")).toBe(false);
-    expect(bobThread!.messages.some((m) => m.id === "m_a")).toBe(false);
+    expect(await agent.threads.get(sharedId, bob)).toBeNull();
+    expect(await agent.threads.list(bob)).toEqual([]);
   });
 
-  it("evictSubject drops exactly one subject's in-memory threads (AGENT-11 / ENG-237)", async () => {
-    // No-store (BYO) composition keeps threads in per-subject #memory maps, which
-    // pre-ENG-237 lived for the whole process. The umbrella calls evictSubject on
-    // idle-session eviction; it must drop precisely the evicted subject's threads.
+  it("evictSubject drops exactly one subject's threads from the internal default store (AGENT-11 / ENG-237)", async () => {
+    // No-store (BYO) composition now defaults internally to core's in-memory
+    // StoreAdapter (kill-list B5) instead of a private #memory map, so nothing
+    // else sweeps it — evictSubject's list-and-delete against that same store is
+    // the only reclaim path left. The umbrella calls it on idle-session eviction;
+    // it must drop precisely the evicted subject's threads. The public
+    // evictSubject stays synchronous (03-agent §1) but the underlying store
+    // operations are async, so assert via waitFor rather than immediately.
     const guard = testGuard({});
     const agent = createAgent({
       model: scriptedModel([
@@ -509,7 +516,7 @@ describe("agent threads", () => {
       ]),
       tools: boundRegistry({}, guard),
       guard,
-      // no store → threads live in the agent's #memory
+      // no store → the internal default store is what evictSubject reclaims
     });
     const alice = ctx({ principal: { kind: "user", subject: "alice", ephemeral: true }, sessionId: "sa" });
     const bob = ctx({ principal: { kind: "user", subject: "bob", ephemeral: true }, sessionId: "sb" });
@@ -522,8 +529,10 @@ describe("agent threads", () => {
     agent.evictSubject("alice");
 
     // Alice's threads are gone; Bob's are untouched.
-    expect(await agent.threads.list(alice)).toEqual([]);
-    expect(await agent.threads.get("thr_a", alice)).toBeNull();
+    await vi.waitFor(async () => {
+      expect(await agent.threads.list(alice)).toEqual([]);
+      expect(await agent.threads.get("thr_a", alice)).toBeNull();
+    });
     expect(await agent.threads.list(bob)).toHaveLength(1);
     expect(await agent.threads.get("thr_b", bob)).not.toBeNull();
 

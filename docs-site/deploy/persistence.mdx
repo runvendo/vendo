@@ -14,9 +14,18 @@ export function createStore(config?: {
 Omit `url` for PGlite. `dataDir` defaults to `.vendo/data`. Set `url` for a
 hosted Postgres database. Both use the same schema and migration path.
 
+PGlite is single-writer: the store enforces one live instance per data dir with
+a lock file inside it (`<dataDir>/.vendo-writer.lock`). A second process pointed at the same
+dir waits for the holder to exit instead of opening (and corrupting) it — dev
+servers that evaluate your server module in extra worker processes are safe. A
+lock left behind by a killed process is reclaimed automatically. If boot logs
+show the store waiting on a pid, another server owns that dir: stop it, give
+each server its own `dataDir`, or move to a Postgres `url`.
+
 The stable public tables are `vendo_meta`, `vendo_apps`, `vendo_records`,
 `vendo_blobs`, `vendo_state`, `vendo_threads`, `vendo_grants`,
-`vendo_approvals`, `vendo_audit`, `vendo_runs`, and `vendo_secrets`.
+`vendo_approvals`, `vendo_audit`, `vendo_runs`, `vendo_secrets`, and
+`vendo_sessions` (the anonymous-session registry the TTL sweep reads).
 
 All structured payloads use `jsonb`. App record refs are GIN-indexed and can be
 joined to host tables with containment queries. Collection names use
@@ -31,8 +40,8 @@ environment](/reference/environment-variables#app-machine-environment) for the
 `/data` and `/files` proxy routes.
 
 `encryption.key` encrypts secret values in `vendo_secrets` only. App records
-stay queryable. Ephemeral principals use an in-memory overlay and never write
-to disk.
+stay queryable. Ephemeral (anonymous) principals write ordinary rows under
+their subject; a TTL sweep erases idle sessions.
 
 ## Encryption is on by default
 
@@ -48,8 +57,7 @@ An explicitly configured store always wins. If you pass
 variable is ignored.
 
 Ciphertext is bound to the secret name with AES-GCM authenticated data, so a
-tampered or swapped row fails to decrypt. Rows written before this hardening
-keep decrypting and upgrade to the bound envelope on their next write.
+tampered or swapped row fails to decrypt.
 
 ## Audit is append-only
 
@@ -65,32 +73,22 @@ delete the row and re-seed it under the new subject.
 
 ## Erasing data
 
-`eraseStore(store)` is the sanctioned deletion path for `vendo_audit` and the
-one call that cascades across every store table plus the ephemeral overlay.
-Use it for right-to-erasure requests, tearing down a test app, or purging
-old runs.
+`eraseStore(store)` is the sanctioned deletion path for `vendo_audit`,
+cascading across every store table. Use it for right-to-erasure requests,
+tearing down a test app, or purging old runs.
 
 ```ts
 import { eraseStore } from "@vendoai/vendo/server";
 
-// Full erasure for a subject across every store table and the overlay.
-const bySubject = await eraseStore(vendo.store, { bySubject: subjectId });
+// Full erasure for a subject across every store table.
+const bySubject = await eraseStore(vendo.store).bySubject(subjectId);
 
 // Erase everything owned by one app.
-const byApp = await eraseStore(vendo.store, { byApp: appId });
-
-// Erase rows whose entire lifecycle predates a cutoff.
-const byAge = await eraseStore(vendo.store, {
-  byAge: { before: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) },
-});
+const byApp = await eraseStore(vendo.store).byApp(appId);
 ```
 
 Each call returns per-table deleted counts so you can log or verify the
-cascade. `byAge` treats a row as recent when any lifecycle timestamp
-(including `updated_at`) is at or after the cutoff — so a standing grant
-with a future `expires_at` and a rotated secret both survive an age sweep.
-Overlay blobs carry no timestamps and are exempt from the age axis; they
-end with the process.
+cascade.
 
 ## Atomic claims
 

@@ -1,13 +1,13 @@
 # vendo cloud — live e2e (console.vendo.run)
 
-Run against the production Vendo Cloud API. Machine commands use an entitled
+Run against the production Vendo Cloud API. Machine commands use a valid
 VENDO_API_KEY; user commands use a stored email-OTP session or the `--token
-<supabase access jwt>` fallback.
+<supabase access jwt>` fallback. There is no validate endpoint or client-side
+pre-check: the server checks key validity and meters on every call, and key
+problems surface as per-call errors.
 
 ## Machine principal (VENDO_API_KEY)
-- `vendo cloud validate` (entitled key) → `{valid:true, entitlements:{sharing,insights,hosted_adapters,seats:10}}`
-- `vendo cloud validate` (free-plan key) → entitlements all false / seats 1
-- `vendo cloud share app.json` (entitled) → `ShareSnapshot { id: shr_…, doc, createdAt }`
+- `vendo cloud share app.json` (valid key) → `ShareSnapshot { id: shr_…, doc, createdAt }`
 - `vendo cloud share app.json` (free) → "This key's org needs a Cloud plan (cloud-required)." (HTTP 402)
 - `vendo cloud publish app.json` ×2 → `PublishRecord` version "1" then "2" (monotonic)
 - `vendo cloud pin-ship --app app_cli --slot hero --base sha256:aa --diff d` → `{ id: pin_…, status: "pending" }`
@@ -56,29 +56,14 @@ envelope is surfaced as a friendly message. The auth/share/publish flows were
 verified live on 2026-07-13; hosted deploy has deterministic local-store and
 mocked-wire coverage pending the console-side production endpoint.
 
-## Entitlement contract v2 (ENG-305/306/307)
+## Request identity (2026-07-17 realignment)
 
-`vendo cloud validate` on a `contract_version: 2` response renders plan
-(informational only — never gated on), the nine capabilities, and per-meter
-quota bars; `--json` prints the raw contract. Entitlements are cached in
-`~/.vendo/entitlements.json` (0600, keyed by sha256(apiUrl+key)):
-
-- fresh within `cache.ttl_seconds` (600) for programmatic consumers;
-  `validate` itself always revalidates live
-- 503/network failure → cached contract served with a
-  `stale since <ISO> (console unreachable)` banner (exit 0) within
-  `stale_if_error_seconds` (24h)
-- past 24h unreachable → degrades to free entitlements, renders
-  `Vendo Cloud key: unverified (offline)` (exit 1, fail-closed meters)
-- 401 → cache entry dropped immediately; envelope-less 401 surfaces as
-  `Invalid or revoked API key (401)`
-- free-tier `storage_gb` arrives `exhausted: true` from day one — rendered
-  as no-headroom, not an error (exit stays 0)
 - malformed keys (`^vnd_[0-9a-f]{40}$` mismatch) fail before any request;
   every cloud request sends `User-Agent: vendo-cli/<version>`
-
-Verified 2026-07-14 live against the console contract-v2 spine
-(vendo-web@5cb58dc run locally: supabase local + `next dev`): signup → OTP
-login (Mailpit) → `keys create` → validate free + pro, `--json`, stale,
-degrade-to-free, and 401 eviction, all through the real HTTP seam. Production
-console re-verification pending the ENG-318 migration deploy.
+- every key-authed request carries the deployment-identity headers
+  `X-Vendo-Deployment-Host` (machine hostname) and `X-Vendo-Deployment-Name`
+  (cwd package name, directory-name fallback), sanitized to printable ASCII;
+  the console upserts its deployment inventory and meters usage from these
+  headers on real service calls
+- envelope-less 401 surfaces as `Invalid or revoked API key (401)`; there is
+  no local entitlements cache to evict

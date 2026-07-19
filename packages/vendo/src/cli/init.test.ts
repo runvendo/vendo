@@ -1,7 +1,9 @@
 import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import type { LanguageModel } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
+import { afterEach, describe, expect, it } from "vitest";
 import { runInit } from "./init.js";
 import type { Output } from "./shared.js";
 
@@ -10,6 +12,26 @@ const cleanup: string[] = [];
 afterEach(async () => {
   await Promise.all(cleanup.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
+
+/** Cloud step stub: absent key, no offer accepted — the quiet default. */
+const NO_CLOUD = {
+  cloudProbe: async () => ({ present: false, ok: false, unlocks: ["a starter allowance"] as readonly string[] }),
+};
+
+/** A canned theme-pass model (the refine-seam mock): returns the given slots. */
+function themeModelOf(payload: object): () => Promise<LanguageModel> {
+  return async () => new MockLanguageModelV3({
+    doGenerate: async () => ({
+      content: [{ type: "text", text: JSON.stringify(payload) }],
+      finishReason: { unified: "stop", raw: undefined },
+      usage: {
+        inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+        outputTokens: { total: 0, text: 0, reasoning: 0 },
+      },
+      warnings: [],
+    }),
+  }) as LanguageModel;
+}
 
 async function fixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "vendo-init-"));
@@ -35,7 +57,7 @@ async function expressFixture(wired: boolean): Promise<string> {
   if (wired) {
     await mkdir(join(root, "src"), { recursive: true });
     await writeFile(join(root, "src", "server.ts"),
-      'import { createVendo } from "@vendoai/vendo/server";\nconst vendo = createVendo({ model, principal: async () => null });\n');
+      'import { createVendo } from "@vendoai/vendo/server";\nconst vendo = createVendo({ principal: async () => null });\n');
     await writeFile(join(root, "src", "client.tsx"),
       'import { VendoRoot } from "@vendoai/vendo/react";\nexport const App = () => <VendoRoot><main /></VendoRoot>;\n');
   }
@@ -48,24 +70,6 @@ function output(): { output: Output; logs: string[]; errors: string[] } {
   return { output: { log: (message) => logs.push(message), error: (message) => errors.push(message) }, logs, errors };
 }
 
-const WELL_KNOWN_ROUTE = `import { GET as handleVendo } from "../../api/vendo/[...vendo]/route";
-
-const DOOR_PATHS = new Set([
-  "/.well-known/oauth-protected-resource/api/vendo/mcp",
-  "/.well-known/oauth-authorization-server/api/vendo/mcp",
-  "/.well-known/mcp/server-card.json",
-  "/.well-known/mcp-server-card",
-]);
-
-const forward = (request: Request) =>
-  DOOR_PATHS.has(new URL(request.url).pathname)
-    ? handleVendo(request)
-    : new Response(null, { status: 404 });
-
-export const GET = forward;
-export const POST = forward;
-`;
-
 async function tree(root: string, at = root): Promise<Record<string, string>> {
   const result: Record<string, string> = {};
   for (const name of await readdir(at, { withFileTypes: true })) {
@@ -77,7 +81,19 @@ async function tree(root: string, at = root): Promise<Record<string, string>> {
   return result;
 }
 
-describe("vendo init", () => {
+function run(root: string, sink: { output: Output }, extra: Partial<Parameters<typeof runInit>[0]> = {}): Promise<number> {
+  return runInit({
+    targetDir: root,
+    output: sink.output,
+    env: {},
+    cloud: NO_CLOUD,
+    themeModel: themeModelOf({ slots: {} }),
+    telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    ...extra,
+  });
+}
+
+describe("vendo init (zero-question)", () => {
   it.each([
     [{ dependencies: { express: "5.0.0" } }, "express"],
     [{ dependencies: { express: "5.0.0", next: "16.0.0" } }, "next"],
@@ -87,526 +103,380 @@ describe("vendo init", () => {
     cleanup.push(root);
     await writeFile(join(root, "package.json"), JSON.stringify(manifest));
     const sink = output();
-    expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
+    expect(await run(root, sink, { agent: true })).toBe(0);
     expect(JSON.parse(sink.logs.join("\n"))).toMatchObject({ framework: expected });
   });
 
-  it("recognizes a wired Express host and leaves its code untouched across reruns", async () => {
-    const root = await expressFixture(true);
+  it("wires a fresh Next host with no prompts: route + hooks + .vendo, never touching the layout", async () => {
+    const root = await fixture();
+    const layoutBefore = await readFile(join(root, "app", "layout.tsx"), "utf8");
     const sink = output();
-    expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
-    expect(JSON.parse(sink.logs.join("\n"))).toMatchObject({
-      framework: "express",
-      codeChanges: [{ path: "package.json" }],
-    });
+    expect(await run(root, sink)).toBe(0);
 
-    const initialized = output();
-    expect(await runInit({ targetDir: root, yes: true, output: initialized.output })).toBe(0);
-    expect(initialized.logs).toContain("Vendo initialized. Run `vendo doctor` to verify the live composition.");
-    expect(initialized.logs.join("\n")).not.toContain("Two manual steps remain");
+    // The two generated code files: model-less createVendo (model is optional)
+    // wired to the empty shared registry.
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain('import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";');
+    expect(route).toContain('import { registry } from ' + '"../../../../vendo/registry";');
+    expect(route).toContain("catalog: registry,");
+    expect(route).toContain("principal: async () => null");
+    expect(route).not.toContain("model");
+    const registry = await readFile(join(root, "vendo", "registry.tsx"), "utf8");
+    expect(registry).toContain('import type { ComponentRegistry } from "@vendoai/core";');
+    expect(registry).toContain("export const registry = {} satisfies ComponentRegistry;");
+    expect(registry).toContain("SpendingDonut"); // the commented example entry
+
+    // package.json gains the sync hooks.
+    const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as { scripts?: Record<string, string> };
+    expect(manifest.scripts?.predev).toBe("vendo sync");
+    expect(manifest.scripts?.prebuild).toBe("vendo sync --strict");
+
+    // User-authored code is never edited; no model module is scaffolded.
+    expect(await readFile(join(root, "app", "layout.tsx"), "utf8")).toBe(layoutBefore);
+    await expect(readFile(join(root, "lib", "ai.ts"))).rejects.toMatchObject({ code: "ENOENT" });
+
+    // .vendo artifacts land; no encryption key is ever generated.
     for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) {
       await expect(readFile(join(root, ".vendo", file), "utf8")).resolves.toBeTruthy();
     }
     await expect(readFile(join(root, ".vendo", "data", ".gitignore"), "utf8")).resolves.toBe("*\n!.gitignore\n");
-    await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts")))
-      .rejects.toMatchObject({ code: "ENOENT" });
-    await expect(readFile(join(root, "app", "layout.tsx")))
-      .rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(root, ".env"))).rejects.toMatchObject({ code: "ENOENT" });
 
-    const first = await tree(root);
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    expect(await tree(root)).toEqual(first);
+    // The summary lists what changed and hands the paste + next steps over.
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Wired (3 files):");
+    expect(logs).toContain("+ " + join("vendo", "registry.tsx"));
+    expect(logs).toContain("+ " + join("app", "api", "vendo", "[...vendo]", "route.ts"));
+    expect(logs).toContain("~ package.json");
+    // No auth dependency in the fixture: one calm advisory, nothing guessed.
+    expect(logs).toContain("Auth: no provider detected");
+    expect(logs).toContain("Last steps are yours:");
+    expect(logs).toContain('import { VendoRoot } from "@vendoai/vendo/react";');
+    expect(logs).toContain('import { registry } from "../vendo/registry";');
+    expect(logs).toContain("<VendoRoot components={registry} theme={theme as VendoTheme}>{children}</VendoRoot>");
+    expect(logs).toContain("npx vendo doctor");
+    // No interview, no per-diff consent, no refine offer, no finale.
+    expect(logs).not.toContain("[y/N]");
+    expect(logs).not.toContain("vendo refine");
   });
 
-  it("proposes a resolvable TypeScript scaffold and model module for an unwired Express host", async () => {
-    const root = await expressFixture(false);
-    const planned = output();
-    expect(await runInit({ targetDir: root, agent: true, output: planned.output })).toBe(0);
-    const plan = JSON.parse(planned.logs.join("\n")) as {
-      framework: string;
-      codeChanges: Array<{ path: string; diff: string }>;
-    };
-    expect(plan.framework).toBe("express");
-    expect(plan.codeChanges).toHaveLength(3);
-    expect(plan.codeChanges[0]?.path).toBe("vendo/server.ts");
-    expect(plan.codeChanges[0]?.diff).toContain("createVendo");
-    expect(plan.codeChanges[0]?.diff).toContain("new Request");
-    expect(plan.codeChanges[1]?.path).toBe("vendo/ai.ts");
-    expect(plan.codeChanges[2]?.path).toBe("package.json");
-
-    const declined = output();
-    const confirm = vi.fn().mockResolvedValue(false);
-    expect(await runInit({ targetDir: root, confirm, output: declined.output })).toBe(0);
-    expect(confirm).toHaveBeenCalledTimes(3);
-    expect(declined.logs.join("\n")).toContain("Proposed code change");
-    await expect(readFile(join(root, "vendo", "server.ts")))
-      .rejects.toMatchObject({ code: "ENOENT" });
-
-    const initialized = output();
-    expect(await runInit({ targetDir: root, yes: true, output: initialized.output })).toBe(0);
-    const scaffold = await readFile(join(root, "vendo", "server.ts"), "utf8");
-    expect(scaffold).toContain('from "@vendoai/vendo/server"');
-    expect(scaffold).toContain('from "./ai"');
-    expect(scaffold).not.toContain("x-forwarded-host");
-    expect(scaffold).not.toContain("x-forwarded-proto");
-    expect(scaffold).toContain("VENDO_BASE_URL");
-    expect(scaffold).toContain("getSetCookie");
-    expect(scaffold).toContain("Readable.toWeb(request)");
-    expect(scaffold).toContain("source.body.getReader()");
-    expect(scaffold).toContain('app.use("/api/vendo", mountVendo());');
-    expect(scaffold).toContain("<VendoRoot theme={theme as VendoTheme}>");
-    expect(scaffold).toContain('import { VendoRoot } from "@vendoai/vendo/react";');
-    expect(scaffold).toContain('import theme from "<path-to>/.vendo/theme.json";');
-    expect(scaffold).toContain('import type { VendoTheme } from "@vendoai/vendo";');
-    expect(await readFile(join(root, "vendo", "ai.ts"), "utf8")).toContain("export const model");
-    // Pinned majors: @ai-sdk/anthropic@4 targets ai v7 — unpinned install breaks fresh hosts.
-    expect(initialized.logs.join("\n")).toContain("`npm install ai@^6 @ai-sdk/anthropic@^3`");
-    expect(initialized.logs.join("\n")).toContain("Two manual steps remain");
-    expect(initialized.logs.join("\n")).toContain('mount `mountVendo()`');
-    expect(initialized.logs.join("\n")).toContain("wrap the client in `<VendoRoot>`");
-    expect(initialized.logs.join("\n")).toContain("will report broken until both are complete");
-    await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts")))
-      .rejects.toMatchObject({ code: "ENOENT" });
-    await expect(readFile(join(root, "app", "layout.tsx")))
-      .rejects.toMatchObject({ code: "ENOENT" });
+  it("is idempotent: a re-run changes nothing and says so", async () => {
+    const root = await fixture();
+    expect(await run(root, output())).toBe(0);
     const first = await tree(root);
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    const again = output();
+    expect(await run(root, again)).toBe(0);
     expect(await tree(root)).toEqual(first);
+    expect(again.logs.join("\n")).toContain("Already wired — nothing to change.");
+  });
+
+  it("computes the theme paste specifier from a src/app layout (../../ to project root)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-init-srcapp-"));
+    cleanup.push(root);
+    await mkdir(join(root, "src", "app"), { recursive: true });
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "host", dependencies: { next: "16.0.0" } }));
+    await writeFile(join(root, "src", "app", "layout.tsx"),
+      "export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n");
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    const route = await readFile(join(root, "src", "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain('import { registry } from ' + '"../../../../vendo/registry";');
+    // The registry mirrors the app dir: src/app → src/vendo/registry.tsx.
+    await expect(readFile(join(root, "src", "vendo", "registry.tsx"), "utf8")).resolves.toContain("ComponentRegistry");
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain('import theme from "../../.vendo/theme.json";');
+    expect(logs).toContain('import { registry } from "../vendo/registry";');
+  });
+
+  it("prints a theme-less paste when the project disables resolveJsonModule", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "tsconfig.json"), JSON.stringify({ compilerOptions: { resolveJsonModule: false } }));
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("<VendoRoot components={registry}>{children}</VendoRoot>");
+    expect(logs).not.toContain("import theme from");
+  });
+
+  it.each([
+    ["next-auth", "authJs"],
+    ["@auth/core", "authJs"],
+    ["@clerk/nextjs", "clerk"],
+    ["@supabase/supabase-js", "supabase"],
+    ["@auth0/nextjs-auth0", "auth0"],
+  ] as const)("non-interactive runs silently wire auth from %s → %s()", async (dependency, preset) => {
+    // No `interactive` override and vitest has no TTY: the detected default
+    // is accepted without a question (--yes behaves identically).
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", [dependency]: "1.0.0" },
+    }));
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    const named = [preset, "createVendo", "nextVendoHandler"].sort().join(", ");
+    expect(route).toContain(`import { ${named} } from "@vendoai/vendo/server";`);
+    expect(route).toContain(`auth: ${preset}(),`);
+    // The detected line carries its escape hatch, and the preset owns the
+    // principal seam — no hand-wired anonymous resolver remains.
+    expect(route).toContain("docs/act-as-presets.md");
+    expect(route).not.toContain("principal");
+    // Detection is silent: no question, no advisory.
+    expect(sink.logs.join("\n")).not.toContain("Auth:");
+  });
+
+  it("interactive runs confirm the detected preset with one [Y/n]-style question — accept wires it", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
+    }));
+    const asked: Array<{ question: string; defaultYes: boolean }> = [];
+    const sink = output();
+    expect(await run(root, sink, {
+      interactive: true,
+      confirmAuth: async (question, defaultYes) => {
+        asked.push({ question, defaultYes });
+        return true; // Enter/Y
+      },
+    })).toBe(0);
+    expect(asked).toEqual([{ question: "Detected next-auth — wire auth: authJs()?", defaultYes: true }]);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain("auth: authJs(),");
+    expect(sink.logs.join("\n")).not.toContain("Auth:");
+  });
+
+  it("interactive decline keeps the composition anonymous and names the exact line to add later", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "@clerk/nextjs": "6.0.0" },
+    }));
+    const sink = output();
+    expect(await run(root, sink, { interactive: true, confirmAuth: async () => false })).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).not.toContain("auth:");
+    expect(route).toContain("principal: async () => null");
+    const advisories = sink.logs.filter((line) => line.includes("Auth:"));
+    expect(advisories).toHaveLength(1);
+    expect(advisories[0]).toContain("left anonymous");
+    expect(advisories[0]).toContain("@clerk/nextjs");
+    expect(advisories[0]).toContain("auth: clerk()");
+    expect(advisories[0]).toContain(join("app", "api", "vendo", "[...vendo]", "route.ts"));
+  });
+
+  it("--yes never asks even in an interactive run: the detected default is accepted", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
+    }));
+    let askedCount = 0;
+    expect(await run(root, output(), {
+      yes: true,
+      interactive: true,
+      confirmAuth: async () => {
+        askedCount += 1;
+        return false;
+      },
+    })).toBe(0);
+    expect(askedCount).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain("auth: authJs(),");
+  });
+
+  it("stays anonymous and advises once when several auth providers are present", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "next-auth": "5.0.0", "@clerk/nextjs": "6.0.0" },
+    }));
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).not.toContain("auth:");
+    expect(route).toContain("principal: async () => null");
+    const advisories = sink.logs.filter((line) => line.includes("Auth:"));
+    expect(advisories).toHaveLength(1);
+    expect(advisories[0]).toContain("next-auth, @clerk/nextjs");
+    expect(advisories[0]).toContain("auth: authJs() or auth: clerk()");
+  });
+
+  it("never clobbers an existing registry and still wires the route to it", async () => {
+    const root = await fixture();
+    await mkdir(join(root, "vendo"), { recursive: true });
+    const custom = "export const registry = { /* host-authored */ };\n";
+    await writeFile(join(root, "vendo", "registry.tsx"), custom);
+    expect(await run(root, output())).toBe(0);
+    expect(await readFile(join(root, "vendo", "registry.tsx"), "utf8")).toBe(custom);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain('import { registry } from ' + '"../../../../vendo/registry";');
+  });
+
+  it("does not scaffold a registry next to a hand-written route that ignores it", async () => {
+    const root = await fixture();
+    await mkdir(join(root, "app", "api", "vendo", "[...vendo]"), { recursive: true });
+    await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
+      'import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";\n' +
+      "const vendo = createVendo({ principal: async () => null });\n" +
+      "export const { GET, POST, DELETE } = nextVendoHandler(vendo);\n");
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    await expect(readFile(join(root, "vendo", "registry.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
+    // The paste line stays honest: no components prop without a registry file.
+    expect(sink.logs.join("\n")).not.toContain("components={registry}");
+  });
+
+  it("states an env key in one line and skips the cloud offer", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, { env: { ANTHROPIC_API_KEY: "sk-a" } })).toBe(0);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Model: explicit ANTHROPIC_API_KEY (anthropic)");
+    expect(logs).not.toContain("No model key yet");
+  });
+
+  it("points a keyless host at .env.local and `vendo cloud login`", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    expect(sink.logs.join("\n")).toContain("No model key yet");
+    expect(sink.logs.join("\n")).toContain("vendo cloud login");
+  });
+
+  it("preserves an existing env example while appending the trusted Vendo origin once", async () => {
+    const root = await fixture();
+    await writeFile(join(root, ".env.example"), "HOST_FLAG=1\n");
+    expect(await run(root, output())).toBe(0);
+    const example = await readFile(join(root, ".env.example"), "utf8");
+    expect(example).toContain("HOST_FLAG=1");
+    expect(example).toContain("VENDO_BASE_URL=http://localhost:3000");
+    // Post server-wiring semantics: dev trusts its own origin; production
+    // fails loud without the variable — no silent credential drop.
+    expect(example).toContain("Dev trusts the request's own");
+    expect(example).toContain("production fails loud");
+    expect(example).not.toContain("disabled without it");
+    expect(await run(root, output())).toBe(0);
+    expect((await readFile(join(root, ".env.example"), "utf8")).match(/VENDO_BASE_URL/g)).toHaveLength(1);
+  });
+
+  it("merges the sync hooks into existing scripts without clobbering them", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0" },
+      scripts: { dev: "next dev", predev: "echo pre" },
+    }, null, 2));
+    expect(await run(root, output())).toBe(0);
+    const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as { scripts: Record<string, string> };
+    expect(manifest.scripts.predev).toBe("vendo sync && echo pre");
+    expect(manifest.scripts.prebuild).toBe("vendo sync --strict");
+    expect(manifest.scripts.dev).toBe("next dev");
+  });
+
+  it("generates the server-action registration map and wires an existing route (ENG-248)", async () => {
+    const root = await fixture();
+    await mkdir(join(root, "app", "actions"), { recursive: true });
+    await writeFile(join(root, "app", "actions", "invoices.ts"),
+      '"use server";\n\nexport async function createInvoice(input: { amount: number }) {\n  return { ok: true, amount: input.amount };\n}\n');
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+
+    const actions = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "vendo-actions.ts"), "utf8");
+    expect(actions).toContain("createInvoice");
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain('import { serverActions } from "./vendo-actions";');
+    expect(route).toContain("serverActions,");
+
+    // A route generated BEFORE actions existed gets rewired on the next init.
+    const bare = await fixture();
+    expect(await run(bare, output())).toBe(0);
+    await mkdir(join(bare, "app", "actions"), { recursive: true });
+    await writeFile(join(bare, "app", "actions", "later.ts"),
+      '"use server";\n\nexport async function later() {\n  return 1;\n}\n');
+    expect(await run(bare, output())).toBe(0);
+    const rewired = await readFile(join(bare, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(rewired).toContain("serverActions,");
+  });
+
+  it("scaffolds an unwired Express host (server only, no model module) and leaves a wired one untouched", async () => {
+    const unwired = await expressFixture(false);
+    const sink = output();
+    expect(await run(unwired, sink)).toBe(0);
+    const server = await readFile(join(unwired, "vendo", "server.ts"), "utf8");
+    expect(server).toContain("createVendo({");
+    expect(server).toContain('import { registry } from "./registry";');
+    expect(server).toContain("catalog: registry,");
+    expect(server).not.toContain("model");
+    await expect(readFile(join(unwired, "vendo", "registry.tsx"), "utf8")).resolves.toContain("ComponentRegistry");
+    await expect(readFile(join(unwired, "vendo", "ai.ts"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(sink.logs.join("\n")).toContain('app.use("/api/vendo", mountVendo());');
+    expect(sink.logs.join("\n")).toContain("components={registry}");
+    // Fresh composition creation with no auth dependency: one calm advisory.
+    expect(sink.logs.join("\n")).toContain("Auth: no provider detected");
+
+    const wired = await expressFixture(true);
+    expect(await run(wired, output())).toBe(0);
+    const first = await tree(wired);
+    expect(await run(wired, output())).toBe(0);
+    expect(await tree(wired)).toEqual(first);
+    await expect(readFile(join(wired, "vendo", "server.ts"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(wired, "vendo", "registry.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("re-init on a scaffolded, not-yet-client-wired Express host changes nothing and stays silent", async () => {
+    const root = await expressFixture(false);
+    expect(await run(root, output())).toBe(0);
+    const first = await tree(root);
+    const again = output();
+    expect(await run(root, again)).toBe(0);
+    expect(await tree(root)).toEqual(first);
+    const logs = again.logs.join("\n");
+    expect(logs).toContain("Already wired — nothing to change.");
+    // The advisory fires only when the composition is created, never on the
+    // re-run between scaffold and the manual <VendoRoot> paste.
+    expect(logs).not.toContain("Auth:");
+  });
+
+  it("leaves a hand-wired Express composition at a custom path alone", async () => {
+    const root = await expressFixture(false);
+    await mkdir(join(root, "src"), { recursive: true });
+    await writeFile(join(root, "src", "agent.ts"),
+      'import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ principal: async () => null });\n');
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    // No duplicate server module, no orphaned registry, no advisory about a
+    // composition init does not own — and the paste line stays honest.
+    await expect(readFile(join(root, "vendo", "server.ts"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(root, "vendo", "registry.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
+    const logs = sink.logs.join("\n");
+    expect(logs).not.toContain("Auth:");
+    expect(logs).not.toContain("components={registry}");
   });
 
   it("uses an ESM scaffold when an Express host has no tsconfig", async () => {
     const root = await expressFixture(false);
     await rm(join(root, "tsconfig.json"));
-    const sink = output();
-    expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
-    const codeChanges = JSON.parse(sink.logs.join("\n")).codeChanges as Array<{ path: string; diff: string }>;
-    expect(codeChanges).toMatchObject([
-      { path: "vendo/server.mjs" },
-      { path: "vendo/ai.mjs" },
-      { path: "package.json" },
-    ]);
-    // The JS wiring hint must be pasteable JavaScript — no type-only syntax.
-    const scaffold = codeChanges[0]?.diff ?? "";
-    expect(scaffold).toContain('import { VendoRoot } from "@vendoai/vendo/react";');
-    expect(scaffold).toContain('import theme from "<path-to>/.vendo/theme.json";');
-    expect(scaffold).toContain("<VendoRoot theme={theme}>");
-    expect(scaffold).not.toContain("as VendoTheme");
-    expect(scaffold).not.toContain("import type");
+    expect(await run(root, output())).toBe(0);
+    const server = await readFile(join(root, "vendo", "server.mjs"), "utf8");
+    expect(server).not.toContain(": Headers");
+    expect(server).toContain("mountVendo");
+    expect(server).toContain('import { registry } from "./registry.mjs";');
+    await expect(readFile(join(root, "vendo", "registry.mjs"), "utf8")).resolves.toContain("export const registry = {};");
   });
 
-  it("emits a read-only agent plan with the plain-language questions", async () => {
+  it("writes the setup skill silently when .claude exists and respects an edited copy", async () => {
     const root = await fixture();
-    const before = await tree(root);
-    const sink = output();
-    expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
-    expect(await tree(root)).toEqual(before);
-    const plan = JSON.parse(sink.logs.join("\n")) as {
-      questions: unknown[];
-      codeChanges: Array<{ path: string; diff: string }>;
-    };
-    expect(plan.questions).toHaveLength(4);
-    expect(plan.codeChanges).toHaveLength(4); // route + layout + starter model module + package hooks
-    expect(plan.codeChanges[0]?.diff).toContain("@vendoai/vendo/server");
-    expect(plan.codeChanges.find((change) => change.path === "package.json")?.diff)
-      .toContain('"predev": "vendo sync"');
-  });
+    await mkdir(join(root, ".claude"), { recursive: true });
+    expect(await run(root, output())).toBe(0);
+    const skill = join(root, ".claude", "skills", "vendo-setup", "SKILL.md");
+    const body = await readFile(skill, "utf8");
+    expect(body.length).toBeGreaterThan(0);
 
-  it("adds predev and prebuild sync hooks only when the package change is approved", async () => {
-    const root = await fixture();
-    const before = await readFile(join(root, "package.json"), "utf8");
-    const confirm = vi.fn(async (change: { path: string }) => change.path === "package.json");
-
-    expect(await runInit({ targetDir: root, confirm, output: output().output })).toBe(0);
-
-    expect(confirm).toHaveBeenCalledTimes(4);
-    expect(JSON.parse(await readFile(join(root, "package.json"), "utf8"))).toMatchObject({
-      scripts: { predev: "vendo sync", prebuild: "vendo sync --strict" },
-    });
-    expect(await readFile(join(root, "package.json"), "utf8")).not.toBe(before);
-  });
-
-  it("prepends sync to existing lifecycle hooks and preserves package formatting", async () => {
-    const root = await fixture();
-    const manifest = {
-      name: "host",
-      scripts: { predev: "echo warmup", prebuild: "npm run check" },
-      dependencies: { next: "16.0.0", "@vendoai/vendo": "0.3.0" },
-    };
-    await writeFile(join(root, "package.json"), `${JSON.stringify(manifest, null, 4)}\n`);
-
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-
-    const raw = await readFile(join(root, "package.json"), "utf8");
-    expect(raw.endsWith("\n")).toBe(true);
-    expect(raw).toContain('    "scripts"');
-    expect(JSON.parse(raw)).toMatchObject({
-      scripts: {
-        predev: "vendo sync && echo warmup",
-        prebuild: "vendo sync --strict && npm run check",
-      },
-    });
-  });
-
-  it("offers no package change on an idempotent rerun", async () => {
-    const root = await fixture();
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    const first = await readFile(join(root, "package.json"), "utf8");
-    const confirm = vi.fn().mockResolvedValue(false);
-
-    expect(await runInit({ targetDir: root, confirm, output: output().output })).toBe(0);
-
-    expect(confirm).not.toHaveBeenCalled();
-    expect(await readFile(join(root, "package.json"), "utf8")).toBe(first);
-  });
-
-  it("leaves package.json untouched when its prompt is declined", async () => {
-    const root = await fixture();
-    const before = await readFile(join(root, "package.json"), "utf8");
-    const confirm = vi.fn(async (change: { path: string }) => change.path !== "package.json");
-
-    expect(await runInit({ targetDir: root, confirm, output: output().output })).toBe(0);
-
-    expect(await readFile(join(root, "package.json"), "utf8")).toBe(before);
-  });
-
-  it("writes the complete .vendo contract and permission-gated Next wiring idempotently", async () => {
-    const root = await fixture();
-    const sink = output();
-    expect(await runInit({ targetDir: root, yes: true, output: sink.output })).toBe(0);
-
-    const overrides = JSON.parse(await readFile(join(root, ".vendo", "overrides.json"), "utf8"));
-    const tools = JSON.parse(await readFile(join(root, ".vendo", "tools.json"), "utf8"));
-    const policy = JSON.parse(await readFile(join(root, ".vendo", "policy.json"), "utf8"));
-    expect(overrides).toEqual({ format: "vendo/overrides@1", tools: {}, remix: { ignoreSlots: [] } });
-    expect(tools).toMatchObject({ format: "vendo/tools@1", tools: [] });
-    const catalog = JSON.parse(await readFile(join(root, ".vendo", "catalog.json"), "utf8"));
-    expect(catalog).toEqual({ format: "vendo/catalog@1", entries: [] });
-    expect(sink.logs).toContain("catalog.json: 0 discovered, 0 registered");
-    expect(policy).toMatchObject({ format: "vendo/policy@1" });
-    const envExample = await readFile(join(root, ".env.example"), "utf8");
-    expect(envExample).toContain("VENDO_BASE_URL=http://localhost:3000");
-    expect(envExample).toContain("credential forwarding is disabled without it");
-    expect(await readFile(join(root, ".vendo", "data", ".gitignore"), "utf8")).toBe("*\n!.gitignore\n");
-    expect(await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))
-      .toContain("@vendoai/vendo/server");
-    await expect(readFile(join(root, "app", ".well-known", "[...vendo]", "route.ts"), "utf8"))
-      .rejects.toMatchObject({ code: "ENOENT" });
-    const wiredLayout = await readFile(join(root, "app", "layout.tsx"), "utf8");
-    expect(wiredLayout).toContain("<VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>");
-    expect(wiredLayout).toContain('import theme from "../.vendo/theme.json";');
-    expect(wiredLayout).toContain('import type { VendoTheme } from "@vendoai/vendo";');
-
-    const first = await tree(root);
-    expect(await runInit({ targetDir: root, yes: true, output: sink.output })).toBe(0);
-    expect(await tree(root)).toEqual(first);
-  });
-
-  it("emits the server-action registration map and wires it into createVendo (ENG-248)", async () => {
-    const root = await fixture();
-    await mkdir(join(root, "app", "actions"), { recursive: true });
-    await writeFile(join(root, "app", "actions", "send-email.ts"),
-      '"use server";\n\nexport async function sendEmail(to: string) {\n  return { to };\n}\n\nexport async function archiveThread(threadId: string) {\n  return { threadId };\n}\n');
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-
-    const wiring = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "vendo-actions.ts"), "utf8");
-    expect(wiring).toContain('"app/actions/send-email.ts#sendEmail"');
-    expect(wiring).toContain('"app/actions/send-email.ts#archiveThread"');
-    // (asserted without the `from` keyword so the dependency guard's
-    // import-shaped-string scan does not read a test literal as a real import)
-    expect(wiring).toContain('"../../../actions/send-email"');
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
-    expect(route).toContain('import { serverActions } from "./vendo-actions"');
-    expect(route).toContain("serverActions,");
-
-    // The extracted tools carry matching server-action bindings.
-    const tools = JSON.parse(await readFile(join(root, ".vendo", "tools.json"), "utf8")) as {
-      tools: Array<{ binding: { kind: string; module?: string; exportName?: string } }>;
-    };
-    const bindings = tools.tools.filter((tool) => tool.binding.kind === "server-action");
-    expect(bindings.map((tool) => `${tool.binding.module}#${tool.binding.exportName}`).sort()).toEqual([
-      "app/actions/send-email.ts#archiveThread",
-      "app/actions/send-email.ts#sendEmail",
-    ]);
-
-    // Re-init stays idempotent.
-    const first = await tree(root);
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    expect(await tree(root)).toEqual(first);
-  });
-
-  it("regenerates the registration map when the detected action surface changes", async () => {
-    const root = await fixture();
-    await mkdir(join(root, "app", "actions"), { recursive: true });
-    await writeFile(join(root, "app", "actions", "send-email.ts"),
-      '"use server";\n\nexport async function sendEmail(to: string) {\n  return { to };\n}\n');
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-
-    await writeFile(join(root, "app", "actions", "tags.ts"),
-      '"use server";\n\nexport async function createTag(name: string) {\n  return { name };\n}\n');
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    const wiring = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "vendo-actions.ts"), "utf8");
-    expect(wiring).toContain('"app/actions/send-email.ts#sendEmail"');
-    expect(wiring).toContain('"app/actions/tags.ts#createTag"');
-  });
-
-  it("wires serverActions into a pre-existing route when actions appear on re-init (ENG-248 Greptile P1)", async () => {
-    const root = await fixture();
-    // First init with no server actions: route.ts is created without serverActions wiring.
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    const routePath = join(root, "app", "api", "vendo", "[...vendo]", "route.ts");
-    expect(await readFile(routePath, "utf8")).not.toContain("serverActions");
-
-    // A server action appears; re-init must wire it into the EXISTING route,
-    // not just emit vendo-actions.ts (else every call fails closed at runtime).
-    await mkdir(join(root, "app", "actions"), { recursive: true });
-    await writeFile(join(root, "app", "actions", "notify.ts"),
-      '"use server";\n\nexport async function notify(userId: string) {\n  return { userId };\n}\n');
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-
-    const route = await readFile(routePath, "utf8");
-    expect(route).toContain('import { serverActions } from "./vendo-actions"');
-    expect(route).toContain("serverActions,");
-    expect(route).toContain("createVendo(");
-    await readFile(join(root, "app", "api", "vendo", "[...vendo]", "vendo-actions.ts"), "utf8");
-
-    // Re-init over the now-wired route stays idempotent.
-    const wired = await tree(root);
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    expect(await tree(root)).toEqual(wired);
-  });
-
-  it("scaffolds no registration map for hosts without server actions", async () => {
-    const root = await fixture();
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "vendo-actions.ts"), "utf8"))
-      .rejects.toMatchObject({ code: "ENOENT" });
-    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
-    expect(route).not.toContain("serverActions");
-  });
-
-  it("offers remix wrapping for capturable registrations and captures approved slots (ENG-288 M6)", async () => {
-    const root = await fixture();
-    await writeFile(join(root, "app", "card.tsx"),
-      "export function HostCard() { return <div>host card</div>; }\n");
-    await writeFile(join(root, "app", "vendo-components.ts"),
-      "import { HostCard } from \"./card\";\n" +
-      "export const components = [\n" +
-      "  { name: \"HostCard\", component: HostCard, description: \"A host card\" },\n" +
-      "];\n");
-    const home = await mkdtemp(join(tmpdir(), "vendo-home-remix-"));
-    cleanup.push(home);
-    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
-    const sink = output();
-    expect(await runInit({
-      targetDir: root,
-      yes: true,
-      output: sink.output,
-      telemetry: { home, posthogKey: "phc_test", env: { NODE_ENV: "test" }, fetchImpl },
-    })).toBe(0);
-
-    const rewritten = await readFile(join(root, "app", "vendo-components.ts"), "utf8");
-    expect(rewritten).toContain("{ remixable: true, name: \"HostCard\", component: HostCard");
-    expect(sink.logs.join("\n")).toContain("Remix offer — mark HostCard remixable");
-    // The post-wrap re-sync captured the freshly wrapped slot immediately.
-    const baseline = JSON.parse(await readFile(join(root, ".vendo", "remixable", "HostCard.json"), "utf8"));
-    expect(baseline).toMatchObject({ slot: "HostCard", exportable: false });
-    expect(baseline.source).toContain("host card");
-    const completed = fetchImpl.mock.calls
-      .map((call) => JSON.parse(String(call[1]?.body)))
-      .find((event) => event.event === "init_completed");
-    expect(completed?.properties).toMatchObject({ remixOffered: 1, remixWrapped: 1, remixSkipped: 0 });
-
-    // Idempotent: the wrapped registration is never offered again.
-    const first = await tree(root);
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    expect(await tree(root)).toEqual(first);
-  });
-
-  it("counts declined remix offers as skipped and leaves the source untouched", async () => {
-    const root = await fixture();
-    await writeFile(join(root, "app", "card.tsx"),
-      "export function HostCard() { return <div>host card</div>; }\n");
-    const registration = "import { HostCard } from \"./card\";\n" +
-      "export const components = [{ name: \"HostCard\", component: HostCard }];\n";
-    await writeFile(join(root, "app", "vendo-components.ts"), registration);
-    const home = await mkdtemp(join(tmpdir(), "vendo-home-remix-skip-"));
-    cleanup.push(home);
-    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
-    // Approve everything except the remix wrap.
-    const confirm = vi.fn(async (change: { path: string; diff: string }) =>
-      !change.diff.includes("remixable: true"));
-    expect(await runInit({
-      targetDir: root,
-      confirm,
-      interview: async () => ({}),
-      output: output().output,
-      telemetry: { home, posthogKey: "phc_test", env: { NODE_ENV: "test" }, fetchImpl },
-    })).toBe(0);
-
-    expect(await readFile(join(root, "app", "vendo-components.ts"), "utf8")).toBe(registration);
-    await expect(readFile(join(root, ".vendo", "remixable", "HostCard.json"), "utf8"))
-      .rejects.toMatchObject({ code: "ENOENT" });
-    const completed = fetchImpl.mock.calls
-      .map((call) => JSON.parse(String(call[1]?.body)))
-      .find((event) => event.event === "init_completed");
-    expect(completed?.properties).toMatchObject({ remixOffered: 1, remixWrapped: 0, remixSkipped: 1 });
-  });
-
-  it("surfaces unresolved remixable slots loudly at init without aborting", async () => {
-    const root = await fixture();
-    await writeFile(join(root, "app", "vendo-components.ts"),
-      "export const components = [{ name: \"InlineCard\", component: () => null, remixable: true }];\n");
-    const sink = output();
-    expect(await runInit({ targetDir: root, yes: true, output: sink.output })).toBe(0);
-    const errors = sink.errors.join("\n");
-    expect(errors).toContain("UNRESOLVED REMIXABLE SLOTS (init continues)");
-    expect(errors).toContain("InlineCard [inline-component]");
-    expect(errors).toContain("sync exits non-zero while they remain unresolved");
-  });
-
-  it("provisions VENDO_STORE_ENCRYPTION_KEY into .env and never regenerates it (02-store §4)", async () => {
-    const root = await fixture();
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    const env = await readFile(join(root, ".env"), "utf8");
-    const key = env.match(/^VENDO_STORE_ENCRYPTION_KEY=(.+)$/m)?.[1];
-    expect(key).toBeDefined();
-    // A valid createStore key: base64-encoded 32 bytes (AES-256-GCM).
-    expect(Buffer.from(key ?? "", "base64").byteLength).toBe(32);
-
-    // Re-running init — even with --force — keeps the key: rotating it would
-    // orphan every already-encrypted vendo_secrets row.
-    expect(await runInit({ targetDir: root, yes: true, force: true, output: output().output })).toBe(0);
-    const again = await readFile(join(root, ".env"), "utf8");
-    expect(again.match(/^VENDO_STORE_ENCRYPTION_KEY=(.+)$/m)?.[1]).toBe(key);
-  });
-
-  it("appends the encryption key to an existing .env without clobbering it (02-store §4)", async () => {
-    const root = await fixture();
-    await writeFile(join(root, ".env"), "EXISTING_VAR=keep-me"); // no trailing newline on purpose
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    const env = await readFile(join(root, ".env"), "utf8");
-    expect(env.startsWith("EXISTING_VAR=keep-me\n")).toBe(true);
-    expect(env).toMatch(/^VENDO_STORE_ENCRYPTION_KEY=.+$/m);
-  });
-
-  it.each(["app", join("src", "app")])(
-    "generates the MCP sibling route with exact content under %s",
-    async (appDir) => {
-      const root = await mkdtemp(join(tmpdir(), "vendo-init-mcp-"));
-      cleanup.push(root);
-      await mkdir(join(root, appDir), { recursive: true });
-      await writeFile(join(root, "package.json"), JSON.stringify({
-        name: "host",
-        dependencies: { next: "16.0.0", "@vendoai/vendo": "0.3.0" },
-      }));
-      await writeFile(join(root, appDir, "layout.tsx"),
-        "export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n");
-
-      const confirm = vi.fn().mockResolvedValue(true);
-      expect(await runInit({
-        targetDir: root,
-        confirm,
-        interview: async () => ({ openDoor: true }),
-        output: output().output,
-      })).toBe(0);
-
-      const routePath = join(appDir, ".well-known", "[...vendo]", "route.ts");
-      await expect(readFile(join(root, routePath), "utf8"))
-        .resolves.toBe(WELL_KNOWN_ROUTE);
-      expect(confirm).toHaveBeenCalledWith(expect.objectContaining({
-        path: routePath,
-        diff: expect.stringContaining('+import { GET as handleVendo }'),
-      }));
-      const otherAppDir = appDir === "app" ? join("src", "app") : "app";
-      await expect(readFile(join(root, otherAppDir, ".well-known", "[...vendo]", "route.ts"), "utf8"))
-        .rejects.toMatchObject({ code: "ENOENT" });
-    },
-  );
-
-  it("preserves an existing hand-written MCP sibling route", async () => {
-    const root = await fixture();
-    const routeDir = join(root, "app", ".well-known", "[...vendo]");
-    const route = join(routeDir, "route.ts");
-    const existing = "export { GET } from \"../../api/vendo/[...vendo]/route\";\n";
-    await mkdir(routeDir, { recursive: true });
-    await writeFile(route, existing);
-
-    expect(await runInit({
-      targetDir: root,
-      confirm: async () => true,
-      interview: async () => ({ openDoor: true }),
-      output: output().output,
-    })).toBe(0);
-
-    expect(await readFile(route, "utf8")).toBe(existing);
-  });
-
-  it("preserves an existing env example while appending the trusted Vendo origin once", async () => {
-    const root = await fixture();
-    await writeFile(join(root, ".env.example"), "DATABASE_URL=postgres://localhost/host\n");
-
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-
-    const envExample = await readFile(join(root, ".env.example"), "utf8");
-    expect(envExample).toContain("DATABASE_URL=postgres://localhost/host");
-    expect(envExample).toContain("credential forwarding is disabled without it");
-    expect(envExample.match(/^VENDO_BASE_URL=/gm)).toHaveLength(1);
-  });
-
-  it("shows each code diff and writes no code without approval", async () => {
-    const root = await fixture();
-    const sink = output();
-    const confirm = vi.fn().mockResolvedValue(false);
-    expect(await runInit({ targetDir: root, confirm, output: sink.output })).toBe(0);
-    expect(confirm).toHaveBeenCalledTimes(4); // route + layout + starter model module + package hooks
-    expect(sink.logs.join("\n")).toContain("Proposed code change");
-    expect(await readFile(join(root, "app", "layout.tsx"), "utf8")).not.toContain("VendoRoot");
-    await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))
-      .rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  it("records interview answers in the owned files and wiring", async () => {
-    const root = await fixture();
-    await runInit({
-      targetDir: root,
-      confirm: async () => true,
-      interview: async (questions) => {
-        expect(questions).toHaveLength(4);
-        return {
-          modelImport: "@/server/model",
-          brief: "A billing product for finance teams.",
-          criticalTools: ["host_invoices_send"],
-        };
-      },
-      output: output().output,
-    });
-    expect(await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))
-      .toContain('from "@/server/model"');
-    expect(await readFile(join(root, ".vendo", "brief.md"), "utf8"))
-      .toBe("A billing product for finance teams.\n");
-    expect(JSON.parse(await readFile(join(root, ".vendo", "overrides.json"), "utf8")))
-      .toEqual({
-        format: "vendo/overrides@1",
-        tools: { host_invoices_send: { critical: true } },
-        remix: { ignoreSlots: [] },
-      });
-  });
-
-  it("guides an explicitly opened MCP door without generating registry-auth routes", async () => {
-    const root = await fixture();
-    const sink = output();
-    await runInit({
-      targetDir: root,
-      confirm: async () => true,
-      interview: async () => ({ openDoor: true }),
-      output: sink.output,
-    });
-
-    expect(sink.logs.join("\n")).toContain("vendo mcp server-json");
-    expect(sink.logs.join("\n")).toContain("vendo mcp verify-domain");
-    expect(sink.logs.join("\n")).toContain("vendo doctor");
-    expect(Object.keys(await tree(root)).some((path) => path.includes("mcp-registry-auth"))).toBe(false);
+    await writeFile(skill, "edited by host\n");
+    expect(await run(root, output())).toBe(0);
+    expect(await readFile(skill, "utf8")).toBe("edited by host\n");
   });
 
   it("extracts host CSS variables into the Vendo theme as concrete values", async () => {
@@ -618,7 +488,7 @@ describe("vendo init", () => {
       "--primary-foreground: #ffffff; --foreground: oklch(0.205 0 0); --card: 0 0% 100%; " +
       "--border: #dedede; --destructive: #b91c1c; --font-heading: Newsreader, serif; " +
       "--density: compact; --motion: reduced; --radius: 0.625rem; }\n");
-    await runInit({ targetDir: root, yes: true, output: output().output });
+    expect(await run(root, output(), { yes: true })).toBe(0);
     expect(JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"))).toMatchObject({
       colors: {
         background: "#fafafa",
@@ -636,7 +506,7 @@ describe("vendo init", () => {
     });
   });
 
-  it("extracts light theme tokens through CSS imports and recovers next/font stacks", async () => {
+  it("fills next/font gaps via the model pass and prints the one-glance summary", async () => {
     const root = await fixture();
     await writeFile(join(root, "app", "layout.tsx"),
       'import "./global.css";\n' +
@@ -648,377 +518,84 @@ describe("vendo init", () => {
       ':root { --font-body: var(--font-sans); }\n');
     await writeFile(join(root, "app", "tokens.css"),
       ':root { --background: #fafafa; --card: #ffffff; --foreground: #171717; ' +
-      '--muted-foreground: #737373; --primary: #2b7fff; --radius: 0.375rem; }\n' +
-      '.dark { --background: #09090b; --card: #18181b; --foreground: #fafafa; ' +
-      '--muted-foreground: #a1a1aa; --primary: #60a5fa; }\n');
+      '--muted-foreground: #737373; --primary: #2b7fff; --radius: 0.375rem; }\n');
 
-    await runInit({ targetDir: root, yes: true, output: output().output });
+    const sink = output();
+    expect(await run(root, sink, {
+      yes: true,
+      themeModel: themeModelOf({ slots: { fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif" } }),
+    })).toBe(0);
 
     expect(JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"))).toMatchObject({
-      colors: {
-        background: "#fafafa",
-        surface: "#ffffff",
-        text: "#171717",
-        muted: "#737373",
-        accent: "#2b7fff",
-      },
+      colors: { background: "#fafafa", surface: "#ffffff", text: "#171717", muted: "#737373", accent: "#2b7fff" },
       typography: { fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif" },
       radius: { medium: "6px" },
     });
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Theme: accent #2b7fff");
+    expect(logs).toContain(".vendo/theme.json");
   });
 
-  it("wraps a layout that returns bare children (no JSX slot) with VendoRoot", async () => {
+  it("asks about the theme ONLY when the model reports uncertainty, and applies the answer", async () => {
     const root = await fixture();
     await writeFile(join(root, "app", "layout.tsx"),
-      "import type { ReactNode } from \"react\";\n" +
-      "export default function RootLayout({ children }: { children: ReactNode }) {\n" +
-      "    return children;\n}\n");
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    const layout = await readFile(join(root, "app", "layout.tsx"), "utf8");
-    expect(layout).toContain("import { VendoRoot } from \"@vendoai/vendo/react\";");
-    expect(layout).toContain("import theme from \"../.vendo/theme.json\";");
-    expect(layout).toContain("return <VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>;");
-  });
+      'import "./globals.css";\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n');
+    await writeFile(join(root, "app", "globals.css"),
+      ":root { --color-ink: #111111; --color-evergreen-600: #196b46; }\n");
 
-  it("scaffolds a fresh root app/ layout that imports and passes the extracted theme", async () => {
-    const root = await mkdtemp(join(tmpdir(), "vendo-init-fresh-"));
-    cleanup.push(root);
-    await mkdir(join(root, "app"), { recursive: true });
-    await writeFile(join(root, "package.json"), JSON.stringify({
-      name: "host", dependencies: { next: "16.0.0", "@vendoai/vendo": "0.3.0" },
-    }));
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    const layout = await readFile(join(root, "app", "layout.tsx"), "utf8");
-    // 08 §4 / 09 §4: fresh install adopts the host brand, not neutral chrome.
-    expect(layout).toContain("import theme from \"../.vendo/theme.json\";");
-    expect(layout).toContain("import type { VendoTheme } from \"@vendoai/vendo\";");
-    expect(layout).toContain("<VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>");
-  });
-
-  it("computes the theme specifier from a src/app layout (../../ to project root)", async () => {
-    const root = await mkdtemp(join(tmpdir(), "vendo-init-srcapp-"));
-    cleanup.push(root);
-    await mkdir(join(root, "src", "app"), { recursive: true });
-    await writeFile(join(root, "package.json"), JSON.stringify({
-      name: "host", dependencies: { next: "16.0.0", "@vendoai/vendo": "0.3.0" },
-    }));
-    await writeFile(join(root, "src", "app", "layout.tsx"),
-      "export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n");
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    const layout = await readFile(join(root, "src", "app", "layout.tsx"), "utf8");
-    expect(layout).toContain("import theme from \"../../.vendo/theme.json\";");
-    expect(layout).toContain("import type { VendoTheme } from \"@vendoai/vendo\";");
-    expect(layout).toContain("<VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>");
-  });
-
-  it("wires theme while preserving a \"use client\" directive at the top of the file", async () => {
-    const root = await fixture();
-    await writeFile(join(root, "app", "layout.tsx"),
-      "\"use client\";\n" +
-      "import type { ReactNode } from \"react\";\n" +
-      "export default function Layout({ children }: { children: ReactNode }) { return <html><body>{children}</body></html>; }\n");
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    const layout = await readFile(join(root, "app", "layout.tsx"), "utf8");
-    expect(layout.startsWith("\"use client\";\n")).toBe(true);
-    expect(layout).toContain("import { VendoRoot } from \"@vendoai/vendo/react\";");
-    expect(layout).toContain("import theme from \"../.vendo/theme.json\";");
-    expect(layout).toContain("import type { VendoTheme } from \"@vendoai/vendo\";");
-    expect(layout).toContain("<VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>");
-    // Idempotent: a second run leaves the already-wired layout byte-identical.
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    expect(await readFile(join(root, "app", "layout.tsx"), "utf8")).toBe(layout);
-  });
-
-  it("degrades to bare VendoRoot wiring when the project disables resolveJsonModule", async () => {
-    const root = await fixture();
-    await writeFile(join(root, "tsconfig.json"),
-      JSON.stringify({ compilerOptions: { resolveJsonModule: false } }));
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    const layout = await readFile(join(root, "app", "layout.tsx"), "utf8");
-    expect(layout).toContain("<VendoRoot>{children}</VendoRoot>");
-    expect(layout).not.toContain("theme.json");
-    expect(layout).not.toContain("theme={theme");
-    expect(layout).not.toContain("VendoTheme");
-  });
-
-  it("runs extraction for the agent plan and stays read-only", async () => {
-    const root = await fixture();
-    await writeFile(join(root, "openapi.json"), JSON.stringify({
-      openapi: "3.1.0",
-      info: { title: "Host", version: "1.0.0" },
-      paths: {
-        "/api/invoices": { get: { summary: "List invoices" } },
-        "/api/invoices/{id}": { delete: { summary: "Delete an invoice" } },
+    const reviewed: string[] = [];
+    const sink = output();
+    expect(await run(root, sink, {
+      themeModel: themeModelOf({
+        slots: { accent: "#196b46", text: "#111111" },
+        uncertain: [{ slot: "accent", note: "green may be data-only" }],
+      }),
+      themeReview: async (summary) => {
+        reviewed.push(...summary.uncertain.map((entry) => entry.slot));
+        return { accent: "#facc15", border: "#ecebe8", danger: "chartreuse-ish", sparkle: "#123456" };
       },
-    }));
+    })).toBe(0);
+
+    expect(reviewed).toEqual(["accent"]);
+    const theme = JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"));
+    // The human answer wins; invalid values and unknown slots are ignored.
+    expect(theme.colors.accent).toBe("#facc15");
+    expect(theme.colors.border).toBe("#ecebe8");
+    expect(theme.colors.danger).toBe("#dc2626");
+    expect(theme.colors.text).toBe("#111111");
+    expect(sink.errors.join("\n")).toContain('unknown theme slot "sparkle"');
+    // The contrast-derived accentText follows the replaced accent.
+    expect(theme.colors.accentText).toBe("#000000");
+  });
+
+  it("emits a read-only agent plan with code changes, extraction, and paste steps", async () => {
+    const root = await fixture();
     const before = await tree(root);
     const sink = output();
-
-    expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
-
-    expect(await tree(root)).toEqual(before); // extraction ran against a throwaway dir
+    expect(await run(root, sink, { agent: true })).toBe(0);
     const plan = JSON.parse(sink.logs.join("\n")) as {
-      extraction: { tools: Array<{ name: string; risk: string; binding: { kind: string; method: string } }>; warnings: string[] };
-      riskRecommendations: Array<{ tool: string; risk: string; recommendation: string }>;
-    };
-    expect(plan.extraction.tools).toHaveLength(2);
-    expect(plan.extraction.tools.every((tool) => tool.binding.kind === "openapi")).toBe(true);
-    const destructive = plan.extraction.tools.find((tool) => tool.binding.method === "DELETE");
-    expect(destructive?.risk).toBe("destructive");
-    expect(plan.riskRecommendations).toContainEqual({
-      tool: destructive?.name,
-      risk: "destructive",
-      recommendation: expect.stringContaining("mark it critical in .vendo/overrides.json"),
-    });
-  });
-
-  // ENG-335: the documented promise is that --agent writes NOTHING into the
-  // target — not `.vendo/`, not scaffolds, not sync hooks. Exercise every
-  // write-adjacent path at once (extraction, pin capture for an already
-  // remixable slot, catalog scan, skill offer, package.json hooks, layout
-  // wiring) and require the tree byte-identical.
-  it("agent mode writes nothing on the richest plan path (ENG-335)", async () => {
-    const root = await fixture();
-    await writeFile(join(root, "package.json"), JSON.stringify({
-      name: "host",
-      scripts: { dev: "next dev", build: "next build" },
-      dependencies: { next: "16.0.0", "@vendoai/vendo": "0.3.0" },
-    }));
-    await writeFile(join(root, "openapi.json"), JSON.stringify({
-      openapi: "3.1.0",
-      info: { title: "Host", version: "1.0.0" },
-      paths: { "/api/invoices/{id}": { delete: { summary: "Delete an invoice" } } },
-    }));
-    await writeFile(join(root, "app", "card.tsx"),
-      "export function HostCard() { return <div>host card</div>; }\n");
-    await writeFile(join(root, "app", "vendo-components.ts"),
-      "import { HostCard } from \"./card\";\n" +
-      "export const components = [\n" +
-      "  { remixable: true, name: \"HostCard\", component: HostCard, description: \"A host card\" },\n" +
-      "  { name: \"HostBadge\", component: HostCard, description: \"A host badge\" },\n" +
-      "];\n");
-    await mkdir(join(root, ".claude"), { recursive: true });
-    const before = await tree(root);
-    const sink = output();
-
-    expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
-
-    expect(await tree(root)).toEqual(before);
-    // tree() cannot see empty directories — assert .vendo was never created.
-    expect(await readdir(root)).not.toContain(".vendo");
-    const plan = JSON.parse(sink.logs.join("\n")) as {
-      extraction: { tools: Array<{ name: string }> };
-      codeChanges: Array<{ path: string }>;
-    };
-    expect(plan.extraction.tools.length).toBeGreaterThan(0); // the plan still reports
-    expect(plan.codeChanges.length).toBeGreaterThan(0);
-  });
-
-  it("agent-plan recommendations respect existing overrides", async () => {
-    const root = await fixture();
-    await writeFile(join(root, "openapi.json"), JSON.stringify({
-      openapi: "3.1.0",
-      info: { title: "Host", version: "1.0.0" },
-      paths: { "/api/invoices/{id}": { delete: { summary: "Delete an invoice" } } },
-    }));
-    const first = output();
-    expect(await runInit({ targetDir: root, agent: true, output: first.output })).toBe(0);
-    const name = (JSON.parse(first.logs.join("\n")) as { extraction: { tools: Array<{ name: string }> } })
-      .extraction.tools[0]!.name;
-
-    await mkdir(join(root, ".vendo"), { recursive: true });
-    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({
-      format: "vendo/overrides@1",
-      tools: { [name]: { critical: true } },
-    }));
-    const second = output();
-    expect(await runInit({ targetDir: root, agent: true, output: second.output })).toBe(0);
-    const plan = JSON.parse(second.logs.join("\n")) as {
-      extraction: { tools: Array<{ name: string; critical?: boolean }> };
-      riskRecommendations: Array<{ tool: string; recommendation: string }>;
-    };
-    expect(plan.extraction.tools[0]).toMatchObject({ name, critical: true });
-    expect(plan.riskRecommendations).toContainEqual(expect.objectContaining({
-      tool: name,
-      recommendation: expect.stringContaining("already marked critical"),
-    }));
-  });
-
-  it("degrades the agent plan to a warning when extraction fails", async () => {
-    const root = await fixture();
-    await mkdir(join(root, ".vendo"), { recursive: true });
-    await writeFile(join(root, ".vendo", "overrides.json"), "{ not json"); // malformed overrides make vendoSync throw
-    const sink = output();
-
-    expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
-
-    const plan = JSON.parse(sink.logs.join("\n")) as {
+      framework: string;
+      writes: string[];
+      codeChanges: Array<{ path: string; diff: string }>;
+      manualSteps: string[];
       extraction: { tools: unknown[]; warnings: string[] };
       riskRecommendations: unknown[];
+      aiPolish: { instructions: string; draftSchema: Record<string, unknown>; apply: string };
     };
-    expect(plan.extraction.tools).toEqual([]);
-    expect(plan.extraction.warnings[0]).toContain("extraction failed:");
-    expect(plan.riskRecommendations).toEqual([]);
-  });
-
-  it("offers the packaged setup skill only to hosts with a .claude directory", async () => {
-    const skillPath = join(".claude", "skills", "vendo-setup", "SKILL.md");
-    const without = output();
-    expect(await runInit({ targetDir: await fixture(), agent: true, output: without.output })).toBe(0);
-    expect((JSON.parse(without.logs.join("\n")) as { codeChanges: Array<{ path: string }> })
-      .codeChanges.some((change) => change.path === skillPath)).toBe(false);
-
-    const root = await fixture();
-    await mkdir(join(root, ".claude"), { recursive: true });
-    const sink = output();
-    expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
-    const plan = JSON.parse(sink.logs.join("\n")) as { codeChanges: Array<{ path: string; diff: string }> };
-    const offered = plan.codeChanges.find((change) => change.path === skillPath);
-    expect(offered?.diff).toContain("name: vendo-setup");
-  });
-
-  it("writes the setup skill through diff consent and stays idempotent", async () => {
-    const root = await fixture();
-    await mkdir(join(root, ".claude"), { recursive: true });
-    const skillAbsolute = join(root, ".claude", "skills", "vendo-setup", "SKILL.md");
-    const skillPath = join(".claude", "skills", "vendo-setup", "SKILL.md");
-
-    const declined = vi.fn(async (change: { path: string }) => change.path !== skillPath);
-    expect(await runInit({ targetDir: root, confirm: declined, output: output().output })).toBe(0);
-    await expect(readFile(skillAbsolute, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
-    const written = await readFile(skillAbsolute, "utf8");
-    expect(written).toContain("name: vendo-setup");
-    expect(written).toContain("docs.vendo.run/install.md");
-
-    // A rerun (or a host that edited its copy) is never re-prompted.
-    await writeFile(skillAbsolute, "# my edited copy\n");
-    const confirm = vi.fn().mockResolvedValue(true);
-    expect(await runInit({ targetDir: root, confirm, output: output().output })).toBe(0);
-    expect(confirm.mock.calls.map(([change]) => (change as { path: string }).path)).not.toContain(skillPath);
-    expect(await readFile(skillAbsolute, "utf8")).toBe("# my edited copy\n");
-
-    // A deleted copy is offered again, like any missing scaffold.
-    await rm(skillAbsolute);
-    const reoffered = output();
-    expect(await runInit({ targetDir: root, agent: true, output: reoffered.output })).toBe(0);
-    expect((JSON.parse(reoffered.logs.join("\n")) as { codeChanges: Array<{ path: string }> })
-      .codeChanges.some((change) => change.path === skillPath)).toBe(true);
-  });
-
-  it("emits only init telemetry and respects env opt-out", async () => {
-    const root = await fixture();
-    const home = await mkdtemp(join(tmpdir(), "vendo-home-"));
-    cleanup.push(home);
-    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
-    await runInit({
-      targetDir: root,
-      yes: true,
-      output: output().output,
-      telemetry: { home, posthogKey: "phc_test", env: { NODE_ENV: "test" }, fetchImpl },
-    });
-    const events = fetchImpl.mock.calls.map((call) => JSON.parse(String(call[1]?.body)).event);
-    expect(events).toEqual(expect.arrayContaining(["init_started", "init_completed"]));
-    expect(events).not.toContain("refresh");
-
-    const expressHome = await mkdtemp(join(tmpdir(), "vendo-home-express-"));
-    cleanup.push(expressHome);
-    const expressFetch = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
-    await runInit({
-      targetDir: await expressFixture(true),
-      yes: true,
-      output: output().output,
-      telemetry: { home: expressHome, posthogKey: "phc_test", env: { NODE_ENV: "test" }, fetchImpl: expressFetch },
-    });
-    expect(expressFetch.mock.calls.map((call) => JSON.parse(String(call[1]?.body))))
-      .toEqual(expect.arrayContaining([expect.objectContaining({
-        event: "init_completed",
-        properties: expect.objectContaining({ framework: "express" }),
-      })]));
-
-    const disabled = vi.fn();
-    await runInit({
-      targetDir: await fixture(),
-      yes: true,
-      output: output().output,
-      telemetry: {
-        home: await mkdtemp(join(tmpdir(), "vendo-home-disabled-")),
-        posthogKey: "phc_test",
-        env: { NODE_ENV: "test", VENDO_TELEMETRY_DISABLED: "1" },
-        fetchImpl: disabled,
-      },
-    });
-    expect(disabled).not.toHaveBeenCalled();
-  });
-
-  describe("end-of-init refine offer (one engine, two surfaces)", () => {
-    it("runs `vendo refine` against the initialized root when the offer is accepted", async () => {
-      const root = await fixture();
-      const sink = output();
-      const runRefine = vi.fn(async () => 0);
-      expect(await runInit({
-        targetDir: root,
-        interview: async () => ({}),
-        confirm: async () => true,
-        output: sink.output,
-        offerRefine: async () => true,
-        runRefine,
-      })).toBe(0);
-      expect(runRefine).toHaveBeenCalledWith(expect.objectContaining({ targetDir: root }));
-    });
-
-    it("forwards the model the dev configured during init into the refine offer", async () => {
-      const runRefine = vi.fn(async () => 0);
-      expect(await runInit({
-        targetDir: await fixture(),
-        modelImport: "@/lib/ai",
-        interview: async () => ({}),
-        confirm: async () => true,
-        output: output().output,
-        offerRefine: async () => true,
-        runRefine,
-      })).toBe(0);
-      expect(runRefine).toHaveBeenCalledWith(expect.objectContaining({ modelImport: "@/lib/ai" }));
-    });
-
-    it("a declined offer runs nothing; a failed refine never fails init", async () => {
-      const declinedRefine = vi.fn(async () => 0);
-      const declined = output();
-      expect(await runInit({
-        targetDir: await fixture(),
-        interview: async () => ({}),
-        confirm: async () => true,
-        output: declined.output,
-        offerRefine: async () => false,
-        runRefine: declinedRefine,
-      })).toBe(0);
-      expect(declinedRefine).not.toHaveBeenCalled();
-
-      const failed = output();
-      expect(await runInit({
-        targetDir: await fixture(),
-        interview: async () => ({}),
-        confirm: async () => true,
-        output: failed.output,
-        offerRefine: async () => true,
-        runRefine: async () => 1,
-      })).toBe(0);
-      expect(failed.errors.join("\n")).toContain("vendo refine did not complete");
-    });
-
-    it("--yes skips the prompt and points at `vendo refine` instead", async () => {
-      const sink = output();
-      const runRefine = vi.fn(async () => 0);
-      expect(await runInit({
-        targetDir: await fixture(),
-        yes: true,
-        output: sink.output,
-        offerRefine: async () => true,
-        runRefine,
-      })).toBe(0);
-      expect(runRefine).not.toHaveBeenCalled();
-      expect(sink.logs.join("\n")).toContain("`vendo refine` proposes compound capabilities");
-    });
+    expect(plan.framework).toBe("next");
+    expect(plan.writes).toContain(".vendo/tools.json");
+    expect(plan.writes).not.toContain(".env");
+    expect(plan.codeChanges.map((change) => change.path)).toContain(join("app", "api", "vendo", "[...vendo]", "route.ts"));
+    expect(plan.codeChanges.map((change) => change.path)).toContain(join("vendo", "registry.tsx"));
+    expect(plan.manualSteps.join("\n")).toContain("<VendoRoot");
+    expect(Array.isArray(plan.extraction.tools)).toBe(true);
+    expect(Array.isArray(plan.riskRecommendations)).toBe(true);
+    // The delegation contract rides the plan: instructions an external agent
+    // executes, the draft schema, and the apply command that runs the guards.
+    expect(plan.aiPolish.instructions).toContain("never lower");
+    expect(plan.aiPolish.instructions).toContain("Statically extracted tools");
+    expect(plan.aiPolish.draftSchema).toMatchObject({ type: "object", required: ["brief", "tools"] });
+    expect(plan.aiPolish.apply).toContain("vendo extract --apply");
+    expect(await tree(root)).toEqual(before); // --agent wrote nothing
   });
 });

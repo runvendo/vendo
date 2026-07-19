@@ -145,6 +145,7 @@ export class PGliteStore implements StoreAdapter {
         refs jsonb,
         created_at timestamptz not null default now(),
         updated_at timestamptz not null default now(),
+        revision bigint not null default 1,
         primary key(collection, id)
       );
     `);
@@ -415,16 +416,51 @@ class GenericSqlRecordStore implements RecordStore {
   async put(record: Pick<VendoRecord, "id" | "data" | "refs">): Promise<VendoRecord> {
     const now = new Date().toISOString();
     await this.db.query(
-      `INSERT INTO vendo_records (collection, id, data, refs, created_at, updated_at)
-       VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$5)
+      `INSERT INTO vendo_records (collection, id, data, refs, created_at, updated_at, revision)
+       VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$5,1)
        ON CONFLICT (collection, id) DO UPDATE SET
-        data=EXCLUDED.data, refs=EXCLUDED.refs, updated_at=EXCLUDED.updated_at`,
+        data=EXCLUDED.data, refs=EXCLUDED.refs, updated_at=EXCLUDED.updated_at,
+        revision=vendo_records.revision + 1`,
       [this.collection, record.id, json(record.data), json(record.refs ?? null), now],
     );
     const stored = await this.get(record.id);
     if (!stored) throw new Error(`failed to persist ${this.collection}/${record.id}`);
     return stored;
   }
+
+  /** Mirrors the store lane's generic-table atomic capability (02-store §4):
+   *  each verb is one statement, so exactly one concurrent claimant wins. */
+  readonly atomic = {
+    insertIfAbsent: async (
+      record: Pick<VendoRecord, "id" | "data" | "refs">,
+    ): Promise<VendoRecord | null> => {
+      const now = new Date().toISOString();
+      const result = await this.db.query<Record<string, unknown>>(
+        `INSERT INTO vendo_records (collection, id, data, refs, created_at, updated_at, revision)
+         VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$5,1)
+         ON CONFLICT (collection, id) DO NOTHING
+         RETURNING *`,
+        [this.collection, record.id, json(record.data), json(record.refs ?? null), now],
+      );
+      const row = result.rows[0];
+      return row ? this.toRecord(row) : null;
+    },
+    compareAndSwap: async (
+      record: Pick<VendoRecord, "id" | "data" | "refs">,
+      expectedRevision: string,
+    ): Promise<VendoRecord | null> => {
+      const now = new Date().toISOString();
+      const result = await this.db.query<Record<string, unknown>>(
+        `UPDATE vendo_records
+         SET data = $3::jsonb, refs = $4::jsonb, updated_at = $5, revision = revision + 1
+         WHERE collection = $1 AND id = $2 AND revision = $6::bigint
+         RETURNING *`,
+        [this.collection, record.id, json(record.data), json(record.refs ?? null), now, expectedRevision],
+      );
+      const row = result.rows[0];
+      return row ? this.toRecord(row) : null;
+    },
+  };
 
   async delete(id: string): Promise<void> {
     await this.db.query("DELETE FROM vendo_records WHERE collection = $1 AND id = $2", [
@@ -461,6 +497,7 @@ class GenericSqlRecordStore implements RecordStore {
       ...(row.refs == null ? {} : { refs: row.refs as Record<string, string> }),
       createdAt: iso(row.created_at),
       updatedAt: iso(row.updated_at),
+      ...(row.revision == null ? {} : { revision: String(row.revision) }),
     };
   }
 }

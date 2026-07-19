@@ -92,15 +92,21 @@ standard `Request` and returns a standard `Response`. The Node adapter that
   present-mode same-origin tool calls.
 - Return multi-value `Set-Cookie` as a header array, not a joined string.
 
-Set `VENDO_BASE_URL` to your trusted host origin — `http://localhost:3000` in
-development, your public HTTPS origin in production. It does three jobs.
-It gates present-mode credential forwarding, so Vendo passes `authorization`
-and `cookie` only to same-origin routes matching this value. It marks the
-anonymous-session cookie `Secure` behind a TLS-terminating proxy. And it
-provides the base for extracted route tools. When it is unset, present tool
-calls run without inbound auth and the composition emits one
-`present-credentials-not-forwarded` audit event so the misconfiguration
-does not stay silent. `vendo init` writes it into `.env.example` for you.
+Present tool calls forward `authorization` and `cookie` headers to
+same-origin routes only when the wire trusts its own origin. In development,
+it learns and trusts that origin automatically from the first request — no
+`VENDO_BASE_URL` needed. Every other environment (including `NODE_ENV=test`)
+keeps the learned origin untrusted by default, so a spoofed `Host` header can
+never turn it into a credential-exfiltration target.
+
+Set `VENDO_BASE_URL` to your public HTTPS origin in production. It does three
+jobs: it is the trusted origin present-mode credentials forward to, it marks
+the anonymous-session cookie `Secure` behind a TLS-terminating proxy, and it
+provides the base for extracted route tools. Without it in production, a
+present-mode host tool call that needs to forward credentials fails loud
+instead of running unauthenticated, and `vendo doctor` reports the missing
+variable as a failing check. `vendo init` writes a `http://localhost:3000`
+default into `.env.example` for you to replace.
 
 ## Verify
 

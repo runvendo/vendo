@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "getAuthNextauth",
+      "method": "GET",
+      "path": "/api/auth/{nextauth}",
+      "risk": "read"
+    },
+    {
+      "name": "postAuthNextauth",
+      "method": "POST",
+      "path": "/api/auth/{nextauth}",
+      "risk": "write"
+    },
+    {
+      "name": "postChat",
+      "method": "POST",
+      "path": "/api/chat",
+      "risk": "write"
+    },
+    {
+      "name": "postOnboardingChecks",
+      "method": "POST",
+      "path": "/api/onboarding/checks",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcEdgeTrpc",
+      "method": "GET",
+      "path": "/api/trpc/edge/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcEdgeTrpc",
+      "method": "POST",
+      "path": "/api/trpc/edge/{trpc}",
+      "risk": "write"
+    },
+    {
+      "name": "getTrpcLambdaTrpc",
+      "method": "GET",
+      "path": "/api/trpc/lambda/{trpc}",
+      "risk": "read"
+    },
+    {
+      "name": "postTrpcLambdaTrpc",
+      "method": "POST",
+      "path": "/api/trpc/lambda/{trpc}",
+      "risk": "write"
+    }
+  ]
+}

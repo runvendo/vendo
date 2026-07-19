@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useVendoOverlay } from "@vendoai/ui";
-import { VendoOverlay } from "@vendoai/ui/chrome";
+import { VendoOverlay, VendoPalette, type VendoCommand } from "@vendoai/ui/chrome";
 
 async function resetDemo(): Promise<void> {
   try {
@@ -18,7 +19,15 @@ export function VendoLayer() {
   // surface, so the built-in launcher is suppressed the supported way
   // (launcher="none") instead of the old display:none CSS hack.
   const overlay = useVendoOverlay();
-  const { toggle } = overlay;
+  const { toggle, open } = overlay;
+  const router = useRouter();
+
+  // ENG-230: route ⌘K palette commands. Opening the agent or a new conversation
+  // uses the overlay; showing activity jumps to the shipped workspace.
+  const onCommand = (command: VendoCommand) => {
+    if (command.kind === "show-activity") router.push("/vendo/workspace");
+    else open();
+  };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -40,10 +49,12 @@ export function VendoLayer() {
   return (
     <>
       <VendoOverlay {...overlay.overlayProps} launcher="none" />
-      {/* VENDO-MIGRATION: 08-ui's frozen overlay does not expose custom
-          greetings or suggestion chips; Cmd/Ctrl+K behavior remains intact. */}
-      {/* VENDO-MIGRATION: connectors remain available to the server-side agent,
-          but 08-ui has no integration/OAuth rail or ConnectCard surface. */}
+      {/* ENG-230: the command palette surface, mounted app-wide. Distinct
+          chord (Cmd/Ctrl+J) so it never fights the overlay's own ⌘K toggle. */}
+      <VendoPalette
+        hotkey={(event) => (event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "j"}
+        onCommand={onCommand}
+      />
     </>
   );
 }

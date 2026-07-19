@@ -810,7 +810,7 @@ interface OpenInProductPayload {
   appName?: string;
 }
 
-/** AppsRuntime.open has already resolved every v0 tree query into `tree.data`
+/** AppsRuntime.open has already resolved every tree query into `tree.data`
  * (06-apps §1). The query declarations remain on the in-product payload so a
  * later open/refresh can resolve them again, but forwarding them to the MCP
  * shim would execute every query a second time. Project the already-resolved
@@ -830,7 +830,7 @@ function mcpAppsOpenOutput(
     return projected;
   }
   const payload = unwrapAppsOpen(output);
-  if (!isRecord(payload) || payload.formatVersion !== "vendo-genui/v1" || !Object.hasOwn(payload, "queries")) {
+  if (!isRecord(payload) || payload.formatVersion !== "vendo-genui/v2" || !Object.hasOwn(payload, "queries")) {
     return payload;
   }
   const projected = { ...payload };

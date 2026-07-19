@@ -1,12 +1,12 @@
-import type { Json, Tree, TreeNode, TreeQuery } from "@vendoai/core";
+import type { Json, TreeNode, TreeQueryV2, TreeV2 } from "@vendoai/core";
 
 /**
- * Build a synthetic vendo-genui/v1 tree of exactly `nodeCount` nodes with
+ * Build a synthetic vendo-genui/v2 tree of exactly `nodeCount` nodes with
  * realistic props, $path / $state bindings, and up to 16 queries (the 01 §8
  * cap). Prewired primitives only, so it validates and server-renders without
  * the jail. Never exceeds `nodeCount` (5000 is the contract maximum).
  */
-export function syntheticTree(nodeCount: number): Tree {
+export function syntheticTree(nodeCount: number): TreeV2 {
   const nodes: TreeNode[] = [];
   const rootChildren: string[] = [];
   nodes.push({ id: "root", component: "Stack", source: "prewired", children: rootChildren });
@@ -65,12 +65,12 @@ export function syntheticTree(nodeCount: number): Tree {
 
   data.count = rows.length;
 
-  const queries: TreeQuery[] = [];
+  const queries: TreeQueryV2[] = [];
   for (let i = 0; i < Math.min(16, section); i += 1) {
-    queries.push({ path: `/rows/${i}`, tool: "host_items_list", input: { section: i } });
+    queries.push({ name: `rows_${i}`, tool: "host_items_list", input: { section: i } });
   }
 
-  return { formatVersion: "vendo-genui/v1", root: "root", nodes, data, queries };
+  return { formatVersion: "vendo-genui/v2", root: "root", nodes, data, queries };
 }
 
 /** The node sizes the deterministic tree suites sweep. 5000 = the 01 §8 cap. */

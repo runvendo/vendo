@@ -101,11 +101,11 @@ export const hostCatalog = [{
     const remixedSource = hostSource.replace("$1.2M", "$1.2M — remixed");
     const model = scriptedModel([
       // Edit 1: fork the pin (copies captured source verbatim, records the pin).
-      JSON.stringify({ ops: [{ op: "fork-pin", slot: "net-worth-card", nodeId: "worth", parentId: "root" }] }),
+      '<Edit><ForkPin slot="net-worth-card" into="root"/></Edit>',
       // Edit 2: change the fork — the reviewable delta the ship-diff must show.
-      JSON.stringify({ ops: [{ op: "add-component", name: componentName, source: remixedSource }] }),
+      `<Edit><Island name="${componentName}">${remixedSource}</Island></Edit>`,
       // Edit 3: any content change after approval — must invalidate the pin.
-      JSON.stringify({ ops: [{ op: "set-name", name: "Net worth (renamed)" }] }),
+      '<Edit><SetName name="Net worth (renamed)"/></Edit>',
     ]);
 
     const store = createStore({ dataDir: join(root, ".data") });
@@ -126,7 +126,7 @@ export const hostCatalog = [{
       name: "Maple overview",
       ui: "tree",
       tree: {
-        formatVersion: "vendo-genui/v1",
+        formatVersion: "vendo-genui/v2",
         root: "root",
         nodes: [{ id: "root", component: "Stack", source: "prewired" }],
       },

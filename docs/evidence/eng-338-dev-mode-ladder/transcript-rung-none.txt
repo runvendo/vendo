@@ -1,0 +1,9 @@
+[rung-none] dev server up at http://localhost:3408
+[rung-none] POST /threads → 200; thread=thr_a69d96044afc43f79be64a168b7da55a
+[rung-none] turn 1839ms; parts=[start,error]
+[rung-none] ERROR PART: An error occurred while generating the response.
+[rung-none] server log:
+[vendo] dev-mode model: no model credential found
+[vendo] Vendo found no model credential. Dev-mode ladder: set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY in .env.local, or log in to the Claude Code or Codex CLI and re-run `vendo init` to consent to riding that session (dev only). Production always needs a real key.
+[vendo] dev-mode model: no model credential found
+[vendo] Vendo found no model credential. Dev-mode ladder: set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY in .env.local, or log in to the Claude Code or Codex CLI and re-run `vendo init` to consent to riding that session (dev only). Production always needs a real key.

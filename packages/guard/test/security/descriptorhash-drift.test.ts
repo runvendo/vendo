@@ -4,7 +4,7 @@ import { createGuard } from "../../src/index.js";
 import { createMemoryStore } from "../fixtures/memory-store.js";
 import { alice, call, context, descriptor, seedGrant } from "../fixtures/tools.js";
 
-// 05 §2 stage 3: a grant matches only an unrevoked, unexpired grant whose
+// 05 §2 stage 2: a grant matches only an unrevoked, unexpired grant whose
 // descriptorHash still equals the tool's current descriptor. Flipping risk,
 // revoking, or expiry all lapse the grant back to a park.
 describe("grant lapses on descriptor drift, revocation, and expiry", () => {

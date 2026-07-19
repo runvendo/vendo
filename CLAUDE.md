@@ -19,6 +19,27 @@ generated UI in a sandboxed, brand-native surface.
 - `pnpm install` · `pnpm build` · `pnpm test` · `pnpm typecheck` · `pnpm lint` (turbo-cached)
 - Demos: `pnpm --filter demo-bank dev` (Maple) · `pnpm --filter demo-accounting dev` (Cadence)
 
+## Vendo Cloud
+
+- Cloud sells exactly two categories: infrastructure that is painful to run
+  yourself (sandbox, inference, persistence, brokers, hosted automations) and
+  inherently multi-party coordination (sharing, registry, orgs, SSO, billing,
+  console). Everything else stays OSS.
+- Hard BYO rule: every single-player capability keeps a no-key
+  bring-your-own path (own Postgres, sandbox account, model key, OAuth apps).
+- Adapter rule: one adapter interface per block; Cloud is just another
+  implementation shipped in OSS. `VENDO_API_KEY` sets Cloud defaults only for
+  adapter slots the host left unset; an explicitly passed adapter always
+  wins; no hidden key-conditional branches. Reference implementation:
+  `selectConnections` in `packages/vendo/src/server.ts`.
+- Gating is valid key + meter, nothing else: no capability booleans, no
+  entitlement protocol, no validate endpoint, no client-side checks. Key
+  problems surface on the first real service call.
+- Managed inference rides the console's Anthropic-compatible model gateway
+  through the stock `@ai-sdk/anthropic` provider, so inference traffic does
+  not carry the deployment-identity headers and does not feed the deployment
+  inventory (known, accepted).
+
 ## Rules
 
 - Never commit to `main`; branch and open a PR.

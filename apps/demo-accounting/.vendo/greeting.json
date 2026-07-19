@@ -1,0 +1,8 @@
+{
+  "intro": "Hi — I'm Cadence's built-in assistant. I can answer questions about your clients and deadlines, chase missing documents, and reshape any screen to fit how you work.",
+  "prompts": [
+    "Which clients still owe documents?",
+    "Build me a deadline board for this month",
+    "Reshape my dashboard around document chasing"
+  ]
+}

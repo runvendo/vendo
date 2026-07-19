@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isPlainObject as isRecord } from "@vendoai/core";
 import { useVendoContext } from "../context.js";
 import type {
   VoiceDriverEvent,
   VoiceSessionHandle,
   VoiceSessionState,
+  VoiceSessionView,
   VoiceState,
   VoiceTranscriptEntry,
 } from "./driver.js";
@@ -13,9 +15,14 @@ export interface UseVoiceResult {
   start(): void;
   stop(): void;
   transcript: VoiceTranscriptEntry[];
+  error: { message: string } | null;
+  muted: boolean;
+  setMuted(muted: boolean): void;
+  amplitude: number;
+  views: VoiceSessionView[];
 }
 
-const SESSION_STATES = new Set<VoiceSessionState>(["connecting", "listening", "speaking"]);
+const SESSION_STATES = new Set<VoiceSessionState>(["connecting", "reconnecting", "listening", "speaking"]);
 
 /**
  * The frozen headless voice surface (08-ui §3). Without an injected driver,
@@ -25,6 +32,10 @@ export function useVoice(): UseVoiceResult {
   const driver = useVendoContext().voice?.driver;
   const [state, setState] = useState<VoiceState>(() => (driver ? "idle" : "unavailable"));
   const [transcript, setTranscript] = useState<VoiceTranscriptEntry[]>([]);
+  const [error, setError] = useState<{ message: string } | null>(null);
+  const [muted, setMutedState] = useState(false);
+  const [amplitude, setAmplitude] = useState(0);
+  const [views, setViews] = useState<VoiceSessionView[]>([]);
   const handleRef = useRef<VoiceSessionHandle | null>(null);
   const activeRef = useRef(false);
   const generationRef = useRef(0);
@@ -36,6 +47,9 @@ export function useVoice(): UseVoiceResult {
       const handle = handleRef.current;
       handleRef.current = null;
       handle?.stop();
+      setError(null);
+      setMutedState(false);
+      setAmplitude(0);
       setState(nextState);
     },
     [driver],
@@ -47,6 +61,10 @@ export function useVoice(): UseVoiceResult {
     handleRef.current?.stop();
     handleRef.current = null;
     setTranscript([]);
+    setError(null);
+    setMutedState(false);
+    setAmplitude(0);
+    setViews([]);
     setState(driver ? "idle" : "unavailable");
 
     return () => {
@@ -64,6 +82,10 @@ export function useVoice(): UseVoiceResult {
     generationRef.current = generation;
     activeRef.current = true;
     setTranscript([]);
+    setError(null);
+    setMutedState(false);
+    setAmplitude(0);
+    setViews([]);
     setState("connecting");
     let failedSynchronously = false;
 
@@ -71,6 +93,7 @@ export function useVoice(): UseVoiceResult {
       if (!activeRef.current || generationRef.current !== generation) return;
 
       if (isStateEvent(event)) {
+        if (event.state === "connecting" || event.state === "reconnecting") setAmplitude(0);
         setState(event.state);
         return;
       }
@@ -80,12 +103,24 @@ export function useVoice(): UseVoiceResult {
         return;
       }
 
+      if (isAmplitudeEvent(event)) {
+        setAmplitude(Math.max(0, Math.min(1, event.level)));
+        return;
+      }
+
+      if (isViewEvent(event)) {
+        setViews((current) => updateViews(current, event.view));
+        return;
+      }
+
       if (event.type === "error") {
         failedSynchronously = handleRef.current === null;
         activeRef.current = false;
         const handle = handleRef.current;
         handleRef.current = null;
         handle?.stop();
+        setError({ message: voiceErrorMessage(event) });
+        setAmplitude(0);
         setState("error");
       }
       // Unknown variants are ignored for forward compatibility (01-core §15).
@@ -98,9 +133,11 @@ export function useVoice(): UseVoiceResult {
         return;
       }
       handleRef.current = handle;
-    } catch {
+    } catch (cause) {
       activeRef.current = false;
       handleRef.current = null;
+      setError({ message: cause instanceof Error ? cause.message : "Voice session failed" });
+      setAmplitude(0);
       setState("error");
     }
   }, [driver]);
@@ -110,7 +147,14 @@ export function useVoice(): UseVoiceResult {
     stopCurrent();
   }, [stopCurrent]);
 
-  return { state, start, stop, transcript };
+  const setMuted = useCallback((nextMuted: boolean) => {
+    const handle = handleRef.current;
+    if (!activeRef.current || !handle?.setMuted) return;
+    handle.setMuted(nextMuted);
+    setMutedState(nextMuted);
+  }, []);
+
+  return { state, start, stop, transcript, error, muted, setMuted, amplitude, views };
 }
 
 function isStateEvent(
@@ -132,8 +176,23 @@ function isTranscriptEvent(
   );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+function isAmplitudeEvent(event: VoiceDriverEvent): event is { type: "amplitude"; level: number } {
+  return event.type === "amplitude" && "level" in event && typeof event.level === "number";
+}
+
+function isViewEvent(event: VoiceDriverEvent): event is { type: "view"; view: VoiceSessionView } {
+  if (event.type !== "view" || !("view" in event) || !isRecord(event.view)) return false;
+  return (
+    typeof event.view.id === "string" &&
+    typeof event.view.appId === "string" &&
+    isRecord(event.view.payload) &&
+    typeof event.view.payload.formatVersion === "string"
+  );
+}
+
+function voiceErrorMessage(event: VoiceDriverEvent): string {
+  if (event.type !== "error" || !("error" in event) || !isRecord(event.error)) return "Voice session failed";
+  return typeof event.error.message === "string" ? event.error.message : "Voice session failed";
 }
 
 function updateTranscript(
@@ -144,6 +203,14 @@ function updateTranscript(
   if (index < 0) return [...entries, incoming];
   if (entries[index]?.final) return entries;
   const next = [...entries];
+  next[index] = incoming;
+  return next;
+}
+
+function updateViews(current: VoiceSessionView[], incoming: VoiceSessionView): VoiceSessionView[] {
+  const index = current.findIndex((view) => view.id === incoming.id);
+  if (index < 0) return [...current, incoming];
+  const next = [...current];
   next[index] = incoming;
   return next;
 }

@@ -57,10 +57,10 @@ Options:
   `model` (default `@/lib/ai` for Next.js and `./ai` for Express).
 - `--brief <text>` supplies the product brief written to `.vendo/brief.md`.
 
-Init rejects options it does not recognize and exits 1 before doing anything,
-so a flag the installed CLI does not support (for example `--agent` on an
-older version) can never be silently dropped and turn a read-only request
-into a writing init.
+Init rejects options it does not recognize and exits 1 before doing anything.
+This means a flag the installed CLI does not support (for example `--agent`
+on an older version) can never be silently dropped and turn a read-only
+request into a writing init.
 
 When the host repo has a `.claude/` directory and no
 `.claude/skills/vendo-setup/SKILL.md`, init also offers (through the same
@@ -283,13 +283,12 @@ Client for the Vendo Cloud API. `vendo cloud login <email>` sends a 6-10 digit
 email OTP, prompts for it, and stores the session at
 `~/.vendo/cloud-session.json`; `--token <jwt>` stores an access token instead.
 Other subcommands: `logout`, `whoami`, `orgs`, `keys` (`list`, `create`,
-`revoke`), `members`, `invite`, `deployments`, `usage`, `billing`, `validate`,
+`revoke`), `members`, `invite`, `deployments`, `usage`, `billing`,
 `deploy`, `share`, `publish`, and `pin-ship`. Read results print as JSON, with
-two exceptions. `validate` renders a human-readable report by default (org,
-plan, capabilities, quota bars) and takes `--json` for a machine-readable
-envelope that stays stable across live, stale-cache, and offline-degraded
-paths. `deploy` prints a concise summary table by default and switches to raw
-JSON with `--json`.
+one exception: `deploy` prints a concise summary table by default and switches
+to raw JSON with `--json`. There is no validate subcommand: key problems
+surface on the first real call, and `vendo cloud usage` and
+`vendo cloud deployments` read the server-side metering from real traffic.
 
 `vendo cloud deploy` pushes local enabled automations from `.vendo/data` to a
 hosted instance. Use `--app <id>` (repeatable) to restrict the set, `--subject
@@ -302,7 +301,7 @@ Global options:
 
 - `--api-url <url>` overrides `VENDO_CLOUD_URL` (default `https://console.vendo.run`).
 - `--key <vnd_...>` overrides `VENDO_API_KEY` for the machine commands
-  (`validate`, `deploy`, `share`, `publish`, `pin-ship`). Keys must match
+  (`deploy`, `share`, `publish`, `pin-ship`). Keys must match
   `vnd_` followed by 40 hex characters or the command exits before any
   network call.
 

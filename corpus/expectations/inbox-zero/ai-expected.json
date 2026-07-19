@@ -1,0 +1,1169 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "getAdminTopSpenders",
+      "method": "GET",
+      "path": "/api/admin/top-spenders",
+      "risk": "read"
+    },
+    {
+      "name": "postAiAnalyzeSenderPattern",
+      "method": "POST",
+      "path": "/api/ai/analyze-sender-pattern",
+      "risk": "write"
+    },
+    {
+      "name": "postAiComposeAutocomplete",
+      "method": "POST",
+      "path": "/api/ai/compose-autocomplete",
+      "risk": "write"
+    },
+    {
+      "name": "postAiDigest",
+      "method": "POST",
+      "path": "/api/ai/digest",
+      "risk": "write"
+    },
+    {
+      "name": "postAiDigestQueue",
+      "method": "POST",
+      "path": "/api/ai/digest/queue",
+      "risk": "write"
+    },
+    {
+      "name": "getAiModels",
+      "method": "GET",
+      "path": "/api/ai/models",
+      "risk": "read"
+    },
+    {
+      "name": "postAiSummarise",
+      "method": "POST",
+      "path": "/api/ai/summarise",
+      "risk": "write"
+    },
+    {
+      "name": "postAppleSubscriptionSync",
+      "method": "POST",
+      "path": "/api/apple/subscription/sync",
+      "risk": "write"
+    },
+    {
+      "name": "postAppleWebhook",
+      "method": "POST",
+      "path": "/api/apple/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "getAuthAll",
+      "method": "GET",
+      "path": "/api/auth/{all}",
+      "risk": "read"
+    },
+    {
+      "name": "postAuthAll",
+      "method": "POST",
+      "path": "/api/auth/{all}",
+      "risk": "write"
+    },
+    {
+      "name": "putAuthAll",
+      "method": "PUT",
+      "path": "/api/auth/{all}",
+      "risk": "write"
+    },
+    {
+      "name": "patchAuthAll",
+      "method": "PATCH",
+      "path": "/api/auth/{all}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteAuthAll",
+      "method": "DELETE",
+      "path": "/api/auth/{all}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postAutomationJobsExecute",
+      "method": "POST",
+      "path": "/api/automation-jobs/execute",
+      "risk": "write"
+    },
+    {
+      "name": "postAutomationJobsExecuteQueue",
+      "method": "POST",
+      "path": "/api/automation-jobs/execute/queue",
+      "risk": "write"
+    },
+    {
+      "name": "postChat",
+      "method": "POST",
+      "path": "/api/chat",
+      "risk": "write"
+    },
+    {
+      "name": "postChatConfirmEmailAction",
+      "method": "POST",
+      "path": "/api/chat/confirm-email-action",
+      "risk": "write"
+    },
+    {
+      "name": "getChats",
+      "method": "GET",
+      "path": "/api/chats",
+      "risk": "read"
+    },
+    {
+      "name": "getChatsChatId",
+      "method": "GET",
+      "path": "/api/chats/{chatId}",
+      "risk": "read"
+    },
+    {
+      "name": "patchChatsChatId",
+      "method": "PATCH",
+      "path": "/api/chats/{chatId}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteChatsChatId",
+      "method": "DELETE",
+      "path": "/api/chats/{chatId}",
+      "risk": "destructive"
+    },
+    {
+      "name": "postClean",
+      "method": "POST",
+      "path": "/api/clean",
+      "risk": "write"
+    },
+    {
+      "name": "postCleanGmail",
+      "method": "POST",
+      "path": "/api/clean/gmail",
+      "risk": "write"
+    },
+    {
+      "name": "getCleanHistory",
+      "method": "GET",
+      "path": "/api/clean/history",
+      "risk": "read"
+    },
+    {
+      "name": "getCronAutomationJobs",
+      "method": "GET",
+      "path": "/api/cron/automation-jobs",
+      "risk": "read"
+    },
+    {
+      "name": "postCronAutomationJobs",
+      "method": "POST",
+      "path": "/api/cron/automation-jobs",
+      "risk": "write"
+    },
+    {
+      "name": "getCronDraftCleanup",
+      "method": "GET",
+      "path": "/api/cron/draft-cleanup",
+      "risk": "read"
+    },
+    {
+      "name": "postCronDraftCleanup",
+      "method": "POST",
+      "path": "/api/cron/draft-cleanup",
+      "risk": "write"
+    },
+    {
+      "name": "getCronReasoningRetention",
+      "method": "GET",
+      "path": "/api/cron/reasoning-retention",
+      "risk": "read"
+    },
+    {
+      "name": "postCronReasoningRetention",
+      "method": "POST",
+      "path": "/api/cron/reasoning-retention",
+      "risk": "write"
+    },
+    {
+      "name": "getCronScheduledActions",
+      "method": "GET",
+      "path": "/api/cron/scheduled-actions",
+      "risk": "read"
+    },
+    {
+      "name": "postCronScheduledActions",
+      "method": "POST",
+      "path": "/api/cron/scheduled-actions",
+      "risk": "write"
+    },
+    {
+      "name": "getDigestPreview",
+      "method": "GET",
+      "path": "/api/digest-preview",
+      "risk": "read"
+    },
+    {
+      "name": "getEmailStream",
+      "method": "GET",
+      "path": "/api/email-stream",
+      "risk": "read"
+    },
+    {
+      "name": "postEmailRenderHtml",
+      "method": "POST",
+      "path": "/api/email/render-html",
+      "risk": "write"
+    },
+    {
+      "name": "getFollowUpReminders",
+      "method": "GET",
+      "path": "/api/follow-up-reminders",
+      "risk": "read"
+    },
+    {
+      "name": "postFollowUpReminders",
+      "method": "POST",
+      "path": "/api/follow-up-reminders",
+      "risk": "write"
+    },
+    {
+      "name": "postFollowUpRemindersAccount",
+      "method": "POST",
+      "path": "/api/follow-up-reminders/account",
+      "risk": "write"
+    },
+    {
+      "name": "postFollowUpRemindersAccountQueue",
+      "method": "POST",
+      "path": "/api/follow-up-reminders/account/queue",
+      "risk": "write"
+    },
+    {
+      "name": "getGoogleCalendarAuthUrl",
+      "method": "GET",
+      "path": "/api/google/calendar/auth-url",
+      "risk": "read"
+    },
+    {
+      "name": "getGoogleCalendarCallback",
+      "method": "GET",
+      "path": "/api/google/calendar/callback",
+      "risk": "read"
+    },
+    {
+      "name": "getGoogleContacts",
+      "method": "GET",
+      "path": "/api/google/contacts",
+      "risk": "read"
+    },
+    {
+      "name": "getGoogleDriveAuthUrl",
+      "method": "GET",
+      "path": "/api/google/drive/auth-url",
+      "risk": "read"
+    },
+    {
+      "name": "getGoogleDriveCallback",
+      "method": "GET",
+      "path": "/api/google/drive/callback",
+      "risk": "read"
+    },
+    {
+      "name": "getGoogleLinkingAuthUrl",
+      "method": "GET",
+      "path": "/api/google/linking/auth-url",
+      "risk": "read"
+    },
+    {
+      "name": "getGoogleLinkingCallback",
+      "method": "GET",
+      "path": "/api/google/linking/callback",
+      "risk": "read"
+    },
+    {
+      "name": "postGoogleWebhook",
+      "method": "POST",
+      "path": "/api/google/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "getHealth",
+      "method": "GET",
+      "path": "/api/health",
+      "risk": "read"
+    },
+    {
+      "name": "getImageProxy",
+      "method": "GET",
+      "path": "/api/image-proxy",
+      "risk": "read"
+    },
+    {
+      "name": "getKnowledge",
+      "method": "GET",
+      "path": "/api/knowledge",
+      "risk": "read"
+    },
+    {
+      "name": "getLabels",
+      "method": "GET",
+      "path": "/api/labels",
+      "risk": "read"
+    },
+    {
+      "name": "postLabelsCreate",
+      "method": "POST",
+      "path": "/api/labels/create",
+      "risk": "write"
+    },
+    {
+      "name": "postLemonSqueezyWebhook",
+      "method": "POST",
+      "path": "/api/lemon-squeezy/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "getMcpIntegrationAuthUrl",
+      "method": "GET",
+      "path": "/api/mcp/{integration}/auth-url",
+      "risk": "read"
+    },
+    {
+      "name": "getMcpIntegrationCallback",
+      "method": "GET",
+      "path": "/api/mcp/{integration}/callback",
+      "risk": "read"
+    },
+    {
+      "name": "getMcpIntegrations",
+      "method": "GET",
+      "path": "/api/mcp/integrations",
+      "risk": "read"
+    },
+    {
+      "name": "getMeetingBriefs",
+      "method": "GET",
+      "path": "/api/meeting-briefs",
+      "risk": "read"
+    },
+    {
+      "name": "postMeetingBriefs",
+      "method": "POST",
+      "path": "/api/meeting-briefs",
+      "risk": "write"
+    },
+    {
+      "name": "getMessages",
+      "method": "GET",
+      "path": "/api/messages",
+      "risk": "read"
+    },
+    {
+      "name": "getMessagesAttachment",
+      "method": "GET",
+      "path": "/api/messages/attachment",
+      "risk": "read"
+    },
+    {
+      "name": "getMessagesBatch",
+      "method": "GET",
+      "path": "/api/messages/batch",
+      "risk": "read"
+    },
+    {
+      "name": "getMobileAuthCallback",
+      "method": "GET",
+      "path": "/api/mobile-auth/callback",
+      "risk": "read"
+    },
+    {
+      "name": "postMobileAuthExchangeCode",
+      "method": "POST",
+      "path": "/api/mobile-auth/exchange-code",
+      "risk": "write"
+    },
+    {
+      "name": "postMobileAuthStart",
+      "method": "POST",
+      "path": "/api/mobile-auth/start",
+      "risk": "write"
+    },
+    {
+      "name": "postMobileReviewSignIn",
+      "method": "POST",
+      "path": "/api/mobile-review/sign-in",
+      "risk": "write"
+    },
+    {
+      "name": "getMobileReviewStatus",
+      "method": "GET",
+      "path": "/api/mobile-review/status",
+      "risk": "read"
+    },
+    {
+      "name": "getOrganizationsOrganizationId",
+      "method": "GET",
+      "path": "/api/organizations/{organizationId}",
+      "risk": "read"
+    },
+    {
+      "name": "getOrganizationsOrganizationIdExecutedRulesCount",
+      "method": "GET",
+      "path": "/api/organizations/{organizationId}/executed-rules-count",
+      "risk": "read"
+    },
+    {
+      "name": "getOrganizationsOrganizationIdMembers",
+      "method": "GET",
+      "path": "/api/organizations/{organizationId}/members",
+      "risk": "read"
+    },
+    {
+      "name": "getOrganizationsOrganizationIdRules",
+      "method": "GET",
+      "path": "/api/organizations/{organizationId}/rules",
+      "risk": "read"
+    },
+    {
+      "name": "getOrganizationsOrganizationIdStatsEmailBuckets",
+      "method": "GET",
+      "path": "/api/organizations/{organizationId}/stats/email-buckets",
+      "risk": "read"
+    },
+    {
+      "name": "getOrganizationsOrganizationIdStatsRulesBuckets",
+      "method": "GET",
+      "path": "/api/organizations/{organizationId}/stats/rules-buckets",
+      "risk": "read"
+    },
+    {
+      "name": "getOrganizationsOrganizationIdStatsTotals",
+      "method": "GET",
+      "path": "/api/organizations/{organizationId}/stats/totals",
+      "risk": "read"
+    },
+    {
+      "name": "getOutlookAdminConsent",
+      "method": "GET",
+      "path": "/api/outlook/admin-consent",
+      "risk": "read"
+    },
+    {
+      "name": "getOutlookAdminConsentCallback",
+      "method": "GET",
+      "path": "/api/outlook/admin-consent/callback",
+      "risk": "read"
+    },
+    {
+      "name": "getOutlookCalendarAuthUrl",
+      "method": "GET",
+      "path": "/api/outlook/calendar/auth-url",
+      "risk": "read"
+    },
+    {
+      "name": "getOutlookCalendarCallback",
+      "method": "GET",
+      "path": "/api/outlook/calendar/callback",
+      "risk": "read"
+    },
+    {
+      "name": "getOutlookDriveAuthUrl",
+      "method": "GET",
+      "path": "/api/outlook/drive/auth-url",
+      "risk": "read"
+    },
+    {
+      "name": "getOutlookDriveCallback",
+      "method": "GET",
+      "path": "/api/outlook/drive/callback",
+      "risk": "read"
+    },
+    {
+      "name": "getOutlookLinkingAuthUrl",
+      "method": "GET",
+      "path": "/api/outlook/linking/auth-url",
+      "risk": "read"
+    },
+    {
+      "name": "getOutlookLinkingCallback",
+      "method": "GET",
+      "path": "/api/outlook/linking/callback",
+      "risk": "read"
+    },
+    {
+      "name": "getOutlookWatch",
+      "method": "GET",
+      "path": "/api/outlook/watch",
+      "risk": "read"
+    },
+    {
+      "name": "getOutlookWatchAll",
+      "method": "GET",
+      "path": "/api/outlook/watch/all",
+      "risk": "read"
+    },
+    {
+      "name": "postOutlookWatchAll",
+      "method": "POST",
+      "path": "/api/outlook/watch/all",
+      "risk": "write"
+    },
+    {
+      "name": "postOutlookWebhook",
+      "method": "POST",
+      "path": "/api/outlook/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "getPublicBookingLinksSlug",
+      "method": "GET",
+      "path": "/api/public/booking-links/{slug}",
+      "risk": "read"
+    },
+    {
+      "name": "getPublicBookingLinksSlugAvailability",
+      "method": "GET",
+      "path": "/api/public/booking-links/{slug}/availability",
+      "risk": "read"
+    },
+    {
+      "name": "postPublicBookings",
+      "method": "POST",
+      "path": "/api/public/bookings",
+      "risk": "write"
+    },
+    {
+      "name": "postPublicBookingsIdCancel",
+      "method": "POST",
+      "path": "/api/public/bookings/{id}/cancel",
+      "risk": "destructive"
+    },
+    {
+      "name": "postPublicBookingsIdReschedule",
+      "method": "POST",
+      "path": "/api/public/bookings/{id}/reschedule",
+      "risk": "write"
+    },
+    {
+      "name": "getReferralsCode",
+      "method": "GET",
+      "path": "/api/referrals/code",
+      "risk": "read"
+    },
+    {
+      "name": "getReferralsStats",
+      "method": "GET",
+      "path": "/api/referrals/stats",
+      "risk": "read"
+    },
+    {
+      "name": "postReplyTrackerDisableUnusedAutoDraft",
+      "method": "POST",
+      "path": "/api/reply-tracker/disable-unused-auto-draft",
+      "risk": "write"
+    },
+    {
+      "name": "getResendDigest",
+      "method": "GET",
+      "path": "/api/resend/digest",
+      "risk": "read"
+    },
+    {
+      "name": "postResendDigest",
+      "method": "POST",
+      "path": "/api/resend/digest",
+      "risk": "write"
+    },
+    {
+      "name": "getResendDigestAll",
+      "method": "GET",
+      "path": "/api/resend/digest/all",
+      "risk": "read"
+    },
+    {
+      "name": "postResendDigestAll",
+      "method": "POST",
+      "path": "/api/resend/digest/all",
+      "risk": "write"
+    },
+    {
+      "name": "postResendDigestQueue",
+      "method": "POST",
+      "path": "/api/resend/digest/queue",
+      "risk": "write"
+    },
+    {
+      "name": "getResendSummary",
+      "method": "GET",
+      "path": "/api/resend/summary",
+      "risk": "read"
+    },
+    {
+      "name": "postResendSummary",
+      "method": "POST",
+      "path": "/api/resend/summary",
+      "risk": "write"
+    },
+    {
+      "name": "getResendSummaryAll",
+      "method": "GET",
+      "path": "/api/resend/summary/all",
+      "risk": "read"
+    },
+    {
+      "name": "postResendSummaryAll",
+      "method": "POST",
+      "path": "/api/resend/summary/all",
+      "risk": "write"
+    },
+    {
+      "name": "postResendSummaryQueue",
+      "method": "POST",
+      "path": "/api/resend/summary/queue",
+      "risk": "write"
+    },
+    {
+      "name": "postScheduledActionsExecute",
+      "method": "POST",
+      "path": "/api/scheduled-actions/execute",
+      "risk": "write"
+    },
+    {
+      "name": "getSlackAuthUrl",
+      "method": "GET",
+      "path": "/api/slack/auth-url",
+      "risk": "read"
+    },
+    {
+      "name": "getSlackCallback",
+      "method": "GET",
+      "path": "/api/slack/callback",
+      "risk": "read"
+    },
+    {
+      "name": "postSlackCommands",
+      "method": "POST",
+      "path": "/api/slack/commands",
+      "risk": "write"
+    },
+    {
+      "name": "postSlackEvents",
+      "method": "POST",
+      "path": "/api/slack/events",
+      "risk": "write"
+    },
+    {
+      "name": "getSsoSignin",
+      "method": "GET",
+      "path": "/api/sso/signin",
+      "risk": "read"
+    },
+    {
+      "name": "getStripeSuccess",
+      "method": "GET",
+      "path": "/api/stripe/success",
+      "risk": "read"
+    },
+    {
+      "name": "postStripeWebhook",
+      "method": "POST",
+      "path": "/api/stripe/webhook",
+      "risk": "write"
+    },
+    {
+      "name": "postTeamsEvents",
+      "method": "POST",
+      "path": "/api/teams/events",
+      "risk": "write"
+    },
+    {
+      "name": "postTelegramEvents",
+      "method": "POST",
+      "path": "/api/telegram/events",
+      "risk": "write"
+    },
+    {
+      "name": "getThreads",
+      "method": "GET",
+      "path": "/api/threads",
+      "risk": "read"
+    },
+    {
+      "name": "getThreadsId",
+      "method": "GET",
+      "path": "/api/threads/{id}",
+      "risk": "read"
+    },
+    {
+      "name": "postThreadsIdArchive",
+      "method": "POST",
+      "path": "/api/threads/{id}/archive",
+      "risk": "destructive"
+    },
+    {
+      "name": "getThreadsBasic",
+      "method": "GET",
+      "path": "/api/threads/basic",
+      "risk": "read"
+    },
+    {
+      "name": "getThreadsBatch",
+      "method": "GET",
+      "path": "/api/threads/batch",
+      "risk": "read"
+    },
+    {
+      "name": "getUnsubscribe",
+      "method": "GET",
+      "path": "/api/unsubscribe",
+      "risk": "read"
+    },
+    {
+      "name": "postUnsubscribe",
+      "method": "POST",
+      "path": "/api/unsubscribe",
+      "risk": "write"
+    },
+    {
+      "name": "getUserAiAutomationStatus",
+      "method": "GET",
+      "path": "/api/user/ai-automation-status",
+      "risk": "read"
+    },
+    {
+      "name": "getUserApiKeys",
+      "method": "GET",
+      "path": "/api/user/api-keys",
+      "risk": "read"
+    },
+    {
+      "name": "getUserAutomationJobs",
+      "method": "GET",
+      "path": "/api/user/automation-jobs",
+      "risk": "read"
+    },
+    {
+      "name": "getUserAvailability",
+      "method": "GET",
+      "path": "/api/user/availability",
+      "risk": "read"
+    },
+    {
+      "name": "getUserBookingLinks",
+      "method": "GET",
+      "path": "/api/user/booking-links",
+      "risk": "read"
+    },
+    {
+      "name": "getUserCalendarUpcomingEvents",
+      "method": "GET",
+      "path": "/api/user/calendar/upcoming-events",
+      "risk": "read"
+    },
+    {
+      "name": "getUserCalendars",
+      "method": "GET",
+      "path": "/api/user/calendars",
+      "risk": "read"
+    },
+    {
+      "name": "getUserCategories",
+      "method": "GET",
+      "path": "/api/user/categories",
+      "risk": "read"
+    },
+    {
+      "name": "postUserCategorizeSendersBatch",
+      "method": "POST",
+      "path": "/api/user/categorize/senders/batch",
+      "risk": "write"
+    },
+    {
+      "name": "postUserCategorizeSendersBatchSimple",
+      "method": "POST",
+      "path": "/api/user/categorize/senders/batch/simple",
+      "risk": "write"
+    },
+    {
+      "name": "getUserCategorizeSendersCategorized",
+      "method": "GET",
+      "path": "/api/user/categorize/senders/categorized",
+      "risk": "read"
+    },
+    {
+      "name": "getUserCategorizeSendersProgress",
+      "method": "GET",
+      "path": "/api/user/categorize/senders/progress",
+      "risk": "read"
+    },
+    {
+      "name": "getUserCategorizeSendersUncategorized",
+      "method": "GET",
+      "path": "/api/user/categorize/senders/uncategorized",
+      "risk": "read"
+    },
+    {
+      "name": "getUserColdEmail",
+      "method": "GET",
+      "path": "/api/user/cold-email",
+      "risk": "read"
+    },
+    {
+      "name": "postUserCompleteRegistration",
+      "method": "POST",
+      "path": "/api/user/complete-registration",
+      "risk": "write"
+    },
+    {
+      "name": "getUserDebugFollowUp",
+      "method": "GET",
+      "path": "/api/user/debug/follow-up",
+      "risk": "read"
+    },
+    {
+      "name": "getUserDebugMemories",
+      "method": "GET",
+      "path": "/api/user/debug/memories",
+      "risk": "read"
+    },
+    {
+      "name": "getUserDebugRules",
+      "method": "GET",
+      "path": "/api/user/debug/rules",
+      "risk": "read"
+    },
+    {
+      "name": "getUserDigestSchedule",
+      "method": "GET",
+      "path": "/api/user/digest-schedule",
+      "risk": "read"
+    },
+    {
+      "name": "getUserDraftActions",
+      "method": "GET",
+      "path": "/api/user/draft-actions",
+      "risk": "read"
+    },
+    {
+      "name": "getUserDraftCleanupSettings",
+      "method": "GET",
+      "path": "/api/user/draft-cleanup-settings",
+      "risk": "read"
+    },
+    {
+      "name": "getUserDriveConnections",
+      "method": "GET",
+      "path": "/api/user/drive/connections",
+      "risk": "read"
+    },
+    {
+      "name": "getUserDriveFilings",
+      "method": "GET",
+      "path": "/api/user/drive/filings",
+      "risk": "read"
+    },
+    {
+      "name": "getUserDriveFolders",
+      "method": "GET",
+      "path": "/api/user/drive/folders",
+      "risk": "read"
+    },
+    {
+      "name": "getUserDriveFoldersFolderId",
+      "method": "GET",
+      "path": "/api/user/drive/folders/{folderId}",
+      "risk": "read"
+    },
+    {
+      "name": "getUserDrivePreview",
+      "method": "GET",
+      "path": "/api/user/drive/preview",
+      "risk": "read"
+    },
+    {
+      "name": "getUserDrivePreviewAttachments",
+      "method": "GET",
+      "path": "/api/user/drive/preview/attachments",
+      "risk": "read"
+    },
+    {
+      "name": "getUserDriveSourceItems",
+      "method": "GET",
+      "path": "/api/user/drive/source-items",
+      "risk": "read"
+    },
+    {
+      "name": "getUserDriveSourceItemsFolderId",
+      "method": "GET",
+      "path": "/api/user/drive/source-items/{folderId}",
+      "risk": "read"
+    },
+    {
+      "name": "getUserEmailAccount",
+      "method": "GET",
+      "path": "/api/user/email-account",
+      "risk": "read"
+    },
+    {
+      "name": "getUserEmailAccounts",
+      "method": "GET",
+      "path": "/api/user/email-accounts",
+      "risk": "read"
+    },
+    {
+      "name": "getUserExecutedRulesBatch",
+      "method": "GET",
+      "path": "/api/user/executed-rules/batch",
+      "risk": "read"
+    },
+    {
+      "name": "getUserExecutedRulesHistory",
+      "method": "GET",
+      "path": "/api/user/executed-rules/history",
+      "risk": "read"
+    },
+    {
+      "name": "getUserFolders",
+      "method": "GET",
+      "path": "/api/user/folders",
+      "risk": "read"
+    },
+    {
+      "name": "getUserGroup",
+      "method": "GET",
+      "path": "/api/user/group",
+      "risk": "read"
+    },
+    {
+      "name": "getUserGroupGroupIdItems",
+      "method": "GET",
+      "path": "/api/user/group/{groupId}/items",
+      "risk": "read"
+    },
+    {
+      "name": "getUserGroupGroupIdRules",
+      "method": "GET",
+      "path": "/api/user/group/{groupId}/rules",
+      "risk": "read"
+    },
+    {
+      "name": "getUserLabels",
+      "method": "GET",
+      "path": "/api/user/labels",
+      "risk": "read"
+    },
+    {
+      "name": "getUserMe",
+      "method": "GET",
+      "path": "/api/user/me",
+      "risk": "read"
+    },
+    {
+      "name": "getUserMeetingBriefs",
+      "method": "GET",
+      "path": "/api/user/meeting-briefs",
+      "risk": "read"
+    },
+    {
+      "name": "getUserMeetingBriefsHistory",
+      "method": "GET",
+      "path": "/api/user/meeting-briefs/history",
+      "risk": "read"
+    },
+    {
+      "name": "getUserMessagingChannels",
+      "method": "GET",
+      "path": "/api/user/messaging-channels",
+      "risk": "read"
+    },
+    {
+      "name": "getUserMessagingChannelsChannelIdTargets",
+      "method": "GET",
+      "path": "/api/user/messaging-channels/{channelId}/targets",
+      "risk": "read"
+    },
+    {
+      "name": "getUserNoReply",
+      "method": "GET",
+      "path": "/api/user/no-reply",
+      "risk": "read"
+    },
+    {
+      "name": "getUserOnboardingProcessedEmails",
+      "method": "GET",
+      "path": "/api/user/onboarding/processed-emails",
+      "risk": "read"
+    },
+    {
+      "name": "getUserOrganizationMembership",
+      "method": "GET",
+      "path": "/api/user/organization-membership",
+      "risk": "read"
+    },
+    {
+      "name": "getUserPersona",
+      "method": "GET",
+      "path": "/api/user/persona",
+      "risk": "read"
+    },
+    {
+      "name": "getUserRules",
+      "method": "GET",
+      "path": "/api/user/rules",
+      "risk": "read"
+    },
+    {
+      "name": "getUserRulesId",
+      "method": "GET",
+      "path": "/api/user/rules/{id}",
+      "risk": "read"
+    },
+    {
+      "name": "getUserScheduleId",
+      "method": "GET",
+      "path": "/api/user/schedule/{id}",
+      "risk": "read"
+    },
+    {
+      "name": "getUserSettingsMultiAccount",
+      "method": "GET",
+      "path": "/api/user/settings/multi-account",
+      "risk": "read"
+    },
+    {
+      "name": "getUserSetupProgress",
+      "method": "GET",
+      "path": "/api/user/setup-progress",
+      "risk": "read"
+    },
+    {
+      "name": "getUserStatsByPeriod",
+      "method": "GET",
+      "path": "/api/user/stats/by-period",
+      "risk": "read"
+    },
+    {
+      "name": "getUserStatsEmailActions",
+      "method": "GET",
+      "path": "/api/user/stats/email-actions",
+      "risk": "read"
+    },
+    {
+      "name": "getUserStatsNewsletters",
+      "method": "GET",
+      "path": "/api/user/stats/newsletters",
+      "risk": "read"
+    },
+    {
+      "name": "getUserStatsNewslettersSummary",
+      "method": "GET",
+      "path": "/api/user/stats/newsletters/summary",
+      "risk": "read"
+    },
+    {
+      "name": "getUserStatsRecipients",
+      "method": "GET",
+      "path": "/api/user/stats/recipients",
+      "risk": "read"
+    },
+    {
+      "name": "getUserStatsResponseTime",
+      "method": "GET",
+      "path": "/api/user/stats/response-time",
+      "risk": "read"
+    },
+    {
+      "name": "getUserStatsRuleStats",
+      "method": "GET",
+      "path": "/api/user/stats/rule-stats",
+      "risk": "read"
+    },
+    {
+      "name": "getUserStatsSenderEmails",
+      "method": "GET",
+      "path": "/api/user/stats/sender-emails",
+      "risk": "read"
+    },
+    {
+      "name": "getUserStatsSenders",
+      "method": "GET",
+      "path": "/api/user/stats/senders",
+      "risk": "read"
+    },
+    {
+      "name": "getV1Openapi",
+      "method": "GET",
+      "path": "/api/v1/openapi",
+      "risk": "read"
+    },
+    {
+      "name": "getV1Rules",
+      "method": "GET",
+      "path": "/api/v1/rules",
+      "risk": "read"
+    },
+    {
+      "name": "postV1Rules",
+      "method": "POST",
+      "path": "/api/v1/rules",
+      "risk": "write"
+    },
+    {
+      "name": "getV1RulesId",
+      "method": "GET",
+      "path": "/api/v1/rules/{id}",
+      "risk": "read"
+    },
+    {
+      "name": "putV1RulesId",
+      "method": "PUT",
+      "path": "/api/v1/rules/{id}",
+      "risk": "write"
+    },
+    {
+      "name": "deleteV1RulesId",
+      "method": "DELETE",
+      "path": "/api/v1/rules/{id}",
+      "risk": "destructive"
+    },
+    {
+      "name": "getV1StatsByPeriod",
+      "method": "GET",
+      "path": "/api/v1/stats/by-period",
+      "risk": "read"
+    },
+    {
+      "name": "getV1StatsResponseTime",
+      "method": "GET",
+      "path": "/api/v1/stats/response-time",
+      "risk": "read"
+    },
+    {
+      "name": "getWatch",
+      "method": "GET",
+      "path": "/api/watch",
+      "risk": "read"
+    },
+    {
+      "name": "getWatchAll",
+      "method": "GET",
+      "path": "/api/watch/all",
+      "risk": "read"
+    },
+    {
+      "name": "postWatchAll",
+      "method": "POST",
+      "path": "/api/watch/all",
+      "risk": "write"
+    },
+    {
+      "name": "postWatchUnwatch",
+      "method": "POST",
+      "path": "/api/watch/unwatch",
+      "risk": "write"
+    }
+  ]
+}

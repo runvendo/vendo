@@ -46,12 +46,21 @@ export type RiskResolver = (
   ctx: RunContext,
 ) => RiskLabel | undefined | Promise<RiskLabel | undefined>;
 
-export type PolicyConfig = {
+/** Named policy presets: pure sugar that expands to rules before evaluation
+ *  (00-overview decision 8). "cautious" asks before write/destructive and
+ *  runs read; "readonly" runs read and blocks everything else; "autopilot"
+ *  explicitly runs everything — still fully audited, and distinct from
+ *  leaving `policy` unset (which reports the "unconfigured" posture). */
+export type PolicyPresetName = "cautious" | "readonly" | "autopilot";
+
+export interface PolicyConfigObject {
   file?: string;
   rules?: PolicyRule[];
   directions?: string[];
   code?: PolicyFn;
-};
+}
+
+export type PolicyConfig = PolicyPresetName | PolicyConfigObject;
 
 export interface PolicyFile {
   format: typeof VENDO_POLICY_FORMAT;
@@ -90,16 +99,6 @@ export interface Judge {
     recent: AuditEvent[];
     directions: string[];
   }): Promise<{ action: "run" | "ask" | "block"; rationale: string }>;
-}
-
-export interface Scanner {
-  name: string;
-  on: "input" | "output";
-  scan(payload: {
-    text: string;
-    call?: ToolCall;
-    ctx: RunContext;
-  }): Promise<{ verdict: "ok" | "flag" | "block"; findings?: string[] }>;
 }
 
 export interface VendoGuard extends Guard {
@@ -149,5 +148,4 @@ export interface CreateGuardConfig {
     maxCallsPerMinute?: number;
     maxWritesPerRun?: number;
   };
-  scanners?: Scanner[];
 }

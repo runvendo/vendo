@@ -97,7 +97,7 @@
             "data": {
               "appId": "app_director",
               "payload": {
-                "formatVersion": "vendo-genui/v1",
+                "formatVersion": "vendo-genui/v2",
                 "name": "Document chases",
                 "root": "root",
                 "streaming": true,
@@ -142,7 +142,7 @@
             "data": {
               "appId": "app_director",
               "payload": {
-                "formatVersion": "vendo-genui/v1",
+                "formatVersion": "vendo-genui/v2",
                 "name": "Document chases",
                 "root": "root",
                 "streaming": true,
@@ -190,7 +190,7 @@
             "data": {
               "appId": "app_director",
               "payload": {
-                "formatVersion": "vendo-genui/v1",
+                "formatVersion": "vendo-genui/v2",
                 "name": "Document chases",
                 "root": "root",
                 "streaming": true,
@@ -239,7 +239,7 @@
             "data": {
               "appId": "app_director",
               "payload": {
-                "formatVersion": "vendo-genui/v1",
+                "formatVersion": "vendo-genui/v2",
                 "name": "Document chases",
                 "root": "root",
                 "nodes": [

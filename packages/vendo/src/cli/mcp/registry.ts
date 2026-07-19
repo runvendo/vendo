@@ -1,5 +1,6 @@
 import Ajv, { type ErrorObject } from "ajv";
 import addFormats from "ajv-formats";
+import { isPlainObject as isRecord } from "@vendoai/core";
 import serverSchema from "./server.schema.json" with { type: "json" };
 
 export const SERVER_SCHEMA_URL = "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json";
@@ -11,10 +12,6 @@ const validatePinnedSchema = ajv.compile(serverSchema);
 function schemaError(error: ErrorObject): string {
   const path = error.instancePath.length > 0 ? error.instancePath : "/";
   return `${path} ${error.message ?? "is invalid"}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function normalizeDomain(input: string): string {
