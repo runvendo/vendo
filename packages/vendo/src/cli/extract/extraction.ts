@@ -171,6 +171,9 @@ export interface AiExtractionOptions {
   env: Record<string, string | undefined>;
   /** Non-interactive (--yes / no TTY): no consent possible — skip silently. */
   yes: boolean;
+  /** --ai-polish: consent granted as a flag — skip the prompt and run even
+      when non-interactive (the flag IS the answer). */
+  consent?: boolean;
   force?: boolean;
   /** Seams (tests / future harnesses). */
   harnesses?: ExtractionHarness[];
@@ -191,7 +194,7 @@ export async function runAiExtraction(options: AiExtractionOptions): Promise<{ r
   }
 
   const interactive = options.interactive ?? (Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
-  if (options.yes || !interactive) {
+  if (options.consent !== true && (options.yes || !interactive)) {
     output.log("AI polish (descriptions, risk review, brief): skipped — needs an interactive run (`vendo init` in a terminal).");
     return { ran: false };
   }
@@ -211,7 +214,7 @@ export async function runAiExtraction(options: AiExtractionOptions): Promise<{ r
   }
 
   const confirm = options.confirm ?? askYesNo;
-  const consented = await confirm(
+  const consented = options.consent === true || await confirm(
     `Let ${chosen.credential} read this codebase to draft tool descriptions, review risk, and write the product brief? Source goes to your model provider under your account.`,
     true,
   );
