@@ -57,16 +57,9 @@ function boxSandbox(handler: BoxHandler): SandboxAdapter {
         body: new TextEncoder().encode(answer.body ?? ""),
       };
     },
-    async exec() {
-      return { code: 0, stdout: "", stderr: "" };
-    },
-    files: {
-      async read() { return new Uint8Array(); },
-      async write() { /* no-op */ },
-      async list() { return []; },
-    },
     async snapshot() { return "fake:snap"; },
-    async stop() { /* no-op */ },
+    async stop() { /* sleep */ },
+    async destroy() { /* gone */ },
   };
   return {
     async create() { return machine; },

@@ -109,14 +109,9 @@ function fakeBox(): { sandbox: SandboxAdapter; setEnv(env: Record<string, string
       const result = await handler();
       return { status: 200, headers, body: encoder.encode(JSON.stringify(result)) };
     },
-    async exec() { return { code: 0, stdout: "", stderr: "" }; },
-    files: {
-      async read() { return new Uint8Array(); },
-      async write() { /* scratch disk */ },
-      async list() { return []; },
-    },
     async snapshot() { return "fake:machine-skin"; },
-    async stop() { /* no-op */ },
+    async stop() { /* sleep */ },
+    async destroy() { /* gone */ },
   };
 
   return {
