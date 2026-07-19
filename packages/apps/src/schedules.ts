@@ -35,10 +35,7 @@ import { rowFromRecord } from "./persistence.js";
 
 export const SCHEDULE_STATE_COLLECTION = "vendo_app_schedules";
 
-/** Bounded catch-up: a schedule fires at most once per tick, at the LATEST
- *  missed occurrence — a host that slept through a window never replays it. */
-const MAX_OCCURRENCE_SCAN = 10_000;
-/** Bounded CAS retries before an app's claim reports a conflict. */
+/** Bounded CAS retries before an app's state write reports a conflict. */
 const CLAIM_ATTEMPTS = 3;
 
 const decoder = new TextDecoder();
@@ -128,18 +125,44 @@ interface AppRow {
   doc: AppDocument;
 }
 
-/** The latest occurrence of `cron` after `baseline` and at or before `at`. */
+/**
+ * The latest occurrence of `cron` after `baseline` and at or before `at`, or
+ * undefined when none is due. Exact for ANY downtime length: a binary search
+ * over the window (each probe one croner `nextRun`), never a bounded forward
+ * scan — so a host offline for months still collapses to ONE fire at the
+ * latest occurrence, with no truncated catch-up batches (AI-review triage,
+ * PR #406). Occurrences of a five-field cron are ≥60s apart, so once the
+ * window shrinks under a second, `lo` (always a known occurrence ≤ at) is it.
+ */
 const latestDueOccurrence = (cron: string, baseline: string, at: Date): string | undefined => {
   const job = new Cron(cron, { timezone: "UTC", paused: true });
-  let occurrence: Date | undefined;
-  let from = new Date(baseline);
-  for (let scanned = 0; scanned < MAX_OCCURRENCE_SCAN; scanned += 1) {
-    const next = job.nextRun(from);
-    if (next === null || next.getTime() > at.getTime()) break;
-    occurrence = next;
-    from = next;
+  const first = job.nextRun(new Date(baseline));
+  if (first === null || first.getTime() > at.getTime()) return undefined;
+  let lo = first.getTime();
+  let hi = at.getTime();
+  while (hi - lo > 1000) {
+    const mid = lo + Math.floor((hi - lo) / 2);
+    const next = job.nextRun(new Date(mid));
+    if (next !== null && next.getTime() <= at.getTime()) lo = next.getTime();
+    else hi = mid;
   }
-  return occurrence?.toISOString();
+  return new Date(lo).toISOString();
+};
+
+/** Croner is the cron arbiter: a declaration the manifest's field-shape regex
+ *  admits but no calendar time satisfies (e.g. "99 99 * * *") must fail LOUDLY
+ *  at the read boundary, not on a later tick's due computation. */
+const assertCronValid = (cron: string, appId: AppId): void => {
+  try {
+    // paused: constructed for validation only, never scheduled.
+    new Cron(cron, { timezone: "UTC", paused: true });
+  } catch (error) {
+    throw new VendoError(
+      "validation",
+      `invalid vendo.json: schedule cron "${cron}" is not a valid cron expression: ${error instanceof Error ? error.message : "invalid"}`,
+      { appId },
+    );
+  }
 };
 
 export const createScheduleEngine = (config: ScheduleEngineConfig): ScheduleEngine => {
@@ -191,8 +214,31 @@ export const createScheduleEngine = (config: ScheduleEngineConfig): ScheduleEngi
     return parsed.success ? parsed.data : null;
   };
 
-  const writeState = async (appId: AppId, state: AppScheduleState): Promise<void> => {
-    await states.put({ id: appId, data: state as unknown as Json });
+  /**
+   * Read-mutate-CAS on one app's schedule state (the lifecycle's document
+   * pattern): EVERY state write is revision-checked where the store supports
+   * it, so a concurrent claim's `lastFiredAt` can never be rolled back by a
+   * racing manifest sync or outcome note (AI-review triage, PR #406). The
+   * mutate callback sees the freshest state on every attempt.
+   */
+  const updateState = async (
+    appId: AppId,
+    mutate: (previous: AppScheduleState | null) => AppScheduleState,
+  ): Promise<AppScheduleState> => {
+    for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
+      const record = await states.get(appId);
+      const parsed = record === null ? null : scheduleStateSchema.safeParse(record.data);
+      const previous = parsed !== null && parsed.success ? parsed.data : null;
+      const next = mutate(previous);
+      const input = { id: appId, data: next as unknown as Json };
+      if (record === null || states.atomic === undefined || record.revision === undefined) {
+        await states.put(input);
+        return next;
+      }
+      const swapped = await states.atomic.compareAndSwap(input, record.revision);
+      if (swapped !== null) return next;
+    }
+    throw new VendoError("conflict", `schedule state for ${appId} was concurrently modified`, { appId });
   };
 
   const syncManifest = async (app: AppDocument, at = new Date()): Promise<AppScheduleState> => {
@@ -207,17 +253,17 @@ export const createScheduleEngine = (config: ScheduleEngineConfig): ScheduleEngi
     } else {
       throw new VendoError("validation", `vendo.json read failed (${answer.status})`, { appId: app.id });
     }
-    const previous = await readState(app.id);
-    const carried = new Map((previous?.schedules ?? []).map((schedule) => [`${schedule.cron}\n${schedule.fn}`, schedule]));
-    const state: AppScheduleState = {
-      syncedAt: at.toISOString(),
-      schedules: declared.map(({ cron, fn }) => {
-        const kept = carried.get(`${cron}\n${fn}`);
-        return kept === undefined ? { cron, fn, since: at.toISOString() } : { ...kept };
-      }),
-    };
-    await writeState(app.id, state);
-    return state;
+    for (const { cron } of declared) assertCronValid(cron, app.id);
+    return updateState(app.id, (previous) => {
+      const carried = new Map((previous?.schedules ?? []).map((schedule) => [`${schedule.cron}\n${schedule.fn}`, schedule]));
+      return {
+        syncedAt: at.toISOString(),
+        schedules: declared.map(({ cron, fn }) => {
+          const kept = carried.get(`${cron}\n${fn}`);
+          return kept === undefined ? { cron, fn, since: at.toISOString() } : { ...kept };
+        }),
+      };
+    });
   };
 
   /** Claim the due occurrences in the store BEFORE firing (at-most-once): a
@@ -237,7 +283,14 @@ export const createScheduleEngine = (config: ScheduleEngineConfig): ScheduleEngi
       const next: AppScheduleState = {
         ...state,
         schedules: state.schedules.map((schedule) => {
-          const scheduledFor = latestDueOccurrence(schedule.cron, schedule.lastFiredAt ?? schedule.since, at);
+          // A legacy-cached cron croner rejects is contained per schedule
+          // (sync validates new declarations; this guards old cache rows).
+          let scheduledFor: string | undefined;
+          try {
+            scheduledFor = latestDueOccurrence(schedule.cron, schedule.lastFiredAt ?? schedule.since, at);
+          } catch {
+            scheduledFor = undefined;
+          }
           if (scheduledFor === undefined) return schedule;
           due.push({ cron: schedule.cron, fn: schedule.fn, scheduledFor });
           return { ...schedule, lastFiredAt: scheduledFor };
@@ -257,13 +310,11 @@ export const createScheduleEngine = (config: ScheduleEngineConfig): ScheduleEngi
 
   const recordOutcome = async (appId: AppId, fn: string, cron: string, status: "ok" | "error"): Promise<void> => {
     // Best-effort doctor detail; the claim already made the fire durable.
-    const state = await readState(appId);
-    if (state === null) return;
-    await writeState(appId, {
-      ...state,
-      schedules: state.schedules.map((schedule) =>
+    await updateState(appId, (previous) => ({
+      syncedAt: previous?.syncedAt ?? new Date().toISOString(),
+      schedules: (previous?.schedules ?? []).map((schedule) =>
         schedule.cron === cron && schedule.fn === fn ? { ...schedule, lastStatus: status } : schedule),
-    }).catch(() => undefined);
+    })).catch(() => undefined);
   };
 
   const fireApp = async (row: AppRow, at: Date, report: ScheduleTickReport): Promise<void> => {
@@ -276,11 +327,15 @@ export const createScheduleEngine = (config: ScheduleEngineConfig): ScheduleEngi
     }
     if (config.lifecycle.peek(row.id) !== undefined) {
       // The box is awake anyway — re-read vendo.json so schedule edits made
-      // inside the box (agent sessions, layer-3 apps) are picked up.
+      // inside the box (agent sessions, layer-3 apps) are picked up. A failed
+      // refresh FAILS CLOSED for this tick: the cached declarations were just
+      // proven stale-or-unreadable, so firing them would honor a manifest the
+      // box may no longer declare. Loud error now, retry next tick.
       try {
         state = await syncManifest(row.doc, at);
       } catch (error) {
         report.errors.push({ appId: row.id, message: error instanceof Error ? error.message : "manifest refresh failed" });
+        return;
       }
     }
     const claimed = await claimDue(row.id, at);
