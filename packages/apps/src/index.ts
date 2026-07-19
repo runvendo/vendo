@@ -34,6 +34,16 @@ export {
   type SecretExposureGrant,
 } from "./secret-exposure.js";
 export type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
+// execution-v2 — the shrunk sandbox seam (Lane A owns the shape; see
+// sandbox-v2.ts) and the machine lifecycle built against it.
+export type { SandboxAdapterV2, SandboxMachineV2 } from "./sandbox-v2.js";
+export {
+  createMachineLifecycle,
+  type BuildMachineEnv,
+  type LifecycleClock,
+  type MachineLifecycle,
+  type MachineLifecycleConfig,
+} from "./machine-lifecycle.js";
 export {
   toV1SandboxAdapter,
   type V1SandboxAdapter,
