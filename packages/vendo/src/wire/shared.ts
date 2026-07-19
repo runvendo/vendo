@@ -25,7 +25,7 @@ import type { RuntimeCaptureHandler } from "../runtime-capture.js";
 export const VERSION = "0.3.0";
 export const BASE_PATH = "/api/vendo";
 
-export type SandboxVenue = "e2b" | "modal" | "cloud" | "custom" | false;
+export type SandboxVenue = "e2b" | "cloud" | "custom" | false;
 
 /** How inference is served: "custom" (a host-passed model) or "ladder" (the
     composed devModel default — provider env key, then VENDO_API_KEY via the
