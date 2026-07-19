@@ -5,7 +5,9 @@
  */
 import { describe, expect, it } from "vitest";
 import { e2bSandbox } from "@vendoai/apps/e2b";
-import type { SandboxMachine } from "@vendoai/apps";
+// execution-v2 transition: provisioning still rides the archived v1 surface
+// (files+exec) until the Wave 3 in-box agent replaces it.
+import { toV1SandboxAdapter, type V1SandboxMachine } from "@vendoai/apps";
 import { automationDoc, createStack, loginCookie, fixtureBaseUrl, ownerCtx, resetFixture } from "./harness.js";
 import { ADA, approve } from "./support.js";
 
@@ -27,7 +29,7 @@ http.createServer((request, response) => {
 }).listen(Number(process.env.PORT || 8080));
 `;
 
-async function readyEventually(machine: SandboxMachine): Promise<void> {
+async function readyEventually(machine: V1SandboxMachine): Promise<void> {
   let failure: unknown;
   for (let attempt = 0; attempt < 30; attempt += 1) {
     try {
@@ -49,7 +51,7 @@ async function readyEventually(machine: SandboxMachine): Promise<void> {
 describe.skipIf(!plausible)("live e2b fn: automation", () => {
   it("runs a single fn:main step against a real machine and feeds its output onward", { timeout: 300_000 }, async () => {
     await resetFixture();
-    const adapter = e2bSandbox({ apiKey: liveKey as string, timeoutMs: 120_000 });
+    const adapter = toV1SandboxAdapter(e2bSandbox({ apiKey: liveKey as string, timeoutMs: 120_000 }));
     const machine = await adapter.create({
       env: { PORT: "8080" },
       files: { "/app/server.js": serverSource },

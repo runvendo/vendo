@@ -1,58 +1,54 @@
-/** 06-apps §3 */
+/**
+ * execution-v2 Wave 1 Lane A — the sandbox seam
+ * (docs/superpowers/specs/2026-07-19-execution-v2-design.md).
+ *
+ * The whole public contract between Vendo and a sandbox provider. The coding
+ * agent lives INSIDE the box (Wave 3), so outside-the-box exec/files dropped
+ * out of this seam; a provider adapter may keep them adapter-private for
+ * bootstrap and diagnostics. The v1 seam this replaces is archived in
+ * docs/archive/contracts/06-apps.md §3-4.
+ */
 export interface SandboxAdapter {
-  /** 06-apps §3 — Create a machine with its run environment and optional initial files. */
+  /** Create a machine, optionally from a provider template, with its boundary env. */
   create(spec: {
+    /** Provider template (base snapshot) to boot from; provider default when omitted. */
+    template?: string;
     env: Record<string, string>;
-    files?: Record<string, Uint8Array | string>;
     /**
-     * 06-apps §4.3 additive adapter flag — provider-native outbound-domain
-     * allowlist. Undefined means unrestricted egress; an empty list denies all egress.
+     * Grant-style outbound-domain allowlist enforced at the provider network
+     * layer. Undefined means unrestricted egress; an empty list denies all
+     * egress. Wave 2 Lane E wires the approval flow on top of this knob.
      */
-    egress?: string[];
+    allowedDomains?: string[];
   }): Promise<SandboxMachine>;
 
-  /** 06-apps §3 — Resume a machine from a provider-prefixed opaque snapshot reference. */
+  /** Restore a machine from a provider-prefixed opaque snapshot reference (e.g. "e2b:…"). */
   resume(snapshotRef: string): Promise<SandboxMachine>;
 }
 
-/** 06-apps §3 */
 export interface SandboxMachine {
-  /** 06-apps §3 — The provider-assigned machine identifier. */
+  /** The provider-assigned machine identifier. */
   id: string;
 
-  /** 06-apps §3 — Proxy an HTTP request to the app's $PORT. */
+  /**
+   * Proxy one HTTP request to the box — the ONLY runtime data path into it.
+   * Targets the app's $PORT by default; `port` overrides for a box serving
+   * more than one listener.
+   */
   request(req: {
     method: string;
     path: string;
+    port?: number;
     headers?: Record<string, string>;
     body?: Uint8Array | string;
   }): Promise<{ status: number; headers: Record<string, string>; body: Uint8Array }>;
 
-  /** 06-apps §3 — Execute an agent editing command inside the machine. */
-  exec(
-    cmd: string,
-    opts?: { cwd?: string; timeoutMs?: number },
-  ): Promise<{ code: number; stdout: string; stderr: string }>;
-
-  /** 06-apps §3 — Read, write, and list files in the machine filesystem. */
-  files: {
-    /** 06-apps §3 — Read a file as bytes. */
-    read(path: string): Promise<Uint8Array>;
-    /** 06-apps §3 — Write bytes or UTF-8 text to a file. */
-    write(path: string, bytes: Uint8Array | string): Promise<void>;
-    /** 06-apps §3 — List files beneath a directory. */
-    list(dir: string): Promise<string[]>;
-  };
-
-  /** 06-apps §3 — Snapshot the machine after edits for the app document's server field. */
+  /** Persist the machine's current state; the ref restores it via SandboxAdapter.resume. */
   snapshot(): Promise<string>;
 
-  /** 06-apps §3 — Capture the optional rung-4 loading cover. */
-  screenshot?(): Promise<Uint8Array>;
-
-  /** Plan decision 2 — Resolve the rung-4 serving URL; without it ui:"http" cannot be served. */
-  url?(port: number): Promise<string>;
-
-  /** 06-apps §3 — Stop the machine. */
+  /** Sleep: a snapshot-preserving pause where the provider supports it. */
   stop(): Promise<void>;
+
+  /** Gone for good. Previously taken snapshot refs stay valid. */
+  destroy(): Promise<void>;
 }

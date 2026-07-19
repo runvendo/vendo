@@ -24,7 +24,7 @@ import type {
 import { createStore, type VendoStore } from "@vendoai/store";
 import { createGuard, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createActions } from "@vendoai/actions";
-import { createApps, type AppsRuntime, type SandboxAdapter } from "@vendoai/apps";
+import { createApps, type AppsRuntime, type SandboxAdapter, type V1SandboxAdapter } from "@vendoai/apps";
 import { createAutomations, type AutomationsEngine } from "@vendoai/automations";
 
 export const fixtureBaseUrl = (): string => inject("fixtureBaseUrl");
@@ -142,7 +142,7 @@ export interface StackOptions {
   runnerFrom?: (parts: { guard: VendoGuard; bound: ToolRegistry; store: VendoStore }) => AgentRunner;
   now?: () => Date;
   policy?: PolicyConfig;
-  sandbox?: SandboxAdapter;
+  sandbox?: SandboxAdapter | V1SandboxAdapter;
 }
 
 export async function createStack(options: StackOptions = {}): Promise<Stack> {

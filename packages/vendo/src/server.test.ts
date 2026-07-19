@@ -347,14 +347,14 @@ describe("09 §3 public wire", () => {
     });
   });
 
-  it("selects explicit, E2B, Modal, Cloud, and dark venues with the required precedence", async () => {
+  it("selects explicit, E2B, Cloud, and dark venues with the required precedence", async () => {
     const custom: SandboxAdapter = {
       create: vi.fn(async () => { throw new Error("not called"); }),
       resume: vi.fn(async () => { throw new Error("not called"); }),
     };
     const store = await tempStore("vendo-wire-custom-");
     const statusFor = async (
-      env: { E2B_API_KEY: string; MODAL_TOKEN_ID: string; MODAL_TOKEN_SECRET: string; VENDO_API_KEY: string },
+      env: { E2B_API_KEY: string; VENDO_API_KEY: string },
       sandbox?: SandboxAdapter,
     ): Promise<unknown> => {
       for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
@@ -373,15 +373,12 @@ describe("09 §3 public wire", () => {
     // the slot the host left unfilled); no key and no BYO env → dark.
     const allKeys = {
       E2B_API_KEY: "e2b-key",
-      MODAL_TOKEN_ID: "modal-id",
-      MODAL_TOKEN_SECRET: "modal-secret",
       VENDO_API_KEY: "vnd_cloud_key",
     };
     expect(await statusFor(allKeys, custom)).toBe("custom");
     expect(await statusFor(allKeys)).toBe("e2b");
-    expect(await statusFor({ ...allKeys, E2B_API_KEY: "" })).toBe("modal");
-    expect(await statusFor({ ...allKeys, E2B_API_KEY: "", MODAL_TOKEN_SECRET: "" })).toBe("cloud");
-    expect(await statusFor({ ...allKeys, E2B_API_KEY: "", MODAL_TOKEN_SECRET: "", VENDO_API_KEY: "" })).toBe(false);
+    expect(await statusFor({ ...allKeys, E2B_API_KEY: "" })).toBe("cloud");
+    expect(await statusFor({ ...allKeys, E2B_API_KEY: "", VENDO_API_KEY: "" })).toBe(false);
     expect(custom.create).not.toHaveBeenCalled();
     expect(custom.resume).not.toHaveBeenCalled();
   });
