@@ -98,6 +98,22 @@ call, deliberately **not** changed in this lane. Flagged as the top follow-up.
   BYO-API cannot cross it — closing to sub-second needs **owned serving**
   (out of scope), the same conclusion the genui-bench work reached.
 
+## Browser sanity check
+
+Demo-bank booted in **production** (`next start`, never `next dev`), signed in as
+a seeded Maple user, created "a net-worth dashboard…" on `/vendo/apps`:
+
+- `browser-paint.jpg` — the tier-0 paint renders in-browser within a few seconds
+  (NetWorthDashboard: Net Worth header, Total Assets / Cash Inflow / Cash Outflow
+  metric cards, Accounts table, Recent Transactions).
+- `browser-full-swap.jpg` — the full-quality pass completes and swaps **in place**
+  (same layout / stable ids; "Creating…" clears).
+
+The additive timing/prewarm seams did not change rendering or the swap. One node
+(`maplenetworthcard-1`) shows a contained render error (`reading 'slice'` — the
+`series` prop) — a prewired-prop/data-binding issue owned by the
+generation-quality lane, unrelated to this speed work.
+
 ## What landed here
 
 - `onTiming` structured timing seam (opt-in) around the create path.
