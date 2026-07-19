@@ -230,10 +230,10 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       // 10-mcp §1 — the door flag lives under blocks.mcp.
       mcpEnabled = body.blocks.mcp === true;
       sandboxVenue = body.blocks.sandbox;
-      if (sandboxVenue === "e2b" || sandboxVenue === "modal" || sandboxVenue === "cloud" || sandboxVenue === "custom") {
+      if (sandboxVenue === "e2b" || sandboxVenue === "cloud" || sandboxVenue === "custom") {
         pass("live/venue", `execution venue: ${sandboxVenue}`);
       } else if (sandboxVenue === false) {
-        warn("live/venue", "E-LIVE-004", "install the e2b package and set E2B_API_KEY, or install modal and set MODAL_TOKEN_ID+MODAL_TOKEN_SECRET, or set VENDO_API_KEY for the managed Cloud sandbox, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable");
+        warn("live/venue", "E-LIVE-004", "install the e2b package and set E2B_API_KEY, or set VENDO_API_KEY for the managed Cloud sandbox, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable");
       } else if (sandboxVenue === undefined) {
         // Older hosts predate blocks.sandbox — version skew, not a broken install.
         warn("live/venue", "E-LIVE-005", "host /status does not report an execution venue; upgrade @vendoai/vendo to enable the venue check");

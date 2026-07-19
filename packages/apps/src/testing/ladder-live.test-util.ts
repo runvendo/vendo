@@ -124,7 +124,7 @@ const openUntilHttp = async (
 };
 
 export interface LadderLiveLaneOptions {
-  /** The provider's opaque snapshot-ref shape, e.g. /^e2b:v1:/. */
+  /** The provider's opaque snapshot-ref shape, e.g. /^e2b:v2:/. */
   serverRefPattern: RegExp;
 }
 

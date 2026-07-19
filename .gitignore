@@ -36,3 +36,6 @@ coverage/
 .env.local
 .env.*.local
 apps/*/.env.local
+
+# speed lane raw samples (aggregated into README table)
+docs/verification/vendo-v2-speed/samples.ndjson
