@@ -2019,4 +2019,14 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   .fl-approval-sheet { animation: fl-fade-in .18s ease both; }
 }
 
+/* Cross-lane reduced-motion sweep (review finding): entrance/pulse animations
+   that were neither wrapped in a no-preference block nor listed in an explicit
+   reduce kill — settle instantly at their end state for vestibular-sensitive
+   users. (The data-vendo-motion="reduced" root rule already covers theme-level
+   reduction; this covers the OS preference.) */
+@media (prefers-reduced-motion: reduce) {
+  .fl-overlay-scrim, .fl-toasts-card, .fl-voice-drawer,
+  .fl-approvals-slide, .fl-auto-runs-dot, .fl-acct-severed { animation: none; opacity: 1; }
+}
+
 `;
