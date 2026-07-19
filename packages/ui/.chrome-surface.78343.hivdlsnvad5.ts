@@ -1,1 +1,0 @@
-import type { ApprovalCardProps, ConnectCardProps, VendoOverlayProps, VendoCommand, HotkeyChord, PaletteHotkey, VendoToastsProps, VendoToastInput, VendoToastAction, WaitingQueueProps, OpenConversationOptions, VendoActivitiesProps, VendoTriggerProps, VendoThreadProps, MorphToastProps, OutcomeTone, ActivityGlyph, VendoDiscoverability, VendoGreeting } from "./src/chrome/index.js";
