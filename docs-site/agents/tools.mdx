@@ -15,7 +15,8 @@ A host's entire server wiring is two files, both scaffolded by `vendo init`:
    references. There is no second map to keep in sync.
 2. **The composition**: one `createVendo({...})` call. On Next.js it lives in
    the catch-all route `app/api/vendo/[...vendo]/route.ts`; on Express in
-   `vendo/server.ts`, mounted with `app.use("/api/vendo", mountVendo())`.
+   `vendo/server.ts` (`server.mjs` when the host has no TypeScript), mounted
+   with `app.use("/api/vendo", mountVendo())`.
 
 Init generates the registry empty. Filling it with real host components is
 your job; see the catalog contract below.

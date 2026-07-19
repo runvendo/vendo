@@ -188,8 +188,9 @@ the stock status route answers.
 
 **Symptom (warning):** No execution venue is configured.
 
-**Cause:** The composition has no sandbox adapter, so server-backed user apps
-(rungs 2-4) return sandbox-unavailable. Tree-only apps still work.
+**Cause:** The composition has no sandbox adapter, so user apps that need a
+server (anything beyond tree-only rendering) return sandbox-unavailable.
+Tree-only apps still work.
 
 **Fix:** One of: install the `e2b` package and set `E2B_API_KEY`; install
 `modal` and set `MODAL_TOKEN_ID` + `MODAL_TOKEN_SECRET`; set `VENDO_API_KEY`
@@ -385,9 +386,11 @@ arrived: no usable model credential, a provider error, or a timeout (90s).
 
 **Fix:** Check the credential the message names. With no key set, add
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY` to
-`.env.local` (with the matching `@ai-sdk/*` provider installed), or set
-`VENDO_API_KEY` (`vendo cloud login` mints a free dev key; ask your human
-first). Then restart the dev server and check its logs for the turn error.
+`.env.local` (with the matching `@ai-sdk/*` provider installed), or use a
+free Vendo Cloud dev key: `vendo cloud login` stores the session, then
+re-run `vendo init` so its cloud step mints the key into `.env.local` (ask
+your human first). Then restart the dev server and check its logs for the
+turn error.
 
 ### E-TURN-002 {#E-TURN-002}
 
@@ -408,6 +411,7 @@ first). Then restart the dev server and check its logs for the turn error.
 characters). Doctor never validates keys against a server; a well-formed but
 revoked key surfaces on the first real service call instead.
 
-**Fix:** Re-copy the key from the Vendo Cloud console, or mint a fresh one
-with `vendo cloud login` (ask your human first). Unsetting `VENDO_API_KEY`
+**Fix:** Re-copy the key from the Vendo Cloud console, or mint a fresh one:
+`vendo cloud login`, then re-run `vendo init` so its cloud step writes the
+minted key to `.env.local` (ask your human first). Unsetting `VENDO_API_KEY`
 also clears the warning; Cloud is optional.
