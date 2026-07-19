@@ -12,10 +12,16 @@ human and when fetched as Markdown for an agent — append `.md` to this page's 
 Paste this into your coding agent inside the app you want to install Vendo in:
 
 ```text
-Install Vendo (the embedded product agent) in this repo.
-Fetch https://docs.vendo.run/install.md and follow it stage by stage.
-Finish by running `npx vendo doctor` against the dev server and iterating until it exits 0.
+Install Vendo in this repo. Read https://vendo.run/agents.md and follow
+it exactly. Use `vendo init` for scaffolding — don't hand-write what it
+generates. Ask me before creating any account or key. You're done when
+`vendo doctor --json` reports all green.
 ```
+
+The agent playbook behind that URL is the [agents hub](/agents/index): the
+install flow, [host auth wiring](/agents/host-auth),
+[tools and the catalog](/agents/tools), and
+[every doctor error code](/agents/verify).
 
 Agents get first-class surfaces along the way. `npx vendo init --agent`
 prints a read-only JSON plan: framework, code diffs, the four questions,

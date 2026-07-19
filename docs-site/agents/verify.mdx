@@ -1,0 +1,413 @@
+---
+title: "Verify: every doctor error code"
+description: "Symptom, cause, and exact fix for every error code vendo doctor can emit. fix_ref URLs from doctor --json anchor into this page."
+---
+
+`npx vendo doctor --json` is the install gate. It prints one JSON object; each
+check carries a stable `id`, and every failing or warning check carries an
+`error_code` from the registry below plus a `fix_ref` URL that anchors into
+this page. Exit 0 means no `broken` checks: that is the definition of
+installed. Warnings do not block.
+
+The remediation loop: run doctor, open the `fix_ref` for each non-`ok` check,
+apply the fix, run doctor again. Repeat until exit 0.
+
+Doctor probes the wire at `http://localhost:3000/api/vendo` by default;
+override with `--url <base>` or `VENDO_URL`. In `--json` mode doctor never
+starts the dev server itself: start it yourself before running the live
+checks.
+
+## Wiring
+
+### E-WIRE-001 {#E-WIRE-001}
+
+**Symptom:** Express server is not wired with createVendo from
+`@vendoai/vendo/server`.
+
+**Cause:** Doctor scanned the repo's source files and found none that imports
+`@vendoai/vendo/server` and calls `createVendo(`. The composition module is
+missing or imports from the wrong specifier.
+
+**Fix:** Run `npx vendo init`; it scaffolds `vendo/server.ts` (or
+`server.mjs`) with the composition. If you composed by hand, make sure the
+file imports from `@vendoai/vendo/server` and calls `createVendo({...})`.
+
+### E-WIRE-002 {#E-WIRE-002}
+
+**Symptom:** Express client is not wrapped in `<VendoRoot>`.
+
+**Cause:** No source file contains a `<VendoRoot` element. The client half of
+the wiring was never pasted.
+
+**Fix:** In the client entry, wrap the app:
+
+```tsx
+import { VendoRoot } from "@vendoai/vendo/react";
+import { registry } from "<path-to>/vendo/registry";
+import theme from "<path-to>/.vendo/theme.json";
+
+root.render(<VendoRoot components={registry} theme={theme}><App /></VendoRoot>);
+```
+
+`vendo init` prints these exact lines with resolved paths for your repo.
+
+### E-WIRE-003 {#E-WIRE-003}
+
+**Symptom:** Missing `app/api/vendo/[...vendo]/route.ts`.
+
+**Cause:** The Next.js catch-all handler does not exist at
+`app/api/vendo/[...vendo]/route.ts` or `src/app/api/vendo/[...vendo]/route.ts`.
+
+**Fix:** Run `npx vendo init`; it scaffolds the route wired to the registry.
+Do not mount the handler anywhere else; doctor checks these two paths only.
+
+### E-WIRE-004 {#E-WIRE-004}
+
+**Symptom:** Root layout is not wrapped in `<VendoRoot>`.
+
+**Cause:** Neither `app/layout.tsx` nor `src/app/layout.tsx` contains a
+`<VendoRoot` element.
+
+**Fix:** In the root layout, wrap `{children}`:
+
+```tsx
+import { VendoRoot } from "@vendoai/vendo/react";
+import { registry } from "../vendo/registry";
+import theme from "../.vendo/theme.json";
+import type { VendoTheme } from "@vendoai/vendo";
+
+<VendoRoot components={registry} theme={theme as VendoTheme}>{children}</VendoRoot>
+```
+
+`vendo init` prints these lines with the import paths resolved for your repo.
+
+### E-WIRE-005 {#E-WIRE-005}
+
+**Symptom:** `@vendoai/vendo` (or the `vendoai` alias) is not declared.
+
+**Cause:** Neither package appears in `package.json` dependencies or
+devDependencies.
+
+**Fix:** `npm install vendoai` (a thin alias of `@vendoai/vendo`; either name
+works and both ship the `vendo` bin).
+
+## Config files
+
+### E-CFG-001 {#E-CFG-001}
+
+**Symptom:** A required `.vendo/` file is missing; the message names it, one
+of `tools.json`, `overrides.json`, `policy.json`, `brief.md`, `theme.json`.
+
+**Cause:** `vendo init` was never run in this directory, or the file was
+deleted.
+
+**Fix:** Run `npx vendo init`; it recreates missing `.vendo/` files and never
+overwrites existing ones. A missing `tools.json` alone can also be regenerated
+with `npx vendo sync`.
+
+### E-CFG-002 {#E-CFG-002}
+
+**Symptom (warning):** `.vendo/data/.gitignore` is missing.
+
+**Cause:** The gitignore that keeps the local PGlite store out of version
+control was deleted, so `.vendo/data/` contents could get committed.
+
+**Fix:** Run `npx vendo init`, or create `.vendo/data/.gitignore` containing:
+
+```text
+*
+!.gitignore
+```
+
+## Ejected UI
+
+### E-UI-001 {#E-UI-001}
+
+**Symptom (warning):** An ejected surface came from an older `@vendoai/ui`
+than the one installed.
+
+**Cause:** You ejected a chrome surface, then upgraded `@vendoai/ui`. The
+ejected pixels are your code, so nothing is broken; only newer presentation
+is missed.
+
+**Fix:** Review the [release notes](https://github.com/runvendo/vendo/releases)
+and run `npx vendo eject <surface> --force` if you want the new presentation.
+Leaving it is also valid; this never blocks doctor.
+
+## Dev server
+
+### E-DEV-001 {#E-DEV-001}
+
+**Symptom (warning):** The dev server could not be started for the probe.
+
+**Cause:** Interactive doctor offered to start the dev server (`run dev` via
+your package manager) and `/status` never answered within the startup window.
+
+**Fix:** Start the dev server yourself (for example `npm run dev`), wait until
+it serves, and re-run `vendo doctor`. If the app listens on a non-default port
+or mount, pass `--url <base>` or set `VENDO_URL`. Note: `--json` runs never
+attempt the start; agents own the dev server.
+
+## Live composition
+
+### E-LIVE-001 {#E-LIVE-001}
+
+**Symptom:** `/status` returned an invalid composition response.
+
+**Cause:** Something answered at `<base>/status` but not with the Vendo status
+shape (`posture`, `version`, `blocks`). Usually another handler owns the path,
+the mount is wrong, or the base URL points at the wrong app.
+
+**Fix:** Confirm the Vendo handler is mounted at the probed base (Next:
+`app/api/vendo/[...vendo]/route.ts`; Express: `app.use("/api/vendo",
+mountVendo())`) and that `--url`/`VENDO_URL` points at it.
+
+### E-LIVE-002 {#E-LIVE-002}
+
+**Symptom:** `/status` is unreachable.
+
+**Cause:** Nothing is listening at the probed base: the dev server is not
+running, or it runs on a different port than the probe target.
+
+**Fix:** Start the dev server and re-run doctor. The default probe base is
+`http://localhost:3000/api/vendo`; override with `--url <base>` or
+`VENDO_URL`. All live checks (auth probes, model turn) depend on this one.
+
+### E-LIVE-003 {#E-LIVE-003}
+
+**Symptom:** `/status` returned an invalid execution venue.
+
+**Cause:** `blocks.sandbox` in the status response is not one of the known
+venues (`e2b`, `modal`, `cloud`, `custom`), `false`, or absent. The status
+route is patched or the composition is corrupted.
+
+**Fix:** Remove any custom `/status` handling and upgrade `@vendoai/vendo` so
+the stock status route answers.
+
+### E-LIVE-004 {#E-LIVE-004}
+
+**Symptom (warning):** No execution venue is configured.
+
+**Cause:** The composition has no sandbox adapter, so server-backed user apps
+(rungs 2-4) return sandbox-unavailable. Tree-only apps still work.
+
+**Fix:** One of: install the `e2b` package and set `E2B_API_KEY`; install
+`modal` and set `MODAL_TOKEN_ID` + `MODAL_TOKEN_SECRET`; set `VENDO_API_KEY`
+for the managed Cloud sandbox; or pass `sandbox:` to `createVendo`. Ask your
+human which venue they want; this needs an account or key.
+
+### E-LIVE-005 {#E-LIVE-005}
+
+**Symptom (warning):** The host `/status` does not report an execution venue.
+
+**Cause:** Version skew: the installed `@vendoai/vendo` predates the
+`blocks.sandbox` field, so the venue check cannot run.
+
+**Fix:** Upgrade: `npm install vendoai@latest`, restart the dev server, re-run
+doctor.
+
+## Auth probes
+
+### E-AUTH-001 {#E-AUTH-001}
+
+**Symptom:** Present credentials did not reach the host API.
+
+**Cause:** Doctor POSTed `<base>/doctor/present` with seeded cookie and
+authorization headers, and they did not come back through the wire's
+same-origin fetch. The wire does not trust the origin it is being probed on,
+so it strips credentials instead of forwarding them.
+
+**Fix:** Set `VENDO_BASE_URL` to the running host origin (for example
+`VENDO_BASE_URL=http://localhost:3000` in `.env.local`), restart the dev
+server, and re-run doctor.
+
+### E-AUTH-002 {#E-AUTH-002}
+
+**Symptom:** The present credential probe is unreachable.
+
+**Cause:** `/status` answered but `<base>/doctor/present` threw: the dev
+server died mid-run or a proxy blocks the doctor routes.
+
+**Fix:** Restart the dev server, verify `VENDO_BASE_URL`, and re-run doctor.
+
+### E-AUTH-003 {#E-AUTH-003}
+
+**Symptom:** The present credential probe cannot run while the dev server is
+down.
+
+**Cause:** Follows from a failed `/status` round-trip; see
+[E-LIVE-002](#E-LIVE-002).
+
+**Fix:** Start the dev server at the probed base and re-run doctor; this check
+runs once `/status` answers.
+
+### E-AUTH-004 {#E-AUTH-004}
+
+**Symptom:** actAs mint + host verification failed.
+
+**Cause:** The composition minted an away credential but the host did not
+verify it. The verifier middleware is missing, or the secret the preset signs
+with differs from the one the host verifies with.
+
+**Fix:** Check `createVendo({ auth })` (or the hand-wired `actAs`), its
+verifier middleware on the host API, and the host principal resolver. For
+Clerk/Auth0, `VENDO_AWAY_TOKEN_SECRET` must be the same value on both sides.
+See [Host auth](/agents/host-auth).
+
+### E-AUTH-005 {#E-AUTH-005}
+
+**Symptom:** The actAs probe is unreachable.
+
+**Cause:** `/status` answered but `<base>/doctor/act-as` threw.
+
+**Fix:** Restart the dev server, check `createVendo({ actAs })` (or the `auth`
+preset), and re-run doctor.
+
+### E-AUTH-006 {#E-AUTH-006}
+
+**Symptom:** The actAs probe cannot run while the dev server is down.
+
+**Cause:** Follows from a failed `/status` round-trip; see
+[E-LIVE-002](#E-LIVE-002).
+
+**Fix:** Start the dev server at the probed base and re-run doctor.
+
+### E-AUTH-007 {#E-AUTH-007}
+
+**Symptom (warning):** actAs is not configured.
+
+**Cause:** The composition has neither an `auth` preset nor an `actAs` seam,
+so the agent cannot act through the host API while the user is away. Present
+(user-in-the-room) calls still work.
+
+**Fix:** Wire an auth preset (`auth: authJs()` and friends fill `actAs`) or
+pass `createVendo({ actAs })` before enabling away host actions. Acceptable to
+leave for a present-only install; this never blocks doctor.
+
+## MCP door
+
+These checks run only when the composition reports `blocks.mcp: true`.
+
+### E-MCP-001 {#E-MCP-001}
+
+**Symptom:** MCP protected-resource metadata did not resolve.
+
+**Cause:** `GET <origin>/.well-known/oauth-protected-resource<mount>/mcp` did
+not return a JSON object with a `resource` string. The metadata is
+path-inserted (RFC 9728): a door at `/api/vendo/mcp` serves
+`/.well-known/oauth-protected-resource/api/vendo/mcp`.
+
+**Fix:** Make sure the composition passes `mcp: true` with a working
+`auth`/`oauth` seam, the `.well-known` route is reachable at the origin (not
+swallowed by a proxy or middleware), and the probed `--url` matches the real
+mount.
+
+### E-MCP-002 {#E-MCP-002}
+
+**Symptom:** MCP authorization-server metadata did not resolve.
+
+**Cause:** `GET <origin>/.well-known/oauth-authorization-server<mount>/mcp`
+did not return a JSON object with an `issuer` string.
+
+**Fix:** Same as [E-MCP-001](#E-MCP-001): the two documents are served by the
+same door wiring; check the oauth adapter configuration.
+
+### E-MCP-003 {#E-MCP-003}
+
+**Symptom:** The MCP server card did not parse.
+
+**Cause:** `GET <origin>/.well-known/mcp/server-card.json` did not return an
+object with a `name` string and a `transports` array.
+
+**Fix:** Check that the door's well-known routes are mounted at the origin and
+nothing rewrites the card response.
+
+### E-MCP-004 {#E-MCP-004}
+
+**Symptom:** `server.json` does not meet MCP registry discovery requirements;
+the message lists the exact validation errors.
+
+**Cause:** The repo has a `server.json` (the official MCP registry artifact)
+that fails schema validation.
+
+**Fix:** Regenerate it: `npx vendo mcp server-json --domain <domain> --url
+<public-mcp-url> --force`, or fix the listed fields by hand.
+
+### E-MCP-005 {#E-MCP-005}
+
+**Symptom:** The `server.json` remote does not match the live MCP door.
+
+**Cause:** The remote URL declared in `server.json` differs from the door
+doctor just probed; the file predates a URL or mount change.
+
+**Fix:** Regenerate `server.json` with the current public door URL: `npx vendo
+mcp server-json --domain <domain> --url <public-mcp-url> --force`.
+
+### E-MCP-006 {#E-MCP-006}
+
+**Symptom:** `server.json` is invalid JSON.
+
+**Cause:** The file does not parse.
+
+**Fix:** Regenerate it with `npx vendo mcp server-json` (see
+[E-MCP-004](#E-MCP-004)) or repair the syntax.
+
+### E-MCP-007 {#E-MCP-007}
+
+**Symptom:** The local MCP registry auth challenge is malformed.
+
+**Cause:** `public/.well-known/mcp-registry-auth` exists but does not start
+with `v=MCPv1`.
+
+**Fix:** Regenerate the domain-verification material: `npx vendo mcp
+verify-domain --domain <domain> --key-out <path> --write-well-known public`.
+
+### E-MCP-008 {#E-MCP-008}
+
+**Symptom:** The live MCP registry auth challenge is malformed.
+
+**Cause:** `GET <origin>/.well-known/mcp-registry-auth` serves content that
+does not start with `v=MCPv1`, usually a stale or hand-edited deployed copy.
+
+**Fix:** Redeploy the file generated by `npx vendo mcp verify-domain` (see
+[E-MCP-007](#E-MCP-007)); DNS verification is an alternative to serving it
+over HTTP.
+
+## Live model turn
+
+### E-TURN-001 {#E-TURN-001}
+
+**Symptom:** The live model turn did not answer; the message names the
+credential used and the error.
+
+**Cause:** Doctor POSTed one real turn to `<base>/threads` and no reply text
+arrived: no usable model credential, a provider error, or a timeout (90s).
+
+**Fix:** Check the credential the message names. With no key set, add
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY` to
+`.env.local` (with the matching `@ai-sdk/*` provider installed), or set
+`VENDO_API_KEY` (`vendo cloud login` mints a free dev key; ask your human
+first). Then restart the dev server and check its logs for the turn error.
+
+### E-TURN-002 {#E-TURN-002}
+
+**Symptom:** The live model turn cannot run while the dev server is down.
+
+**Cause:** Follows from a failed `/status` round-trip; see
+[E-LIVE-002](#E-LIVE-002).
+
+**Fix:** Start the dev server at the probed base and re-run doctor.
+
+## Vendo Cloud
+
+### E-CLOUD-001 {#E-CLOUD-001}
+
+**Symptom (warning):** `VENDO_API_KEY` is set but not usable.
+
+**Cause:** The key fails the local shape check (expected `vnd_` + 40 hex
+characters). Doctor never validates keys against a server; a well-formed but
+revoked key surfaces on the first real service call instead.
+
+**Fix:** Re-copy the key from the Vendo Cloud console, or mint a fresh one
+with `vendo cloud login` (ask your human first). Unsetting `VENDO_API_KEY`
+also clears the warning; Cloud is optional.

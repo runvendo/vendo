@@ -35,6 +35,10 @@
         "pages": ["index", "install", "quickstart", "quickstart-node"]
       },
       {
+        "group": "For coding agents",
+        "pages": ["agents/index", "agents/host-auth", "agents/tools", "agents/verify"]
+      },
+      {
         "group": "Concepts",
         "pages": ["concepts/architecture", "concepts/generated-ui", "concepts/in-client-venue", "concepts/tools-and-safety", "concepts/prompts"]
       },

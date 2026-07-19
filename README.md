@@ -21,13 +21,20 @@ npm install @vendoai/vendo
 npx vendo init
 ```
 
-Or hand the install to your coding agent — paste this inside your app's repo:
+## Install with your coding agent
+
+Paste this inside your app's repo:
 
 ```text
-Install Vendo (the embedded product agent) in this repo.
-Fetch https://docs.vendo.run/install.md and follow it stage by stage.
-Finish by running `npx vendo doctor` against the dev server and iterating until it exits 0.
+Install Vendo in this repo. Read https://vendo.run/agents.md and follow
+it exactly. Use `vendo init` for scaffolding — don't hand-write what it
+generates. Ask me before creating any account or key. You're done when
+`vendo doctor --json` reports all green.
 ```
+
+The playbook behind that URL walks the agent through detection, `vendo init`
+value flags, host-auth wiring, and the `vendo doctor --json` gate, where every
+error code links to its exact fix.
 
 `@vendoai/vendo` is the default composition. The `vendoai` package is a thin
 alias. Install individual blocks when you want to compose Vendo yourself.
