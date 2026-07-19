@@ -1,18 +1,137 @@
 ---
 title: "UI components"
-description: "The shipped Vendo chrome — overlay, thread, activities, slot, and page surfaces — with a live playground you can explore without a model key."
+description: "The shipped Vendo chrome — overlay, palette, thread, approvals, activities, slot, page, and voice surfaces — with a live playground you can explore without a model key."
 ---
 
 Vendo ships a complete set of brand-native chrome components. Every surface
 derives its colors, typography, radius, density, and motion from your
 [VendoTheme tokens](/connect/theming), so the same components render on-brand
-in any host product.
+in any host product. Everything below is the real chrome rendering against
+scripted data — the same components your hosts mount.
+
+## Overlay
+
+The default drop-in: a themed launcher pill that opens a floating conversation
+overlay over your product. On phones it becomes an Intercom-style full-bleed
+takeover with safe-area and keyboard handling. One component, zero layout
+changes to your app.
+
+<Frame caption="The closed overlay: a quiet launcher pill in the corner, plus the slot invitation.">
+  <img src="/images/ui/hero-launcher.png" alt="Vendo overlay launcher pill in the corner of a host page" />
+</Frame>
+
+The overlay opens compact — an invitation, not a takeover — and grows into a
+full conversation on your first message:
+
+<video autoPlay muted loop playsInline src="/images/ui/loop-overlay-grow.mp4" />
+
+## Command palette
+
+The same surface is one keystroke away: **⌘K** opens the conversation overlay
+in its compact palette form, with host-registered commands on the chip strip.
+If your product already owns ⌘K in a focused input, Vendo stays out of the
+way.
+
+<Frame caption="⌘K opens the compact overlay: greeting, suggestions, commands, and the composer.">
+  <img src="/images/ui/hero-palette.png" alt="Vendo command palette — the compact conversation overlay" />
+</Frame>
+
+## Thread
+
+The bare conversation surface — composer, streaming replies, tool beats,
+approval cards, connect cards, and generated views arriving inline. Use it
+when you want the conversation embedded in your own layout instead of an
+overlay.
+
+<Frame caption="A reply streaming into the thread: tool chip, live text, stop affordance.">
+  <img src="/images/ui/hero-thread-streaming.png" alt="Vendo thread surface with a streaming reply" />
+</Frame>
+
+## Generated views
+
+When the agent builds UI, the view streams into the transcript as it forms —
+skeleton first, then live pieces — and lands as an interactive component, not
+a screenshot.
+
+<video autoPlay muted loop playsInline src="/images/ui/loop-view-arrival.mp4" />
+
+<Frame caption="The finished turn: a generated Renewals radar inline in the conversation.">
+  <img src="/images/ui/hero-generated-view.png" alt="A generated view rendered inline in the Vendo thread" />
+</Frame>
+
+## Approvals
+
+A write action parks the turn on an in-thread approval card showing the exact
+request. Approve it and the same turn resumes — the card morphs into a toast,
+the tool runs, and the agent confirms.
+
+<Frame caption="The in-thread approval card: exact inputs, risk label, approve or deny.">
+  <img src="/images/ui/hero-approval.png" alt="Vendo approval card pausing a turn on a Slack post" />
+</Frame>
+
+<video autoPlay muted loop playsInline src="/images/ui/loop-approval-toast.mp4" />
+
+## Activities
+
+The approvals queue and humanized activity feed as a host-placeable piece:
+pending approvals render as actionable cards on top, recent agent activity
+below. Drop it into your own settings or admin pages.
+
+<Frame caption="VendoActivities: the waiting-on-you queue above the humanized activity feed.">
+  <img src="/images/ui/hero-activities.png" alt="Vendo activities surface with an approval card and activity feed" />
+</Frame>
+
+## Slot
+
+A placeholder in your product that users can fill with their own generated
+view. Empty, it shows a quiet ghost with a "Design a view" call to action;
+filled, it renders the pinned view; broken, it falls back to your original
+markup — never a blank hole.
+
+<Frame caption="A filled slot: the user's pinned Renewals radar mounted in the host page.">
+  <img src="/images/ui/hero-slot-filled.png" alt="Vendo slot holding a pinned generated view" />
+</Frame>
+
+## Page
+
+The full workspace console: conversation history, the waiting-on-you approval
+strip, apps, automations, connected accounts, and activity in one routed
+surface. Mount it on a dedicated route like `/assistant`.
+
+<Frame caption="VendoPage: conversations, the approval strip, and a generated view in one console.">
+  <img src="/images/ui/hero-page.png" alt="Vendo workspace console page" />
+</Frame>
+
+## Voice
+
+The voice stage: a live orb, streaming captions, views arriving mid-session,
+and voice-native approvals — say "approve" or tap. See
+[Voice](/capabilities/voice) for wiring it up.
+
+<Frame caption="The voice stage mid-session: captions, a ready view, and a spoken approval.">
+  <img src="/images/ui/hero-voice-stage.png" alt="Vendo voice stage with captions and a voice approval" />
+</Frame>
+
+<video autoPlay muted loop playsInline src="/images/ui/loop-voice-stage.mp4" />
+
+## Theming
+
+Every component above re-themes from one token file. Extract it with
+`vendo init`, or hand-edit `.vendo/theme.json` — the playground's theme editor
+emits a valid file from whatever look you land on. See
+[Theming](/connect/theming) for the full token reference.
+
+<Frame caption="The playground's theme editor: presets, per-token colors, any Google Font, radius, density, motion.">
+  <img src="/images/ui/hero-theme-editor.png" alt="The Vendo playground theme editor open over the activities surface" />
+</Frame>
+
+<video autoPlay muted loop playsInline src="/images/ui/loop-theme-retheme.mp4" />
 
 ## Try every surface live
 
-The hosted playground below renders each surface against scripted data — no
-model key, no database, nothing to install. Use the **Theme** button inside it
-to edit every theme token live, copy a ready `.vendo/theme.json`, and share a
+The hosted playground renders each surface against scripted data — no model
+key, no database, nothing to install. Use the **Theme** button inside it to
+edit every theme token live, copy a ready `.vendo/theme.json`, and share a
 themed link.
 
 <iframe
@@ -26,45 +145,3 @@ themed link.
 If the embed does not load, open
 [vendo.run/playground](https://vendo.run/playground) directly, or run it
 locally with `npx vendoai playground`.
-
-## The surfaces
-
-### Overlay
-
-The default drop-in: a themed launcher pill that opens a floating conversation
-overlay over your product. On phones it becomes an Intercom-style full-bleed
-takeover with safe-area and keyboard handling. One component, zero layout
-changes to your app.
-
-### Thread
-
-The bare conversation surface — composer, streaming replies, tool beats,
-approval cards, connect cards, and generated views arriving inline. Use it
-when you want the conversation embedded in your own layout instead of an
-overlay.
-
-### Activities
-
-The approvals queue and humanized activity feed as a host-placeable piece:
-pending approvals render as actionable cards on top, recent agent activity
-below. Drop it into your own settings or admin pages.
-
-### Slot
-
-A placeholder in your product that users can fill with their own generated
-view. Empty, it shows a quiet ghost with a "Design a view" call to action;
-filled, it renders the pinned view; broken, it falls back to your original
-markup — never a blank hole.
-
-### Page
-
-The full workspace console: conversation history, the waiting-on-you approval
-strip, apps, automations, connected accounts, and activity in one routed
-surface. Mount it on a dedicated route like `/assistant`.
-
-## Theming
-
-Every component above re-themes from one token file. Extract it with
-`vendo init`, or hand-edit `.vendo/theme.json` — the playground's theme editor
-emits a valid file from whatever look you land on. See
-[Theming](/connect/theming) for the full token reference.
