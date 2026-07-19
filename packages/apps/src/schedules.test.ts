@@ -240,6 +240,47 @@ describe("createScheduleEngine (execution-v2 BYO schedule execution)", () => {
     expect(report.fired).toEqual([expect.objectContaining({ fn: "chase" })]);
   });
 
+  it("fires exactly once at the latest occurrence after a very long downtime (no catch-up batches)", async () => {
+    const { state, engine } = await setup();
+    await engine.tick(at("2026-05-01T00:00:10.000Z"));
+    // ~80 days of missed every-minute windows collapse to ONE fire at the
+    // latest due occurrence — never a truncated batch replayed tick by tick.
+    const report = await engine.tick(at("2026-07-19T12:10:05.000Z"));
+    expect(report.fired).toEqual([expect.objectContaining({ scheduledFor: "2026-07-19T12:10:00.000Z" })]);
+    const again = await engine.tick(at("2026-07-19T12:10:20.000Z"));
+    expect(again.fired).toEqual([]);
+    expect(state.seen.filter((request) => request.path === "/fn/chase")).toHaveLength(1);
+  });
+
+  it("rejects a croner-invalid cron loudly at the sync boundary, caching nothing", async () => {
+    // "99 99 * * *" passes the manifest's field-shape regex but no such time
+    // exists — croner is the arbiter, and the read boundary is where it fails.
+    const { engine, store } = await setup((request) =>
+      request.path === "/vendo.json" ? manifest([{ cron: "99 99 * * *", fn: "chase" }]) : fnOk);
+    const report = await engine.tick(at("2026-07-19T12:00:10.000Z"));
+    expect(report.errors).toEqual([expect.objectContaining({ appId: "app_sched" })]);
+    expect(await store.records(SCHEDULE_STATE_COLLECTION).get("app_sched")).toBeNull();
+  });
+
+  it("fails closed when an awake refresh cannot read the manifest: nothing fires that tick", async () => {
+    const { state, engine } = await setup();
+    await engine.tick(at("2026-07-19T12:00:10.000Z"));
+    // The box goes sour while awake: vendo.json now unreadable. The cached
+    // schedule is due, but stale declarations must not fire on a tick whose
+    // refresh just failed — loud error, no fire, retry next tick.
+    state.handler = (request) =>
+      request.path === "/vendo.json" ? { status: 500, body: "boom" } : fnOk;
+    const report = await engine.tick(at("2026-07-19T12:01:30.000Z"));
+    expect(report.errors).toEqual([expect.objectContaining({ appId: "app_sched" })]);
+    expect(report.fired).toEqual([]);
+    expect(state.seen.filter((request) => request.path === "/fn/chase")).toHaveLength(0);
+
+    // Manifest healthy again: the due window fires normally.
+    state.handler = defaultHandler;
+    const healed = await engine.tick(at("2026-07-19T12:01:40.000Z"));
+    expect(healed.fired).toEqual([expect.objectContaining({ fn: "chase" })]);
+  });
+
   it("concurrent ticks coalesce to one run", async () => {
     const { state, engine } = await setup();
     await engine.tick(at("2026-07-19T12:00:10.000Z"));
