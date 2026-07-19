@@ -233,6 +233,15 @@ const hostToolSections = (deps: GenerationDependencies): GenerationPromptSection
   ...(deps.toolShapes === undefined || Object.keys(deps.toolShapes).length === 0 ? [] : [{
     id: "catalog" as const,
     content: `TOOL RESPONSE SHAPES (bind only to fields that exist; a binding outside these shapes fails validation):\n${Object.entries(deps.toolShapes).map(([tool, shape]) => `- ${tool}: ${describeShape(shape)}`).join("\n")}`,
+  }, {
+    id: "catalog" as const,
+    content: `RESHAPE PIPES — project & format bound data to the shape a component needs. A binding may end with a bounded \`| op(...)\` pipe (this is the ONLY computation allowed in a binding). PROJECT fetched object arrays into the component's shape, and never bind a raw object array into a slot that expects labeled items:
+- Select options / Tabs tabs need [{value, label}] items. Map a fetched object array with asOptions(valueField, labelField): options={accounts | asOptions(id, name)} — first arg becomes value, second becomes label. Binding a raw object array (e.g. options={accounts}) renders every option BLANK and fails validation.
+- Chart/points props need [{label, value}] items: points={revenue.rows | asPoints(month, revenue)}.
+FORMAT values for display — money from host tools is integer CENTS, and dates are raw ISO/epoch; a bare number or ISO string shown to the user is a defect:
+- Money (integer cents): value={txn.amount | format(currencyCents)} for a scalar, or format a table column in place with rows={txns | format(amount, currencyCents)}. Use format(currency) only when the field is already in whole dollars.
+- Dates: value={invoice.dueDate | format(date)}. Percents (0..1): format(percent). Plain numbers: format(number).
+NEVER bind a raw object or array into a Text body, a Stat value, or a Table cell — it renders as raw JSON like {"received":3,"total":6}. Bind the specific scalar field, or pick/rename it (| pick(fieldName)) to a scalar first.`,
   }]),
 ];
 
