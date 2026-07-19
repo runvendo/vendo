@@ -186,6 +186,14 @@ describe("e2bSandbox", () => {
     sdk.deleteSnapshot.mockRejectedValueOnce(new Error("e2b is down"));
     await expect(adapter.destroy(v2SnapshotRef)).rejects.toThrow("e2b is down");
     await expect(adapter.destroy("modal:im_wrong")).rejects.toMatchObject({ code: "validation" });
+    // an empty recorded source id is a malformed ref, not a swallowed kill("")
+    const emptySourceRef = `e2b:v2:${Buffer.from(JSON.stringify({
+      version: 2,
+      snapshotId: "snapshot_789",
+      sourceSandboxId: "",
+      port: 8080,
+    })).toString("base64url")}`;
+    await expect(adapter.destroy(emptySourceRef)).rejects.toMatchObject({ code: "validation" });
   });
 
   it("destroys a retired v1 ref by snapshot deletion alone (no recorded source sandbox)", async () => {

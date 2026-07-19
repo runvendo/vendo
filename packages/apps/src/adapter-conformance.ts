@@ -194,7 +194,7 @@ export const sandboxAdapterConformance = (
       const machine = track(await adapter.create({
         env: { PORT: "8080", CONFORMANCE_VALUE: "sleeping" },
       }));
-      const ref = await machine.snapshot();
+      const ref = await mint(adapter, machine);
       await machine.stop();
 
       await adapter.destroy(ref);

@@ -85,7 +85,8 @@ const decodeSnapshotRef = (snapshotRef: string): Omit<E2BSnapshotState, "version
       }
       if (!validPort(state.port)) throw new Error("invalid port");
       if (!validDomains(state.allowedDomains)) throw new Error("invalid allowedDomains policy");
-      if (state.sourceSandboxId !== undefined && typeof state.sourceSandboxId !== "string") {
+      if (state.sourceSandboxId !== undefined
+        && (typeof state.sourceSandboxId !== "string" || state.sourceSandboxId.length === 0)) {
         throw new Error("invalid source sandbox id");
       }
       return {
@@ -284,8 +285,11 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
       try {
         await Sandbox.deleteSnapshot(state.snapshotId, apiOptions);
       } catch (error) {
-        // Idempotent by seam contract: already-deleted state is a no-op.
-        if (!(error instanceof NotFoundError)) throw error;
+        // Idempotent by seam contract: already-deleted state is a no-op. The
+        // name fallback covers an SDK bump or bundler duplicating the class.
+        const notFound = error instanceof NotFoundError
+          || (error instanceof Error && error.name === "NotFoundError");
+        if (!notFound) throw error;
       }
     },
   };
