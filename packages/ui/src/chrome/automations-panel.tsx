@@ -3,12 +3,42 @@ import { useEffect, useRef, useState } from "react";
 import { useVendoTheme } from "../context.js";
 import { useApprovals } from "../hooks/use-approvals.js";
 import { useAutomations } from "../hooks/use-automations.js";
-import type { RunPlan, RunRecord } from "../wire-types.js";
+import type { RunPlan, RunRecord, RunStatus } from "../wire-types.js";
+import { formatAuditTime } from "./activity-semantics.js";
 import { ApprovalCard } from "./approval-card.js";
 import { ChromeRoot } from "./chrome-root.js";
 
 const ENABLE_CELEBRATION_MS = 3_100;
 const REDUCED_ENABLE_CELEBRATION_MS = 900;
+
+/** ui-lane-panels pick B — the last-10-runs dot strip. */
+const RUN_STRIP_LIMIT = 10;
+const RUN_STATUS_LABEL: Record<RunStatus, string> = {
+  ok: "Succeeded",
+  error: "Failed",
+  running: "Running",
+  stopped: "Stopped",
+  "pending-approval": "Waiting on approval",
+};
+const RUN_STATUS_ROLLUP: Record<RunStatus, string> = {
+  ok: "ok",
+  error: "failed",
+  running: "running",
+  stopped: "stopped",
+  "pending-approval": "waiting",
+};
+
+/** "8 ok · 1 failed · 1 waiting" — text rollup so colour is never the only
+    signal on the strip. Statuses appear in a fixed order, zero-counts drop. */
+function runRollup(runs: RunRecord[]): string {
+  const counts = new Map<RunStatus, number>();
+  for (const run of runs) counts.set(run.status, (counts.get(run.status) ?? 0) + 1);
+  const order: RunStatus[] = ["ok", "error", "pending-approval", "running", "stopped"];
+  return order
+    .filter(status => counts.has(status))
+    .map(status => `${counts.get(status)} ${RUN_STATUS_ROLLUP[status]}`)
+    .join(" · ");
+}
 
 function humanize(value: string): string {
   const words = value
@@ -67,15 +97,43 @@ export function AutomationsPanel() {
   const [missing, setMissing] = useState<Record<AppId, ApprovalRequest[]>>({});
   const [plans, setPlans] = useState<Record<AppId, RunPlan | undefined>>({});
   const [runs, setRuns] = useState<Record<AppId, RunRecord[] | undefined>>({});
+  const [recent, setRecent] = useState<Record<AppId, RunRecord[] | undefined>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string>();
   const [justEnabled, setJustEnabled] = useState<Record<AppId, boolean>>({});
   const enableTimers = useRef(new Map<AppId, number>());
+  const stripFetched = useRef(new Set<AppId>());
 
   useEffect(() => () => {
     for (const timer of enableTimers.current.values()) window.clearTimeout(timer);
     enableTimers.current.clear();
   }, []);
+
+  // Eager last-N-runs fetch per card (pick B): the strip answers "is this
+  // automation healthy" without opening Run history. Once per appId; a strip
+  // fetch failure stays silent-but-visible — the strip simply doesn't render,
+  // and Run history still surfaces errors through the shared alert.
+  const listRuns = automations.runs;
+  useEffect(() => {
+    let cancelled = false;
+    for (const entry of automations.automations) {
+      const appId = entry.app.id;
+      if (stripFetched.current.has(appId)) continue;
+      stripFetched.current.add(appId);
+      void (async () => {
+        try {
+          const result = await listRuns({ appId });
+          if (cancelled) return;
+          setRecent(current => ({ ...current, [appId]: result.runs.slice(0, RUN_STRIP_LIMIT) }));
+        } catch {
+          if (!cancelled) stripFetched.current.delete(appId);
+        }
+      })();
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [automations.automations, listRuns]);
 
   const clearEnableCelebration = (appId: AppId) => {
     const timer = enableTimers.current.get(appId);
@@ -135,6 +193,8 @@ export function AutomationsPanel() {
           const appRuns = runs[appId];
           const flow = automationFlow(entry.app.trigger);
           const celebrating = justEnabled[appId] === true;
+          // Oldest → newest left-to-right, so the strip reads like a timeline.
+          const strip = recent[appId]?.slice().reverse();
           return (
             <article
               className="fl-automation"
@@ -210,6 +270,22 @@ export function AutomationsPanel() {
                       <span className="fl-auto-node-s" style={{ display: "block" }}>{flow.action.sub}</span>
                     </span>
                   </span>
+                </div>
+              ) : null}
+
+              {strip && strip.length > 0 ? (
+                <div className="fl-auto-runs" aria-label={`Last ${strip.length} run${strip.length === 1 ? "" : "s"} for ${entry.app.name}: ${runRollup(strip)}`}>
+                  <span className="fl-auto-runs-lbl" aria-hidden="true">Last {strip.length} run{strip.length === 1 ? "" : "s"}</span>
+                  {strip.map(run => (
+                    <span
+                      key={run.id}
+                      className="fl-auto-runs-dot"
+                      data-status={run.status}
+                      title={`${RUN_STATUS_LABEL[run.status]} · ${formatAuditTime(run.startedAt)}`}
+                      aria-hidden="true"
+                    />
+                  ))}
+                  <span className="fl-auto-runs-sum" aria-hidden="true">{runRollup(strip)}</span>
                 </div>
               ) : null}
 

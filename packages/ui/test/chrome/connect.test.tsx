@@ -70,16 +70,57 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     expect(screen.getByRole("button", { name: "Connect gmail" }).hasAttribute("disabled")).toBe(false);
   });
 
-  it("lists connected accounts and disconnects one", async () => {
-    render(<VendoProvider client={client}><ConnectedAccountsPanel /></VendoProvider>);
-    await screen.findByText("gmail");
-    expect(screen.getByText(/Connected · since/).textContent).toContain("via composio");
+  it("lists accounts with real identity and severs one through confirm + undo window", async () => {
+    render(<VendoProvider client={client}><ConnectedAccountsPanel undoMs={60} /></VendoProvider>);
+    // Identity-forward: display name (never the raw slug), status chip, byline.
+    await screen.findByText("Gmail");
+    expect(screen.queryByText("gmail")).toBeNull();
+    expect(screen.getByText("Connected")).toBeTruthy();
+    expect(screen.getByText(/via Composio · connected/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Disconnect gmail" }));
-    await waitFor(() => expect(screen.queryByText("gmail")).toBeNull());
-    expect(screen.getByText(/No connected accounts yet/)).toBeTruthy();
-    expect(wire.requests).toContainEqual(
+    // Step 1 opens the inline consequence confirm — nothing is severed yet.
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect Gmail" }));
+    expect(screen.getByText("Disconnect Gmail?")).toBeTruthy();
+    expect(wire.requests).not.toContainEqual(
       expect.objectContaining({ method: "DELETE", path: "/connections/ca_1?connector=composio" }),
     );
+
+    // Step 2 severs into the undo row; the wire call waits for the window.
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+    expect(await screen.findByText(/Gmail disconnected/)).toBeTruthy();
+    expect(wire.requests).not.toContainEqual(
+      expect.objectContaining({ method: "DELETE", path: "/connections/ca_1?connector=composio" }),
+    );
+    await waitFor(() => expect(wire.requests).toContainEqual(
+      expect.objectContaining({ method: "DELETE", path: "/connections/ca_1?connector=composio" }),
+    ));
+    await waitFor(() => expect(screen.queryByText(/Gmail disconnected/)).toBeNull());
+    expect(screen.getByText(/No connected accounts yet/)).toBeTruthy();
+  });
+
+  it("undo inside the window cancels the disconnect entirely", async () => {
+    render(<VendoProvider client={client}><ConnectedAccountsPanel undoMs={30_000} /></VendoProvider>);
+    await screen.findByText("Gmail");
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect Gmail" }));
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+    expect(await screen.findByText(/Gmail disconnected/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    // The card returns and no wire call ever fired.
+    expect(await screen.findByText("Gmail")).toBeTruthy();
+    await new Promise(resolve => globalThis.setTimeout(resolve, 50));
+    expect(wire.requests).not.toContainEqual(
+      expect.objectContaining({ method: "DELETE", path: "/connections/ca_1?connector=composio" }),
+    );
+  });
+
+  it("offers connect-ahead chips in the empty state and initiates through the broker", async () => {
+    vi.stubGlobal("open", vi.fn());
+    wire.state.connections = [];
+    render(<VendoProvider client={client}><ConnectedAccountsPanel /></VendoProvider>);
+    expect(await screen.findByText(/No connected accounts yet/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Connect Slack" }));
+    await waitFor(() => expect(wire.requests).toContainEqual(
+      expect.objectContaining({ method: "POST", path: "/connections/initiate", body: { toolkit: "slack" } }),
+    ));
   });
 });

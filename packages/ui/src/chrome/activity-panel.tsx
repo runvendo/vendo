@@ -2,27 +2,13 @@ import { useState } from "react";
 import { useActivity } from "../hooks/use-activity.js";
 import { useVendoTools } from "../context.js";
 import { ChromeRoot } from "./chrome-root.js";
-import {
-  describeActivity,
-  formatAuditTime,
-  outcomeLabel,
-  type OutcomeTone,
-} from "./activity-semantics.js";
-
-/** The status glyph for an outcome tone. In-flight tones animate (pulse/spin);
-    settled tones use a static tick / cross that reads without colour alone. */
-function OutcomeIcon({ tone }: { tone: OutcomeTone }) {
-  if (tone === "running") return <span className="fl-act-pulse" aria-hidden="true" />;
-  if (tone === "pending") return <span className="fl-act-spin" aria-hidden="true" />;
-  const glyph = tone === "ok" ? "✓" : tone === "connect" ? "⭘" : "✕";
-  const cls = tone === "ok" ? "fl-act-tick" : tone === "connect" ? "fl-act-denied" : "fl-act-x";
-  return <span className={`fl-act-ic ${cls}`} aria-hidden="true">{glyph}</span>;
-}
+import { ActivityLedger } from "./activity-ledger.js";
 
 /** 08-ui §4 — self-scoped, user-facing audit transparency. Every row is a
     concrete action taken as the user (a tool call, an approval, a connection…)
-    with a humanized label, a human timestamp and a plain-language result;
-    pagination ends in an explicit end-of-list marker. */
+    rendered as one icon-ledger line (ui-lane-panels pick B): kind glyph,
+    humanized action with the input preview folded in, plain-language result,
+    relative timestamp. Pagination ends in an explicit end-of-list marker. */
 export function ActivityPanel() {
   const { events, isLoading, hasMore, loadMore } = useActivity();
   const tools = useVendoTools();
@@ -50,42 +36,10 @@ export function ActivityPanel() {
             {isLoading ? "Loading activity…" : "Nothing has run as you yet"}
           </p>
         ) : (
-          <table className="fl-act-table">
-            <caption className="fl-act-cap">Actions performed as your account</caption>
-            <thead className="fl-act-thead">
-              <tr className="fl-act-grid">
-                <th className="fl-act-th">Activity</th>
-                <th className="fl-act-th">Details</th>
-                <th className="fl-act-th">Result</th>
-                <th className="fl-act-th">When</th>
-              </tr>
-            </thead>
-            <tbody className="fl-act-tbody">
-              {events.map(event => {
-                const { kindLabel, action } = describeActivity(event, tools);
-                const { label, tone } = outcomeLabel(event.outcome);
-                return (
-                  <tr className="fl-act-grid" key={event.id}>
-                    <td className="fl-act-cell">
-                      <span className="fl-act-kind">{kindLabel}</span>
-                      <span className="fl-act-action">{action}</span>
-                    </td>
-                    <td className="fl-act-cell fl-act-detail">{event.inputPreview ?? "—"}</td>
-                    <td className="fl-act-cell">
-                      <span className="fl-act-outcome">
-                        <OutcomeIcon tone={tone} />
-                        <span>{label}</span>
-                      </span>
-                      {event.decidedBy ? <div className="fl-act-by">by {event.decidedBy}</div> : null}
-                    </td>
-                    <td className="fl-act-cell fl-act-when">
-                      <time dateTime={event.at} title={event.at}>{formatAuditTime(event.at)}</time>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <>
+            <p className="fl-act-cap" style={{ margin: 0 }}>Actions performed as your account</p>
+            <ActivityLedger events={events} tools={tools} />
+          </>
         )}
         {events.length > 0 ? (
           <div className="fl-act-foot">

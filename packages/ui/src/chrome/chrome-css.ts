@@ -1565,4 +1565,106 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   color: var(--vendo-warn-on-fill); }
 .fl-btn-ceremony:hover, .fl-btn-critical:hover { opacity: .92; background: var(--vendo-warn); }
 
+/* ==================== ui-lane-panels lane block ====================
+   Converged picks (see LANE-REPORT.md in the lane worktree):
+   activity B (icon ledger) · vendo-activities B (approval queue pager) ·
+   automations B (run-dot strip) · connected-accounts A+D+F (identity rows,
+   two-step disconnect + undo, connect-ahead empty state).
+   Every value derives from the existing --vendo-* tokens. */
+
+/* ---- activity icon ledger (shared by ActivityPanel + VendoActivities) ---- */
+.fl-act-led { list-style: none; margin: 0; padding: 0; }
+.fl-act-led-row { display: grid; grid-template-columns: 26px minmax(0, 1.9fr) 1fr auto; gap: 10px;
+  align-items: center; padding: 8px 13px; border-bottom: 1px solid var(--vendo-border); }
+.fl-act-led-row:last-child { border-bottom: 0; }
+.fl-act-led-row:hover { background: var(--vendo-accent-soft); }
+.fl-act-led-ic { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center;
+  background: var(--vendo-accent-soft); border: 1px solid var(--vendo-border); color: var(--vendo-fg);
+  flex-shrink: 0; }
+.fl-act-led-ic svg { width: 13px; height: 13px; }
+.fl-act-led-main { min-width: 0; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.fl-act-led-main b { font-weight: 550; }
+.fl-act-led-det { color: var(--vendo-fg-muted); font-size: 11.5px; }
+.fl-act-led-out { min-width: 0; }
+.fl-act-led-by { color: var(--vendo-fg-muted); font-size: 10.5px; }
+/* Narrow viewports (375px hosts): result wraps under the action so the
+   outcome and timestamp never collide. */
+@media (max-width: 480px) {
+  .fl-act-led-row { grid-template-columns: 26px minmax(0, 1fr) auto;
+    grid-template-areas: "ic main when" "ic out out"; row-gap: 3px; }
+  .fl-act-led-ic { grid-area: ic; }
+  .fl-act-led-main { grid-area: main; }
+  .fl-act-led-out { grid-area: out; }
+  .fl-act-led-row > .fl-act-when { grid-area: when; }
+}
+
+/* ---- vendo-activities approval queue pager ---- */
+.fl-approvals-pager { display: flex; align-items: center; gap: 8px; }
+.fl-approvals-dots { display: flex; gap: 4px; margin-left: auto; }
+.fl-approvals-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--vendo-border-strong); }
+.fl-approvals-dot--on { background: var(--vendo-accent); }
+.fl-approvals-stack { position: relative; }
+.fl-approvals-stack .fl-approval { width: 100%; max-width: 100%; }
+.fl-approvals-slide { animation: fl-approval-enter .32s var(--vendo-motion-easing) both; }
+@keyframes fl-approval-enter { from { opacity: 0; transform: translateX(14px) scale(.985); } }
+.fl-approvals-ghost { position: absolute; inset: 6px -5px auto auto; width: 96%; height: 100%;
+  border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
+  background: var(--vendo-glass); z-index: -1; }
+
+/* ---- automations run-dot history strip ---- */
+.fl-auto-runs { display: flex; align-items: center; gap: 4px; padding: 12px 16px 14px;
+  border-top: 1px solid var(--vendo-border); }
+.fl-auto-runs-lbl { font-size: 11px; color: var(--vendo-fg-muted); margin-right: 6px; white-space: nowrap; }
+.fl-auto-runs-dot { width: 14px; height: 7px; border-radius: 3px; background: var(--vendo-ok);
+  opacity: .85; animation: fl-auto-runs-pop .3s var(--vendo-motion-easing) both; cursor: default; }
+.fl-auto-runs-dot[data-status="pending-approval"] { background: var(--vendo-warn-tint); }
+.fl-auto-runs-dot[data-status="error"] { background: var(--vendo-danger); }
+.fl-auto-runs-dot[data-status="stopped"] { background: var(--vendo-border-strong); }
+.fl-auto-runs-dot[data-status="running"] { background: var(--vendo-accent); }
+.fl-auto-runs-dot:hover { transform: scaleY(1.4); }
+@keyframes fl-auto-runs-pop { from { opacity: 0; transform: scaleY(.2); } }
+.fl-auto-runs-sum { margin-left: auto; font-size: 11px; color: var(--vendo-fg-muted);
+  white-space: nowrap; }
+
+/* ---- connected accounts: identity rows + disconnect ceremony + empty ---- */
+.fl-acct-logo { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--vendo-surface); border: 1px solid var(--vendo-border); flex-shrink: 0;
+  box-shadow: inset 0 1px 0 light-dark(rgba(255,255,255,.58), rgba(255,255,255,.08)); }
+.fl-acct-title { display: flex; align-items: center; gap: 8px; }
+.fl-acct-chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px;
+  padding: 3px 9px; font: 600 10.5px/1.2 var(--vendo-font); }
+.fl-acct-chip i { width: 5px; height: 5px; border-radius: 999px; background: currentColor; }
+.fl-acct-chip--ok { color: var(--vendo-ok); background: color-mix(in srgb, var(--vendo-ok) 11%, transparent); }
+.fl-acct-chip--warn { color: var(--vendo-warn-text); background: color-mix(in srgb, var(--vendo-warn-tint) 14%, transparent); }
+.fl-acct-chip--danger { color: var(--vendo-danger); background: color-mix(in srgb, var(--vendo-danger) 11%, transparent); }
+.fl-acct-chip--off { color: var(--vendo-fg-muted); background: color-mix(in srgb, var(--vendo-fg) 7%, transparent); }
+.fl-acct-confirm { overflow: hidden; max-height: 0; transition: max-height .3s var(--vendo-motion-easing); }
+.fl-acct-confirm--open { max-height: 150px; }
+.fl-acct-confirm-inner { border-top: 1px solid var(--vendo-warn-border); background: var(--vendo-warn-bg);
+  padding: 11px 16px; font-size: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fl-acct-confirm-inner b { font-weight: 600; }
+.fl-acct-confirm-sub { display: block; color: var(--vendo-fg-muted); font-size: 11.5px; margin-top: 2px; }
+.fl-acct-confirm-actions { margin-left: auto; display: flex; gap: 6px; flex-shrink: 0; }
+.fl-acct-confirm-actions .fl-btn { padding: 5px 12px; font-size: 11.5px; }
+.fl-acct-severed { display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+  border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
+  background: color-mix(in srgb, var(--vendo-fg) 3%, transparent); font-size: 12.5px;
+  color: var(--vendo-fg-muted); animation: fl-item-in .3s ease-out both; }
+.fl-acct-undo { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; }
+.fl-acct-undo .fl-btn { padding: 5px 12px; font-size: 11.5px; }
+.fl-acct-undo-count { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--vendo-fg-muted); }
+.fl-acct-ghost { border: 1.5px dashed var(--vendo-border-strong); border-radius: var(--vendo-radius);
+  padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.fl-acct-ghost-title { font-weight: 600; font-size: 13.5px; }
+.fl-acct-ghost-copy { margin: 0; color: var(--vendo-fg-muted); font-size: 12.5px; line-height: 1.55; }
+.fl-acct-connect-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.fl-acct-connect-chip { display: inline-flex; align-items: center; gap: 8px;
+  border: 1.5px dashed var(--vendo-border-strong); border-radius: 999px; background: transparent;
+  color: var(--vendo-fg); padding: 6px 13px 6px 7px; font: 600 12px/1.2 var(--vendo-font); cursor: pointer; }
+.fl-acct-connect-chip:hover { background: var(--vendo-accent-soft); border-style: solid; }
+.fl-acct-connect-chip:disabled { opacity: .6; cursor: default; }
+.fl-acct-connect-chip .fl-acct-logo { width: 24px; height: 24px; border-radius: 999px; }
+/* ================== end ui-lane-panels lane block ================== */
+
 `;
