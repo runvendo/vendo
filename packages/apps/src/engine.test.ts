@@ -1408,6 +1408,40 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     expect(calls).toBe(2);
   });
 
+  it("rejects an island importing a module the jail cannot load and repairs to inline SVG", async () => {
+    const broken = '<App name="Chart"><RevChart/><Island name="RevChart">import { LineChart } from "recharts";\nexport default function RevChart() { return <LineChart/>; }</Island></App>';
+    const fixed = '<App name="Chart"><RevChart/><Island name="RevChart">export default function RevChart() { return <svg width="100" height="40"><rect width="10" height="20"/></svg>; }</Island></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? broken : fixed;
+    });
+    const document = await modelEngine.create({ prompt: "Build a chart" }, guardDeps(model));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("recharts");
+    expect(prompts[1]).toContain("inline SVG");
+    expect(document.components?.RevChart).toContain("<svg");
+    expect(document.components?.RevChart).not.toContain("recharts");
+  });
+
+  it("accepts an island importing only react", async () => {
+    const wire = '<App name="Ok"><Note/><Island name="Note">import { useState } from "react";\nexport default function Note() { const [n] = useState(0); return <p>{n}</p>; }</Island></App>';
+    const document = await modelEngine.create({ prompt: "Build it" }, guardDeps(scriptedLanguageModel(wire)));
+    expect(document.components?.Note).toContain('from "react"');
+  });
+
+  it("steers islands to react-only and inline-SVG charts in the create prompt", async () => {
+    let captured = "";
+    const model = scriptedLanguageModel((call) => {
+      captured = promptText(call);
+      return validCreate();
+    });
+    await modelEngine.create({ prompt: "Build it" }, guardDeps(model));
+    expect(captured).toContain("import ONLY react/react-dom");
+    expect(captured).toContain("INLINE SVG");
+    expect(captured).toContain("empty-state");
+  });
+
   it("rejects a query naming a tool absent from the host registry and repairs", async () => {
     const invented = '<App name="Tools"><Query id="rev" tool="get_revenue_history"/><MetricCard label="Revenue" value={rev}/></App>';
     const valid = '<App name="Tools"><Query id="rev" tool="host_metric"/><MetricCard label="Revenue" value={rev}/></App>';

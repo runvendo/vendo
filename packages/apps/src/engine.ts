@@ -12,6 +12,7 @@ import {
   compileWirePatchV2,
   compileWireV2,
   describeShape,
+  JAIL_ALLOWED_MODULES,
   shapeAtPointer,
   printWireV2,
   isPathBinding,
@@ -211,9 +212,11 @@ const wireContractSections = (deps: GenerationDependencies): GenerationPromptSec
 - Attribute values: "string", {42}, {true}, bare attribute for true, {{...}} objects, {[...]} arrays, and query bindings {queryName.path.segments}. Bindings are PLAIN FIELD REFERENCES ONLY — no arithmetic, no function/method calls (.filter/.map/.length), no bracket indexing (address array elements with dot-numeric segments, e.g. {accounts.data.0.sparkline}), no string concatenation. If a value would need computing, bind the closest raw field instead and let the component render it. There is NO string interpolation: never write {reference} inside a \"string\" attribute — bind the whole prop to one {reference} or use separate Text nodes.
 - Components resolve host catalog -> prewired primitives -> your <Island> components; the host brand wins a name collision. Prewired primitives: ${RESERVED_COMPONENT_NAMES.join(", ")}, Card, Button, Input, Select, Table, Badge, Stat, Tabs.
 - COMPOSE the app from host catalog and prewired components bound to query data. Prefer a host catalog component whenever it covers the need, with its exact name and props schema; use Stat/Card/Table/Badge and layout primitives for everything else. Matching the host brand is a hard goal.
-- Never hardcode business data (invoices, balances, metrics, rows). Every number, label, and row the user sees must come from a <Query> binding; if no tool provides it, leave the region out rather than inventing data.
+- Never hardcode business data (invoices, balances, metrics, rows). Every number, label, and row the user sees must come from a <Query> binding; if no tool provides it, leave the region out rather than inventing data. This applies to CHARTS and METRICS too: when NO host tool supplies the numbers, render an honest empty-state (a short Text/Badge that the data isn't available), never fabricated, placeholder, or example figures.
 - Actions are on* attributes naming a host tool or fn:<name> (name matches [A-Za-z_][A-Za-z0-9_-]*), e.g. onClick="host_tool" or onRun="fn:submit". A rung-1 app has no server, so never use fn: on create.
+- An action that CHANGES host state (a write/destructive tool) MUST carry a payload binding the context it acts on — the per-row id for a row action, the form field values for a submit — e.g. onClick={{action:"host_send_reminder", payload:{invoiceId: invoices.rows.0.id}}}. Never wire a submit/primary Button to a read-only tool, and never leave a submit/primary Button with no action: a button that does nothing is a fake affordance. When NO host tool can perform the requested action, do NOT render a dead Submit — render an honest disclaimer (Text/Badge) saying the action isn't available on this host.
 - <Island> generated components are a LAST RESORT: one small, self-contained visual piece that no catalog or prewired component can express (a custom chart, a novel visualization). NEVER put the whole app, layout, data, or fetching inside an island. Island content is top-level <Island name="PascalName">raw TSX with an \`export default\`</Island>, referenced as <PascalName/> — plain source, never wrapped in braces, template literals, or fences.
+- An island runs in a network-denied sandbox and may import ONLY react/react-dom (${JAIL_ALLOWED_MODULES.join(", ")}); NOTHING else loads. NEVER import a chart or utility library (no recharts, d3, chart.js, victory, nivo, lodash): render a chart as dependency-free INLINE SVG inside the island, or use a prewired/host component instead. Pass the chart's numbers in as props bound to a <Query>; never fabricate them.
 - Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} islands, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per island, ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes of island source total.`,
 }, {
   id: "prewired-props",
@@ -358,14 +361,41 @@ const esbuildTransform = (async () => {
   }
 })();
 
+/** Every module specifier an island source imports — static (`import … from`,
+ *  side-effect `import "x"`, `export … from`), dynamic `import("x")`, and
+ *  `require("x")`. The jail's sucrase loader rewrites all of these to its
+ *  require table, so any specifier here that is not a `JAIL_ALLOWED_MODULES`
+ *  entry cannot resolve at runtime. */
+const IMPORT_SPECIFIER =
+  /(?:\bimport\b|\bexport\b)[^'"]*?\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)|\brequire\s*\(\s*["']([^"']+)["']\s*\)/g;
+
+const islandImportSpecifiers = (source: string): string[] => {
+  const specifiers: string[] = [];
+  for (const match of source.matchAll(IMPORT_SPECIFIER)) {
+    const specifier = match[1] ?? match[2] ?? match[3] ?? match[4];
+    if (specifier !== undefined) specifiers.push(specifier);
+  }
+  return specifiers;
+};
+
+const JAIL_ALLOWED_MODULE_SET = new Set<string>(JAIL_ALLOWED_MODULES);
+
 /** verify-v2 fixes — a broken island must never persist: it renders as a
- *  contained error instead of an app. Checked at create, routed to repair. */
+ *  contained error instead of an app. Checked at create, routed to repair.
+ *  An island reaching for a module the jail cannot load (a chart library, a
+ *  util) error-boxes the whole app (verify-v2 #5: `recharts`), so a disallowed
+ *  import is rejected before the syntax gate. */
 const islandIssues = async (components: Record<string, string>): Promise<string[]> => {
   const issues: string[] = [];
   const transform = await esbuildTransform;
   for (const [name, source] of Object.entries(components)) {
     if (!hasDefaultExport(source)) {
       issues.push(`island "${name}" must be plain TSX with an \`export default\` component — no braces, template literals, or fences around the source`);
+      continue;
+    }
+    const disallowed = [...new Set(islandImportSpecifiers(source))].filter((specifier) => !JAIL_ALLOWED_MODULE_SET.has(specifier));
+    if (disallowed.length > 0) {
+      issues.push(`island "${name}" imports ${disallowed.map((specifier) => `"${specifier}"`).join(", ")} — the Vendo jail can load ONLY ${JAIL_ALLOWED_MODULES.join(", ")}. Remove the import: render charts as dependency-free inline SVG, or use a prewired/host component; never import an external chart or utility library.`);
       continue;
     }
     if (transform === undefined) continue;
