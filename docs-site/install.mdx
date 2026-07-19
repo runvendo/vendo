@@ -24,9 +24,10 @@ install flow, [host auth wiring](/agents/host-auth),
 [every doctor error code](/agents/verify).
 
 Agents get first-class surfaces along the way. `npx vendo init --agent`
-prints a read-only JSON plan: framework, code diffs, the four questions,
-extracted tools, and risk recommendations. `npx vendo sync --json` prints one
-machine-readable report object. Init also offers to write a `vendo-setup`
+prints a read-only JSON plan (framework, files init would write, code diffs,
+extracted tools, risk recommendations, and the AI-polish delegation contract)
+and writes nothing — scaffold with `vendo init --yes`. `npx vendo sync --json`
+prints one machine-readable report object. Init also writes a `vendo-setup`
 skill into `.claude/skills/` when your repo uses skills.
 
 ## Stage 1 — base install
@@ -48,29 +49,32 @@ skill into `.claude/skills/` when your repo uses skills.
     ```
 
     Init detects your framework from `package.json` (`next` wins over
-    `express`; anything else is treated as Next), interviews you — model
-    import, product brief, critical-tool risk labels, MCP door — and proposes
-    every code change as a diff you approve one by one. It writes the
-    committed `.vendo/` contract: `tools.json` (extracted from your OpenAPI
-    spec and routes), `overrides.json`, `policy.json`, `brief.md`,
-    `theme.json` (your brand, extracted from your CSS), and a gitignored
-    `.vendo/data/` for the zero-config PGlite store.
+    `express`; anything else is treated as Next) with zero questions on the
+    happy path. It scaffolds the two-file surface (an empty `vendo/registry.tsx`
+    plus the composition wired to it) and writes the committed `.vendo/`
+    contract: `tools.json` (extracted from your OpenAPI spec and routes),
+    `overrides.json`, `policy.json`, `brief.md`, `theme.json` (your brand,
+    extracted from your CSS), and a gitignored `.vendo/data/` for the
+    zero-config PGlite store. Auth is detected from `package.json`; an
+    interactive run confirms a single detected provider with one `[Y/n]`.
 
-    Unattended (CI or agent-driven):
+    Unattended (CI or agent-driven), answer auth and the model-key question
+    with value flags so nothing prompts:
 
     ```bash
-    npx vendo init --yes --model-import "@/lib/ai" --brief "One paragraph about your product."
+    npx vendo init --yes --auth authJs --byo
     ```
   </Step>
   <Step title="Give it a model">
-    Vendo runs on any AI SDK `LanguageModel`. The scaffolded `lib/ai.ts`
-    calls `devModel()`, which resolves a credential in this order in
-    development: an env key, a logged-in Claude Code CLI session, a
-    logged-in Codex CLI session, then `VENDO_API_KEY`. The env-key rung
-    reads `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or
-    `GOOGLE_GENERATIVE_AI_API_KEY`. Session rungs need consent (init asks
-    once, or set `VENDO_DEV_ALLOW_SESSIONS=1`) and never resolve when
-    `NODE_ENV=production`. See
+    Vendo runs on any AI SDK `LanguageModel`. The scaffolded composition
+    omits `model`, so the runtime resolves `devModel()` on every turn — a
+    credential ladder in this order in development: an env key, a logged-in
+    Claude Code CLI session, a logged-in Codex CLI session, then
+    `VENDO_API_KEY`. The env-key rung reads `ANTHROPIC_API_KEY`,
+    `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`. Session rungs need
+    consent (init asks once, or set `VENDO_DEV_ALLOW_SESSIONS=1`) and never
+    resolve when `NODE_ENV=production`. No key on hand? `npx vendo cloud login`
+    mints a free metered dev key. See
     [Dev-mode credentials](/connect/dev-mode).
 
     Production always needs a real key. Install the matching provider and
@@ -81,8 +85,8 @@ skill into `.claude/skills/` when your repo uses skills.
     echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env.local
     ```
 
-    If your app already exports a model, point init at it with
-    `--model-import` instead.
+    To pin a provider, set `model` in the generated composition to any AI SDK
+    `LanguageModel`.
   </Step>
   <Step title="Finish Express wiring (Express only)">
     Next.js apps are fully wired by init. Express apps get `vendo/server.ts`
@@ -146,7 +150,7 @@ block unlocks for your install.
 | `https://docs.vendo.run/install.md` | This page as raw Markdown (append `.md` to any docs page) |
 | `https://docs.vendo.run/llms.txt` | Index of every docs page for LLM ingestion (also at `/.well-known/llms.txt`) |
 | `https://docs.vendo.run/llms-full.txt` | The whole docs site as one file |
-| `npx vendo init --agent` | Read-only JSON plan: framework, diffs, questions, extracted tools, risk recommendations |
+| `npx vendo init --agent` | Read-only JSON plan: framework, diffs, extracted tools, risk recommendations, AI-polish contract (writes nothing) |
 | `npx vendo sync --json` | One machine-readable sync report object on stdout |
 | `.claude/skills/vendo-setup/` | Setup skill shipped in the npm tarball; init offers to install it when `.claude/` exists |
 
