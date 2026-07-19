@@ -144,13 +144,13 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
   };
 
   // Suggestion chips prefill the composer — never send (safe on any prompt).
+  // No palette-opener fallback here: it cannot carry the prompt, so it would
+  // open an empty surface and silently drop the chip's text (cubic PR#391
+  // finding). Without an overlay the chip is a dev-warned no-op instead.
   const suggest = (prompt: string) => {
     const opened = openVendoConversation({ prompt, send: false });
-    if (!opened) {
-      if (openVendoPalette()) return;
-      if (developmentMode()) {
-        console.warn(`[vendo] VendoSlot "${id}": suggestions open the conversation surface — mount a VendoOverlay for them to land in.`);
-      }
+    if (!opened && developmentMode()) {
+      console.warn(`[vendo] VendoSlot "${id}": suggestions open the conversation surface — mount a VendoOverlay for them to land in.`);
     }
   };
 

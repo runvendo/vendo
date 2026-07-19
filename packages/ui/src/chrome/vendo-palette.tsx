@@ -48,6 +48,10 @@ export function VendoPalette({ onCommand, hotkey }: { onCommand?(command: VendoC
     commands,
     select(command) {
       if (onCommand) {
+        // The old palette dialog closed on select; mirror that for host-routed
+        // commands so navigation (show-activity etc.) never lands behind the
+        // open modal (cubic PR#391 finding).
+        openVendoConversation({ close: true });
         onCommand(command);
         return;
       }

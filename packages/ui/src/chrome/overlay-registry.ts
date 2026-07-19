@@ -28,6 +28,10 @@ export interface OpenConversationOptions {
   /** Close the overlay when it is already open instead of no-opping — the
    *  one-surface ⌘K behavior (the keybinding toggles, everything else opens). */
   toggle?: boolean;
+  /** Close the overlay (a no-op when it is closed) without opening anything —
+   *  used before handing a command to the host router, mirroring the old
+   *  palette dialog's close-on-select. */
+  close?: boolean;
 }
 
 type OverlayOpener = (options?: OpenConversationOptions) => void;

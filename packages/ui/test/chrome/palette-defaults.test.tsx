@@ -106,5 +106,18 @@ describe("VendoPalette self-sufficient defaults (one-surface)", () => {
     const strip = await screen.findByRole("toolbar", { name: "Commands" });
     fireEvent.click(within(strip).getByRole("button", { name: "New conversation" }));
     await waitFor(() => expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ kind: "new-conversation" })));
+    // Host-routed commands close the surface first (the old palette's
+    // close-on-select) so host navigation never lands behind the modal.
+    expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull();
+  });
+
+  it("collapses an empty launcher label to the accessible blob-only orb", () => {
+    render(
+      <VendoProvider client={client}>
+        <VendoOverlay launcher={{ label: "" }} />
+      </VendoProvider>,
+    );
+    const orb = screen.getByRole("button", { name: "AI agent" });
+    expect(orb.hasAttribute("data-vendo-launcher-bare")).toBe(true);
   });
 });
