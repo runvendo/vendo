@@ -56,6 +56,24 @@ export {
   type BuiltBoxEnv,
   type InferenceResolver,
 } from "./box-env.js";
+// execution-v2 Lane D — fn: resolution over the box door and the BYO
+// schedule-execution engine (vendo.json schedules → authenticated tick).
+export {
+  createFnCaller,
+  type FnCaller,
+  type FnCallerConfig,
+} from "./fn.js";
+export {
+  createScheduleEngine,
+  SCHEDULE_STATE_COLLECTION,
+  type AppScheduleState,
+  type AppScheduleStatus,
+  type ScheduleEngine,
+  type ScheduleEngineConfig,
+  type ScheduleFire,
+  type ScheduleState,
+  type ScheduleTickReport,
+} from "./schedules.js";
 // execution-v2 Lane B — the machine lifecycle over the canonical seam.
 // (MachineSandboxAdapter has collapsed to a deprecated alias of SandboxAdapter
 // now that destroy-by-ref lives on the seam itself.)

@@ -92,7 +92,10 @@ Schedule `POST /api/vendo/tick` from the platform cron. Send:
 Authorization: Bearer <secret>
 ```
 
-The `/tick` endpoint is outside cookie auth and requires this bearer secret.
+The `/tick` endpoint is outside cookie auth and requires this bearer secret
+(`VENDO_TICK_SECRET`). One tick drives both schedulers: automation schedules
+and graduated apps' `vendo.json` machine schedules (each due target fires as
+`POST /fn/<name>` on the app's machine, exactly once per cron window).
 Use hosted Postgres for serverless deployment. Local PGlite files are suitable
 for a durable single-process host, not an ephemeral filesystem.
 
