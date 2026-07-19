@@ -277,7 +277,11 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
       // than riding the warm entry. (A running provider machine's network
       // policy cannot be re-tightened in place — the refusal plus the idle
       // sleep is the containment; the next wake re-applies the policy.)
-      if (config.allowedDomains !== undefined) await config.allowedDomains(app);
+      // Evaluated over the authoritative row, not the caller's copy — a
+      // grant committed since the caller loaded its document must count.
+      if (config.allowedDomains !== undefined) {
+        await config.allowedDomains(await currentDocument(app.id));
+      }
       armIdleTimer(app.id);
       return entry.wrapped;
     }
