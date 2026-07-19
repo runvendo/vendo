@@ -13,15 +13,11 @@ const DEFAULT_IDLE_MS = 5 * 60_000;
 const CAS_ATTEMPTS = 3;
 
 /**
- * The canonical execution-v2 seam plus the orchestrator-locked destroy-by-ref
- * amendment: releasing a SLEEPING machine's provider resources needs no resume.
- * Lane A lands the method on SandboxAdapter itself (with the e2b
- * implementation); when it does, this extension collapses to SandboxAdapter.
+ * Collapsed onto the seam: destroy-by-ref now lives on SandboxAdapter itself
+ * (Lane A amendment). Kept as an alias so Lane B-era call sites read the same.
+ * @deprecated Use SandboxAdapter directly.
  */
-export interface MachineSandboxAdapter extends SandboxAdapter {
-  /** Release a sleeping machine's snapshot and every provider resource behind it. */
-  destroy(snapshotRef: string): Promise<void>;
-}
+export type MachineSandboxAdapter = SandboxAdapter;
 
 /** Injectable timer seam so idle auto-sleep is testable without real time. */
 export interface LifecycleClock {
