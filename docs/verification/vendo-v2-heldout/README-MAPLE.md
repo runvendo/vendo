@@ -20,3 +20,23 @@ Timing = submit → app visible. "Creating…" indicator was shown on every subm
 | M13 | show my crypto portfolio [impossible] | FAIL | ~18s | Honesty handled RIGHT: zero fabricated crypto; real accounts shown with explicit note "Crypto-specific data is not available on this host. Showing connected financial accounts and spending insights instead." (note is at the very bottom — weak placement, title still says "Crypto Portfolio"). FAIL on format bar only: recurring raw-cents donut center "TOTAL $475,841.00". Class: raw-cents formatting. |
 | M14 | a net worth trend chart with account breakdown | PASS | ~15s | Clean: working trend chart + per-account sparklines, breakdown table with formatted balances, and Net Worth "$54,907.15" CORRECT (first app to render net worth right). No raw cents, no NaN, no raw braces. Minor filler "Linked Accounts 4" tile. |
 | M15 | a form to add a new payee and send them $50 | FAIL | ~18s | Action fires approval-gated (apr_f9b8c20c…) with $50 payload — send-to-new-person IS a real host tool (POST /api/transfers takes recipient_name). FAIL: "Account to Send From" selector (Checking/Savings/Credit/Invest) is an INVENTED control — transferMoney has no source param and always debits checking (verified in src/server/transfers.ts); picking Savings would silently debit checking, and the fine print ("will debit from your checking account") contradicts the selector. Classes: invented-prop/control on money action (known class), contradictory copy. |
+
+## Summary
+
+**2/15 PASS** (M3, M14). One attempt per prompt, zero tuning, production boot, port 3000.
+
+### Fails grouped by class (13 fails, several multi-class)
+
+1. **Money-scale (raw cents / cents-as-dollars) — 7 apps (M1, M2, M4, M5, M7, M8, M13).** THE dominant class. Stat tiles and donut centers render the cents integer as dollars ("$642000", "TOTAL $475,841.00" for $4,758.41). M8 shows a nastier NEW variant: the cents value nicely comma-formatted ("$5,490,715.00") — passes a "looks formatted" glance while 100x wrong. Table cells are almost always correctly formatted; the bug lives in derived/aggregate stat slots.
+2. **Core-ask-not-computed — 3 apps (M6, M9, M10).** The headline question is dodged: no progress-toward-$10k (filler account-count tiles), no sort/limit on "largest 10", REMAINING column all "—" though budget & spent are on screen.
+3. **Invented/mislabeled control or binding — 3 apps (M6, M11, M15).** Checking balance labeled "Your savings balance"; "credit card payee" select bound to the generic payee list (no credit target); "Account to Send From" selector with NO backing tool param (always debits checking) on an irreversible money action. This is the prior gate's "invented prop contracts" class surviving into v2 UI controls.
+4. **Silent-empty-despite-data — 1 app (M4).** "No transactions found" for merchant grouping while the host demonstrably has the data.
+5. **Error blob — 1 app (M10).** "TOTAL $NaN" on screen; donut arcs absent.
+6. **Impossible-prompt honesty — 1 of 3 failed it (M12).** Fabricated 14-currency FX converter with invented rates + fig-leaf footer. M3 (no cancel tool) and M13 (no crypto) handled honesty correctly — M13 still failed on class 1.
+7. **Cosmetic leaks:** HTML entity "&amp;" in a card title (M1), raw "2026-04" month labels (M2, M7).
+
+### Timing (submit → app visible)
+p50 = **15s**; range 12–75s (M12 outlier: 75s with blank panel until render). "Creating…" indicator shown on every submit.
+
+### GIF note
+gif_creator recorded and reported successful export twice (M8, M11), but the downloaded file never materialized on disk (browser download sandbox); per task fallback, before/after screenshot pairs are committed instead: M08-quick-transfer{,-2-approval}.png and M11-pay-credit-card-2-before/-3-approval.png. Both show click → "Action is waiting for approval (apr_…)".
