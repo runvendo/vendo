@@ -96,6 +96,7 @@ describe.skipIf(!LIVE)("e2bSandbox live", () => {
     const adapter = makeAdapter();
     let created: SandboxMachine | undefined;
     let resumed: SandboxMachine | undefined;
+    let ref: string | undefined;
     try {
       created = await adapter.create({ env: { PORT: "8080", HELLO: "hello from the box" } });
       log(`create → machine ${created.id}`);
@@ -107,7 +108,7 @@ describe.skipIf(!LIVE)("e2bSandbox live", () => {
       expect(first.status).toBe(200);
       expect(decoder.decode(first.body)).toBe("hello from the box");
 
-      const ref = await created.snapshot();
+      ref = await created.snapshot();
       log(`snapshot → ${ref.slice(0, 24)}… (${ref.length} chars)`);
       await created.stop();
       log("stop → machine paused (snapshot-preserving)");
@@ -124,7 +125,8 @@ describe.skipIf(!LIVE)("e2bSandbox live", () => {
         created?.destroy().catch(() => undefined),
         resumed?.destroy().catch(() => undefined),
       ]);
-      log("destroy → both machines gone");
+      if (ref !== undefined) await adapter.destroy(ref).catch(() => undefined);
+      log("destroy → both machines and the snapshot ref gone");
       console.log(`[lane-a-gate] TRANSCRIPT\n${transcript.join("\n")}`);
     }
   }, LIVE_TIMEOUT_MS);

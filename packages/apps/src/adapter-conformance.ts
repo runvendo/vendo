@@ -70,10 +70,18 @@ export const sandboxAdapterConformance = (
       spawned.push(machine);
       return machine;
     };
+    const mintedRefs: Array<{ adapter: SandboxAdapter; ref: string }> = [];
+    const mint = async (adapter: SandboxAdapter, machine: SandboxMachine): Promise<string> => {
+      const ref = await machine.snapshot();
+      mintedRefs.push({ adapter, ref });
+      return ref;
+    };
 
-    // The gate's own rule: destroy every sandbox we create, even on failure.
+    // The gate's own rule: destroy every sandbox we create — and every
+    // snapshot we mint — even on failure.
     afterEach(async () => {
       await Promise.all(spawned.splice(0).map((machine) => machine.destroy().catch(() => undefined)));
+      await Promise.all(mintedRefs.splice(0).map(({ adapter, ref }) => adapter.destroy(ref).catch(() => undefined)));
     }, TEST_TIMEOUT_MS);
 
     it("creates, serves on $PORT, snapshots, sleeps, resumes, and destroys", async () => {
@@ -90,7 +98,7 @@ export const sandboxAdapterConformance = (
       expect(echoed.status).toBe(200);
       expect(decoder.decode(echoed.body)).toBe("round-trip");
 
-      const snapshotRef = await created.snapshot();
+      const snapshotRef = await mint(adapter, created);
       // The seam requires provider-prefixed refs (e.g. "e2b:…"); the prefix
       // spelling beyond that is the provider's business.
       expect(snapshotRef).toMatch(/^[A-Za-z][A-Za-z0-9_-]*:.+/);
@@ -120,7 +128,7 @@ export const sandboxAdapterConformance = (
       await harness.bootstrap(source);
       const envRequest = { method: "GET", path: "/conformance/env/CONFORMANCE_VALUE" };
       await requestEventually(source, envRequest);
-      const ref = await source.snapshot();
+      const ref = await mint(adapter, source);
 
       // The source keeps serving after the snapshot...
       await expect(requestEventually(source, envRequest))
@@ -178,6 +186,20 @@ export const sandboxAdapterConformance = (
     it("rejects a snapshot ref it did not issue", async () => {
       const adapter = await harness.makeAdapter();
       await expect(adapter.resume("bogus:not-a-real-ref")).rejects.toThrow();
+      await expect(adapter.destroy("bogus:not-a-real-ref")).rejects.toThrow();
+    }, TEST_TIMEOUT_MS);
+
+    it("destroys a sleeping machine by ref, without resuming it", async () => {
+      const adapter = await harness.makeAdapter();
+      const machine = track(await adapter.create({
+        env: { PORT: "8080", CONFORMANCE_VALUE: "sleeping" },
+      }));
+      const ref = await machine.snapshot();
+      await machine.stop();
+
+      await adapter.destroy(ref);
+      await adapter.destroy(ref); // destroying already-destroyed state is a no-op
+      await expect(adapter.resume(ref)).rejects.toThrow();
     }, TEST_TIMEOUT_MS);
   });
 };

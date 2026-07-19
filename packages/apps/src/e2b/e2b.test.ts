@@ -31,12 +31,22 @@ const sdk = vi.hoisted(() => {
         ? resumedSandbox
         : sandbox),
     connect: vi.fn(async () => sandbox),
+    staticKill: vi.fn(async () => true),
+    deleteSnapshot: vi.fn(async () => true),
   };
 });
 
+class FakeNotFoundError extends Error {}
+
 vi.mock("e2b", () => ({
   ALL_TRAFFIC: "0.0.0.0/0",
-  Sandbox: { create: sdk.create, connect: sdk.connect },
+  NotFoundError: FakeNotFoundError,
+  Sandbox: {
+    create: sdk.create,
+    connect: sdk.connect,
+    kill: sdk.staticKill,
+    deleteSnapshot: sdk.deleteSnapshot,
+  },
 }));
 
 beforeEach(() => {
@@ -51,6 +61,7 @@ describe("e2bSandbox", () => {
   const v2SnapshotRef = `e2b:v2:${Buffer.from(JSON.stringify({
     version: 2,
     snapshotId: "snapshot_789",
+    sourceSandboxId: "sandbox_123",
     port: 8080,
   })).toString("base64url")}`;
 
@@ -158,6 +169,34 @@ describe("e2bSandbox", () => {
       timeoutMs: 9_000,
       network: { allowOut: [], denyOut: ["0.0.0.0/0"] },
     });
+  });
+
+  it("destroys a sleeping machine by ref: reaps the paused source and deletes the snapshot", async () => {
+    const adapter = e2bSandbox({ apiKey: "key_test" });
+    await adapter.destroy(v2SnapshotRef);
+    expect(sdk.staticKill).toHaveBeenCalledWith("sandbox_123", { apiKey: "key_test" });
+    expect(sdk.deleteSnapshot).toHaveBeenCalledWith("snapshot_789", { apiKey: "key_test" });
+    expect(sdk.create).not.toHaveBeenCalled(); // never resumes to destroy
+
+    // idempotent: already-deleted provider state is a no-op…
+    sdk.deleteSnapshot.mockRejectedValueOnce(new FakeNotFoundError("gone"));
+    sdk.staticKill.mockRejectedValueOnce(new Error("already dead"));
+    await expect(adapter.destroy(v2SnapshotRef)).resolves.toBeUndefined();
+    // …but a real provider failure still surfaces
+    sdk.deleteSnapshot.mockRejectedValueOnce(new Error("e2b is down"));
+    await expect(adapter.destroy(v2SnapshotRef)).rejects.toThrow("e2b is down");
+    await expect(adapter.destroy("modal:im_wrong")).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("destroys a retired v1 ref by snapshot deletion alone (no recorded source sandbox)", async () => {
+    const legacyRef = `e2b:v1:${Buffer.from(JSON.stringify({
+      version: 1,
+      snapshotId: "snapshot_789",
+      port: 8080,
+    })).toString("base64url")}`;
+    await e2bSandbox({ apiKey: "key_test" }).destroy(legacyRef);
+    expect(sdk.staticKill).not.toHaveBeenCalled();
+    expect(sdk.deleteSnapshot).toHaveBeenCalledWith("snapshot_789", { apiKey: "key_test" });
   });
 
   it("keeps adapter-private exec, files, url, and v1 create extras for the compat bridge", async () => {

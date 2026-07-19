@@ -350,5 +350,12 @@ export const fakeSandbox = (options: { app?: MachineApp } = {}): FakeSandboxAdap
         snapshot.app,
       );
     },
+    async destroy(snapshotRef: string): Promise<void> {
+      if (!snapshotRef.startsWith("fake:")) {
+        throw new Error(`not a fake sandbox snapshot ref: ${snapshotRef}`);
+      }
+      // Idempotent by seam contract: deleting absent state is a no-op.
+      providerSnapshots.delete(snapshotRef);
+    },
   };
 };

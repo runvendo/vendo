@@ -1,10 +1,11 @@
 /**
  * TEMPORARY execution-v2 transition surface — DELETE WITH THE LAST v1 PATH.
  *
- * Ownership (locked by the execution-v2 orchestrator at Wave 1 Lane A merge):
- * - Lane B deletes the machine.ts / runtime.ts / interchange.ts v1 usages.
- * - Lane C (Wave 5 for cloudSandbox) deletes the packages/vendo usages.
- * - Whichever of Lanes B/C merges LAST also deletes this file.
+ * Ownership (execution-v2 orchestrator ruling, amended post-#393): the v1
+ * MachineSessions paths and these compat types are removed by the
+ * orchestrator-owned Wave-1.5 cleanup task after all three Wave-1 lanes
+ * merge — Lanes B and C do NOT delete them. (cloudSandbox's usage in
+ * packages/vendo is ported by the Wave 5 Cloud lane.)
  *
  * These are the archived v1 seam shapes (docs/archive/contracts/06-apps.md
  * §3-4) kept only so the dying v1 code paths keep compiling and behaving
