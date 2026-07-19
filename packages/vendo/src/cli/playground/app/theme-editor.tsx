@@ -141,11 +141,13 @@ export function ThemeEditor({ theme, onChange }: { theme: VendoTheme; onChange(n
   return (
     <>
       <style>{EDITOR_CSS}</style>
-      <button type="button" className="te-pill" data-shown={!open} onClick={() => setOpen(true)} aria-label="Open theme editor">
+      {/* inert (not just aria-hidden/pointer-events) so the hidden half is
+          also removed from the Tab order (cubic P3 on PR #391). */}
+      <button type="button" className="te-pill" data-shown={!open} inert={open} onClick={() => setOpen(true)} aria-label="Open theme editor">
         <span className="te-dot" />
         Theme
       </button>
-      <div className="te-card" data-closed={!open} role="dialog" aria-label="Theme editor" aria-hidden={!open}>
+      <div className="te-card" data-closed={!open} role="dialog" aria-label="Theme editor" inert={!open}>
         <div className="te-grab" />
         <div className="te-head">
           <div>
