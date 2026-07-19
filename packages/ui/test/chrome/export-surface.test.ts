@@ -70,6 +70,12 @@ const VALUE_EXPORTS = [
   "defaultVendoGreeting",
   "hasSeen",
   "markSeen",
+  // ui-lane-cards picks — the mobile approval sheet (1-H) and the morph's
+  // Activity-dock seam (4-C): the anchor attribute a host stamps and the
+  // bump event its badge listens for.
+  "ApprovalSheet",
+  "ACTIVITY_ANCHOR_ATTRIBUTE",
+  "ACTIVITY_BUMP_EVENT",
 ] as const;
 
 const TYPE_EXPORTS = [

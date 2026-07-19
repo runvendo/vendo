@@ -2,6 +2,7 @@
 export { ActivityPanel } from "./activity-panel.js";
 export { VendoActivities, type VendoActivitiesProps } from "./vendo-activities.js";
 export { ApprovalCard, type ApprovalCardProps } from "./approval-card.js";
+export { ApprovalSheet } from "./approval-sheet.js";
 export { AutomationsPanel } from "./automations-panel.js";
 export { ConnectCard, type ConnectCardProps } from "./connect-card.js";
 export { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
@@ -40,6 +41,6 @@ export { ConnectDockButton, ConnectTray } from "./connect-dock.js";
 export { FluidThinking } from "./fluid-thinking.js";
 export { previewArgs, toolTitle } from "./humanize.js";
 export { Markdown } from "./markdown.js";
-export { MorphToast, type MorphToastProps } from "./morph-toast.js";
+export { ACTIVITY_ANCHOR_ATTRIBUTE, ACTIVITY_BUMP_EVENT, MorphToast, type MorphToastProps } from "./morph-toast.js";
 export { PrefillScopeContext, registerPrefillConsumer } from "./overlay-registry.js";
 export { LONG_TEXT_CAP, truncateHead } from "./truncate.js";

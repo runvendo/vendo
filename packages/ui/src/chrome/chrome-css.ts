@@ -1940,4 +1940,75 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-tr-forming td { padding: var(--vendo-density-table-padding); }
 .fl-tr-forming .fl-skeleton-bar { display: block; height: 9px; width: 62%; border-radius: 5px; }
 
+/* ================= ui-lane-cards converged picks ================= */
+/* 1-A · consequence-first approval. Distinct from .fl-approval-consequence
+   (the amber voice-register line) — this is the neutral leading sentence. */
+.fl-approval-consequence-line { margin: 10px 0 0; font: 500 13px/1.5 var(--vendo-font);
+  color: var(--vendo-fg); }
+.fl-approval-consequence-line strong { font-weight: 650; }
+.fl-approval-details { margin-top: 2px; }
+.fl-approval-details summary { color: var(--vendo-fg-muted); font-size: 11px; cursor: pointer;
+  margin-top: 8px; }
+.fl-approval-details summary:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
+.fl-approval-details[open] summary { margin-bottom: 2px; }
+
+/* 1-H · mobile approval sheet. A consent surface: the scrim does NOT dismiss
+   and Esc is a no-op (enforced in approval-sheet.tsx) — deciding is the only
+   way out. Sits above the takeover panel and the palette scrim. */
+.fl-approval-sheet-layer { position: fixed; inset: 0; z-index: 2147483004; }
+.fl-approval-sheet-scrim { position: absolute; inset: 0;
+  background: color-mix(in srgb, var(--vendo-fg) 26%, transparent); }
+.fl-approval-sheet { position: absolute; left: 0; right: 0; bottom: 0;
+  border-radius: 18px 18px 0 0; background: var(--vendo-surface);
+  box-shadow: 0 -12px 40px color-mix(in srgb, var(--vendo-fg) 22%, transparent);
+  padding: 8px 16px calc(16px + env(safe-area-inset-bottom, 0px) + var(--fl-kb-inset, 0px));
+  max-height: 86vh; overflow-y: auto; overscroll-behavior: contain; outline: none; }
+.fl-approval-sheet-grabber { width: 36px; height: 4px; border-radius: 999px;
+  background: var(--vendo-border-strong); margin: 4px auto 12px; }
+/* Inside the sheet the card sheds its own chrome — the sheet IS the surface. */
+.fl-approval-sheet .fl-approval { max-width: none; min-width: 0; width: 100%;
+  border: 0; box-shadow: none; background: none; padding: 0;
+  -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* …except the ceremony register: a destructive ask keeps its warn wash. */
+.fl-approval-sheet .fl-approval--ceremony { border: 1px solid var(--vendo-warn-border);
+  background: var(--vendo-warn-bg); padding: 12px; border-radius: var(--vendo-radius); }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-approval-sheet { animation: fl-sheet-up .42s cubic-bezier(.22,1.1,.36,1) both; }
+  .fl-approval-sheet-scrim { animation: fl-fade-in .3s ease both; }
+}
+@keyframes fl-sheet-up { from { transform: translateY(100%); } to { transform: none; } }
+/* 1-H · thumb-zone decision buttons (same query as the ENG-228 block). */
+@media (max-width: 767px), (pointer: coarse) {
+  .fl-approval-actions .fl-btn { padding: 14px 15px; font-size: 14px; flex: 1; }
+}
+
+/* 3-A′ · real brand marks in the tray rows (monogram = fallback). */
+.fl-picker-ic img { width: 15px; height: 15px; object-fit: contain; display: block; }
+
+/* 4-C · the morph docks into the Activity anchor; the anchor answers. */
+@media (prefers-reduced-motion: no-preference) {
+  .fl-tab--bump { animation: fl-tab-bump .55s cubic-bezier(.22,1,.36,1); }
+}
+@keyframes fl-tab-bump {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.1); color: var(--vendo-fg); }
+  100% { transform: scale(1); }
+}
+
+/* 7-A · automation liveness: countdown + the run dot traveling the arrow. */
+.fl-auto-nextrun { font-variant-numeric: tabular-nums; }
+.fl-automation .fl-auto-arrow { position: relative; }
+.fl-auto-runner { position: absolute; top: -4.5px; left: 0; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--vendo-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vendo-accent) 18%, transparent); }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-auto-runner { animation: fl-auto-travel 1.5s ease-in-out infinite; }
+}
+@keyframes fl-auto-travel { from { left: -2%; } to { left: 98%; } }
+@media (prefers-reduced-motion: reduce) {
+  /* The runner rests mid-arrow; the sheet arrives without motion. */
+  .fl-auto-runner { animation: none; left: 46%; }
+  .fl-approval-sheet { animation: fl-fade-in .18s ease both; }
+}
+
 `;
