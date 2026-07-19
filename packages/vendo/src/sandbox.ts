@@ -1,9 +1,52 @@
 import { VendoError, type VendoErrorCode } from "@vendoai/core";
-// execution-v2 transition: cloudSandbox still speaks the archived v1 seam
-// end-to-end (console wire included); the Wave 5 Cloud lane ports it to the
-// v2 seam. Until then it rides the deprecated compat surface.
-import type { V1SandboxAdapter, V1SandboxMachine } from "@vendoai/apps";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
+
+// ─── Wave-5 port pending ────────────────────────────────────────────────────
+// execution-v2: cloudSandbox still speaks the archived v1 seam end-to-end
+// (console wire included); the Wave 5 Cloud lane ports it (and the console's
+// /api/v1/sandboxes routes) to the v2 seam. The shared sandbox-v1-compat
+// bridge died in Wave 1.5, so the MINIMAL v1 shapes live here, file-local and
+// deprecated — nothing else may import them, and they are deleted with the
+// Wave 5 port. Until then this adapter satisfies no runtime slot: the umbrella
+// wires machine execution only for a v2 adapter (see selectSandbox/server.ts).
+
+/** @deprecated archived v1 create spec (docs/archive/contracts/06-apps.md §3) — Wave 5 deletes this. */
+interface V1SandboxCreateSpec {
+  env: Record<string, string>;
+  files?: Record<string, Uint8Array | string>;
+  egress?: string[];
+}
+
+/** @deprecated archived v1 machine shape — Wave 5 deletes this. */
+interface V1SandboxMachine {
+  id: string;
+  request(req: {
+    method: string;
+    path: string;
+    headers?: Record<string, string>;
+    body?: Uint8Array | string;
+  }): Promise<{ status: number; headers: Record<string, string>; body: Uint8Array }>;
+  exec(
+    cmd: string,
+    opts?: { cwd?: string; timeoutMs?: number },
+  ): Promise<{ code: number; stdout: string; stderr: string }>;
+  files: {
+    read(path: string): Promise<Uint8Array>;
+    write(path: string, bytes: Uint8Array | string): Promise<void>;
+    list(dir: string): Promise<string[]>;
+  };
+  snapshot(): Promise<string>;
+  screenshot?(): Promise<Uint8Array>;
+  url?(port: number): Promise<string>;
+  stop(): Promise<void>;
+}
+
+/** @deprecated archived v1 adapter seam — Wave 5 deletes this. */
+export interface V1CloudSandboxAdapter {
+  create(spec: V1SandboxCreateSpec): Promise<V1SandboxMachine>;
+  resume(snapshotRef: string): Promise<V1SandboxMachine>;
+}
+// ─── end Wave-5 port pending ────────────────────────────────────────────────
 
 /** The console mounts the managed-sandbox surface here
  * (apps/console/app/api/v1/sandboxes/*). */
@@ -97,7 +140,7 @@ async function raiseCloudError(response: Response): Promise<never> {
  * Cloned from cloudConnections' shape: behavior comes ONLY from constructor
  * arguments (adapter rule — see selectSandbox in server.ts); the adapter
  * never reads the environment. */
-export function cloudSandbox(options: CloudSandboxOptions): V1SandboxAdapter {
+export function cloudSandbox(options: CloudSandboxOptions): V1CloudSandboxAdapter {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchImpl = options.fetch ?? globalThis.fetch;

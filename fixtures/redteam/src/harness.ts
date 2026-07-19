@@ -315,24 +315,3 @@ export async function exportAndTamper(
   next["app.json"] = new TextEncoder().encode(JSON.stringify(mutated));
   return zipSync(next, { level: 6 });
 }
-
-/** The run-token capability proxy exposed for run-token abuse tests.
- *
- * NOTE ON COUPLING: the token HMAC secret is minted inside createApps() and is
- * never handed out — createAppsProxy, createAppData, mintRunToken and
- * verifyRunToken are all internal to @vendoai/apps and unreachable through its
- * exports map (only ".", "./e2b", "./modal" are exported). So we cannot mint a
- * VALID token from here, and there is no `mintToken`/token-secret to expose.
- * What we CAN reach is the REAL proxy the runtime already built (apps.proxy),
- * which is the higher-value adversarial surface: red-team suites drive forged,
- * malformed, expired, and cross-app bearer tokens at `handler` and assert the
- * proxy rejects them (401/404) without leaking state or executing tools.
- * Positive-path (valid-token) minting is covered block-local in
- * packages/apps/src/run-token.ts + proxy tests. */
-export interface RedTeamProxy {
-  handler(request: Request): Promise<Response>;
-}
-
-export function mkProxy(stack: Stack): RedTeamProxy {
-  return { handler: (request) => stack.apps.proxy.handler(request) };
-}

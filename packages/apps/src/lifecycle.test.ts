@@ -136,39 +136,23 @@ describe("apps lifecycle", () => {
     expect(await runtime.history(fork.id).list()).toEqual([]);
   });
 
-  it("clones a server snapshot for a fork and drops server refs without an adapter", async () => {
-    const sandbox = fakeSandbox();
-    const seed = await sandbox.create({ env: {}, files: { "/app/value.txt": "source" } });
-    const server = await seed.snapshot();
+  it("a fork never carries a machine or a retired v1 server ref", async () => {
     const store = memoryStore();
-    const runtime = createApps({ store, guard: guardFixture(), tools, sandbox, catalog: [] });
+    const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [] });
+    // A persisted pre-v2 document may still carry a retired v1 server ref.
     const source: AppDocument = {
       format: VENDO_APP_FORMAT,
       id: "app_server_source",
       name: "Server source",
-      server,
+      server: "fake:snap_legacy",
     };
     await seedAppRow(store, source, "user_ada");
 
     const fork = await runtime.fork(source.id, context("user_ada"));
 
-    expect(fork.server).toMatch(/^fake:snap_/);
-    expect(fork.server).not.toBe(source.server);
-    await runtime.call(fork.id, "fn:touch", {}, context("user_ada"));
-    const forkMachine = [...sandbox.machines.values()].at(-1)!;
-    await forkMachine.files.write("/app/value.txt", "fork");
-    const sourceMachine = await sandbox.resume(source.server!);
-    expect(new TextDecoder().decode(await sourceMachine.files.read("/app/value.txt"))).toBe("source");
-
-    const noAdapterStore = memoryStore();
-    await seedAppRow(noAdapterStore, source, "user_ada");
-    const withoutAdapter = createApps({
-      store: noAdapterStore,
-      guard: guardFixture(),
-      tools,
-      catalog: [],
-    });
-    await expect(withoutAdapter.fork(source.id, context("user_ada"))).resolves.not.toHaveProperty("server");
+    expect(fork).not.toHaveProperty("server");
+    expect(fork).not.toHaveProperty("machine");
+    expect(fork.forkedFrom).toBe(source.id);
   });
 
   it("emits one scoped lifecycle audit event for each lifecycle mutation", async () => {
@@ -294,59 +278,6 @@ describe("apps lifecycle", () => {
     } finally {
       uuid.mockRestore();
     }
-  });
-
-  it("evicts the post-edit machine when undo restores an older server", async () => {
-    const base = fakeSandbox({
-      app: () => ({ status: 200, headers: { "content-type": "application/json" }, body: '{"result":"v1"}' }),
-    });
-    const seed = await base.create({ env: {}, files: { "/app/server.js": "v1" } });
-    const server = await seed.snapshot();
-    const sandbox: SandboxAdapter = {
-      create: (spec) => base.create(spec),
-      async resume(ref) {
-        const machine = await base.resume(ref);
-        const write = machine.files.write;
-        machine.files.write = async (path, bytes) => {
-          await write(path, bytes);
-          const text = typeof bytes === "string" ? bytes : new TextDecoder().decode(bytes);
-          if (path === "/app/server.js" && text.includes("v2")) {
-            machine.setApp(() => ({
-              status: 200,
-              headers: { "content-type": "application/json" },
-              body: '{"result":"v2"}',
-            }));
-          }
-        };
-        return machine;
-      },
-    };
-    const store = memoryStore();
-    const app: AppDocument = { format: VENDO_APP_FORMAT, id: "app_undo_server", name: "Undo server", server };
-    await seedAppRow(store, app, "user_ada");
-    const runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools,
-      sandbox,
-      catalog: [],
-      model: scriptedLanguageModel(JSON.stringify({
-        rung: 2,
-        files: [{ path: "/app/server.js", content: "v2" }],
-      })),
-    });
-
-    await runtime.edit(app.id, "Change the server", context("user_ada"));
-    await expect(runtime.call(app.id, "fn:version", {}, context("user_ada"))).resolves.toEqual({
-      status: "ok",
-      output: "v2",
-    });
-    await runtime.history(app.id).undo();
-
-    await expect(runtime.call(app.id, "fn:version", {}, context("user_ada"))).resolves.toEqual({
-      status: "ok",
-      output: "v1",
-    });
   });
 
   it("rejects undo on empty history", async () => {

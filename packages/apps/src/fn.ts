@@ -119,21 +119,21 @@ export const createFnCaller = (config: FnCallerConfig): FnCaller => {
   return {
     callFn,
     wrap: (inner) => ({
-      async call(app, ref, args, ctx, authorization) {
+      async call(app, ref, args, ctx) {
         if (ref.startsWith("fn:") && app.machine !== undefined) {
           return callFn(app, ref.slice(3), args, ctx);
         }
-        return inner.call(app, ref, args, ctx, authorization);
+        return inner.call(app, ref, args, ctx);
       },
-      async callFn(app, name, args, ctx, authorization) {
+      async callFn(app, name, args, ctx) {
         if (app.machine !== undefined) return callFn(app, name, args, ctx);
-        return inner.callFn(app, name, args, ctx, authorization);
+        return inner.callFn(app, name, args, ctx);
       },
-      async callQuery(app, ref, args, ctx, authorization) {
+      async callQuery(app, ref, args, ctx) {
         if (ref.startsWith("fn:") && app.machine !== undefined) {
           return { outcome: await callFn(app, ref.slice(3), args, ctx), uiEnvelope: false };
         }
-        return inner.callQuery(app, ref, args, ctx, authorization);
+        return inner.callQuery(app, ref, args, ctx);
       },
     }),
   };

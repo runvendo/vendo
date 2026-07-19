@@ -106,9 +106,10 @@ export const devRoutes: RouteEntry[] = [
 ];
 
 /** The machine-facing surfaces: webhook ingress, the authenticated scheduler
-    tick, the dev-only sync impact probe, and the apps proxy mount. All match
-    on the RAW path (prefix or exact) ahead of any segment decoding, exactly
-    like the old chain. */
+    tick, and the dev-only sync impact probe. All match on the RAW path
+    (prefix or exact) ahead of any segment decoding, exactly like the old
+    chain. (The v1 run-token apps proxy mount died with execution-v2 Wave 1.5;
+    the box callback surface at /box/ is its replacement.) */
 export const systemRoutes: RouteEntry[] = [
   prefixRoute("POST", "/webhooks/", async ({ request, deps }) => {
     return await deps.automations.webhook(request);
@@ -148,12 +149,6 @@ export const systemRoutes: RouteEntry[] = [
       throw new VendoError("validation", "tools must be an array of at most 200 strings");
     }
     return json({ impact: await computeImpact(deps.store, tools) });
-  }),
-  prefixRoute("*", "/proxy/", async ({ request, path, deps }) => {
-    const proxyPath = path.slice("/proxy".length);
-    const proxyUrl = new URL(request.url);
-    proxyUrl.pathname = proxyPath;
-    return await deps.apps.proxy.handler(new Request(proxyUrl, request));
   }),
 ];
 

@@ -5,14 +5,12 @@ import {
   type AppDocument,
   type Json,
   type RunContext,
-  type StoreAdapter,
   type TreeQueryV2,
   type TreeV2,
   type UIPayload,
 } from "@vendoai/core";
 import type { AppCaller } from "./call.js";
 import type { InClientVenueState } from "./inclient.js";
-import type { MachineSessions } from "./machine.js";
 import { detectPinDrift, pinComponentName, type PinBaseline, type PinDrift } from "./pins.js";
 import type { OpenSurface } from "./runtime.js";
 
@@ -84,12 +82,6 @@ const setQueryData = (data: Record<string, Json>, pointer: string, value: Json):
   return assignChild(target, final, structuredClone(value));
 };
 
-const bytesToDataUri = (bytes: Uint8Array, contentType = "image/png"): string => {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return `data:${contentType};base64,${globalThis.btoa(binary)}`;
-};
-
 /** A v2 query's result lives at `"/" + name` by definition (v2 spec §2). */
 const queryPointer = (query: TreeQueryV2): string => `/${query.name}`;
 
@@ -112,16 +104,11 @@ export interface ProgressiveQueryResolver {
  * retain the same deterministic last-write behavior as the old serial loop.
  */
 export const createProgressiveQueryResolver = (
-  machines: MachineSessions,
   caller: AppCaller,
   app: AppDocument,
   ctx: RunContext,
   onData?: (data: Record<string, Json>) => void,
-  authorization?: Awaited<ReturnType<MachineSessions["mintRun"]>>,
 ): ProgressiveQueryResolver => {
-  const authorizationPromise = authorization === undefined
-    ? machines.mintRun(app, ctx)
-    : Promise.resolve(authorization);
   const states: QueryState[] = [];
   const pending = new Set<Promise<void>>();
   let baseData: Record<string, Json> = {};
@@ -143,8 +130,8 @@ export const createProgressiveQueryResolver = (
     const key = JSON.stringify(query);
     const state: QueryState = { key, query: structuredClone(query), settled: false };
     states[index] = state;
-    const task = authorizationPromise
-      .then((run) => caller.callQuery(app, query.tool, query.input ?? {}, ctx, run))
+    const task = caller
+      .callQuery(app, query.tool, query.input ?? {}, ctx)
       .then((result) => {
         if (states[index] !== state) return;
         state.result = result;
@@ -174,9 +161,6 @@ export const createProgressiveQueryResolver = (
     },
     async complete() {
       while (pending.size > 0) await Promise.all([...pending]);
-      const fatal = states.find((state) =>
-        state.error instanceof VendoError && state.error.code === "sandbox-unavailable")?.error;
-      if (fatal !== undefined) throw fatal;
       recompute(false);
       return structuredClone(resolvedData);
     },
@@ -218,33 +202,17 @@ const attachPinFurnishings = (
   }
 };
 
-/** 06-apps §§1–2 — construct the invisible-graduation open surface. */
+/** 06-apps §§1–2 — construct the open surface. */
 export const createAppOpener = (
-  machines: MachineSessions,
   caller: AppCaller,
-  store: StoreAdapter,
   pinBaselines: readonly PinBaseline[] = [],
   inClientVenue?: (app: AppDocument) => Promise<InClientVenueState | undefined>,
 ): ((app: AppDocument, ctx: RunContext) => Promise<OpenSurface>) => async (app, ctx) => {
-  const authorization = await machines.mintRun(app, ctx);
   if (app.ui === "http") {
-    if (!machines.available()) throw new VendoError("sandbox-unavailable", "sandbox execution is unavailable");
-    const machine = machines.peek(app.id);
-    if (machine !== undefined) {
-      if (machine.url === undefined) {
-        throw new VendoError("sandbox-unavailable", "adapter cannot serve http apps");
-      }
-      try {
-        return { kind: "http", url: await machine.url(8080) };
-      } catch {
-        throw new VendoError("sandbox-unavailable", "adapter cannot serve http apps");
-      }
-    }
-    machines.wake(app, ctx, authorization);
-    const cover = await store.blobs(`app:${app.id}`).get("cover.png");
-    return cover === null
-      ? { kind: "resuming" }
-      : { kind: "resuming", cover: bytesToDataUri(cover.bytes, cover.contentType) };
+    // execution-v2 — the v1 rung-4 served surface is deleted; the layer-3
+    // "machine serves the app" surface (experimental, host-gated) arrives in a
+    // later wave over the machine lifecycle.
+    throw new VendoError("not-implemented", "served (http) app surfaces return with execution-v2 layer 3");
   }
 
   if (app.tree === undefined) {
@@ -266,7 +234,7 @@ export const createAppOpener = (
       (tree as TreeV2 & { pinDrift: PinDrift[] }).pinDrift = pinDrift;
     }
     attachPinFurnishings(tree, app, pinBaselines);
-    const queries = createProgressiveQueryResolver(machines, caller, app, ctx, undefined, authorization);
+    const queries = createProgressiveQueryResolver(caller, app, ctx);
     queries.update(tree);
     tree.data = await queries.complete();
     const payload = {

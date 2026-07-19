@@ -9,16 +9,11 @@ import {
   type StoreAdapter,
 } from "@vendoai/core";
 import { unzipSync, zipSync, type Zippable } from "fflate";
-import type { MachineSessions } from "./machine.js";
 import { appRecordInput } from "./persistence.js";
 import { assertPinsExportable, type PinBaseline } from "./pins.js";
-import type { SandboxAdapter } from "./sandbox.js";
-import { toV1SandboxAdapter, type V1SandboxAdapter, type V1SandboxMachine } from "./sandbox-v1-compat.js";
-import { FETCH_SHIM_PATH } from "./scaffold/fetch-shim.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-const APP_ROOT = "/app";
 const ARCHIVE_MAX_ENTRIES = 4_096;
 const ARCHIVE_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
 const ARCHIVE_MAX_ENTRY_BYTES = 16 * 1024 * 1024;
@@ -39,18 +34,6 @@ const APP_DOCUMENT_FIELDS = [
   "pins",
   "forkedFrom",
 ] as const;
-const EXCLUDED_DIRECTORY_NAMES = new Set([
-  ".cache",
-  ".git",
-  ".next",
-  ".turbo",
-  ".vite",
-  "cache",
-  "coverage",
-  "data",
-  "node_modules",
-  "tmp",
-]);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -83,9 +66,10 @@ const allowedDocumentFields = (
   return copy;
 };
 
-// execution-v2 — a machine ref never crosses the interchange boundary: export
-// never writes one, and import strips one a document tries to smuggle in (an
-// imported app re-graduates on its own).
+// execution-v2 — interchange is document-only, a copy boundary: a machine (or
+// retired v1 server) ref never crosses it. Export never writes one, import
+// strips one a document tries to smuggle in, and the box's disk is scratch by
+// the data rule — an imported app re-graduates on its own.
 const withoutExportIdentity = (app: AppDocument): Omit<AppDocument, "id"> =>
   allowedDocumentFields(app, new Set(["id", "server", "machine", "forkedFrom"])) as Omit<AppDocument, "id">;
 
@@ -95,71 +79,10 @@ const withFreshIdentity = (input: unknown, id: AppId): Record<string, unknown> =
   return copy;
 };
 
-const normalizedMachinePath = (dir: string, entry: string): string => {
-  if (entry.startsWith("/")) return entry.replace(/\/+$/, "");
-  if (entry.startsWith("app/")) return `/${entry.replace(/\/+$/, "")}`;
-  return `${dir.replace(/\/+$/, "")}/${entry.replace(/^\/+|\/+$/g, "")}`;
-};
-
-const excludedMachinePath = (path: string): boolean => {
-  // ENG-290 M4 — the egress fetch shim is runtime infrastructure, not app
-  // code: every machine gets the current version at create/edit time, so a
-  // copy never carries it (and an archive can never smuggle a stale one out).
-  if (path === FETCH_SHIM_PATH) return true;
-  const relative = path.slice(`${APP_ROOT}/`.length);
-  const segments = relative.split("/");
-  if (segments.some((segment) => EXCLUDED_DIRECTORY_NAMES.has(segment))) return true;
-  const name = segments.at(-1) ?? "";
-  return name === ".DS_Store"
-    || name === ".env"
-    || name.startsWith(".env.")
-    || name.endsWith(".log");
-};
-
-const collectMachineFiles = async (
-  machine: V1SandboxMachine,
-): Promise<Record<string, Uint8Array>> => {
-  const files: Record<string, Uint8Array> = {};
-  const visitedDirectories = new Set<string>();
-
-  const walk = async (dir: string): Promise<void> => {
-    if (visitedDirectories.has(dir)) return;
-    visitedDirectories.add(dir);
-    const entries = await machine.files.list(dir);
-    for (const entry of entries) {
-      const path = normalizedMachinePath(dir, entry);
-      if (path !== APP_ROOT && !path.startsWith(`${APP_ROOT}/`)) continue;
-      if (path === APP_ROOT || excludedMachinePath(path)) continue;
-      try {
-        const bytes = await machine.files.read(path);
-        files[`app/${path.slice(`${APP_ROOT}/`.length)}`] = bytes;
-      } catch {
-        await walk(path);
-      }
-    }
-  };
-
-  await walk(APP_ROOT);
-  return files;
-};
-
 interface ParsedArchive {
   document: unknown;
-  files: Record<string, Uint8Array>;
   hasAppDirectory: boolean;
 }
-
-const archiveMachinePath = (entry: string): string => {
-  const relative = entry.slice("app/".length);
-  if (relative === "" || relative.includes("\\")) {
-    throw validationError(`invalid app archive path: ${entry}`);
-  }
-  const segments = relative.split("/");
-  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
-    throw validationError(`invalid app archive path: ${entry}`);
-  }
-  return `${APP_ROOT}/${segments.join("/")}`;
-};
 
 const parseArchive = (source: Uint8Array): ParsedArchive => {
   try {
@@ -186,18 +109,9 @@ const parseArchive = (source: Uint8Array): ParsedArchive => {
     }
     const appJson = archive["app.json"];
     if (appJson === undefined) throw validationError("invalid .vendoapp: app.json is missing");
-    const files: Record<string, Uint8Array> = {};
-    let hasAppDirectory = false;
-    for (const [entry, bytes] of Object.entries(archive)) {
-      if (!entry.startsWith("app/")) continue;
-      hasAppDirectory = true;
-      if (entry.endsWith("/")) continue;
-      files[archiveMachinePath(entry)] = bytes.slice();
-    }
     return {
       document: JSON.parse(decoder.decode(appJson)) as unknown,
-      files,
-      hasAppDirectory,
+      hasAppDirectory: Object.keys(archive).some((entry) => entry.startsWith("app/")),
     };
   } catch (error) {
     if (error instanceof VendoError) throw error;
@@ -211,10 +125,6 @@ const parseArchive = (source: Uint8Array): ParsedArchive => {
 export interface AppInterchangeDependencies {
   store: StoreAdapter;
   guard: Guard;
-  sandbox?: SandboxAdapter | V1SandboxAdapter;
-  /** Shared machine cache — import provisions its rebuilt snapshot through here
-   * so it inherits the create/edit §4.2 run environment (ENG-347). */
-  machines: MachineSessions;
   pinBaselines?: readonly PinBaseline[];
   requireOwned(appId: AppId, subject: string): Promise<AppDocument>;
 }
@@ -256,24 +166,8 @@ export const createAppInterchange = (
       const archive: Zippable = {
         "app.json": encoder.encode(JSON.stringify(withoutExportIdentity(app))),
       };
-
-      if (app.server !== undefined) {
-        if (dependencies.sandbox === undefined) {
-          throw new VendoError("sandbox-unavailable", "app snapshot cannot be exported without a sandbox adapter");
-        }
-        const machine = await toV1SandboxAdapter(dependencies.sandbox).resume(app.server);
-        try {
-          const files = await collectMachineFiles(machine);
-          Object.assign(archive, Object.keys(files).length === 0
-            ? { "app/": new Uint8Array() }
-            : files);
-        } finally {
-          await machine.stop().catch(() => undefined);
-        }
-      }
-
       const bytes = zipSync(archive, { level: 6 });
-      await report("export", app.id, ctx, { includedAppDirectory: app.server !== undefined });
+      await report("export", app.id, ctx);
       return bytes;
     },
 
@@ -282,32 +176,16 @@ export const createAppInterchange = (
       const appId = `app_${globalThis.crypto.randomUUID()}`;
       const parsed = source instanceof Uint8Array
         ? parseArchive(source)
-        : { document: source, files: {}, hasAppDirectory: false };
-      const candidate = withFreshIdentity(parsed.document, appId);
-      let imported: AppDocument;
-      let appDirectory: Json = "absent";
-
-      if (parsed.hasAppDirectory && dependencies.machines.available()) {
-        // A temporary non-authoritative ref lets core validate fn: surfaces before
-        // provisioning; the validated shape carries the secrets/egress the run
-        // environment needs (ENG-347).
-        const pending = validateImportedDocument({ ...candidate, server: "import:pending" });
-        // ENG-347 — provision through the shared machine cache so the rebuilt
-        // snapshot bakes in the SAME §4.2 run environment (proxy URL + run token
-        // + secret handles) the create/edit path injects; provisioning also
-        // writes the CURRENT runtime-owned fetch shim last.
-        const server = await dependencies.machines.provisionImport(pending, ctx, parsed.files);
-        imported = validateImportedDocument({ ...candidate, server });
-        appDirectory = "rebuilt";
-      } else {
-        imported = validateImportedDocument(candidate);
-        if (parsed.hasAppDirectory) appDirectory = "contained-without-sandbox";
-      }
-
+        : { document: source, hasAppDirectory: false };
+      const imported = validateImportedDocument(withFreshIdentity(parsed.document, appId));
       await dependencies.store.records("vendo_apps").put(
         appRecordInput(imported, ctx.principal.subject),
       );
-      await report("import", imported.id, ctx, { appDirectory });
+      // An app/ directory in the archive is machine scratch from an older
+      // export; it is ignored — the imported copy re-graduates on its own.
+      await report("import", imported.id, ctx, {
+        appDirectory: parsed.hasAppDirectory ? "ignored" : "absent",
+      });
       return structuredClone(imported);
     },
   };

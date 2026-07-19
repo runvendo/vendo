@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { sandboxAdapterConformance, type SandboxConformanceHarness } from "../adapter-conformance.js";
-import type { V1SandboxMachine } from "../sandbox-v1-compat.js";
 import type { SandboxMachine } from "../sandbox.js";
 import { e2bSandbox } from "./index.js";
 
@@ -56,7 +55,10 @@ http.createServer((request, response) => {
 /** Install and start the conformance app through the ADAPTER-PRIVATE surface
     (in production the in-box agent owns the inside of the box). */
 const bootstrap = async (machine: SandboxMachine): Promise<void> => {
-  const box = machine as unknown as V1SandboxMachine;
+  const box = machine as unknown as {
+    exec(cmd: string, opts?: { cwd?: string; timeoutMs?: number }): Promise<{ code: number; stdout: string; stderr: string }>;
+    files: { write(path: string, bytes: Uint8Array | string): Promise<void> };
+  };
   await box.files.write("/app/server.js", CONFORMANCE_SERVER_SOURCE);
   const started = await box.exec(
     [
