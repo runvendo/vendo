@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { createPortal, flushSync } from "react-dom";
 import { jsx, jsxs, Fragment } from "react/jsx-runtime";
 import { transform } from "sucrase";
+import type { JailModule } from "@vendoai/core";
 
 declare global {
   // These globals are visible only inside the opaque-origin jail realm.
@@ -47,8 +48,12 @@ const post = (message: Record<string, unknown>) => parent.postMessage({ vendo: t
  * verified escape (a blob-ESM `import("https://…")` initiating a request
  * despite `script-src`) is closed at the loader itself, and `script-src`
  * carries no `blob:`/host sources as the second wall.
+ *
+ * Keyed by `JailModule` (the shared allowlist in @vendoai/core) so this table
+ * and the engine's island import gate cannot drift: a missing or extra key is
+ * a compile error.
  */
-const JAIL_MODULES: Record<string, unknown> = {
+const JAIL_MODULES: Record<JailModule, unknown> = {
   react: { ...React, default: React },
   "react-dom": { createPortal, flushSync, default: { createPortal, flushSync } },
   "react-dom/client": { createRoot, default: { createRoot } },
@@ -60,7 +65,7 @@ function jailRequire(specifier: string): unknown {
   if (!Object.prototype.hasOwnProperty.call(JAIL_MODULES, specifier)) {
     throw new Error(`module "${specifier}" is not available in the Vendo jail`);
   }
-  return JAIL_MODULES[specifier];
+  return (JAIL_MODULES as Record<string, unknown>)[specifier];
 }
 
 interface VirtualSource {
