@@ -1,4 +1,6 @@
 import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LanguageModel } from "ai";
@@ -247,14 +249,18 @@ describe("vendo init (zero-question)", () => {
     expect(sink.logs.join("\n")).not.toContain("Auth:");
   });
 
-  it("interactive decline keeps the composition anonymous and names the exact line to add later", async () => {
+  it("interactive decline + picking none keeps the composition anonymous and names the exact line to add later", async () => {
     const root = await fixture();
     await writeFile(join(root, "package.json"), JSON.stringify({
       name: "host",
       dependencies: { next: "16.0.0", "@clerk/nextjs": "6.0.0" },
     }));
     const sink = output();
-    expect(await run(root, sink, { interactive: true, confirmAuth: async () => false })).toBe(0);
+    expect(await run(root, sink, {
+      interactive: true,
+      confirmAuth: async () => false,
+      selectAuth: async () => "none",
+    })).toBe(0);
     const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
     expect(route).not.toContain("auth:");
     expect(route).toContain("principal: async () => null");
@@ -266,13 +272,14 @@ describe("vendo init (zero-question)", () => {
     expect(advisories[0]).toContain(join("app", "api", "vendo", "[...vendo]", "route.ts"));
   });
 
-  it("--yes never asks even in an interactive run: the detected default is accepted", async () => {
+  it("--yes never asks even in an interactive run: the detected default is accepted, no picker either", async () => {
     const root = await fixture();
     await writeFile(join(root, "package.json"), JSON.stringify({
       name: "host",
       dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
     }));
     let askedCount = 0;
+    let pickedCount = 0;
     expect(await run(root, output(), {
       yes: true,
       interactive: true,
@@ -280,10 +287,111 @@ describe("vendo init (zero-question)", () => {
         askedCount += 1;
         return false;
       },
+      selectAuth: async () => {
+        pickedCount += 1;
+        return "clerk";
+      },
     })).toBe(0);
     expect(askedCount).toBe(0);
+    expect(pickedCount).toBe(0);
     const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
     expect(route).toContain("auth: authJs(),");
+  });
+
+  it("decline → picker → clerk wires clerk() and hints the missing SDK install", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
+    }));
+    const askedSelects: Array<{ question: string; options: Array<{ value: string; label: string; hint?: string }> }> = [];
+    const sink = output();
+    expect(await run(root, sink, {
+      interactive: true,
+      confirmAuth: async () => false,
+      selectAuth: async (question, options) => {
+        askedSelects.push({ question, options });
+        return "clerk";
+      },
+    })).toBe(0);
+
+    // One picker: none first (the default), detected authJs named, jwt last.
+    expect(askedSelects).toHaveLength(1);
+    expect(askedSelects[0]!.question).toBe("Which auth should Vendo wire?");
+    const values = askedSelects[0]!.options.map((option) => option.value);
+    expect(values[0]).toBe("none");
+    expect(values[values.length - 1]).toBe("jwt");
+    expect(askedSelects[0]!.options[1]).toMatchObject({ value: "authJs", hint: "detected next-auth" });
+
+    // clerk() is wired exactly like a detection-accept, with an honest
+    // lead-in: it was picked, not detected.
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain("auth: clerk(),");
+    expect(route).toContain("// Selected Clerk — clerk() fills the identity seams");
+    expect(route).not.toContain("Detected");
+    expect(route).toContain("docs/act-as-presets.md");
+    expect(route).not.toContain("principal");
+    // …plus one install hint, since @clerk/backend is not in package.json.
+    const advisories = sink.logs.filter((line) => line.includes("Auth:"));
+    expect(advisories).toHaveLength(1);
+    expect(advisories[0]).toContain("clerk() wired");
+    expect(advisories[0]).toContain("npm install @clerk/backend");
+  });
+
+  it("decline → picker → jwt wires nothing and prints the jwt recipe", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
+    }));
+    const sink = output();
+    expect(await run(root, sink, {
+      interactive: true,
+      confirmAuth: async () => false,
+      selectAuth: async () => "jwt",
+    })).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).not.toContain("auth:");
+    expect(route).toContain("principal: async () => null");
+    const advisories = sink.logs.filter((line) => line.includes("Auth:"));
+    expect(advisories).toHaveLength(1);
+    expect(advisories[0]).toContain("auth: jwt({ secret:");
+    expect(advisories[0]).toContain("docs/act-as-presets.md");
+  });
+
+  it("ambiguous detection offers the picker with detected families first (after none)", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "@supabase/supabase-js": "2.0.0", "@auth0/nextjs-auth0": "3.0.0" },
+    }));
+    const askedSelects: Array<Array<{ value: string; hint?: string }>> = [];
+    let confirmCount = 0;
+    const sink = output();
+    expect(await run(root, sink, {
+      interactive: true,
+      confirmAuth: async () => {
+        confirmCount += 1;
+        return true;
+      },
+      selectAuth: async (_question, options) => {
+        askedSelects.push(options);
+        return "supabase";
+      },
+    })).toBe(0);
+
+    // Ambiguity never gets the single-family confirm — straight to the picker.
+    expect(confirmCount).toBe(0);
+    expect(askedSelects).toHaveLength(1);
+    expect(askedSelects[0]!.map((option) => option.value))
+      .toEqual(["none", "supabase", "auth0", "authJs", "clerk", "jwt"]);
+    expect(askedSelects[0]![1]).toMatchObject({ hint: "detected @supabase/supabase-js" });
+    expect(askedSelects[0]![2]).toMatchObject({ hint: "detected @auth0/nextjs-auth0" });
+
+    // The detected pick wires like a detection-accept: no advisory at all.
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain("auth: supabase(),");
+    expect(sink.logs.join("\n")).not.toContain("Auth:");
   });
 
   it("stays anonymous and advises once when several auth providers are present", async () => {
@@ -335,14 +443,76 @@ describe("vendo init (zero-question)", () => {
     const logs = sink.logs.join("\n");
     expect(logs).toContain("Model: explicit ANTHROPIC_API_KEY (anthropic)");
     expect(logs).not.toContain("No model key yet");
+    // The credential story leads the run — before the AI passes and the summary.
+    expect(logs.indexOf("Model: explicit")).toBeLessThan(logs.indexOf("Wired ("));
   });
 
   it("points a keyless host at .env.local and `vendo cloud login`", async () => {
     const root = await fixture();
     const sink = output();
     expect(await run(root, sink)).toBe(0);
-    expect(sink.logs.join("\n")).toContain("No model key yet");
-    expect(sink.logs.join("\n")).toContain("vendo cloud login");
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("No model key yet");
+    expect(logs).toContain("vendo cloud login");
+    // The Cloud offer runs FIRST (before theme capture and the wired summary);
+    // the end of the run keeps only the short one-line reminder.
+    expect(logs.indexOf("Vendo Cloud")).toBeLessThan(logs.indexOf("Theme:"));
+    expect(logs.indexOf("Vendo Cloud")).toBeLessThan(logs.indexOf("Wired ("));
+    expect(logs.indexOf("No model key yet")).toBeGreaterThan(logs.indexOf("Wired ("));
+    expect(logs.match(/Vendo Cloud \(optional\)/g)).toHaveLength(1);
+  });
+
+  it("picks up a starter key minted mid-run: the same run's theme model pass sees it", async () => {
+    const root = await fixture();
+    const sink = output();
+    const key = `vnd_${"a".repeat(40)}`;
+    // A canned Cloud model gateway: records what credential the theme model
+    // pass presents, answers 401 so the pass degrades gracefully. VENDO_CLOUD_URL
+    // in the run's env points devModel's gateway at it — no real network.
+    const seen: Array<string | undefined> = [];
+    const gateway = createServer((request, response) => {
+      seen.push(request.headers["x-api-key"] as string | undefined);
+      response.statusCode = 401;
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "starter key rejected by test gateway" } }));
+    });
+    await new Promise<void>((resolveListen) => gateway.listen(0, "127.0.0.1", resolveListen));
+    const port = (gateway.address() as AddressInfo).port;
+
+    try {
+      // No themeModel seam here on purpose: the DEFAULT resolver must observe
+      // the key the cloud step just wrote to .env.local.
+      expect(await runInit({
+        targetDir: root,
+        output: sink.output,
+        env: { VENDO_CLOUD_URL: `http://127.0.0.1:${port}` },
+        telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+        cloud: {
+          cloudProbe: async () => ({ present: false, ok: false, unlocks: ["a starter allowance"] as readonly string[] }),
+          confirm: async () => true,
+          promptEmail: async () => "dev@example.com",
+          login: async () => 0,
+          mint: async () => key,
+        },
+      })).toBe(0);
+    } finally {
+      await new Promise<void>((resolveClose) => gateway.close(() => resolveClose()));
+    }
+
+    // The mint landed in .env.local…
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${key}`);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Wrote VENDO_API_KEY to .env.local");
+    // …the SAME run's theme model pass presented the minted key to the model
+    // gateway (same-run pickup, end to end)…
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen[0]).toBe(key);
+    // …and degraded with the gateway's real answer, never "no key".
+    const warnings = sink.errors.join("\n");
+    expect(warnings).toContain("theme model pass unavailable:");
+    expect(warnings).not.toContain("Vendo found no model key");
+    // A key now exists — the end-of-run reminder is suppressed.
+    expect(logs).not.toContain("No model key yet");
   });
 
   it("preserves an existing env example while appending the trusted Vendo origin once", async () => {
@@ -566,6 +736,74 @@ describe("vendo init (zero-question)", () => {
     expect(sink.errors.join("\n")).toContain('unknown theme slot "sparkle"');
     // The contrast-derived accentText follows the replaced accent.
     expect(theme.colors.accentText).toBe("#000000");
+  });
+
+  it("the cloud step honors the run's env: a supplied VENDO_API_KEY skips the offer", async () => {
+    const root = await fixture();
+    const sink = output();
+    let offered = 0;
+    // No cloudProbe stub: the default probe must see the RUN's env (not
+    // process.env) and report the programmatically supplied key.
+    expect(await runInit({
+      targetDir: root,
+      output: sink.output,
+      env: { VENDO_API_KEY: `vnd_${"b".repeat(40)}` },
+      themeModel: themeModelOf({ slots: {} }),
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+      cloud: {
+        confirm: async () => {
+          offered += 1;
+          return false;
+        },
+      },
+    })).toBe(0);
+    expect(offered).toBe(0);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Vendo Cloud: VENDO_API_KEY present and well-formed.");
+    expect(logs).not.toContain("No model key yet");
+  });
+
+  it("a starter key from a PRIOR run's .env.local counts: no offer, and the theme pass sees it", async () => {
+    const root = await fixture();
+    const key = `vnd_${"d".repeat(40)}`;
+    await writeFile(join(root, ".env.local"), `VENDO_API_KEY=${key}\n`);
+    // The canned gateway again: proves the DEFAULT theme resolver received
+    // the .env.local key without any mint happening this run.
+    const seen: Array<string | undefined> = [];
+    const gateway = createServer((request, response) => {
+      seen.push(request.headers["x-api-key"] as string | undefined);
+      response.statusCode = 401;
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "rejected by test gateway" } }));
+    });
+    await new Promise<void>((resolveListen) => gateway.listen(0, "127.0.0.1", resolveListen));
+    const port = (gateway.address() as AddressInfo).port;
+
+    const sink = output();
+    let offered = 0;
+    try {
+      expect(await runInit({
+        targetDir: root,
+        output: sink.output,
+        env: { VENDO_CLOUD_URL: `http://127.0.0.1:${port}` },
+        telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+        cloud: {
+          confirm: async () => {
+            offered += 1;
+            return false;
+          },
+        },
+      })).toBe(0);
+    } finally {
+      await new Promise<void>((resolveClose) => gateway.close(() => resolveClose()));
+    }
+
+    expect(offered).toBe(0);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Vendo Cloud: VENDO_API_KEY present and well-formed.");
+    expect(logs).not.toContain("No model key yet");
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen[0]).toBe(key);
   });
 
   it("emits a read-only agent plan with code changes, extraction, and paste steps", async () => {

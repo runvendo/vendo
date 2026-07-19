@@ -19,9 +19,10 @@ import { runCloudStep, type CloudStepOptions } from "./cloud-init.js";
 import { APPLY_COMMAND, composeDelegatedInstructions, EXTRACTION_DRAFT_JSON_SCHEMA } from "./extract/delegate.js";
 import { askYesNo, runAiExtraction, type AiExtractionOptions } from "./extract/extraction.js";
 import type { StaticTool } from "./extract/stages.js";
-import { resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
+import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
-import { resolveRefineModel } from "./refine.js";
+import { createPrettyOutput, plainSelect, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
+import { devModel, NO_CREDENTIAL_MESSAGE } from "../dev-creds/model.js";
 import { contrastingText } from "./theme/color.js";
 import {
   extractTheme as extractThemeSlots,
@@ -136,6 +137,10 @@ export interface InitOptions {
       runs when exactly one auth family is detected and init is creating the
       composition. Mirrors the AI-polish consent's confirm shape. */
   confirmAuth?: (question: string, defaultYes: boolean) => Promise<boolean>;
+  /** Test seam: the auth picker shown when the confirm is declined or when
+      several families are detected. Receives the choice list (value/label/
+      hint) and resolves the chosen value. */
+  selectAuth?: (question: string, options: SelectOption[]) => Promise<string>;
   /** Test seam: interactivity override for the auth confirm (default: TTY),
       mirroring runAiExtraction's `interactive`. */
   interactive?: boolean;
@@ -146,14 +151,20 @@ export interface InitOptions {
 }
 
 /**
- * Theme extraction's model comes from the SAME seam `vendo refine` uses (the
- * host's key + installed provider) — no theme-specific configuration exists.
- * Vendo-hosted inference will swap in behind this same seam later; total
- * failure is handled by extractTheme's graceful degradation to reported
- * defaults.
+ * Theme extraction's model rides the devModel ladder — the same env resolution
+ * the runtime composes when `model` is omitted: provider env keys, then
+ * VENDO_API_KEY via the Cloud gateway. That is what makes the same-run pickup
+ * real: a starter key minted moments earlier in this init powers this pass.
+ * No credential throws the honest instructions instead of constructing a model
+ * that can only fail later; total failure is handled by extractTheme's
+ * graceful degradation to reported defaults.
  */
-function themeModelResolver(root: string): () => Promise<LanguageModel> {
-  return () => resolveRefineModel({ root, env: process.env });
+function themeModelResolver(root: string, env: Record<string, string | undefined>): () => Promise<LanguageModel> {
+  return async () => {
+    const credential = await resolveDevCredential({ env });
+    if (credential.rung === "none") throw new Error(NO_CREDENTIAL_MESSAGE);
+    return devModel({ root, env });
+  };
 }
 
 const THEME_PALETTE_SLOTS = ["accent", "background", "surface", "text", "mutedText", "border", "danger"] as const;
@@ -217,6 +228,9 @@ type AuthPresetName = "authJs" | "clerk" | "supabase" | "auth0";
 interface AuthMatch {
   preset: AuthPresetName;
   dependency: string;
+  /** How the family was chosen: detection (default) cites the dependency it
+      found; a picker pick says so honestly — nothing was detected. */
+  source?: "picked";
 }
 
 interface AuthDetection {
@@ -274,33 +288,107 @@ function declinedAuthAdvisory(match: AuthMatch, compositionPath: string): string
 }
 
 type ConfirmAuth = (question: string, defaultYes: boolean) => Promise<boolean>;
+type SelectAuth = (question: string, options: SelectOption[]) => Promise<string>;
 
-/** Detect + confirm: in interactive runs, exactly one detected family gets
-    ONE calm [Y/n] question before anything is written (Enter accepts).
-    Without a confirm (non-interactive, --yes, --agent) silent detection
-    stands — a default has to exist. None/ambiguous never ask: nothing is
-    certain enough to confirm, the advisory line covers it. */
+/** Picker labels + the runtime package each zero-arg preset lazy-loads (the
+    install hint when the picked family's SDK is absent; the preset's own
+    lazy-load error already guards runtime). */
+const AUTH_FAMILY_INFO: Record<AuthPresetName, { name: string; label: string; runtime: string }> = {
+  authJs: { name: "Auth.js", label: "authJs() — Auth.js / next-auth", runtime: "@auth/core" },
+  clerk: { name: "Clerk", label: "clerk() — Clerk", runtime: "@clerk/backend" },
+  supabase: { name: "Supabase Auth", label: "supabase() — Supabase Auth", runtime: "jose" },
+  auth0: { name: "Auth0", label: "auth0() — Auth0", runtime: "jose" },
+};
+
+/** The auth picker (decline or ambiguity): none — stay anonymous — is first
+    and the default; detected families come next (named), then the remaining
+    zero-arg presets, then jwt (recipe only — it cannot be zero-arg). */
+async function pickScaffoldAuth(
+  detection: AuthDetection,
+  compositionPath: string,
+  selectAuth: SelectAuth,
+): Promise<{ wired: AuthMatch | null; advice: string | null }> {
+  const detected = detection.matches;
+  const undetected = (Object.keys(AUTH_FAMILY_INFO) as AuthPresetName[])
+    .filter((preset) => !detected.some((match) => match.preset === preset));
+  const picked = await selectAuth("Which auth should Vendo wire?", [
+    { value: "none", label: "none — stay anonymous, add it later" },
+    ...detected.map((match) => ({
+      value: match.preset,
+      label: AUTH_FAMILY_INFO[match.preset].label,
+      hint: `detected ${match.dependency}`,
+    })),
+    ...undetected.map((preset) => ({ value: preset, label: AUTH_FAMILY_INFO[preset].label })),
+    { value: "jwt", label: "jwt — my own JWT scheme (prints the recipe)" },
+  ]);
+  if (picked === "jwt") {
+    // jwt() cannot be zero-arg — nothing is wired; the recipe is the answer.
+    return {
+      wired: null,
+      advice: `Auth: your own JWT — add one line in ${compositionPath}: auth: jwt({ secret: <your signing secret> }). ` +
+        "Options and the claim mapping: docs/act-as-presets.md.",
+    };
+  }
+  const detectedMatch = detected.find((match) => match.preset === picked);
+  if (detectedMatch !== undefined) return { wired: detectedMatch, advice: null };
+  if (picked in AUTH_FAMILY_INFO) {
+    // Picked without its SDK in package.json: wire it exactly like a
+    // detection-accept, plus one install hint.
+    const preset = picked as AuthPresetName;
+    const info = AUTH_FAMILY_INFO[preset];
+    return {
+      wired: { preset, dependency: info.runtime, source: "picked" },
+      advice: `Auth: ${preset}() wired — ${info.runtime} is not in package.json yet; install it ` +
+        `(npm install ${info.runtime}) before the first authenticated run (the preset fails loud until then).`,
+    };
+  }
+  // none (or anything unrecognized): today's decline behavior.
+  return detection.wired !== null
+    ? { wired: null, advice: declinedAuthAdvisory(detection.wired, compositionPath) }
+    : { wired: null, advice: authAdvisory(detection, compositionPath) };
+}
+
+/** Detect + confirm + choose: in interactive runs, exactly one detected
+    family gets ONE calm [Y/n] question before anything is written (Enter
+    accepts and wires it — no picker on the happy path). A decline — and the
+    ambiguous case (several families) — offers the picker instead of settling
+    for anonymous. Without the seams (non-interactive, --yes, --agent) silent
+    detection stands and none/ambiguous keep the advisory line — a default
+    has to exist. None-detected never asks: there is nothing to choose from
+    that the advisory doesn't already name. */
 async function resolveScaffoldAuth(
   root: string,
   compositionPath: string,
   confirmAuth: ConfirmAuth | undefined,
+  selectAuth: SelectAuth | undefined,
 ): Promise<{ wired: AuthMatch | null; advice: string | null }> {
   const detection = await detectAuthPreset(root);
-  if (detection.wired === null || confirmAuth === undefined) {
+  if (confirmAuth === undefined) {
     return { wired: detection.wired, advice: authAdvisory(detection, compositionPath) };
   }
-  const accepted = await confirmAuth(
-    `Detected ${detection.wired.dependency} — wire auth: ${detection.wired.preset}()?`,
-    true,
-  );
-  return accepted
-    ? { wired: detection.wired, advice: null }
-    : { wired: null, advice: declinedAuthAdvisory(detection.wired, compositionPath) };
+  if (detection.wired !== null) {
+    const accepted = await confirmAuth(
+      `Detected ${detection.wired.dependency} — wire auth: ${detection.wired.preset}()?`,
+      true,
+    );
+    if (accepted) return { wired: detection.wired, advice: null };
+    if (selectAuth !== undefined) return pickScaffoldAuth(detection, compositionPath, selectAuth);
+    return { wired: null, advice: declinedAuthAdvisory(detection.wired, compositionPath) };
+  }
+  if (detection.matches.length > 1 && selectAuth !== undefined) {
+    return pickScaffoldAuth(detection, compositionPath, selectAuth);
+  }
+  return { wired: null, advice: authAdvisory(detection, compositionPath) };
 }
 
-/** The wired preset line plus its escape-hatch comment. */
+/** The wired preset line plus its escape-hatch comment. The lead-in stays
+    honest about how the preset got here: detection cites the found
+    dependency, a picker pick says "Selected". */
 function authConfigLines(auth: AuthMatch): string {
-  return `  // Detected ${auth.dependency} — ${auth.preset}() fills the identity seams\n` +
+  const origin = auth.source === "picked"
+    ? `Selected ${AUTH_FAMILY_INFO[auth.preset].name}`
+    : `Detected ${auth.dependency}`;
+  return `  // ${origin} — ${auth.preset}() fills the identity seams\n` +
     `  // (request→user, actAs, door OAuth); options and the per-seam escape\n` +
     `  // hatch: docs/act-as-presets.md.\n` +
     `  auth: ${auth.preset}(),\n`;
@@ -734,7 +822,7 @@ async function vendoRootPasteLines(root: string, framework: HostFramework, withR
   return [`In ${layout}:`, ...importLines.map((line) => `  ${line}`), `  … then wrap: ${wrap}`];
 }
 
-async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth): Promise<{ plan: InitPlan; changes: PlannedChange[]; manualSteps: string[]; authAdvice: string | null }> {
+async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, selectAuth?: SelectAuth): Promise<{ plan: InitPlan; changes: PlannedChange[]; manualSteps: string[]; authAdvice: string | null }> {
   const root = resolve(options.targetDir);
   const framework = await detectFramework(root);
   const changes: PlannedChange[] = [];
@@ -770,7 +858,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth): Promi
         // Detect + confirm happens only here — fresh composition creation —
         // so a re-run before the manual <VendoRoot> paste neither asks nor
         // re-fires the advisory after "Already wired".
-        const auth = await resolveScaffoldAuth(root, path, confirmAuth);
+        const auth = await resolveScaffoldAuth(root, path, confirmAuth, selectAuth);
         const serverAfter = expressServerSource(typescript, auth.wired);
         changes.push({ absolute: server, path, before: null, after: serverAfter, diff: diff(path, null, serverAfter) });
         authAdvice = auth.advice;
@@ -811,7 +899,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth): Promi
     if (routeBefore === null) {
       const path = relative(root, route);
       // Detect + confirm happens only on fresh composition creation.
-      const auth = await resolveScaffoldAuth(root, path, confirmAuth);
+      const auth = await resolveScaffoldAuth(root, path, confirmAuth, selectAuth);
       const registrySpecifier = relative(dirname(route), join(dirname(app), "vendo", "registry")).split(sep).join("/");
       const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired, registrySpecifier });
       changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
@@ -885,6 +973,14 @@ async function writeIfMissing(path: string, content: string, force: boolean): Pr
   await writeText(path, content);
 }
 
+/** The value of one NAME=value line in .env.local (the cloud step's upsert
+    target) — the same-run pickup reads the freshly minted key back from disk. */
+async function envLocalValue(root: string, name: string): Promise<string | null> {
+  const raw = await readOptional(join(root, ".env.local"));
+  const match = raw?.match(new RegExp(`^\\s*${name}\\s*=\\s*(.+?)\\s*$`, "m"));
+  return match?.[1] ?? null;
+}
+
 async function ensureVendoEnvExample(root: string): Promise<void> {
   const path = join(root, ".env.example");
   const current = await readOptional(path);
@@ -903,7 +999,15 @@ function telemetryFor(options: InitOptions, output: Output): Telemetry {
 
 /** 09-vendo §5 — idempotent, zero-question setup. */
 export async function runInit(options: InitOptions): Promise<number> {
-  const output = options.output ?? consoleOutput;
+  // The clack-style renderer rides the SAME Output seam: it restyles the
+  // exact plain messages below, and is selected only for a human terminal
+  // (TTY, no NO_COLOR/CI, never --agent, never an injected output). Every
+  // other run — tests, pipes, CI — keeps the plain strings byte-for-byte.
+  const pretty: PrettyOutput | null =
+    options.output === undefined && options.agent !== true && usePrettyOutput()
+      ? createPrettyOutput()
+      : null;
+  const output = options.output ?? pretty ?? consoleOutput;
   const started = Date.now();
   const root = resolve(options.targetDir);
   const env = options.env ?? process.env;
@@ -941,12 +1045,56 @@ export async function runInit(options: InitOptions): Promise<number> {
   const interactive = options.interactive ?? (Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
   const confirmAuth = options.yes === true || !interactive
     ? undefined
-    : (options.confirmAuth ?? askYesNo);
-  const { plan, changes, manualSteps, authAdvice } = await buildPlan(options, confirmAuth);
+    : (options.confirmAuth ?? (pretty === null ? askYesNo : pretty.confirm));
+  const selectAuth = options.yes === true || !interactive
+    ? undefined
+    : (options.selectAuth ?? (pretty === null ? plainSelect : pretty.select));
+  const { plan, changes, manualSteps, authAdvice } = await buildPlan(options, confirmAuth, selectAuth);
   const telemetry = telemetryFor(options, output);
   await telemetry.track("init_started", { framework: plan.framework });
 
   try {
+    // Key first (product order fix): the model-credential story — env keys,
+    // else the Vendo Cloud offer — runs BEFORE the AI-assisted passes, so a
+    // starter key minted here powers the SAME run's theme model pass and AI
+    // polish instead of those passes reporting "no model" while the offer
+    // waits below them. --yes / non-interactive semantics are unchanged.
+    // Dev keys may live in .env.local rather than this process's env — a
+    // PRIOR run's minted starter key, or hand-added provider keys. Merge
+    // them into the env every credential consumer reads (credential ladder,
+    // cloud step, theme model pass, AI polish); an explicit env value
+    // always wins over .env.local.
+    let effectiveEnv = env;
+    for (const name of [...ENV_KEY_VARS.map((entry) => entry.envVar), "VENDO_API_KEY"]) {
+      if ((env[name] ?? "").trim() !== "") continue;
+      const stored = await envLocalValue(root, name);
+      if (stored !== null) effectiveEnv = { ...effectiveEnv, [name]: stored };
+    }
+    let credential = await (options.resolveCredential ?? resolveDevCredential)({ env: effectiveEnv });
+    if (credential.rung === "env-key") {
+      output.log(`Model: ${describeDevCredential(credential)} — production uses this same key server-side.`);
+    }
+    const cloud = await runCloudStep({
+      root,
+      output,
+      yes: options.yes === true,
+      credential,
+      // The RUN's env, not process.env: a programmatic caller's key must be
+      // what the probe and the mint see (seams in options.cloud still win).
+      env: effectiveEnv,
+      ...(pretty === null ? {} : { confirm: pretty.confirm }),
+      ...(options.cloud ?? {}),
+    });
+    // Same-run pickup: a starter key minted just now lands in .env.local —
+    // merge it the same way so THIS run's passes already benefit.
+    if (cloud.wroteEnvLocal) {
+      const minted = await envLocalValue(root, "VENDO_API_KEY");
+      if (minted !== null) {
+        effectiveEnv = { ...effectiveEnv, VENDO_API_KEY: minted };
+        credential = await (options.resolveCredential ?? resolveDevCredential)({ env: effectiveEnv });
+      }
+    }
+
     // Wire — apply the bounded change set and list it. No gates, no prompts.
     for (const change of changes) {
       await writeText(change.absolute, change.after);
@@ -987,9 +1135,11 @@ export async function runInit(options: InitOptions): Promise<number> {
     // reruns never spend a model call or overwrite hand edits.
     const themePath = join(root, ".vendo", "theme.json");
     if (options.force === true || !(await exists(themePath))) {
+      pretty?.spin("Capturing your theme");
       const summary = await extractThemeSlots(root, {
-        resolveModel: options.themeModel ?? themeModelResolver(root),
+        resolveModel: options.themeModel ?? themeModelResolver(root, effectiveEnv),
       });
+      pretty?.stopSpin();
       if (summary.uncertain.length > 0 && options.yes !== true) {
         const overrides = await (options.themeReview ?? defaultThemeReview)(summary);
         for (const [slot, raw] of Object.entries(overrides)) {
@@ -1024,7 +1174,9 @@ export async function runInit(options: InitOptions): Promise<number> {
     }
     await writeIfMissing(join(root, ".vendo", "data", ".gitignore"), "*\n!.gitignore\n", options.force === true);
 
+    pretty?.spin("Learning your API surface");
     const report = await vendoSync({ root, out: join(root, ".vendo") });
+    pretty?.stopSpin();
     for (const warning of report.warnings) output.error(`warning: ${warning}`);
 
     let toolCount = 0;
@@ -1050,22 +1202,6 @@ export async function runInit(options: InitOptions): Promise<number> {
     if (authAdvice !== null) output.log(authAdvice);
     output.log(`Learned: ${toolCount} tools · theme captured → .vendo/ (tools.json, theme.json, brief.md)`);
 
-    // Key — state the env credential, or offer the cloud starter key.
-    const credential = await (options.resolveCredential ?? resolveDevCredential)({ env });
-    if (credential.rung === "env-key") {
-      output.log(`Model: ${describeDevCredential(credential)} — production uses this same key server-side.`);
-    }
-    await runCloudStep({
-      root,
-      output,
-      yes: options.yes === true,
-      credential,
-      ...(options.cloud ?? {}),
-    });
-    if (credential.rung === "none") {
-      output.log("No model key yet: set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY in .env.local, or run `vendo cloud login` for a free dev key.");
-    }
-
     // AI extraction (install-dx, staged): a coding agent surveys the repo,
     // drafts each surface in a focused pass, cross-checks the combined draft,
     // and drafts the brief — all into the override channel; deterministic
@@ -1075,9 +1211,10 @@ export async function runInit(options: InitOptions): Promise<number> {
     const polish = await runAiExtraction({
       root,
       output,
-      env,
+      env: effectiveEnv,
       yes: options.yes === true,
       ...(options.force === true ? { force: true } : {}),
+      ...(pretty === null ? {} : { confirm: pretty.confirm }),
       ...(options.extract ?? {}),
     });
     if (polish.ran) {
@@ -1092,16 +1229,24 @@ export async function runInit(options: InitOptions): Promise<number> {
       durationMs: Date.now() - started,
     });
 
+    // The one short Cloud reminder in the end-of-run summary — ONLY while no
+    // key exists (the full emphasized block already ran up top; no repeat).
+    if (credential.rung === "none") {
+      output.log("No model key yet: set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY in .env.local, or run `vendo cloud login` for a free dev key.");
+    }
+
     // Done — the one paste that is the user's, then their own dev server.
     output.log("\nLast steps are yours:");
     for (const line of manualSteps) output.log(`  ${line}`);
     output.log("\nThen start your dev server — the agent is live in your app.");
     output.log("Verify everything: `npx vendo doctor` (it can start the server and run a live turn).");
+    pretty?.done(Date.now() - started, true);
     return 0;
   } catch (error) {
     await telemetry.track("init_failed", { framework: plan.framework, failedStep: "wiring" });
     await telemetry.track("error_class", { errorClass: errorClass(error) });
     output.error(error instanceof Error ? error.message : "vendo init failed");
+    pretty?.done(Date.now() - started, false);
     return 1;
   }
 }
