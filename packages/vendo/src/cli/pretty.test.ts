@@ -1,3 +1,4 @@
+import { PassThrough, Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPrettyOutput, plainSelect, usePrettyOutput, type SelectInput } from "./pretty.js";
 
@@ -23,6 +24,25 @@ function sink(): { write: (chunk: string) => void; raw: () => string; plain: () 
 afterEach(() => {
   vi.useRealTimers();
 });
+
+/** Real streams posing as a TTY, so the readline-driven prompt bodies run. */
+function promptStreams(): {
+  input: PassThrough & { isTTY?: boolean };
+  output: Writable & { isTTY?: boolean };
+  echoed: () => string;
+} {
+  const input = new PassThrough() as PassThrough & { isTTY?: boolean };
+  input.isTTY = true;
+  let buffer = "";
+  const output = new Writable({
+    write(chunk, _encoding, callback) {
+      buffer += String(chunk);
+      callback();
+    },
+  }) as Writable & { isTTY?: boolean };
+  output.isTTY = true;
+  return { input, output, echoed: () => buffer };
+}
 
 /** A PTY-free keypress source for the select loop. */
 function fakeInput(): { input: SelectInput; press: (text: string) => void } {
@@ -230,6 +250,66 @@ describe("createPrettyOutput (visual system)", () => {
       { value: "none", label: "none — stay anonymous" },
       { value: "clerk", label: "clerk()" },
     ])).toBe("none");
+  });
+
+  it("confirm parses y / n / Enter-default / other text through a real readline", async () => {
+    const out = sink();
+    const io = promptStreams();
+    const pretty = createPrettyOutput(out.write, io.input, io.output);
+
+    const enterAccepts = pretty.confirm("Wire auth: authJs()?", true);
+    io.input.write("\n");
+    expect(await enterAccepts).toBe(true);
+
+    const explicitNo = pretty.confirm("Wire auth: authJs()?", true);
+    io.input.write("n\n");
+    expect(await explicitNo).toBe(false);
+
+    const explicitYes = pretty.confirm("Log in to Vendo Cloud now?", false);
+    io.input.write("y\n");
+    expect(await explicitYes).toBe(true);
+
+    // Anything that isn't a yes is a No — even against a Yes default.
+    const garbage = pretty.confirm("Wire auth: authJs()?", true);
+    io.input.write("whatever\n");
+    expect(await garbage).toBe(false);
+
+    const plain = out.plain();
+    expect(plain).toContain("◇  Wire auth: authJs()?");
+    expect(plain).toContain("● Yes");
+    expect(plain).toContain("● No");
+  });
+
+  it("plainSelect drives the numbered list: pick, Enter-default, out-of-range and garbage settle on the default", async () => {
+    const options = [
+      { value: "none", label: "none — stay anonymous, add it later" },
+      { value: "clerk", label: "clerk() — Clerk", hint: "detected @clerk/nextjs" },
+    ];
+
+    const picked = promptStreams();
+    const pick = plainSelect("Which auth should Vendo wire?", options, 0, picked.input, picked.output);
+    picked.input.write("2\n");
+    expect(await pick).toBe("clerk");
+    expect(picked.echoed()).toContain("Which auth should Vendo wire?");
+    expect(picked.echoed()).toContain("1. none — stay anonymous, add it later");
+    expect(picked.echoed()).toContain("2. clerk() — Clerk (detected @clerk/nextjs)");
+    expect(picked.echoed()).toContain("Choose [1]: ");
+
+    const defaulted = promptStreams();
+    const byEnter = plainSelect("Which auth should Vendo wire?", options, 0, defaulted.input, defaulted.output);
+    defaulted.input.write("\n");
+    expect(await byEnter).toBe("none");
+
+    // Out-of-range and non-numeric answers settle on the default (no re-ask).
+    const outOfRange = promptStreams();
+    const nine = plainSelect("Which auth should Vendo wire?", options, 0, outOfRange.input, outOfRange.output);
+    outOfRange.input.write("9\n");
+    expect(await nine).toBe("none");
+
+    const garbage = promptStreams();
+    const text = plainSelect("Which auth should Vendo wire?", options, 0, garbage.input, garbage.output);
+    garbage.input.write("clerk\n");
+    expect(await text).toBe("none");
   });
 
   it("spins during slow phases and clears the frame before any log line", () => {

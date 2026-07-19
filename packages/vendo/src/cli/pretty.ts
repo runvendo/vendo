@@ -67,7 +67,9 @@ export interface PrettyOutput extends Output {
   /** The styled [Y/n] confirm — Enter accepts the default, answer echoed. */
   confirm(question: string, defaultYes?: boolean): Promise<boolean>;
   /** The styled select — arrows move, Enter accepts, number keys pick
-      directly; collapses to the chosen answer. */
+      directly; collapses to the chosen answer. Number keys cover options
+      1-9 only: keep lists at nine options or fewer (a longer list stays
+      arrow-navigable, but two-digit entry is deliberately not built). */
   select(question: string, options: SelectOption[], defaultIndex?: number): Promise<string>;
   /** The `└ Done in Xs` footer (red `Failed` when init exits non-zero). */
   done(durationMs: number, ok: boolean): void;
@@ -83,19 +85,23 @@ function styleInline(text: string): string {
 }
 
 /** The plain-terminal select for non-pretty interactive runs: numbered list +
-    readline. Non-TTY runs never prompt — the default option stands. */
+    readline. Non-TTY runs never prompt — the default option stands; an
+    empty, garbage, or out-of-range answer also settles on the default.
+    Streams are injectable for tests only; call sites use the defaults. */
 export async function plainSelect(
   question: string,
   options: SelectOption[],
   defaultIndex = 0,
+  input: NodeJS.ReadableStream & { isTTY?: boolean } = stdin,
+  output: NodeJS.WritableStream & { isTTY?: boolean } = stdout,
 ): Promise<string> {
   const fallback = (options[defaultIndex] ?? options[0])!.value;
-  if (stdin.isTTY !== true || stdout.isTTY !== true) return fallback;
-  stdout.write(`${question}\n`);
+  if (input.isTTY !== true || output.isTTY !== true) return fallback;
+  output.write(`${question}\n`);
   options.forEach((option, index) => {
-    stdout.write(`  ${index + 1}. ${option.label}${option.hint === undefined ? "" : ` (${option.hint})`}\n`);
+    output.write(`  ${index + 1}. ${option.label}${option.hint === undefined ? "" : ` (${option.hint})`}\n`);
   });
-  const prompt = createInterface({ input: stdin, output: stdout });
+  const prompt = createInterface({ input, output });
   try {
     const answer = (await prompt.question(`Choose [${defaultIndex + 1}]: `)).trim();
     const number = /^\d+$/.test(answer) ? Number(answer) : NaN;
@@ -111,6 +117,7 @@ export async function plainSelect(
 export function createPrettyOutput(
   write: (chunk: string) => void = (chunk) => { stdout.write(chunk); },
   input: SelectInput = stdin,
+  promptOutput: NodeJS.WritableStream & { isTTY?: boolean } = stdout,
 ): PrettyOutput {
   let headerPrinted = false;
   let lastWasBar = false;
@@ -246,11 +253,16 @@ export function createPrettyOutput(
       // usePrettyOutput gates on stdout only; a piped/closed stdin can still
       // reach here (vendo init < file). Never block readline on a non-TTY —
       // the default stands, mirroring the plain askYesNo guard.
-      if (stdin.isTTY !== true) return defaultYes;
+      if (input.isTTY !== true) return defaultYes;
       stopSpin();
       ensureHeader();
       section(cyan("◇"), bold(question));
-      const prompt = createInterface({ input: stdin, output: stdout });
+      // SelectInput is the raw-key slice of the same real stream readline
+      // needs; the default (stdin) satisfies both.
+      const prompt = createInterface({
+        input: input as unknown as NodeJS.ReadableStream,
+        output: promptOutput,
+      });
       try {
         const answer = (await prompt.question(
           `${BAR}  ${dim(defaultYes ? "Y/n" : "y/N")} ${dim("›")} `,
