@@ -50,6 +50,12 @@ export function toolTitle(name: string, meta?: ToolMeta): string {
   return label ? label : humanizeToolName(name);
 }
 
+/** Proper-case display name for a toolkit slug ("slack" → "Slack"). The
+    brand-forward connect surfaces (lane pick 2-A) never show the raw slug. */
+export function toolkitDisplayName(toolkit: string): string {
+  return toolkit ? toolkit.charAt(0).toUpperCase() + toolkit.slice(1) : toolkit;
+}
+
 function formatValue(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);

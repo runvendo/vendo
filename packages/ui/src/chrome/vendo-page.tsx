@@ -8,6 +8,7 @@ import { AppFrame } from "../tree/frames.js";
 import { ActivityPanel } from "./activity-panel.js";
 import { AutomationsPanel } from "./automations-panel.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { ACTIVITY_ANCHOR_ATTRIBUTE, ACTIVITY_BUMP_EVENT } from "./morph-toast.js";
 import { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
 import { TakeoverPortal } from "./takeover-portal.js";
 import { VendoThread } from "./thread/index.js";
@@ -195,6 +196,23 @@ export function VendoPage() {
   const takeover = useMobileTakeover();
   const [tab, setTab] = useState<Tab>("chat");
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  // Lane pick 4-C — the Activity tab is the morph's dock anchor: the approved
+  // pill shrinks into it and this pulse answers, teaching where receipts live.
+  const [activityBump, setActivityBump] = useState(false);
+  useEffect(() => {
+    let timer: number | undefined;
+    const onBump = () => {
+      setActivityBump(false);
+      requestAnimationFrame(() => setActivityBump(true));
+      if (timer !== undefined) window.clearTimeout(timer);
+      timer = window.setTimeout(() => setActivityBump(false), 700);
+    };
+    window.addEventListener(ACTIVITY_BUMP_EVENT, onBump);
+    return () => {
+      window.removeEventListener(ACTIVITY_BUMP_EVENT, onBump);
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, []);
 
   const move = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     let next = index;
@@ -223,7 +241,7 @@ export function VendoPage() {
           {TABS.map((item, index) => (
             <button
               ref={node => { tabRefs.current[index] = node; }}
-              className="fl-tab"
+              className={`fl-tab${item === "activity" && activityBump ? " fl-tab--bump" : ""}`}
               id={`vendo-tab-${item}`}
               type="button"
               role="tab"
@@ -233,6 +251,7 @@ export function VendoPage() {
               key={item}
               onClick={() => setTab(item)}
               onKeyDown={event => move(event, index)}
+              {...(item === "activity" ? { [ACTIVITY_ANCHOR_ATTRIBUTE]: "" } : {})}
             >{title(item)}</button>
           ))}
         </div>

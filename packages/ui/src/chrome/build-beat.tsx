@@ -55,6 +55,21 @@ export interface ToolPresentation {
   sub?: string;
   toolkit?: string;
   logoUrl?: string;
+  /** Lane pick 1-A — the consequence-first sentence, structured so the card
+      can emphasize the artifact and target. Synthesized ONLY from the real
+      inputs (same honesty rule as `description`); absent when the inputs
+      don't support a truthful sentence, in which case the card keeps its
+      always-open fields layout. */
+  consequence?: ToolConsequence;
+}
+
+/** "Vendo will post ‹artifact› to ‹target› — now, as you." in parts. */
+export interface ToolConsequence {
+  pre: string;
+  artifact?: string;
+  mid?: string;
+  target?: string;
+  post: string;
 }
 
 export function toolPresentation(name: string, args?: unknown, meta?: ToolMeta): ToolPresentation {
@@ -70,16 +85,31 @@ export function toolPresentation(name: string, args?: unknown, meta?: ToolMeta):
 
   let description = meta?.description;
   let sub: string | undefined;
+  let consequence: ToolConsequence | undefined;
   if (toolkit === "slack" && typeof flat.channel === "string") {
     description ??= trigger
       ? `Vendo will post to ${flat.channel} on your behalf, ${trigger}. It runs as you, and you can pause it anytime.`
       : `Vendo will post to ${flat.channel} on your behalf, running as you.`;
     sub = trigger ? `Posts to ${flat.channel} ${trigger}` : `Posts to ${flat.channel} as you`;
+    if (typeof flat.message === "string" && flat.message.trim().length > 0) {
+      consequence = {
+        pre: "Vendo will post ",
+        artifact: `“${flat.message}”`,
+        mid: " to ",
+        target: flat.channel,
+        post: trigger ? `, ${trigger} — as you.` : " — now, as you.",
+      };
+    }
   } else if (toolkit === "gmail" && typeof flat.to === "string") {
     description ??= `Vendo will send this email as you${trigger ? `, ${trigger}` : ""}.`;
     sub = `Emails ${flat.to} as you`;
+    consequence = {
+      pre: "Vendo will email ",
+      target: flat.to,
+      post: trigger ? `, ${trigger} — as you.` : " — now, as you.",
+    };
   }
-  return { title, eyebrow, description, sub, toolkit, logoUrl };
+  return { title, eyebrow, description, sub, toolkit, logoUrl, consequence };
 }
 
 /** Lane pick C1 (1A+1D) — the live status ribbon. While a turn works, ONE

@@ -2,10 +2,13 @@ import type { ApprovalRequest, Json, RiskLabel, VendoViewPart } from "@vendoai/c
 import { isToolUIPart, type UIMessage } from "ai";
 import { useState } from "react";
 import { useVendoContext } from "../../context.js";
+import { useMobileTakeover } from "../../hooks/use-mobile-takeover.js";
 import { PayloadView } from "../../tree/renderer.js";
 import { ApprovalCard } from "../approval-card.js";
+import { ApprovalSheet } from "../approval-sheet.js";
 import { BuildBeat, toolPresentation } from "../build-beat.js";
 import { ConnectCard } from "../connect-card.js";
+import { toolTitle } from "../humanize.js";
 import { Markdown } from "../markdown.js";
 import type { MorphToastProps } from "../morph-toast.js";
 import { LONG_TEXT_CAP, truncateHead } from "../truncate.js";
@@ -154,9 +157,13 @@ export function ThreadApprovals({ approvals, risks, guardApprovals, cardRefs, re
   onMorph: (morph: Omit<MorphToastProps, "onDone">) => void;
 }) {
   const { client, theme, tools } = useVendoContext();
+  // Lane pick 1-H — below the mobile breakpoint the NEWEST parked approval
+  // presents as a bottom sheet (thumb-zone consent); older parked ones stay
+  // in-list behind it so the thread record is complete when the sheet closes.
+  const mobile = useMobileTakeover().active;
   return (
     <>
-      {approvals.map(part => {
+      {approvals.map((part, index) => {
         const risk = risks.get(part.toolCallId) ?? "read";
         const input = "input" in part ? part.input : undefined;
         const guardApproval = guardApprovals.get(part.toolCallId);
@@ -182,7 +189,8 @@ export function ThreadApprovals({ approvals, risks, guardApprovals, cardRefs, re
           createdAt: SYNTHESIZED_CREATED_AT,
         };
         const guardApprovalId = guardApproval?.approvalId;
-        return (
+        const asSheet = mobile && index === approvals.length - 1;
+        const card = (
           <div key={part.approval.id} ref={element => { cardRefs.current.set(part.approval.id, element); }}>
             <ApprovalCard
               approval={approval}
@@ -218,6 +226,11 @@ export function ThreadApprovals({ approvals, risks, guardApprovals, cardRefs, re
             />
           </div>
         );
+        return asSheet ? (
+          <ApprovalSheet key={part.approval.id} label={`Approval for ${toolTitle(name, tools[name])}`}>
+            {card}
+          </ApprovalSheet>
+        ) : card;
       })}
     </>
   );

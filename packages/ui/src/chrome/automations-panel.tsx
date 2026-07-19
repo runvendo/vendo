@@ -40,6 +40,57 @@ function runRollup(runs: RunRecord[]): string {
     .join(" · ");
 }
 
+/** Lane pick 7-A — liveness. `every` durations the wire uses ("30m", "6h",
+    "1d", "1w"); anything unparseable yields no countdown (the flow node's
+    "Every …" label already states the cadence). */
+const EVERY_UNIT_MS: Record<string, number> = {
+  s: 1_000,
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+  w: 604_800_000,
+};
+
+function everyToMs(every: string): number | undefined {
+  const match = /^(\d+)\s*([smhdw])$/.exec(every.trim());
+  if (!match) return undefined;
+  const unit = EVERY_UNIT_MS[match[2]!];
+  return unit === undefined ? undefined : Number(match[1]) * unit;
+}
+
+function formatEta(ms: number): string {
+  if (ms < 60_000) return "in under a minute";
+  const minutes = Math.floor(ms / 60_000);
+  const days = Math.floor(minutes / 1_440);
+  const hours = Math.floor((minutes % 1_440) / 60);
+  const rest = minutes % 60;
+  if (days > 0) return `in ${days} d${hours > 0 ? ` ${hours} h` : ""}`;
+  if (hours > 0) return `in ${hours} h${rest > 0 ? ` ${rest} m` : ""}`;
+  return `in ${rest} m`;
+}
+
+/** "next run in 6 h 12 m" — computed only from REAL data: a parseable
+    schedule plus (for recurring schedules) the last run's actual start time.
+    No runs yet or an unparseable cadence → null, and the line stays quiet. */
+function nextRunLabel(trigger: Trigger | undefined, lastStartedAt: string | undefined, now: number): string | null {
+  if (!trigger || trigger.on.kind !== "schedule") return null;
+  const source = trigger.on;
+  if (source.at) {
+    const at = Date.parse(source.at);
+    if (Number.isNaN(at) || at <= now) return null;
+    return `next run ${formatEta(at - now)}`;
+  }
+  if (source.every && lastStartedAt) {
+    const period = everyToMs(source.every);
+    const last = Date.parse(lastStartedAt);
+    if (period === undefined || Number.isNaN(last)) return null;
+    const next = last + period;
+    if (next <= now) return "next run due now";
+    return `next run ${formatEta(next - now)}`;
+  }
+  return null;
+}
+
 function humanize(value: string): string {
   const words = value
     .replace(/^host[_:. -]?/i, "")
@@ -103,6 +154,13 @@ export function AutomationsPanel() {
   const [justEnabled, setJustEnabled] = useState<Record<AppId, boolean>>({});
   const enableTimers = useRef(new Map<AppId, number>());
   const stripFetched = useRef(new Set<AppId>());
+  // 7-A — the countdown re-renders on a slow clock; minute precision needs no
+  // faster tick, and an unmounted panel stops it.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => () => {
     for (const timer of enableTimers.current.values()) window.clearTimeout(timer);
@@ -195,6 +253,21 @@ export function AutomationsPanel() {
           const celebrating = justEnabled[appId] === true;
           // Oldest → newest left-to-right, so the strip reads like a timeline.
           const strip = recent[appId]?.slice().reverse();
+          // 7-A liveness — a running run puts the traveling dot on the arrow
+          // and takes over the state line; otherwise the enabled line carries
+          // the next-run countdown when it can be computed honestly. The
+          // expanded history is fresher than the strip when both exist.
+          const known = runs[appId] ?? recent[appId];
+          const runningRun = known?.find(run => run.status === "running");
+          // "step N/M": M = the plan's step count, N = the step in flight
+          // (recorded steps + 1). Plans without steps just say "running now".
+          const plannedSteps = entry.app.trigger?.run.kind === "steps" ? entry.app.trigger.run.steps.length : 0;
+          const runningStep = runningRun && plannedSteps > 0
+            ? ` · step ${Math.min(runningRun.steps.length + 1, plannedSteps)}/${plannedSteps}`
+            : "";
+          const nextRun = entry.enabled && !runningRun
+            ? nextRunLabel(entry.app.trigger, known?.[0]?.startedAt, now)
+            : null;
           return (
             <article
               className="fl-automation"
@@ -212,16 +285,26 @@ export function AutomationsPanel() {
                 <div>
                   <div className="fl-auto-title">{entry.app.name}</div>
                   <div className="fl-auto-sub">
-                    {entry.enabled ? (
-                      <span
-                        className="fl-auto-live"
-                        aria-hidden="true"
-                        style={celebrating && !reduced
-                          ? { animation: "fl-connect-pop .55s cubic-bezier(.22,1,.36,1) both" }
-                          : undefined}
-                      />
-                    ) : null}
-                    {entry.enabled ? "Enabled" : "Disabled"}
+                    {runningRun ? (
+                      <>
+                        <span className="fl-act-spin" aria-hidden="true" />
+                        <span className="fl-auto-nextrun">running now{runningStep}</span>
+                      </>
+                    ) : (
+                      <>
+                        {entry.enabled ? (
+                          <span
+                            className="fl-auto-live"
+                            aria-hidden="true"
+                            style={celebrating && !reduced
+                              ? { animation: "fl-connect-pop .55s cubic-bezier(.22,1,.36,1) both" }
+                              : undefined}
+                          />
+                        ) : null}
+                        {entry.enabled ? "Enabled" : "Disabled"}
+                        {nextRun ? <span className="fl-auto-nextrun">· {nextRun}</span> : null}
+                      </>
+                    )}
                   </div>
                 </div>
                 <button
@@ -262,7 +345,9 @@ export function AutomationsPanel() {
                       <span className="fl-auto-node-s" style={{ display: "block" }}>{flow.trigger.sub}</span>
                     </span>
                   </span>
-                  <span className="fl-auto-arrow" aria-hidden="true" />
+                  <span className="fl-auto-arrow" aria-hidden="true">
+                    {runningRun ? <span className="fl-auto-runner" /> : null}
+                  </span>
                   <span className="fl-auto-node" style={{ flex: 1 }}>
                     <span className="fl-auto-node-ic" aria-hidden="true">✓</span>
                     <span>

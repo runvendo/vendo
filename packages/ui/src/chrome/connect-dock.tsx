@@ -11,6 +11,8 @@ import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { useVendoContext, type ConnectorOption } from "../context.js";
 import { useConnections } from "../hooks/use-connections.js";
 import type { ConnectionAccount } from "../wire-types.js";
+import { toolkitLogoUrl } from "./build-beat.js";
+import { toolkitDisplayName } from "./humanize.js";
 
 const POLL_INTERVAL_MS = 1_500;
 const POLL_DEADLINE_MS = 120_000;
@@ -40,7 +42,7 @@ export async function completeConnection(
 
 function displayName(option: ConnectorOption): string {
   if (option.label !== undefined) return option.label;
-  return option.toolkit.charAt(0).toUpperCase() + option.toolkit.slice(1);
+  return toolkitDisplayName(option.toolkit);
 }
 
 /** The dock button in the composer row. Renders nothing when the host supplied
@@ -108,6 +110,8 @@ export function ConnectTray({ onClose, anchorRef }: {
   const [connecting, setConnecting] = useState<string>();
   const [justConnected, setJustConnected] = useState<string>();
   const [error, setError] = useState<string>();
+  // 3-A′ — toolkits whose brand mark failed to load fall back to the monogram.
+  const [failedLogos, setFailedLogos] = useState<ReadonlySet<string>>(new Set());
   const trayRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const cancelledRef = useRef(false);
@@ -176,7 +180,7 @@ export function ConnectTray({ onClose, anchorRef }: {
       if (listed.has(toolkit)) continue;
       connected.push({
         key: toolkit,
-        name: toolkit.charAt(0).toUpperCase() + toolkit.slice(1),
+        name: toolkitDisplayName(toolkit),
         toolkit,
         connector: account.connector,
         account,
@@ -209,12 +213,29 @@ export function ConnectTray({ onClose, anchorRef }: {
   const item = (row: TrayRow) => {
     const isConnected = row.account !== undefined;
     const isConnecting = connecting === row.toolkit;
+    // Lane pick 3-A′ — real brand marks in the tray rows; the two-letter
+    // monogram stays as the fallback for toolkits without a mapped domain or
+    // whose mark failed to load.
+    const logoUrl = failedLogos.has(row.toolkit) ? undefined : toolkitLogoUrl(row.toolkit);
     return (
       <li
         key={row.key}
         className={`fl-picker-item${isConnected ? " is-connected" : ""}${justConnected === row.toolkit ? " is-just-connected" : ""}`}
       >
-        <span className="fl-picker-ic" aria-hidden="true">{row.name.slice(0, 2).toUpperCase()}</span>
+        <span className="fl-picker-ic" aria-hidden="true">
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- chrome surface, plain img by design
+            <img
+              src={logoUrl}
+              alt=""
+              width={15}
+              height={15}
+              onError={() => setFailedLogos(previous => new Set(previous).add(row.toolkit))}
+            />
+          ) : (
+            row.name.slice(0, 2).toUpperCase()
+          )}
+        </span>
         <span className="fl-picker-nm">{row.name}</span>
         <span className="fl-picker-status">
           {isConnected ? (

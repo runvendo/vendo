@@ -35,10 +35,10 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
       </VendoProvider>,
     );
 
-    expect(screen.getByRole("article", { name: "Connect gmail" }).textContent).toContain(
+    expect(screen.getByRole("article", { name: "Connect Gmail" }).textContent).toContain(
       "Connect your gmail account to run gmail_GMAIL_SEND_EMAIL.",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Connect gmail" }));
+    fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
 
     await waitFor(() => expect(onConnected).toHaveBeenCalledTimes(1));
     expect(opened).toHaveBeenCalledWith("https://connect.test/oauth/1", "_blank", "noopener");
@@ -65,9 +65,9 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
         <ConnectCard connector="composio" toolkit="gmail" message="Connect gmail." onConnected={() => undefined} />
       </VendoProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Connect gmail" }));
+    fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
     expect((await screen.findByRole("alert")).textContent).toContain("requires a signed-in user");
-    expect(screen.getByRole("button", { name: "Connect gmail" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Connect Gmail" }).hasAttribute("disabled")).toBe(false);
   });
 
   it("lists accounts with real identity and severs one through confirm + undo window", async () => {
