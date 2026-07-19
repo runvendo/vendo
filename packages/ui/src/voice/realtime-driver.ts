@@ -313,7 +313,10 @@ export function realtimeVoiceDriver(options: RealtimeVoiceDriverOptions): VoiceD
           try {
             output = await bridge.onToolCall(
               { callId: call.callId, name: call.name, args },
-              { emitView: (view) => { if (alive && connectionVersion === callVersion) emit({ type: "view", view }); } },
+              {
+                emitView: (view) => { if (alive && connectionVersion === callVersion) emit({ type: "view", view }); },
+                emitConnect: (connect) => { if (alive && connectionVersion === callVersion) emit({ type: "connect", connect }); },
+              },
             );
           } catch (cause) {
             output = { error: causeMessage(cause) };

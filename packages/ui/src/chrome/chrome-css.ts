@@ -1667,4 +1667,110 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 .fl-acct-connect-chip .fl-acct-logo { width: 24px; height: 24px; border-radius: 999px; }
 /* ================== end ui-lane-panels lane block ================== */
 
+/* ================================================================
+   voice-lane composite (2026-07-19) — ui-lane-voice's converged Round 2:
+   PiP dock (P-C) · speaker lean (P-F) · rolling ticker (S-C) · idle
+   invitation (S-E) · attention vignette (S-F) · spoken-yes consent (C-A) ·
+   connect-during-voice slot (Cn-A) · mobile safe-area foot (M-A).
+   One marked block so every lane's chrome-css edits merge cleanly.
+   ================================================================ */
+
+/* ---- S-C rolling ticker: the caption slot holds the last 3 transcript
+   lines, newest bright, older fading and shrinking upward. */
+.fl-voice-caption { height: 84px; }
+.fl-voice-tick { animation: fl-voice-tick-up .4s cubic-bezier(.22, 1, .36, 1) both; }
+.fl-voice-tick.is-age-2 { opacity: .3; font-size: 11.5px; }
+.fl-voice-tick.is-age-1 { opacity: .55; font-size: 12.5px; }
+.fl-voice-tick.is-age-0 { opacity: 1; }
+.fl-voice-tick.is-age-0.is-settled { opacity: .8; }
+@keyframes fl-voice-tick-up { from { transform: translateY(9px); opacity: 0; } }
+
+/* ---- P-C dock: once a view lands the head becomes a corner pill (travel is
+   FLIP-animated in stage.tsx on fluidkit MorphSurface's BODY_SPRING; the ball
+   remounts at 30px — never a scaled svg). The pill and the docked ticker own
+   an aligned top band; the deck starts below it. */
+.fl-voice-stage.is-docked .fl-voice-canvas { grid-template-rows: 0fr auto 1fr; }
+.fl-voice-stage.is-docked .fl-voice-head { position: absolute; top: 12px; right: 14px; z-index: 5;
+  flex-direction: row; align-items: center; gap: 8px; min-height: 52px;
+  padding: 5px 12px 5px 6px; border-radius: 999px;
+  border: 1px solid var(--vendo-border-strong); background: var(--vendo-glass-strong);
+  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  box-shadow: var(--vendo-shadow); }
+.fl-voice-stage.is-docked .fl-voice-status { min-height: auto; }
+.fl-voice-stage.is-docked > .fl-voice-caption { position: absolute; top: 12px; left: 14px; z-index: 5;
+  height: auto; min-height: 52px; max-width: min(46%, 360px); padding: 8px 12px;
+  text-align: left; align-items: flex-start; justify-content: center;
+  border-radius: 12px; border: 1px solid var(--vendo-border); background: var(--vendo-glass-strong);
+  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  animation: fl-item-in .3s cubic-bezier(.22, 1, .36, 1) both; }
+.fl-voice-stage.is-docked > .fl-voice-caption .fl-voice-tick.is-age-2 { display: none; }
+.fl-voice-stage.is-docked .fl-voice-feedwrap { margin-top: 80px; }
+
+/* ---- P-F speaker lean: the presence settles toward the user's words and
+   lifts for its own — center-stage only; the docked pill stays still. */
+.fl-voice-stage:not(.is-docked) .fl-voice-blob { transition: transform .6s cubic-bezier(.22, 1, .36, 1), filter .6s ease; }
+.fl-voice-stage:not(.is-docked) .fl-voice-blob.is-lean-user { transform: translateY(7px) scale(.97); }
+.fl-voice-stage:not(.is-docked) .fl-voice-blob.is-lean-agent { transform: translateY(-5px) scale(1.04); filter: brightness(1.06); }
+.fl-voice-glow { width: 120px; height: 26px; margin-top: -20px; border-radius: 50%; flex-shrink: 0;
+  background: radial-gradient(ellipse, color-mix(in srgb, var(--vendo-accent) 22%, transparent), transparent 70%);
+  filter: blur(6px); pointer-events: none; animation: fl-fade-in .6s ease both; }
+
+/* ---- S-E idle invitation: host-provided suggestion chips under the presence. */
+.fl-voice-invite { display: flex; flex-direction: column; gap: 8px; align-items: center; margin-top: 6px; }
+.fl-voice-chip { border: 1px solid var(--vendo-border-strong); border-radius: 999px; cursor: pointer;
+  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  color: var(--vendo-fg); font: 500 12.5px/1 var(--vendo-font); padding: 10px 16px;
+  animation: fl-item-in .4s cubic-bezier(.22, 1, .36, 1) backwards;
+  transition: border-color .15s, transform .15s; }
+.fl-voice-chip:hover { border-color: var(--vendo-accent); transform: translateY(-1px); }
+.fl-voice-chip:nth-child(2) { animation-delay: .08s; }
+.fl-voice-chip:nth-child(3) { animation-delay: .16s; }
+.fl-voice-invite-hint { font: 500 11.5px/1 var(--vendo-font); color: var(--vendo-fg-muted); margin-top: 2px; }
+
+/* ---- S-F attention vignette: a whisper-soft dim outside the point of
+   attention — the ball while the agent speaks, the card once docked. */
+.fl-voice-spot { position: absolute; inset: 0; pointer-events: none; z-index: 1; opacity: 0;
+  background: radial-gradient(circle var(--fl-spot-r, 260px) at var(--fl-spot-x, 50%) var(--fl-spot-y, 30%),
+    transparent 60%, color-mix(in srgb, var(--vendo-fg) 5%, transparent));
+  transition: opacity .8s ease; }
+.fl-voice-stage.is-spot-on .fl-voice-spot { opacity: 1; }
+
+/* ---- C-A spoken-yes: the act-tier bar says voice works, with a live
+   equalizer while the mic is open; a heard yes flips the hint. */
+.fl-voice-consent-hint { font-size: 11px; color: var(--vendo-fg-muted); display: flex; align-items: center; }
+.fl-voice-consent-hint.is-heard { color: var(--vendo-ok); font-weight: 600; }
+.fl-voice-eq { display: inline-flex; gap: 2px; align-items: flex-end; height: 12px; margin-left: 6px; }
+.fl-voice-eq i { width: 2.5px; height: 100%; border-radius: 2px; background: currentColor;
+  animation: fl-voice-eq 1s ease-in-out infinite; }
+.fl-voice-eq i:nth-child(1) { height: 60%; }
+.fl-voice-eq i:nth-child(2) { animation-delay: .15s; }
+.fl-voice-eq i:nth-child(3) { height: 45%; animation-delay: .3s; }
+@keyframes fl-voice-eq { 0%, 100% { transform: scaleY(.5); } 50% { transform: scaleY(1); } }
+
+/* ---- Cn-A connect-during-voice: the ConnectCard docks at the consent edge,
+   centered (the approval card's max-width would left-hug a full-width slot),
+   with the connecting hint stacked under the button as a caption. */
+.fl-voice-connect { margin: 0 18px 8px; flex-shrink: 0; display: flex; justify-content: center; }
+.fl-voice-connect .fl-approval { align-self: auto; width: 100%; margin-inline: auto;
+  animation: fl-item-in .3s cubic-bezier(.22, 1, .36, 1) both; }
+.fl-voice-connect .fl-approval-actions { flex-wrap: wrap; row-gap: 6px; }
+.fl-voice-connect .fl-approval-actions .fl-approval-more { flex-basis: 100%; margin: 0; }
+
+/* ---- M-A mobile safe-area foot: the controls clear the home indicator, and
+   touch surfaces get real 48px targets. */
+.fl-voice-foot { padding-bottom: max(12px, env(safe-area-inset-bottom, 0px) + 10px); }
+@media (pointer: coarse) {
+  .fl-voice-foot { padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 20px); }
+  .fl-voice-controls { gap: 10px; }
+  .fl-voice-controls .fl-icon-btn { width: 48px; height: 48px; border-radius: 14px; }
+  .fl-voice-controls .fl-btn { min-height: 48px; padding: 12px 26px; border-radius: 999px; font-size: 14px; }
+  .fl-voice-drawer-btn { padding: 14px 10px; font-size: 12.5px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fl-voice-tick, .fl-voice-chip, .fl-voice-glow, .fl-voice-eq i { animation: none; }
+  .fl-voice-spot { transition: none; }
+  .fl-voice-stage:not(.is-docked) .fl-voice-blob { transition: none; }
+}
+
 `;
