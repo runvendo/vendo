@@ -106,7 +106,7 @@ export const fakeSandboxV2 = (): FakeSandboxV2 => {
     const ref = `fake-v2:snap_${nextSnapshot++}`;
     snapshots.set(ref, Object.freeze({
       env: machine.env,
-      ...(machine.allowedDomains === undefined ? {} : { allowedDomains: [...machine.allowedDomains] }),
+      ...(machine.allowedDomains === undefined ? {} : { allowedDomains: Object.freeze([...machine.allowedDomains]) }),
       ...(machine.template === undefined ? {} : { template: machine.template }),
       state: new Map(machine.state),
     }));

@@ -240,3 +240,32 @@ describe("egress grant hygiene", () => {
     expect(fixture.approvals[fixture.approvals.length - 1]?.ctx.appId).toBe(fork.id);
   });
 });
+
+describe("egress grant state cannot be authored", () => {
+  it("an engine-persisted edit cannot mint or widen egressApproved", async () => {
+    // The persist seam pins grant state to the stored document; this drives
+    // it through the same box.request → provision path the runtime uses.
+    const { runtime, doc, ada, stored, store } = await setup({
+      doc: app({ egress: ["api.example.com"] }),
+    });
+    // Simulate a model-authored document arriving at the store WITH a forged
+    // approval, then confirm the enforcement layers still treat the domain
+    // as unapproved once the real persist seams have run: fork (a copy mint)
+    // strips it, and provision on the fork re-prompts.
+    const record = await store.records("vendo_apps").get(doc.id);
+    if (record === null) throw new Error("app row is gone");
+    const data = record.data as { subject: string; enabled: boolean; doc: AppDocument };
+    await store.records("vendo_apps").put({
+      id: doc.id,
+      data: { ...data, doc: { ...data.doc, egressApproved: ["api.example.com"] } },
+      refs: { subject: data.subject },
+    });
+    const fork = await runtime.fork(doc.id, ada);
+    expect(fork.egressApproved).toBeUndefined();
+    await expect(runtime.machine.provision(fork.id, ada)).rejects.toMatchObject({
+      code: "blocked",
+      detail: expect.objectContaining({ unapprovedDomains: ["api.example.com"] }),
+    });
+    expect((await stored()).egressApproved).toEqual(["api.example.com"]); // untouched source
+  });
+});

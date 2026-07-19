@@ -448,6 +448,20 @@ describe("machine lifecycle: egress allowlist policy (Lane E)", () => {
     expect(sandbox.creates).toBe(0);
   });
 
+  it("a policy refusal also stops a LIVE machine's wake (warm-entry path)", async () => {
+    let approved = true;
+    const { lifecycle, doc } = await setup({
+      allowedDomains: () => {
+        if (!approved) throw new VendoError("blocked", "machine egress is not approved for: api.example.com");
+        return ["api.example.com"];
+      },
+    });
+    await lifecycle.provision(doc);
+    await lifecycle.wake(doc); // machine is now live
+    approved = false;
+    await expect(lifecycle.wake(doc)).rejects.toMatchObject({ code: "blocked" });
+  });
+
   it("a policy refusal blocks wake before any provider call", async () => {
     let approved = true;
     const { sandbox, lifecycle, doc } = await setup({

@@ -12,8 +12,12 @@ import type { Json, SecretsProvider } from "@vendoai/core";
  * must not turn the host's store, logs, or clients into a secret sink.
  */
 
-/** Values shorter than this are not scrubbed: replacing very short strings
-    (e.g. a secret set to "1") would mangle unrelated payloads wholesale. */
+/** Values shorter than this are not scrubbed. This is a deliberate
+    trade-off, not an oversight: scrubbing a 1-3 character "secret" (say "1")
+    would rewrite every occurrence of that substring in every response and
+    row — wholesale data corruption to protect a value with no entropy that
+    any brute-force enumerates instantly. Real credentials are far longer;
+    a host that stores one this short has no secrecy for redaction to save. */
 const MIN_REDACTABLE_LENGTH = 4;
 
 /**

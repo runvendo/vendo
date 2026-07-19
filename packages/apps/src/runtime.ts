@@ -594,6 +594,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const commitExposure = async (grant: SecretExposureGrant): Promise<void> => {
     await exposure.activate(grant.appId, grant.secretName);
     // Re-boot the machine so the next run's env reflects the new grant state.
+    // Known v2 limit: a machine PROVISIONED before this grant keeps its
+    // provision-time env — a memory snapshot resumes already-started
+    // processes, so env can only change at a fresh provision (and Wave 3's
+    // in-box edit loop, which restarts the server, is where re-injection
+    // lands). The eviction below covers the v1 session cache.
     await machines.evict(grant.appId);
     await reportGuard("app-lifecycle", grant.owner, grant.appId, { venue: "app", presence: "present" }, {
       operation: "secret-exposure-set",
@@ -733,7 +738,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       }
       for (const [appId, entry] of byApp) {
         if (approved) {
-          await commitEgressApproval(appId, entry.domains, entry.owner);
+          try {
+            await commitEgressApproval(appId, entry.domains, entry.owner);
+          } catch (error) {
+            // The app vanished between park and decision (delete raced the
+            // card): there is nothing to grant — clear the orphaned records.
+            for (const domain of entry.domains) await egressApprovals.remove(appId, domain);
+            if (!(error instanceof VendoError && error.code === "not-found")) throw error;
+          }
         } else {
           // Denial leaves the declaration unapproved (fail closed) and clears the card.
           for (const domain of entry.domains) await egressApprovals.remove(appId, domain);
@@ -938,6 +950,15 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return row.enabled;
     };
     await assertCurrent();
+    // Lane E — egressApproved is grant state, written ONLY by the egress
+    // approval flow: an engine- or model-authored edit must never mint or
+    // widen it (same rule as model-forged venue/drift fields above). Pin it
+    // to the stored document's value.
+    if (previous.egressApproved === undefined) {
+      delete app.egressApproved;
+    } else {
+      app.egressApproved = [...previous.egressApproved];
+    }
     await history.append(app.id, previous, version, pinSlots ?? touchedPinSlots(previous, app));
     const wasEnabled = await assertCurrent();
     // A changed trigger must be re-armed — enable() re-captures and re-mints trigger state.
@@ -1070,6 +1091,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // Same rule at rest: open() strips before serving, but a model-forged
       // venue or drift field has no business being persisted in the first place.
       if (app.tree !== undefined) stripServerAuthoritativeFields(app.tree);
+      // Lane E — same rule for egress grant state: a freshly generated app
+      // has approved nothing, whatever the model emitted.
+      delete app.egressApproved;
       let finalTree: TreeV2 | undefined;
       if (input.onView !== undefined && app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
         finalTree = {

@@ -272,6 +272,12 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
   const wake = async (app: AppDocument): Promise<SandboxMachine> => {
     const entry = live.get(app.id);
     if (entry !== undefined) {
+      // Lane E — a live machine answers to the CURRENT policy too: a
+      // declaration that lost (or never had) approval refuses here rather
+      // than riding the warm entry. (A running provider machine's network
+      // policy cannot be re-tightened in place — the refusal plus the idle
+      // sleep is the containment; the next wake re-applies the policy.)
+      if (config.allowedDomains !== undefined) await config.allowedDomains(app);
       armIdleTimer(app.id);
       return entry.wrapped;
     }

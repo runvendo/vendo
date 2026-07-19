@@ -208,9 +208,10 @@ export const sandboxAdapterConformance = (
         expect(await attempt(bare, "vendo.run")).toBe(false);
 
         // …and a passed policy replaces it — the wake enforces CURRENT grants
-        // (Lane E), not what the machine slept with.
-        const repoliced = track(await adapter.resume(ref, { allowedDomains: ["vendo.run"] }));
-        expect(await attempt(repoliced, "vendo.run")).toBe(true);
+        // (Lane E), not what the machine slept with. The positive probe uses
+        // an IANA-reserved domain so reachability never masquerades as policy.
+        const repoliced = track(await adapter.resume(ref, { allowedDomains: ["example.org"] }));
+        expect(await attempt(repoliced, "example.org")).toBe(true);
         expect(await attempt(repoliced, "example.com")).toBe(false);
       },
       TEST_TIMEOUT_MS,
