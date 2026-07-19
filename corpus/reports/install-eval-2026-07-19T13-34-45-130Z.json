@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-19T13:34:45.130Z",
+  "runId": "2026-07-19T13-34-45-130Z",
+  "mode": "live",
+  "model": "haiku",
+  "promptSource": "docs-site/install.mdx",
+  "prompt": "Install Vendo in this repo. Read https://vendo.run/agents.md and follow\nit exactly. Use `vendo init` for scaffolding. Don't hand-write what it\ngenerates. Ask me before creating any account or key. You're done when\n`vendo doctor --json` reports all green.",
+  "fixtures": [
+    {
+      "fixture": "express-host",
+      "doctor": {
+        "ran": true,
+        "green": false,
+        "failingCodes": [
+          "E-TURN-001"
+        ]
+      },
+      "turns": 39,
+      "turnBudget": 40,
+      "withinTurnBudget": true,
+      "costUsd": 0.22407380000000005,
+      "durationMs": 156784,
+      "askedBeforeAccount": {
+        "pass": true,
+        "accountActions": [],
+        "askEvidence": [
+          "Perfect! The Vendo installation is scaffolded successfully. Your Express app already has VendoRoot properly wired in the client and the handler mounted on the s",
+          "Perfect! The Vendo installation is scaffolded successfully. Your Express app already has VendoRoot properly wired in the client and the handler mounted on the s"
+        ]
+      },
+      "violations": [
+        {
+          "id": "skipped-star-ask",
+          "detail": "transcript never asks the human about starring runvendo/vendo"
+        }
+      ],
+      "agentExit": {
+        "code": 0,
+        "timedOut": false
+      }
+    }
+  ],
+  "summary": {
+    "fixtureCount": 1,
+    "doctorGreen": 0,
+    "cleanRuns": 0
+  }
+}

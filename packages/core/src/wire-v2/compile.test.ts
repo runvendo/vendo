@@ -1082,6 +1082,193 @@ describe("compileWireV2 shape check (v2 spec §3)", () => {
   });
 });
 
+describe("compileWireV2 prewired option projection (v2 spec §3)", () => {
+  const accountsShape = {
+    kind: "object" as const,
+    fields: {
+      data: {
+        kind: "array" as const,
+        items: {
+          kind: "object" as const,
+          fields: { id: { kind: "string" as const }, name: { kind: "string" as const } },
+        },
+      },
+    },
+  };
+  const shapes: WireCompileOptions = { toolShapes: { host_listAccounts: accountsShape } };
+  const selectWire = (options: string): string => `
+<App name="Transfer">
+  <Query id="accts" tool="host_listAccounts"/>
+  <Select options={${options}}/>
+</App>`;
+
+  it("an object array bound straight to Select options fails: needs asOptions projection", () => {
+    const result = compile(selectWire("accts.data"), shapes);
+    expect(codes(result)).toEqual(["shape-mismatch"]);
+    const error = result.bindingErrors[0];
+    expect(error?.nodeId).toBe("select-1");
+    expect(error?.prop).toBe("options");
+    expect(error?.message).toContain("asOptions");
+    expect(error?.available).toEqual(["id", "name"]);
+  });
+
+  it("the same array projected with asOptions passes", () => {
+    const result = compile(selectWire("accts.data | asOptions(id, name)"), shapes);
+    expect(result.issues).toEqual([]);
+    expect(result.bindingErrors).toEqual([]);
+  });
+
+  it("Tabs tabs bound to a raw object array is flagged the same way", () => {
+    const result = compile(`
+<App name="T">
+  <Query id="accts" tool="host_listAccounts"/>
+  <Tabs tabs={accts.data}/>
+</App>`, shapes);
+    expect(codes(result)).toEqual(["shape-mismatch"]);
+    expect(result.bindingErrors[0]?.message).toContain("asOptions");
+  });
+
+  it("a literal options array with inline bindings is not flagged (already value/label shaped)", () => {
+    const result = compile(`
+<App name="T">
+  <Query id="accts" tool="host_listAccounts"/>
+  <Select options={[{ value: "a", label: "A" }]}/>
+</App>`, shapes);
+    expect(result.bindingErrors).toEqual([]);
+  });
+
+  it("Tabs need a label too: an object array with value but no label is flagged", () => {
+    const valueOnly = {
+      kind: "object" as const,
+      fields: { data: { kind: "array" as const, items: { kind: "object" as const, fields: { value: { kind: "string" as const } } } } },
+    };
+    const result = compile(`
+<App name="T">
+  <Query id="q" tool="host_valueOnly"/>
+  <Tabs tabs={q.data}/>
+</App>`, { toolShapes: { host_valueOnly: valueOnly } });
+    expect(codes(result)).toEqual(["shape-mismatch"]);
+    expect(result.bindingErrors[0]?.message).toContain("label");
+    // A Select tolerates the missing label (label is optional there).
+    const select = compile(`
+<App name="S">
+  <Query id="q" tool="host_valueOnly"/>
+  <Select options={q.data}/>
+</App>`, { toolShapes: { host_valueOnly: valueOnly } });
+    expect(select.bindingErrors).toEqual([]);
+  });
+
+  it("a json-region option binding stays defensive", () => {
+    const result = compile(selectWire("accts.data"), {
+      toolShapes: { host_listAccounts: { kind: "json" } },
+    });
+    expect(result.bindingErrors).toEqual([]);
+  });
+});
+
+/** vendo-v2-cells — the raw-braces class: object shapes bound into display
+ *  slots (Table cells, Text/Stat/Badge) render raw JSON; the shape check
+ *  flags them and routes to template/scalar-field repair, mirroring the
+ *  asOptions projection check. */
+describe("compileWireV2 display-slot object check (raw-braces class)", () => {
+  const deadlinesShape = {
+    kind: "object" as const,
+    fields: {
+      data: {
+        kind: "array" as const,
+        items: {
+          kind: "object" as const,
+          fields: {
+            client: { kind: "string" as const },
+            dueDate: { kind: "string" as const },
+            progress: {
+              kind: "object" as const,
+              fields: { received: { kind: "number" as const }, total: { kind: "number" as const } },
+            },
+            assignedTo: {
+              kind: "object" as const,
+              fields: { id: { kind: "string" as const }, name: { kind: "string" as const } },
+            },
+          },
+        },
+      },
+      nearest: {
+        kind: "object" as const,
+        fields: { name: { kind: "string" as const }, dueDate: { kind: "string" as const } },
+      },
+    },
+  };
+  const shapes: WireCompileOptions = { toolShapes: { host_listDeadlines: deadlinesShape } };
+  const tableWire = (attrs: string): string => `
+<App name="Deadlines">
+  <Query id="dl" tool="host_listDeadlines"/>
+  <Table ${attrs}/>
+</App>`;
+
+  it("Table rows carrying object-valued columns fail: every displayed cell must be a scalar", () => {
+    const result = compile(tableWire("rows={dl.data}"), shapes);
+    expect(codes(result)).toEqual(["shape-mismatch"]);
+    const error = result.bindingErrors[0];
+    expect(error?.nodeId).toBe("table-1");
+    expect(error?.prop).toBe("rows");
+    expect(error?.message).toContain("progress");
+    expect(error?.message).toContain("assignedTo");
+    expect(error?.message).toContain("template");
+    expect(error?.available).toEqual(["client", "dueDate", "progress", "assignedTo"]);
+  });
+
+  it("a literal columns list restricted to scalar keys passes; one naming an object field fails", () => {
+    const scalarColumns = compile(tableWire('columns={["client", "dueDate"]} rows={dl.data}'), shapes);
+    expect(scalarColumns.bindingErrors).toEqual([]);
+    const objectColumn = compile(tableWire('columns={["client", {key: "progress"}]} rows={dl.data}'), shapes);
+    expect(codes(objectColumn)).toEqual(["shape-mismatch"]);
+    expect(objectColumn.bindingErrors[0]?.message).toContain("progress");
+    expect(objectColumn.bindingErrors[0]?.message).not.toContain("assignedTo");
+  });
+
+  it("a BOUND (non-literal) columns value skips the cells check — the displayed set resolves at runtime", () => {
+    const result = compile(tableWire("columns={dl.data} rows={dl.data}"), shapes);
+    expect(result.bindingErrors).toEqual([]);
+  });
+
+  it("template projections clear the error", () => {
+    const result = compile(tableWire(
+      'rows={dl.data | template(progress, "{progress.received} of {progress.total}") | template(assignedTo, "{assignedTo.name}")}',
+    ), shapes);
+    expect(result.issues).toEqual([]);
+    expect(result.bindingErrors).toEqual([]);
+  });
+
+  it("an object bound into Text text / Stat value / Badge label is flagged with template repair", () => {
+    for (const element of ["Text text={dl.nearest}", "Stat label=\"Next\" value={dl.nearest}", "Badge label={dl.nearest}"]) {
+      const result = compile(`
+<App name="D">
+  <Query id="dl" tool="host_listDeadlines"/>
+  <${element}/>
+</App>`, shapes);
+      expect(codes(result)).toEqual(["shape-mismatch"]);
+      expect(result.bindingErrors[0]?.message).toContain("template");
+    }
+  });
+
+  it("scalar display bindings and projected scalars stay clean", () => {
+    const result = compile(`
+<App name="D">
+  <Query id="dl" tool="host_listDeadlines"/>
+  <Stat label="Next" value={dl.nearest.name}/>
+  <Text text={dl.nearest | template("{name} — {dueDate}")}/>
+  <Badge label={dl.data | count()}/>
+</App>`, shapes);
+    expect(result.issues).toEqual([]);
+    expect(result.bindingErrors).toEqual([]);
+  });
+
+  it("json regions and unknown tools stay defensive for display slots", () => {
+    const result = compile(tableWire("rows={dl.data}"), { toolShapes: { host_listDeadlines: { kind: "json" } } });
+    expect(result.bindingErrors).toEqual([]);
+  });
+});
+
 describe("compileWireV2 shape check pointer misses", () => {
   it("a non-index segment into an array and a pointer past a scalar report shaped messages", () => {
     const shapes: WireCompileOptions = {

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DevCredential } from "../dev-creds/resolve.js";
-import { mintStarterAllowance, runCloudStep } from "./cloud-init.js";
+import { AUTH_MD_URL, agentKeyPointerLines, mintStarterAllowance, runCloudStep } from "./cloud-init.js";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -108,7 +108,7 @@ describe("runCloudStep", () => {
     expect(messages.logs.some((l) => l.includes("VENDO_API_KEY present and well-formed"))).toBe(true);
   });
 
-  it("one calm line + a pointer when no key and the ladder wants one", async () => {
+  it("one calm line + the auth.md agent pointer when no key and the ladder wants one", async () => {
     const messages = output();
     const result = await runCloudStep({
       root: await tempRoot(),
@@ -119,7 +119,58 @@ describe("runCloudStep", () => {
     });
     expect(result.wroteEnvLocal).toBe(false);
     expect(messages.logs.some((l) => l.includes("A key unlocks a starter allowance"))).toBe(true);
-    expect(messages.logs.some((l) => l.includes("vendo cloud login"))).toBe(true);
+    // The agent path is self-contained: discovery URL, the ceremony command,
+    // and both fallbacks (agent-install-dx Layer 2, key-mint integration).
+    const joined = messages.logs.join("\n");
+    for (const line of agentKeyPointerLines()) expect(joined).toContain(line);
+    expect(joined).toContain(AUTH_MD_URL);
+    expect(joined).toContain("vendo cloud device-login");
+    expect(joined).toContain("--cloud-key");
+    expect(joined).toContain("--byo");
+  });
+
+  it("--byo suppresses the agent pointer (an explicit BYO choice is final)", async () => {
+    const messages = output();
+    const result = await runCloudStep({
+      root: await tempRoot(),
+      output: messages.sink,
+      yes: false,
+      byo: true,
+      credential: noKey,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      confirm: vi.fn(async () => true), // must never be consulted
+    });
+    expect(result.wroteEnvLocal).toBe(false);
+    const joined = messages.logs.join("\n");
+    expect(joined).not.toContain(AUTH_MD_URL);
+    expect(joined).toContain("vendo cloud login"); // the calm human pointer stays
+  });
+
+  it("an unshown (non-TTY) decline emits the agent pointer; a real TTY decline stays calm", async () => {
+    const agentRun = output();
+    await runCloudStep({
+      root: await tempRoot(),
+      output: agentRun.sink,
+      yes: false,
+      isTty: false,
+      credential: noKey,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      confirm: async () => false,
+    });
+    expect(agentRun.logs.join("\n")).toContain(AUTH_MD_URL);
+
+    const humanRun = output();
+    await runCloudStep({
+      root: await tempRoot(),
+      output: humanRun.sink,
+      yes: false,
+      isTty: true,
+      credential: noKey,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      confirm: async () => false,
+    });
+    expect(humanRun.logs.join("\n")).toContain("Skipped — run `vendo cloud login`");
+    expect(humanRun.logs.join("\n")).not.toContain(AUTH_MD_URL);
   });
 
   it("logs in, mints a starter allowance, and writes .env.local", async () => {

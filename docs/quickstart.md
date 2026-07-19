@@ -18,6 +18,17 @@ confirm the preset (consent-style, Enter accepts; `--yes` and
 non-interactive runs accept it silently). It never edits code you wrote. Then start your dev server — the agent is live in your app —
 and run `npx vendo doctor` to verify everything with one real model turn.
 
+## Non-interactive runs (agents)
+
+Every init question has a value-flag answer, so a coding agent never hangs
+on a prompt: `--auth <preset>` (authJs, clerk, supabase, auth0, jwt, none)
+answers the auth confirm and picker, `--framework <next|express>` overrides
+detection, `--cloud-key <key>` or `--byo` answers the Cloud offer,
+`--ai-polish` grants the extraction consent, and `--theme slot=value`
+(repeatable) answers uncertain theme slots. When a decision has no flag and
+no detected default — an undetectable framework — a non-interactive run
+errors with the exact flag to pass instead of guessing or prompting.
+
 ## Model keys
 
 The agent needs an LLM. `createVendo`'s `model` is optional: when you don't
@@ -329,7 +340,11 @@ would have gotten an answer, nonzero means the turn failed. It also validates
 When nothing is listening on the dev port, `doctor` offers to start the dev
 server for the probe (or pass `--yes` to start it non-interactively). `--json`
 prints one machine-readable object — `checks`, `liveTurn`, `cloud`, and the
-exit code — for scripts and agents.
+exit code — for scripts and agents. Every check carries a stable `id`; failing
+and warning checks additionally carry a registry `error_code` (e.g.
+`E-AUTH-001`) and a `fix_ref` URL into `https://vendo.run/agents/verify` with
+the installed version as a query param, so an agent's remediation loop is:
+doctor → read `fix_ref` → fix → repeat.
 
 `sync` extracts the host API and remix baselines. In strict mode, breaking
 extraction changes exit with code 2.

@@ -1448,6 +1448,40 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     expect(calls).toBe(2);
   });
 
+  it("rejects an island importing a module the jail cannot load and repairs to inline SVG", async () => {
+    const broken = '<App name="Chart"><RevChart/><Island name="RevChart">import { LineChart } from "recharts";\nexport default function RevChart() { return <LineChart/>; }</Island></App>';
+    const fixed = '<App name="Chart"><RevChart/><Island name="RevChart">export default function RevChart() { return <svg width="100" height="40"><rect width="10" height="20"/></svg>; }</Island></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? broken : fixed;
+    });
+    const document = await modelEngine.create({ prompt: "Build a chart" }, guardDeps(model));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("recharts");
+    expect(prompts[1]).toContain("inline SVG");
+    expect(document.components?.RevChart).toContain("<svg");
+    expect(document.components?.RevChart).not.toContain("recharts");
+  });
+
+  it("accepts an island importing only react", async () => {
+    const wire = '<App name="Ok"><Note/><Island name="Note">import { useState } from "react";\nexport default function Note() { const [n] = useState(0); return <p>{n}</p>; }</Island></App>';
+    const document = await modelEngine.create({ prompt: "Build it" }, guardDeps(scriptedLanguageModel(wire)));
+    expect(document.components?.Note).toContain('from "react"');
+  });
+
+  it("steers islands to react-only and inline-SVG charts in the create prompt", async () => {
+    let captured = "";
+    const model = scriptedLanguageModel((call) => {
+      captured = promptText(call);
+      return validCreate();
+    });
+    await modelEngine.create({ prompt: "Build it" }, guardDeps(model));
+    expect(captured).toContain("import ONLY react/react-dom");
+    expect(captured).toContain("INLINE SVG");
+    expect(captured).toContain("empty-state");
+  });
+
   it("rejects a query naming a tool absent from the host registry and repairs", async () => {
     const invented = '<App name="Tools"><Query id="rev" tool="get_revenue_history"/><MetricCard label="Revenue" value={rev}/></App>';
     const valid = '<App name="Tools"><Query id="rev" tool="host_metric"/><MetricCard label="Revenue" value={rev}/></App>';
@@ -1507,6 +1541,11 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     expect(captured).toContain("total");
     expect(captured).toContain("LAST RESORT");
     expect(captured).toContain("Never hardcode");
+    // vendo-v2-cells — the display-cell contract rides with the shapes:
+    // object cells project via template, date/cents display columns MUST format.
+    expect(captured).toContain("RESHAPE PIPES");
+    expect(captured).toContain("template(");
+    expect(captured).toContain("MUST carry a format step");
   });
 });
 
@@ -1566,7 +1605,7 @@ describe("branded prewired components validate on create", () => {
       '<App name="Branded"><Stack>',
       '<Stat label="Overdue" value="3"/><Badge label="Late"/>',
       '<Card title="Invoices"><Table rows={[]}/></Card>',
-      '<Button label="Remind"/>',
+      '<Button label="Remind" onClick="host_remind"/>',
       "</Stack></App>",
     ].join("");
     const document = await modelEngine.create(
@@ -1634,5 +1673,127 @@ describe("string interpolation guard", () => {
     expect(prompts[1]).toContain("string interpolation is unsupported");
     expect((document.tree as { nodes: Array<{ props?: Record<string, unknown> }> }).nodes.at(-1)?.props?.label)
       .toBe("Total");
+  });
+});
+
+describe("edit path filters pre-existing catalog/action issues (fast-follow)", () => {
+  const legacyApp = (): AppDocument => ({
+    format: "vendo/app@1",
+    id: "app_legacy",
+    name: "Invoices",
+    ui: "tree",
+    tree: {
+      formatVersion: "vendo-genui/v2",
+      root: "root",
+      // `table` omits source (legacy/direct tree) and carries the now-rejected
+      // `data` prop; the renderer still resolves it to the prewired Table.
+      nodes: [
+        { id: "root", component: "Stack", source: "prewired", children: ["heading", "table"] },
+        { id: "heading", component: "Text", props: { text: "Invoices" } },
+        { id: "table", component: "Table", props: { data: [] } },
+      ],
+    },
+  } as unknown as AppDocument);
+
+  it("does not block an edit to an untouched node carrying a now-rejected prewired prop", async () => {
+    const patch = '<Edit><Set id="heading" text="Overdue invoices"/></Edit>';
+    const result = await modelEngine.edit(
+      { app: legacyApp(), instruction: "Rename the heading" },
+      { model: scriptedLanguageModel(patch), catalog } as unknown as Parameters<typeof modelEngine.edit>[1],
+    );
+    expect(result.kind).toBe("document");
+  });
+
+  it("surfaces a prewired prop issue the edit newly introduces", async () => {
+    const patch = '<Edit><Set id="heading" data="bogus"/></Edit>';
+    const result = await modelEngine.edit(
+      { app: legacyApp(), instruction: "Break the heading" },
+      { model: scriptedLanguageModel(patch, patch), catalog } as unknown as Parameters<typeof modelEngine.edit>[1],
+    );
+    expect(result.kind).toBe("failure");
+    if (result.kind === "failure") {
+      expect(result.issues.some((issue) => issue.includes('unknown prop "data"') && issue.includes("heading"))).toBe(true);
+    }
+  });
+});
+
+describe("action-wiring honesty guard", () => {
+  const actionDeps = (model: unknown, tools: Array<{ name: string; description: string; risk: string }>) => ({
+    model,
+    catalog,
+    tools,
+  }) as unknown as Parameters<typeof modelEngine.create>[1];
+
+  it("repairs a mutating action that carries no payload", async () => {
+    const wrong = '<App name="Remind"><Button label="Send Reminder" onClick="host_remind"/></App>';
+    const right = '<App name="Remind"><Button label="Send Reminder" onClick={{action:"host_remind",payload:{clientId:"c1"}}}/></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? wrong : right;
+    });
+    const document = await modelEngine.create(
+      { prompt: "Overdue invoices with a reminder button" },
+      actionDeps(model, [{ name: "host_remind", description: "Send a reminder", risk: "write" }]),
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("no payload");
+    expect((document.tree as { nodes: Array<{ props?: Record<string, unknown> }> }).nodes.at(-1)?.props?.onClick)
+      .toEqual({ action: "host_remind", payload: { clientId: "c1" } });
+  });
+
+  it("repairs a submit button wired to a read-only tool", async () => {
+    const wrong = '<App name="Form"><Button label="Submit" onClick="host_list"/></App>';
+    const right = '<App name="Form"><Button label="Submit" onClick={{action:"host_create",payload:{name:"x"}}}/></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? wrong : right;
+    });
+    await modelEngine.create(
+      { prompt: "A form" },
+      actionDeps(model, [
+        { name: "host_list", description: "List clients", risk: "read" },
+        { name: "host_create", description: "Create a client", risk: "write" },
+      ]),
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("read-only tool");
+  });
+
+  it("repairs a dead submit button into an honest disclaimer when the host has no tool", async () => {
+    const wrong = '<App name="Intake"><Stack><Input label="Name"/><Button label="Submit Intake Form"/></Stack></App>';
+    const right = '<App name="Intake"><Stack><Input label="Name"/><Text text="This host has no client-creation tool, so intake can\'t be submitted here."/></Stack></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? wrong : right;
+    });
+    const document = await modelEngine.create(
+      { prompt: "A new-client intake form" },
+      actionDeps(model, [{ name: "host_list", description: "List clients", risk: "read" }]),
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("fake affordance");
+    const components = (document.tree as { nodes: Array<{ component: string }> }).nodes.map((node) => node.component);
+    expect(components).not.toContain("Button");
+    expect(components).toContain("Text");
+  });
+
+  it("accepts a mutating action with a payload and a non-submit read button on the first pass", async () => {
+    const wire = '<App name="Ok"><Stack><Button label="Delete" onClick={{action:"host_delete",payload:{id:"x"}}}/><Button label="Cancel"/><Button label="View details" onClick="host_list"/></Stack></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return wire;
+    });
+    await modelEngine.create(
+      { prompt: "Build it" },
+      actionDeps(model, [
+        { name: "host_delete", description: "Delete a row", risk: "destructive" },
+        { name: "host_list", description: "List rows", risk: "read" },
+      ]),
+    );
+    expect(prompts).toHaveLength(1);
   });
 });

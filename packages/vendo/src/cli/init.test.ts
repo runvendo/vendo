@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -6,7 +7,7 @@ import { join } from "node:path";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, describe, expect, it } from "vitest";
-import { runInit } from "./init.js";
+import { runInit, starViaGh } from "./init.js";
 import type { Output } from "./shared.js";
 
 const cleanup: string[] = [];
@@ -170,6 +171,14 @@ describe("vendo init (zero-question)", () => {
     expect(await run(root, again)).toBe(0);
     expect(await tree(root)).toEqual(first);
     expect(again.logs.join("\n")).toContain("Already wired — nothing to change.");
+    // The second run's agent tail reflects what THIS run did: no composition
+    // was created (no auth line), no registry was generated (no registry edit
+    // line) — only the still-manual layout paste and the doctor gate remain.
+    const tail = again.logs.join("\n").split("Agent tail:")[1]!;
+    expect(tail).not.toContain("auth:");
+    expect(tail).not.toContain(join("vendo", "registry.tsx"));
+    expect(tail).toContain(`edit ${join("app", "layout.tsx")} — `);
+    expect(tail).toContain("vendo doctor --json");
   });
 
   it("computes the theme paste specifier from a src/app layout (../../ to project root)", async () => {
@@ -409,6 +418,320 @@ describe("vendo init (zero-question)", () => {
     expect(advisories).toHaveLength(1);
     expect(advisories[0]).toContain("next-auth, @clerk/nextjs");
     expect(advisories[0]).toContain("auth: authJs() or auth: clerk()");
+  });
+
+  // Agent-install-dx: --auth answers the confirm AND the picker in one flag,
+  // wiring exactly like the equivalent interactive pick — no prompt ever.
+  it("--auth wires the named preset without any prompt, install hint included when the SDK is absent", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
+    }));
+    const sink = output();
+    expect(await run(root, sink, {
+      auth: "clerk",
+      interactive: true,
+      confirmAuth: async () => { throw new Error("prompted"); },
+      selectAuth: async () => { throw new Error("prompted"); },
+    })).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain("auth: clerk(),");
+    expect(route).toContain("// Selected Clerk — clerk() fills the identity seams");
+    const advisories = sink.logs.filter((line) => line.includes("Auth:"));
+    expect(advisories).toHaveLength(1);
+    expect(advisories[0]).toContain("npm install @clerk/backend");
+  });
+
+  it("--auth on the detected family wires like a detection-accept; none and jwt mirror their picks", async () => {
+    const detected = await fixture();
+    await writeFile(join(detected, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "@supabase/supabase-js": "2.0.0" },
+    }));
+    const detectedSink = output();
+    expect(await run(detected, detectedSink, { yes: true, auth: "supabase" })).toBe(0);
+    const detectedRoute = await readFile(join(detected, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(detectedRoute).toContain("auth: supabase(),");
+    expect(detectedRoute).toContain("Detected @supabase/supabase-js");
+    expect(detectedSink.logs.join("\n")).not.toContain("Auth:");
+
+    // --auth none: stay anonymous even though detection would have wired.
+    const declined = await fixture();
+    await writeFile(join(declined, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
+    }));
+    const declinedSink = output();
+    expect(await run(declined, declinedSink, { yes: true, auth: "none" })).toBe(0);
+    const declinedRoute = await readFile(join(declined, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(declinedRoute).toContain("principal: async () => null");
+    expect(declinedSink.logs.join("\n")).toContain("left anonymous");
+
+    // --auth jwt: nothing wired, the recipe is the answer.
+    const jwt = await fixture();
+    const jwtSink = output();
+    expect(await run(jwt, jwtSink, { yes: true, auth: "jwt" })).toBe(0);
+    const jwtRoute = await readFile(join(jwt, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(jwtRoute).toContain("principal: async () => null");
+    expect(jwtSink.logs.join("\n")).toContain("auth: jwt({ secret:");
+  });
+
+  // Agent-install-dx: a non-interactive scaffold run is agent-driven — the
+  // run ENDS with the repo-specific agent tail (the wired auth preset and
+  // what's still stubbed, the exact files to hand-edit, the doctor gate),
+  // every line derived from what this run actually wrote.
+  it("non-interactive runs end with the agent tail: wired preset, hand-edit files, doctor gate", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
+    }));
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    const logs = sink.logs.join("\n");
+    const tailAt = logs.indexOf("Agent tail:");
+    expect(tailAt).toBeGreaterThan(-1);
+    const tail = logs.slice(tailAt);
+    // The wired preset with its provenance — real run facts, not prose…
+    expect(tail).toContain("auth: authJs() wired (detected next-auth)");
+    // …the exact files the agent must now hand-edit, each described…
+    expect(tail).toContain(`edit ${join("vendo", "registry.tsx")} — `);
+    expect(tail).toContain(`edit ${join("app", "layout.tsx")} — `);
+    expect(tail).toContain(`edit ${join(".vendo", "brief.md")} — `);
+    // …and the machine gate, as the run's FINAL line.
+    expect(tail).toContain("vendo doctor --json");
+    expect(sink.logs[sink.logs.length - 1]).toContain("vendo doctor --json");
+    expect(sink.logs[sink.logs.length - 1]).toContain("green");
+  });
+
+  // Agent-install-dx Layer 2 (key-mint integration): a keyless run's tail
+  // carries the complete in-band key story — the auth.md discovery URL, the
+  // device-login ceremony, and both flag fallbacks — so the agent never
+  // detours to a browser signup it can't drive.
+  it("a keyless run's tail points at the auth.md key flow; a run with a key stays silent about it", async () => {
+    const keyless = await fixture();
+    const keylessSink = output();
+    expect(await run(keyless, keylessSink)).toBe(0);
+    const keylessTail = keylessSink.logs.join("\n").split("Agent tail:")[1]!;
+    expect(keylessTail).toContain("cloud key: none");
+    expect(keylessTail).toContain("https://vendo.run/auth.md");
+    expect(keylessTail).toContain("vendo cloud device-login");
+    expect(keylessTail).toContain("--cloud-key");
+    expect(keylessTail).toContain("--byo");
+
+    const keyed = await fixture();
+    const keyedSink = output();
+    expect(await run(keyed, keyedSink, { env: { ANTHROPIC_API_KEY: "sk-ant-test" } })).toBe(0);
+    const keyedTail = keyedSink.logs.join("\n").split("Agent tail:")[1]!;
+    expect(keyedTail).not.toContain("cloud key: none");
+  });
+
+  it("the tail states auth stubs honestly: anonymous scaffolds point at the composition, a picked preset names its missing SDK", async () => {
+    // No auth dependency: the tail says so and points the hand-edit at the
+    // generated composition file.
+    const anonymous = await fixture();
+    const anonymousSink = output();
+    expect(await run(anonymous, anonymousSink)).toBe(0);
+    const anonymousTail = anonymousSink.logs.join("\n").split("Agent tail:")[1]!;
+    expect(anonymousTail).toContain("auth: none wired");
+    expect(anonymousTail).toContain(`edit ${join("app", "api", "vendo", "[...vendo]", "route.ts")} — `);
+    // The advisory count stays exact: the tail never repeats the "Auth:" line.
+    expect(anonymousSink.logs.filter((line) => line.includes("Auth:"))).toHaveLength(1);
+
+    // --auth clerk without the SDK: the stub is the missing runtime package.
+    const picked = await fixture();
+    const pickedSink = output();
+    expect(await run(picked, pickedSink, { yes: true, auth: "clerk" })).toBe(0);
+    const pickedTail = pickedSink.logs.join("\n").split("Agent tail:")[1]!;
+    expect(pickedTail).toContain("auth: clerk() wired");
+    expect(pickedTail).toContain("@clerk/backend");
+  });
+
+  it("interactive runs keep the clack-style summary — no agent tail; --yes brings it back even on a TTY", async () => {
+    const interactive = await fixture();
+    const interactiveSink = output();
+    expect(await run(interactive, interactiveSink, { interactive: true })).toBe(0);
+    expect(interactiveSink.logs.join("\n")).not.toContain("Agent tail");
+
+    // --yes IS the non-interactive path, TTY or not.
+    const flagged = await fixture();
+    const flaggedSink = output();
+    expect(await run(flagged, flaggedSink, { yes: true, interactive: true })).toBe(0);
+    expect(flaggedSink.logs.join("\n")).toContain("Agent tail:");
+  });
+
+  it("the Express tail points at the printed wiring lines (no exact entry file exists to name)", async () => {
+    const root = await expressFixture(false);
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    const tail = sink.logs.join("\n").split("Agent tail:")[1]!;
+    expect(tail).toContain("auth: none wired");
+    expect(tail).toContain(`edit ${join("vendo", "registry.tsx")} — `);
+    expect(tail).toContain(`edit ${join("vendo", "server.ts")} — `);
+    expect(tail).toContain("mountVendo()");
+    expect(tail).toContain("vendo doctor --json");
+  });
+
+  // Agent-install-dx: an undetectable framework has NO safe default — a
+  // non-interactive run errors with the exact flag instead of guessing the
+  // Next layout into an unknown host (or hanging on a prompt it can't show).
+  it("non-interactive init on an undetectable framework errors with --framework and an example", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-init-nofw-"));
+    cleanup.push(root);
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "host", dependencies: { react: "19.0.0" } }));
+    const sink = output();
+    expect(await run(root, sink, { yes: true })).toBe(1);
+    const errors = sink.errors.join("\n");
+    expect(errors).toContain("--framework");
+    expect(errors).toContain("vendo init --yes --framework next"); // one example invocation
+    expect(await readdir(root)).toEqual(["package.json"]); // nothing was written
+
+    // The flag answers it: the same host scaffolds as the named framework.
+    const answered = output();
+    expect(await run(root, answered, { yes: true, framework: "next" })).toBe(0);
+    await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))
+      .resolves.toContain("createVendo");
+  });
+
+  it("interactive init on an undetectable framework is unchanged: it still scaffolds the Next layout", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-init-nofw-tty-"));
+    cleanup.push(root);
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "host", dependencies: { react: "19.0.0" } }));
+    const sink = output();
+    expect(await run(root, sink, { interactive: true })).toBe(0);
+    await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))
+      .resolves.toContain("createVendo");
+  });
+
+  it("--cloud-key lands the key in .env.local and the login offer never fires", async () => {
+    const root = await fixture();
+    const key = `vnd_${"c".repeat(40)}`;
+    const sink = output();
+    let offered = 0;
+    // No cloudProbe stub: the default probe must see the flag-landed key.
+    expect(await runInit({
+      targetDir: root,
+      output: sink.output,
+      env: {},
+      cloudKey: key,
+      themeModel: themeModelOf({ slots: {} }),
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+      cloud: {
+        confirm: async () => {
+          offered += 1;
+          return false;
+        },
+      },
+    })).toBe(0);
+    expect(offered).toBe(0);
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${key}`);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Vendo Cloud: VENDO_API_KEY present and well-formed.");
+    expect(logs).not.toContain("No model key yet");
+  });
+
+  it("--cloud-key upserts into an existing .env.local without dropping unrelated lines", async () => {
+    const root = await fixture();
+    await writeFile(join(root, ".env.local"), "FOO=bar\n");
+    const key = `vnd_${"f".repeat(40)}`;
+    // No cloudProbe stub: the default probe sees the flag-landed key, so the
+    // offer (which would throw here) never fires.
+    expect(await run(root, output(), {
+      cloudKey: key,
+      cloud: { confirm: async () => { throw new Error("offered"); } },
+    })).toBe(0);
+    const envLocal = await readFile(join(root, ".env.local"), "utf8");
+    expect(envLocal).toContain("FOO=bar");
+    expect(envLocal).toContain(`VENDO_API_KEY=${key}`);
+  });
+
+  it("--byo declines the Cloud offer explicitly: no question, no mint, just the pointer", async () => {
+    const root = await fixture();
+    const sink = output();
+    let offered = 0;
+    let minted = 0;
+    expect(await run(root, sink, {
+      byo: true,
+      cloud: {
+        ...NO_CLOUD,
+        confirm: async () => {
+          offered += 1;
+          return true;
+        },
+        mint: async () => {
+          minted += 1;
+          return `vnd_${"e".repeat(40)}`;
+        },
+      },
+    })).toBe(0);
+    expect(offered).toBe(0);
+    expect(minted).toBe(0);
+    await expect(readFile(join(root, ".env.local"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(sink.logs.join("\n")).toContain("vendo cloud login");
+  });
+
+  it("--ai-polish is the consent: non-interactive runs reach the harness instead of skipping", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, {
+      yes: true,
+      aiPolish: true,
+      // No available harness: the gate must still OPEN (proving the
+      // non-interactive skip was bypassed) and then report unavailability.
+      extract: {
+        harnesses: [],
+        confirm: async () => { throw new Error("prompted"); },
+      },
+    })).toBe(0);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("AI polish: unavailable");
+    expect(logs).not.toContain("needs an interactive run");
+
+    // Without the flag, the non-interactive skip is unchanged.
+    const skipped = await fixture();
+    const skippedSink = output();
+    expect(await run(skipped, skippedSink, { yes: true, extract: { harnesses: [] } })).toBe(0);
+    expect(skippedSink.logs.join("\n")).toContain("needs an interactive run");
+  });
+
+  it("--theme answers uncertain slots; the review prompt covers only what the flags left open", async () => {
+    const root = await fixture();
+    const reviewed: string[] = [];
+    const sink = output();
+    expect(await run(root, sink, {
+      themeAnswers: { accent: "#facc15" },
+      themeModel: themeModelOf({
+        slots: { accent: "#196b46", text: "#111111" },
+        uncertain: [
+          { slot: "accent", note: "green may be data-only" },
+          { slot: "border", note: "no border evidence" },
+        ],
+      }),
+      themeReview: async (summary) => {
+        reviewed.push(...summary.uncertain.map((entry) => entry.slot));
+        return {};
+      },
+    })).toBe(0);
+    expect(reviewed).toEqual(["border"]); // accent was answered by flag
+    const theme = JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"));
+    expect(theme.colors.accent).toBe("#facc15");
+    // The contrast-derived accentText follows the flag-replaced accent.
+    expect(theme.colors.accentText).toBe("#000000");
+
+    // With --yes the flag still applies — no prompt existed to answer.
+    const quiet = await fixture();
+    expect(await run(quiet, output(), {
+      yes: true,
+      themeAnswers: { accent: "#facc15" },
+      themeModel: themeModelOf({
+        slots: { accent: "#196b46" },
+        uncertain: [{ slot: "accent", note: "green may be data-only" }],
+      }),
+      themeReview: async () => { throw new Error("prompted"); },
+    })).toBe(0);
+    const quietTheme = JSON.parse(await readFile(join(quiet, ".vendo", "theme.json"), "utf8"));
+    expect(quietTheme.colors.accent).toBe("#facc15");
   });
 
   it("never clobbers an existing registry and still wires the route to it", async () => {
@@ -804,6 +1127,139 @@ describe("vendo init (zero-question)", () => {
     expect(logs).not.toContain("No model key yet");
     expect(seen.length).toBeGreaterThan(0);
     expect(seen[0]).toBe(key);
+  });
+
+  // Agent-install-dx (§CLI-5): the star ask — ONE consent question at the end
+  // of a fully successful INTERACTIVE run. Yes stars via gh (any failure
+  // degrades to the repo URL, one line, no error noise); no does nothing.
+  // Never shown non-interactively, and never able to change init's exit code.
+  it("interactive success ends with the star ask; yes stars runvendo/vendo via gh", async () => {
+    const root = await fixture();
+    const asked: Array<{ question: string; defaultYes: boolean }> = [];
+    const spawned: Array<{ command: string; args: string[] }> = [];
+    const sink = output();
+    expect(await run(root, sink, {
+      interactive: true,
+      confirmStar: async (question, defaultYes) => {
+        asked.push({ question, defaultYes });
+        return true; // Enter/Y
+      },
+      spawnStar: (command, args) => {
+        spawned.push({ command, args });
+        const child = new EventEmitter();
+        setImmediate(() => child.emit("exit", 0));
+        return child;
+      },
+    })).toBe(0);
+    expect(asked).toEqual([{ question: "Star runvendo/vendo to support the project?", defaultYes: true }]);
+    expect(spawned).toEqual([{ command: "gh", args: ["api", "-X", "PUT", "user/starred/runvendo/vendo"] }]);
+    // The star landed: no fallback URL line.
+    expect(sink.logs.join("\n")).not.toContain("github.com/runvendo/vendo");
+  });
+
+  it("a missing or failing gh degrades to one repo-URL line and leaves the exit code alone", async () => {
+    // gh absent: spawn emits ENOENT.
+    const missing = await fixture();
+    const missingSink = output();
+    expect(await run(missing, missingSink, {
+      interactive: true,
+      confirmStar: async () => true,
+      spawnStar: () => {
+        const child = new EventEmitter();
+        setImmediate(() => child.emit("error", new Error("spawn gh ENOENT")));
+        return child;
+      },
+    })).toBe(0);
+    const missingUrls = missingSink.logs.filter((line) => line.includes("https://github.com/runvendo/vendo"));
+    expect(missingUrls).toHaveLength(1);
+    expect(missingSink.errors.join("\n")).not.toContain("gh"); // no error noise
+
+    // gh present but the call fails (non-zero exit): same one-line fallback.
+    const failing = await fixture();
+    const failingSink = output();
+    expect(await run(failing, failingSink, {
+      interactive: true,
+      confirmStar: async () => true,
+      spawnStar: () => {
+        const child = new EventEmitter();
+        setImmediate(() => child.emit("exit", 1));
+        return child;
+      },
+    })).toBe(0);
+    expect(failingSink.logs.filter((line) => line.includes("https://github.com/runvendo/vendo"))).toHaveLength(1);
+
+    // Even a spawn seam that throws synchronously never fails the init.
+    const throwing = await fixture();
+    const throwingSink = output();
+    expect(await run(throwing, throwingSink, {
+      interactive: true,
+      confirmStar: async () => true,
+      spawnStar: () => { throw new Error("no spawn at all"); },
+    })).toBe(0);
+    expect(throwingSink.logs.filter((line) => line.includes("https://github.com/runvendo/vendo"))).toHaveLength(1);
+  });
+
+  it("declining the star ask does nothing: no gh, no URL, no guilt text", async () => {
+    const root = await fixture();
+    let spawnCount = 0;
+    const sink = output();
+    expect(await run(root, sink, {
+      interactive: true,
+      confirmStar: async () => false,
+      spawnStar: () => {
+        spawnCount += 1;
+        return new EventEmitter();
+      },
+    })).toBe(0);
+    expect(spawnCount).toBe(0);
+    const logs = sink.logs.join("\n");
+    expect(logs).not.toContain("github.com/runvendo/vendo");
+    expect(logs).not.toContain("Star");
+  });
+
+  it("the star ask never fires non-interactively: --yes, non-TTY, and --agent stay deterministic", async () => {
+    const seams = {
+      confirmStar: async () => { throw new Error("star prompted"); },
+      spawnStar: (): EventEmitter => { throw new Error("star spawned"); },
+    };
+    // Non-TTY (vitest default interactivity): no prompt.
+    const nonTty = await fixture();
+    expect(await run(nonTty, output(), seams)).toBe(0);
+    // --yes on a TTY: no prompt.
+    const flagged = await fixture();
+    expect(await run(flagged, output(), { yes: true, interactive: true, ...seams })).toBe(0);
+    // --agent: the read-only JSON plan carries no prompt either.
+    const agent = await fixture();
+    const agentSink = output();
+    expect(await run(agent, agentSink, { agent: true, ...seams })).toBe(0);
+    expect(agentSink.logs.join("\n")).not.toContain("Star");
+  });
+
+  it("an unshown prompt is never a yes: interactive override without a TTY stdin means no star", async () => {
+    // A programmatic runInit({ interactive: true }) with piped stdin (vitest
+    // has no TTY) must not auto-star off the confirm's Y default — the
+    // question was never actually shown, so the answer is false.
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, {
+      interactive: true,
+      // No confirmStar seam: the real default path must decline on its own.
+      spawnStar: (): EventEmitter => { throw new Error("star spawned"); },
+    })).toBe(0);
+    expect(sink.logs.join("\n")).not.toContain("github.com/runvendo/vendo");
+  });
+
+  it("a gh that hangs resolves the star as false after the timeout", async () => {
+    // A child that never emits: the timer settles the promise instead.
+    await expect(starViaGh(() => new EventEmitter(), 25)).resolves.toBe(false);
+  });
+
+  it("a star step that blows up entirely never changes init's exit code", async () => {
+    const root = await fixture();
+    expect(await run(root, output(), {
+      interactive: true,
+      confirmStar: async () => { throw new Error("terminal went away"); },
+    })).toBe(0);
   });
 
   it("emits a read-only agent plan with code changes, extraction, and paste steps", async () => {

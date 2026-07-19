@@ -3,6 +3,7 @@ import type { AppDataAccess } from "../app-data.js";
 import { describe, expect, it } from "vitest";
 import { createAppsProxy } from "../proxy.js";
 import { mintRunToken } from "../run-token.js";
+import { toV1SandboxAdapter } from "../sandbox-v1-compat.js";
 import { e2bSandbox } from "./index.js";
 
 // ============================================================================
@@ -66,7 +67,7 @@ const egress = async (envelope: unknown): Promise<Response> => proxy.handler(new
 
 describe.skipIf(!process.env.E2B_API_KEY)("ENG-259 functional secret egress (live)", () => {
   it("boots a real E2B machine that carries the secret HANDLE, not the value", async () => {
-    const adapter = e2bSandbox({ apiKey: process.env.E2B_API_KEY, timeoutMs: 90_000 });
+    const adapter = toV1SandboxAdapter(e2bSandbox({ apiKey: process.env.E2B_API_KEY, timeoutMs: 90_000 }));
     const machine = await adapter.create({
       env: { PORT: "8080", ECHO_KEY: HANDLE },
       egress: [ALLOWED_HOST],

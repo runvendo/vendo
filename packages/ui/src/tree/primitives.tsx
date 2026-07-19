@@ -1,12 +1,13 @@
 import type { ComponentType, CSSProperties, PropsWithChildren } from "react";
 import { BRANDED_COMPONENTS } from "./branded.js";
 
-type GapProps = PropsWithChildren<{ gap?: string | number }>;
+// gap is a number of pixels only (the prewired schema and wire compiler both
+// pin it to number); a string here was never emitted by generation and only
+// widened the contract.
+type GapProps = PropsWithChildren<{ gap?: number }>;
 
-const spacing = (value: string | number | undefined, fallback: string): string => {
-  if (typeof value === "number") return `${value}px`;
-  return value ?? fallback;
-};
+const spacing = (value: number | undefined, fallback: string): string =>
+  value === undefined ? `${fallback}` : `${value}px`;
 
 /** 01-core §8; 08-ui §5 */
 export function Stack({ gap, children }: GapProps) {

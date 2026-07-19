@@ -88,6 +88,13 @@ import {
   type RunAiRepoMatrixOptions,
 } from "./ai/matrix.js";
 import type { ExtractionHarness } from "@vendoai/vendo/extract";
+import {
+  INSTALL_EVAL_DEFAULTS,
+  runInstallEvalCommand as defaultRunInstallEvalCommand,
+  type InstallEvalCommandOptions,
+  type InstallEvalDeps,
+} from "./install-eval/run.js";
+import { INSTALL_EVAL_FIXTURES } from "./install-eval/fixtures.js";
 
 const usage = `Usage:
   pnpm corpus --help
@@ -97,6 +104,8 @@ const usage = `Usage:
   pnpm corpus boot <repo> [--timeout-ms <ms>]
   pnpm corpus gallery [repo...]
   pnpm corpus ai [repo...] [--model <id>]... [--json] [--strict]
+  pnpm corpus install-eval [fixture...] [--model <id>] [--dry-run] [--json] [--strict]
+                           [--turn-budget <n>] [--time-budget-ms <ms>] [--max-budget-usd <usd>]
 
 Commands:
   validate  Load and validate corpus/manifest.json.
@@ -106,6 +115,11 @@ Commands:
   gallery   Boot configured deep-tier repos and capture native/generated screenshots, GIFs, and timings.
   ai        Run the AI extraction matrix (repo × model) and score against ai-expected.json labels.
             Needs a real model credential (ANTHROPIC_API_KEY or a Claude Code login); never part of pnpm test.
+  install-eval  Prove a real coding agent installs Vendo from the docs' copy-paste prompt alone:
+            clean fixture copies (${INSTALL_EVAL_FIXTURES.map((fixture) => fixture.name).join(", ")}),
+            headless Claude Code, machine scoring, report under corpus/reports/.
+            Spends real model money per live run; never part of pnpm test or CI. --dry-run scores a
+            canned transcript without invoking the agent.
 `;
 
 const defaultWorkspaceRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
@@ -140,6 +154,7 @@ export interface CorpusCliDependencies {
   ensureAgentSdk?: (sdkDir: string) => Promise<void>;
   createExtractionHarness?: (sdkDir: string) => ExtractionHarness;
   runAiRepoMatrix?: (options: RunAiRepoMatrixOptions) => Promise<AiRepoResult>;
+  runInstallEval?: (options: InstallEvalCommandOptions, deps: InstallEvalDeps) => Promise<number>;
 }
 
 interface ResolvedDeps {
@@ -169,6 +184,7 @@ interface ResolvedDeps {
   ensureAgentSdk: (sdkDir: string) => Promise<void>;
   createExtractionHarness: (sdkDir: string) => ExtractionHarness;
   runAiRepoMatrix: (options: RunAiRepoMatrixOptions) => Promise<AiRepoResult>;
+  runInstallEval: (options: InstallEvalCommandOptions, deps: InstallEvalDeps) => Promise<number>;
 }
 
 interface RunCommandOptions {
@@ -220,6 +236,7 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
     ensureAgentSdk: deps.ensureAgentSdk ?? defaultEnsureAgentSdk,
     createExtractionHarness: deps.createExtractionHarness ?? corpusExtractionHarness,
     runAiRepoMatrix: deps.runAiRepoMatrix ?? defaultRunAiRepoMatrix,
+    runInstallEval: deps.runInstallEval ?? defaultRunInstallEvalCommand,
   };
 }
 
@@ -337,6 +354,57 @@ function parseAiArgs(args: readonly string[]): AiCommandOptions {
     json,
     strict,
   };
+}
+
+export function parseInstallEvalArgs(args: readonly string[]): InstallEvalCommandOptions {
+  const fixtureNames: string[] = [];
+  let model: string = INSTALL_EVAL_DEFAULTS.model;
+  let dryRun = false;
+  let json = false;
+  let strict = false;
+  let turnBudget: number = INSTALL_EVAL_DEFAULTS.turnBudget;
+  let timeBudgetMs: number = INSTALL_EVAL_DEFAULTS.timeBudgetMs;
+  let maxBudgetUsd: number = INSTALL_EVAL_DEFAULTS.maxBudgetUsd;
+
+  const valueOf = (arg: string, next: string | undefined, label: string): string => {
+    if (arg.includes("=")) return arg.slice(arg.indexOf("=") + 1);
+    if (!next || next.startsWith("-")) throw new Error(`${label} needs a value`);
+    return next;
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg) continue;
+    if (arg === "--model" || arg.startsWith("--model=")) {
+      model = valueOf(arg, args[index + 1], "--model");
+      if (!arg.includes("=")) index += 1;
+    } else if (arg === "--turn-budget" || arg.startsWith("--turn-budget=")) {
+      turnBudget = parsePositiveInt(valueOf(arg, args[index + 1], "--turn-budget"), "--turn-budget");
+      if (!arg.includes("=")) index += 1;
+    } else if (arg === "--time-budget-ms" || arg.startsWith("--time-budget-ms=")) {
+      timeBudgetMs = parsePositiveInt(valueOf(arg, args[index + 1], "--time-budget-ms"), "--time-budget-ms");
+      if (!arg.includes("=")) index += 1;
+    } else if (arg === "--max-budget-usd" || arg.startsWith("--max-budget-usd=")) {
+      const value = Number(valueOf(arg, args[index + 1], "--max-budget-usd"));
+      if (!Number.isFinite(value) || value <= 0) throw new Error(`--max-budget-usd must be a positive number; got ${value}`);
+      maxBudgetUsd = value;
+      if (!arg.includes("=")) index += 1;
+    } else if (arg === "--dry-run") {
+      dryRun = true;
+    } else if (arg === "--json") {
+      json = true;
+    } else if (arg === "--strict") {
+      strict = true;
+    } else if (arg === "--help" || arg === "-h") {
+      throw new Error(usage);
+    } else if (arg.startsWith("-")) {
+      throw new Error(`Unknown install-eval option: ${arg}`);
+    } else {
+      fixtureNames.push(arg);
+    }
+  }
+
+  return { fixtureNames, model, dryRun, json, strict, turnBudget, timeBudgetMs, maxBudgetUsd };
 }
 
 function parseGalleryArgs(args: readonly string[]): GalleryCommandOptions {
@@ -989,6 +1057,18 @@ export async function runCli(args = process.argv.slice(2), providedDeps: CorpusC
 
     if (command === "ai") {
       return await runAiCommand(parseAiArgs(args.slice(1)), deps);
+    }
+
+    if (command === "install-eval") {
+      const options = parseInstallEvalArgs(args.slice(1));
+      return await deps.runInstallEval(options, {
+        stdout: deps.stdout,
+        stderr: deps.stderr,
+        now: deps.now,
+        env: (deps.env ?? process.env) as NodeJS.ProcessEnv,
+        workspaceRoot: deps.workspaceRoot ?? defaultWorkspaceRoot,
+        context: deps.createContext(),
+      });
     }
 
     deps.stderr(`Unknown corpus command: ${command}`);

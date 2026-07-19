@@ -1,6 +1,8 @@
 import { performance } from "node:perf_hooks";
 import { e2bSandbox } from "@vendoai/apps/e2b";
-import type { SandboxMachine } from "@vendoai/apps";
+// execution-v2 transition: this bench still provisions through the archived v1
+// surface (files+exec); the Wave 3 in-box agent supersedes it.
+import { toV1SandboxAdapter, type V1SandboxMachine } from "@vendoai/apps";
 import { summarize } from "../stats.js";
 import type { CaseResult, Suite, SuiteResult } from "../types.js";
 
@@ -20,7 +22,7 @@ http.createServer((request, response) => {
 `;
 
 /** Poll the machine until the in-sandbox HTTP server answers, returning the body. */
-const requestEventually = async (machine: SandboxMachine): Promise<string> => {
+const requestEventually = async (machine: V1SandboxMachine): Promise<string> => {
   let failure: unknown;
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
@@ -37,10 +39,12 @@ const requestEventually = async (machine: SandboxMachine): Promise<string> => {
 /**
  * The truth about e2b wake latency (E2B_API_KEY required; never in CI).
  *
- * An e2b snapshot IS a paused sandbox (same id): snapshot() pauses, resume()
- * reconnects and unpauses. Per trial we pause, then time resume(ref) and the
- * resume→first-successful-request path, then re-pause for the next trial.
- * The 06 §1 "resuming" surface claims a ~1s wake — this measures the truth.
+ * The v2 seam's snapshot() is a point-in-time checkpoint that leaves the
+ * source machine running, so each source is destroyed right after its
+ * checkpoint (the v1 bridge maps stop() to destroy). Per trial we time
+ * resume(ref) and the resume→first-successful-request path, then checkpoint
+ * and destroy that machine for the next trial. The 06 §1 "resuming" surface
+ * claims a ~1s wake — this measures the truth.
  */
 export const e2bSuite: Suite = {
   name: "e2b",
@@ -50,10 +54,10 @@ export const e2bSuite: Suite = {
       return { suite: "e2b", kind: "live", cases: [], skipped: true, reason: "E2B_API_KEY not set" };
     }
 
-    const adapter = e2bSandbox({ apiKey: process.env.E2B_API_KEY, timeoutMs: 180_000 });
+    const adapter = toV1SandboxAdapter(e2bSandbox({ apiKey: process.env.E2B_API_KEY, timeoutMs: 180_000 }));
     const resumeMs: number[] = [];
     const wakeToServeMs: number[] = [];
-    let live: SandboxMachine | undefined;
+    let live: V1SandboxMachine | undefined;
 
     try {
       // Boot once, start the server, confirm it serves.
@@ -66,7 +70,8 @@ export const e2bSuite: Suite = {
       if (exec.code !== 0) throw new Error(`server start failed (${exec.code}): ${exec.stderr}`);
       await requestEventually(machine);
 
-      let ref = await machine.snapshot(); // pause
+      let ref = await machine.snapshot();
+      await machine.stop().catch(() => undefined); // bridge: destroy the running source
       live = undefined;
 
       for (let trial = 0; trial < TRIALS; trial += 1) {
@@ -76,14 +81,10 @@ export const e2bSuite: Suite = {
         live = resumed;
         await requestEventually(resumed);
         wakeToServeMs.push(performance.now() - start);
-        ref = await resumed.snapshot(); // re-pause for the next trial
+        ref = await resumed.snapshot(); // checkpoint for the next trial
+        await resumed.stop().catch(() => undefined); // bridge: destroy this trial's machine
         live = undefined;
       }
-
-      // The final ref is a paused sandbox — resume and kill it to clean up.
-      const last = await adapter.resume(ref);
-      await last.stop();
-      live = undefined;
 
       const cases: CaseResult[] = [
         summarize("resume", resumeMs),

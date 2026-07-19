@@ -26,13 +26,17 @@
   },
   "favicon": "/favicon.svg",
   "contextual": {
-    "options": ["copy", "view", "chatgpt", "claude", "cursor", "vscode"]
+    "options": ["copy", "view", "mcp", "chatgpt", "claude", "cursor", "vscode"]
   },
   "navigation": {
     "groups": [
       {
         "group": "Getting started",
         "pages": ["index", "install", "quickstart", "quickstart-node"]
+      },
+      {
+        "group": "For coding agents",
+        "pages": ["agents/index", "agents/host-auth", "agents/tools", "agents/verify"]
       },
       {
         "group": "Concepts",

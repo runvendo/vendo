@@ -1,0 +1,111 @@
+---
+title: "Tools and the catalog for agents"
+description: "Exposing the host API as Vendo tools, the two-file surface, what makes a good tool, and the catalog contract with anti-prop-invention rules."
+---
+
+## The two-file surface
+
+A host's entire server wiring is two files, both scaffolded by `vendo init`:
+
+1. **`vendo/registry.tsx`**: the component registry. One object keyed by
+   component name; each entry holds the real component reference, a
+   description the model reads, and an optional zod props schema. The same
+   object serves both sides: `createVendo` reads it as `catalog` (data fields
+   only) and `<VendoRoot components={registry}>` reads the component
+   references. There is no second map to keep in sync.
+2. **The composition**: one `createVendo({...})` call. On Next.js it lives in
+   the catch-all route `app/api/vendo/[...vendo]/route.ts`; on Express in
+   `vendo/server.ts` (`server.mjs` when the host has no TypeScript), mounted
+   with `app.use("/api/vendo", mountVendo())`.
+
+Init generates the registry empty. Filling it with real host components is
+your job; see the catalog contract below.
+
+## Tools come from extraction, not from you
+
+`vendo sync` (run by init, and hooked into `predev`/`prebuild`) statically
+extracts the host API (OpenAPI operations, tRPC procedures, GraphQL
+operations, Next.js server actions, and a route scan) into
+`.vendo/tools.json`. Only tools in that file exist.
+
+The rules:
+
+- **Never hand-edit `.vendo/tools.json`.** It is regenerated. Durable
+  corrections go in `.vendo/overrides.json`, which wins field by field and is
+  never touched by sync.
+- **Never invent a tool.** If an endpoint was not extracted, fix the source it
+  is extracted from (or its OpenAPI spec) and re-run `npx vendo sync`; do not
+  add entries by hand.
+- Unclassifiable routes are extracted `disabled` with a note. Enable them
+  deliberately in `overrides.json` after review, never blanket-enable.
+
+## What makes a good tool
+
+- **A task-oriented description**, written for the model: what the tool does
+  for the user, when to reach for it, not a restatement of the route path.
+- **An honest risk label.** `read` auto-runs, `write` and `destructive` are
+  policy-gated (default policy: destructive asks first). Risk can be raised in
+  overrides, never lowered.
+- **`critical: true` on irreversible actions** (delete, send, cancel) so
+  policy always asks before running them.
+
+The AI-polish pass drafts exactly this judgment. Do it yourself through the
+delegation contract: `npx vendo init --agent` prints a read-only JSON plan
+whose `aiPolish` object carries instructions, the draft schema, and the apply
+command. Read the codebase against the instructions, write the draft, then:
+
+```bash
+npx vendo extract --apply draft.json
+```
+
+The apply step runs deterministic guards: only extracted tool names are
+accepted, risk never goes down, waking a disabled tool requires reasoning, and
+existing human decisions in `overrides.json` and a hand-written `brief.md`
+always win. Guard refusals print per entry while the rest applies.
+
+## The catalog contract (anti-prop-invention)
+
+The registry is a closed contract: **only components registered in
+`vendo/registry.tsx` exist, and only with the props their schemas declare.**
+Generated views validate against those schemas; an invented prop name fails
+instead of rendering. Inventing prop names is the single most observed agent
+failure: models reach for generic names like `data`, `rows`, `items`,
+`labelKey`, or `onPress` that the real component never had.
+
+When you register a host component:
+
+- **Copy prop names from the component's source**, never from convention. If
+  `SpendingDonut` takes `slices`, the schema says `slices`, not `data`.
+- **Give it a zod props schema.** A schema-less entry is legal (the model
+  infers props), but a schema is what makes prop invention impossible; prefer
+  it whenever the component has typed props.
+- **Schema only what the model should control.** Data-shaped props belong in
+  the schema; internal callbacks and render props do not.
+- **Write the description for selection**: what the component shows and when
+  to use it, e.g. "Spending by category. Use for where-did-my-money-go
+  requests."
+
+```tsx
+import type { ComponentRegistry } from "@vendoai/core";
+import { z } from "zod";
+import { SpendingDonut } from "@/components/charts/spending-donut";
+
+export const registry = {
+  SpendingDonut: {
+    component: SpendingDonut,
+    description: "Spending by category. Use for where-did-my-money-go requests.",
+    props: z.object({
+      slices: z.array(z.object({ category: z.string(), amount: z.number() })),
+    }),
+    examples: ['{"slices":[{"category":"dining","amount":342.18}]}'],
+  },
+} satisfies ComponentRegistry;
+```
+
+The same closed-world rule applies to you during install: when writing
+examples, briefs, or drafts, reference only components that exist in the
+registry and tools that exist in `tools.json`. If something you need is
+missing, register or extract it; do not name it into existence.
+
+Full extraction reference: [Tools from your API](/connect/api-tools).
+Registry details: [Quickstart](/quickstart).
