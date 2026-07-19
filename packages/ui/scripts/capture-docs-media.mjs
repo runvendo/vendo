@@ -14,7 +14,7 @@
 // Prereqs: `pnpm build` (playground serves dist), ffmpeg + pngquant on PATH.
 // Usage:
 //   node scripts/capture-docs-media.mjs             # capture everything
-//   node scripts/capture-docs-media.mjs approval-toast theme-editor  # subset
+//   node scripts/capture-docs-media.mjs loop-approval-toast hero-theme-editor  # subset
 import { execFile, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -316,7 +316,9 @@ async function captureHero(browser, base, name, shot) {
   }
   await page.screenshot({ path: out, animations: "disabled", clip });
   await context.close();
-  await run("pngquant", ["--force", "--skip-if-larger", "--quality", "60-90", "--output", out, out]).catch(() => {});
+  await run("pngquant", ["--force", "--skip-if-larger", "--quality", "60-90", "--output", out, out]).catch((error) => {
+    if (error.code !== 98 && error.code !== 99) console.warn(`pngquant failed on ${name}: ${error.message}`);
+  });
   console.log(`captured ${name}.png (${Math.round(statSync(out).size / 1024)}KB)`);
 }
 
@@ -354,6 +356,12 @@ async function captureLoop(browser, base, name, beat) {
 
 async function main() {
   const only = process.argv.slice(2);
+  const known = new Set([...Object.keys(HEROES), ...Object.keys(LOOPS)]);
+  const unknown = only.filter((name) => !known.has(name));
+  if (unknown.length) {
+    console.error(`unknown capture name(s): ${unknown.join(", ")} — known: ${[...known].join(", ")}`);
+    process.exit(1);
+  }
   mkdirSync(OUT_DIR, { recursive: true });
 
   const playground = await startPlaygroundServer({ port: 0 });
@@ -367,14 +375,15 @@ async function main() {
     await wait(500);
   }
 
-  const browser = await chromium.launch({
-    args: [
-      "--use-fake-ui-for-media-stream",
-      "--use-fake-device-for-media-stream",
-      "--autoplay-policy=no-user-gesture-required",
-    ],
-  });
+  let browser;
   try {
+    browser = await chromium.launch({
+      args: [
+        "--use-fake-ui-for-media-stream",
+        "--use-fake-device-for-media-stream",
+        "--autoplay-policy=no-user-gesture-required",
+      ],
+    });
     for (const [name, shot] of Object.entries(HEROES)) {
       if (only.length && !only.includes(name)) continue;
       await captureHero(browser, base, name, shot);
@@ -384,7 +393,7 @@ async function main() {
       await captureLoop(browser, base, name, beat);
     }
   } finally {
-    await browser.close();
+    await browser?.close();
     vite.kill("SIGTERM");
     await playground.close();
   }
