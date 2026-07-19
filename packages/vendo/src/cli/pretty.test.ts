@@ -200,6 +200,31 @@ describe("createPrettyOutput (visual system)", () => {
     expect(out.plain()).toContain("● jwt");
   });
 
+  it("confirm returns the default without prompting when stdin is not a TTY", async () => {
+    // vitest's stdin is not a TTY: the styled confirm must never block
+    // readline — the default stands (stdout-TTY selection is stdout-only).
+    const out = sink();
+    const pretty = createPrettyOutput(out.write);
+    await expect(pretty.confirm("Wire auth: authJs()?", true)).resolves.toBe(true);
+    await expect(pretty.confirm("Log in to Vendo Cloud now?", false)).resolves.toBe(false);
+    expect(out.plain()).not.toContain("Wire auth");
+    expect(out.plain()).not.toContain("Log in");
+  });
+
+  it("select returns the default option without prompting when stdin is not a TTY", async () => {
+    const out = sink();
+    const pretty = createPrettyOutput(out.write, {
+      isTTY: false,
+      on: () => undefined,
+      off: () => undefined,
+    });
+    await expect(pretty.select("Which auth should Vendo wire?", [
+      { value: "none", label: "none — stay anonymous" },
+      { value: "clerk", label: "clerk()" },
+    ])).resolves.toBe("none");
+    expect(out.plain()).not.toContain("Which auth");
+  });
+
   it("plainSelect returns the default without prompting when not a TTY", async () => {
     expect(await plainSelect("Which auth should Vendo wire?", [
       { value: "none", label: "none — stay anonymous" },

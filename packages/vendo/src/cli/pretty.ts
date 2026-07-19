@@ -243,6 +243,10 @@ export function createPrettyOutput(
     },
     stopSpin,
     async confirm(question, defaultYes = false) {
+      // usePrettyOutput gates on stdout only; a piped/closed stdin can still
+      // reach here (vendo init < file). Never block readline on a non-TTY —
+      // the default stands, mirroring the plain askYesNo guard.
+      if (stdin.isTTY !== true) return defaultYes;
       stopSpin();
       ensureHeader();
       section(cyan("◇"), bold(question));
@@ -259,6 +263,8 @@ export function createPrettyOutput(
       }
     },
     async select(question, options, defaultIndex = 0) {
+      // Same stdin guard as confirm: no keypress source → the default option.
+      if (input.isTTY !== true) return (options[defaultIndex] ?? options[0])!.value;
       stopSpin();
       ensureHeader();
       section(cyan("◇"), bold(question));
