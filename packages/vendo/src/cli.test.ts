@@ -23,6 +23,13 @@ describe("vendo CLI commands", () => {
     expect(help).toContain("--force");
     expect(help).toContain("--agent");
     expect(help).toContain("--json");
+    // Agent-install-dx: every init wizard question has a value-flag answer.
+    expect(help).toContain("--auth <preset>");
+    expect(help).toContain("--framework <name>");
+    expect(help).toContain("--cloud-key <key>");
+    expect(help).toContain("--byo");
+    expect(help).toContain("--ai-polish");
+    expect(help).toContain("--theme <slot=value>");
     // The interview flags are gone with the interview.
     expect(help).not.toContain("--brief <text>");
     expect(help).not.toContain("Init/refine: module exporting");
@@ -68,11 +75,51 @@ describe("vendo CLI commands", () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-cli-init-known-"));
     cleanup.push(root);
 
-    expect(await main(["init", root, "--agent", "--yes", "--force"])).toBe(0);
+    expect(await main(["init", root, "--agent", "--yes", "--force", "--byo", "--ai-polish",
+      "--auth", "clerk", "--framework", "next", "--theme", "accent=#7c3bed"])).toBe(0);
 
     expect(await readdir(root)).toEqual([]); // --agent stayed read-only
+    // Value-flag values are never mistaken for the target dir, and the
+    // --framework answer reaches the plan.
+    const plan = JSON.parse(log.mock.calls.flat().join("\n")) as { root: string; framework: string };
+    expect(plan.root).toBe(root);
+    expect(plan.framework).toBe("next");
+
+    // --cloud-key parses too — and --agent STILL writes nothing (the
+    // read-only promise beats the key-landing side effect).
+    expect(await main(["init", root, "--agent", "--cloud-key", `vnd_${"b".repeat(40)}`])).toBe(0);
+    expect(await readdir(root)).toEqual([]);
     log.mockRestore();
     error.mockRestore();
+  });
+
+  // Agent-install-dx: a bad flag VALUE fails as loudly as an unknown flag —
+  // an agent gets the valid values and an example instead of a silent guess.
+  it("init value flags reject invalid values with the valid choices and an example", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const root = await mkdtemp(join(tmpdir(), "vendo-cli-init-values-"));
+    cleanup.push(root);
+
+    expect(await main(["init", root, "--auth", "okta"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--auth must be one of authJs, clerk, supabase, auth0, jwt, none");
+
+    expect(await main(["init", root, "--framework", "rails"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--framework must be next or express");
+
+    expect(await main(["init", root, "--cloud-key", "not-a-key"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--cloud-key must be a Vendo Cloud key");
+
+    expect(await main(["init", root, "--theme", "accent"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--theme takes slot=value");
+
+    // The two answers to the one Cloud question are mutually exclusive.
+    expect(await main(["init", root, "--cloud-key", `vnd_${"a".repeat(40)}`, "--byo"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--cloud-key and --byo answer the same question");
+
+    expect(await readdir(root)).toEqual([]); // nothing ever ran
+    error.mockRestore();
+    log.mockRestore();
   });
 
   it("wires the mcp subcommand group", async () => {

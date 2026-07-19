@@ -74,8 +74,10 @@ export async function mintStarterAllowance(
   }
 }
 
-/** Upsert VENDO_API_KEY in .env.local without clobbering other lines. */
-async function upsertEnvLocal(root: string, name: string, value: string): Promise<void> {
+/** Upsert one NAME=value line in .env.local without clobbering other lines.
+    Exported for init's --cloud-key flag, which lands a supplied key exactly
+    where the mint below would. */
+export async function upsertEnvLocal(root: string, name: string, value: string): Promise<void> {
   const path = join(root, ".env.local");
   const current = await readOptional(path);
   const line = `${name}=${value}`;

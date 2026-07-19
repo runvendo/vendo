@@ -411,6 +411,209 @@ describe("vendo init (zero-question)", () => {
     expect(advisories[0]).toContain("auth: authJs() or auth: clerk()");
   });
 
+  // Agent-install-dx: --auth answers the confirm AND the picker in one flag,
+  // wiring exactly like the equivalent interactive pick — no prompt ever.
+  it("--auth wires the named preset without any prompt, install hint included when the SDK is absent", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
+    }));
+    const sink = output();
+    expect(await run(root, sink, {
+      auth: "clerk",
+      interactive: true,
+      confirmAuth: async () => { throw new Error("prompted"); },
+      selectAuth: async () => { throw new Error("prompted"); },
+    })).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain("auth: clerk(),");
+    expect(route).toContain("// Selected Clerk — clerk() fills the identity seams");
+    const advisories = sink.logs.filter((line) => line.includes("Auth:"));
+    expect(advisories).toHaveLength(1);
+    expect(advisories[0]).toContain("npm install @clerk/backend");
+  });
+
+  it("--auth on the detected family wires like a detection-accept; none and jwt mirror their picks", async () => {
+    const detected = await fixture();
+    await writeFile(join(detected, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "@supabase/supabase-js": "2.0.0" },
+    }));
+    const detectedSink = output();
+    expect(await run(detected, detectedSink, { yes: true, auth: "supabase" })).toBe(0);
+    const detectedRoute = await readFile(join(detected, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(detectedRoute).toContain("auth: supabase(),");
+    expect(detectedRoute).toContain("Detected @supabase/supabase-js");
+    expect(detectedSink.logs.join("\n")).not.toContain("Auth:");
+
+    // --auth none: stay anonymous even though detection would have wired.
+    const declined = await fixture();
+    await writeFile(join(declined, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "16.0.0", "next-auth": "5.0.0" },
+    }));
+    const declinedSink = output();
+    expect(await run(declined, declinedSink, { yes: true, auth: "none" })).toBe(0);
+    const declinedRoute = await readFile(join(declined, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(declinedRoute).toContain("principal: async () => null");
+    expect(declinedSink.logs.join("\n")).toContain("left anonymous");
+
+    // --auth jwt: nothing wired, the recipe is the answer.
+    const jwt = await fixture();
+    const jwtSink = output();
+    expect(await run(jwt, jwtSink, { yes: true, auth: "jwt" })).toBe(0);
+    const jwtRoute = await readFile(join(jwt, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(jwtRoute).toContain("principal: async () => null");
+    expect(jwtSink.logs.join("\n")).toContain("auth: jwt({ secret:");
+  });
+
+  // Agent-install-dx: an undetectable framework has NO safe default — a
+  // non-interactive run errors with the exact flag instead of guessing the
+  // Next layout into an unknown host (or hanging on a prompt it can't show).
+  it("non-interactive init on an undetectable framework errors with --framework and an example", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-init-nofw-"));
+    cleanup.push(root);
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "host", dependencies: { react: "19.0.0" } }));
+    const sink = output();
+    expect(await run(root, sink, { yes: true })).toBe(1);
+    const errors = sink.errors.join("\n");
+    expect(errors).toContain("--framework");
+    expect(errors).toContain("vendo init --yes --framework next"); // one example invocation
+    expect(await readdir(root)).toEqual(["package.json"]); // nothing was written
+
+    // The flag answers it: the same host scaffolds as the named framework.
+    const answered = output();
+    expect(await run(root, answered, { yes: true, framework: "next" })).toBe(0);
+    await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))
+      .resolves.toContain("createVendo");
+  });
+
+  it("interactive init on an undetectable framework is unchanged: it still scaffolds the Next layout", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-init-nofw-tty-"));
+    cleanup.push(root);
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "host", dependencies: { react: "19.0.0" } }));
+    const sink = output();
+    expect(await run(root, sink, { interactive: true })).toBe(0);
+    await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))
+      .resolves.toContain("createVendo");
+  });
+
+  it("--cloud-key lands the key in .env.local and the login offer never fires", async () => {
+    const root = await fixture();
+    const key = `vnd_${"c".repeat(40)}`;
+    const sink = output();
+    let offered = 0;
+    // No cloudProbe stub: the default probe must see the flag-landed key.
+    expect(await runInit({
+      targetDir: root,
+      output: sink.output,
+      env: {},
+      cloudKey: key,
+      themeModel: themeModelOf({ slots: {} }),
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+      cloud: {
+        confirm: async () => {
+          offered += 1;
+          return false;
+        },
+      },
+    })).toBe(0);
+    expect(offered).toBe(0);
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${key}`);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Vendo Cloud: VENDO_API_KEY present and well-formed.");
+    expect(logs).not.toContain("No model key yet");
+  });
+
+  it("--byo declines the Cloud offer explicitly: no question, no mint, just the pointer", async () => {
+    const root = await fixture();
+    const sink = output();
+    let offered = 0;
+    let minted = 0;
+    expect(await run(root, sink, {
+      byo: true,
+      cloud: {
+        ...NO_CLOUD,
+        confirm: async () => {
+          offered += 1;
+          return true;
+        },
+        mint: async () => {
+          minted += 1;
+          return `vnd_${"e".repeat(40)}`;
+        },
+      },
+    })).toBe(0);
+    expect(offered).toBe(0);
+    expect(minted).toBe(0);
+    await expect(readFile(join(root, ".env.local"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(sink.logs.join("\n")).toContain("vendo cloud login");
+  });
+
+  it("--ai-polish is the consent: non-interactive runs reach the harness instead of skipping", async () => {
+    const root = await fixture();
+    const sink = output();
+    expect(await run(root, sink, {
+      yes: true,
+      aiPolish: true,
+      // No available harness: the gate must still OPEN (proving the
+      // non-interactive skip was bypassed) and then report unavailability.
+      extract: {
+        harnesses: [],
+        confirm: async () => { throw new Error("prompted"); },
+      },
+    })).toBe(0);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("AI polish: unavailable");
+    expect(logs).not.toContain("needs an interactive run");
+
+    // Without the flag, the non-interactive skip is unchanged.
+    const skipped = await fixture();
+    const skippedSink = output();
+    expect(await run(skipped, skippedSink, { yes: true, extract: { harnesses: [] } })).toBe(0);
+    expect(skippedSink.logs.join("\n")).toContain("needs an interactive run");
+  });
+
+  it("--theme answers uncertain slots; the review prompt covers only what the flags left open", async () => {
+    const root = await fixture();
+    const reviewed: string[] = [];
+    const sink = output();
+    expect(await run(root, sink, {
+      themeAnswers: { accent: "#facc15" },
+      themeModel: themeModelOf({
+        slots: { accent: "#196b46", text: "#111111" },
+        uncertain: [
+          { slot: "accent", note: "green may be data-only" },
+          { slot: "border", note: "no border evidence" },
+        ],
+      }),
+      themeReview: async (summary) => {
+        reviewed.push(...summary.uncertain.map((entry) => entry.slot));
+        return {};
+      },
+    })).toBe(0);
+    expect(reviewed).toEqual(["border"]); // accent was answered by flag
+    const theme = JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"));
+    expect(theme.colors.accent).toBe("#facc15");
+    // The contrast-derived accentText follows the flag-replaced accent.
+    expect(theme.colors.accentText).toBe("#000000");
+
+    // With --yes the flag still applies — no prompt existed to answer.
+    const quiet = await fixture();
+    expect(await run(quiet, output(), {
+      yes: true,
+      themeAnswers: { accent: "#facc15" },
+      themeModel: themeModelOf({
+        slots: { accent: "#196b46" },
+        uncertain: [{ slot: "accent", note: "green may be data-only" }],
+      }),
+      themeReview: async () => { throw new Error("prompted"); },
+    })).toBe(0);
+    const quietTheme = JSON.parse(await readFile(join(quiet, ".vendo", "theme.json"), "utf8"));
+    expect(quietTheme.colors.accent).toBe("#facc15");
+  });
+
   it("never clobbers an existing registry and still wires the route to it", async () => {
     const root = await fixture();
     await mkdir(join(root, "vendo"), { recursive: true });

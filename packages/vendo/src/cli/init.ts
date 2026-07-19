@@ -15,7 +15,7 @@ import { stdin, stdout } from "node:process";
 import type { VendoTheme } from "@vendoai/core";
 import type { Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
-import { runCloudStep, type CloudStepOptions } from "./cloud-init.js";
+import { runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
 import { APPLY_COMMAND, composeDelegatedInstructions, EXTRACTION_DRAFT_JSON_SCHEMA } from "./extract/delegate.js";
 import { askYesNo, runAiExtraction, type AiExtractionOptions } from "./extract/extraction.js";
 import type { StaticTool } from "./extract/stages.js";
@@ -119,6 +119,22 @@ export interface InitOptions {
   agent?: boolean;
   yes?: boolean;
   force?: boolean;
+  /** Agent-install-dx value flags: each one answers exactly one wizard
+      question, so a non-interactive run never needs the prompt it replaces. */
+  /** --auth: the auth answer — wires like the equivalent interactive pick. */
+  auth?: AuthPresetName | "jwt" | "none";
+  /** --framework: detection override; required non-interactively when
+      detection comes back "unknown" (there is no safe default to guess). */
+  framework?: HostFramework;
+  /** --cloud-key: answer the cloud-login offer with an existing key — landed
+      in .env.local exactly where the mint would put it. */
+  cloudKey?: string;
+  /** --byo: answer the cloud-login offer with "no — bring my own key". */
+  byo?: boolean;
+  /** --ai-polish: consent to the AI extraction pass without the prompt. */
+  aiPolish?: boolean;
+  /** --theme slot=value answers for the uncertain-slot review. */
+  themeAnswers?: Record<string, string>;
   output?: Output;
   telemetry?: {
     home?: string;
@@ -359,10 +375,17 @@ async function pickScaffoldAuth(
 async function resolveScaffoldAuth(
   root: string,
   compositionPath: string,
+  authAnswer: AuthPresetName | "jwt" | "none" | undefined,
   confirmAuth: ConfirmAuth | undefined,
   selectAuth: SelectAuth | undefined,
 ): Promise<{ wired: AuthMatch | null; advice: string | null }> {
   const detection = await detectAuthPreset(root);
+  // --auth answers the confirm AND the picker in one flag: route it through
+  // the picker path so a flag answer and an interactive pick wire identically
+  // (detection-accept, install hint, jwt recipe, none advisory).
+  if (authAnswer !== undefined) {
+    return pickScaffoldAuth(detection, compositionPath, async () => authAnswer);
+  }
   if (confirmAuth === undefined) {
     return { wired: detection.wired, advice: authAdvisory(detection, compositionPath) };
   }
@@ -824,7 +847,7 @@ async function vendoRootPasteLines(root: string, framework: HostFramework, withR
 
 async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, selectAuth?: SelectAuth): Promise<{ plan: InitPlan; changes: PlannedChange[]; manualSteps: string[]; authAdvice: string | null }> {
   const root = resolve(options.targetDir);
-  const framework = await detectFramework(root);
+  const framework = options.framework ?? await detectFramework(root);
   const changes: PlannedChange[] = [];
   let authAdvice: string | null = null;
   let withRegistry = false;
@@ -858,7 +881,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
         // Detect + confirm happens only here — fresh composition creation —
         // so a re-run before the manual <VendoRoot> paste neither asks nor
         // re-fires the advisory after "Already wired".
-        const auth = await resolveScaffoldAuth(root, path, confirmAuth, selectAuth);
+        const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
         const serverAfter = expressServerSource(typescript, auth.wired);
         changes.push({ absolute: server, path, before: null, after: serverAfter, diff: diff(path, null, serverAfter) });
         authAdvice = auth.advice;
@@ -899,7 +922,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     if (routeBefore === null) {
       const path = relative(root, route);
       // Detect + confirm happens only on fresh composition creation.
-      const auth = await resolveScaffoldAuth(root, path, confirmAuth, selectAuth);
+      const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
       const registrySpecifier = relative(dirname(route), join(dirname(app), "vendo", "registry")).split(sep).join("/");
       const routeAfter = routeSource({ serverActions: registrations.length > 0, auth: auth.wired, registrySpecifier });
       changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
@@ -1043,6 +1066,17 @@ export async function runInit(options: InitOptions): Promise<number> {
   // accept the detected default silently — the same interactivity posture as
   // the AI-polish consent.
   const interactive = options.interactive ?? (Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
+  // An undetectable framework has NO safe default: a non-interactive run
+  // (agents) errors with the exact flag instead of guessing the Next layout
+  // into an unknown host. Interactive runs keep today's fall-through.
+  if (options.framework === undefined && (options.yes === true || !interactive)
+    && await detectFramework(root) === "unknown") {
+    output.error(
+      "Framework not detected (no next or express dependency in package.json) and this run cannot ask. " +
+      "Pass --framework. Example: vendo init --yes --framework next",
+    );
+    return 1;
+  }
   const confirmAuth = options.yes === true || !interactive
     ? undefined
     : (options.confirmAuth ?? (pretty === null ? askYesNo : pretty.confirm));
@@ -1054,6 +1088,13 @@ export async function runInit(options: InitOptions): Promise<number> {
   await telemetry.track("init_started", { framework: plan.framework });
 
   try {
+    // --cloud-key: the flag answer to the cloud-login offer — the supplied
+    // key lands exactly where the mint would (.env.local), so the merge
+    // below picks it up and the offer never fires.
+    if (options.cloudKey !== undefined) {
+      await upsertEnvLocal(root, "VENDO_API_KEY", options.cloudKey);
+      output.log("Wrote VENDO_API_KEY to .env.local (--cloud-key).");
+    }
     // Key first (product order fix): the model-credential story — env keys,
     // else the Vendo Cloud offer — runs BEFORE the AI-assisted passes, so a
     // starter key minted here powers the SAME run's theme model pass and AI
@@ -1077,7 +1118,9 @@ export async function runInit(options: InitOptions): Promise<number> {
     const cloud = await runCloudStep({
       root,
       output,
-      yes: options.yes === true,
+      // --byo answers the offer with "no" — the same skip as --yes, scoped
+      // to the cloud step only.
+      yes: options.yes === true || options.byo === true,
       credential,
       // The RUN's env, not process.env: a programmatic caller's key must be
       // what the probe and the mint see (seams in options.cloud still win).
@@ -1140,9 +1183,21 @@ export async function runInit(options: InitOptions): Promise<number> {
         resolveModel: options.themeModel ?? themeModelResolver(root, effectiveEnv),
       });
       pretty?.stopSpin();
-      if (summary.uncertain.length > 0 && options.yes !== true) {
-        const overrides = await (options.themeReview ?? defaultThemeReview)(summary);
-        for (const [slot, raw] of Object.entries(overrides)) {
+      // --theme answers land first; the review prompt then covers only the
+      // uncertain slots the flags left unanswered (non-interactive runs keep
+      // the extracted values for those, exactly as before).
+      const answers: Record<string, string> = { ...(options.themeAnswers ?? {}) };
+      const unanswered = summary.uncertain.filter((entry) => !Object.hasOwn(answers, entry.slot));
+      if (unanswered.length > 0 && options.yes !== true) {
+        const reviewed = await (options.themeReview ?? defaultThemeReview)(
+          unanswered.length === summary.uncertain.length ? summary : { ...summary, uncertain: unanswered },
+        );
+        for (const [slot, raw] of Object.entries(reviewed)) {
+          if (!Object.hasOwn(answers, slot)) answers[slot] = raw;
+        }
+      }
+      if (Object.keys(answers).length > 0) {
+        for (const [slot, raw] of Object.entries(answers)) {
           if (!Object.hasOwn(summary.slots, slot)) {
             output.error(`ignored unknown theme slot ${JSON.stringify(slot)}`);
             continue;
@@ -1213,6 +1268,9 @@ export async function runInit(options: InitOptions): Promise<number> {
       output,
       env: effectiveEnv,
       yes: options.yes === true,
+      // --ai-polish IS the consent: no prompt, and non-interactive runs
+      // stop skipping.
+      ...(options.aiPolish === true ? { consent: true } : {}),
       ...(options.force === true ? { force: true } : {}),
       ...(pretty === null ? {} : { confirm: pretty.confirm }),
       ...(options.extract ?? {}),

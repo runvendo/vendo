@@ -232,6 +232,21 @@ describe("runAiExtraction", () => {
     expect(sink.logs.join("\n")).toContain("Skipped");
   });
 
+  // Agent-install-dx: --ai-polish carries consent as a flag, so a
+  // non-interactive run neither skips nor prompts — the flag IS the answer.
+  it("a consent flag replaces the prompt and unlocks non-interactive runs", async () => {
+    const root = await fixture();
+    const sink = output();
+    const draft = { brief: "b", tools: [] };
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: true, interactive: false, consent: true,
+      harnesses: [fakeHarness("```json\n" + JSON.stringify(draft) + "\n```")],
+      confirm: async () => { throw new Error("prompted"); },
+    });
+    expect(result.ran).toBe(true);
+    expect(sink.logs.join("\n")).toContain("Reading your product");
+  });
+
   it("runs the harness, applies the draft, and summarizes", async () => {
     const root = await fixture();
     const sink = output();
