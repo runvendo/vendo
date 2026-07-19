@@ -1,303 +1,299 @@
-# Vendo v2 generation quality — the generalization redesign
+# Vendo app format v3 + generation quality — the generalization redesign
 
-Status: DRAFT for Yousef's review. Output of the 2026-07-19 brainstorm following the
-held-out gate. Supersedes the micro-op fix direction; complements (does not replace)
-the v2 format spec (`2026-07-18-vendo-v2-format-spec.md`) — wire, compiler, ids,
-tier-0 lane, approval gates all stay.
+Status: DRAFT v2 for Yousef's review (rewritten after the format brainstorm converged).
+Output of the 2026-07-19 brainstorm following the held-out gate (11/30). Supersedes the
+micro-op fix direction AND revises parts of the v2 format spec
+(`2026-07-18-vendo-v2-format-spec.md`): compiler-owned ids, streaming, tier-0 lane,
+brand-native sandboxed rendering, approval gates, and the rung ladder all stay; the
+data surface, island rules, and prewired set change as specified here.
 
-## 1. Why: what we measured
+## 0. The whole design in five lines
 
-- Dev-set matrix (6 prompts, iterated 4×): went 2/6 → 6/6-equivalent via five merged PRs
-  (#385 prop schemas, #386 speed, #387 asOptions/currencyCents, #388 island-gate/honesty,
-  #397 template op).
-- **Held-out gate (30 fresh prompts, zero tuning, one attempt each): 11/30**
-  (Maple 2/15, Cadence 9/15). Evidence: branches `vendo-heldout-maple`/`-cadence`.
-- The split is the finding: **zero of 30 failures came from compile-enforced classes**
-  (Select projection, object cells, action payloads, jail imports). Every prompt-held
-  behavior cracked. The compile layer generalizes; instructions don't.
-- Held-out failure classes, by frequency:
-  1. Money-scale in derived slots ×7 (raw cents in stat tiles/donut centers/sums; incl.
-     comma-formatted cents-as-dollars "$5,490,715.00" and one "$NaN")
-  2. Core-ask-not-computed ×5 ("largest 10" → unsorted dump; "remaining" → "—";
-     "per staff" → flat list — the tree cannot sort/limit/group/derive by design)
-  3. Impossible-prompt fabrication ×3 (invented FX rates; document data relabeled as
-     payroll/invoice dashboards, no disclaimer) — honesty held when the *action tool*
-     was missing (2/2) but failed when the *data domain* was missing (0/3... 2/5 total)
-  4. Invented/mislabeled controls ×3 (a "From account" selector for a parameter the
-     transfer tool does not have — twice on money-moving actions)
-  5. Dead controls ×2 (filter Selects/tabs render but do nothing — no client-state wiring
-     exists in the dialect)
-  6. Smaller: dotted column keys unresolved while `template` resolves the same path
-     (dialect inconsistency); silent-empty-despite-data (wrong query); layout clipping;
-     raw ISO date in hero; entity leak; TZ off-by-one.
-- Cross-cutting engine bug: **approved actions stall at "Running"** — after human
-  approval the action never resumes (C4, C11). Breaks every gated mutation.
+The model builds an app out of three things:
+1. **Our components** (the Kit) — smart and branded; they sort, filter, paginate, and
+   format themselves. The model fills in props.
+2. **Its own small React components** (islands) — for anything the Kit doesn't cover.
+   Full React, sandboxed, with the Kit and the host's tools in scope.
+3. **The host's tools** — the only source of data and the only way to act.
 
-## 2. Principles (the learnings, now design law)
+Two laws keep it honest:
+- **Law 1 — screen data traces to a tool call.** The model cannot type business data
+  in by hand; no tool for the ask → the styled `Disclaimer` is the only legal move.
+- **Law 2 — every app's tool surface is statically readable, and every call flows
+  through the one gated pipe** (guard + approval), whether fired from the tree or
+  from island code.
 
-1. **Enforcement generalizes; guidance doesn't.** Correctness lives in code that
-   executes or validates deterministically — never in prompt instructions alone.
-   Prompt guidance is a UX hint, not a correctness mechanism.
-2. **Bespoke vocabulary is the overfitting engine.** Every op we invented
-   (`asOptions`, `template`, `currencyCents`, dotted keys) is syntax with zero
-   pretraining mass — a permanent teaching tax the model keeps mispaying. Ride the
-   model's pretraining distribution (JSX, JS, real libraries, plain props); never
-   invent grammar when a native surface exists.
-3. **Values must not transit the model.** The model routes *references*; raw values
-   flow tool → component; components format deterministically. A model-written
-   display string is where scale/format bugs are born.
-4. **Compute lives in real code** — our components, sandboxed islands, or a server.
-   Never in the model's head, and never demanded of a layer that cannot compute.
-5. **Honesty is structural.** Fabrication must be inexpressible (data slots can only
-   render what a real query returned), not discouraged.
+Everything else in this spec is plumbing for those five lines.
+
+## 1. The format (v3) — by example
+
+A complete app; every feature of the format appears once:
+
+```jsx
+<App name="Overdue Invoices">
+  <Stack>
+    <Text variant="heading">Overdue Invoices</Text>
+
+    <Stat label="Total overdue"
+          value={invoices.list({status:"overdue"}).totalCents} format="money"/>
+
+    <DataTable rows={invoices.list({status:"overdue"}).data}   // same call → one fetch (dedupe)
+       sortBy="dueDate asc" limit={20} filterableBy={["client"]} searchable
+       columns={[
+         { key: "client.name", label: "Client" },
+         { key: "amountCents", label: "Amount", format: "money" },
+         { key: "dueDate",     label: "Due",    format: "date" },
+       ]}/>
+
+    <Button label="Remind all" onClick="invoices.sendReminders"/>
+
+    <ClientLookup/>
+  </Stack>
+
+  <Island name="ClientLookup">
+    export default function ClientLookup() {
+      const [q, setQ] = useState("");
+      const [hits, setHits] = useState([]);
+      async function search(text) {
+        setQ(text);
+        const res = await tools.clients.search({ q: text });   // ambient tools API
+        setHits(res.data);
+      }
+      return (
+        <Stack>
+          <Input label="Find a client" value={q} onChange={search}/>
+          <DataTable rows={hits} columns={[{key:"name"},{key:"balanceCents",format:"money"}]}/>
+          <Button label="Send reminder"
+                  onClick={() => tools.invoices.sendReminders({ ids: hits.map(h => h.id) })}/>
+        </Stack>
+      );
+    }
+  </Island>
+</App>
+```
+
+### 1.1 Components
+Resolution order: **host catalog** (the host's real branded components, schemas from
+`vendo sync`) → **Kit** (ours, §3) → **islands** (model's own). Host brand wins name
+collisions. The model emits JSX; the compiler mints ids, validates, and produces the
+canonical tree exactly as in the v2 spec.
+
+### 1.2 Data — inline tool references (pending measurement)
+Data enters as **inline tool references in props**: `rows={invoices.list({...}).data}`.
+References are parsed data, never executed code: the compiler statically extracts every
+reference, checks tool name + input shape against the live registry (unknown tool →
+repair), and the runtime fetches on first reference with dedupe by tool+args.
+Rationale: declare-at-use matches autoregressive generation (upfront `<Query>` blocks
+force the model to plan all data needs before writing the UI — a measured failure
+source: declared-but-unused queries, wrong-query-silent-empty), and it removes one of
+the format's two data concepts.
+
+**Open experiment (Wave 1 gate):** bench inline references vs declared `<Query>` on
+reliability and paint timing. Expected: inline wins or ties (prefetch head start of
+declarations ≈ ~100 tokens against a multi-second stream). If the measurement
+surprises us, `<Query>` stays and inline is dropped — decided by data, not taste.
+
+### 1.3 Actions
+`on*` props naming a host tool (`onClick="invoices.sendReminders"`), unchanged
+semantics: guard-checked, approval-gated at dispatch, mutating actions must bind a
+payload, and controls feeding a payload must correspond to real parameters of the
+target tool's input schema (kills the invented-"From account"-selector class).
+
+### 1.4 Islands — full React with the Kit and tools in scope
+- **One island = one file = one component.** Full React inside (state, effects,
+  handlers, SVG, canvas, animation).
+- **Ambient scope, no imports.** React + hooks, the entire Kit, charts, and `fmt`
+  helpers are in scope (react-live pattern). Compile rule: island code contains **no
+  import statements** — known specifiers are silently stripped (pretraining habit),
+  unknown ones are compile errors → repair. The import/loader attack surface is gone
+  rather than allowlisted.
+- **Ambient `tools` API — direct calls.** `await tools.clients.search({ q })`.
+  One syntax rule makes this safe: **literal member access only**
+  (`tools.<name>.<name>`; `tools[expr]` is a compile error). The compiler scans island
+  source, infers the island's tool manifest, validates every name against the
+  registry (→ repair), stamps the manifest into the canonical app, and the runtime
+  exposes **only the manifest's tools** to that island — least privilege by
+  construction. Reads execute per read policy; mutations pause at the same approval
+  gate as tree buttons. Static enumerability of the app's powers is preserved: tree
+  actions are attributes; island tools are the inferred manifest.
+- **Sandbox fences (mechanical, unchanged):** no network egress (CSP; imports can't
+  express a fetch either), no host-page DOM access (iframe sandbox), byte caps,
+  TSX syntax + default-export gates.
+- Islands may compose Kit components inside custom logic — "custom" never means
+  "off-brand": theme tokens flow via CSS variables already present in the iframe.
+
+### 1.5 Run anything — the ladder
+| Need | Where it runs |
+|---|---|
+| Standard UI | Kit/host components — no code |
+| Custom visuals, client logic, rich interaction, dynamic reads | Island — React in the iframe sandbox |
+| Heavy compute, cross-tool joins, private logic | `fn:` server functions — sandboxed machine; tree/islands reference them like tools |
+| A real application (routing, jobs, storage) | Rung 4 — full app on its own machine |
+
+Same two laws at every rung. Complexity climbs the ladder; no rung's rules bend.
+
+## 2. Principles (measured, now design law)
+
+1. **Enforcement generalizes; guidance doesn't.** Held-out gate: zero of 30 failures
+   came from compile-enforced classes; every prompt-held behavior cracked.
+2. **Bespoke vocabulary is the overfitting engine.** Every invented op (`asOptions`,
+   `template`, `currencyCents`, dotted keys) is syntax with no pretraining mass — a
+   permanent teaching tax. Ride the model's distribution: JSX, plain props, real JS,
+   `await tools.x.y()`. Never invent grammar where a native surface exists.
+3. **Values must not transit the model.** The model routes references; raw values flow
+   tool → component; components format deterministically.
+4. **Compute lives in real code** — Kit internals, island JS, or a server. Never in
+   the model's head; never demanded of a layer that cannot compute.
+5. **Honesty is structural.** Fabrication must be inexpressible, not discouraged.
 6. **Dumb components force the model to be smart; smart components let it be dumb.**
-   The model is excellent at configuring well-described props (measured) and bad at
-   computing. Move intelligence into components; leave configuration to the model.
+   The model is excellent at configuring described props and bad at computing.
 
-## 3. Architecture overview (what changes, what stays)
+## 3. The Kit (smart components)
 
-Unchanged: JSX wire format; deterministic compiler owning ids/validation/repair
-routing; canonical `vendo-genui/v2` tree; sandboxed brand-native renderer; tier-0
-paint lane; guarded actions + approval gates; rung ladder (2–4 server apps); repair
-loop; owned-serving roadmap.
+Replaces the dumb prewired set. Components own compute, formatting, interaction, and
+empty states; the model configures.
 
-Changed (the five moves):
+- **Per failure class:** sorting/limiting/grouping are props (`sortBy`, `limit`,
+  `groupBy`+agg) executed in component code · filter/search/tab UI lives INSIDE
+  components (`filterableBy`, `searchable`) so there is no wiring to get wrong ·
+  formatting is component-owned (`format="money|date|percent"` + the value tier
+  `Money/DateTime/Percent/Num/EnumBadge`) driven by field semantics (§4) · column
+  keys and label/value fields accept dot-paths resolved in component code · every
+  data component ships a designed empty state naming its query ("No rows from
+  `payments.list`") so silent-wrong-query becomes visible.
+- **v1 surface:** layout (Stack/Row/Grid/Surface/Divider) · text+values
+  (Text, Money, DateTime, Percent, Num, EnumBadge) · data (DataTable, CardList, Stat,
+  Badge) · charts (Line, Bar, Donut, Sparkline, Progress — data props only, recharts
+  internals, formatted ticks, designed empty/invalid states; a `$NaN` is impossible to
+  render) · forms+actions (Input, Select with labelField/valueField over raw arrays,
+  DatePicker, Form, Button, **Disclaimer** — the styled honest-fallback, first-class) ·
+  self-managing Tabs.
+- **Internals decision:** build ours (brand-native, host theme tokens), with
+  battle-tested logic libraries inside — TanStack Table mechanics, recharts rendering —
+  not a styled kit (Tremor) wholesale.
+- **Contract:** every component ships a zod prop schema with per-prop class
+  `config | copy | data` (§5), a 1–2 sentence "when to use", and 1–2 canonical
+  examples. The generation prompt for the Kit is **generated from these schemas**
+  (`catalog.prompt()` pattern); hand-written prompt lists are abolished. Kit is
+  versioned; stored apps pin their kit version (compiler carries per-version schemas).
 
-1. **Smart Component Kit** replaces the dumb prewired set (§4).
-2. **Furnished jail** re-scopes islands from "demonized last resort" to "fenced escape
-   hatch with batteries" (§5).
-3. **Semantic sync** — shape cards carry meaning (units, dates, enums, ids) plus a
-   host domain manifest; the catalog prompt is generated, never hand-written (§6).
-4. **Bind-only data props** — the single mechanism behind both structural honesty and
-   values-not-transiting (§7).
-5. **Dialect retirement** — the invented micro-op vocabulary shrinks away (§8).
+## 4. Semantic sync + generated context
 
-Generated-code posture (three tiers):
-- **Tier A (~95% of apps): no generated code.** The model emits the JSX wire — a spec
-  of Kit + host components with props and bindings. Looks like code, is data; the
-  compiler validates it, the renderer executes it.
-- **Tier B (custom tail): islands.** The only model-written executable code on the
-  client. Small display-only React components in the jailed iframe; imports limited
-  to react + bundled kit libs; size-capped; no authority (cannot call tools).
-- **Tier C (rungs 2–4, unchanged): server code** in sandboxed machines, for apps that
-  graduate to owning a backend.
+At `vendo sync` (the host's existing extraction step), capture meaning alongside shape:
 
-## 4. The Smart Component Kit (the centerpiece)
+- **Field semantics** per tool response field: `money(cents|dollars, currency)`,
+  `date(iso|epoch)`, `enum(value→label map)`, `id(entity)`, `percent(0-1|0-100)`,
+  plain. Priority: host annotations → inference from names + sampled values (inferred
+  ONCE at sync into a reviewable generated file; never guessed per-generation) →
+  plain. Consumers: Kit auto-formatting, §5 compile checks, and the model's context.
+- **Domain manifest:** the positive list of data domains the host's tools cover
+  (derived at sync, host-editable), surfaced as fact: "This host has accounts,
+  transactions, budgets. It has NO payroll, invoices, crypto, FX." Unservable asks
+  stop being judgment calls; the Disclaimer path is stated, not hoped for.
+- **Generated context:** the full generation context — Kit schemas, host component
+  schemas, tool list with shapes + semantics, domain manifest, theme — is
+  program-generated from artifacts. Prompt content is a build product with a diffable
+  source of truth.
 
-Replace the current prewired primitives with a kit where components own compute,
-formatting, interaction, and empty states internally. The model configures; the
-component executes.
+## 5. Compile checks (the enforcement layer)
 
-### 4.1 What "smart" means, per failure class
-- **Sorting/limiting/grouping are props, not model work.** `DataTable` accepts
-  `sortBy`, `limit`; chart/list components accept `groupBy` + an aggregate mode.
-  The component sorts/groups deterministically in our code. Kills class 2 without
-  any new language: it is just zod-described props, which the model demonstrably
-  handles once schemas are provided (#385's proof).
-- **Filtering/search/tabs live INSIDE components.** `DataTable` ships its own
-  filter/search UI (`filterableBy`, `searchable`); a tabbed container manages its own
-  active tab. The model never wires a Select to a Table — there is no wiring to get
-  wrong. Kills class 5 (dead controls) structurally.
-- **Formatting is component-owned.** Value components (`Money`, `DateTime`, `Percent`,
-  `Num`) and per-column `format` on tables take RAW values plus semantics (from §6)
-  and run Intl internally. Kills class 1 wherever the tree renders a value.
-- **Nested access is component-native.** Column keys and label/value fields accept
-  dot-paths resolved by component code (`labelField="assignee.name"`), replacing both
-  the failed dotted-key compiler feature and the `template` op for the common case.
-- **Empty states are built in and honest.** Every data component renders a designed
-  empty state naming its query ("No transactions matched `payments.list`") — silent
-  wrong-query emptiness (M4) becomes visible and diagnosable.
-- **Derived-value slots accept simple references only.** Stat tiles take a bound raw
-  value + format; where a genuine computation is needed (budget − spent), the ask
-  routes to an island (§5) — never to model arithmetic.
+Prop classes from the Kit/host contracts: `config` (knobs; literals expected) ·
+`copy` (human text; model writes freely) · `data` (anything rendered as business
+data).
 
-### 4.2 Kit contents (v1 surface)
-- Layout: Stack, Row, Grid, Surface, Divider (unchanged, already fine).
-- Text & values: Text, **Money, DateTime, Percent, Num, EnumBadge** (new value tier).
-- Data: **DataTable** (sort/limit/filter/search/paginate/format/nested-keys/empty-state),
-  **CardList/Grouped list**, Stat, Badge.
-- Charts: **Line, Bar, Donut/Pie, Sparkline, Progress** — data props only
-  (`series`/`segments` + `x`/`y`/`groupBy`/`agg` + format hints), internally rendered
-  (recharts internals), self-labeling axes with formatted ticks, designed empty state.
-- Forms & actions: Input, Select (labelField/valueField over raw arrays), DatePicker,
-  Form + Button (actions remain tree-level, guard-checked, approval-gated),
-  **Disclaimer/NotAvailable** (the honest-fallback component, first-class and styled).
-- Tabs/sections: self-managing.
+- **Law 1 in the tree:** a `data` prop must be a tool reference (or a value derived
+  from one). Literal arrays/objects/numbers in data slots = compile error → repair.
+  Value slots are typed raw by semantics (cents ⇒ number), so model-written display
+  strings ("$5,490,715.00") fail type-check.
+- **Law 1 in islands (honest limits):** island code's only possible data sources are
+  props and `tools.*` (no network exists), so provenance is structural; but a model
+  could still hardcode a literal dataset in island source. Mitigation: a compile lint
+  flags large business-data-shaped literals in island source → repair; plus the
+  domain manifest steers generation. Named residual risk, accepted and measured by
+  the eval (§7) rather than hidden.
+- **Law 2:** tree actions are validated attributes; island tool manifests are
+  compiler-inferred (literal-member-access rule) and registry-checked. Unknown tool,
+  wrong input shape, mutation without payload, control not matching a real tool
+  parameter — all compile errors routed to the existing repair loop.
+- Streaming discipline (kept from v2 + OpenUI lesson): invalid statements drop
+  without killing the frame; skeletons for not-yet-defined refs; last-good-state on
+  regressions.
 
-### 4.3 Internals decision
-Build the Kit ourselves (brand-native: host theme tokens, porcelain defaults), with
-battle-tested logic libraries INSIDE our components — TanStack Table for table
-mechanics, recharts for chart rendering — rather than adopting a styled kit (Tremor)
-wholesale. We keep total brand control and a stable prop contract; the hard logic is
-not hand-rolled. The kit is versioned; the catalog prompt regenerates from its schemas
-on every change.
+## 6. Dialect retirement
 
-### 4.4 Kit contract (what makes it enforceable)
-Every component ships: a zod prop schema where each prop is classed
-`config | copy | data` (§7 uses this), semantics-aware format props, a one-to-two
-sentence "when to use" description, and 1–2 canonical usage examples. The generation
-prompt for the kit is GENERATED from these — hand-written prompt lists are abolished
-(thesys/json-render `catalog.prompt()` pattern).
+Deprecate `asOptions`, `template`, `currencyCents`, compiler dotted keys, and shrink
+the reshape pipe to (at most) `pick`/`rename`/`asPoints` during migration — their jobs
+move into Kit internals and island JS. No new reshape ops, ever: pressure for one is a
+signal the Kit lacks a prop or the case belongs in an island. Staged removal: stop
+teaching (prompt) immediately → keep compiling for stored apps → delete after Kit
+migration. The `<Query>` element follows the same path if (and only if) the §1.2
+measurement retires it.
 
-## 5. Furnished jail; islands as the fenced escape hatch
+## 7. Eval infrastructure (permanent fixture)
 
-- Bundle vetted libraries INTO the jail as allowlisted imports (they ship with the
-  runtime; nothing is fetched): `@vendo/charts` (recharts-based, same visual language
-  as the Kit charts), `@vendo/kit` (fmt helpers: moneyCents, date, percent; misc
-  utilities), react/react-dom (as today).
-- Re-scope the island rule from "LAST RESORT, never for data" (a v1-era overcorrection
-  that caused class 2's worst cases) to: **"Use the Kit for anything it covers. Use an
-  island for a custom visual or a derived region the Kit cannot express — small,
-  display-only, one region."**
-- Gates stay and extend: import allowlist (react + the two bundled libs), byte caps,
-  export-default check, TSX syntax gate, **display-only enforced** (no tool calls, no
-  action dispatch from island code — anything mutating stays in the tree), props are
-  the only data entry point (bound query data, shape-checked at the boundary).
-- The trade, stated honestly: island internals are code, not provable by shape-check.
-  This is the *fenced* generality valve — industry consensus (thesys essay; v0 needing
-  a trained AutoFix model) says don't make it the main path, and we don't.
+- The 30-prompt held-out corpus is **frozen** as the golden set (the 6 dev-set prompts
+  kept, labeled dev). Never tuned against; each wave judged on it once; any prompt
+  discussed in a fix PR moves to the dev pile.
+- A rotating **fresh pool** (~10 never-seen prompts per gate; new categories over
+  time: multi-part, edits, joins, adversarial phrasing, non-dashboard shapes).
+- **Negative prompts** are first-class (asks the host cannot serve, scored on honest
+  handling) — the measured honesty rate (2/5) is the baseline to beat.
+- Metric: error-free rate, browser-judged with committed screenshots, per-class
+  breakdown, timing. Production boots, real generations — the discipline that caught
+  everything unit tests missed.
 
-## 6. Semantic sync + generated context (the B work)
+## 8. Engine fix (orthogonal, ships first)
 
-At `vendo sync` (already the host's extraction step), capture MEANING alongside shapes:
+Approved actions stall at "Running" (approve → resume never completes; found twice in
+the held-out gate). Breaks every approval-gated mutation regardless of generation
+quality. Fix in the actions/runtime path + an e2e that approves a gated action and
+asserts the effect lands (current e2e stops at "approval requested").
 
-- **Field semantics** on every tool response field: `money(cents|dollars, currency)`,
-  `date(iso|epoch)`, `enum(value → label map)`, `id(entity)`, `percent(0-1|0-100)`,
-  plain. Sources, in priority order: host annotations (one-line decorators/config in
-  the host's vendo config), inference from field names + sampled values (\*Cents,
-  ISO-looking strings — inferred ONCE at sync, reviewed in the generated file, never
-  guessed per-generation), defaults to plain.
-- **Domain manifest**: the positive list of data domains the host's tools cover
-  (derived from tool names/descriptions at sync, host-editable) — surfaced to
-  generation as fact: "This host has: accounts, transactions, budgets, payees.
-  It has NO: payroll, invoices, crypto, FX." The honest-disclaimer path stops being
-  a judgment call.
-- **Generated catalog prompt**: the entire component/tool context (Kit schemas §4.4,
-  host component schemas, tool list + shapes + semantics, domain manifest) is
-  program-generated from these artifacts. Prompt content becomes a build product with
-  a diffable source of truth; hand-edited prompt lists are retired.
-- Semantics feed three consumers: Kit components auto-format (`Money` reads
-  `money(cents)` and needs no per-use hint), compile checks (§7 can type value slots),
-  and the model's context (it stops guessing units).
+## 9. Failure class → mechanism map
 
-## 7. Bind-only data props (structural honesty + values-not-transiting — one mechanism)
+| Held-out failure class (freq) | Killed by |
+|---|---|
+| Raw cents / cents-as-dollars in derived slots (7) | §3 value components + §4 semantics + §5 raw-typed data slots; island compute uses `fmt` |
+| Core-ask-not-computed: sort/limit/group/derive (5) | §3 smart props; §1.4 island JS for arbitrary derivation |
+| Fabrication on missing domains (3) | §5 Law-1 checks + §4 domain manifest + Disclaimer |
+| Invented/mislabeled controls (3) | §5 control-grounding vs tool input schemas |
+| Dead filters/tabs (2) | §3 internal-filter components (no wiring exists to break) |
+| Dotted-key vs template inconsistency | §6 retirement; dot-paths native to Kit |
+| Silent-empty-despite-data | §3 named-query empty states |
+| Raw ISO dates / raw enums | §4 semantics + §3 auto-formatting |
+| $NaN error blobs | §3 chart invalid-states + §5 raw typing |
+| Approve→resume stall (engine) | §8 |
+| Facade interactions (dead Submit) | §1.4 island `tools` API — flows can complete |
 
-The single rule: **a `data`-classed prop must be a binding to a declared Query result.**
+Named residual risks: island internals are unproven code (fenced; lint for literal
+data; eval measures it) · copy props are free text (captions can mislead; carry no
+data) · semantics inference can mislabel (sync-time review file + host override).
 
-- Prop classes come from the Kit contract (§4.4) and host catalog schemas:
-  - `config` — knobs (limit, sortBy, variant, columns spec): literals expected.
-  - `copy` — human text (titles, captions, disclaimers): model writes freely.
-  - `data` — anything rendered as business data (rows, options, series, segments,
-    stat/value slots, Money cents): **must be `{query.path}` bindings.** A literal
-    array/object/number here is a compile error routed to repair.
-- Consequences, by class:
-  - Fabrication becomes inexpressible (class 3): an invented FX table cannot be
-    written — no query yields FX data, so repair converges on the `Disclaimer`
-    component (which is `copy`, where the model is free and harmless).
-  - Model-written display strings die (class 1's transit half): value slots are typed
-    raw (number cents) by §6 semantics, so "$5,490,715.00" fails the schema type
-    check; the number arrives via binding and the component formats it.
-  - Silent-empty gets diagnosable (M4): data props name their query; the component's
-    empty state says which query returned nothing.
-- Action-side counterpart (kept from #388, extended): mutating actions must bind a
-  payload; submit-shaped buttons must either carry a real action or be replaced by
-  `Disclaimer`; **new — control-grounding check**: a form control bound into an
-  action payload must correspond to a parameter in the target tool's input schema
-  (kills class 4's invented "From account" selector — the tool has no such parameter,
-  so the control is flagged at compile).
-- Escape valve: demo/preview data is a legitimate need (playgrounds); it enters
-  through a declared sample-data query source, never through literals — the rule has
-  no exceptions, the *sources* vary.
+## 10. Rollout (broad waves; detailed plans via writing-plans)
 
-## 8. Dialect retirement
+1. **Wave 0** — engine approve→resume fix (§8); freeze the golden set (§7).
+2. **Wave 1** — format experiments in the bench harness: inline refs vs `<Query>`
+   (§1.2), ambient-tools island reliability, ambient-scope stripping. Decisions by
+   measurement before product code.
+3. **Wave 2** — Kit core (DataTable, value tier, Select, Disclaimer; prop-class
+   contract; generated kit prompt).
+4. **Wave 3** — semantic sync + §5 compile checks (land together — checks need
+   semantics).
+5. **Wave 4** — charts tier + furnished jail (ambient Kit/tools in islands, manifest
+   inference).
+6. **Wave 5** — dialect retirement + full re-gate: frozen 30 + ~10 fresh; report the
+   arc honestly.
 
-- Deprecate `asOptions`, `template`, `currencyCents` format kind, and compiler-level
-  dotted column keys. Their jobs move into Kit component internals (§4.1): Select's
-  labelField/valueField over raw arrays, dot-path resolution in component code,
-  semantics-driven Money/date formatting.
-- The reshape pipe shrinks back toward its Wave-3 core (`pick`, `rename`, `asPoints`
-  where charts still want it) and no new ops are added — any pressure for a new op is
-  a signal the Kit is missing a prop or the case belongs in an island.
-- Removal is staged: mark deprecated in the prompt immediately (stop teaching them),
-  keep compiling them for stored apps, delete after the Kit migration completes.
+## 11. Relationship to the market
 
-## 9. Eval infrastructure (the permanent fixture)
-
-- The 30-prompt held-out corpus is FROZEN as the golden set (plus the 6 dev-set
-  prompts, labeled as dev). It is never tuned against; each fix wave is judged on it
-  once, and any prompt that gets discussed in a fix PR moves to the dev pile.
-- Grow a rotating FRESH pool: every gate run adds ~10 never-seen prompts (new
-  categories over time: multi-part asks, edits, cross-tool joins, adversarial
-  phrasing, non-dashboard shapes).
-- Negative prompts are a first-class category (OpenAI golden-set discipline): asks the
-  host cannot serve, scored on honest handling.
-- Metric: error-free rate (browser-judged, screenshot evidence, PASS bar as defined in
-  the held-out CORPUS.md) + per-class breakdown + timing. Report the arc honestly on
-  every wave.
-- Judging stays browser-real (production boots, real generations, committed
-  screenshots) — the discipline that caught everything unit tests missed.
-
-## 10. Engine fix (orthogonal, ships first)
-
-Approved actions stall at "Running" (approve → resume path broken; C4/C11). This
-breaks every approval-gated mutation in production regardless of generation quality.
-Diagnose and fix in `@vendoai/actions`/runtime; add an e2e test that approves a gated
-action and asserts the effect lands (the current e2e stops at "approval requested").
-
-## 11. Failure class → mechanism map (the analyzability table)
-
-| Held-out failure class | Killed by | Mechanism type |
-|---|---|---|
-| Raw cents / cents-as-dollars in derived slots (×7) | §4 value components + §6 semantics + §7 raw-typed value slots | enforce + execute |
-| Core-ask-not-computed: sort/limit/group/derive (×5) | §4 smart props (sortBy/limit/groupBy); islands for arbitrary derivation (§5) | execute |
-| Fabrication on missing domains (×3) | §7 bind-only data props + §6 domain manifest + Disclaimer component | enforce (structural) |
-| Invented/mislabeled controls (×3) | §7 control-grounding check vs tool input schemas | enforce |
-| Dead filters/tabs (×2) | §4 internal-filter components (no wiring exists to break) | execute |
-| Dotted-key vs template inconsistency | §8 retirement + §4 component-native dot-paths | simplify |
-| Silent-empty-despite-data | §4 named-query empty states | execute + surface |
-| Raw ISO dates / raw enums | §6 semantics + §4 DateTime/EnumBadge auto-format | execute |
-| Approve→resume stall (engine) | §10 | bugfix |
-| $NaN error blobs | §7 raw typing + §4 chart empty/invalid states | enforce + execute |
-
-Residual risks named: island internals are unproven code (fenced, display-only);
-copy props remain free text (a model could write a misleading caption — accepted;
-captions carry no data); semantics inference can mislabel a field (mitigated by
-sync-time review file + host override).
-
-## 12. Rollout (broad waves — plans come from writing-plans)
-
-1. **Wave 0 — engine fix (§10)** + freeze the golden set (§9). Small, urgent.
-2. **Wave 1 — Kit core**: DataTable + value components + Select/labelField + Disclaimer;
-   prop-class contract; generated kit prompt. Gate: fresh-prompt mini-corpus.
-3. **Wave 2 — semantic sync + bind-only data props** (§6 + §7 land together — the
-   check needs the semantics). Gate: negative prompts + the money classes.
-4. **Wave 3 — charts tier + furnished jail** (§4 charts, §5 bundles + re-scoped island
-   rules). Gate: chart-heavy + derivation prompts.
-5. **Wave 4 — dialect retirement (§8) + full held-out re-gate** on the frozen 30 +
-   ~10 fresh. Report the arc.
-
-## 13. Open questions (parked, not blocking)
-
-- Cross-component reactive state (a filter OUTSIDE a table driving it): deliberately
-  deferred — internal-filter components cover the measured cases; revisit with
-  evidence from fresh corpora before inventing a state dialect.
-- Kit versioning vs stored apps (old apps reference old prop contracts): compiler
-  carries per-version schemas; details in the Wave-1 plan.
-- Cadence/Maple speed asymmetry + repair-round latency: unchanged by this spec;
-  owned-serving remains the endgame per the format spec.
-- How much of the host's own catalog should adopt the prop-class contract: catalog
-  entries already carry schemas; classing their props is additive at sync — scope in
-  Wave 2.
-
-## 14. Relationship to the market (context for the bets)
-
-Borrowed: spec-not-code main path (thesys conviction + essay), catalog-generated
-prompts (json-render/OpenUI), smart chart components with data props (Crayon/Tambo),
-format-enum props + component-side Intl (json-render/Retool), golden-set + negative
-prompts (OpenAI Apps), streaming drop-invalid/last-good discipline (OpenUI).
-Rejected: bespoke line-DSLs and closed compute vocabularies (`@Sum/@Filter`) — the
-teaching-tax argument (§2.2); LLM-roundtrip interactivity.
-Different (the moat): host-native rendering (their apps look like thesys; ours look
-like the host), real guarded authority (approval-gated host-API actions vs
-send-values-to-the-LLM), durable app artifacts with a server ladder, and the fenced
-island escape hatch (pure spec systems cannot express custom visuals at all).
+Borrowed: spec-not-code main path (thesys conviction) · catalog-generated prompts
+(json-render/OpenUI) · smart components with data props + format enums
+(Crayon/Tambo/Retool/json-render) · golden sets with negative prompts (OpenAI Apps) ·
+streaming drop-invalid/last-good (OpenUI). Rejected: bespoke line-DSLs and closed
+compute vocabularies (`@Sum/@Filter`) — the teaching-tax argument; LLM-roundtrip
+interactivity; codegen-never absolutism (v0's trained-AutoFix data shows raw codegen
+needs a crutch — our answer is fencing it, not banning it). Different (the moat):
+host-native rendering (apps look like the host, not like us) · real gated authority
+(approval-gated host-API actions) · durable app artifacts with a server ladder ·
+islands with the Kit + tools in scope — spec-only systems cannot express custom
+interactive regions at all.
