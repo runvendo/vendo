@@ -1,24 +1,24 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "maple",
+  "theme": "almond",
   "name": "Vendo",
   "description": "Embed an agent in your product that lets every customer automate their work, build their own views, and connect their tools, inside your brand and your guardrails.",
   "appearance": {
     "default": "light"
   },
   "colors": {
-    "primary": "#4338CA",
-    "light": "#818CF8",
-    "dark": "#4338CA"
+    "primary": "#6c3bff",
+    "light": "#a78bfa",
+    "dark": "#8b6bff"
   },
   "background": {
     "color": {
-      "light": "#FAFAF8",
-      "dark": "#17171A"
+      "light": "#ffffff",
+      "dark": "#0a0a0c"
     }
   },
   "fonts": {
-    "family": "Inter"
+    "family": "Onest"
   },
   "logo": {
     "light": "/logo/light.svg",
