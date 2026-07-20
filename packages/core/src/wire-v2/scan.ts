@@ -30,6 +30,54 @@ export const readName = (state: CompileState): string => {
   return state.source.slice(start, state.index);
 };
 
+/** Skips an HTML comment at the cursor (which sits on a "<"). Models narrate
+ *  with comments despite instructions; a total compiler skips them. Returns
+ *  "not-comment" (cursor unmoved) when the next character is not "!";
+ *  "skipped" after advancing past a full comment or a non-comment "<!" run;
+ *  "eof" for an unterminated (or prefix-truncated) comment — stream
+ *  truncation, with the cursor left AT EOF so prefixes stay monotonic (D6).
+ *  Shared by parseChildren and prescanDeclarations, whose cursors must move
+ *  identically — a hand-mirrored drift once lost declarations after a
+ *  comment (Devin, PR #381). */
+export const skipComment = (state: CompileState): "skipped" | "eof" | "not-comment" => {
+  if (state.source[state.index + 1] !== "!") return "not-comment";
+  const opener = state.source.slice(state.index, state.index + 4);
+  if (opener === "<!--") {
+    const close = state.source.indexOf("-->", state.index + 4);
+    if (close === -1) {
+      state.index = state.source.length;
+      return "eof";
+    }
+    state.index = close + 3;
+    return "skipped";
+  }
+  if ("<!--".startsWith(opener)) {
+    state.index = state.source.length;
+    return "eof";
+  }
+  state.index += 2; // "<!" that is not a comment is dropped (totality)
+  return "skipped";
+};
+
+/** Scans a close tag at the cursor (which sits on "</"): reads the name,
+ *  advances just past ">", and reports whether non-whitespace junk sat in
+ *  between. FAILED = truncated at EOF (cursor left at EOF, per state.ts's
+ *  FAILED invariant). Shared by parseChildren, prescanDeclarations, and the
+ *  patch op loop — identical cursor movement by construction; callers decide
+ *  what the name and junk mean. */
+export const scanCloseTag = (state: CompileState): { name: string; junk: boolean } | Failed => {
+  state.index += 2; // consume "</"
+  const name = readName(state);
+  let junk = false;
+  while (state.index < state.source.length && state.source[state.index] !== ">") {
+    if (!WHITESPACE.test(state.source[state.index] as string)) junk = true;
+    state.index += 1;
+  }
+  if (state.index >= state.source.length) return FAILED;
+  state.index += 1;
+  return { name, junk };
+};
+
 /** Skips a quoted run inside an expression brace block (either quote style,
  *  backslash skips the next character). */
 export const skipQuotedRun = (state: CompileState, quote: string): undefined | Failed => {

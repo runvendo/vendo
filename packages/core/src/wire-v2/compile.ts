@@ -37,10 +37,10 @@ import { QUERY_NAME_PATTERN, type TreeQueryV2, type TreeV2 } from "../tree-v2.js
 import type { ShapeType } from "../shape.js";
 import { parseAttributes } from "./attributes.js";
 import type { WireIssue } from "./expression.js";
-import { checkBindingShapes, type BindingShapeError } from "./shape-check.js";
+import { checkBindingShapes, mirrorBindingIssues, type BindingShapeError } from "./shape-check.js";
 import { admitIslandSource, claimNodeSlot, claimQuerySlot } from "./limits.js";
-import { collectText, NAME_CHAR, readName, scanTagEnd, skipElement, skipWhitespace } from "./scan.js";
-import { FAILED, issue, isWellFormedUtf16, mergeIssues, type CompileState, type Frame } from "./state.js";
+import { collectText, NAME_CHAR, readName, scanCloseTag, scanTagEnd, skipComment, skipElement, skipWhitespace } from "./scan.js";
+import { FAILED, issue, isWellFormedUtf16, type CompileState, type Frame } from "./state.js";
 
 /** v2 spec §2 / plan D3 — compiler options. `hostComponents` (the host
  *  catalog names) feeds source resolution: host brand wins over the prewired
@@ -339,42 +339,20 @@ export const parseChildren = (state: CompileState, frames: Frame[], rootLabel = 
   while (state.index < state.source.length) {
     appendTextChild(state, frames, collectText(state));
     if (state.index >= state.source.length) break;
-    // Models narrate with HTML comments despite instructions; a total
-    // compiler skips them. An unterminated (or prefix-truncated) comment is
-    // stream truncation, and "<!" that is not a comment is dropped, so the
-    // cursor always advances (totality) and prefixes stay monotonic (D6).
-    if (state.source[state.index + 1] === "!") {
-      const opener = state.source.slice(state.index, state.index + 4);
-      if (opener === "<!--") {
-        const close = state.source.indexOf("-->", state.index + 4);
-        if (close === -1) {
-          state.index = state.source.length;
-          break;
-        }
-        state.index = close + 3;
-      } else if ("<!--".startsWith(opener)) {
-        state.index = state.source.length;
-        break;
-      } else {
-        state.index += 2;
-      }
-      continue;
-    }
+    // Comment skipping and close-tag scanning share scan.ts's skipComment /
+    // scanCloseTag with the pre-scan, so both cursors move identically by
+    // construction.
+    const comment = skipComment(state);
+    if (comment === "eof") break;
+    if (comment === "skipped") continue;
     // The cursor sits on a "<" that plausibly starts a tag.
     if (state.source[state.index + 1] === "/") {
-      state.index += 2;
-      const name = readName(state);
-      let junk = false;
-      while (state.index < state.source.length && state.source[state.index] !== ">") {
-        if (!/\s/.test(state.source[state.index] as string)) junk = true;
-        state.index += 1;
+      const close = scanCloseTag(state);
+      if (close === FAILED) break; // truncated close tag
+      if (close.junk) {
+        issue(state, "malformed-close-tag", `unexpected content in close tag </${close.name}> was ignored`);
       }
-      if (state.index >= state.source.length) break; // truncated close tag
-      state.index += 1;
-      if (junk) {
-        issue(state, "malformed-close-tag", `unexpected content in close tag </${name}> was ignored`);
-      }
-      closeTag(state, frames, name);
+      closeTag(state, frames, close.name);
       if (state.appClosed) return;
       continue;
     }
@@ -442,33 +420,18 @@ export const prescanDeclarations = (wire: string, rootTag = "App"): { queryNames
   while (state.index < state.source.length) {
     collectText(state);
     if (state.index >= state.source.length) break;
-    // Byte-for-byte mirror of parseChildren's comment handling: the pre-scan
-    // cursor must move exactly like the main pass or declarations after a
-    // comment vanish (Devin, PR #381).
-    if (state.source[state.index + 1] === "!") {
-      const opener = state.source.slice(state.index, state.index + 4);
-      if (opener === "<!--") {
-        const close = state.source.indexOf("-->", state.index + 4);
-        if (close === -1) break;
-        state.index = close + 3;
-      } else if ("<!--".startsWith(opener)) {
-        break;
-      } else {
-        state.index += 2;
-      }
-      continue;
-    }
+    // Comments and close tags move through the same scan.ts helpers as
+    // parseChildren, so the pre-scan cursor mirrors the main pass by
+    // construction (see skipComment/scanCloseTag).
+    const comment = skipComment(state);
+    if (comment === "eof") break;
+    if (comment === "skipped") continue;
     if (state.source[state.index + 1] === "/") {
-      state.index += 2;
-      const name = readName(state);
-      while (state.index < state.source.length && state.source[state.index] !== ">") {
-        state.index += 1;
-      }
-      if (state.index >= state.source.length) break;
-      state.index += 1;
+      const close = scanCloseTag(state); // junk is the main pass's to report
+      if (close === FAILED) break;
       // Nested <App> elements are skipped-with-subtree below, so any </App>
       // reaching the main stream closes the document in the main pass too.
-      if (name === rootTag) break;
+      if (close.name === rootTag) break;
       continue;
     }
     state.index += 1;
@@ -549,10 +512,7 @@ const finishResult = (
   const bindingErrors = toolShapes === undefined
     ? []
     : checkBindingShapes(state.nodes, state.queries, toolShapes);
-  mergeIssues(state, bindingErrors.map((error): WireIssue => ({
-    code: "shape-mismatch",
-    message: `node "${error.nodeId}" prop "${error.prop}" (${error.path}): ${error.message}`,
-  })));
+  mirrorBindingIssues(state, bindingErrors);
   const result: WireCompileResult = {
     tree,
     components: state.components,

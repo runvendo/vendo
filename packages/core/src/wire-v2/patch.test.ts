@@ -124,6 +124,25 @@ describe("compileWirePatchV2 queries, islands, name", () => {
     expect(removed.tree.queries).toBeUndefined();
   });
 
+  it("RemoveQuery then Query in one patch replaces the query (document order)", () => {
+    const result = patch(`<Edit>
+      <RemoveQuery id="revenue"/>
+      <Query id="revenue" tool="metrics_revenue_v2"/>
+    </Edit>`);
+    expect(result.issues).toEqual([]);
+    expect(result.tree.queries).toEqual([{ name: "revenue", tool: "metrics_revenue_v2" }]);
+    expect(result.appliedOps).toBe(2);
+  });
+
+  it("Query then RemoveQuery in one patch still removes (document order)", () => {
+    const result = patch(`<Edit>
+      <Query id="payments" tool="payments_list"/>
+      <RemoveQuery id="payments"/>
+    </Edit>`);
+    expect(result.issues).toEqual([]);
+    expect(result.tree.queries).toEqual([{ name: "revenue", tool: "metrics_revenue" }]);
+  });
+
   it("a Set binding may reference a Query declared later in the same patch", () => {
     const result = patch(`<Edit>
       <Set id="datatable-1" rows={payments.items}/>
@@ -144,6 +163,29 @@ describe("compileWirePatchV2 queries, islands, name", () => {
     const removed = patch('<Edit><RemoveIsland name="Sparkline"/></Edit>', result);
     expect(removed.components).toStrictEqual({});
     expect(node(removed, "sparkline-1")?.source).toBeUndefined();
+  });
+
+  it("RemoveIsland then Island in one patch replaces the island (document order)", () => {
+    const withIsland = patch(`<Edit>
+      <Island name="Sparkline">export default function Sparkline() { return null; }</Island>
+      <Insert into="grid-1"><Sparkline/></Insert>
+    </Edit>`);
+    const replaced = patch(`<Edit>
+      <RemoveIsland name="Sparkline"/>
+      <Island name="Sparkline">export default function Sparkline() { return "v2"; }</Island>
+    </Edit>`, withIsland);
+    expect(replaced.issues).toEqual([]);
+    expect(replaced.components.Sparkline).toContain('"v2"');
+    expect(node(replaced, "sparkline-1")?.source).toBe("generated");
+  });
+
+  it("Island then RemoveIsland in one patch still removes (document order)", () => {
+    const result = patch(`<Edit>
+      <Island name="Sparkline">export default function Sparkline() { return null; }</Island>
+      <RemoveIsland name="Sparkline"/>
+    </Edit>`);
+    expect(result.issues).toEqual([]);
+    expect(result.components).toStrictEqual({});
   });
 
   it("SetName renames the app", () => {

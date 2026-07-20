@@ -4,25 +4,19 @@ const unsupported = (message: string): never => {
   throw new VendoError("validation", message);
 };
 
-const SURROGATE_PATTERN = /[\uD800-\uDFFF]/;
+/** ES2024 String.prototype.isWellFormed — guaranteed at runtime by the
+ *  package's engines floor (node >= 20) but absent from this tsconfig's
+ *  ES2022 lib, hence the local cast. The one lone-surrogate detector in the
+ *  package: canonicalJson rejects ill-formed strings below, and the wire-v2
+ *  compiler (state.ts) keeps them out of props/islands so this never throws
+ *  downstream. */
+export const isWellFormedUtf16 = (text: string): boolean =>
+  (text as string & { isWellFormed(): boolean }).isWellFormed();
 
 /** RFC 8785 §3.2.2.2 requires well-formed Unicode; a lone surrogate would hash
  *  differently across implementations (strict ones reject it outright). */
 const assertWellFormed = (value: string): string => {
-  if (!SURROGATE_PATTERN.test(value)) return value;
-  for (let index = 0; index < value.length; index += 1) {
-    const unit = value.charCodeAt(index);
-    if (unit >= 0xd800 && unit <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
-      if (next >= 0xdc00 && next <= 0xdfff) {
-        index += 1;
-        continue;
-      }
-      unsupported("canonical JSON does not support lone surrogates");
-    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
-      unsupported("canonical JSON does not support lone surrogates");
-    }
-  }
+  if (!isWellFormedUtf16(value)) unsupported("canonical JSON does not support lone surrogates");
   return value;
 };
 

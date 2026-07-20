@@ -1,6 +1,6 @@
 import type { Json } from "./ids.js";
 import { shapeAtPointer, type ShapeType } from "./shape.js";
-import { isPlainObject } from "./tree.js";
+import { defineOwn, isPlainObject } from "./tree.js";
 
 /**
  * v2 spec §3 (docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md) —
@@ -178,14 +178,10 @@ const isRowArray = (value: unknown): value is Record<string, unknown>[] =>
 const fieldPresent = (rows: readonly Record<string, unknown>[], field: string): boolean =>
   rows.length === 0 || rows.some((row) => Object.prototype.hasOwnProperty.call(row, field));
 
-const defineValue = (record: Record<string, unknown>, key: string, value: unknown): void => {
-  Object.defineProperty(record, key, { value, enumerable: true, writable: true, configurable: true });
-};
-
 const pickFields = (row: Record<string, unknown>, fields: readonly string[]): Record<string, unknown> => {
   const picked: Record<string, unknown> = {};
   for (const field of fields) {
-    if (Object.prototype.hasOwnProperty.call(row, field)) defineValue(picked, field, row[field]);
+    if (Object.prototype.hasOwnProperty.call(row, field)) defineOwn(picked, field, row[field]);
   }
   return picked;
 };
@@ -195,7 +191,7 @@ const renameFields = (row: Record<string, unknown>, pairs: readonly string[]): R
   for (let i = 0; i < pairs.length; i += 2) renames.set(pairs[i] as string, pairs[i + 1] as string);
   const renamed: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(row)) {
-    defineValue(renamed, renames.get(key) ?? key, value);
+    defineOwn(renamed, renames.get(key) ?? key, value);
   }
   return renamed;
 };
@@ -331,7 +327,7 @@ const applyStep = (value: Json, step: ReshapeStep): ReshapeResult => {
       const rendered = render(row);
       if ("bad" in rendered) return nonScalar(rendered.bad);
       const next = { ...row };
-      defineValue(next, field, rendered.text);
+      defineOwn(next, field, rendered.text);
       return { ok: true, value: next as Json };
     };
     if (isRowArray(value)) {
@@ -376,7 +372,7 @@ const applyStep = (value: Json, step: ReshapeStep): ReshapeResult => {
       const formatted = formatScalar(row[field], kind);
       if (formatted === null) return mismatch(`format "${kind}" cannot format "${field}" values`);
       const next = { ...row };
-      defineValue(next, field, formatted);
+      defineOwn(next, field, formatted);
       rows.push(next);
     }
     return { ok: true, value: rows };
@@ -576,10 +572,10 @@ export function reshapeShape(shape: ShapeType, step: ReshapeStep): ReshapeShapeR
     const target = args[0] as string;
     const fields: Record<string, ShapeType> = {};
     for (const [key, value] of Object.entries(view.fields)) {
-      defineValue(fields as Record<string, unknown>, key, key === target ? STRING_SHAPE : value);
+      defineOwn(fields, key, key === target ? STRING_SHAPE : value);
     }
     if (!Object.prototype.hasOwnProperty.call(fields, target)) {
-      defineValue(fields as Record<string, unknown>, target, STRING_SHAPE);
+      defineOwn(fields, target, STRING_SHAPE);
     }
     // The target field is always written, so it leaves the optional set.
     return { ok: true, shape: view.rebuild(objectShape(fields, [...view.optional].filter((key) => key !== target))) };
@@ -648,7 +644,7 @@ export function reshapeShape(shape: ShapeType, step: ReshapeStep): ReshapeShapeR
     }
     const fields: Record<string, ShapeType> = {};
     for (const [key, value] of Object.entries(view.fields)) {
-      defineValue(fields as Record<string, unknown>, key, key === field ? STRING_SHAPE : value);
+      defineOwn(fields, key, key === field ? STRING_SHAPE : value);
     }
     return { ok: true, shape: view.rebuild(objectShape(fields, [...view.optional])) };
   }
@@ -662,7 +658,7 @@ export function reshapeShape(shape: ShapeType, step: ReshapeStep): ReshapeShapeR
   }
   if (op === "pick") {
     const fields: Record<string, ShapeType> = {};
-    for (const field of args) defineValue(fields as Record<string, unknown>, field, view.fields[field]);
+    for (const field of args) defineOwn(fields, field, view.fields[field] as ShapeType);
     return {
       ok: true,
       shape: view.rebuild(objectShape(fields, args.filter((field) => view.optional.has(field)))),
@@ -674,7 +670,7 @@ export function reshapeShape(shape: ShapeType, step: ReshapeStep): ReshapeShapeR
   const optional: string[] = [];
   for (const [key, value] of Object.entries(view.fields)) {
     const nextKey = renames.get(key) ?? key;
-    defineValue(fields as Record<string, unknown>, nextKey, value);
+    defineOwn(fields, nextKey, value);
     if (view.optional.has(key)) optional.push(nextKey);
   }
   return { ok: true, shape: view.rebuild(objectShape(fields, optional)) };

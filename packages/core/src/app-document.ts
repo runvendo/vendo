@@ -40,14 +40,14 @@ export const pinSchema = z.object({
  * with no machine is a layer-1 tree app. The layer itself is always derived
  * from presence (and, for layer 3, from what the box serves), never stored.
  */
-export interface AppMachine {
+interface AppMachine {
   /** Provider-prefixed snapshot reference (e.g. "e2b:snap_x91"), opaque past the colon. */
   snapshotRef: string;
   provisionedAt: IsoDateTime;
 }
 
 /** execution-v2 */
-export const appMachineSchema = z.object({
+const appMachineSchema = z.object({
   snapshotRef: z.string(),
   provisionedAt: isoDateTimeSchema,
 }).passthrough() satisfies z.ZodType<AppMachine>;

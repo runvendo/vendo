@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   toVendoWirePart,
   vendoApprovalPartSchema,
-  vendoApprovalWirePartSchema,
   vendoStepLimitPartSchema,
   vendoConnectPartSchema,
-  vendoConnectWirePartSchema,
   vendoViewPartSchema,
   vendoViewWirePartSchema,
 } from "./stream-parts.js";
@@ -129,17 +127,6 @@ describe("wire envelopes for §16 parts", () => {
       appId: "app_1",
       payload: { formatVersion: "vendo-genui/v2" },
     }).success).toBe(false);
-  });
-
-  it("approval and connect wire envelopes parse their nested shapes", () => {
-    expect(vendoApprovalWirePartSchema.safeParse({
-      type: "data-vendo-approval",
-      data: { toolCallId: "call_1", risk: "write", approvalId: "apr_1" },
-    }).success).toBe(true);
-    expect(vendoConnectWirePartSchema.safeParse({
-      type: "data-vendo-connect",
-      data: { toolCallId: "call_1", connector: "composio", toolkit: "gmail", message: "Connect gmail" },
-    }).success).toBe(true);
   });
 });
 
