@@ -9,3 +9,4 @@ Repair flag = did structured repair visibly engage (slow first paint / retries)?
 
 | id | prompt | verdict | timing | class-if-fail | repair? | note |
 |----|--------|---------|--------|---------------|---------|------|
+| M1 | show me my account balances at a glance | PASS | ~8s | — | no | Host balance card + 4 account cards, money formatted, no errors. Blemish: headline card label "Total balance" shows checking-only ($9,412.20 vs true total $54,907.15) — host component's baked-in label. |
