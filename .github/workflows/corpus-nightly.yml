@@ -174,3 +174,8 @@ jobs:
             corpus/.repos/.logs/**/*.log
           retention-days: 30
           if-no-files-found: warn
+          # Everything above lives under dot-directories (.repos/.logs);
+          # upload-artifact v4 excludes hidden paths by default, which is why
+          # the artifact has been empty since Jul 17 (proven by the diagnostic
+          # step on run 29768616216).
+          include-hidden-files: true
