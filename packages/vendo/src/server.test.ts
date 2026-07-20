@@ -404,7 +404,7 @@ describe("09 §3 public wire", () => {
       });
       const url = new URL(sent.url);
       if (url.pathname === "/api/v1/sandboxes/resume") {
-        return Response.json({ id: machineId, url: `https://${machineId}.m.vendo.run` });
+        return Response.json({ id: machineId, url: `https://m-${machineId}.vendo.run` });
       }
       if (url.pathname.endsWith("/snapshot")) {
         return Response.json({ ref: `vendo:snap_${"b".repeat(40)}` });

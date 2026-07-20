@@ -50,14 +50,16 @@
  - exec/files also exist server-side (`POST /{id}/exec`,
  *   `GET|PUT /{id}/files?path=`, `GET /{id}/files/list?dir=`) — adapter-
  *   private, used for live-lane bootstrap and diagnostics only.
- * - ingress  the create/resume handle `url` (`https://<id>.m.vendo.run`) is
- *   the canonical-port public surface; `machine.url(port)` formats other
- *   ports as an e2b-style port-prefixed label on the same host
- *   (`https://<port>-<id>.m.vendo.run`) — PROVISIONAL, pending Cloud
- *   confirmation of the non-canonical shape. KNOWN PROD BUG (probed
- *   2026-07-20, reported): TLS for `*.m.vendo.run` fails entirely —
- *   Cloudflare Universal SSL covers one label only, so the ingress needs an
- *   advanced certificate before ANY served-app URL works.
+ * - ingress  the create/resume handle `url` (`https://m-<id>.vendo.run`,
+ *   single-label scheme locked 2026-07-20) is the canonical-port public
+ *   surface; `machine.url(port)` formats other ports as an e2b-style
+ *   port-prefixed label on the same host (`https://<port>-m-<id>.vendo.run`),
+ *   still single-label. Single-label hosts ride the existing `*.vendo.run`
+ *   Universal SSL cert — no advanced certificate needed (live-verified
+ *   2026-07-20: TLS fails on `test123.m.vendo.run`, succeeds on
+ *   `m-test123.vendo.run`, which answers a JSON 404 for the unknown id).
+ *   The console mints `url`, so the hostname shape is console-side; this
+ *   adapter echoes whatever handle it is given.
  *
  * Adapter mapping:
  * - `machine.snapshot()` = the artifact mint, wrapped in the adapter's
@@ -96,5 +98,5 @@ export const CLOUD_SNAPSHOT_REF_PREFIX = "vendo:v2:";
 export const CONSOLE_SNAPSHOT_REF_PREFIX = "vendo:";
 
 /** The canonical box port the relay targets when no port rides the wire
- * (and the one the public ingress `https://<id>.m.vendo.run` serves). */
+ * (and the one the public ingress `https://m-<id>.vendo.run` serves). */
 export const CLOUD_BOX_PORT = 8080;

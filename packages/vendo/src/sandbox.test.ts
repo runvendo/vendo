@@ -96,7 +96,7 @@ function fakeConsole() {
         allowedDomains: body.egress === undefined ? undefined : [...body.egress],
         files: new Map(),
       });
-      return json({ id, url: `https://${id}.m.vendo.run` }, 201);
+      return json({ id, url: `https://m-${id}.vendo.run` }, 201);
     }
     if (path === `${CLOUD_SANDBOX_PATH}/resume` && request.method === "POST") {
       const body = recorded.json as { ref: string; egress?: string[] };
@@ -113,7 +113,7 @@ function fakeConsole() {
         ...(snapshot.app === undefined ? {} : { app: snapshot.app }),
         files: new Map(snapshot.files),
       });
-      return json({ id, url: `https://${id}.m.vendo.run` });
+      return json({ id, url: `https://m-${id}.vendo.run` });
     }
     const gc = new RegExp(`^${CLOUD_SANDBOX_PATH}/snapshots/([^/]+)$`).exec(path);
     if (gc && request.method === "DELETE") {
@@ -274,9 +274,6 @@ const harness: SandboxConformanceHarness = {
   // adapter states the allowlist (recorded or replaced) on every resume.
   resumeForks: true,
   resumeReplacesPolicy: true,
-  // TEMPORARY (2026-07-20): *.m.vendo.run TLS pending the advanced
-  // certificate — url() refuses loudly (CLOUD_INGRESS_TLS_BROKEN, sandbox.ts).
-  ingressUnavailable: true,
 };
 sandboxAdapterConformance("cloudSandbox (mock console)", harness);
 
@@ -369,35 +366,23 @@ describe("cloudSandbox", () => {
       .rejects.toMatchObject({ code: "validation" });
   });
 
-  it("url() fails loudly while *.m.vendo.run TLS is broken instead of handing out a dead URL", async () => {
-    // TEMPORARY GUARD (2026-07-20, flagged decision): prod TLS for
-    // *.m.vendo.run fails entirely (Cloudflare Universal SSL covers one
-    // label), so every ingress URL this adapter could mint is dead. Until the
-    // advanced certificate lands, url() refuses with a VendoError naming the
-    // limitation — the 2→3 flip surfaces the real problem instead of shipping
-    // an app whose surface cannot load.
+  it("url() defaults to the app's $PORT and prefixes non-canonical ports onto the ingress host", async () => {
+    // Single-label scheme (locked 2026-07-20): the console mints
+    // `https://m-<id>.vendo.run` so the existing *.vendo.run Universal SSL
+    // cert covers it; port-prefixed labels stay single-label too
+    // (`https://<port>-m-<id>.vendo.run`).
     const console_ = fakeConsole();
     const adapter = adapterFor(console_);
     const canonical = await adapter.create({ env: { PORT: "8080" } });
-    await expect(canonical.url()).rejects.toMatchObject({ code: "sandbox-unavailable" });
-    await expect(canonical.url(9090)).rejects.toThrow(/\*\.m\.vendo\.run/);
-  });
-
-  // Re-enable when the *.m.vendo.run advanced certificate lands and the
-  // CLOUD_INGRESS_TLS_BROKEN guard in sandbox.ts is removed.
-  it.skip("url() defaults to the app's $PORT and prefixes non-canonical ports onto the ingress host", async () => {
-    const console_ = fakeConsole();
-    const adapter = adapterFor(console_);
-    const canonical = await adapter.create({ env: { PORT: "8080" } });
-    expect(await canonical.url()).toBe(`https://${canonical.id}.m.vendo.run`);
-    expect(await canonical.url(9090)).toBe(`https://9090-${canonical.id}.m.vendo.run`);
+    expect(await canonical.url()).toBe(`https://m-${canonical.id}.vendo.run`);
+    expect(await canonical.url(9090)).toBe(`https://9090-m-${canonical.id}.vendo.run`);
 
     // An app listening elsewhere gets its OWN port surface by default, and
     // the $PORT rides refs so a resumed machine keeps it.
     const ported = await adapter.create({ env: { PORT: "9090" } });
-    expect(await ported.url()).toBe(`https://9090-${ported.id}.m.vendo.run`);
+    expect(await ported.url()).toBe(`https://9090-m-${ported.id}.vendo.run`);
     const woken = await adapter.resume(await ported.snapshot());
-    expect(await woken.url()).toBe(`https://9090-${woken.id}.m.vendo.run`);
+    expect(await woken.url()).toBe(`https://9090-m-${woken.id}.vendo.run`);
   });
 
   it("states the applicable allowlist explicitly on every resume — the wire inherits nothing", async () => {

@@ -27,14 +27,6 @@ const CLOUD_ERROR_CODES: ReadonlySet<string> = new Set([
  * request can't wedge a generation forever. */
 const DEFAULT_TIMEOUT_MS = 300_000;
 
-/** TEMPORARY GUARD — flip to false (or delete) when the `*.m.vendo.run`
- * advanced certificate lands. KNOWN PROD BUG (probed 2026-07-20, reported —
- * see the sandbox-wire.ts ingress entry): Cloudflare Universal SSL covers one
- * label, so TLS for `*.m.vendo.run` fails entirely and every ingress URL this
- * adapter could mint is dead. While broken, url() refuses loudly so the 2→3
- * flip surfaces the limitation instead of shipping an app with a dead surface. */
-const CLOUD_INGRESS_TLS_BROKEN = true;
-
 export interface CloudSandboxOptions {
   apiKey: string;
   /** Defaults to the Vendo console; the composition seam passes VENDO_CLOUD_URL. */
@@ -365,19 +357,12 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
         },
       },
       async url(port?: number) {
-        if (CLOUD_INGRESS_TLS_BROKEN) {
-          throw new VendoError(
-            "sandbox-unavailable",
-            "Vendo Cloud served-app ingress is temporarily unavailable: TLS for *.m.vendo.run "
-              + "is not yet provisioned (advanced certificate pending), so machine URLs cannot "
-              + "be served. Use a BYO sandbox (E2B_API_KEY) for layer-3 served apps until then.",
-          );
-        }
         // Wave 4 (layer 3) — the browser→box serving path. The handle URL
-        // from create/resume IS the canonical-port ingress; other ports ride
-        // an e2b-style port-prefixed label on the same host (PROVISIONAL —
-        // sandbox-wire.ts ingress entry; the exact non-canonical shape is
-        // pending Cloud confirmation).
+        // from create/resume IS the canonical-port ingress (single-label
+        // `m-<id>.vendo.run`, locked 2026-07-20 — sandbox-wire.ts ingress
+        // entry); other ports ride an e2b-style port-prefixed label on the
+        // same host (`<port>-m-<id>.vendo.run`), which stays single-label
+        // under the *.vendo.run Universal SSL cert.
         const target = port ?? state.port;
         if (target === CLOUD_BOX_PORT) return handle.url;
         const ingress = new URL(handle.url);

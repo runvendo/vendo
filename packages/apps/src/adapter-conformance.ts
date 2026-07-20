@@ -47,13 +47,6 @@ export interface SandboxConformanceHarness {
    * resume grows its egress field (tracked follow-up).
    */
   resumeReplacesPolicy: boolean;
-  /**
-   * True while the provider's public ingress is temporarily unavailable
-   * (Vendo Cloud: `*.m.vendo.run` TLS pending an advanced certificate — the
-   * CLOUD_INGRESS_TLS_BROKEN guard in the umbrella's sandbox.ts). The suite
-   * then asserts url() refuses LOUDLY instead of asserting URL shapes.
-   */
-  ingressUnavailable?: boolean;
 }
 
 const requestEventually = async (
@@ -251,7 +244,7 @@ export const sandboxAdapterConformance = (
       TEST_TIMEOUT_MS,
     );
 
-    it.skipIf(harness.ingressUnavailable === true)("exposes a public ingress URL, defaulting to the app's $PORT", async () => {
+    it("exposes a public ingress URL, defaulting to the app's $PORT", async () => {
       const adapter = await harness.makeAdapter();
       const machine = track(await adapter.create({
         env: { PORT: "8080" },
@@ -263,16 +256,6 @@ export const sandboxAdapterConformance = (
       expect(await machine.url(8080)).toBe(appUrl);
       expect(await machine.url(9090)).not.toBe(appUrl);
       expect(new URL(await machine.url(9090)).protocol).toMatch(/^https?:$/);
-    }, TEST_TIMEOUT_MS);
-
-    it.skipIf(harness.ingressUnavailable !== true)("refuses url() loudly while the provider ingress is unavailable", async () => {
-      // A dead URL is worse than a loud error: the 2→3 flip must surface the
-      // provider limitation, never mint an app whose surface cannot load.
-      const adapter = await harness.makeAdapter();
-      const machine = track(await adapter.create({
-        env: { PORT: "8080" },
-      }));
-      await expect(machine.url()).rejects.toThrow();
     }, TEST_TIMEOUT_MS);
 
     it("rejects a snapshot ref it did not issue", async () => {
