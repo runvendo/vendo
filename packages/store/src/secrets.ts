@@ -1,6 +1,6 @@
 import { VendoError, type SecretsProvider } from "@vendoai/core";
-import { decryptSecret, encryptSecret, getEncryptionKey, plaintextSecretsAllowed } from "./crypto.js";
-import { dbFor, type VendoStore } from "./store.js";
+import { decryptSecret, encryptSecret } from "./crypto.js";
+import { dbFor, secretsConfigFor, type VendoStore } from "./store.js";
 import { text } from "./helpers/utils.js";
 
 /** 02-store §1 */
@@ -33,9 +33,9 @@ function warnPlaintextOnce(): void {
 /** The key when configured; null when plaintext is allowed (dev mode);
  *  fail-closed otherwise — production stores secrets encrypted or not at all. */
 function keyFor(store: VendoStore): Buffer | null {
-  const key = getEncryptionKey(store);
-  if (key) return key;
-  if (plaintextSecretsAllowed(store)) return null;
+  const { encryptionKey, allowPlaintextSecrets } = secretsConfigFor(store);
+  if (encryptionKey) return encryptionKey;
+  if (allowPlaintextSecrets) return null;
   throw new VendoError(
     "not-implemented",
     "Stored secrets require an encryption key in production: set VENDO_STORE_ENCRYPTION_KEY "

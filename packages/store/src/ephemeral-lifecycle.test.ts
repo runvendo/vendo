@@ -2,9 +2,11 @@ import type { Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
 import { appFixture, approvalFixture, at, auditFixture, grantFixture, persistentPrincipal } from "./fixtures.test-util.js";
+import { approvalStore } from "./helpers/approvals.js";
+import { stateStore } from "./helpers/state.js";
 import {
-  appStore, approvalStore, auditStore, createStore, grantStore, registerEphemeralSubject,
-  runStore, stateStore, sweepEphemeralSubjects, threadStore,
+  appStore, auditStore, createStore, grantStore, registerEphemeralSubject,
+  runStore, sweepEphemeralSubjects, threadStore,
   type VendoStore,
 } from "./index.js";
 

@@ -1,4 +1,4 @@
-import { VendoError, isoDateTimeSchema, type IsoDateTime, type Json } from "@vendoai/core";
+import { VendoError, isoDateTimeSchema, type IsoDateTime } from "@vendoai/core";
 import type { Db } from "../db.js";
 
 export function iso(value: unknown): IsoDateTime {
@@ -17,8 +17,17 @@ export function text(value: unknown): string {
   return value;
 }
 
-export function json(value: unknown): Json {
-  return value;
+/** Keyset timestamps compare at millisecond precision. The timestamptz cursor
+ *  columns can hold microseconds — the §2 table map is public (direct host
+ *  SQL, vendo_state's DEFAULT now()), and caller-supplied ISO timestamps
+ *  (audit `at`, run `startedAt`) are z.string().datetime()-validated, which
+ *  accepts sub-ms digits — while cursors round-trip through JS Dates (ms).
+ *  Comparing at full precision against a truncated cursor silently skips rows
+ *  (DESC lists) or repeats them (ASC export), so every keyset predicate and
+ *  its ORDER BY route BOTH the column and the cursor parameter through this
+ *  same truncated expression. */
+export function cursorMs(expr: string): string {
+  return `date_trunc('milliseconds', ${expr})`;
 }
 
 export function encodeCursor(date: IsoDateTime, id: string): string {
@@ -57,6 +66,10 @@ export function pageLimit(value: number | undefined): number {
 
 export function jsonParam(value: unknown): string {
   return JSON.stringify(value);
+}
+
+export function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, "\\$&");
 }
 
 /** app:<appId>:… is the collection/namespace grammar for app-scoped record and

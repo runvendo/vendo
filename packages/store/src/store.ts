@@ -1,6 +1,6 @@
 import type { BlobStore, RecordStore, StoreAdapter } from "@vendoai/core";
 import { createBlobStore } from "./blobs.js";
-import { dropEncryptionKey, setEncryptionKey, setPlaintextSecretsAllowed, validateEncryptionKey } from "./crypto.js";
+import { validateEncryptionKey } from "./crypto.js";
 import { createDb, type Db, type StoreConfig } from "./db.js";
 import { createRecordStore } from "./records.js";
 import { createReservedRecordStore } from "./routing.js";
@@ -13,12 +13,27 @@ export interface VendoStore extends StoreAdapter {
   raw(): unknown;
 }
 
-const databases = new WeakMap<object, Db>();
+/** Per-handle internals kept OFF the public store object (02-store §4 keeps
+ *  the encryption key out of reach of anything holding the store). */
+interface StoreInternals {
+  db: Db;
+  encryptionKey: Buffer | undefined;
+  allowPlaintextSecrets: boolean;
+}
+
+const internals = new WeakMap<object, StoreInternals>();
 
 export function dbFor(store: VendoStore): Db {
-  const db = databases.get(store);
-  if (!db) throw new Error("Unknown VendoStore handle");
-  return db;
+  const found = internals.get(store);
+  if (!found) throw new Error("Unknown VendoStore handle");
+  return found.db;
+}
+
+/** Package-internal (secrets.ts): the secrets configuration bound to a store
+ *  handle. A closed (or unknown) handle reads as no key and no plaintext
+ *  allowance, so secret access fails closed. */
+export function secretsConfigFor(store: VendoStore): Pick<StoreInternals, "encryptionKey" | "allowPlaintextSecrets"> {
+  return internals.get(store) ?? { encryptionKey: undefined, allowPlaintextSecrets: false };
 }
 
 /** 02-store §1 */
@@ -36,16 +51,17 @@ export function createStore(config: StoreConfig = {}): VendoStore {
       await migrateSchema(db);
     },
     async close() {
-      dropEncryptionKey(store);
-      databases.delete(store);
+      internals.delete(store);
       await db.close();
     },
     raw() {
       return db.raw();
     },
   };
-  databases.set(store, db);
-  setEncryptionKey(store, encryptionKey);
-  setPlaintextSecretsAllowed(store, encryptionKey === undefined && config.allowUnencryptedSecrets === true);
+  internals.set(store, {
+    db,
+    encryptionKey,
+    allowPlaintextSecrets: encryptionKey === undefined && config.allowUnencryptedSecrets === true,
+  });
   return store;
 }
