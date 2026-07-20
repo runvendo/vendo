@@ -119,6 +119,15 @@ export async function POST(request: Request): Promise<Response> {
     )
   }
   if (!grant.ok) {
+    // GoTrue is shared machine-wide (one `supabase start` stack): a 429 or
+    // 5xx is a transient stack-side answer, not a credential verdict — keep
+    // it distinguishable from a real rejection so callers can retry.
+    if (grant.status === 429) {
+      return errorPage("Too many sign-in attempts right now. Wait a moment and try again.", 429)
+    }
+    if (grant.status >= 500) {
+      return errorPage("Supabase Auth errored. Try again in a moment.", 502)
+    }
     return errorPage("Email or password is incorrect.")
   }
   const session = (await grant.json()) as { access_token?: string; expires_in?: number }
