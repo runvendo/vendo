@@ -77,9 +77,9 @@ couldn't resolve, and writes the product brief.
 The pass runs as a staged pipeline, not one shot: a cheap survey maps the
 repo and groups tools into surfaces (`VENDO_EXTRACTION_SURVEY_MODEL` can
 point it at a faster model), one focused pass drafts each surface, a
-cross-check reviews the combined draft for consistency, an optional theme
-stage fills whatever the exact CSS read couldn't, and the brief is drafted
-last from what the stages learned. Each stage writes its artifact to
+cross-check reviews the combined draft for consistency, the brief is
+drafted from what the stages learned, and an optional theme stage runs
+last, filling whatever the exact CSS read couldn't. Each stage writes its artifact to
 `.vendo/data/extract/<stage>.json` (gitignored) for inspection, and failures
 degrade per stage — a failed surface is skipped with a note instead of
 aborting the run.

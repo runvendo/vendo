@@ -123,7 +123,8 @@ skill into `.claude/skills/` when your repo uses skills.
   a real `.vendo/brief.md` — it is the agent's product knowledge.
 - `theme.json` was extracted from your CSS (conventional tokens read
   exactly; consented AI polish during init fills whatever the reader
-  couldn't); re-run `vendo sync` after brand changes. See
+  couldn't); after brand changes, edit `theme.json` directly (it is the
+  source of truth) or delete it and re-run `npx vendo init`. See
   [Theming](/connect/theming) and [Host components](/connect/host-components)
   for remix baselines.
 
