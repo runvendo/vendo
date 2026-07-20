@@ -25,7 +25,10 @@ layer.
 A persistent per-app sandbox. It sleeps as a snapshot and wakes in about a
 second when poked. Idle machines auto-sleep after 5 minutes (a request in
 flight defers the timer). Sleep takes a fresh snapshot and stores its ref on
-the app document; the next wake resumes it.
+the app document; the next wake resumes it. If the provider kills a live
+machine out from under us (TTL expiry, provider sweep), the next request
+through the live handle evicts the dead entry and resumes the durable
+snapshot ref transparently — one retry, then the error surfaces.
 
 Which provider runs the box is the standard adapter decision, made once in
 `createVendo`:
@@ -69,7 +72,10 @@ Vendo owns only the boundary.
 `buildEnv` (packages/apps/src/box-env.ts) assembles these when the machine is
 provisioned. A wake resumes the snapshot's environment; before every in-box
 edit the host re-injects the current set through the agent control port and
-restarts the app, which is how a grant flipped while the machine slept lands:
+restarts the app. A secret grant decided while a machine exists also marks the
+machine env-stale on the document (and puts a running box to sleep), so the
+next wake rebuilds the env through the same control-port door — a grant flip
+lands at the next wake, not just the next edit:
 
 | Variable | Contents |
 | --- | --- |
@@ -183,7 +189,10 @@ Operator knobs: `VENDO_BOX_EDIT_TIMEOUT_MS` (long-poll budget, default 8
 minutes) and `VENDO_BOX_EDIT_POLL_MS`. On BYO e2b, `VENDO_E2B_TIMEOUT_MS` sets
 the provider machine lifetime; when unset, a raised edit budget implies a
 matching lifetime (budget plus 5 minutes) so a long build is not killed by the
-provider's default TTL. A timed-out or failed edit rolls back: the live
+provider's default TTL. The lifetime is a sliding deadline, not a hard cap:
+every request and exec through the machine re-extends it (throttled to once a
+minute), so the idle auto-sleep — not the provider TTL — decides when a busy
+box stops. A timed-out or failed edit rolls back: the live
 machine is discarded without a snapshot and the document keeps its pre-edit
 ref.
 
@@ -195,11 +204,13 @@ ordinary high-risk approval flow.
 - **Secrets**: an app declares secret names (`AppDocument.secrets`). Turning a
   declared secret on for a box parks one approval card per secret
   (`vendo_secret_expose`); only declared and granted secrets inject real
-  values, at provision and at the env re-injection before each in-box edit.
-  An ordinary wake resumes the snapshot's environment, so a grant or
-  revocation decided while the machine slept fully lands at the next edit or
-  re-provision. Grants live in their own collection, keyed by app id, and are
-  never carried by shares, forks, or publishes.
+  values, at provision, at the env re-injection before each in-box edit, and
+  at the first wake after a grant change: committing or revoking a grant
+  marks the machine env-stale (a running box is put to sleep), and the next
+  wake pushes the freshly assembled env through the agent control port, which
+  restarts the app with exactly the new set. Grants live in their own
+  collection, keyed by app id, and are never carried by shares, forks, or
+  publishes.
 - **Egress**: the app's `egress` declaration is an ask, not an authority. Each
   declared domain needs one owner approval (`vendo_egress_allow`); approving
   commits it to the document's `egressApproved` field. A machine never

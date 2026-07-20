@@ -352,6 +352,71 @@ describe("machine lifecycle: in-flight requests defer auto-sleep", () => {
   });
 });
 
+describe("machine lifecycle: stale-live-ref eviction (Wave 7)", () => {
+  it("transparently re-wakes from the durable ref when the provider reaped the live machine", async () => {
+    const { sandbox, lifecycle, doc } = await setup();
+    const withMachine = await lifecycle.provision(doc);
+    const machine = await lifecycle.wake(withMachine);
+    await machine.request({ method: "POST", path: "/state/note", body: "survives the reap" });
+    const slept = await lifecycle.sleep(withMachine);
+    const handle = await lifecycle.wake(slept);
+
+    // The provider kills the box out from under us (TTL expiry, idle sweep):
+    // the live handle must not 502 until the idle sweep — it evicts the dead
+    // entry and resumes the durable snapshot ref transparently.
+    sandbox.machines.at(-1)?.reap();
+    const read = await handle.request({ method: "GET", path: "/state/note" });
+
+    expect(read.status).toBe(200);
+    expect(bodyText(read.body)).toBe("survives the reap");
+    // wake, post-sleep wake, and ONE recovery resume from the ref the sleep stored.
+    expect(sandbox.resumes).toBe(3);
+    expect(lifecycle.peek(doc.id)).toBeDefined();
+  });
+
+  it("retries exactly once: a recovery machine that is also gone surfaces the error", async () => {
+    const { sandbox, lifecycle, doc } = await setup();
+    const withMachine = await lifecycle.provision(doc);
+    const handle = await lifecycle.wake(withMachine);
+
+    // Every machine the provider hands back is instantly reaped too — the
+    // single-retry recovery must SURFACE the failure, never spin resumes.
+    sandbox.machines.at(-1)?.reap();
+    const resume = sandbox.resume.bind(sandbox);
+    sandbox.resume = async (ref, policy) => {
+      const machine = await resume(ref, policy);
+      (machine as InstanceType<typeof import("./testing/fake-sandbox-v2.js").FakeMachineV2>).reap();
+      return machine;
+    };
+
+    await expect(handle.request({ method: "GET", path: "/state/anything" })).rejects.toMatchObject({
+      name: "VendoError",
+      code: "not-found",
+    });
+    expect(sandbox.resumes).toBe(2); // initial wake + ONE recovery resume
+  });
+
+  it("a stale handle held across a concurrent recovery still answers through the fresh machine", async () => {
+    const { sandbox, lifecycle, doc } = await setup();
+    const withMachine = await lifecycle.provision(doc);
+    await lifecycle.wake(withMachine);
+    await lifecycle.sleep(withMachine);
+    const handle = await lifecycle.wake(withMachine);
+    sandbox.machines.at(-1)?.reap();
+
+    // Two callers hit the dead machine concurrently: recovery coalesces onto
+    // one resume, and both answers come from the fresh machine.
+    const [first, second] = await Promise.all([
+      handle.request({ method: "GET", path: "/" }),
+      handle.request({ method: "GET", path: "/" }),
+    ]);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(sandbox.resumes).toBe(3); // wake, re-wake, ONE shared recovery
+  });
+});
+
 describe("machine lifecycle: destroy", () => {
   it("destroys the sandbox and clears the machine field", async () => {
     const { sandbox, lifecycle, doc, stored } = await setup();
