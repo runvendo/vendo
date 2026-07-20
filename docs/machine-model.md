@@ -76,11 +76,11 @@ wake:
 | `VENDO_HOST_URL` | base URL of the host-tools callback surface (same mount) |
 | `VENDO_APP_TOKEN` | the per-app bearer minted at provision; authenticates every `/box` call |
 | `VENDO_INFERENCE_URL` / `VENDO_INFERENCE_KEY` | the in-box agent's model door (absent when no inference is configured) |
-| `VENDO_INFERENCE_MODEL` | optional model choice the harness reads |
+| `VENDO_INFERENCE_MODEL` | optional model choice the harness reads (added by the composition beside `buildEnv`'s output) |
 | declared secret names | real values, for declared and granted secrets only |
 
-The boundary names are reserved: a secret named like one of them is a
-validation error. Secrets are injected by their own names; the box does its
+The `buildEnv` boundary names (all of the above except `VENDO_INFERENCE_MODEL`)
+are reserved: a secret named like one of them is a validation error. Secrets are injected by their own names; the box does its
 own allowlisted egress with them (no handles, no egress proxy).
 
 The inference door resolves host-side: explicit `VENDO_INFERENCE_URL` and
