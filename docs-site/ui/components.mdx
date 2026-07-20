@@ -1,13 +1,16 @@
 ---
 title: "UI components"
-description: "The shipped Vendo chrome — overlay, palette, thread, approvals, activities, slot, page, and voice surfaces — with a live playground you can explore without a model key."
+description: "The shipped Vendo chrome — overlay, palette, thread, approvals, activities, slot, page, and voice surfaces — playable inline, plus a full playground with a live theme editor."
 ---
+
+import { VendoEmbed, VendoLauncher } from "/snippets/vendo-embed.jsx"
 
 Vendo ships a complete set of brand-native chrome components. Every surface
 derives its colors, typography, radius, density, and motion from your
 [VendoTheme tokens](/connect/theming), so the same components render on-brand
-in any host product. Everything below is the real chrome rendering against
-scripted data — the same components your hosts mount.
+in any host product. **The components below are live** — the real chrome
+mounted against scripted data, the same components your hosts mount. Type,
+click, approve.
 
 ## Overlay
 
@@ -16,14 +19,15 @@ overlay over your product. On phones it becomes an Intercom-style full-bleed
 takeover with safe-area and keyboard handling. One component, zero layout
 changes to your app.
 
+You don't need a demo for this one — **it's running on this page**. The Vendo
+pill in the corner is the shipped component; click it and the overlay opens
+over these docs, compact first, growing on your first message.
+
+<VendoLauncher />
+
 <Frame caption="The closed overlay: a quiet launcher pill in the corner, plus the slot invitation.">
   <img src="/images/ui/hero-launcher.png" alt="Vendo overlay launcher pill in the corner of a host page" />
 </Frame>
-
-The overlay opens compact — an invitation, not a takeover — and grows into a
-full conversation on your first message:
-
-<video autoPlay muted loop playsInline type="video/mp4" src="/images/ui/loop-overlay-grow.mp4" />
 
 ## Command palette
 
@@ -43,9 +47,13 @@ approval cards, connect cards, and generated views arriving inline. Use it
 when you want the conversation embedded in your own layout instead of an
 overlay.
 
-<Frame caption="A reply streaming into the thread: tool chip, live text, stop affordance.">
-  <img src="/images/ui/hero-thread-streaming.png" alt="Vendo thread surface with a streaming reply" />
-</Frame>
+<VendoEmbed
+  surface="thread-streaming"
+  poster="/images/ui/hero-thread-streaming.png"
+  alt="Vendo thread surface with a streaming reply"
+  height={560}
+  caption="A reply streams into the thread: tool beat, live text, stop affordance"
+/>
 
 ## Generated views
 
@@ -55,9 +63,13 @@ a screenshot.
 
 <video autoPlay muted loop playsInline type="video/mp4" src="/images/ui/loop-view-arrival.mp4" />
 
-<Frame caption="The finished turn: a generated Renewals radar inline in the conversation.">
-  <img src="/images/ui/hero-generated-view.png" alt="A generated view rendered inline in the Vendo thread" />
-</Frame>
+<VendoEmbed
+  surface="thread-view"
+  poster="/images/ui/hero-generated-view.png"
+  alt="A generated view rendered inline in the Vendo thread"
+  height={620}
+  caption="Ask for a view and watch it form — the finished Renewals radar is interactive"
+/>
 
 ## Approvals
 
@@ -65,9 +77,13 @@ A write action parks the turn on an in-thread approval card showing the exact
 request. Approve it and the same turn resumes — the card morphs into a toast,
 the tool runs, and the agent confirms.
 
-<Frame caption="The in-thread approval card: exact inputs, risk label, approve or deny.">
-  <img src="/images/ui/hero-approval.png" alt="Vendo approval card pausing a turn on a Slack post" />
-</Frame>
+<VendoEmbed
+  surface="approval-flow"
+  poster="/images/ui/hero-approval.png"
+  alt="Vendo approval card pausing a turn on a Slack post"
+  height={560}
+  caption="Pending → approved → resumed: press Approve and the turn continues"
+/>
 
 <video autoPlay muted loop playsInline type="video/mp4" src="/images/ui/loop-approval-toast.mp4" />
 
@@ -77,9 +93,13 @@ The approvals queue and humanized activity feed as a host-placeable piece:
 pending approvals render as actionable cards on top, recent agent activity
 below. Drop it into your own settings or admin pages.
 
-<Frame caption="VendoActivities: the waiting-on-you queue above the humanized activity feed.">
-  <img src="/images/ui/hero-activities.png" alt="Vendo activities surface with an approval card and activity feed" />
-</Frame>
+<VendoEmbed
+  surface="activities"
+  poster="/images/ui/hero-activities.png"
+  alt="Vendo activities surface with an approval card and activity feed"
+  height={520}
+  caption="VendoActivities: the waiting-on-you queue above the humanized activity feed"
+/>
 
 ## Slot
 
@@ -88,9 +108,13 @@ view. Empty, it shows a quiet ghost with a "Design a view" call to action;
 filled, it renders the pinned view; broken, it falls back to your original
 markup — never a blank hole.
 
-<Frame caption="A filled slot: the user's pinned Renewals radar mounted in the host page.">
-  <img src="/images/ui/hero-slot-filled.png" alt="Vendo slot holding a pinned generated view" />
-</Frame>
+<VendoEmbed
+  surface="slot-filled"
+  poster="/images/ui/hero-slot-filled.png"
+  alt="Vendo slot holding a pinned generated view"
+  height={460}
+  caption="A filled slot: the user's pinned Renewals radar mounted in the host page"
+/>
 
 ## Page
 
@@ -98,9 +122,13 @@ The full workspace console: conversation history, the waiting-on-you approval
 strip, apps, automations, connected accounts, and activity in one routed
 surface. Mount it on a dedicated route like `/assistant`.
 
-<Frame caption="VendoPage: conversations, the approval strip, and a generated view in one console.">
-  <img src="/images/ui/hero-page.png" alt="Vendo workspace console page" />
-</Frame>
+<VendoEmbed
+  surface="page"
+  poster="/images/ui/hero-page.png"
+  alt="Vendo workspace console page"
+  height={640}
+  caption="VendoPage: conversations, the approval strip, and a generated view in one console"
+/>
 
 ## Voice
 
@@ -125,8 +153,6 @@ emits a valid file from whatever look you land on. See
   <img src="/images/ui/hero-theme-editor.png" alt="The Vendo playground theme editor open over the activities surface" />
 </Frame>
 
-<video autoPlay muted loop playsInline type="video/mp4" src="/images/ui/loop-theme-retheme.mp4" />
-
 ## Try every surface live
 
 The hosted playground renders each surface against scripted data — no model
@@ -142,6 +168,6 @@ themed link.
   style={{ border: "1px solid #e5e5e5", borderRadius: "12px" }}
 />
 
-If the embed does not load, open
+If the embeds on this page do not load, open
 [vendo.run/playground](https://vendo.run/playground) directly, or run it
 locally with `npx vendoai playground`.

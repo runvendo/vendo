@@ -19,12 +19,24 @@ export {
   type BoxResponse,
   type EditFailure,
   type EditResult,
+  type MachineEditResult,
   type OpenSurface,
   type PinRebaseResult,
   type SecretExposureState,
   type SetExposureResult,
   type VersionEntry,
 } from "./runtime.js";
+// execution-v2 Wave 3 — the in-box agent control-port client (the host side
+// of the base box template's harness). BOX_CONTROL_PORT is the port the
+// harness listens on, distinct from the app's $PORT.
+export {
+  BOX_CONTROL_PORT,
+  pushBoxEnv,
+  readBoxManifest,
+  runBoxEdit,
+  type BoxEditOptions,
+  type BoxEditResult,
+} from "./box-agent.js";
 export {
   createSecretExposure,
   type SecretExposure,

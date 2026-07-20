@@ -20,7 +20,6 @@ import {
   validateAppDocument,
   validateTreeV2,
   type AppDocument,
-  type Json,
   type NormalizedCatalog,
   type ShapeType,
   type TreeNode,
@@ -30,7 +29,6 @@ import {
   type WireCompileResult,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
-import { parseModelJson } from "./model-json.js";
 import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "./pins.js";
 import { prewiredPropNames, prewiredSchemaPrompt } from "./prewired-schema.js";
 
@@ -110,14 +108,15 @@ export interface GenerationEditInput {
 
 export type GeneratedAppDocument = Omit<AppDocument, "id">;
 
-export interface CodeFileEdit {
-  path: string;
-  content: string;
-}
-
+/**
+ * execution-v2 Wave 3 — the engine emits ONLY tree documents now. Server code
+ * no longer rides a model "code edit" dialect: it is written BY the in-box
+ * coding agent (box-agent.ts) during graduation, and the tree gains its `fn:`
+ * bindings through this same tree-edit path afterward. The vestigial code
+ * lane (rungs 2–4 file plans) is deleted.
+ */
 export type GenerationEditResult =
   | { kind: "document"; document: GeneratedAppDocument; rung: 1 }
-  | { kind: "code"; files: CodeFileEdit[]; rung: 2 | 3 | 4 }
   | { kind: "failure"; issues: string[] };
 
 /** 06-apps §5 — replaceable generation seam used by createApps(). */
@@ -127,20 +126,21 @@ export interface GenerationEngine {
 }
 
 const PASCAL_CASE = /^[A-Z][A-Za-z0-9]*$/;
-const SAFE_MACHINE_PATH = /^\/app\/[A-Za-z0-9._/-]+$/;
-const SERVER_INSTRUCTION = /\b(server|server-side|backend|database|persist|mutation|mutate|egress)\b/i;
-// Words that signal server work only outside a visible-element label: "call the
-// api" needs code, "the API status card" is a tree edit (ENG-349).
-const AMBIGUOUS_SERVER_TERM = /\b(api|http|web app|function|external|secret)\b/gi;
+// execution-v2 Wave 3 — the graduation judgment (instructionRequiresServer):
+// UNAMBIGUOUS signals of the four machine reasons (scheduled/background work,
+// third-party egress with secrets, heavy logic, app-owned state) — words that
+// essentially never label a visible element.
+const SERVER_INSTRUCTION = /\b(server|server-side|backend|database|persist|mutation|mutate|egress|schedule|scheduled|scheduling|cron|recurring)\b/i;
+// Words that signal server work only OUTSIDE a visible-element label (ENG-349):
+// "watch my invoices"/"email a daily digest" escalate, but "the digest card",
+// "the watch list", "the API status card" stay on the cheap tree path.
+const AMBIGUOUS_SERVER_TERM = /\b(api|http|web app|function|external|secret|digest|watch|monitor|daily|nightly|hourly|periodic)\b/gi;
 const VISIBLE_ELEMENT_LABEL = /^(?:\w+\s+)?(card|button|badge|chip|header|heading|title|label|caption|text|list|table|column|row|cell|section|panel|chart|graph|icon|field|tab|menu|toolbar|sidebar|footer|banner|tile|widget)s?\b/i;
-const SERVER_COMPUTED_INSTRUCTION = /\b(server-computed|computed (?:view|tree)|render(?:ed)? on the server)\b/i;
 const FULL_WEB_APP_INSTRUCTION = /\b(full web app|served web app|custom client|ui:? ?http)\b/i;
 const reserved = new Set<string>(PREWIRED_COMPONENT_NAMES);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
-
-const asJson = (value: unknown): Json => value as Json;
 
 const catalogPrompt = (catalog: NormalizedCatalog): string => JSON.stringify(
   catalog.map(({ name, description, propsJsonSchema, examples }) => ({
@@ -213,9 +213,6 @@ ${pinBaselinesPrompt(deps.pinBaselines)}
 - A remixable slot is captured host source. To start editing it, emit <ForkPin slot="exact slot" into="parent-id" at={index} props={{...}}/> — the engine copies the trusted captured source into the named generated component (componentName above), renders it, and records the baseline pin. into/at/props are optional.
 - After a slot is forked, edit its named generated component by re-declaring <Island name="componentName">...full source...</Island> while preserving the pin. Never reproduce or alter a baseline hash yourself.`,
 }];
-
-const formatContract = (deps: GenerationDependencies): string =>
-  composePromptSections(generationPromptSections(deps));
 
 /** v2 spec §2 — the JSX-wire create contract. The model emits markup, never
  *  JSON; the deterministic compiler owns ids, bindings, and validation. */
@@ -584,33 +581,6 @@ const validateCompiledCreate = async (
   return { document, issues: [] };
 };
 
-/** Edit-dialect model call: accumulate the stream and parse it as JSON.
- *  (The v1 create-streaming parser is gone — v2 creates stream through the
- *  wire compiler in {@link streamWire}.) */
-const generateJson = async (
-  deps: GenerationDependencies,
-  system: string,
-  prompt: string,
-): Promise<{ value?: unknown; issues: string[] }> => {
-  try {
-    const { streamText } = await import("ai");
-    const result = streamText({
-      model: deps.model,
-      system,
-      prompt,
-      temperature: 0,
-      maxRetries: 0,
-    });
-    let text = "";
-    for await (const delta of result.textStream) {
-      text += delta;
-    }
-    return parseModelJson(text);
-  } catch (error) {
-    return { issues: [`model generation failed: ${error instanceof Error ? error.message : "unknown error"}`] };
-  }
-};
-
 const withoutId = (app: AppDocument): GeneratedAppDocument => {
   const { id: _id, ...document } = structuredClone(app);
   return document;
@@ -872,46 +842,6 @@ const validateEditedApp = async (
   ];
 };
 
-const safeFilePath = (path: string): boolean =>
-  SAFE_MACHINE_PATH.test(path) && !path.split("/").includes("..");
-
-const codePlanFrom = (
-  value: unknown,
-  app: AppDocument,
-  instruction: string,
-): { files?: CodeFileEdit[]; rung?: 2 | 3 | 4; issues: string[] } => {
-  if (!isRecord(value) || !Array.isArray(value.files)) {
-    return { issues: ["code edit output must be {rung,files:[{path,content}]}"] };
-  }
-  const issues: string[] = [];
-  const files: CodeFileEdit[] = [];
-  if (value.files.length === 0 || value.files.length > 32) issues.push("code edit must contain 1 to 32 files");
-  for (const file of value.files) {
-    if (!isRecord(file) || typeof file.path !== "string" || typeof file.content !== "string") {
-      issues.push("every code file edit requires path and content strings");
-      continue;
-    }
-    if (!safeFilePath(file.path)) issues.push(`unsafe machine path "${file.path}"; paths must stay under /app`);
-    if (new TextEncoder().encode(file.content).length > TREE_MAX_TOTAL_COMPONENT_BYTES) issues.push(`file "${file.path}" is too large`);
-    files.push({ path: file.path, content: file.content });
-  }
-  // Rung is the capability level actually reached, so either signal that indicates a
-  // higher rung wins: the model's own declaration of what it built (previously validated
-  // then discarded — Devin) OR the instruction heuristic.
-  const policyRung = app.ui === "http" || FULL_WEB_APP_INSTRUCTION.test(instruction)
-    ? 4
-    : SERVER_COMPUTED_INSTRUCTION.test(instruction) ? 3 : 2;
-  const declaredRaw = value.rung;
-  const declared = declaredRaw === 2 || declaredRaw === 3 || declaredRaw === 4 ? declaredRaw : undefined;
-  if (declaredRaw !== undefined && declared === undefined) {
-    issues.push("code edit rung must be 2, 3, or 4");
-  }
-  const rung = (declared !== undefined && declared > policyRung ? declared : policyRung) as 2 | 3 | 4;
-  return issues.length > 0
-    ? { issues }
-    : { files, rung, issues: [] };
-};
-
 const repairPrompt = (issues: string[]): string =>
   issues.length === 0 ? "" : `\nREPAIR_THESE_ISSUES: ${JSON.stringify(issues)}`;
 
@@ -1097,29 +1027,6 @@ const editTree = async (
   return { kind: "failure", issues: issues.length === 0 ? ["tree edit failed validation"] : issues };
 };
 
-const editCode = async (
-  input: GenerationEditInput,
-  deps: GenerationDependencies,
-): Promise<GenerationEditResult> => {
-  let issues = [...(input.repairIssues ?? [])];
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const output = await generateJson(
-      deps,
-      `${formatContract(deps)}\n\nCODE EDIT DIALECT: emit full small files as {"rung":2|3|4,"files":[{"path":"/app/...","content":"..."}]}. Keep every path under /app. Rung 2 is tree plus server, rung 3 is a server-computed tree, and rung 4 is a served web app. A rung 2 or 3 server must be a plain Node HTTP server listening on process.env.PORT that answers POST /fn/<name> with {"result":...} (or {"ui":<tree>} for rung 3); its entry point must be /app/start.sh or /app/server.js — the runtime starts that entry and rejects the edit when nothing serves $PORT. A tree app may graduate to rung 4 when the requested interface outgrows the tree format; the runtime supplies the invisible-graduation scaffold. On that first tree-to-http edit, do not emit /app/tree.json, /app/components.json, /app/tree-renderer.js, /app/index.html, /app/.vendo/scaffold-server.cjs, /app/.vendo/fetch-shim.cjs, or /app/start.sh; a later edit to the graduated http app may replace those defaults. Never emit /app/.vendo/fetch-shim.cjs at any rung — the runtime owns it. Server code may call fetch() to external hosts normally, sending declared secret env vars (opaque handles) in headers or body; the runtime routes outbound fetch through the Vendo egress proxy, which substitutes real secret values for allowlisted hosts only.`,
-      `TASK: EDIT_CODE\nINSTRUCTION: ${input.instruction}\nCURRENT_APP: ${JSON.stringify(input.app)}${repairPrompt(issues)}`,
-    );
-    issues = distinctIssues(issues, output.issues);
-    if (output.value !== undefined) {
-      const plan = codePlanFrom(output.value, input.app, input.instruction);
-      issues = distinctIssues(issues, plan.issues);
-      if (plan.files !== undefined && plan.rung !== undefined) {
-        return { kind: "code", files: plan.files, rung: plan.rung };
-      }
-    }
-  }
-  return { kind: "failure", issues: issues.length === 0 ? ["code edit failed validation"] : issues };
-};
-
 /**
  * Speed lane — page-open prewarm. Pays the provider import + TLS/keep-alive
  * connection cost up front with a throwaway 1-token generation so the first
@@ -1196,20 +1103,22 @@ export const modelEngine: GenerationEngine = {
     throw new VendoError("validation", "model could not produce a valid app", issues);
   },
   async edit(input, deps) {
-    return instructionRequiresServer(input.app, input.instruction)
-      ? editCode(input, deps)
-      : editTree(input, deps);
+    // execution-v2 Wave 3 — the engine only patches the tree. Server work is
+    // the in-box agent's job (graduation, runtime.machine.editApp); the tree
+    // gains its fn: bindings through this same tree-edit path afterward.
+    return editTree(input, deps);
   },
 };
 
 /**
- * 06-apps §2 — whether an instruction needs the machine/code edit dialect.
- * Every rung-4 phrase `codePlanFrom` recognizes must route here too, or a
- * graduation request (e.g. "custom client") would take the tree dialect and
- * never reach the scaffold (Greptile, PR #243).
+ * execution-v2 Wave 3 — the graduation judgment: whether an instruction needs
+ * server capability (scheduled/background work, third-party egress, heavy
+ * logic, app-owned state) and so must ride the in-box agent (runtime graduates
+ * 1→2, delegates the server work to the box, then lands fn: bindings via the
+ * tree-edit path). A false answer keeps the edit on the pure tree path.
  * Ambiguous words like "api" or "function" count only when they are not
  * labeling a visible element — "make the API status card blue" must stay on
- * the cheap tree dialect instead of failing slowly through code (ENG-349).
+ * the cheap tree path (ENG-349).
  */
 export const instructionRequiresServer = (app: AppDocument, instruction: string): boolean =>
   SERVER_INSTRUCTION.test(instruction)
