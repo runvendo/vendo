@@ -18,10 +18,21 @@
   requiring an `@ai-sdk/*` package installed in the host app. It fires
   without consent whenever a key resolves.
 
-Consequence, measured in the 2026-07-19 corpus nightly: neither AI half ever
-runs against foreign repos. Four dev-set repos (umami, cal-com, formbricks,
-openstatus) score 2/7 on theme with pure neutral defaults because only the
-deterministic allowlist executes.
+Consequence in the wild: on a host that is not already an AI app, neither AI
+half runs. The corpus proves the DX gap indirectly: the harness works around
+it by injecting `@ai-sdk/anthropic` into every cloned repo's package.json
+(`corpus/harness/src/local-pack.ts`), which real `vendo init` users do not
+get. With that injection the theme model pass does run nightly; the
+tool-extraction Agent SDK pass still never runs anywhere (the SDK is in no
+dependency tree). The four dev-set repos scoring 2/7 on theme (umami,
+cal-com, formbricks, openstatus) are genuine extraction quality gaps on
+thin-evidence apps, not a dead code path.
+
+Once theme moves behind the consent gate, the corpus sweep must pass the
+consent flag or nightly theme model coverage regresses. After the SDK ships
+with the CLI, the harness's `@ai-sdk/anthropic` injection becomes removable
+(coordinate separately; harness code is another lane's surface as of
+2026-07-20).
 
 ## Decisions (locked in brainstorm)
 
