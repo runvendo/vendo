@@ -38,12 +38,17 @@ function authConfigsStub() {
     res.setHeader("content-type", "application/json");
     if (req.method === "GET" && url.pathname === "/api/v3/auth_configs") {
       requests += 1;
-      if (url.searchParams.get("cursor") === "page2") {
+      // Page-number pagination with a LYING next_cursor (null) — exactly the
+      // live API shape probed 2026-07-20: total_items is the only honest
+      // signal that more pages exist.
+      if (url.searchParams.get("cursor") === "2") {
         res.end(JSON.stringify({
           items: [
             { id: "ac_slack_2", toolkit: { slug: "slack" }, status: "ENABLED" }, // duplicate toolkit
             { id: "ac_linear", toolkit: { slug: "linear" }, status: "ENABLED" },
           ],
+          total_items: 5,
+          next_cursor: null,
         }));
         return;
       }
@@ -53,7 +58,8 @@ function authConfigsStub() {
           { id: "ac_slack", toolkit: { slug: "slack" }, status: "ENABLED" },
           { id: "ac_notion", toolkit: { slug: "notion" }, status: "DISABLED" },
         ],
-        next_cursor: "page2",
+        total_items: 5,
+        next_cursor: null,
       }));
       return;
     }
