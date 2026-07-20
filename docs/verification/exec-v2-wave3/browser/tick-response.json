@@ -1,0 +1,1 @@
+{"runIds":[],"schedules":{"checked":1,"fired":[{"appId":"app_622b1d63-355e-4671-9bee-ebc2a21866f6","fn":"chaseInvoices","cron":"*/5 * * * *","scheduledFor":"2026-07-20T03:20:00.000Z","status":"ok"}],"errors":[]}}

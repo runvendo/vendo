@@ -299,10 +299,12 @@ and are audited, and shipped chrome displays the unconfigured-policy notice.
 - threads, approvals, grants, activity, and app lifecycle routes
 - schedule, host-event, and external-trigger automation machinery
 
-A sandbox adapter unlocks server-backed app rungs. `auth` (or its `actAs`
+A sandbox adapter unlocks machine-backed apps. `auth` (or its `actAs`
 half, hand-wired) unlocks host API calls while the user is away. Connectors
 add external tools. `VENDO_API_KEY` activates cloud-gated sharing, publishing,
-org overlays, and pinning.
+org overlays, and pinning — and fills the sandbox slot with the hosted
+sandbox when you passed no adapter and no `E2B_API_KEY` is set (an explicit
+adapter or BYO key always wins).
 
 Use the [actAs preset recipes](./act-as-presets.md) to wire Auth.js, Supabase
 Auth, Clerk, Auth0, or a host-owned generic JWT without changing the

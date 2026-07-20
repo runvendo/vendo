@@ -39,3 +39,6 @@ apps/*/.env.local
 
 # speed lane raw samples (aggregated into README table)
 docs/verification/vendo-v2-speed/samples.ndjson
+
+# w4-pipeline lane raw samples (aggregated into README table)
+docs/verification/w4-pipeline/samples.ndjson

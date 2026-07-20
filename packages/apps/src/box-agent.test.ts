@@ -37,6 +37,23 @@ describe("box-agent control-port transport", () => {
     expect(await readBoxManifest(machine)).toBe(JSON.stringify({ egress: ["api.example.com"] }));
   });
 
+  it("passes the box's served-app declaration through as data (Wave 4 layer 3)", async () => {
+    const machine = await boxOf(({ box }) => {
+      box.pages.set("/", "<!doctype html><h1>Kanban</h1>");
+      return { ok: true, summary: "serving a web app", filesChanged: ["/app/server.js"], testsRun: 3, servesUi: true };
+    });
+    const result = await runBoxEdit(machine, { prompt: "build a kanban web app", clock: instantClock() });
+    expect(result.ok).toBe(true);
+    expect(result.servesUi).toBe(true);
+    // The page the agent installed is served on the app port (non-/fn path).
+    const page = await machine.request({ method: "GET", path: "/" });
+    expect(page.status).toBe(200);
+    expect(new TextDecoder().decode(page.body)).toContain("Kanban");
+    // A non-served edit carries no servesUi field at all.
+    const fnOnly = await boxOf(() => ({ ok: true, summary: "fn only", filesChanged: [], testsRun: 0 }));
+    expect(await runBoxEdit(fnOnly, { prompt: "x", clock: instantClock() })).not.toHaveProperty("servesUi");
+  });
+
   it("surfaces a box failure as a non-ok result (caller rolls back)", async () => {
     const machine = await boxOf(() => ({ ok: false, summary: "the model gave up", filesChanged: [], testsRun: 0 }));
     const result = await runBoxEdit(machine, { prompt: "x", clock: instantClock() });
@@ -85,7 +102,7 @@ describe("box-agent control-port transport", () => {
         const status = statuses[Math.min(calls++, statuses.length - 1)] ?? 200;
         return { status, headers: {}, body: new TextEncoder().encode(JSON.stringify({ result: { ready: true } })) };
       },
-      snapshot: async () => "x", stop: async () => undefined, destroy: async () => undefined,
+      url: async () => "https://8080-boot.test", snapshot: async () => "x", stop: async () => undefined, destroy: async () => undefined,
     } satisfies SandboxMachine;
     const answer = await requestAppWithBootRetry(machine, { method: "POST", path: "/fn/x" }, { attempts: 5, sleep: async () => undefined });
     expect(calls).toBe(3);
@@ -96,7 +113,7 @@ describe("box-agent control-port transport", () => {
     const machine = {
       id: "stuck",
       async request() { return { status: 502, headers: {}, body: new Uint8Array() }; },
-      snapshot: async () => "x", stop: async () => undefined, destroy: async () => undefined,
+      url: async () => "https://8080-stuck.test", snapshot: async () => "x", stop: async () => undefined, destroy: async () => undefined,
     } satisfies SandboxMachine;
     const answer = await requestAppWithBootRetry(machine, { method: "GET", path: "/vendo.json" }, { attempts: 3, sleep: async () => undefined });
     expect(answer.status).toBe(502);
