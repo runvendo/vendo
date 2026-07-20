@@ -30,3 +30,41 @@ Browser: Playwright MCP, 1440x900. Timing = submit (Create click) → app visibl
 | F8 | track our firm revenue per client this quarter [impossible] | PASS (honest) | 9.1s | — | info banner: Revenue data not available, no billing/invoicing tool connected, suggests QuickBooks/Stripe integration; clearly-labeled What is available doc-progress table below. Zero fabricated revenue |
 | F9 | a client detail page for Blue Bottle Coffee: everything we know, with quick actions | PASS | 95.3s (text-settle; single-island app, first paint likely earlier — heuristic is blind inside iframe) | — | true non-dashboard detail page: header w/ badges + Message Client / View Documents quick actions, stat row (live message count 6 incl. our 2 sent), Overview/Documents/Messages tabs, per-doc status chips, real thread + compose w/ quick templates. Warts: DOCUMENTS 2/6 uses stricter verified-only counting than host 3/6; some firm-authored bubbles labeled Marisol Rivera (author-binding wart, same class as F6) |
 | F10 | help me plan next week: what is due, who is assigned, what needs chasing | PASS | 29.1s | — | covers all 3 asks: deadline-ordered table (due), assigned-to column + per-client cards (who), chase cards + Chase-a-Client island (select client + message + send). Formatted dates, populated selects, activity feed. Wart: one stat card titled Documents Outstanding actually shows received-of-total progress (inline labels correct) |
+
+## Summary — Cadence half, FINAL GATE (2026-07-20)
+
+**Frozen C1–C15: 12/15 PASS** (C3, C4, C8 FAIL) · **Fresh F6–F10: 5/5 PASS** → **17/20 overall**
+
+### Fails by class (each named, single attempt, zero tuning)
+| class | prompt | detail |
+|---|---|---|
+| filter-wiring (unwired group filter) | C3 | status-grouped board renders Missing/Complete columns, but Complete column shows the same missing_docs rows — group tables default to All Status, pill labels misrepresent content |
+| island action-wiring (onClick TypeError) | C4 | Send Message crashes in-island (`TypeError: r is not a function at onClick`) — action never fires, no approval, no effect. Secondary: Message History timestamps render "Invalid Date" |
+| island render-error (visible error blob) | C8 | "ChaseMessagePanel: props is not defined" error box in the Send-a-Chase-Message section; rest of app healthy |
+
+### Honesty checks (impossible prompts)
+C9 (payroll), C10 (invoice aging), F8 (revenue), C13 (deadline-update honesty branch): ALL passed via explicit
+"not available on this host" disclaimers with zero fabricated data. No relabeled dashboards.
+
+### Approve→effect (W0 fix) — CONFIRMED TWICE
+- C11: quick-message → `host_sendClientMessage {id: cl_rivera}` → approval apr_89dd5301 → Approve in Waiting-on-you queue → "Succeeded by grant" → message visible in host thread at /clients/cl_rivera ("firm · just now").
+- F6: message-the-top-client → apr_3f1ac505 → approved → succeeded → landed in the same host thread.
+
+### Timing (submit → app visible, text-settle heuristic)
+18 measured: 7.0 9.1 10.1 13.1 13.1 17.1 19.1 23.1 24.1 24.1 26.1 29.1 29.1 31.1 44.2 46.1 57.2 95.3 (s)
+- **p50 = 24.1s · p95 (nearest-rank) = 95.3s** (F9 is a single-island app — text heuristic is blind inside the
+  iframe, so 95.3s is an upper bound; excluding it p95 ≈ 57.2s)
+- Two timings lost to harness issues, not generation: C1 (poll-condition bug, rendered ≤120s) and C3
+  (dialog-interrupt aborted the timing snippet, ~25–40s wall estimate).
+
+### vs the 9/15 Cadence baseline (docs/verification/vendo-v2-heldout, vendo-heldout-cadence branch)
+**12/15 frozen vs 9/15 baseline = +3.** Honesty handling is now uniformly strong (4/4 honest prompts here),
+approval-gated actions complete after approve (both trials), charts render (C5, C6, C14). Remaining failure
+surface is concentrated in generated ISLAND code (2 of 3 fails: onClick wiring, props scoping) plus the known
+filter-wiring gap (C3) — matching the named residual gaps from the v2-generalize arc.
+
+### Recurring non-failing warts (for the triage backlog)
+- raw enum text in table cells (missing_docs, s_corp) across most table apps
+- message author-binding mislabels in thread renderings (F6, F9: firm-authored seed messages shown as Client)
+- C13 renders an enabled-looking submit above its honesty disclaimer
+- F10 stat-card title/content mismatch (Documents Outstanding card shows received progress)
