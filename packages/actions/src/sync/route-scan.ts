@@ -14,6 +14,7 @@ import {
   walk,
   type ParsedModule,
 } from "./common.js";
+import { createRouteScanState, inferRouteInput, type RouteInputResult } from "./route-schema.js";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 const HTTP_METHOD_SET = new Set<string>(HTTP_METHODS);
@@ -383,6 +384,53 @@ function routeInputSchema(urlPath: string): Record<string, unknown> {
   };
 }
 
+/**
+ * Fold a collector's verdict (route-schema.ts) into the path-params-only
+ * schema `routeInputSchema` always produces. `inferred === null` (no
+ * collector recognized anything) reproduces today's exact output — the
+ * fail-closed default. Otherwise: path params are kept, a body schema
+ * replaces the blank permissive default for body-bound methods, and query
+ * properties merge in additively regardless of `argsIn` (a body-bound
+ * handler can still read `searchParams` — Task 4 wires that case). Query-
+ * derived properties never join `required` (fail-closed: absence of a query
+ * param is never proof it's missing).
+ */
+function mergeRouteInput(
+  urlPath: string,
+  argsIn: "query" | "body",
+  inferred: RouteInputResult | null,
+): { inputSchema: Record<string, unknown>; note?: string } {
+  const base = routeInputSchema(urlPath);
+  if (!inferred) return { inputSchema: base };
+
+  const properties: Record<string, unknown> = { ...(base.properties as Record<string, unknown>) };
+  const required = new Set<string>((base.required as string[] | undefined) ?? []);
+  let additionalProperties = base.additionalProperties;
+
+  const body = argsIn === "body" ? inferred.bodySchema : undefined;
+  if (body) {
+    for (const [key, value] of Object.entries((body.properties as Record<string, unknown> | undefined) ?? {})) {
+      properties[key] = value;
+    }
+    for (const key of (body.required as string[] | undefined) ?? []) required.add(key);
+    if (typeof body.additionalProperties === "boolean") additionalProperties = body.additionalProperties;
+  }
+
+  if (inferred.queryProperties) {
+    for (const [key, value] of Object.entries(inferred.queryProperties)) properties[key] = value;
+  }
+
+  return {
+    inputSchema: {
+      type: "object",
+      properties,
+      ...(required.size > 0 ? { required: [...required] } : {}),
+      additionalProperties,
+    },
+    note: inferred.note,
+  };
+}
+
 async function routeSources(root: string): Promise<RouteSource[]> {
   const files = await walk(root, (relativePath) => {
     const route = routePath(relativePath);
@@ -418,6 +466,7 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
   const warnings: string[] = [];
   const tools: ExtractedTool[] = [];
   const usedNames = new Set<string>();
+  const scanState = createRouteScanState(root);
   for (const route of routes) {
     const methods = await verbsFromSource(route.file, route.source, route, root, new Set(), 0, false);
     if (methods.size === 0) {
@@ -441,16 +490,20 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
       if (!methods.has(method)) continue;
       const preferred = routeToolFullName(method, route.urlPath);
       const name = allocateToolName(preferred, method, usedNames);
+      const argsIn = method === "GET" || method === "DELETE" ? "query" : "body";
+      const inferred = await inferRouteInput(route, method, scanState);
+      const { inputSchema, note } = mergeRouteInput(route.urlPath, argsIn, inferred);
       tools.push({
         name,
         description: `${method} ${route.urlPath}`,
-        inputSchema: routeInputSchema(route.urlPath),
+        inputSchema,
         risk: extractedRisk(method, name, "route"),
+        ...(note ? { note } : {}),
         binding: {
           kind: "route",
           method,
           path: route.urlPath,
-          argsIn: method === "GET" || method === "DELETE" ? "query" : "body",
+          argsIn,
         },
       });
     }
