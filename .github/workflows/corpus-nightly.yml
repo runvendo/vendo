@@ -33,7 +33,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - name: Check required secrets
@@ -106,6 +106,20 @@ jobs:
           # loudly. The scorecard/trend/upload steps below run on `always()` so
           # the evidence is still published before the job is marked red.
           pnpm corpus run "${repos[@]}" --layer "$layer" --json
+
+      - name: Diagnose scorecard artifact path
+        if: always()
+        run: |
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          echo "PWD=$(pwd)"
+          node -e '
+            const path = require("path");
+            const { fileURLToPath } = require("url");
+            const runContextUrl = "file://" + path.resolve("corpus/harness/src/run-context.ts");
+            const corpusRoot = path.resolve(fileURLToPath(new URL("../../", runContextUrl)));
+            console.log("resolved corpusRoot (writeScorecardArtifacts target):", corpusRoot);
+          '
+          ls -laR corpus/.repos/.logs 2>&1 || echo "corpus/.repos/.logs does not exist"
 
       - name: Publish scorecard to job summary
         if: always()
