@@ -1360,8 +1360,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // Wave 4 — a served (layer-3) app's ENTIRE surface lives in its machine,
       // and machines never travel with a copy: the fork would be an app that
       // can never open (ui: http, no tree, no machine). Refuse loudly instead
-      // of minting a broken document.
-      if (source.ui === "http") {
+      // of minting a broken document. Scoped to machine-backed docs — a
+      // retired v1 `server`-ref doc keeps its established fork semantics (the
+      // copy drops the dead ref; see the 09 §3 wire test).
+      if (source.ui === "http" && source.machine !== undefined) {
         throw new VendoError(
           "conflict",
           "a served (layer-3) app cannot be forked: its surface lives in its machine, which never travels with a copy — create a new app instead",
