@@ -196,7 +196,9 @@ arrives as `data-vendo-approval` parts.
   The scaffolded route passes `policy: {}`, which reads `.vendo/policy.json`:
   destructive tools ask before running, reads run. Remove the `policy` key and
   every call auto-runs (audited), with the unconfigured-policy notice in
-  shipped chrome. Named presets replace the file — `"cautious"` (writes ask,
+  shipped chrome. The file is read fail-soft: deleting it while keeping
+  `policy: {}` also auto-runs, without the notice — keep it in version
+  control. Named presets replace the file — `"cautious"` (writes ask,
   reads run), `"readonly"` (reads run, everything else blocked), or
   `"autopilot"` (everything runs) — and inline `{ rules }` covers anything a
   preset doesn't.

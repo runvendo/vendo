@@ -188,7 +188,10 @@ env-resolved model, anonymous ephemeral sessions, and PGlite persistence.
 The `policy: {}` line activates the `.vendo/policy.json` file init wrote, so
 the scaffolded default posture is: destructive tools ask, reads run. Remove
 the `policy` key entirely and every call auto-runs (audited, with the
-unconfigured-policy notice in shipped chrome). Named presets replace the
+unconfigured-policy notice in shipped chrome). The default file is read
+fail-soft: deleting `.vendo/policy.json` while keeping `policy: {}` also
+auto-runs, silently and without the notice — keep the file in version
+control; it is part of your security posture. Named presets replace the
 file: `"cautious"` asks before write/destructive calls and runs reads,
 `"readonly"` runs reads and blocks everything else, and `"autopilot"` runs
 everything. Inline `{ rules }` and the explicit `{ file }` form cover

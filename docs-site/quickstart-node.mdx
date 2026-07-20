@@ -71,7 +71,9 @@ const vendo = createVendo({
 
 The `policy: {}` line activates the `.vendo/policy.json` file init wrote, so
 destructive tools ask and reads run. Without a `policy` key, every call
-auto-runs.
+auto-runs. The file is read fail-soft: deleting it while keeping `policy: {}`
+also auto-runs, without the unconfigured-policy notice — keep it in version
+control.
 
 Replace `principal` with your session resolver. It receives the `Request` and
 returns a `Principal`, or `null` for an anonymous session:

@@ -991,6 +991,16 @@ describe("vendo init (zero-question)", () => {
         .resolves.toMatchObject({ action: "ask", decidedBy: "rule" });
       await expect(guard.check({ id: "call_2", tool: read.name, args: {} }, read, ctx))
         .resolves.toMatchObject({ action: "run", decidedBy: "rule" });
+
+      // The documented edge (quickstart/install): deleting the init-written
+      // file while keeping `policy: {}` degrades to auto-run WITHOUT the
+      // unconfigured notice — the default file is read fail-soft, and
+      // status() reads any policy object as configured.
+      await rm(join(root, ".vendo", "policy.json"));
+      const fileless = createGuard({ store, policy: {} });
+      await expect(fileless.check({ id: "call_3", tool: destructive.name, args: {} }, destructive, ctx))
+        .resolves.toMatchObject({ action: "run", decidedBy: "default" });
+      expect(fileless.status()).toEqual({ posture: "rules" });
     } finally {
       process.chdir(cwd);
       await store.close();

@@ -22,7 +22,7 @@ sessions, and default persistence.
 | `connections` | explicit connections adapter for the connected-accounts surface; always wins over the composed defaults |
 | `actAs` | escape hatch: supplies scoped auth material for away host API execution. Mutually exclusive with `auth` — see [actAs presets](/connect/act-as-presets) |
 | `serverActions` | the server-action registration map emitted by the generated wiring file, keyed `"<module>#<exportName>"`; server-action tools dispatch in-process through it, and a missing key fails closed at execution |
-| `policy` | named preset (`"cautious"`, `"readonly"`, `"autopilot"`), inline rules and directions, a policy file, or a code escape hatch; `policy: {}` reads the default `.vendo/policy.json` (what `vendo init` scaffolds). Omit the key entirely and every call auto-runs |
+| `policy` | named preset (`"cautious"`, `"readonly"`, `"autopilot"`), inline rules and directions, a policy file, or a code escape hatch; `policy: {}` reads the default `.vendo/policy.json` (what `vendo init` scaffolds; read fail-soft — a missing default file also auto-runs, with no notice). Omit the key entirely and every call auto-runs |
 | `judge` | contextual guard judge |
 | `secrets` | defaults to environment-backed secret lookup |
 | `telemetry` | wires build and development telemetry |
