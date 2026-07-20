@@ -46,7 +46,9 @@ export type AutomationPlanResult =
 
 const RESULTS_TOOL = "vendo_apps_data_put";
 const COLLECTION_NAME = /^[a-z][a-z0-9_-]{0,40}$/i;
-const EVERY_DURATION = /^(\d+)[smhd]$/;
+// n > 0, matching the automations engine's durationMs rule exactly — "0s"
+// would validate here and then never fire.
+const EVERY_DURATION = /^[1-9]\d*[smhd]$/;
 
 /** The planning surface: host + connected tools, plus ONLY the results-publish
  *  tool from the vendo_apps_* family — an automation's job is host effects and
