@@ -22,11 +22,6 @@ import {
   type UIMessage,
 } from "ai";
 import { assembleSystemPrompt } from "./prompt.js";
-import {
-  isApprovalResponseMessage,
-  RiderThreadBridge,
-  type RiderSessionProvider,
-} from "./rider.js";
 import { createRunner } from "./runner.js";
 import { ThreadRepository, type Thread, type ThreadSummary } from "./threads.js";
 import { buildAgentTools } from "./tools.js";
@@ -115,12 +110,6 @@ interface AgentConfig {
    *  rest through search; searched-in tools execute through the same guard-bound
    *  registry as any initially-enabled tool. */
   toolSearch?: ToolSearchConfig;
-  /** ENG-338 dev-mode rider seam: when the provider returns a session for a
-   *  thread, that persistent harness owns the model loop while tool execution
-   *  and consent stay on the SAME guard-bound path (rider.ts). Returning null
-   *  falls back to the native streamText loop. Additive and optional; absent
-   *  config behaves exactly as before. */
-  rider?: { session: RiderSessionProvider };
 }
 
 // Anthropic prompt-caching breakpoint. providerOptions.anthropic is ignored by every
@@ -362,27 +351,6 @@ export function createAgent(config: AgentConfig): VendoAgent {
     }
     return fresh;
   };
-  // ENG-338: one rider bridge per thread, held for the agent's lifetime so a
-  // parked approval survives across requests inside the persistent session.
-  // "Lifetime" means surviving across REQUESTS, not surviving thread delete:
-  // a deleted thread's id is immediately reclaimable (resolve() recreates it,
-  // possibly for another subject), so its bridge — and the external harness
-  // session holding the deleted conversation — must be torn down with it.
-  const riderBridges = new Map<string, RiderThreadBridge>();
-  const disposeRiderBridge = (id: string): void => {
-    const bridge = riderBridges.get(id);
-    if (bridge === undefined) return;
-    riderBridges.delete(id);
-    // Fire-and-forget: teardown of the dev-mode harness must never block or
-    // fail the delete/eviction that triggered it.
-    bridge.dispose().catch((error: unknown) => {
-      console.error("[vendo] agent: rider bridge dispose failed", {
-        threadId: id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-  };
-
   return {
     async stream(input) {
       validateMessage(input?.message);
@@ -405,58 +373,12 @@ export function createAgent(config: AgentConfig): VendoAgent {
         }
       }
       upsertMessage(thread.messages, input.message);
-      // ENG-338 rider path: a dev-mode session harness owns the model loop for
-      // this thread; tools + consent still run the guard-bound path (rider.ts).
-      // The capability-miss reporter tool is native-loop only (rider sessions
-      // register the host tool surface at session start), so a rider system
-      // prompt must not instruct calling it.
-      const riderSession = config.rider === undefined
-        ? null
-        : await config.rider.session({ threadId: thread.id });
       const system = await assembleSystemPrompt(
         config.guard,
         input.ctx,
         config.system,
-        config.capabilityMiss !== undefined && riderSession === null,
+        config.capabilityMiss !== undefined,
       );
-      if (riderSession !== null) {
-        let bridge = riderBridges.get(thread.id);
-        if (bridge === undefined) {
-          bridge = new RiderThreadBridge(riderSession, {
-            registry: config.tools,
-            guard: config.guard,
-            ...(config.context?.toolOutputCap === undefined
-              ? {}
-              : { toolOutputCap: config.context.toolOutputCap }),
-          }, input.ctx);
-          riderBridges.set(thread.id, bridge);
-        }
-        const riderBridge = bridge;
-        const riderStream = createUIMessageStream<UIMessage>({
-          originalMessages: thread.messages,
-          execute: async ({ writer }) => {
-            const turn = { message: input.message, system, ctx: input.ctx, writer };
-            if (isApprovalResponseMessage(input.message)) {
-              await riderBridge.handleApprovalResponse(turn);
-            } else {
-              await riderBridge.handleUserTurn(turn);
-            }
-          },
-          onFinish: async ({ messages }) => {
-            await persistFinishedTurn(threads, thread, messages, input.ctx);
-          },
-          // The wire stays generic (same as the native loop), but a rider
-          // failure is dev-mode infrastructure — the operator's terminal gets
-          // the real cause (missing SDK, dead CLI process, protocol drift).
-          onError: (error) => {
-            console.error("[vendo] dev-mode rider turn failed:", error);
-            return "An error occurred while generating the response.";
-          },
-        });
-        const riderResponse = createUIMessageStreamResponse({ stream: riderStream });
-        riderResponse.headers.set(THREAD_ID_HEADER, thread.id);
-        return riderResponse;
-      }
 
       const stream = createUIMessageStream<UIMessage>({
         originalMessages: thread.messages,
@@ -570,7 +492,6 @@ export function createAgent(config: AgentConfig): VendoAgent {
       list: (ctx) => threads.list(ctx),
       delete: async (id, ctx) => {
         loadedTools.delete(id);
-        disposeRiderBridge(id);
         await threads.delete(id, ctx);
       },
     },
@@ -585,7 +506,6 @@ export function createAgent(config: AgentConfig): VendoAgent {
         .then((ids) => {
           for (const id of ids) {
             loadedTools.delete(id);
-            disposeRiderBridge(id);
           }
         })
         .catch((error: unknown) => {

@@ -69,13 +69,10 @@ skill into `.claude/skills/` when your repo uses skills.
   <Step title="Give it a model">
     Vendo runs on any AI SDK `LanguageModel`. The scaffolded composition
     omits `model`, so the runtime resolves `devModel()` on every turn — a
-    credential ladder in this order in development: an env key, a logged-in
-    Claude Code CLI session, a logged-in Codex CLI session, then
-    `VENDO_API_KEY`. The env-key rung reads `ANTHROPIC_API_KEY`,
-    `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`. Session rungs need
-    consent (init asks once, or set `VENDO_DEV_ALLOW_SESSIONS=1`) and never
-    resolve when `NODE_ENV=production`. No key on hand? `npx vendo cloud login`
-    mints a free metered dev key. See
+    credential ladder in this order: an env key (`ANTHROPIC_API_KEY`,
+    `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`), then
+    `VENDO_API_KEY` via the Vendo Cloud model gateway. No key on hand?
+    `npx vendo cloud login` mints a free metered dev key. See
     [Dev-mode credentials](/connect/dev-mode).
 
     Production always needs a real key. Install the matching provider and

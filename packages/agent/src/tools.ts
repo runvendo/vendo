@@ -51,7 +51,7 @@ function writePart(
 }
 
 /** The flat §16 approval part shared by every consent surface (native
- *  needsApproval, pending-approval outcomes, the rider ask path). */
+ *  needsApproval, pending-approval outcomes). */
 export function approvalPart(
   toolCallId: string,
   risk: RiskLabel,
