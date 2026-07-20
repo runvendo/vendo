@@ -20,10 +20,10 @@ effective risk per call before policy, grants, breakers, and approvals — so
 chat, SSE, and the MCP door reach the same decision.
 
 - `vendo_apps_create` is `read`. Creating an app writes only to Vendo's own
-  app store and always produces a jailed rung 1 UI document. It runs
+  app store and always produces a jailed layer-1 tree document. It runs
   immediately with no approval card.
 - `vendo_apps_edit` is declared `write`. It is downgraded to `read` for a
-  single call only when the app is owner-scoped, is a tree (rung 1) document,
+  single call only when the app is owner-scoped, is a tree (layer 1) document,
   and the edit instruction does not require server code. A tree-only edit
   runs without approval; an edit that adds server behavior, host-tool writes,
   destructive actions, or egress keeps the approval card. If an edit

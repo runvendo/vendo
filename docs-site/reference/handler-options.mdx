@@ -11,7 +11,7 @@ description: "Every createVendo configuration option and fetch-handler setting, 
 | `auth` | no | one host-identity preset filling `principal`, `actAs`, and `oauth` from a single config key; mutually exclusive with all three — see [actAs presets](/connect/act-as-presets) |
 | `principal` | no | escape hatch: resolves the host request to a principal; `null` creates an ephemeral session. Mutually exclusive with `auth` |
 | `store` | no | defaults to PGlite at `.vendo/data` |
-| `sandbox` | no | unlocks app rungs 2 through 4; absent means rung 1 only |
+| `sandbox` | no | unlocks machine-backed apps (layers 2 and 3); absent means tree-only apps |
 | `catalog` | no | `ComponentCatalog` or the name-keyed `ComponentRegistry` of host components exposed to the generation prompt; merged with any `.vendo/catalog.json` written by `vendo sync`, with explicit entries winning by name — see [Host components](/connect/host-components) |
 | `connectors` | no | adds external connector tool registries |
 | `actAs` | no | escape hatch: supplies scoped auth material for away host API execution. Mutually exclusive with `auth` — see [actAs presets](/connect/act-as-presets) |

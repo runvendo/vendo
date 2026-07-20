@@ -29,7 +29,8 @@ Every non-2xx response uses `{ "error": { "code", "message" } }`.
 
 ## Common checks
 
-- A rung 2 through 4 app requires a configured sandbox adapter.
+- A machine-backed app (layers 2 and 3) requires a configured sandbox adapter
+  and `VENDO_BASE_URL` for the box callback URLs.
 - Present-mode credential forwarding requires the wire to trust its own
   origin. In development it learns and trusts that origin automatically from
   the first request — no `VENDO_BASE_URL` needed. Every other environment
