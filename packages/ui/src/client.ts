@@ -21,6 +21,7 @@ import type {
 } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import type {
+  ApprovalResolution,
   AutomationEntry,
   ConnectableToolkit,
   ConnectionAccount,
@@ -62,6 +63,9 @@ export interface VendoClient {
     pending(): Promise<ApprovalRequest[]>;
     /** Batch-capable: POST /approvals/decide { ids, decision }. */
     decide(ids: ApprovalId | ApprovalId[], decision: ApprovalDecision): Promise<void>;
+    /** Existing-agents — GET /approvals/:id, the per-approval state
+        `<VendoApprovalEmbed>` polls (pending/executed/declined/expired). */
+    get(id: ApprovalId): Promise<ApprovalResolution>;
   };
 
   grants: {

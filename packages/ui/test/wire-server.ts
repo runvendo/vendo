@@ -12,7 +12,7 @@ import type {
 } from "@vendoai/core";
 import { createServer, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { AutomationEntry, RunRecord, Thread, ThreadSummary, VersionEntry } from "../src/index.js";
+import type { ApprovalResolution, AutomationEntry, RunRecord, Thread, ThreadSummary, VersionEntry } from "../src/index.js";
 
 export interface RecordedRequest {
   method: string;
@@ -144,6 +144,9 @@ export async function createWireServer() {
   const state = {
     apps: [baseApp, automationApp],
     approvals: [approval()],
+    // Existing-agents — decided approvals move here so GET /approvals/:id can
+    // answer the embed's poll; tests may also seed terminal states directly.
+    approvalResolutions: new Map<string, ApprovalResolution>(),
     grants: [grant()],
     connections: [
       { id: "ca_1", connector: "composio", toolkit: "gmail", status: "active" as const, createdAt: NOW },
@@ -392,12 +395,33 @@ export async function createWireServer() {
 
       if (method === "GET" && url.pathname === "/approvals") return json(response, state.approvals);
       if (method === "POST" && url.pathname === "/approvals/decide") {
-        const ids = (parsedBody as { ids: string[] }).ids;
+        const body = parsedBody as { ids: string[]; decision?: { approve?: boolean } };
+        const ids = body.ids;
         if (ids.some(id => !state.approvals.some(item => item.id === id))) {
           return wireError(response, "not-found", "Approval not found", 404);
         }
+        // Mirror the real wire's park→resume: approve executes the parked call
+        // (a canned ok outcome here), deny discards it (existing-agents).
+        for (const id of ids) {
+          state.approvalResolutions.set(
+            id,
+            body.decision?.approve === true
+              ? { state: "executed", outcome: { status: "ok", output: { delivered: true } } }
+              : { state: "declined" },
+          );
+        }
         state.approvals = state.approvals.filter(item => !ids.includes(item.id));
         return empty(response);
+      }
+      // Existing-agents — the per-approval read <VendoApprovalEmbed> polls.
+      const approvalMatch = url.pathname.match(/^\/approvals\/([^/]+)$/);
+      if (method === "GET" && approvalMatch && approvalMatch[1] !== "decide") {
+        const id = decodeURIComponent(approvalMatch[1]!);
+        const pending = state.approvals.find(item => item.id === id);
+        if (pending) return json(response, { state: "pending", request: pending });
+        const resolved = state.approvalResolutions.get(id);
+        if (resolved) return json(response, resolved);
+        return wireError(response, "not-found", "Approval not found", 404);
       }
       if (method === "GET" && url.pathname === "/connections") {
         return json(response, { connections: state.connections });
