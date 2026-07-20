@@ -180,7 +180,14 @@ async function sendFetchResponse(source: Response, target: ServerResponse): Prom
   target.end();
 }
 
-export async function createWireServer() {
+export interface WireServerOptions {
+  /** Seed the generated-island dashboard app (`app_island`) — the browser
+   *  harness's embed-sizing scenario. Off by default so the fixture's app
+   *  list stays exactly what every existing suite asserts against. */
+  islandApp?: boolean;
+}
+
+export async function createWireServer(options: WireServerOptions = {}) {
   const baseApp = app("app_1", "Invoices");
   const automationApp = app("app_auto", "Invoice watcher", true);
   const existingMessage: UIMessage = {
@@ -189,7 +196,7 @@ export async function createWireServer() {
     parts: [{ type: "text", text: "Existing thread" }],
   };
   const state = {
-    apps: [baseApp, automationApp, islandApp()],
+    apps: [baseApp, automationApp, ...(options.islandApp === true ? [islandApp()] : [])],
     approvals: [approval()],
     // Existing-agents — decided approvals move here so GET /approvals/:id can
     // answer the embed's poll; tests may also seed terminal states directly.

@@ -6,7 +6,7 @@ const harnessRoot = fileURLToPath(new URL(".", import.meta.url));
 
 /** 08-ui §4–5 — real-browser harness backed by the exact in-test wire route table. */
 export default defineConfig(async () => {
-  const wire = await createWireServer();
+  const wire = await createWireServer({ islandApp: true });
   wire.state.posture = "rules";
 
   return {
