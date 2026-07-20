@@ -31,6 +31,10 @@ export {
   // chrome/humanize.ts
   type ToolMeta,
   type ToolMetaMap,
+  // chrome/embeds.tsx — the BYO-agent embeds (existing-agents)
+  VendoAppEmbed,
+  VendoApprovalEmbed,
+  VendoToolResult,
   // hooks/*
   useActivity,
   useApp,
