@@ -1,17 +1,23 @@
-# The box (execution-v2 Wave 3)
+# The box (execution-v2 Wave 3; agent engine = Claude Agent SDK since Wave 8)
 
 The reproducible base box template: **Node + the in-box coding agent harness**.
 Every graduated app's machine boots from this snapshot. The agent lives in the
 box; "edit this app" sends a prompt to the box and the agent writes the server
 code, runs it, curls its own endpoints, and reports a structured result.
 
-## Files (zero-dependency runtime `.mjs`, baked into the template)
+## Files (baked into the template)
 
 - `bootstrap.mjs` — the entrypoint the template's start command runs.
-- `harness.mjs` — `createHarness()`: the control-port server + app supervisor.
-- `agent-loop.mjs` — `runAgentTask()`: the agentic loop (shell + file tools,
-  model over the Anthropic-compatible Messages API).
+- `harness.mjs` — `createHarness()`: the control-port server + app supervisor
+  (zero-dependency).
+- `agent-sdk.mjs` — `runAgentTask()`: the agent engine — the **Claude Agent
+  SDK** (Claude Code as a library, `@anthropic-ai/claude-agent-sdk`), headless
+  `query()` with its shell + file tools, working dir `/app`, structured result
+  via an in-process `report_done` MCP tool. The SDK (plus its peers) is
+  npm-installed into `/opt/vendo-box/node_modules` at **template-build time**,
+  so install size is a template concern, never a wake concern.
 - `build-template.mjs` — the e2b template builder (the recipe).
+- `scaffold/` — the pre-baked served-app scaffold layer-3 builds copy and edit.
 
 ## The two ports
 
@@ -25,6 +31,9 @@ code, runs it, curls its own endpoints, and reports a structured result.
   - `GET  /agent/task/<id>` → `{ status, result?, log }`
   - `POST /agent/restart-app`
 
+The control-port protocol is engine-agnostic and did NOT change in the Wave-8
+engine swap — nothing outside the box needed edits.
+
 ## The app the agent maintains
 
 - `/app/.vendo/run` — a Procfile-style one-line start command (e.g.
@@ -34,15 +43,11 @@ code, runs it, curls its own endpoints, and reports a structured result.
 
 ## Inference
 
-Reads `VENDO_INFERENCE_URL` / `VENDO_INFERENCE_KEY` (BYO Anthropic key today;
-the Cloud metered gateway is the Wave-5 slot-in behind the same two vars).
-
-## Harness note (loud, per the Wave-3 charter)
-
-`agent-loop.mjs` is a **thin loop over the Anthropic Messages API**, not the
-Claude Agent SDK. The SDK's CLI-sized install and login plumbing fought the
-base-template budget; the control-port protocol is engine-agnostic, so the SDK
-can slot in behind `runAgentTask()` later with no host-side change.
+Reads `VENDO_INFERENCE_URL` / `VENDO_INFERENCE_KEY` (BYO Anthropic key, or the
+Cloud metered gateway behind the same two vars) and maps them onto the SDK's
+env auth: `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`. `VENDO_INFERENCE_MODEL`
+still picks the model (default `claude-sonnet-4-5`; without the pin the SDK
+would default to its `sonnet` alias).
 
 ## Build
 
