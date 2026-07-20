@@ -1229,6 +1229,39 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     ...extra,
   }) as unknown as Parameters<typeof modelEngine.create>[1];
 
+  it("logs a compile INFO — never an error — when a new create emits a deprecated reshape op (W5a staged retirement)", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const wire = '<App name="Legacy"><Select label="Account" options={host_listAccounts({}).data | asOptions(id, name)}/></App>';
+      const document = await modelEngine.create(
+        { prompt: "Build it" },
+        guardDeps(scriptedLanguageModel(wire), {
+          tools: [{ name: "host_listAccounts", description: "List accounts", risk: "read" }],
+        }),
+      );
+      // Staged retirement: the op still compiles for the document…
+      expect(document.name).toBe("Legacy");
+      // …and the usage is observable.
+      const lines = info.mock.calls.map((call) => String(call[0]));
+      expect(lines.some((line) => line.includes('deprecated reshape op "asOptions"'))).toBe(true);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it("a Kit-native create logs no deprecation INFO", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const wire = '<App name="Native"><Select label="Account" options={host_listAccounts({}).data} labelField="name" valueField="id"/></App>';
+      await modelEngine.create({ prompt: "Build it" }, guardDeps(scriptedLanguageModel(wire), {
+        tools: [{ name: "host_listAccounts", description: "List accounts", risk: "read" }],
+      }));
+      expect(info).not.toHaveBeenCalled();
+    } finally {
+      info.mockRestore();
+    }
+  });
+
   it("strips a template-literal island wrapper and persists plain TSX", async () => {
     const wire = [
       '<App name="Wrapped"><Note/>',

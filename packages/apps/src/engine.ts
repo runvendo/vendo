@@ -13,6 +13,7 @@ import {
   compileWirePatchV2,
   compileWireV2,
   describeShapeWithSemantics,
+  findDeprecatedReshapeUsage,
   kitPrompt,
   kitSpec,
   ISLAND_AMBIENT_KIT_NAMES,
@@ -341,7 +342,7 @@ const hostToolSections = (deps: GenerationDependencies): GenerationPromptSection
     content: `TOOL RESPONSE SHAPES (bind only to fields that exist; a binding outside these shapes fails validation). Field annotations mark semantics: :money.cents = integer CENTS (bind the RAW number into Money cents / a format:"money" column — never pre-format it), :money.dollars = whole dollars, :date.iso and :date.epoch = machine dates (DateTime / format:"date"), :enum(a|b) = closed vocabulary (EnumBadge), :id = OPAQUE host identifier (for action payloads — NEVER invent, guess, or abbreviate an id value; when a call would need an id you don't literally have, use the un-filtered list variant instead), :percent.ratio = 0..1, :percent.0-100 = whole percent.\n${Object.entries(deps.toolShapes).map(([tool, shape]) => `- ${tool}: ${describeShapeWithSemantics(shape, deps.semantics?.[tool] ?? {})}`).join("\n")}`,
   }, {
     id: "catalog" as const,
-    content: `RESHAPE PIPES — a binding may end with a bounded \`| op(...)\` pipe (this is the ONLY computation allowed in a binding). PREFER the Kit's native props over pipes: Kit components read RAW tool rows directly — Select/MultiSelect take the raw object array with labelField/valueField, DataTable/CardList columns resolve dot-path keys ({key:"client.name"}), Kit charts read raw rows via data + xKey + series. Never pre-project rows a Kit or host component can read raw.
+    content: `RESHAPE PIPES — a binding may end with a bounded \`| op(...)\` pipe (this is the ONLY computation allowed in a binding). PREFER native field-name props over pipes: components read RAW tool rows directly — Select takes the raw object array plus labelField/valueField, DataTable/CardList columns resolve dot-path keys ({key:"client.name"}), Kit charts read raw rows via data + xKey + series. Never pre-project rows a component can read raw.
 - Only LEGACY chart/points props need [{label, value}] items: points={revenue.rows | asPoints(month, revenue)}.
 FORMAT for DISPLAY — money from host tools is integer CENTS, and dates are raw ISO/epoch; a bare number or ISO string shown to the user is a defect, on EVERY host. The Kit formats for you — USE it: <Money cents={...}/> and <DateTime value={...}/> for single values, DataTable/CardList column/field format tokens ("money", "date") for rows, <EnumBadge value={...}/> for enum fields. Cents money ALWAYS rides the Kit (<Money cents={...}/>, a format:"money" column) — never route a cents field through a legacy slot. When another such field must show through a LEGACY slot (Text value, legacy Table column, legacy Stat value, Badge label), a format(...) pipe is mandatory. format(...) turns a value into a STRING, so it is ONLY for text the user reads, NEVER for data a component computes on:
 - format(...) on a legacy text/label slot: dates value={invoice.dueDate | format(date)}, or a legacy Table column in place: rows={invoices | format(dueDate, date)}. Percents (0..1): format(percent). Plain numbers: format(number). Whole-dollar (non-cents) amounts: format(currency).
@@ -1307,6 +1308,17 @@ export const prewarmModels = async (models: readonly LanguageModel[]): Promise<v
   );
 };
 
+/** W5a (v3 spec §Dialect retirement) — compile INFO, never an error: a NEW
+ *  create that emits a deprecated reshape op still compiles (stored apps
+ *  depend on the ops), but each distinct usage logs one observable line so
+ *  live traffic tells us when deletion is safe. */
+const logDeprecatedDialect = (document: GeneratedAppDocument): GeneratedAppDocument => {
+  for (const notice of findDeprecatedReshapeUsage(document.tree)) {
+    console.info(`[vendo] INFO generated app "${document.name}" uses a ${notice} (kept compiling for stored apps; W5a staged retirement)`);
+  }
+  return document;
+};
+
 /** 06-apps §§2,5; v2 spec §§2,4 — wire-backed rung-1 generation and
  *  two-dialect edit planning. */
 export const modelEngine: GenerationEngine = {
@@ -1323,7 +1335,7 @@ export const modelEngine: GenerationEngine = {
       validate: (compiled) => validateCompiledCreate(compiled, deps),
     };
     const finish = (document: GeneratedAppDocument): Promise<GeneratedAppDocument> =>
-      endPass(document, input.prompt, pipelineContext);
+      endPass(document, input.prompt, pipelineContext).then(logDeprecatedDialect);
     // Tier-0 paint lane (v2 spec §4): only with a streaming consumer — the
     // instant paint exists to reach a screen. One attempt, no repair loop:
     // an invalid paint is simply not resident (the full lane still runs).
@@ -1415,7 +1427,7 @@ export const modelEngine: GenerationEngine = {
     }
     // Never a white box: a failed full lane falls back to the resident
     // tier-0 app (v2 spec §4).
-    if (resident !== undefined) return resident;
+    if (resident !== undefined) return logDeprecatedDialect(resident);
     throw new VendoError("validation", "model could not produce a valid app", issues);
   },
   async edit(input, deps) {
