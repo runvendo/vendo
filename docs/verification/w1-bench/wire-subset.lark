@@ -1,0 +1,86 @@
+// W1-bench Experiment 4 — a Lark CFG for a SUBSET of the vendo-genui/v2 wire,
+// specialized to one host's catalog (Maple, fixtures.ts). Intended for
+// grammar-constrained decoding (llguidance / XGrammar) on an open-weights model
+// served by vLLM or SGLang. The point of the experiment is the EVIDENCE LINE
+// for owned serving: with this grammar, an invalid component name, an invalid
+// prop name, or a tool reference outside the registry becomes UNSAMPLABLE at
+// the keyboard — the whole "invented component / wrong prop / hallucinated
+// tool" error class is structurally impossible, not repaired after the fact.
+//
+// This is deliberately a subset: it fixes the terminals (component names, prop
+// names, tool names, format enums) to one host so the grammar is small and the
+// win is unambiguous. Field-path VALUES inside bindings are left as free
+// identifiers here (a full field-path CFG would enumerate each tool's shape —
+// a mechanical extension noted in the protocol below).
+//
+// Grammar is illustrative and unit-shaped for llguidance's Lark dialect; expect
+// minor dialect tweaks (whitespace handling, %import) when wiring to a specific
+// runtime.
+
+start: app
+
+app: "<App name=" STRING ">" query* node* island* "</App>"
+
+// ---- queries -------------------------------------------------------------
+query: "<Query id=\"" IDENT "\" tool=\"" tool_name "\"" query_input? "/>"
+query_input: " input={" OBJECT "}"
+
+// ---- nodes ---------------------------------------------------------------
+?node: container | leaf
+
+container: layout_open node* layout_close
+layout_open: "<" LAYOUT attr* ">"
+layout_close: "</" LAYOUT ">"
+
+leaf: "<" LEAF attr* "/>"
+
+// ---- attributes ----------------------------------------------------------
+// Prop NAMES are drawn from a fixed set; the model cannot invent one.
+attr: " " PROP "=" attr_value
+attr_value: STRING
+          | "{" NUMBER "}"
+          | "{" BOOL "}"
+          | "{" binding "}"
+          | "{" OBJECT "}"
+          | "{" ARRAY "}"
+
+// A binding is a query name followed by a dotted field path, optional reshape.
+binding: IDENT ("." path_seg)* reshape?
+path_seg: IDENT | INT
+reshape: " | " RESHAPE_OP "(" reshape_args? ")"
+reshape_args: reshape_arg ("," " "? reshape_arg)*
+reshape_arg: IDENT | FORMAT_ENUM | STRING
+
+// ---- islands (opaque source; kept minimal) -------------------------------
+island: "<Island name=\"" IDENT "\">" ISLAND_SRC "</Island>"
+
+// ---- fixed terminals: THE host surface -----------------------------------
+LAYOUT: "Stack" | "Row" | "Grid" | "Card" | "Surface"
+LEAF: "Text" | "Stat" | "Badge" | "Button" | "Input" | "Select" | "Table"
+    | "DataTable" | "CardList" | "LineChart" | "BarChart" | "Donut"
+    | "Sparkline" | "EnumBadge" | "Disclaimer" | "Divider"
+
+PROP: "label" | "value" | "text" | "variant" | "tone" | "format" | "trend"
+    | "prefix" | "suffix" | "columns" | "rows" | "sortBy" | "limit"
+    | "filterableBy" | "emptyLabel" | "options" | "placeholder" | "name"
+    | "onClick" | "onChange" | "disabled" | "gap" | "columns" | "title"
+    | "description" | "items" | "titleKey" | "subtitleKey" | "valueKey"
+    | "valueFormat" | "points" | "series" | "slices" | "values" | "kind"
+
+tool_name: "invoices.list" | "invoices.get" | "invoices.sendReminders"
+         | "invoices.markPaid" | "clients.list" | "clients.search"
+         | "accounts.list" | "accounts.transactions" | "payments.create"
+         | "spending.byCategory" | "revenue.monthly"
+
+FORMAT_ENUM: "money" | "date" | "percent" | "number" | "currencyCents"
+RESHAPE_OP: "format" | "asOptions" | "asPoints" | "template" | "sum" | "avg"
+
+// ---- primitives ----------------------------------------------------------
+IDENT: /[A-Za-z_][A-Za-z0-9_]*/
+INT: /[0-9]+/
+NUMBER: /-?[0-9]+(\.[0-9]+)?/
+BOOL: "true" | "false"
+STRING: /"[^"]*"/
+OBJECT: /\{[^{}]*\}/       // shallow object literal (illustrative)
+ARRAY: /\[[^\[\]]*\]/      // shallow array literal (illustrative)
+ISLAND_SRC: /(?:(?!<\/Island>).)*/s
