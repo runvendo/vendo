@@ -9,6 +9,7 @@ import {
 } from "./local-pack.js";
 import { resolveAppRoot } from "./app-root.js";
 import { normalizePostInjectionInstallCommand } from "./install-command.js";
+import { pnpmDeclaresBuiltDependencies } from "./pnpm-build-policy.js";
 import type { ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
 
@@ -160,29 +161,6 @@ async function findPnpmWorkspaceRoot(checkoutDir: string, targetDir: string): Pr
   }
 
   return undefined;
-}
-
-/** pnpm ≥10 errors on dangerouslyAllowAllBuilds when the workspace already
- * declares a curated build allowlist — detect that curation, whether it lives
- * in pnpm-workspace.yaml (onlyBuiltDependencies/neverBuiltDependencies, or the
- * newer allowBuilds map umami uses) or in the package.json `pnpm` field
- * (ENG-334). */
-async function pnpmDeclaresBuiltDependencies(installDir: string): Promise<boolean> {
-  const curationKeys = ["onlyBuiltDependencies", "neverBuiltDependencies", "allowBuilds"];
-  try {
-    const source = await readFile(path.join(installDir, "pnpm-workspace.yaml"), "utf8");
-    if (new RegExp(`^\\s*(${curationKeys.join("|")})\\s*:`, "m").test(source)) return true;
-  } catch {
-    // No workspace manifest — fall through to package.json.
-  }
-  try {
-    const pkg = JSON.parse(await readFile(path.join(installDir, "package.json"), "utf8")) as {
-      pnpm?: Record<string, unknown>;
-    };
-    return curationKeys.some((key) => pkg.pnpm?.[key] !== undefined);
-  } catch {
-    return false;
-  }
 }
 
 function localVendoTarballLockfileSpec(lockfile: string): boolean {
