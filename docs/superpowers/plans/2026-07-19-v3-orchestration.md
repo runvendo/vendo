@@ -14,7 +14,7 @@ workers self-triage AI reviewers + self-merge green PRs (standing authorization)
 | W1 | w1-bench | measurements: inline-refs vs Query, builder-calls fork, fetch-then-generate A/B, (best-effort) llguidance replay | — | DISPATCHED |
 | W2 | w2-kit | the Kit (superset bar) + prop classes + generated prompt | — | DISPATCHED |
 | W4a | w4-pipeline | structured repair + outline/region-parallel + end pass (engine-internal) | — | DISPATCHED |
-| W3 | (create: w3-semantics) | semantic sync + law-1/law-2 compile checks | W2 prop classes merged; W1 data-surface verdict | pending |
+| W3 | (create: w3-semantics) | semantic sync + law-1/law-2 compile checks + ADOPT inline refs (W1 Exp1) | W2 prop classes merged | pending |
 | W4b | (create: w4-islands) | islands ambient scope + ambient tools + manifest inference | W2 merged (Kit-in-jail) | pending |
 | W5 | (create: w5-regate) | dialect retirement + FINAL frozen-30 + 10 fresh gate + report | all merged | pending |
 
@@ -35,3 +35,9 @@ workers self-triage AI reviewers + self-merge green PRs (standing authorization)
 Frozen 30 (docs/verification/vendo-v2-heldout/CORPUS.md) + 10 FRESH prompts (W5 authors
 them, never seen) — run ONCE on merged main, browser-judged, screenshots, per-class
 table, arc: 11/30 → N/30. NO fixes during the run. Report to Yousef.
+
+## W1 VERDICTS (2026-07-19, PR #414): Exp1 inline refs ADOPT (tie, binding-err 0.17 vs 0.56);
+Exp2 builder-calls DEFER (composition survives, ref-error-free 65% vs 33%, but 44s vs 6.7s latency);
+Exp3 fetch-then-generate DEFER (binding-err 0.00 but compile-ok 81% — prose refusals on negatives; revisit behind repair+Disclaimer-forcing);
+Exp4 CFG DEFER (wire-subset.lark + 1-day GPU protocol delivered — owned-serving evidence line).
+Cross-lane: both arms over-bind ~1 field/app at base — structured repair (W4a) is the designed fix.
