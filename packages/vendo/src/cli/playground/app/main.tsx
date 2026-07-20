@@ -5,11 +5,10 @@
  * (used by the phone-viewport iframe).
  */
 import type { VendoTheme } from "@vendoai/core";
-import { defaultVendoTheme, ScriptedTransport, VendoProvider } from "@vendoai/ui";
-import { StrictMode, useEffect, useMemo, useState } from "react";
+import { defaultVendoTheme } from "@vendoai/ui";
+import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { createFakeClient } from "./fake-client.js";
-import { playgroundFixtures, playgroundToolMeta } from "./fixtures.js";
+import { ScenarioMount } from "./scenario-mount.js";
 import { scenarios, type PlaygroundScenario } from "./scenarios.js";
 import { ThemeEditor, useGoogleFont } from "./theme-editor.js";
 import { decodeThemeParam, encodeThemeParam } from "./theme-state.js";
@@ -38,59 +37,6 @@ const SHELL_CSS = `
   .pg-stage { max-width: 860px; }
   .pg-embed { padding: 0; }
 `;
-
-/**
- * Types the scenario's opening turn into the mounted chrome's own composer and
- * submits it — the send travels the REAL path (draft state, user bubble,
- * transport). The composer may live in a body-level portal (the overlay), so
- * the search spans the document, retrying briefly while the surface mounts.
- */
-function useAutoSend(scenario: PlaygroundScenario): void {
-  useEffect(() => {
-    const prompt = scenario.autoSend;
-    if (!prompt) return;
-    let tries = 0;
-    let submitTimer: ReturnType<typeof setTimeout> | undefined;
-    const timer = setInterval(() => {
-      const textarea = document.querySelector<HTMLTextAreaElement>("form.fl-composer textarea");
-      const form = textarea?.closest("form");
-      if (textarea && form) {
-        clearInterval(timer);
-        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
-        setter?.call(textarea, prompt);
-        textarea.dispatchEvent(new Event("input", { bubbles: true }));
-        // Let React commit the draft before the submit reads it.
-        submitTimer = setTimeout(() => form.requestSubmit(), 120);
-      } else if ((tries += 1) > 50) {
-        clearInterval(timer);
-      }
-    }, 100);
-    return () => {
-      clearInterval(timer);
-      clearTimeout(submitTimer);
-    };
-  }, [scenario]);
-}
-
-function ScenarioMount({ scenario, theme }: { scenario: PlaygroundScenario; theme: VendoTheme }) {
-  const client = useMemo(() => createFakeClient((scenario.fixtures ?? playgroundFixtures)()), [scenario]);
-  const transport = useMemo(
-    () => (scenario.script ? new ScriptedTransport(scenario.script, { speed: scenario.speed ?? 1 }) : undefined),
-    [scenario],
-  );
-  useAutoSend(scenario);
-  return (
-    <VendoProvider
-      client={client}
-      transport={transport}
-      theme={theme}
-      tools={playgroundToolMeta}
-      connectors={[{ toolkit: "slack", label: "Slack" }, { toolkit: "github", label: "GitHub" }]}
-    >
-      {scenario.render()}
-    </VendoProvider>
-  );
-}
 
 const THEME_MESSAGE = "vendo-playground-theme";
 const THEME_REQUEST = "vendo-playground-theme-request";
