@@ -1,0 +1,1155 @@
+{
+  "experiment": "exp2-builder-calls-fork",
+  "generatedAt": "2026-07-20T03:00:01.958Z",
+  "thinkingBudget": 3000,
+  "summaries": [
+    {
+      "arm": "A: single-stream JSX",
+      "n": 18,
+      "compileOkRate": 0.8888888888888888,
+      "meanRefErrors": 0.8888888888888888,
+      "refErrorFreeRate": 0.3333333333333333,
+      "meanBindingShapeErrors": 0.3888888888888889,
+      "declaredUnusedRate": 0.16666666666666666,
+      "formatMissRate": 0.05555555555555555,
+      "meanFormatMiss": 0.05555555555555555,
+      "fabricationRate": 0.05555555555555555,
+      "answersAskRate": 1,
+      "meanQuality": 3.9444444444444446,
+      "qualityStdev": 0.8480187512485418,
+      "p50OutputTokens": 427,
+      "p50LatencyMs": 6738,
+      "errorRate": 0
+    },
+    {
+      "arm": "B: builder tool calls (+thinking)",
+      "n": 18,
+      "compileOkRate": 1,
+      "meanRefErrors": 0.47058823529411764,
+      "refErrorFreeRate": 0.6470588235294118,
+      "meanBindingShapeErrors": 0.29411764705882354,
+      "declaredUnusedRate": 0,
+      "formatMissRate": 0,
+      "meanFormatMiss": 0,
+      "fabricationRate": 0,
+      "answersAskRate": 1,
+      "meanQuality": 4.352941176470588,
+      "qualityStdev": 0.5882352941176472,
+      "p50OutputTokens": 158,
+      "p50LatencyMs": 44440,
+      "errorRate": 0.05555555555555555
+    }
+  ],
+  "qualityDiff": {
+    "diff": 0.40849673202614323,
+    "se": 0.24557310816186548,
+    "outside": false
+  },
+  "meanToolCallsPerApp": 14.055555555555555,
+  "table": "| arm | n | compile-ok | ref-error-free | mean ref-err | mean binding-err | declared-unused | format-miss | fabrication | answers-ask | mean quality (sd) | p50 out-tok | p50 latency |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|\n| A: single-stream JSX | 18 | 89% | 33% | 0.89 | 0.39 | 17% | 6% | 6% | 100% | 3.94 (0.85) | 427 | 6.7s |\n| B: builder tool calls (+thinking) | 18 | 100% | 65% | 0.47 | 0.29 | 0% | 0% | 0% | 100% | 4.35 (0.59) | 158 | 44.4s |",
+  "samples": {
+    "jsx": [
+      {
+        "prompt": "Show my overdue invoices in a table with client, amount, and due date, plus a headline total.",
+        "wire": "<App name=\"Overdue Invoices\">\n  <Query id=\"overdueInvoices\" tool=\"invoices.list\" input={{ status: \"overdue\" }} />\n\n  <Stack gap={24}>\n    <Text variant=\"heading\" text=\"Overdue Invoices\" />\n\n    <Stat\n      label=\"Total Overdue\"\n      value={overdueInvoices.totalCents}\n      format=\"money\"\n      tone=\"danger\"\n    />\n\n    <DataTable\n      rows={overdueInvoices.data}\n      columns={[\n        { key: \"client.name\", label: \"Client\" },\n        { key: \"amountCents\", label: \"Amount\", format: \"money\" },\n        { key: \"dueDate\", label: \"Due Date\", format: \"date\" },\n      ]}\n      sortBy=\"dueDate\"\n      emptyLabel=\"No overdue invoices — you're all caught up!\"\n    />\n  </Stack>\n</App>",
+        "inputTokens": 1849,
+        "outputTokens": 242,
+        "ms": 4353,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 5,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 5,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Uses invoices.list with overdue filter, formatted money/date columns, headline total Stat, and all data traces to the host tool."
+        }
+      },
+      {
+        "prompt": "Build a dashboard of my bank accounts: a balance stat per account and a small trend for each.",
+        "wire": "<App name=\"Bank Accounts Dashboard\">\n  <Query id=\"accounts\" tool=\"accounts.list\" />\n\n  <Stack gap={6}>\n    <Text variant=\"heading\" text=\"Bank Accounts\" />\n    <Text variant=\"caption\" text=\"Live balances and 12-point trends for all your connected accounts.\" />\n\n    <Grid columns={2}>\n      <CardList\n        items={accounts.data}\n        titleKey=\"name\"\n        subtitleKey=\"type\"\n        valueKey=\"balanceCents\"\n        valueFormat=\"money\"\n      />\n    </Grid>\n\n    <Grid columns={2}>\n      <Card title=\"Account Trends\">\n        <Stack gap={6}>\n          <Text variant=\"caption\" text=\"Balance sparklines — one per account\" />\n          <DataTable\n            rows={accounts.data}\n            columns={[\n              { key: \"name\", label: \"Account\" },\n              { key: \"type\", label: \"Type\" },\n              { key: \"balanceCents\", label: \"Balance\", format: \"money\" },\n              { key: \"sparkline\", label: \"Trend\" }\n            ]}\n          />\n        </Stack>\n      </Card>\n    </Grid>\n\n    <Grid columns={3}>\n      <Stat\n        label=\"Total Accounts\"\n        value={accounts.data.length}\n        format=\"number\"\n      />\n    </Grid>\n  </Stack>\n</App>\n```\n\nWait — let me rethink this. The best approach is a per-account card with a `Stat` + `Sparkline` side by side, iterating over the accounts. Since we can't dynamically loop in markup, I'll use `CardList` for the summary and then a `DataTable` with inline sparklines, plus top-level stats.\n\n```xml\n<App name=\"Bank Accounts Dashboard\">\n  <Query id=\"accounts\" tool=\"accounts.list\" />\n\n  <Stack gap={8}>\n    <Text variant=\"heading\" text=\"Bank Accounts\" />\n    <Text variant=\"caption\" text=\"Live balances and 12-point balance trends across all connected accounts.\" />\n\n    <Divider />\n\n    <Grid columns={2}>\n      <CardList\n        items={accounts.data}\n        titleKey=\"name\"\n        subtitleKey=\"type\"\n        valueKey=\"balanceCents\"\n        valueFormat=\"money\"\n      />\n    </Grid>\n\n    <Divider />\n\n    <Text variant=\"heading\" text=\"Balance Trends\" />\n\n    <DataTable\n      rows={accounts.data}\n      columns={[\n        { key: \"name\",         label: \"Account\" },\n        { key: \"type\",         label: \"Type\" },\n        { key: \"balanceCents\", label: \"Current Balance\", format: \"money\" },\n        { key: \"sparkline\",    label: \"12-Month Trend\" }\n      ]}\n      emptyLabel=\"No accounts found.\"\n    />\n  </Stack>\n</App>",
+        "inputTokens": 1846,
+        "outputTokens": 712,
+        "ms": 10873,
+        "metrics": {
+          "compileOk": false,
+          "refErrors": 1,
+          "bindingShapeErrors": 1,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 13,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 2,
+          "answersAsk": true,
+          "fabricated": true,
+          "notes": "The per-account trend relies on a 'sparkline' field from accounts.list which is not a traceable data source; the actual trend data should come from accounts.transactions, and the wire is messy with duplicate versions and prose."
+        }
+      },
+      {
+        "prompt": "List clients sorted by outstanding balance, and let me filter by client name.",
+        "wire": "<App name=\"Clients by Outstanding Balance\">\n  <Query id=\"clientsData\" tool=\"clients.list\" />\n\n  <Stack gap={24}>\n    <Text variant=\"heading\" text=\"Clients by Outstanding Balance\" />\n\n    <DataTable\n      rows={clientsData.data}\n      columns={[\n        { key: \"name\", label: \"Client Name\" },\n        { key: \"email\", label: \"Email\" },\n        { key: \"tier\", label: \"Tier\" },\n        { key: \"balanceCents\", label: \"Outstanding Balance\", format: \"money\" }\n      ]}\n      sortBy=\"balanceCents\"\n      filterableBy={[\"name\"]}\n      emptyLabel=\"No clients found.\"\n    />\n  </Stack>\n</App>",
+        "inputTokens": 1841,
+        "outputTokens": 193,
+        "ms": 3735,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 4,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Uses clients.list with money formatting, sort by balance, and name filter; minor uncertainty whether clients.list actually returns balanceCents, but data traces to a real tool and the ask is met."
+        }
+      },
+      {
+        "prompt": "Give me a spending breakdown by category for this quarter as a donut plus a table of the numbers.",
+        "wire": "<App name=\"Spending Breakdown – This Quarter\">\n  <Query id=\"spending\" tool=\"spending.byCategory\" input={{ period: \"quarter\" }} />\n\n  <Stack gap={24}>\n    <Text variant=\"heading\" text=\"Spending by Category — This Quarter\" />\n\n    <Grid columns={2}>\n      <Card title=\"Category Breakdown\">\n        <Donut\n          slices={spending.data}\n          label=\"Total Spending\"\n        />\n      </Card>\n\n      <Card title=\"Category Totals\">\n        <DataTable\n          rows={spending.data}\n          columns={[\n            { key: \"category\", label: \"Category\" },\n            { key: \"amountCents\", label: \"Amount\", format: \"money\" },\n            { key: \"pct\", label: \"% of Total\", format: \"percent\" }\n          ]}\n          sortBy=\"amountCents\"\n          emptyLabel=\"No spending data available.\"\n        />\n      </Card>\n    </Grid>\n\n    <Surface>\n      <Stat\n        label=\"Total Quarterly Spending\"\n        value={spending.totalCents}\n        format=\"money\"\n      />\n    </Surface>\n  </Stack>\n</App>",
+        "inputTokens": 1847,
+        "outputTokens": 293,
+        "ms": 5468,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 10,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 5,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Donut uses raw slice numbers, table formats money/percent, stat formatted, all data from spending.byCategory."
+        }
+      },
+      {
+        "prompt": "Show the last few transactions on my operating account with amounts and dates.",
+        "wire": "<App name=\"Operating Account Transactions\">\n  <Query id=\"accountsData\" tool=\"accounts.list\" />\n  <Query id=\"txData\" tool=\"accounts.transactions\" />\n\n  <Stack gap={24}>\n    <Text variant=\"heading\" text=\"Operating Account — Recent Transactions\" />\n\n    <Row gap={16}>\n      <Stat\n        label=\"Total Transactions\"\n        value={txData.count}\n        format=\"number\"\n      />\n    </Row>\n\n    <DataTable\n      rows={txData.data}\n      columns={[\n        { key: \"date\", label: \"Date\", format: \"date\" },\n        { key: \"description\", label: \"Description\" },\n        { key: \"category\", label: \"Category\" },\n        { key: \"amountCents\", label: \"Amount\", format: \"money\" }\n      ]}\n      sortBy=\"date\"\n      emptyLabel=\"No recent transactions found.\"\n    />\n  </Stack>\n</App>",
+        "inputTokens": 1840,
+        "outputTokens": 242,
+        "ms": 4808,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 1,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 2,
+          "nodeCount": 6,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Shows transactions with formatted dates and money amounts, but accounts.transactions is queried without an account filter to target the operating account specifically."
+        }
+      },
+      {
+        "prompt": "I want to send payment reminders for all overdue invoices from one screen.",
+        "wire": "<App name=\"Overdue Invoice Reminders\">\n  <Query id=\"overdueInvoices\" tool=\"invoices.list\" input={{ status: \"overdue\" }} />\n\n  <Stack gap={24}>\n    <Text variant=\"heading\" text=\"Overdue Invoice Reminders\" />\n    <Text variant=\"caption\" text=\"Review all overdue invoices below and send payment reminders in one click.\" />\n\n    <Row gap={16}>\n      <Stat\n        label=\"Overdue Invoices\"\n        value={overdueInvoices.count}\n        tone=\"danger\"\n      />\n      <Stat\n        label=\"Total Outstanding\"\n        value={overdueInvoices.totalCents}\n        format=\"money\"\n        tone=\"danger\"\n      />\n    </Row>\n\n    <Divider />\n\n    <Card\n      title=\"Overdue Invoices\"\n      description=\"All invoices currently past their due date.\"\n      tone=\"danger\"\n    >\n      <Stack gap={16}>\n        <DataTable\n          rows={overdueInvoices.data}\n          columns={[\n            { key: \"client.name\", label: \"Client\" },\n            { key: \"amountCents\", label: \"Amount\", format: \"money\" },\n            { key: \"dueDate\", label: \"Due Date\", format: \"date\" },\n            { key: \"status\", label: \"Status\" }\n          ]}\n          sortBy=\"dueDate\"\n          emptyLabel=\"No overdue invoices — you're all caught up!\"\n        />\n\n        <Divider />\n\n        <Row gap={12}>\n          <Button\n            label=\"Send Reminders to All Overdue Clients\"\n            variant=\"primary\"\n            onClick=\"invoices.sendReminders\"\n          />\n        </Row>\n      </Stack>\n    </Card>\n  </Stack>\n</App>",
+        "inputTokens": 1843,
+        "outputTokens": 455,
+        "ms": 6789,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 1,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 1,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 14,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 5,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Cleanly lists overdue invoices from invoices.list with formatted money/date and wires bulk sendReminders action, fully meeting the ask."
+        }
+      },
+      {
+        "prompt": "Show a monthly revenue trend line for the last few months with a headline of the latest month.",
+        "wire": "<App name=\"Monthly Revenue Trend\">\n  <Stack gap={24}>\n    <Text variant=\"heading\" text=\"Monthly Revenue\"/>\n    <Row gap={24}>\n      <Stat\n        label=\"Latest Month Revenue\"\n        value={revenue.data[-1].revenueCents}\n        format=\"money\"\n        tone=\"accent\"\n      />\n    </Row>\n    <Card title=\"Revenue Trend — Last 6 Months\">\n      <LineChart\n        points={revenue.data}\n        label=\"Monthly Revenue\"\n      />\n    </Card>\n  </Stack>\n</App>",
+        "inputTokens": 1845,
+        "outputTokens": 160,
+        "ms": 3580,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 2,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 2,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 0,
+          "nodeCount": 7,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Addresses the ask with trend line and latest-month headline stat using revenue.monthly data, but the negative-index access for the latest month is awkward/likely-unsupported syntax."
+        }
+      },
+      {
+        "prompt": "Build an invoice detail view for a single invoice including its line items and a mark-paid action.",
+        "wire": "<App name=\"Invoice Detail\">\n\n  <Query id=\"invoice\" tool=\"invoices.get\" input={{ id: \"inv_001\" }} />\n\n  <Stack gap={6}>\n\n    <Row gap={4}>\n      <Stack gap={1}>\n        <Text variant=\"heading\" text=\"Invoice Detail\" />\n        <Text variant=\"caption\" text={invoice.id} />\n      </Stack>\n      <EnumBadge value={invoice.status} />\n    </Row>\n\n    <Grid columns={3}>\n      <Stat label=\"Amount Due\" value={invoice.amountCents} format=\"money\" />\n      <Stat label=\"Due Date\" value={invoice.dueDate} format=\"date\" />\n      <Stat label=\"Status\" value={invoice.status} />\n    </Grid>\n\n    <Divider />\n\n    <Card title=\"Client\" tone=\"default\">\n      <Stack gap={2}>\n        <Row gap={3}>\n          <Text variant=\"caption\" text=\"Name\" />\n          <Text variant=\"body\" text={invoice.client.name} />\n        </Row>\n        <Row gap={3}>\n          <Text variant=\"caption\" text=\"Email\" />\n          <Text variant=\"body\" text={invoice.client.email} />\n        </Row>\n      </Stack>\n    </Card>\n\n    <Card title=\"Line Items\" tone=\"default\">\n      <DataTable\n        rows={invoice.lineItems}\n        columns={[\n          { key: \"description\", label: \"Description\" },\n          { key: \"amountCents\", label: \"Amount\", format: \"money\" }\n        ]}\n        emptyLabel=\"No line items found.\"\n      />\n    </Card>\n\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Actions\" />\n        <Row gap={3}>\n          <Button\n            label=\"Mark as Paid\"\n            variant=\"primary\"\n            onClick=\"invoices.markPaid\"\n            payload={{ id: invoice.id }}\n          />\n          <Button\n            label=\"Send Reminder\"\n            variant=\"secondary\"\n            onClick=\"invoices.sendReminders\"\n            payload={{ ids: [invoice.id] }}\n          />\n        </Row>\n      </Stack>\n    </Surface>\n\n  </Stack>\n\n</App>",
+        "inputTokens": 1846,
+        "outputTokens": 554,
+        "ms": 7763,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 2,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 2,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 28,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 5,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Cleanly renders invoice detail with line items via invoices.get and wires markPaid correctly with proper money/date formatting and raw values traceable to the host tool."
+        }
+      },
+      {
+        "prompt": "Create a clients page with a search box and a results table of matches showing their balances.",
+        "wire": "<App name=\"Clients\">\n  <Query id=\"allClients\" tool=\"clients.list\" />\n  <Query id=\"searchResults\" tool=\"clients.search\" input={{ query: \"\" }} />\n\n  <Stack gap={24}>\n    <Text variant=\"heading\" text=\"Clients\" />\n\n    <Surface>\n      <Stack gap={16}>\n        <Input\n          label=\"Search Clients\"\n          name=\"clientSearch\"\n          type=\"search\"\n          placeholder=\"Search by name or email…\"\n          onChange=\"clients.search\"\n        />\n\n        <DataTable\n          rows={searchResults.data}\n          columns={[\n            { key: \"name\", label: \"Client Name\" },\n            { key: \"email\", label: \"Email\" },\n            { key: \"balanceCents\", label: \"Balance\", format: \"money\" },\n          ]}\n          filterableBy={[\"name\", \"email\"]}\n          emptyLabel=\"No clients match your search.\"\n        />\n      </Stack>\n    </Surface>\n\n    <Card title=\"All Clients\" description=\"Full client roster with current balances.\">\n      <DataTable\n        rows={allClients.data}\n        columns={[\n          { key: \"name\", label: \"Client Name\" },\n          { key: \"email\", label: \"Email\" },\n          { key: \"tier\", label: \"Tier\" },\n          { key: \"balanceCents\", label: \"Balance\", format: \"money\" },\n        ]}\n        sortBy=\"balanceCents\"\n        filterableBy={[\"name\", \"email\", \"tier\"]}\n        emptyLabel=\"No clients found.\"\n      />\n    </Card>\n  </Stack>\n</App>",
+        "inputTokens": 1845,
+        "outputTokens": 412,
+        "ms": 6738,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 1,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 1,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 2,
+          "nodeCount": 9,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Search box and results table with money-formatted balances are properly wired to clients.search; minor issue is the search input binding to the query via onChange is a bit awkward but overall correct."
+        }
+      },
+      {
+        "prompt": "Summarize accounts receivable: total overdue, count of overdue invoices, and the worst three clients.",
+        "wire": "<App name=\"Accounts Receivable Summary\">\n\n  <Query id=\"overdueInvoices\" tool=\"invoices.list\" input={{ status: \"overdue\" }} />\n  <Query id=\"allClients\" tool=\"clients.list\" />\n\n  <Stack gap={24}>\n\n    <Text variant=\"heading\" text=\"Accounts Receivable Summary\" />\n\n    <Row gap={16}>\n      <Stat\n        label=\"Total Overdue\"\n        value={overdueInvoices.totalCents}\n        format=\"money\"\n        tone=\"danger\"\n      />\n      <Stat\n        label=\"Overdue Invoices\"\n        value={overdueInvoices.count}\n        format=\"number\"\n        tone=\"danger\"\n      />\n    </Row>\n\n    <Divider />\n\n    <Text variant=\"heading\" text=\"Worst 3 Overdue Clients\" />\n\n    <DataTable\n      rows={overdueInvoices.data}\n      columns={[\n        { key: \"client.name\", label: \"Client\" },\n        { key: \"amountCents\", label: \"Amount Overdue\", format: \"money\" },\n        { key: \"dueDate\", label: \"Due Date\", format: \"date\" },\n        { key: \"status\", label: \"Status\" }\n      ]}\n      sortBy=\"amountCents\"\n      limit={3}\n      emptyLabel=\"No overdue invoices\"\n    />\n\n    <Divider />\n\n    <Text variant=\"heading\" text=\"All Overdue Invoices\" />\n\n    <DataTable\n      rows={overdueInvoices.data}\n      columns={[\n        { key: \"client.name\", label: \"Client\" },\n        { key: \"amountCents\", label: \"Amount\", format: \"money\" },\n        { key: \"dueDate\", label: \"Due Date\", format: \"date\" },\n        { key: \"status\", label: \"Status\" }\n      ]}\n      sortBy=\"amountCents\"\n      filterableBy={[\"client.name\"]}\n      emptyLabel=\"No overdue invoices\"\n    />\n\n  </Stack>\n\n</App>",
+        "inputTokens": 1850,
+        "outputTokens": 525,
+        "ms": 7514,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 1,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 2,
+          "nodeCount": 12,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Addresses all three asks with real tool data and correct formatting, though it aggregates worst clients by top invoice rather than summing per client and relies on assumed fields like totalCents/count."
+        }
+      },
+      {
+        "prompt": "Show a payments form to pay a client from an account, with the amount and recipient.",
+        "wire": "<App name=\"Create Payment\">\n  <Query id=\"accountsData\" tool=\"accounts.list\" />\n  <Query id=\"clientsData\" tool=\"clients.list\" />\n\n  <Stack gap={24}>\n    <Text variant=\"heading\" text=\"Send a Payment\" />\n    <Text variant=\"caption\" text=\"Transfer funds from one of your bank accounts to a client.\" />\n\n    <Card title=\"Payment Details\" tone=\"default\">\n      <Stack gap={20}>\n        <Select\n          label=\"From Account\"\n          name=\"accountId\"\n          placeholder=\"Select an account…\"\n          options={accountsData.data}\n          required={true}\n        />\n\n        <Select\n          label=\"Recipient (Client)\"\n          name=\"toClientId\"\n          placeholder=\"Select a client…\"\n          options={clientsData.data}\n          required={true}\n        />\n\n        <Input\n          label=\"Amount\"\n          name=\"amountCents\"\n          type=\"number\"\n          placeholder=\"Enter amount in cents\"\n          hint=\"Enter the payment amount in cents (e.g. 5000 = $50.00)\"\n          required={true}\n        />\n\n        <Divider />\n\n        <Row gap={12}>\n          <Button\n            label=\"Send Payment\"\n            variant=\"primary\"\n            onClick=\"payments.create\"\n          />\n          <Button\n            label=\"Cancel\"\n            variant=\"secondary\"\n          />\n        </Row>\n      </Stack>\n    </Card>\n  </Stack>\n</App>",
+        "inputTokens": 1844,
+        "outputTokens": 365,
+        "ms": 5942,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 3,
+          "bindingShapeErrors": 2,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 1,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 2,
+          "nodeCount": 13,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 5,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Form has account, recipient, and amount fields sourced from real tools and wired to payments.create write action."
+        }
+      },
+      {
+        "prompt": "Give me an at-a-glance finance overview: cash on hand, this-month revenue, and overdue total.",
+        "wire": "<App name=\"Finance Overview\">\n\n  <Query id=\"accounts\" tool=\"accounts.list\" />\n  <Query id=\"revenue\" tool=\"revenue.monthly\" />\n  <Query id=\"overdueInvoices\" tool=\"invoices.list\" input={{ status: \"overdue\" }} />\n\n  <Stack gap={24}>\n\n    <Text variant=\"heading\" text=\"Finance Overview\" />\n    <Text variant=\"caption\" text=\"A real-time snapshot of your key financial metrics.\" />\n\n    <Divider />\n\n    <Grid columns={3}>\n\n      <Card tone=\"accent\" title=\"Cash on Hand\">\n        <Stat\n          label=\"Total Balance Across All Accounts\"\n          value={accounts.data}\n          format=\"money\"\n          tone=\"accent\"\n        />\n      </Card>\n\n      <Card tone=\"default\" title=\"This Month's Revenue\">\n        <Stat\n          label=\"Revenue — Current Month\"\n          value={revenue.data}\n          format=\"money\"\n          tone=\"default\"\n        />\n      </Card>\n\n      <Card tone=\"danger\" title=\"Overdue Invoices\">\n        <Stat\n          label=\"Total Overdue Balance\"\n          value={overdueInvoices.totalCents}\n          format=\"money\"\n          tone=\"danger\"\n          trend={overdueInvoices.count}\n        />\n      </Card>\n\n    </Grid>\n\n    <Divider />\n\n    <Grid columns={2}>\n\n      <Card title=\"Account Balances\">\n        <DataTable\n          rows={accounts.data}\n          columns={[\n            { key: \"name\", label: \"Account\" },\n            { key: \"type\", label: \"Type\" },\n            { key: \"balanceCents\", label: \"Balance\", format: \"money\" }\n          ]}\n          sortBy=\"balanceCents\"\n        />\n      </Card>\n\n      <Card title=\"Overdue Invoices\">\n        <DataTable\n          rows={overdueInvoices.data}\n          columns={[\n            { key: \"client.name\", label: \"Client\" },\n            { key: \"dueDate\", label: \"Due Date\", format: \"date\" },\n            { key: \"amountCents\", label: \"Amount\", format: \"money\" }\n          ]}\n          sortBy=\"dueDate\"\n          emptyLabel=\"No overdue invoices — great work!\"\n        />\n      </Card>\n\n    </Grid>\n\n    <Card title=\"Monthly Revenue Trend\">\n      <LineChart\n        points={revenue.data}\n        label=\"Monthly Revenue (trailing 6 months)\"\n      />\n    </Card>\n\n  </Stack>\n\n</App>",
+        "inputTokens": 1852,
+        "outputTokens": 638,
+        "ms": 9878,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 2,
+          "bindingShapeErrors": 2,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 3,
+          "nodeCount": 20,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 3,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Addresses all three metrics with correct tools and formatting, but Stat values bind raw arrays (accounts.data, revenue.data) instead of aggregated cents, so cash-on-hand and this-month revenue won't render correct scalars."
+        }
+      },
+      {
+        "prompt": "Show overdue invoices grouped visually with a reminder button per row.",
+        "wire": "<App name=\"Overdue Invoices\">\n  <Query id=\"overdueInvoices\" tool=\"invoices.list\" input={{ status: \"overdue\" }} />\n\n  <Stack gap={24}>\n    <Row gap={12}>\n      <Text variant=\"heading\" text=\"Overdue Invoices\" />\n      <Badge label=\"Overdue\" tone=\"danger\" />\n    </Row>\n\n    <Row gap={16}>\n      <Stat\n        label=\"Total Overdue\"\n        value={overdueInvoices.totalCents}\n        format=\"money\"\n        tone=\"danger\"\n      />\n      <Stat\n        label=\"Invoices\"\n        value={overdueInvoices.count}\n        format=\"number\"\n        tone=\"default\"\n      />\n    </Row>\n\n    <Surface>\n      <DataTable\n        rows={overdueInvoices.data}\n        emptyLabel=\"No overdue invoices — great work!\"\n        filterableBy={[\"client.name\"]}\n        columns={[\n          { key: \"client.name\", label: \"Client\" },\n          { key: \"amountCents\", label: \"Amount\", format: \"money\" },\n          { key: \"dueDate\", label: \"Due Date\", format: \"date\" },\n          { key: \"status\", label: \"Status\" },\n        ]}\n      />\n    </Surface>\n\n    <Card\n      title=\"Send Reminders\"\n      description=\"Send payment reminders to all clients with overdue invoices at once.\"\n      tone=\"danger\"\n    >\n      <Button\n        label=\"Send All Reminders\"\n        variant=\"danger\"\n        onClick=\"invoices.sendReminders\"\n      />\n    </Card>\n  </Stack>\n</App>",
+        "inputTokens": 1841,
+        "outputTokens": 427,
+        "ms": 6159,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 1,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 1,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 12,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 3,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Shows overdue invoices in a table but lacks per-row reminder buttons (only a bulk 'Send All' action) and no visual grouping as requested."
+        }
+      },
+      {
+        "prompt": "Build a category spending page with a bar chart and each category's share as a percentage.",
+        "wire": "<App name=\"Category Spending\">\n  <Query id=\"spendingData\" tool=\"spending.byCategory\" input={{ period: \"month\" }} />\n\n  <Stack gap={24}>\n    <Text variant=\"heading\" text=\"Category Spending\" />\n    <Text variant=\"caption\" text=\"Breakdown of spending by category for the current month\" />\n\n    <Surface>\n      <Stack gap={16}>\n        <Text variant=\"heading\" text=\"Spending by Category\" />\n        <BarChart\n          series={spendingData.data}\n          label=\"Amount by Category\"\n        />\n      </Stack>\n    </Surface>\n\n    <Surface>\n      <Stack gap={16}>\n        <Text variant=\"heading\" text=\"Category Breakdown\" />\n        <DataTable\n          rows={spendingData.data}\n          columns={[\n            { key: \"category\", label: \"Category\" },\n            { key: \"amountCents\", label: \"Amount\", format: \"money\" },\n            { key: \"pct\", label: \"Share (%)\", format: \"percent\" }\n          ]}\n          sortBy=\"amountCents\"\n          emptyLabel=\"No spending data available\"\n        />\n      </Stack>\n    </Surface>\n\n    <Grid columns={3}>\n      <Card tone=\"default\">\n        <Stat\n          label=\"Total Spending\"\n          value={spendingData.totalCents}\n          format=\"money\"\n        />\n      </Card>\n      <Card tone=\"default\">\n        <Stat\n          label=\"Categories Tracked\"\n          value={spendingData.data.length}\n          format=\"number\"\n        />\n      </Card>\n      <Card tone=\"accent\">\n        <Stack gap={8}>\n          <Text variant=\"caption\" text=\"Top Categories\" />\n          <CardList\n            items={spendingData.data}\n            titleKey=\"category\"\n            valueKey=\"pct\"\n            valueFormat=\"percent\"\n          />\n        </Stack>\n      </Card>\n    </Grid>\n  </Stack>\n</App>",
+        "inputTokens": 1844,
+        "outputTokens": 499,
+        "ms": 7101,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 1,
+          "bindingShapeErrors": 1,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 21,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Substantively delivers the bar chart and per-category percentage shares from spending.byCategory; assumes pct/totalCents fields exist but data traces to the tool, with minor risk that chart consumes formatted rows rather than raw numbers."
+        }
+      },
+      {
+        "prompt": "Show all accounts as cards with name, type, balance, and a sparkline.",
+        "wire": "<App name=\"Accounts Overview\">\n  <Query id=\"accountsData\" tool=\"accounts.list\"/>\n\n  <Stack gap={24}>\n    <Text variant=\"heading\" text=\"Bank Accounts\"/>\n    <Grid columns={2}>\n      <CardList\n        items={accountsData.data}\n        titleKey=\"name\"\n        subtitleKey=\"type\"\n        valueKey=\"balanceCents\"\n        valueFormat=\"money\"\n      />\n    </Grid>\n  </Stack>\n</App>\n```\n\nWait — `CardList` doesn't surface the sparkline. Let me compose proper cards manually so the sparkline renders per account.\n\n```xml\n<App name=\"Accounts Overview\">\n  <Query id=\"accountsData\" tool=\"accounts.list\"/>\n\n  <Stack gap={24}>\n    <Text variant=\"heading\" text=\"Bank Accounts\"/>\n    <DataTable\n      rows={accountsData.data}\n      columns={[\n        { key: \"name\",         label: \"Account Name\" },\n        { key: \"type\",         label: \"Type\" },\n        { key: \"balanceCents\", label: \"Balance\", format: \"money\" }\n      ]}\n      emptyLabel=\"No accounts found\"\n    />\n  </Stack>\n</App>\n```\n\nThat loses the sparkline too. The right move is an Island per card — but Islands are last resort. Since Sparkline is a catalog component and I need one per account row, I'll use a DataTable for the structured fields and pair it with a note, but actually the prompt specifically asks for cards + sparkline. Let me compose this correctly using the available primitives with an Island for the sparkline-in-card layout since no single catalog component covers \"card grid with embedded sparklines\":\n\n```xml\n<App name=\"Accounts Overview\">\n  <Query id=\"accountsData\" tool=\"accounts.list\"/>\n\n  <Stack gap={24}>\n    <Text variant=\"heading\" text=\"Bank Accounts\"/>\n    <Grid columns={2}>\n      <Island>\n        {accountsData.data?.map(account => (\n          <div key={account.id} style={{\n            background: \"#FFFFFF\",\n            border: \"1px solid #E6E3DC\",\n            borderRadius: 12,\n            padding: 20,\n            display: \"flex\",\n            flexDirection: \"column\",\n            gap: 12,\n            fontFamily: \"Inter, sans-serif\"\n          }}>\n            <div style={{ display: \"flex\", justifyContent: \"space-between\", alignItems: \"flex-start\" }}>\n              <div>\n                <div style={{ fontWeight: 600, fontSize: 16, color: \"#1A1A1A\" }}>{account.name}</div>\n                <div style={{ fontSize: 13, color: \"#888\", marginTop: 2, textTransform: \"capitalize\" }}>{account.type}</div>\n              </div>\n              <div style={{\n                fontSize: 18,\n                fontWeight: 700,\n                color: \"#2B5CE6\"\n              }}>\n                {new Intl.NumberFormat(\"en-US\", { style: \"currency\", currency: \"USD\" }).format(account.balanceCents / 100)}\n              </div>\n            </div>\n            <Sparkline values={account.sparkline}/>\n          </div>\n        ))}\n      </Island>\n    </Grid>\n  </Stack>\n</App>",
+        "inputTokens": 1843,
+        "outputTokens": 815,
+        "ms": 12649,
+        "metrics": {
+          "compileOk": false,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 5,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 3,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Final Island version renders all four required fields with proper money formatting and a raw-number sparkline traceable to accounts.list, but the messy multi-attempt output and use of a last-resort Island (plus unverified sparkline field) l"
+        }
+      },
+      {
+        "prompt": "Make a page that shows the single largest overdue invoice with a prominent amount and a reminder action.",
+        "wire": "<App name=\"Largest Overdue Invoice\">\n  <Query id=\"overdueInvoices\" tool=\"invoices.list\" input={{ status: \"overdue\" }} />\n\n  <Stack gap={6}>\n    <Text variant=\"heading\" text=\"Largest Overdue Invoice\" />\n\n    <Card tone=\"danger\" title=\"Outstanding Payment Required\" description=\"This invoice is past due and requires immediate attention.\">\n      <Stack gap={5}>\n        <Row gap={4}>\n          <Stat\n            label=\"Amount Due\"\n            value={overdueInvoices.data[0].amountCents}\n            format=\"money\"\n            tone=\"danger\"\n          />\n          <Stat\n            label=\"Due Date\"\n            value={overdueInvoices.data[0].dueDate}\n            format=\"date\"\n            tone=\"danger\"\n          />\n          <Stat\n            label=\"Client\"\n            value={overdueInvoices.data[0].client.name}\n          />\n        </Row>\n\n        <Divider />\n\n        <Row gap={3}>\n          <Badge label=\"Overdue\" tone=\"danger\" />\n          <Text variant=\"caption\" text={overdueInvoices.data[0].id} />\n        </Row>\n\n        <Button\n          label=\"Send Payment Reminder\"\n          variant=\"primary\"\n          onClick=\"invoices.sendReminders\"\n          payload={{ ids: [overdueInvoices.data[0].id] }}\n        />\n      </Stack>\n    </Card>\n  </Stack>\n</App>",
+        "inputTokens": 1846,
+        "outputTokens": 375,
+        "ms": 5854,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 1,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 1,
+          "declaredButUnused": 1,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 14,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 3,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Uses invoices.list without sorting/limit to guarantee the single largest overdue invoice, relying on data[0] which may not be the max amount, though components and action wiring are otherwise correct."
+        }
+      },
+      {
+        "prompt": "Show revenue by month and spending by category side by side for a quick health check.",
+        "wire": "<App name=\"Financial Health Check\">\n\n  <Query id=\"revenueData\" tool=\"revenue.monthly\" />\n  <Query id=\"spendingData\" tool=\"spending.byCategory\" input={{ period: \"month\" }} />\n\n  <Stack gap={24}>\n\n    <Text variant=\"heading\" text=\"Financial Health Check\" />\n    <Text variant=\"caption\" text=\"A snapshot of monthly revenue and spending by category.\" />\n\n    <Row gap={24}>\n\n      <Card title=\"Revenue · Last 6 Months\" tone=\"accent\">\n        <Stack gap={16}>\n          <Stat\n            label=\"Total Revenue\"\n            value={revenueData.data}\n            format=\"money\"\n          />\n          <LineChart\n            points={revenueData.data}\n            label=\"Monthly Revenue\"\n          />\n          <DataTable\n            rows={revenueData.data}\n            columns={[\n              { key: \"month\", label: \"Month\" },\n              { key: \"revenueCents\", label: \"Revenue\", format: \"money\" }\n            ]}\n            sortBy=\"month\"\n            emptyLabel=\"No revenue data available.\"\n          />\n        </Stack>\n      </Card>\n\n      <Card title=\"Spending · This Month\" tone=\"default\">\n        <Stack gap={16}>\n          <Stat\n            label=\"Total Spending\"\n            value={spendingData.totalCents}\n            format=\"money\"\n          />\n          <Donut\n            slices={spendingData.data}\n            label=\"Spending by Category\"\n          />\n          <DataTable\n            rows={spendingData.data}\n            columns={[\n              { key: \"category\", label: \"Category\" },\n              { key: \"amountCents\", label: \"Amount\", format: \"money\" },\n              { key: \"pct\", label: \"Share\", format: \"percent\" }\n            ]}\n            sortBy=\"amountCents\"\n            emptyLabel=\"No spending data available.\"\n          />\n        </Stack>\n      </Card>\n\n    </Row>\n\n  </Stack>\n\n</App>",
+        "inputTokens": 1843,
+        "outputTokens": 508,
+        "ms": 7255,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 1,
+          "bindingShapeErrors": 1,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 1,
+          "formatWrongOnChart": 0,
+          "queryCount": 2,
+          "nodeCount": 15,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Good side-by-side layout with correct tools and formatting, but the Total Revenue Stat binds value to the raw array (revenueData.data) rather than a summed scalar, an awkward/incorrect binding."
+        }
+      },
+      {
+        "prompt": "List recent transactions and let me filter them, showing category as a badge and the amount formatted.",
+        "wire": "<App name=\"Recent Transactions\">\n  <Query id=\"txns\" tool=\"accounts.transactions\" />\n\n  <Stack gap={24}>\n    <Text variant=\"heading\" text=\"Recent Transactions\" />\n\n    <Surface>\n      <Stack gap={16}>\n        <Row gap={12}>\n          <Input\n            label=\"Search\"\n            name=\"search\"\n            placeholder=\"Filter by description or category…\"\n          />\n          <Select\n            label=\"Category\"\n            name=\"category\"\n            options={[\n              { value: \"\", label: \"All Categories\" },\n              { value: \"income\", label: \"Income\" },\n              { value: \"software\", label: \"Software\" },\n              { value: \"payroll\", label: \"Payroll\" },\n              { value: \"travel\", label: \"Travel\" },\n              { value: \"utilities\", label: \"Utilities\" },\n              { value: \"marketing\", label: \"Marketing\" },\n              { value: \"other\", label: \"Other\" },\n            ]}\n          />\n        </Row>\n\n        <Divider />\n\n        <DataTable\n          rows={txns.data}\n          columns={[\n            { key: \"date\", label: \"Date\", format: \"date\" },\n            { key: \"description\", label: \"Description\" },\n            {\n              key: \"category\",\n              label: \"Category\",\n            },\n            { key: \"amountCents\", label: \"Amount\", format: \"money\" },\n          ]}\n          sortBy=\"date\"\n          filterableBy={[\"description\", \"category\"]}\n          emptyLabel=\"No transactions found.\"\n        />\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+        "inputTokens": 1845,
+        "outputTokens": 411,
+        "ms": 5998,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 10,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Lists transactions with filtering and formatted money/date, but the category column renders as plain text rather than the requested badge."
+        }
+      }
+    ],
+    "fork": [
+      {
+        "prompt": "Show my overdue invoices in a table with client, amount, and due date, plus a headline total.",
+        "wire": "<App name=\"Generated\"><Query id=\"overdueInvoices\" tool=\"invoices.list\" input={{\"status\":\"overdue\"}}/><Stack><Stat label=\"Total Overdue\" format=\"money\" tone=\"danger\" value={overdueInvoices.totalCents}/><DataTable columns={[{\"key\":\"client.name\",\"label\":\"Client\"},{\"key\":\"amountCents\",\"label\":\"Amount\",\"format\":\"money\"},{\"key\":\"dueDate\",\"label\":\"Due Date\",\"format\":\"date\"}]} sortBy=\"dueDate\" emptyLabel=\"No overdue invoices\" rows={overdueInvoices.data}/></Stack></App>",
+        "inputTokens": 8885,
+        "outputTokens": 156,
+        "ms": 17191,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 4,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 5,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Correctly uses invoices.list with overdue filter, formatted money/date columns, and a formatted headline total all traceable to the host tool."
+        },
+        "callCount": 6
+      },
+      {
+        "prompt": "Build a dashboard of my bank accounts: a balance stat per account and a small trend for each.",
+        "wire": "<App name=\"Generated\"><Query id=\"accountsList\" tool=\"accounts.list\"/><Stack><Text text=\"Bank Accounts\" variant=\"heading\"/><Text text=\"Live balances and recent 12-point trends for each of your linked accounts.\" variant=\"caption\"/><Row><Stat label=\"Total Accounts\" value={accountsList.data.length}/></Row><Divider/><DataTable columns={[{\"key\":\"name\",\"label\":\"Account\"},{\"key\":\"type\",\"label\":\"Type\"},{\"key\":\"balanceCents\",\"label\":\"Balance\",\"format\":\"money\"}]} sortBy=\"balanceCents\" emptyLabel=\"No accounts found.\" rows={accountsList.data}/></Stack><Island name=\"AccountCards\">\nimport React from \"react\";\nimport { Stat, Sparkline, Card, Stack, Badge } from \"@vendo/ui\";\n\ninterface Account {\n  id: string;\n  name: string;\n  balanceCents: number;\n  type: string;\n  sparkline: number[];\n}\n\ninterface Props {\n  accounts: Account[];\n}\n\nexport default function AccountCards({ accounts = [] }: Props) {\n  return (\n    <div\n      style={{\n        display: \"grid\",\n        gridTemplateColumns: \"repeat(auto-fill, minmax(260px, 1fr))\",\n        gap: \"1.25rem\",\n      }}\n    >\n      {accounts.map((acct) => (\n        <div\n          key={acct.id}\n          style={{\n            background: \"var(--surface, #fff)\",\n            border: \"1px solid var(--border, #e5e7eb)\",\n            borderRadius: \"0.75rem\",\n            padding: \"1.25rem\",\n            display: \"flex\",\n            flexDirection: \"column\",\n            gap: \"1rem\",\n            boxShadow: \"0 1px 4px rgba(0,0,0,0.06)\",\n          }}\n        >\n          {/* Header row */}\n          <div style={{ display: \"flex\", justifyContent: \"space-between\", alignItems: \"flex-start\" }}>\n            <div>\n              <p\n                style={{\n                  margin: 0,\n                  fontSize: \"0.75rem\",\n                  fontWeight: 600,\n                  textTransform: \"uppercase\",\n                  letterSpacing: \"0.05em\",\n                  color: \"var(--text-muted, #6b7280)\",\n                }}\n              >\n                {acct.name}\n              </p>\n            </div>\n            <span\n              style={{\n                fontSize: \"0.7rem\",\n                fontWeight: 600,\n                textTransform: \"uppercase\",\n                padding: \"2px 8px\",\n                borderRadius: \"999px\",\n                background: \"var(--accent-subtle, #eff6ff)\",\n                color: \"var(--accent, #2563eb)\",\n                letterSpacing: \"0.04em\",\n              }}\n            >\n              {acct.type}\n            </span>\n          </div>\n\n          {/* Balance */}\n          <Stat\n            label=\"Current Balance\"\n            value={acct.balanceCents}\n            format=\"money\"\n            tone=\"default\"\n          />\n\n          {/* Sparkline trend */}\n          <div>\n            <p\n              style={{\n                margin: \"0 0 4px 0\",\n                fontSize: \"0.7rem\",\n                color: \"var(--text-muted, #9ca3af)\",\n                fontWeight: 500,\n                textTransform: \"uppercase\",\n                letterSpacing: \"0.04em\",\n              }}\n            >\n              12-pt Trend\n            </p>\n            <Sparkline values={acct.sparkline ?? []} />\n          </div>\n        </div>\n      ))}\n    </div>\n  );\n}\n</Island><Island name=\"AccountCardsHost\">\nimport React from \"react\";\nimport AccountCards from \"./AccountCards\";\n\ninterface Props {\n  accounts: {\n    id: string;\n    name: string;\n    balanceCents: number;\n    type: string;\n    sparkline: number[];\n  }[];\n}\n\nexport default function AccountCardsHost({ accounts }: Props) {\n  return <AccountCards accounts={accounts} />;\n}\n</Island></App>",
+        "inputTokens": 10667,
+        "outputTokens": 252,
+        "ms": 56916,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 1,
+          "bindingShapeErrors": 1,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 8,
+          "islandCount": 2,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 3,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Addresses the ask with balance stats per account, but the sparkline trend relies on a 'sparkline' field not provided by any host tool (no transactions query wired) and the Island receives no props binding, so the trend data has no real sour"
+        },
+        "callCount": 13
+      },
+      {
+        "prompt": "List clients sorted by outstanding balance, and let me filter by client name.",
+        "wire": "<App name=\"Generated\"><Query id=\"clientsList\" tool=\"clients.list\"/><Stack><Text text=\"Clients by Outstanding Balance\" variant=\"heading\"/><Card><DataTable columns={[{\"key\":\"name\",\"label\":\"Client Name\"},{\"key\":\"email\",\"label\":\"Email\"},{\"key\":\"tier\",\"label\":\"Tier\"},{\"key\":\"balanceCents\",\"label\":\"Outstanding Balance\",\"format\":\"money\"}]} sortBy=\"balanceCents\" filterableBy={[\"name\"]} emptyLabel=\"No clients found.\" rows={clientsList.data}/></Card></Stack></App>",
+        "inputTokens": 8968,
+        "outputTokens": 137,
+        "ms": 20185,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 5,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Correctly lists clients sorted by balance with name filter and money formatting; whether clients.list actually returns balanceCents is uncertain but the wire traces to a real tool."
+        },
+        "callCount": 8
+      },
+      {
+        "prompt": "Give me a spending breakdown by category for this quarter as a donut plus a table of the numbers.",
+        "wire": "<App name=\"Generated\"></App>",
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "ms": 10499,
+        "genError": "Cannot connect to API: other side closed",
+        "metrics": {
+          "compileOk": false,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 0,
+          "nodeCount": 1,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": true
+        },
+        "judge": {
+          "quality": 1,
+          "answersAsk": false,
+          "fabricated": false,
+          "notes": "The wire is empty and does not address the spending breakdown request at all."
+        },
+        "callCount": 0
+      },
+      {
+        "prompt": "Show the last few transactions on my operating account with amounts and dates.",
+        "wire": "<App name=\"Generated\"><Query id=\"accountsList\" tool=\"accounts.list\"/><Query id=\"recentTxns\" tool=\"accounts.transactions\"/><Stack><Text text=\"Operating Account — Recent Transactions\" variant=\"heading\"/><Card><CardList titleKey=\"name\" subtitleKey=\"type\" valueKey=\"balanceCents\" valueFormat=\"money\" items={accountsList.data}/></Card><Divider/><Card><DataTable columns={[{\"key\":\"date\",\"label\":\"Date\",\"format\":\"date\"},{\"key\":\"description\",\"label\":\"Description\"},{\"key\":\"category\",\"label\":\"Category\"},{\"key\":\"amountCents\",\"label\":\"Amount\",\"format\":\"money\"}]} sortBy=\"date\" limit={10} emptyLabel=\"No recent transactions found.\" rows={recentTxns.data}/></Card></Stack></App>",
+        "inputTokens": 9700,
+        "outputTokens": 122,
+        "ms": 37598,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 2,
+          "nodeCount": 8,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Shows transactions with formatted dates/amounts, but accounts.transactions isn't filtered to the operating account and the extra account-list card is slightly off-topic."
+        },
+        "callCount": 13
+      },
+      {
+        "prompt": "I want to send payment reminders for all overdue invoices from one screen.",
+        "wire": "<App name=\"Generated\"><Query id=\"overdueInvoices\" tool=\"invoices.list\" input={{\"status\":\"overdue\"}}/><Stack><Row align=\"center\" justify=\"space-between\"><Text text=\"Overdue Invoice Reminders\" variant=\"heading\"/><Button label=\"Send All Reminders\" variant=\"primary\" onClick={{action:\"invoices.sendReminders\",payload:{value:overdueInvoices.data}}}/></Row><Divider/><Row><Stat label=\"Overdue Invoices\" tone=\"danger\" value={overdueInvoices.count}/><Stat label=\"Total Overdue Amount\" format=\"money\" tone=\"danger\" value={overdueInvoices.totalCents}/></Row><Card><DataTable columns={[{\"key\":\"client.name\",\"label\":\"Client\"},{\"key\":\"amountCents\",\"label\":\"Amount\",\"format\":\"money\"},{\"key\":\"dueDate\",\"label\":\"Due Date\",\"format\":\"date\"},{\"key\":\"status\",\"label\":\"Status\"}]} sortBy=\"dueDate\" filterableBy={[\"client.name\"]} emptyLabel=\"No overdue invoices — you're all caught up!\" rows={overdueInvoices.data}/></Card></Stack></App>",
+        "inputTokens": 10025,
+        "outputTokens": 191,
+        "ms": 44440,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 11,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 5,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Bulk reminder action wired to invoices.sendReminders with a well-formatted overdue table and stats, all traceable to invoices.list."
+        },
+        "callCount": 16
+      },
+      {
+        "prompt": "Show a monthly revenue trend line for the last few months with a headline of the latest month.",
+        "wire": "<App name=\"Generated\"><Query id=\"revenueMonthly\" tool=\"revenue.monthly\"/><Stack><Text text=\"Monthly Revenue Trend\" variant=\"heading\"/><Card><Stat label=\"Latest Month Revenue\" format=\"money\" value={revenueMonthly.data.5.revenueCents}/></Card><Card><LineChart label=\"Revenue (last 6 months)\" points={revenueMonthly.data}/></Card></Stack></App>",
+        "inputTokens": 9726,
+        "outputTokens": 148,
+        "ms": 38598,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 7,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Addresses the ask with a formatted headline and trend chart, but hardcoding index 5 for 'latest' is fragile and the LineChart should bind to a raw numeric field rather than the whole data objects."
+        },
+        "callCount": 11
+      },
+      {
+        "prompt": "Build an invoice detail view for a single invoice including its line items and a mark-paid action.",
+        "wire": "<App name=\"Generated\"><Query id=\"invoiceDetail\" tool=\"invoices.get\"/><Stack gap=\"lg\"><Card title=\"Invoice Detail\"><Row gap=\"md\" align=\"center\"><Stack gap=\"xs\"><Text variant=\"heading\" text={invoiceDetail.client.name}/><Text variant=\"caption\" text={invoiceDetail.client.email}/></Stack><EnumBadge kind=\"invoiceStatus\" value={invoiceDetail.status}/></Row><Divider/><Row gap=\"lg\"><Stat label=\"Invoice Total\" format=\"money\" value={invoiceDetail.amountCents}/><Stat label=\"Due Date\" format=\"date\" value={invoiceDetail.dueDate}/><Stat label=\"Invoice ID\" value={invoiceDetail.id}/></Row></Card><Card title=\"Line Items\"><DataTable columns={[{\"key\":\"description\",\"label\":\"Description\"},{\"key\":\"amountCents\",\"label\":\"Amount\",\"format\":\"money\"}]} emptyLabel=\"No line items found.\" rowKey=\"description\" rows={invoiceDetail.lineItems}/></Card><Row justify=\"flex-end\" gap=\"md\"><Button label=\"Send Payment Reminder\" variant=\"secondary\" onClick={{action:\"invoices.sendReminders\",payload:{value:invoiceDetail.id}}}/><Button label=\"Mark as Paid\" variant=\"primary\" onClick={{action:\"invoices.markPaid\",payload:{value:invoiceDetail.id}}}/></Row></Stack></App>",
+        "inputTokens": 10747,
+        "outputTokens": 36,
+        "ms": 53667,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 18,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 5,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Complete invoice detail with line items table, formatted money/date stats, and correctly wired markPaid action bound to real tool data."
+        },
+        "callCount": 24
+      },
+      {
+        "prompt": "Create a clients page with a search box and a results table of matches showing their balances.",
+        "wire": "<App name=\"Generated\"><Query id=\"clientsSearch\" tool=\"clients.search\" input={{\"query\":\"\"}}/><Stack><Text text=\"Clients\" variant=\"heading\"/><Card><Input label=\"Search Clients\" name=\"query\" placeholder=\"Search by name or email…\" type=\"search\" onChange=\"clients.search\"/></Card><Card><DataTable columns={[{\"key\":\"name\",\"label\":\"Client Name\"},{\"key\":\"balanceCents\",\"label\":\"Balance\",\"format\":\"money\"}]} filterableBy={[\"name\"]} emptyLabel=\"No clients match your search.\" sortBy=\"name\" rows={clientsSearch.data}/></Card></Stack></App>",
+        "inputTokens": 9619,
+        "outputTokens": 128,
+        "ms": 39176,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 1,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 1,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 7,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 5,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Search box wired to clients.search with a results table binding to real query data and money-formatted balances."
+        },
+        "callCount": 11
+      },
+      {
+        "prompt": "Summarize accounts receivable: total overdue, count of overdue invoices, and the worst three clients.",
+        "wire": "<App name=\"Generated\"><Query id=\"overdueInvoices\" tool=\"invoices.list\" input={{\"status\":\"overdue\"}}/><Stack><Text text=\"Accounts Receivable — Overdue Summary\" variant=\"heading\"/><Row><Stat label=\"Total Overdue\" format=\"money\" tone=\"danger\" value={overdueInvoices.totalCents}/><Stat label=\"Overdue Invoices\" format=\"number\" tone=\"danger\" value={overdueInvoices.count}/></Row><Divider/><Text text=\"Worst Three Clients by Overdue Amount\" variant=\"heading\"/><DataTable columns={[{\"key\":\"client.name\",\"label\":\"Client\"},{\"key\":\"amountCents\",\"label\":\"Amount Overdue\",\"format\":\"money\"},{\"key\":\"dueDate\",\"label\":\"Due Date\",\"format\":\"date\"}]} sortBy=\"amountCents\" limit={3} emptyLabel=\"No overdue invoices — you're all clear!\" rows={overdueInvoices.data}/></Stack></App>",
+        "inputTokens": 9742,
+        "outputTokens": 155,
+        "ms": 39812,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 9,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Addresses all three asks with proper formatting and traceable data, though sortBy on amountCents likely defaults ascending which could show best rather than worst three clients."
+        },
+        "callCount": 12
+      },
+      {
+        "prompt": "Show a payments form to pay a client from an account, with the amount and recipient.",
+        "wire": "<App name=\"Generated\"><Query id=\"accountsList\" tool=\"accounts.list\"/><Query id=\"clientsList\" tool=\"clients.list\"/><Surface><Card title=\"Send a Payment\" maxWidth={520}><Stack gap={4}><Text text=\"Fill in the details below to send a payment from one of your accounts to a client.\" variant=\"body\"/><Divider/><Select label=\"From Account\" name=\"accountId\" placeholder=\"Select an account…\" required={true} options={accountsList.data}/><Select label=\"Recipient\" name=\"toClientId\" placeholder=\"Select a client…\" required={true} options={clientsList.data}/><Input label=\"Amount\" name=\"amountCents\" type=\"number\" placeholder=\"Enter amount in cents…\" hint=\"Enter the value in cents (e.g. 5000 = $50.00)\" required={true}/><Divider/><Button label=\"Send Payment\" variant=\"primary\" onClick=\"payments.create\"/></Stack></Card></Surface></App>",
+        "inputTokens": 10158,
+        "outputTokens": 158,
+        "ms": 50556,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 3,
+          "bindingShapeErrors": 2,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 1,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 2,
+          "nodeCount": 11,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 5,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Form correctly sources accounts and clients from host tools, includes amount/recipient/from-account fields, and wires the submit button to payments.create."
+        },
+        "callCount": 16
+      },
+      {
+        "prompt": "Give me an at-a-glance finance overview: cash on hand, this-month revenue, and overdue total.",
+        "wire": "<App name=\"Generated\"><Query id=\"accounts\" tool=\"accounts.list\"/><Query id=\"revenue\" tool=\"revenue.monthly\"/><Query id=\"overdueInvoices\" tool=\"invoices.list\" input={{\"status\":\"overdue\"}}/><Stack gap={6}><Text text=\"Finance Overview\" variant=\"heading\"/><Row gap={4}><Card><Stat label=\"Cash on Hand\" format=\"money\" tone=\"accent\" value={accounts.data.0.balanceCents}/></Card><Card><Stat label=\"This Month's Revenue\" format=\"money\" tone=\"accent\" value={revenue.data.0.revenueCents}/></Card><Card><Stat label=\"Overdue Total\" format=\"money\" tone=\"danger\" value={overdueInvoices.totalCents}/></Card></Row><Divider/><Text text=\"Bank Accounts\" variant=\"heading\"/><DataTable columns={[{\"key\":\"name\",\"label\":\"Account\"},{\"key\":\"type\",\"label\":\"Type\"},{\"key\":\"balanceCents\",\"label\":\"Balance\",\"format\":\"money\"}]} rows={accounts.data}/><Divider/><Text text=\"Overdue Invoices\" variant=\"heading\"/><DataTable columns={[{\"key\":\"client.name\",\"label\":\"Client\"},{\"key\":\"amountCents\",\"label\":\"Amount\",\"format\":\"money\"},{\"key\":\"dueDate\",\"label\":\"Due Date\",\"format\":\"date\"},{\"key\":\"status\",\"label\":\"Status\"}]} sortBy=\"dueDate\" emptyLabel=\"No overdue invoices 🎉\" filterableBy={[\"client.name\"]} rows={overdueInvoices.data}/><Row justify=\"end\"><Button label=\"Send Reminders for All Overdue\" variant=\"secondary\" onClick={{action:\"invoices.sendReminders\",payload:{value:overdueInvoices.data}}}/></Row></Stack></App>",
+        "inputTokens": 10734,
+        "outputTokens": 36,
+        "ms": 58666,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 3,
+          "nodeCount": 18,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 5,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "All three at-a-glance stats trace to real tools with proper money formatting, plus useful supporting tables and a correctly wired reminders action."
+        },
+        "callCount": 26
+      },
+      {
+        "prompt": "Show overdue invoices grouped visually with a reminder button per row.",
+        "wire": "<App name=\"Generated\"><Query id=\"overdueInvoices\" tool=\"invoices.list\" input={{\"status\":\"overdue\"}}/><Stack gap=\"lg\"><Text text=\"Overdue Invoices\" variant=\"heading\"/><Row gap=\"md\"><Stat label=\"Overdue Invoices\" value={overdueInvoices.count}/><Stat label=\"Total Overdue Amount\" format=\"money\" tone=\"danger\" value={overdueInvoices.totalCents}/></Row><Divider/><Card title=\"All Overdue Invoices\"><Text text=\"Each invoice below is past its due date. Use the per-row button to fire a payment reminder directly to that client.\" variant=\"caption\"/><Text component=\"OverdueInvoiceRows\" rows={overdueInvoices.data} onSendReminder=\"invoices.sendReminders\"/></Card></Stack><Island name=\"OverdueInvoiceRows\">\nimport React from \"react\";\n\ninterface Invoice {\n  id: string;\n  client: { id: string; name: string };\n  amountCents: number;\n  dueDate: string;\n  status: string;\n}\n\ninterface Props {\n  rows: Invoice[];\n  onSendReminder: (ids: string[]) => void;\n}\n\nfunction formatMoney(cents: number) {\n  return new Intl.NumberFormat(\"en-US\", { style: \"currency\", currency: \"USD\" }).format(cents / 100);\n}\n\nfunction formatDate(iso: string) {\n  return new Date(iso).toLocaleDateString(\"en-US\", { year: \"numeric\", month: \"short\", day: \"numeric\" });\n}\n\nfunction daysOverdue(iso: string) {\n  const due = new Date(iso).getTime();\n  const now = Date.now();\n  return Math.max(0, Math.floor((now - due) / 86400000));\n}\n\nexport default function OverdueInvoiceRows({ rows = [], onSendReminder }: Props) {\n  const [loadingId, setLoadingId] = React.useState<string | null>(null);\n  const [sentIds, setSentIds] = React.useState<Set<string>>(new Set());\n\n  async function handleReminder(id: string) {\n    setLoadingId(id);\n    try {\n      await onSendReminder([id]);\n      setSentIds(prev => new Set([...prev, id]));\n    } finally {\n      setLoadingId(null);\n    }\n  }\n\n  if (!rows.length) {\n    return (\n      <div style={{ padding: \"2rem\", textAlign: \"center\", color: \"#6b7280\" }}>\n        🎉 No overdue invoices right now.\n      </div>\n    );\n  }\n\n  return (\n    <div style={{ display: \"flex\", flexDirection: \"column\", gap: \"0.75rem\" }}>\n      {rows.map((inv) => {\n        const overdueDays = daysOverdue(inv.dueDate);\n        const sent = sentIds.has(inv.id);\n        const loading = loadingId === inv.id;\n\n        return (\n          <div\n            key={inv.id}\n            style={{\n              display: \"flex\",\n              alignItems: \"center\",\n              justifyContent: \"space-between\",\n              padding: \"1rem 1.25rem\",\n              borderRadius: \"0.625rem\",\n              border: \"1.5px solid #fca5a5\",\n              background: sent ? \"#f0fdf4\" : \"#fff7f7\",\n              gap: \"1rem\",\n              flexWrap: \"wrap\",\n              transition: \"background 0.3s\",\n            }}\n          >\n            {/* Left: client + id */}\n            <div style={{ display: \"flex\", flexDirection: \"column\", minWidth: \"160px\" }}>\n              <span style={{ fontWeight: 700, fontSize: \"0.975rem\", color: \"#111827\" }}>\n                {inv.client.name}\n              </span>\n              <span style={{ fontSize: \"0.75rem\", color: \"#9ca3af\", marginTop: \"2px\" }}>\n                Invoice #{inv.id}\n              </span>\n            </div>\n\n            {/* Center: due date + overdue badge */}\n            <div style={{ display: \"flex\", flexDirection: \"column\", alignItems: \"center\", minWidth: \"120px\" }}>\n              <span style={{ fontSize: \"0.82rem\", color: \"#6b7280\" }}>Due {formatDate(inv.dueDate)}</span>\n              <span\n                style={{\n                  marginTop: \"4px\",\n                  display: \"inline-block\",\n                  background: \"#fee2e2\",\n                  color: \"#b91c1c\",\n                  borderRadius: \"999px\",\n                  padding: \"1px 10px\",\n                  fontSize: \"0.72rem\",\n                  fontWeight: 600,\n                }}\n              >\n                {overdueDays}d overdue\n              </span>\n            </div>\n\n            {/* Right: amount + button */}\n            <div style={{ display: \"flex\", alignItems: \"center\", gap: \"1rem\", marginLeft: \"auto\" }}>\n              <span style={{ fontWeight: 700, fontSize: \"1.05rem\", color: \"#dc2626\" }}>\n                {formatMoney(inv.amountCents)}\n              </span>\n              <button\n                disabled={loading || sent}\n                onClick={() => handleReminder(inv.id)}\n                style={{\n                  padding: \"0.45rem 1.1rem\",\n                  borderRadius: \"0.5rem\",\n                  border: \"none\",\n                  cursor: loading || sent ? \"default\" : \"pointer\",\n                  background: sent ? \"#22c55e\" : loading ? \"#d1d5db\" : \"#ef4444\",\n                  color: \"#fff\",\n                  fontWeight: 600,\n                  fontSize: \"0.82rem\",\n                  whiteSpace: \"nowrap\",\n                  transition: \"background 0.2s\",\n                  minWidth: \"130px\",\n                }}\n              >\n                {sent ? \"✓ Reminder Sent\" : loading ? \"Sending…\" : \"Send Reminder\"}\n              </button>\n            </div>\n          </div>\n        );\n      })}\n    </div>\n  );\n}\n</Island><Island name=\"OverdueInvoiceRows\">\nimport React from \"react\";\n\ninterface Invoice {\n  id: string;\n  client: { id: string; name: string };\n  amountCents: number;\n  dueDate: string;\n  status: string;\n}\n\ninterface Props {\n  rows: Invoice[];\n  onSendReminder: (ids: string[]) => void;\n}\n\nfunction formatMoney(cents: number) {\n  return new Intl.NumberFormat(\"en-US\", { style: \"currency\", currency: \"USD\" }).format(cents / 100);\n}\n\nfunction formatDate(iso: string) {\n  return new Date(iso).toLocaleDateString(\"en-US\", { year: \"numeric\", month: \"short\", day: \"numeric\" });\n}\n\nfunction daysOverdue(iso: string) {\n  const due = new Date(iso).getTime();\n  const now = Date.now();\n  return Math.max(0, Math.floor((now - due) / 86400000));\n}\n\nexport default function OverdueInvoiceRows({ rows = [], onSendReminder }: Props) {\n  const [loadingId, setLoadingId] = React.useState<string | null>(null);\n  const [sentIds, setSentIds] = React.useState<Set<string>>(new Set());\n\n  async function handleReminder(id: string) {\n    setLoadingId(id);\n    try {\n      await onSendReminder([id]);\n      setSentIds(prev => new Set([...prev, id]));\n    } finally {\n      setLoadingId(null);\n    }\n  }\n\n  if (!rows.length) {\n    return (\n      <div style={{ padding: \"2rem\", textAlign: \"center\", color: \"#6b7280\" }}>\n        🎉 No overdue invoices right now.\n      </div>\n    );\n  }\n\n  return (\n    <div style={{ display: \"flex\", flexDirection: \"column\", gap: \"0.75rem\" }}>\n      {rows.map((inv) => {\n        const overdueDays = daysOverdue(inv.dueDate);\n        const sent = sentIds.has(inv.id);\n        const loading = loadingId === inv.id;\n\n        return (\n          <div\n            key={inv.id}\n            style={{\n              display: \"flex\",\n              alignItems: \"center\",\n              justifyContent: \"space-between\",\n              padding: \"1rem 1.25rem\",\n              borderRadius: \"0.625rem\",\n              border: \"1.5px solid #fca5a5\",\n              background: sent ? \"#f0fdf4\" : \"#fff7f7\",\n              gap: \"1rem\",\n              flexWrap: \"wrap\",\n              transition: \"background 0.3s\",\n            }}\n          >\n            <div style={{ display: \"flex\", flexDirection: \"column\", minWidth: \"160px\" }}>\n              <span style={{ fontWeight: 700, fontSize: \"0.975rem\", color: \"#111827\" }}>\n                {inv.client.name}\n              </span>\n              <span style={{ fontSize: \"0.75rem\", color: \"#9ca3af\", marginTop: \"2px\" }}>\n                Invoice #{inv.id}\n              </span>\n            </div>\n\n            <div style={{ display: \"flex\", flexDirection: \"column\", alignItems: \"center\", minWidth: \"120px\" }}>\n              <span style={{ fontSize: \"0.82rem\", color: \"#6b7280\" }}>Due {formatDate(inv.dueDate)}</span>\n              <span\n                style={{\n                  marginTop: \"4px\",\n                  display: \"inline-block\",\n                  background: \"#fee2e2\",\n                  color: \"#b91c1c\",\n                  borderRadius: \"999px\",\n                  padding: \"1px 10px\",\n                  fontSize: \"0.72rem\",\n                  fontWeight: 600,\n                }}\n              >\n                {overdueDays}d overdue\n              </span>\n            </div>\n\n            <div style={{ display: \"flex\", alignItems: \"center\", gap: \"1rem\", marginLeft: \"auto\" }}>\n              <span style={{ fontWeight: 700, fontSize: \"1.05rem\", color: \"#dc2626\" }}>\n                {formatMoney(inv.amountCents)}\n              </span>\n              <button\n                disabled={loading || sent}\n                onClick={() => handleReminder(inv.id)}\n                style={{\n                  padding: \"0.45rem 1.1rem\",\n                  borderRadius: \"0.5rem\",\n                  border: \"none\",\n                  cursor: loading || sent ? \"default\" : \"pointer\",\n                  background: sent ? \"#22c55e\" : loading ? \"#d1d5db\" : \"#ef4444\",\n                  color: \"#fff\",\n                  fontWeight: 600,\n                  fontSize: \"0.82rem\",\n                  whiteSpace: \"nowrap\",\n                  transition: \"background 0.2s\",\n                  minWidth: \"130px\",\n                }}\n              >\n                {sent ? \"✓ Reminder Sent\" : loading ? \"Sending…\" : \"Send Reminder\"}\n              </button>\n            </div>\n          </div>\n        );\n      })}\n    </div>\n  );\n}\n</Island></App>",
+        "inputTokens": 12742,
+        "outputTokens": 335,
+        "ms": 80076,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 1,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 1,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 10,
+          "islandCount": 1,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Cleanly shows overdue invoices with per-row reminder buttons wired to invoices.sendReminders and all data from invoices.list; duplicate Island definition is a minor redundancy."
+        },
+        "callCount": 16
+      },
+      {
+        "prompt": "Build a category spending page with a bar chart and each category's share as a percentage.",
+        "wire": "<App name=\"Generated\"><Query id=\"spending\" tool=\"spending.byCategory\" input={{\"period\":\"month\"}}/><Stack><Text text=\"Spending by Category\" variant=\"heading\"/><Text text=\"Current month · all categories\" variant=\"caption\"/><Row><Stat label=\"Total Spend This Month\" format=\"money\" value={spending.totalCents}/><Stat label=\"Categories Tracked\" format=\"number\" value={spending.data.length}/></Row><Card title=\"Spend Distribution\"><BarChart label=\"Spending by Category (this month)\" series={spending.data | map(category as label, amountCents as value)}/></Card><Card title=\"Category Breakdown\"><DataTable columns={[{\"key\":\"category\",\"label\":\"Category\"},{\"key\":\"amountCents\",\"label\":\"Amount\",\"format\":\"money\"},{\"key\":\"pct\",\"label\":\"Share of Total\",\"format\":\"percent\"}]} sortBy=\"amountCents\" filterableBy={[\"category\"]} emptyLabel=\"No spending data available.\" rows={spending.data}/></Card></Stack></App>",
+        "inputTokens": 9930,
+        "outputTokens": 189,
+        "ms": 42135,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 1,
+          "bindingShapeErrors": 1,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 11,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Delivers bar chart and percentage share table from spending.byCategory, but the pct field and totalCents aren't clearly provided by the tool and may need computation."
+        },
+        "callCount": 16
+      },
+      {
+        "prompt": "Show all accounts as cards with name, type, balance, and a sparkline.",
+        "wire": "<App name=\"Generated\"><Query id=\"accountsList\" tool=\"accounts.list\"/><Stack><Text text=\"Bank Accounts\" variant=\"heading\"/><Stat label=\"Total Accounts\" value={accountsList.data.length}/><Divider/><Surface><Skeleton component=\"AccountCards\" accounts={accountsList.data}/></Surface></Stack><Island name=\"AccountCards\">\nimport React from \"react\";\n\ninterface Account {\n  id: string;\n  name: string;\n  type: string;\n  balanceCents: number;\n  sparkline: number[];\n}\n\ninterface Props {\n  accounts: Account[];\n}\n\nfunction formatMoney(cents: number) {\n  return new Intl.NumberFormat(\"en-US\", {\n    style: \"currency\",\n    currency: \"USD\",\n    minimumFractionDigits: 2,\n  }).format(cents / 100);\n}\n\nfunction MiniSparkline({ values }: { values: number[] }) {\n  if (!values || values.length === 0) return null;\n  const w = 120, h = 40, pad = 4;\n  const min = Math.min(...values);\n  const max = Math.max(...values);\n  const range = max - min || 1;\n  const pts = values.map((v, i) => {\n    const x = pad + (i / (values.length - 1)) * (w - pad * 2);\n    const y = pad + (1 - (v - min) / range) * (h - pad * 2);\n    return `${x},${y}`;\n  });\n  const polyline = pts.join(\" \");\n  const last = pts[pts.length - 1].split(\",\");\n  const trend = values[values.length - 1] >= values[0];\n\n  return (\n    <svg width={w} height={h} style={{ display: \"block\" }}>\n      <polyline\n        points={polyline}\n        fill=\"none\"\n        stroke={trend ? \"#22c55e\" : \"#ef4444\"}\n        strokeWidth=\"2\"\n        strokeLinejoin=\"round\"\n        strokeLinecap=\"round\"\n      />\n      <circle\n        cx={parseFloat(last[0])}\n        cy={parseFloat(last[1])}\n        r=\"3\"\n        fill={trend ? \"#22c55e\" : \"#ef4444\"}\n      />\n    </svg>\n  );\n}\n\nfunction typeLabel(type: string) {\n  return type.charAt(0).toUpperCase() + type.slice(1).toLowerCase();\n}\n\nfunction typeBadgeStyle(type: string): React.CSSProperties {\n  const map: Record<string, string> = {\n    checking: \"#3b82f6\",\n    savings: \"#8b5cf6\",\n    credit: \"#f59e0b\",\n    investment: \"#10b981\",\n  };\n  return {\n    backgroundColor: map[type.toLowerCase()] ?? \"#6b7280\",\n    color: \"#fff\",\n    fontSize: \"0.7rem\",\n    fontWeight: 600,\n    borderRadius: \"9999px\",\n    padding: \"2px 10px\",\n    display: \"inline-block\",\n    letterSpacing: \"0.04em\",\n    textTransform: \"uppercase\",\n  };\n}\n\nexport default function AccountCards({ accounts }: Props) {\n  if (!accounts || accounts.length === 0) {\n    return <p style={{ color: \"#6b7280\" }}>No accounts found.</p>;\n  }\n\n  return (\n    <div\n      style={{\n        display: \"grid\",\n        gridTemplateColumns: \"repeat(auto-fill, minmax(240px, 1fr))\",\n        gap: \"1.25rem\",\n      }}\n    >\n      {accounts.map((acct) => (\n        <div\n          key={acct.id}\n          style={{\n            background: \"#fff\",\n            border: \"1px solid #e5e7eb\",\n            borderRadius: \"0.75rem\",\n            padding: \"1.25rem\",\n            boxShadow: \"0 1px 4px rgba(0,0,0,0.06)\",\n            display: \"flex\",\n            flexDirection: \"column\",\n            gap: \"0.6rem\",\n          }}\n        >\n          {/* Name + type */}\n          <div style={{ display: \"flex\", justifyContent: \"space-between\", alignItems: \"flex-start\" }}>\n            <span style={{ fontWeight: 700, fontSize: \"1rem\", color: \"#111827\" }}>{acct.name}</span>\n            <span style={typeBadgeStyle(acct.type)}>{typeLabel(acct.type)}</span>\n          </div>\n\n          {/* Balance */}\n          <div>\n            <div style={{ fontSize: \"0.72rem\", color: \"#6b7280\", marginBottom: \"2px\", textTransform: \"uppercase\", letterSpacing: \"0.05em\" }}>Balance</div>\n            <div style={{ fontSize: \"1.5rem\", fontWeight: 800, color: \"#111827\", letterSpacing: \"-0.02em\" }}>\n              {formatMoney(acct.balanceCents)}\n            </div>\n          </div>\n\n          {/* Sparkline */}\n          <div style={{ marginTop: \"0.25rem\" }}>\n            <MiniSparkline values={acct.sparkline} />\n          </div>\n        </div>\n      ))}\n    </div>\n  );\n}\n</Island></App>",
+        "inputTokens": 10817,
+        "outputTokens": 174,
+        "ms": 51051,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 1,
+          "bindingShapeErrors": 1,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 7,
+          "islandCount": 1,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Cleanly renders account cards with name, type, formatted balance, and sparkline from accounts.list, though the sparkline relies on an assumed 'sparkline' field whose provenance from the tool is uncertain."
+        },
+        "callCount": 11
+      },
+      {
+        "prompt": "Make a page that shows the single largest overdue invoice with a prominent amount and a reminder action.",
+        "wire": "<App name=\"Generated\"><Query id=\"overdueInvoices\" tool=\"invoices.list\" input={{\"status\":\"overdue\"}}/><Stack gap=\"lg\"><Text text=\"Largest Overdue Invoice\" variant=\"heading\"/><Text text=\"The single highest-value invoice currently past due. Send a reminder directly from here.\" variant=\"caption\"/><Card><Skeleton height={320} hidden={overdueInvoices.data}/><DataTable columns={[{\"key\":\"id\",\"label\":\"Invoice ID\"},{\"key\":\"client.name\",\"label\":\"Client\"},{\"key\":\"amountCents\",\"label\":\"Amount\",\"format\":\"money\"},{\"key\":\"dueDate\",\"label\":\"Due Date\",\"format\":\"date\"},{\"key\":\"status\",\"label\":\"Status\"}]} sortBy=\"amountCents\" limit={1} emptyLabel=\"No overdue invoices — you're all caught up!\" rows={overdueInvoices.data} onRowClick={{action:\"invoices.sendReminders\",payload:{value:overdueInvoices.data.0.id}}}/><Divider/><Row><Stat label=\"Invoice Amount\" format=\"money\" tone=\"danger\" value={overdueInvoices.data.0.amountCents}/><Stat label=\"Client\" value={overdueInvoices.data.0.client.name}/><Stat label=\"Due Date\" format=\"date\" tone=\"danger\" value={overdueInvoices.data.0.dueDate}/></Row><Divider/><Button label=\"📨 Send Payment Reminder\" variant=\"danger\" onClick={{action:\"invoices.sendReminders\",payload:{value:overdueInvoices.data.0.id}}}/></Card></Stack><Island name=\"LargestOverdueInvoice\">\nimport { useState } from \"react\";\n\ninterface Invoice {\n  id: string;\n  client: { id: string; name: string };\n  amountCents: number;\n  dueDate: string;\n  status: string;\n}\n\ninterface Props {\n  data: Invoice[];\n}\n\nfunction formatMoney(cents: number) {\n  return new Intl.NumberFormat(\"en-US\", { style: \"currency\", currency: \"USD\" }).format(cents / 100);\n}\n\nfunction formatDate(iso: string) {\n  return new Date(iso).toLocaleDateString(\"en-US\", { year: \"numeric\", month: \"long\", day: \"numeric\" });\n}\n\nfunction daysOverdue(iso: string) {\n  const diff = Date.now() - new Date(iso).getTime();\n  return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));\n}\n\nexport default function LargestOverdueInvoice({ data = [] }: Props) {\n  const [status, setStatus] = useState<\"idle\" | \"sending\" | \"sent\" | \"error\">(\"idle\");\n\n  if (!data.length) {\n    return (\n      <div style={{ textAlign: \"center\", padding: \"2rem\", color: \"#6b7280\" }}>\n        No overdue invoices found. 🎉\n      </div>\n    );\n  }\n\n  const invoice = data.reduce((max, inv) => (inv.amountCents > max.amountCents ? inv : max), data[0]);\n  const days = daysOverdue(invoice.dueDate);\n\n  async function handleReminder() {\n    setStatus(\"sending\");\n    try {\n      const res = await fetch(\"/api/tools/invoices.sendReminders\", {\n        method: \"POST\",\n        headers: { \"Content-Type\": \"application/json\" },\n        body: JSON.stringify({ ids: [invoice.id] }),\n      });\n      setStatus(res.ok ? \"sent\" : \"error\");\n    } catch {\n      setStatus(\"error\");\n    }\n  }\n\n  return (\n    <div style={{\n      display: \"flex\",\n      flexDirection: \"column\",\n      alignItems: \"center\",\n      gap: \"1.5rem\",\n      padding: \"2.5rem 2rem\",\n      maxWidth: 480,\n      margin: \"0 auto\",\n    }}>\n      {/* Overdue badge */}\n      <span style={{\n        background: \"#fef2f2\",\n        color: \"#dc2626\",\n        fontWeight: 700,\n        fontSize: \"0.75rem\",\n        letterSpacing: \"0.08em\",\n        textTransform: \"uppercase\",\n        padding: \"0.25rem 0.85rem\",\n        borderRadius: 999,\n        border: \"1px solid #fecaca\",\n      }}>\n        ⚠ Overdue · {days} day{days !== 1 ? \"s\" : \"\"}\n      </span>\n\n      {/* Prominent amount */}\n      <div style={{ textAlign: \"center\" }}>\n        <div style={{\n          fontSize: \"clamp(2.5rem, 8vw, 4rem)\",\n          fontWeight: 800,\n          color: \"#dc2626\",\n          lineHeight: 1.1,\n          letterSpacing: \"-0.02em\",\n        }}>\n          {formatMoney(invoice.amountCents)}\n        </div>\n        <div style={{ marginTop: \"0.4rem\", fontSize: \"1rem\", color: \"#6b7280\" }}>\n          Invoice #{invoice.id}\n        </div>\n      </div>\n\n      {/* Details */}\n      <div style={{\n        width: \"100%\",\n        background: \"#f9fafb\",\n        borderRadius: 12,\n        padding: \"1rem 1.25rem\",\n        display: \"flex\",\n        flexDirection: \"column\",\n        gap: \"0.6rem\",\n        fontSize: \"0.9rem\",\n      }}>\n        <div style={{ display: \"flex\", justifyContent: \"space-between\" }}>\n          <span style={{ color: \"#6b7280\" }}>Client</span>\n          <span style={{ fontWeight: 600, color: \"#111827\" }}>{invoice.client.name}</span>\n        </div>\n        <div style={{ display: \"flex\", justifyContent: \"space-between\" }}>\n          <span style={{ color: \"#6b7280\" }}>Due Date</span>\n          <span style={{ fontWeight: 600, color: \"#dc2626\" }}>{formatDate(invoice.dueDate)}</span>\n        </div>\n        <div style={{ display: \"flex\", justifyContent: \"space-between\" }}>\n          <span style={{ color: \"#6b7280\" }}>Status</span>\n          <span style={{\n            fontWeight: 600,\n            color: \"#dc2626\",\n            textTransform: \"capitalize\",\n          }}>{invoice.status}</span>\n        </div>\n      </div>\n\n      {/* Reminder button */}\n      <button\n        onClick={handleReminder}\n        disabled={status === \"sending\" || status === \"sent\"}\n        style={{\n          width: \"100%\",\n          padding: \"0.85rem\",\n          borderRadius: 10,\n          border: \"none\",\n          cursor: status === \"sending\" || status === \"sent\" ? \"not-allowed\" : \"pointer\",\n          fontWeight: 700,\n          fontSize: \"1rem\",\n          transition: \"background 0.2s\",\n          background:\n            status === \"sent\" ? \"#16a34a\" :\n            status === \"error\" ? \"#dc2626\" :\n            status === \"sending\" ? \"#9ca3af\" :\n            \"#dc2626\",\n          color: \"#fff\",\n          letterSpacing: \"0.01em\",\n        }}\n      >\n        {status === \"idle\" && \"📨 Send Payment Reminder\"}\n        {status === \"sending\" && \"Sending…\"}\n        {status === \"sent\" && \"✓ Reminder Sent\"}\n        {status === \"error\" && \"⚠ Failed — Retry\"}\n      </button>\n\n      {status === \"error\" && (\n        <p style={{ color: \"#dc2626\", fontSize: \"0.8rem\", margin: 0 }}>\n          Could not send the reminder. Please try again.\n        </p>\n      )}\n    </div>\n  );\n}\n</Island><Island name=\"LargestOverdueInvoiceWrapper\">\n// Re-export island bound to query data\nexport { default } from \"./LargestOverdueInvoice\";\n</Island></App>",
+        "inputTokens": 12418,
+        "outputTokens": 315,
+        "ms": 84931,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 14,
+          "islandCount": 2,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Substantively answers with prominent amount and reminder action wired to invoices.sendReminders; all data traces to invoices.list, but the redundant DataTable and duplicate island wrapper add awkwardness."
+        },
+        "callCount": 20
+      },
+      {
+        "prompt": "Show revenue by month and spending by category side by side for a quick health check.",
+        "wire": "<App name=\"Generated\"><Query id=\"revenue\" tool=\"revenue.monthly\"/><Query id=\"spending\" tool=\"spending.byCategory\" input={{\"period\":\"quarter\"}}/><Stack><Text text=\"Financial Health Check\" variant=\"heading\"/><Row><Stat label=\"Total Revenue (6 mo)\" value={revenue.data | format(money)}/><Stat label=\"Total Spend (Quarter)\" value={spending.totalCents | format(money)}/></Row><Divider/><Row><Card title=\"Monthly Revenue\"><LineChart label=\"Revenue (last 6 months)\" points={revenue.data}/></Card><Card title=\"Spending by Category\"><Donut label=\"Quarterly Spend\" slices={spending.data}/></Card></Row><Divider/><Text text=\"Spending Breakdown\" variant=\"heading\"/><DataTable columns={[{\"key\":\"category\",\"label\":\"Category\"},{\"key\":\"amountCents\",\"label\":\"Amount\",\"format\":\"money\"},{\"key\":\"pct\",\"label\":\"% of Spend\",\"format\":\"percent\"}]} sortBy=\"amountCents\" emptyLabel=\"No spending data available.\" rows={spending.data}/></Stack></App>",
+        "inputTokens": 10256,
+        "outputTokens": 188,
+        "ms": 45853,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 2,
+          "nodeCount": 15,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 4,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Charts and table trace to real tools with proper formatting, but the 'Total Revenue' Stat passes the raw array (revenue.data) into format(money) which is an awkward/incorrect aggregation."
+        },
+        "callCount": 22
+      },
+      {
+        "prompt": "List recent transactions and let me filter them, showing category as a badge and the amount formatted.",
+        "wire": "<App name=\"Generated\"><Query id=\"txns\" tool=\"accounts.transactions\"/><Stack><Text text=\"Recent Transactions\" variant=\"heading\"/><Row><Stat label=\"Total Transactions\" value={txns.count}/></Row><Divider/><Card><DataTable columns={[{\"key\":\"date\",\"label\":\"Date\",\"format\":\"date\"},{\"key\":\"description\",\"label\":\"Description\"},{\"key\":\"category\",\"label\":\"Category\",\"format\":\"badge\"},{\"key\":\"amountCents\",\"label\":\"Amount\",\"format\":\"money\"}]} sortBy=\"date\" filterableBy={[\"category\",\"description\"]} emptyLabel=\"No transactions found.\" rows={txns.data}/></Card></Stack></App>",
+        "inputTokens": 9763,
+        "outputTokens": 190,
+        "ms": 38315,
+        "metrics": {
+          "compileOk": true,
+          "refErrors": 0,
+          "bindingShapeErrors": 0,
+          "unknownTool": 0,
+          "unknownRef": 0,
+          "unknownComponent": 0,
+          "invalidAction": 0,
+          "declaredButUnused": 0,
+          "formatMiss": 0,
+          "formatWrongOnChart": 0,
+          "queryCount": 1,
+          "nodeCount": 8,
+          "islandCount": 0,
+          "usedDisclaimer": false,
+          "empty": false
+        },
+        "judge": {
+          "quality": 5,
+          "answersAsk": true,
+          "fabricated": false,
+          "notes": "Lists transactions from accounts.transactions with category badge, money-formatted amount, and category/description filtering as requested."
+        },
+        "callCount": 12
+      }
+    ]
+  }
+}

@@ -5,7 +5,7 @@
  * self-preference bias. A/B arms always share the generator model.
  */
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { generateText, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
+import { generateText, stepCountIs, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
 
 export const GEN_MODEL = process.env.W1_GEN_MODEL ?? "claude-sonnet-4-6";
 export const JUDGE_MODEL = process.env.W1_JUDGE_MODEL ?? "claude-opus-4-8";
@@ -51,6 +51,7 @@ const withRetry = async <T>(fn: () => Promise<T>, label: string): Promise<T> => 
 export interface GenOptions {
   thinkingBudget?: number;
   maxOutputTokens?: number;
+  maxSteps?: number;
 }
 
 export const generateWire = async (
@@ -109,13 +110,17 @@ export const generateToolCalls = async (
         messages,
         tools,
         toolChoice: "auto",
+        // The builder emits a batch of calls, gets no-op results, and continues
+        // until the app is fully composed (or the step cap). This is how "one
+        // logical build" maps onto the tool-use protocol.
+        stopWhen: stepCountIs(opts.maxSteps ?? 16),
         maxOutputTokens: opts.maxOutputTokens ?? 12000,
         maxRetries: 0,
         ...(opts.thinkingBudget
           ? { providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: opts.thinkingBudget } } } }
           : {}),
       }), "generateToolCalls");
-    const calls = (res.toolCalls ?? []).map((c) => ({
+    const calls = (res.steps ?? []).flatMap((s) => s.toolCalls ?? []).map((c) => ({
       toolName: c.toolName,
       input: (c.input ?? {}) as Record<string, unknown>,
     }));
