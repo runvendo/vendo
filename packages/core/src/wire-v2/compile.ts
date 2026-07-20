@@ -32,7 +32,8 @@ import { FN_REFERENCE_PATTERN } from "../fn-references.js";
 import { VENDO_TREE_FORMAT_V2 } from "../formats.js";
 import type { Json } from "../ids.js";
 import { isPlainObject, type TreeNode } from "../tree.js";
-import { PREWIRED_COMPONENT_NAMES, RESERVED_COMPONENT_NAMES } from "../tree-limits.js";
+import { RESERVED_COMPONENT_NAMES } from "../tree-limits.js";
+import { WIRE_COMPONENT_NAMES } from "../kit/specs.js";
 import { QUERY_NAME_PATTERN, type TreeQueryV2, type TreeV2 } from "../tree-v2.js";
 import type { ShapeType } from "../shape.js";
 import { parseAttributes } from "./attributes.js";
@@ -81,9 +82,10 @@ export interface WireCompileResult {
 /** D3 — component tag names (and Island names) are PascalCase. */
 const PASCAL_TAG_PATTERN = /^[A-Z][A-Za-z0-9]*$/;
 
-/** D3 — the full prewired set (reserved layout primitives + branded),
- *  shared with the engine's catalog validation via tree-limits. */
-const PREWIRED_NAMES: ReadonlySet<string> = new Set(PREWIRED_COMPONENT_NAMES);
+/** D3 (extended W3) — the full built-in vocabulary: the legacy prewired set
+ *  plus the adopted Kit names, shared with the engine's catalog validation
+ *  via kit/specs. */
+const PREWIRED_NAMES: ReadonlySet<string> = new Set(WIRE_COMPONENT_NAMES);
 
 const RESERVED_SET: ReadonlySet<string> = new Set(RESERVED_COMPONENT_NAMES);
 

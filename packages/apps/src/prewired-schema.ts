@@ -12,6 +12,8 @@
  *  `@vendoai/ui` `packages/ui/src/tree/{primitives,branded}.tsx`. The drift test
  *  (`prewired-schema.test.ts`) asserts this covers exactly
  *  PREWIRED_COMPONENT_NAMES so a new/renamed primitive can't silently diverge. */
+import { KIT_WIRE_COMPONENT_NAMES, kitSpec } from "@vendoai/core";
+
 export interface PrewiredSchema {
   /** Compact, model-facing signature listing the exact prop names + shapes. */
   readonly signature: string;
@@ -40,12 +42,19 @@ export const PREWIRED_SCHEMAS: Readonly<Record<string, PrewiredSchema>> = {
   Tabs: { signature: `Tabs(tabs: (string | {value, label, disabled?})[], value?, label?, onChange?: <tool-or-fn>) — items is an accepted alias for tabs`, props: ["tabs", "items", "value", "label", "onChange"] },
 };
 
-/** Allowed prop-name set per prewired component, for validation. */
-export const prewiredPropNames: ReadonlyMap<string, ReadonlySet<string>> = new Map(
-  Object.entries(PREWIRED_SCHEMAS).map(([name, schema]) => [name, new Set(schema.props)]),
-);
+/** Allowed prop-name set per prewired component, for validation. W3: the
+ *  adopted Kit names carry their spec's exact prop-name sets — one map for
+ *  every wire-built-in component. */
+export const prewiredPropNames: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ...Object.entries(PREWIRED_SCHEMAS).map(([name, schema]) =>
+    [name, new Set(schema.props)] as const),
+  ...KIT_WIRE_COMPONENT_NAMES.map((name) =>
+    [name, new Set(Object.keys(kitSpec(name)?.props ?? {}))] as const),
+]);
 
-/** The model-facing block: one line per primitive, exact prop names. */
+/** The model-facing block for the LEGACY prewired primitives (the Kit section
+ *  is `kitPrompt()`; these lines are generated from PREWIRED_SCHEMAS — no
+ *  hand-written prompt list). */
 export const prewiredSchemaPrompt = (): string =>
   Object.entries(PREWIRED_SCHEMAS)
     .map(([, schema]) => `- ${schema.signature}`)

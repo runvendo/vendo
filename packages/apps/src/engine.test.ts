@@ -1369,10 +1369,15 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     expect(captured).toContain("LAST RESORT");
     expect(captured).toContain("Never hardcode");
     // vendo-v2-cells — the display-cell contract rides with the shapes:
-    // object cells project via template, date/cents display columns MUST format.
+    // object cells project via template; date/cents display rides a Kit
+    // semantic component / format token or a legacy format step (W3).
     expect(captured).toContain("RESHAPE PIPES");
     expect(captured).toContain("template(");
-    expect(captured).toContain("MUST carry a format step");
+    expect(captured).toContain("is NOT optional");
+    // W3 — the COMPONENTS section is generated from the Kit specs.
+    expect(captured).toContain("COMPONENTS (generated from the component schemas");
+    expect(captured).toContain("<Money");
+    expect(captured).toContain("DataTable");
   });
 });
 

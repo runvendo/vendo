@@ -403,8 +403,7 @@ export function kitSpec(name: string): KitComponentSpec | undefined {
   return KIT_SPECS.find((s) => s.name === name);
 }
 
-/** Every Kit component name — the wire compiler resolves these as prewired
- *  (the ui renderer maps them to `KIT_COMPONENTS`). */
+/** Every Kit component name (the ui renderer maps them to `KIT_COMPONENTS`). */
 export const KIT_COMPONENT_NAMES: readonly string[] = KIT_SPECS.map((spec) => spec.name);
 
 /** Kit components whose props cannot be expressed as wire attribute values
@@ -413,15 +412,22 @@ export const KIT_COMPONENT_NAMES: readonly string[] = KIT_SPECS.map((spec) => sp
  *  Tabs (string tabs + onChange) remains the tree-level tabs surface. */
 export const KIT_WIRE_UNSAFE_NAMES: readonly string[] = ["Tabs", "Accordion"];
 
-/** The Kit names the wire prompt teaches (see {@link KIT_WIRE_UNSAFE_NAMES}). */
-export const KIT_WIRE_COMPONENT_NAMES: readonly string[] =
-  KIT_COMPONENT_NAMES.filter((name) => !KIT_WIRE_UNSAFE_NAMES.includes(name));
+/**
+ * The Kit names the WIRE adopts in W3: wire-expressible and not shadowed by
+ * a legacy prewired primitive (the legacy set keeps its names + prop
+ * surfaces until the Wave-5 retirement — stored apps keep rendering
+ * byte-identically). These are taught by `kitPrompt`, resolved as prewired
+ * by the compiler, and rendered from `KIT_COMPONENTS`.
+ */
+export const KIT_WIRE_COMPONENT_NAMES: readonly string[] = KIT_COMPONENT_NAMES.filter((name) =>
+  !KIT_WIRE_UNSAFE_NAMES.includes(name)
+  && !(PREWIRED_COMPONENT_NAMES as readonly string[]).includes(name));
 
 /** The full component vocabulary a wire tree may name without a source map:
- *  the legacy prewired set plus the Kit. */
+ *  the legacy prewired set plus the adopted Kit names. */
 export const WIRE_COMPONENT_NAMES: readonly string[] = [
   ...PREWIRED_COMPONENT_NAMES,
-  ...KIT_COMPONENT_NAMES.filter((name) => !(PREWIRED_COMPONENT_NAMES as readonly string[]).includes(name)),
+  ...KIT_WIRE_COMPONENT_NAMES,
 ];
 
 /** Prop name → class for one Kit component (law-1 enforcement handle). */

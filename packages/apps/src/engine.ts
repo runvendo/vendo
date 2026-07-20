@@ -1,5 +1,6 @@
 import {
-  PREWIRED_COMPONENT_NAMES,
+  KIT_WIRE_COMPONENT_NAMES,
+  WIRE_COMPONENT_NAMES,
   RESERVED_COMPONENT_NAMES,
   TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
@@ -11,7 +12,8 @@ import {
   VendoError,
   compileWirePatchV2,
   compileWireV2,
-  describeShape,
+  describeShapeWithSemantics,
+  kitPrompt,
   JAIL_ALLOWED_MODULES,
   shapeAtPointer,
   printWireV2,
@@ -20,8 +22,10 @@ import {
   validateAppDocument,
   validateTreeV2,
   type AppDocument,
+  type DomainManifest,
   type NormalizedCatalog,
   type ShapeType,
+  type ToolSemantics,
   type TreeNode,
   type TreeV2,
   type VendoTheme,
@@ -90,6 +94,13 @@ export interface GenerationDependencies {
    *  generation prompt and a query naming any other tool is a validation
    *  error routed to repair (verify-v2: the model invents tool names). */
   tools?: readonly HostToolInfo[];
+  /** W3 (v3 spec §Context) — per-tool field semantics from
+   *  `.vendo/semantics.json`: annotate the shape cards, drive Kit format
+   *  defaults, and feed the law checks. Keyed by tool name. */
+  semantics?: Readonly<Record<string, ToolSemantics>>;
+  /** W3 — the host's domain manifest (has / has-NOT), surfaced to generation
+   *  as fact so out-of-domain asks get a Disclaimer, never invented data. */
+  domains?: DomainManifest;
   /** 06-apps §5 — additive, optional partial-tree streaming seam. */
   onPartial?: (partial: GeneratedPartial) => void | Promise<void>;
   /**
@@ -160,7 +171,7 @@ const SERVED_APP_INSTRUCTION = /\b(full web app|served web app|custom (?:ui|clie
  *  kanban board heading blue" is a tree ask); same ENG-349 rule as the
  *  ambiguous server terms. */
 const AMBIGUOUS_SERVED_TERM = /\b(kanban|whiteboard|draggable)\b/gi;
-const reserved = new Set<string>(PREWIRED_COMPONENT_NAMES);
+const reserved = new Set<string>(WIRE_COMPONENT_NAMES);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -248,8 +259,8 @@ const wireContractSections = (deps: GenerationDependencies): GenerationPromptSec
 - Emit exactly one <App name="..."> element containing the whole app. No HTML/JSX comments anywhere — emit only elements. Positional nesting expresses the tree; NEVER emit id attributes — the compiler mints stable ids.
 - <Query id="queryName" tool="tool_name" input={{...}}/> declarations come FIRST inside <App>, before layout, so data fetching starts while the rest streams. A query result lives at the query's name; bind it into props with expressions like value={queryName} or value={queryName.field.path}.
 - Attribute values: "string", {42}, {true}, bare attribute for true, {{...}} objects, {[...]} arrays, and query bindings {queryName.path.segments}. Bindings are PLAIN FIELD REFERENCES ONLY — no arithmetic, no function/method calls (.filter/.map/.length), no bracket indexing (address array elements with dot-numeric segments, e.g. {accounts.data.0.sparkline}), no string concatenation. If a value would need computing, bind the closest raw field instead and let the component render it. There is NO string interpolation: never write {reference} inside a \"string\" attribute — bind the whole prop to one {reference} or use separate Text nodes.
-- Components resolve host catalog -> prewired primitives -> your <Island> components; the host brand wins a name collision. Prewired primitives: ${RESERVED_COMPONENT_NAMES.join(", ")}, Card, Button, Input, Select, Table, Badge, Stat, Tabs.
-- COMPOSE the app from host catalog and prewired components bound to query data. Prefer a host catalog component whenever it covers the need, with its exact name and props schema; use Stat/Card/Table/Badge and layout primitives for everything else. Matching the host brand is a hard goal.
+- Components resolve host catalog -> built-in components (the Kit and legacy primitives in the COMPONENTS section below) -> your <Island> components; the host brand wins a name collision.
+- COMPOSE the app from host catalog and built-in components bound to query data. Prefer a host catalog component whenever it covers the need, with its exact name and props schema; use the Kit (DataTable/Stat/Money/DateTime/charts) and layout primitives for everything else. Matching the host brand is a hard goal.
 - Never hardcode business data (invoices, balances, metrics, rows). Every number, label, and row the user sees must come from a <Query> binding; if no tool provides it, leave the region out rather than inventing data. This applies to CHARTS and METRICS too: when NO host tool supplies the numbers, render an honest empty-state (a short Text/Badge that the data isn't available), never fabricated, placeholder, or example figures.
 - Actions are on* attributes naming a host tool or fn:<name> (name matches [A-Za-z_][A-Za-z0-9_-]*), e.g. onClick="host_tool" or onRun="fn:submit". A rung-1 app has no server, so never use fn: on create.
 - An action that CHANGES host state (a write/destructive tool) MUST carry a payload binding the context it acts on — the per-row id for a row action, the form field values for a submit — e.g. onClick={{action:"host_send_reminder", payload:{invoiceId: invoices.rows.0.id}}}. Never wire a submit/primary Button to a read-only tool, and never leave a submit/primary Button with no action: a button that does nothing is a fake affordance. When NO host tool can perform the requested action, do NOT render a dead Submit — render an honest disclaimer (Text/Badge) saying the action isn't available on this host.
@@ -258,7 +269,15 @@ const wireContractSections = (deps: GenerationDependencies): GenerationPromptSec
 - Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} islands, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per island, ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes of island source total.`,
 }, {
   id: "prewired-props",
-  content: `PREWIRED COMPONENT PROPS (use these EXACT prop names — any other name is silently dropped and fails validation):\n${prewiredSchemaPrompt()}`,
+  // W3 — the COMPONENTS section is GENERATED from the component schemas
+  // (kitPrompt over the Kit specs + the legacy primitive signatures); no
+  // hand-written component list survives here.
+  content: `COMPONENTS (generated from the component schemas — use these EXACT component and prop names; an unknown prop is silently dropped and fails validation):
+
+${kitPrompt({ only: [...KIT_WIRE_COMPONENT_NAMES] })}
+
+# Legacy primitives (also available)
+${prewiredSchemaPrompt()}`,
 }, ...hostToolSections(deps),
 ...generationPromptSections(deps).filter(({ id }) =>
   id === "component-styling" || id === "catalog" || id === "theme" || id === "design-rules")];
@@ -271,17 +290,25 @@ const hostToolSections = (deps: GenerationDependencies): GenerationPromptSection
     id: "catalog" as const,
     content: `HOST TOOLS (the ONLY tools a <Query> or action may name — anything else is a validation error):\n${deps.tools.map(({ name, description, risk }) => `- ${name} [${risk}]: ${description}`).join("\n")}`,
   }]),
+  // W3 — the domain manifest is FACT derived at sync, not guidance: it tells
+  // the model what data exists at all, so an out-of-domain ask becomes an
+  // honest disclaimer instead of a repurposed tool or invented figures.
+  ...(deps.domains === undefined || (deps.domains.has.length === 0 && deps.domains.hasNot.length === 0) ? [] : [{
+    id: "catalog" as const,
+    content: `DATA DOMAINS (fact, derived from this host's tools — not guidance):${deps.domains.has.length === 0 ? "" : `\n- This host HAS data for: ${deps.domains.has.join(", ")}.`}${deps.domains.hasNot.length === 0 ? "" : `\n- This host has NO data for: ${deps.domains.hasNot.join(", ")}.`}
+- An ask about a domain not covered above cannot be answered with real data: render an honest empty-state/disclaimer for that part, never repurpose an unrelated tool and never invent figures.`,
+  }]),
   ...(deps.toolShapes === undefined || Object.keys(deps.toolShapes).length === 0 ? [] : [{
     id: "catalog" as const,
-    content: `TOOL RESPONSE SHAPES (bind only to fields that exist; a binding outside these shapes fails validation):\n${Object.entries(deps.toolShapes).map(([tool, shape]) => `- ${tool}: ${describeShape(shape)}`).join("\n")}`,
+    content: `TOOL RESPONSE SHAPES (bind only to fields that exist; a binding outside these shapes fails validation). Field annotations mark semantics: :money.cents = integer CENTS (bind the RAW number into Money cents / a format:"money" column — never pre-format it), :money.dollars = whole dollars, :date.iso and :date.epoch = machine dates (DateTime / format:"date"), :enum(a|b) = closed vocabulary (EnumBadge), :id = identifier (for action payloads and lookups, not a metric), :percent.ratio = 0..1, :percent.0-100 = whole percent.\n${Object.entries(deps.toolShapes).map(([tool, shape]) => `- ${tool}: ${describeShapeWithSemantics(shape, deps.semantics?.[tool] ?? {})}`).join("\n")}`,
   }, {
     id: "catalog" as const,
     content: `RESHAPE PIPES — project & format bound data to the shape a component needs. A binding may end with a bounded \`| op(...)\` pipe (this is the ONLY computation allowed in a binding). PROJECT fetched object arrays into the component's shape, and never bind a raw object array into a slot that expects labeled items:
 - Select options / Tabs tabs need [{value, label}] items. Map a fetched object array with asOptions(valueField, labelField): options={accounts | asOptions(id, name)} — first arg becomes value, second becomes label. Binding a raw object array (e.g. options={accounts}) renders every option BLANK and fails validation.
 - Chart/points props need [{label, value}] items: points={revenue.rows | asPoints(month, revenue)}.
-FORMAT for DISPLAY — money from host tools is integer CENTS, and dates are raw ISO/epoch; a bare number or ISO string shown to the user is a defect. But format(...) turns a number into a STRING, so it is ONLY for text the user reads, NEVER for data a component computes on:
-- format(...) belongs on a text/label slot: a Text/Stat value, a Badge label, or a Table column of a prewired Table. Money (integer cents): value={txn.amount | format(currencyCents)}, or a table column in place: rows={txns | format(amount, currencyCents)}. Dates: value={invoice.dueDate | format(date)}. Percents (0..1): format(percent). Plain numbers: format(number). Use format(currency) only when the field is already in whole dollars.
-- This is NOT optional: EVERY date/timestamp field and EVERY cents money field shown in a Table column, Stat, Text, or Badge MUST carry a format step — chain one per column, e.g. rows={deadlines.data | format(dueDate, date) | format(amount, currencyCents)}. A raw ISO string like 2026-07-21T17:00:00-07:00 or raw cents like 285000 on screen is a defect, on EVERY host.
+FORMAT for DISPLAY — money from host tools is integer CENTS, and dates are raw ISO/epoch; a bare number or ISO string shown to the user is a defect, on EVERY host. The Kit formats for you — PREFER it: <Money cents={...}/> and <DateTime value={...}/> for single values, DataTable/CardList column/field format tokens ("money", "date") for rows, <EnumBadge value={...}/> for enum fields. When you instead show such a field through a LEGACY slot (Text value, legacy Table column, legacy Stat value, Badge label), a format(...) pipe is mandatory. format(...) turns a number into a STRING, so it is ONLY for text the user reads, NEVER for data a component computes on:
+- format(...) belongs on a legacy text/label slot: Money (integer cents): value={txn.amount | format(currencyCents)}, or a legacy Table column in place: rows={txns | format(amount, currencyCents)}. Dates: value={invoice.dueDate | format(date)}. Percents (0..1): format(percent). Plain numbers: format(number). Use format(currency) only when the field is already in whole dollars.
+- One way or the other is NOT optional: EVERY date/timestamp field and EVERY cents money field the user sees must ride a Kit semantic component / format token OR carry a format step. A raw ISO string like 2026-07-21T17:00:00-07:00 or raw cents like 285000 on screen is a defect.
 - NEVER format a value bound into a CHART or visualization component — anything that draws from numbers (a *Chart/*Donut/*Graph/*Plot host component, or its slices/series/points/segments/data/values prop), an <Island>, or a reshape aggregate (sum/avg/asPoints). Those need the RAW numeric field; a chart or total fed formatted STRINGS computes NaN and draws nothing. Example: for a spending donut + a table off the same query, bind slices={spending.data} (raw) but rows={spending.data | format(amount, currencyCents)} (formatted) — do NOT reuse the formatted binding for the donut.
 NEVER bind a raw object or array into a Text body, a Stat value, a Badge label, or a Table cell — it renders as raw JSON like {"received":3,"total":6} and fails validation. Project object-valued fields to ONE readable string with template:
 - Per-row (an object-valued Table column): rows={deadlines.data | template(progress, "{progress.received} of {progress.total}") | template(assignedTo, "{assignedTo.name}")} — template(field, "pattern") rewrites that field per row; {path} placeholders are dot-paths into the row, so nested scalars like {assignedTo.name} work.
