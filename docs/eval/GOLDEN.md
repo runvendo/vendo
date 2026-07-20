@@ -98,3 +98,29 @@ never as a quality number.
 - D6. demo-accounting: "a new-client intake form"
 
 Any golden prompt discussed in a fix PR joins this list (rule 4).
+
+## Tranche 2 — the F-set (frozen 2026-07-20 after its single fresh run)
+
+Authored blind pre-gate (`docs/superpowers/plans/2026-07-20-final-gate-fresh10.md` on the
+format-gen-v2 branch), run ONCE in the 2026-07-20 final gate as the fresh pool.
+**Baseline: 8/10** (F3, F5 FAIL). Now frozen under the same rules as the 30; each future
+wave authors a NEW fresh pool (fresh sets, once run, become frozen tranches).
+
+- F1. demo-bank: "I'm trying to figure out if I can afford a $3,000 vacation in October — help me"
+- F2. demo-bank: "a bill-pay center: upcoming bills, what I paid last month, and pay one now"
+- F3. demo-bank: "which subscriptions should I cancel? rank them and let me act on it"
+- F4. demo-bank: "show my student loan balance and payoff plan" [impossible — no loan tools]
+- F5. demo-bank: "a weekly money digest I could glance at every Monday morning"
+- F6. demo-accounting: "which clients are most at risk of missing their filing deadline, and message the top one"
+- F7. demo-accounting: "a staff performance review packet for our next team meeting"
+- F8. demo-accounting: "track our firm's revenue per client this quarter" [impossible — no revenue/billing tools]
+- F9. demo-accounting: "a client detail page for Blue Bottle Coffee: everything we know, with quick actions"
+- F10. demo-accounting: "help me plan next week: what's due, who's assigned, what needs chasing"
+
+## Run ledger
+
+| Date | Set | Score | Main @ | Evidence |
+|---|---|---|---|---|
+| 2026-07-19 | frozen 30 (baseline) | 11/30 | pre-v3 | branches `vendo-heldout-maple`/`-cadence` |
+| 2026-07-20 | frozen 30 | **18/30** | 090b1779 (full v3) | `docs/verification/final-gate/` (PR #436) |
+| 2026-07-20 | F-set (fresh) | **8/10** | 090b1779 | `docs/verification/final-gate/` (PR #436) |

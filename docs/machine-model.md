@@ -44,7 +44,8 @@ Which provider runs the box is the standard adapter decision, made once in
 Machine provisioning requires `VENDO_BASE_URL`: the box's callback URLs must
 be this deployment's public origin. `VENDO_BOX_TEMPLATE` sets the provider
 base template for BYO e2b (the image built by
-`packages/apps/box/build-template.mjs`: Node plus the in-box agent harness,
+`packages/apps/box/build-template.mjs`: Node plus the in-box agent harness
+with the Claude Agent SDK npm-installed beside it at build time,
 plus a pre-baked served-app scaffold at `/opt/vendo-box/scaffold` that layer-3
 builds copy and edit instead of writing the skin plumbing from scratch);
 the Cloud pool ships its own base image and takes no template.
@@ -187,13 +188,24 @@ configured, and last-fired state.
 ## The agent lives in the box
 
 Every machine's base image includes a coding agent behind a control port
-(8811), separate from the app's `$PORT`. "Edit this app" sends one prompt to
-`POST /agent/task`; the agent writes code, installs deps, runs the server,
-curls its own endpoints, fixes failures, and reports a structured result
-(summary, files changed, tests run, served `fn` names, and whether it now
-serves a UI). The host long-polls to completion. Everything the box returns is
-data: a box result cannot approve egress, grant a secret, or mutate a host
-document.
+(8811), separate from the app's `$PORT`. The agent engine is the **Claude
+Agent SDK** (Claude Code as a library), baked into the base template at
+build time so the box inherits Anthropic's agentic-harness improvements —
+install size is a template concern, never a wake concern. The SDK runs
+headless with its own shell + file tools, working dir `/app`; its auth is the
+same inference door mapped onto plain env (`ANTHROPIC_API_KEY` =
+`VENDO_INFERENCE_KEY`, `ANTHROPIC_BASE_URL` = `VENDO_INFERENCE_URL` — BYO
+Anthropic and the Cloud gateway ride identically), and `VENDO_INFERENCE_MODEL`
+still picks the model (default `claude-sonnet-4-5`).
+
+"Edit this app" sends one prompt to `POST /agent/task`; the agent writes code,
+installs deps, runs the server, curls its own endpoints, fixes failures, and
+reports a structured result (summary, files changed, tests run, served `fn`
+names, and whether it now serves a UI) through an in-process `report_done`
+tool. The host long-polls to completion. The control-port protocol is
+engine-agnostic — the Wave-8 engine swap changed nothing outside the box.
+Everything the box returns is data: a box result cannot approve egress, grant
+a secret, or mutate a host document.
 
 Operator knobs: `VENDO_BOX_EDIT_TIMEOUT_MS` (long-poll budget, default 8
 minutes) and `VENDO_BOX_EDIT_POLL_MS`. On BYO e2b, `VENDO_E2B_TIMEOUT_MS` sets

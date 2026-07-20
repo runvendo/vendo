@@ -82,7 +82,7 @@ Then re-export the handler from your catch-all route:
 import { nextVendoHandler } from "@vendoai/vendo/server";
 import { vendo } from "@/lib/vendo";
 
-export const { GET, POST, DELETE } = nextVendoHandler(vendo);
+export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
 ```
 
 `oauth` is required when `mcp` is true. Without it, `createVendo` throws: the
@@ -237,11 +237,9 @@ export const vendo = createVendo({
 });
 ```
 
-`mcp: { … }` accepts the same `baseUrl`, `remoteAs`, and `federation` fields
-as the top-level `createVendo` options, and takes precedence over them when
-both are set. Use the object form when you want one place to gate broker
-trust behind environment variables, and the top-level form when the door
-runs on its own alongside your host.
+`baseUrl`, `remoteAs`, and `federation` live under `mcp: { … }` — they are
+not top-level `createVendo` keys. The object form is also the one place to
+gate broker trust behind environment variables.
 
 ## How door calls reach host tools
 
@@ -271,13 +269,14 @@ by that issuer.
 export const vendo = createVendo({
   model,
   principal: resolvePrincipal,
-  mcp: true,
   oauth,
-  remoteAs: {
-    issuer: "https://auth.example.com",
-    audience: "https://app.example.com/api/vendo/mcp",
-    // jwksUri is optional — the door discovers it from the issuer's
-    // RFC 8414 metadata when omitted.
+  mcp: {
+    remoteAs: {
+      issuer: "https://auth.example.com",
+      audience: "https://app.example.com/api/vendo/mcp",
+      // jwksUri is optional — the door discovers it from the issuer's
+      // RFC 8414 metadata when omitted.
+    },
   },
 });
 ```
@@ -316,9 +315,10 @@ does.
 export const vendo = createVendo({
   model,
   principal: resolvePrincipal,
-  mcp: true,
   oauth,
-  federation: { secret: process.env.VENDO_MCP_FEDERATION_SECRET! },
+  mcp: {
+    federation: { secret: process.env.VENDO_MCP_FEDERATION_SECRET! },
+  },
 });
 ```
 

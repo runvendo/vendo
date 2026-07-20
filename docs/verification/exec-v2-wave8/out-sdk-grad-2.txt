@@ -1,0 +1,14 @@
+[sdk-grad-2] mode=graduation creating sandbox from pbgk5vxvhmtjmcn8lgeo…
+[sdk-grad-2] boot→control-port: 1.3s
+[sdk-grad-2] task boxtask_03caea88-5dcb-4922-b44e-e0e79e51046b started (1.6s)
+............
+[sdk-grad-2] BUILD 66.8s ok=true servesUi=false fns=chaseInvoices,getDigest
+[sdk-grad-2] summary: Zero-dependency Node server built and verified. Serves chaseInvoices (computes digest, posts to httpbin.org, stores in memory) and getDigest (returns latest digest). Manifest declares 8am daily schedule and httpbin.org egress. Both endpoints tested successfully.
+[sdk-grad-2] POST /fn/getDigest → 200 {"result":{"count":3,"totalCents":450000,"invoices":[{"id":"INV-001","customerName":"Acme Corp","amountCents":150000,"dueDate":"2026-07-15"},{"id":"INV-002","customerName":"TechStart Inc","amountCents":75000,"dueDate":"2026-07-18"},{"id":"INV-003","customerName":"Global Services","amountCents":22500
+[sdk-grad-2] phase profile over 20 log lines (~5 assistant turns):
+  model        29.9s (45%)
+  bash         17.5s (26%)
+  npm-install  0.0s (0%)
+  other        16.9s (25%)
+[sdk-grad-2] full log: /Users/yousefh/orca/workspaces/flowlet/exec-wave8-sdk/docs/verification/exec-v2-wave8/agent-log-sdk-grad-2.txt
+[sdk-grad-2] sandbox killed (68.7s)
