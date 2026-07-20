@@ -10,12 +10,12 @@ workers self-triage AI reviewers + self-merge green PRs (standing authorization)
 
 | Lane | Worktree/branch (vendo-*) | Scope | Depends on | Status |
 |---|---|---|---|---|
-| W0 | w0-engine | approve→resume stall fix + e2e; freeze eval corpus | — | DISPATCHED |
-| W1 | w1-bench | measurements: inline-refs vs Query, builder-calls fork, fetch-then-generate A/B, (best-effort) llguidance replay | — | DISPATCHED |
-| W2 | w2-kit | the Kit (superset bar) + prop classes + generated prompt | — | DISPATCHED |
-| W4a | w4-pipeline | structured repair + outline/region-parallel + end pass (engine-internal) | — | DISPATCHED |
-| W3 | (create: w3-semantics) | semantic sync + law-1/law-2 compile checks + ADOPT inline refs (W1 Exp1) | W2 prop classes merged | pending |
-| W4b | (create: w4-islands) | islands ambient scope + ambient tools + manifest inference | W2 merged (Kit-in-jail) | pending |
+| W0 | w0-engine | approve→resume stall fix + e2e; freeze eval corpus | — | MERGED #412 |
+| W1 | w1-bench | measurements → VERDICTS.md | — | PR #414 green, in train |
+| W2 | w2-kit | the Kit: 31 components, superset | — | MERGED #415 |
+| W4a | w4-pipeline | structured repair ON (14.6s→1.4-3.1s) + region-parallel FLAGGED OFF + end pass opt-in | — | MERGED #417 |
+| W3 | w3-semantics | semantic sync + laws + inline refs adoption | W2 ✅ (+#414 for inline proto) | DISPATCHED |
+| W4b | w4-islands | islands ambient scope + ambient tools + manifest | W2 ✅ | DISPATCHED |
 | W5 | (create: w5-regate) | dialect retirement + FINAL frozen-30 + 10 fresh gate + report | all merged | pending |
 
 ## Coordination rules (from the successful #385-#397 run)
