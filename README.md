@@ -93,6 +93,7 @@ tool proxy.
 | `@vendoai/apps` | App generation, editing, execution, interchange, and sandbox adapters |
 | `@vendoai/automations` | Trigger ingestion, schedules, away runs, and run history |
 | `@vendoai/ui` | Headless React hooks, optional chrome, tree rendering, and voice surfaces |
+| `@vendoai/mcp` | The door: serves the host's tools to outside MCP clients |
 | `@vendoai/telemetry` | Anonymous, opt-out build and development telemetry |
 | `@vendoai/vendo` | Default composition, public wire, React entry, and `vendo` bin |
 
