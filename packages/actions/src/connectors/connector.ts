@@ -15,6 +15,18 @@ export interface ConnectorCatalogEntry {
   toolkit: string;
   /** Display name; the UI falls back to its humanizer when absent. */
   label?: string;
+  /** One-line capability blurb (provider metadata). Load-bearing for the
+   * discovery index's recall — "send email" must match gmail. */
+  description?: string;
+}
+
+/** One toolkit in the discovery index: always searchable, never executable on
+ * its own. Implementations enrich `description` from provider metadata with a
+ * static fallback, because index recall depends on it. */
+export interface ToolkitIndexEntry {
+  toolkit: string;
+  label?: string;
+  description?: string;
 }
 
 /** 04-actions §3 — the per-user connected-accounts capability of a connector.
@@ -62,4 +74,12 @@ export interface Connector {
   execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome>;
   /** Optional: per-user connected accounts (Composio is the sole broker). */
   connections?: ConnectorConnections;
+  /** Optional: the lazily-loaded discovery index — one entry per connectable
+   * toolkit. Present only on connectors that defer full schema loading
+   * (connection-scoped tool loading, spec 2026-07-20). */
+  discoveryIndex?(): Promise<ToolkitIndexEntry[]>;
+  /** Optional: fetch + include the named toolkits' full descriptors in the
+   * next descriptors() read. Returns true when anything NEW was expanded (the
+   * registry then invalidates its load memo). Unknown toolkits are ignored. */
+  expandToolkits?(toolkits: string[]): Promise<boolean>;
 }
