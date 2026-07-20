@@ -274,6 +274,8 @@ describe("runStagedExtraction", () => {
     expect(themeRun?.input.instructions).toContain("accent");
     expect(themeRun?.input.instructions).toContain("radius");
     expect(themeRun?.input.instructions).toContain("app/globals.css");
+    // Slot glossary (the semantics, not just the rules) must survive the port.
+    expect(themeRun?.input.instructions).toContain("primary interactive color");
     expect(result.theme).toEqual(themeArtifact);
     expect(await readArtifact(root, "theme")).toEqual(themeArtifact);
   });
