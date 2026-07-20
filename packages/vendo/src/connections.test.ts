@@ -6,7 +6,11 @@ import { byoConnections, cloudConnections, unconfiguredConnections } from "./con
 const ada: Principal = { kind: "user", subject: "user_ada" };
 const anonymous: Principal = { kind: "user", subject: "anonymous_abc", ephemeral: true };
 
-function fakeConnector(name: string, accounts: Record<string, ConnectorAccount[]>): Connector {
+function fakeConnector(
+  name: string,
+  accounts: Record<string, ConnectorAccount[]>,
+  connectable?: string[],
+): Connector {
   return {
     name,
     descriptors: async () => [],
@@ -18,6 +22,9 @@ function fakeConnector(name: string, accounts: Record<string, ConnectorAccount[]
       disconnect: async (subject, id) => {
         if (!(accounts[subject] ?? []).some((account) => account.id === id)) throw new Error(`not found: ${id}`);
       },
+      ...(connectable === undefined
+        ? {}
+        : { listConnectable: async () => connectable.map((toolkit) => ({ toolkit })) }),
     },
   };
 }
@@ -69,6 +76,22 @@ describe("byoConnections", () => {
 
   it("rejects an unknown connector name", async () => {
     await expect(service().initiate(ada, { connector: "zapier", toolkit: "gmail" })).rejects.toThrow(/connector/i);
+  });
+
+  it("aggregates the catalog across brokers, tagging each row with its connector", async () => {
+    const catalog = await byoConnections([
+      fakeConnector("composio", {}, ["gmail", "slack"]),
+      fakeConnector("other", {}, ["jira"]),
+    ]).catalog();
+    expect(catalog).toEqual([
+      { toolkit: "gmail", connector: "composio" },
+      { toolkit: "slack", connector: "composio" },
+      { toolkit: "jira", connector: "other" },
+    ]);
+  });
+
+  it("treats a broker without listConnectable as advertising nothing", async () => {
+    await expect(service().catalog()).resolves.toEqual([]);
   });
 });
 
@@ -185,6 +208,20 @@ describe("unconfiguredConnections", () => {
     expect(service.posture).toBe(false);
     await expect(service.list(ada)).resolves.toEqual([]);
     await expect(service.initiate(ada, { toolkit: "gmail" })).rejects.toThrow(/connected accounts/i);
+  });
+});
+
+describe("catalog posture", () => {
+  it("cloud rides the console's catalog endpoint", async () => {
+    const cloudFetch = vi.fn(async () =>
+      Response.json({ available: [{ toolkit: "gmail", connector: "composio" }] }));
+    const cloud = cloudConnections({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: cloudFetch as unknown as typeof fetch });
+    await expect(cloud.catalog()).resolves.toEqual([{ toolkit: "gmail", connector: "composio" }]);
+    expect(String(cloudFetch.mock.calls[0]![0])).toBe("https://cloud.test/api/v1/connections/catalog");
+  });
+
+  it("unconfigured advertises nothing", async () => {
+    await expect(unconfiguredConnections().catalog()).resolves.toEqual([]);
   });
 });
 
