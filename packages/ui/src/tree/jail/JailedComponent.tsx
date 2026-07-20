@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { Json, ToolOutcome } from "@vendoai/core";
+import { islandToolFallbackManifest, type Json, type ToolOutcome } from "@vendoai/core";
 import { ContainedNotice } from "../notice.js";
 import { JAIL_RUNTIME_SOURCE } from "./runtime-bundle.gen.js";
 
@@ -94,6 +94,13 @@ export interface JailedComponentProps {
   furnishing?: JailFurnishing;
   /** Host brand tokens as `--vendo-*` custom properties, applied to the jail root. */
   themeVars?: Record<string, string>;
+  /**
+   * W4b §2 — the island's compiler-stamped tool manifest: the ONLY tools its
+   * ambient `tools` calls may reach. `undefined` means the document predates
+   * stamping and the manifest is derived from the source the HOST holds —
+   * either way, nothing the iframe claims is ever trusted.
+   */
+  toolManifest?: readonly string[];
   onAction(action: string, payload?: Json): Promise<ToolOutcome>;
   onStateSet(key: string, value: Json): void;
 }
@@ -116,6 +123,37 @@ export interface JailFurnishing {
   styles?: JailStyle[];
 }
 
+const IDENTIFIER_PATTERN = /^[A-Za-z_$][\w$]*$/;
+
+/** A well-formed `tool-call` path: the literal member chain the jail runtime
+ *  captured, as identifier segments. Anything else is dropped unanswered. */
+const isToolCallPath = (value: unknown): value is string[] =>
+  Array.isArray(value)
+  && value.length > 0
+  && value.every((segment) => typeof segment === "string" && IDENTIFIER_PATTERN.test(segment));
+
+/** Every `$action` name embedded in the props the HOST sends into the jail —
+ *  the legacy action channel's own least-privilege set. */
+const collectActionNames = (value: unknown, into: Set<string>): void => {
+  if (Array.isArray(value)) {
+    for (const child of value) collectActionNames(child, into);
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+  const record = value as Record<string, unknown>;
+  if (typeof record.$action === "string") into.add(record.$action);
+  for (const child of Object.values(record)) collectActionNames(child, into);
+};
+
+/** Legacy islands call `props.vendo.action("tool", …)` directly; their literal
+ *  action names are part of the source the host holds, so they stay allowed. */
+const vendoActionLiterals = (source: string): string[] => {
+  const names: string[] = [];
+  const pattern = /\bvendo\s*\.\s*action\s*\(\s*["'`]([^"'`]+)["'`]/g;
+  for (const match of source.matchAll(pattern)) names.push(match[1] as string);
+  return names;
+};
+
 /** 08-ui §5 — generated code runs only in this opaque-origin iframe. */
 export function JailedComponent({
   name,
@@ -123,12 +161,27 @@ export function JailedComponent({
   props,
   furnishing,
   themeVars,
+  toolManifest,
   onAction,
   onStateSet,
 }: JailedComponentProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [error, setError] = useState<string>();
   const srcDoc = useMemo(buildJailSrcdoc, []);
+  // The island's tool surface, resolved on the HOST side only. A stamped
+  // manifest wins; an unstamped document falls back to scanning the source the
+  // host itself holds. The legacy action channel additionally admits the
+  // action names the host embedded in the props it sent.
+  const manifest = useMemo(
+    () => new Set(toolManifest ?? islandToolFallbackManifest(source)),
+    [source, toolManifest],
+  );
+  const allowedActions = useMemo(() => {
+    const allowed = new Set(manifest);
+    collectActionNames(props ?? furnishing?.sampleProps ?? {}, allowed);
+    for (const literal of vendoActionLiterals(source)) allowed.add(literal);
+    return allowed;
+  }, [furnishing, manifest, props, source]);
 
   useEffect(() => {
     setError(undefined);
@@ -160,6 +213,18 @@ export function JailedComponent({
         onStateSet(message.key, message.value as Json);
       } else if (message.kind === "action" && typeof message.action === "string") {
         const requestId = message.requestId;
+        // Never trust the iframe: only action names the host itself put in
+        // reach (prop-embedded $action bindings, the stamped tool manifest,
+        // literal vendo.action names in the source) may enter the pipe.
+        if (!allowedActions.has(message.action)) {
+          iframe.contentWindow?.postMessage({
+            vendo: true,
+            kind: "action-result",
+            requestId,
+            error: `action "${message.action}" is not available to this island`,
+          }, "*");
+          return;
+        }
         void onAction(message.action, message.payload as Json)
           .then((outcome) => {
             iframe.contentWindow?.postMessage({
@@ -175,6 +240,42 @@ export function JailedComponent({
               kind: "action-result",
               requestId,
               error: actionError instanceof Error ? actionError.message : String(actionError),
+            }, "*");
+          });
+      } else if (message.kind === "tool-call" && typeof message.requestId === "string") {
+        // W4b §2 — the ambient tools bridge. The literal member chain resolves
+        // by underscore-join (tool names never contain dots); a resolved name
+        // outside THIS island's manifest is blocked here, before the pipe.
+        const requestId = message.requestId;
+        if (!isToolCallPath(message.path)) return;
+        const toolName = message.path.join("_");
+        if (!manifest.has(toolName)) {
+          iframe.contentWindow?.postMessage({
+            vendo: true,
+            kind: "tool-result",
+            requestId,
+            outcome: {
+              status: "blocked",
+              reason: `tool "${toolName}" is not in this island's tool manifest`,
+            },
+          }, "*");
+          return;
+        }
+        void onAction(toolName, message.args as Json)
+          .then((outcome) => {
+            iframe.contentWindow?.postMessage({
+              vendo: true,
+              kind: "tool-result",
+              requestId,
+              outcome,
+            }, "*");
+          })
+          .catch((toolError: unknown) => {
+            iframe.contentWindow?.postMessage({
+              vendo: true,
+              kind: "tool-result",
+              requestId,
+              error: toolError instanceof Error ? toolError.message : String(toolError),
             }, "*");
           });
       } else if (message.kind === "error") {
@@ -193,7 +294,7 @@ export function JailedComponent({
       window.removeEventListener("message", handleMessage);
       iframe.removeEventListener("load", sendRender);
     };
-  }, [furnishing, onAction, onStateSet, props, source, themeVars]);
+  }, [allowedActions, furnishing, manifest, onAction, onStateSet, props, source, themeVars]);
 
   if (error) {
     return <ContainedNotice label="Generated component error">{`${name}: ${error}`}</ContainedNotice>;
