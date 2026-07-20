@@ -273,6 +273,28 @@ describe("inline tool refs in the production path (W1 Exp1 verdict — adopted)"
   });
 });
 
+describe("law 2 — query inputs are literal JSON (a dependent call cannot execute)", () => {
+  it("rejects an inline-ref arg that embeds another query's binding and routes it to repair", async () => {
+    // Live-verify finding (Maple P2): the model writes dependent calls like
+    // host_listAccountTransactions({accountId: accounts.data.0.id}) — the
+    // runtime executes query inputs as literal JSON, so the tool receives an
+    // unresolved binding object and the app ships broken.
+    const dependent = '<App name="Tx"><DataTable rows={host_send_reminder({invoiceId: metric.rows.0.id}).data}/><Query id="metric" tool="host_metric"/></App>';
+    const literal = '<App name="Tx"><Query id="metric" tool="host_metric"/><DataTable rows={metric.rows}/></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? dependent : literal;
+    });
+    await modelEngine.create(
+      { prompt: "Transactions" },
+      deps(model, { pipeline: { structuredRepair: false } }),
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("query inputs must be LITERAL JSON");
+  });
+});
+
 describe("law 1 raw typing — bound field kinds must match the Kit slot", () => {
   it("rejects a string-shaped field bound into Money.cents (pre-formatted money strings fail)", async () => {
     const shapes = {

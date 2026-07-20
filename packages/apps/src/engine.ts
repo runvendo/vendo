@@ -260,6 +260,7 @@ const wireContractSections = (deps: GenerationDependencies): GenerationPromptSec
   content: `WIRE DIALECT (vendo-genui/v2):
 - Emit exactly one <App name="..."> element containing the whole app. No HTML/JSX comments anywhere — emit only elements. Positional nesting expresses the tree; NEVER emit id attributes — the compiler mints stable ids.
 - DATA comes from INLINE TOOL REFERENCES written directly in a prop: rows={host_listTransactions({limit:20}).data} or value={host_getBudgets({}).totalCents} — the tool call (exact HOST TOOLS name + an args object, {} when none) followed by the field path. The compiler turns each distinct call into one fetch; IDENTICAL call+args used twice is ONE fetch, so reuse the same expression for the same data. Explicit <Query id="name" tool="tool_name" input={{...}}/> declarations (bound as {name.field.path}) are also accepted.
+- Call args (and query inputs) are LITERAL JSON only — never put a reference/binding inside an args object: one call's input can NOT come from another call's result (the runtime executes inputs literally). When a tool needs an id you don't have literally, prefer the no-arg/list variant of the ask, or build the dependent lookup inside an <Island> using ambient tools.
 - Attribute values: "string", {42}, {true}, bare attribute for true, {{...}} objects, {[...]} arrays, and data bindings. A binding is ONE inline tool call plus a plain field path (or a declared query name plus a field path) — NO other computation: no arithmetic, no .filter/.map/.length, no bracket indexing (address array elements with dot-numeric segments, e.g. {host_listAccounts({}).data.0.sparkline}), no string concatenation, no chained or nested calls. If a value would need computing, bind the closest raw field instead and let the component render it. There is NO string interpolation: never write a binding inside a \"string\" attribute — bind the whole prop to one {reference} or use separate Text nodes.
 - Components resolve host catalog -> built-in components (the Kit and legacy primitives in the COMPONENTS section below) -> your <Island> components; the host brand wins a name collision.
 - COMPOSE the app from host catalog and built-in components bound to query data. Prefer a host catalog component whenever it covers the need, with its exact name and props schema; use the Kit (DataTable/Stat/Money/DateTime/charts) and layout primitives for everything else. Matching the host brand is a hard goal.
@@ -571,6 +572,26 @@ const bindingKindIssues = (
   return issues;
 };
 
+/** W3 law 2 (live-verify finding) — a query input executes as LITERAL JSON:
+ *  the runtime never resolves bindings inside it, so a dependent call
+ *  (`accountId: accounts.data.0.id`) reaches the tool as an unresolved
+ *  binding object and the app ships broken. Reject at compile → repair. */
+const queryInputIssues = (tree: TreeV2): string[] => {
+  const issues: string[] = [];
+  const findBinding = (value: unknown): boolean => {
+    if (isPathBinding(value) || isStateBinding(value)) return true;
+    if (Array.isArray(value)) return value.some(findBinding);
+    if (isRecord(value)) return Object.values(value).some(findBinding);
+    return false;
+  };
+  for (const query of tree.queries ?? []) {
+    if (query.input !== undefined && findBinding(query.input)) {
+      issues.push(`query "${query.name}" (tool "${query.tool}") embeds a binding in its input — query inputs must be LITERAL JSON the tool can execute directly; another query's result can never feed a query input. Use a literal value (or drop the optional input), or build the dependent lookup inside an <Island> with ambient tools.`);
+    }
+  }
+  return issues;
+};
+
 /** W3 law 1 raw typing — probe values per shape kind, parsed against the Kit
  *  prop's zod schema. Kind-level only: a string-shaped field bound into
  *  Money.cents fails (pre-formatted money strings never reach a numeric
@@ -674,6 +695,7 @@ const validateCompiledCreate = async (
     `binding ${error.path} on node "${error.nodeId}" prop "${error.prop}": ${error.message}${error.available === undefined ? "" : ` (available: ${error.available.join(", ")})`}`));
   issues.push(...bindingKindIssues(compiled, deps));
   issues.push(...kitSlotIssues(compiled, deps));
+  issues.push(...queryInputIssues(compiled.tree));
   issues.push(...interpolationIssues(compiled));
   issues.push(...await catalogIssues(compiled.tree, components, deps.catalog));
   // Law 1 is checkable only when a tool surface exists to trace data to —
