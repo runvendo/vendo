@@ -284,6 +284,11 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
         return { status: payload.status, headers, body: decodeBase64(payload.body_b64) };
       },
       async snapshot() {
+        // A checkpoint of a machine this object already slept or destroyed
+        // must not silently reactivate it (the pause+revive below would).
+        if (sleeping !== undefined || destroying !== undefined) {
+          throw new VendoError("conflict", "the machine is asleep or destroyed; resume its snapshot ref instead of checkpointing it");
+        }
         // The console's snapshot pauses the source; the immediate resume
         // restores the seam law that a checkpoint leaves it serving. A resume
         // failure propagates — the machine is then paused, not lost: the ref
@@ -372,7 +377,9 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
         // Seam semantics carried verbatim: absent = unrestricted, [] = deny-all
         // (deny-by-default lives ABOVE the seam — Lane E's grant flow).
         ...(spec.allowedDomains === undefined ? {} : { egress: [...spec.allowedDomains] }),
-      })), { allowedDomains: spec.allowedDomains });
+        // Defensive copy: later refs must record the policy the machine was
+        // CREATED with, immune to caller-side mutation of the array.
+      })), { allowedDomains: spec.allowedDomains === undefined ? undefined : [...spec.allowedDomains] });
     },
     async resume(snapshotRef, policy?: SandboxResumePolicy) {
       const state = decodeSnapshotRef(snapshotRef);

@@ -389,11 +389,28 @@ describe("cloudSandbox", () => {
       "POST /resume",
       `POST /${machine.id}/snapshot`,
     ]);
+    // A checkpoint through the slept machine object must not silently
+    // reactivate it — the pause+revive shim would wake the box.
+    await expect(machine.snapshot()).rejects.toMatchObject({ code: "conflict" });
     const revived = await adapter.resume(ref);
     expect(revived.id).toBe(machine.id);
     // destroy() after a sleep stays the seam's no-op chain (repeat tolerated).
     await machine.destroy();
     await machine.destroy();
+  });
+
+  it("records the create-time policy in refs, immune to caller-side array mutation", async () => {
+    const console_ = fakeConsole();
+    const adapter = adapterFor(console_);
+    const domains = ["example.com"];
+    const machine = await adapter.create({ env: {}, allowedDomains: domains });
+    domains.push("attacker.example"); // the caller's array is theirs to mutate
+    const ref = await machine.snapshot();
+    await machine.stop();
+    // The unchanged CREATE-time policy proceeds; the mutated one is a change.
+    await adapter.resume(ref, { allowedDomains: ["example.com"] });
+    await expect(adapter.resume(ref, { allowedDomains: domains }))
+      .rejects.toMatchObject({ code: "not-implemented" });
   });
 
   it("rejects snapshot refs it did not mint before anything rides the wire", async () => {
