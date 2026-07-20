@@ -66,8 +66,10 @@ Vendo owns only the boundary.
 
 ### In: environment variables
 
-`buildEnv` (packages/apps/src/box-env.ts) assembles these at provision and
-wake:
+`buildEnv` (packages/apps/src/box-env.ts) assembles these when the machine is
+provisioned. A wake resumes the snapshot's environment; before every in-box
+edit the host re-injects the current set through the agent control port and
+restarts the app, which is how a grant flipped while the machine slept lands:
 
 | Variable | Contents |
 | --- | --- |
@@ -91,9 +93,9 @@ The inference door resolves host-side: explicit `VENDO_INFERENCE_URL` and
 
 - `POST /fn/<name>`: tree-callable functions and schedule targets. Names match
   `[A-Za-z_][A-Za-z0-9_-]{0,63}`. The request body is `{args}` JSON. A 2xx
-  response must be exactly a `{result}` JSON envelope; anything else
-  (including a `ui` member) is a validation error, because the machine never
-  draws UI. Errors relay as `{error: {code, message}}`.
+  response must be a JSON object envelope carrying `result`; a missing
+  `result` or a present `ui` member is a validation error, because the
+  machine never draws UI. Errors relay as `{error: {code, message}}`.
 - `GET /vendo.json`: the manifest (below). 404 means no declarations.
 - Anything else served is the layer-3 web app. Layer 2 vs 3 is not a mode,
   just which paths the app serves.
@@ -193,8 +195,11 @@ ordinary high-risk approval flow.
 - **Secrets**: an app declares secret names (`AppDocument.secrets`). Turning a
   declared secret on for a box parks one approval card per secret
   (`vendo_secret_expose`); only declared and granted secrets inject real
-  values at provision and wake. Grants live in their own collection, keyed by
-  app id, and are never carried by shares, forks, or publishes.
+  values, at provision and at the env re-injection before each in-box edit.
+  An ordinary wake resumes the snapshot's environment, so a grant or
+  revocation decided while the machine slept fully lands at the next edit or
+  re-provision. Grants live in their own collection, keyed by app id, and are
+  never carried by shares, forks, or publishes.
 - **Egress**: the app's `egress` declaration is an ask, not an authority. Each
   declared domain needs one owner approval (`vendo_egress_allow`); approving
   commits it to the document's `egressApproved` field. A machine never

@@ -35,8 +35,9 @@ App machines reach `vendo_records` through the app-token `/box` callback
 surface, not directly. Box-written rows land in their own namespace,
 `app:<appId>:box:<collection>`, capped at 256 KB per row. App-declared
 storage collections (`app:<appId>:<name>`; records 256 KB, blobs 5 MB, the
-reserved name `state` rejected) are served by the apps runtime for tree apps
-and host tools. See the [app machine
+reserved name `state` rejected, every written `refs` key declared with a
+non-empty string value) are served by the apps runtime for tree apps and
+host tools. See the [app machine
 environment](/reference/environment-variables#app-machine-environment) for the
 `/box` callback routes.
 

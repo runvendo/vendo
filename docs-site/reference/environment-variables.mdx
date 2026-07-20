@@ -37,8 +37,10 @@ seams without requiring those names from custom compositions.
 
 ## App machine environment
 
-The machine lifecycle injects these values into every box at provision and
-wake:
+The machine lifecycle injects these values into every box at provision, and
+re-injects the current set (through the in-box agent control port, with an
+app restart) before every in-box edit; an ordinary wake resumes the
+snapshot's environment:
 
 | Variable | Contents |
 | --- | --- |
@@ -50,8 +52,9 @@ wake:
 | `VENDO_INFERENCE_MODEL` | optional model choice the box harness reads |
 | declared secret names | real values, injected only for secrets the owner granted to this app |
 
-The boundary names are reserved; a declared secret named like one of them is
-a validation error. The box does its own outbound requests directly, against
+The `buildEnv` boundary names (all of the above except
+`VENDO_INFERENCE_MODEL`, which the composition adds beside them) are
+reserved; a declared secret named like one of them is a validation error. The box does its own outbound requests directly, against
 the provider-enforced domain allowlist. See
 [Generated UI and apps](/concepts/generated-ui#secrets-and-outbound-requests).
 

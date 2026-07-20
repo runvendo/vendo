@@ -218,8 +218,10 @@ Machines boot from Cloud's own pooled base image (Node plus the in-box agent);
 `vendo:v2:` and resume only against the console. The egress allowlist is
 enforced HTTP(S)-only: raw TCP is severed even to allowlisted hosts, so a
 direct database connection from the box never works while the HTTPS store
-callback does. Errors map to the shared taxonomy: missing or invalid keys and
-exhausted meters surface as `cloud-required`, console outages as
+callback does. Errors map to the shared taxonomy: invalid or revoked keys
+(HTTP 401) and exhausted meters (HTTP 402) surface as `cloud-required`,
+console outages as `sandbox-unavailable`; with no key and no adapter at all
+the sandbox slot is simply unconfigured, so machine paths fail with
 `sandbox-unavailable`. See [Server API](/reference/server-api) for the
 `SandboxAdapter` seam and
 [Generated UI and apps](/concepts/generated-ui) for the layer model.

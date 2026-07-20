@@ -60,15 +60,18 @@ secrets and egress are approve-once owner grants:
 
 - An app declares secret names. Each declared secret needs one owner approval
   before its real value enters the box environment; only declared and granted
-  secrets inject, at provision and wake. Grants are never carried by shares,
-  forks, or publishes.
+  secrets inject, at provision and at the env re-injection before each in-box
+  edit. An ordinary wake resumes the snapshot's environment, so a grant or
+  revocation decided while the machine slept fully lands at the next edit or
+  re-provision. Grants are never carried by shares, forks, or publishes.
 - An app declares the domains it talks to in `vendo.json`. Each declared
   domain parks one approval card; a machine never provisions or wakes with an
   unapproved declared domain. An app that declares nothing can reach only its
   own boundary (the host callback origin and the inference endpoint).
 
-A wake applies the current policy over the snapshot-time one, so a grant
-decided or revoked while the machine slept counts at the next resume. A
+The egress allowlist, unlike the environment, is re-applied at every wake:
+a domain grant decided or revoked while the machine slept counts at the next
+resume. A
 redaction guard scrubs known secret values from everything that crosses back
 out of the box. This is the SSRF and exfiltration answer, including for a
 bring-your-own model key: the key sits in the box, and the box can only talk

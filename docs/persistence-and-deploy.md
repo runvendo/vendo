@@ -101,6 +101,7 @@ works (Vercel cron, a GitHub Actions schedule, crontab), and Vendo Cloud's
 hosted broker is another caller of the same surface, not a separate protocol.
 See [the machine model](./machine-model.md) for how machine schedules are
 declared and fired.
+
 Use hosted Postgres for serverless deployment. Local PGlite files are suitable
 for a durable single-process host, not an ephemeral filesystem.
 
