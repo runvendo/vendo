@@ -1,8 +1,11 @@
 import { genericJwtPreset, verifyHs256 } from "@vendoai/actions/presets";
 import type { PermissionGrant } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-// Imported through the same entry hosts use, pinning the re-export.
-import { hostAuthPresetConformance, jwt } from "./index.js";
+// jwt is pinned via its own module — the same file the
+// "@vendoai/vendo/auth/jwt" subpath re-exports (corpus-triage Task 9);
+// hostAuthPresetConformance still comes through the shared barrel.
+import { jwt } from "./jwt.js";
+import { hostAuthPresetConformance } from "./index.js";
 
 afterEach(() => {
   vi.unstubAllEnvs();

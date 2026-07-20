@@ -59,15 +59,16 @@ export { eraseStore, type EraseReport, type EraseTable } from "@vendoai/store";
 // imports these from "@vendoai/vendo/server"); hosts never need to install
 // @vendoai/store directly.
 export { createStore, envSecrets, secretStore, storeSecrets } from "@vendoai/store";
-// 09-vendo §2.1 — host-identity presets, shipped on the server entry: one
-// `auth` key fills the principal, actAs, and oauth seams from one config.
+// 09-vendo §2.1 — host-identity presets: one `auth` key fills the principal,
+// actAs, and oauth seams from one config. The conformance kit + shared types
+// ship here (safe — no peer deps reachable through them); the five zero-arg
+// preset FUNCTIONS ship on their own subpath instead
+// (@vendoai/vendo/auth/auth0, /auth/auth-js, /auth/clerk, /auth/jwt,
+// /auth/supabase) so importing this server entry never forces a host to
+// have every preset's optional peer dep installed (corpus-triage Task 9 —
+// see auth-presets/index.ts for why).
 export {
-  auth0,
-  authJs,
-  clerk,
   hostAuthPresetConformance,
-  jwt,
-  supabase,
   type HostAuthPreset,
   type HostAuthPresetConformanceOptions,
   type HostAuthPresetOptions,

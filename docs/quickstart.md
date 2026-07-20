@@ -152,7 +152,8 @@ hand-write one.
 // app/api/vendo/[...vendo]/route.ts — the `vendo init` scaffold, plus an
 // explicit model pin (init itself writes no model line)
 import { anthropic } from "@ai-sdk/anthropic";
-import { authJs, createVendo, nextVendoHandler } from "@vendoai/vendo/server";
+import { authJs } from "@vendoai/vendo/auth/auth-js";
+import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
 import { registry } from "@/vendo/registry";
 
 const vendo = createVendo({
