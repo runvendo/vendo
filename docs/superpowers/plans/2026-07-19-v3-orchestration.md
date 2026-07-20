@@ -48,3 +48,8 @@ law-2 payload = tool's exact required params + literal query inputs; inline refs
 (inlineTools extension for single-segment names; <Query> still accepted); kitPrompt hoisted to core;
 live 5/6 PASS + 1 PARTIAL-honest. CAVEAT for W4b: island names can't shadow Kit names anymore (forwarded).
 Remaining: W4b (running) → W5 (retirement + frozen-30 final gate + report).
+
+## FINAL GATE DISPATCHED 2026-07-20 (main @ 090b1779 = FULL v3: #412 #414 #415 #417 #425 #432 #433 #434 #435).
+Two halves: vendo-gate-maple (M1-15 + F1-5, port 3000), vendo-gate-cadence (C1-15 + F6-10, port 3200).
+One attempt each, zero fixes, GOLDEN.md bar, screenshots committed per prompt, branches pushed, NO PRs.
+Orchestrator combines -> final report (arc 11/30 -> N/30 + fresh 10) + results page + evidence PR.
