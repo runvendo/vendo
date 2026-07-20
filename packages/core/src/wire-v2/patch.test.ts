@@ -168,17 +168,19 @@ describe("compileWirePatchV2 queries, islands, name", () => {
   });
 
   it("RemoveIsland then Island in one patch replaces the island (document order)", () => {
+    // "MiniTrend" — island names must not collide with the built-in set (the
+    // W3 Kit adoption made e.g. Sparkline a prewired name that wins resolution).
     const withIsland = patch(`<Edit>
-      <Island name="Sparkline">export default function Sparkline() { return null; }</Island>
-      <Insert into="grid-1"><Sparkline/></Insert>
+      <Island name="MiniTrend">export default function MiniTrend() { return null; }</Island>
+      <Insert into="grid-1"><MiniTrend/></Insert>
     </Edit>`);
     const replaced = patch(`<Edit>
-      <RemoveIsland name="Sparkline"/>
-      <Island name="Sparkline">export default function Sparkline() { return "v2"; }</Island>
+      <RemoveIsland name="MiniTrend"/>
+      <Island name="MiniTrend">export default function MiniTrend() { return "v2"; }</Island>
     </Edit>`, withIsland);
     expect(replaced.issues).toEqual([]);
-    expect(replaced.components.Sparkline).toContain('"v2"');
-    expect(node(replaced, "sparkline-1")?.source).toBe("generated");
+    expect(replaced.components.MiniTrend).toContain('"v2"');
+    expect(node(replaced, "minitrend-1")?.source).toBe("generated");
   });
 
   it("Island then RemoveIsland in one patch still removes (document order)", () => {
