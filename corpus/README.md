@@ -116,7 +116,7 @@ clean per-model scratch root — and scores the result against
 - Credential: the run needs `ANTHROPIC_API_KEY` or a Claude Code login and
   fails fast with a clear message when neither is available. The Claude Agent
   SDK deliberately exists nowhere in the workspace (host-only resolution
-  doctrine, enforced by the dev-riders missing-install test); the matrix
+  doctrine); the matrix
   provisions a pinned copy into the gitignored `corpus/.repos/.agent-sdk/`
   cache on first run (needs npm + network once).
 - CI posture: like the other live layers, the AI matrix is never part of

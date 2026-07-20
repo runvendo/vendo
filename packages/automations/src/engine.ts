@@ -108,6 +108,8 @@ const resumeSchema = z.object({
   claimedBy: z.string().optional(),
 });
 
+const runStatusSchema = z.enum(["running", "ok", "error", "stopped", "pending-approval"]);
+
 const baseRunRecordSchema = z.object({
   id: z.string(),
   appId: z.string(),
@@ -115,7 +117,7 @@ const baseRunRecordSchema = z.object({
     kind: z.enum(["schedule", "host-event", "external"]),
     event: z.string().optional(),
   }),
-  status: z.enum(["running", "ok", "error", "stopped", "pending-approval"]),
+  status: runStatusSchema,
   startedAt: z.string(),
   finishedAt: z.string().optional(),
   steps: z.array(z.object({
@@ -142,11 +144,8 @@ interface RunRowData {
 
 const runRowDataSchema = z.object({
   appId: z.string(),
-  trigger: z.object({
-    kind: z.enum(["schedule", "host-event", "external"]),
-    event: z.string().optional(),
-  }),
-  status: z.enum(["running", "ok", "error", "stopped", "pending-approval"]),
+  trigger: baseRunRecordSchema.shape.trigger,
+  status: runStatusSchema,
   record: internalRunRecordSchema,
   startedAt: z.string(),
   finishedAt: z.string().optional(),
@@ -183,19 +182,11 @@ const parseRunRow = (record: VendoRecord): RunRowData => {
   return result.data as unknown as RunRowData;
 };
 
-const publicRun = (record: InternalRunRecord): RunRecord => {
-  const result = baseRunRecordSchema.safeParse(record);
-  if (!result.success) throw new VendoError("validation", `invalid run record: ${result.error.issues[0]?.message ?? "invalid"}`);
-  return result.data;
-};
+// Callers already validated the row via parseRunRow; only __resume needs stripping.
+const publicRun = ({ __resume: _, ...record }: InternalRunRecord): RunRecord => record;
 
 const triggerEvent = (source: TriggerSource): string | undefined =>
   source.kind === "host-event" || source.kind === "external" ? source.event : undefined;
-
-const triggerRef = (trigger: Trigger): RunRecord["trigger"] => ({
-  kind: trigger.on.kind,
-  ...(triggerEvent(trigger.on) === undefined ? {} : { event: triggerEvent(trigger.on) }),
-});
 
 const durationMs = (value: string): number | null => {
   const match = /^(\d+)([smhd])$/.exec(value);
@@ -531,7 +522,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     ? await config.apps.call(appId, step.tool, call.args, ctx)
     : await config.tools.execute(call, ctx);
 
-  const finishStoppedIfNeeded = async (run: InternalRunRecord, _ctx: RunContext): Promise<boolean> => {
+  const finishStoppedIfNeeded = async (run: InternalRunRecord): Promise<boolean> => {
     if (stopped.has(run.id)) {
       // runs.stop persisted and audited the authoritative stopped row; this is a stale in-flight copy.
       run.status = "stopped";
@@ -547,6 +538,17 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     }
     if (terminalStatus(run.status)) return true;
     return false;
+  };
+
+  const failStep = async (
+    run: InternalRunRecord,
+    ctx: RunContext,
+    step: Step,
+    error: unknown,
+  ): Promise<void> => {
+    const failed: ToolOutcome = { status: "error", error: { code: "validation", message: message(error) } };
+    appendOutcome(run, step, failed);
+    await terminal(run, ctx, "error", `stopped at ${step.id}: ${message(error)}`, failed.error);
   };
 
   const continueSteps = async (
@@ -566,7 +568,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     if (trigger.run.kind !== "steps") throw new VendoError("validation", "steps run expected");
     const steps = trigger.run.steps;
     for (let stepIndex = state.stepIndex; stepIndex < steps.length; stepIndex += 1) {
-      if (await finishStoppedIfNeeded(run, ctx)) return;
+      if (await finishStoppedIfNeeded(run)) return;
       const step = steps[stepIndex] as Step;
       let items: Json[] | undefined = stepIndex === state.stepIndex ? state.iterationItems : undefined;
       let outputs: Json[] = stepIndex === state.stepIndex ? state.iterationOutputs ?? [] : [];
@@ -582,9 +584,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           }
         }
       } catch (error) {
-        const failed: ToolOutcome = { status: "error", error: { code: "validation", message: message(error) } };
-        appendOutcome(run, step, failed);
-        await terminal(run, ctx, "error", `stopped at ${step.id}: ${message(error)}`, failed.error);
+        await failStep(run, ctx, step, error);
         return;
       }
 
@@ -592,20 +592,18 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         ? [{}]
         : items.map((item, index) => ({ item, index }));
       for (let index = iterationStart; index < iterations.length; index += 1) {
-        if (await finishStoppedIfNeeded(run, ctx)) return;
+        if (await finishStoppedIfNeeded(run)) return;
         const iteration = iterations[index] as { item?: Json; index?: number };
         let args: Record<string, Json>;
         try {
           args = await stepArgs(step, state.event, state.stepOutputs, iteration.item);
         } catch (error) {
-          const failed: ToolOutcome = { status: "error", error: { code: "validation", message: message(error) } };
-          appendOutcome(run, step, failed);
-          await terminal(run, ctx, "error", `stopped at ${step.id}: ${message(error)}`, failed.error);
+          await failStep(run, ctx, step, error);
           return;
         }
         const call: ToolCall = { id: id("call_"), tool: step.tool, args };
         const outcome = await executeCall(app.doc.id, step, call, ctx);
-        if (await finishStoppedIfNeeded(run, ctx)) return;
+        if (await finishStoppedIfNeeded(run)) return;
         appendOutcome(run, step, outcome);
         if (outcome.status === "pending-approval") {
           await park(run, ctx, {
@@ -661,7 +659,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       }, ctx);
       // Cross-instance stops cannot reach this process's controller, so the persisted
       // terminal-row check remains the best-effort fallback for a late result.
-      if (await finishStoppedIfNeeded(run, ctx)) return;
+      if (await finishStoppedIfNeeded(run)) return;
       run.steps = report.toolCalls.map(({ call, outcome }) => ({
         id: call.id,
         tool: call.tool,
@@ -670,7 +668,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       }));
       await terminal(run, ctx, report.status, report.summary);
     } catch (error) {
-      if (await finishStoppedIfNeeded(run, ctx)) return;
+      if (await finishStoppedIfNeeded(run)) return;
       await terminal(run, ctx, "error", message(error), { code: "not-implemented", message: message(error) });
     }
   };
@@ -801,6 +799,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   };
 
   const resumeRun = async (approvalId: string, approved: boolean): Promise<void> => {
+    const dropPark = (): Promise<void> => config.store.records(PARKED).delete(approvalId);
     const parkedRecord = await config.store.records(PARKED).get(approvalId);
     if (parkedRecord === null) return;
     const { runId } = parkedSchema.parse(parkedRecord.data);
@@ -809,7 +808,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     try {
       const stored = await config.store.records(RUNS).get(runId);
       if (stored === null) {
-        await config.store.records(PARKED).delete(approvalId);
+        await dropPark();
         return;
       }
       const run = parseRunRow(stored).record;
@@ -817,7 +816,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         if (run.status === "running" && run.__resume?.approvalId === approvalId && run.__resume.claimedBy !== undefined) {
           return;
         }
-        await config.store.records(PARKED).delete(approvalId);
+        await dropPark();
         return;
       }
       const approval = await config.store.records(APPROVALS).get(approvalId);
@@ -852,17 +851,17 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       if (appFound === null) {
         const ctx = runContext(run, approvalData.request.ctx.principal.subject);
         await terminal(run, ctx, "stopped", "app deleted before resume");
-        await config.store.records(PARKED).delete(approvalId);
+        await dropPark();
         return;
       }
       const ctx = runContext(run, appFound.row.subject);
       if (!appFound.row.enabled || appFound.row.doc.trigger === undefined) {
         await terminal(run, ctx, "stopped", "automation disabled before resume");
-        await config.store.records(PARKED).delete(approvalId);
+        await dropPark();
         return;
       }
-      if (await finishStoppedIfNeeded(run, ctx)) {
-        await config.store.records(PARKED).delete(approvalId);
+      if (await finishStoppedIfNeeded(run)) {
+        await dropPark();
         return;
       }
       await audit(ctx, "running");
@@ -876,22 +875,42 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           pending.detail = "user declined approval";
           pending.at = iso();
         }
-        await terminal(run, ctx, "error", `stopped at ${state === undefined ? "step" : appFound.row.doc.trigger.run.kind === "steps" ? appFound.row.doc.trigger.run.steps[state.stepIndex]?.id ?? "step" : "step"}: user declined`, {
+        const declinedStepId = state !== undefined && appFound.row.doc.trigger.run.kind === "steps"
+          ? appFound.row.doc.trigger.run.steps[state.stepIndex]?.id ?? "step"
+          : "step";
+        await terminal(run, ctx, "error", `stopped at ${declinedStepId}: user declined`, {
           code: "blocked",
           message: "the user declined the approval",
         });
-        await config.store.records(PARKED).delete(approvalId);
+        await dropPark();
         return;
       }
-      await mintGrant(approvalData.request);
       const state = run.__resume as ResumeState;
-      const trigger = validateTrigger(appFound.row.doc.trigger);
-      if (trigger.run.kind !== "steps") throw new VendoError("validation", "parked agentic run is invalid");
-      const step = trigger.run.steps[state.stepIndex];
-      if (step === undefined) throw new VendoError("validation", "parked step is missing");
-      const outcome = await executeCall(run.appId, step, state.call, ctx);
-      if (await finishStoppedIfNeeded(run, ctx)) {
-        await config.store.records(PARKED).delete(approvalId);
+      // The run is claimed (status "running", claimedBy persisted) from here on: a throw
+      // escaping this section would strand it in "running" forever (re-entry short-circuits
+      // on the claim and sweepParked only scans "pending-approval"), so any resume failure
+      // must land the run on a terminal row instead.
+      let trigger: Trigger;
+      let step: Step;
+      let outcome: ToolOutcome;
+      try {
+        await mintGrant(approvalData.request);
+        trigger = validateTrigger(appFound.row.doc.trigger);
+        if (trigger.run.kind !== "steps") throw new VendoError("validation", "parked agentic run is invalid");
+        const parkedStep = trigger.run.steps[state.stepIndex];
+        if (parkedStep === undefined) throw new VendoError("validation", "parked step is missing");
+        step = parkedStep;
+        outcome = await executeCall(run.appId, step, state.call, ctx);
+      } catch (error) {
+        await terminal(run, ctx, "error", `stopped at resume: ${message(error)}`, {
+          code: "validation",
+          message: message(error),
+        });
+        await dropPark();
+        return;
+      }
+      if (await finishStoppedIfNeeded(run)) {
+        await dropPark();
         return;
       }
       const pending = [...run.steps].reverse().find(
@@ -908,24 +927,24 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       if (outcome.status === "pending-approval") {
         state.approvalId = outcome.approvalId;
         delete state.claimedBy;
-        await config.store.records(PARKED).delete(approvalId);
+        await dropPark();
         await park(run, ctx, state);
         return;
       }
       if (outcome.status !== "ok") {
         const error = errorForOutcome(outcome);
         await terminal(run, ctx, "error", `stopped at ${step.id}: ${error.message}`, error);
-        await config.store.records(PARKED).delete(approvalId);
+        await dropPark();
         return;
       }
       if (state.iterationItems === undefined) state.stepOutputs[step.id] = outcome.output;
       else (state.iterationOutputs ??= []).push(outcome.output);
       delete run.__resume;
       if (!await writeRun(run)) {
-        await config.store.records(PARKED).delete(approvalId);
+        await dropPark();
         return;
       }
-      await config.store.records(PARKED).delete(approvalId);
+      await dropPark();
       await continueSteps(appFound.row, trigger, run, ctx, {
         stepIndex: state.iterationItems === undefined ? state.stepIndex + 1 : state.stepIndex,
         event: state.event,
@@ -1138,7 +1157,9 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     const timer = setInterval(() => {
       if (ticking) return;
       ticking = true;
-      void tick().finally(() => { ticking = false; });
+      // A failed tick must never surface as an unhandled rejection and crash the
+      // host; the next interval retries.
+      void tick().catch(() => undefined).finally(() => { ticking = false; });
     }, intervalMs);
     return () => clearInterval(timer);
   };
