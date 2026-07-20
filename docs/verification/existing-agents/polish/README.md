@@ -47,3 +47,22 @@ degradation is only the console noise.
 Guard: the same spec's build-window test, `packages/vendo/src/server.test.ts`
 (flag-gated pending vs contracted 404), and the embeds unit suite (every
 poll carries `?pending=1`).
+
+Live corroboration (examples/ai-sdk-agent, real model turn, 2026-07-20): a
+full "make me a dashboard" build window against the real wire — every poll
+`GET …/open?pending=1 → 200`, ZERO browser console errors, and the dashboard
+landed inline (~1.8k px island, content-sized — fix 1 holding on a real
+generated app).
+
+## Fix 3 — AI SDK quickstart fixed-input overlap
+
+The quickstart's stock input is `fixed bottom-0` and translucent; the stock
+container's `py-24` clears chat-text-sized content, but a generated app card
+is hundreds of pixels tall and ended up under the input at the bottom of the
+scroll (see wave4's `wave4-c1-app-built.png`). Fix: one fenced spacer div in
+the marked vendo diff of `app/page.tsx`; the README's diff table documents
+it, so the "unmodified starter plus the fenced lines" claim stays honest.
+The Mastra example is unaffected — its form is a sticky in-flow footer.
+
+- `polish-3-input-clearance-after.png` — live turn, scrolled to the bottom:
+  the last content sits well clear of the fixed input.
