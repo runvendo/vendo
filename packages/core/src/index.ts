@@ -29,6 +29,7 @@ export * from "./triggers.js";
 // sibling modules (expressions, attributes, scan, limits, state, the shape
 // checker) stay internal.
 export { compileWireV2, type WireCompileOptions, type WireCompileResult } from "./wire-v2/compile.js";
+export { expandInlineRefs, type InlineRefsResult } from "./wire-v2/inline-refs.js";
 export { WIRE_ISSUE_CODES, type WireIssue, type WireIssueCode } from "./wire-v2/expression.js";
 // v2 spec §5 — the one-dialect edit surface: print the app as id-anchored
 // wire (the model's edit context), apply the model's <Edit> patch.
