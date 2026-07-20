@@ -391,6 +391,13 @@ async function zodBase(
       const argument = call.arguments[0];
       if (!argument) return ok({ type: "array" });
       const items = await zodFromExpression(extraction, module, argument, depth + 1);
+      // An unrecognized `items` degrades to a bare `{type:"array"}` (kept
+      // recognized:true with `reason` attached) rather than failing the
+      // whole array closed — but one level up, `ok()` drops that `reason`
+      // on the floor. A nested-array depth-exhaustion case hits exactly
+      // this and never surfaces as fail-closed at the top; see the
+      // "depth exhaustion" row's comment in static-ts.oracle.test.ts for
+      // the traced example and the modifier-chain workaround it uses instead.
       return items.recognized
         ? ok({ type: "array", items: items.schema })
         : { schema: { type: "array" }, optional: false, recognized: true, reason: items.reason };
