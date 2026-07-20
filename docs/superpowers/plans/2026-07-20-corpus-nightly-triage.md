@@ -72,6 +72,31 @@
 
 - [ ] Dispatch a separate investigation using local Layer-1 reruns of invoify (smallest) to capture the real post-init typecheck stderr; classify root cause; report only (fixes are follow-up scope).
 
+### Task 8 (added post-investigation, Yousef-approved): react.tsx named re-exports
+
+**Context:** `packages/vendo/src/react.tsx:6` does `export * from "@vendoai/ui"` inside a `"use client"` file; Next's flight loader cannot enumerate `export *` for the client-reference manifest ("export * in a client boundary" build error). Dormant only because init stopped wrapping layouts; Task 1's harness paste re-exposes it on every Next host. MUST land with Task 1.
+
+- [ ] Replace the `export *` with explicit named re-exports of @vendoai/ui's public surface (enumerate from ui's index; keep parity — a test should assert the named list matches ui's actual exports so future ui additions fail loudly here instead of silently missing).
+- [ ] `pnpm --filter @vendoai/vendo test` + typecheck green; commit `fix(vendo): named client re-exports — Next flight loader cannot enumerate export * in a use-client boundary`.
+
+### Task 9 (added, Yousef-approved): auth-presets stop eagerly importing every preset
+
+**Context:** `packages/vendo/src/auth-presets/index.ts` (commit `aa0d69fd`) eagerly re-exports all five presets; server.js imports through it, so hosts lacking any one preset's peer deps (e.g. invoify has no `@auth/core`) fail with Module not found even when no preset is used.
+
+- [ ] Restructure so importing the vendo server never evaluates preset modules the host didn't select (per-preset entry points or lazy dynamic import at use-time — follow whatever shape `aa0d69fd`'s consumers expect; check with the init-scaffolds usage). TDD: a test asserting the server entry's module graph doesn't reach `@auth/core` (e.g. resolve-and-walk or a bundler-style probe, matching existing test conventions).
+- [ ] Tests + typecheck green; commit `fix(vendo): auth presets load lazily — server import no longer requires every preset's peer deps`.
+
+### Task 10 (added, Yousef-approved): keep esbuild out of host bundle graphs
+
+**Context:** `packages/apps/src/engine.ts` lazy-imports esbuild (island syntax check); esbuild's native-binary loader defeats webpack static analysis, so every Next host importing `@vendoai/vendo/server` fails to build. Demo apps carry `serverExternalPackages: ["esbuild", "@electric-sql/pglite"]` in next.config; real hosts never get it.
+
+- [ ] Decide the mechanism with a bias to NOT editing host configs: prefer restructuring so esbuild is not reachable from the default `createVendo()`/`nextVendoHandler` composition (e.g. eval-guarded import that webpack ignores, or an optional injection seam), falling back to init writing `serverExternalPackages` into host next.config only if restructuring is disproportionate. Document the choice in the commit.
+- [ ] TDD at whatever seam is chosen; tests + typecheck green; demo apps still build (`pnpm build`); commit accordingly.
+
+### Task ordering note
+
+Task 8 must merge in the same PR as Task 1 (pairing rule above). Tasks 9/10 unblock host.build on invoify-class repos, which Task 6's verification sweep then proves.
+
 ---
 
 ## Decisions locked during planning
