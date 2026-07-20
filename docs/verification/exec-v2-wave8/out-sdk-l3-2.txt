@@ -1,0 +1,14 @@
+[sdk-l3-2] mode=layer3 creating sandbox from pbgk5vxvhmtjmcn8lgeo…
+[sdk-l3-2] boot→control-port: 1.4s
+[sdk-l3-2] task boxtask_79733479-fd43-4d6c-965c-14a93a8e8935 started (1.9s)
+.................
+[sdk-l3-2] BUILD 92.6s ok=true servesUi=true fns=listInvoices,moveInvoice
+[sdk-l3-2] summary: Built a fully functional invoice kanban board web app with drag-and-drop between Draft/Sent/Paid columns. Dragging cards updates status server-side via the moveInvoice endpoint. Seeded with 7 sample invoices in memory.
+[sdk-l3-2] GET / → 200 text/html; charset=utf-8
+[sdk-l3-2] phase profile over 27 log lines (~7 assistant turns):
+  model        49.2s (53%)
+  bash         21.9s (24%)
+  npm-install  0.0s (0%)
+  other        16.8s (18%)
+[sdk-l3-2] full log: /Users/yousefh/orca/workspaces/flowlet/exec-wave8-sdk/docs/verification/exec-v2-wave8/agent-log-sdk-l3-2.txt
+[sdk-l3-2] sandbox killed (94.7s)

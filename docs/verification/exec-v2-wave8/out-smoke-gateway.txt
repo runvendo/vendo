@@ -1,0 +1,18 @@
+[gateway] creating sandbox from pbgk5vxvhmtjmcn8lgeo…
+......
+[gateway] result: {
+  "ok": true,
+  "summary": "Created zero-dependency Node server with POST /fn/ping endpoint and GET /vendo.json manifest serving. App restarted and verified working.",
+  "filesChanged": [
+    "/app/server.js",
+    "/app/vendo.json",
+    "/app/.vendo/run"
+  ],
+  "testsRun": 0,
+  "fns": [
+    "ping"
+  ]
+}
+[gateway] POST /fn/ping → 200 {"result":{"pong":true}}
+[gateway] PASS (38.0s total)
+[gateway] sandbox killed
