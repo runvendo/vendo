@@ -1211,7 +1211,12 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     });
     const document = await modelEngine.create(
       { prompt: "Build it" },
-      guardDeps(model, { tools: [{ name: "host_metric", description: "Revenue metric", risk: "read" }] }),
+      // pipeline off: this test pins the FREE-FORM fallback loop (the
+      // structured path is covered in engine-pipeline.test.ts).
+      guardDeps(model, {
+        tools: [{ name: "host_metric", description: "Revenue metric", risk: "read" }],
+        pipeline: { structuredRepair: false },
+      }),
     );
     expect((document.tree as { queries?: Array<{ tool: string }> }).queries).toEqual([
       { name: "rev", tool: "host_metric" },
@@ -1233,6 +1238,9 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
       guardDeps(model, {
         tools: [{ name: "host_metric", description: "Revenue metric", risk: "read" }],
         toolShapes: { host_metric: { kind: "object", fields: { total: { kind: "string" } } } },
+        // pipeline off: pins the free-form fallback (structured path is
+        // covered in engine-pipeline.test.ts).
+        pipeline: { structuredRepair: false },
       }),
     );
     expect(calls).toBe(2);
@@ -1437,10 +1445,13 @@ describe("edit path filters pre-existing catalog/action issues (fast-follow)", (
 });
 
 describe("action-wiring honesty guard", () => {
+  // pipeline off: these tests pin the FREE-FORM fallback loop (the
+  // structured-repair path is covered in engine-pipeline.test.ts).
   const actionDeps = (model: unknown, tools: Array<{ name: string; description: string; risk: string }>) => ({
     model,
     catalog,
     tools,
+    pipeline: { structuredRepair: false },
   }) as unknown as Parameters<typeof modelEngine.create>[1];
 
   it("repairs a mutating action that carries no payload", async () => {

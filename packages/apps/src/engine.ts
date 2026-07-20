@@ -29,15 +29,25 @@ import {
   type WireCompileResult,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
+import {
+  actionFaults,
+  endPass,
+  regionParallelCreate,
+  structuredRepair,
+  type PipelineConfig,
+  type PipelineContext,
+} from "./pipeline.js";
 import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "./pins.js";
 import { prewiredPropNames, prewiredSchemaPrompt } from "./prewired-schema.js";
 
 /** The slice of a tool descriptor generation needs: prompt context and the
- *  query-tool existence check. */
+ *  query-tool existence check. `inputSchema` (W4 pipeline) feeds the
+ *  structured-repair payload skeleton for mutation-without-payload fixes. */
 export interface HostToolInfo {
   name: string;
   description: string;
   risk: string;
+  inputSchema?: Record<string, unknown>;
 }
 
 /** v2 spec §§1,4 — a compiled prefix of the streaming wire: always a
@@ -58,7 +68,7 @@ export interface GeneratedPartial {
  *  ones are failed attempts. Opt-in: nothing is emitted unless `onTiming` is
  *  wired. */
 export interface GenerationTimingEvent {
-  lane: "paint" | "full";
+  lane: "paint" | "full" | "outline" | "section" | "repair" | "end-pass";
   phase: "first-partial" | "complete";
   atMs: number;
   thinking: boolean;
@@ -94,6 +104,8 @@ export interface GenerationDependencies {
   };
   /** Speed lane — opt-in structured timing seam (see GenerationTimingEvent). */
   onTiming?: (event: GenerationTimingEvent) => void;
+  /** W4 pipeline knobs (structured repair / region-parallel / end pass). */
+  pipeline?: PipelineConfig;
 }
 
 export interface GenerationCreateInput {
@@ -306,8 +318,8 @@ const streamWire = async (
   system: string,
   prompt: string,
   hostComponents: readonly string[],
-  timing?: { lane: "paint" | "full"; thinking: boolean; startedAt: number },
-): Promise<{ compiled?: WireCompileResult; issues: string[] }> => {
+  timing?: { lane: GenerationTimingEvent["lane"]; thinking: boolean; startedAt: number },
+): Promise<{ compiled?: WireCompileResult; raw?: string; issues: string[] }> => {
   let text = "";
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastFlushAt = 0;
@@ -371,7 +383,7 @@ const streamWire = async (
       const usage = await Promise.resolve(result.usage).catch(() => undefined);
       reportTiming("complete", usage === undefined ? undefined : { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens });
     }
-    return { compiled: compileWireV2(extractWire(text), { hostComponents, ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }) }), issues: [] };
+    return { compiled: compileWireV2(extractWire(text), { hostComponents, ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }) }), raw: extractWire(text), issues: [] };
   } catch (error) {
     await finishPartials();
     return { issues: [`model generation failed: ${error instanceof Error ? error.message : "unknown error"}`] };
@@ -698,73 +710,23 @@ const catalogIssues = async (
   return issues;
 };
 
-/** Button labels that promise a state change. A Button carrying one of these
- *  is a submit/primary affordance: it must DO something (a mutating host tool
- *  bound to real context) or honestly say it can't — a no-op submit is the
- *  facade class (verify-v2 #6 intake form). Read-only verbs (view/show/open)
- *  and dismiss verbs (cancel/clear/close) are deliberately excluded. */
-const SUBMIT_LABEL = /\b(submit|save|create|add|send|remind|reminder|transfer|pay|confirm|update|delete|remove|apply|schedule|book|post|approve|generate|register|enroll|invite|assign)\b/i;
-
-const isMutatingRisk = (risk: string | undefined): boolean => risk === "write" || risk === "destructive";
-
-const hasPayload = (payload: unknown): boolean =>
-  isRecord(payload) ? Object.keys(payload).length > 0 : payload !== undefined && payload !== null;
-
-/** Every {action,payload?} binding reachable in a node's props, with the prop
- *  it sits under (actions can nest inside arrays/objects, not just top-level
- *  on* attributes). */
-const actionBindingsInProps = (
-  props: Record<string, unknown>,
-): Array<{ prop: string; action: string; payload: unknown }> => {
-  const found: Array<{ prop: string; action: string; payload: unknown }> = [];
-  const walk = (prop: string, value: unknown): void => {
-    if (isActionBinding(value)) {
-      const record = value as Record<string, unknown>;
-      found.push({ prop, action: record.action as string, payload: record.payload });
-      return;
-    }
-    if (Array.isArray(value)) {
-      for (const item of value) walk(prop, item);
-      return;
-    }
-    if (isRecord(value)) {
-      for (const child of Object.values(value)) walk(prop, child);
-    }
-  };
-  for (const [prop, value] of Object.entries(props)) walk(prop, value);
-  return found;
-};
-
 /** Action-wiring honesty (verify-v2 #4 reminder, #6 intake). A mutating action
  *  with no payload has nothing to change; a submit button wired to a read tool
  *  or to nothing at all is a fake affordance. Each routes to repair, where the
  *  model binds the row/form context — or, when the host has no tool for the
- *  ask, replaces the dead button with an honest disclaimer. */
-const actionIssues = (tree: TreeV2, tools: readonly HostToolInfo[] | undefined): string[] => {
-  const risk = new Map((tools ?? []).map((tool) => [tool.name, tool.risk]));
-  const issues: string[] = [];
-  for (const node of tree.nodes) {
-    const props = node.props;
-    const label = node.component === "Button" && typeof props?.label === "string" ? props.label : "";
-    const submitLike = label !== "" && SUBMIT_LABEL.test(label);
-    const bindings = props === undefined ? [] : actionBindingsInProps(props);
-    if (submitLike && bindings.length === 0) {
-      issues.push(`node "${node.id}" is a submit button ("${label}") with no action — a button that does nothing is a fake affordance. Wire its onClick to a host tool that performs the action, binding the form/row context into payload; or if NO host tool can perform it, replace the button with an honest Text/Badge disclaimer that the action isn't available.`);
+ *  ask, replaces the dead button with an honest disclaimer. Detection lives in
+ *  pipeline.ts (shared with the structured-repair fix space); this renders the
+ *  repair-facing messages. */
+const actionIssues = (tree: TreeV2, tools: readonly HostToolInfo[] | undefined): string[] =>
+  actionFaults(tree, tools).map((fault) => {
+    if (fault.kind === "dead-submit") {
+      return `node "${fault.nodeId}" is a submit button ("${fault.label}") with no action — a button that does nothing is a fake affordance. Wire its onClick to a host tool that performs the action, binding the form/row context into payload; or if NO host tool can perform it, replace the button with an honest Text/Badge disclaimer that the action isn't available.`;
     }
-    for (const { prop, action, payload } of bindings) {
-      if (action.startsWith("fn:")) continue;
-      const toolRisk = risk.get(action);
-      if (toolRisk === undefined) continue;
-      if (isMutatingRisk(toolRisk) && !hasPayload(payload)) {
-        issues.push(`node "${node.id}" prop "${prop}" invokes mutating tool "${action}" with no payload — bind the context it acts on (a per-row id, or the form field values) into payload:{...} so the action has something to change.`);
-      }
-      if (submitLike && toolRisk === "read") {
-        issues.push(`node "${node.id}" submit button ("${label}") prop "${prop}" is wired to read-only tool "${action}" — a submit that only reads is a fake affordance. Wire it to a mutating host tool with a payload, or render an honest disclaimer if the host has none.`);
-      }
+    if (fault.kind === "missing-payload") {
+      return `node "${fault.nodeId}" prop "${fault.prop}" invokes mutating tool "${fault.action}" with no payload — bind the context it acts on (a per-row id, or the form field values) into payload:{...} so the action has something to change.`;
     }
-  }
-  return issues;
-};
+    return `node "${fault.nodeId}" submit button ("${fault.label}") prop "${fault.prop}" is wired to read-only tool "${fault.action}" — a submit that only reads is a fake affordance. Wire it to a mutating host tool with a payload, or render an honest disclaimer if the host has none.`;
+  });
 
 const distinctIssues = (current: string[], next: string[]): string[] => [
   ...new Set([...current, ...next]),
@@ -1049,6 +1011,16 @@ export const modelEngine: GenerationEngine = {
     const startedAt = Date.now();
     const hostComponents = deps.catalog.map(({ name }) => name);
     const basePrompt = `TASK: CREATE_APP\nUSER_REQUEST: ${input.prompt}`;
+    // W4 pipeline context: structured repair / region-parallel / end pass all
+    // validate through the ONE create validator.
+    const pipelineContext: PipelineContext = {
+      deps,
+      hostComponents,
+      startedAt,
+      validate: (compiled) => validateCompiledCreate(compiled, deps),
+    };
+    const finish = (document: GeneratedAppDocument): Promise<GeneratedAppDocument> =>
+      endPass(document, input.prompt, pipelineContext);
     // Tier-0 paint lane (v2 spec §4): only with a streaming consumer — the
     // instant paint exists to reach a screen. One attempt, no repair loop:
     // an invalid paint is simply not resident (the full lane still runs).
@@ -1079,7 +1051,42 @@ export const modelEngine: GenerationEngine = {
         ...deps,
         onPartial: (partial) => partial.tree.nodes.length < residentNodes ? undefined : forward(partial),
       };
+    // W4 pipeline steps 1+3 — outline + region-parallel tier-2 (flagged).
+    // Any planning/section/assembly failure falls through to the
+    // single-stream loop below: parallel is an optimization, never a gate.
+    if (deps.pipeline?.regionParallel === true) {
+      const parallel = await regionParallelCreate(pipelineContext, {
+        userRequest: input.prompt,
+        generateSection: async (prompt) => {
+          const output = await streamWire(
+            // Section streams bypass onPartial (the assembled prefix is
+            // emitted on section completion below) but keep the model/deps.
+            { ...deps, onPartial: undefined },
+            wireContract(deps),
+            prompt,
+            hostComponents,
+            { lane: "section", thinking: false, startedAt },
+          );
+          return output.raw;
+        },
+        ...(fullLaneDeps.onPartial === undefined ? {} : {
+          emitPartial: (assembledWire: string) => {
+            const compiled = compileWireV2(assembledWire, { hostComponents, ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }) });
+            if (compiled.tree.nodes.length < residentNodes) return;
+            void Promise.resolve(fullLaneDeps.onPartial?.({
+              tree: compiled.tree,
+              ...(compiled.name === undefined ? {} : { name: compiled.name }),
+              ...(Object.keys(compiled.components).length === 0 ? {} : { components: compiled.components }),
+            })).catch(() => undefined);
+          },
+        }),
+      });
+      if (parallel.document !== undefined) return finish(parallel.document);
+    }
     let issues: string[] = [];
+    // W4 pipeline step 5 — structured repair budget: at most 2 strict rounds
+    // per create, then today's free-form regeneration loop takes over.
+    let repairRounds = deps.pipeline?.structuredRepair === false ? 0 : 2;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const output = await streamWire(
         fullLaneDeps,
@@ -1093,8 +1100,14 @@ export const modelEngine: GenerationEngine = {
       issues = distinctIssues(issues, output.issues);
       if (output.compiled !== undefined) {
         const validated = await validateCompiledCreate(output.compiled, deps);
+        if (validated.document !== undefined) return finish(validated.document);
         issues = distinctIssues(issues, validated.issues);
-        if (validated.document !== undefined) return validated.document;
+        if (repairRounds > 0) {
+          const repaired = await structuredRepair(output.compiled, input.prompt, pipelineContext, repairRounds);
+          repairRounds -= repaired.rounds;
+          if (repaired.document !== undefined) return finish(repaired.document);
+          issues = distinctIssues(issues, repaired.issues);
+        }
       }
     }
     // Never a white box: a failed full lane falls back to the resident

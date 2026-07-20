@@ -120,6 +120,9 @@ export interface AppsConfig {
    *  `model` is the no-think switch (a thinking-disabled model instance);
    *  `disabled` forces single-lane generation. */
   paint?: GenerationDependencies["paint"];
+  /** W4 pipeline knobs, passed to the generation engine: structured repair
+   *  (default on), outline+region-parallel tier-2 and the end pass (opt-in). */
+  pipeline?: GenerationDependencies["pipeline"];
   /** The composition-normalized catalog (01 §14): derived schemas included. */
   catalog: NormalizedCatalog;
   theme?: VendoTheme;
@@ -432,6 +435,7 @@ const generationDependencies = (
   pinBaselines: config.pinBaselines,
   ...toolContext,
   ...(config.paint === undefined ? {} : { paint: config.paint }),
+  ...(config.pipeline === undefined ? {} : { pipeline: config.pipeline }),
   ...(onPartial === undefined ? {} : { onPartial }),
 });
 
@@ -942,7 +946,16 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         }
       }));
     return {
-      tools: descriptors.map(({ name, description, risk }) => ({ name, description, risk })),
+      tools: descriptors.map(({ name, description, risk, inputSchema }) => ({
+        name,
+        description,
+        risk,
+        // W4 pipeline — the structured-repair payload skeleton derives from
+        // the tool's input schema (mutation-without-payload fixes).
+        ...(typeof inputSchema === "object" && inputSchema !== null && !Array.isArray(inputSchema)
+          ? { inputSchema: inputSchema as Record<string, unknown> }
+          : {}),
+      })),
       ...(sampledShapes.size === 0 ? {} : { toolShapes: Object.fromEntries(sampledShapes) }),
     };
   };
