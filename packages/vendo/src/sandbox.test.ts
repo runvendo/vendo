@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SandboxAdapter, SandboxMachine } from "@vendoai/apps";
+import {
+  sandboxAdapterConformance,
+  type SandboxConformanceHarness,
+} from "@vendoai/apps/adapter-conformance";
+import { CLOUD_BOX_PORT, CLOUD_SANDBOX_PATH } from "./sandbox-wire.js";
 import { cloudSandbox } from "./sandbox.js";
 
 const encoder = new TextEncoder();
@@ -20,19 +25,33 @@ interface RecordedRequest {
   bytes?: Uint8Array;
 }
 
-/** In-memory fake of the console's /api/v1/sandboxes surface (the wire the
- * adapter must speak — see apps/console/lib/api/sandbox-handlers.ts). */
+/** The in-box app a mock machine serves on the (single) Cloud box port. */
+type BoxApp = (
+  request: { method: string; path: string; headers: Record<string, string>; body: Uint8Array },
+  ctx: { env: Record<string, string>; allowedDomains: string[] | undefined },
+) => { status: number; headers: Record<string, string>; body: Uint8Array | string };
+
+interface MockMachine {
+  env: Record<string, string>;
+  /** undefined = unrestricted egress (seam + wire-contract semantics). */
+  allowedDomains: string[] | undefined;
+  app?: BoxApp;
+  files: Map<string, Uint8Array>;
+}
+
+/** In-memory fake of the console's /api/v1/sandboxes surface, faithful to the
+ * PROVISIONAL wire contract in sandbox-wire.ts — the ONE place a Cloud-side
+ * correction to that contract must land alongside the adapter. */
 function fakeConsole() {
   const requests: RecordedRequest[] = [];
-  const machines = new Map<string, {
-    state: "live" | "paused" | "stopped";
-    files: Map<string, Uint8Array>;
-  }>();
-  const snapshots = new Map<string, string>();
-  let minted = 0;
+  const machines = new Map<string, MockMachine>();
+  const snapshots = new Map<string, Omit<MockMachine, "files"> & { files: Map<string, Uint8Array> }>();
+  let mintedMachines = 0;
+  let mintedSnapshots = 0;
 
-  const json = (body: unknown, status = 200): Response =>
-    Response.json(body, { status });
+  const json = (body: unknown, status = 200): Response => Response.json(body, { status });
+  const notFound = (what: string): Response =>
+    json({ error: { code: "not-found", message: `${what} not found.` } }, 404);
 
   const handler = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const request = new Request(input, init);
@@ -54,44 +73,90 @@ function fakeConsole() {
     requests.push(recorded);
 
     const path = url.pathname;
-    if (path === "/api/v1/sandboxes" && request.method === "POST") {
-      const body = recorded.json as { files?: Record<string, string> };
-      const id = `m_${String(++minted).padStart(24, "0")}`;
-      const files = new Map<string, Uint8Array>();
-      for (const [filePath, data] of Object.entries(body.files ?? {})) {
-        files.set(filePath, fromBase64(data));
-      }
-      machines.set(id, { state: "live", files });
+    if (path === CLOUD_SANDBOX_PATH && request.method === "POST") {
+      const body = recorded.json as { env: Record<string, string>; template?: string; egress?: string[] };
+      const id = `m_${(++mintedMachines).toString(16).padStart(24, "0")}`;
+      machines.set(id, {
+        env: { ...body.env },
+        allowedDomains: body.egress === undefined ? undefined : [...body.egress],
+        files: new Map(),
+      });
       return json({ id, url: `https://${id}.m.vendo.run` }, 201);
     }
-    if (path === "/api/v1/sandboxes/resume" && request.method === "POST") {
-      const { ref } = recorded.json as { ref: string };
-      const id = snapshots.get(ref);
-      const machine = id === undefined ? undefined : machines.get(id);
-      if (id === undefined || machine === undefined) {
-        return json({ error: { code: "not-found", message: "Snapshot not found." } }, 404);
-      }
-      machine.state = "live";
+    if (path === `${CLOUD_SANDBOX_PATH}/resume` && request.method === "POST") {
+      const body = recorded.json as { ref: string; egress?: string[] | null };
+      const snapshot = snapshots.get(body.ref);
+      if (snapshot === undefined) return notFound("Snapshot");
+      const id = `m_${(++mintedMachines).toString(16).padStart(24, "0")}`;
+      machines.set(id, {
+        env: { ...snapshot.env },
+        // Wire contract: egress absent = snapshot-time policy, null =
+        // unrestricted, a list = REPLACE the snapshot's allowlist.
+        allowedDomains: !("egress" in body)
+          ? (snapshot.allowedDomains === undefined ? undefined : [...snapshot.allowedDomains])
+          : (body.egress === null || body.egress === undefined ? undefined : [...body.egress]),
+        ...(snapshot.app === undefined ? {} : { app: snapshot.app }),
+        files: new Map(snapshot.files),
+      });
       return json({ id, url: `https://${id}.m.vendo.run` });
     }
 
-    const match = /^\/api\/v1\/sandboxes\/([^/]+)(\/.*)?$/.exec(path);
-    const machine = match ? machines.get(match[1]!) : undefined;
-    if (!match || machine === undefined) {
-      return json({ error: { code: "not-found", message: "Sandbox not found." } }, 404);
+    const match = new RegExp(`^${CLOUD_SANDBOX_PATH}/([^/]+)(/.*)?$`).exec(path);
+    if (!match) return notFound("Route");
+    const key = decodeURIComponent(match[1]!);
+    const rest = match[2] ?? "";
+
+    if (request.method === "DELETE" && rest === "") {
+      // The one {id} route accepts machine ids AND snapshot refs (wire contract).
+      if (key.startsWith("vendo:")) {
+        return snapshots.delete(key) ? json({ ok: true }) : notFound("Snapshot");
+      }
+      return machines.delete(key) ? json({ ok: true }) : notFound("Sandbox");
     }
-    const [, id, rest] = match;
-    if (machine.state !== "live" && request.method !== "DELETE") {
-      return json({ error: { code: "conflict", message: `Sandbox is ${machine.state}.` } }, 409);
-    }
-    switch (`${request.method} ${rest ?? ""}`) {
+    const machine = machines.get(key);
+    if (machine === undefined) return notFound("Sandbox");
+
+    switch (`${request.method} ${rest}`) {
+      case "POST /request": {
+        const body = recorded.json as {
+          method: string; path: string; headers?: Record<string, string>; body_b64?: string;
+        };
+        // The relay is HARDWIRED to the box port — no port rides the wire.
+        expect(recorded.json).not.toHaveProperty("port");
+        if (machine.app === undefined) return json({ status: 503, headers: {}, body_b64: "" });
+        const answered = machine.app(
+          {
+            method: body.method,
+            path: body.path,
+            headers: body.headers ?? {},
+            body: body.body_b64 === undefined ? new Uint8Array() : fromBase64(body.body_b64),
+          },
+          { env: machine.env, allowedDomains: machine.allowedDomains },
+        );
+        return json({
+          status: answered.status,
+          headers: answered.headers,
+          body_b64: toBase64(
+            typeof answered.body === "string" ? encoder.encode(answered.body) : answered.body,
+          ),
+        });
+      }
+      case "POST /snapshot": {
+        // The source machine KEEPS RUNNING — the checkpoint is what survives.
+        const ref = `vendo:snap_${(++mintedSnapshots).toString(16).padStart(40, "0")}`;
+        snapshots.set(ref, {
+          env: { ...machine.env },
+          allowedDomains: machine.allowedDomains === undefined ? undefined : [...machine.allowedDomains],
+          ...(machine.app === undefined ? {} : { app: machine.app }),
+          files: new Map(machine.files),
+        });
+        return json({ ref });
+      }
       case "POST /exec":
         return json({ code: 0, stdout: "ran", stderr: "" });
       case "GET /files": {
         const bytes = machine.files.get(url.searchParams.get("path") ?? "");
-        if (bytes === undefined) {
-          return json({ error: { code: "not-found", message: "File not found." } }, 404);
-        }
+        if (bytes === undefined) return notFound("File");
         return new Response(bytes.slice().buffer as ArrayBuffer, {
           headers: { "content-type": "application/octet-stream" },
         });
@@ -106,176 +171,104 @@ function fakeConsole() {
           .map((filePath) => filePath.slice(dir.length + 1));
         return json({ entries });
       }
-      case "POST /request": {
-        const body = recorded.json as { path: string; body_b64?: string };
-        return json({
-          status: 200,
-          headers: { "x-echo-path": body.path },
-          body_b64: body.body_b64 ?? "",
-        });
-      }
-      case "POST /snapshot": {
-        const ref = `vendo:snap_${"0".repeat(38)}${String(minted).padStart(2, "0")}`;
-        snapshots.set(ref, id!);
-        machine.state = "paused";
-        return json({ ref });
-      }
-      case "GET /screenshot":
-        return new Response(new Uint8Array([137, 80]).slice().buffer as ArrayBuffer, {
-          headers: { "content-type": "image/png" },
-        });
-      case "DELETE ":
-        machine.state = "stopped";
-        return json({ ok: true });
       default:
-        return json({ error: { code: "not-found", message: "Sandbox not found." } }, 404);
+        return notFound("Route");
     }
   };
 
-  return { requests, machines, handler };
-}
-
-/** The one consumer routine, typed against the frozen 06-apps §3 seam. Running
- * it against a BYO-style in-memory adapter AND the Cloud adapter proves the
- * generation pipeline can hold either behind the same interface. */
-async function exerciseThroughSeam(adapter: SandboxAdapter): Promise<string> {
-  const created = await adapter.create({
-    env: { PORT: "8080" },
-    files: { "/app/seed.txt": "seed" },
-    egress: ["api.example.com"],
-  });
-  expect(decoder.decode(await created.files.read("/app/seed.txt"))).toBe("seed");
-  await created.files.write("/app/round-trip.bin", encoder.encode("survives"));
-  expect(await created.files.list("/app")).toEqual(
-    expect.arrayContaining(["round-trip.bin"]),
-  );
-  expect(await created.exec("echo hi", { cwd: "/app", timeoutMs: 5_000 })).toMatchObject({ code: 0 });
-  const proxied = await created.request({ method: "POST", path: "/fn/echo", body: encoder.encode("ping") });
-  expect(proxied.status).toBe(200);
-  expect(proxied.body).toBeInstanceOf(Uint8Array);
-  const ref = await created.snapshot();
-  const resumed = await adapter.resume(ref);
-  expect(resumed.id).toBe(created.id);
-  await resumed.stop();
-  return ref;
-}
-
-function byoStyleAdapter(): SandboxAdapter {
-  const machines = new Map<string, Map<string, Uint8Array>>();
-  const wrap = (id: string, files: Map<string, Uint8Array>): SandboxMachine => ({
-    id,
-    request: async (req) => ({
-      status: 200,
-      headers: {},
-      body: typeof req.body === "string" ? encoder.encode(req.body) : req.body ?? new Uint8Array(),
-    }),
-    exec: async () => ({ code: 0, stdout: "", stderr: "" }),
-    files: {
-      read: async (path) => {
-        const bytes = files.get(path);
-        if (bytes === undefined) throw new Error(`missing ${path}`);
-        return bytes;
-      },
-      write: async (path, bytes) => {
-        files.set(path, typeof bytes === "string" ? encoder.encode(bytes) : bytes);
-      },
-      list: async (dir) => [...files.keys()]
-        .filter((path) => path.startsWith(`${dir}/`))
-        .map((path) => path.slice(dir.length + 1)),
-    },
-    snapshot: async () => `byo:v1:${id}`,
-    stop: async () => undefined,
-  });
   return {
-    create: async (spec) => {
-      const id = `byo_${machines.size + 1}`;
-      const files = new Map(Object.entries(spec.files ?? {}).map(([path, data]) => [
-        path,
-        typeof data === "string" ? encoder.encode(data) : data,
-      ]));
-      machines.set(id, files);
-      return wrap(id, files);
-    },
-    resume: async (ref) => {
-      const id = ref.slice("byo:v1:".length);
-      return wrap(id, machines.get(id) ?? new Map());
+    requests,
+    machines,
+    snapshots,
+    handler,
+    installApp(machineId: string, app: BoxApp): void {
+      const machine = machines.get(machineId);
+      if (machine === undefined) throw new Error(`no mock machine ${machineId}`);
+      machine.app = app;
     },
   };
 }
+
+const adapterFor = (
+  console_: ReturnType<typeof fakeConsole>,
+  baseUrl = "https://cloud.test",
+): SandboxAdapter =>
+  cloudSandbox({ apiKey: "vnd_secret", baseUrl, fetch: console_.handler as unknown as typeof fetch });
+
+// ─── shared seam conformance, adapter ↔ mock console over the real wire ─────
+
+/** The conformance app contract, in-process behind the mock relay: env from
+ * the box ctx, egress simulated with the provider-faithful allowlist rule
+ * (same rule as the fake sandbox harness). */
+const conformanceApp: BoxApp = (request, ctx) => {
+  const env = /^\/conformance\/env\/([A-Za-z_][A-Za-z0-9_]*)$/.exec(request.path);
+  if (env?.[1] !== undefined) {
+    return { status: 200, headers: {}, body: ctx.env[env[1]] ?? "" };
+  }
+  const egress = /^\/conformance\/egress\/(.+)$/.exec(request.path);
+  if (egress?.[1] !== undefined) {
+    const host = decodeURIComponent(egress[1]);
+    const allowed = ctx.allowedDomains === undefined || ctx.allowedDomains.some((rule) =>
+      rule === host || (rule.startsWith("*.") && host.endsWith(rule.slice(1))));
+    return {
+      status: 200,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ allowed }),
+    };
+  }
+  if (request.method.toUpperCase() === "POST" && request.path === "/fn/echo") {
+    return { status: 200, headers: {}, body: request.body };
+  }
+  return { status: 404, headers: {}, body: "" };
+};
+
+// One console instance across makeAdapter() calls: the suite resumes refs
+// through FRESH adapter instances, which must land on the same Cloud state.
+const conformanceConsole = fakeConsole();
+const harness: SandboxConformanceHarness = {
+  makeAdapter: () => adapterFor(conformanceConsole),
+  async bootstrap(machine) {
+    conformanceConsole.installApp(machine.id, conformanceApp);
+  },
+  enforcesAllowedDomains: true,
+  // The Cloud relay is hardwired to CLOUD_BOX_PORT; its single-port behavior
+  // (typed cloud-single-port error) is covered beside the adapter below.
+  multiPort: false,
+};
+sandboxAdapterConformance("cloudSandbox (mock console)", harness);
+
+// ─── cloud-specific wire + error behavior ────────────────────────────────────
 
 describe("cloudSandbox", () => {
-  it("BYO and Cloud adapters serve the same generation-facing seam", async () => {
-    // BYO leg: an in-memory adapter standing in for e2bSandbox/modalSandbox
-    // (their provider conformance lives in @vendoai/apps). Cloud leg: the
-    // console wire behind stubbed HTTP. Same routine, same interface.
-    await exerciseThroughSeam(byoStyleAdapter());
-
+  it("speaks the documented console wire shapes exactly", async () => {
     const console_ = fakeConsole();
-    const ref = await exerciseThroughSeam(cloudSandbox({
-      apiKey: "vnd_secret",
-      baseUrl: "https://cloud.test",
-      fetch: console_.handler as unknown as typeof fetch,
-    }));
-    expect(ref).toMatch(/^vendo:snap_/);
-    // Every request carried the org key AND the deployment identity (the
-    // console meters usage from real traffic); nothing spoke to the provider
-    // directly.
-    expect(console_.requests.length).toBeGreaterThan(0);
-    for (const request of console_.requests) {
-      expect(request.authorization).toBe("Bearer vnd_secret");
-      expect(request.url).toContain("https://cloud.test/api/v1/sandboxes");
-      expect(request.deploymentHost).toEqual(expect.any(String));
-      expect(request.deploymentHost).not.toBe("");
-      expect(request.deploymentName).toEqual(expect.any(String));
-      expect(request.deploymentName).not.toBe("");
-    }
-  });
-
-  it("speaks the console wire shapes exactly", async () => {
-    const console_ = fakeConsole();
-    const adapter = cloudSandbox({
-      apiKey: "vnd_secret",
-      baseUrl: "https://cloud.test/",
-      fetch: console_.handler as unknown as typeof fetch,
-    });
+    const adapter = adapterFor(console_);
     const machine = await adapter.create({
-      env: { PORT: "8080" },
-      files: { "/app/a.bin": new Uint8Array([0, 1, 2, 255]), "/app/b.txt": "text" },
-      egress: [],
+      template: "vendo-box-node22",
+      env: { PORT: String(CLOUD_BOX_PORT), APP: "wire" },
+      allowedDomains: [],
     });
     expect(machine.id).toMatch(/^m_/);
     expect(console_.requests[0]).toMatchObject({
       method: "POST",
-      url: "https://cloud.test/api/v1/sandboxes",
+      url: `https://cloud.test${CLOUD_SANDBOX_PATH}`,
       json: {
-        env: { PORT: "8080" },
-        files: { "/app/a.bin": toBase64(new Uint8Array([0, 1, 2, 255])), "/app/b.txt": toBase64(encoder.encode("text")) },
+        env: { PORT: String(CLOUD_BOX_PORT), APP: "wire" },
+        template: "vendo-box-node22",
         egress: [],
       },
     });
 
-    await machine.exec("pwd", { cwd: "/app", timeoutMs: 9_000 });
-    expect(console_.requests[1]).toMatchObject({
-      method: "POST",
-      url: `https://cloud.test/api/v1/sandboxes/${machine.id}/exec`,
-      json: { cmd: "pwd", cwd: "/app", timeout_ms: 9_000 },
-    });
-
-    await machine.files.write("/tmp/raw", new Uint8Array([5, 6]));
-    expect(console_.requests[2]).toMatchObject({
-      method: "PUT",
-      url: `https://cloud.test/api/v1/sandboxes/${machine.id}/files?path=%2Ftmp%2Fraw`,
-      contentType: "application/octet-stream",
-      bytes: new Uint8Array([5, 6]),
-    });
-
+    console_.installApp(machine.id, conformanceApp);
     const proxied = await machine.request({
       method: "POST",
       path: "fn/echo", // missing leading slash is normalized, e2b-adapter parity
       headers: { "x-test": "yes" },
       body: "ping",
     });
-    expect(console_.requests[3]).toMatchObject({
+    expect(console_.requests[1]).toMatchObject({
+      method: "POST",
+      url: `https://cloud.test${CLOUD_SANDBOX_PATH}/${machine.id}/request`,
       json: {
         method: "POST",
         path: "/fn/echo",
@@ -284,17 +277,115 @@ describe("cloudSandbox", () => {
       },
     });
     expect(decoder.decode(proxied.body)).toBe("ping");
-    expect(proxied.headers["x-echo-path"]).toBe("/fn/echo");
 
-    expect(await machine.url?.(8080)).toBe(`https://${machine.id}.m.vendo.run`);
-    const screenshot = await machine.screenshot?.();
-    expect(screenshot).toEqual(new Uint8Array([137, 80]));
-
-    await machine.stop();
-    expect(console_.requests.at(-1)).toMatchObject({
-      method: "DELETE",
-      url: `https://cloud.test/api/v1/sandboxes/${machine.id}`,
+    const ref = await machine.snapshot();
+    expect(ref).toMatch(/^vendo:snap_[0-9a-f]{40}$/);
+    expect(console_.requests[2]).toMatchObject({
+      method: "POST",
+      url: `https://cloud.test${CLOUD_SANDBOX_PATH}/${machine.id}/snapshot`,
     });
+
+    await machine.destroy();
+    expect(console_.requests[3]).toMatchObject({
+      method: "DELETE",
+      url: `https://cloud.test${CLOUD_SANDBOX_PATH}/${machine.id}`,
+    });
+
+    await adapter.destroy(ref);
+    expect(console_.requests[4]).toMatchObject({
+      method: "DELETE",
+      url: `https://cloud.test${CLOUD_SANDBOX_PATH}/${encodeURIComponent(ref)}`,
+    });
+    await expect(adapter.resume(ref)).rejects.toMatchObject({ code: "not-found" });
+  });
+
+  it("relays request() only to the single Cloud box port, rejecting others with the typed cloud-single-port error", async () => {
+    const console_ = fakeConsole();
+    const machine = await adapterFor(console_).create({ env: { HELLO: "port" } });
+    console_.installApp(machine.id, conformanceApp);
+
+    // An explicit port equal to the hardwired box port IS the default route.
+    const explicit = await machine.request({
+      method: "GET",
+      path: "/conformance/env/HELLO",
+      port: CLOUD_BOX_PORT,
+    });
+    expect(explicit.status).toBe(200);
+    expect(decoder.decode(explicit.body)).toBe("port");
+
+    // Any other port is a typed error BEFORE anything rides the wire — the
+    // Cloud relay serves exactly one listener (e2b keeps multi-port).
+    const sent = console_.requests.length;
+    await expect(machine.request({ method: "GET", path: "/", port: 9090 }))
+      .rejects.toMatchObject({
+        name: "VendoError",
+        code: "not-implemented",
+        detail: { reason: "cloud-single-port", port: 9090 },
+      });
+    expect(console_.requests.length).toBe(sent);
+  });
+
+  it("resume rides the ref with the three-state egress override", async () => {
+    const console_ = fakeConsole();
+    const adapter = adapterFor(console_);
+    const machine = await adapter.create({ env: {}, allowedDomains: ["example.com"] });
+    const ref = await machine.snapshot();
+
+    // Absent policy → absent egress field: the snapshot-time policy applies.
+    await adapter.resume(ref);
+    expect(console_.requests.at(-1)!.json).toEqual({ ref });
+
+    // A policy with a list REPLACES the snapshot's allowlist.
+    await adapter.resume(ref, { allowedDomains: ["example.org"] });
+    expect(console_.requests.at(-1)!.json).toEqual({ ref, egress: ["example.org"] });
+
+    // A policy carrying undefined means unrestricted — explicit null on the
+    // wire, so "no override" and "override to unrestricted" stay distinct.
+    await adapter.resume(ref, { allowedDomains: undefined });
+    expect(console_.requests.at(-1)!.json).toEqual({ ref, egress: null });
+  });
+
+  it("stop() is the defensive Cloud sleep: preservation snapshot, then machine delete", async () => {
+    const console_ = fakeConsole();
+    const machine = await adapterFor(console_).create({ env: {} });
+    await machine.stop();
+    await machine.stop(); // sleeping twice shares the one transition
+    const wire = console_.requests.slice(1).map((request) => `${request.method} ${new URL(request.url).pathname}`);
+    expect(wire).toEqual([
+      `POST ${CLOUD_SANDBOX_PATH}/${machine.id}/snapshot`,
+      `DELETE ${CLOUD_SANDBOX_PATH}/${machine.id}`,
+    ]);
+    // destroy() after a sleep stays the seam's no-op (already-gone tolerated).
+    await machine.destroy();
+    await machine.destroy();
+  });
+
+  it("rejects snapshot refs from other providers before anything rides the wire", async () => {
+    const console_ = fakeConsole();
+    const adapter = adapterFor(console_);
+    for (const foreign of ["bogus:not-a-real-ref", "e2b:v2:abc", "snap_nocolon"]) {
+      await expect(adapter.resume(foreign)).rejects.toMatchObject({ code: "validation" });
+      await expect(adapter.destroy(foreign)).rejects.toMatchObject({ code: "validation" });
+    }
+    expect(console_.requests).toEqual([]);
+  });
+
+  it("destroy(ref) treats already-gone state as the seam's no-op but propagates real failures", async () => {
+    const console_ = fakeConsole();
+    const adapter = adapterFor(console_);
+    // Never minted: the console answers 404 → idempotent no-op by seam contract.
+    await expect(adapter.destroy(`vendo:snap_${"0".repeat(40)}`)).resolves.toBeUndefined();
+
+    const failing = cloudSandbox({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: (async () => Response.json(
+        { error: { code: "unavailable", message: "Sandbox provider is unavailable." } },
+        { status: 503 },
+      )) as unknown as typeof fetch,
+    });
+    await expect(failing.destroy(`vendo:snap_${"0".repeat(40)}`))
+      .rejects.toMatchObject({ code: "sandbox-unavailable" });
   });
 
   it("defaults the base URL to the Vendo console", async () => {
@@ -302,7 +393,26 @@ describe("cloudSandbox", () => {
       Response.json({ id: `m_${"0".repeat(24)}`, url: "https://m.test" }, { status: 201 }));
     const adapter = cloudSandbox({ apiKey: "vnd_secret", fetch: cloudFetch as unknown as typeof fetch });
     await adapter.create({ env: {} });
-    expect(cloudFetch.mock.calls[0]![0]).toBe("https://console.vendo.run/api/v1/sandboxes");
+    expect(cloudFetch.mock.calls[0]![0]).toBe(`https://console.vendo.run${CLOUD_SANDBOX_PATH}`);
+  });
+
+  it("carries the org key and the deployment identity on every console request", async () => {
+    const console_ = fakeConsole();
+    const adapter = adapterFor(console_);
+    const machine = await adapter.create({ env: {} });
+    const ref = await machine.snapshot();
+    await machine.stop();
+    await (await adapter.resume(ref)).destroy();
+    await adapter.destroy(ref);
+    expect(console_.requests.length).toBeGreaterThanOrEqual(6);
+    for (const request of console_.requests) {
+      expect(request.authorization).toBe("Bearer vnd_secret");
+      expect(request.url).toContain(`https://cloud.test${CLOUD_SANDBOX_PATH}`);
+      expect(request.deploymentHost).toEqual(expect.any(String));
+      expect(request.deploymentHost).not.toBe("");
+      expect(request.deploymentName).toEqual(expect.any(String));
+      expect(request.deploymentName).not.toBe("");
+    }
   });
 
   it("maps an exhausted sandbox_minutes meter to the binding cloud-required error on create and resume", async () => {
@@ -334,7 +444,7 @@ describe("cloudSandbox", () => {
   });
 
   it("treats malformed 200 responses as sandbox-unavailable — console garbage is never the caller's fault", async () => {
-    const adapterFor = (fetchImpl: unknown) =>
+    const stubbed = (fetchImpl: unknown) =>
       cloudSandbox({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: fetchImpl as typeof fetch });
     // A stub whose FIRST response is a valid machine handle, then garbage.
     const handleThen = (garbage: unknown) => {
@@ -348,17 +458,13 @@ describe("cloudSandbox", () => {
       });
     };
     const machineFor = async (garbage: unknown): Promise<SandboxMachine> =>
-      adapterFor(handleThen(garbage)).create({ env: {} });
+      stubbed(handleThen(garbage)).create({ env: {} });
 
     // Missing machine handle on create and resume.
-    await expect(adapterFor(vi.fn(async () => Response.json({}))).create({ env: {} }))
+    await expect(stubbed(vi.fn(async () => Response.json({}))).create({ env: {} }))
       .rejects.toMatchObject({ code: "sandbox-unavailable", message: /no machine handle/ });
-    await expect(adapterFor(vi.fn(async () => Response.json({ id: 42, url: null }))).resume(`vendo:snap_${"a".repeat(40)}`))
+    await expect(stubbed(vi.fn(async () => Response.json({ id: 42, url: null }))).resume(`vendo:snap_${"a".repeat(40)}`))
       .rejects.toMatchObject({ code: "sandbox-unavailable", message: /no machine handle/ });
-
-    // Invalid exec response (no numeric code).
-    await expect((await machineFor({ stdout: "but no code" })).exec("pwd"))
-      .rejects.toMatchObject({ code: "sandbox-unavailable", message: /invalid exec response/ });
 
     // Invalid proxy response (no body_b64).
     await expect((await machineFor({ status: 200, headers: {} })).request({ method: "GET", path: "/" }))
@@ -385,18 +491,48 @@ describe("cloudSandbox", () => {
   it("preserves the console's error codes and falls back to sandbox-unavailable", async () => {
     const respond = (code: string, message: string, status: number) =>
       vi.fn(async () => Response.json({ error: { code, message } }, { status }));
-    const adapterFor = (fetchImpl: unknown) =>
+    const stubbed = (fetchImpl: unknown) =>
       cloudSandbox({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: fetchImpl as typeof fetch });
 
-    await expect(adapterFor(respond("not-found", "Snapshot not found.", 404)).resume(`vendo:snap_${"a".repeat(40)}`))
+    await expect(stubbed(respond("not-found", "Snapshot not found.", 404)).resume(`vendo:snap_${"a".repeat(40)}`))
       .rejects.toMatchObject({ code: "not-found" });
-    await expect(adapterFor(respond("conflict", "Sandbox is paused.", 409)).create({ env: {} }))
+    await expect(stubbed(respond("conflict", "Sandbox is paused.", 409)).create({ env: {} }))
       .rejects.toMatchObject({ code: "conflict" });
-    await expect(adapterFor(respond("unavailable", "Sandbox provider is unavailable.", 503)).create({ env: {} }))
+    await expect(stubbed(respond("unavailable", "Sandbox provider is unavailable.", 503)).create({ env: {} }))
       .rejects.toMatchObject({ code: "sandbox-unavailable", message: "Sandbox provider is unavailable." });
     const nonJson = vi.fn(async () => new Response("bad gateway", { status: 502 }));
-    await expect(adapterFor(nonJson).create({ env: {} }))
+    await expect(stubbed(nonJson).create({ env: {} }))
       .rejects.toMatchObject({ code: "sandbox-unavailable", message: expect.stringContaining("502") });
+  });
+
+  it("keeps the adapter-private exec/files bootstrap surface on the console wire", async () => {
+    // NOT part of the public seam — the in-box agent owns the inside of the
+    // box; the live conformance lane uses these to install its test app.
+    const console_ = fakeConsole();
+    const machine = await adapterFor(console_).create({ env: {} }) as SandboxMachine & {
+      exec(cmd: string, opts?: { cwd?: string; timeoutMs?: number }): Promise<{ code: number; stdout: string; stderr: string }>;
+      files: {
+        read(path: string): Promise<Uint8Array>;
+        write(path: string, bytes: Uint8Array | string): Promise<void>;
+        list(dir: string): Promise<string[]>;
+      };
+    };
+    expect(await machine.exec("pwd", { cwd: "/app", timeoutMs: 9_000 })).toMatchObject({ code: 0 });
+    expect(console_.requests.at(-1)).toMatchObject({
+      method: "POST",
+      url: `https://cloud.test${CLOUD_SANDBOX_PATH}/${machine.id}/exec`,
+      json: { cmd: "pwd", cwd: "/app", timeout_ms: 9_000 },
+    });
+
+    await machine.files.write("/app/a.bin", new Uint8Array([5, 6]));
+    expect(console_.requests.at(-1)).toMatchObject({
+      method: "PUT",
+      url: `https://cloud.test${CLOUD_SANDBOX_PATH}/${machine.id}/files?path=%2Fapp%2Fa.bin`,
+      contentType: "application/octet-stream",
+      bytes: new Uint8Array([5, 6]),
+    });
+    expect(await machine.files.read("/app/a.bin")).toEqual(new Uint8Array([5, 6]));
+    expect(await machine.files.list("/app")).toEqual(["a.bin"]);
   });
 });
 
@@ -404,7 +540,7 @@ describe("adapter rule", () => {
   it("cloudSandbox never reads the environment: behavior comes only from constructor arguments", async () => {
     // Cloned from connections.test.ts and widened to the sandbox BYO vars, per
     // that test's instruction to lanes cloning the pattern.
-    const WATCHED_ENV_PREFIXES = ["VENDO_", "E2B_", "MODAL_"];
+    const WATCHED_ENV_PREFIXES = ["VENDO_", "E2B_"];
     const reads: string[] = [];
     const realEnv = process.env;
     process.env = new Proxy({
@@ -412,8 +548,6 @@ describe("adapter rule", () => {
       VENDO_API_KEY: "vnd_env",
       VENDO_CLOUD_URL: "https://env.test",
       E2B_API_KEY: "e2b_env",
-      MODAL_TOKEN_ID: "modal_env",
-      MODAL_TOKEN_SECRET: "modal_env_secret",
     }, {
       get(target, property) {
         if (typeof property === "string") reads.push(property);
@@ -428,7 +562,7 @@ describe("adapter rule", () => {
         fetch: console_.handler as unknown as typeof fetch,
       });
       const machine = await adapter.create({ env: {} });
-      await machine.stop();
+      await machine.destroy();
       expect(console_.requests[0]!.url).toContain("https://arg.test/");
       expect(console_.requests[0]!.authorization).toBe("Bearer vnd_arg");
       expect(reads.filter((name) => WATCHED_ENV_PREFIXES.some((prefix) => name.startsWith(prefix))))

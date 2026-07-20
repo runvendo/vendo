@@ -1,20 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { sandboxAdapterConformance, type SandboxConformanceHarness } from "../adapter-conformance.js";
-import type { SandboxMachine } from "../sandbox.js";
-import { e2bSandbox } from "./index.js";
+import type { SandboxMachine } from "@vendoai/apps";
+import {
+  sandboxAdapterConformance,
+  type SandboxConformanceHarness,
+} from "@vendoai/apps/adapter-conformance";
+import { cloudSandbox } from "./sandbox.js";
 
 // ============================================================================
-// execution-v2 Lane A LIVE lane — real E2B, real network, real snapshots.
-// Gated on E2B_API_KEY + VENDO_LIVE_SANDBOX=1 (never runs in CI).
-// Costs real sandbox-minutes; every machine is destroyed in afterEach/finally.
+// execution-v2 Wave 5 LIVE lane — the REAL Vendo Cloud hosted sandbox
+// (console.vendo.run), real network, real snapshots, metered sandbox_minutes.
+// Gated on VENDO_API_KEY + VENDO_LIVE_SANDBOX=1 (never runs in CI); the tests
+// read the environment — the adapter itself never does (adapter rule).
+// Every machine and snapshot is destroyed in afterEach/finally.
 // ============================================================================
 
-const LIVE = process.env.E2B_API_KEY !== undefined && process.env.VENDO_LIVE_SANDBOX === "1";
+const LIVE = process.env.VENDO_API_KEY !== undefined && process.env.VENDO_LIVE_SANDBOX === "1";
 const decoder = new TextDecoder();
 const LIVE_TIMEOUT_MS = 180_000;
 
 /** The conformance app (see SandboxConformanceHarness contract), as a real
-    node http server listening on the box's $PORT. */
+    node http server listening on the box's $PORT — same source as the e2b
+    live lane. */
 const CONFORMANCE_SERVER_SOURCE = `
 const http = require("node:http");
 http.createServer((request, response) => {
@@ -30,8 +36,8 @@ http.createServer((request, response) => {
     const egress = /^\\/conformance\\/egress\\/(.+)$/.exec(request.url);
     if (egress) {
       let allowed = false;
-      // Two attempts: a machine resumed from a memory snapshot can hold a
-      // dead keep-alive socket for this origin in the fetch pool; the first
+      // Two attempts: a machine resumed from a snapshot can hold a dead
+      // keep-alive socket for this origin in the fetch pool; the first
       // attempt's abort evicts it and the retry opens a fresh connection.
       for (let attempt = 0; attempt < 2 && !allowed; attempt += 1) {
         try {
@@ -81,32 +87,37 @@ const bootstrap = async (machine: SandboxMachine): Promise<void> => {
   expect(started.code).toBe(0);
 };
 
-const makeAdapter = () => e2bSandbox({ apiKey: process.env.E2B_API_KEY, timeoutMs: 120_000 });
+const makeAdapter = () => cloudSandbox({
+  apiKey: process.env.VENDO_API_KEY!,
+  ...(process.env.VENDO_CLOUD_URL === undefined ? {} : { baseUrl: process.env.VENDO_CLOUD_URL }),
+  timeoutMs: 120_000,
+});
 
-describe.skipIf(!LIVE)("e2bSandbox live", () => {
+describe.skipIf(!LIVE)("cloudSandbox live", () => {
   const harness: SandboxConformanceHarness = {
     makeAdapter,
     bootstrap,
     enforcesAllowedDomains: true,
-    multiPort: true,
+    // The Cloud relay is hardwired to the one box port (cloud-single-port).
+    multiPort: false,
   };
-  sandboxAdapterConformance("real E2B", harness);
+  sandboxAdapterConformance("real Vendo Cloud", harness);
 
-  // The Lane A gate, verbatim: create → box serves a hello HTTP app →
+  // The Wave 5 gate, verbatim: create → box serves a hello HTTP app →
   // request() returns it → snapshot() → stop → resume(ref) → request() again
   // → destroy. Logged so the transcript lands in the PR body as evidence.
-  it("passes the Lane A live round-trip gate", async () => {
+  it("passes the Wave 5 live round-trip gate", async () => {
     const transcript: string[] = [];
     const log = (line: string): void => {
       transcript.push(line);
-      console.log(`[lane-a-gate] ${line}`);
+      console.log(`[wave-5-gate] ${line}`);
     };
     const adapter = makeAdapter();
     let created: SandboxMachine | undefined;
     let resumed: SandboxMachine | undefined;
     let ref: string | undefined;
     try {
-      created = await adapter.create({ env: { PORT: "8080", HELLO: "hello from the box" } });
+      created = await adapter.create({ env: { PORT: "8080", HELLO: "hello from the cloud box" } });
       log(`create → machine ${created.id}`);
       await bootstrap(created);
       log("bootstrap → hello app serving on $PORT");
@@ -114,19 +125,19 @@ describe.skipIf(!LIVE)("e2bSandbox live", () => {
       const first = await created.request({ method: "GET", path: "/conformance/env/HELLO" });
       log(`request → ${first.status} "${decoder.decode(first.body)}"`);
       expect(first.status).toBe(200);
-      expect(decoder.decode(first.body)).toBe("hello from the box");
+      expect(decoder.decode(first.body)).toBe("hello from the cloud box");
 
       ref = await created.snapshot();
       log(`snapshot → ${ref.slice(0, 24)}… (${ref.length} chars)`);
       await created.stop();
-      log("stop → machine paused (snapshot-preserving)");
+      log("stop → preservation snapshot + machine deleted (Cloud has no pause)");
 
       resumed = await adapter.resume(ref);
       log(`resume(ref) → machine ${resumed.id}`);
       const second = await resumed.request({ method: "GET", path: "/conformance/env/HELLO" });
       log(`request → ${second.status} "${decoder.decode(second.body)}"`);
       expect(second.status).toBe(200);
-      expect(decoder.decode(second.body)).toBe("hello from the box");
+      expect(decoder.decode(second.body)).toBe("hello from the cloud box");
       expect(resumed.id).not.toBe(created.id);
     } finally {
       await Promise.all([
@@ -135,7 +146,7 @@ describe.skipIf(!LIVE)("e2bSandbox live", () => {
       ]);
       if (ref !== undefined) await adapter.destroy(ref).catch(() => undefined);
       log("destroy → both machines and the snapshot ref gone");
-      console.log(`[lane-a-gate] TRANSCRIPT\n${transcript.join("\n")}`);
+      console.log(`[wave-5-gate] TRANSCRIPT\n${transcript.join("\n")}`);
     }
   }, LIVE_TIMEOUT_MS);
 });

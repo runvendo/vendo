@@ -34,6 +34,10 @@
     "./e2b": {
       "types": "./dist/e2b/index.d.ts",
       "default": "./dist/e2b/index.js"
+    },
+    "./adapter-conformance": {
+      "types": "./dist/adapter-conformance.d.ts",
+      "default": "./dist/adapter-conformance.js"
     }
   },
   "files": [

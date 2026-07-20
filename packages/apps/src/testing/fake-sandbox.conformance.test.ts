@@ -41,6 +41,7 @@ const harness: SandboxConformanceHarness = {
     machine.setApp(conformanceApp);
   },
   enforcesAllowedDomains: true,
+  multiPort: true,
 };
 
 sandboxAdapterConformance("fake", harness);

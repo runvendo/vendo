@@ -22,6 +22,14 @@ export interface SandboxConformanceHarness {
   bootstrap(machine: SandboxMachine): Promise<void>;
   /** True when the adapter enforces create()'s allowedDomains; enables the egress case. */
   enforcesAllowedDomains: boolean;
+  /**
+   * True when the provider can route request() to any box port (e2b). The
+   * Vendo Cloud relay is hardwired to one box port and surfaces a non-default
+   * `port` as the typed `cloud-single-port` error, so its harness disables
+   * the multi-port case (its single-port behavior is provider-specific and
+   * tested beside the adapter).
+   */
+  multiPort: boolean;
 }
 
 const requestEventually = async (
@@ -145,7 +153,7 @@ export const sandboxAdapterConformance = (
         .resolves.toMatchObject({ status: 200, body: "independent" });
     }, TEST_TIMEOUT_MS);
 
-    it("routes requests to the box $PORT by default, honoring an explicit port", async () => {
+    it.skipIf(!harness.multiPort)("routes requests to the box $PORT by default, honoring an explicit port", async () => {
       const adapter = await harness.makeAdapter();
       const machine = track(await adapter.create({
         env: { PORT: "9090", CONFORMANCE_VALUE: "ported" },
