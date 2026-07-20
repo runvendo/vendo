@@ -12,6 +12,18 @@ export const approvalRoutes: RouteEntry[] = [
     if (url.searchParams.get("org") !== null) orgsCloudRequired();
     return json(await deps.guard.approvals.pending(ctx.principal));
   }),
+  // Existing-agents Lane B — the read `<VendoApprovalEmbed>` polls for a
+  // parked BYO guarded call: the frozen VendoApprovalEmbedState vocabulary,
+  // carrying the full request while pending (the consent card shows real
+  // inputs) and the resumed call's outcome once executed. Owner-scoped;
+  // unknown and foreign ids both answer not-found. Registered before the
+  // decide route only textually — decide's exact-path POST never collides
+  // with this GET segment pattern.
+  route("GET", "/approvals/:id", async ({ url, deps, context, params }) => {
+    const ctx = await context("chat");
+    if (url.searchParams.get("org") !== null) orgsCloudRequired();
+    return json(await deps.byoApprovals.read(string(params["id"], "approval id"), ctx.principal));
+  }),
   route("POST", "/approvals/decide", async ({ request, deps, context }) => {
     const body = await requestJson(request);
     const ids = Array.isArray(body["ids"]) ? body["ids"].map((id) => string(id, "approval id")) : [];

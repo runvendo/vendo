@@ -26,7 +26,12 @@ describe("createVendoClient", () => {
     expect((await client.threads.get("thr_1")).id).toBe("thr_1");
 
     expect(await client.approvals.pending()).toHaveLength(1);
+    expect(await client.approvals.get("apr_1")).toMatchObject({ state: "pending" });
     await client.approvals.decide("apr_1", { approve: true });
+    expect(await client.approvals.get("apr_1")).toEqual({
+      state: "executed",
+      outcome: { status: "ok", output: { delivered: true } },
+    });
     expect(await client.grants.list()).toHaveLength(1);
     await client.grants.revoke("grt_1");
 
@@ -80,6 +85,7 @@ describe("createVendoClient", () => {
     exact("GET", "/threads/thr_1", undefined);
     exact("DELETE", "/threads/thr_1", {});
     exact("GET", "/approvals", undefined);
+    exact("GET", "/approvals/apr_1", undefined);
     exact("POST", "/approvals/decide", { ids: ["apr_1"], decision: { approve: true } });
     exact("GET", "/grants", undefined);
     exact("GET", "/connections", undefined);

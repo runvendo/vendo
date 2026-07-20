@@ -26,6 +26,8 @@ export interface ConnectableToolkit {
   toolkit: string;
   connector: string;
   label?: string;
+  /** One-line capability blurb — feeds the OSS discovery index. */
+  description?: string;
 }
 
 /** 04-actions §3 (block-actions design §B) — the umbrella's per-principal

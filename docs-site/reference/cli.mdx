@@ -1,9 +1,9 @@
 ---
-title: "CLI reference: vendo init, doctor, sync, refine, mcp, cloud"
-description: "Reference for the vendo bin commands: init, doctor for wiring checks, sync for build-time extraction, refine for compound proposals, mcp, and cloud."
+title: "CLI reference: vendo init, doctor, sync, eject, extract, refine, playground, mcp, cloud"
+description: "Reference for the vendo bin commands: init, doctor for wiring checks, sync for build-time extraction, eject, extract, refine, playground, mcp, and cloud."
 ---
 
-The umbrella owns the `vendo` bin. It has five commands.
+The umbrella owns the `vendo` bin. It has nine commands.
 
 ## `vendo init [dir]`
 
@@ -118,17 +118,15 @@ gotten an answer — the turn must produce a non-empty reply. When nothing is
 listening on the dev port, an interactive run offers to start `npm run dev`
 for the probe (`--yes` starts it non-interactively) and stops it afterward.
 
-Doctor also validates `VENDO_API_KEY` against the Vendo Cloud entitlements
-contract when set, prints the "what Cloud unlocks" hint either way, and
-warns when the installed Codex CLI has drifted off the tested app-server
-protocol line (dev-only, informational).
+Doctor also checks that `VENDO_API_KEY` is present and well formed when set
+and prints the "what Cloud unlocks" hint either way.
 
 Options:
 
 - `--url <url>` — override `VENDO_URL` for the probe target.
 - `--yes` — start the dev server for the probe without asking.
 - `--json` — print exactly one machine-readable object on stdout with
-  `{ vendo, version, wired, exit, checks, liveTurn, cloud, codex, summary }`
+  `{ vendo, version, wired, exit, checks, liveTurn, cloud, summary }`
   and suppress every other line. `wired` is true when no static or HTTP
   check failed; `exit` reflects the process exit code, which additionally
   requires `liveTurn.ok`.
@@ -210,6 +208,37 @@ Exit codes:
 - `3`: breaking changes that impact saved apps, automations, or grants when
   `--strict` is set
 
+## `vendo eject <surface> [dir]`
+
+Copies a shipped chrome surface's presentation source out of the installed
+`@vendoai/ui` into your repo as code you own, shadcn-style. Pixels are
+copied; data and wire logic stay a package dependency — the templates'
+package-internal imports are rewritten to the public `@vendoai/ui` subpaths,
+so protocol updates keep flowing to ejected code. A `.vendo-eject.json`
+manifest in the ejected directory records the surface and package version,
+which doctor uses for its drift check.
+
+Options:
+
+- `--list` — print the ejectable surfaces (with `--list`, the first
+  positional is the target dir).
+- `--force` — overwrite an existing ejected directory.
+
+## `vendo extract [dir]`
+
+Applies a coding agent's extraction draft through the same deterministic
+guards init's built-in pass uses. The flow: `vendo init --agent` emits the
+read-only plan with the `aiPolish` delegation contract, an external agent
+writes a draft from it, and `vendo extract --apply <draft.json>` parses the
+draft, runs the deterministic guards, writes the same artifacts, re-syncs,
+and prints the same summary. Non-interactive safe; exits non-zero on an
+unusable draft.
+
+Options:
+
+- `--apply <draft.json>` — required. The draft file the agent produced.
+- `--force` — regenerate Vendo-owned files.
+
 ## `vendo refine [dir]`
 
 Proposes agent-layer improvements as reviewable diffs — nothing is ever
@@ -248,6 +277,17 @@ Options:
 
 Each run writes a transcript under `.vendo/data/refine/`. `vendo init` offers
 to run refine once at the end of a successful interactive setup.
+
+## `vendo playground`
+
+Serves every Vendo surface and state (streaming, approvals, slots, the
+workspace page) against scripted data in the browser — no model key, no
+wiring. Runs from anywhere; it does not read the target app.
+
+Options:
+
+- `--port <port>` — listen on a fixed port (default: any free port).
+- `--no-open` — print the URL without opening the browser.
 
 ## `vendo mcp`
 

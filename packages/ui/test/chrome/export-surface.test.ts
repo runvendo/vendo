@@ -23,6 +23,10 @@ const VALUE_EXPORTS = [
   "VendoPage",
   "VendoPalette",
   "VendoSlot",
+  // Existing-agents Lane B — the three BYO-chat embeds.
+  "VendoAppEmbed",
+  "VendoApprovalEmbed",
+  "VendoToolResult",
   "VendoThread",
   "VendoToasts",
   "vendoToast",

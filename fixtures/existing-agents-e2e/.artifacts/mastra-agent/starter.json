@@ -1,0 +1,35 @@
+{
+  "written": [
+    ".env.example",
+    ".gitignore",
+    "eslint.config.mjs",
+    "mastra.db-shm",
+    "mastra.db-wal",
+    "next-env.d.ts",
+    "next.config.ts",
+    "package.json",
+    "postcss.config.mjs",
+    "public/file.svg",
+    "public/globe.svg",
+    "public/next.svg",
+    "public/vercel.svg",
+    "public/window.svg",
+    "src/app/api/chat/route.ts",
+    "src/app/favicon.ico",
+    "src/app/globals.css",
+    "src/app/layout.tsx",
+    "src/app/page.tsx",
+    "src/mastra/agents/weather-agent.ts",
+    "src/mastra/index.ts",
+    "src/mastra/tools/weather-tool.ts",
+    "src/mastra/workflows/weather-workflow.ts",
+    "tsconfig.json",
+    "tsconfig.tsbuildinfo"
+  ],
+  "vendoOwned": [
+    ".vendo/tools.json",
+    "src/app/api/vendo/[...vendo]/route.ts",
+    "src/lib/vendo-actions.ts",
+    "src/lib/vendo.ts"
+  ]
+}

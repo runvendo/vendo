@@ -1,0 +1,45 @@
+{
+  "name": "@vendoai-examples/mastra-agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Mastra's weather-agent starter, fronted per Mastra's Next.js guide, plus the four-touch Vendo diff: guarded tools, generated UI, and approvals inside your own agent loop.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@ai-sdk/react": "3.0.230",
+    "@mastra/ai-sdk": "^1.6.2",
+    "@mastra/core": "1.51.0",
+    "@mastra/duckdb": "^1.5.1",
+    "@mastra/libsql": "^1.15.1",
+    "@mastra/loggers": "^1.2.0",
+    "@mastra/memory": "^1.22.2",
+    "@mastra/observability": "^1.16.0",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/ui": "workspace:*",
+    "@vendoai/vendo": "workspace:*",
+    "ai": "6.0.230",
+    "mastra": "^1.18.2",
+    "next": "16.2.9",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vendoai/store": "workspace:*",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.9",
+    "tailwindcss": "^4",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

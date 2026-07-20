@@ -7,7 +7,7 @@ description: "Every environment variable Vendo reads across host process, app ma
 
 | Variable | Effect |
 | --- | --- |
-| `VENDO_API_KEY` | authenticates Vendo Cloud calls (sharing, publishing, pinning) and selects Cloud defaults for adapter slots the host left unset, including the hosted sandbox; an explicitly passed adapter always wins, and key problems surface on the first real call |
+| `VENDO_API_KEY` | authenticates Vendo Cloud calls (sharing, publishing, pinning) and selects Cloud defaults for adapter slots the host left unset: the hosted sandbox, and the hosted store — with no `store` passed, threads, apps, records, grants, and audit persist in Vendo Cloud instead of local PGlite (pass `store: createStore(...)` to keep data local). An explicitly passed adapter always wins, and key problems surface on the first real call |
 | `VENDO_CLOUD_URL` | overrides the Vendo Cloud base URL for the runtime and CLI; defaults to `https://console.vendo.run` |
 | `VENDO_TELEMETRY_DISABLED=1` | disables build and development telemetry |
 | `VENDO_TICK_SECRET` | bearer secret required by `POST /tick` |

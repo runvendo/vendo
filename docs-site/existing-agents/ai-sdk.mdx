@@ -1,0 +1,244 @@
+---
+title: "Add Vendo to an AI SDK agent"
+description: "A four-touch diff that gives an existing AI SDK chatbot guarded host actions, generated UI, and approvals inside its own chat."
+---
+
+This walkthrough mirrors
+[`examples/ai-sdk-agent`](https://github.com/runvendo/vendo/tree/main/examples/ai-sdk-agent)
+in the repo: the **unmodified
+[AI SDK Next.js quickstart chatbot](https://ai-sdk.dev/docs/getting-started/nextjs-app-router)**
+(`useChat` + `streamText` + the weather tool) plus four touches. In the
+example every added line sits inside `--- vendo` / `--- /vendo` comment
+fences, so you can grep the whole integration.
+
+Read [the overview](/existing-agents) first for the tool pack and envelope
+contract.
+
+## Touch 1: the Vendo composition
+
+One new file holds the whole server-side Vendo surface: `createVendo` plus
+the host actions it guards. The quickstart's inline `weather` tool moves
+here, so the lookup runs through policy, approval, and audit like everything
+else the agent can touch. A second, deliberately risky action exercises
+approvals.
+
+```ts
+// lib/vendo.ts
+import { anthropic } from "@ai-sdk/anthropic";
+import { createVendo } from "@vendoai/vendo/server";
+
+/** The quickstart's weather lookup, registered as a Vendo action
+ *  (`host_get_weather`, risk `read`). */
+export async function getWeather(city: string) {
+  const temperature = Math.round(Math.random() * (90 - 32) + 32);
+  const conditions = ["sunny", "cloudy", "rainy", "snowy"][
+    Math.floor(Math.random() * 4)
+  ];
+  return { city, temperature, conditions };
+}
+
+/** The risky action (`host_send_trip_report`, risk `write`): the cautious
+ *  policy parks it for approval. */
+export async function sendTripReport(to: string, subject: string, body: string) {
+  return { delivered: true, to, subject };
+}
+
+/** The demo has no auth, so every request is the same user. In a real app,
+ *  resolve your session's user here or pass a `createVendo({ auth })` preset. */
+export const demoUser = { kind: "user", subject: "demo-user" } as const;
+
+export const vendo = createVendo({
+  // Vendo's own model seam: powers `vendo_create_app` and the delegate.
+  // Your agent keeps its own model in app/api/chat/route.ts.
+  model: anthropic("claude-sonnet-4-6"),
+  principal: async () => demoUser,
+  // Ask before write/destructive actions, run reads.
+  policy: "cautious",
+  // In-process dispatch for the two actions declared in .vendo/tools.json.
+  serverActions: {
+    "lib/vendo.ts#getWeather": getWeather,
+    "lib/vendo.ts#sendTripReport": sendTripReport,
+  },
+});
+```
+
+The action descriptors (name, input schema, risk) live in
+`.vendo/tools.json`, exactly where `vendo init` extracts them in a real app.
+The example writes them by hand:
+
+```json
+{
+  "format": "vendo/tools@1",
+  "tools": [
+    {
+      "name": "host_get_weather",
+      "description": "Get the current weather for a city.",
+      "inputSchema": { "type": "object", "properties": { "city": { "type": "string" } }, "required": ["city"] },
+      "risk": "read",
+      "binding": { "kind": "server-action", "module": "lib/vendo.ts", "exportName": "getWeather", "params": ["city"] }
+    },
+    {
+      "name": "host_send_trip_report",
+      "description": "Email a trip weather report to a recipient.",
+      "inputSchema": { "type": "object", "properties": { "to": { "type": "string" }, "subject": { "type": "string" }, "body": { "type": "string" } }, "required": ["to", "subject", "body"] },
+      "risk": "write",
+      "binding": { "kind": "server-action", "module": "lib/vendo.ts", "exportName": "sendTripReport", "params": ["to", "subject", "body"] }
+    }
+  ]
+}
+```
+
+## Touch 2: the wire route
+
+The stock catch-all route, unchanged from the quickstart. It serves apps and
+approvals to the embeds.
+
+```ts
+// app/api/vendo/[...vendo]/route.ts
+import { nextVendoHandler } from "@vendoai/vendo/server";
+import { vendo } from "@/lib/vendo";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
+```
+
+## Touch 3: the tools spread
+
+One spread in the chat route. Your loop and your model stay yours; the pack
+adds `vendo_host_get_weather`, `vendo_host_send_trip_report`,
+`vendo_create_app`, and `vendo_delegate`.
+
+```ts
+// app/api/chat/route.ts
+import { anthropic } from "@ai-sdk/anthropic";
+import { convertToModelMessages, stepCountIs, streamText, UIMessage } from "ai";
+import { vendoTools } from "@vendoai/vendo/ai-sdk";
+import { demoUser, vendo } from "@/lib/vendo";
+
+export const maxDuration = 30;
+
+export async function POST(req: Request) {
+  const { messages }: { messages: UIMessage[] } = await req.json();
+
+  const result = streamText({
+    model: anthropic("claude-sonnet-4-6"),
+    messages: await convertToModelMessages(messages),
+    stopWhen: stepCountIs(5),
+    tools: {
+      ...(await vendoTools(vendo, { principal: demoUser })),
+    },
+  });
+
+  return result.toUIMessageStreamResponse();
+}
+```
+
+`vendoTools` is built per request because tool execution needs a
+principal-scoped context. Resolve the caller's principal server-side first;
+pass `sessionId` too if you want the host session id in Vendo's audit trail.
+
+## Touch 4: the embeds
+
+Wrap the chat in `VendoProvider` once, and hand finished tool outputs to
+`<VendoToolResult>`. In the AI SDK's `useChat`, `vendo_*` tools stream as
+`dynamic-tool` message parts.
+
+```tsx
+// app/page.tsx
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+import { useState } from "react";
+import { VendoProvider, VendoToolResult } from "@vendoai/ui";
+
+export default function Chat() {
+  const [input, setInput] = useState("");
+  const { messages, sendMessage } = useChat();
+  return (
+    <VendoProvider>
+      <div className="flex flex-col w-full max-w-md py-24 mx-auto stretch">
+        {messages.map((message) => (
+          <div key={message.id} className="whitespace-pre-wrap">
+            {message.role === "user" ? "User: " : "AI: "}
+            {message.parts.map((part, i) => {
+              switch (part.type) {
+                case "text":
+                  return <div key={`${message.id}-${i}`}>{part.text}</div>;
+                case "dynamic-tool":
+                  return (
+                    <div key={`${message.id}-${i}`} className="py-1">
+                      {part.state === "output-available" ? (
+                        <VendoToolResult output={part.output} />
+                      ) : (
+                        <div className="text-zinc-400">
+                          Running {part.toolName}…
+                        </div>
+                      )}
+                    </div>
+                  );
+              }
+            })}
+          </div>
+        ))}
+        {/* the quickstart's form, unchanged */}
+      </div>
+    </VendoProvider>
+  );
+}
+```
+
+## One config line
+
+Next.js bundles route modules, and Vendo carries native and wasm
+dependencies that must stay external:
+
+```ts
+// next.config.ts
+const nextConfig = {
+  serverExternalPackages: ["esbuild", "@electric-sql/pglite"],
+};
+```
+
+## Run it
+
+```bash
+# from the repo root
+pnpm install && pnpm build
+
+echo 'ANTHROPIC_API_KEY=sk-ant-…' > examples/ai-sdk-agent/.env.local
+
+pnpm --filter @vendoai-examples/ai-sdk-agent dev
+```
+
+Open http://localhost:3000.
+
+## The demo script
+
+All three value props in one thread:
+
+1. **"What's the weather in Paris?"** Normal tool use. The model calls
+   `vendo_host_get_weather`; the guard runs it (risk `read` under the
+   `cautious` policy), audits it, and returns plain data the model narrates.
+2. **"Make me a dashboard comparing the weather in Paris, London and
+   Tokyo."** The model calls `vendo_create_app`, gets a `vendo/app-ref@1`
+   envelope back immediately, and the app builds inline in `<VendoAppEmbed>`
+   while the build streams over the wire.
+3. **"Email that trip report to boss@example.com."** The model calls
+   `vendo_host_send_trip_report`; the guard parks it and returns a
+   `vendo/approval-ref@1` envelope, which renders as an approval card. Click
+   **Approve** and the wire executes the parked call; the card resolves in
+   place to the executed result. Deny resolves to "declined"; walking away
+   expires it on the parked-call TTL.
+
+<Frame caption="Step 3 in the quickstart's own chat: the approval card for the parked send, with the exact inputs the call will run with.">
+  <img src="/images/existing-agents/ai-sdk-approval-card.png" alt="Vendo approval card rendered inline in the AI SDK quickstart chat" />
+</Frame>
+
+## Tests
+
+The example ships a hermetic fixture e2e
+(`examples/ai-sdk-agent/e2e/byo-agent.e2e.test.ts`): one real `streamText`
+turn per value prop over a real `createVendo` composition, with both model
+seams scripted so no keys are needed. Run it with `pnpm test` in the example.

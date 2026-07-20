@@ -5,25 +5,40 @@ description: "Every createVendo configuration option and fetch-handler setting, 
 
 ## Composition configuration
 
-| Option | Required | Behavior |
-| --- | --- | --- |
-| `model` | yes | AI SDK `LanguageModel` used by the agent and default app generation; the only required key — `createVendo({ model })` alone boots with anonymous ephemeral sessions |
-| `auth` | no | one host-identity preset filling `principal`, `actAs`, and `oauth` from a single config key; mutually exclusive with all three — see [actAs presets](/connect/act-as-presets) |
-| `principal` | no | escape hatch: resolves the host request to a principal; `null` creates an ephemeral session. Mutually exclusive with `auth` |
-| `store` | no | defaults to PGlite at `.vendo/data` |
-| `sandbox` | no | unlocks machine-backed apps (layers 2 and 3); absent means tree-only apps |
-| `catalog` | no | `ComponentCatalog` or the name-keyed `ComponentRegistry` of host components exposed to the generation prompt; merged with any `.vendo/catalog.json` written by `vendo sync`, with explicit entries winning by name — see [Host components](/connect/host-components) |
-| `connectors` | no | adds external connector tool registries |
-| `actAs` | no | escape hatch: supplies scoped auth material for away host API execution. Mutually exclusive with `auth` — see [actAs presets](/connect/act-as-presets) |
-| `policy` | no | named preset (`"cautious"`, `"readonly"`, `"autopilot"`), policy file, rules, directions, and code escape hatch |
-| `judge` | no | contextual guard judge |
-| `secrets` | no | defaults to environment-backed secret lookup |
-| `telemetry` | no | wires build and development telemetry |
-| `mcp` | no | opens the [MCP door](/capabilities/mcp) so outside agents reach host tools through the guarded path; `true` for defaults, or an object carrying `{ baseUrl?, remoteAs?, federation? }` when door-specific settings need to flow through the umbrella (see [Configure the door through the umbrella](/capabilities/mcp#configure-the-door-through-the-umbrella)); off by default |
-| `oauth` | conditional | escape hatch: `HostOAuthAdapter` used by the door for session lookup and principal resolution; required when `mcp` is enabled and `auth` supplies no oauth half. Mutually exclusive with `auth`. The door renders consent when the adapter uses `session`, or hands off the whole page when it supplies `authorize` instead — see [MCP door](/capabilities/mcp) |
-| `remoteAs` | no | delegates MCP bearer authentication to an external ES256-signing authorization server (`{ issuer, audience, jwksUri? }`); disables the door's local OAuth endpoints. Also accepted under `mcp: { remoteAs }` — see [MCP door](/capabilities/mcp) |
-| `federation` | no | enables the `/api/vendo/mcp/federate` handshake so an external authorization server can borrow the host's login flow; takes a shared `{ secret }`. Also accepted under `mcp: { federation }` — see [MCP door](/capabilities/mcp) |
-| `agent` | no | chat context controls: `toolOutputCap`, `maxOutputTokens`, `historyWindow`, `maxInitialTools`, `loadout`, `maxSteps` (see [Agent context](#agent-context)) |
+Every key is optional (`oauth` becomes required when `mcp` is enabled). A
+bare `createVendo()` boots with an env-resolved model, anonymous ephemeral
+sessions, and default persistence.
+
+| Option | Behavior |
+| --- | --- |
+| `model` | AI SDK `LanguageModel` used by the agent and default app generation. Optional: an explicitly passed model always wins (BYO-LLM); when absent, the composition resolves a real key from the environment — provider keys via the [dev-mode ladder](/connect/dev-mode), then `VENDO_API_KEY` for Vendo Cloud managed inference — and fails honestly with instructions when none exists |
+| `paint` | app-generation paint-lane knob: `model` supplies a thinking-disabled model instance for the instant first paint; `disabled` forces single-lane generation |
+| `auth` | one host-identity preset filling `principal`, `actAs`, and `oauth` from a single config key; mutually exclusive with all three — see [actAs presets](/connect/act-as-presets) |
+| `principal` | escape hatch: resolves the host request to a principal; `null` creates an ephemeral session. Mutually exclusive with `auth` |
+| `catalog` | `ComponentCatalog` or the name-keyed `ComponentRegistry` of host components exposed to the generation prompt; merged with any `.vendo/catalog.json` written by `vendo sync`, with explicit entries winning by name — see [Host components](/connect/host-components) |
+| `store` | defaults to PGlite at `.vendo/data`; with `VENDO_API_KEY` set and no `store` passed, the Cloud hosted store fills the slot instead — see [Persistence](/deploy/persistence) |
+| `sandbox` | unlocks machine-backed apps (layers 2 and 3); with no adapter passed, `E2B_API_KEY` (with the `e2b` package installed) or `VENDO_API_KEY` fills the slot, and with none of the three, apps stay tree-only |
+| `connectors` | adds external connector tool registries |
+| `connections` | explicit connections adapter for the connected-accounts surface; always wins over the composed defaults |
+| `actAs` | escape hatch: supplies scoped auth material for away host API execution. Mutually exclusive with `auth` — see [actAs presets](/connect/act-as-presets) |
+| `serverActions` | the server-action registration map emitted by the generated wiring file, keyed `"<module>#<exportName>"`; server-action tools dispatch in-process through it, and a missing key fails closed at execution |
+| `policy` | named preset (`"cautious"`, `"readonly"`, `"autopilot"`), inline rules and directions, a policy file, or a code escape hatch; `policy: {}` reads the default `.vendo/policy.json` (what `vendo init` scaffolds; read fail-soft — a missing default file also auto-runs, with no notice). Omit the key entirely and every call auto-runs |
+| `judge` | contextual guard judge |
+| `secrets` | defaults to environment-backed secret lookup |
+| `telemetry` | wires build and development telemetry |
+| `development` | development-only source capture; `NODE_ENV=development` enables it with cwd `.vendo` defaults, an object supplies `{ root?, out? }` for adapters whose process cwd differs, `false` disables the environment default |
+| `mcp` | opens the [MCP door](/capabilities/mcp) so outside agents reach host tools through the guarded path; `true` for defaults, or an object carrying `{ baseUrl?, remoteAs?, federation? }` when door-specific settings need to flow through the umbrella (see [Configure the door through the umbrella](/capabilities/mcp#configure-the-door-through-the-umbrella)); off by default |
+| `oauth` | escape hatch: `HostOAuthAdapter` used by the door for session lookup and principal resolution; required when `mcp` is enabled and `auth` supplies no oauth half. Mutually exclusive with `auth`. The door renders consent when the adapter uses `session`, or hands off the whole page when it supplies `authorize` instead — see [MCP door](/capabilities/mcp) |
+| `agent` | chat context controls: `toolOutputCap`, `maxOutputTokens`, `historyWindow`, `maxInitialTools`, `loadout`, `maxSteps` (see [Agent context](#agent-context)) |
+| `sessions` | ephemeral (anonymous) session lifecycle: `ttlMs` idle timeout before a session is swept (default 30 minutes; `0` disables eviction) and `sweepIntervalMs` sweep cadence (default 60 seconds) |
+| `approvals` | approval lifecycle knobs: `parkedCallTtlMs` is the idle timeout for a guarded call parked from a [BYO agent loop](/existing-agents) (default 60 min; `0` disables expiry). Past it, the sweep denies the approval and `<VendoApprovalEmbed>` reads "expired". Vendo-thread approvals are untouched |
+| `apps` | apps-block options: `experimentalServedApps` opts the project into layer-3 served apps (off by default) — see [Generated UI](/concepts/generated-ui) |
+
+The umbrella also ships two subpath exports for hosts that keep their own
+agent loop: `@vendoai/vendo/ai-sdk` (`vendoTools`) and `@vendoai/vendo/mastra`
+(`vendoMastraTools`) build the guarded tool pack for AI SDK and Mastra
+agents. See [Use with your existing agent](/existing-agents) and the
+[server API reference](/reference/server-api#byo-agent-subpaths).
 
 ## Agent context
 
@@ -87,8 +102,8 @@ a consistent, resumable state. No configuration is required.
 ## Base path
 
 The wire mounts under one base path, default `/api/vendo`. Configure
-`createVendoClient({ baseUrl })` when mounting elsewhere. Rung 4 HTTP app UI is
-not proxied through this base.
+`createVendoClient({ baseUrl })` when mounting elsewhere. Layer-3 served-app
+UI is not proxied through this base.
 
 ## Identity
 

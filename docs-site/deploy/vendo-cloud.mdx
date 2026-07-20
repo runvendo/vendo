@@ -45,6 +45,15 @@ unset or empty, `vendo.apps.share()` and `vendo.apps.publish()` throw
 `cloud-required` and the mapped HTTP status is 402. Set it wherever your handler
 runs:
 
+<Warning>
+  Setting the key does more than unlock the gated surfaces: it also fills
+  every adapter slot your composition left unset with the Cloud default — the
+  [hosted sandbox](#hosted-sandboxes) and the [hosted store](#hosted-store).
+  With no `store` passed, your Vendo data moves from local PGlite to Vendo
+  Cloud. An explicitly passed adapter always wins; pass
+  `store: createStore(...)` to keep persistence local.
+</Warning>
+
 ```bash
 export VENDO_API_KEY=vnd_live_...
 ```
@@ -225,5 +234,45 @@ the sandbox slot is simply unconfigured, so machine paths fail with
 `sandbox-unavailable`. See [Server API](/reference/server-api) for the
 `SandboxAdapter` seam and
 [Generated UI and apps](/concepts/generated-ui) for the layer model.
+
+## Hosted store
+
+`hostedStore` is the Cloud persistence adapter: a plain `StoreAdapter`
+speaking to the console's store routes, tenant resolved server-side from the
+key's org. You normally never construct it: with `VENDO_API_KEY` set and no
+`store` passed, `createVendo` fills the store slot with it automatically —
+threads, apps, records, grants, and audit then persist in Vendo Cloud instead
+of local PGlite. An explicitly passed `store:` always wins over that default:
+
+```ts
+import { createStore, createVendo } from "@vendoai/vendo/server";
+
+const vendo = createVendo({
+  // model, principal, ...
+  store: createStore({ url: process.env.DATABASE_URL }), // data stays yours
+});
+```
+
+To construct it explicitly (the adapter itself never reads the environment):
+
+```ts
+import { createVendo, hostedStore } from "@vendoai/vendo/server";
+
+const vendo = createVendo({
+  store: hostedStore({ apiKey: process.env.VENDO_API_KEY! }),
+});
+```
+
+`hostedStore(options)` accepts `apiKey` (required), `baseUrl` (console base
+URL override; `createVendo` passes `VENDO_CLOUD_URL` when it composes the
+default), and `timeoutMs` (per-request abort timeout).
+
+Stored secrets are excluded by construction: the hosted wire has no secrets
+surface, and the `storeSecrets`/`secretStore` helpers keep requiring a local
+store handle — they fail loudly against the hosted store rather than sending
+secret values to the console. The composition's secrets default (`envSecrets`)
+reads your process environment either way. `ensureSchema` is a client no-op
+(the service owns its migrations), and `eraseStore` cascades server-side
+exactly like the local implementation.
 
 For the full CLI surface, see [CLI](/reference/cli).

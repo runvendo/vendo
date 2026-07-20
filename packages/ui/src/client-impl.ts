@@ -105,6 +105,7 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
     approvals: {
       pending: () => readJson("/approvals"),
       decide: (ids, decision) => json("/approvals/decide", "POST", { ids: Array.isArray(ids) ? ids : [ids], decision }),
+      get: id => readJson(`/approvals/${idPath(id)}`),
     },
     grants: {
       list: () => readJson("/grants"),

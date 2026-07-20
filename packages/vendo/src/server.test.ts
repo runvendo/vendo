@@ -506,12 +506,29 @@ describe("09 §3 public wire", () => {
     // connector resolves real descriptors without leaving the test.
     const { createServer } = await import("node:http");
     const stub = createServer((req, res) => {
+      const url = new URL(req.url ?? "/", "http://stub");
       res.setHeader("content-type", "application/json");
-      if (req.url?.startsWith("/api/v1/tools")) {
+      if (url.pathname === "/api/v1/connections/catalog") {
+        res.end(JSON.stringify({ available: [
+          { toolkit: "gmail", connector: "composio", description: "Send and read email with Gmail" },
+          { toolkit: "slack", connector: "composio", description: "Post messages to Slack channels" },
+        ] }));
+        return;
+      }
+      if (url.pathname === "/api/v1/connections") {
+        // gmail is ACTIVE for the composed principal; nothing else.
+        res.end(JSON.stringify({ connections: [
+          { id: "ca_1", connector: "composio", toolkit: "gmail", status: "active" },
+        ] }));
+        return;
+      }
+      if (url.pathname === "/api/v1/tools") {
+        const toolkit = url.searchParams.get("toolkits") ?? "gmail";
+        const raw = `${toolkit.toUpperCase()}_SEND_THING`;
         res.end(JSON.stringify({ tools: [{
-          slug: "GMAIL_SEND_EMAIL",
-          toolkit: "gmail",
-          description: "Send email",
+          slug: toolkit === "gmail" ? "GMAIL_SEND_EMAIL" : raw,
+          toolkit,
+          description: toolkit === "gmail" ? "Send email" : `use ${toolkit}`,
           inputParameters: { type: "object" },
           tags: [],
         }] }));
@@ -545,11 +562,26 @@ describe("09 §3 public wire", () => {
       return vendo;
     };
 
-    // Unset slot + key → the Cloud tools connector composes; its descriptors
-    // ride the console broker and carry BYO-identical names.
+    // Unset slot + key → the Cloud tools connector composes LAZILY: nothing
+    // eager at boot; expansion pulls exactly the asked-for toolkit through
+    // the console broker with BYO-identical names.
     const auto = await compose({});
-    const autoNames = (await auto.actions.descriptors()).map((descriptor) => descriptor.name);
-    expect(autoNames).toContain("gmail_GMAIL_SEND_EMAIL");
+    const bootNames = (await auto.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(bootNames.some((name) => name.startsWith("gmail_") || name.startsWith("slack_"))).toBe(false);
+    await auto.actions.expandToolkits(["gmail"]);
+    const expanded = (await auto.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(expanded).toContain("gmail_GMAIL_SEND_EMAIL");
+
+    // The loadout seed: connected toolkits' tools in, unconnected out.
+    const seed = await auto.actions.loadoutSeed(["gmail"]);
+    expect(seed).toContain("gmail_GMAIL_SEND_EMAIL");
+    expect(seed.some((name) => name.startsWith("slack_"))).toBe(false);
+
+    // Search discovers the UNCONNECTED toolkit by intent and annotates it.
+    const matches = await auto.actions.search("post a message to slack channels");
+    const slack = matches.find((match) => match.name.startsWith("slack_"));
+    expect(slack).toBeDefined();
+    expect(slack!.description).toMatch(/connect/i);
 
     // An explicit connectors array — even empty — always wins over the key.
     const explicit = await compose({ connectors: [] });

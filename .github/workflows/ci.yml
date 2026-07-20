@@ -78,8 +78,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Build only the workspace deps the integration suites need (the `...`
-      # suffix pulls each fixture package's transitive workspace deps).
-      - run: pnpm turbo run build --filter=@vendoai-fixtures/integration... --filter=@vendoai-fixtures/integration-browser... --filter=@vendoai-fixtures/mcp-e2e...
+      # suffix pulls each fixture package's transitive workspace deps;
+      # `demo-bank^...` builds demo-bank's deps without running its Next build).
+      - run: pnpm turbo run build --filter=@vendoai-fixtures/integration... --filter=@vendoai-fixtures/integration-browser... --filter=@vendoai-fixtures/mcp-e2e... --filter=@vendoai/redteam-e2e... --filter=@vendoai-fixtures/automations-e2e... --filter=@vendoai-fixtures/chat-e2e... --filter=demo-bank^...
       # The node suite boots the real composed umbrella over HTTP against the host app.
       - run: pnpm --filter @vendoai-fixtures/integration test
       # The MCP door e2e suite: its multi-instance token-claim race test
@@ -87,6 +88,26 @@ jobs:
       # gates on POSTGRES_URL and otherwise silently skips — the job-level
       # POSTGRES_URL above makes it actually run its forced-overlap races here.
       - run: pnpm --filter @vendoai-fixtures/mcp-e2e test
+      # The offline security corpus (PR #123): prompt-injection, oauth-csrf,
+      # artifact/away-authority, shared-app-dormant, smoke. Mock-model and
+      # key-free; the live-egress legs stay on nightly. Each fixture boots its
+      # own host-app dev server on an ephemeral port with a per-suite dist dir,
+      # so these steps are safe to run back to back on one runner; they stay
+      # sequential steps (not turbo-parallel) to avoid oversubscribing CPUs.
+      - run: pnpm --filter @vendoai/redteam-e2e test
+      # Automations governance e2e: kill-switch, emit-and-revoke, park-resume,
+      # webhook, schedules, observability, steps-pipeline (live-* legs are
+      # nightly's).
+      - run: pnpm --filter @vendoai-fixtures/automations-e2e test
+      # Chat governance/approval e2e: approval-roundtrip, away-runner, blocked,
+      # deny, ephemeral, grant-drift, thread-scoping. Own PGlite per test, no
+      # shared server.
+      - run: pnpm --filter @vendoai-fixtures/chat-e2e test
+      # Maple's suite (auth, away drill, transfers, money, mcp-config, server
+      # routes). demo apps define no test:coverage script, so the main ci job's
+      # turbo run skips them — this is demo-bank's only CI execution (Cadence
+      # gets the cadence-supabase-auth job).
+      - run: pnpm --filter demo-bank test
       # The browser leg drives the shipped hooks/chrome in Chromium against the same wire.
       - run: pnpm --filter @vendoai-fixtures/integration-browser exec playwright install --with-deps chromium
       - run: pnpm --filter @vendoai-fixtures/integration-browser test:browser
