@@ -57,6 +57,10 @@ interface ParkedByoCall {
   /** The context the call ran in — the approved replay pins venue/presence/appId. */
   ctx: RunContext;
   parkedAt: IsoDateTime;
+  /** The pending request as the guard reported it at park time. `read` serves
+   *  it while the record exists so a poll landing mid-resume (decided, outcome
+   *  row not yet written) stays "pending" instead of a terminal not-found. */
+  request?: ApprovalRequest;
   /** Set by the sweep just before it denies, so the decision subscriber
    *  resolves the outcome to "expired" instead of "declined". */
   expiring?: boolean;
@@ -195,13 +199,18 @@ export function createByoApprovals({ guard, tools, store }: ByoApprovalsConfig):
         const outcome = await tools.execute(call, ctx);
         if (outcome.status === "pending-approval") {
           // PARK — written right before the pack tool returns the
-          // vendo/approval-ref@1 envelope to the foreign loop.
+          // vendo/approval-ref@1 envelope to the foreign loop. The request
+          // snapshot keeps `read` answering "pending" through the resume
+          // window, after the decision has already left the guard's queue.
+          const requests = await guard.approvals.pending(ctx.principal);
+          const request = requests.find((candidate) => candidate.id === outcome.approvalId);
           await putParked({
             approvalId: outcome.approvalId,
             owner: ctx.principal.subject,
             call: cloneJson(call),
             ctx: cloneJson(ctx),
             parkedAt: now(),
+            ...(request === undefined ? {} : { request: cloneJson(request) }),
           });
         }
         return outcome;
@@ -224,6 +233,18 @@ export function createByoApprovals({ guard, tools, store }: ByoApprovalsConfig):
       const pending = await guard.approvals.pending(principal);
       const request = pending.find((candidate) => candidate.id === approvalId);
       if (request !== undefined) return { state: "pending", request };
+      // Mid-resume window: the decision already left the guard's pending queue
+      // but the subscriber has not written the outcome row yet. The parked
+      // record exists exactly until that write, so serve its request snapshot
+      // as still-pending rather than a terminal not-found (which the embed
+      // renders as expired and stops polling).
+      const stillParked = await parked.get(approvalId);
+      if (stillParked !== null) {
+        const data = stillParked.data as ParkedByoCall;
+        if (data.owner === principal.subject && data.request !== undefined) {
+          return { state: "pending", request: data.request };
+        }
+      }
       throw new VendoError("not-found", `Approval ${approvalId} was not found`);
     },
 

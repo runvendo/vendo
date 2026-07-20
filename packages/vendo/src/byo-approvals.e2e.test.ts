@@ -220,4 +220,57 @@ describe.sequential("existing-agents — parked BYO guarded calls", () => {
     if (resolved.state !== "executed") throw new Error("expected executed");
     expect(resolved.outcome.status).toBe("error");
   });
+
+  it("answers pending, never not-found, to a read that lands mid-resume", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-byo-approvals-"));
+    cleanups.push(async () => rm(root, { recursive: true, force: true }));
+    const store = createStore({ dataDir: join(root, ".data") });
+    cleanups.push(async () => store.close());
+    await store.ensureSchema();
+    const guard = createGuard({ store, policy: { rules: [{ match: { risk: "write" }, action: "ask" }] } });
+    // The decision transition removes the approval from `pending` BEFORE the
+    // resume subscriber runs the call and writes the outcome row. A watcher
+    // polling inside that window (cross-tab decide + a slow downstream call)
+    // must keep seeing "pending" — a terminal not-found would strand the
+    // embed on "expired" and swallow the executed result.
+    let releaseResume!: () => void;
+    const resumeGate = new Promise<void>((resolve) => { releaseResume = resolve; });
+    let resumeStarted!: () => void;
+    const started = new Promise<void>((resolve) => { resumeStarted = resolve; });
+    let parkedOnce = false;
+    const slow: ToolRegistry = {
+      async descriptors() {
+        return [{
+          name: "host_slowSend",
+          description: "Slow mutating call",
+          inputSchema: { type: "object" },
+          risk: "write",
+        }];
+      },
+      async execute() {
+        if (parkedOnce) {
+          resumeStarted();
+          await resumeGate;
+        }
+        return { status: "ok", output: { delivered: true } };
+      },
+    };
+    const byo = createByoApprovals({ guard, tools: guard.bind(slow), store });
+
+    const parked = await byo.registry.execute({ id: "call_7", tool: "host_slowSend", args: {} }, ctx);
+    if (parked.status !== "pending-approval") throw new Error("expected the mutation to park");
+    parkedOnce = true;
+
+    // Decide without awaiting: the subscriber is now executing the resumed call.
+    const decided = guard.approvals.decide(parked.approvalId, { approve: true }, principal);
+    await started;
+
+    const mid = await byo.read(parked.approvalId, principal);
+    expect(mid.state).toBe("pending");
+
+    releaseResume();
+    await decided;
+    const resolved = await byo.read(parked.approvalId, principal);
+    expect(resolved.state).toBe("executed");
+  });
 });
