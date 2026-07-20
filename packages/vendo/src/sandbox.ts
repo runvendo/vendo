@@ -1,7 +1,11 @@
 import type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "@vendoai/apps";
 import { VendoError, type VendoErrorCode } from "@vendoai/core";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
-import { CLOUD_BOX_PORT, CLOUD_SANDBOX_PATH, CLOUD_SNAPSHOT_REF_PREFIX } from "./sandbox-wire.js";
+import {
+  CLOUD_SANDBOX_PATH,
+  CLOUD_SNAPSHOT_REF_PREFIX,
+  CONSOLE_SNAPSHOT_REF_PREFIX,
+} from "./sandbox-wire.js";
 
 /** Console error codes forwarded as-is when they are wire-legal VendoError
  * codes (same posture as the apps block's cloud share/publish client). The
@@ -31,6 +35,7 @@ export interface CloudSandboxOptions {
 }
 
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 const toBytes = (data: Uint8Array | string): Uint8Array =>
   typeof data === "string" ? encoder.encode(data) : data;
@@ -85,40 +90,95 @@ async function raiseCloudError(response: Response): Promise<never> {
   throw new VendoError(code, message);
 }
 
-/** Seam contract: refs are provider-prefixed opaque strings; a ref this
- * provider did not issue must reject without touching the console. */
-const assertCloudRef = (snapshotRef: string): void => {
-  if (!snapshotRef.startsWith(CLOUD_SNAPSHOT_REF_PREFIX)
-    || snapshotRef.length <= CLOUD_SNAPSHOT_REF_PREFIX.length) {
+/** The adapter-minted composite snapshot ref payload (sandbox-wire.ts): the
+ * console ref alone cannot serve the seam — destroy-by-ref needs the machine
+ * id (the console DELETE route is machine-only) and resume-policy comparison
+ * needs the snapshot-time allowlist. */
+interface CloudSnapshotState {
+  version: 2;
+  machineId: string;
+  /** The console-minted ref (`vendo:snap_<40hex>`), sent back on resume. */
+  ref: string;
+  allowedDomains?: string[];
+}
+
+const toBase64Url = (value: string): string =>
+  encodeBase64(encoder.encode(value)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+
+const encodeSnapshotRef = (state: CloudSnapshotState): string =>
+  `${CLOUD_SNAPSHOT_REF_PREFIX}${toBase64Url(JSON.stringify(state))}`;
+
+const decodeSnapshotRef = (snapshotRef: string): CloudSnapshotState => {
+  try {
+    if (!snapshotRef.startsWith(CLOUD_SNAPSHOT_REF_PREFIX)
+      || snapshotRef.length <= CLOUD_SNAPSHOT_REF_PREFIX.length) {
+      throw new Error("unknown prefix");
+    }
+    const payload = snapshotRef.slice(CLOUD_SNAPSHOT_REF_PREFIX.length)
+      .replaceAll("-", "+").replaceAll("_", "/");
+    const state = JSON.parse(decoder.decode(
+      Uint8Array.from(atob(payload), (character) => character.charCodeAt(0)),
+    )) as Record<string, unknown>;
+    if (state.version !== 2
+      || typeof state.machineId !== "string" || state.machineId.length === 0
+      || typeof state.ref !== "string" || !state.ref.startsWith(CONSOLE_SNAPSHOT_REF_PREFIX)) {
+      throw new Error("invalid payload");
+    }
+    if (state.allowedDomains !== undefined && !(Array.isArray(state.allowedDomains)
+      && state.allowedDomains.every((host) => typeof host === "string"))) {
+      throw new Error("invalid allowedDomains policy");
+    }
+    return {
+      version: 2,
+      machineId: state.machineId,
+      ref: state.ref,
+      ...(state.allowedDomains === undefined ? {} : { allowedDomains: [...state.allowedDomains as string[]] }),
+    };
+  } catch {
     throw new VendoError(
       "validation",
-      `Vendo Cloud snapshot references must start with "${CLOUD_SNAPSHOT_REF_PREFIX}"`,
+      `Vendo Cloud snapshot references must start with "${CLOUD_SNAPSHOT_REF_PREFIX}" and carry a valid payload`,
     );
   }
+};
+
+/** Two seam egress policies are the same grant state (order-insensitive;
+ * undefined means unrestricted on both sides). */
+const sameDomains = (a: string[] | undefined, b: string[] | undefined): boolean => {
+  if (a === undefined || b === undefined) return a === b;
+  const left = [...new Set(a)].sort();
+  const right = [...new Set(b)].sort();
+  return left.length === right.length && left.every((host, index) => host === right[index]);
 };
 
 /** True exactly for the "that state is already gone" answer that the seam's
  * idempotent transitions (destroy twice, stop of a dead machine) absorb. */
 const isGone = (error: unknown): boolean =>
-  error instanceof VendoError && error.code === "not-found";
+  error instanceof VendoError && (error.code === "not-found" || error.code === "conflict");
 
 /** The Cloud sandbox adapter — the OSS side of the managed-sandbox seam: the
  * execution-v2 SandboxAdapter speaking HTTP to the console's /api/v1/sandboxes
  * routes (Vendo's pooled provider capacity, metered as sandbox_minutes). The
- * wire contract lives in sandbox-wire.ts. Cloned from cloudConnections' shape:
- * behavior comes ONLY from constructor arguments (adapter rule — see
- * selectSandbox in server.ts); the adapter never reads the environment.
+ * wire contract — probed against prod — lives in sandbox-wire.ts. Cloned from
+ * cloudConnections' shape: behavior comes ONLY from constructor arguments
+ * (adapter rule — see selectSandbox in server.ts); the adapter never reads
+ * the environment.
  *
- * Provider particulars, versus the e2b reference port:
- * - Single port: the Cloud relay and the public ingress
- *   (`https://<id>.m.vendo.run`) serve exactly {@link CLOUD_BOX_PORT}; a
- *   non-default `request.port` raises the typed `cloud-single-port` error
- *   (code "not-implemented", `detail.reason = "cloud-single-port"`).
- * - No pause: `stop()` mints a best-effort preservation snapshot and then
- *   deletes the machine, so sleeping never silently discards state the
- *   caller hadn't snapshotted (see the stop entry in sandbox-wire.ts).
- * - Refs are minted server-side and opaque past the `vendo:` prefix; resume
- *   applies SandboxResumePolicy as the wire's three-state egress override.
+ * Provider particulars, versus the e2b reference port (details and the two
+ * in-flight Cloud follow-ups in sandbox-wire.ts):
+ * - Pause model: the console's snapshot IS a pause and resume revives the
+ *   SAME machine (no fork). snapshot() therefore pauses and immediately
+ *   resumes so the seam's "source keeps serving" law holds; stop() is a
+ *   bare pause (its console ref discarded — a snapshot-row leak until the
+ *   Cloud GC endpoint ships).
+ * - Composite refs: the seam sees `vendo:v2:<base64url state>` carrying the
+ *   machine id (destroy-by-ref is machine-only on the wire) and the
+ *   snapshot-time allowlist.
+ * - No egress override on resume yet: a CHANGED policy raises the typed
+ *   `cloud-egress-override-unsupported` error (code "not-implemented") —
+ *   never a silent stale-policy wake; an UNCHANGED policy proceeds.
+ * - `spec.template` is dropped from the wire: the create route takes none —
+ *   the pooled base image (Node + the in-box agent) is Cloud's own.
  *
  * The machine object also carries adapter-private exec/files/url used for
  * live-lane bootstrap and diagnostics — NOT part of the public seam (the
@@ -168,19 +228,22 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
     return { id: handle.id, url: handle.url };
   };
 
-  const wrap = (handle: { id: string; url: string }): SandboxMachine => {
+  const wrap = (
+    handle: { id: string; url: string },
+    state: { allowedDomains?: string[] | undefined },
+  ): SandboxMachine => {
     const prefix = `/${encodeURIComponent(handle.id)}`;
-    const takeSnapshot = async (): Promise<string> => {
+    /** POST /{id}/snapshot — a state-preserving PAUSE minting a console ref. */
+    const pauseIntoSnapshot = async (): Promise<string> => {
       const payload = await sendJson(`${prefix}/snapshot`, "POST") as { ref?: unknown };
       if (typeof payload.ref !== "string" || payload.ref.length === 0) {
         throw new VendoError("sandbox-unavailable", "Vendo Cloud sandbox returned no snapshot reference");
       }
-      // A ref this adapter would itself refuse to resume/destroy must never
-      // reach a document — reject it as console garbage here instead (same
-      // condition as assertCloudRef, so a bare prefix is equally foreign).
-      if (!payload.ref.startsWith(CLOUD_SNAPSHOT_REF_PREFIX)
-        || payload.ref.length <= CLOUD_SNAPSHOT_REF_PREFIX.length) {
-        throw new VendoError("sandbox-unavailable", `Vendo Cloud sandbox returned a foreign snapshot reference (expected the "${CLOUD_SNAPSHOT_REF_PREFIX}" prefix)`);
+      // A ref this adapter would itself refuse to carry must never reach a
+      // document — reject it as console garbage here instead.
+      if (!payload.ref.startsWith(CONSOLE_SNAPSHOT_REF_PREFIX)
+        || payload.ref.length <= CONSOLE_SNAPSHOT_REF_PREFIX.length) {
+        throw new VendoError("sandbox-unavailable", `Vendo Cloud sandbox returned a foreign snapshot reference (expected the "${CONSOLE_SNAPSHOT_REF_PREFIX}" prefix)`);
       }
       return payload.ref;
     };
@@ -202,19 +265,12 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
     return {
       id: handle.id,
       async request(req) {
-        if (req.port !== undefined && req.port !== CLOUD_BOX_PORT) {
-          // The Cloud relay is HARDWIRED to the one box port (the e2b adapter
-          // keeps multi-port); erroring beats silently answering from a port
-          // the caller didn't ask for.
-          throw new VendoError(
-            "not-implemented",
-            `Vendo Cloud sandboxes serve a single box port (${CLOUD_BOX_PORT}); request.port=${req.port} cannot be routed (cloud-single-port)`,
-            { reason: "cloud-single-port", port: req.port },
-          );
-        }
         const payload = await sendJson(`${prefix}/request`, "POST", {
           method: req.method,
           path: req.path.startsWith("/") ? req.path : `/${req.path}`,
+          // Absent port targets the canonical box port server-side; explicit
+          // ports (e.g. the in-box agent control port) route as-is.
+          ...(req.port === undefined ? {} : { port: req.port }),
           ...(req.headers === undefined ? {} : { headers: req.headers }),
           ...(req.body === undefined ? {} : { body_b64: encodeBase64(toBytes(req.body)) }),
         }) as { status?: unknown; headers?: unknown; body_b64?: unknown };
@@ -228,24 +284,33 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
         return { status: payload.status, headers, body: decodeBase64(payload.body_b64) };
       },
       async snapshot() {
-        return takeSnapshot();
+        // The console's snapshot pauses the source; the immediate resume
+        // restores the seam law that a checkpoint leaves it serving. A resume
+        // failure propagates — the machine is then paused, not lost: the ref
+        // below revives it.
+        const consoleRef = await pauseIntoSnapshot();
+        await sendJson("/resume", "POST", { ref: consoleRef });
+        return encodeSnapshotRef({
+          version: 2,
+          machineId: handle.id,
+          ref: consoleRef,
+          ...(state.allowedDomains === undefined ? {} : { allowedDomains: [...state.allowedDomains] }),
+        });
       },
       async stop() {
         if (destroying !== undefined) {
           await destroying;
           return;
         }
-        // Defensive Cloud sleep (wire contract: no pause endpoint exists):
-        // mint a preservation snapshot so post-snapshot state survives the
-        // delete, then drop the machine. The preservation ref is discarded —
-        // the sleep flows that need a ref mint their own BEFORE stopping
-        // (machine-lifecycle.ts) — and the mint is best-effort: a machine the
-        // Cloud sweeper already reaped has nothing left to preserve.
-        sleeping ??= takeSnapshot()
+        // Cloud sleep IS the pause-flavored snapshot; the minted console ref
+        // is discarded — the sleep flows that need a ref mint their own
+        // BEFORE stopping (machine-lifecycle.ts). One snapshot row leaks per
+        // stop until the Cloud GC endpoint ships (sandbox-wire.ts follow-up
+        // A). An already-paused/gone machine is the seam's no-op.
+        sleeping ??= pauseIntoSnapshot()
           .then(() => undefined, (error) => {
             if (!isGone(error)) throw error;
-          })
-          .then(remove);
+          });
         await sleeping;
       },
       async destroy() {
@@ -299,32 +364,47 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
 
   return {
     async create(spec) {
+      // spec.template is dropped: the create route takes none — the pooled
+      // base image (Node + the in-box agent harness) is Cloud's own
+      // (sandbox-wire.ts).
       return wrap(parseHandle(await sendJson("", "POST", {
         env: spec.env,
-        ...(spec.template === undefined ? {} : { template: spec.template }),
         // Seam semantics carried verbatim: absent = unrestricted, [] = deny-all
         // (deny-by-default lives ABOVE the seam — Lane E's grant flow).
         ...(spec.allowedDomains === undefined ? {} : { egress: [...spec.allowedDomains] }),
-      })));
+      })), { allowedDomains: spec.allowedDomains });
     },
     async resume(snapshotRef, policy?: SandboxResumePolicy) {
-      assertCloudRef(snapshotRef);
-      return wrap(parseHandle(await sendJson("/resume", "POST", {
-        ref: snapshotRef,
-        // Lane E — a wake enforces the CURRENT egress policy when the caller
-        // passes one; the wire keeps "no override" (field absent) distinct
-        // from "override to unrestricted" (explicit null).
-        ...(policy === undefined ? {} : {
-          egress: policy.allowedDomains === undefined ? null : [...policy.allowedDomains],
-        }),
-      })));
+      const state = decodeSnapshotRef(snapshotRef);
+      // Lane E — a wake must enforce the CURRENT egress policy. The Cloud
+      // resume cannot re-police yet (sandbox-wire.ts follow-up B), so an
+      // UNCHANGED policy proceeds and a CHANGED one fails typed — never a
+      // silent wake under a stale allowlist.
+      if (policy !== undefined && !sameDomains(policy.allowedDomains, state.allowedDomains)) {
+        throw new VendoError(
+          "not-implemented",
+          "Vendo Cloud sandboxes cannot change the egress allowlist on resume yet (cloud-egress-override-unsupported); the machine keeps its create-time policy",
+          {
+            reason: "cloud-egress-override-unsupported",
+            snapshotDomains: state.allowedDomains ?? null,
+            requestedDomains: policy.allowedDomains ?? null,
+          },
+        );
+      }
+      return wrap(parseHandle(await sendJson("/resume", "POST", { ref: state.ref })), {
+        allowedDomains: state.allowedDomains,
+      });
     },
     async destroy(snapshotRef) {
-      assertCloudRef(snapshotRef);
+      const state = decodeSnapshotRef(snapshotRef);
+      // The console DELETE route is machine-only; the composite ref carries
+      // the machine id for exactly this call. Repeat-deletes answer 200 and
+      // an unknown machine 404 — both are the seam's idempotent no-op. The
+      // snapshot row itself keeps metering storage until the Cloud GC
+      // endpoint ships (sandbox-wire.ts follow-up A).
       try {
-        await sendJson(`/${encodeURIComponent(snapshotRef)}`, "DELETE");
+        await sendJson(`/${encodeURIComponent(state.machineId)}`, "DELETE");
       } catch (error) {
-        // Idempotent by seam contract: already-deleted state is a no-op.
         if (!isGone(error)) throw error;
       }
     },

@@ -23,13 +23,30 @@ export interface SandboxConformanceHarness {
   /** True when the adapter enforces create()'s allowedDomains; enables the egress case. */
   enforcesAllowedDomains: boolean;
   /**
-   * True when the provider can route request() to any box port (e2b). The
-   * Vendo Cloud relay is hardwired to one box port and surfaces a non-default
-   * `port` as the typed `cloud-single-port` error, so its harness disables
-   * the multi-port case (its single-port behavior is provider-specific and
-   * tested beside the adapter).
+   * True when a DEFAULT request() (no explicit port) reaches the app on its
+   * $PORT whatever that is (e2b). The Vendo Cloud relay defaults to the one
+   * canonical box port instead — explicit ports route fine, but the
+   * "$PORT by default" case is provider-specific and tested beside the
+   * adapter.
    */
   multiPort: boolean;
+  /**
+   * True when resume() mints an INDEPENDENT machine per call (e2b restores
+   * a checkpoint into fresh sandboxes). The Vendo Cloud resume revives the
+   * ONE machine a snapshot came from (pause model, same id) — no fork — so
+   * its harness disables the independent-machines case and the fresh-id
+   * assertion. Tracked Cloud follow-up: resume-from-a-stopped-machine
+   * provisioning a new box would flip this back on.
+   */
+  resumeForks: boolean;
+  /**
+   * True when resume(ref, policy) can REPLACE the snapshot-time egress
+   * allowlist (e2b, via provider network rules). The Cloud resume takes the
+   * bare ref today (a changed policy raises the typed
+   * cloud-egress-override-unsupported error); flips on when the Cloud
+   * resume grows its egress field (tracked follow-up).
+   */
+  resumeReplacesPolicy: boolean;
 }
 
 const requestEventually = async (
@@ -115,9 +132,11 @@ export const sandboxAdapterConformance = (
       await created.stop(); // sleeping twice is not an error
       expect(await noLongerServes(created, envRequest, "present")).toBe(true);
 
-      // A fresh adapter instance restores the ref: env and app carried.
+      // A fresh adapter instance restores the ref: env and app carried. A
+      // forking provider restores into a NEW machine; a pause-model provider
+      // (Cloud) revives the one it came from.
       const resumed = track(await (await harness.makeAdapter()).resume(snapshotRef));
-      expect(resumed.id).not.toBe(created.id);
+      if (harness.resumeForks) expect(resumed.id).not.toBe(created.id);
       await expect(requestEventually(resumed, envRequest))
         .resolves.toMatchObject({ status: 200, body: "present" });
 
@@ -128,7 +147,7 @@ export const sandboxAdapterConformance = (
       expect(await noLongerServes(resumed, envRequest, "present")).toBe(true);
     }, TEST_TIMEOUT_MS);
 
-    it("resumes one snapshot into independent machines", async () => {
+    it.skipIf(!harness.resumeForks)("resumes one snapshot into independent machines", async () => {
       const adapter = await harness.makeAdapter();
       const source = track(await adapter.create({
         env: { PORT: "8080", CONFORMANCE_VALUE: "independent" },
@@ -191,7 +210,7 @@ export const sandboxAdapterConformance = (
       TEST_TIMEOUT_MS,
     );
 
-    it.skipIf(!harness.enforcesAllowedDomains)(
+    it.skipIf(!harness.enforcesAllowedDomains || !harness.resumeReplacesPolicy)(
       "a resume-time policy replaces the snapshot's egress allowlist",
       async () => {
         const adapter = await harness.makeAdapter();

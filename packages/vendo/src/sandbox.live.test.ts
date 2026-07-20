@@ -98,8 +98,13 @@ describe.skipIf(!LIVE)("cloudSandbox live", () => {
     makeAdapter,
     bootstrap,
     enforcesAllowedDomains: true,
-    // The Cloud relay is hardwired to the one box port (cloud-single-port).
+    // The Cloud relay defaults to the canonical box port, not $PORT
+    // (explicit ports route fine — probed live).
     multiPort: false,
+    // Pause model: resume revives the ONE machine a snapshot came from.
+    resumeForks: false,
+    // Bare-ref resume until Cloud follow-up B (sandbox-wire.ts).
+    resumeReplacesPolicy: false,
   };
   sandboxAdapterConformance("real Vendo Cloud", harness);
 
@@ -130,7 +135,7 @@ describe.skipIf(!LIVE)("cloudSandbox live", () => {
       ref = await created.snapshot();
       log(`snapshot → ${ref.slice(0, 24)}… (${ref.length} chars)`);
       await created.stop();
-      log("stop → preservation snapshot + machine deleted (Cloud has no pause)");
+      log("stop → console pause (state-preserving snapshot)");
 
       resumed = await adapter.resume(ref);
       log(`resume(ref) → machine ${resumed.id}`);
@@ -138,7 +143,12 @@ describe.skipIf(!LIVE)("cloudSandbox live", () => {
       log(`request → ${second.status} "${decoder.decode(second.body)}"`);
       expect(second.status).toBe(200);
       expect(decoder.decode(second.body)).toBe("hello from the cloud box");
-      expect(resumed.id).not.toBe(created.id);
+      // Machine identity across resume is the provider's business: today's
+      // pause model revives the same id; the in-flight Cloud artifact rework
+      // (sandbox-wire.ts) will mint a NEW one. Serving the app is the law.
+      log(resumed.id === created.id
+        ? "resume revived the paused machine in place (pause model)"
+        : "resume provisioned a fresh machine (artifact model)");
     } finally {
       await Promise.all([
         created?.destroy().catch(() => undefined),

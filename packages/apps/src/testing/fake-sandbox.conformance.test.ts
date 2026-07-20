@@ -42,6 +42,8 @@ const harness: SandboxConformanceHarness = {
   },
   enforcesAllowedDomains: true,
   multiPort: true,
+  resumeForks: true,
+  resumeReplacesPolicy: true,
 };
 
 sandboxAdapterConformance("fake", harness);
