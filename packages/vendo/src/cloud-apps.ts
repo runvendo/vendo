@@ -1,4 +1,4 @@
-import { VendoError, type AppDocument, type AppId } from "@vendoai/core";
+import type { AppDocument, AppId } from "@vendoai/core";
 import {
   publishRecordSchema,
   shareSnapshotSchema,
@@ -64,9 +64,10 @@ export function cloudApps(options: CloudAppsOptions): CloudAppsClient {
       payload = await response.json();
     } catch {
       // hosted-store's malformed-200 posture: a 2xx that isn't JSON means a
-      // misdeployed Cloud base — fail loudly instead of a schema error.
-      throw new VendoError(
-        "validation",
+      // misdeployed Cloud base — the SERVICE misbehaving, never the caller's
+      // fault, so this is a plain Error (not a wire-legal "validation" code
+      // that would blame the share/publish input).
+      throw new Error(
         `Vendo Cloud apps returned a non-JSON ${response.status} response — check VENDO_CLOUD_URL`,
       );
     }

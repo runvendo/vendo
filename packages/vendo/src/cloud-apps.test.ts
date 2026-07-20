@@ -139,7 +139,15 @@ describe("cloudApps", () => {
       baseUrl: "https://cloud.test",
       fetch: fetchImpl as unknown as typeof fetch,
     });
-    await expect(client.share(doc.id, doc)).rejects.toThrow(/non-JSON/i);
+    // A misdeployed console is the SERVICE misbehaving, never the caller's
+    // fault — hosted-store's malformed-200 posture: a plain Error, not a
+    // wire-legal "validation" VendoError that would blame the share input.
+    const failure = await client.share(doc.id, doc).then(
+      () => { throw new Error("expected share to reject"); },
+      (error: unknown) => error as { code?: string; message: string },
+    );
+    expect(failure.message).toMatch(/non-JSON/i);
+    expect(failure.code).toBeUndefined();
   });
 
   it("aborts a hung console request after timeoutMs", async () => {
