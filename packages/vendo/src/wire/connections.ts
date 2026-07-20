@@ -18,6 +18,15 @@ export const connectionRoutes: RouteEntry[] = [
       ...(body["callbackUrl"] === undefined ? {} : { callbackUrl: string(body["callbackUrl"], "callbackUrl") }),
     }));
   }),
+  // The connect dock's auto catalog. Host-level rows, but the principal still
+  // resolves first so this surface authenticates exactly like its siblings.
+  // Must precede /connections/:id, which would otherwise swallow "catalog".
+  route("GET", "/connections/catalog", async ({ deps, context }) => {
+    await context("chat");
+    // Optional-capability guard: a pre-catalog custom adapter (plain JS, or
+    // compiled before the interface grew) advertises nothing rather than 500s.
+    return json({ available: await deps.connections.catalog?.() ?? [] });
+  }),
   // Grouped like the old if-chain arm: ANY method resolves context first, and
   // an unhandled method falls through to the table's not-found.
   route("*", "/connections/:id", async ({ request, url, deps, context, params }) => {

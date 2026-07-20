@@ -236,10 +236,33 @@ describe("connect dock + tray (ENG-225)", () => {
 
   const CONNECTORS = [{ toolkit: "gmail", label: "Gmail" }, { toolkit: "slack", label: "Slack" }];
 
-  it("renders no dock without a host connector catalog", async () => {
-    const view = render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+  it("renders no dock when the host force-disables it (connectors={[]})", async () => {
+    const view = render(
+      <VendoProvider client={client} connectors={[]}><VendoThread threadId="thr_1" /></VendoProvider>,
+    );
     await screen.findByText("Existing thread");
     expect(view.container.querySelector(".fl-dock")).toBeNull();
+  });
+
+  it("auto-derives the dock from the wire catalog when no connectors prop is passed", async () => {
+    render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+    await screen.findByText("Existing thread");
+    // gmail + slack come from the wire's /connections/catalog, not a prop.
+    const dock = await screen.findByRole("button", { name: "Connect tools" });
+    fireEvent.click(dock);
+    const tray = await screen.findByRole("dialog", { name: "Connect tools" });
+    await within(tray).findByRole("button", { name: /connect slack/i });
+  });
+
+  it("renders no dock when the auto catalog resolves empty", async () => {
+    wire.state.catalog = [];
+    const view = render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+    await screen.findByText("Existing thread");
+    // Poll until the catalog fetch has settled (the attach button renders
+    // regardless of the dock, so the composer being interactive is the
+    // "resolved" signal), then assert the dock stayed absent.
+    await screen.findByRole("button", { name: "Attach files" });
+    await waitFor(() => expect(view.container.querySelector(".fl-dock")).toBeNull());
   });
 
   it("shows the dock with an active-count badge and opens the tray", async () => {
