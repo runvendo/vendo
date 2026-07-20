@@ -182,12 +182,18 @@ export const runAgentTask = async ({ prompt, context, env, appDir, log, engine }
       onReport: (input) => { report = input; },
     });
   } catch (error) {
-    return {
-      ok: false,
-      summary: `agent engine failed: ${error instanceof Error ? error.message : String(error)}`,
-      filesChanged: [...written],
-      testsRun: 0,
-    };
+    // A report filed before a late stream failure still counts (review
+    // finding, PR #438): the structured result is the contract; the throw
+    // after it is engine noise.
+    if (report === undefined) {
+      return {
+        ok: false,
+        summary: `agent engine failed: ${error instanceof Error ? error.message : String(error)}`,
+        filesChanged: [...written],
+        testsRun: 0,
+      };
+    }
+    log(`[task] engine threw after report_done — keeping the report: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (report === undefined || typeof report !== "object" || report === null) {
     return { ok: false, summary: "agent finished without calling report_done", filesChanged: [...written], testsRun: 0 };

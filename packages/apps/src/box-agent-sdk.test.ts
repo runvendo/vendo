@@ -112,6 +112,15 @@ describe("in-box SDK agent contract", () => {
     expect(result.summary).toMatch(/agent engine failed: cli spawn failed/);
   });
 
+  it("keeps a report filed before a late engine throw (the report is the contract)", async () => {
+    const result = await run(async ({ onReport }) => {
+      onReport({ ok: true, summary: "built and verified", filesChanged: [], testsRun: 1 });
+      throw new Error("stream hiccup after the report");
+    });
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe("built and verified");
+  });
+
   it("reports honestly when the agent finishes without calling report_done", async () => {
     const result = await run(async ({ onWrite }) => {
       onWrite("/tmp/server.js");
