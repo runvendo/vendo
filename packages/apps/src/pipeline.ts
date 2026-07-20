@@ -916,7 +916,11 @@ export const regionParallelCreate = async (
     hooks.emitPartial?.(assemble());
   }));
   const landedCount = landed.filter((part) => part !== undefined).length;
-  if (landedCount < 2) {
+  // EVERY planned section must land — assembling a subset would silently ship
+  // an app missing a region the user asked for (Devin review, PR #417). The
+  // single-stream fallback still produces the complete app, so falling back
+  // here never blocks and never drops content.
+  if (landedCount !== outline.sections.length) {
     return finish({ fallback: "sections-failed", sectionsPlanned: outline.sections.length, sectionsLanded: landedCount });
   }
   const compiled = compileWireV2(assemble(), {

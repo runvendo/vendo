@@ -422,6 +422,42 @@ describe("outline + region-parallel tier-2 (flagged)", () => {
     expect(lanes).toEqual(["outline", "full"]);
   });
 
+  it("falls back to the single stream when ANY planned section fails to land (never ships a partial app)", async () => {
+    const threeSections = {
+      tool: "plan_outline",
+      input: {
+        appName: "Board",
+        sharedFacts: "",
+        sections: [
+          { id: "s1", brief: "Metrics", tools: ["host_metric"], coupledWithPrevious: false },
+          { id: "s2", brief: "Invoices", tools: ["host_invoices"], coupledWithPrevious: false },
+          { id: "s3", brief: "Alerts", tools: [], coupledWithPrevious: false },
+        ],
+      },
+    };
+    const valid = '<App name="Single"><MetricCard label="Revenue" value="$42k"/></App>';
+    const lanes: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      const text = promptText(call);
+      if (isOutlineCall(call)) { lanes.push("outline"); return threeSections; }
+      if (text.includes("OUTLINE_SECTION s1")) { lanes.push("s1"); return '<App name="Board"><MetricCard label="Revenue" value="$42k"/></App>'; }
+      if (text.includes("OUTLINE_SECTION s2")) { lanes.push("s2"); return '<App name="Board"><Text text="Invoices"/></App>'; }
+      if (text.includes("OUTLINE_SECTION s3")) { lanes.push("s3"); return "no wire markup at all"; }
+      lanes.push("full");
+      return valid;
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "Metrics, invoices, and alerts" },
+      deps(model, { tools: parallelTools, toolShapes: parallelShapes, pipeline: { regionParallel: true } }),
+    );
+
+    // Two of three sections landed — assembling would silently drop the
+    // alerts region, so the engine must regenerate via the single stream.
+    expect(document.name).toBe("Single");
+    expect(lanes.at(-1)).toBe("full");
+  });
+
   it("stays off without the flag", async () => {
     const valid = '<App name="Plain"><MetricCard label="Revenue" value="$42k"/></App>';
     const lanes: string[] = [];
