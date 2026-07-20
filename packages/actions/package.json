@@ -72,6 +72,7 @@
     "jose": "^6.2.3",
     "next": "16.2.9",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^2.1.0",
+    "zod-to-json-schema": "^3.25.2"
   }
 }
