@@ -10,6 +10,7 @@ import {
   type RiskLabel,
   type RunContext,
   type ToolCall,
+  type ToolDescriptor,
   type ToolOutcome,
   type ToolRegistry,
   type VendoApprovalPart,
@@ -100,8 +101,15 @@ function capOutcome(outcome: ToolOutcome, cap: number | undefined): ToolOutcome 
 export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolSet> {
   const descriptors = await options.registry.descriptors();
   const tools: ToolSet = {};
+  for (const descriptor of descriptors) addAgentTool(tools, descriptor, options);
+  return tools;
+}
 
-  for (const descriptor of descriptors) {
+/** Build ONE guard-bound agent tool and insert it into `tools`. Exported so a
+ * tool lazily expanded mid-turn (vendo_tools_search, spec 2026-07-20)
+ * materializes with the exact wrapper the boot-time toolset uses. */
+export function addAgentTool(tools: ToolSet, descriptor: ToolDescriptor, options: ToolBridgeOptions): void {
+  {
     const execute = async (input: unknown, { toolCallId }: { toolCallId: string }): Promise<ToolOutcome> => {
       const call: VendoViewStreamingToolCall = { id: toolCallId, tool: descriptor.name, args: input };
       if (descriptor.name === VENDO_APPS_CREATE_TOOL && options.writer !== undefined) {
@@ -193,6 +201,4 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
       ...(needsApproval ? { needsApproval } : {}),
     });
   }
-
-  return tools;
 }

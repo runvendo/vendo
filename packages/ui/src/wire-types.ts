@@ -129,6 +129,8 @@ export interface ConnectableToolkit {
   toolkit: string;
   connector: string;
   label?: string;
+  /** One-line capability blurb (provider metadata); surfaces may ignore it. */
+  description?: string;
 }
 
 /** 07-automations §5 */

@@ -39,8 +39,10 @@ this order:
    `GOOGLE_GENERATIVE_AI_API_KEY` (install the matching `@ai-sdk/*@^3`
    provider). This same rung serves production.
 2. `VENDO_API_KEY` — a Vendo Cloud dev key. When init finds no key, it offers
-   `vendo cloud login`: after the browser login it mints a metered dev-mode
-   starter key and writes it to `.env.local` for you. You never paste a key.
+   `vendo cloud login`: it emails you a one-time code, prompts for it on
+   stdin (the browser flow is the separate `vendo cloud device-login`
+   command), then mints a metered dev-mode starter key and writes it to
+   `.env.local` for you. You never paste a key.
    Model calls go through the Vendo Cloud model gateway (Anthropic models,
    served via the installed `@ai-sdk/anthropic`) and meter your dev-mode
    runs allowance.
@@ -160,6 +162,7 @@ const vendo = createVendo({
   model: anthropic("claude-sonnet-4-6"),
   auth: authJs(),
   catalog: registry,
+  policy: {}, // .vendo/policy.json: destructive asks, reads run
 });
 
 export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
@@ -183,11 +186,17 @@ hosts without a shipped preset.
 `model` and `catalog` are the only other keys most hosts touch on day one.
 Every key is optional — a bare `createVendo()` legitimately boots, with an
 env-resolved model, anonymous ephemeral sessions, and PGlite persistence.
-Add a named `policy` preset once you want a guard posture instead of the
-unconfigured-policy default: `"cautious"` asks before write/destructive calls
-and runs reads, `"readonly"` runs reads and blocks everything else, and
-`"autopilot"` runs everything. `.vendo/policy.json` (the `{ file }` form) and
-inline `{ rules }` stay available for anything a preset doesn't cover.
+The `policy: {}` line activates the `.vendo/policy.json` file init wrote, so
+the scaffolded default posture is: destructive tools ask, reads run. Remove
+the `policy` key entirely and every call auto-runs (audited, with the
+unconfigured-policy notice in shipped chrome). The default file is read
+fail-soft: deleting `.vendo/policy.json` while keeping `policy: {}` also
+auto-runs, silently and without the notice — keep the file in version
+control; it is part of your security posture. Named presets replace the
+file: `"cautious"` asks before write/destructive calls and runs reads,
+`"readonly"` runs reads and blocks everything else, and `"autopilot"` runs
+everything. Inline `{ rules }` and the explicit `{ file }` form cover
+anything a preset doesn't.
 
 `createVendo`'s real configuration surface:
 
@@ -293,12 +302,15 @@ var as a failing check.
 VENDO_BASE_URL=https://app.example.com
 ```
 
-Every call passes through the guard. With no policy or judge, calls auto-run
-and are audited, and shipped chrome displays the unconfigured-policy notice.
+Every call passes through the guard. The scaffolded composition passes
+`policy: {}`, which reads `.vendo/policy.json`: destructive tools ask, reads
+run. A composition with no `policy` key at all auto-runs every call (audited),
+and shipped chrome displays the unconfigured-policy notice.
 
 ## What works without more configuration
 
-- PGlite persistence at `.vendo/data`
+- PGlite persistence at `.vendo/data` (until `VENDO_API_KEY` is set — see
+  below)
 - tree-only apps, including host and generated components
 - threads, approvals, grants, activity, and app lifecycle routes
 - schedule, host-event, and external-trigger automation machinery
@@ -309,9 +321,16 @@ the box contract. Machine provisioning also requires `VENDO_BASE_URL`, since
 the box calls back to your deployment's public origin. `auth` (or its `actAs`
 half, hand-wired) unlocks host API calls while the user is away. Connectors
 add external tools. `VENDO_API_KEY` activates cloud-gated sharing, publishing,
-org overlays, and pinning — and fills the sandbox slot with the hosted
-sandbox when you passed no adapter and no `E2B_API_KEY` is set (an explicit
-adapter or BYO key always wins).
+org overlays, and pinning — and fills the adapter slots you left unset with
+Cloud defaults:
+
+- the sandbox slot becomes the hosted sandbox when you passed no adapter and
+  no `E2B_API_KEY` is set;
+- the store slot becomes the Cloud hosted store when you passed no `store` —
+  threads, apps, records, grants, and audit then persist in Vendo Cloud
+  instead of local PGlite. Pass `store: createStore(...)` to keep data local.
+
+An explicitly passed adapter or BYO key always wins over both defaults.
 
 Use the [actAs preset recipes](./act-as-presets.md) to wire Auth.js, Supabase
 Auth, Clerk, Auth0, or a host-owned generic JWT without changing the
