@@ -478,6 +478,44 @@ describe("machine lifecycle: env-stale wake rebuild (Wave 7)", () => {
     expect(stored.machine?.envStaleAt).toBeUndefined();
   });
 
+  it("a WARM wake honors a marker written by another process: the live box is re-policed", async () => {
+    const store = memoryStore();
+    const sandbox = fakeSandboxV2();
+    const timers = fakeClock();
+    const doc = app();
+    await seedAppRow(store, doc, "owner");
+    const injected: Record<string, string>[] = [];
+    let secret: string | undefined;
+    const lifecycle = createMachineLifecycle({
+      store,
+      sandbox,
+      buildEnv: () => ({ PORT: "8080", ...(secret === undefined ? {} : { STRIPE_KEY: secret }) }),
+      injectEnv: async (_machine, env) => {
+        injected.push(env);
+      },
+      clock: timers.clock,
+    });
+    await lifecycle.provision(doc);
+    const first = await lifecycle.wake(doc);
+    expect(injected).toHaveLength(0);
+
+    // ANOTHER process commits a grant: the durable marker lands on the row,
+    // but that process cannot reach THIS process's live entry to sleep it.
+    secret = "sk_live_from_other_process";
+    await seedStale(store, doc);
+
+    // The next warm wake here must re-police the live box, not ride the
+    // stale entry until the idle sweep.
+    const second = await lifecycle.wake(doc);
+    expect(second).toBe(first);
+    expect(injected).toEqual([{ PORT: "8080", STRIPE_KEY: "sk_live_from_other_process" }]);
+    const record = await store.records("vendo_apps").get(doc.id);
+    expect(((record?.data as { doc: AppDocument }).doc).machine?.envStaleAt).toBeUndefined();
+    // Marker gone → the wake after that injects nothing new.
+    await lifecycle.wake(doc);
+    expect(injected).toHaveLength(1);
+  });
+
   it("a wake with no injectEnv seam ignores the marker (pre-Wave-7 hosts)", async () => {
     const { lifecycle, store, doc } = await setup();
     await lifecycle.provision(doc);
