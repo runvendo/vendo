@@ -1691,14 +1691,16 @@ describe("09 §2 apps composition", () => {
       entries: [{
         name: "DiskMetric",
         exportPath: "./src/disk-metric.tsx#DiskMetric",
-        propsSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"], additionalProperties: false },
+        // "level" (config-ish) — a number prop named "value" is data-classed since
+        // W3 law 1 and a literal there is a compile error by design.
+        propsSchema: { type: "object", properties: { level: { type: "number" } }, required: ["level"], additionalProperties: false },
         description: "Use for a metric loaded from the generated catalog.",
         source: "scanned",
       }],
     }));
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
-    const generated = '<App name="Disk catalog app"><DiskMetric value={42}/></App>';
+    const generated = '<App name="Disk catalog app"><DiskMetric level={42}/></App>';
     const model = new MockLanguageModelV3({
       doStream: async () => ({
         stream: simulateReadableStream({ chunks: [
@@ -1728,7 +1730,7 @@ describe("09 §2 apps composition", () => {
     await store.ensureSchema();
 
     await expect(vendo.apps.create({ prompt: "Show the disk metric" }, ctx)).resolves.toMatchObject({
-      tree: { nodes: [{ component: "Stack" }, { component: "DiskMetric", source: "host", props: { value: 42 } }] },
+      tree: { nodes: [{ component: "Stack" }, { component: "DiskMetric", source: "host", props: { level: 42 } }] },
     });
   });
 
@@ -1745,7 +1747,9 @@ describe("09 §2 apps composition", () => {
       entries: [{
         name: "DiskMetric",
         exportPath: "./src/disk-metric.tsx#DiskMetric",
-        propsSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"], additionalProperties: false },
+        // "level" (config-ish) — a number prop named "value" is data-classed since
+        // W3 law 1 and a literal there is a compile error by design.
+        propsSchema: { type: "object", properties: { level: { type: "number" } }, required: ["level"], additionalProperties: false },
         description: "Use for a metric loaded from the generated catalog.",
         source: "scanned",
       }],
