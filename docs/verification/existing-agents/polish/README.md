@@ -66,3 +66,17 @@ The Mastra example is unaffected — its form is a sticky in-flow footer.
 
 - `polish-3-input-clearance-after.png` — live turn, scrolled to the bottom:
   the last content sits well clear of the fixed input.
+
+## Fix 4 — mastra#9005 model pin retest (pin stays)
+
+Retested the scaffolded `openai/gpt-5-mini` on `@mastra/core` 1.51.0 (the
+latest stable; upstream closed #9005 as completed 2025-11-27): fixture e2e
+green (hermetic), live turn 1 fine, live turn 2 still 400s at
+`api.openai.com/v1/responses` with the exact upstream signature — `Item '…'
+was provided without its required 'reasoning' item: 'rs_…'` (memory's
+history replay drops Responses-API reasoning items). Wholly upstream,
+nothing Vendo-specific. The `gpt-4.1-mini` pin stays; the example README
+carries the dated status.
+
+- `polish-4-gpt5-mini-still-broken.png` — the live second-turn failure with
+  gpt-5-mini unpinned, 2026-07-20.
