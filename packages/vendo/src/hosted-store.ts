@@ -74,6 +74,38 @@ const raiseStoreError = (response: Response): Promise<never> =>
     throw Object.assign(new Error(message), { code: code ?? "unavailable" });
   });
 
+/** vendo-web@7cd0a02 (2026-07-19) deleted the console's ephemeral-session op
+ * family (/api/v1/store/sessions/*) per spec — the removed routes answer
+ * Next.js's BARE 404 page, no error envelope. Typed so the composition layer
+ * (hostedSessionOps in server.ts) can disable the session doors gracefully
+ * instead of failing anonymous traffic; an ENVELOPED 404 is a live console
+ * answering "not-found" and keeps the loud path, same for every other
+ * failure. */
+export class HostedSessionDoorsMissingError extends Error {
+  constructor() {
+    super(
+      "Vendo Cloud console does not serve /api/v1/store/sessions/* (removed in vendo-web@7cd0a02)",
+    );
+    this.name = "HostedSessionDoorsMissingError";
+  }
+}
+
+/** The session doors' raise: a bare 404 (no envelope) is the one
+ * removed-surface signal; everything else defers to the store mapping. */
+const raiseSessionsError = async (response: Response): Promise<never> => {
+  if (response.status === 404) {
+    let payload: unknown;
+    try {
+      payload = JSON.parse(await response.clone().text());
+    } catch {
+      payload = undefined;
+    }
+    const enveloped = typeof payload === "object" && payload !== null && "error" in payload;
+    if (!enveloped) throw new HostedSessionDoorsMissingError();
+  }
+  return raiseStoreError(response);
+};
+
 function parseRecord(value: unknown): VendoRecord {
   const parsed = vendoRecordSchema.safeParse(value);
   if (!parsed.success) invalidResponse("invalid record");
@@ -109,8 +141,19 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
     raise: raiseStoreError,
   });
 
-  const sendJson = async (path: string, body: unknown): Promise<unknown> => {
-    const response = await send(path, {
+  // Same wire, sessions-only raise — the doors are the one surface the prod
+  // console may legitimately not serve (vendo-web@7cd0a02).
+  const sendSessions = consoleSender({
+    base,
+    mountPath: CONSOLE_STORE_PATH,
+    apiKey: options.apiKey,
+    timeoutMs,
+    fetchImpl,
+    raise: raiseSessionsError,
+  });
+
+  const postJson = (sender: typeof send) => async (path: string, body: unknown): Promise<unknown> => {
+    const response = await sender(path, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -121,6 +164,8 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
       return {};
     }
   };
+  const sendJson = postJson(send);
+  const sendSessionsJson = postJson(sendSessions);
 
   const records = (collection: string): RecordStore => {
     const prefix = `/records/${encodeURIComponent(collection)}`;
@@ -290,13 +335,13 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
     blobs,
     sessions: {
       async register(subject, now) {
-        await sendJson("/sessions/register", { subject, ...(now === undefined ? {} : { now }) });
+        await sendSessionsJson("/sessions/register", { subject, ...(now === undefined ? {} : { now }) });
       },
       async adopt(from, to) {
-        return parseMergeReport(await sendJson("/sessions/adopt", { from, to }));
+        return parseMergeReport(await sendSessionsJson("/sessions/adopt", { from, to }));
       },
       async stale(idleMs, now) {
-        const payload = await sendJson("/sessions/stale", {
+        const payload = await sendSessionsJson("/sessions/stale", {
           idleMs,
           ...(now === undefined ? {} : { now }),
         }) as { subjects?: unknown };
@@ -306,7 +351,7 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
         return payload.subjects as string[];
       },
       async claim(subject, idleMs, now) {
-        const payload = await sendJson("/sessions/claim", {
+        const payload = await sendSessionsJson("/sessions/claim", {
           subject,
           idleMs,
           ...(now === undefined ? {} : { now }),
