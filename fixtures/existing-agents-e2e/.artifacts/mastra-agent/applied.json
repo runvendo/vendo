@@ -1,0 +1,9 @@
+[
+  ".vendo/tools.json",
+  "src/app/api/chat/route.ts",
+  "src/app/api/vendo/[...vendo]/route.ts",
+  "src/app/page.tsx",
+  "src/lib/vendo-actions.ts",
+  "src/lib/vendo.ts",
+  "src/mastra/agents/weather-agent.ts"
+]

@@ -5,3 +5,4 @@ import { nextVendoHandler } from "@vendoai/vendo/server";
 import { vendo } from "@/lib/vendo";
 
 export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
+// --- /vendo

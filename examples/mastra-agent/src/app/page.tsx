@@ -100,6 +100,8 @@ export default function Chat() {
           </button>
         </form>
       </div>
+      {/* --- vendo */}
     </VendoProvider>
+    // --- /vendo
   );
 }
