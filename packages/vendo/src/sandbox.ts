@@ -271,23 +271,37 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
     return {
       id: handle.id,
       async request(req) {
-        const payload = await sendJson(`${prefix}/request`, "POST", {
-          method: req.method,
-          path: req.path.startsWith("/") ? req.path : `/${req.path}`,
-          // Absent port targets the canonical box port server-side; explicit
-          // ports (e.g. the in-box agent control port) route as-is.
-          ...(req.port === undefined ? {} : { port: req.port }),
-          ...(req.headers === undefined ? {} : { headers: req.headers }),
-          ...(req.body === undefined ? {} : { body_b64: encodeBase64(toBytes(req.body)) }),
-        }) as { status?: unknown; headers?: unknown; body_b64?: unknown };
-        if (typeof payload.status !== "number" || typeof payload.body_b64 !== "string") {
+        let payload: unknown;
+        try {
+          payload = await sendJson(`${prefix}/request`, "POST", {
+            method: req.method,
+            path: req.path.startsWith("/") ? req.path : `/${req.path}`,
+            // Absent port targets the canonical box port server-side; explicit
+            // ports (e.g. the in-box agent control port) route as-is.
+            ...(req.port === undefined ? {} : { port: req.port }),
+            ...(req.headers === undefined ? {} : { headers: req.headers }),
+            ...(req.body === undefined ? {} : { body_b64: encodeBase64(toBytes(req.body)) }),
+          });
+        } catch (error) {
+          // Wave 7 — the seam's dead-machine signal. Cloud stop is final (no
+          // pause), so a conflict ("Sandbox is stopped") on the DATA path
+          // means the sweep destroyed the machine out from under this handle,
+          // exactly like a purged id's not-found: both become the thrown
+          // not-found the lifecycle's eviction/re-wake recovery keys on.
+          if (error instanceof VendoError && error.code === "conflict") {
+            throw new VendoError("not-found", `Vendo Cloud sandbox ${handle.id} is gone (destroyed by the provider): ${error.message}`);
+          }
+          throw error;
+        }
+        const proxied = payload as { status?: unknown; headers?: unknown; body_b64?: unknown };
+        if (typeof proxied.status !== "number" || typeof proxied.body_b64 !== "string") {
           throw new VendoError("sandbox-unavailable", "Vendo Cloud sandbox returned an invalid proxy response");
         }
-        const headers = typeof payload.headers === "object" && payload.headers !== null
-          ? Object.fromEntries(Object.entries(payload.headers)
+        const headers = typeof proxied.headers === "object" && proxied.headers !== null
+          ? Object.fromEntries(Object.entries(proxied.headers)
               .filter((entry): entry is [string, string] => typeof entry[1] === "string"))
           : {};
-        return { status: payload.status, headers, body: decodeBase64(payload.body_b64) };
+        return { status: proxied.status, headers, body: decodeBase64(proxied.body_b64) };
       },
       async snapshot() {
         // A checkpoint through a machine object that already slept or was

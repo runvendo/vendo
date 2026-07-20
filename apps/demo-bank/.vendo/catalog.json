@@ -102,7 +102,7 @@
                 },
                 "amount": {
                   "type": "number",
-                  "description": "Amount in dollars"
+                  "description": "Amount in integer cents"
                 }
               },
               "required": [
@@ -121,9 +121,9 @@
         ],
         "additionalProperties": false
       },
-      "description": "The default Maple visualization for spending by category, where money went, or category mix. Use it whenever the request includes one of those intents; slice amounts are dollars, not cents.",
+      "description": "The default Maple visualization for spending by category, where money went, or category mix. Use it whenever the request includes one of those intents; slice amounts are integer CENTS (matching the spending-insights tool).",
       "examples": [
-        "{\"slices\":[{\"category\":\"dining\",\"amount\":342.18},{\"category\":\"groceries\",\"amount\":286.42}],\"size\":200}"
+        "{\"slices\":[{\"category\":\"dining\",\"amount\":34218},{\"category\":\"groceries\",\"amount\":28642}],\"size\":200}"
       ],
       "source": "registered"
     }

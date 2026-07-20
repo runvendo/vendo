@@ -59,6 +59,13 @@ export interface SandboxMachine {
    * Proxy one HTTP request to the box — the ONLY runtime data path into it.
    * Targets the app's $PORT by default; `port` overrides for a box serving
    * more than one listener.
+   *
+   * Wave 7 — the dead-machine signal: when the PROVIDER's machine state is
+   * gone (TTL expiry, idle sweep), the adapter throws VendoError "not-found"
+   * instead of relaying a gateway status. App-level responses (including the
+   * app's own 4xx/5xx) always come back as `status`, never as a throw, so a
+   * thrown not-found is unambiguous — the machine lifecycle keys its
+   * evict-and-re-wake recovery on it.
    */
   request(req: {
     method: string;

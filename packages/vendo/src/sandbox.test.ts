@@ -428,6 +428,29 @@ describe("cloudSandbox", () => {
     await machine.destroy();
   });
 
+  it("translates a reaped machine's request into the seam's not-found signal (Wave 7)", async () => {
+    const console_ = fakeConsole();
+    const adapter = adapterFor(console_);
+
+    // The Cloud sweep destroyed the machine out from under the live handle
+    // (console answers conflict "Sandbox is stopped" — stop is final, there is
+    // no pause to come back from)…
+    const stopped = await adapter.create({ env: {} });
+    console_.machines.get(stopped.id)!.state = "stopped";
+    await expect(stopped.request({ method: "GET", path: "/fn/echo" })).rejects.toMatchObject({
+      name: "VendoError",
+      code: "not-found",
+    });
+
+    // …and a machine the console purged entirely answers not-found directly.
+    const purged = await adapter.create({ env: {} });
+    console_.machines.delete(purged.id);
+    await expect(purged.request({ method: "GET", path: "/fn/echo" })).rejects.toMatchObject({
+      name: "VendoError",
+      code: "not-found",
+    });
+  });
+
   it("records the create-time policy in refs, immune to caller-side array mutation", async () => {
     const console_ = fakeConsole();
     const adapter = adapterFor(console_);

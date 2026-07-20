@@ -1,10 +1,12 @@
 import {
   VENDO_TREE_FORMAT_V2,
   VendoError,
+  checkBindingShapes,
   deriveShapeCard,
   validateAppDocument,
   type AppDocument,
   type AppId,
+  type DomainManifest,
   type Guard,
   type IsoDateTime,
   type Json,
@@ -18,6 +20,7 @@ import {
   type ToolCall,
   type ToolDescriptor,
   type ToolOutcome,
+  type ToolSemantics,
   type TreeV2,
   type ToolRegistry,
   type UIPayload,
@@ -63,7 +66,7 @@ import {
 } from "./box-agent.js";
 import { parseVendoManifest } from "./manifest.js";
 import { createAppOpener, createProgressiveQueryResolver, servedAppsDisabledError, stripServerAuthoritativeFields } from "./open.js";
-import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, rowFromRecord, updateAppRow } from "./persistence.js";
+import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, updateAppRow } from "./persistence.js";
 import { detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "./redaction.js";
 import {
@@ -144,6 +147,12 @@ export interface AppsConfig {
    * block never reads the environment. Unset → share/publish fail with
    * VendoError("cloud-required"). */
   cloud?: CloudAppsClient;
+  /** W3 — per-tool field semantics from `.vendo/semantics.json`, passed to
+   *  the generation engine (annotated shape cards, law checks, Kit format
+   *  defaults). */
+  semantics?: Readonly<Record<string, ToolSemantics>>;
+  /** W3 — the host's domain manifest (has / has-NOT), generation fact. */
+  domains?: DomainManifest;
 }
 
 /** 06-apps §1 */
@@ -369,6 +378,15 @@ export interface AppsRuntime {
     editApp(appId: AppId, instruction: string, ctx: RunContext): Promise<MachineEditResult>;
     /** Destroy the sandbox and clear the document's machine field (de-graduation). */
     destroy(appId: AppId, ctx: RunContext): Promise<AppDocument>;
+    /**
+     * Wave 7 H2 — the embed surface's keepalive: one cheap HEAD through the
+     * idle-tracked machine wrapper, so user activity on an embedded served
+     * app counts as machine activity (re-arms the idle timer and rides any
+     * provider TTL extension). A sleeping machine wakes and reports "woke" —
+     * the embed's signal that its URL is stale and it should re-open once
+     * awake. Owner-scoped like every machine surface.
+     */
+    ping(appId: AppId, ctx: RunContext): Promise<{ state: "awake" | "woke" }>;
   };
   /**
    * execution-v2 Wave 2 Lane D — additive BYO schedule-execution surface (same
@@ -437,6 +455,8 @@ const generationDependencies = (
   theme: config.theme,
   designRules: config.designRules,
   pinBaselines: config.pinBaselines,
+  ...(config.semantics === undefined ? {} : { semantics: config.semantics }),
+  ...(config.domains === undefined ? {} : { domains: config.domains }),
   ...toolContext,
   ...(config.paint === undefined ? {} : { paint: config.paint }),
   ...(config.pipeline === undefined ? {} : { pipeline: config.pipeline }),
@@ -445,9 +465,15 @@ const generationDependencies = (
 
 /** v2 spec §1 — assemble the emitted payload: the tree plus document islands
  *  at payload level (the v2 renderer lifts them into the shared walk). */
-const assembleTree = (source: { tree: UIPayload | TreeV2; components?: Record<string, string> }): TreeV2 => ({
+const assembleTree = (source: {
+  tree: UIPayload | TreeV2;
+  components?: Record<string, string>;
+  /** W4b — the stamped per-island tool manifests ride beside the sources. */
+  componentTools?: Record<string, string[]>;
+}): TreeV2 => ({
   ...structuredClone(source.tree),
   ...(source.components === undefined ? {} : { components: structuredClone(source.components) }),
+  ...(source.componentTools === undefined ? {} : { componentTools: structuredClone(source.componentTools) }),
 } as TreeV2);
 
 const pinnedSubtree = (app: AppDocument, componentName: string): unknown[] => {
@@ -531,6 +557,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     ...(hostBuildEnv === undefined ? {} : {
       buildEnv: async (doc: AppDocument) =>
         hostBuildEnv(doc, { grantedSecrets: await exposure.activeNames(doc.id) }),
+      // Wave 7 — the wake-time env rebuild for grant changes (machine.envStaleAt)
+      // rides the same box control-port door the pre-edit re-injection uses;
+      // the in-box harness restarts the app with the new boundary set.
+      injectEnv: pushBoxEnv,
     }),
     // Lane E — the egress policy EVERY provision and wake consults (including
     // ctx-less paths like an idle resume or a schedule fire): approved
@@ -584,13 +614,37 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     args: { appId, secretName },
   });
 
+  /**
+   * Wave 7 — a grant change while a machine exists: resumes restore the
+   * SNAPSHOT's env on every provider, so mark the machine env-stale (the next
+   * wake rebuilds the boundary env through the box control port and the
+   * harness restarts the app) and put a RUNNING box to sleep so its next
+   * request takes that wake path. No machine → nothing to mark; an app
+   * deleted between park and decision is a no-op.
+   */
+  const markMachineEnvStale = async (appId: AppId): Promise<void> => {
+    let marked: AppDocument;
+    try {
+      marked = await updateAppDocument(appId, (doc) => doc.machine === undefined
+        ? doc
+        // Strictly-increasing marker (nextEnvStaleAt): same-millisecond flips
+        // must not mint equal values, or a concurrent wake's guarded clear
+        // would erase the newer flip after injecting the older env.
+        : { ...doc, machine: { ...doc.machine, envStaleAt: nextEnvStaleAt(doc.machine.envStaleAt) } });
+    } catch (error) {
+      if (error instanceof VendoError && error.code === "not-found") return;
+      throw error;
+    }
+    if (marked.machine === undefined) return;
+    await lifecycle.sleep(marked).catch(() => undefined);
+  };
+
   const commitExposure = async (grant: SecretExposureGrant): Promise<void> => {
     await exposure.activate(grant.appId, grant.secretName);
-    // Known v2 limit: a machine PROVISIONED before this grant keeps its
-    // provision-time env — a memory snapshot resumes already-started
-    // processes, so env can only change at a fresh provision (and Wave 3's
-    // in-box edit loop, which restarts the server, is where re-injection
-    // lands).
+    // A machine PROVISIONED before this grant keeps its provision-time env —
+    // mark it stale so the next wake's control-port rebuild (and the pre-edit
+    // re-injection) lands the new value.
+    await markMachineEnvStale(grant.appId);
     await reportGuard(grant.owner, grant.appId, { venue: "app", presence: "present" }, {
       operation: "secret-exposure-set",
       secretName: grant.secretName,
@@ -968,6 +1022,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
    *  surface flip. */
   const servedAppContractPrompt = (): string => [
     "THIS TASK BUILDS THE APP SURFACE ITSELF (layer 3):",
+    "- START WARM: a served-app scaffold is pre-baked at /opt/vendo-box/scaffold (zero-dep Node server with the /fn envelopes, vendo.json serving, a themed entry page, and the .vendo/run entry already wired and tested). Your FIRST action: run exactly `cp -a /opt/vendo-box/scaffold/. /app/` (one command; it copies .vendo/run too — no ls, no second cp), then go straight to editing fns.js + index.html (touch server.js only for extra routes). Only if that cp fails (older box) build from scratch.",
     "- Serve a REAL web app on the non-/fn paths of $PORT. GET / is the entry page and must answer 200 with text/html. Any framework or plain HTML+JS; keep it self-contained (no CDN dependencies unless their domains are declared egress).",
     "- Keep every POST /fn/<name> endpoint working beside the pages; the page's own JavaScript may call relative /fn/<name> endpoints for data and actions.",
     "- The page may read the OPTIONAL `vendoTheme` query param (JSON host theme tokens: colors/typography/radius/density) to match the host brand. Ignore it if absent.",
@@ -1123,6 +1178,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         const flipped = structuredClone(base);
         delete flipped.tree;
         delete flipped.components;
+        delete flipped.componentTools;
         delete flipped.pins;
         flipped.ui = "http";
         const flipVersion: VersionEntry = {
@@ -1159,22 +1215,62 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     // A FOCUSED rebind directive — not the full server spec (which is noise to
     // the tree-edit model). The only job here is repointing the tree's data
     // queries and actions at the new fn: functions.
-    const treeInstruction = `The app just graduated to a machine that serves these functions: ${fns.map((fn) => `fn:${fn}`).join(", ") || "(none reported)"}. Rewire the tree to use them:\n- Repoint the query that feeds the main board/list/digest so its tool is the matching data function (e.g. change its tool to "fn:getDigest"); if no such query exists, add one with <Query id="data" tool="fn:..."/> and bind a node to it. Do not leave a stale placeholder or host-tool query where the server now provides the data.\n- Wire any submit/refresh/run control's action to the matching fn:.\nChange ONLY the data source and actions; keep the layout. Emit no id attributes on nodes (ids are compiler-owned); a <Query> id is its name.`;
+    const treeInstruction = `The app just graduated to a machine that serves these functions: ${fns.map((fn) => `fn:${fn}`).join(", ") || "(none reported)"}. Rewire the tree to use them:\n- Repoint the query that feeds the main board/list/digest so its tool is the matching data function (e.g. change its tool to "fn:getDigest"); if no such query exists, add one with <Query id="data" tool="fn:..."/> and bind a node to it. Do not leave a stale placeholder or host-tool query where the server now provides the data.\n- Wire any submit/refresh/run control's action to the matching fn:.\n- An fn response unwraps its {"result": ...} envelope: bind paths directly against the function's result value, and NEVER carry a host tool's response envelope (e.g. a "data" segment) into an fn: binding — when you repoint a query, rewrite every binding path that read the old tool's shape.\nChange ONLY the data source and actions; keep the layout. Emit no id attributes on nodes (ids are compiler-owned); a <Query> id is its name.`;
     let treeIssues: string[] = [];
     let bound: AppDocument | undefined;
+    // Wave 7 H2 (the em-dash class, PR #418) — fn-result shape cards, sampled
+    // lazily for the fn: queries the rebind actually lands (never for unbound
+    // action fns), keyed like tool shapes ("fn:<name>") so the edit compiler
+    // and the TOOL RESPONSE SHAPES prompt pick them up on retries.
+    const fnShapes: Record<string, ShapeType> = {};
+    const sampledFns = new Set<string>();
     for (let attempt = 0; attempt < 3 && bound === undefined; attempt += 1) {
+      const toolContext = await generationToolContext(ctx);
       const generated = await engine.edit(
         {
           app: structuredClone(base),
           instruction: treeInstruction,
           ...(treeIssues.length === 0 ? {} : { repairIssues: treeIssues }),
         },
-        generationDependencies(config, config.model, await generationToolContext(ctx)),
+        generationDependencies(config, config.model, {
+          ...toolContext,
+          ...(Object.keys(fnShapes).length === 0 && toolContext.toolShapes === undefined
+            ? {}
+            : { toolShapes: { ...toolContext.toolShapes, ...fnShapes } }),
+        }),
       );
-      if (generated.kind === "document") {
-        bound = { ...generated.document, id: base.id };
-      } else {
+      if (generated.kind !== "document") {
         treeIssues = distinctIssues(treeIssues, generated.issues);
+        continue;
+      }
+      const candidate: AppDocument = { ...generated.document, id: base.id };
+      // Post-pass: check the landed fn: bindings against SAMPLED result
+      // shapes. The sample is the exact call the bound query makes at open()
+      // (fn.ts unwraps the {result} envelope), so it does nothing a rendered
+      // board would not do itself; a failed sample leaves that fn's shape
+      // unknown — defensive, like an unsampled host tool.
+      const tree = candidate.tree as unknown as TreeV2 | undefined;
+      const queries = tree?.queries ?? [];
+      // Sampling adds no new authority and (at most) one extra invocation:
+      // a query-bound fn fires WITHOUT user action the moment the graduated
+      // tree is opened or emitted (the progressive resolver calls it with
+      // exactly this input), so an fn too dangerous to sample was already
+      // too dangerous for the model to wire as a query — that is a box-side
+      // design concern, not a host gate this pass could add.
+      for (const query of queries) {
+        if (!query.tool.startsWith("fn:") || sampledFns.has(query.tool)) continue;
+        sampledFns.add(query.tool);
+        const outcome = await fnCaller.callFn(base, query.tool.slice(3), query.input ?? {}, ctx).catch(() => undefined);
+        if (outcome !== undefined && outcome.status === "ok") {
+          fnShapes[query.tool] = deriveShapeCard(query.tool, [outcome.output]).output;
+        }
+      }
+      const bindingErrors = tree === undefined ? [] : checkBindingShapes(tree.nodes, queries, fnShapes);
+      if (bindingErrors.length === 0) {
+        bound = candidate;
+      } else {
+        treeIssues = distinctIssues(treeIssues, bindingErrors.map((error) =>
+          `binding ${error.path} on node "${error.nodeId}" prop "${error.prop}": ${error.message}${error.available === undefined ? "" : ` (available: ${error.available.join(", ")})`}`));
       }
     }
     const version: VersionEntry = { at: new Date().toISOString(), intent: instruction, rung: rungFor(base) };
@@ -1269,7 +1365,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       delete app.egressApproved;
       let finalTree: TreeV2 | undefined;
       if (input.onView !== undefined && app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
-        finalTree = assembleTree({ tree: app.tree, components: app.components });
+        finalTree = assembleTree({ tree: app.tree, components: app.components, componentTools: app.componentTools });
         latestTree = structuredClone(finalTree);
         queryResolver?.update(finalTree);
         finalTree.data = await queryResolver?.complete() ?? structuredClone(finalTree.data ?? {});
@@ -1298,7 +1394,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
               // resolver failure, emit nothing rather than a data-less tree
               // that would blank the screen.
               try {
-                const tree = assembleTree({ tree: graduated.app.tree, components: graduated.app.components });
+                const tree = assembleTree({ tree: graduated.app.tree, components: graduated.app.components, componentTools: graduated.app.componentTools });
                 stripServerAuthoritativeFields(tree);
                 const graduatedResolver = createProgressiveQueryResolver(caller, graduated.app, ctx);
                 graduatedResolver.update(tree);
@@ -1703,6 +1799,22 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           ...(pending.status === "pending" ? { pendingEgress: { approvalId: pending.approvalId, domains: pending.domains } } : {}),
         };
       },
+      async ping(appId, ctx) {
+        const app = await requireOwned(appId, ctx.principal.subject);
+        if (app.machine === undefined) {
+          throw new VendoError("validation", `app ${appId} has no machine to ping`);
+        }
+        const wasAwake = lifecycle.peek(appId) !== undefined;
+        // A ping that has to WAKE rides the same egress gate as machine.wake:
+        // an unapproved declared domain must never reach the provider.
+        if (!wasAwake) await ensureEgressApproved(app, ctx);
+        const machine = await lifecycle.wake(app);
+        // The activity signal itself: one cheap HEAD through the idle-tracked
+        // wrapper. Best-effort — a failed HEAD must not fail the keepalive
+        // (the wake above already proved the machine is reachable).
+        await machine.request({ method: "HEAD", path: "/" }).catch(() => undefined);
+        return { state: wasAwake ? "awake" as const : "woke" as const };
+      },
       async destroy(appId, ctx) {
         const app = await requireOwned(appId, ctx.principal.subject);
         const cleared = await lifecycle.destroyMachine(app);
@@ -1745,6 +1857,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         if (input.expose === false) {
           // Turning OFF is safe — revert to the Option B handle default at once.
           await exposure.revoke(input.appId, input.secretName);
+          // Wave 7 — the revoked value is still baked into the box snapshot;
+          // the stale marker makes the next wake rebuild env without it.
+          await markMachineEnvStale(input.appId);
           await reportGuard(ctx.principal.subject, input.appId, ctx, {
             operation: "secret-exposure-set",
             secretName: input.secretName,
@@ -1778,6 +1893,8 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             requestedAt: new Date().toISOString(),
           });
           await exposure.activate(input.appId, input.secretName);
+          // Wave 7 — same stale marker as the approval-decided commit path.
+          await markMachineEnvStale(input.appId);
           await reportGuard(ctx.principal.subject, input.appId, ctx, {
             operation: "secret-exposure-set",
             secretName: input.secretName,

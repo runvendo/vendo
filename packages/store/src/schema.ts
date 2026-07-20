@@ -131,6 +131,11 @@ const ADDITIVE_DDL = [
   // can do guarded read-merge-write instead of last-write-wins. DEFAULT backfills
   // existing rows on ALTER; every write path bumps it.
   "ALTER TABLE vendo_threads ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1",
+  // Wave 7: the same counter for vendo_apps, so the machine lifecycle and the
+  // schedule engine's fire claims (updateAppRow's read-mutate-CAS) stop
+  // degrading to read-then-put on the dev store — a multi-process dev host
+  // could double-fire a schedule or clobber a concurrent lifecycle write.
+  "ALTER TABLE vendo_apps ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1",
   // Tracks the secret's last rewrite (rotation) separately from created_at;
   // set() stamps it. NULL on legacy rows means created_at IS the last write.
   "ALTER TABLE vendo_secrets ADD COLUMN IF NOT EXISTS updated_at timestamptz",

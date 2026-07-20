@@ -24,6 +24,7 @@ import {
 import {
   VendoError,
   descriptorHash,
+  semanticsFileSchema,
   vendoThemeSchema,
   type ActAs,
   type AppDocument,
@@ -1017,6 +1018,19 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const theme = dotVendoTheme();
   const designRules = dotVendoFile("design-rules.md");
   const pinBaselines = dotVendoPinBaselines();
+  // W3 — .vendo/semantics.json (field semantics + domain manifest), written
+  // by `vendo sync`, host-edited, treated as generation fact. Malformed →
+  // loud + absent, same stance as catalog.json.
+  const semanticsFile = (() => {
+    const raw = dotVendoFile("semantics.json");
+    if (raw === undefined) return undefined;
+    try {
+      return semanticsFileSchema.parse(JSON.parse(raw));
+    } catch (error) {
+      console.error(`[vendo] Failed to load .vendo/semantics.json: ${error instanceof Error ? error.message : String(error)}. Run "vendo sync" to regenerate the file.`);
+      return undefined;
+    }
+  })();
   const catalog = mergeRuntimeCatalog(
     runtimeCatalogFromJson(dotVendoFile("catalog.json")),
     normalizeCatalogConfig(config.catalog),
@@ -1128,6 +1142,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
     ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
+    ...(semanticsFile === undefined ? {} : { semantics: semanticsFile.tools, domains: semanticsFile.domains }),
     secrets: config.secrets ?? envSecrets(),
     // execution-v2 — the machine lifecycle's seams: the selected v2 adapter
     // (every provider speaks the canonical seam since the Wave 5 Cloud port)

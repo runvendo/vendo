@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vendo app</title>
+<style>
+  :root {
+    --bg: #ffffff; --surface: #f7f7f8; --text: #111111; --muted: #666666;
+    --accent: #3457dc; --accent-text: #ffffff; --danger: #b3261e;
+    --border: #e3e3e6; --radius: 10px; --font: system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); }
+  main { padding: 16px; }
+  button { background: var(--accent); color: var(--accent-text); border: 0; border-radius: var(--radius); padding: 8px 14px; cursor: pointer; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+</style>
+<script>
+  // Host theming handoff: the OPTIONAL vendoTheme query param carries the
+  // host's theme tokens; apply them when present, ignore them when absent
+  // OR malformed (a bad param must never blank the app).
+  const vendoTheme = (() => {
+    try { return JSON.parse(new URLSearchParams(location.search).get("vendoTheme") ?? "null"); }
+    catch { return null; }
+  })();
+  if (vendoTheme && typeof vendoTheme === "object") {
+    const root = document.documentElement.style;
+    const colors = vendoTheme.colors ?? {};
+    for (const [token, cssVar] of [
+      ["background", "--bg"], ["surface", "--surface"], ["text", "--text"], ["muted", "--muted"],
+      ["accent", "--accent"], ["accentText", "--accent-text"], ["danger", "--danger"], ["border", "--border"],
+    ]) { if (typeof colors[token] === "string") root.setProperty(cssVar, colors[token]); }
+    if (typeof vendoTheme.typography?.fontFamily === "string") root.setProperty("--font", vendoTheme.typography.fontFamily);
+    if (typeof vendoTheme.radius?.medium === "string") root.setProperty("--radius", vendoTheme.radius.medium);
+  }
+
+  /** Call one of the app's own fns: await callFn("name", {...args}) → result. */
+  async function callFn(name, args = {}) {
+    const response = await fetch(`/fn/${name}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ args }),
+    });
+    const body = await response.json();
+    if (body.error) throw new Error(`${body.error.code}: ${body.error.message}`);
+    return body.result;
+  }
+</script>
+</head>
+<body>
+<main id="app">
+  <h1>Vendo served app</h1>
+  <p class="card">Scaffold entry page — replace this with the app's real UI.</p>
+</main>
+</body>
+</html>

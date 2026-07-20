@@ -81,6 +81,21 @@ describe("Select", () => {
     expect(onChange).toHaveBeenCalledOnce();
     expect(select.closest('[data-primitive="Select"]')).not.toBeNull();
   });
+
+  it("reads RAW tool rows via labelField/valueField (W5a — the taught path since asOptions retired)", () => {
+    render(
+      <Select
+        label="Account"
+        options={[{ id: "acc_1", name: "Everyday Checking" }, { id: "acc_2", name: "Rainy-Day Savings" }]}
+        labelField="name"
+        valueField="id"
+      />,
+    );
+
+    const checking = screen.getByRole("option", { name: "Everyday Checking" }) as HTMLOptionElement;
+    expect(checking.value).toBe("acc_1");
+    expect((screen.getByRole("option", { name: "Rainy-Day Savings" }) as HTMLOptionElement).value).toBe("acc_2");
+  });
 });
 
 describe("Table", () => {

@@ -176,6 +176,23 @@ describe("appDocumentSchema and validateAppDocument", () => {
     });
   });
 
+  it("validates componentTools against the components map and tool-name grammar", () => {
+    const base = {
+      format: VENDO_APP_FORMAT,
+      id: "app_x",
+      name: "X",
+      components: { Gauge: "export default () => null;" },
+    };
+    // W4b — a stamped per-island tool manifest rides beside components.
+    expect(validateAppDocument({ ...base, componentTools: { Gauge: ["clients_search"] } }).ok).toBe(true);
+    expect(validateAppDocument({ ...base, componentTools: { Gauge: [] } }).ok).toBe(true);
+    // A manifest for an island that does not exist is a stamping bug.
+    expectValidation({ ...base, componentTools: { Missing: ["clients_search"] } });
+    // Manifest entries are registry tool names — the flat grammar, never dotted.
+    expectValidation({ ...base, componentTools: { Gauge: ["clients.search"] } });
+    expectValidation({ ...minimal(), componentTools: { Gauge: ["clients_search"] } });
+  });
+
   it("rejects step tools that are neither valid tool names nor fn: references", () => {
     const withStep = (tool: string) => ({
       ...minimal(),

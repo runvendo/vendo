@@ -703,6 +703,25 @@ describe("09 §3 public wire", () => {
     });
   });
 
+  it("serves sync semantics inference on dev servers and blocks it in production", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const { vendo } = await setup();
+
+    // No extracted host tools in this composition → an empty inference map;
+    // the shape of the seam (and its dev-only gate) is what this pins. The
+    // inference itself is unit-tested in core (inferToolSemantics).
+    const response = await vendo.handler(request("POST", "/sync/semantics", {}));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ tools: {} });
+
+    vi.stubEnv("NODE_ENV", "production");
+    const blocked = await vendo.handler(request("POST", "/sync/semantics", {}));
+    expect(blocked.status).toBe(403);
+    expect(await blocked.json()).toEqual({
+      error: { code: "blocked", message: "sync semantics is only available on a dev server" },
+    });
+  });
+
   it("validates sync impact tool arrays", async () => {
     vi.stubEnv("NODE_ENV", "development");
     const { vendo } = await setup();
@@ -1839,14 +1858,16 @@ describe("09 §2 apps composition", () => {
       entries: [{
         name: "DiskMetric",
         exportPath: "./src/disk-metric.tsx#DiskMetric",
-        propsSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"], additionalProperties: false },
+        // "level" (config-ish) — a number prop named "value" is data-classed since
+        // W3 law 1 and a literal there is a compile error by design.
+        propsSchema: { type: "object", properties: { level: { type: "number" } }, required: ["level"], additionalProperties: false },
         description: "Use for a metric loaded from the generated catalog.",
         source: "scanned",
       }],
     }));
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
-    const generated = '<App name="Disk catalog app"><DiskMetric value={42}/></App>';
+    const generated = '<App name="Disk catalog app"><DiskMetric level={42}/></App>';
     const model = new MockLanguageModelV3({
       doStream: async () => ({
         stream: simulateReadableStream({ chunks: [
@@ -1876,7 +1897,7 @@ describe("09 §2 apps composition", () => {
     await store.ensureSchema();
 
     await expect(vendo.apps.create({ prompt: "Show the disk metric" }, ctx)).resolves.toMatchObject({
-      tree: { nodes: [{ component: "Stack" }, { component: "DiskMetric", source: "host", props: { value: 42 } }] },
+      tree: { nodes: [{ component: "Stack" }, { component: "DiskMetric", source: "host", props: { level: 42 } }] },
     });
   });
 
@@ -1893,6 +1914,8 @@ describe("09 §2 apps composition", () => {
       entries: [{
         name: "DiskMetric",
         exportPath: "./src/disk-metric.tsx#DiskMetric",
+        // "value" stays: this test binds it (law 1 exempts bindings); the
+        // literal-violation arm below is doubly illegal (ajv + law 1).
         propsSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"], additionalProperties: false },
         description: "Use for a metric loaded from the generated catalog.",
         source: "scanned",

@@ -12,6 +12,8 @@ export function sanitizeSeries<T extends Record<string, unknown>>(
   rows: T[],
   keys: string[],
 ): Array<Record<string, unknown>> {
+  // W3 — fail SOFT on missing data (a failed query resolves to undefined).
+  if (!Array.isArray(rows)) return [];
   return rows.map((row) => {
     const out: Record<string, unknown> = { ...row };
     for (const key of keys) {
