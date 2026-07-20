@@ -26,6 +26,7 @@ describe("tool-pack contract", () => {
     const principal: Principal = { kind: "user", subject: "user_byo" };
     const options: VendoToolPackOptions = {
       principal,
+      sessionId: "session_host",
       include: ["vendo_create_app"],
       exclude: ["vendo_delegate"],
     };

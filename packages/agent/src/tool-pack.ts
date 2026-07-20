@@ -32,6 +32,9 @@ export interface VendoToolPackFilter {
  *  principal-scoped RunContext, so the pack is built per request. */
 export interface VendoToolPackOptions extends VendoToolPackFilter {
   principal: Principal;
+  /** RunContext requires a session id; pass the host session's for audit
+   *  continuity, or leave unset and the shim mints one per pack build. */
+  sessionId?: string;
 }
 
 /** `vendo_delegate`'s output is plain data (no embed): the run report's
