@@ -1177,9 +1177,42 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // agent executes through — a searched-in tool has no unguarded path.
     toolSearch: {
       search: (query, options) => actions.search(query, options),
+      // Connection-scoped loadout seed (spec 2026-07-20): each turn starts
+      // with host tools + the principal's connected toolkits — never an
+      // alphabetical slice of a lazy catalog. `connections` is declared below
+      // this composition; turns only run after createVendo returns, so the
+      // closure reference is safe.
+      seed: (ctx) => loadoutSeedFor(ctx),
       ...(config.agent?.maxInitialTools === undefined ? {} : { maxInitialTools: config.agent.maxInitialTools }),
     },
   });
+  // Per-subject connected-toolkit lookups are cached briefly so a turn never
+  // pays a broker round-trip it doesn't need; failures degrade to host tools
+  // only (warn, never the turn). Bounded so long-lived deployments don't grow.
+  const CONNECTED_TOOLKITS_TTL_MS = 60_000;
+  const connectedToolkitsCache = new Map<string, { at: number; toolkits: string[] }>();
+  async function loadoutSeedFor(ctx: RunContext): Promise<string[]> {
+    const subject = ctx.principal.subject;
+    const cached = connectedToolkitsCache.get(subject);
+    let toolkits: string[];
+    if (cached !== undefined && Date.now() - cached.at < CONNECTED_TOOLKITS_TTL_MS) {
+      toolkits = cached.toolkits;
+    } else {
+      try {
+        const accounts = await connections.list(ctx.principal);
+        toolkits = [...new Set(accounts.filter((account) => account.status === "active").map((account) => account.toolkit))];
+      } catch (error) {
+        console.warn(
+          "[vendo] connected-toolkits lookup failed; seeding host tools only:",
+          error instanceof Error ? error.message : error,
+        );
+        toolkits = [];
+      }
+      if (connectedToolkitsCache.size > 1_000) connectedToolkitsCache.clear();
+      connectedToolkitsCache.set(subject, { at: Date.now(), toolkits });
+    }
+    return actions.loadoutSeed(toolkits);
+  }
   // 02-store §4 (kill-list B3) TTL sweep: erase every idle ephemeral session's
   // disk rows, then cascade each swept subject into the agent's in-memory
   // threads (store-first — a concurrent request then fails closed at the store
