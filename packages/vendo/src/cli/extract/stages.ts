@@ -9,14 +9,15 @@ import {
   type ExtractionHarness,
 } from "./harness.js";
 import { readOptional, writeText } from "../shared.js";
-import { BRAND_SLOTS, modelThemeSchema } from "../theme/extract-theme.js";
+import { BRAND_SLOTS, modelThemeSchema, type ThemeSlotValues } from "../theme/extract-theme.js";
 
 /**
  * The staged extraction pipeline (install-dx, PostHog lesson: narrow stages
- * beat one-shot). Four passes over the SAME harness seam — each is one
- * `harness.run(instructions)` with its own narrow instructions and its own
- * zod-validated artifact, written to `.vendo/data/extract/<stage>.json` so a
- * failed run is diagnosable stage by stage:
+ * beat one-shot). Four required passes plus one optional pass, all over the
+ * SAME harness seam — each is one `harness.run(instructions)` with its own
+ * narrow instructions and its own zod-validated artifact, written to
+ * `.vendo/data/extract/<stage>.json` so a failed run is diagnosable stage by
+ * stage:
  *
  * 1. survey — map the repo: frameworks, where the API surfaces live, and a
  *    grouping of the static tool list into surfaces (cheap/fast; respects a
@@ -317,7 +318,7 @@ export interface StagedExtractionInput {
   /** Optional theme stage input — omitted entirely when the caller has no
    *  theme extraction to do (e.g. init running without a theme pass). */
   theme?: {
-    needed: string[];
+    needed: Array<keyof ThemeSlotValues>;
     alreadyExact: Record<string, string>;
     evidencePaths: string[];
   };
@@ -469,7 +470,7 @@ export async function runStagedExtraction(input: StagedExtractionInput): Promise
   let theme: z.infer<typeof modelThemeSchema> | undefined;
   const themeInput = input.theme;
   if (themeInput !== undefined) {
-    const brandNeeded = themeInput.needed.filter((slot) => (BRAND_SLOTS as readonly string[]).includes(slot));
+    const brandNeeded = themeInput.needed.filter((slot) => BRAND_SLOTS.includes(slot));
     if (brandNeeded.length > 0) {
       onProgress?.("theme: filling brand slots");
       try {

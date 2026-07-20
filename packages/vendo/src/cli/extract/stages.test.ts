@@ -271,9 +271,10 @@ describe("runStagedExtraction", () => {
 
     expect(runs.map((run) => run.stage)).toEqual(["survey", "draft", "draft", "cross-check", "brief", "theme"]);
     const themeRun = runs.find((run) => run.stage === "theme");
-    expect(themeRun?.input.instructions).toContain("accent");
-    expect(themeRun?.input.instructions).toContain("radius");
     expect(themeRun?.input.instructions).toContain("app/globals.css");
+    // "#ffffff" only appears via alreadyExact input threading — the glossary
+    // and rules never mention a literal color, so this can't pass by accident.
+    expect(themeRun?.input.instructions).toContain("#ffffff");
     // Slot glossary (the semantics, not just the rules) must survive the port.
     expect(themeRun?.input.instructions).toContain("primary interactive color");
     expect(result.theme).toEqual(themeArtifact);
