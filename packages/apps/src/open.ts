@@ -234,6 +234,14 @@ export const createAppOpener = (
     if (served === undefined || !served.enabled) {
       throw servedAppsDisabledError();
     }
+    // A served document without a machine has NO surface anywhere (a v1-era
+    // import or a de-graduated doc): say so instead of a confusing wake error.
+    if (app.machine === undefined) {
+      throw new VendoError(
+        "validation",
+        "this served app has no machine — its surface is gone; re-graduate it with an edit or re-create the app",
+      );
+    }
     // Wake-on-open: a sleeping machine resumes here (the accepted wake
     // latency; the host shows its ordinary loading state — no v1 cover or
     // screenshot machinery).

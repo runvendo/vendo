@@ -1017,9 +1017,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     let servedOk = false;
     if (result.servesUi === true) {
       const root = await requestAppWithBootRetry(machine, { method: "GET", path: "/" }).catch(() => undefined);
+      // Header keys are matched case-insensitively: fetch normalizes to
+      // lowercase, but a provider adapter is not obliged to.
+      const contentType = root === undefined
+        ? ""
+        : Object.entries(root.headers).find(([key]) => key.toLowerCase() === "content-type")?.[1] ?? "";
       servedOk = root !== undefined
         && root.status >= 200 && root.status < 300
-        && (root.headers["content-type"] ?? "").includes("text/html")
+        && contentType.includes("text/html")
         && root.body.length > 0;
     }
     // Sync schedule state while the box is awake and its egress declaration is
@@ -1118,7 +1123,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         extraIssues.push(
           "the box declared a served web app, but experimentalServedApps is disabled — the surface flip was refused and the tree keeps serving (enable createVendo({ apps: { experimentalServedApps: true } }))",
         );
-      } else if (box.result.servesUi === true && box.servedOk) {
+      } else if (options.served === true && box.result.servesUi === true && box.servedOk) {
+        // The flip needs BOTH the escalation decision and the verified served
+        // surface: a box that spontaneously serves UI on a layer-2 instruction
+        // must never replace a tree the user did not ask to lose.
         const flipped = structuredClone(base);
         delete flipped.tree;
         delete flipped.components;

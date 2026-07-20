@@ -360,13 +360,21 @@ function selectSandbox(configured: SandboxAdapter | V1CloudSandboxAdapter | unde
   if (e2bApiKey !== undefined && e2bInstalled()) {
     // Wave 4 — operator knob for the provider machine lifetime. The default
     // 5-minute TTL kills a box mid-way through a long in-box agent build
-    // (the box agent loop runs for minutes); hosts that raise
-    // VENDO_BOX_EDIT_TIMEOUT_MS raise this alongside it.
-    const timeoutMs = Number(environment("VENDO_E2B_TIMEOUT_MS"));
+    // (the box agent loop runs for minutes). Explicit VENDO_E2B_TIMEOUT_MS
+    // wins; otherwise a raised box-edit budget implies a matching machine
+    // lifetime (budget + 5-minute slack), so the two knobs cannot silently
+    // disagree.
+    const configured = Number(environment("VENDO_E2B_TIMEOUT_MS"));
+    const editBudget = Number(environment("VENDO_BOX_EDIT_TIMEOUT_MS"));
+    const timeoutMs = Number.isFinite(configured) && configured > 0
+      ? configured
+      : Number.isFinite(editBudget) && editBudget > 0
+        ? editBudget + 5 * 60_000
+        : undefined;
     return {
       adapter: e2bSandbox({
         apiKey: e2bApiKey,
-        ...(Number.isFinite(timeoutMs) && timeoutMs > 0 ? { timeoutMs } : {}),
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
       }),
       venue: "e2b",
     };
