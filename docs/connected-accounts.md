@@ -25,8 +25,9 @@ createVendo({
 Vendo Cloud: set `VENDO_API_KEY` and bring no Composio key — connection
 endpoints ride the Vendo Cloud broker with Vendo's Composio credentials, and
 the agent's connector tools load and execute through the same broker
-(`cloudTools`, auto-composed when the `connectors` slot is left unset; pass
-`cloudTools({ apiKey, apps })` explicitly to scope toolkits, or
+(`cloudTools`, auto-composed when the `connectors` slot is left unset; to
+scope toolkits explicitly pass `cloudTools({ apiKey, apps })` together with
+`cloudConnections({ apiKey, apps })` so the dock matches, or
 `connectors: []` for none). A BYO connector always wins over the cloud broker
 when both are configured, because connections must live where the connector
 executes. `GET /api/vendo/status` reports the active posture under

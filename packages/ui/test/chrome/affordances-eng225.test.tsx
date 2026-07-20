@@ -258,9 +258,11 @@ describe("connect dock + tray (ENG-225)", () => {
     wire.state.catalog = [];
     const view = render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
     await screen.findByText("Existing thread");
-    // Let the catalog fetch settle before asserting absence.
-    await new Promise(resolve => setTimeout(resolve, 25));
-    expect(view.container.querySelector(".fl-dock")).toBeNull();
+    // Poll until the catalog fetch has settled (the attach button renders
+    // regardless of the dock, so the composer being interactive is the
+    // "resolved" signal), then assert the dock stayed absent.
+    await screen.findByRole("button", { name: "Attach files" });
+    await waitFor(() => expect(view.container.querySelector(".fl-dock")).toBeNull());
   });
 
   it("shows the dock with an active-count badge and opens the tray", async () => {

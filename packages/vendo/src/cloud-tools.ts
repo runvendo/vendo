@@ -17,7 +17,9 @@ export interface CloudToolsOptions {
   /** Defaults to the Vendo console; the composition seam passes VENDO_CLOUD_URL. */
   baseUrl?: string;
   /** Toolkit scoping, same meaning as composioConnector's `apps`. Unset =
-   * everything the console's catalog advertises (enabled auth configs). */
+   * everything the console's catalog advertises (enabled auth configs).
+   * When set, pass the SAME list to cloudConnections({ apps }) so the
+   * connect dock's catalog stays in lockstep with the executable tools. */
   apps?: string[];
   fetch?: typeof fetch;
 }
@@ -90,7 +92,9 @@ export function cloudTools(options: CloudToolsOptions): Connector {
         return [];
       }
 
-      const items = (response.payload as { tools?: unknown }).tools;
+      const items = response.payload && typeof response.payload === "object"
+        ? (response.payload as { tools?: unknown }).tools
+        : undefined;
       const nextNormalizedToRaw = new Map<string, { raw: string; toolkit: string }>();
       const descriptors: ToolDescriptor[] = [];
       for (const item of (Array.isArray(items) ? items : []) as WireTool[]) {

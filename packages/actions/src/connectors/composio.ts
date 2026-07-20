@@ -197,7 +197,9 @@ export function composioConnector(config: {
 
     for (let page = 0; page < MAX_PAGES; page += 1) {
       const response = await composioFetch("/api/v3/auth_configs", {
-        query: { ...(cursor === undefined ? {} : { cursor }) },
+        // Large page size so MAX_PAGES bounds the real catalog rather than
+        // the API's small default (same reasoning as fetchTools).
+        query: { limit: "100", ...(cursor === undefined ? {} : { cursor }) },
       });
       if (!response.ok) {
         const { message } = responseErrorParts(response.payload);

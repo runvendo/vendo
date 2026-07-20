@@ -131,6 +131,11 @@ export interface CloudConnectionsOptions {
   apiKey: string;
   /** Defaults to the Vendo console; the composition seam passes VENDO_CLOUD_URL. */
   baseUrl?: string;
+  /** Catalog scoping, mirroring cloudTools' `apps`: a host that scopes its
+   * cloud tools explicitly passes the same list here so the connect dock
+   * never advertises a toolkit the agent cannot invoke. Unset = everything
+   * the console's catalog serves. */
+  apps?: string[];
   fetch?: typeof fetch;
 }
 
@@ -231,7 +236,10 @@ export function cloudConnections(options: CloudConnectionsOptions): ConnectionsS
     },
     async catalog() {
       const payload = await cloudFetch("/api/v1/connections/catalog") as { available?: unknown };
-      return Array.isArray(payload.available) ? (payload.available as ConnectableToolkit[]) : [];
+      const available = Array.isArray(payload.available) ? (payload.available as ConnectableToolkit[]) : [];
+      return options.apps === undefined
+        ? available
+        : available.filter((entry) => options.apps!.includes(entry.toolkit));
     },
   };
 }

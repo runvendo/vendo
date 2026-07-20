@@ -40,13 +40,15 @@ export function useConnectorCatalog(): {
 } {
   const { client, connectors } = useVendoContext();
   const auto = connectors === "auto";
-  const [fetched, setFetched] = useState<ConnectorOption[]>();
+  // Keyed by client so a provider that swaps clients never shows the
+  // previous host's catalog while the replacement fetch is in flight.
+  const [fetched, setFetched] = useState<{ client: VendoClient; options: ConnectorOption[] }>();
 
   useEffect(() => {
     if (!auto) return;
     let cancelled = false;
     void fetchCatalog(client).then((options) => {
-      if (!cancelled) setFetched(options);
+      if (!cancelled) setFetched({ client, options });
     });
     return () => {
       cancelled = true;
@@ -54,5 +56,6 @@ export function useConnectorCatalog(): {
   }, [auto, client]);
 
   if (!auto) return { options: connectors, resolved: true };
-  return { options: fetched ?? [], resolved: fetched !== undefined };
+  const current = fetched !== undefined && fetched.client === client ? fetched.options : undefined;
+  return { options: current ?? [], resolved: current !== undefined };
 }

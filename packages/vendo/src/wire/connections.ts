@@ -23,7 +23,9 @@ export const connectionRoutes: RouteEntry[] = [
   // Must precede /connections/:id, which would otherwise swallow "catalog".
   route("GET", "/connections/catalog", async ({ deps, context }) => {
     await context("chat");
-    return json({ available: await deps.connections.catalog() });
+    // Optional-capability guard: a pre-catalog custom adapter (plain JS, or
+    // compiled before the interface grew) advertises nothing rather than 500s.
+    return json({ available: await deps.connections.catalog?.() ?? [] });
   }),
   // Grouped like the old if-chain arm: ANY method resolves context first, and
   // an unhandled method falls through to the table's not-found.

@@ -27,12 +27,15 @@ function connectedDate(createdAt: string): string {
 }
 
 function ToolkitMark({ toolkit }: { toolkit: string }) {
-  const logo = toolkitLogoUrl(toolkit);
+  // Same failure posture as the tray and connect card: a mark that fails to
+  // load falls back to the link glyph instead of a broken-image icon.
+  const [logoFailed, setLogoFailed] = useState(false);
+  const logo = logoFailed ? undefined : toolkitLogoUrl(toolkit);
   return (
     <span className="fl-acct-logo" aria-hidden="true">
       {logo ? (
         // eslint-disable-next-line @next/next/no-img-element -- chrome surface, plain img by design
-        <img src={logo} alt="" width={17} height={17} style={{ display: "block", objectFit: "contain" }} />
+        <img src={logo} alt="" width={17} height={17} style={{ display: "block", objectFit: "contain" }} onError={() => setLogoFailed(true)} />
       ) : (
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 1 1 0 10h-2M8 12h8" />
