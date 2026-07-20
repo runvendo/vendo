@@ -38,6 +38,7 @@ export {
   useApprovals,
   useAutomations,
   useConnections,
+  useConnectorCatalog,
   useGrants,
   useMobileTakeover,
   type MobileTakeover,
