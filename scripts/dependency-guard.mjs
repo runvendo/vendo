@@ -84,14 +84,24 @@ const LAYERS = {
  */
 const ZOD_V4_EXPORT_FLOOR = [3, 25, 0];
 
-/** Extracts a [major, minor, patch] floor from a simple semver range token
- * ("^3.25.76", "~3.25.0", ">=3.25.76", or a bare "3.25.76"). Returns null for
- * anything without a plain x.y.z inside it — good enough for the ranges this
- * workspace actually declares. */
+/** Extracts a [major, minor, patch] floor from a semver range ("^3.25.76",
+ * "~3.25.0", ">=3.25.76", a bare "3.25.76", or a `||` union of those). A
+ * union is only as safe as its LOWEST satisfiable alternative, so the floor
+ * is the minimum x.y.z across every `||` branch; any branch without a plain
+ * x.y.z returns null so the guard fails closed instead of trusting a range
+ * it cannot model. */
 function parseVersionFloor(range) {
-  const match = /(\d+)\.(\d+)\.(\d+)/.exec(String(range));
-  if (!match) return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
+  let floor = null;
+  for (const alternative of String(range).split("||")) {
+    let lowest = null;
+    for (const match of alternative.matchAll(/(\d+)\.(\d+)\.(\d+)/g)) {
+      const version = [Number(match[1]), Number(match[2]), Number(match[3])];
+      if (!lowest || compareVersions(version, lowest) < 0) lowest = version;
+    }
+    if (!lowest) return null;
+    if (!floor || compareVersions(lowest, floor) < 0) floor = lowest;
+  }
+  return floor;
 }
 
 function compareVersions(a, b) {
