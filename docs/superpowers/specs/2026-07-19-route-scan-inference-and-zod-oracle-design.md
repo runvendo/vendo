@@ -41,8 +41,9 @@ table row holds a zod expression as source text and runs it two ways:
 
 - through the static reader (`zodFromExpression`), which pattern-matches the
   text without executing it;
-- through real zod + `zod-to-json-schema` (the oracle), both added as
-  devDependencies only — never shipped in the published package.
+- through real zod + `zod-to-json-schema` (the oracle); zod is already a
+  runtime dependency of `@vendoai/actions`, and `zod-to-json-schema` is added
+  as a devDependency only — never shipped in the published package.
 
 A small normalizer strips the oracle's cosmetic output differences
 (`$schema` key and similar) so only genuine disagreements fail the test.
