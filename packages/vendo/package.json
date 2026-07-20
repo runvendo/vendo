@@ -46,6 +46,10 @@
     "./react": {
       "types": "./dist/react.d.ts",
       "default": "./dist/react.js"
+    },
+    "./ai-sdk": {
+      "types": "./dist/ai-sdk.d.ts",
+      "default": "./dist/ai-sdk.js"
     }
   },
   "files": [
