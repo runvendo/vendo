@@ -18,6 +18,9 @@ thin alias. Every block is also available à la carte.
   <Card title="Start with the default composition" href="/quickstart">
     Mount one fetch handler and wrap the product in VendoRoot.
   </Card>
+  <Card title="Already have an agent?" href="/existing-agents">
+    Keep your AI SDK or Mastra loop; add guarded tools, generated UI, and approvals.
+  </Card>
   <Card title="Understand the blocks" href="/concepts/architecture">
     See how tools, guard, apps, automations, storage, agent, and UI fit together.
   </Card>
@@ -39,4 +42,7 @@ thin alias. Every block is also available à la carte.
 - Chrome shows a loud notice when no policy or judge is configured.
 
 Cloud-gated sharing, publishing, org overlays, and pinning activate with
-`VENDO_API_KEY`. The rest of the stack is complete in the open-source packages.
+`VENDO_API_KEY`. The key also fills adapter slots you left unset with Cloud
+defaults — the hosted sandbox, and the hosted store (persistence moves from
+PGlite to Vendo Cloud unless you pass your own `store`). An explicit adapter
+always wins. The rest of the stack is complete in the open-source packages.

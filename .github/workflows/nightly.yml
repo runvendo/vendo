@@ -12,6 +12,12 @@ jobs:
   live-conformance:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    defaults:
+      run:
+        # An explicit `bash` gets `-o pipefail` (the implicit default is plain
+        # `bash -e`): the `vitest … | tee` legs must propagate vitest's exit
+        # code, or a failing live suite reads as success at the final gate.
+        shell: bash
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -34,20 +40,76 @@ jobs:
         continue-on-error: true
         run: pnpm --filter @vendoai/agent exec vitest run src/live.test.ts 2>&1 | tee nightly-logs/agent-providers.log
 
+      # The matrix legs describe.skipIf on their provider secrets, so an empty
+      # secret silently skips a leg and the step above still passes — coverage
+      # that quietly stopped existing. This guard makes every skip loud:
+      # a provider in EXPECTED_PROVIDERS with its secret missing FAILS the
+      # nightly; any other skipped leg emits an ::error annotation without
+      # failing the run. Promote proxy into EXPECTED_PROVIDERS the moment
+      # VENDO_TEST_PROXY_URL/KEY are provisioned.
+      - name: Provider matrix must not silently skip
+        id: provider_matrix_guard
+        continue-on-error: true
+        env:
+          EXPECTED_PROVIDERS: anthropic openai
+        run: |
+          status=0
+          check() {
+            name=$1 present=$2
+            if [ -n "$present" ]; then
+              echo "provider leg ran: $name"
+              return
+            fi
+            if printf '%s' "$EXPECTED_PROVIDERS" | grep -qw "$name"; then
+              echo "::error title=Provider matrix leg skipped::The $name live leg was silently skipped (secret empty) but is expected coverage."
+              status=1
+            else
+              echo "::error title=Provider matrix leg not provisioned::The $name live leg skipped (secret empty); BYO-model coverage for it does not exist. Provision the secret and add it to EXPECTED_PROVIDERS."
+            fi
+          }
+          check anthropic "$ANTHROPIC_API_KEY"
+          check openai "$OPENAI_API_KEY"
+          check proxy "${VENDO_TEST_PROXY_URL:+${VENDO_TEST_PROXY_KEY:+x}}"
+          exit "$status"
+
       - name: Live agentic automation
         id: live_agentic
         continue-on-error: true
         run: pnpm --filter @vendoai-fixtures/automations-e2e exec vitest run src/live-agentic.e2e.test.ts 2>&1 | tee nightly-logs/live-agentic.log
 
-      - name: Live E2B automation
+      # Full sandbox-adapter conformance against real E2B (snapshots, multi-port,
+      # allowedDomains, the Lane A round-trip gate). Replaces the deleted
+      # fixtures/automations-e2e live-e2b leg (removed in #407 with the v1
+      # machine paths). Costs sandbox-minutes; every machine is destroyed.
+      - name: Live E2B adapter conformance
         id: live_e2b
         continue-on-error: true
-        run: pnpm --filter @vendoai-fixtures/automations-e2e exec vitest run src/live-e2b.e2e.test.ts 2>&1 | tee nightly-logs/live-e2b.log
+        env:
+          VENDO_LIVE_SANDBOX: "1"
+        run: pnpm --filter @vendoai/apps exec vitest run src/e2b/e2b.live.test.ts 2>&1 | tee nightly-logs/live-e2b.log
 
-      - name: Live secret-egress red team
+      # Lane E security gate: granted-secrets injection + egress allowlist on
+      # real E2B. Replaces the deleted fixtures/redteam live-egress leg (the v1
+      # run-token proxy it exercised died in #407; this is its v2 successor).
+      - name: Live secret-egress red team (E2B)
         id: live_egress
         continue-on-error: true
-        run: pnpm --filter @vendoai/redteam-e2e exec vitest run src/live-egress.e2e.test.ts 2>&1 | tee nightly-logs/live-egress.log
+        env:
+          VENDO_LIVE_SANDBOX: "1"
+        run: pnpm --filter @vendoai/apps exec vitest run src/e2b/secrets-egress.live.test.ts 2>&1 | tee nightly-logs/live-egress.log
+
+      # Cloud sandbox adapter vs prod (drift here previously surfaced only in
+      # manual runs). VENDO_API_KEY is scoped to THIS step on purpose: at job
+      # level it would fill unset Cloud adapter slots in every other leg and
+      # change what they test. Metered Pro-org key — the suite keeps runs small
+      # and destroys every machine.
+      - name: Live Cloud sandbox conformance
+        id: cloud_sandbox
+        continue-on-error: true
+        env:
+          VENDO_API_KEY: ${{ secrets.VENDO_API_KEY }}
+          VENDO_LIVE_SANDBOX: "1"
+        run: pnpm --filter @vendoai/vendo exec vitest run src/sandbox.live.test.ts 2>&1 | tee nightly-logs/cloud-sandbox.log
 
       - name: Live judge
         id: judge_live
@@ -57,6 +119,12 @@ jobs:
       - name: Install Claude Code for live MCP door
         run: npm install --global @anthropic-ai/claude-code@2.1.209
 
+      # The door OAuth-gates MCP calls by design (10-mcp §6), and `claude -p`
+      # cannot complete an OAuth dance in a non-interactive session — so CI
+      # mints the access token itself over the door's real OAuth wire (DCR →
+      # PKCE authorize, auto-approved by the fixture adapter → code exchange)
+      # and hands it to Claude via --header. The vitest side self-asserts by
+      # observing the venue='mcp' tool-call audit row.
       - name: Live Claude MCP registration
         id: live_claude
         continue-on-error: true
@@ -79,8 +147,9 @@ jobs:
             fi
             sleep 2
           done
+          token=$(node fixtures/mcp-e2e/scripts/mint-live-token.mjs http://127.0.0.1:7337/api/vendo/mcp)
           claude mcp remove vendo-e2e --scope local >/dev/null 2>&1 || true
-          claude mcp add --transport http --scope local vendo-e2e http://127.0.0.1:7337/api/vendo/mcp
+          claude mcp add --transport http --scope local vendo-e2e http://127.0.0.1:7337/api/vendo/mcp --header "Authorization: Bearer $token"
           claude -p "Use the vendo-e2e MCP server to call host_invoices_list exactly once, then report that it succeeded." \
             --allowedTools "mcp__vendo-e2e__host_invoices_list" \
             --permission-mode bypassPermissions
@@ -102,15 +171,20 @@ jobs:
         if: always()
         env:
           AGENT_PROVIDERS: ${{ steps.agent_providers.outcome }}
+          PROVIDER_MATRIX_GUARD: ${{ steps.provider_matrix_guard.outcome }}
           LIVE_AGENTIC: ${{ steps.live_agentic.outcome }}
           LIVE_E2B: ${{ steps.live_e2b.outcome }}
           LIVE_EGRESS: ${{ steps.live_egress.outcome }}
+          CLOUD_SANDBOX: ${{ steps.cloud_sandbox.outcome }}
           JUDGE_LIVE: ${{ steps.judge_live.outcome }}
           LIVE_CLAUDE: ${{ steps.live_claude.outcome }}
         run: |
-          for outcome in "$AGENT_PROVIDERS" "$LIVE_AGENTIC" "$LIVE_E2B" "$LIVE_EGRESS" "$JUDGE_LIVE" "$LIVE_CLAUDE"; do
+          failed=0
+          for leg in AGENT_PROVIDERS PROVIDER_MATRIX_GUARD LIVE_AGENTIC LIVE_E2B LIVE_EGRESS CLOUD_SANDBOX JUDGE_LIVE LIVE_CLAUDE; do
+            eval "outcome=\$$leg"
             if [ "$outcome" != "success" ]; then
-              echo "::error title=Nightly live conformance failed::One or more live legs failed; inspect the uploaded logs."
-              exit 1
+              echo "::error title=Nightly live leg failed::$leg finished with outcome '$outcome'; inspect the uploaded logs."
+              failed=1
             fi
           done
+          exit "$failed"

@@ -1,0 +1,1 @@
+{"posture":"rules","version":"0.3.0","blocks":{"store":true,"agent":true,"actions":true,"guard":true,"apps":true,"automations":true,"sandbox":false,"model":"ladder","mcp":false,"connections":false}}

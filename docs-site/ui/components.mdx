@@ -142,6 +142,25 @@ and voice-native approvals — say "approve" or tap. See
 
 <video autoPlay muted loop playsInline type="video/mp4" src="/images/ui/loop-voice-stage.mp4" />
 
+## Embeds for your own agent's chat
+
+Three components render Vendo inside a chat surface that is not Vendo's,
+when your product keeps its own agent loop and spreads in the
+[guarded tool pack](/existing-agents). All three live inside `VendoProvider`
+pointed at the wire and take no config props of their own.
+
+- `<VendoToolResult output>` is the dispatcher: give it any `vendo_*` tool
+  output and it renders the right embed, or nothing for plain data.
+- `<VendoAppEmbed refValue>` renders an inline generated app from a
+  `vendo/app-ref@1` envelope: a build beat while the build streams, then the
+  live app. In-app interactions go over the wire, not through your loop.
+- `<VendoApprovalEmbed refValue>` renders the approve/deny card for a
+  `vendo/approval-ref@1` envelope and resolves in place to the executed
+  result, "declined", or "expired".
+
+See [Use with your existing agent](/existing-agents) for the envelope
+contract and the AI SDK and Mastra walkthroughs.
+
 ## Theming
 
 Every component above re-themes from one token file. Extract it with

@@ -1,0 +1,37 @@
+{
+  "name": "@vendoai-examples/ai-sdk-agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The AI SDK Next.js quickstart chatbot plus the four-touch Vendo diff: guarded host actions, generated UI, and approvals inside your existing agent loop.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
+    "@ai-sdk/react": "3.0.30",
+    "@vendoai/ui": "workspace:*",
+    "@vendoai/vendo": "workspace:*",
+    "ai": "6.0.28",
+    "next": "16.2.9",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/store": "workspace:*",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.9",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
+  }
+}
