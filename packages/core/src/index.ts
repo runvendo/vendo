@@ -13,6 +13,7 @@ export * from "./host-seams.js";
 export * from "./ids.js";
 export * from "./jail-modules.js";
 export * from "./jcs.js";
+export * from "./kit/index.js";
 export * from "./principal.js";
 export * from "./reshape.js";
 export * from "./run-context.js";
