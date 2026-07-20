@@ -148,6 +148,10 @@ export async function createWireServer() {
     connections: [
       { id: "ca_1", connector: "composio", toolkit: "gmail", status: "active" as const, createdAt: NOW },
     ],
+    catalog: [
+      { toolkit: "gmail", connector: "composio" },
+      { toolkit: "slack", connector: "composio" },
+    ],
     automations: [{ app: automationApp, enabled: false }] satisfies AutomationEntry[],
     runs: [run()],
     events: [audit("aud_1"), audit("aud_2"), audit("aud_3")],
@@ -398,6 +402,10 @@ export async function createWireServer() {
       if (method === "GET" && url.pathname === "/connections") {
         return json(response, { connections: state.connections });
       }
+      // Before the /connections/:id match below, which would swallow "catalog".
+      if (method === "GET" && url.pathname === "/connections/catalog") {
+        return json(response, { available: state.catalog });
+      }
       if (method === "POST" && url.pathname === "/connections/initiate") {
         // The freshly initiated account is immediately pollable and flips
         // active on first read (the shortest honest OAuth completion). Honors
@@ -457,6 +465,12 @@ export async function createWireServer() {
         response.writeHead(200, { "Content-Type": "application/octet-stream" });
         response.end(Buffer.from([0, 1, 255]));
         return;
+      }
+      const pingMatch = url.pathname.match(/^\/apps\/([^/]+)\/machine\/ping$/);
+      if (pingMatch && method === "POST") {
+        const id = decodeURIComponent(pingMatch[1] ?? "");
+        if (!state.apps.some(item => item.id === id)) return wireError(response, "not-found", "App not found", 404);
+        return json(response, { state: "awake" });
       }
       const appActionMatch = url.pathname.match(/^\/apps\/([^/]+)\/(open|call|edit|history|fork)$/);
       if (appActionMatch) {

@@ -65,7 +65,7 @@ const cellPad = "var(--vendo-density-table-padding, 10px 12px)";
 
 export function DataTable(props: DataTableProps) {
   const {
-    rows,
+    rows: rawRows,
     sortBy,
     limit,
     filterableBy,
@@ -74,6 +74,14 @@ export function DataTable(props: DataTableProps) {
     emptyState = "No data",
     caption,
   } = props;
+
+  // W3 — fail SOFT on missing data: a failed/pending query resolves its
+  // binding to undefined at runtime; the table's named-query empty state is
+  // the honest render, never a crash.
+  const rows = useMemo<Array<Record<string, unknown>>>(
+    () => (Array.isArray(rawRows) ? rawRows : []),
+    [rawRows],
+  );
 
   const columns = useMemo<DataTableColumn[]>(
     () => props.columns ?? Object.keys(rows[0] ?? {}).map((key) => ({ key })),

@@ -97,6 +97,20 @@ export const appRecordInput = (
   refs: { subject, ...(app.trigger === undefined ? {} : { trigger_kind: app.trigger.on.kind }) },
 });
 
+/**
+ * Wave 7 — mint the next `machine.envStaleAt` marker, strictly greater than
+ * the previous one. Two grant flips in the same millisecond must never mint
+ * EQUAL markers: a wake that read the first would clear the second's marker
+ * after injecting the older env, losing the newer flip (e.g. a revocation).
+ * Marks serialize through the app row's CAS, so bumping past the previous
+ * marker is enough.
+ */
+export const nextEnvStaleAt = (previous?: string): string => {
+  const now = Date.now();
+  const floor = previous === undefined ? Number.NaN : Date.parse(previous);
+  return new Date(Number.isFinite(floor) && floor >= now ? floor + 1 : now).toISOString();
+};
+
 /** Bounded read-mutate-CAS on the app row; the store's revision receipt
  *  arbitrates racers (adapters without atomic/revision fall back to put). */
 export const updateAppRow = async (

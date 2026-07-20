@@ -1,5 +1,5 @@
 import { VendoError, type RunContext, type ToolCall, type ToolDescriptor, type ToolOutcome } from "@vendoai/core";
-import type { Connector, ConnectorAccount, ConnectorAccountIdentity } from "./connector.js";
+import type { Connector, ConnectorAccount, ConnectorAccountIdentity, ConnectorCatalogEntry } from "./connector.js";
 import { composioToolRisk } from "./composio-risk.js";
 import { normalizeToolName } from "./names.js";
 
@@ -27,6 +27,10 @@ interface ComposioConnectedAccount {
 }
 
 const MAX_PAGES = 50;
+
+/** Auth configs change on dashboard timescales; thread mounts must not
+ * re-walk them. */
+const CONNECTABLE_CACHE_TTL_MS = 5 * 60_000;
 
 /** Composio's deterministic missing-connection signal on tool execution. */
 const NO_CONNECTED_ACCOUNT_SLUG = "ActionExecute_ConnectedAccountNotFound";
@@ -175,6 +179,55 @@ export function composioConnector(config: {
     return accounts;
   }
 
+  let connectableCache: { at: number; entries: ConnectorCatalogEntry[] } | undefined;
+
+  /** The dock catalog: the host's `apps` scoping verbatim when set, else the
+   * distinct toolkits with an enabled auth config — exactly the set a user
+   * can finish connecting (initiate refuses anything else). Host-level, so
+   * the auth-config walk is cached across principals. */
+  async function listConnectable(): Promise<ConnectorCatalogEntry[]> {
+    if (config.apps !== undefined) return config.apps.map((toolkit) => ({ toolkit }));
+    if (connectableCache !== undefined && Date.now() - connectableCache.at < CONNECTABLE_CACHE_TTL_MS) {
+      return connectableCache.entries;
+    }
+
+    // auth_configs paginates by PAGE NUMBER, not cursor: live-probed
+    // 2026-07-20, the API clamps limit to 50 and answers `total_pages: 1,
+    // next_cursor: null` even when total_items is larger — cursor-following
+    // silently drops the tail. Walk `cursor=1,2,…` until the item count
+    // reaches total_items.
+    const toolkits = new Set<string>();
+    let itemsSeen = 0;
+
+    for (let page = 1; page <= MAX_PAGES; page += 1) {
+      const response = await composioFetch("/api/v3/auth_configs", {
+        query: { limit: "100", cursor: String(page) },
+      });
+      if (!response.ok) {
+        const { message } = responseErrorParts(response.payload);
+        throw new Error(`Composio auth-configs request failed with ${response.status}: ${message ?? ""}`.trim());
+      }
+      const parsed = pageParts(response.payload as ComposioPage);
+      for (const item of parsed.items as Array<{ status?: unknown; toolkit?: { slug?: unknown } }>) {
+        // The same enablement test initiate applies (anything not DISABLED).
+        if (item.status === "DISABLED") continue;
+        if (typeof item.toolkit?.slug === "string") toolkits.add(item.toolkit.slug);
+      }
+      itemsSeen += parsed.items.length;
+      const totalItems = (response.payload as { total_items?: unknown }).total_items;
+      const done = parsed.items.length === 0
+        || typeof totalItems !== "number"
+        || itemsSeen >= totalItems;
+      if (done) {
+        const entries = [...toolkits].map((toolkit) => ({ toolkit }));
+        connectableCache = { at: Date.now(), entries };
+        return entries;
+      }
+    }
+
+    throw new Error(`Composio auth-configs pagination exceeded ${MAX_PAGES} pages`);
+  }
+
   return {
     name: "composio",
 
@@ -259,6 +312,7 @@ export function composioConnector(config: {
 
     connections: {
       list: (subject) => listAccounts(subject),
+      listConnectable,
 
       async initiate(subject, toolkit, options) {
         const configs = await composioFetch("/api/v3/auth_configs", { query: { toolkit_slug: toolkit } });

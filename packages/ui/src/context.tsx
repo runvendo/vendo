@@ -30,10 +30,13 @@ export interface VendoContextValue {
   /** Optional host-supplied friendly tool metadata, keyed by tool name/id
       (ENG-216 humanization seam — additive, UI-side, no wire/contract change). */
   tools: ToolMetaMap;
-  /** ENG-225 — the connect dock's catalog: which toolkits this host's users can
-      connect (the wire only knows accounts that already exist, 04 §3). Empty
-      means no dock renders. Additive, UI-side. */
-  connectors: ConnectorOption[];
+  /** ENG-225 — the connect dock's catalog: which toolkits this host's users
+      can connect. An explicit array is used as-is (empty = no dock renders);
+      `"auto"` (the omitted-prop default) means surfaces resolve the catalog
+      from `GET /connections/catalog` — everything the host's server-side
+      connectors advertise. Resolve through useConnectorCatalog, never read
+      this raw. */
+  connectors: ConnectorOption[] | "auto";
   /** The discoverability dial (ui-usage-dx §6): quiet | default. Default keeps
       the fire-once whisper + greeting; surfaces may override via their own prop. */
   discoverability: VendoDiscoverability;
@@ -103,7 +106,7 @@ export function VendoProvider(props: {
       transport,
       onPin,
       tools: tools ?? {},
-      connectors: connectors ?? [],
+      connectors: connectors ?? "auto",
       discoverability: discoverability ?? "default",
       greeting,
     }),

@@ -10,6 +10,7 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { useVendoContext, type ConnectorOption } from "../context.js";
 import { useConnections } from "../hooks/use-connections.js";
+import { useConnectorCatalog } from "../hooks/use-connector-catalog.js";
 import type { ConnectionAccount } from "../wire-types.js";
 import { toolkitLogoUrl } from "./build-beat.js";
 import { toolkitDisplayName } from "./humanize.js";
@@ -45,13 +46,15 @@ function displayName(option: ConnectorOption): string {
   return toolkitDisplayName(option.toolkit);
 }
 
-/** The dock button in the composer row. Renders nothing when the host supplied
-    no connector catalog — the dock is opt-in chrome, and a thread without it
-    must not fetch /connections at all (the inner component owns the fetch). */
+/** The dock button in the composer row. Renders nothing when the effective
+    catalog is empty — an explicit `connectors={[]}`, or an auto catalog that
+    resolved to nothing. The inner component owns the /connections fetch, so a
+    thread whose catalog is empty never polls accounts; auto mode costs one
+    shared /connections/catalog read (useConnectorCatalog). */
 export const ConnectDockButton = forwardRef<HTMLButtonElement, { open: boolean; onToggle(): void }>(
   function ConnectDockButton(props, ref) {
-    const { connectors } = useVendoContext();
-    if (connectors.length === 0) return null;
+    const { options, resolved } = useConnectorCatalog();
+    if (!resolved || options.length === 0) return null;
     return <DockButtonInner {...props} buttonRef={ref} />;
   },
 );
@@ -104,7 +107,8 @@ export function ConnectTray({ onClose, anchorRef }: {
   onClose(): void;
   anchorRef?: React.RefObject<HTMLButtonElement | null>;
 }) {
-  const { client, connectors } = useVendoContext();
+  const { client } = useVendoContext();
+  const { options: connectors } = useConnectorCatalog();
   const { connections, refresh } = useConnections();
   const [query, setQuery] = useState("");
   const [connecting, setConnecting] = useState<string>();

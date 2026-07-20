@@ -20,6 +20,7 @@ const sdk = vi.hoisted(() => {
     pause: vi.fn(async () => true),
     kill: vi.fn(async () => true),
     setTimeout: vi.fn(async () => undefined),
+    isRunning: vi.fn(async () => true),
     commands: {
       run: vi.fn(async () => ({ exitCode: 7, stdout: "out", stderr: "err" })),
     },
@@ -34,6 +35,7 @@ const sdk = vi.hoisted(() => {
     sandboxId: "sandbox_456",
     getHost: vi.fn((port: number) => `${port}-sandbox_456.e2b.app`),
     setTimeout: vi.fn(async () => undefined),
+    isRunning: vi.fn(async () => true),
   };
   return {
     sandbox,
@@ -138,6 +140,44 @@ describe("e2bSandbox", () => {
     sdk.resumedSandbox.setTimeout.mockRejectedValueOnce(new Error("e2b is down"));
     await expect(resumed.request({ method: "GET", path: "/c" })).resolves.toMatchObject({ status: 201 });
     expect(sdk.resumedSandbox.setTimeout).toHaveBeenCalledWith(9_000);
+  });
+
+  it("translates a dead-sandbox 502 into the seam's not-found signal (Wave 7)", async () => {
+    // The e2b ingress answers 502 for BOTH "app port not open yet" (boot race,
+    // retried above the seam) and "sandbox reaped" (TTL, sweep). Only the SDK
+    // knows which, so a 502 consults isRunning: dead → the seam's thrown
+    // not-found (machine-lifecycle evicts + re-wakes); alive → the 502 passes
+    // through as an app-level status.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("Bad Gateway", { status: 502 })));
+    const machine = await e2bSandbox({ apiKey: "key_test" }).create({ env: {} });
+
+    await expect(machine.request({ method: "GET", path: "/still-booting" })).resolves.toMatchObject({ status: 502 });
+
+    sdk.sandbox.isRunning.mockResolvedValueOnce(false);
+    await expect(machine.request({ method: "GET", path: "/fn/echo" })).rejects.toMatchObject({
+      name: "VendoError",
+      code: "not-found",
+    });
+
+    // A liveness probe failure is inconclusive — fail open to the plain 502
+    // (the boot retry loop above the seam handles it).
+    sdk.sandbox.isRunning.mockRejectedValueOnce(new Error("e2b api is down"));
+    await expect(machine.request({ method: "GET", path: "/fn/echo" })).resolves.toMatchObject({ status: 502 });
+  });
+
+  it("extends the provider TTL on exec activity too (in-box agent builds are activity)", async () => {
+    // Wave 7 — the box-agent bootstrap and diagnostics run through exec; a
+    // minutes-long command sequence is exactly the busy box the TTL slide
+    // exists for, so exec shares request's extend-on-activity (and its
+    // throttle: interleaved request/exec traffic still means ONE extension
+    // per interval).
+    const machine = await e2bSandbox({ apiKey: "key_test", timeoutMs: 12_345 })
+      .create({ env: {} }) as unknown as AdapterPrivateMachine & { request(req: { method: string; path: string }): Promise<unknown> };
+    await machine.exec("echo one");
+    expect(sdk.sandbox.setTimeout).toHaveBeenCalledWith(12_345);
+    await machine.exec("echo two");
+    await machine.request({ method: "GET", path: "/interleaved" });
+    expect(sdk.sandbox.setTimeout).toHaveBeenCalledOnce();
   });
 
   it("snapshots to a v2 ref, sleeps with pause, and destroys with kill", async () => {

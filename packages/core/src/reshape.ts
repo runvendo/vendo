@@ -26,14 +26,16 @@ export interface ReshapeStep {
   args: string[];
 }
 
-/** v2 spec §3 — the closed op registry. */
+/** v2 spec §3 — the closed op registry. FROZEN at this set (v3 spec §Dialect
+ *  retirement): pressure for a new op = a missing Kit prop or an island case.
+ *  Never add an op here. */
 export const RESHAPE_OPS = [
   "pick",
   "rename",
   "asPoints",
-  "asOptions",
+  "asOptions", // @deprecated (W5a) — Kit Select/MultiSelect read raw rows via labelField/valueField
   "format",
-  "template",
+  "template", // @deprecated (W5a) — Kit DataTable/CardList dot-path column keys reach nested scalars
   "sum",
   "avg",
   "min",
@@ -44,12 +46,32 @@ export const RESHAPE_OPS = [
 /** v2 spec §3 */
 export type ReshapeOp = (typeof RESHAPE_OPS)[number];
 
+/**
+ * W5a (v3 spec §Dialect retirement) — STAGED retirement. These ops keep
+ * compiling and rendering for STORED apps, but generation no longer teaches
+ * them: the Kit's native props replace them (`asOptions` → Select/MultiSelect
+ * `labelField`/`valueField` over raw rows; `template` → DataTable/CardList
+ * dot-path column keys or a scalar field binding). A new create that emits
+ * one surfaces a compile INFO (never an error) so live usage stays
+ * observable until deletion.
+ * @deprecated Do not emit in new apps; use the Kit equivalents.
+ */
+export const DEPRECATED_RESHAPE_OPS = ["asOptions", "template"] as const satisfies readonly ReshapeOp[];
+
 /** v2 spec §3 — chain-length cap: bounded and non-Turing by construction. */
 export const RESHAPE_MAX_STEPS = 8;
 
-/** format's closed kind vocabulary (deterministic en-US / USD / UTC). */
+/** format's closed kind vocabulary (deterministic en-US / USD / UTC).
+ *  `currencyCents` is @deprecated (W5a §Dialect retirement): cents money
+ *  rides the Kit (`<Money cents/>`, a `format:"money"` column) — the kind
+ *  keeps rendering for stored apps only. */
 const FORMAT_KINDS = ["number", "currency", "currencyCents", "percent", "date"] as const;
 type FormatKind = (typeof FORMAT_KINDS)[number];
+
+/** W5a — see {@link DEPRECATED_RESHAPE_OPS}; the `format` kind retired with
+ *  the dialect.
+ *  @deprecated Do not emit in new apps; use `<Money cents/>` / `format:"money"`. */
+export const DEPRECATED_FORMAT_KINDS = ["currencyCents"] as const satisfies readonly FormatKind[];
 
 const OP_SET: ReadonlySet<string> = new Set(RESHAPE_OPS);
 const FORMAT_KIND_SET: ReadonlySet<string> = new Set(FORMAT_KINDS);
@@ -159,6 +181,45 @@ export function findInvalidReshape(value: unknown): string | null {
     if (violation !== null) return violation;
   }
   return null;
+}
+
+/**
+ * W5a (v3 spec §Dialect retirement) — scan a value for deprecated-dialect
+ * usage: `$reshape` chains carrying a {@link DEPRECATED_RESHAPE_OPS} op or a
+ * `format` step with a {@link DEPRECATED_FORMAT_KINDS} kind. Same deep-walk
+ * discipline as {@link findInvalidReshape}. Returns ONE notice per distinct
+ * usage kind — INFO material for the generation engine, never a validation
+ * issue: stored apps keep compiling.
+ */
+export function findDeprecatedReshapeUsage(value: unknown): string[] {
+  const notices = new Map<string, string>();
+  const visitSteps = (steps: unknown): void => {
+    if (!Array.isArray(steps)) return;
+    for (const entry of steps) {
+      if (!isPlainObject(entry)) continue;
+      const { op, args } = entry as { op?: unknown; args?: unknown };
+      if (op === "asOptions") {
+        notices.set("asOptions", 'deprecated reshape op "asOptions" — Kit Select/MultiSelect read raw rows via labelField/valueField');
+      } else if (op === "template") {
+        notices.set("template", 'deprecated reshape op "template" — Kit DataTable/CardList dot-path column keys reach nested scalars');
+      } else if (op === "format" && Array.isArray(args) && args[args.length - 1] === "currencyCents") {
+        notices.set("currencyCents", 'deprecated format kind "currencyCents" — cents money rides the Kit (<Money cents/>, a format:"money" column)');
+      }
+    }
+  };
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+    if (!isPlainObject(node)) return;
+    if (Object.prototype.hasOwnProperty.call(node, "$reshape")) {
+      visitSteps((node as { $reshape: unknown }).$reshape);
+    }
+    for (const child of Object.values(node)) walk(child);
+  };
+  walk(value);
+  return [...notices.values()];
 }
 
 /** v2 spec §3 — the total runtime evaluation result. `ok: false` is the

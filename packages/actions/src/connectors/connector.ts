@@ -10,6 +10,13 @@ export interface ConnectorAccount {
   createdAt?: string;
 }
 
+/** One connectable toolkit as the connect dock's catalog advertises it. */
+export interface ConnectorCatalogEntry {
+  toolkit: string;
+  /** Display name; the UI falls back to its humanizer when absent. */
+  label?: string;
+}
+
 /** 04-actions §3 — the per-user connected-accounts capability of a connector.
  * Every method is scoped to ONE subject (entityId = principal subject); an
  * implementation must never let one subject read or disconnect another's
@@ -24,6 +31,12 @@ export interface ConnectorConnections {
   ): Promise<{ id: string; redirectUrl: string }>;
   status(subject: string, connectionId: string): Promise<ConnectorAccount | null>;
   disconnect(subject: string, connectionId: string): Promise<void>;
+  /** Optional: the toolkits a user can actually finish connecting here — the
+   * host's explicit scoping when it has one, else whatever the broker holds
+   * credentials for. Host-level, not per-subject: this feeds the wire's
+   * catalog endpoint, which the connect dock renders when the host passes no
+   * explicit `connectors` list. */
+  listConnectable?(): Promise<ConnectorCatalogEntry[]>;
 }
 
 /** Cross-cutting audit enrichment (block-actions design §Cross-cutting): the

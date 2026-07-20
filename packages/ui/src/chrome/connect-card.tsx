@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useVendoContext } from "../context.js";
+import { useConnectorCatalog } from "../hooks/use-connector-catalog.js";
 import { toolkitLogoUrl } from "./build-beat.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { completeConnection } from "./connect-dock.js";
@@ -26,7 +27,8 @@ type Phase = "idle" | "connecting" | "connected" | "failed";
  * slug), the toolkit's real mark in the icon well (link glyph fallback), and
  * an OAuth chip. The ask reads as the product, not the plumbing. */
 export function ConnectCard({ connector, toolkit, message, onConnected }: ConnectCardProps) {
-  const { client, connectors } = useVendoContext();
+  const { client } = useVendoContext();
+  const { options: connectors } = useConnectorCatalog();
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string>();
   // Keyed to the toolkit so a failed mark for one toolkit never suppresses

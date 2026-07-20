@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   applyReshape,
+  DEPRECATED_FORMAT_KINDS,
+  DEPRECATED_RESHAPE_OPS,
+  findDeprecatedReshapeUsage,
   findInvalidReshape,
   RESHAPE_MAX_STEPS,
+  RESHAPE_OPS,
   reshapeShape,
   type ReshapeStep,
 } from "./reshape.js";
@@ -471,5 +475,76 @@ describe("template (object→string projection)", () => {
     expect(reshapeShape({ kind: "json" }, step("template", "{anything}"))).toEqual({ ok: true, shape: { kind: "string" } });
     const rowsForm = reshapeShape({ kind: "array", items: { kind: "json" } }, step("template", "a", "{a.b}"));
     expect(rowsForm.ok).toBe(true);
+  });
+});
+
+/** W5a (v3 spec §Dialect retirement) — staged retirement mechanics. */
+describe("findDeprecatedReshapeUsage", () => {
+  it("flags asOptions, template, and format currencyCents — once per distinct kind", () => {
+    const tree = {
+      nodes: [
+        { id: "select-1", component: "Select", props: { options: { $path: "/accounts/data", $reshape: [{ op: "asOptions", args: ["id", "name"] }] } } },
+        { id: "table-1", component: "Table", props: { rows: { $path: "/deadlines/data", $reshape: [
+          { op: "template", args: ["assignedTo", "{assignedTo.name}"] },
+          { op: "format", args: ["amount", "currencyCents"] },
+        ] } } },
+        { id: "text-1", component: "Text", props: { value: { $path: "/x", $reshape: [{ op: "template", args: ["{a}"] }] } } },
+      ],
+    };
+    const notices = findDeprecatedReshapeUsage(tree);
+    expect(notices).toHaveLength(3);
+    expect(notices.join("\n")).toContain('"asOptions"');
+    expect(notices.join("\n")).toContain('"template"');
+    expect(notices.join("\n")).toContain('"currencyCents"');
+    expect(notices.join("\n")).toContain("labelField");
+  });
+
+  it("the taught path is clean: Kit-native props and live ops raise no notice", () => {
+    expect(findDeprecatedReshapeUsage({
+      nodes: [
+        { id: "select-1", component: "Select", props: { options: { $path: "/accounts/data" }, labelField: "name", valueField: "id" } },
+        { id: "stat-1", component: "Stat", props: { value: { $path: "/txns/data", $reshape: [{ op: "sum", args: ["amount"] }] } } },
+        { id: "chart-1", component: "Chart", props: { points: { $path: "/rev/rows", $reshape: [{ op: "asPoints", args: ["month", "revenue"] }] } } },
+        { id: "text-1", component: "Text", props: { value: { $path: "/d", $reshape: [{ op: "format", args: ["date"] }] } } },
+      ],
+    })).toEqual([]);
+  });
+
+  it("deprecated ops STAY COMPILING for stored apps (staged retirement, not deletion)", () => {
+    expect(findInvalidReshape({ $reshape: [{ op: "asOptions", args: ["id", "name"] }] })).toBeNull();
+    expect(findInvalidReshape({ $reshape: [{ op: "template", args: ["{name}"] }] })).toBeNull();
+    expect(findInvalidReshape({ $reshape: [{ op: "format", args: ["currencyCents"] }] })).toBeNull();
+    expect(applyReshape([{ id: "a", name: "Checking" }], [step("asOptions", "id", "name")]))
+      .toEqual({ ok: true, value: [{ value: "a", label: "Checking" }] });
+    expect(applyReshape(285000, [step("format", "currencyCents")])).toEqual({ ok: true, value: "$2,850.00" });
+  });
+});
+
+/** W5a (v3 spec §Dialect retirement) — "no new reshape ops ever". */
+describe("frozen reshape op registry", () => {
+  it("the registry is frozen at the retirement-era set — no new op can be added silently", () => {
+    // v3 spec §Also (Dialect retirement): deprecate asOptions/template/
+    // currencyCents/dotted keys (Kit makes them unnecessary); NO NEW RESHAPE
+    // OPS EVER. If this test is failing because you added an op: don't —
+    // "pressure for a new op = a missing Kit prop or an island case".
+    // Extend the Kit's native props or write an island instead.
+    expect(RESHAPE_OPS).toEqual([
+      "pick",
+      "rename",
+      "asPoints",
+      "asOptions",
+      "format",
+      "template",
+      "sum",
+      "avg",
+      "min",
+      "max",
+      "count",
+    ]);
+  });
+
+  it("the deprecated subset is exactly the retired dialect", () => {
+    expect(DEPRECATED_RESHAPE_OPS).toEqual(["asOptions", "template"]);
+    expect(DEPRECATED_FORMAT_KINDS).toEqual(["currencyCents"]);
   });
 });
