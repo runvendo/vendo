@@ -461,9 +461,15 @@ const generationDependencies = (
 
 /** v2 spec §1 — assemble the emitted payload: the tree plus document islands
  *  at payload level (the v2 renderer lifts them into the shared walk). */
-const assembleTree = (source: { tree: UIPayload | TreeV2; components?: Record<string, string> }): TreeV2 => ({
+const assembleTree = (source: {
+  tree: UIPayload | TreeV2;
+  components?: Record<string, string>;
+  /** W4b — the stamped per-island tool manifests ride beside the sources. */
+  componentTools?: Record<string, string[]>;
+}): TreeV2 => ({
   ...structuredClone(source.tree),
   ...(source.components === undefined ? {} : { components: structuredClone(source.components) }),
+  ...(source.componentTools === undefined ? {} : { componentTools: structuredClone(source.componentTools) }),
 } as TreeV2);
 
 const pinnedSubtree = (app: AppDocument, componentName: string): unknown[] => {
@@ -1168,6 +1174,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         const flipped = structuredClone(base);
         delete flipped.tree;
         delete flipped.components;
+        delete flipped.componentTools;
         delete flipped.pins;
         flipped.ui = "http";
         const flipVersion: VersionEntry = {
@@ -1354,7 +1361,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       delete app.egressApproved;
       let finalTree: TreeV2 | undefined;
       if (input.onView !== undefined && app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
-        finalTree = assembleTree({ tree: app.tree, components: app.components });
+        finalTree = assembleTree({ tree: app.tree, components: app.components, componentTools: app.componentTools });
         latestTree = structuredClone(finalTree);
         queryResolver?.update(finalTree);
         finalTree.data = await queryResolver?.complete() ?? structuredClone(finalTree.data ?? {});
@@ -1383,7 +1390,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
               // resolver failure, emit nothing rather than a data-less tree
               // that would blank the screen.
               try {
-                const tree = assembleTree({ tree: graduated.app.tree, components: graduated.app.components });
+                const tree = assembleTree({ tree: graduated.app.tree, components: graduated.app.components, componentTools: graduated.app.componentTools });
                 stripServerAuthoritativeFields(tree);
                 const graduatedResolver = createProgressiveQueryResolver(caller, graduated.app, ctx);
                 graduatedResolver.update(tree);

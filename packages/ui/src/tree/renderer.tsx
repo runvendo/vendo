@@ -311,6 +311,9 @@ interface NodeRendererProps {
   ancestry: ReadonlySet<string>;
   nodes: ReadonlyMap<string, TreeNode>;
   generated: Record<string, string>;
+  /** W4b — the payload's compiler-stamped per-island tool manifests. Absent
+   *  (legacy/streaming) means JailedComponent derives from source host-side. */
+  componentTools?: Record<string, string[]>;
   /** True ONLY when the payload's server-written verdict granted the venue. */
   inClientGranted: boolean;
   furnishings: Record<string, JailFurnishing>;
@@ -375,6 +378,12 @@ function NodeRenderer(props: NodeRendererProps) {
   if (node.source === "generated") {
     const source = props.generated[node.component];
     const revealKey = source === undefined ? "forming" : "ready";
+    // Stamped era: a missing entry means "this island calls no tools" (least
+    // privilege). No stamping at all: undefined, so JailedComponent derives
+    // the manifest from the source the host holds.
+    const toolManifest = props.componentTools === undefined
+      ? undefined
+      : props.componentTools[node.component] ?? [];
     if (source === undefined) {
       content = props.streaming ? (
         <span data-streaming-component={node.component} style={{ display: "block", width: "100%" }}>
@@ -403,6 +412,7 @@ function NodeRenderer(props: NodeRendererProps) {
             props={jailBind.bound}
             furnishing={props.furnishings[node.component]}
             themeVars={props.themeVars}
+            toolManifest={toolManifest}
             onAction={invoke}
             onStateSet={props.setViewState}
           />
@@ -432,6 +442,7 @@ function NodeRenderer(props: NodeRendererProps) {
             props={bound}
             furnishing={props.furnishings[node.component]}
             themeVars={props.themeVars}
+            toolManifest={toolManifest}
             onAction={invoke}
             onStateSet={props.setViewState}
           />
@@ -507,6 +518,9 @@ function StatefulTreeView({
   const themeVars = useMemo(() => themeCssVariables(theme), [theme]);
   const streaming = (tree as WalkTree & { streaming?: unknown }).streaming === true;
   const furnishings = (tree as WalkTree & { furnishings?: Record<string, JailFurnishing> }).furnishings ?? {};
+  // W4b — the stamped per-island tool manifests ride the payload beside the
+  // component sources (a payload extra, like furnishings).
+  const componentTools = (tree as WalkTree & { componentTools?: Record<string, string[]> }).componentTools;
   const inClient = (tree as WalkTree & { inClient?: InClientVenue }).inClient;
   // Tolerate a malformed field (like every other payload extra): only an
   // array of well-formed entries renders the notice.
@@ -608,6 +622,7 @@ function StatefulTreeView({
         ancestry={new Set()}
         nodes={nodes}
         generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
+        {...(componentTools === undefined ? {} : { componentTools })}
         inClientGranted={inClientGranted}
         furnishings={furnishings}
         themeVars={themeVars}

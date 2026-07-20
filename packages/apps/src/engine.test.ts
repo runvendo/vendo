@@ -1269,8 +1269,8 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     expect(calls).toBe(2);
   });
 
-  it("rejects an island importing a module the jail cannot load and repairs to inline SVG", async () => {
-    const broken = '<App name="Chart"><RevChart/><Island name="RevChart">import { LineChart } from "recharts";\nexport default function RevChart() { return <LineChart/>; }</Island></App>';
+  it("rejects an island importing a module the jail cannot load and repairs to ambient Kit charts", async () => {
+    const broken = '<App name="Chart"><RevChart/><Island name="RevChart">import { scaleLinear } from "d3-scale";\nexport default function RevChart() { return <p>{String(scaleLinear)}</p>; }</Island></App>';
     const fixed = '<App name="Chart"><RevChart/><Island name="RevChart">export default function RevChart() { return <svg width="100" height="40"><rect width="10" height="20"/></svg>; }</Island></App>';
     const prompts: string[] = [];
     const model = scriptedLanguageModel((call) => {
@@ -1279,28 +1279,181 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     });
     const document = await modelEngine.create({ prompt: "Build a chart" }, guardDeps(model));
     expect(prompts).toHaveLength(2);
-    expect(prompts[1]).toContain("recharts");
-    expect(prompts[1]).toContain("inline SVG");
+    expect(prompts[1]).toContain("d3-scale");
+    expect(prompts[1]).toContain("ambient");
     expect(document.components?.RevChart).toContain("<svg");
-    expect(document.components?.RevChart).not.toContain("recharts");
+    expect(document.components?.RevChart).not.toContain("d3-scale");
   });
 
-  it("accepts an island importing only react", async () => {
-    const wire = '<App name="Ok"><Note/><Island name="Note">import { useState } from "react";\nexport default function Note() { const [n] = useState(0); return <p>{n}</p>; }</Island></App>';
-    const document = await modelEngine.create({ prompt: "Build it" }, guardDeps(scriptedLanguageModel(wire)));
-    expect(document.components?.Note).toContain('from "react"');
+  it("silently strips habit imports of react and kit-ish specifiers (W4b — ambient scope)", async () => {
+    const wire = [
+      '<App name="Ok"><Note/><Island name="Note">',
+      'import React, { useState } from "react";',
+      'import { Stat } from "@vendo/kit";',
+      "export default function Note() { const [n] = useState(0); return <Stat label=\"n\" value={String(n)}/>; }",
+      "</Island></App>",
+    ].join("\n");
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return wire;
+    });
+    const document = await modelEngine.create({ prompt: "Build it" }, guardDeps(model));
+    // No repair round: the strip is silent (a pretraining habit, not an error).
+    expect(prompts).toHaveLength(1);
+    expect(document.components?.Note).not.toContain("import");
+    expect(document.components?.Note).toContain("export default function Note()");
   });
 
-  it("steers islands to react-only and inline-SVG charts in the create prompt", async () => {
+  it("describes the ambient island scope and tools API in the create prompt", async () => {
     let captured = "";
     const model = scriptedLanguageModel((call) => {
       captured = promptText(call);
       return validCreate();
     });
     await modelEngine.create({ prompt: "Build it" }, guardDeps(model));
-    expect(captured).toContain("import ONLY react/react-dom");
-    expect(captured).toContain("INLINE SVG");
-    expect(captured).toContain("empty-state");
+    expect(captured).not.toContain("LAST RESORT");
+    expect(captured).toContain("already in scope");
+    expect(captured).toContain("await tools.");
+    expect(captured).toContain("pending-approval");
+    expect(captured).toContain("DataTable");
+    expect(captured).toContain("fmt.money");
+  });
+
+  it("stamps the per-island tool manifest from literal tools chains (W4b §2)", async () => {
+    const wire = [
+      '<App name="Lookup"><ClientLookup/><Island name="ClientLookup">',
+      "export default function ClientLookup() {",
+      "  const [hits, setHits] = useState([]);",
+      '  const run = async (q) => setHits((await tools.clients.search({ q })).data);',
+      "  const metric = async () => tools.host_metric({});",
+      "  return <Input label=\"Find\" onChange={run}/>;",
+      "}",
+      "</Island></App>",
+    ].join("\n");
+    const document = await modelEngine.create({ prompt: "Build it" }, guardDeps(scriptedLanguageModel(wire), {
+      tools: [
+        { name: "clients_search", description: "Search clients", risk: "read" },
+        { name: "host_metric", description: "Metric", risk: "read" },
+      ],
+      pipeline: { structuredRepair: false },
+    }));
+    expect(document.componentTools).toStrictEqual({ ClientLookup: ["clients_search", "host_metric"] });
+  });
+
+  it("stamps an empty manifest for a tool-free island (least privilege)", async () => {
+    const wire = '<App name="Plain"><Note/><Island name="Note">export default function Note() { return <p>hi</p>; }</Island></App>';
+    const document = await modelEngine.create({ prompt: "Build it" }, guardDeps(scriptedLanguageModel(wire), {
+      tools: [{ name: "host_metric", description: "Metric", risk: "read" }],
+      pipeline: { structuredRepair: false },
+    }));
+    expect(document.componentTools).toStrictEqual({ Note: [] });
+  });
+
+  it("repairs an island calling a tool absent from the registry", async () => {
+    const broken = '<App name="Bad"><Note/><Island name="Note">export default function Note() { useEffect(() => { tools.made.up({}); }, []); return <p>x</p>; }</Island></App>';
+    const fixed = '<App name="Bad"><Note/><Island name="Note">export default function Note() { useEffect(() => { tools.host_metric({}); }, []); return <p>x</p>; }</Island></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? broken : fixed;
+    });
+    const document = await modelEngine.create({ prompt: "Build it" }, guardDeps(model, {
+      tools: [{ name: "host_metric", description: "Metric", risk: "read" }],
+      pipeline: { structuredRepair: false },
+    }));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("unknown tool");
+    expect(prompts[1]).toContain("host_metric");
+    expect(document.componentTools).toStrictEqual({ Note: ["host_metric"] });
+  });
+
+  it("rejects computed tools access and repairs (adversarial: tools[expr])", async () => {
+    const broken = '<App name="Bad"><Note/><Island name="Note">export default function Note() { const name = "host_metric"; useEffect(() => { tools[name]({}); }, []); return <p>x</p>; }</Island></App>';
+    const fixed = '<App name="Bad"><Note/><Island name="Note">export default function Note() { useEffect(() => { tools.host_metric({}); }, []); return <p>x</p>; }</Island></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? broken : fixed;
+    });
+    await modelEngine.create({ prompt: "Build it" }, guardDeps(model, {
+      tools: [{ name: "host_metric", description: "Metric", risk: "read" }],
+      pipeline: { structuredRepair: false },
+    }));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("computed");
+  });
+
+  it("rejects an island NAMED after a Kit/catalog/prewired component (W3: built-ins win collisions)", async () => {
+    // W3 (#432): name resolution is host catalog -> built-ins -> islands, so
+    // an island named "Sparkline" is unreachable — the Kit Sparkline renders
+    // instead and the island is dead weight. Compile issue → repair.
+    const broken = '<App name="Shadow"><Sparkline/><Island name="Sparkline">export default function Sparkline() { return <p>mine</p>; }</Island></App>';
+    const fixed = '<App name="Shadow"><PulseLine/><Island name="PulseLine">export default function PulseLine() { return <p>mine</p>; }</Island></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? broken : fixed;
+    });
+    const document = await modelEngine.create({ prompt: "Build it" }, guardDeps(model));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("Sparkline");
+    expect(prompts[1]).toContain("never render");
+    expect(document.components?.PulseLine).toBeDefined();
+  });
+
+  it("rejects host catalog / prewired components inside island JSX and repairs to the ambient Kit", async () => {
+    // Live P4 finding: the island rendered <MapleSpendingDonut/> (a host
+    // catalog component) — host components live in the HOST page and can
+    // never cross into the jail, so the island died on a ReferenceError.
+    const broken = '<App name="Mix"><Note/><Island name="Note">export default function Note() { return <MetricCard label="x" value="1"/>; }</Island></App>';
+    const fixed = '<App name="Mix"><Note/><Island name="Note">export default function Note() { return <Stat label="x" value="1"/>; }</Island></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? broken : fixed;
+    });
+    const document = await modelEngine.create({ prompt: "Build it" }, guardDeps(model));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("MetricCard");
+    expect(prompts[1]).toContain("ambient Kit");
+    expect(document.components?.Note).toContain("<Stat");
+  });
+
+  it("rejects a raw network call inside an island and repairs to ambient tools", async () => {
+    // Live P3 finding: the model wrote fetch("/api/payments") from pretraining
+    // habit; the jail CSP blocked it silently (connect-src 'none') and the
+    // island just died. Catch it at compile and route to repair instead.
+    const broken = '<App name="Bad"><Note/><Island name="Note">export default function Note() { useEffect(() => { fetch("/api/payments"); }, []); return <p>x</p>; }</Island></App>';
+    const fixed = '<App name="Bad"><Note/><Island name="Note">export default function Note() { useEffect(() => { tools.host_metric({}); }, []); return <p>x</p>; }</Island></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? broken : fixed;
+    });
+    await modelEngine.create({ prompt: "Build it" }, guardDeps(model, {
+      tools: [{ name: "host_metric", description: "Metric", risk: "read" }],
+      pipeline: { structuredRepair: false },
+    }));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("no network");
+    expect(prompts[1]).toContain("tools");
+  });
+
+  it("rejects aliasing the tools object and repairs (adversarial)", async () => {
+    const broken = '<App name="Bad"><Note/><Island name="Note">export default function Note() { const t = tools; useEffect(() => { t.host_metric({}); }, []); return <p>x</p>; }</Island></App>';
+    const fixed = '<App name="Bad"><Note/><Island name="Note">export default function Note() { useEffect(() => { tools.host_metric({}); }, []); return <p>x</p>; }</Island></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? broken : fixed;
+    });
+    await modelEngine.create({ prompt: "Build it" }, guardDeps(model, {
+      tools: [{ name: "host_metric", description: "Metric", risk: "read" }],
+      pipeline: { structuredRepair: false },
+    }));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("literal member access");
   });
 
   it("rejects a query naming a tool absent from the host registry and repairs", async () => {
@@ -1350,6 +1503,50 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
       .toEqual({ $path: "/metric/total" });
   });
 
+  it("sketches each tool's INPUT beside its name (W4b — islands and actions must match the real arg shape)", async () => {
+    let captured = "";
+    const model = scriptedLanguageModel((call) => {
+      captured = promptText(call);
+      return validCreate();
+    });
+    await modelEngine.create(
+      { prompt: "Build it" },
+      guardDeps(model, {
+        tools: [
+          {
+            name: "host_createOrder",
+            description: "Place an order",
+            risk: "write",
+            inputSchema: {
+              type: "object",
+              properties: {
+                body: {
+                  type: "object",
+                  properties: { merchant: { type: "string" }, amountCents: { type: "number" } },
+                },
+              },
+            },
+          },
+          {
+            name: "host_transfer",
+            description: "Send money",
+            risk: "destructive",
+            inputSchema: {
+              type: "object",
+              properties: { amount: { type: "integer" }, recipient_name: { type: "string" } },
+              required: ["amount", "recipient_name"],
+            },
+          },
+        ],
+      }),
+    );
+    // The nested `body` wrapper is visible — flat args against this tool were
+    // the live P3 failure (the host route read an empty JSON body and ran
+    // with defaults).
+    expect(captured).toContain("host_createOrder [write] (input: {body: {merchant, amountCents}})");
+    expect(captured).toContain("host_transfer [destructive] (input: {amount, recipient_name})");
+  });
+
   it("lists host tools and response shapes in the create prompt and steers composition-first", async () => {
     let captured = "";
     const model = scriptedLanguageModel((call) => {
@@ -1368,7 +1565,9 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     expect(captured).toContain("Revenue metric");
     expect(captured).toContain("TOOL RESPONSE SHAPES");
     expect(captured).toContain("total");
-    expect(captured).toContain("LAST RESORT");
+    // W4b — the island fear rules are retired; the Kit-or-island posture stands.
+    expect(captured).not.toContain("LAST RESORT");
+    expect(captured).toContain("covers the need");
     expect(captured).toContain("Never hardcode");
     // vendo-v2-cells — the display-cell contract rides with the shapes:
     // object cells project via template; date/cents display rides a Kit
@@ -1547,6 +1746,73 @@ describe("edit path filters pre-existing catalog/action issues (fast-follow)", (
     expect(result.kind).toBe("failure");
     if (result.kind === "failure") {
       expect(result.issues.some((issue) => issue.includes('unknown prop "data"') && issue.includes("heading"))).toBe(true);
+    }
+  });
+});
+
+describe("edit path islands (W4b — strip + manifest restamp)", () => {
+  const baseApp = (): AppDocument => ({
+    format: "vendo/app@1",
+    id: "app_islands",
+    name: "Metrics",
+    ui: "tree",
+    tree: {
+      formatVersion: "vendo-genui/v2",
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "prewired", children: ["heading"] },
+        { id: "heading", component: "Text", props: { text: "Metrics" } },
+      ],
+    },
+  } as unknown as AppDocument);
+
+  it("strips habit imports and stamps the manifest for an island added by an edit", async () => {
+    const patch = [
+      '<Edit><Insert into="root"><Pulse/></Insert><Island name="Pulse">',
+      'import { useState } from "react";',
+      "export default function Pulse() {",
+      "  const [v, setV] = useState(null);",
+      "  useEffect(() => { (async () => setV(await tools.host_metric({})))(); }, []);",
+      '  return <p>{v === null ? "..." : String(v)}</p>;',
+      "}",
+      "</Island></Edit>",
+    ].join("\n");
+    const result = await modelEngine.edit(
+      { app: baseApp(), instruction: "Add a live metric pulse" },
+      {
+        model: scriptedLanguageModel(patch),
+        catalog,
+        tools: [{ name: "host_metric", description: "Metric", risk: "read" }],
+      } as unknown as Parameters<typeof modelEngine.edit>[1],
+    );
+    expect(result.kind).toBe("document");
+    if (result.kind === "document") {
+      expect(result.document.components?.Pulse).not.toContain("import");
+      expect(result.document.componentTools).toStrictEqual({ Pulse: ["host_metric"] });
+    }
+  });
+
+  it("repairs an edit island calling an unknown tool", async () => {
+    const broken = '<Edit><Insert into="root"><Pulse/></Insert><Island name="Pulse">export default function Pulse() { useEffect(() => { tools.made_up({}); }, []); return <p>x</p>; }</Island></Edit>';
+    const fixed = '<Edit><Insert into="root"><Pulse/></Insert><Island name="Pulse">export default function Pulse() { useEffect(() => { tools.host_metric({}); }, []); return <p>x</p>; }</Island></Edit>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? broken : fixed;
+    });
+    const result = await modelEngine.edit(
+      { app: baseApp(), instruction: "Add a pulse" },
+      {
+        model,
+        catalog,
+        tools: [{ name: "host_metric", description: "Metric", risk: "read" }],
+      } as unknown as Parameters<typeof modelEngine.edit>[1],
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("unknown tool");
+    expect(result.kind).toBe("document");
+    if (result.kind === "document") {
+      expect(result.document.componentTools).toStrictEqual({ Pulse: ["host_metric"] });
     }
   });
 });
