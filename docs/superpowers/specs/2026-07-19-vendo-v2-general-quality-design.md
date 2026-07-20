@@ -81,6 +81,13 @@ Target: paint ~1.5s, complete ~6s, no failure mode that ships silently.
 
 ## The Kit (Wave 2 surface)
 
+**Bar: the best component stack in generative UI — a strict superset of thesys Crayon /
+Tambo / json-render surfaces, then better on our axes:** host-brand-native (theme tokens,
+not our brand), action-gated interactivity (their components can't mutate anything; ours
+carry approval-gated real actions), semantics-driven formatting (cents/dates/enums arrive
+correct, not prompted), named-query empty states, and composable inside islands. Wave-2
+planning starts from a full inventory of their catalogs and ships ours strictly larger.
+
 Layout (Stack/Row/Grid/Surface/Divider) · values (Text, Money, DateTime, Percent, Num,
 EnumBadge) · data (DataTable — sort/limit/filter/search/paginate/dot-path columns/named-
 query empty states — CardList, Stat, Badge) · charts (Line, Bar, Donut, Sparkline,
