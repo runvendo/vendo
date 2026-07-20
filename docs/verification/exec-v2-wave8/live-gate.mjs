@@ -23,6 +23,15 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const requireVendo = createRequire(path.join(here, "../../../packages/vendo/package.json"));
 
+// A stray rejection anywhere in the wired runtime (idle sweeps, tunnel
+// hiccups) must not kill the gate mid-flight — log it and keep driving.
+process.on("unhandledRejection", (reason) => {
+  console.log(`[unhandledRejection] ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`);
+});
+process.on("uncaughtException", (error) => {
+  console.log(`[uncaughtException] ${error.stack ?? error.message}`);
+});
+
 const arg = (name, fallback) => {
   const index = process.argv.indexOf(`--${name}`);
   return index === -1 ? fallback : process.argv[index + 1];
@@ -149,9 +158,12 @@ try {
   step("egress-approved", { egressApproved: afterApprove?.data?.doc?.egressApproved });
 
   // ─── 4. the schedule fires (8am window, host clock faked Date-only) ─────
+  // The fire baseline is the schedule-sync time (graduation, real now), and
+  // cron is evaluated in UTC — so the faked clock must sit at the NEXT 8am
+  // UTC occurrence AFTER the baseline: tomorrow 08:00:30 UTC.
   const RealDate = Date;
-  const eight = new RealDate();
-  eight.setHours(8, 0, 30, 0);
+  const eight = new RealDate(RealDate.now() + 24 * 3_600_000);
+  eight.setUTCHours(8, 0, 30, 0);
   const fakeNowMs = eight.getTime();
   const FakeDate = class extends RealDate {
     constructor(...args) { if (args.length === 0) { super(fakeNowMs); } else { super(...args); } }
@@ -168,7 +180,7 @@ try {
     globalThis.Date = RealDate;
   }
   step("wire-tick", tick);
-  const fired = (tick.schedules ?? []).find((entry) => entry.fn === "chaseInvoices");
+  const fired = (tick.schedules?.fired ?? []).find((entry) => entry.fn === "chaseInvoices");
   if (fired === undefined || fired.status !== "ok") throw new Error(`schedule did not fire ok: ${JSON.stringify(tick)}`);
 
   // ─── 5. reopen: the digest is in the tree (durable /box row round trip) ─

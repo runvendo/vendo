@@ -1,7 +1,7 @@
 
 === tunnel ===
 {
-  "url": "https://api.trycloudflare.com"
+  "url": "https://aerial-goal-exclusively-meanwhile.trycloudflare.com"
 }
 
 === server ===
@@ -9,3 +9,127 @@
   "port": 3400,
   "template": "pbgk5vxvhmtjmcn8lgeo"
 }
+
+=== tree-created ===
+{
+  "id": "app_4f8ed0b7-9268-4576-9b2f-d9a879a84617",
+  "ui": "tree",
+  "hasMachine": false
+}
+
+=== graduate-start ===
+{
+  "instruction": "Watch my unpaid invoices and email me a digest every morning at 8am, and show the latest digest on the status board.\nBuild a zero-dependency Node server:\n- POST /fn/chaseInvoices: compute a digest of …"
+}
+
+=== graduated ===
+{
+  "graduated": true,
+  "box": {
+    "ok": true,
+    "summary": "Built zero-dependency Node server with invoice tracking. Serves POST /fn/chaseInvoices (computes digest of 3 sample invoices, stores in Vendo store, attempts httpbin.org POST - currently blocked by network egress but declared in manifest) and POST /fn/getDigest (returns latest stored digest). vendo.json configured with 8am daily schedule for chaseInvoices and httpbin.org egress declaration. Both endpoints tested and working; digest storage verified.",
+    "fns": [
+      "chaseInvoices",
+      "getDigest"
+    ],
+    "filesChanged": [
+      "/app/server.js",
+      "/app/vendo.json",
+      "/app/.vendo/run"
+    ]
+  },
+  "pendingEgress": {
+    "approvalId": "apr_4929368e-489c-4906-931b-8cb285c3850d",
+    "domains": [
+      "httpbin.org"
+    ]
+  },
+  "machine": {
+    "snapshotRef": "e2b:v2:eyJ2ZXJzaW9uIjoyLCJzbmFwc2hvdElkIjoiNDNjNXJtaHNvdWV3Ym1obzFyajE6ZGVmYXVsdCIsInNvdXJjZVNhbmRib3hJZCI6ImlzM2t2MW9ia2UyazVyMHQ0bG13eCIsImFsbG93ZWREb21haW5zIjpbImFlcmlhbC1nb2FsLWV4Y2x1c2l2ZWx5LW1lYW53aGlsZS50cnljbG91ZGZsYXJlLmNvbSIsImFwaS5hbnRocm9waWMuY29tIl0sInBvcnQiOjgwODB9",
+    "provisionedAt": "2026-07-20T18:13:15.414Z"
+  },
+  "egress": [
+    "httpbin.org"
+  ]
+}
+
+=== pending-approvals ===
+[
+  {
+    "id": "apr_4929368e-489c-4906-931b-8cb285c3850d"
+  }
+]
+
+=== egress-approved ===
+{
+  "egressApproved": [
+    "httpbin.org"
+  ]
+}
+
+=== wire-tick ===
+{
+  "runIds": [],
+  "schedules": {
+    "checked": 1,
+    "fired": [
+      {
+        "appId": "app_4f8ed0b7-9268-4576-9b2f-d9a879a84617",
+        "fn": "chaseInvoices",
+        "cron": "0 8 * * *",
+        "scheduledFor": "2026-07-21T08:00:00.000Z",
+        "status": "ok"
+      }
+    ],
+    "errors": []
+  }
+}
+
+=== reopened ===
+{
+  "kind": "tree",
+  "hasDigest": true,
+  "dataPreview": "{\"kind\":\"tree\",\"payload\":{\"formatVersion\":\"vendo-genui/v2\",\"root\":\"root\",\"nodes\":[{\"id\":\"root\",\"source\":\"prewired\",\"children\":[\"stack-1\"],\"component\":\"Stack\"},{\"id\":\"stack-1\",\"props\":{\"gap\":24},\"source\":\"prewired\",\"children\":[\"text-1\",\"row-1\",\"datatable-1\"],\"component\":\"Stack\"},{\"id\":\"text-1\",\"props\":{\"text\":\"Invoice Status Board\",\"variant\":\"heading\"},\"source\":\"prewired\",\"component\":\"Text\"},{\"id\":\"row-1\",\"props\":{\"gap\":16},\"source\":\"prewired\",\"children\":[\"stat-1\",\"stat-2\"],\"component\":\"Row\"},{\"id\":\"stat-1\",\"props\":{\"label\":\"Total Outstanding\",\"prefix\":\"$\"},\"source\":\"prewired\",\"component\":\"Stat"
+}
+
+=== layer3-edit ===
+{
+  "graduated": true,
+  "box": {
+    "ok": true,
+    "summary": "Built a full kanban board web app for invoice management with drag-and-drop between Draft/Sent/Paid columns. Moving cards updates status server-side via the Vendo store. Includes modal form for creating invoices with title, amount, and client name. All endpoints verified working.",
+    "fns": [
+      "listInvoices",
+      "createInvoice",
+      "updateInvoiceStatus",
+      "deleteInvoice"
+    ],
+    "filesChanged": [
+      "/app/fns.js",
+      "/app/index.html"
+    ]
+  },
+  "ui": "http"
+}
+
+=== layer3-open ===
+{
+  "kind": "http",
+  "url": "https://8080-iz86gnkrj9uodjglopf4t.e2b.app/",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8"
+}
+
+=== GATE ===
+{
+  "pass": true
+}
+
+=== cleanup ===
+{
+  "deleted": [
+    "app_4f8ed0b7-9268-4576-9b2f-d9a879a84617",
+    "app_0db63680-bd64-454a-8abd-50623884a446"
+  ]
+}
+exit=0

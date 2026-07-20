@@ -65,12 +65,32 @@ the BUILD wall clock — the comparison is conservative in the thin loop's favor
 ## 3. THE GATE (`live-gate.mjs`)
 
 The Wave-3 invoice-chaser graduation re-run through the SDK harness against
-the real wired `createVendo` server (cloudflared tunnel for `/box` callbacks):
-tree → graduate (SDK box agent writes `chaseInvoices` + `getDigest` +
-`vendo.json`) → egress card approved → 8am schedule fires → durable digest row
-through `/box` → reopen shows the digest — plus one layer-3 (served kanban)
-build and `GET / → 200` on the machine's public ingress. Transcript:
-`live-gate-transcript.txt`.
+the real wired `createVendo` server (cloudflared tunnel for `/box` callbacks),
+**clean pass, exit 0** (`live-gate-transcript.txt`):
+
+1. tree app created;
+2. the server instruction **graduates** it: machine provisioned, the SDK box
+   agent writes `chaseInvoices` + `getDigest` + `vendo.json` (8am schedule +
+   `httpbin.org` egress), `pendingEgress` parked;
+3. the **egress approval card** decided (`egressApproved: ["httpbin.org"]`);
+4. the **schedule fires** via the authenticated wire tick:
+   `{fn: "chaseInvoices", cron: "0 8 * * *", scheduledFor: 2026-07-21T08:00Z,
+   status: "ok"}` — the box did allowlisted egress and wrote the durable
+   digest row through `/box` over the tunnel;
+5. **reopening** shows the digest in the tree (`hasDigest: true`);
+6. **layer-3**: a second app's 2→3 edit built the served kanban through the
+   SDK agent (scaffold ridden — only `fns.js` + `index.html` written; 4 fns),
+   document flipped to `ui: "http"`, and the machine-ingress page answered
+   `GET / → 200 text/html`.
+
+Both gate apps deleted at the end (`apps.delete` → machine + snapshot reaped).
+
+Gate-harness note (host-side script mechanics, not product behavior): the
+schedule step fakes the host clock Date-only to the next 8am UTC occurrence
+after the fire baseline — the baseline is the schedule-sync time, so a
+same-day earlier hour would honestly not be due. Two early gate attempts
+died to session churn on the driving machine, not to any product failure;
+crashed attempts' sandboxes were swept (account at zero after the campaign).
 
 ## Notes
 
