@@ -125,7 +125,11 @@ describe("vendo init (zero-question)", () => {
     expect(route).toContain("principal: async () => null");
     expect(route).not.toContain("model");
     const registry = await readFile(join(root, "vendo", "registry.tsx"), "utf8");
-    expect(registry).toContain('import type { ComponentRegistry } from "@vendoai/core";');
+    // The type comes from @vendoai/vendo (the root contract-types entry), not
+    // @vendoai/core — hosts only get @vendoai/vendo (or @vendoai/ui) as a
+    // direct dependency; @vendoai/core is transitive and pnpm strict linking
+    // won't let the host resolve it (TS2307).
+    expect(registry).toContain('import type { ComponentRegistry } from "@vendoai/vendo";');
     expect(registry).toContain("export const registry = {} satisfies ComponentRegistry;");
     expect(registry).toContain("SpendingDonut"); // the commented example entry
 
@@ -210,12 +214,12 @@ describe("vendo init (zero-question)", () => {
   });
 
   it.each([
-    ["next-auth", "authJs"],
-    ["@auth/core", "authJs"],
-    ["@clerk/nextjs", "clerk"],
-    ["@supabase/supabase-js", "supabase"],
-    ["@auth0/nextjs-auth0", "auth0"],
-  ] as const)("non-interactive runs silently wire auth from %s → %s()", async (dependency, preset) => {
+    ["next-auth", "authJs", "@vendoai/vendo/auth/auth-js"],
+    ["@auth/core", "authJs", "@vendoai/vendo/auth/auth-js"],
+    ["@clerk/nextjs", "clerk", "@vendoai/vendo/auth/clerk"],
+    ["@supabase/supabase-js", "supabase", "@vendoai/vendo/auth/supabase"],
+    ["@auth0/nextjs-auth0", "auth0", "@vendoai/vendo/auth/auth0"],
+  ] as const)("non-interactive runs silently wire auth from %s → %s()", async (dependency, preset, specifier) => {
     // No `interactive` override and vitest has no TTY: the detected default
     // is accepted without a question (--yes behaves identically).
     const root = await fixture();
@@ -226,8 +230,11 @@ describe("vendo init (zero-question)", () => {
     const sink = output();
     expect(await run(root, sink)).toBe(0);
     const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
-    const named = [preset, "createVendo", "nextVendoHandler"].sort().join(", ");
-    expect(route).toContain(`import { ${named} } from "@vendoai/vendo/server";`);
+    // The preset comes from its own subpath — never "@vendoai/vendo/server" —
+    // so importing it never resolves the other presets' optional peer deps
+    // (corpus-triage Task 9).
+    expect(route).toContain(`import { ${preset} } from "${specifier}";`);
+    expect(route).toContain('import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";');
     expect(route).toContain(`auth: ${preset}(),`);
     // The detected line carries its escape hatch, and the preset owns the
     // principal seam — no hand-wired anonymous resolver remains.

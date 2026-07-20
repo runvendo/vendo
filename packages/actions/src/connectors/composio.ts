@@ -191,15 +191,17 @@ export function composioConnector(config: {
       return connectableCache.entries;
     }
 
+    // auth_configs paginates by PAGE NUMBER, not cursor: live-probed
+    // 2026-07-20, the API clamps limit to 50 and answers `total_pages: 1,
+    // next_cursor: null` even when total_items is larger — cursor-following
+    // silently drops the tail. Walk `cursor=1,2,…` until the item count
+    // reaches total_items.
     const toolkits = new Set<string>();
-    let cursor: string | undefined;
-    const seenCursors = new Set<string>();
+    let itemsSeen = 0;
 
-    for (let page = 0; page < MAX_PAGES; page += 1) {
+    for (let page = 1; page <= MAX_PAGES; page += 1) {
       const response = await composioFetch("/api/v3/auth_configs", {
-        // Large page size so MAX_PAGES bounds the real catalog rather than
-        // the API's small default (same reasoning as fetchTools).
-        query: { limit: "100", ...(cursor === undefined ? {} : { cursor }) },
+        query: { limit: "100", cursor: String(page) },
       });
       if (!response.ok) {
         const { message } = responseErrorParts(response.payload);
@@ -211,14 +213,16 @@ export function composioConnector(config: {
         if (item.status === "DISABLED") continue;
         if (typeof item.toolkit?.slug === "string") toolkits.add(item.toolkit.slug);
       }
-      cursor = parsed.nextCursor;
-      if (!cursor) {
+      itemsSeen += parsed.items.length;
+      const totalItems = (response.payload as { total_items?: unknown }).total_items;
+      const done = parsed.items.length === 0
+        || typeof totalItems !== "number"
+        || itemsSeen >= totalItems;
+      if (done) {
         const entries = [...toolkits].map((toolkit) => ({ toolkit }));
         connectableCache = { at: Date.now(), entries };
         return entries;
       }
-      if (seenCursors.has(cursor)) throw new Error(`Composio pagination loop at cursor ${cursor}`);
-      seenCursors.add(cursor);
     }
 
     throw new Error(`Composio auth-configs pagination exceeded ${MAX_PAGES} pages`);

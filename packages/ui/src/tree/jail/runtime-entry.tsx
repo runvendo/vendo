@@ -3,7 +3,14 @@ import { createRoot, type Root } from "react-dom/client";
 import { createPortal, flushSync } from "react-dom";
 import { jsx, jsxs, Fragment } from "react/jsx-runtime";
 import { transform } from "sucrase";
-import type { JailModule } from "@vendoai/core";
+import { ISLAND_AMBIENT_NAMES, type IslandResolvableModule } from "@vendoai/core";
+import {
+  Accordion, Badge, BarChart, Button, Callout, CardList, Checkbox, DataTable,
+  DatePicker, DateTime, Disclaimer, Divider, DonutChart, EnumBadge, Form, Grid,
+  Input, LineChart, Money, Num, Percent, Progress, Row, Select, Sparkline,
+  Stack, Stat, Surface, Tabs, Text, Textarea,
+  applyFormat, formatDateTime, formatMoney, formatNum, formatPercent,
+} from "../../kit/index.js";
 
 declare global {
   // These globals are visible only inside the opaque-origin jail realm.
@@ -42,6 +49,84 @@ const pendingActions = new Map<string, {
 const post = (message: Record<string, unknown>) => parent.postMessage({ vendo: true, ...message }, "*");
 
 /**
+ * W4b §2 — the ambient `tools` API. `tools.a.b(args)` posts a `tool-call`
+ * over the bridge; the HOST resolves the literal member chain against the
+ * island's compiler-stamped manifest and routes an allowed call through the
+ * EXACT same guarded pipe as tree actions (reads per read policy, mutations
+ * pause at the approval gate and complete after approve — the W0 fix). The
+ * jail side is pure transport: enforcement never trusts this realm.
+ */
+const pendingToolCalls = new Map<string, {
+  resolve(value: unknown): void;
+  reject(error: Error): void;
+}>();
+
+function requestToolCall(path: readonly string[], args: unknown): Promise<unknown> {
+  const requestId = `jail-tool-${++requestSequence}`;
+  return new Promise((resolve, reject) => {
+    pendingToolCalls.set(requestId, { resolve, reject });
+    post({ kind: "tool-call", requestId, path: [...path], ...(args === undefined ? {} : { args }) });
+  });
+}
+
+/** Build the ambient `tools` value: every property access extends the literal
+ *  member chain, a call ships the chain + args to the host. The manifest
+ *  lives host-side; an out-of-manifest chain simply comes back `blocked`. */
+const makeToolsAmbient = (path: readonly string[]): unknown =>
+  new Proxy(Object.assign(() => undefined, {}) as () => undefined, {
+    get: (_target, property) =>
+      typeof property === "string" ? makeToolsAmbient([...path, property]) : undefined,
+    apply: (_target, _thisArg, args: unknown[]) => requestToolCall(path, args[0]),
+  });
+
+/**
+ * W4b §1 — the ambient island scope (react-live pattern): React + hooks, the
+ * ENTIRE Kit, charts, and `fmt` are simply in scope — island code has no
+ * imports. The name list is pinned to `ISLAND_AMBIENT_NAMES` in @vendoai/core
+ * (shared with the engine's prompt + strip pass) by the typed record below.
+ */
+const fmt = {
+  money: formatMoney,
+  percent: formatPercent,
+  num: formatNum,
+  dateTime: formatDateTime,
+  format: applyFormat,
+};
+
+const AMBIENT_SCOPE: Record<(typeof ISLAND_AMBIENT_NAMES)[number], unknown> = {
+  React,
+  ReactDOM: { createPortal, flushSync },
+  Fragment,
+  useState: React.useState,
+  useEffect: React.useEffect,
+  useMemo: React.useMemo,
+  useCallback: React.useCallback,
+  useRef: React.useRef,
+  useReducer: React.useReducer,
+  useId: React.useId,
+  useLayoutEffect: React.useLayoutEffect,
+  useTransition: React.useTransition,
+  useDeferredValue: React.useDeferredValue,
+  useSyncExternalStore: React.useSyncExternalStore,
+  Stack, Row, Grid, Surface, Divider,
+  Text, Money, DateTime, Percent, Num, EnumBadge,
+  DataTable, CardList, Stat, Badge,
+  LineChart, BarChart, DonutChart, Sparkline, Progress,
+  Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer,
+  Tabs, Callout, Accordion,
+  fmt,
+  tools: makeToolsAmbient([]),
+};
+
+/** The Kit's exports as a resolvable module, for habit imports the engine has
+ *  not stripped yet (streaming partials) — same objects as the ambient scope,
+ *  never a second bundle. */
+const KIT_MODULE_EXPORTS = {
+  ...AMBIENT_SCOPE,
+  default: AMBIENT_SCOPE,
+};
+
+/**
  * The ONLY modules generated code can reach. Sucrase's `imports` transform
  * rewrites every static AND dynamic `import` into a call to this `require`,
  * so no module-loader network fetch can ever be expressed — the browser-
@@ -49,16 +134,23 @@ const post = (message: Record<string, unknown>) => parent.postMessage({ vendo: t
  * despite `script-src`) is closed at the loader itself, and `script-src`
  * carries no `blob:`/host sources as the second wall.
  *
- * Keyed by `JailModule` (the shared allowlist in @vendoai/core) so this table
- * and the engine's island import gate cannot drift: a missing or extra key is
- * a compile error.
+ * Keyed by `IslandResolvableModule` (the shared allowlist in @vendoai/core —
+ * react plus the kit-ish specifiers the engine strips) so this table, the
+ * engine's strip pass, and the import gate cannot drift: a missing or extra
+ * key is a compile error.
  */
-const JAIL_MODULES: Record<JailModule, unknown> = {
+const JAIL_MODULES: Record<IslandResolvableModule, unknown> = {
   react: { ...React, default: React },
   "react-dom": { createPortal, flushSync, default: { createPortal, flushSync } },
   "react-dom/client": { createRoot, default: { createRoot } },
   "react/jsx-runtime": { jsx, jsxs, Fragment, default: { jsx, jsxs, Fragment } },
   "react/jsx-dev-runtime": { jsx, jsxs, jsxDEV: jsx, Fragment, default: { jsx, jsxs, Fragment } },
+  "@vendoai/ui": KIT_MODULE_EXPORTS,
+  "@vendoai/ui/kit": KIT_MODULE_EXPORTS,
+  "@vendoai/kit": KIT_MODULE_EXPORTS,
+  "@vendoai/vendo": KIT_MODULE_EXPORTS,
+  "@vendo/kit": KIT_MODULE_EXPORTS,
+  "vendo/kit": KIT_MODULE_EXPORTS,
 };
 
 function jailRequire(specifier: string): unknown {
@@ -66,6 +158,48 @@ function jailRequire(specifier: string): unknown {
     throw new Error(`module "${specifier}" is not available in the Vendo jail`);
   }
   return (JAIL_MODULES as Record<string, unknown>)[specifier];
+}
+
+// A module's own top-level `const Badge = …` must win over the ambient
+// parameter of the same name. Redeclaring a parameter with let/const/class is
+// a SyntaxError at Function construction, so drop the colliding name(s) and
+// retry; the engine messages differ (V8 / SpiderMonkey / JSC), hence the
+// pattern list. If a collision cannot be attributed, fall back to the bare
+// pre-ambient evaluation so legacy islands keep rendering.
+const REDECLARATION_PATTERNS = [
+  /Identifier '([^']+)' has already been declared/,
+  /redeclaration of (?:formal parameter|var|let|const|class) ([\w$]+)/,
+  /Cannot declare a (?:let|const|class) variable twice: '?([\w$]+)'?/,
+];
+
+function evaluateWithAmbientScope(
+  compiled: string,
+  localRequire: (specifier: string) => unknown,
+  moduleRecord: { exports: Record<string, unknown> },
+): void {
+  let names = ISLAND_AMBIENT_NAMES.filter((name) => name in AMBIENT_SCOPE);
+  for (;;) {
+    let evaluate: (...bindings: unknown[]) => void;
+    try {
+      evaluate = new Function("require", "module", "exports", ...names, compiled) as typeof evaluate;
+    } catch (error) {
+      if (error instanceof SyntaxError && names.length > 0) {
+        const identifier = REDECLARATION_PATTERNS
+          .map((pattern) => pattern.exec(error.message)?.[1])
+          .find((name) => name !== undefined && (names as readonly string[]).includes(name));
+        names = identifier === undefined ? [] : names.filter((name) => name !== identifier);
+        continue;
+      }
+      throw error;
+    }
+    evaluate(
+      localRequire,
+      moduleRecord,
+      moduleRecord.exports,
+      ...names.map((name) => AMBIENT_SCOPE[name as keyof typeof AMBIENT_SCOPE]),
+    );
+    return;
+  }
 }
 
 interface VirtualSource {
@@ -138,12 +272,7 @@ async function load(
     };
     // 'unsafe-eval' is deliberately allowed in the jail CSP: evaluation is the
     // jail's whole job; NETWORK is what the jail forbids.
-    const evaluate = new Function("require", "module", "exports", compiled[id]!) as (
-      require: typeof localRequire,
-      module: typeof moduleRecord,
-      exports: Record<string, unknown>,
-    ) => void;
-    evaluate(localRequire, moduleRecord, moduleRecord.exports);
+    evaluateWithAmbientScope(compiled[id]!, localRequire, moduleRecord);
     return moduleRecord.exports;
   };
   const loaded = evaluateModule(entryId) as { default?: unknown };
@@ -280,6 +409,35 @@ window.addEventListener("message", (event) => {
     pendingActions.delete(message.requestId);
     if (message.error) pending.reject(new Error(String(message.error)));
     else pending.resolve(message.outcome);
+    return;
+  }
+
+  // W4b §2 — the ambient tools reply. `ok` unwraps to the tool OUTPUT (so
+  // `(await tools.x.y(args)).data` reads naturally); `error`/`blocked` reject;
+  // anything else (pending-approval, connect-required) resolves as the outcome
+  // value so the island can render a pending state — the effect itself lands
+  // through the host's approve→resume seam, never through this promise.
+  if (message.kind === "tool-result" && typeof message.requestId === "string") {
+    const pending = pendingToolCalls.get(message.requestId);
+    if (!pending) return;
+    pendingToolCalls.delete(message.requestId);
+    if (message.error !== undefined) {
+      pending.reject(new Error(String(message.error)));
+      return;
+    }
+    const outcome = message.outcome as Record<string, unknown> | undefined;
+    if (outcome === undefined || typeof outcome !== "object") {
+      pending.reject(new Error("malformed tool outcome"));
+    } else if (outcome.status === "ok") {
+      pending.resolve(outcome.output);
+    } else if (outcome.status === "error") {
+      const error = outcome.error as { message?: unknown } | undefined;
+      pending.reject(new Error(typeof error?.message === "string" ? error.message : "tool call failed"));
+    } else if (outcome.status === "blocked") {
+      pending.reject(new Error(typeof outcome.reason === "string" ? outcome.reason : "tool call blocked"));
+    } else {
+      pending.resolve(outcome);
+    }
   }
 });
 

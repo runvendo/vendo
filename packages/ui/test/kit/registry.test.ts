@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ISLAND_AMBIENT_KIT_NAMES } from "@vendoai/core";
 import { KIT_COMPONENTS, KIT_SPECS, kitComponentNames } from "../../src/kit/registry.js";
 import { kitPrompt } from "../../src/kit/kit-prompt.js";
 import { propsSchema } from "../../src/kit/schema.js";
@@ -9,6 +10,12 @@ describe("KIT registry", () => {
       expect(KIT_COMPONENTS[spec.name], `component missing for ${spec.name}`).toBeTypeOf("function");
     }
     expect(Object.keys(KIT_COMPONENTS).sort()).toEqual([...kitComponentNames()].sort());
+  });
+
+  it("matches core's island ambient Kit name list exactly (W4b — the jail scope cannot drift)", () => {
+    // core cannot import ui (layering), so the shared list lives in core and
+    // this test pins the real registry to it.
+    expect([...ISLAND_AMBIENT_KIT_NAMES].sort()).toEqual(Object.keys(KIT_COMPONENTS).sort());
   });
 
   it("has no duplicate names and covers the floor + adopted extras", () => {

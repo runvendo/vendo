@@ -24,6 +24,7 @@ import {
 import {
   VendoError,
   descriptorHash,
+  semanticsFileSchema,
   vendoThemeSchema,
   type ActAs,
   type AppDocument,
@@ -59,15 +60,16 @@ export { eraseStore, type EraseReport, type EraseTable } from "@vendoai/store";
 // imports these from "@vendoai/vendo/server"); hosts never need to install
 // @vendoai/store directly.
 export { createStore, envSecrets, secretStore, storeSecrets } from "@vendoai/store";
-// 09-vendo §2.1 — host-identity presets, shipped on the server entry: one
-// `auth` key fills the principal, actAs, and oauth seams from one config.
+// 09-vendo §2.1 — host-identity presets: one `auth` key fills the principal,
+// actAs, and oauth seams from one config. The conformance kit + shared types
+// ship here (safe — no peer deps reachable through them); the five zero-arg
+// preset FUNCTIONS ship on their own subpath instead
+// (@vendoai/vendo/auth/auth0, /auth/auth-js, /auth/clerk, /auth/jwt,
+// /auth/supabase) so importing this server entry never forces a host to
+// have every preset's optional peer dep installed (corpus-triage Task 9 —
+// see auth-presets/index.ts for why).
 export {
-  auth0,
-  authJs,
-  clerk,
   hostAuthPresetConformance,
-  jwt,
-  supabase,
   type HostAuthPreset,
   type HostAuthPresetConformanceOptions,
   type HostAuthPresetOptions,
@@ -1011,6 +1013,19 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const theme = dotVendoTheme();
   const designRules = dotVendoFile("design-rules.md");
   const pinBaselines = dotVendoPinBaselines();
+  // W3 — .vendo/semantics.json (field semantics + domain manifest), written
+  // by `vendo sync`, host-edited, treated as generation fact. Malformed →
+  // loud + absent, same stance as catalog.json.
+  const semanticsFile = (() => {
+    const raw = dotVendoFile("semantics.json");
+    if (raw === undefined) return undefined;
+    try {
+      return semanticsFileSchema.parse(JSON.parse(raw));
+    } catch (error) {
+      console.error(`[vendo] Failed to load .vendo/semantics.json: ${error instanceof Error ? error.message : String(error)}. Run "vendo sync" to regenerate the file.`);
+      return undefined;
+    }
+  })();
   const catalog = mergeRuntimeCatalog(
     runtimeCatalogFromJson(dotVendoFile("catalog.json")),
     normalizeCatalogConfig(config.catalog),
@@ -1105,6 +1120,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(config.paint === undefined ? {} : { paint: config.paint }),
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
+    ...(semanticsFile === undefined ? {} : { semantics: semanticsFile.tools, domains: semanticsFile.domains }),
     secrets: config.secrets ?? envSecrets(),
     // execution-v2 — the machine lifecycle's seams: the selected v2 adapter
     // (every provider speaks the canonical seam since the Wave 5 Cloud port)

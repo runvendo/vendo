@@ -1,4 +1,9 @@
-import { authJsPreset } from "@vendoai/actions/presets";
+// authJsPreset ships on its own subpath, not the shared "@vendoai/actions/presets"
+// barrel: it is the only preset there with a top-level optional-peer dynamic
+// import (@auth/core/jwt), and bundlers resolve every `export ... from` target
+// in a barrel file regardless of which export a consumer uses (corpus-triage
+// Task 9 — mirrors the same split done for this file's own vendo-side barrel).
+import { authJsPreset } from "@vendoai/actions/presets/auth-js";
 import type { ActAs } from "@vendoai/core";
 import { environment } from "../wire/shared.js";
 import {

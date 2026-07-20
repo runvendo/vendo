@@ -37,8 +37,10 @@ function optionLabel(opt: SelectOption, labelField?: string): string {
   return String(opt);
 }
 
-export function Select({ label, options, labelField, valueField, value, placeholder, hint, disabled, required, multiple, onChange }: SelectProps) {
+export function Select({ label, options: rawOptions, labelField, valueField, value, placeholder, hint, disabled, required, multiple, onChange }: SelectProps) {
   const { fieldId, helpId } = useFieldIds("select");
+  // W3 — fail SOFT on missing data (a failed query resolves to undefined).
+  const options = Array.isArray(rawOptions) ? rawOptions : [];
   return (
     <FieldShell fieldId={fieldId} helpId={helpId} label={label} hint={hint}>
       <select

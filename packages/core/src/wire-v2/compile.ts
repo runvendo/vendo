@@ -32,7 +32,8 @@ import { FN_REFERENCE_PATTERN } from "../fn-references.js";
 import { VENDO_TREE_FORMAT_V2 } from "../formats.js";
 import type { Json } from "../ids.js";
 import { isPlainObject, type TreeNode } from "../tree.js";
-import { PREWIRED_COMPONENT_NAMES, RESERVED_COMPONENT_NAMES } from "../tree-limits.js";
+import { RESERVED_COMPONENT_NAMES } from "../tree-limits.js";
+import { WIRE_COMPONENT_NAMES } from "../kit/specs.js";
 import { QUERY_NAME_PATTERN, type TreeQueryV2, type TreeV2 } from "../tree-v2.js";
 import type { ShapeType } from "../shape.js";
 import { parseAttributes } from "./attributes.js";
@@ -51,11 +52,15 @@ import { FAILED, issue, isWellFormedUtf16, type CompileState, type Frame } from 
 export interface WireCompileOptions {
   hostComponents?: readonly string[];
   toolShapes?: Readonly<Record<string, ShapeType>>;
-  /** W1-bench prototype (docs/verification/w1-bench): expand inline tool
-   *  references (`rows={invoices.list({...}).data}`) into minted `<Query>`
-   *  declarations + plain bindings before compiling. Off by default; the
-   *  canonical `<Query>` dialect is unaffected. */
+  /** W1 Exp1 verdict (ADOPTED in W3): expand inline tool references
+   *  (`rows={invoices.list({...}).data}`) into minted `<Query>` declarations
+   *  + plain bindings before compiling. The canonical `<Query>` dialect stays
+   *  accepted either way. */
   inlineRefs?: boolean;
+  /** W3 — known tool names for the inline-refs pre-transform: enables
+   *  single-segment inline heads (production extraction names like
+   *  `host_listTransactions`). */
+  inlineTools?: readonly string[];
 }
 
 /** v2 spec §2 / plan D6 — the compile result. */
@@ -81,9 +86,10 @@ export interface WireCompileResult {
 /** D3 — component tag names (and Island names) are PascalCase. */
 const PASCAL_TAG_PATTERN = /^[A-Z][A-Za-z0-9]*$/;
 
-/** D3 — the full prewired set (reserved layout primitives + branded),
- *  shared with the engine's catalog validation via tree-limits. */
-const PREWIRED_NAMES: ReadonlySet<string> = new Set(PREWIRED_COMPONENT_NAMES);
+/** D3 (extended W3) — the full built-in vocabulary: the legacy prewired set
+ *  plus the adopted Kit names, shared with the engine's catalog validation
+ *  via kit/specs. */
+const PREWIRED_NAMES: ReadonlySet<string> = new Set(WIRE_COMPONENT_NAMES);
 
 const RESERVED_SET: ReadonlySet<string> = new Set(RESERVED_COMPONENT_NAMES);
 
@@ -531,7 +537,9 @@ const finishResult = (
 };
 
 const compileWireV2Unsafe = (rawWire: string, options: WireCompileOptions | undefined): WireCompileResult => {
-  const wire = options?.inlineRefs ? expandInlineRefs(rawWire).wire : rawWire;
+  const wire = options?.inlineRefs
+    ? expandInlineRefs(rawWire, options.inlineTools === undefined ? undefined : { tools: options.inlineTools }).wire
+    : rawWire;
   const declared = prescanDeclarations(wire);
   const state = makeState(wire, declared.queryNames, declared.islandNames, new Set(options?.hostComponents ?? []));
   const root: TreeNode = { id: "root", component: "Stack", source: "prewired" };

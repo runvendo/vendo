@@ -18,6 +18,10 @@ export interface AppRow {
   doc: AppDocument;
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
+  /** Opaque write counter backing the routed atomic capability (01 §12); bumped
+   *  on every write. Wave 7 — arbitration for the machine lifecycle and the
+   *  schedule engine's fire claims (updateAppRow's read-mutate-CAS). */
+  revision?: string;
 }
 
 /** 02-store §3 */
