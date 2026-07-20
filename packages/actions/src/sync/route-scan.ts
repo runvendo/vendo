@@ -466,7 +466,7 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
   const warnings: string[] = [];
   const tools: ExtractedTool[] = [];
   const usedNames = new Set<string>();
-  const scanState = createRouteScanState(root);
+  const scanState = createRouteScanState(root, routes.map((route) => route.file));
   for (const route of routes) {
     const methods = await verbsFromSource(route.file, route.source, route, root, new Set(), 0, false);
     if (methods.size === 0) {
@@ -508,5 +508,10 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
       });
     }
   }
+  // The checker collector (route-schema.ts) can only fail closed at
+  // scan-level granularity (e.g. "no tsconfig.json found") — it has no single
+  // tool to attach that warning to, so it queues it on the shared scan state
+  // instead; drain it here into route-scan's own warnings output.
+  warnings.push(...scanState.warnings);
   return { tools, warnings };
 }

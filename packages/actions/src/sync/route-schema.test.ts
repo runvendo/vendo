@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { scanRoutes } from "./route-scan.js";
 import { createRouteScanState, inferRouteInput, type RouteContext } from "./route-schema.js";
 
 const temporaryDirectories: string[] = [];
@@ -20,6 +21,12 @@ async function write(root: string, relativePath: string, source: string): Promis
   const file = path.join(root, relativePath);
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, source, "utf8");
+}
+
+async function writeTsconfig(root: string): Promise<void> {
+  await write(root, "tsconfig.json", JSON.stringify({
+    compilerOptions: { target: "ES2022", module: "ESNext", strict: true },
+  }));
 }
 
 /** Contract test for the collector seam (Task 1 of the route-scan inference
@@ -376,5 +383,266 @@ export async function POST(req: Request) {
       required: ["first"],
       additionalProperties: false,
     });
+  });
+});
+
+/** Task 3: the TypeScript-checker collector. Runs only when the zod
+ * collector returns null (04 §1 Task 3). One `ts.Program` is built lazily,
+ * on first need, and cached on the shared scan state — the perf-guard and
+ * ordering tests assert this via `state.checkerProgramBuilds` rather than
+ * timing. */
+describe("inferRouteInput (checker collector)", () => {
+  it("(a) recognizes an as-cast to a local type alias, with an optional property from `?`", async () => {
+    const root = await temporaryRoot();
+    await writeTsconfig(root);
+    const file = path.join(root, "app/api/widgets/route.ts");
+    await write(root, "app/api/widgets/route.ts", `
+type TransferBody = { amount: number; recipient: string; memo?: string };
+export async function POST(req: Request) {
+  const body = (await req.json()) as TransferBody;
+  return Response.json(body);
+}
+`);
+    const route: RouteContext = { file, source: await fs.readFile(file, "utf8"), urlPath: "/api/widgets", kind: "app" };
+    const state = createRouteScanState(root, [file]);
+
+    const result = await inferRouteInput(route, "POST", state);
+    expect(result?.bodySchema).toEqual({
+      type: "object",
+      properties: { amount: { type: "number" }, recipient: { type: "string" }, memo: { type: "string" } },
+      required: ["amount", "recipient"],
+      additionalProperties: false,
+    });
+    expect(result?.note).toBeUndefined();
+  });
+
+  it("(b) recognizes an annotated variable declaration", async () => {
+    const root = await temporaryRoot();
+    await writeTsconfig(root);
+    const file = path.join(root, "app/api/widgets/route.ts");
+    await write(root, "app/api/widgets/route.ts", `
+type TransferBody = { amount: number; recipient: string };
+export async function POST(req: Request) {
+  const body: TransferBody = await req.json();
+  return Response.json(body);
+}
+`);
+    const route: RouteContext = { file, source: await fs.readFile(file, "utf8"), urlPath: "/api/widgets", kind: "app" };
+    const state = createRouteScanState(root, [file]);
+
+    const result = await inferRouteInput(route, "POST", state);
+    expect(result?.bodySchema).toEqual({
+      type: "object",
+      properties: { amount: { type: "number" }, recipient: { type: "string" } },
+      required: ["amount", "recipient"],
+      additionalProperties: false,
+    });
+  });
+
+  it("(c) resolves a type imported from another file", async () => {
+    const root = await temporaryRoot();
+    await writeTsconfig(root);
+    await write(root, "app/api/widgets/schema.ts", `export type TransferBody = { id: string };\n`);
+    const file = path.join(root, "app/api/widgets/route.ts");
+    await write(root, "app/api/widgets/route.ts", `
+import type { TransferBody } from "./schema";
+export async function POST(req: Request) {
+  const body = (await req.json()) as TransferBody;
+  return Response.json(body);
+}
+`);
+    const route: RouteContext = { file, source: await fs.readFile(file, "utf8"), urlPath: "/api/widgets", kind: "app" };
+    const state = createRouteScanState(root, [file]);
+
+    const result = await inferRouteInput(route, "POST", state);
+    expect(result?.bodySchema).toEqual({
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+      additionalProperties: false,
+    });
+  });
+
+  it("(d) converts a literal-union property to an enum-shaped schema", async () => {
+    const root = await temporaryRoot();
+    await writeTsconfig(root);
+    const file = path.join(root, "app/api/widgets/route.ts");
+    await write(root, "app/api/widgets/route.ts", `
+type TransferBody = { status: "draft" | "sent" };
+export async function POST(req: Request) {
+  const body = (await req.json()) as TransferBody;
+  return Response.json(body);
+}
+`);
+    const route: RouteContext = { file, source: await fs.readFile(file, "utf8"), urlPath: "/api/widgets", kind: "app" };
+    const state = createRouteScanState(root, [file]);
+
+    const result = await inferRouteInput(route, "POST", state);
+    expect(result?.bodySchema).toEqual({
+      type: "object",
+      properties: { status: { type: "string", enum: ["draft", "sent"] } },
+      required: ["status"],
+      additionalProperties: false,
+    });
+  });
+
+  it("(e) converts nested object and array-of-object properties", async () => {
+    const root = await temporaryRoot();
+    await writeTsconfig(root);
+    const file = path.join(root, "app/api/widgets/route.ts");
+    await write(root, "app/api/widgets/route.ts", `
+type Item = { id: string; qty: number };
+type TransferBody = { items: Item[]; nested: { a: string } };
+export async function POST(req: Request) {
+  const body = (await req.json()) as TransferBody;
+  return Response.json(body);
+}
+`);
+    const route: RouteContext = { file, source: await fs.readFile(file, "utf8"), urlPath: "/api/widgets", kind: "app" };
+    const state = createRouteScanState(root, [file]);
+
+    const result = await inferRouteInput(route, "POST", state);
+    expect(result?.bodySchema).toEqual({
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { id: { type: "string" }, qty: { type: "number" } },
+            required: ["id", "qty"],
+            additionalProperties: false,
+          },
+        },
+        nested: {
+          type: "object",
+          properties: { a: { type: "string" } },
+          required: ["a"],
+          additionalProperties: false,
+        },
+      },
+      required: ["items", "nested"],
+      additionalProperties: false,
+    });
+  });
+
+  it("(f) falls back to a permissive schema with a note for a mapped/generic type outside the supported subset", async () => {
+    const root = await temporaryRoot();
+    await writeTsconfig(root);
+    const file = path.join(root, "app/api/widgets/route.ts");
+    await write(root, "app/api/widgets/route.ts", `
+type Mapped<T> = { [K in keyof T]: T[K] };
+type TransferBody = Mapped<{ x: number }>;
+export async function POST(req: Request) {
+  const body = (await req.json()) as TransferBody;
+  return Response.json(body);
+}
+`);
+    const route: RouteContext = { file, source: await fs.readFile(file, "utf8"), urlPath: "/api/widgets", kind: "app" };
+    const state = createRouteScanState(root, [file]);
+
+    const result = await inferRouteInput(route, "POST", state);
+    expect(result?.bodySchema).toEqual({ type: "object", additionalProperties: true });
+    expect(result?.note).toMatch(
+      /^input schema not statically interpreted \(mapped type is not statically interpreted/,
+    );
+  });
+
+  it("(g) fails closed with exactly one scan-level warning when no tsconfig exists (JS-only repo)", async () => {
+    const root = await temporaryRoot();
+    // The TypeScript parser still parses an `as`-cast structurally even in a
+    // `.js`-scriptkind file (it just wouldn't type-check it) — real evidence
+    // the checker collector is willing to chase, which is why attempting
+    // (and failing) to build the program here is the CORRECT behavior rather
+    // than a silent no-op: this repo has no tsconfig at all, so there is no
+    // way to resolve `TransferBody` even though the syntax looks promising.
+    await write(root, "app/api/widgets/route.js", `
+export async function POST(req) {
+  const body = (await req.json()) as TransferBody;
+  return Response.json(body);
+}
+`);
+    await write(root, "app/api/other/route.js", `
+export async function GET(req) {
+  return Response.json({ ok: true });
+}
+`);
+
+    const result = await scanRoutes(root);
+    const postTool = result.tools.find((tool) => tool.binding.kind === "route" && tool.binding.method === "POST");
+    expect(postTool?.inputSchema).toEqual({ type: "object", properties: {}, additionalProperties: true });
+    const checkerWarnings = result.warnings.filter((warning) => warning.includes("checker collector"));
+    expect(checkerWarnings).toEqual([`route-scan checker collector skipped: no tsconfig.json found under ${root}`]);
+  });
+
+  it("(h) returns null for an unannotated, uncast json read with no other reads (voice-proxy case)", async () => {
+    const root = await temporaryRoot();
+    await writeTsconfig(root);
+    const file = path.join(root, "app/api/widgets/route.ts");
+    await write(root, "app/api/widgets/route.ts", `
+export async function POST(req: Request) {
+  const body = await req.json();
+  return Response.json(body);
+}
+`);
+    const route: RouteContext = { file, source: await fs.readFile(file, "utf8"), urlPath: "/api/widgets", kind: "app" };
+    const state = createRouteScanState(root, [file]);
+
+    expect(await inferRouteInput(route, "POST", state)).toBeNull();
+  });
+
+  it("builds the checker program at most once per scan, across three different route files", async () => {
+    const root = await temporaryRoot();
+    await writeTsconfig(root);
+    const routes: RouteContext[] = [];
+    for (const name of ["a", "b", "c"]) {
+      const file = path.join(root, `app/api/${name}/route.ts`);
+      await write(root, `app/api/${name}/route.ts`, `
+type TransferBody = { value: string };
+export async function POST(req: Request) {
+  const body = (await req.json()) as TransferBody;
+  return Response.json(body);
+}
+`);
+      routes.push({ file, source: await fs.readFile(file, "utf8"), urlPath: `/api/${name}`, kind: "app" });
+    }
+    const state = createRouteScanState(root, routes.map((route) => route.file));
+
+    for (const route of routes) {
+      const result = await inferRouteInput(route, "POST", state);
+      expect(result?.bodySchema).toEqual({
+        type: "object",
+        properties: { value: { type: "string" } },
+        required: ["value"],
+        additionalProperties: false,
+      });
+    }
+    expect(state.checkerProgramBuilds).toBe(1);
+  });
+
+  it("prefers the zod collector's schema over a cast on the same expression; the checker is never consulted", async () => {
+    const root = await temporaryRoot();
+    await writeTsconfig(root);
+    const file = path.join(root, "app/api/widgets/route.ts");
+    await write(root, "app/api/widgets/route.ts", `
+import { z } from "zod";
+type TransferBody = { amount: number };
+const schema = z.object({ name: z.string() });
+export async function POST(req: Request) {
+  const body = schema.parse((await req.json()) as TransferBody);
+  return Response.json(body);
+}
+`);
+    const route: RouteContext = { file, source: await fs.readFile(file, "utf8"), urlPath: "/api/widgets", kind: "app" };
+    const state = createRouteScanState(root, [file]);
+
+    const result = await inferRouteInput(route, "POST", state);
+    expect(result?.bodySchema).toEqual({
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
+      additionalProperties: false,
+    });
+    expect(state.checkerProgramBuilds).toBe(0);
   });
 });
