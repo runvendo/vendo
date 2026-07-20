@@ -37,6 +37,18 @@ shipped `VendoThread` renders an inline connect card (the approvals pattern):
 Connect opens the broker's hosted OAuth page, the card polls until the
 connection is active, and the thread retries the call.
 
+## The connect dock and its catalog
+
+The thread's connect dock (the tray over the composer) advertises the host's
+connectable toolkits automatically: with no `connectors` prop on the UI, it
+fetches `GET /api/vendo/connections/catalog`, which reflects the server-side
+connector — the `apps` list when one is set, else every toolkit with an
+enabled auth config in the host's Composio project. Pass an explicit
+`connectors` array to curate the list (labels, order, pinned brokers), or
+`connectors={[]}` to hide the dock entirely. Rows the user can't finish
+connecting never appear: the catalog is derived from what `initiate` would
+accept.
+
 ## The settings panel
 
 `ConnectedAccountsPanel` (a tab in `VendoPage` chrome, exported from
@@ -46,9 +58,11 @@ them. Disconnect severs the broker-side account.
 ## Wire endpoints
 
 All per-principal — the wire passes exactly the resolved principal's subject;
-no caller-supplied subject exists.
+no caller-supplied subject exists. (`/connections/catalog` is the one
+host-level read: every principal sees the same rows.)
 
 - `GET /api/vendo/connections` — list
+- `GET /api/vendo/connections/catalog` — the connectable-toolkit catalog `{ available: [{ toolkit, connector, label? }] }`
 - `POST /api/vendo/connections/initiate` `{ toolkit, connector?, callbackUrl? }` — returns `{ id, connector, redirectUrl }`
 - `GET /api/vendo/connections/:id?connector=` — status (poll while connecting)
 - `DELETE /api/vendo/connections/:id?connector=` — disconnect

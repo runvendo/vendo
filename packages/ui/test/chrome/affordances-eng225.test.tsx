@@ -236,9 +236,30 @@ describe("connect dock + tray (ENG-225)", () => {
 
   const CONNECTORS = [{ toolkit: "gmail", label: "Gmail" }, { toolkit: "slack", label: "Slack" }];
 
-  it("renders no dock without a host connector catalog", async () => {
+  it("renders no dock when the host force-disables it (connectors={[]})", async () => {
+    const view = render(
+      <VendoProvider client={client} connectors={[]}><VendoThread threadId="thr_1" /></VendoProvider>,
+    );
+    await screen.findByText("Existing thread");
+    expect(view.container.querySelector(".fl-dock")).toBeNull();
+  });
+
+  it("auto-derives the dock from the wire catalog when no connectors prop is passed", async () => {
+    render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+    await screen.findByText("Existing thread");
+    // gmail + slack come from the wire's /connections/catalog, not a prop.
+    const dock = await screen.findByRole("button", { name: "Connect tools" });
+    fireEvent.click(dock);
+    const tray = await screen.findByRole("dialog", { name: "Connect tools" });
+    await within(tray).findByRole("button", { name: /connect slack/i });
+  });
+
+  it("renders no dock when the auto catalog resolves empty", async () => {
+    wire.state.catalog = [];
     const view = render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
     await screen.findByText("Existing thread");
+    // Let the catalog fetch settle before asserting absence.
+    await new Promise(resolve => setTimeout(resolve, 25));
     expect(view.container.querySelector(".fl-dock")).toBeNull();
   });
 

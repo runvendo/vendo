@@ -459,6 +459,7 @@ describe("09 §3 public wire", () => {
         initiate: async () => ({ id: "ca_x", redirectUrl: "https://connect.test/x" }),
         status: async () => null,
         disconnect: async () => {},
+        listConnectable: async () => [{ toolkit: "gmail" }, { toolkit: "slack" }],
       },
     };
 
@@ -470,11 +471,24 @@ describe("09 §3 public wire", () => {
       initiate: async () => { throw new Error("unused"); },
       status: async () => null,
       disconnect: async () => {},
+      catalog: async () => [],
     };
     expect((await compose({ connections: explicit, connectors: [broker] })).connections).toBe(explicit);
 
     // A BYO connector's connections capability beats the key.
-    expect((await compose({ connectors: [broker] })).connections.posture).toBe("byo");
+    const byo = await compose({ connectors: [broker] });
+    expect(byo.connections.posture).toBe("byo");
+
+    // The catalog endpoint serves the broker's connectable toolkits; the
+    // route must not be swallowed by /connections/:id.
+    const catalogResponse = await byo.handler(request("GET", "/connections/catalog"));
+    expect(catalogResponse.status).toBe(200);
+    expect(await catalogResponse.json()).toEqual({
+      available: [
+        { toolkit: "gmail", connector: "composio" },
+        { toolkit: "slack", connector: "composio" },
+      ],
+    });
 
     // The key alone defaults the Cloud adapter for the unfilled seam.
     expect((await compose({})).connections.posture).toBe("cloud");
