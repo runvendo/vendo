@@ -741,6 +741,12 @@ describe("instructionRequiresServer (ENG-349)", () => {
     "Move the HTTP status badge next to the title",
     "Update the External vendors table caption",
     "Make the secret santa list festive",
+    // Wave 3 (Devin PR #410): ambiguous scheduling/data words that LABEL a
+    // visible element must stay on the tree path.
+    "Make the digest card blue",
+    "Rename the watch list header",
+    "Recolor the daily summary card",
+    "Move the monitor panel to the top",
   ])("routes the UI ask %j to the tree dialect", (instruction) => {
     expect(instructionRequiresServer(app(), instruction)).toBe(false);
   });
@@ -754,6 +760,11 @@ describe("instructionRequiresServer (ENG-349)", () => {
     "Make the api card blue and call the api for fresh data",
     "Make this a custom client over the data",
     "Turn this into a full web app",
+    // Wave 3 graduation signals: schedules + those same words used as ACTIONS.
+    "Watch my unpaid invoices and email me a daily digest at 8am",
+    "Add a nightly digest of overdue accounts",
+    "Run this on a schedule and store the results",
+    "Monitor prices in the background and alert me",
   ])("routes the server ask %j to the code dialect", (instruction) => {
     expect(instructionRequiresServer(app(), instruction)).toBe(true);
   });

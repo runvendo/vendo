@@ -136,9 +136,15 @@ export const pushBoxEnv = async (machine: SandboxMachine, env: Record<string, st
   }
 };
 
-/** Read the box's `vendo.json` manifest verbatim (empty when the box has none). */
-export const readBoxManifest = async (machine: SandboxMachine): Promise<string | undefined> => {
-  const answer = await machine.request({ method: "GET", path: "/vendo.json" });
+/** Read the box's `vendo.json` manifest verbatim (empty when the box has none).
+ *  Uses the post-resume boot retry: a manifest read right after an edit can
+ *  race the harness restarting the app, and a dropped read would silently lose
+ *  a freshly declared egress domain (and its approval card). */
+export const readBoxManifest = async (
+  machine: SandboxMachine,
+  bootRetry: BootRetryOptions = {},
+): Promise<string | undefined> => {
+  const answer = await requestAppWithBootRetry(machine, { method: "GET", path: "/vendo.json" }, bootRetry);
   if (answer.status === 404) return undefined;
   if (answer.status < 200 || answer.status >= 300) {
     throw new VendoError("validation", `vendo.json read failed (${answer.status})`);

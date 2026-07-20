@@ -127,14 +127,14 @@ export interface GenerationEngine {
 
 const PASCAL_CASE = /^[A-Z][A-Za-z0-9]*$/;
 // execution-v2 Wave 3 — the graduation judgment (instructionRequiresServer):
-// unambiguous signals of the four machine reasons (scheduled/background work,
-// third-party egress with secrets, heavy logic, app-owned state). Kept to
-// words that rarely label a visible element, so a pure-UI edit ("make the
-// digest card blue") stays on the cheap tree path.
-const SERVER_INSTRUCTION = /\b(server|server-side|backend|database|persist|mutation|mutate|egress|schedule|scheduled|scheduling|cron|recurring|daily|nightly|hourly|periodic|digest|background|watch|monitor)\b/i;
-// Words that signal server work only outside a visible-element label: "call the
-// api" needs code, "the API status card" is a tree edit (ENG-349).
-const AMBIGUOUS_SERVER_TERM = /\b(api|http|web app|function|external|secret)\b/gi;
+// UNAMBIGUOUS signals of the four machine reasons (scheduled/background work,
+// third-party egress with secrets, heavy logic, app-owned state) — words that
+// essentially never label a visible element.
+const SERVER_INSTRUCTION = /\b(server|server-side|backend|database|persist|mutation|mutate|egress|schedule|scheduled|scheduling|cron|recurring)\b/i;
+// Words that signal server work only OUTSIDE a visible-element label (ENG-349):
+// "watch my invoices"/"email a daily digest" escalate, but "the digest card",
+// "the watch list", "the API status card" stay on the cheap tree path.
+const AMBIGUOUS_SERVER_TERM = /\b(api|http|web app|function|external|secret|digest|watch|monitor|daily|nightly|hourly|periodic)\b/gi;
 const VISIBLE_ELEMENT_LABEL = /^(?:\w+\s+)?(card|button|badge|chip|header|heading|title|label|caption|text|list|table|column|row|cell|section|panel|chart|graph|icon|field|tab|menu|toolbar|sidebar|footer|banner|tile|widget)s?\b/i;
 const FULL_WEB_APP_INSTRUCTION = /\b(full web app|served web app|custom client|ui:? ?http)\b/i;
 const reserved = new Set<string>(PREWIRED_COMPONENT_NAMES);

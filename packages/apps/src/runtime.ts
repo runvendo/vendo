@@ -1030,9 +1030,13 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         `the in-box agent could not complete the server work: ${box.result.summary}`,
       ], true);
     }
-    const base = box.doc;
-    // Park the approval card for the domains the server code declared.
-    const pending = await requestEgressApproval(base, ctx);
+    // Park the approval card for the domains the server code declared. On the
+    // pre-approved-replay path this COMMITS the grant (writing egressApproved
+    // and sleeping the box), which mutates the stored row — so re-read the
+    // current document AFTER it as the base the fn-binding persist builds on,
+    // rather than the now-possibly-stale box.doc.
+    const pending = await requestEgressApproval(box.doc, ctx);
+    const base = await requireOwned(previous.id, ctx.principal.subject);
     const pendingEgress = pending.status === "pending"
       ? { pendingEgress: { approvalId: pending.approvalId, domains: pending.domains } }
       : {};
