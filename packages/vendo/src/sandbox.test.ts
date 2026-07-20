@@ -274,6 +274,9 @@ const harness: SandboxConformanceHarness = {
   // adapter states the allowlist (recorded or replaced) on every resume.
   resumeForks: true,
   resumeReplacesPolicy: true,
+  // TEMPORARY (2026-07-20): *.m.vendo.run TLS pending the advanced
+  // certificate — url() refuses loudly (CLOUD_INGRESS_TLS_BROKEN, sandbox.ts).
+  ingressUnavailable: true,
 };
 sandboxAdapterConformance("cloudSandbox (mock console)", harness);
 
@@ -366,7 +369,23 @@ describe("cloudSandbox", () => {
       .rejects.toMatchObject({ code: "validation" });
   });
 
-  it("url() defaults to the app's $PORT and prefixes non-canonical ports onto the ingress host", async () => {
+  it("url() fails loudly while *.m.vendo.run TLS is broken instead of handing out a dead URL", async () => {
+    // TEMPORARY GUARD (2026-07-20, flagged decision): prod TLS for
+    // *.m.vendo.run fails entirely (Cloudflare Universal SSL covers one
+    // label), so every ingress URL this adapter could mint is dead. Until the
+    // advanced certificate lands, url() refuses with a VendoError naming the
+    // limitation — the 2→3 flip surfaces the real problem instead of shipping
+    // an app whose surface cannot load.
+    const console_ = fakeConsole();
+    const adapter = adapterFor(console_);
+    const canonical = await adapter.create({ env: { PORT: "8080" } });
+    await expect(canonical.url()).rejects.toMatchObject({ code: "sandbox-unavailable" });
+    await expect(canonical.url(9090)).rejects.toThrow(/\*\.m\.vendo\.run/);
+  });
+
+  // Re-enable when the *.m.vendo.run advanced certificate lands and the
+  // CLOUD_INGRESS_TLS_BROKEN guard in sandbox.ts is removed.
+  it.skip("url() defaults to the app's $PORT and prefixes non-canonical ports onto the ingress host", async () => {
     const console_ = fakeConsole();
     const adapter = adapterFor(console_);
     const canonical = await adapter.create({ env: { PORT: "8080" } });

@@ -232,9 +232,12 @@ reason printed.
 npx vendo refine --url http://localhost:3000/api/vendo
 ```
 
-The model rides your own key: `--model-import` loads the module that exports
-your AI SDK `model`, and without it the init starter default is used
-(`@ai-sdk/anthropic` installed in your app plus `ANTHROPIC_API_KEY`).
+The model resolves like the rest of Vendo: `--model-import` loads the module
+that exports your AI SDK `model`, and without it the shared dev-credential
+ladder composes — a provider env key (`ANTHROPIC_API_KEY` /
+`OPENAI_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY`, with the matching
+`@ai-sdk/*` provider installed), then `VENDO_API_KEY` via the Vendo Cloud
+model gateway.
 
 Options:
 

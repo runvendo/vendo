@@ -11,6 +11,12 @@ Layer 3 ships fully built but disabled. Enable it per project:
 createVendo({ apps: { experimentalServedApps: true } });
 ```
 
+Venue caveat: a BYO sandbox (`E2B_API_KEY`) serves layer-3 URLs today. The
+Vendo Cloud sandbox does not yet — TLS for `*.m.vendo.run` is pending an
+advanced certificate, so its `url()` refuses with a typed
+`VendoError("sandbox-unavailable")` naming the limitation instead of handing
+out a URL that cannot load. The refusal lifts when the certificate lands.
+
 With the flag off (the default), three things refuse with a typed
 `VendoError("not-implemented")` naming the flag: layer-3 generation, the 2-to-3
 surface flip, and `open()` on an app whose surface is already served.

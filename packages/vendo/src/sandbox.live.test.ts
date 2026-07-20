@@ -105,6 +105,9 @@ describe.skipIf(!LIVE)("cloudSandbox live", () => {
     // and the adapter states the allowlist on every resume.
     resumeForks: true,
     resumeReplacesPolicy: true,
+    // TEMPORARY (2026-07-20): *.m.vendo.run TLS pending the advanced
+    // certificate — url() refuses loudly (CLOUD_INGRESS_TLS_BROKEN, sandbox.ts).
+    ingressUnavailable: true,
   };
   sandboxAdapterConformance("real Vendo Cloud", harness);
 

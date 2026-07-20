@@ -50,6 +50,7 @@ export { SCHEDULE_STATE_COLLECTION } from "./schedules.js";
 export {
   shareSnapshotSchema,
   publishRecordSchema,
+  type CloudAppsClient,
   type PublishRecord,
   type ShareSnapshot,
 } from "./cloud.js";

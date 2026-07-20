@@ -200,6 +200,81 @@ describe("cloudConnections", () => {
     });
     await expect(service.initiate(ada, { toolkit: "gmail" })).rejects.toThrow(/plan does not include/i);
   });
+
+  // Release-gap fixes (2026-07-20): the connections client joins the shared
+  // console-client posture (cloud-console.ts) — per-request abort timeout and
+  // the honest 401/402 → cloud-required error table.
+  it("maps an invalid or revoked key (401) to cloud-required, never caller validation", async () => {
+    const cloudFetch = vi.fn(async () =>
+      Response.json({ error: { code: "unauthorized", message: "invalid API key" } }, { status: 401 }));
+    const service = cloudConnections({
+      apiKey: "vnd_revoked",
+      baseUrl: "https://cloud.test",
+      fetch: cloudFetch as unknown as typeof fetch,
+    });
+    await expect(service.list(ada)).rejects.toMatchObject({
+      code: "cloud-required",
+      message: "invalid API key",
+    });
+  });
+
+  it("a console 5xx does not read as a caller validation error", async () => {
+    const cloudFetch = vi.fn(async () => new Response("bad gateway", { status: 502 }));
+    const service = cloudConnections({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: cloudFetch as unknown as typeof fetch,
+    });
+    const failure = await service.list(ada).then(
+      () => { throw new Error("expected list to reject"); },
+      (error: unknown) => error as { code?: string; message: string },
+    );
+    expect(failure.code).not.toBe("validation");
+    expect(failure.message).toMatch(/502/);
+  });
+
+  it("forwards wire-legal console error codes as VendoErrors", async () => {
+    const cloudFetch = vi.fn(async () =>
+      Response.json({ error: { code: "not-found", message: "no such connection" } }, { status: 404 }));
+    const service = cloudConnections({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: cloudFetch as unknown as typeof fetch,
+    });
+    await expect(service.status(ada, "composio", "ca_missing")).rejects.toMatchObject({
+      code: "not-found",
+      message: "no such connection",
+    });
+  });
+
+  it("aborts a hung console request after timeoutMs instead of wedging the connections surface", async () => {
+    const cloudFetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+      }));
+    const service = cloudConnections({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: cloudFetch as unknown as typeof fetch,
+      timeoutMs: 25,
+    });
+    await expect(service.list(ada)).rejects.toMatchObject({ name: "TimeoutError" });
+  });
+
+  it("sends an abort signal with every request (the default timeout)", async () => {
+    const signals: Array<AbortSignal | null | undefined> = [];
+    const cloudFetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      signals.push(init?.signal);
+      return Response.json({ connections: [] });
+    });
+    const service = cloudConnections({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: cloudFetch as unknown as typeof fetch,
+    });
+    await service.list(ada);
+    expect(signals[0]).toBeInstanceOf(AbortSignal);
+  });
 });
 
 describe("unconfiguredConnections", () => {

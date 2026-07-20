@@ -2,8 +2,8 @@ import { VendoError, type VendoErrorCode } from "@vendoai/core";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
 
 /** Console-client plumbing shared by the Cloud adapters (cloudSandbox,
- * hostedStore): the wire-legal error table, the enveloped-error raise, and the
- * key-authed sender. Behavior still comes ONLY from each adapter's constructor
+ * hostedStore, cloudConnections): the wire-legal error table, the
+ * enveloped-error raise, and the key-authed sender. Behavior still comes ONLY from each adapter's constructor
  * arguments (adapter rule — see selectSandbox/selectStore in server.ts);
  * nothing here reads the environment. */
 
