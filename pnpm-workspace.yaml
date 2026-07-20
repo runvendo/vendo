@@ -1,6 +1,7 @@
 packages:
   - "packages/*"
   - "fixtures/*"
+  - "examples/*"
   - "corpus/harness"
   - "corpus/hosts/*"
   - "apps/*"

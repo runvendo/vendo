@@ -1,0 +1,43 @@
+{
+  "format": "vendo/tools@1",
+  "tools": [
+    {
+      "name": "host_get_weather",
+      "description": "Get the current weather for a city.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "city": { "type": "string", "description": "The city to get the weather for" }
+        },
+        "required": ["city"]
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "server-action",
+        "module": "lib/vendo.ts",
+        "exportName": "getWeather",
+        "params": ["city"]
+      }
+    },
+    {
+      "name": "host_send_trip_report",
+      "description": "Email a trip weather report to a recipient.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "to": { "type": "string", "description": "Recipient email address" },
+          "subject": { "type": "string", "description": "Email subject line" },
+          "body": { "type": "string", "description": "Email body" }
+        },
+        "required": ["to", "subject", "body"]
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "server-action",
+        "module": "lib/vendo.ts",
+        "exportName": "sendTripReport",
+        "params": ["to", "subject", "body"]
+      }
+    }
+  ]
+}

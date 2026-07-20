@@ -20,6 +20,7 @@ bench/demo-capture/output/
 # Vendo demo runtime state (PGlite) — never committed.
 apps/*/.vendo/data/
 fixtures/*/.vendo/data/
+examples/*/.vendo/data/
 
 # wave-6 orchestration lane briefs/signals (never committed)
 .lanes/
