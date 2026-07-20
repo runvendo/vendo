@@ -1,0 +1,42 @@
+automation authored+armed in 28.0s
+trigger: {
+  "on": {
+    "kind": "schedule",
+    "cron": "0 8 * * *"
+  },
+  "run": {
+    "kind": "steps",
+    "steps": [
+      {
+        "id": "unpaid",
+        "tool": "host_listUnpaidInvoices"
+      },
+      {
+        "id": "email",
+        "tool": "host_sendEmail",
+        "args": {
+          "subject": "'Unpaid Invoice Digest'",
+          "body": "'You have ' & $string(steps.unpaid.count) & ' unpaid invoice(s):\\n\\n' & $join(steps.unpaid.invoices.('• ' & client & ' — $' & $string($round(amountCents / 100, 2)) & ' due ' & dueDate & ' [' & status & ']'), '\\n')"
+        }
+      },
+      {
+        "id": "publish",
+        "tool": "vendo_apps_data_put",
+        "args": {
+          "appId": "'app_c53e0a76-d64e-4961-a7a0-a63f5ed1141d'",
+          "collection": "'invoice_digest'",
+          "id": "'latest'",
+          "data": "{\"sentAt\": $now(), \"count\": steps.unpaid.count, \"invoices\": steps.unpaid.invoices}"
+        }
+      }
+    ]
+  }
+}
+resultsCollection: invoice_digest
+pending standing-grant approvals: host_listUnpaidInvoices, host_sendEmail, vendo_apps_data_put
+run run_75e817e8-61f9-4569-84ce-3eb22bd3a201 ok: host_listUnpaidInvoices=ok, host_sendEmail=ok, vendo_apps_data_put=ok
+emails sent by the automation: [{"body":"You have 2 unpaid invoice(s):\n\n• Acme Robotics — $4200 due 2026-07-10 [unpaid]\n• Birchwood LLC — $1550 due 2026-07-15 [unpaid]","subject":"Unpaid Invoice Digest"}]
+results row: {"count":2,"sentAt":"2026-07-20T23:25:21.916Z","invoices":[{"id":"inv_1041","client":"Acme Robotics","status":"unpaid","dueDate":"2026-07-10","amountCents":420000},{"id":"inv_1042","client":"Birchwood LLC","status":"unpaid","dueDate":"2026-07-15","amountCents":155000}]}
+no machine anywhere: PASS
+GATE PASS — setup 28.0s, fired via tick, result visible in tree, zero sandboxes
+exit=0

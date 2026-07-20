@@ -1391,6 +1391,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       instruction,
       mode,
       tools: toolContext.tools ?? [],
+      ...(toolContext.toolShapes === undefined ? {} : { toolShapes: toolContext.toolShapes }),
     }, config.model);
     if (planned.kind === "failure") {
       return failedEdit(previous, instruction, [

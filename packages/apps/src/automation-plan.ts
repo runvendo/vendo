@@ -1,5 +1,7 @@
 import {
+  describeShapeWithSemantics,
   triggerSchema,
+  type ShapeType,
   type Trigger,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
@@ -24,6 +26,10 @@ export interface AutomationPlanInput {
   /** The tools steps may name / the agentic prompt may reference — the SAME
    *  guard-bound surface the automations engine executes through. */
   tools: readonly HostToolInfo[];
+  /** Sampled result shapes (the engine's shape cards, keyed by tool name):
+   *  without them the model guesses output fields and the jsonata reads
+   *  nothing (the live-gate "steps.unpaid.items" class). */
+  toolShapes?: Readonly<Record<string, ShapeType>>;
 }
 
 export interface AutomationPlan {
@@ -42,20 +48,33 @@ const RESULTS_TOOL = "vendo_apps_data_put";
 const COLLECTION_NAME = /^[a-z][a-z0-9_-]{0,40}$/i;
 const EVERY_DURATION = /^(\d+)[smhd]$/;
 
-const toolLine = ({ name, description, risk, inputSchema }: HostToolInfo): string => {
+/** The planning surface: host + connected tools, plus ONLY the results-publish
+ *  tool from the vendo_apps_* family — an automation's job is host effects and
+ *  one published result, never app lifecycle operations (and live data comes
+ *  from host tools, not from reading app data collections). */
+const plannerTools = (tools: readonly HostToolInfo[]): HostToolInfo[] =>
+  tools.filter((tool) => !tool.name.startsWith("vendo_apps_") || tool.name === RESULTS_TOOL);
+
+const toolLine = (
+  { name, description, risk, inputSchema }: HostToolInfo,
+  shape: ShapeType | undefined,
+): string => {
   const properties = inputSchema?.properties;
   const fields = typeof properties === "object" && properties !== null
     ? Object.keys(properties as Record<string, unknown>)
     : [];
-  return `- ${name} [${risk}]${fields.length === 0 ? "" : ` (input fields: ${fields.join(", ")})`}: ${description}`;
+  return `- ${name} [${risk}]${fields.length === 0 ? "" : ` (input fields: ${fields.join(", ")})`}: ${description}${shape === undefined ? "" : `\n  result shape: ${describeShapeWithSemantics(shape, {})}`}`;
 };
 
 const stepsContract = (input: AutomationPlanInput): string => `RUN MODEL (this instruction is DETERMINISTIC tool work):
 "run" is {"kind":"steps","steps":[{"id":"<bare identifier>","tool":"<tool name>","args":{...}?,"if":"<jsonata>"?,"forEach":"<jsonata>"?}, ...]}.
 - Every step's "tool" MUST be a name from the TOOLS list; anything else is invalid. Steps run in order.
-- Every value inside "args" is a JSONATA EXPRESSION evaluated against {event, steps, item}: a prior step's output is steps.<stepId>...; a LITERAL string must be single-quoted jsonata ('like this'); numbers and booleans are bare.
+- Choose tools that FULFILL the instruction: read live data with the host/connected READ tools (live data NEVER comes from "${RESULTS_TOOL}"-style app collections), and perform each requested effect (email, message, notify, create) with a matching tool from the list when one exists. When no tool can perform a requested effect, skip that effect — the published result still lands on the board.
+- EVERY value inside "args" is a JSON STRING containing a JSONATA expression evaluated against {event, steps, item} — never a bare number, boolean, object, or array. A prior step's output is "steps.<stepId>...". A literal string is single-quoted INSIDE the string ("'like this'"); a literal number is written as its expression ("20"); an object is built in jsonata ("{\\"count\\": $count(steps.rows.items)}").
 - "if" skips the step unless the jsonata expression is truthy. "forEach" is a jsonata expression producing an array; the step runs once per element with that element bound to item (max 1000).
-- RESULTS: the app's board reads STORE ROWS, not run logs. The LAST step MUST persist the displayable result through tool "${RESULTS_TOOL}" with args {"appId":"'${input.appId}'","collection":"'<collection>'","id":"'latest'","data":<jsonata for the displayable result>} — and set the top-level "resultsCollection" to that collection name.`;
+- RESULTS: the app's board reads STORE ROWS, not run logs. The LAST step MUST persist the displayable result through tool "${RESULTS_TOOL}" with args {"appId":"'${input.appId}'","collection":"'<collection>'","id":"'latest'","data":"<jsonata for the displayable result>"} — and set the top-level "resultsCollection" to that collection name.
+EXAMPLE (shape only — use the real tools and the real request):
+{"name":"Morning digest","trigger":{"on":{"kind":"schedule","cron":"0 8 * * *"},"run":{"kind":"steps","steps":[{"id":"rows","tool":"host_list_things"},{"id":"notify","tool":"host_send_message","args":{"subject":"'Daily digest'","body":"$string($count(steps.rows.items)) & ' items today'"}},{"id":"publish","tool":"${RESULTS_TOOL}","args":{"appId":"'${input.appId}'","collection":"'digest'","id":"'latest'","data":"steps.rows"}}]}},"resultsCollection":"digest"}`;
 
 const agenticContract = (input: AutomationPlanInput): string => `RUN MODEL (this instruction needs PER-RUN JUDGMENT):
 "run" is {"kind":"agentic","prompt":"<the instructions an away agent follows on every firing>","budget":{"maxToolCalls":<n>}?}.
@@ -74,8 +93,8 @@ External webhook connectors are NOT available to this planner.
 
 ${input.mode === "steps" ? stepsContract(input) : agenticContract(input)}
 
-TOOLS (the ONLY tools available):
-${input.tools.map(toolLine).join("\n") || "(none)"}`;
+TOOLS (the ONLY tools available). Where a "result shape" is shown, a jsonata expression may reference ONLY those fields (steps.<id>.<field>); when a tool has no shape shown, pass its WHOLE output along (steps.<id>) instead of guessing field names:
+${plannerTools(input.tools).map((tool) => toolLine(tool, input.toolShapes?.[tool.name])).join("\n") || "(none)"}`;
 
 const repairPrompt = (issues: string[]): string =>
   issues.length === 0 ? "" : `\nREPAIR_THESE_ISSUES: ${JSON.stringify(issues)}`;
@@ -137,8 +156,8 @@ const validatePlan = (
   let parsed: unknown;
   try {
     parsed = JSON.parse(extractJson(raw));
-  } catch {
-    return { issues: ["the response was not a single valid JSON object"] };
+  } catch (error) {
+    return { issues: [`the response was not a single valid JSON object (${error instanceof Error ? error.message.split("\n")[0] : "parse error"}) — return ONLY the JSON object, no prose or fences`] };
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     return { issues: ["the response must be one JSON object"] };
@@ -147,7 +166,9 @@ const validatePlan = (
   const issues: string[] = [];
   const triggerResult = triggerSchema.safeParse(candidate.trigger);
   if (!triggerResult.success) {
-    return { issues: [`invalid trigger: ${triggerResult.error.issues[0]?.message ?? "does not match the trigger schema"}`] };
+    const first = triggerResult.error.issues[0];
+    const at = first === undefined || first.path.length === 0 ? "" : ` at trigger.${first.path.join(".")}`;
+    return { issues: [`invalid trigger${at}: ${first?.message ?? "does not match the trigger schema"} — remember every steps args value is a JSON STRING containing a jsonata expression`] };
   }
   const trigger = triggerResult.data;
   if (trigger.on.kind === "external") {
@@ -160,7 +181,7 @@ const validatePlan = (
   if (trigger.run.kind === "steps") {
     const steps = trigger.run.steps;
     if (steps.length === 0) issues.push("steps must not be empty");
-    const known = new Set(input.tools.map(({ name }) => name));
+    const known = new Set(plannerTools(input.tools).map(({ name }) => name));
     const seen = new Set<string>();
     for (const step of steps) {
       if (step.id.trim() === "" || seen.has(step.id)) {
@@ -169,6 +190,15 @@ const validatePlan = (
       seen.add(step.id);
       if (!step.tool.startsWith("fn:") && !known.has(step.tool)) {
         issues.push(`step "${step.id}" names unknown tool "${step.tool}"; the available tools are: ${[...known].join(", ") || "(none)"}`);
+      }
+      // Law 1 for automations: a published result must be BUILT from a prior
+      // step's output (or the trigger event) — a hand-typed data payload is
+      // invented data on the board.
+      if (step.tool === RESULTS_TOOL) {
+        const dataExpression = step.args?.data ?? "";
+        if (!/\b(steps|event)\b/.test(dataExpression)) {
+          issues.push(`step "${step.id}" publishes hand-typed data — the "${RESULTS_TOOL}" data expression must derive from a prior step's output (steps.<id>...) or the trigger event; add the read step that fetches the live data first`);
+        }
       }
     }
   }
