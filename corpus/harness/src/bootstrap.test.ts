@@ -196,7 +196,9 @@ describe("bootstrapRepo", () => {
       },
     });
 
-    await expect(readFile(path.join(repoDir, "pnpm-argv.txt"), "utf8")).resolves.toBe("install --no-frozen-lockfile --force --ignore-workspace");
+    await expect(readFile(path.join(repoDir, "pnpm-argv.txt"), "utf8")).resolves.toBe(
+      "--config.minimumReleaseAge=0 --config.dangerouslyAllowAllBuilds=true install --no-frozen-lockfile --force --ignore-workspace",
+    );
     await expect(readFile(path.join(context.logsDir(repo.name), "bootstrap.stdout.log"), "utf8")).resolves.toMatch(/normalized.*--no-frozen-lockfile/i);
   });
 
@@ -219,7 +221,9 @@ describe("bootstrapRepo", () => {
       },
     });
 
-    await expect(readFile(path.join(repoDir, "pnpm-workspace-argv.txt"), "utf8")).resolves.toBe("install --no-frozen-lockfile --force");
+    await expect(readFile(path.join(repoDir, "pnpm-workspace-argv.txt"), "utf8")).resolves.toBe(
+      "--config.minimumReleaseAge=0 --config.dangerouslyAllowAllBuilds=true install --no-frozen-lockfile --force",
+    );
     await expect(readFile(path.join(context.logsDir(repo.name), "bootstrap.stdout.log"), "utf8")).resolves.toMatch(/normalized.*--no-frozen-lockfile --force/i);
   });
 
