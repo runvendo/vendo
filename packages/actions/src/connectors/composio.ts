@@ -1,5 +1,5 @@
 import { VendoError, type RunContext, type ToolCall, type ToolDescriptor, type ToolOutcome } from "@vendoai/core";
-import type { Connector, ConnectorAccount, ConnectorAccountIdentity, ConnectorCatalogEntry } from "./connector.js";
+import type { Connector, ConnectorAccount, ConnectorAccountIdentity, ConnectorCatalogEntry, ToolkitIndexEntry } from "./connector.js";
 import { composioToolRisk } from "./composio-risk.js";
 import { normalizeToolName } from "./names.js";
 
@@ -31,6 +31,18 @@ const MAX_PAGES = 50;
 /** Auth configs change on dashboard timescales; thread mounts must not
  * re-walk them. */
 const CONNECTABLE_CACHE_TTL_MS = 5 * 60_000;
+
+/** Fallback discovery blurbs for toolkits whose provider metadata is
+ * unavailable — index recall depends on descriptions ("send email" must
+ * match gmail), so silence is not an option for the majors. */
+const STATIC_BLURBS: Record<string, string> = {
+  gmail: "Send, read, and manage email with Gmail",
+  googlecalendar: "Create and manage Google Calendar events",
+  slack: "Post messages and interact with Slack channels",
+  github: "Manage GitHub repos, issues, and pull requests",
+  notion: "Create and edit Notion pages and databases",
+  linear: "Create and manage Linear issues",
+};
 
 /** Composio's deterministic missing-connection signal on tool execution. */
 const NO_CONNECTED_ACCOUNT_SLUG = "ActionExecute_ConnectedAccountNotFound";
@@ -181,6 +193,55 @@ export function composioConnector(config: {
 
   let connectableCache: { at: number; entries: ConnectorCatalogEntry[] } | undefined;
 
+  // Connection-scoped tool loading (spec 2026-07-20): without an explicit
+  // `apps` scoping the connector defers ALL schema loading — descriptors()
+  // covers only lazily expanded toolkits, and discovery rides a cheap index.
+  const lazy = config.apps === undefined;
+  const expandedToolkits = new Set<string>();
+  const toolkitToolCache = new Map<string, Promise<ComposioTool[]>>();
+  let indexPromise: Promise<ToolkitIndexEntry[]> | undefined;
+  let connectableSlugsPromise: Promise<Set<string>> | undefined;
+
+  function toolkitTools(toolkit: string): Promise<ComposioTool[]> {
+    let promise = toolkitToolCache.get(toolkit);
+    if (!promise) {
+      promise = fetchTools(toolkit);
+      toolkitToolCache.set(toolkit, promise);
+    }
+    return promise;
+  }
+
+  /** Per-slug toolkit metadata (label + description). Best-effort: a missing
+   * or failing slug degrades to the static blurb, never throws. */
+  async function toolkitMeta(slug: string): Promise<{ label?: string; description?: string }> {
+    try {
+      const response = await composioFetch(`/api/v3/toolkits/${encodeURIComponent(slug)}`);
+      if (!response.ok) return {};
+      const payload = response.payload as { name?: unknown; meta?: { description?: unknown } };
+      return {
+        ...(typeof payload.name === "string" && payload.name ? { label: payload.name } : {}),
+        ...(typeof payload.meta?.description === "string" && payload.meta.description
+          ? { description: payload.meta.description }
+          : {}),
+      };
+    } catch {
+      return {};
+    }
+  }
+
+  async function buildIndex(): Promise<ToolkitIndexEntry[]> {
+    const slugs = config.apps ?? (await listConnectable()).map((entry) => entry.toolkit);
+    const metas = await Promise.all(slugs.map((slug) => toolkitMeta(slug)));
+    return slugs.map((toolkit, i) => {
+      const description = metas[i]!.description ?? STATIC_BLURBS[toolkit];
+      return {
+        toolkit,
+        ...(metas[i]!.label === undefined ? {} : { label: metas[i]!.label }),
+        ...(description === undefined ? {} : { description }),
+      };
+    });
+  }
+
   /** The dock catalog: the host's `apps` scoping verbatim when set, else the
    * distinct toolkits with an enabled auth config — exactly the set a user
    * can finish connecting (initiate refuses anything else). Host-level, so
@@ -231,11 +292,31 @@ export function composioConnector(config: {
   return {
     name: "composio",
 
+    discoveryIndex: () => (indexPromise ??= buildIndex()),
+
+    async expandToolkits(toolkits: string[]): Promise<boolean> {
+      if (!lazy) return false;
+      connectableSlugsPromise ??= (async () => new Set((await listConnectable()).map((entry) => entry.toolkit)))();
+      const connectable = await connectableSlugsPromise;
+      let changed = false;
+      for (const toolkit of toolkits) {
+        if (!connectable.has(toolkit) || expandedToolkits.has(toolkit)) continue;
+        expandedToolkits.add(toolkit);
+        changed = true;
+      }
+      return changed;
+    },
+
     async descriptors(): Promise<ToolDescriptor[]> {
       // Built fresh and swapped in atomically so a concurrent execute() never sees a half-empty map.
       const nextNormalizedToRaw = new Map<string, { raw: string; toolkit: string }>();
-      const appFilters = config.apps === undefined ? [undefined] : config.apps;
-      const pages = await Promise.all(appFilters.map((app) => fetchTools(app)));
+      // Lazy mode: only expanded toolkits materialize; nothing loads eagerly.
+      const appFilters = lazy ? [...expandedToolkits] : config.apps!;
+      if (appFilters.length === 0) {
+        normalizedToRaw = nextNormalizedToRaw;
+        return [];
+      }
+      const pages = await Promise.all(appFilters.map((app) => toolkitTools(app)));
       const descriptors: ToolDescriptor[] = [];
 
       for (const item of pages.flat()) {
