@@ -43,8 +43,15 @@ export function registrySource(variant: "tsx" | "mjs"): string {
     ` *\n` +
     ` * (\`props\` is an optional zod schema; a schema-less entry is legal.)\n` +
     ` */\n`;
+  // The type comes from @vendoai/vendo, not @vendoai/core: a host only gets
+  // @vendoai/vendo (and @vendoai/ui) as a direct dependency, so under pnpm
+  // strict linking @vendoai/core (transitive) doesn't resolve for the host
+  // (TS2307). @vendoai/vendo's root entry already re-exports the full
+  // @vendoai/core type surface (index.ts: `export type * from "@vendoai/core"`),
+  // and the bare root — not /server or /react — is the neutral entry for a
+  // type this file needs in both the server route and the client wrap.
   return variant === "tsx"
-    ? `${header}import type { ComponentRegistry } from "@vendoai/core";\n\nexport const registry = {} satisfies ComponentRegistry;\n`
+    ? `${header}import type { ComponentRegistry } from "@vendoai/vendo";\n\nexport const registry = {} satisfies ComponentRegistry;\n`
     : `${header}export const registry = {};\n`;
 }
 

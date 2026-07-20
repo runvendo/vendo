@@ -125,7 +125,11 @@ describe("vendo init (zero-question)", () => {
     expect(route).toContain("principal: async () => null");
     expect(route).not.toContain("model");
     const registry = await readFile(join(root, "vendo", "registry.tsx"), "utf8");
-    expect(registry).toContain('import type { ComponentRegistry } from "@vendoai/core";');
+    // The type comes from @vendoai/vendo (the root contract-types entry), not
+    // @vendoai/core — hosts only get @vendoai/vendo (or @vendoai/ui) as a
+    // direct dependency; @vendoai/core is transitive and pnpm strict linking
+    // won't let the host resolve it (TS2307).
+    expect(registry).toContain('import type { ComponentRegistry } from "@vendoai/vendo";');
     expect(registry).toContain("export const registry = {} satisfies ComponentRegistry;");
     expect(registry).toContain("SpendingDonut"); // the commented example entry
 
