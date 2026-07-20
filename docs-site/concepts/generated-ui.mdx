@@ -110,3 +110,9 @@ URL in a sandboxed iframe; the wake latency is the loading state, and the URL
 is only valid for the current wake. With the flag off, layer-3 generation,
 the surface flip, and opening a served app all refuse with a typed
 `not-implemented` error naming the flag.
+
+Layer 3 currently has one working venue: BYO e2b (`E2B_API_KEY` or an
+explicit `e2bSandbox`). On the Vendo Cloud hosted sandbox, the
+`*.m.vendo.run` ingress TLS certificate is not yet live, so served-app URLs
+fail the TLS handshake until it lands; layers 1 and 2 are unaffected on both
+venues.
