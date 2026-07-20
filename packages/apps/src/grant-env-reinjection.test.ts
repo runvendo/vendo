@@ -2,7 +2,7 @@ import type { AppDocument, RunContext, ToolRegistry } from "@vendoai/core";
 import { VENDO_APP_FORMAT } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createApps } from "./index.js";
-import { documentFromRecord } from "./persistence.js";
+import { documentFromRecord, nextEnvStaleAt } from "./persistence.js";
 import {
   fakeBoxSandbox,
   guardFixture,
@@ -134,6 +134,22 @@ describe("env re-injection on grant change (Wave 7)", () => {
     // The boundary env is REPLACED (the harness restarts the app with exactly
     // the injected set), so the revoked value is gone, not merged over.
     expect(raw?.state.env.STRIPE_KEY).toBeUndefined();
+  });
+
+  it("stale markers are strictly increasing, even within one millisecond", () => {
+    // Two grant flips in the same millisecond must never mint EQUAL markers:
+    // a wake that read the first would clear the second's marker after
+    // injecting the older env, losing the newer flip (e.g. a revocation).
+    // Marks serialize through the app row's CAS, so bumping past the
+    // previous marker suffices.
+    const first = nextEnvStaleAt(undefined);
+    const second = nextEnvStaleAt(first);
+    const third = nextEnvStaleAt(second);
+    expect(Date.parse(second)).toBeGreaterThan(Date.parse(first));
+    expect(Date.parse(third)).toBeGreaterThan(Date.parse(second));
+    // A marker from the past yields the present, not a stale echo.
+    expect(Date.parse(nextEnvStaleAt("2000-01-01T00:00:00.000Z")))
+      .toBeGreaterThanOrEqual(Date.parse(first));
   });
 
   it("an ordinary wake with no grant change never touches the control port", async () => {

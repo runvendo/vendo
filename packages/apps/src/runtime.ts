@@ -64,7 +64,7 @@ import {
 } from "./box-agent.js";
 import { parseVendoManifest } from "./manifest.js";
 import { createAppOpener, createProgressiveQueryResolver, servedAppsDisabledError, stripServerAuthoritativeFields } from "./open.js";
-import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, rowFromRecord, updateAppRow } from "./persistence.js";
+import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, updateAppRow } from "./persistence.js";
 import { detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "./redaction.js";
 import {
@@ -597,7 +597,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     try {
       marked = await updateAppDocument(appId, (doc) => doc.machine === undefined
         ? doc
-        : { ...doc, machine: { ...doc.machine, envStaleAt: new Date().toISOString() } });
+        // Strictly-increasing marker (nextEnvStaleAt): same-millisecond flips
+        // must not mint equal values, or a concurrent wake's guarded clear
+        // would erase the newer flip after injecting the older env.
+        : { ...doc, machine: { ...doc.machine, envStaleAt: nextEnvStaleAt(doc.machine.envStaleAt) } });
     } catch (error) {
       if (error instanceof VendoError && error.code === "not-found") return;
       throw error;

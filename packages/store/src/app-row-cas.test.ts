@@ -11,7 +11,8 @@
 import { VendoError } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
-import { appFixture } from "./fixtures.test-util.js";
+import { appFixture, persistentPrincipal } from "./fixtures.test-util.js";
+import { appStore } from "./index.js";
 
 const appData = (id: string, subject: string, name: string) => ({
   subject,
@@ -85,6 +86,31 @@ for (const backend of backends()) {
       )).toBeNull();
       expect(await made.sql("SELECT subject FROM vendo_apps WHERE id = 'app_cas_foreign'"))
         .toEqual([{ subject: "user_one" }]);
+    });
+
+    it("EVERY write door bumps the token: a pre-setEnabled token can no longer swap", async () => {
+      // The enable/disable door writes vendo_apps too; if it left the counter
+      // alone, a CAS armed with a pre-flip token would land and silently
+      // revert the flip.
+      const seam = made.store.records("vendo_apps");
+      const apps = appStore(made.store);
+      const before = await seam.put({
+        id: "app_cas_enabled",
+        data: { subject: persistentPrincipal.subject, enabled: false, doc: appFixture("app_cas_enabled", "flip me") },
+      });
+
+      await apps.setEnabled("app_cas_enabled", true);
+
+      expect(await seam.atomic!.compareAndSwap(
+        { id: "app_cas_enabled", data: appData("app_cas_enabled", persistentPrincipal.subject, "stale clobber") },
+        before.revision!,
+      )).toBeNull();
+      const current = await seam.get("app_cas_enabled");
+      expect((current?.data as { enabled: boolean }).enabled).toBe(true);
+      // The appStore read surfaces the current token too.
+      expect((await apps.get("app_cas_enabled"))?.revision).toBe(current?.revision);
+      expect((await apps.list(persistentPrincipal)).find((row) => row.id === "app_cas_enabled")?.revision)
+        .toBe(current?.revision);
     });
 
     it("guarded writes keep the trigger_kind projection the tick queries by", async () => {
