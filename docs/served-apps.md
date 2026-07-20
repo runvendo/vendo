@@ -27,12 +27,12 @@ Serving needs a sandbox provider with working public ingress:
 | Sandbox venue | Served apps |
 | --- | --- |
 | BYO e2b (`E2B_API_KEY` or an explicit `e2bSandbox`) | works |
-| Vendo Cloud hosted sandbox | pending the `*.m.vendo.run` ingress certificate |
+| Vendo Cloud hosted sandbox | works — single-label `<id-suffix>-m.vendo.run` ingress |
 
-On the Cloud venue, TLS for `*.m.vendo.run` is not yet live: the 2-to-3 flip
-succeeds, but the URL `open()` returns fails the TLS handshake in the browser.
-Use BYO e2b for served apps until the certificate lands; layers 1 and 2 are
-unaffected on both venues.
+The Cloud ingress moved to single-label hosts (`<id-suffix>-m.vendo.run`,
+ports as `<id-suffix>-<port>-m.vendo.run`) so the stock `*.vendo.run`
+certificate covers them; the earlier `*.m.vendo.run` TLS limitation no
+longer applies.
 
 ## How an app reaches layer 3
 
