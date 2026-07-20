@@ -176,8 +176,10 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
         throw new VendoError("sandbox-unavailable", "Vendo Cloud sandbox returned no snapshot reference");
       }
       // A ref this adapter would itself refuse to resume/destroy must never
-      // reach a document — reject it as console garbage here instead.
-      if (!payload.ref.startsWith(CLOUD_SNAPSHOT_REF_PREFIX)) {
+      // reach a document — reject it as console garbage here instead (same
+      // condition as assertCloudRef, so a bare prefix is equally foreign).
+      if (!payload.ref.startsWith(CLOUD_SNAPSHOT_REF_PREFIX)
+        || payload.ref.length <= CLOUD_SNAPSHOT_REF_PREFIX.length) {
         throw new VendoError("sandbox-unavailable", `Vendo Cloud sandbox returned a foreign snapshot reference (expected the "${CLOUD_SNAPSHOT_REF_PREFIX}" prefix)`);
       }
       return payload.ref;
