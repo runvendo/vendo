@@ -23,7 +23,6 @@ import {
   type NormalizedCatalog,
   type ShapeType,
   type TreeNode,
-  type TreeQueryV2,
   type TreeV2,
   type VendoTheme,
   type WireCompileResult,
@@ -32,6 +31,7 @@ import type { LanguageModel } from "ai";
 import {
   actionFaults,
   endPass,
+  extractEdit,
   regionParallelCreate,
   structuredRepair,
   type PipelineConfig,
@@ -132,7 +132,7 @@ export type GeneratedAppDocument = Omit<AppDocument, "id">;
  * lane (rungs 2–4 file plans) is deleted.
  */
 export type GenerationEditResult =
-  | { kind: "document"; document: GeneratedAppDocument; rung: 1 }
+  | { kind: "document"; document: GeneratedAppDocument }
   | { kind: "failure"; issues: string[] };
 
 /** 06-apps §5 — replaceable generation seam used by createApps(). */
@@ -303,7 +303,7 @@ const layoutHeader = (compiled: WireCompileResult): string =>
   compiled.tree.nodes.map((node) => `${node.id}:${node.component}`).join(" ");
 
 /** Models wrap output in prose or a markdown fence despite instructions
- *  (the v1 JSON path had the same tolerance in parseModelJson). The wire is
+ *  (the deleted v1 JSON path had the same tolerance). The wire is
  *  everything from the first `<App` through the last `</App>` (or stream
  *  end while it is still open) — deterministic, so prefix compiles stay
  *  valid-while-partial. */
@@ -732,7 +732,7 @@ const actionIssues = (tree: TreeV2, tools: readonly HostToolInfo[] | undefined):
     return `node "${fault.nodeId}" submit button ("${fault.label}") prop "${fault.prop}" is wired to read-only tool "${fault.action}" — a submit that only reads is a fake affordance. Wire it to a mutating host tool with a payload, or render an honest disclaimer if the host has none.`;
   });
 
-const distinctIssues = (current: string[], next: string[]): string[] => [
+export const distinctIssues = (current: string[], next: string[]): string[] => [
   ...new Set([...current, ...next]),
 ];
 
@@ -833,15 +833,6 @@ Ops (attribute-only elements unless noted):
 Emit at least one op. Keep patches minimal and local to the instruction.`,
 }, ...generationPromptSections(deps).filter(({ id }) =>
   id === "component-styling" || id === "catalog" || id === "theme" || id === "design-rules" || id === "remixable-slots")]);
-
-/** Same fence tolerance as {@link extractWire}, for <Edit> documents. */
-const extractEdit = (text: string): string => {
-  const start = text.indexOf("<Edit");
-  if (start === -1) return text;
-  const closeTag = "</Edit>";
-  const close = text.lastIndexOf(closeTag);
-  return close === -1 ? text.slice(start) : text.slice(start, close + closeTag.length);
-};
 
 /** Raw-text model call for the edit dialect (no streaming seam: edits are
  *  small and apply atomically). */
@@ -979,7 +970,7 @@ const editTree = async (
         if (extensionIssues.length === 0) {
           const validationIssues = await validateEditedApp(app, deps, input.app);
           if (validationIssues.length === 0) {
-            return { kind: "document", document: withoutId(app), rung: 1 };
+            return { kind: "document", document: withoutId(app) };
           }
           issues = distinctIssues(issues, validationIssues);
         } else {
@@ -1143,7 +1134,3 @@ export const instructionRequiresServer = (app: AppDocument, instruction: string)
   || app.ui === "http"
   || [...instruction.matchAll(AMBIGUOUS_SERVER_TERM)].some((match) =>
     !VISIBLE_ELEMENT_LABEL.test(instruction.slice(match.index + match[0].length).trimStart()));
-
-/** 01-core §8 — generated component naming check exported for focused engine tests. */
-export const isGeneratedComponentName = (name: string): boolean =>
-  PASCAL_CASE.test(name) && !reserved.has(name);

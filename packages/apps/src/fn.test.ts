@@ -140,7 +140,7 @@ describe("createFnCaller (execution-v2 fn resolution over the box door)", () => 
     const inner: AppCaller = {
       call: vi.fn(async () => innerOutcome),
       callFn: vi.fn(async () => innerOutcome),
-      callQuery: vi.fn(async () => ({ outcome: innerOutcome, uiEnvelope: false })),
+      callQuery: vi.fn(async () => innerOutcome),
     };
 
     it("routes fn: refs on a machine-bearing app to the box for call and callQuery", async () => {
@@ -152,7 +152,7 @@ describe("createFnCaller (execution-v2 fn resolution over the box door)", () => 
       const call = await wrapped.call(machineApp(), "fn:submit", { id: "i1" }, ctx);
       const query = await wrapped.callQuery(machineApp(), "fn:report", {}, ctx);
       expect(call).toEqual({ status: "ok", output: { ok: true } });
-      expect(query).toEqual({ outcome: { status: "ok", output: { ok: true } }, uiEnvelope: false });
+      expect(query).toEqual({ status: "ok", output: { ok: true } });
       expect(seen.map((request) => request.path)).toEqual(["/fn/submit", "/fn/report"]);
       expect(inner.call).not.toHaveBeenCalled();
       expect(inner.callQuery).not.toHaveBeenCalled();
@@ -163,7 +163,7 @@ describe("createFnCaller (execution-v2 fn resolution over the box door)", () => 
       const wrapped = createFnCaller({ wake }).wrap(inner);
       expect(await wrapped.call(machineApp(), "host_tool", {}, ctx)).toEqual(innerOutcome);
       expect(await wrapped.call(treeApp(), "fn:total", {}, ctx)).toEqual(innerOutcome);
-      expect((await wrapped.callQuery(treeApp(), "host_tool", {}, ctx)).outcome).toEqual(innerOutcome);
+      expect(await wrapped.callQuery(treeApp(), "host_tool", {}, ctx)).toEqual(innerOutcome);
       expect(await wrapped.callFn(treeApp(), "total", {}, ctx)).toEqual(innerOutcome);
       expect(wake).not.toHaveBeenCalled();
     });

@@ -118,9 +118,8 @@ export const createProgressiveQueryResolver = (
     const data = structuredClone(baseData);
     for (const state of states) {
       if (!state.settled || state.result === undefined) continue;
-      const { outcome, uiEnvelope } = state.result;
-      if (outcome.status !== "ok" || uiEnvelope) continue;
-      setQueryData(data, queryPointer(state.query), outcome.output);
+      if (state.result.status !== "ok") continue;
+      setQueryData(data, queryPointer(state.query), state.result.output);
     }
     resolvedData = data;
     if (notify) onData?.(structuredClone(data));
@@ -172,9 +171,10 @@ export const createProgressiveQueryResolver = (
  * SERVER-AUTHORITATIVE. The stored tree is model-written or imported from an
  * untrusted `.vendoapp`, so a forged `inClient` or `pinDrift` riding the
  * document must never reach the client: strip both before the verified
- * verdict and the computed drift (when any) are attached.
+ * verdict and the computed drift (when any) are attached — and strip at
+ * persist time too (the runtime shares this helper), streamed or at rest.
  */
-const stripForgedServerFields = <T extends object>(payload: T): T => {
+export const stripServerAuthoritativeFields = <T extends object>(payload: T): T => {
   delete (payload as { inClient?: unknown }).inClient;
   delete (payload as { pinDrift?: unknown }).pinDrift;
   return payload;
@@ -224,7 +224,7 @@ export const createAppOpener = (
   if (app.tree.formatVersion === VENDO_TREE_FORMAT_V2) {
     const validation = validateTreeV2(app.tree);
     if (!validation.ok) throw new VendoError("validation", validation.error.message);
-    const tree = stripForgedServerFields(structuredClone(validation.tree));
+    const tree = stripServerAuthoritativeFields(structuredClone(validation.tree));
     const inClient = await inClientVenue?.(app);
     if (inClient !== undefined) {
       (tree as TreeV2 & { inClient: InClientVenueState }).inClient = inClient;
@@ -248,7 +248,7 @@ export const createAppOpener = (
   // 01-core §8 — an unregistered format tag is a contained failure: the payload
   // passes through untouched (no query resolution) and the renderer shows the
   // notice. v2 is the only registered tree format (v1 is discarded).
-  const payload = stripForgedServerFields(structuredClone(app.tree));
+  const payload = stripServerAuthoritativeFields(structuredClone(app.tree));
   return app.components === undefined
     ? { kind: "tree", payload }
     : { kind: "tree", payload, components: structuredClone(app.components) };

@@ -28,6 +28,7 @@ import {
 import type { LanguageModel } from "ai";
 import { createAgentTools } from "./agent-tools.js";
 import { createAppData } from "./app-data.js";
+import { appLifecycleEvent } from "./audit.js";
 import { createAppCaller } from "./call.js";
 import { createParkedActions } from "./parked-action.js";
 import {
@@ -37,6 +38,7 @@ import {
   type ShareSnapshot,
 } from "./cloud.js";
 import {
+  distinctIssues,
   instructionRequiresServer,
   modelEngine,
   prewarmModels,
@@ -50,7 +52,6 @@ import {
   createMachineLifecycle,
   type BuildMachineEnv,
   type LifecycleClock,
-  type MachineSandboxAdapter,
 } from "./machine-lifecycle.js";
 import { createFnCaller } from "./fn.js";
 import {
@@ -60,8 +61,8 @@ import {
   type BoxEditResult,
 } from "./box-agent.js";
 import { parseVendoManifest } from "./manifest.js";
-import { createAppOpener, createProgressiveQueryResolver } from "./open.js";
-import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
+import { createAppOpener, createProgressiveQueryResolver, stripServerAuthoritativeFields } from "./open.js";
+import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, rowFromRecord, updateAppRow } from "./persistence.js";
 import { detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "./redaction.js";
 import {
@@ -79,7 +80,7 @@ import {
 import { createSecretExposure, type SecretExposureGrant } from "./secret-exposure.js";
 import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
 import { appVersionHash } from "./version-hash.js";
-import type { SandboxMachine } from "./sandbox.js";
+import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 
 /** 06-apps §1 plus block-plan decisions 3–4. */
 export interface AppsConfig {
@@ -94,7 +95,7 @@ export interface AppsConfig {
    * unaffected.
    */
   machine?: {
-    sandbox?: MachineSandboxAdapter;
+    sandbox?: SandboxAdapter;
     buildEnv?: BuildMachineEnv;
     /**
      * Lane E — the implicit skin domains merged into every machine's egress
@@ -395,30 +396,14 @@ export interface AppsRuntime {
   };
 }
 
-const allRecords = async (
-  store: StoreAdapter,
-  refs: Record<string, string>,
-): Promise<VendoRecord[]> => {
-  const records: VendoRecord[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await store.records("vendo_apps").list(
-      cursor === undefined ? { refs } : { refs, cursor },
-    );
-    records.push(...page.records);
-    cursor = page.cursor;
-  } while (cursor !== undefined);
-  return records;
-};
+const allRecords = (store: StoreAdapter, refs: Record<string, string>): Promise<VendoRecord[]> =>
+  listAllRecords(store.records("vendo_apps"), { refs });
 
-const rungFor = (
-  app: AppDocument,
-  declared?: VersionEntry["rung"],
-): VersionEntry["rung"] => {
+const rungFor = (app: AppDocument): VersionEntry["rung"] => {
   if (app.ui === "http") return 4;
   // execution-v2 — a machine (Wave 1 Lane B) is layer 2, exactly like the
   // retired v1 `server`; presence, never a stored rung, is the source of truth.
-  if (app.machine !== undefined || app.server !== undefined) return declared === 3 ? 3 : 2;
+  if (app.machine !== undefined || app.server !== undefined) return 2;
   return 1;
 };
 
@@ -439,13 +424,12 @@ const generationDependencies = (
   ...(onPartial === undefined ? {} : { onPartial }),
 });
 
-/** 06-apps §§8–9 — payload fields only the server may write (the venue verdict
- * and the drift report). A model-written or artifact-imported tree must never
- * smuggle either one in, streamed or at rest. */
-const stripServerAuthoritativeFields = (payload: object): void => {
-  delete (payload as { inClient?: unknown }).inClient;
-  delete (payload as { pinDrift?: unknown }).pinDrift;
-};
+/** v2 spec §1 — assemble the emitted payload: the tree plus document islands
+ *  at payload level (the v2 renderer lifts them into the shared walk). */
+const assembleTree = (source: { tree: UIPayload | TreeV2; components?: Record<string, string> }): TreeV2 => ({
+  ...structuredClone(source.tree),
+  ...(source.components === undefined ? {} : { components: structuredClone(source.components) }),
+} as TreeV2);
 
 const pinnedSubtree = (app: AppDocument, componentName: string): unknown[] => {
   if (app.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) return [];
@@ -453,7 +437,8 @@ const pinnedSubtree = (app: AppDocument, componentName: string): unknown[] => {
   const included = new Set(tree.nodes.filter((node) => node.component === componentName).map((node) => node.id));
   const pending = [...included];
   while (pending.length > 0) {
-    const node = tree.nodes.find(({ id }) => id === pending.pop());
+    const id = pending.pop();
+    const node = tree.nodes.find((candidate) => candidate.id === id);
     for (const child of node?.children ?? []) {
       if (included.has(child)) continue;
       included.add(child);
@@ -496,24 +481,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const parkedActions = createParkedActions(config.store);
 
   const reportGuard = async (
-    kind: "app-lifecycle",
     principalSubject: string,
     appId: AppId,
     ctx: Pick<RunContext, "venue" | "presence"> & { trigger?: RunContext["trigger"] },
     detail: Record<string, Json>,
   ): Promise<void> => {
-    await config.guard.report({
-      id: `aud_${globalThis.crypto.randomUUID()}`,
-      at: new Date().toISOString(),
-      kind,
-      principal: { kind: "user", subject: principalSubject },
-      venue: ctx.venue,
-      presence: ctx.presence,
-      appId,
-      ...(ctx.trigger === undefined ? {} : { trigger: { ...ctx.trigger } }),
-      outcome: "ok",
-      detail,
-    });
+    await config.guard.report(
+      appLifecycleEvent({ kind: "user", subject: principalSubject }, ctx, appId, detail),
+    );
   };
 
   // execution-v2 — the v2 machine lifecycle (provision/wake/sleep/destroy);
@@ -597,7 +572,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     // processes, so env can only change at a fresh provision (and Wave 3's
     // in-box edit loop, which restarts the server, is where re-injection
     // lands).
-    await reportGuard("app-lifecycle", grant.owner, grant.appId, { venue: "app", presence: "present" }, {
+    await reportGuard(grant.owner, grant.appId, { venue: "app", presence: "present" }, {
       operation: "secret-exposure-set",
       secretName: grant.secretName,
       expose: true,
@@ -633,24 +608,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   });
 
   /** Bounded read-mutate-CAS on the app row (the lifecycle uses the same recipe). */
-  const updateAppDocument = async (
+  const updateAppDocument = (
     appId: AppId,
     mutate: (doc: AppDocument) => AppDocument,
-  ): Promise<AppDocument> => {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const record = await apps.get(appId);
-      if (record === null) throw new VendoError("not-found", `app not found: ${appId}`);
-      const row = rowFromRecord(record);
-      const next = mutate(structuredClone(row.doc));
-      const input = appRecordInput(next, row.subject, row.enabled);
-      if (apps.atomic === undefined || record.revision === undefined) {
-        await apps.put(input);
-        return next;
-      }
-      if (await apps.atomic.compareAndSwap(input, record.revision) !== null) return next;
-    }
-    throw new VendoError("conflict", `app ${appId} was concurrently modified`, { appId });
-  };
+  ): Promise<AppDocument> => updateAppRow(apps, appId, mutate);
 
   const commitEgressApproval = async (
     appId: AppId,
@@ -669,7 +630,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     // policy override fixes that — but a LIVE machine still runs the old
     // network policy, so put it to sleep; its next wake applies the grant.
     await lifecycle.sleep(updated).catch(() => undefined);
-    await reportGuard("app-lifecycle", owner, appId, { venue: "app", presence: "present" }, {
+    await reportGuard(owner, appId, { venue: "app", presence: "present" }, {
       operation: "egress-approved",
       domains,
     });
@@ -763,7 +724,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         } else {
           // Denial leaves the declaration unapproved (fail closed) and clears the card.
           for (const domain of entry.domains) await egressApprovals.remove(appId, domain);
-          await reportGuard("app-lifecycle", entry.owner, appId, { venue: "app", presence: "present" }, {
+          await reportGuard(entry.owner, appId, { venue: "app", presence: "present" }, {
             operation: "egress-denied",
             domains: entry.domains,
           });
@@ -842,10 +803,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
   });
 
-  const appendIssues = (current: string[], next: string[]): string[] => [
-    ...new Set([...current, ...next]),
-  ];
-
   const persistEdit = async (
     previous: AppDocument,
     app: AppDocument,
@@ -892,18 +849,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     ctx: RunContext,
     extra: Record<string, Json> = {},
   ): Promise<void> => {
-    await config.guard.report({
-      id: `aud_${globalThis.crypto.randomUUID()}`,
-      at: new Date().toISOString(),
-      kind: "app-lifecycle",
-      principal: { ...ctx.principal },
-      venue: ctx.venue,
-      presence: ctx.presence,
-      appId,
-      trigger: ctx.trigger === undefined ? undefined : { ...ctx.trigger },
-      outcome: "ok",
-      detail: { operation, ...extra },
-    });
+    await config.guard.report(appLifecycleEvent(ctx.principal, ctx, appId, { operation, ...extra }));
   };
 
   // verify-v2 fixes / v2 spec §3 — shape cards from live samples: each read
@@ -1109,7 +1055,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       if (generated.kind === "document") {
         bound = { ...generated.document, id: base.id };
       } else {
-        treeIssues = appendIssues(treeIssues, generated.issues);
+        treeIssues = distinctIssues(treeIssues, generated.issues);
       }
     }
     const version: VersionEntry = { at: new Date().toISOString(), intent: instruction, rung: rungFor(base) };
@@ -1180,10 +1126,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         generationDependencies(config, config.model, await generationToolContext(ctx), input.onView === undefined ? undefined : (partial) => {
           // v2 spec §1 — the payload carries islands at payload level (the
           // renderer lifts them); a mid-stream payload is marked streaming.
-          latestTree = {
-            ...structuredClone(partial.tree),
-            ...(partial.components === undefined ? {} : { components: structuredClone(partial.components) }),
-          } as TreeV2;
+          latestTree = assembleTree(partial);
           emit({ ...structuredClone(latestTree), streaming: true } as TreeV2);
           queryResolver?.update(latestTree);
         }),
@@ -1200,10 +1143,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       delete app.egressApproved;
       let finalTree: TreeV2 | undefined;
       if (input.onView !== undefined && app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
-        finalTree = {
-          ...structuredClone(app.tree),
-          ...(app.components === undefined ? {} : { components: structuredClone(app.components) }),
-        } as TreeV2;
+        finalTree = assembleTree({ tree: app.tree, components: app.components });
         latestTree = structuredClone(finalTree);
         queryResolver?.update(finalTree);
         finalTree.data = await queryResolver?.complete() ?? structuredClone(finalTree.data ?? {});
@@ -1222,12 +1162,22 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           const graduated = await graduate(structuredClone(app), input.prompt, ctx);
           if (graduated.failure === undefined) {
             if (input.onView !== undefined && graduated.app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
-              const tree = {
-                ...structuredClone(graduated.app.tree),
-                ...(graduated.app.components === undefined ? {} : { components: structuredClone(graduated.app.components) }),
-              } as TreeV2;
-              stripServerAuthoritativeFields(tree);
-              emit(tree);
+              // The streamed view parts are last-write-wins, and the pre-
+              // graduation emit above already painted resolved query data —
+              // so this emit must resolve the graduated tree's queries too
+              // (its fn: refs are resolvable: the machine exists). On a
+              // resolver failure, emit nothing rather than a data-less tree
+              // that would blank the screen.
+              try {
+                const tree = assembleTree({ tree: graduated.app.tree, components: graduated.app.components });
+                stripServerAuthoritativeFields(tree);
+                const graduatedResolver = createProgressiveQueryResolver(caller, graduated.app, ctx);
+                graduatedResolver.update(tree);
+                tree.data = await graduatedResolver.complete();
+                emit(tree);
+              } catch {
+                // Best-effort: the pre-graduation view stands until open().
+              }
             }
             return structuredClone(graduated.app);
           }
@@ -1330,7 +1280,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           generationDependencies(config, config.model, await generationToolContext(ctx)),
         );
         if (generated.kind === "failure") {
-          collectedIssues = appendIssues(collectedIssues, generated.issues);
+          collectedIssues = distinctIssues(collectedIssues, generated.issues);
           repairIssues = collectedIssues;
           continue;
         }
@@ -1341,7 +1291,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         const version: VersionEntry = {
           at: new Date().toISOString(),
           intent: instruction,
-          rung: rungFor(app, generated.rung),
+          rung: rungFor(app),
         };
         return withPinDrift({
           app: await persistEdit(previous, app, version, ctx.principal.subject),
@@ -1640,7 +1590,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         if (input.expose === false) {
           // Turning OFF is safe — revert to the Option B handle default at once.
           await exposure.revoke(input.appId, input.secretName);
-          await reportGuard("app-lifecycle", ctx.principal.subject, input.appId, ctx, {
+          await reportGuard(ctx.principal.subject, input.appId, ctx, {
             operation: "secret-exposure-set",
             secretName: input.secretName,
             expose: false,
@@ -1673,7 +1623,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             requestedAt: new Date().toISOString(),
           });
           await exposure.activate(input.appId, input.secretName);
-          await reportGuard("app-lifecycle", ctx.principal.subject, input.appId, ctx, {
+          await reportGuard(ctx.principal.subject, input.appId, ctx, {
             operation: "secret-exposure-set",
             secretName: input.secretName,
             expose: true,

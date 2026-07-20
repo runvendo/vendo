@@ -4,20 +4,11 @@ import {
   type AppId,
   type StoreAdapter,
 } from "@vendoai/core";
-import { appRecordInput, rowFromRecord } from "./persistence.js";
+import { rowFromRecord, updateAppRow } from "./persistence.js";
 import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 
 /** Execution-v2 wake/sleep policy: auto-sleep after 5 minutes idle. */
 const DEFAULT_IDLE_MS = 5 * 60_000;
-/** Bounded CAS retries before a document update reports a conflict. */
-const CAS_ATTEMPTS = 3;
-
-/**
- * Collapsed onto the seam: destroy-by-ref now lives on SandboxAdapter itself
- * (Lane A amendment). Kept as an alias so Lane B-era call sites read the same.
- * @deprecated Use SandboxAdapter directly.
- */
-export type MachineSandboxAdapter = SandboxAdapter;
 
 /** Injectable timer seam so idle auto-sleep is testable without real time. */
 export interface LifecycleClock {
@@ -64,7 +55,7 @@ export type BuildMachineAllowlist = (
 
 export interface MachineLifecycleConfig {
   store: StoreAdapter;
-  sandbox?: MachineSandboxAdapter;
+  sandbox?: SandboxAdapter;
   buildEnv?: BuildMachineEnv;
   allowedDomains?: BuildMachineAllowlist;
   /** Provider base template every provisioned machine boots from. */
@@ -138,7 +129,7 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
   const waking = new Map<AppId, Promise<SandboxMachine>>();
   const provisioning = new Map<AppId, Promise<AppDocument>>();
 
-  const requireAdapter = (): MachineSandboxAdapter => {
+  const requireAdapter = (): SandboxAdapter => {
     if (config.sandbox === undefined) {
       throw new VendoError("sandbox-unavailable", "sandbox execution is unavailable");
     }
@@ -155,27 +146,10 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
   };
 
   /** Read-mutate-CAS on the app row; the store's revision receipt arbitrates racers. */
-  const updateDocument = async (
+  const updateDocument = (
     appId: AppId,
     mutate: (doc: AppDocument) => AppDocument,
-  ): Promise<AppDocument> => {
-    for (let attempt = 0; attempt < CAS_ATTEMPTS; attempt += 1) {
-      const record = await records.get(appId);
-      if (record === null) {
-        throw new VendoError("not-found", `app ${appId} does not exist`, { appId });
-      }
-      const row = rowFromRecord(record);
-      const next = mutate(structuredClone(row.doc));
-      const input = appRecordInput(next, row.subject, row.enabled);
-      if (records.atomic === undefined || record.revision === undefined) {
-        await records.put(input);
-        return next;
-      }
-      const swapped = await records.atomic.compareAndSwap(input, record.revision);
-      if (swapped !== null) return next;
-    }
-    throw new VendoError("conflict", `app ${appId} was concurrently modified`, { appId });
-  };
+  ): Promise<AppDocument> => updateAppRow(records, appId, mutate);
 
   const armIdleTimer = (appId: AppId): void => {
     const entry = live.get(appId);

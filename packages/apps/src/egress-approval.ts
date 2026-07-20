@@ -7,6 +7,7 @@ import {
   type StoreAdapter,
   type VendoRecord,
 } from "@vendoai/core";
+import { listAllRecords } from "./persistence.js";
 
 /**
  * execution-v2 Wave 2 Lane E — grant-style egress approval
@@ -88,22 +89,8 @@ const COLLECTION = "vendo_egress_approval";
 
 const requestData = (record: VendoRecord): EgressApprovalRequest => record.data as EgressApprovalRequest;
 
-const listAll = async (
-  store: StoreAdapter,
-  refs: Record<string, string>,
-): Promise<VendoRecord[]> => {
-  const records: VendoRecord[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await store.records(COLLECTION).list(
-      cursor === undefined ? { refs } : { refs, cursor },
-    );
-    records.push(...page.records);
-    if (page.cursor === undefined || page.cursor === cursor) break;
-    cursor = page.cursor;
-  } while (cursor !== undefined);
-  return records;
-};
+const listAll = (store: StoreAdapter, refs: Record<string, string>): Promise<VendoRecord[]> =>
+  listAllRecords(store.records(COLLECTION), { refs });
 
 /**
  * Persistence for PARKED egress approvals only. Approved state lives on the

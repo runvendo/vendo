@@ -5,7 +5,7 @@ import {
   type RunContext,
   type ToolOutcome,
 } from "@vendoai/core";
-import type { AppCaller } from "./call.js";
+import { FN_NAME_PATTERN, fnOutcome, type AppCaller } from "./call.js";
 import { requestAppWithBootRetry, type BootRetryOptions } from "./box-agent.js";
 import type { SandboxMachine } from "./sandbox.js";
 
@@ -22,9 +22,6 @@ import type { SandboxMachine } from "./sandbox.js";
  * box. Responses bind exactly like tool results: `{result}` becomes
  * `{status:"ok", output}`, `{error:{code,message}}` relays as-is.
  */
-
-/** The name half of core's 01 §8 `fn:<name>` grammar. */
-const FN_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 
 const decoder = new TextDecoder();
 
@@ -96,11 +93,8 @@ export const createFnCaller = (config: FnCallerConfig): FnCaller => {
     args: Json,
     _ctx: RunContext,
   ): Promise<ToolOutcome> => {
-    if (!FN_NAME_PATTERN.test(name)) {
-      return errorOutcome("validation", `invalid fn reference: fn:${name}`);
-    }
-    if (app.machine === undefined) {
-      return errorOutcome("validation", `fn:${name} requires a machine; the app has not graduated`);
+    if (!FN_NAME_PATTERN.test(name) || app.machine === undefined) {
+      return fnOutcome(name);
     }
     try {
       const machine = await config.wake(app);
@@ -137,7 +131,7 @@ export const createFnCaller = (config: FnCallerConfig): FnCaller => {
       },
       async callQuery(app, ref, args, ctx) {
         if (ref.startsWith("fn:") && app.machine !== undefined) {
-          return { outcome: await callFn(app, ref.slice(3), args, ctx), uiEnvelope: false };
+          return callFn(app, ref.slice(3), args, ctx);
         }
         return inner.callQuery(app, ref, args, ctx);
       },

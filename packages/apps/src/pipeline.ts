@@ -3,6 +3,7 @@ import {
   compileWirePatchV2,
   printWireV2,
   isPathBinding,
+  shapeAtPointer,
   type ShapeType,
   type TreeNode,
   type TreeV2,
@@ -166,22 +167,6 @@ const enumerateShapePaths = (shape: ShapeType, prefix: string): string[] => {
   return out;
 };
 
-const shapeAt = (shape: ShapeType, pointer: string): ShapeType | undefined => {
-  let current = shape;
-  if (pointer === "") return current;
-  for (const token of pointer.slice(1).split("/")) {
-    const key = token.replaceAll("~1", "/").replaceAll("~0", "~");
-    if (current.kind === "object" && key in current.fields) {
-      current = current.fields[key] as ShapeType;
-    } else if (current.kind === "array" && /^\d+$/.test(key)) {
-      current = current.items;
-    } else {
-      return undefined;
-    }
-  }
-  return current;
-};
-
 const kindMatchesSchemaType = (kind: ShapeType["kind"], type: string): boolean => {
   if (kind === "json") return true;
   if (type === "array") return kind === "array";
@@ -290,7 +275,7 @@ const deriveFixes = (
       && !("$reshape" in (propValue as unknown as Record<string, unknown>));
     if (wholeProp && requirement.type !== undefined) {
       const filtered = options.filter((path) => {
-        const bound = shapeAt(shape, path.slice(`/${error.query}`.length));
+        const bound = shapeAtPointer(shape, path.slice(`/${error.query}`.length));
         return bound !== undefined && kindMatchesSchemaType(bound.kind, requirement.type as string);
       });
       if (filtered.length > 0) options = filtered;
@@ -686,7 +671,9 @@ Ops (patch the CURRENT_APP wire against its id="..." anchors):
 - <SetName name="..."/> renames the app.
 If nothing needs polish, emit exactly <Edit></Edit>.`;
 
-const extractEdit = (text: string): string => {
+/** Same fence tolerance as engine.ts's extractWire, for <Edit> documents
+ *  (shared by the edit dialect and the end pass). */
+export const extractEdit = (text: string): string => {
   const start = text.indexOf("<Edit");
   if (start === -1) return text;
   const closeTag = "</Edit>";

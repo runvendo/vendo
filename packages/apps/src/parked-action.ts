@@ -6,6 +6,7 @@ import {
   type ToolCall,
   type VendoRecord,
 } from "@vendoai/core";
+import { listAllRecords } from "./persistence.js";
 
 /**
  * W0 — parked in-app actions (the approve→resume engine seam).
@@ -50,22 +51,8 @@ const COLLECTION = "vendo_parked_action";
 
 const parkedData = (record: VendoRecord): ParkedAction => record.data as ParkedAction;
 
-const listAll = async (
-  store: StoreAdapter,
-  refs: Record<string, string>,
-): Promise<VendoRecord[]> => {
-  const records: VendoRecord[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await store.records(COLLECTION).list(
-      cursor === undefined ? { refs } : { refs, cursor },
-    );
-    records.push(...page.records);
-    if (page.cursor === undefined || page.cursor === cursor) break;
-    cursor = page.cursor;
-  } while (cursor !== undefined);
-  return records;
-};
+const listAll = (store: StoreAdapter, refs: Record<string, string>): Promise<VendoRecord[]> =>
+  listAllRecords(store.records(COLLECTION), { refs });
 
 export interface ParkedActions {
   /** Park one in-app action on its guard approval (re-parking overwrites). */

@@ -138,9 +138,12 @@ describe("box control-port protocol", () => {
     cleanups.push(() => harness.stop());
     writeFileSync(path.join(appDir, ".vendo", "run"), `printf ran > ${JSON.stringify(marker)}; sleep 30`);
     await harness.start();
-    // The supervisor spawns the entry on start; poll for the marker (bash -lc
-    // login-shell startup varies under load).
-    for (let i = 0; i < 60; i += 1) {
+    // The supervisor spawns the entry on start; poll for the marker with a
+    // generous deadline (bash -lc login-shell startup varies wildly under
+    // turbo-parallel load — a bounded ~6s poll flaked there). The happy path
+    // still exits on the first sighting.
+    const deadline = Date.now() + 25_000;
+    while (Date.now() < deadline) {
       try {
         if (readFileSync(marker, "utf8") === "ran") break;
       } catch {
@@ -149,5 +152,5 @@ describe("box control-port protocol", () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     expect(readFileSync(marker, "utf8")).toBe("ran");
-  });
+  }, 30_000);
 });

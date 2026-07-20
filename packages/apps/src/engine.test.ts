@@ -340,6 +340,63 @@ describe("generation engine through createApps", () => {
     expect(trails).toHaveLength(3);
   });
 
+  it("records a pin intent for an edit that only touches a node below the pinned instance", async () => {
+    // pinnedSubtree must traverse DESCENDANTS of the pinned instance: a props
+    // change on a child node — with the pin base, the island source, and the
+    // pinned node itself all unchanged — still touches the slot, so the edit
+    // must land in the per-slot replay trail (otherwise a rebase silently
+    // drops it from the replay).
+    const store = memoryStore();
+    const slot = "net-worth-card";
+    const componentName = pinComponentName(slot);
+    const source = `export default function MapleNetWorthCard() {
+  return <section><h2>Net worth</h2><strong>$1.2M</strong></section>;
+}`;
+    const pinnedId = `${componentName.toLowerCase()}-1`;
+    const original: AppDocument = {
+      format: "vendo/app@1",
+      id: "app_maple_pin_child",
+      name: "Maple overview",
+      ui: "tree",
+      pins: [{ slot, base: "sha256:maple-base" }],
+      components: { [componentName]: source },
+      tree: {
+        formatVersion: "vendo-genui/v2",
+        root: "root",
+        // The pinned instance is NOT first in nodes, and the edited node sits
+        // below it — only a real subtree walk marks the slot touched.
+        nodes: [
+          { id: "root", component: "Stack", source: "prewired", children: [pinnedId] },
+          { id: pinnedId, component: componentName, source: "generated", children: ["note-1"] },
+          { id: "note-1", component: "Text", source: "prewired", props: { text: "old note" } },
+        ],
+      },
+    };
+    await putApp(store, original);
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel('<Edit><Set id="note-1" text="new note"/></Edit>'),
+      pinBaselines: [{
+        slot,
+        source,
+        hash: "sha256:maple-base",
+        exportable: false,
+        capturedAt: "2026-07-14T12:00:00.000Z",
+      }],
+    });
+
+    const result = await runtime.edit(original.id, "Update the note", ctx);
+
+    expect(result.issues).toBeUndefined();
+    const rows = await store.records(`vendo:app-pin-intents:${original.id}`).list();
+    expect(rows.records.map((record) => record.data)).toEqual([
+      expect.objectContaining({ slot, intent: "Update the note" }),
+    ]);
+  });
+
   it("forks a named-export host slot with a synthesized default export (ENG-348)", async () => {
     const store = memoryStore();
     const source = `export function MapleNetWorthCard() {

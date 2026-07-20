@@ -131,14 +131,12 @@ describe("fakeSandbox v2 seam semantics", () => {
     await expect(fakeSandbox().destroy("e2b:v2:whatever")).rejects.toThrow(/fake sandbox snapshot ref/);
   });
 
-  it("keeps the v1 compat surface working: files, exec, and egress simulation", async () => {
+  it("simulates the egress allowlist in exec fetches", async () => {
     const adapter = fakeSandbox();
     const machine = await adapter.create({
       env: { PORT: "8080" },
-      files: { "/app/seed.txt": "seed" },
-      egress: ["api.example.com", "*.wild.example"],
+      allowedDomains: ["api.example.com", "*.wild.example"],
     });
-    expect(decoder.decode(await machine.files.read("/app/seed.txt"))).toBe("seed");
     expect(machine.allowedDomains).toEqual(["api.example.com", "*.wild.example"]);
     const allowed = await machine.exec(
       "timeout 5 node -e \"fetch('https://api.example.com').then(() => process.exit(0)).catch(() => process.exit(1))\"",
@@ -148,15 +146,5 @@ describe("fakeSandbox v2 seam semantics", () => {
       "timeout 5 node -e \"fetch('https://evil.example').then(() => process.exit(0)).catch(() => process.exit(1))\"",
     );
     expect(blocked.code).toBe(1);
-  });
-
-  it("prefers allowedDomains over the deprecated egress alias when both are given", async () => {
-    const adapter = fakeSandbox();
-    const machine = await adapter.create({
-      env: { PORT: "8080" },
-      allowedDomains: ["v2.example"],
-      egress: ["v1.example"],
-    });
-    expect(machine.allowedDomains).toEqual(["v2.example"]);
   });
 });
