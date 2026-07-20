@@ -602,3 +602,45 @@ describe("RiderThreadBridge direct edge paths", () => {
     expect(result.ok).toBe(false);
   });
 });
+
+describe("rider bridge lifecycle in the agent", () => {
+  it("disposes the bridge on thread delete so a reused id gets a fresh session", async () => {
+    const guard = testGuard({});
+    const first = new FakeRiderSession([[{ text: "first" }]]);
+    const second = new FakeRiderSession([[{ text: "second" }]]);
+    const sessions = [first, second];
+    const agent = createAgent({
+      model: "unused-on-rider-threads" as never,
+      tools: registry(guard),
+      guard,
+      rider: { session: async () => sessions.shift() ?? null },
+    });
+
+    await streamTurn(agent, "thr_reuse", userMessage("u1", "hi"));
+    await agent.threads.delete("thr_reuse", ctx());
+    // Delete tears the harness session down, not just the stored thread.
+    expect(first.disposed).toBe(true);
+
+    // A reused id must not resurrect the deleted thread's session: the fresh
+    // turn runs on the newly provided session, not the old harness history.
+    const { parts } = await streamTurn(agent, "thr_reuse", userMessage("u2", "hi again"));
+    expect(second.started).not.toBeNull();
+    const text = parts
+      .filter((part) => part.type === "text-delta")
+      .map((part) => part.delta as string)
+      .join("");
+    expect(text).toBe("second");
+  });
+
+  it("disposes rider bridges when a subject's threads are evicted", async () => {
+    const guard = testGuard({});
+    const session = new FakeRiderSession([[{ text: "hello" }]]);
+    const { agent } = agentWith(session, guard);
+
+    await streamTurn(agent, "thr_evicted", userMessage("u1", "hi"));
+    // evictSubject is fire-and-forget (03-agent §1), so the teardown lands
+    // asynchronously after the store delete resolves.
+    agent.evictSubject("u1");
+    await vi.waitFor(() => expect(session.disposed).toBe(true));
+  });
+});

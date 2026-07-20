@@ -364,7 +364,24 @@ export function createAgent(config: AgentConfig): VendoAgent {
   };
   // ENG-338: one rider bridge per thread, held for the agent's lifetime so a
   // parked approval survives across requests inside the persistent session.
+  // "Lifetime" means surviving across REQUESTS, not surviving thread delete:
+  // a deleted thread's id is immediately reclaimable (resolve() recreates it,
+  // possibly for another subject), so its bridge — and the external harness
+  // session holding the deleted conversation — must be torn down with it.
   const riderBridges = new Map<string, RiderThreadBridge>();
+  const disposeRiderBridge = (id: string): void => {
+    const bridge = riderBridges.get(id);
+    if (bridge === undefined) return;
+    riderBridges.delete(id);
+    // Fire-and-forget: teardown of the dev-mode harness must never block or
+    // fail the delete/eviction that triggered it.
+    bridge.dispose().catch((error: unknown) => {
+      console.error("[vendo] agent: rider bridge dispose failed", {
+        threadId: id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  };
 
   return {
     async stream(input) {
@@ -388,26 +405,21 @@ export function createAgent(config: AgentConfig): VendoAgent {
         }
       }
       upsertMessage(thread.messages, input.message);
+      // ENG-338 rider path: a dev-mode session harness owns the model loop for
+      // this thread; tools + consent still run the guard-bound path (rider.ts).
+      // The capability-miss reporter tool is native-loop only (rider sessions
+      // register the host tool surface at session start), so a rider system
+      // prompt must not instruct calling it.
+      const riderSession = config.rider === undefined
+        ? null
+        : await config.rider.session({ threadId: thread.id });
       const system = await assembleSystemPrompt(
         config.guard,
         input.ctx,
         config.system,
-        config.capabilityMiss !== undefined,
+        config.capabilityMiss !== undefined && riderSession === null,
       );
-
-      // ENG-338 rider path: a dev-mode session harness owns the model loop for
-      // this thread; tools + consent still run the guard-bound path (rider.ts).
-      // The capability-miss reporter tool is native-loop only (rider sessions
-      // register the host tool surface at session start).
-      const riderSession = config.rider === undefined
-        ? null
-        : await config.rider.session({ threadId: thread.id });
       if (riderSession !== null) {
-        // Rider sessions never get the capability-miss reporter tool, so their
-        // system prompt must not instruct calling it.
-        const riderSystem = config.capabilityMiss === undefined
-          ? system
-          : await assembleSystemPrompt(config.guard, input.ctx, config.system, false);
         let bridge = riderBridges.get(thread.id);
         if (bridge === undefined) {
           bridge = new RiderThreadBridge(riderSession, {
@@ -423,7 +435,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
         const riderStream = createUIMessageStream<UIMessage>({
           originalMessages: thread.messages,
           execute: async ({ writer }) => {
-            const turn = { message: input.message, system: riderSystem, ctx: input.ctx, writer };
+            const turn = { message: input.message, system, ctx: input.ctx, writer };
             if (isApprovalResponseMessage(input.message)) {
               await riderBridge.handleApprovalResponse(turn);
             } else {
@@ -558,6 +570,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
       list: (ctx) => threads.list(ctx),
       delete: async (id, ctx) => {
         loadedTools.delete(id);
+        disposeRiderBridge(id);
         await threads.delete(id, ctx);
       },
     },
@@ -570,7 +583,10 @@ export function createAgent(config: AgentConfig): VendoAgent {
       // session sweep.
       threads.evictSubject(subject)
         .then((ids) => {
-          for (const id of ids) loadedTools.delete(id);
+          for (const id of ids) {
+            loadedTools.delete(id);
+            disposeRiderBridge(id);
+          }
         })
         .catch((error: unknown) => {
           console.error("[vendo] agent: evictSubject failed", {

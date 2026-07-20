@@ -1,12 +1,13 @@
-import type {
-  Guard,
-  RunContext,
-  ToolDescriptor,
-  ToolOutcome,
-  ToolRegistry,
+import {
+  toVendoWirePart,
+  type Guard,
+  type RunContext,
+  type ToolDescriptor,
+  type ToolOutcome,
+  type ToolRegistry,
 } from "@vendoai/core";
 import { isToolUIPart, type ToolSet, type UIMessage, type UIMessageStreamWriter } from "ai";
-import { buildAgentTools, type ToolBridgeOptions } from "./tools.js";
+import { approvalPart, buildAgentTools, type ToolBridgeOptions } from "./tools.js";
 
 /**
  * ENG-338 dev-mode rider seam (install-dx design §2, spike ENG-337).
@@ -114,13 +115,6 @@ export class RiderThreadBridge {
     this.session = session;
     this.config = config;
     this.ctx = ctx;
-  }
-
-  /** Serialize turn handling: a thread has at most one rider turn in flight. */
-  private enqueue<T>(task: () => Promise<T>): Promise<T> {
-    const next = this.queue.then(task, task);
-    this.queue = next.catch(() => undefined);
-    return next;
   }
 
   private write(chunk: Record<string, unknown>): void {
@@ -247,17 +241,12 @@ export class RiderThreadBridge {
       if (decision.action === "ask") {
         ask = true;
         // Same wire part the native needsApproval path writes (core §16).
-        this.write({
-          type: "data-vendo-approval",
-          data: {
-            toolCallId,
-            risk: descriptor.risk,
-            approvalId: decision.approval.id,
-            ...(decision.approval.invalidatedGrant === undefined
-              ? {}
-              : { invalidatedGrant: decision.approval.invalidatedGrant }),
-          },
-        });
+        this.write({ ...toVendoWirePart(approvalPart(
+          toolCallId,
+          descriptor.risk,
+          decision.approval.id,
+          decision.approval.invalidatedGrant,
+        )) });
       }
     } catch {
       // Native parity: a guard failure fails CLOSED into the ask flow.
@@ -309,6 +298,25 @@ export class RiderThreadBridge {
     this.parked.clear();
   }
 
+  /** Launch one rider turn; its then/catch closes the attached stream when
+   *  the turn completes (or fails), matching the native loop's finish wire. */
+  private launchTurn(text: string): void {
+    this.turn = this.session
+      .runTurn(text, this.onTextDelta)
+      .then(() => {
+        this.turn = null;
+        this.finishAttached("stop");
+      })
+      .catch((error: unknown) => {
+        this.turn = null;
+        // Rider failures are dev-mode infrastructure: keep the wire generic
+        // but give the operator the real cause on the server log.
+        console.error("[vendo] dev-mode rider turn failed:", error);
+        this.write({ type: "error", errorText: "An error occurred while generating the response." });
+        this.finishAttached("error");
+      });
+  }
+
   /** One user turn. Resolves when THIS response should close. */
   handleUserTurn(input: {
     message: UIMessage;
@@ -332,20 +340,7 @@ export class RiderThreadBridge {
         .filter(Boolean)
         .join("\n");
       this.attach(input.writer, randomId("msg"), finish);
-      this.turn = this.session
-        .runTurn(text, this.onTextDelta)
-        .then(() => {
-          this.turn = null;
-          this.finishAttached("stop");
-        })
-        .catch((error: unknown) => {
-          this.turn = null;
-          // Rider failures are dev-mode infrastructure: keep the wire generic
-          // but give the operator the real cause on the server log.
-          console.error("[vendo] dev-mode rider turn failed:", error);
-          this.write({ type: "error", errorText: "An error occurred while generating the response." });
-          this.finishAttached("error");
-        });
+      this.launchTurn(text);
       // The response stays open until the turn completes or parks
       // (finishAttached resolves `finish` in both cases).
     });
@@ -399,23 +394,11 @@ export class RiderThreadBridge {
           // fresh turn carrying the settlement so it can continue the thread.
           await this.ensureStarted(input.system);
           sawLiveTurn = true;
-          this.turn = this.session
-            .runTurn(
-              outcome === null
-                ? `[system] The user declined your earlier ${toolName} call. Continue helping the user.`
-                : `[system] The user approved your earlier ${toolName} call; it ran with result ${JSON.stringify(outcome)}. Continue helping the user.`,
-              this.onTextDelta,
-            )
-            .then(() => {
-              this.turn = null;
-              this.finishAttached("stop");
-            })
-            .catch((error: unknown) => {
-              this.turn = null;
-              console.error("[vendo] dev-mode rider turn failed:", error);
-              this.write({ type: "error", errorText: "An error occurred while generating the response." });
-              this.finishAttached("error");
-            });
+          this.launchTurn(
+            outcome === null
+              ? `[system] The user declined your earlier ${toolName} call. Continue helping the user.`
+              : `[system] The user approved your earlier ${toolName} call; it ran with result ${JSON.stringify(outcome)}. Continue helping the user.`,
+          );
         }
       }
 
@@ -445,16 +428,18 @@ export class RiderThreadBridge {
   }
 
   /** Wrap one HTTP request: the returned promise resolves when the response
-   *  should close (turn finished OR parked), NOT when the rider turn ends. */
+   *  should close (turn finished OR parked), NOT when the rider turn ends.
+   *  Requests are serialized — a thread has at most one rider turn in flight. */
   private enqueueRequest(
     handler: (finish: (reason: string) => void) => Promise<void>,
   ): Promise<void> {
-    return this.enqueue(
-      () =>
-        new Promise<void>((resolve, reject) => {
-          handler(() => resolve()).catch(reject);
-        }),
-    );
+    const run = (): Promise<void> =>
+      new Promise<void>((resolve, reject) => {
+        handler(() => resolve()).catch(reject);
+      });
+    const next = this.queue.then(run, run);
+    this.queue = next.catch(() => undefined);
+    return next;
   }
 
   async dispose(): Promise<void> {
