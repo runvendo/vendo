@@ -18,18 +18,23 @@
 
 ### Task 1: Ship the Agent SDK with the CLI
 
-**Files:**
-- Modify: `packages/vendo/package.json` (dependencies)
-- Modify: `packages/vendo/src/cli/extract/extraction.ts:212` (unavailable message)
-- Test: `packages/vendo/src/cli/extract/claude-harness.test.ts`
+**RESPEC 2026-07-20:** measurement killed the ship-the-SDK plan (~245 MB
+native Claude Code binary per platform inside the SDK's platform packages,
+hard-required by `query()`; `optionalDependencies` does not reduce it; zod-4
+peer conflict). Decision (Yousef): do NOT ship the SDK. Add a PATH-CLI
+harness instead.
 
-- [ ] **Step 1:** Measure the SDK's install weight (`npm view @anthropic-ai/claude-agent-sdk dist.unpackedSize`, plus its transitive deps). Record the number in the commit message. Decision rule from the spec: plain `dependency` unless the added weight is egregious (guideline: over ~30 MB unpacked), in which case `optionalDependency` and today's graceful skip stays the fallback.
-- [ ] **Step 2:** Write a failing test in `claude-harness.test.ts`: with no test seams, `loadSdk` resolution from the CLI's own tree succeeds (the harness `availability` no longer returns null for SDK-absence reasons when a key is present in env).
-- [ ] **Step 3:** Run it, confirm it fails because the SDK is not in the tree. Command: `pnpm --filter @vendoai/vendo exec vitest run src/cli/extract/claude-harness.test.ts`
-- [ ] **Step 4:** Add the dependency at the version the decision rule picked, `pnpm install`, re-run the test, confirm pass.
-- [ ] **Step 5:** Update the unavailable message at `extraction.ts:212`: the SDK is now shipped, so the message should only mention the missing credential (Claude Code login or `ANTHROPIC_API_KEY`), not `npm install -D @anthropic-ai/claude-agent-sdk`.
-- [ ] **Step 6:** Run the extraction unit tests: `pnpm --filter @vendoai/vendo exec vitest run src/cli/extract/`. Expected: green.
-- [ ] **Step 7:** Commit ("deps: ship @anthropic-ai/claude-agent-sdk with the CLI (<measured size>)").
+**Files:**
+- Create: `packages/vendo/src/cli/extract/claude-cli-harness.ts`
+- Create: `packages/vendo/src/cli/extract/claude-cli-harness.test.ts`
+- Modify: `packages/vendo/src/cli/extract/extraction.ts` (default harness list + unavailable message)
+
+- [ ] **Step 1:** Write failing unit tests for a new `claudeCliHarness()` implementing the existing `ExtractionHarness` interface with injectable exec/probe seams (mirror `claude-harness.ts`'s seam style): (a) `availability` returns null when no `claude` binary is on PATH; (b) returns the key-credential string when the binary exists and `ANTHROPIC_API_KEY` is set; (c) returns the login-credential string when the binary exists and the login probe succeeds; (d) `run` invokes the binary headless with print mode, the instructions as the prompt, read-only allowed tools (Read/Glob/Grep), everything else disallowed, default permission mode, isolated settings, host root as cwd, caller env forwarded, and honors `VENDO_EXTRACTION_MODEL`; (e) `run` returns stdout on success and throws with stderr context on nonzero exit.
+- [ ] **Step 2:** Run them, confirm they fail (module does not exist): `pnpm --filter @vendoai/vendo exec vitest run src/cli/extract/claude-cli-harness.test.ts`
+- [ ] **Step 3:** Implement the harness. Verify real flag spellings against the locally installed binary (`claude --help`); the repo's own nightly uses `claude -p ... --allowedTools ... --permission-mode ...` as prior art. Generous subprocess timeout (stages can run minutes). Reuse the login-probe approach from `claude-harness.ts` rather than duplicating logic where reasonable.
+- [ ] **Step 4:** Register it in `runAiExtraction`'s default harness list AFTER the Agent SDK harness (SDK preferred when resolvable, CLI as fallback), and update the unavailable message to name the real remedies: install Claude Code (`npm install -g @anthropic-ai/claude-code`) or make the Agent SDK resolvable, plus a credential (Claude Code login or `ANTHROPIC_API_KEY`).
+- [ ] **Step 5:** Run the extraction unit tests: `pnpm --filter @vendoai/vendo exec vitest run src/cli/extract/`. Expected: green. Then `pnpm --filter @vendoai/vendo typecheck`.
+- [ ] **Step 6:** Commit ("feat(extract): claude PATH-CLI harness — AI pass without shipping the 245MB Agent SDK").
 
 ### Task 2: Make extract-theme.ts fully deterministic
 

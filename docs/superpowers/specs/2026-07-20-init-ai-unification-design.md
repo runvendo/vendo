@@ -43,11 +43,21 @@ with the CLI, the harness's `@ai-sdk/anthropic` injection becomes removable
    Same harness, same credential story, same artifact trail.
 3. **Corpus wiring ships in the same program.** Scores stay informational,
    not a hard gate.
-4. **Ship the SDK.** `@anthropic-ai/claude-agent-sdk` becomes a real
-   dependency of `@vendoai/vendo`, making the harness's documented
-   resolution order ("CLI's own installation first, never installed into
-   the host") true. If measured install weight is egregious, downgrade to
-   `optionalDependency` and keep today's graceful skip as the fallback.
+4. **PATH-CLI harness instead of shipping the SDK** (revised 2026-07-20
+   after measurement, Yousef's call). Shipping `@anthropic-ai/claude-agent-sdk`
+   was measured at ~245 MB per host install: the SDK's platform packages
+   each bundle the full Claude Code native binary (~241 MB), `query()`
+   hard-requires it, and `optionalDependencies` only changes failure
+   tolerance, not footprint. It also peers on zod 4 against our zod 3
+   pins. So the SDK stays unshipped. Instead, a second
+   `ExtractionHarness` drives the dev's own `claude` CLI headless
+   (`claude -p`, read-only tools, isolated settings) — zero install
+   weight, same credential story (Claude Code login or
+   `ANTHROPIC_API_KEY`). The Agent SDK harness remains first choice when
+   the SDK happens to be resolvable; the CLI harness is the fallback that
+   makes the pass real for the typical dev, who has Claude Code on PATH.
+   CI/corpus get the binary via `npm install -g @anthropic-ai/claude-code`
+   (the nightly's MCP leg already does exactly this).
 
 ## Design
 
@@ -125,5 +135,6 @@ Apply guards, mirroring the overrides guards: only `needed` slots accepted
 - Init-with-consent gets slower on non-conventional apps (an agentic stage
   instead of one structured call), traded for one mechanism and the shared
   credential story.
-- Host installs gain the SDK package weight (measured during
-  implementation; optionalDependency is the fallback).
+- The AI pass depends on a `claude` binary on PATH (or a resolvable Agent
+  SDK) at init time; hosts without either keep today's honest skip. Zero
+  install weight was chosen over universal availability.
