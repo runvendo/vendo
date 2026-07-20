@@ -31,7 +31,14 @@ sessions, and default persistence.
 | `oauth` | escape hatch: `HostOAuthAdapter` used by the door for session lookup and principal resolution; required when `mcp` is enabled and `auth` supplies no oauth half. Mutually exclusive with `auth`. The door renders consent when the adapter uses `session`, or hands off the whole page when it supplies `authorize` instead — see [MCP door](/capabilities/mcp) |
 | `agent` | chat context controls: `toolOutputCap`, `maxOutputTokens`, `historyWindow`, `maxInitialTools`, `loadout`, `maxSteps` (see [Agent context](#agent-context)) |
 | `sessions` | ephemeral (anonymous) session lifecycle: `ttlMs` idle timeout before a session is swept (default 30 minutes; `0` disables eviction) and `sweepIntervalMs` sweep cadence (default 60 seconds) |
+| `approvals` | approval lifecycle knobs: `parkedCallTtlMs` is the idle timeout for a guarded call parked from a [BYO agent loop](/existing-agents) (default 60 min; `0` disables expiry). Past it, the sweep denies the approval and `<VendoApprovalEmbed>` reads "expired". Vendo-thread approvals are untouched |
 | `apps` | apps-block options: `experimentalServedApps` opts the project into layer-3 served apps (off by default) — see [Generated UI](/concepts/generated-ui) |
+
+The umbrella also ships two subpath exports for hosts that keep their own
+agent loop: `@vendoai/vendo/ai-sdk` (`vendoTools`) and `@vendoai/vendo/mastra`
+(`vendoMastraTools`) build the guarded tool pack for AI SDK and Mastra
+agents. See [Use with your existing agent](/existing-agents) and the
+[server API reference](/reference/server-api#byo-agent-subpaths).
 
 ## Agent context
 

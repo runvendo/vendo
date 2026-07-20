@@ -165,6 +165,19 @@ Import mints a fresh `app_` id and does not carry over data, grants, or
 authority — see [Generated UI and apps](/concepts/generated-ui) for the
 ownership model.
 
+## BYO-agent embeds
+
+`@vendoai/ui` also exports three components for hosts that run their own
+agent loop and spread in the [guarded tool pack](/existing-agents):
+`VendoToolResult` (the dispatcher: any `vendo_*` tool output in, the right
+embed out), `VendoAppEmbed` (`vendo/app-ref@1`), and `VendoApprovalEmbed`
+(`vendo/approval-ref@1`). Like the hooks, they read the wire through the
+surrounding `VendoProvider`; each polls on its own until it reaches a
+terminal state. Prop types
+ship alongside them: `VendoToolResultProps`, `VendoAppEmbedProps`,
+`VendoApprovalEmbedProps`, and the `VendoApprovalEmbedState` resolution
+vocabulary (`"pending" | "executed" | "declined" | "expired"`).
+
 ## When to use hooks vs. chrome
 
 - Reach for `VendoOverlay` and the other chrome components when you want the

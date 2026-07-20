@@ -20,6 +20,7 @@ bench/demo-capture/output/
 # Vendo demo runtime state (PGlite) — never committed.
 apps/*/.vendo/data/
 fixtures/*/.vendo/data/
+examples/*/.vendo/data/
 
 # wave-6 orchestration lane briefs/signals (never committed)
 .lanes/
@@ -27,6 +28,10 @@ fixtures/*/.vendo/data/
 # type-surface test fixtures (packages/vendo/src/type-surface.test.ts) — cleaned
 # in afterEach; ignored so an interrupted run can never dirty a commit.
 packages/vendo/.type-surface.*.ts
+
+# chrome export-surface test fixtures (packages/ui/test/chrome/export-surface.test.ts)
+# — same afterEach cleanup, same interrupted-run hazard.
+packages/ui/.chrome-surface.*.ts
 
 # Coverage reports (v8 / vitest)
 coverage/

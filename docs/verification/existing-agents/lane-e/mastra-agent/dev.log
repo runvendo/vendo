@@ -1,0 +1,35 @@
+▲ Next.js 16.2.9 (Turbopack)
+- Local:         http://localhost:4311
+- Network:       http://10.0.0.188:4311
+✓ Ready in 180ms
+
+ GET / 200 in 1958ms (next.js: 1749ms, application-code: 210ms)
+ GET /api/vendo/status 200 in 1524ms (next.js: 1511ms, application-code: 13ms)
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+ POST /api/chat 200 in 12.9s (next.js: 3.6s, application-code: 9.3s)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667/open 404 in 8ms (next.js: 4ms, application-code: 4ms)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667 404 in 3ms (next.js: 1234µs, application-code: 2ms)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667/open 404 in 6ms (next.js: 3ms, application-code: 3ms)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667 404 in 4ms (next.js: 1343µs, application-code: 3ms)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667/open 404 in 6ms (next.js: 3ms, application-code: 3ms)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667 404 in 4ms (next.js: 1148µs, application-code: 2ms)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667/open 404 in 7ms (next.js: 4ms, application-code: 3ms)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667 404 in 4ms (next.js: 1159µs, application-code: 3ms)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667/open 404 in 9ms (next.js: 4ms, application-code: 5ms)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667 404 in 4ms (next.js: 1233µs, application-code: 2ms)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667/open 404 in 5ms (next.js: 2ms, application-code: 3ms)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667 404 in 2ms (next.js: 695µs, application-code: 1704µs)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667/open 404 in 7ms (next.js: 4ms, application-code: 4ms)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667 404 in 4ms (next.js: 1255µs, application-code: 3ms)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667/open 404 in 5ms (next.js: 2ms, application-code: 3ms)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667 404 in 3ms (next.js: 732µs, application-code: 1946µs)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667/open 404 in 4ms (next.js: 1919µs, application-code: 2ms)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667 404 in 2ms (next.js: 698µs, application-code: 1652µs)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667/open 404 in 5ms (next.js: 2ms, application-code: 3ms)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667 404 in 3ms (next.js: 994µs, application-code: 1691µs)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667/open 404 in 4ms (next.js: 1777µs, application-code: 1949µs)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667 404 in 3ms (next.js: 1005µs, application-code: 1803µs)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667/open 404 in 4ms (next.js: 2ms, application-code: 1918µs)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667 404 in 2ms (next.js: 699µs, application-code: 1551µs)
+ GET /api/vendo/apps/app_1996b3a1-e074-46af-82c6-adb630402667/open 200 in 1462ms (next.js: 2ms, application-code: 1460ms)
+[?25h

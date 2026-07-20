@@ -35,6 +35,10 @@
         "pages": ["index", "install", "quickstart", "quickstart-node"]
       },
       {
+        "group": "Use with your existing agent",
+        "pages": ["existing-agents/index", "existing-agents/ai-sdk", "existing-agents/mastra"]
+      },
+      {
         "group": "For coding agents",
         "pages": ["agents/index", "agents/host-auth", "agents/tools", "agents/verify"]
       },
