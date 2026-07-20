@@ -4,6 +4,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import {
   loadTypescript,
   localInitializer,
+  MAX_RESOLVE_DEPTH,
   parseModule,
   zodFromExpression,
   type StaticExtraction,
@@ -18,7 +19,7 @@ import {
  * is safe and intended (see `oracleRead`).
  */
 
-type CaseMode = "match" | "divergent"; // a later task adds "permissive"
+type CaseMode = "match" | "divergent" | "permissive";
 
 interface BaseCase {
   name: string;
@@ -46,7 +47,19 @@ interface DivergentCase extends BaseCase {
   expectedOracle: Record<string, unknown>;
 }
 
-type OracleCase = MatchCase | DivergentCase;
+/** The mimic fails closed: `recognized: false` with a diagnostic reason.
+ * These rows never call `oracleRead` — some snippets aren't even valid
+ * runtime zod (unresolved identifiers, depth-exhausting nesting), so there
+ * is nothing for the oracle to evaluate. Only the reason's stable substring
+ * is asserted, since the prose itself isn't a stable contract. */
+interface PermissiveCase extends BaseCase {
+  mode: "permissive";
+  /** Substring the mimic's `reason` must contain (not an exact match — the
+   * message text is prose and may be reworded). */
+  reasonIncludes: string;
+}
+
+type OracleCase = MatchCase | DivergentCase | PermissiveCase;
 
 /** Feeds `snippet` through the static interpreter, wrapped as a one-line module. */
 async function staticRead(snippet: string): Promise<ZodSchemaResult> {
@@ -123,6 +136,7 @@ function normalizePropertiesMap(value: unknown): unknown {
 }
 
 const cases: OracleCase[] = [
+  // --- smoke (kitchen-sink shapes) ---------------------------------------
   {
     name: "object with int/min and optional string",
     snippet: "z.object({ amount: z.number().int().min(1), memo: z.string().optional() })",
@@ -202,7 +216,16 @@ const cases: OracleCase[] = [
     mode: "match",
   },
   { name: "record (typed value)", snippet: "z.record(z.string())", mode: "match" },
-  { name: "record (untyped value)", snippet: "z.record(z.any())", mode: "match" },
+  {
+    // Renamed from "record (untyped value)": bare `z.record()` throws in
+    // real zod (it requires a value schema), so the mimic's no-argument
+    // fallback branch (`zodBase`'s `record` case, `!valueArgument`) has no
+    // corresponding runtime snippet — it is oracle-untestable. This row
+    // exercises the argument-present path instead.
+    name: "record (any-typed value)",
+    snippet: "z.record(z.any())",
+    mode: "match",
+  },
   { name: "z.coerce.number()", snippet: "z.coerce.number()", mode: "match" },
 
   // --- modifiers (each inside an object property, so `required` reacts) --
@@ -223,12 +246,236 @@ const cases: OracleCase[] = [
   { name: "uuid modifier", snippet: "z.object({ id: z.string().uuid() })", mode: "match" },
   { name: "url modifier", snippet: "z.object({ site: z.string().url() })", mode: "match" },
   { name: "datetime modifier", snippet: "z.object({ when: z.string().datetime() })", mode: "match" },
+
+  // --- passthrough modifiers (ZOD_PASSTHROUGH_MODIFIERS; kill-list §B1: ---
+  // --- unproven modifiers fail closed to passthrough on the wire type) ---
+  // Each of the 11 modifiers in ZOD_PASSTHROUGH_MODIFIERS gets one row.
+  // Where the oracle also leaves the wire type unchanged, the row is
+  // "match"; where the oracle adds a constraint the mimic deliberately
+  // drops, the row is "divergent" with both sides pinned literally.
+  { name: "trim passthrough modifier", snippet: "z.object({ note: z.string().trim() })", mode: "match" },
+  {
+    // refine passes through the INNER schema on the mimic; the oracle does
+    // the same (a refinement predicate isn't representable on the wire),
+    // so this is "match", not a dropped-constraint divergence.
+    name: "refine passthrough modifier",
+    snippet: "z.object({ note: z.string().refine(v => v.length > 0) })",
+    mode: "match",
+  },
+  {
+    // transform passes through the INNER (pre-transform) schema on the
+    // mimic; the oracle does too (zod-to-json-schema has no representation
+    // for the transform function), so this is "match".
+    name: "transform passthrough modifier",
+    snippet: "z.object({ note: z.string().transform(v => v.toUpperCase()) })",
+    mode: "match",
+  },
+  { name: "toUpperCase passthrough modifier", snippet: "z.object({ note: z.string().toUpperCase() })", mode: "match" },
+  {
+    // DIVERGENT: the oracle adds `pattern` for .regex(); the mimic
+    // deliberately drops it (kill-list §B1: unproven modifiers fail closed
+    // to passthrough on the wire type).
+    name: "regex passthrough modifier (oracle adds pattern, mimic drops it)",
+    snippet: "z.object({ note: z.string().regex(/^[a-z]+$/) })",
+    mode: "divergent",
+    expectedStatic: {
+      type: "object",
+      properties: { note: { type: "string" } },
+      required: ["note"],
+      additionalProperties: false,
+    },
+    expectedOracle: {
+      type: "object",
+      properties: { note: { type: "string", pattern: "^[a-z]+$" } },
+      required: ["note"],
+      additionalProperties: false,
+    },
+  },
+  {
+    // DIVERGENT: real zod's `ZodCatch.isOptional()` returns true (a caught
+    // parse always succeeds via the fallback), so the oracle drops the
+    // property from `required` entirely — it never adds a literal
+    // `default` keyword. The mimic's passthrough keeps the inner (pre-
+    // catch) schema and its original required-ness unchanged, so "note"
+    // stays required on the mimic side. Both sides pinned literally.
+    name: "catch passthrough modifier (oracle drops the field from required, mimic keeps it required)",
+    snippet: "z.object({ note: z.string().catch('fallback') })",
+    mode: "divergent",
+    expectedStatic: {
+      type: "object",
+      properties: { note: { type: "string" } },
+      required: ["note"],
+      additionalProperties: false,
+    },
+    expectedOracle: {
+      type: "object",
+      properties: { note: { type: "string" } },
+      additionalProperties: false,
+    },
+  },
+  {
+    // DIVERGENT: the oracle adds `exclusiveMinimum: 0` for .positive();
+    // the mimic drops it by design.
+    name: "positive passthrough modifier (oracle adds exclusiveMinimum, mimic drops it)",
+    snippet: "z.object({ qty: z.number().positive() })",
+    mode: "divergent",
+    expectedStatic: {
+      type: "object",
+      properties: { qty: { type: "number" } },
+      required: ["qty"],
+      additionalProperties: false,
+    },
+    expectedOracle: {
+      type: "object",
+      properties: { qty: { type: "number", exclusiveMinimum: 0 } },
+      required: ["qty"],
+      additionalProperties: false,
+    },
+  },
+  {
+    // DIVERGENT: the oracle adds `minimum: 0` for .nonnegative(); the
+    // mimic drops it by design.
+    name: "nonnegative passthrough modifier (oracle adds minimum, mimic drops it)",
+    snippet: "z.object({ qty: z.number().nonnegative() })",
+    mode: "divergent",
+    expectedStatic: {
+      type: "object",
+      properties: { qty: { type: "number" } },
+      required: ["qty"],
+      additionalProperties: false,
+    },
+    expectedOracle: {
+      type: "object",
+      properties: { qty: { type: "number", minimum: 0 } },
+      required: ["qty"],
+      additionalProperties: false,
+    },
+  },
+  {
+    // DIVERGENT: the oracle adds `minLength`/`maxLength` for .length(); the
+    // mimic drops both by design.
+    name: "length passthrough modifier (oracle adds minLength/maxLength, mimic drops them)",
+    snippet: "z.object({ code: z.string().length(5) })",
+    mode: "divergent",
+    expectedStatic: {
+      type: "object",
+      properties: { code: { type: "string" } },
+      required: ["code"],
+      additionalProperties: false,
+    },
+    expectedOracle: {
+      type: "object",
+      properties: { code: { type: "string", minLength: 5, maxLength: 5 } },
+      required: ["code"],
+      additionalProperties: false,
+    },
+  },
+  {
+    // DIVERGENT: the oracle adds `minItems: 1` for .nonempty(); the mimic
+    // drops it by design.
+    name: "nonempty passthrough modifier (oracle adds minItems, mimic drops it)",
+    snippet: "z.object({ tags: z.array(z.string()).nonempty() })",
+    mode: "divergent",
+    expectedStatic: {
+      type: "object",
+      properties: { tags: { type: "array", items: { type: "string" } } },
+      required: ["tags"],
+      additionalProperties: false,
+    },
+    expectedOracle: {
+      type: "object",
+      properties: { tags: { type: "array", items: { type: "string" }, minItems: 1 } },
+      required: ["tags"],
+      additionalProperties: false,
+    },
+  },
+  {
+    // DIVERGENT: the oracle adds a `pattern` regex for .cuid(); the mimic
+    // drops it by design.
+    name: "cuid passthrough modifier (oracle adds pattern, mimic drops it)",
+    snippet: "z.object({ id: z.string().cuid() })",
+    mode: "divergent",
+    expectedStatic: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    expectedOracle: {
+      type: "object",
+      properties: { id: { type: "string", pattern: "^[cC][^\\s-]{8,}$" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+
+  // --- fail-closed (permissive: recognized:false, oracle never runs) ----
+  {
+    name: "unrecognized modifier: z.string().brand()",
+    snippet: "z.string().brand()",
+    mode: "permissive",
+    reasonIncludes: "brand",
+  },
+  {
+    name: "unrecognized constructor: z.map(...)",
+    snippet: "z.map(z.string(), z.number())",
+    mode: "permissive",
+    reasonIncludes: "z.map",
+  },
+  {
+    // The mimic never resolves the enum value's identity beyond a literal
+    // check, so both a referenced identifier and a non-string literal hit
+    // the same "non-literal value" rejection. This snippet uses a numeric
+    // literal so the fixture doesn't need an undefined external binding.
+    name: "non-literal enum value: z.enum([\"a\", 1])",
+    snippet: 'z.enum(["a", 1])',
+    mode: "permissive",
+    reasonIncludes: "non-literal",
+  },
+  {
+    // Bare identifier snippet: not even a call expression. The wrapped
+    // snippet becomes `const schema = externalSchema;`, an identifier with
+    // no local declaration or import for the mimic to chase — and nothing
+    // for oracleRead to safely evaluate (it's an undefined reference at
+    // runtime too).
+    name: "unresolvable schema reference: externalSchema",
+    snippet: "externalSchema",
+    mode: "permissive",
+    reasonIncludes: "could not be statically resolved",
+  },
+  {
+    // Chains one modifier call beyond MAX_RESOLVE_DEPTH so the recursive
+    // descent into the chain's receiver trips the depth guard. (A
+    // z.array()-nesting variant was tried first but doesn't surface here:
+    // zodBase's "array" case treats an unrecognized items schema as a
+    // *partial* success — `{ type: "array" }` with the inner reason
+    // attached — and the next level up re-wraps that via `ok()`, which
+    // drops `reason` entirely, so the failure never reaches the top.
+    // Modifier chaining doesn't have that swallow: `applyZodModifier`'s
+    // caller does `if (!inner.recognized) return inner;`, which propagates
+    // an unrecognized result untouched all the way up.)
+    name: `depth exhaustion: modifier chain nested ${MAX_RESOLVE_DEPTH + 1} levels deep`,
+    snippet: "z.string()" + ".optional()".repeat(MAX_RESOLVE_DEPTH + 1),
+    mode: "permissive",
+    reasonIncludes: "depth",
+  },
 ];
 
 describe("static-ts oracle differential", () => {
   for (const testCase of cases) {
     it(`${testCase.mode}: ${testCase.name}`, async () => {
       const mimic = await staticRead(testCase.snippet);
+
+      if (testCase.mode === "permissive") {
+        // Fail-closed rows: the mimic must report recognized:false with a
+        // diagnostic reason, and nothing more. oracleRead is never called —
+        // some of these snippets aren't even valid runtime zod.
+        expect(mimic.recognized).toBe(false);
+        expect(mimic.reason).toBeDefined();
+        expect(mimic.reason).toContain(testCase.reasonIncludes);
+        return;
+      }
+
       // Surface the mimic's diagnostic on failure and catch partial
       // recognition (recognized:true with a reason still attached) — with
       // ~40 rows coming, `reason` is the main debugging signal.
