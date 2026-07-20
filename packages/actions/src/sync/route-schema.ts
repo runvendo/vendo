@@ -128,12 +128,65 @@ function methodHandlerBody(module: FileModule, ts: typeof TS, method: HttpMethod
   return null;
 }
 
-/** True for `await <x>.json()` (and the un-awaited call, defensively) — the
- * request-body read the zod collector looks for as a `.parse`/`.safeParse`
- * argument. */
+/** Peel wrapper layers off a `.parse`/`.safeParse` argument that do not change
+ * *what* is being read, only how it's typed or guarded: `await`, redundant
+ * parens, `as`/`satisfies` casts, non-null assertions, and a trailing
+ * `.catch(...)` fallback (demo-bank's own handlers read
+ * `(await req.json().catch(() => ({}))) as T` — apps/demo-bank's orders
+ * route). Peeling `.catch`'s receiver, not its whole call, is what lets the
+ * loop reach the underlying `.json()` call under any combination of the above. */
+function unwrapJsonCandidate(ts: typeof TS, node: TS.Node): TS.Node {
+  let current: TS.Node = node;
+  for (;;) {
+    if (ts.isAwaitExpression(current)) {
+      current = current.expression;
+    } else if (ts.isParenthesizedExpression(current)) {
+      current = current.expression;
+    } else if (ts.isAsExpression(current) || ts.isSatisfiesExpression(current)) {
+      current = current.expression;
+    } else if (ts.isNonNullExpression(current)) {
+      current = current.expression;
+    } else if (ts.isCallExpression(current) && ts.isPropertyAccessExpression(current.expression) && current.expression.name.text === "catch") {
+      current = current.expression.expression;
+    } else {
+      return current;
+    }
+  }
+}
+
+/** True for an (unwrapped) `<x>.json()` call — the request-body read the zod
+ * collector looks for as a `.parse`/`.safeParse` argument, per the plan's
+ * "argument CONTAINING await x.json()" (04 §1 Task 2). */
 function isJsonReadExpression(ts: typeof TS, node: TS.Node): boolean {
-  const inner = ts.isAwaitExpression(node) ? node.expression : node;
+  const inner = unwrapJsonCandidate(ts, node);
   return ts.isCallExpression(inner) && ts.isPropertyAccessExpression(inner.expression) && inner.expression.name.text === "json";
+}
+
+/** One-hop local resolution (review-decided, no data-flow analysis): when the
+ * `.parse`/`.safeParse` argument is a plain identifier — the two-statement
+ * form `const body = await req.json(); schema.parse(body)` — look for a
+ * `const`/`let` declaration of that name at the top level of the SAME
+ * function body and test its initializer instead. Anything else (a different
+ * scope, no matching declaration, an initializer that isn't a json read)
+ * fails closed: not a match. */
+function localDeclarationInitializer(ts: typeof TS, functionBody: TS.Node, name: string): TS.Expression | null {
+  if (!ts.isBlock(functionBody)) return null;
+  for (const statement of functionBody.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (ts.isIdentifier(declaration.name) && declaration.name.text === name && declaration.initializer) {
+        return declaration.initializer;
+      }
+    }
+  }
+  return null;
+}
+
+function isJsonBodyArgument(ts: typeof TS, argument: TS.Expression, functionBody: TS.Node): boolean {
+  if (isJsonReadExpression(ts, argument)) return true;
+  if (!ts.isIdentifier(argument)) return false;
+  const initializer = localDeclarationInitializer(ts, functionBody, argument.text);
+  return initializer !== null && isJsonReadExpression(ts, initializer);
 }
 
 /** The first `.parse`/`.safeParse` call in `body` whose argument reads the
@@ -148,7 +201,7 @@ function findZodParseReceiver(ts: typeof TS, body: TS.Node): TS.Expression | nul
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
       && (node.expression.name.text === "parse" || node.expression.name.text === "safeParse")) {
       const argument = node.arguments[0];
-      if (argument && isJsonReadExpression(ts, argument)) {
+      if (argument && isJsonBodyArgument(ts, argument, body)) {
         found = node.expression.expression;
         return;
       }

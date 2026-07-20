@@ -226,4 +226,155 @@ export async function PUT(req: Request) {
       additionalProperties: false,
     });
   });
+
+  it("(h) recognizes a trailing .catch(...) chain on the json read (demo-bank's own handler shape)", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+import { z } from "zod";
+const schema = z.object({ name: z.string() });
+export async function POST(req: Request) {
+  const body = schema.parse(await req.json().catch(() => ({})));
+  return Response.json(body);
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    const result = await inferRouteInput(route, "POST", state);
+    expect(result?.bodySchema).toEqual({
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
+      additionalProperties: false,
+    });
+  });
+
+  it("(i) recognizes a parenthesized `as`-cast json read, exactly demo-bank's `(await req.json().catch(...)) as Type` shape", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+import { z } from "zod";
+const schema = z.object({ name: z.string() });
+export async function POST(req: Request) {
+  const body = schema.parse((await req.json().catch(() => ({}))) as Record<string, unknown>);
+  return Response.json(body);
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    const result = await inferRouteInput(route, "POST", state);
+    expect(result?.bodySchema).toEqual({
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
+      additionalProperties: false,
+    });
+  });
+
+  it("(j) resolves the two-statement form: const body = await req.json(); schema.parse(body)", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+import { z } from "zod";
+const schema = z.object({ name: z.string() });
+export async function POST(req: Request) {
+  const body = await req.json();
+  const parsed = schema.parse(body);
+  return Response.json(parsed);
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    const result = await inferRouteInput(route, "POST", state);
+    expect(result?.bodySchema).toEqual({
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
+      additionalProperties: false,
+    });
+  });
+
+  it("(j-counter) does not resolve a one-hop identifier initialized from something other than a json read", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+import { z } from "zod";
+const schema = z.object({ name: z.string() });
+export async function POST(req: Request) {
+  const body = getCached();
+  const parsed = schema.parse(body);
+  return Response.json(parsed);
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    expect(await inferRouteInput(route, "POST", state)).toBeNull();
+  });
+
+  it("(k) carries a partial-interpretation note when one z.object property is uninterpretable", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+import { z } from "zod";
+const schema = z.object({ name: z.string(), extra: z.string().pipe(other) });
+export async function POST(req: Request) {
+  const body = schema.parse(await req.json());
+  return Response.json(body);
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    const result = await inferRouteInput(route, "POST", state);
+    expect(result?.bodySchema).toEqual({
+      type: "object",
+      properties: { name: { type: "string" }, extra: {} },
+      required: ["name"],
+      additionalProperties: false,
+    });
+    expect(result?.note).toBe(
+      "input schema partially interpreted; permissive where unknown (extra: zod modifier .pipe() is not statically interpreted)",
+    );
+  });
+
+  it("(l) first match wins when a handler validates the body more than once", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+import { z } from "zod";
+const schemaA = z.object({ first: z.string() });
+const schemaB = z.object({ second: z.string() });
+export async function POST(req: Request) {
+  const parsedA = schemaA.parse(await req.json());
+  const parsedB = schemaB.parse(await req.json());
+  return Response.json({ parsedA, parsedB });
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    const result = await inferRouteInput(route, "POST", state);
+    expect(result?.bodySchema).toEqual({
+      type: "object",
+      properties: { first: { type: "string" } },
+      required: ["first"],
+      additionalProperties: false,
+    });
+  });
 });
