@@ -372,10 +372,11 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
       },
       async url(port?: number) {
         // Wave 4 (layer 3) — the browser→box serving path. The handle URL
-        // from create/resume IS the canonical-port ingress; other ports ride
-        // an e2b-style port-prefixed label on the same host (PROVISIONAL —
-        // sandbox-wire.ts ingress entry; the exact non-canonical shape is
-        // pending Cloud confirmation).
+        // from create/resume IS the canonical-port ingress (single-label
+        // `m-<id>.vendo.run`, locked 2026-07-20 — sandbox-wire.ts ingress
+        // entry); other ports ride an e2b-style port-prefixed label on the
+        // same host (`<port>-m-<id>.vendo.run`), which stays single-label
+        // under the *.vendo.run Universal SSL cert.
         const target = port ?? state.port;
         if (target === CLOUD_BOX_PORT) return handle.url;
         const ingress = new URL(handle.url);

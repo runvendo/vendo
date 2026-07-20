@@ -22,7 +22,7 @@ description: "Every environment variable Vendo reads across host process, app ma
 | `VENDO_BOX_EDIT_TIMEOUT_MS` | long-poll budget for one in-box agent edit; default 8 minutes |
 | `VENDO_BOX_EDIT_POLL_MS` | poll interval while an in-box agent edit runs |
 | `VENDO_E2B_TIMEOUT_MS` | E2B machine lifetime; when unset, a raised `VENDO_BOX_EDIT_TIMEOUT_MS` implies a matching lifetime (budget plus 5 minutes) so the provider TTL cannot kill a long build |
-| `VENDO_INFERENCE_URL` · `VENDO_INFERENCE_KEY` | the in-box agent's model endpoint and key, injected into every machine; when unset, `ANTHROPIC_API_KEY` rides `https://api.anthropic.com`, and with neither the box gets no inference |
+| `VENDO_INFERENCE_URL` · `VENDO_INFERENCE_KEY` | the in-box agent's model endpoint and key, injected into every machine; when unset, `ANTHROPIC_API_KEY` rides `https://api.anthropic.com`, then `VENDO_API_KEY` rides the Vendo Cloud model gateway, and with none of them the box gets no inference |
 | `VENDO_INFERENCE_MODEL` | optional model choice passed through to the box harness |
 | `VERCEL`, `CF_PAGES`, `AWS_LAMBDA_FUNCTION_NAME` | prevent the default PGlite store from opening on an ephemeral serverless filesystem; pass a Postgres URL instead |
 | `VENDO_STORE_ENCRYPTION_KEY` | 32-byte base64 key the default composition uses to encrypt secret values in `vendo_secrets`; read when no store is passed to `createVendo`. An explicitly configured store ignores it |
