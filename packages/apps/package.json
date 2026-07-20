@@ -34,6 +34,10 @@
     "./e2b": {
       "types": "./dist/e2b/index.d.ts",
       "default": "./dist/e2b/index.js"
+    },
+    "./adapter-conformance": {
+      "types": "./dist/adapter-conformance.d.ts",
+      "default": "./dist/adapter-conformance.js"
     }
   },
   "files": [
@@ -55,13 +59,17 @@
   },
   "peerDependencies": {
     "ai": ">=6.0.0 <7",
-    "e2b": "^2.32.0"
+    "e2b": "^2.32.0",
+    "vitest": "^2.0.0"
   },
   "peerDependenciesMeta": {
     "ai": {
       "optional": true
     },
     "e2b": {
+      "optional": true
+    },
+    "vitest": {
       "optional": true
     }
   },
@@ -70,7 +78,6 @@
     "@types/node": "^22.0.0",
     "ai": "6.0.28",
     "e2b": "^2.32.0",
-    "jsdom": "^25.0.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }

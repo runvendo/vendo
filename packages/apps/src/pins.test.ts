@@ -3,13 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   detectPinDrift,
   inClientApprovalSchema,
-  pinApprovalSchema,
   pinBaselineSchema,
   pinComponentName,
-  pinShipRequestSchema,
   type PinBaseline,
 } from "./index.js";
-import { pinForkSource } from "./pins.js";
+import { pinApprovalSchema, pinForkSource, pinShipRequestSchema } from "./pins.js";
 
 const capturedAt = "2026-07-11T12:00:00.000Z";
 

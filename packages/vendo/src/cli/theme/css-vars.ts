@@ -9,13 +9,6 @@ export interface CssVarDecl {
   value: string;
   file: string;
   darkScope: boolean;
-  /** Not declared in CSS (e.g. recovered from next/font source) — usable to
-   * resolve var() chains but never picked directly for a slot. */
-  synthetic?: boolean;
-  /** Guessed from Tailwind utility classes on root layout elements rather
-   * than declared as a token. Pickable, but weak evidence: derived fallback
-   * rules (monochrome accent, white-card surface) apply only to these. */
-  inferred?: boolean;
 }
 
 const DARK_SELECTOR = /(\.dark\b|\[data-theme=["']?dark["']?\]|prefers-color-scheme:\s*dark)/;
@@ -27,6 +20,17 @@ export function parseCssVars(css: string, file: string): CssVarDecl[] {
   // Stack of "is this block dark-scoped" flags.
   const darkStack: boolean[] = [];
   let selectorBuf = "";
+  // A declaration ends at `;`, at the closing `}` of its block (trailing
+  // semicolons are optional in CSS and absent in minified sheets), or at
+  // end-of-input.
+  const flushDecl = (): void => {
+    const decl = selectorBuf.trim();
+    const m = decl.match(/^(--[\w-]+)\s*:\s*(.+)$/s);
+    if (m && m[1] && m[2]) {
+      out.push({ name: m[1], value: m[2].trim(), file, darkScope: darkStack.some(Boolean) });
+    }
+    selectorBuf = "";
+  };
   for (let i = 0; i < src.length; i++) {
     const ch = src[i];
     if (ch === "{") {
@@ -34,18 +38,14 @@ export function parseCssVars(css: string, file: string): CssVarDecl[] {
       darkStack.push(parentDark || DARK_SELECTOR.test(selectorBuf));
       selectorBuf = "";
     } else if (ch === "}") {
+      flushDecl();
       darkStack.pop();
-      selectorBuf = "";
     } else if (ch === ";") {
-      const decl = selectorBuf.trim();
-      const m = decl.match(/^(--[\w-]+)\s*:\s*(.+)$/s);
-      if (m && m[1] && m[2]) {
-        out.push({ name: m[1], value: m[2].trim(), file, darkScope: darkStack.some(Boolean) });
-      }
-      selectorBuf = "";
+      flushDecl();
     } else {
       selectorBuf += ch;
     }
   }
+  flushDecl();
   return out;
 }

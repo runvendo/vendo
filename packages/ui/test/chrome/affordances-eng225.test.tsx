@@ -186,6 +186,39 @@ describe("toasts (ENG-225)", () => {
     await waitFor(() => expect(screen.queryByText(/Waiting on you: Invoice delete/)).toBeNull());
     await wire.close();
   });
+
+  it("keeps the approval toast when the decide fails, so Approve stays retryable", async () => {
+    const wire = await createWireServer();
+    const client = createVendoClient({ baseUrl: wire.url });
+    render(<VendoProvider client={client}><VendoToasts approvals pollMs={40} /></VendoProvider>);
+
+    // Baseline settles, then a new approval parks and toasts.
+    await new Promise(resolve => setTimeout(resolve, 120));
+    wire.state.approvals.push({
+      ...wire.state.approvals[0]!,
+      id: "apr_2",
+      call: { id: "call_2", tool: "host_invoice_delete", args: {} },
+      descriptor: { name: "host_invoice_delete", description: "Delete invoice", inputSchema: {}, risk: "destructive" },
+    });
+    await screen.findByText(/Waiting on you: Invoice delete/);
+
+    // The wire rejects the next decide (server 500 / dropped connection).
+    wire.state.failures.push({ method: "POST", path: "/approvals/decide", code: "boom", message: "kaboom", status: 500 });
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(
+      wire.requests.filter(request => request.method === "POST" && request.path === "/approvals/decide"),
+    ).toHaveLength(1));
+    // The approval is still parked server-side — the toast must NOT vanish as
+    // if the approval succeeded (a dismissed card can never re-surface here).
+    expect(wire.state.approvals.some(item => item.id === "apr_2")).toBe(true);
+    expect(screen.queryByText(/Waiting on you: Invoice delete/)).not.toBeNull();
+
+    // The failure consumed, a second Approve decides it and withdraws the card.
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(wire.state.approvals.some(item => item.id === "apr_2")).toBe(false));
+    await waitFor(() => expect(screen.queryByText(/Waiting on you: Invoice delete/)).toBeNull());
+    await wire.close();
+  });
 });
 
 describe("connect dock + tray (ENG-225)", () => {
@@ -203,10 +236,33 @@ describe("connect dock + tray (ENG-225)", () => {
 
   const CONNECTORS = [{ toolkit: "gmail", label: "Gmail" }, { toolkit: "slack", label: "Slack" }];
 
-  it("renders no dock without a host connector catalog", async () => {
-    const view = render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+  it("renders no dock when the host force-disables it (connectors={[]})", async () => {
+    const view = render(
+      <VendoProvider client={client} connectors={[]}><VendoThread threadId="thr_1" /></VendoProvider>,
+    );
     await screen.findByText("Existing thread");
     expect(view.container.querySelector(".fl-dock")).toBeNull();
+  });
+
+  it("auto-derives the dock from the wire catalog when no connectors prop is passed", async () => {
+    render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+    await screen.findByText("Existing thread");
+    // gmail + slack come from the wire's /connections/catalog, not a prop.
+    const dock = await screen.findByRole("button", { name: "Connect tools" });
+    fireEvent.click(dock);
+    const tray = await screen.findByRole("dialog", { name: "Connect tools" });
+    await within(tray).findByRole("button", { name: /connect slack/i });
+  });
+
+  it("renders no dock when the auto catalog resolves empty", async () => {
+    wire.state.catalog = [];
+    const view = render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+    await screen.findByText("Existing thread");
+    // Poll until the catalog fetch has settled (the attach button renders
+    // regardless of the dock, so the composer being interactive is the
+    // "resolved" signal), then assert the dock stayed absent.
+    await screen.findByRole("button", { name: "Attach files" });
+    await waitFor(() => expect(view.container.querySelector(".fl-dock")).toBeNull());
   });
 
   it("shows the dock with an active-count badge and opens the tray", async () => {

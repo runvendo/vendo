@@ -141,3 +141,49 @@ access rides the same callback seam as layer 2.
 - Machine wake/sleep policy and idle timeout economics.
 - The in-box agent's harness choice and base-snapshot update story.
 - fn: binding syntax in the v2 wire format (format lane coordination).
+
+## Appendix: shipped-state deviations and backlog (2026-07-20, Wave 6 close-out)
+
+Deviations from this record as built, plus the known backlog. One line each.
+
+- ~~In-box agent is a thin custom loop (box harness `agent-loop.mjs` against
+  the inference door), not the Claude Agent SDK~~ RESOLVED Wave 8: the box
+  agent IS the Claude Agent SDK (`agent-sdk.mjs`, headless `query()` with the
+  SDK's shell + file tools, structured result via an in-process `report_done`
+  MCP tool); the SDK is baked into the base template at build time (size = a
+  template concern), auth rides ANTHROPIC_API_KEY/ANTHROPIC_BASE_URL mapped
+  from the same VENDO_INFERENCE_URL/KEY door (BYO and gateway both
+  live-verified); the thin loop is deleted, the control-port protocol
+  unchanged, live-gated (invoice-chaser graduation + layer-3 build).
+- ~~e2b adapter never extends the provider TTL on activity~~ RESOLVED Wave 7:
+  request and exec activity slide the provider deadline (throttled, coupled to
+  the `VENDO_E2B_TIMEOUT_MS` knob), live-gated.
+- A machine the provider reaped under a LIVE handle (TTL, sweep) 502'd until
+  the idle sweep — RESOLVED Wave 7: a dead-machine provider error (typed
+  not-found through the seam, adapter-appropriate detection on e2b and Cloud)
+  evicts the live entry and re-wakes from the durable snapshot ref
+  transparently (single retry), live-gated. Still owed: a SNAPSHOT ref whose
+  provider state was reaped externally surfaces as a wake error; not-found
+  eviction there (clear the stale ref, re-provision) remains backlog.
+- fn-binding tree edits occasionally emit `/data/`-style envelope paths the
+  validator rejects; graduation retries contain it, dialect-level fix owed.
+- Served-app iframes do not keep the machine awake; no keepalive ping or
+  TTL extend-on-activity, so a long-lived open tab can hit an idle sleep.
+- ~~PGlite store has no atomic CAS capability on `vendo_apps`~~ RESOLVED
+  Wave 7: `vendo_apps` carries the same revision counter + routed
+  insertIfAbsent/compareAndSwap as `vendo_threads`, so `updateAppRow`'s
+  read-mutate-CAS arbitrates lifecycle and schedule claims on the dev store
+  too (verified against PGlite and real Postgres).
+- Cloud artifact storage meters 0 GB for now (console-side caveat, no wire
+  impact); snapshot storage becomes billable later.
+- Cloud served-app ingress TLS for `*.m.vendo.run` is broken in prod (one-label
+  Universal SSL); needs an advanced certificate before Cloud layer-3 URLs work.
+- Modal adapter stays deferred; it can return behind the same SandboxAdapter
+  seam.
+- ~~A secret grant change while a machine exists only lands at the next edit
+  or re-provision~~ RESOLVED Wave 7 (minimal version, no hot-reload
+  machinery): a grant commit or revocation marks the machine env-stale on the
+  document and sleeps a running box; the next wake rebuilds the boundary env
+  through the agent control port (the harness restarts the app with exactly
+  the new set) and clears the marker. Egress changes already landed via the
+  wake-time policy re-check.

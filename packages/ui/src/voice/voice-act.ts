@@ -8,6 +8,7 @@
     the approval response (AGENT-12), with the guard authoritative over the
     recorded decision (05 §1). No new server surface, no contract change. */
 import { DefaultChatTransport, isToolUIPart, readUIMessageStream, type UIMessage } from "ai";
+import { partData } from "../chrome/thread/message-data.js";
 import type { VendoClient } from "../client.js";
 import type { VoiceConnectRequest, VoiceSessionView, VoiceToolBridge } from "./driver.js";
 
@@ -61,19 +62,18 @@ function textOf(message: UIMessage): string {
     .trim();
 }
 
-function partData(part: UIMessage["parts"][number]): unknown {
-  return "data" in part ? part.data : part;
-}
-
 function viewsOf(message: UIMessage, turn: number): VoiceSessionView[] {
   const views: VoiceSessionView[] = [];
   message.parts.forEach((part, index) => {
     if (part.type !== "data-vendo-view") return;
     const data = partData(part) as { appId?: unknown; payload?: unknown };
     if (typeof data.appId !== "string" || data.payload === undefined) return;
-    // Same id across resume passes of the same turn: the feed replaces, not stacks.
+    // Keyed by message id + part index: an upsert re-stream of the SAME
+    // message keeps a stable id (the feed replaces, not stacks), while a fresh
+    // message minted on a resume pass can never collide with an earlier pass's
+    // view that happened to share a part index.
     views.push({
-      id: `act-${turn}-${index}`,
+      id: `act-${turn}-${message.id}-${index}`,
       appId: data.appId,
       payload: data.payload as VoiceSessionView["payload"],
     });
@@ -236,10 +236,12 @@ export function createVoiceActBridge(options: VoiceActBridgeOptions): VoiceToolB
 
       let assistant = await runTurn();
       messages.push(assistant);
+      // Distinct view ids shown this turn — for the viewsShown count only.
+      // Never a skip guard: a re-streamed view with the same id must reach the
+      // stage again so its updateViews replace-by-id path actually replaces.
       const emitted = new Set<string>();
       const emitViews = (message: UIMessage) => {
         for (const view of viewsOf(message, turn)) {
-          if (emitted.has(view.id)) continue;
           emitted.add(view.id);
           session.emitView(view);
         }

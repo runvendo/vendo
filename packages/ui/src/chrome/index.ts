@@ -2,6 +2,7 @@
 export { ActivityPanel } from "./activity-panel.js";
 export { VendoActivities, type VendoActivitiesProps } from "./vendo-activities.js";
 export { ApprovalCard, type ApprovalCardProps } from "./approval-card.js";
+export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult } from "./embeds.js";
 export { ApprovalSheet } from "./approval-sheet.js";
 export { AutomationsPanel } from "./automations-panel.js";
 export { ConnectCard, type ConnectCardProps } from "./connect-card.js";
@@ -24,7 +25,7 @@ export { VendoStage } from "../voice/stage.js";
     (scripts/eject-templates-lib.mjs enforces this list at build). Exported
     deliberately — ejected chrome keeps data/wire logic as a package
     dependency and only forks pixels (§4 customization ladder). */
-export { ActivityLedger, OutcomeIcon } from "./activity-ledger.js";
+export { ActivityLedger } from "./activity-ledger.js";
 export {
   describeActivity,
   formatAuditTime,

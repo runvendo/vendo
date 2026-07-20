@@ -1,6 +1,10 @@
+import { VENDO_APP_FORMAT, type AppDocument } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { sandboxAdapterConformance, type SandboxConformanceHarness } from "../adapter-conformance.js";
+import { requestAppWithBootRetry } from "../box-agent.js";
+import { createMachineLifecycle } from "../machine-lifecycle.js";
 import type { SandboxMachine } from "../sandbox.js";
+import { memoryStore, seedAppRow } from "../testing/index.js";
 import { e2bSandbox } from "./index.js";
 
 // ============================================================================
@@ -88,6 +92,9 @@ describe.skipIf(!LIVE)("e2bSandbox live", () => {
     makeAdapter,
     bootstrap,
     enforcesAllowedDomains: true,
+    multiPort: true,
+    resumeForks: true,
+    resumeReplacesPolicy: true,
   };
   sandboxAdapterConformance("real E2B", harness);
 
@@ -137,4 +144,110 @@ describe.skipIf(!LIVE)("e2bSandbox live", () => {
       console.log(`[lane-a-gate] TRANSCRIPT\n${transcript.join("\n")}`);
     }
   }, LIVE_TIMEOUT_MS);
+
+  // ── Wave 7 gate 1: extend-on-activity ─────────────────────────────────────
+  // A busy box must outlive its create-time provider deadline. Timeline vs a
+  // 90s TTL and the adapter's 60s extension throttle: activity at t≈0 slides
+  // the deadline to ≈t90, activity at t≈70 (past the throttle) slides it to
+  // ≈t160, so being alive at t≈100 is possible ONLY if both extensions landed.
+  it("Wave 7 gate: activity slides the provider TTL past the create-time deadline", async () => {
+    const transcript: string[] = [];
+    const log = (line: string): void => {
+      transcript.push(line);
+      console.log(`[wave7-ttl-gate] ${line}`);
+    };
+    const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+    const adapter = e2bSandbox({ apiKey: process.env.E2B_API_KEY, timeoutMs: 90_000 });
+    let machine: SandboxMachine | undefined;
+    try {
+      const startedAt = Date.now();
+      const at = (): string => `t=${Math.round((Date.now() - startedAt) / 1000)}s`;
+      machine = await adapter.create({ env: { PORT: "8080" } });
+      log(`create → machine ${machine.id}, provider TTL 90s`);
+
+      const box = machine as unknown as { exec(cmd: string): Promise<{ code: number; stdout: string }> };
+      expect((await box.exec("echo one")).code).toBe(0);
+      log(`${at()} exec activity → deadline slides to ≈t=90s`);
+
+      await sleep(70_000);
+      // request-path activity past the 60s throttle (no app is listening, so
+      // the 502 is the app-level answer — the sandbox itself is alive).
+      const poked = await machine.request({ method: "GET", path: "/" });
+      log(`${at()} request activity (status ${poked.status}) → deadline slides to ≈t=160s`);
+
+      await sleep(30_000);
+      const alive = await box.exec("echo alive");
+      log(`${at()} exec → code ${alive.code} "${alive.stdout.trim()}" (past the 90s create-time TTL)`);
+      expect(alive.code).toBe(0);
+      expect(alive.stdout.trim()).toBe("alive");
+    } finally {
+      await machine?.destroy().catch(() => undefined);
+      log("destroy → machine gone");
+      console.log(`[wave7-ttl-gate] TRANSCRIPT\n${transcript.join("\n")}`);
+    }
+  }, 300_000);
+
+  // ── Wave 7 gate 2: stale-live-ref eviction ─────────────────────────────────
+  // The provider kills a woken machine out from under the lifecycle (real
+  // Sandbox.kill = the TTL/sweep failure mode); the SAME live handle must
+  // answer the next request by evicting the dead entry and resuming the
+  // durable snapshot ref transparently.
+  it("Wave 7 gate: a provider-killed machine is evicted and re-woken from the durable ref", async () => {
+    const transcript: string[] = [];
+    const log = (line: string): void => {
+      transcript.push(line);
+      console.log(`[wave7-reap-gate] ${line}`);
+    };
+    const adapter = makeAdapter();
+    const store = memoryStore();
+    const doc: AppDocument = { format: VENDO_APP_FORMAT, id: "app_wave7_reap", name: "Wave 7 reap gate" };
+    const lifecycle = createMachineLifecycle({
+      store,
+      sandbox: adapter,
+      buildEnv: () => ({ PORT: "8080", HELLO: "wave7 survives the reap" }),
+    });
+    let seeded: SandboxMachine | undefined;
+    let ref: string | undefined;
+    try {
+      // Seed a snapshot that SERVES an app (adapter-private bootstrap, exactly
+      // like the Lane A gate), so recovery is provable end-to-end over HTTP.
+      seeded = await adapter.create({ env: { PORT: "8080", HELLO: "wave7 survives the reap" } });
+      await bootstrap(seeded);
+      ref = await seeded.snapshot();
+      await seeded.destroy();
+      await seedAppRow(store, {
+        ...doc,
+        machine: { snapshotRef: ref, provisionedAt: new Date().toISOString() },
+      }, "owner");
+      log(`seeded app row with serving snapshot ${ref.slice(0, 24)}…`);
+
+      const handle = await lifecycle.wake(doc);
+      const first = await requestAppWithBootRetry(handle, { method: "GET", path: "/conformance/env/HELLO" });
+      log(`wake + request → ${first.status} "${decoder.decode(first.body)}"`);
+      expect(first.status).toBe(200);
+      expect(decoder.decode(first.body)).toBe("wave7 survives the reap");
+
+      const killedId = handle.id;
+      const { Sandbox } = await import("e2b");
+      await Sandbox.kill(killedId, { apiKey: process.env.E2B_API_KEY });
+      log(`provider killed machine ${killedId} out-of-band (the TTL/sweep failure mode)`);
+
+      // The SAME handle answers: dead-machine detection → eviction → resume
+      // from the durable ref → the app serves again. No 502-until-idle-sweep.
+      const second = await requestAppWithBootRetry(handle, { method: "GET", path: "/conformance/env/HELLO" });
+      log(`same handle request → ${second.status} "${decoder.decode(second.body)}"`);
+      expect(second.status).toBe(200);
+      expect(decoder.decode(second.body)).toBe("wave7 survives the reap");
+      const recovered = lifecycle.peek(doc.id);
+      log(`recovered live machine ${recovered?.id} (≠ ${killedId})`);
+      expect(recovered?.id).toBeDefined();
+      expect(recovered?.id).not.toBe(killedId);
+    } finally {
+      await lifecycle.destroyMachine(doc).catch(() => undefined);
+      if (ref !== undefined) await adapter.destroy(ref).catch(() => undefined);
+      await seeded?.destroy().catch(() => undefined);
+      log("destroy → live machine and snapshot ref gone");
+      console.log(`[wave7-reap-gate] TRANSCRIPT\n${transcript.join("\n")}`);
+    }
+  }, 300_000);
 });

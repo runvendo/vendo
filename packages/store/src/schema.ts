@@ -107,10 +107,12 @@ const ADDITIVE_DDL = [
   // SET DEFAULT is idempotent, so it runs every boot like the rest of this block.
   "ALTER TABLE vendo_state ALTER COLUMN created_at SET DEFAULT now()",
   "CREATE INDEX IF NOT EXISTS vendo_state_id_idx ON vendo_state (id)",
-  // Keyset pagination lists order by (created_at, id) DESC with a `(created_at, id) < (c, i)`
-  // predicate (records.ts / routing.ts). Without these btree indexes the generic records
-  // table and the paged dedicated tables fall back to a seq-scan + sort per page; a dropped
-  // index here is exactly the order-of-magnitude regression the perf gate exists to catch.
+  // Keyset pagination lists order by (created_at, id) DESC — compared at millisecond
+  // precision via date_trunc (helpers/utils.ts cursorMs; cursors round-trip through JS
+  // Dates) — with a matching `<` tuple predicate (records.ts / routing.ts). These btree
+  // indexes serve the equality/filter legs (the truncated sort itself is a top-N over the
+  // filtered set); a dropped index here is exactly the order-of-magnitude regression the
+  // perf gate exists to catch.
   "CREATE INDEX IF NOT EXISTS vendo_records_collection_created_idx ON vendo_records (collection, created_at DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_mcp_clients_created_idx ON vendo_mcp_clients (created_at DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_mcp_grants_created_idx ON vendo_mcp_grants (created_at DESC, id DESC)",
@@ -129,6 +131,11 @@ const ADDITIVE_DDL = [
   // can do guarded read-merge-write instead of last-write-wins. DEFAULT backfills
   // existing rows on ALTER; every write path bumps it.
   "ALTER TABLE vendo_threads ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1",
+  // Wave 7: the same counter for vendo_apps, so the machine lifecycle and the
+  // schedule engine's fire claims (updateAppRow's read-mutate-CAS) stop
+  // degrading to read-then-put on the dev store — a multi-process dev host
+  // could double-fire a schedule or clobber a concurrent lifecycle write.
+  "ALTER TABLE vendo_apps ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1",
   // Tracks the secret's last rewrite (rotation) separately from created_at;
   // set() stamps it. NULL on legacy rows means created_at IS the last write.
   "ALTER TABLE vendo_secrets ADD COLUMN IF NOT EXISTS updated_at timestamptz",

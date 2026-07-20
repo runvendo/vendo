@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useVendoContext } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useApps } from "../hooks/use-apps.js";
@@ -15,6 +15,10 @@ import { VendoThread } from "./thread/index.js";
 import { WaitingQueue } from "./waiting-queue.js";
 
 const TABS = ["chat", "apps", "automations", "accounts", "activity"] as const;
+
+// How long a minted-thread sidebar retry waits before re-polling GET /threads
+// (the mint header lands at turn START; the thread row persists at turn END).
+const MINTED_RETRY_MS = 1_000;
 type Tab = typeof TABS[number];
 
 function title(tab: Tab): string {
@@ -42,12 +46,21 @@ function ChatWorkspace() {
   }, [threads]);
   const onThreadId = useCallback((id: string) => setMinted(id), []);
   // ENG-222 — a conversation started via "New conversation" mints a thr_ the
-  // sidebar list has never seen; refresh so it appears (and highlights). Once
-  // the refreshed list carries it the guard falls false, so this can't loop.
+  // sidebar list has never seen; refresh so it appears (and highlights). The
+  // mint arrives at turn START while the row persists at turn END, and every
+  // refresh replaces `threads` with a fresh array — so a list that still lacks
+  // the id re-arms a SLOW timer instead of re-firing immediately (which would
+  // hot-loop GET /threads at network-RTT cadence for the whole turn).
+  const refreshedForRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (minted !== undefined && !threads.some(thread => thread.id === minted)) {
+    if (minted === undefined || threads.some(thread => thread.id === minted)) return;
+    if (refreshedForRef.current !== minted) {
+      refreshedForRef.current = minted;
       void refresh();
+      return;
     }
+    const timer = setTimeout(() => void refresh(), MINTED_RETRY_MS);
+    return () => clearTimeout(timer);
   }, [minted, threads, refresh]);
   return (
     <div
@@ -112,9 +125,14 @@ function ChatWorkspace() {
 
 function OpenApp({ appId }: { appId: string }) {
   const { client, components } = useVendoContext();
-  const { surface } = useApp(appId);
+  const { surface, refresh } = useApp(appId);
+  // Wave 7 H2 — same keepalive as VendoSlot's MountedApp (see frames.tsx).
+  const keepalive = useMemo(
+    () => ({ ping: () => client.apps.pingMachine(appId), reopen: refresh }),
+    [appId, client, refresh],
+  );
   if (!surface) return <div role="status">Opening app…</div>;
-  return <AppFrame key={appId} surface={surface} components={components} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
+  return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
 
 function AppsWorkspace() {

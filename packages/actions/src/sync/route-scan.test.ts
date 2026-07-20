@@ -65,6 +65,17 @@ describe("app route verb evidence", () => {
     expect(await methodsFor(root, "/api/star")).toEqual(["DELETE", "GET"]);
   });
 
+  it("keeps re-exported verbs when the route also declares inline verbs", async () => {
+    const root = await temporaryRoot();
+    await write(root, "lib/post-impl.ts", "export function POST() { return new Response(); }\n");
+    await write(
+      root,
+      "app/api/mixed/route.ts",
+      "export async function GET() { return new Response(); }\nexport { POST } from \"../../../lib/post-impl\";\n",
+    );
+    expect(await methodsFor(root, "/api/mixed")).toEqual(["GET", "POST"]);
+  });
+
   it("ignores verb-looking text inside strings and comments", async () => {
     const root = await temporaryRoot();
     await write(

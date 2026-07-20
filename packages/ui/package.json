@@ -40,6 +40,10 @@
       "types": "./dist/tree/index.d.ts",
       "default": "./dist/tree/index.js"
     },
+    "./kit": {
+      "types": "./dist/kit/index.d.ts",
+      "default": "./dist/kit/index.js"
+    },
     "./voice": {
       "types": "./dist/voice/index.d.ts",
       "default": "./dist/voice/index.js"
@@ -68,12 +72,15 @@
   },
   "dependencies": {
     "@ai-sdk/react": "3.0.30",
+    "@tanstack/react-table": "^8.20.0",
     "@vendoai/core": "workspace:*",
     "fluidkit": "^0.5.0",
     "motion": "^11.11.0",
     "react-markdown": "^9.0.1",
+    "recharts": "^3.2.0",
     "remark-gfm": "^4.0.0",
-    "sucrase": "^3.35.0"
+    "sucrase": "^3.35.0",
+    "zod": "^3.25.76"
   },
   "peerDependencies": {
     "ai": "^6.0.0",

@@ -21,7 +21,7 @@ export function createVendo(config: {
   auth?: HostAuthPreset;                      // one preset fills principal + actAs + oauth; see /connect/act-as-presets
   principal?: (req: Request) => Promise<Principal | null>;   // escape hatch, mutually exclusive with auth; null → ephemeral anonymous
   store?: VendoStore;                         // default: createStore() (PGlite, .vendo/data)
-  sandbox?: SandboxAdapter;                   // e.g. vendoSandbox(), e2bSandbox({ apiKey }); absent → rung 1 only
+  sandbox?: SandboxAdapter;                   // e.g. cloudSandbox({ apiKey }), e2bSandbox({ apiKey }); absent → auto-selected from E2B_API_KEY / VENDO_API_KEY, else tree-only apps
   catalog?: ComponentCatalog | ComponentRegistry; // host components exposed to the generation prompt; see /connect/host-components
   connectors?: Connector[];
   actAs?: ActAs;                              // escape hatch, mutually exclusive with auth
@@ -40,6 +40,7 @@ export function createVendo(config: {
     maxSteps?: number;                        // agent-loop step cap per turn (default 20)
   };
   sessions?: { ttlMs?: number; sweepIntervalMs?: number }; // anonymous-session lifecycle
+  approvals?: { parkedCallTtlMs?: number };   // BYO parked-call expiry; default 60 min, 0 disables
   development?: boolean | { root?: string; out?: string }; // dev-only source capture
 }): Vendo;
 
@@ -47,6 +48,7 @@ export interface Vendo {
   handler: (req: Request) => Promise<Response>;   // fetch-style; mount at /api/vendo/[...]
   emit(event: string, payload: Json, principal: Principal): Promise<RunId[]>;   // the host-event seam, re-exposed
   agent: VendoAgent; guard: VendoGuard; apps: AppsRuntime; automations: AutomationsEngine; actions: ActionsRegistry; connections: ConnectionsService; store: VendoStore;
+  guardedTools: ToolRegistry;   // the guard-bound registry the BYO tool pack executes through; parks pending-approval calls for wire resume
 }
 ```
 
@@ -81,3 +83,33 @@ await eraseStore(vendo.store).byApp("app_abc");
 
 Each call returns a map of per-table deleted counts. See
 [Persistence](/deploy/persistence#erasing-data) for the full semantics.
+
+## BYO-agent subpaths
+
+Two subpath exports build the guarded Vendo tool pack for a host that keeps
+its own agent loop. Both are thin shims over one framework-neutral core;
+every pack tool executes through `vendo.guardedTools`, the same guard-bound
+registry Vendo's own loop uses.
+
+```ts
+// @vendoai/vendo/ai-sdk: AI SDK ToolSet, built per request
+export function vendoTools(
+  vendo: Vendo,
+  options: { principal: Principal; sessionId?: string; include?: string[]; exclude?: string[] },
+): Promise<ToolSet>;
+
+// @vendoai/vendo/mastra: Mastra createTool shapes for Agent({ tools });
+// the principal resolves per call from Mastra's request context
+export function vendoMastraTools(
+  vendo: Vendo,
+  options?: { include?: string[]; exclude?: string[] },
+): Promise<Record<string, MastraTool>>;
+
+export const VENDO_PRINCIPAL_KEY = "vendo-principal"; // required per request; missing fails closed
+export const VENDO_SESSION_KEY = "vendo-session-id";  // optional audit continuity
+```
+
+`include`/`exclude` match final (namespaced) tool names exactly; `exclude`
+wins. `@mastra/core` is an optional peer dependency used only by the
+`./mastra` subpath. Tool outputs are the versioned envelopes documented in
+[Use with your existing agent](/existing-agents#the-envelope-contract).

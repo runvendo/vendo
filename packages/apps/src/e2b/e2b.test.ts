@@ -19,6 +19,8 @@ const sdk = vi.hoisted(() => {
     createSnapshot: vi.fn(async () => ({ snapshotId: "snapshot_789" })),
     pause: vi.fn(async () => true),
     kill: vi.fn(async () => true),
+    setTimeout: vi.fn(async () => undefined),
+    isRunning: vi.fn(async () => true),
     commands: {
       run: vi.fn(async () => ({ exitCode: 7, stdout: "out", stderr: "err" })),
     },
@@ -32,6 +34,8 @@ const sdk = vi.hoisted(() => {
     ...sandbox,
     sandboxId: "sandbox_456",
     getHost: vi.fn((port: number) => `${port}-sandbox_456.e2b.app`),
+    setTimeout: vi.fn(async () => undefined),
+    isRunning: vi.fn(async () => true),
   };
   return {
     sandbox,
@@ -117,6 +121,63 @@ describe("e2bSandbox", () => {
     }));
     await machine.request({ method: "GET", path: "/other", port: 3000 });
     expect(fetch).toHaveBeenLastCalledWith("https://3000-sandbox_123.e2b.app/other", expect.anything());
+  });
+
+  it("extends the provider TTL on request activity so a busy box outlives timeoutMs", async () => {
+    // The provider deadline is fixed at create/resume; without sliding it, a
+    // machine under steady traffic is killed mid-session at timeoutMs before
+    // the idle lifecycle ever snapshots it.
+    const machine = await e2bSandbox({ apiKey: "key_test", timeoutMs: 12_345 }).create({ env: {} });
+    await machine.request({ method: "GET", path: "/a" });
+    expect(sdk.sandbox.setTimeout).toHaveBeenCalledWith(12_345);
+    // Throttled: back-to-back requests share one provider extension call.
+    await machine.request({ method: "GET", path: "/b" });
+    expect(sdk.sandbox.setTimeout).toHaveBeenCalledOnce();
+
+    // A resumed machine slides its deadline the same way…
+    const resumed = await e2bSandbox({ apiKey: "key_test", timeoutMs: 9_000 }).resume(v2SnapshotRef);
+    // …and the extension is best-effort: a provider failure never fails the request.
+    sdk.resumedSandbox.setTimeout.mockRejectedValueOnce(new Error("e2b is down"));
+    await expect(resumed.request({ method: "GET", path: "/c" })).resolves.toMatchObject({ status: 201 });
+    expect(sdk.resumedSandbox.setTimeout).toHaveBeenCalledWith(9_000);
+  });
+
+  it("translates a dead-sandbox 502 into the seam's not-found signal (Wave 7)", async () => {
+    // The e2b ingress answers 502 for BOTH "app port not open yet" (boot race,
+    // retried above the seam) and "sandbox reaped" (TTL, sweep). Only the SDK
+    // knows which, so a 502 consults isRunning: dead → the seam's thrown
+    // not-found (machine-lifecycle evicts + re-wakes); alive → the 502 passes
+    // through as an app-level status.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("Bad Gateway", { status: 502 })));
+    const machine = await e2bSandbox({ apiKey: "key_test" }).create({ env: {} });
+
+    await expect(machine.request({ method: "GET", path: "/still-booting" })).resolves.toMatchObject({ status: 502 });
+
+    sdk.sandbox.isRunning.mockResolvedValueOnce(false);
+    await expect(machine.request({ method: "GET", path: "/fn/echo" })).rejects.toMatchObject({
+      name: "VendoError",
+      code: "not-found",
+    });
+
+    // A liveness probe failure is inconclusive — fail open to the plain 502
+    // (the boot retry loop above the seam handles it).
+    sdk.sandbox.isRunning.mockRejectedValueOnce(new Error("e2b api is down"));
+    await expect(machine.request({ method: "GET", path: "/fn/echo" })).resolves.toMatchObject({ status: 502 });
+  });
+
+  it("extends the provider TTL on exec activity too (in-box agent builds are activity)", async () => {
+    // Wave 7 — the box-agent bootstrap and diagnostics run through exec; a
+    // minutes-long command sequence is exactly the busy box the TTL slide
+    // exists for, so exec shares request's extend-on-activity (and its
+    // throttle: interleaved request/exec traffic still means ONE extension
+    // per interval).
+    const machine = await e2bSandbox({ apiKey: "key_test", timeoutMs: 12_345 })
+      .create({ env: {} }) as unknown as AdapterPrivateMachine & { request(req: { method: string; path: string }): Promise<unknown> };
+    await machine.exec("echo one");
+    expect(sdk.sandbox.setTimeout).toHaveBeenCalledWith(12_345);
+    await machine.exec("echo two");
+    await machine.request({ method: "GET", path: "/interleaved" });
+    expect(sdk.sandbox.setTimeout).toHaveBeenCalledOnce();
   });
 
   it("snapshots to a v2 ref, sleeps with pause, and destroys with kill", async () => {
@@ -217,22 +278,24 @@ describe("e2bSandbox", () => {
     expect(sdk.deleteSnapshot).toHaveBeenCalledWith("snapshot_789", { apiKey: "key_test" });
   });
 
-  it("keeps adapter-private exec, files, url, and deprecated create extras", async () => {
+  it("serves the sandbox public host as the seam machine URL (Wave 4 layer 3)", async () => {
+    const adapter = e2bSandbox({ apiKey: "key_test" });
+    const machine = await adapter.create({ env: { PORT: "8080" } });
+    // No-arg url() targets the app's $PORT — the browser→box serving path.
+    await expect(machine.url()).resolves.toBe("https://8080-sandbox_123.e2b.app");
+    await expect(machine.url(9090)).resolves.toBe("https://9090-sandbox_123.e2b.app");
+  });
+
+  it("keeps adapter-private exec and files", async () => {
     const adapter = e2bSandbox({ apiKey: "key_test", timeoutMs: 5_000 });
     const created = await adapter.create({
       env: { PORT: "8080" },
-      files: { "/app/a.txt": "alpha", "/app/b.bin": new Uint8Array([4, 5]) },
-      egress: ["api.example.com"],
-    } as Parameters<typeof adapter.create>[0]);
+      allowedDomains: ["api.example.com"],
+    });
     const machine = created as unknown as AdapterPrivateMachine;
     expect(sdk.create).toHaveBeenCalledWith(expect.objectContaining({
       network: { allowOut: ["api.example.com"], denyOut: ["0.0.0.0/0"] },
     }));
-    const batch = sdk.sandbox.files.write.mock.calls[0]?.[0];
-    expect(batch).toEqual([
-      { path: "/app/a.txt", data: "alpha" },
-      { path: "/app/b.bin", data: expect.any(ArrayBuffer) },
-    ]);
 
     await expect(machine.exec("pwd", { cwd: "/app", timeoutMs: 200 })).resolves.toEqual({
       code: 7,

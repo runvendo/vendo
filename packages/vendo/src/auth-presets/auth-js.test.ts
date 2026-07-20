@@ -1,9 +1,11 @@
 import { encode } from "@auth/core/jwt";
 import type { PermissionGrant } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-// The kit ships publicly next to the presets (imported here through the same
-// entry hosts use, pinning the re-export).
-import { authJs, hostAuthPresetConformance } from "./index.js";
+// authJs is pinned via its own module — the same file the
+// "@vendoai/vendo/auth/auth-js" subpath re-exports (corpus-triage Task 9);
+// hostAuthPresetConformance still comes through the shared barrel.
+import { authJs } from "./auth-js.js";
+import { hostAuthPresetConformance } from "./index.js";
 
 afterEach(() => {
   vi.unstubAllEnvs();

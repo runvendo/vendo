@@ -2,7 +2,7 @@ import type { AppId, RunId } from "@vendoai/core";
 import { dbFor, type VendoStore } from "../store.js";
 import type { RunRow } from "./types.js";
 import { putRunRow, runFromRow } from "./rows.js";
-import { decodeCursor, encodeCursor, pageLimit } from "./utils.js";
+import { cursorMs, decodeCursor, encodeCursor, pageLimit } from "./utils.js";
 import { parseRunData } from "../validate.js";
 
 /** 02-store §3 */
@@ -35,12 +35,12 @@ export function runStore(store: VendoStore): {
       if (filter.cursor !== undefined) {
         const cursor = decodeCursor(filter.cursor);
         params.push(cursor.c, cursor.i);
-        clauses.push(`(started_at, id) < ($${params.length - 1}, $${params.length})`);
+        clauses.push(`(${cursorMs("started_at")}, id) < (${cursorMs(`$${params.length - 1}::timestamptz`)}, $${params.length})`);
       }
       params.push(limit + 1);
       const result = await db.query(
         `SELECT * FROM vendo_runs${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""}
-         ORDER BY started_at DESC, id DESC LIMIT $${params.length}`,
+         ORDER BY ${cursorMs("started_at")} DESC, id DESC LIMIT $${params.length}`,
         params,
       );
       const runs = result.rows.slice(0, limit).map(runFromRow);

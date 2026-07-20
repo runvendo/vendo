@@ -46,6 +46,34 @@
     "./react": {
       "types": "./dist/react.d.ts",
       "default": "./dist/react.js"
+    },
+    "./ai-sdk": {
+      "types": "./dist/ai-sdk.d.ts",
+      "default": "./dist/ai-sdk.js"
+    },
+    "./mastra": {
+      "types": "./dist/mastra.d.ts",
+      "default": "./dist/mastra.js"
+    },
+    "./auth/auth0": {
+      "types": "./dist/auth-presets/auth0.d.ts",
+      "default": "./dist/auth-presets/auth0.js"
+    },
+    "./auth/auth-js": {
+      "types": "./dist/auth-presets/auth-js.d.ts",
+      "default": "./dist/auth-presets/auth-js.js"
+    },
+    "./auth/clerk": {
+      "types": "./dist/auth-presets/clerk.d.ts",
+      "default": "./dist/auth-presets/clerk.js"
+    },
+    "./auth/jwt": {
+      "types": "./dist/auth-presets/jwt.d.ts",
+      "default": "./dist/auth-presets/jwt.js"
+    },
+    "./auth/supabase": {
+      "types": "./dist/auth-presets/supabase.d.ts",
+      "default": "./dist/auth-presets/supabase.js"
     }
   },
   "files": [
@@ -83,6 +111,7 @@
   "peerDependencies": {
     "@auth/core": "^0.34.3",
     "@clerk/backend": ">=1.0.0",
+    "@mastra/core": ">=1.0.0 <2",
     "ai": ">=6.0.0 <7",
     "jose": ">=5.0.0",
     "react": "^18.0.0 || ^19.0.0",
@@ -90,6 +119,9 @@
   },
   "peerDependenciesMeta": {
     "@auth/core": {
+      "optional": true
+    },
+    "@mastra/core": {
       "optional": true
     },
     "@clerk/backend": {
@@ -103,6 +135,8 @@
     "@ai-sdk/anthropic": "3.0.12",
     "@auth/core": "^0.34.3",
     "@clerk/backend": "^3.11.7",
+    "@mastra/core": "1.51.0",
+    "@types/json-schema": "^7.0.15",
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",

@@ -5,6 +5,7 @@ import {
   type PropsWithChildren,
   type ReactNode,
 } from "react";
+import type { BRANDED_COMPONENT_NAMES } from "@vendoai/core";
 
 type PrimitiveAction = () => unknown;
 type PrimitiveValue = string | number | boolean | null | undefined;
@@ -224,12 +225,17 @@ export type SelectOption = PrimitiveValue | {
   value: PrimitiveValue;
   label?: PrimitiveValue;
   disabled?: boolean;
-};
+} | Record<string, unknown>;
 
 export interface SelectProps {
   label?: PrimitiveValue;
   value?: PrimitiveValue;
   options?: SelectOption[];
+  /** W5a (Kit parity) — object field for the visible label when options are
+   *  RAW tool rows; the taught path since the `asOptions` reshape retired. */
+  labelField?: string;
+  /** W5a (Kit parity) — object field for the submitted value on raw rows. */
+  valueField?: string;
   placeholder?: string;
   name?: string;
   hint?: PrimitiveValue;
@@ -244,11 +250,23 @@ export function Select(props: SelectProps) {
   const selectId = `vendo-select-${id.replace(/:/g, "")}`;
   const hintId = `${selectId}-hint`;
   const initialValue = content(props.value);
-  const options = (props.options ?? []).map((option) => (
-    typeof option === "object" && option !== null
-      ? { value: content(option.value), label: content(option.label ?? option.value), disabled: option.disabled }
-      : { value: content(option), label: content(option), disabled: false }
-  ));
+  const { labelField, valueField } = props;
+  const options = (props.options ?? []).map((option) => {
+    if (typeof option === "object" && option !== null) {
+      // W5a — Kit parity: labelField/valueField read RAW tool rows (the
+      // taught path; the asOptions reshape is deprecated). Stored apps'
+      // {value, label} items take the legacy branch and render unchanged.
+      if (labelField !== undefined || valueField !== undefined) {
+        const row = option as Record<string, unknown>;
+        const value = row[(valueField ?? labelField) as string] as PrimitiveValue;
+        const label = (row[(labelField ?? valueField) as string] ?? value) as PrimitiveValue;
+        return { value: content(value), label: content(label), disabled: row.disabled === true };
+      }
+      const item = option as { value?: PrimitiveValue; label?: PrimitiveValue; disabled?: boolean };
+      return { value: content(item.value), label: content(item.label ?? item.value), disabled: item.disabled };
+    }
+    return { value: content(option), label: content(option), disabled: false };
+  });
   return (
     <label
       data-primitive="Select"
@@ -601,7 +619,9 @@ export function Tabs({ label = "Tabs", value, tabs, items, onChange }: TabsProps
   );
 }
 
-/** The fixed branded primitive addition for ENG-242. */
+/** The fixed branded primitive addition for ENG-242. Keys must be exactly
+ *  core's BRANDED_COMPONENT_NAMES (the ONE list this file mirrors); the
+ *  `satisfies` check makes drift a compile error. */
 export const BRANDED_COMPONENTS = {
   Card,
   Button,
@@ -611,4 +631,4 @@ export const BRANDED_COMPONENTS = {
   Badge,
   Stat,
   Tabs,
-} as const;
+} as const satisfies Record<(typeof BRANDED_COMPONENT_NAMES)[number], unknown>;

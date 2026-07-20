@@ -5,7 +5,6 @@ import { buildEnv } from "../box-env.js";
 import { boxAllowlist } from "../egress-approval.js";
 import { createApps } from "../index.js";
 import type { BuildMachineEnv } from "../machine-lifecycle.js";
-import type { V1SandboxMachine } from "../sandbox-v1-compat.js";
 import type { SandboxMachine } from "../sandbox.js";
 import { guardFixture, memoryStore, seedAppRow } from "../testing/index.js";
 import { e2bSandbox } from "./index.js";
@@ -74,7 +73,12 @@ http.createServer((request, response) => {
 `;
 
 const bootstrap = async (machine: SandboxMachine): Promise<void> => {
-  const box = machine as unknown as V1SandboxMachine;
+  // The ADAPTER-PRIVATE bootstrap surface (in production the in-box agent
+  // owns the inside of the box) — same shape the Lane A live test uses.
+  const box = machine as unknown as {
+    exec(cmd: string, opts?: { cwd?: string; timeoutMs?: number }): Promise<{ code: number; stdout: string; stderr: string }>;
+    files: { write(path: string, bytes: Uint8Array | string): Promise<void> };
+  };
   await box.files.write("/app/server.js", CONFORMANCE_SERVER_SOURCE);
   const started = await box.exec(
     "nohup node /app/server.js >/tmp/vendo-conformance.log 2>&1 &\necho $! >/tmp/vendo-conformance.pid",

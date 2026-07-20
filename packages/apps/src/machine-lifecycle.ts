@@ -1,23 +1,15 @@
 import {
   VendoError,
+  safeErrorMessage,
   type AppDocument,
   type AppId,
   type StoreAdapter,
 } from "@vendoai/core";
-import { appRecordInput, rowFromRecord } from "./persistence.js";
+import { rowFromRecord, updateAppRow } from "./persistence.js";
 import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 
 /** Execution-v2 wake/sleep policy: auto-sleep after 5 minutes idle. */
 const DEFAULT_IDLE_MS = 5 * 60_000;
-/** Bounded CAS retries before a document update reports a conflict. */
-const CAS_ATTEMPTS = 3;
-
-/**
- * Collapsed onto the seam: destroy-by-ref now lives on SandboxAdapter itself
- * (Lane A amendment). Kept as an alias so Lane B-era call sites read the same.
- * @deprecated Use SandboxAdapter directly.
- */
-export type MachineSandboxAdapter = SandboxAdapter;
 
 /** Injectable timer seam so idle auto-sleep is testable without real time. */
 export interface LifecycleClock {
@@ -64,9 +56,20 @@ export type BuildMachineAllowlist = (
 
 export interface MachineLifecycleConfig {
   store: StoreAdapter;
-  sandbox?: MachineSandboxAdapter;
+  sandbox?: SandboxAdapter;
   buildEnv?: BuildMachineEnv;
   allowedDomains?: BuildMachineAllowlist;
+  /**
+   * Wave 7 — push a freshly assembled boundary env into a LIVE machine (the
+   * runtime wires the box control port's env door, which restarts the app).
+   * A wake of a machine whose document carries `machine.envStaleAt` (a secret
+   * grant changed while it slept — resumes restore the SNAPSHOT's env on
+   * every provider) rebuilds the env through this seam and clears the marker.
+   * Fail-closed: an injection failure destroys the resumed machine and fails
+   * the wake (a box we cannot re-police must not serve — a revoked secret
+   * would stay usable inside it); the marker and ref survive for the retry.
+   */
+  injectEnv?: (machine: SandboxMachine, env: Record<string, string>) => Promise<void>;
   /** Provider base template every provisioned machine boots from. */
   template?: string;
   idleMs?: number;
@@ -138,7 +141,7 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
   const waking = new Map<AppId, Promise<SandboxMachine>>();
   const provisioning = new Map<AppId, Promise<AppDocument>>();
 
-  const requireAdapter = (): MachineSandboxAdapter => {
+  const requireAdapter = (): SandboxAdapter => {
     if (config.sandbox === undefined) {
       throw new VendoError("sandbox-unavailable", "sandbox execution is unavailable");
     }
@@ -155,27 +158,10 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
   };
 
   /** Read-mutate-CAS on the app row; the store's revision receipt arbitrates racers. */
-  const updateDocument = async (
+  const updateDocument = (
     appId: AppId,
     mutate: (doc: AppDocument) => AppDocument,
-  ): Promise<AppDocument> => {
-    for (let attempt = 0; attempt < CAS_ATTEMPTS; attempt += 1) {
-      const record = await records.get(appId);
-      if (record === null) {
-        throw new VendoError("not-found", `app ${appId} does not exist`, { appId });
-      }
-      const row = rowFromRecord(record);
-      const next = mutate(structuredClone(row.doc));
-      const input = appRecordInput(next, row.subject, row.enabled);
-      if (records.atomic === undefined || record.revision === undefined) {
-        await records.put(input);
-        return next;
-      }
-      const swapped = await records.atomic.compareAndSwap(input, record.revision);
-      if (swapped !== null) return next;
-    }
-    throw new VendoError("conflict", `app ${appId} was concurrently modified`, { appId });
-  };
+  ): Promise<AppDocument> => updateAppRow(records, appId, mutate);
 
   const armIdleTimer = (appId: AppId): void => {
     const entry = live.get(appId);
@@ -193,20 +179,65 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
     }, idleMs);
   };
 
-  /** Every request through the machine counts as activity and re-arms the idle timer. */
+  /** The seam's dead-machine signal (sandbox.ts): a request() throwing
+   *  not-found means the PROVIDER lost the machine (TTL, sweep) — an app-level
+   *  status never throws through the seam. */
+  const isMachineGone = (error: unknown): boolean =>
+    error instanceof VendoError && error.code === "not-found";
+
+  /** One tracked request against a specific live raw machine (no recovery). */
+  const requestOnce = async (
+    appId: AppId,
+    raw: SandboxMachine,
+    req: Parameters<SandboxMachine["request"]>[0],
+  ): Promise<Awaited<ReturnType<SandboxMachine["request"]>>> => {
+    const entry = live.get(appId);
+    const tracked = entry !== undefined && entry.raw === raw;
+    if (tracked) entry.inflight += 1;
+    armIdleTimer(appId);
+    try {
+      return await raw.request(req);
+    } finally {
+      if (tracked) entry.inflight -= 1;
+      armIdleTimer(appId);
+    }
+  };
+
+  /** Wave 7 — drop a live entry whose provider state died out from under us.
+   *  Guarded on the exact raw machine so a racing recovery (or a fresh wake)
+   *  is never evicted by a stale handle's late failure. */
+  const evictDead = async (appId: AppId, raw: SandboxMachine): Promise<void> => {
+    const entry = live.get(appId);
+    if (entry === undefined || entry.raw !== raw) return;
+    live.delete(appId);
+    if (entry.timer !== undefined) clock.clearTimeout(entry.timer);
+    // Best-effort: the provider already reaped it; never snapshot a dead box.
+    await entry.raw.destroy().catch(() => undefined);
+  };
+
+  /** Every request through the machine counts as activity and re-arms the idle
+   *  timer. A dead-machine failure (provider TTL/sweep) evicts the live entry
+   *  and retries ONCE from the durable snapshot ref; a second failure
+   *  surfaces. */
   const withIdleTracking = (appId: AppId, raw: SandboxMachine): SandboxMachine => ({
     id: raw.id,
     request: async (req) => {
-      const entry = live.get(appId);
-      if (entry !== undefined) entry.inflight += 1;
-      armIdleTimer(appId);
       try {
-        return await raw.request(req);
-      } finally {
-        if (entry !== undefined) entry.inflight -= 1;
-        armIdleTimer(appId);
+        return await requestOnce(appId, raw, req);
+      } catch (error) {
+        if (!isMachineGone(error)) throw error;
+        await evictDead(appId, raw);
+        // Re-wake from the stored snapshot ref (concurrent recoveries coalesce
+        // on the waking single-flight); the retry targets the fresh raw
+        // machine directly so a second dead-machine failure surfaces instead
+        // of recursing into another recovery.
+        await wakeById(appId);
+        const fresh = live.get(appId);
+        if (fresh === undefined) throw error;
+        return await requestOnce(appId, fresh.raw, req);
       }
     },
+    url: (port) => raw.url(port),
     snapshot: () => raw.snapshot(),
     stop: () => raw.stop(),
     destroy: () => raw.destroy(),
@@ -293,8 +324,43 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
     }
   };
 
-  const wake = async (app: AppDocument): Promise<SandboxMachine> => {
-    const entry = live.get(app.id);
+  const wake = async (app: AppDocument): Promise<SandboxMachine> => wakeById(app.id);
+
+  /**
+   * Wave 7 — rebuild a machine's boundary env when its document carries the
+   * env-stale marker (a secret grant changed after the last injection), then
+   * clear the marker. Clearing is guarded on the marker VALUE seen — a grant
+   * committed during the rebuild keeps its own fresher marker for the next
+   * wake (markers are strictly increasing, so values never collide). A failed
+   * clear is benign: the env is fresh and the re-push is idempotent. Throws
+   * on injection failure; the CALLER owns tearing the machine down (fail
+   * closed — a box we cannot re-police must not serve).
+   */
+  const rebuildStaleEnv = async (
+    appId: AppId,
+    doc: AppDocument,
+    machine: SandboxMachine,
+  ): Promise<void> => {
+    const staleAt = doc.machine?.envStaleAt;
+    if (staleAt === undefined || config.injectEnv === undefined) return;
+    try {
+      await config.injectEnv(machine, await buildEnv(doc));
+    } catch (error) {
+      throw new VendoError(
+        "sandbox-unavailable",
+        `machine env rebuild failed for ${appId} after a grant change`,
+        { appId, reason: safeErrorMessage(error) },
+      );
+    }
+    await updateDocument(appId, (current) => {
+      if (current.machine === undefined || current.machine.envStaleAt !== staleAt) return current;
+      const { envStaleAt: _stale, ...rest } = current.machine;
+      return { ...current, machine: rest };
+    }).catch(() => undefined);
+  };
+
+  const wakeById = async (appId: AppId): Promise<SandboxMachine> => {
+    const entry = live.get(appId);
     if (entry !== undefined) {
       // Lane E — a live machine answers to the CURRENT policy too: a
       // declaration that lost (or never had) approval refuses here rather
@@ -303,18 +369,29 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
       // sleep is the containment; the next wake re-applies the policy.)
       // Evaluated over the authoritative row, not the caller's copy — a
       // grant committed since the caller loaded its document must count.
-      if (config.allowedDomains !== undefined) {
-        await config.allowedDomains(await currentDocument(app.id));
+      if (config.allowedDomains !== undefined || config.injectEnv !== undefined) {
+        const doc = await currentDocument(appId);
+        if (config.allowedDomains !== undefined) await config.allowedDomains(doc);
+        // Wave 7 — a durable env-stale marker written by ANOTHER process
+        // (whose grant commit cannot reach this process's live entry to
+        // sleep it) must not ride the warm entry until the idle sweep.
+        try {
+          await rebuildStaleEnv(appId, doc, entry.raw);
+        } catch (error) {
+          const taken = await takeLive(appId);
+          await taken?.raw.destroy().catch(() => undefined);
+          throw error;
+        }
       }
-      armIdleTimer(app.id);
+      armIdleTimer(appId);
       return entry.wrapped;
     }
-    const pending = waking.get(app.id);
+    const pending = waking.get(appId);
     if (pending !== undefined) return pending;
     const run = (async () => {
-      const doc = await currentDocument(app.id);
+      const doc = await currentDocument(appId);
       if (doc.machine === undefined) {
-        throw new VendoError("validation", `app ${app.id} has no machine to wake`, { appId: app.id });
+        throw new VendoError("validation", `app ${appId} has no machine to wake`, { appId });
       }
       const adapter = requireAdapter();
       // Lane E — a wake applies the CURRENT egress policy over the snapshot's
@@ -325,16 +402,28 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
         : await adapter.resume(doc.machine.snapshotRef, {
           allowedDomains: await config.allowedDomains(doc),
         });
-      const wrapped = withIdleTracking(app.id, raw);
-      live.set(app.id, { raw, wrapped, inflight: 0 });
-      armIdleTimer(app.id);
+      // Wave 7 — a grant changed while the machine slept: the resumed snapshot
+      // carries the OLD env (every provider restores snapshot env), so rebuild
+      // the boundary env through the control port before anything rides this
+      // wake. A failed rebuild fails the wake CLOSED — registering the machine
+      // live would let a revoked secret keep serving until the idle sweep. The
+      // marker and the document ref survive, so the next wake retries.
+      try {
+        await rebuildStaleEnv(appId, doc, raw);
+      } catch (error) {
+        await raw.destroy().catch(() => undefined);
+        throw error;
+      }
+      const wrapped = withIdleTracking(appId, raw);
+      live.set(appId, { raw, wrapped, inflight: 0 });
+      armIdleTimer(appId);
       return wrapped;
     })();
-    waking.set(app.id, run);
+    waking.set(appId, run);
     try {
       return await run;
     } finally {
-      waking.delete(app.id);
+      waking.delete(appId);
     }
   };
 

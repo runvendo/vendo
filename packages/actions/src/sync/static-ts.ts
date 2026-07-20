@@ -49,6 +49,48 @@ export async function hasDependency(root: string, name: string): Promise<boolean
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Next.js API route files (shared by the tRPC and GraphQL extractors)
+// ---------------------------------------------------------------------------
+
+const ROUTE_SOURCE_FILE_PATTERN = /\.(?:tsx?|jsx?)$/;
+
+/** True when `relativePath` can host a Next.js API route: an app-router
+ * route file or a pages/api source file. */
+export function isApiRouteFileCandidate(relativePath: string): boolean {
+  const normalized = relativePath.replace(/\\/g, "/");
+  const parts = normalized.split("/");
+  const file = parts.at(-1) ?? "";
+  if (/^route\.(?:tsx?|jsx?)$/.test(file) && parts.includes("app")) return true;
+  const pagesIndex = parts.findIndex((part) => part === "pages");
+  return pagesIndex !== -1 && parts[pagesIndex + 1] === "api" && ROUTE_SOURCE_FILE_PATTERN.test(file) && !/\.d\.ts$/.test(file);
+}
+
+function isDynamicSegment(segment: string): boolean {
+  return /^\[.*\]$/.test(segment);
+}
+
+/** The static mount path a route file serves (app or pages router); null when
+ * no path can be derived. */
+export function apiPathFromRouteFile(relativePath: string): string | null {
+  const parts = relativePath.replace(/\\/g, "/").split("/");
+  const file = parts.at(-1) ?? "";
+  if (/^route\.(?:tsx?|jsx?)$/.test(file)) {
+    const appIndex = parts.findIndex((part) => part === "app");
+    if (appIndex === -1) return null;
+    const segments = parts.slice(appIndex + 1, -1)
+      .filter((segment) => !(segment.startsWith("(") && segment.endsWith(")")) && !segment.startsWith("@"))
+      .filter((segment) => !isDynamicSegment(segment));
+    return `/${segments.join("/")}`.replace(/\/+/g, "/");
+  }
+  const pagesIndex = parts.findIndex((part) => part === "pages");
+  if (pagesIndex === -1) return null;
+  const fileBase = file.replace(/\.(?:tsx?|jsx?)$/, "");
+  const segments = [...parts.slice(pagesIndex + 1, -1), fileBase]
+    .filter((segment) => segment !== "index" && !isDynamicSegment(segment));
+  return `/${segments.join("/")}`.replace(/\/+/g, "/");
+}
+
 export interface FileModule {
   file: string;
   source: string;

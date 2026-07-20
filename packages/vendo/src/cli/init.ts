@@ -3,13 +3,10 @@ import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import {
-  extractServerActions,
   mergeOverrides,
-  serverActionRegistrations,
   vendoSync,
   type ExtractedTool,
   type OverridesFile,
-  type ServerActionRegistration,
 } from "@vendoai/actions";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
@@ -19,9 +16,18 @@ import type { LanguageModel } from "ai";
 import { AUTH_MD_URL, runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
 import { APPLY_COMMAND, composeDelegatedInstructions, EXTRACTION_DRAFT_JSON_SCHEMA } from "./extract/delegate.js";
 import { askYesNo, runAiExtraction, type AiExtractionOptions } from "./extract/extraction.js";
-import type { StaticTool } from "./extract/stages.js";
+import { BRIEF_TEMPLATE, type StaticTool } from "./extract/stages.js";
 import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
+import { resolveScaffoldAuth, type AuthMatch, type AuthPresetName, type ConfirmAuth, type SelectAuth } from "./init-auth.js";
+import {
+  expressServerSource,
+  registrySource,
+  routeSource,
+  serverActionsModuleSource,
+  VENDO_ENV_EXAMPLE,
+  wiringServerActions,
+} from "./init-scaffolds.js";
 import { createPrettyOutput, plainSelect, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
 import { devModel, NO_CREDENTIAL_MESSAGE } from "../dev-creds/model.js";
 import { contrastingText } from "./theme/color.js";
@@ -60,7 +66,7 @@ import {
 
 const DEFAULT_RADIUS = { small: "4px", large: "12px" } as const;
 
-const BRIEF_PLACEHOLDER = "Describe this product, its users, and the jobs the agent should help them complete.\n";
+const BRIEF_PLACEHOLDER = `${BRIEF_TEMPLATE}\n`;
 
 function toVendoTheme(slots: ThemeSlotValues): VendoTheme {
   const deriveRadius = (factor: number, fallback: string): string => {
@@ -247,397 +253,6 @@ async function appDirectory(root: string): Promise<string> {
   return join(root, "app");
 }
 
-/** The auth families init detects in package.json (09-vendo §2.1). Preset
-    names double as the zero-arg `@vendoai/vendo/server` export names. */
-type AuthPresetName = "authJs" | "clerk" | "supabase" | "auth0";
-
-interface AuthMatch {
-  preset: AuthPresetName;
-  dependency: string;
-  /** How the family was chosen: detection (default) cites the dependency it
-      found; a picker pick says so honestly — nothing was detected. */
-  source?: "picked";
-}
-
-interface AuthDetection {
-  /** Exactly one family matched — the preset init wires silently. */
-  wired: AuthMatch | null;
-  /** Every family that matched (for the ambiguity advisory). */
-  matches: AuthMatch[];
-}
-
-const AUTH_FAMILIES: ReadonlyArray<{ preset: AuthPresetName; test: (dependency: string) => boolean }> = [
-  { preset: "authJs", test: (dependency) => dependency === "next-auth" || dependency.startsWith("@auth/") },
-  { preset: "clerk", test: (dependency) => dependency.startsWith("@clerk/") },
-  { preset: "supabase", test: (dependency) => dependency.startsWith("@supabase/") },
-  { preset: "auth0", test: (dependency) => dependency.startsWith("@auth0/") },
-];
-
-/** Silent auth-preset detection from the host's package.json (zero-question
-    contract): one unambiguous family gets wired; none or several stay
-    anonymous and become one advisory line (detection-as-advice). */
-async function detectAuthPreset(root: string): Promise<AuthDetection> {
-  let dependencies: string[] = [];
-  try {
-    const manifest = JSON.parse((await readOptional(join(root, "package.json"))) ?? "{}") as {
-      dependencies?: Record<string, string>;
-      devDependencies?: Record<string, string>;
-    };
-    dependencies = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies });
-  } catch {
-    // No readable manifest — nothing to detect; anonymous is the safe default.
-  }
-  const matches = AUTH_FAMILIES.flatMap(({ preset, test }) => {
-    const dependency = dependencies.find(test);
-    return dependency === undefined ? [] : [{ preset, dependency }];
-  });
-  return { wired: matches.length === 1 ? matches[0]! : null, matches };
-}
-
-/** The one calm auth line for the none/ambiguous cases — names the exact
-    line to add, never asks a question. Emitted only when init scaffolds the
-    composition (a hand-wired host may already have auth). */
-function authAdvisory(detection: AuthDetection, compositionPath: string): string | null {
-  if (detection.wired !== null) return null;
-  if (detection.matches.length === 0) {
-    return `Auth: no provider detected — sessions stay anonymous. When you add one, add one line in ${compositionPath}: ` +
-      `auth: authJs() (Auth.js), clerk(), supabase(), auth0(), or jwt({ secret }).`;
-  }
-  const names = detection.matches.map((match) => match.dependency).join(", ");
-  const calls = detection.matches.map((match) => `auth: ${match.preset}()`).join(" or ");
-  return `Auth: several providers detected (${names}) — staying anonymous rather than guessing. Add one line in ${compositionPath}: ${calls}.`;
-}
-
-/** The declined-confirm advisory: anonymous composition, exact line in hand. */
-function declinedAuthAdvisory(match: AuthMatch, compositionPath: string): string {
-  return `Auth: left anonymous. To wire ${match.dependency} later, add one line in ${compositionPath}: auth: ${match.preset}().`;
-}
-
-type ConfirmAuth = (question: string, defaultYes: boolean) => Promise<boolean>;
-type SelectAuth = (question: string, options: SelectOption[]) => Promise<string>;
-
-/** Picker labels + the runtime package each zero-arg preset lazy-loads (the
-    install hint when the picked family's SDK is absent; the preset's own
-    lazy-load error already guards runtime). */
-const AUTH_FAMILY_INFO: Record<AuthPresetName, { name: string; label: string; runtime: string }> = {
-  authJs: { name: "Auth.js", label: "authJs() — Auth.js / next-auth", runtime: "@auth/core" },
-  clerk: { name: "Clerk", label: "clerk() — Clerk", runtime: "@clerk/backend" },
-  supabase: { name: "Supabase Auth", label: "supabase() — Supabase Auth", runtime: "jose" },
-  auth0: { name: "Auth0", label: "auth0() — Auth0", runtime: "jose" },
-};
-
-/** The auth picker (decline or ambiguity): none — stay anonymous — is first
-    and the default; detected families come next (named), then the remaining
-    zero-arg presets, then jwt (recipe only — it cannot be zero-arg). */
-async function pickScaffoldAuth(
-  detection: AuthDetection,
-  compositionPath: string,
-  selectAuth: SelectAuth,
-): Promise<{ wired: AuthMatch | null; advice: string | null }> {
-  const detected = detection.matches;
-  const undetected = (Object.keys(AUTH_FAMILY_INFO) as AuthPresetName[])
-    .filter((preset) => !detected.some((match) => match.preset === preset));
-  const picked = await selectAuth("Which auth should Vendo wire?", [
-    { value: "none", label: "none — stay anonymous, add it later" },
-    ...detected.map((match) => ({
-      value: match.preset,
-      label: AUTH_FAMILY_INFO[match.preset].label,
-      hint: `detected ${match.dependency}`,
-    })),
-    ...undetected.map((preset) => ({ value: preset, label: AUTH_FAMILY_INFO[preset].label })),
-    { value: "jwt", label: "jwt — my own JWT scheme (prints the recipe)" },
-  ]);
-  if (picked === "jwt") {
-    // jwt() cannot be zero-arg — nothing is wired; the recipe is the answer.
-    return {
-      wired: null,
-      advice: `Auth: your own JWT — add one line in ${compositionPath}: auth: jwt({ secret: <your signing secret> }). ` +
-        "Options and the claim mapping: docs/act-as-presets.md.",
-    };
-  }
-  const detectedMatch = detected.find((match) => match.preset === picked);
-  if (detectedMatch !== undefined) return { wired: detectedMatch, advice: null };
-  if (picked in AUTH_FAMILY_INFO) {
-    // Picked without its SDK in package.json: wire it exactly like a
-    // detection-accept, plus one install hint.
-    const preset = picked as AuthPresetName;
-    const info = AUTH_FAMILY_INFO[preset];
-    return {
-      wired: { preset, dependency: info.runtime, source: "picked" },
-      advice: `Auth: ${preset}() wired — ${info.runtime} is not in package.json yet; install it ` +
-        `(npm install ${info.runtime}) before the first authenticated run (the preset fails loud until then).`,
-    };
-  }
-  // none (or anything unrecognized): today's decline behavior.
-  return detection.wired !== null
-    ? { wired: null, advice: declinedAuthAdvisory(detection.wired, compositionPath) }
-    : { wired: null, advice: authAdvisory(detection, compositionPath) };
-}
-
-/** Detect + confirm + choose: in interactive runs, exactly one detected
-    family gets ONE calm [Y/n] question before anything is written (Enter
-    accepts and wires it — no picker on the happy path). A decline — and the
-    ambiguous case (several families) — offers the picker instead of settling
-    for anonymous. Without the seams (non-interactive, --yes, --agent) silent
-    detection stands and none/ambiguous keep the advisory line — a default
-    has to exist. None-detected never asks: there is nothing to choose from
-    that the advisory doesn't already name. */
-async function resolveScaffoldAuth(
-  root: string,
-  compositionPath: string,
-  authAnswer: AuthPresetName | "jwt" | "none" | undefined,
-  confirmAuth: ConfirmAuth | undefined,
-  selectAuth: SelectAuth | undefined,
-): Promise<{ wired: AuthMatch | null; advice: string | null }> {
-  const detection = await detectAuthPreset(root);
-  // --auth answers the confirm AND the picker in one flag: route it through
-  // the picker path so a flag answer and an interactive pick wire identically
-  // (detection-accept, install hint, jwt recipe, none advisory).
-  if (authAnswer !== undefined) {
-    return pickScaffoldAuth(detection, compositionPath, async () => authAnswer);
-  }
-  if (confirmAuth === undefined) {
-    return { wired: detection.wired, advice: authAdvisory(detection, compositionPath) };
-  }
-  if (detection.wired !== null) {
-    const accepted = await confirmAuth(
-      `Detected ${detection.wired.dependency} — wire auth: ${detection.wired.preset}()?`,
-      true,
-    );
-    if (accepted) return { wired: detection.wired, advice: null };
-    if (selectAuth !== undefined) return pickScaffoldAuth(detection, compositionPath, selectAuth);
-    return { wired: null, advice: declinedAuthAdvisory(detection.wired, compositionPath) };
-  }
-  if (detection.matches.length > 1 && selectAuth !== undefined) {
-    return pickScaffoldAuth(detection, compositionPath, selectAuth);
-  }
-  return { wired: null, advice: authAdvisory(detection, compositionPath) };
-}
-
-/** The wired preset line plus its escape-hatch comment. The lead-in stays
-    honest about how the preset got here: detection cites the found
-    dependency, a picker pick says "Selected". */
-function authConfigLines(auth: AuthMatch): string {
-  const origin = auth.source === "picked"
-    ? `Selected ${AUTH_FAMILY_INFO[auth.preset].name}`
-    : `Detected ${auth.dependency}`;
-  return `  // ${origin} — ${auth.preset}() fills the identity seams\n` +
-    `  // (request→user, actAs, door OAuth); options and the per-seam escape\n` +
-    `  // hatch: docs/act-as-presets.md.\n` +
-    `  auth: ${auth.preset}(),\n`;
-}
-
-/** The empty shared registry (one file, two consumers): `createVendo` reads it
-    as `catalog` (data fields only), `<VendoRoot components={registry}>` reads
-    the component references. Generated only while absent — never clobbered. */
-function registrySource(variant: "tsx" | "mjs"): string {
-  const header = `/**\n` +
-    ` * The Vendo component registry — generated empty by \`vendo init\`, then yours.\n` +
-    ` * One file, two consumers: \`createVendo\` takes this object as \`catalog\` and\n` +
-    ` * reads only the data fields (description, props, examples); <VendoRoot\n` +
-    ` * components={registry}> takes the same object and reads only the component\n` +
-    ` * references. There is no second map to keep in sync.\n` +
-    ` *\n` +
-    ` * Add entries keyed by component name, e.g.:\n` +
-    ` *\n` +
-    ` *   SpendingDonut: {\n` +
-    ` *     component: SpendingDonut,\n` +
-    ` *     description: "Spending by category. Use for where-did-my-money-go requests.",\n` +
-    ` *     props: z.object({\n` +
-    ` *       slices: z.array(z.object({ category: z.string(), amount: z.number() })),\n` +
-    ` *     }),\n` +
-    ` *     examples: ['{"slices":[{"category":"dining","amount":342.18}]}'],\n` +
-    ` *   },\n` +
-    ` *\n` +
-    ` * (\`props\` is an optional zod schema; a schema-less entry is legal.)\n` +
-    ` */\n`;
-  return variant === "tsx"
-    ? `${header}import type { ComponentRegistry } from "@vendoai/core";\n\nexport const registry = {} satisfies ComponentRegistry;\n`
-    : `${header}export const registry = {};\n`;
-}
-
-function routeSource(options: { serverActions: boolean; auth: AuthMatch | null; registrySpecifier: string }): string {
-  const named = [...(options.auth === null ? [] : [options.auth.preset]), "createVendo", "nextVendoHandler"].sort();
-  return `import { ${named.join(", ")} } from "@vendoai/vendo/server";\n` +
-    (options.serverActions ? `import { serverActions } from "./vendo-actions";\n` : "") +
-    `import { registry } from ${JSON.stringify(options.registrySpecifier)};\n` +
-    `\nconst vendo = createVendo({\n` +
-    (options.auth === null ? `  principal: async () => null,\n` : authConfigLines(options.auth)) +
-    `  catalog: registry,\n` +
-    (options.serverActions ? `  serverActions,\n` : "") +
-    `});\n\n` +
-    `export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);\n`;
-}
-
-/** Best-effort detection of the host's registrable server actions for the
- * wiring map. Failure degrades to no map — sync reports extraction problems
- * loudly, and runtime execution fails closed on the missing registration. */
-async function wiringServerActions(root: string): Promise<ServerActionRegistration[]> {
-  try {
-    const { tools } = await extractServerActions(root);
-    return serverActionRegistrations(tools);
-  } catch {
-    return [];
-  }
-}
-
-/**
- * The generated server-action registration map (04-actions §1, ENG-248): the
- * wiring file imports each detected `"use server"` action module and passes
- * the map into `createVendo({ serverActions })`. Deterministic content —
- * sorted registrations, stable aliases — so re-init stays idempotent.
- */
-function serverActionsModuleSource(root: string, wiringDir: string, registrations: ServerActionRegistration[]): string {
-  const header = `/**\n` +
-    ` * Server-action registration map — generated by \`vendo init\`; re-run init\n` +
-    ` * when the "use server" surface changes. createVendo dispatches\n` +
-    ` * server-action tools in-process through this map; an action missing here\n` +
-    ` * fails closed at execution time (no work performed).\n` +
-    ` */\n`;
-  if (registrations.length === 0) return `${header}export const serverActions = {};\n`;
-  const imports: string[] = [];
-  const entries: string[] = [];
-  registrations.forEach((registration, index) => {
-    const alias = `action${index}`;
-    const target = relative(wiringDir, join(root, registration.module))
-      .split(sep).join("/")
-      .replace(/\.(?:tsx|ts|jsx|js)$/, "");
-    const specifier = target.startsWith(".") ? target : `./${target}`;
-    imports.push(registration.exportName === "default"
-      ? `import ${alias} from ${JSON.stringify(specifier)};`
-      : `import { ${registration.exportName} as ${alias} } from ${JSON.stringify(specifier)};`);
-    entries.push(`  ${JSON.stringify(`${registration.module}#${registration.exportName}`)}: ${alias},`);
-  });
-  return `${header}${imports.join("\n")}\n\n` +
-    `export const serverActions = {\n${entries.join("\n")}\n};\n`;
-}
-
-function expressServerSource(typescript: boolean, auth: AuthMatch | null = null): string {
-  const imports = typescript
-    ? `import { once } from "node:events";\n` +
-      `import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from "node:http";\n` +
-      `import { Readable } from "node:stream";\n`
-    : `import { once } from "node:events";\n` +
-      `import { Readable } from "node:stream";\n`;
-  const types = typescript
-    ? `\ntype ExpressRequest = IncomingMessage & { originalUrl?: string };\n` +
-      `type ExpressNext = (error?: unknown) => void;\n`
-    : "";
-  const signatures = typescript
-    ? {
-        requestHeaders: `(headers: IncomingHttpHeaders): Headers`,
-        absoluteUrl: `(request: ExpressRequest): string`,
-        sendResponse: `(source: Response, target: ServerResponse): Promise<void>`,
-        handle: `(request: ExpressRequest, response: ServerResponse): Promise<void>`,
-        mountReturn: `: (request: ExpressRequest, response: ServerResponse, next: ExpressNext) => void`,
-      }
-    : { requestHeaders: "(headers)", absoluteUrl: "(request)", sendResponse: "(source, target)", handle: "(request, response)", mountReturn: "" };
-  const requestInit = typescript
-    ? `  const init: RequestInit & { duplex?: "half" } = { method, headers: requestHeaders(request.headers) };\n`
-    : `  const init = { method, headers: requestHeaders(request.headers) };\n`;
-  const body = typescript
-    ? `    init.body = Readable.toWeb(request) as ReadableStream<Uint8Array>;\n`
-    : `    init.body = Readable.toWeb(request);\n`;
-
-  // The client-entry hint mirrors the host's language: the TS variant needs the
-  // VendoTheme cast (JSON-module literals widen to string), the JS variant must
-  // not show type-only syntax a JavaScript host cannot paste.
-  const registrySpecifier = typescript ? "./registry" : "./registry.mjs";
-  const clientHint = typescript
-    ? ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
-      ` *   // the cast narrows TypeScript's widened JSON-module string literals:\n` +
-      ` *   import { VendoRoot } from "@vendoai/vendo/react";\n` +
-      ` *   import { registry } from "<path-to>/vendo/registry";\n` +
-      ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
-      ` *   import type { VendoTheme } from "@vendoai/vendo";\n` +
-      ` *   root.render(<VendoRoot components={registry} theme={theme as VendoTheme}><App /></VendoRoot>);\n`
-    : ` *   // in the client entry — theme.json adopts the host brand (08 §4):\n` +
-      ` *   import { VendoRoot } from "@vendoai/vendo/react";\n` +
-      ` *   import { registry } from "<path-to>/vendo/registry.mjs";\n` +
-      ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
-      ` *   root.render(<VendoRoot components={registry} theme={theme}><App /></VendoRoot>);\n`;
-  const serverNamed = [...(auth === null ? [] : [auth.preset]), "createVendo"].sort();
-
-  return `/**\n` +
-    ` * Add these wiring lines in your host:\n` +
-    ` *   app.use("/api/vendo", mountVendo());\n` +
-    clientHint +
-    ` */\n` +
-    imports +
-    `import { ${serverNamed.join(", ")} } from "@vendoai/vendo/server";\n` +
-    `import { registry } from ${JSON.stringify(registrySpecifier)};\n` +
-    types +
-    `\nconst vendo = createVendo({\n` +
-    (auth === null ? `  principal: async () => null,\n` : authConfigLines(auth)) +
-    `  catalog: registry,\n` +
-    `});\n\n` +
-    `function requestHeaders${signatures.requestHeaders} {\n` +
-    `  const result = new Headers();\n` +
-    `  for (const [name, value] of Object.entries(headers)) {\n` +
-    `    if (Array.isArray(value)) for (const item of value) result.append(name, item);\n` +
-    `    else if (value !== undefined) result.set(name, value);\n` +
-    `  }\n` +
-    `  return result;\n` +
-    `}\n\n` +
-    `function absoluteUrl${signatures.absoluteUrl} {\n` +
-    `  const encrypted = "encrypted" in request.socket && request.socket.encrypted === true;\n` +
-    `  const protocol = encrypted ? "https" : "http";\n` +
-    `  const host = request.headers.host ?? "localhost";\n` +
-    `  // Behind a trusted proxy, set VENDO_BASE_URL explicitly or validate forwarded headers in the host.\n` +
-    `  return new URL(request.originalUrl ?? request.url ?? "/", \`${"${protocol}"}://${"${host}"}\`).href;\n` +
-    `}\n\n` +
-    `async function sendResponse${signatures.sendResponse} {\n` +
-    `  target.statusCode = source.status;\n` +
-    `  source.headers.forEach((value, name) => {\n` +
-    `    if (name.toLowerCase() !== "set-cookie") target.setHeader(name, value);\n` +
-    `  });\n` +
-    `  const getSetCookie = (source.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;\n` +
-    `  const fallbackCookie = source.headers.get("set-cookie");\n` +
-    `  const cookies = typeof getSetCookie === "function"\n` +
-    `    ? getSetCookie.call(source.headers)\n` +
-    `    : fallbackCookie === null ? [] : [fallbackCookie];\n` +
-    `  if (cookies.length > 0) target.setHeader("set-cookie", cookies);\n` +
-    `  if (source.body === null) {\n` +
-    `    target.end();\n` +
-    `    return;\n` +
-    `  }\n` +
-    `  target.flushHeaders();\n` +
-    `  const reader = source.body.getReader();\n` +
-    `  try {\n` +
-    `    while (true) {\n` +
-    `      const chunk = await reader.read();\n` +
-    `      if (chunk.done) break;\n` +
-    `      if (!target.write(chunk.value)) await once(target, "drain");\n` +
-    `    }\n` +
-    `    target.end();\n` +
-    `  } finally {\n` +
-    `    reader.releaseLock();\n` +
-    `  }\n` +
-    `}\n\n` +
-    `async function handle${signatures.handle} {\n` +
-    `  const method = request.method ?? "GET";\n` +
-    requestInit +
-    `  if (method !== "GET" && method !== "HEAD") {\n` +
-    body +
-    `    init.duplex = "half";\n` +
-    `  }\n` +
-    `  await sendResponse(await vendo.handler(new Request(absoluteUrl(request), init)), response);\n` +
-    `}\n\n` +
-    `export function mountVendo()${signatures.mountReturn} {\n` +
-    `  return (request, response, next) => {\n` +
-    `    void handle(request, response).catch(next);\n` +
-    `  };\n` +
-    `}\n`;
-}
-
-const VENDO_ENV_EXAMPLE =
-  "# Trusted host origin for same-origin API calls. Dev trusts the request's own\n" +
-  "# origin automatically; production fails loud without this set (a credential-\n" +
-  "# forwarding call errors instead of silently running unauthenticated).\n" +
-  "VENDO_BASE_URL=http://localhost:3000\n" +
-  "# Model key — REQUIRED in production. In dev, `vendo init` can mint a free starter key instead.\n" +
-  "# ANTHROPIC_API_KEY=\n";
-
 /** Relative, posix-style import specifier from the layout's directory to the
     project-root `.vendo/theme.json` — printed for the user's paste, never
     written by init. Returns null when the project EXPLICITLY disables
@@ -692,7 +307,11 @@ function wireRouteServerActions(source: string): string | null {
   if (!call) return null; // unrecognized composition — leave it untouched
   const callIndex = source.indexOf(call[0]);
   const passesActions = /(^|[\s{,])serverActions\b/.test(source.slice(callIndex));
-  if (importsMap && passesActions) return null; // already wired
+  // Already wired, or hand-customized: a route that passes serverActions
+  // sourced from anywhere other than ./vendo-actions (a local map, an aliased
+  // import) would get a conflicting duplicate binding from our import — leave
+  // it untouched either way.
+  if (passesActions) return null;
 
   let next = source;
   if (!importsMap) {
@@ -705,9 +324,7 @@ function wireRouteServerActions(source: string): string | null {
       next = `${importLine}\n${next}`;
     }
   }
-  if (!passesActions) {
-    next = next.replace(/createVendo\(\s*\{/, (match) => `${match}\n  serverActions,`);
-  }
+  next = next.replace(/createVendo\(\s*\{/, (match) => `${match}\n  serverActions,`);
   return next === source ? null : next;
 }
 
@@ -1119,11 +736,17 @@ async function writeIfMissing(path: string, content: string, force: boolean): Pr
 }
 
 /** The value of one NAME=value line in .env.local (the cloud step's upsert
-    target) — the same-run pickup reads the freshly minted key back from disk. */
+    target) — the same-run pickup reads the freshly minted key back from disk.
+    Matches dotenv semantics for hand-authored entries: surrounding quotes are
+    stripped, and unquoted values lose their ` #…` inline comment. */
 async function envLocalValue(root: string, name: string): Promise<string | null> {
   const raw = await readOptional(join(root, ".env.local"));
   const match = raw?.match(new RegExp(`^\\s*${name}\\s*=\\s*(.+?)\\s*$`, "m"));
-  return match?.[1] ?? null;
+  const value = match?.[1];
+  if (value === undefined) return null;
+  const quoted = value.match(/^(["'])(.*)\1$/);
+  if (quoted?.[2] !== undefined) return quoted[2];
+  return value.replace(/\s+#.*$/, "").trimEnd();
 }
 
 async function ensureVendoEnvExample(root: string): Promise<void> {

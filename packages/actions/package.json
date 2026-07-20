@@ -35,6 +35,10 @@
     "./presets": {
       "types": "./dist/presets/index.d.ts",
       "default": "./dist/presets/index.js"
+    },
+    "./presets/auth-js": {
+      "types": "./dist/presets/auth-js.d.ts",
+      "default": "./dist/presets/auth-js.js"
     }
   },
   "files": [

@@ -1,13 +1,13 @@
 import type { ToolDescriptor } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
+import { CAPABILITY_MISS_TOOL_NAME } from "./capability-miss.js";
+import { createAgent } from "./index.js";
 import {
-  CAPABILITY_MISS_TOOL_NAME,
   DEFAULT_MAX_INITIAL_TOOLS,
   VENDO_TOOLS_SEARCH_TOOL_NAME,
   computeInitialLoadout,
-  createAgent,
   type ToolSearchFn,
-} from "./index.js";
+} from "./tool-search.js";
 import {
   boundRegistry,
   ctx,
@@ -256,5 +256,60 @@ describe("vendo_tools_search meta-tool", () => {
     // The searched-in destructive tool is still guard-gated.
     expect(tools.invocations.host_payouts_refund).toBe(0);
     expect(parts.some((part) => part.type === "data-vendo-approval")).toBe(true);
+  });
+});
+
+describe("seeded loadout (connection-scoped, spec 2026-07-20)", () => {
+  const surface = [
+    descriptor("vendo_apps_create", "create an app"),
+    descriptor("aaa_JUNK", "alphabetically first junk"),
+    descriptor("gmail_SEND", "send email", "write"),
+    descriptor("host_list", "list things"),
+  ];
+
+  it("seed wins over the risk/name fallback and is capped", () => {
+    const loadout = computeInitialLoadout(
+      surface,
+      { search: async () => [], maxInitialTools: 2 },
+      ["host_list", "gmail_SEND", "missing_TOOL"],
+    );
+    expect([...loadout]).toEqual(["vendo_apps_create", "host_list", "gmail_SEND"]);
+    expect(loadout.has("aaa_JUNK")).toBe(false);
+  });
+
+  it("explicit config.loadout still beats the seed", () => {
+    const loadout = computeInitialLoadout(
+      surface,
+      { search: async () => [], loadout: ["aaa_JUNK"] },
+      ["gmail_SEND"],
+    );
+    expect([...loadout]).toEqual(["vendo_apps_create", "aaa_JUNK"]);
+  });
+
+  it("no seed provided: the existing fallback is untouched", () => {
+    const loadout = computeInitialLoadout(surface, { search: async () => [], maxInitialTools: 1 });
+    expect(loadout.has("vendo_apps_create")).toBe(true);
+    expect(loadout.has("aaa_JUNK")).toBe(true); // risk/name fallback, as before
+  });
+});
+
+describe("mid-turn materialization (lazily expanded search hits)", () => {
+  it("search results NOT in the built toolset resolve + materialize + load", async () => {
+    const { createToolSearchSession } = await import("./tool-search.js");
+    const materialized: string[] = [];
+    const session = createToolSearchSession({
+      config: { search: async () => [{ name: "gmail_SEND", description: "send", risk: "write", score: 5 }] },
+      descriptors: [],
+      loaded: new Set<string>(),
+      resolve: async (names) => names.map((name) => descriptor(name, "send", "write")),
+      materialize: (d) => { materialized.push(d.name); },
+    });
+    const tools: Record<string, unknown> = {};
+    session.attach(tools as never);
+    const meta = tools[VENDO_TOOLS_SEARCH_TOOL_NAME] as { execute: (input: unknown, meta: { toolCallId: string }) => Promise<{ status: string; output: { loaded: string[] } }> };
+    const outcome = await meta.execute({ query: "email" }, { toolCallId: "t1" });
+    expect(materialized).toEqual(["gmail_SEND"]);
+    expect(outcome.output.loaded).toEqual(["gmail_SEND"]);
+    expect(session.activeToolNames()).toContain("gmail_SEND");
   });
 });

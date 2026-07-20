@@ -1,4 +1,4 @@
-import { VendoError } from "@vendoai/core";
+import { VendoError, inferToolSemantics, type FieldSemantic } from "@vendoai/core";
 import { computeImpact } from "../sync-impact.js";
 import {
   VERSION,
@@ -149,6 +149,41 @@ export const systemRoutes: RouteEntry[] = [
       throw new VendoError("validation", "tools must be an array of at most 200 strings");
     }
     return json({ impact: await computeImpact(deps.store, tools) });
+  }),
+  // W3 (v3 spec §Context) — the `vendo sync` semantics seam: sample each
+  // zero-required-input READ tool once (through the guard-bound registry,
+  // with this request's own context — approvals/audit see it like any call)
+  // and return the INFERRED field semantics per tool. Values never leave the
+  // server: only classifications (and enum vocabularies) do. Dev-only, like
+  // /sync/impact.
+  route("POST", "/sync/semantics", async ({ deps, context }) => {
+    if (environment("NODE_ENV") === "production") {
+      throw new VendoError("blocked", "sync semantics is only available on a dev server");
+    }
+    const ctx = await context("chat");
+    const descriptors = await deps.tools.descriptors();
+    const requiresInput = (schema: unknown): boolean => {
+      const required = (schema as { required?: unknown } | null)?.required;
+      return Array.isArray(required) && required.length > 0;
+    };
+    const tools: Record<string, Record<string, FieldSemantic>> = {};
+    await Promise.all(descriptors
+      .filter((descriptor) => descriptor.risk === "read" && !requiresInput(descriptor.inputSchema))
+      .map(async (descriptor) => {
+        try {
+          const outcome = await deps.tools.execute(
+            { id: `call_${globalThis.crypto.randomUUID()}`, tool: descriptor.name, args: {} },
+            ctx,
+          );
+          if (outcome.status !== "ok") return;
+          const inferred = inferToolSemantics([outcome.output]);
+          if (Object.keys(inferred).length > 0) tools[descriptor.name] = inferred;
+        } catch {
+          // A failing sample leaves that tool without inferred semantics —
+          // the CLI writes what it can; hosts annotate the rest.
+        }
+      }));
+    return json({ tools });
   }),
 ];
 

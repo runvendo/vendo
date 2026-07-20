@@ -23,6 +23,10 @@ const VALUE_EXPORTS = [
   "VendoPage",
   "VendoPalette",
   "VendoSlot",
+  // Existing-agents Lane B — the three BYO-chat embeds.
+  "VendoAppEmbed",
+  "VendoApprovalEmbed",
+  "VendoToolResult",
   "VendoThread",
   "VendoToasts",
   "vendoToast",
@@ -44,7 +48,6 @@ const VALUE_EXPORTS = [
   // ui-lane-panels pick B — the shared icon-ledger rows (ActivityPanel +
   // VendoActivities render through them; ejected activities fork them).
   "ActivityLedger",
-  "OutcomeIcon",
   "formatRelativeAuditTime",
   "kindGlyph",
   "BuildBeat",

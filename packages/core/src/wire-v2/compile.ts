@@ -32,15 +32,17 @@ import { FN_REFERENCE_PATTERN } from "../fn-references.js";
 import { VENDO_TREE_FORMAT_V2 } from "../formats.js";
 import type { Json } from "../ids.js";
 import { isPlainObject, type TreeNode } from "../tree.js";
-import { PREWIRED_COMPONENT_NAMES, RESERVED_COMPONENT_NAMES } from "../tree-limits.js";
+import { RESERVED_COMPONENT_NAMES } from "../tree-limits.js";
+import { WIRE_COMPONENT_NAMES } from "../kit/specs.js";
 import { QUERY_NAME_PATTERN, type TreeQueryV2, type TreeV2 } from "../tree-v2.js";
 import type { ShapeType } from "../shape.js";
 import { parseAttributes } from "./attributes.js";
 import type { WireIssue } from "./expression.js";
-import { checkBindingShapes, type BindingShapeError } from "./shape-check.js";
+import { checkBindingShapes, mirrorBindingIssues, type BindingShapeError } from "./shape-check.js";
+import { expandInlineRefs } from "./inline-refs.js";
 import { admitIslandSource, claimNodeSlot, claimQuerySlot } from "./limits.js";
-import { collectText, NAME_CHAR, readName, scanTagEnd, skipElement, skipWhitespace } from "./scan.js";
-import { FAILED, issue, isWellFormedUtf16, mergeIssues, type CompileState, type Frame } from "./state.js";
+import { collectText, NAME_CHAR, readName, scanCloseTag, scanTagEnd, skipComment, skipElement, skipWhitespace } from "./scan.js";
+import { FAILED, issue, isWellFormedUtf16, type CompileState, type Frame } from "./state.js";
 
 /** v2 spec §2 / plan D3 — compiler options. `hostComponents` (the host
  *  catalog names) feeds source resolution: host brand wins over the prewired
@@ -50,6 +52,15 @@ import { FAILED, issue, isWellFormedUtf16, mergeIssues, type CompileState, type 
 export interface WireCompileOptions {
   hostComponents?: readonly string[];
   toolShapes?: Readonly<Record<string, ShapeType>>;
+  /** W1 Exp1 verdict (ADOPTED in W3): expand inline tool references
+   *  (`rows={invoices.list({...}).data}`) into minted `<Query>` declarations
+   *  + plain bindings before compiling. The canonical `<Query>` dialect stays
+   *  accepted either way. */
+  inlineRefs?: boolean;
+  /** W3 — known tool names for the inline-refs pre-transform: enables
+   *  single-segment inline heads (production extraction names like
+   *  `host_listTransactions`). */
+  inlineTools?: readonly string[];
 }
 
 /** v2 spec §2 / plan D6 — the compile result. */
@@ -75,9 +86,10 @@ export interface WireCompileResult {
 /** D3 — component tag names (and Island names) are PascalCase. */
 const PASCAL_TAG_PATTERN = /^[A-Z][A-Za-z0-9]*$/;
 
-/** D3 — the full prewired set (reserved layout primitives + branded),
- *  shared with the engine's catalog validation via tree-limits. */
-const PREWIRED_NAMES: ReadonlySet<string> = new Set(PREWIRED_COMPONENT_NAMES);
+/** D3 (extended W3) — the full built-in vocabulary: the legacy prewired set
+ *  plus the adopted Kit names, shared with the engine's catalog validation
+ *  via kit/specs. */
+const PREWIRED_NAMES: ReadonlySet<string> = new Set(WIRE_COMPONENT_NAMES);
 
 const RESERVED_SET: ReadonlySet<string> = new Set(RESERVED_COMPONENT_NAMES);
 
@@ -339,42 +351,20 @@ export const parseChildren = (state: CompileState, frames: Frame[], rootLabel = 
   while (state.index < state.source.length) {
     appendTextChild(state, frames, collectText(state));
     if (state.index >= state.source.length) break;
-    // Models narrate with HTML comments despite instructions; a total
-    // compiler skips them. An unterminated (or prefix-truncated) comment is
-    // stream truncation, and "<!" that is not a comment is dropped, so the
-    // cursor always advances (totality) and prefixes stay monotonic (D6).
-    if (state.source[state.index + 1] === "!") {
-      const opener = state.source.slice(state.index, state.index + 4);
-      if (opener === "<!--") {
-        const close = state.source.indexOf("-->", state.index + 4);
-        if (close === -1) {
-          state.index = state.source.length;
-          break;
-        }
-        state.index = close + 3;
-      } else if ("<!--".startsWith(opener)) {
-        state.index = state.source.length;
-        break;
-      } else {
-        state.index += 2;
-      }
-      continue;
-    }
+    // Comment skipping and close-tag scanning share scan.ts's skipComment /
+    // scanCloseTag with the pre-scan, so both cursors move identically by
+    // construction.
+    const comment = skipComment(state);
+    if (comment === "eof") break;
+    if (comment === "skipped") continue;
     // The cursor sits on a "<" that plausibly starts a tag.
     if (state.source[state.index + 1] === "/") {
-      state.index += 2;
-      const name = readName(state);
-      let junk = false;
-      while (state.index < state.source.length && state.source[state.index] !== ">") {
-        if (!/\s/.test(state.source[state.index] as string)) junk = true;
-        state.index += 1;
+      const close = scanCloseTag(state);
+      if (close === FAILED) break; // truncated close tag
+      if (close.junk) {
+        issue(state, "malformed-close-tag", `unexpected content in close tag </${close.name}> was ignored`);
       }
-      if (state.index >= state.source.length) break; // truncated close tag
-      state.index += 1;
-      if (junk) {
-        issue(state, "malformed-close-tag", `unexpected content in close tag </${name}> was ignored`);
-      }
-      closeTag(state, frames, name);
+      closeTag(state, frames, close.name);
       if (state.appClosed) return;
       continue;
     }
@@ -442,33 +432,18 @@ export const prescanDeclarations = (wire: string, rootTag = "App"): { queryNames
   while (state.index < state.source.length) {
     collectText(state);
     if (state.index >= state.source.length) break;
-    // Byte-for-byte mirror of parseChildren's comment handling: the pre-scan
-    // cursor must move exactly like the main pass or declarations after a
-    // comment vanish (Devin, PR #381).
-    if (state.source[state.index + 1] === "!") {
-      const opener = state.source.slice(state.index, state.index + 4);
-      if (opener === "<!--") {
-        const close = state.source.indexOf("-->", state.index + 4);
-        if (close === -1) break;
-        state.index = close + 3;
-      } else if ("<!--".startsWith(opener)) {
-        break;
-      } else {
-        state.index += 2;
-      }
-      continue;
-    }
+    // Comments and close tags move through the same scan.ts helpers as
+    // parseChildren, so the pre-scan cursor mirrors the main pass by
+    // construction (see skipComment/scanCloseTag).
+    const comment = skipComment(state);
+    if (comment === "eof") break;
+    if (comment === "skipped") continue;
     if (state.source[state.index + 1] === "/") {
-      state.index += 2;
-      const name = readName(state);
-      while (state.index < state.source.length && state.source[state.index] !== ">") {
-        state.index += 1;
-      }
-      if (state.index >= state.source.length) break;
-      state.index += 1;
+      const close = scanCloseTag(state); // junk is the main pass's to report
+      if (close === FAILED) break;
       // Nested <App> elements are skipped-with-subtree below, so any </App>
       // reaching the main stream closes the document in the main pass too.
-      if (name === rootTag) break;
+      if (close.name === rootTag) break;
       continue;
     }
     state.index += 1;
@@ -549,10 +524,7 @@ const finishResult = (
   const bindingErrors = toolShapes === undefined
     ? []
     : checkBindingShapes(state.nodes, state.queries, toolShapes);
-  mergeIssues(state, bindingErrors.map((error): WireIssue => ({
-    code: "shape-mismatch",
-    message: `node "${error.nodeId}" prop "${error.prop}" (${error.path}): ${error.message}`,
-  })));
+  mirrorBindingIssues(state, bindingErrors);
   const result: WireCompileResult = {
     tree,
     components: state.components,
@@ -564,7 +536,10 @@ const finishResult = (
   return result;
 };
 
-const compileWireV2Unsafe = (wire: string, options: WireCompileOptions | undefined): WireCompileResult => {
+const compileWireV2Unsafe = (rawWire: string, options: WireCompileOptions | undefined): WireCompileResult => {
+  const wire = options?.inlineRefs
+    ? expandInlineRefs(rawWire, options.inlineTools === undefined ? undefined : { tools: options.inlineTools }).wire
+    : rawWire;
   const declared = prescanDeclarations(wire);
   const state = makeState(wire, declared.queryNames, declared.islandNames, new Set(options?.hostComponents ?? []));
   const root: TreeNode = { id: "root", component: "Stack", source: "prewired" };

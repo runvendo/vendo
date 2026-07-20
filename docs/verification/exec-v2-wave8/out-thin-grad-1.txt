@@ -1,0 +1,14 @@
+[thin-grad-1] mode=graduation creating sandbox from 02ar6qdzqils9e3hgek5…
+[thin-grad-1] boot→control-port: 1.4s
+[thin-grad-1] task boxtask_c2796ae3-dd52-4972-b3dc-bb9a804eb0d5 started (1.6s)
+........
+[thin-grad-1] BUILD 46.2s ok=true servesUi=false fns=chaseInvoices,getDigest
+[thin-grad-1] summary: Built zero-dependency Node server with invoice digest tracking. POST /fn/chaseInvoices computes unpaid invoice digest, sends to httpbin.org, and stores in memory. POST /fn/getDigest returns latest digest. vendo.json declares 8am daily schedule and httpbin.org egress. All endpoints verified working.
+[thin-grad-1] POST /fn/getDigest → 200 {"result":{"count":4,"totalCents":550000,"invoices":[{"id":"INV-001","customer":"Acme Corp","amountCents":150000,"dueDate":"2024-01-15"},{"id":"INV-002","customer":"Tech Solutions","amountCents":75000,"dueDate":"2024-01-20"},{"id":"INV-003","customer":"Global Industries","amountCents":200000,"dueDat
+[thin-grad-1] phase profile over 12 log lines (~4 assistant turns):
+  model        23.0s (50%)
+  bash         21.8s (47%)
+  npm-install  0.0s (0%)
+  other        0.0s (0%)
+[thin-grad-1] full log: /Users/yousefh/orca/workspaces/flowlet/exec-wave8-sdk/docs/verification/exec-v2-wave8/agent-log-thin-grad-1.txt
+[thin-grad-1] sandbox killed (48.4s)

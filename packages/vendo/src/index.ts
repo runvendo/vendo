@@ -46,3 +46,6 @@ export type { VendoClient, VendoClientConfig } from "@vendoai/ui";
 // only this host-facing seam belongs on the root.
 export type { HostOAuthAdapter } from "@vendoai/mcp";
 export { remixable, type RemixableRegistration, type RemixableReportOptions } from "./remixable.js";
+// Existing-agents Lane B — the wire's per-approval resolution for a parked BYO
+// guarded call (what GET /approvals/:id answers; the ui client mirrors it).
+export type { ByoApprovalResolution } from "./byo-approvals.js";

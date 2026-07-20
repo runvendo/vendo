@@ -1,6 +1,7 @@
 import {
   VendoError,
   type RiskLabel,
+  type RunContext,
   type ToolDescriptor,
   type ToolOutcome,
 } from "@vendoai/core";
@@ -38,6 +39,12 @@ export interface ToolSearchConfig {
   /** Explicit curated initial loadout by tool name. When set, exactly these
    *  (that exist and are enabled) start active; the cap is not applied. */
   loadout?: string[];
+  /** Per-turn initial-loadout seed (connection-scoped tool loading, spec
+   *  2026-07-20): typically the connected toolkits' tools — the umbrella
+   *  wires this to registry.loadoutSeed(connectedToolkits). Runs BEFORE the
+   *  toolset is built so freshly expanded tools are included. A failure
+   *  degrades to the risk/name fallback, never the turn. */
+  seed?: (ctx: RunContext) => Promise<string[] | undefined>;
 }
 
 const SEARCH_INPUT_SCHEMA = {
@@ -68,7 +75,11 @@ function isAlwaysActive(name: string): boolean {
  *    stays discoverable via search.
  * Vendo's own `vendo_*` tools are always active and excluded from the cap.
  */
-export function computeInitialLoadout(descriptors: readonly ToolDescriptor[], config: ToolSearchConfig): Set<string> {
+export function computeInitialLoadout(
+  descriptors: readonly ToolDescriptor[],
+  config: ToolSearchConfig,
+  seedNames?: readonly string[],
+): Set<string> {
   const available = new Set(descriptors.map((descriptor) => descriptor.name));
   const alwaysActive = descriptors.filter((descriptor) => isAlwaysActive(descriptor.name)).map((d) => d.name);
   const hostTools = descriptors.filter((descriptor) => !isAlwaysActive(descriptor.name));
@@ -78,6 +89,13 @@ export function computeInitialLoadout(descriptors: readonly ToolDescriptor[], co
   }
 
   const cap = Math.max(Math.trunc(config.maxInitialTools ?? DEFAULT_MAX_INITIAL_TOOLS), 1);
+
+  // Connection-scoped seed: exactly the relevant tools (host tools + the
+  // principal's connected toolkits), capped — never an alphabetical slice.
+  if (seedNames !== undefined) {
+    const seeded = seedNames.filter((name) => available.has(name) && !isAlwaysActive(name)).slice(0, cap);
+    return new Set([...alwaysActive, ...seeded]);
+  }
   if (hostTools.length <= cap) return new Set([...alwaysActive, ...hostTools.map((d) => d.name)]);
 
   const bounded = [...hostTools]
@@ -101,11 +119,19 @@ export interface ToolSearchSessionOptions {
   descriptors: readonly ToolDescriptor[];
   /** Per-run loaded set — persists across turns within a thread. Mutated here. */
   loaded: Set<string>;
+  /** Per-turn seed for the initial loadout (see ToolSearchConfig.seed). */
+  seedNames?: readonly string[];
+  /** Full descriptors for names search returned that are NOT yet in the built
+   * toolset — they were lazily expanded during the search itself. */
+  resolve?: (names: string[]) => Promise<ToolDescriptor[]>;
+  /** Add a freshly resolved descriptor into the LIVE toolset. prepareStep
+   * re-reads activeToolNames() each step, so it's callable next step. */
+  materialize?: (descriptor: ToolDescriptor) => void;
 }
 
 export function createToolSearchSession(options: ToolSearchSessionOptions): ToolSearchSession {
   const available = new Set(options.descriptors.map((descriptor) => descriptor.name));
-  const initial = computeInitialLoadout(options.descriptors, options.config);
+  const initial = computeInitialLoadout(options.descriptors, options.config, options.seedNames);
   // Captured at attach: the full run toolset. Every Vendo-owned `vendo_*` tool
   // in it stays active regardless of loadout — including the OTHER meta-tools
   // (notably `vendo_report_capability_miss`) that are attached after the host
@@ -129,8 +155,9 @@ export function createToolSearchSession(options: ToolSearchSessionOptions): Tool
       }
       tools[VENDO_TOOLS_SEARCH_TOOL_NAME] = dynamicTool({
         description:
-          "Search the host's full tool surface by intent and LOAD the matches so you can call them this run. "
-          + "Use this when no currently-available tool fits the user's ask before giving up.",
+          "Search ALL of this product's tools and connected-service tools by intent, and LOAD the matches so you can call them this run. "
+          + "Results may include tools for services the user has NOT connected yet — calling one is safe and correct: the user is prompted to connect in-line. "
+          + "Use this whenever no currently-available tool fits the ask.",
         inputSchema: jsonSchema(SEARCH_INPUT_SCHEMA),
         execute: async (input): Promise<ToolOutcome> => {
           const parsed = input as { query?: unknown; limit?: unknown } | null;
@@ -144,6 +171,20 @@ export function createToolSearchSession(options: ToolSearchSessionOptions): Tool
             matches = await options.config.search(query, limit === undefined ? undefined : { limit });
           } catch {
             return { status: "error", error: { code: "execution", message: "Tool search failed." } };
+          }
+          // Names outside the built toolset were lazily expanded during this
+          // very search — resolve their full descriptors and materialize them
+          // into the LIVE toolset so they are callable next step.
+          const missing = matches.filter((match) => !available.has(match.name)).map((match) => match.name);
+          if (missing.length > 0 && options.resolve !== undefined && options.materialize !== undefined) {
+            try {
+              for (const descriptor of await options.resolve(missing)) {
+                options.materialize(descriptor);
+                available.add(descriptor.name);
+              }
+            } catch {
+              // Unresolved names simply stay unloadable below.
+            }
           }
           // Only load names that actually exist in this run's guard-bound toolset
           // — a stale or drifting search seam can never conjure an unbound tool.

@@ -33,7 +33,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - name: Check required secrets
@@ -107,6 +107,20 @@ jobs:
           # the evidence is still published before the job is marked red.
           pnpm corpus run "${repos[@]}" --layer "$layer" --json
 
+      - name: Diagnose scorecard artifact path
+        if: always()
+        run: |
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          echo "PWD=$(pwd)"
+          node -e '
+            const path = require("path");
+            const { fileURLToPath } = require("url");
+            const runContextUrl = "file://" + path.resolve("corpus/harness/src/run-context.ts");
+            const corpusRoot = path.resolve(fileURLToPath(new URL("../../", runContextUrl)));
+            console.log("resolved corpusRoot (writeScorecardArtifacts target):", corpusRoot);
+          '
+          ls -laR corpus/.repos/.logs 2>&1 || echo "corpus/.repos/.logs does not exist"
+
       - name: Publish scorecard to job summary
         if: always()
         run: |
@@ -160,3 +174,8 @@ jobs:
             corpus/.repos/.logs/**/*.log
           retention-days: 30
           if-no-files-found: warn
+          # Everything above lives under dot-directories (.repos/.logs);
+          # upload-artifact v4 excludes hidden paths by default, which is why
+          # the artifact has been empty since Jul 17 (proven by the diagnostic
+          # step on run 29768616216).
+          include-hidden-files: true

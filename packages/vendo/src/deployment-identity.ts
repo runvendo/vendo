@@ -29,7 +29,7 @@ function builtinModule<T>(id: string): T | undefined {
 /** Non-Latin-1 or CR/LF header values make fetch throw "Cannot convert
  *  argument to a ByteString"; identity headers must never take a command
  *  down, so strip to printable ASCII and never send an empty value. */
-export function headerSafe(value: string): string {
+function headerSafe(value: string): string {
   const printable = value.replace(/[^\x20-\x7e]+/g, "").trim();
   return printable.length > 0 ? printable : "unknown";
 }
@@ -38,7 +38,7 @@ export function headerSafe(value: string): string {
  *  directory (a process can chdir between calls). */
 const deploymentNames = new Map<string, Promise<string>>();
 
-export function resolveDeploymentName(cwd: string): Promise<string> {
+function resolveDeploymentName(cwd: string): Promise<string> {
   let name = deploymentNames.get(cwd);
   if (name === undefined) {
     name = (async () => {

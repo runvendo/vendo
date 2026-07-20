@@ -18,8 +18,9 @@ Present tool execution forwards the signed-in request's auth material on a
 same-origin fetch. Away host API execution requires `actAs`; without it, those
 calls fail cleanly with `not-implemented`.
 
-Generated components run in a no-egress iframe. App machines enforce the app's
-domain allowlist and receive secret handles, never secret values.
+Generated components run in a no-egress iframe. App machine egress is
+deny-by-default: each domain an app declares needs a one-time owner approval,
+and only declared, owner-granted secrets are injected into the box.
 
 Use `/status` for a live composition probe. Use the public Postgres tables for
 backup and retention.

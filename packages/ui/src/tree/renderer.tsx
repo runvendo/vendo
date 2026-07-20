@@ -32,6 +32,7 @@ import { deriveFormShape, FormingSkeleton } from "./forming-skeleton.js";
 import { InClientMount } from "./host-mount.js";
 import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
+import { KIT_COMPONENTS } from "../kit/registry.js";
 import { PREWIRED_COMPONENTS } from "./primitives.js";
 
 export interface TreeViewProps {
@@ -310,6 +311,9 @@ interface NodeRendererProps {
   ancestry: ReadonlySet<string>;
   nodes: ReadonlyMap<string, TreeNode>;
   generated: Record<string, string>;
+  /** W4b — the payload's compiler-stamped per-island tool manifests. Absent
+   *  (legacy/streaming) means JailedComponent derives from source host-side. */
+  componentTools?: Record<string, string[]>;
   /** True ONLY when the payload's server-written verdict granted the venue. */
   inClientGranted: boolean;
   furnishings: Record<string, JailFurnishing>;
@@ -374,6 +378,12 @@ function NodeRenderer(props: NodeRendererProps) {
   if (node.source === "generated") {
     const source = props.generated[node.component];
     const revealKey = source === undefined ? "forming" : "ready";
+    // Stamped era: a missing entry means "this island calls no tools" (least
+    // privilege). No stamping at all: undefined, so JailedComponent derives
+    // the manifest from the source the host holds.
+    const toolManifest = props.componentTools === undefined
+      ? undefined
+      : props.componentTools[node.component] ?? [];
     if (source === undefined) {
       content = props.streaming ? (
         <span data-streaming-component={node.component} style={{ display: "block", width: "100%" }}>
@@ -390,7 +400,8 @@ function NodeRenderer(props: NodeRendererProps) {
       // The jail element stays wired as the drop-back for any mount failure.
       const hostBind = bindProps(node.props, "host", props.data, props.state, invoke);
       const jailBind = bindProps(node.props, "jail", props.data, props.state, invoke);
-      const mismatch = hostBind.mismatch ?? jailBind.mismatch;
+      // Reshape mismatches are mode-independent, so both binds report the same one.
+      const mismatch = hostBind.mismatch;
       if (mismatch !== null) {
         content = <>{dataShapeNotice(mismatch)}{children}</>;
       } else {
@@ -401,6 +412,7 @@ function NodeRenderer(props: NodeRendererProps) {
             props={jailBind.bound}
             furnishing={props.furnishings[node.component]}
             themeVars={props.themeVars}
+            toolManifest={toolManifest}
             onAction={invoke}
             onStateSet={props.setViewState}
           />
@@ -430,6 +442,7 @@ function NodeRenderer(props: NodeRendererProps) {
             props={bound}
             furnishing={props.furnishings[node.component]}
             themeVars={props.themeVars}
+            toolManifest={toolManifest}
             onAction={invoke}
             onStateSet={props.setViewState}
           />
@@ -451,7 +464,11 @@ function NodeRenderer(props: NodeRendererProps) {
       </FluidReveal>
     );
   } else {
-    const primitive = PREWIRED_COMPONENTS[node.component];
+    // W3 Kit adoption — legacy prewired names keep their implementations
+    // (retirement is Wave 5); the Kit fills the names the legacy set lacks
+    // (Money, DateTime, DataTable, charts, Form, Disclaimer, …).
+    const primitive = PREWIRED_COMPONENTS[node.component]
+      ?? (KIT_COMPONENTS[node.component] as ComponentType<Record<string, unknown>> | undefined);
     const host = props.components[node.component] as ComponentType<Record<string, unknown>> | undefined;
     // v2 spec §2 — an explicit `source: "host"` resolution means the host
     // brand won the name; only an undefined source keeps the historical
@@ -501,6 +518,9 @@ function StatefulTreeView({
   const themeVars = useMemo(() => themeCssVariables(theme), [theme]);
   const streaming = (tree as WalkTree & { streaming?: unknown }).streaming === true;
   const furnishings = (tree as WalkTree & { furnishings?: Record<string, JailFurnishing> }).furnishings ?? {};
+  // W4b — the stamped per-island tool manifests ride the payload beside the
+  // component sources (a payload extra, like furnishings).
+  const componentTools = (tree as WalkTree & { componentTools?: Record<string, string[]> }).componentTools;
   const inClient = (tree as WalkTree & { inClient?: InClientVenue }).inClient;
   // Tolerate a malformed field (like every other payload extra): only an
   // array of well-formed entries renders the notice.
@@ -602,6 +622,7 @@ function StatefulTreeView({
         ancestry={new Set()}
         nodes={nodes}
         generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
+        {...(componentTools === undefined ? {} : { componentTools })}
         inClientGranted={inClientGranted}
         furnishings={furnishings}
         themeVars={themeVars}

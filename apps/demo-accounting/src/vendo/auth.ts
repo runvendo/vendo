@@ -1,4 +1,4 @@
-import { supabase } from "@vendoai/vendo/server"
+import { supabase } from "@vendoai/vendo/auth/supabase"
 import { resolveCadenceSubject, supabaseJwtSecret, supabaseUrl } from "@/server/users"
 
 /** One preset fills all three identity seams (09-vendo §2.1): the

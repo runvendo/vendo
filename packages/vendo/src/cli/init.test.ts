@@ -6,6 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
+import type { RunContext, ToolDescriptor } from "@vendoai/core";
+import { createGuard } from "@vendoai/guard";
+import { createStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { runInit, starViaGh } from "./init.js";
 import type { Output } from "./shared.js";
@@ -125,7 +128,11 @@ describe("vendo init (zero-question)", () => {
     expect(route).toContain("principal: async () => null");
     expect(route).not.toContain("model");
     const registry = await readFile(join(root, "vendo", "registry.tsx"), "utf8");
-    expect(registry).toContain('import type { ComponentRegistry } from "@vendoai/core";');
+    // The type comes from @vendoai/vendo (the root contract-types entry), not
+    // @vendoai/core — hosts only get @vendoai/vendo (or @vendoai/ui) as a
+    // direct dependency; @vendoai/core is transitive and pnpm strict linking
+    // won't let the host resolve it (TS2307).
+    expect(registry).toContain('import type { ComponentRegistry } from "@vendoai/vendo";');
     expect(registry).toContain("export const registry = {} satisfies ComponentRegistry;");
     expect(registry).toContain("SpendingDonut"); // the commented example entry
 
@@ -210,12 +217,12 @@ describe("vendo init (zero-question)", () => {
   });
 
   it.each([
-    ["next-auth", "authJs"],
-    ["@auth/core", "authJs"],
-    ["@clerk/nextjs", "clerk"],
-    ["@supabase/supabase-js", "supabase"],
-    ["@auth0/nextjs-auth0", "auth0"],
-  ] as const)("non-interactive runs silently wire auth from %s → %s()", async (dependency, preset) => {
+    ["next-auth", "authJs", "@vendoai/vendo/auth/auth-js"],
+    ["@auth/core", "authJs", "@vendoai/vendo/auth/auth-js"],
+    ["@clerk/nextjs", "clerk", "@vendoai/vendo/auth/clerk"],
+    ["@supabase/supabase-js", "supabase", "@vendoai/vendo/auth/supabase"],
+    ["@auth0/nextjs-auth0", "auth0", "@vendoai/vendo/auth/auth0"],
+  ] as const)("non-interactive runs silently wire auth from %s → %s()", async (dependency, preset, specifier) => {
     // No `interactive` override and vitest has no TTY: the detected default
     // is accepted without a question (--yes behaves identically).
     const root = await fixture();
@@ -226,8 +233,11 @@ describe("vendo init (zero-question)", () => {
     const sink = output();
     expect(await run(root, sink)).toBe(0);
     const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
-    const named = [preset, "createVendo", "nextVendoHandler"].sort().join(", ");
-    expect(route).toContain(`import { ${named} } from "@vendoai/vendo/server";`);
+    // The preset comes from its own subpath — never "@vendoai/vendo/server" —
+    // so importing it never resolves the other presets' optional peer deps
+    // (corpus-triage Task 9).
+    expect(route).toContain(`import { ${preset} } from "${specifier}";`);
+    expect(route).toContain('import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";');
     expect(route).toContain(`auth: ${preset}(),`);
     // The detected line carries its escape hatch, and the preset owns the
     // principal seam — no hand-wired anonymous resolver remains.
@@ -893,6 +903,35 @@ describe("vendo init (zero-question)", () => {
     expect(rewired).toContain("serverActions,");
   });
 
+  it("leaves a hand-customized route that passes its own serverActions untouched (no conflicting import)", async () => {
+    const root = await fixture();
+    const routeDir = join(root, "app", "api", "vendo", "[...vendo]");
+    await mkdir(routeDir, { recursive: true });
+    // A host that relocated the map: local `const serverActions` passed to
+    // createVendo. Injecting `import { serverActions } from "./vendo-actions"`
+    // here would conflict with the local declaration and break the build.
+    const custom = [
+      'import { createVendo } from "@vendoai/vendo/server";',
+      "",
+      "const serverActions = { later: async () => 1 };",
+      "",
+      "const vendo = createVendo({",
+      "  serverActions,",
+      "});",
+      "",
+      "export const { GET, POST } = vendo;",
+      "",
+    ].join("\n");
+    await writeFile(join(routeDir, "route.ts"), custom);
+    await mkdir(join(root, "app", "actions"), { recursive: true });
+    await writeFile(join(root, "app", "actions", "later.ts"),
+      '"use server";\n\nexport async function later() {\n  return 1;\n}\n');
+    expect(await run(root, output())).toBe(0);
+    const route = await readFile(join(routeDir, "route.ts"), "utf8");
+    expect(route).not.toContain('from "./vendo-actions"');
+    expect(route).toBe(custom);
+  });
+
   it("scaffolds an unwired Express host (server only, no model module) and leaves a wired one untouched", async () => {
     const unwired = await expressFixture(false);
     const sink = output();
@@ -916,6 +955,63 @@ describe("vendo init (zero-question)", () => {
     expect(await tree(wired)).toEqual(first);
     await expect(readFile(join(wired, "vendo", "server.ts"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(join(wired, "vendo", "registry.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("activates the init-written policy file in both scaffolds: destructive asks, reads run", async () => {
+    const root = await fixture();
+    expect(await run(root, output())).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain("policy: {},");
+
+    const express = await expressFixture(false);
+    expect(await run(express, output())).toBe(0);
+    const server = await readFile(join(express, "vendo", "server.ts"), "utf8");
+    expect(server).toContain("policy: {},");
+
+    // End to end: the config the scaffold passes plus the file init wrote
+    // really produce the documented posture (destructive asks, reads run).
+    const store = createStore({ dataDir: join(root, ".vendo", "data") });
+    await store.ensureSchema();
+    const cwd = process.cwd();
+    process.chdir(root);
+    try {
+      const guard = createGuard({ store, policy: {} });
+      const destructive: ToolDescriptor = {
+        name: "host_delete",
+        description: "destructive fixture tool",
+        inputSchema: { type: "object", additionalProperties: true },
+        risk: "destructive",
+      };
+      const read: ToolDescriptor = {
+        name: "host_read",
+        description: "read fixture tool",
+        inputSchema: { type: "object", additionalProperties: true },
+        risk: "read",
+      };
+      const ctx: RunContext = {
+        principal: { kind: "user", subject: "user_1", display: "User" },
+        venue: "chat",
+        presence: "present",
+        sessionId: "session_1",
+      };
+      await expect(guard.check({ id: "call_1", tool: destructive.name, args: {} }, destructive, ctx))
+        .resolves.toMatchObject({ action: "ask", decidedBy: "rule" });
+      await expect(guard.check({ id: "call_2", tool: read.name, args: {} }, read, ctx))
+        .resolves.toMatchObject({ action: "run", decidedBy: "rule" });
+
+      // The documented edge (quickstart/install): deleting the init-written
+      // file while keeping `policy: {}` degrades to auto-run WITHOUT the
+      // unconfigured notice — the default file is read fail-soft, and
+      // status() reads any policy object as configured.
+      await rm(join(root, ".vendo", "policy.json"));
+      const fileless = createGuard({ store, policy: {} });
+      await expect(fileless.check({ id: "call_3", tool: destructive.name, args: {} }, destructive, ctx))
+        .resolves.toMatchObject({ action: "run", decidedBy: "default" });
+      expect(fileless.status()).toEqual({ posture: "rules" });
+    } finally {
+      process.chdir(cwd);
+      await store.close();
+    }
   });
 
   it("re-init on a scaffolded, not-yet-client-wired Express host changes nothing and stays silent", async () => {
@@ -1127,6 +1223,41 @@ describe("vendo init (zero-question)", () => {
     expect(logs).not.toContain("No model key yet");
     expect(seen.length).toBeGreaterThan(0);
     expect(seen[0]).toBe(key);
+  });
+
+  it("reads quoted .env.local values per dotenv semantics: quotes stripped, inline comments dropped", async () => {
+    const root = await fixture();
+    const key = `vnd_${"e".repeat(40)}`;
+    // Hand-authored .env.local entries are commonly quoted and commented —
+    // Next.js's dotenv loader strips both, so init's merge must too or the
+    // literal quoted string poisons every credential consumer.
+    await writeFile(join(root, ".env.local"), [
+      'ANTHROPIC_API_KEY="sk-ant-quoted"',
+      "OPENAI_API_KEY=sk-openai-plain # dev key",
+      `VENDO_API_KEY='${key}'`,
+      "",
+    ].join("\n"));
+    const seenEnv: Array<Record<string, string | undefined>> = [];
+    const sink = output();
+    expect(await runInit({
+      targetDir: root,
+      output: sink.output,
+      env: {},
+      themeModel: themeModelOf({ slots: {} }),
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+      resolveCredential: async ({ env }) => {
+        seenEnv.push(env);
+        return { rung: "env-key", provider: "anthropic", envVar: "ANTHROPIC_API_KEY" };
+      },
+      cloud: { confirm: async () => false },
+    })).toBe(0);
+    expect(seenEnv[0]?.ANTHROPIC_API_KEY).toBe("sk-ant-quoted");
+    expect(seenEnv[0]?.OPENAI_API_KEY).toBe("sk-openai-plain");
+    expect(seenEnv[0]?.VENDO_API_KEY).toBe(key);
+    // The default cloud probe sees the unquoted key: well-formed, not "malformed".
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Vendo Cloud: VENDO_API_KEY present and well-formed.");
+    expect(sink.errors.join("\n")).not.toContain("not usable");
   });
 
   // Agent-install-dx (§CLI-5): the star ask — ONE consent question at the end

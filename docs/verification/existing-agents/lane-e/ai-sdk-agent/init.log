@@ -1,0 +1,35 @@
+Model: explicit ANTHROPIC_API_KEY (anthropic) — production uses this same key server-side.
+
+Vendo Cloud (optional): not configured. A key unlocks a free dev-mode starter model allowance (keyless first turns); team sharing and org governance (roles, SSO); hosted deploys of your enabled automations; registry publishing and hosted infrastructure defaults like the managed MCP broker.
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+Theme: accent #2563eb · background #ffffff · surface #f8fafc · text #171717 · mutedText #64748b · border #e2e8f0 · danger #dc2626
+Type: Arial, Helvetica, sans-serif · headings Geist, sans-serif · radius 8px
+No host evidence for accent, border, danger, surface, mutedText — neutral defaults used.
+Theme lives in .vendo/theme.json — edit it anytime; it is the source of truth.
+
+Wired (3 files):
+  + vendo/registry.tsx
+  + app/api/vendo/[...vendo]/route.ts
+  ~ package.json
+Auth: no provider detected — sessions stay anonymous. When you add one, add one line in app/api/vendo/[...vendo]/route.ts: auth: authJs() (Auth.js), clerk(), supabase(), auth0(), or jwt({ secret }).
+Learned: 1 tools · theme captured → .vendo/ (tools.json, theme.json, brief.md)
+AI polish (descriptions, risk review, brief): skipped — needs an interactive run (`vendo init` in a terminal).
+
+Last steps are yours:
+  In app/layout.tsx:
+    import { VendoRoot } from "@vendoai/vendo/react";
+    import { registry } from "../vendo/registry";
+    import theme from "../.vendo/theme.json";
+    import type { VendoTheme } from "@vendoai/vendo";
+    … then wrap: <VendoRoot components={registry} theme={theme as VendoTheme}>{children}</VendoRoot>
+
+Then start your dev server — the agent is live in your app.
+Verify everything: `npx vendo doctor` (it can start the server and run a live turn).
+
+Agent tail:
+  auth: none wired — sessions stay anonymous until a preset is added
+  edit vendo/registry.tsx — register the components the agent may render (generated empty)
+  edit app/api/vendo/[...vendo]/route.ts — add the auth preset named in the advisory above when the host has auth
+  edit app/layout.tsx — wrap the app in the <VendoRoot> lines above
+  edit .vendo/brief.md — replace the placeholder with what this product does and for whom
+  gate: run `vendo doctor --json` — done when every check reports green

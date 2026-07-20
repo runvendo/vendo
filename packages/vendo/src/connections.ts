@@ -1,6 +1,6 @@
 import { VendoError, type Principal } from "@vendoai/core";
 import type { Connector, ConnectorAccount, ConnectorConnections } from "@vendoai/actions";
-import { deploymentIdentityHeaders } from "./deployment-identity.js";
+import { consoleSender, raiseCloudError } from "./cloud-console.js";
 
 /** Subjects the runtime mints for machine principals (automations webhook
  * triggers today; the reserved `vendo:` namespace going forward). A synthetic
@@ -20,6 +20,16 @@ export interface InitiatedConnection {
   redirectUrl: string;
 }
 
+/** One row of the connect dock's auto catalog: a toolkit a user could finish
+ * connecting, tagged with the broker that would carry it. */
+export interface ConnectableToolkit {
+  toolkit: string;
+  connector: string;
+  label?: string;
+  /** One-line capability blurb — feeds the OSS discovery index. */
+  description?: string;
+}
+
 /** 04-actions §3 (block-actions design §B) — the umbrella's per-principal
  * connected-accounts surface. Which implementation composes is decided at the
  * seam, never in here (adapter rule — see selectConnections in server.ts).
@@ -35,6 +45,9 @@ export interface ConnectionsService {
   initiate(principal: Principal, options: InitiateOptions): Promise<InitiatedConnection>;
   status(principal: Principal, connector: string, connectionId: string): Promise<ConnectorAccount | null>;
   disconnect(principal: Principal, connector: string, connectionId: string): Promise<void>;
+  /** The connect dock's auto catalog — host-level (every principal sees the
+   * same rows), unlike everything above. Empty when nothing is connectable. */
+  catalog(): Promise<ConnectableToolkit[]>;
 }
 
 function guardInitiatePrincipal(principal: Principal): void {
@@ -106,6 +119,13 @@ export function byoConnections(connectors: Connector[]): ConnectionsService {
     async disconnect(principal, connector, connectionId) {
       await broker(connector).connections.disconnect(principal.subject, connectionId);
     },
+    async catalog() {
+      const catalogs = await Promise.all(brokers.map(async (candidate) => {
+        const entries = await candidate.connections.listConnectable?.() ?? [];
+        return entries.map((entry) => ({ ...entry, connector: candidate.name }));
+      }));
+      return catalogs.flat();
+    },
   };
 }
 
@@ -113,8 +133,28 @@ export interface CloudConnectionsOptions {
   apiKey: string;
   /** Defaults to the Vendo console; the composition seam passes VENDO_CLOUD_URL. */
   baseUrl?: string;
+  /** Catalog scoping, mirroring cloudTools' `apps`: a host that scopes its
+   * cloud tools explicitly passes the same list here so the connect dock
+   * never advertises a toolkit the agent cannot invoke. Unset = everything
+   * the console's catalog serves. */
+  apps?: string[];
   fetch?: typeof fetch;
+  /** Per-request abort budget (default 30s, hosted-store's) — a hung console
+   * must never wedge the connections surface. */
+  timeoutMs?: number;
 }
+
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** The shared console error table (cloud-console.ts): 401/402 → cloud-required
+ * (fix your Cloud standing), wire-legal envelope codes forward as VendoErrors,
+ * and anything else (unknown codes, 5xx, non-JSON bodies) rides a plain Error
+ * with the server's code attached — never a "validation" error blaming the
+ * caller for the console misbehaving (hosted-store's posture). */
+const raiseConnectionsError = (response: Response): Promise<never> =>
+  raiseCloudError(response, "connections", (code, message) => {
+    throw Object.assign(new Error(message), { code: code ?? "unavailable" });
+  });
 
 /** The Cloud adapter — the OSS side of the zero-key cloud seam: same surface,
  * brokered by the Vendo Cloud console (which holds Vendo's Composio
@@ -123,34 +163,38 @@ export interface CloudConnectionsOptions {
 export function cloudConnections(options: CloudConnectionsOptions): ConnectionsService {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
   const fetchImpl = options.fetch ?? globalThis.fetch;
+  // The key-authed console sender (cloud-console.ts): Bearer auth + deployment
+  // identity (the console meters usage from real traffic) + per-request abort
+  // timeout, raising through the shared error table on any non-2xx.
+  const send = consoleSender({
+    base,
+    mountPath: "",
+    apiKey: options.apiKey,
+    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    fetchImpl,
+    raise: raiseConnectionsError,
+  });
 
   async function cloudFetch(path: string, init?: RequestInit): Promise<unknown> {
-    const response = await fetchImpl(`${base}${path}`, {
+    const response = await send(path, {
       ...init,
       headers: {
-        authorization: `Bearer ${options.apiKey}`,
-        accept: "application/json",
-        // Interaction model: key-authed Cloud requests carry the deployment
-        // identity; the console meters usage from real traffic.
-        ...(await deploymentIdentityHeaders()),
         ...(init?.body === undefined ? {} : { "content-type": "application/json" }),
         ...init?.headers,
       },
     });
-    let payload: unknown = {};
     try {
-      payload = await response.json();
+      return await response.json();
     } catch {
-      // Non-JSON bodies fall through to the status check below.
+      // A 2xx that isn't JSON means a misdeployed Cloud base (an SPA host or
+      // reverse proxy that 200s unknown paths with text/html). Fail loudly —
+      // hosted-store's malformed-200 posture — instead of reading as an empty
+      // connections list (or a not-found account) forever.
+      throw new VendoError(
+        "validation",
+        `Vendo Cloud connections returned a non-JSON ${response.status} response — check VENDO_CLOUD_URL`,
+      );
     }
-    if (!response.ok) {
-      const error = (payload as { error?: { message?: unknown } }).error;
-      const message = typeof error?.message === "string"
-        ? error.message
-        : `Vendo Cloud connections request failed with ${response.status}`;
-      throw new VendoError(response.status === 402 ? "cloud-required" : "validation", message);
-    }
-    return payload;
   }
 
   const subjectQuery = (principal: Principal): string => `subject=${encodeURIComponent(principal.subject)}`;
@@ -159,7 +203,12 @@ export function cloudConnections(options: CloudConnectionsOptions): ConnectionsS
     posture: "cloud",
     async list(principal) {
       const payload = await cloudFetch(`/api/v1/connections?${subjectQuery(principal)}`) as { connections?: unknown };
-      return Array.isArray(payload.connections) ? (payload.connections as ConnectorAccount[]) : [];
+      if (!Array.isArray(payload.connections)) {
+        // A 2xx without the envelope is the SERVICE misbehaving — never
+        // indistinguishable from a genuinely empty connections panel.
+        throw new VendoError("validation", "Vendo Cloud connections returned an invalid list response (no connections array)");
+      }
+      return payload.connections as ConnectorAccount[];
     },
     async initiate(principal, options) {
       guardInitiatePrincipal(principal);
@@ -194,6 +243,13 @@ export function cloudConnections(options: CloudConnectionsOptions): ConnectionsS
         { method: "DELETE" },
       );
     },
+    async catalog() {
+      const payload = await cloudFetch("/api/v1/connections/catalog") as { available?: unknown };
+      const available = Array.isArray(payload.available) ? (payload.available as ConnectableToolkit[]) : [];
+      return options.apps === undefined
+        ? available
+        : available.filter((entry) => options.apps!.includes(entry.toolkit));
+    },
   };
 }
 
@@ -212,5 +268,6 @@ export function unconfiguredConnections(): ConnectionsService {
     initiate: async () => refuse(),
     status: async () => refuse(),
     disconnect: async () => refuse(),
+    catalog: async () => [],
   };
 }

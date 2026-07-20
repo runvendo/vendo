@@ -27,7 +27,7 @@ export function registryNamespace(domain: string): string {
   return normalizeDomain(domain).split(".").reverse().join(".");
 }
 
-export function registryDomain(name: string): string | null {
+function registryDomain(name: string): string | null {
   const parts = name.split("/");
   if (parts.length !== 2 || parts[0] === undefined || parts[0].length === 0) return null;
   const domain = parts[0].split(".").reverse().join(".").toLowerCase();
@@ -56,7 +56,7 @@ function urlHost(value: string): string | null {
   }
 }
 
-export function hostMatchesDomain(host: string, domain: string): boolean {
+function hostMatchesDomain(host: string, domain: string): boolean {
   const normalizedHost = host.toLowerCase().replace(/\.$/, "");
   const normalizedDomain = normalizeDomain(domain);
   return normalizedHost === normalizedDomain || normalizedHost.endsWith(`.${normalizedDomain}`);

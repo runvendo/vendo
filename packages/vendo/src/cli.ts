@@ -77,6 +77,12 @@ const INIT_AUTH_VALUES = ["authJs", "clerk", "supabase", "auth0", "jwt", "none"]
 const INIT_FRAMEWORK_VALUES = ["next", "express"];
 const EXTRACT_FLAGS = new Set(["--force"]);
 const EXTRACT_VALUE_OPTIONS = ["--apply"];
+const DOCTOR_FLAGS = new Set(["--json", "--yes"]);
+const DOCTOR_VALUE_OPTIONS = ["--url"];
+const REFINE_FLAGS = new Set(["--yes"]);
+const REFINE_VALUE_OPTIONS = ["--url", "--model-import", "--ask"];
+const SYNC_FLAGS = new Set(["--strict", "--json", "--report"]);
+const SYNC_VALUE_OPTIONS = ["--url", "--key", "--api-url"];
 
 /** ENG-335: options the CLI does not recognize — or value options missing
     their value — must fail loudly before anything runs. Silently dropping a
@@ -131,7 +137,7 @@ function playgroundOptionErrors(args: string[]): { errors: string[]; port?: numb
 
 function target(args: string[]): string {
   const optionValues = new Set<string>();
-  for (const name of ["--model-import", "--url", "--brief", "--key", "--api-url", "--ask", "--apply",
+  for (const name of ["--model-import", "--url", "--key", "--api-url", "--ask", "--apply",
     "--auth", "--framework", "--cloud-key", "--theme"]) {
     for (let index = 0; index < args.length; index += 1) {
       if (args[index] === name && args[index + 1] !== undefined) optionValues.add(args[index + 1]!);
@@ -227,6 +233,11 @@ export async function main(argv: string[]): Promise<number> {
     });
   }
   if (command === "doctor") {
+    const problems = optionErrors(args, DOCTOR_FLAGS, DOCTOR_VALUE_OPTIONS);
+    if (problems.length > 0) {
+      console.error(`vendo doctor: ${problems.join("; ")}\n\n${HELP}`);
+      return 1;
+    }
     return runDoctor({
       targetDir: target(args),
       url: option(args, "--url"),
@@ -235,6 +246,11 @@ export async function main(argv: string[]): Promise<number> {
     });
   }
   if (command === "refine") {
+    const problems = optionErrors(args, REFINE_FLAGS, REFINE_VALUE_OPTIONS);
+    if (problems.length > 0) {
+      console.error(`vendo refine: ${problems.join("; ")}\n\n${HELP}`);
+      return 1;
+    }
     return runRefineCommand({
       targetDir: target(args),
       url: option(args, "--url"),
@@ -252,6 +268,11 @@ export async function main(argv: string[]): Promise<number> {
     return runPlayground({ port, open: !args.includes("--no-open") });
   }
   if (command === "sync") {
+    const problems = optionErrors(args, SYNC_FLAGS, SYNC_VALUE_OPTIONS);
+    if (problems.length > 0) {
+      console.error(`vendo sync: ${problems.join("; ")}\n\n${HELP}`);
+      return 1;
+    }
     return runSync({
       targetDir: target(args),
       strict: args.includes("--strict"),

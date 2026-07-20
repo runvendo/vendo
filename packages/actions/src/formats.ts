@@ -3,10 +3,12 @@ import {
   VENDO_CAPABILITIES_FORMAT,
   VENDO_OVERRIDES_FORMAT,
   VENDO_TOOLS_FORMAT,
+  fieldSemanticSchema,
   jsonSchemaSchema,
   riskLabelSchema,
   stepSchema,
   toolDescriptorSchema,
+  type FieldSemantic,
   type JsonSchema,
   type Step,
   type ToolDescriptor,
@@ -268,6 +270,10 @@ export interface ToolOverride {
   critical?: boolean;
   disabled?: boolean;
   description?: string;
+  /** W3 — host-declared field semantics for this tool's RESPONSE, keyed by
+   *  collapsed dot path (arrays collapse: `data.amountCents`). The highest
+   *  authority in `.vendo/semantics.json`: annotation > sync-time inference. */
+  semantics?: Record<string, FieldSemantic>;
 }
 
 export const toolOverrideSchema = z.object({
@@ -275,6 +281,7 @@ export const toolOverrideSchema = z.object({
   critical: z.boolean().optional(),
   disabled: z.boolean().optional(),
   description: z.string().optional(),
+  semantics: z.record(fieldSemanticSchema).optional(),
 }).strict() satisfies z.ZodType<ToolOverride>;
 
 export interface OverridesFile {
@@ -410,11 +417,6 @@ export interface BreakingChange {
   tool: string;
   change: "removed" | "input-narrowed" | "renamed";
 }
-
-export const breakingChangeSchema = z.object({
-  tool: z.string(),
-  change: z.enum(["removed", "input-narrowed", "renamed"]),
-}).passthrough() satisfies z.ZodType<BreakingChange>;
 
 /** 04-actions §1 */
 export interface SyncReport {

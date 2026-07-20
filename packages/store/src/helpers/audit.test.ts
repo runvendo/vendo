@@ -141,6 +141,32 @@ for (const backend of backends()) {
       expect(ids.indexOf("aud_export_all_1")).toBeLessThan(ids.indexOf("aud_export_all_2"));
     });
 
+    it("export() terminates and emits each row exactly once across a full batch sharing a microsecond `at`", async () => {
+      const audit = auditStore(made.store);
+      const microAt = "2026-03-04T05:06:07.123456Z";
+      // Bulk host-side append (the §2 table map is public; `at` is
+      // z.string().datetime()-validated and accepts sub-ms digits): 501 events
+      // share one microsecond-bearing timestamp, spanning the 500-row export
+      // batch boundary. The rebuilt cursor rounds through a JS Date to
+      // milliseconds, so a full-precision `(at, id) >` predicate re-selects
+      // the same batch forever.
+      await made.sql(
+        `INSERT INTO vendo_audit (id, at, kind, subject, venue, presence, app_id, tool, event)
+         SELECT 'aud_exp_micro_' || lpad(n::text, 4, '0'), $1, 'tool-call', $2, 'chat', 'present', 'app_export_micro', 'host_a',
+                jsonb_build_object('id', 'aud_exp_micro_' || lpad(n::text, 4, '0'))
+         FROM generate_series(1, 501) AS n`,
+        [microAt, "user_export_micro"],
+      );
+      const lines: string[] = [];
+      for await (const line of audit.export({ from: microAt, to: microAt })) {
+        lines.push(line);
+        // Runaway guard: a stuck cursor would re-yield the same batch forever.
+        if (lines.length > 1100) break;
+      }
+      expect(lines).toHaveLength(501);
+      expect(new Set(lines).size).toBe(501);
+    });
+
     it("rejects a malformed audit event and never stores it, for persistent or ephemeral principals", async () => {
       const audit = auditStore(made.store);
       const badKind = { ...auditFixture("aud_bad_kind"), kind: "not-a-real-kind" } as never;

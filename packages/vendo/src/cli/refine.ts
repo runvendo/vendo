@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import type { LanguageModel } from "ai";
+import { DevModelController, type DevModelOptions } from "../dev-creds/model.js";
 import { runRefine, type RefineChange, type RefineResult, type RefineTranscript } from "../refine.js";
 import { consoleOutput, exists, writeText, type Output } from "./shared.js";
 
@@ -35,9 +36,6 @@ const INTERVIEW_QUESTIONS = [
   "Any tools that look mislabeled, misdescribed, or that should be disabled? (Enter to skip)",
 ];
 
-/** Default model in the starter module `vendo init` writes — kept in sync. */
-const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6";
-
 async function importHostModule(root: string, specifier: string): Promise<Record<string, unknown>> {
   if (specifier.startsWith(".") || specifier.startsWith("/") || specifier.startsWith("file:")) {
     const url = specifier.startsWith("file:") ? specifier : pathToFileURL(resolve(root, specifier)).href;
@@ -48,12 +46,17 @@ async function importHostModule(root: string, specifier: string): Promise<Record
 }
 
 /** BYO key through the existing provider-agnostic seam: `--model-import` loads
- * the host's own ai-SDK model module; otherwise the init-starter default
- * (host-installed `@ai-sdk/anthropic` + ANTHROPIC_API_KEY) is composed. */
+ * the host's own ai-SDK model module; otherwise the shared dev-credential
+ * ladder composes (the same resolver init, doctor, and createVendo ride):
+ * provider env keys first, then VENDO_API_KEY via the Cloud model gateway.
+ * Resolved EAGERLY so a credential problem fails here, with instructions,
+ * instead of mid-run. */
 export async function resolveRefineModel(options: {
   root: string;
   modelImport?: string;
   env: Record<string, string | undefined>;
+  /** Test seam for host-module resolution (mirrors DevModelOptions). */
+  importModule?: DevModelOptions["importModule"];
 }): Promise<LanguageModel> {
   if (options.modelImport !== undefined) {
     let loaded: Record<string, unknown>;
@@ -73,23 +76,18 @@ export async function resolveRefineModel(options: {
     return model;
   }
 
-  const apiKey = options.env["ANTHROPIC_API_KEY"]?.trim();
-  if (apiKey === undefined || apiKey === "") {
+  const controller = new DevModelController({
+    root: options.root,
+    env: options.env,
+    ...(options.importModule === undefined ? {} : { importModule: options.importModule }),
+  });
+  const resolution = await controller.resolve();
+  if (resolution.mode === "unavailable") {
     throw new Error(
-      "no model configured: set ANTHROPIC_API_KEY (with @ai-sdk/anthropic installed), "
-        + "or pass --model-import <specifier> pointing at a module that exports your ai-SDK `model`.",
+      `${resolution.message} Or pass --model-import <specifier> pointing at a module that exports your ai-SDK \`model\`.`,
     );
   }
-  let anthropic: { createAnthropic(config: { apiKey: string }): (model: string) => LanguageModel };
-  try {
-    anthropic = await importHostModule(options.root, "@ai-sdk/anthropic") as never;
-  } catch {
-    throw new Error(
-      "ANTHROPIC_API_KEY is set but @ai-sdk/anthropic is not installed in this app; "
-        + "install it (`npm install @ai-sdk/anthropic@^3`) or pass --model-import.",
-    );
-  }
-  return anthropic.createAnthropic({ apiKey })(DEFAULT_ANTHROPIC_MODEL);
+  return resolution.model as unknown as LanguageModel;
 }
 
 async function defaultInterview(questions: string[]): Promise<string[]> {
@@ -213,6 +211,3 @@ export async function runRefineCommand(options: RefineCommandOptions): Promise<n
   }
   return 0;
 }
-
-/** The end-of-init offer surface (spec §3): one engine, two surfaces. */
-export { INTERVIEW_QUESTIONS };

@@ -25,7 +25,7 @@ import {
   threadFromRow,
 } from "./helpers/rows.js";
 import type { AppRow, ApprovalRow, RunRow, StateRow, ThreadRow } from "./helpers/types.js";
-import { decodeCursor, encodeCursor, pageLimit } from "./helpers/utils.js";
+import { cursorMs, decodeCursor, encodeCursor, pageLimit } from "./helpers/utils.js";
 import {
   invalid,
   parseAppData,
@@ -164,6 +164,9 @@ function appRecord(row: AppRow): VendoRecord {
     refs: refs({ subject: row.subject, trigger_kind: row.doc.trigger?.on.kind }),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    // Present when the row carries the write counter (01 §12: opaque token
+    // when atomic is present) — Wave 7's lifecycle/schedule-claim arbitration.
+    ...(row.revision === undefined ? {} : { revision: row.revision }),
   };
 }
 
@@ -248,12 +251,12 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
       if (query.cursor !== undefined) {
         const cursor = decodeCursor(query.cursor);
         params.push(cursor.c, cursor.i);
-        clauses.push(`(${config.cursorColumn}, id) < ($${params.length - 1}, $${params.length})`);
+        clauses.push(`(${cursorMs(config.cursorColumn)}, id) < (${cursorMs(`$${params.length - 1}::timestamptz`)}, $${params.length})`);
       }
       params.push(limit + 1);
       const result = await db.query(
         `${config.listSelect ?? config.select}${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""}
-         ORDER BY ${config.cursorColumn} DESC, id DESC LIMIT $${params.length}`,
+         ORDER BY ${cursorMs(config.cursorColumn)} DESC, id DESC LIMIT $${params.length}`,
         params,
       );
       const records = result.rows.slice(0, limit).map(config.fromDb);
@@ -408,6 +411,47 @@ function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
           // The guarded upsert refuses cross-subject flips (02 §2).
           const row = await putAppRow(db, { id: record.id, ...data });
           return appRecord(row);
+        },
+        // Wave 7: guarded writes (01 §12) backed by the vendo_apps revision
+        // counter, so the machine lifecycle and the schedule engine's fire
+        // claims (updateAppRow's read-mutate-CAS) arbitrate racers on the dev
+        // store instead of degrading to read-then-put. Both verbs keep the
+        // same cross-subject refusal as put: a foreign-subject write NEVER
+        // lands (insertIfAbsent finds the id taken, compareAndSwap's guarded
+        // WHERE fails — and returns null). The doc's trigger_kind projection
+        // is a generated column, so guarded writes keep it for free.
+        atomic: {
+          async insertIfAbsent(record) {
+            requireRecordId(record.id);
+            const data = parseAppData(record.data, record.id);
+            const now = new Date().toISOString();
+            const result = await db.query(
+              `INSERT INTO vendo_apps (id, subject, enabled, doc, created_at, updated_at, revision)
+               VALUES ($1, $2, $3, $4::jsonb, $5, $5, 1)
+               ON CONFLICT (id) DO NOTHING
+               RETURNING id, subject, enabled, doc, created_at, updated_at, revision`,
+              [record.id, data.subject, data.enabled, JSON.stringify(data.doc), now],
+            );
+            return result.rows[0]
+              ? appRecord(appFromRow(result.rows[0] as Record<string, unknown>))
+              : null;
+          },
+          async compareAndSwap(record, expectedRevision) {
+            requireRecordId(record.id);
+            requireRevision(expectedRevision);
+            const data = parseAppData(record.data, record.id);
+            const now = new Date().toISOString();
+            const result = await db.query(
+              `UPDATE vendo_apps
+               SET enabled = $3, doc = $4::jsonb, updated_at = $5, revision = revision + 1
+               WHERE id = $1 AND subject = $2 AND revision = $6::bigint
+               RETURNING id, subject, enabled, doc, created_at, updated_at, revision`,
+              [record.id, data.subject, data.enabled, JSON.stringify(data.doc), now, expectedRevision],
+            );
+            return result.rows[0]
+              ? appRecord(appFromRow(result.rows[0] as Record<string, unknown>))
+              : null;
+          },
         },
       };
     case "vendo_state":

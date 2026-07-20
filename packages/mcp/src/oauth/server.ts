@@ -545,9 +545,10 @@ export class OAuthServer {
       return oauthJsonError("invalid_target", "resource does not match the authorization code");
     }
 
-    const tokens = await this.#issueTokens(grant);
+    // refreshGrantId is internal bookkeeping — the token response omits it.
+    const { refreshGrantId: _refreshGrantId, ...body } = await this.#issueTokens(grant);
     await this.#audit({ kind: "user", subject: grant.subject }, grant.clientId, "issue");
-    return json(publicTokenResponse(tokens), 200, tokenHeaders());
+    return json(body, 200, tokenHeaders());
   }
 
   async #rotateRefresh(form: URLSearchParams): Promise<Response> {
@@ -597,9 +598,10 @@ export class OAuthServer {
     // loses the claim, reuse revocation can see and remove every candidate in
     // the successor chain. Candidate secrets are not exposed unless their
     // parent claim succeeds.
-    const tokens = await this.#issueTokens(grant);
+    // refreshGrantId is internal bookkeeping — the token response omits it.
+    const { refreshGrantId, ...body } = await this.#issueTokens(grant);
     const claimed = await store.claim(record, {
-      data: { ...grant, rotatedTo: tokens.refreshGrantId },
+      data: { ...grant, rotatedTo: refreshGrantId },
       ...(record.refs === undefined ? {} : { refs: record.refs }),
     });
     if (!claimed) {
@@ -611,7 +613,7 @@ export class OAuthServer {
       return oauthJsonError("invalid_grant", "Refresh token is invalid or expired");
     }
     await this.#audit({ kind: "user", subject: grant.subject }, grant.clientId, "refresh");
-    return json(publicTokenResponse(tokens), 200, tokenHeaders());
+    return json(body, 200, tokenHeaders());
   }
 
   async #issueTokens(source: Pick<CodeGrant, "subject" | "clientId" | "familyId" | "resource" | "scopes">): Promise<{
@@ -783,7 +785,22 @@ export class OAuthServer {
       presence: "present",
       detail: { clientId, event },
     };
-    await this.#guard.report(audit);
+    // Every call site sits AFTER the irreversible state change (grants
+    // persisted, code/refresh claimed, client registered). An audit-sink
+    // failure must not abort the already-committed response — losing a
+    // rotation response poisons the next refresh into reuse-revocation of
+    // the whole grant family. Same convention as runner.ts: a reporting
+    // failure cannot change a completed outcome.
+    try {
+      await this.#guard.report(audit);
+    } catch (error) {
+      console.error("[vendo] mcp oauth: audit report failed", {
+        principal,
+        clientId,
+        event,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }
 
@@ -946,15 +963,14 @@ function expired(value: string): boolean {
   return !Number.isFinite(time) || time <= Date.now();
 }
 
-function randomHex(byteLength: number): string {
+export function randomHex(byteLength: number): string {
   return [...crypto.getRandomValues(new Uint8Array(byteLength))]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 }
 
-function randomBase64Url(byteLength: number): string {
+function base64UrlEncode(bytes: Uint8Array): string {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-  const bytes = crypto.getRandomValues(new Uint8Array(byteLength));
   let bits = 0;
   let accumulator = 0;
   let output = "";
@@ -970,27 +986,17 @@ function randomBase64Url(byteLength: number): string {
   return output;
 }
 
+function randomBase64Url(byteLength: number): string {
+  return base64UrlEncode(crypto.getRandomValues(new Uint8Array(byteLength)));
+}
+
 async function sha256Hex(value: string): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
   return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function sha256Base64Url(value: string): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-  let bits = 0;
-  let accumulator = 0;
-  let output = "";
-  for (const byte of digest) {
-    accumulator = (accumulator << 8) | byte;
-    bits += 8;
-    while (bits >= 6) {
-      bits -= 6;
-      output += alphabet[(accumulator >>> bits) & 63];
-    }
-  }
-  if (bits > 0) output += alphabet[(accumulator << (6 - bits)) & 63];
-  return output;
+  return base64UrlEncode(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))));
 }
 
 async function findOne(store: RecordStore, refs: Record<string, string>) {
@@ -1021,7 +1027,7 @@ function oauthJsonError(error: string, description: string): Response {
   return json({ error, error_description: description }, 400, { "cache-control": "no-store" });
 }
 
-function json(body: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response {
+export function json(body: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "content-type": "application/json", ...extraHeaders },
@@ -1051,22 +1057,6 @@ export function sameCanonicalUri(left: string, right: string): boolean {
   } catch {
     return false;
   }
-}
-
-function publicTokenResponse(tokens: {
-  access_token: string;
-  token_type: "Bearer";
-  expires_in: number;
-  refresh_token: string;
-  scope: string;
-}) {
-  return {
-    access_token: tokens.access_token,
-    token_type: tokens.token_type,
-    expires_in: tokens.expires_in,
-    refresh_token: tokens.refresh_token,
-    scope: tokens.scope,
-  };
 }
 
 function tokenHeaders(): Record<string, string> {

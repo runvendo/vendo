@@ -13,7 +13,7 @@ chord (`{ key: "k", meta: true }`), a custom matcher `(e) => boolean`, or
 `false` to disable the built-in opener entirely and wire your own:
 
 ```tsx
-import { VendoPalette } from "@vendoai/ui";
+import { VendoPalette } from "@vendoai/ui/chrome";
 
 // Rebind to Ctrl+/, leaving ⌘K for the host app.
 <VendoPalette hotkey={{ key: "/", ctrl: true }} />
@@ -180,7 +180,7 @@ graduated app's own server. Host-source components degrade to a contained
 "unknown component" notice on the served page; prewired and generated
 components render identically. If any step fails, the previous rung keeps
 serving and the document is untouched. See
-[Generated UI and apps](/concepts/generated-ui#invisible-graduation-to-rung-4).
+[Generated UI and apps](/concepts/generated-ui#graduation).
 
 **Visible error surface and retry in the thread.** A failed send, a
 mid-stream network drop, or any other transport error in the conversation
@@ -225,7 +225,7 @@ runtime now confirms the app's server is serving before it snapshots a
 rung 2 or rung 3 edit. Server code is booted from `/app/start.sh` when
 present, otherwise `/app/server.js`. If nothing listens, the edit fails
 and the previous rung keeps serving. See
-[Generated UI and apps](/concepts/generated-ui#invisible-graduation-to-rung-4).
+[Generated UI and apps](/concepts/generated-ui#graduation).
 
 **Rung 1 UI creates and tree-only edits skip approval.** Guard now resolves
 the effective risk for `vendo_apps_create` and `vendo_apps_edit` at call

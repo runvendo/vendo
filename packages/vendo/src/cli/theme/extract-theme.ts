@@ -69,7 +69,7 @@ export interface ExtractThemeOptions {
   resolveModel?: () => Promise<LanguageModel>;
 }
 
-export const DEFAULT_THEME_SLOTS: ThemeSlotValues = {
+const DEFAULT_THEME_SLOTS: ThemeSlotValues = {
   accent: "#2563eb",
   accentText: "#ffffff",
   background: "#ffffff",
@@ -288,22 +288,15 @@ function readExact(vars: CssVarDecl[]): ExactReads {
 // LLM pass — one structured call fills what the allowlist could not read.
 // ---------------------------------------------------------------------------
 
-/** Brand-defining slots: any of these missing after the exact pass means the
- *  fast path was insufficient and the model is consulted. The remaining slots
- *  never trigger a call on their own: accentText derives from the accent by
- *  WCAG contrast, headingFamily inherits fontFamily, and baseSize/density/
- *  motion have safe brand-neutral defaults. */
-const CORE_SLOTS: readonly SlotKey[] = [
+/** Brand-defining slots: any of these missing after the exact pass consults
+ *  the model, and only doubt about these becomes an init question. The
+ *  remaining slots (accentText, headingFamily, baseSize, density, motion)
+ *  derive or default safely — accentText derives from the accent by WCAG
+ *  contrast, headingFamily inherits fontFamily, and the rest have safe
+ *  brand-neutral defaults — so they never trigger a call or a question. */
+const BRAND_SLOTS: readonly SlotKey[] = [
   "accent", "background", "surface", "text", "mutedText",
   "border", "danger", "radius", "fontFamily",
-];
-
-/** Slots worth interrupting init over. The rest (accentText, headingFamily,
- *  baseSize, density, motion) have safe brand-neutral defaults/derivations —
- *  model doubt about them never becomes a question. */
-const QUESTIONABLE_SLOTS: readonly SlotKey[] = [
-  "accent", "background", "surface", "text", "mutedText", "border", "danger",
-  "radius", "fontFamily",
 ];
 
 const SLOT_KEYS = Object.keys(DEFAULT_THEME_SLOTS) as SlotKey[];
@@ -407,7 +400,7 @@ export async function extractTheme(
   const exact = readExact(vars);
 
   const needed = SLOT_KEYS.filter((slot) => exact.values[slot] === undefined);
-  const coreMissing = CORE_SLOTS.some((slot) => exact.values[slot] === undefined);
+  const coreMissing = BRAND_SLOTS.some((slot) => exact.values[slot] === undefined);
   const fromModel: Partial<Record<SlotKey, string>> = {};
   let uncertain: ThemeUncertainty[] = [];
   let usedModel = false;
@@ -423,7 +416,7 @@ export async function extractTheme(
         if (value !== null) fromModel[slot] = value;
       }
       uncertain = (proposed.uncertain ?? [])
-        .filter((entry): entry is ThemeUncertainty => (QUESTIONABLE_SLOTS as string[]).includes(entry.slot))
+        .filter((entry): entry is ThemeUncertainty => (BRAND_SLOTS as string[]).includes(entry.slot))
         .filter((entry) => exact.values[entry.slot] === undefined);
     } catch (error) {
       errors.push(`theme model pass unavailable: ${error instanceof Error ? error.message : "unknown error"}`);

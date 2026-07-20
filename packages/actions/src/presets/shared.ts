@@ -1,6 +1,6 @@
 import type { PermissionGrant, Principal } from "@vendoai/core";
 
-export type Awaitable<T> = T | Promise<T>;
+type Awaitable<T> = T | Promise<T>;
 export type SecretSource = string | (() => Awaitable<string | undefined>);
 export type JwtClaims = Record<string, unknown>;
 export type ClaimsResolver = (

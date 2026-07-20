@@ -36,6 +36,13 @@ Skip it if you only need to pull remote MCP tools into your own agent. That is
 what `mcpConnector` does, and it runs the other direction. See
 [Connectors](/capabilities/integrations).
 
+Also skip it if the agent is your own, running in process with `createVendo`
+in your backend (an AI SDK or Mastra loop you already ship). That case needs
+no OAuth dance and no door: spread the guarded tool pack into your loop
+through the `@vendoai/vendo/ai-sdk` or `@vendoai/vendo/mastra` subpath. See
+[Use with your existing agent](/existing-agents). The door remains the
+third-party-agent story.
+
 ## Enable the door
 
 Set `mcp: true` and pass a `HostOAuthAdapter`. The recommended shape has two
@@ -82,7 +89,7 @@ Then re-export the handler from your catch-all route:
 import { nextVendoHandler } from "@vendoai/vendo/server";
 import { vendo } from "@/lib/vendo";
 
-export const { GET, POST, DELETE } = nextVendoHandler(vendo);
+export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
 ```
 
 `oauth` is required when `mcp` is true. Without it, `createVendo` throws: the
@@ -237,11 +244,9 @@ export const vendo = createVendo({
 });
 ```
 
-`mcp: { … }` accepts the same `baseUrl`, `remoteAs`, and `federation` fields
-as the top-level `createVendo` options, and takes precedence over them when
-both are set. Use the object form when you want one place to gate broker
-trust behind environment variables, and the top-level form when the door
-runs on its own alongside your host.
+`baseUrl`, `remoteAs`, and `federation` live under `mcp: { … }` — they are
+not top-level `createVendo` keys. The object form is also the one place to
+gate broker trust behind environment variables.
 
 ## How door calls reach host tools
 
@@ -271,13 +276,14 @@ by that issuer.
 export const vendo = createVendo({
   model,
   principal: resolvePrincipal,
-  mcp: true,
   oauth,
-  remoteAs: {
-    issuer: "https://auth.example.com",
-    audience: "https://app.example.com/api/vendo/mcp",
-    // jwksUri is optional — the door discovers it from the issuer's
-    // RFC 8414 metadata when omitted.
+  mcp: {
+    remoteAs: {
+      issuer: "https://auth.example.com",
+      audience: "https://app.example.com/api/vendo/mcp",
+      // jwksUri is optional — the door discovers it from the issuer's
+      // RFC 8414 metadata when omitted.
+    },
   },
 });
 ```
@@ -316,9 +322,10 @@ does.
 export const vendo = createVendo({
   model,
   principal: resolvePrincipal,
-  mcp: true,
   oauth,
-  federation: { secret: process.env.VENDO_MCP_FEDERATION_SECRET! },
+  mcp: {
+    federation: { secret: process.env.VENDO_MCP_FEDERATION_SECRET! },
+  },
 });
 ```
 
@@ -430,8 +437,8 @@ on `kind` rather than sniffing shape:
 - The card themes itself from the same `--vendo-*` CSS tokens as the consent
   page, so no extra configuration is needed to match your brand.
 
-Rung 1–3 apps still render inline through the shim; only rung 4 link-outs use
-the card.
+Tree apps still render inline through the shim; only served-app (layer 3)
+link-outs use the card.
 
 ### Host branding crosses the boundary
 

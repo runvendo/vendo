@@ -1,3 +1,4 @@
+import { escapeLike } from "./helpers/utils.js";
 import { dbFor, type VendoStore } from "./store.js";
 import { invalid } from "./validate.js";
 
@@ -31,10 +32,6 @@ export type EraseReport = Record<EraseTable, number>;
 
 function emptyReport(): EraseReport {
   return Object.fromEntries(ERASE_TABLES.map((table) => [table, 0])) as EraseReport;
-}
-
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, "\\$&");
 }
 
 /**

@@ -95,6 +95,10 @@ import {
   type InstallEvalDeps,
 } from "./install-eval/run.js";
 import { INSTALL_EVAL_FIXTURES } from "./install-eval/fixtures.js";
+import {
+  applyVendoRootPaste as defaultApplyVendoRootPaste,
+  type VendoRootPasteResult,
+} from "./vendo-root-paste.js";
 
 const usage = `Usage:
   pnpm corpus --help
@@ -139,6 +143,11 @@ export interface CorpusCliDependencies {
   bootstrapRepo?: (repo: ManifestEntry, options?: BootstrapOptions) => Promise<BootstrapResult>;
   createInjector?: (options?: CreateLocalVendoInjectorOptions) => LocalVendoInjector;
   runInit?: (repo: InitStepRepo, options?: RunVendoInitStepOptions) => Promise<InitStepResult>;
+  applyVendoRootPaste?: (
+    repoDir: string,
+    framework: "next" | "express" | undefined,
+    initStdout: string,
+  ) => Promise<VendoRootPasteResult>;
   bootRepo?: (repo: ManifestEntry, options?: BootRepoOptions) => Promise<BootHandle>;
   waitForBootShutdown?: (handle: BootHandle, repo: ManifestEntry) => Promise<void>;
   runStructuralLayer?: (ctx: StructuralLayerContext) => Promise<StructuralCheckResult[]>;
@@ -169,6 +178,11 @@ interface ResolvedDeps {
   bootstrapRepo: (repo: ManifestEntry, options?: BootstrapOptions) => Promise<BootstrapResult>;
   createInjector: (options?: CreateLocalVendoInjectorOptions) => LocalVendoInjector;
   runInit: (repo: InitStepRepo, options?: RunVendoInitStepOptions) => Promise<InitStepResult>;
+  applyVendoRootPaste: (
+    repoDir: string,
+    framework: "next" | "express" | undefined,
+    initStdout: string,
+  ) => Promise<VendoRootPasteResult>;
   bootRepo: (repo: ManifestEntry, options?: BootRepoOptions) => Promise<BootHandle>;
   waitForBootShutdown: (handle: BootHandle, repo: ManifestEntry) => Promise<void>;
   runStructuralLayer: (ctx: StructuralLayerContext) => Promise<StructuralCheckResult[]>;
@@ -221,6 +235,7 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
     bootstrapRepo: deps.bootstrapRepo ?? defaultBootstrapRepo,
     createInjector: deps.createInjector ?? createLocalVendoInjector,
     runInit: deps.runInit ?? runVendoInitStep,
+    applyVendoRootPaste: deps.applyVendoRootPaste ?? defaultApplyVendoRootPaste,
     bootRepo: deps.bootRepo ?? defaultBootRepo,
     waitForBootShutdown: deps.waitForBootShutdown ?? waitForBootShutdownSignal,
     runStructuralLayer: deps.runStructuralLayer ?? defaultRunStructuralLayer,
@@ -650,6 +665,13 @@ async function runRepoThroughLayerOne(
     };
     const firstInit = await deps.runInit(repo, { ...initOptions, artifactPrefix: "init.first" });
     logPaths.push(...artifactPaths(firstInit.artifacts));
+    // init no longer codemods the layout (it only prints the paste — see
+    // vendoRootPasteLines in packages/vendo/src/cli/init.ts); the harness
+    // plays the human it printed those instructions for, so "files.expected"
+    // below still means the app is wired end to end, not just that init ran.
+    if (firstInit.exitCode === 0) {
+      await deps.applyVendoRootPaste(appRoot, repo.framework, await readOptional(firstInit.artifacts.log) ?? "");
+    }
     const secondInit = await deps.runInit(repo, { ...initOptions, artifactPrefix: "init.second", diffBase: "pre-run" });
     logPaths.push(...artifactPaths(secondInit.artifacts));
 
@@ -811,6 +833,7 @@ async function runBootCommand(options: BootCommandOptions, deps: ResolvedDeps): 
   if (init.exitCode !== 0) {
     throw new Error(`vendo init failed for ${repo.name}; see ${init.artifacts.log}`);
   }
+  await deps.applyVendoRootPaste(injectResult.repoDir, repo.framework, await readOptional(init.artifacts.log) ?? "");
   await deps.prepareE2eRepo(repo, injectResult.repoDir, context.logsDir(repo.name));
 
   const handle = await deps.bootRepo(repo, {
@@ -871,6 +894,7 @@ async function runGalleryCommand(options: GalleryCommandOptions, deps: ResolvedD
       if (init.exitCode !== 0) {
         throw new Error(`vendo init failed for ${repo.name}; see ${init.artifacts.log}`);
       }
+      await deps.applyVendoRootPaste(appRoot, repo.framework, await readOptional(init.artifacts.log) ?? "");
       await deps.prepareE2eRepo(repo, appRoot, context.logsDir(repo.name));
       // Build only when the dev server serves prebuilt output (manifest
       // devServer.requiresBuild). Self-compiling dev servers boot without a
@@ -944,7 +968,7 @@ async function runAiCommand(options: AiCommandOptions, deps: ResolvedDeps): Prom
 
   // Fail fast, never hang: the matrix runs a real model and is useless
   // without the SDK and a credential. The SDK lives in a gitignored cache,
-  // never in the workspace (the dev-riders host-only resolution doctrine).
+  // never in the workspace (the host-only SDK resolution doctrine).
   const sdkDir = agentSdkDir(context.reposDir);
   await deps.ensureAgentSdk(sdkDir);
   const harness = deps.createExtractionHarness(sdkDir);

@@ -132,48 +132,59 @@ export class DevModelController {
     console.log(`[vendo] model: ${describeDevCredential(credential)}${suffix}`);
   }
 
+  /** The shared delegate rung: load the provider module (an install failure
+   *  resolves unavailable with the exact install command), pick the model id
+   *  (env override or the spec default), and hand the factory-built model back. */
+  private async delegate(
+    credential: DevCredential,
+    spec: (typeof DEFAULT_MODELS)[string],
+    keyName: string,
+    config: { apiKey: string; baseURL?: string },
+    announceSuffix: string,
+  ): Promise<Resolution> {
+    let loaded: Record<string, unknown>;
+    try {
+      loaded = await this.importModule(this.root, spec.module);
+    } catch {
+      const message = `${keyName} is set but ${spec.module} is not installed in this app; install it (\`${spec.install}\`).`;
+      this.announce(credential, ` — but ${spec.module} is missing`);
+      return { mode: "unavailable", credential, message };
+    }
+    const factory = loaded[spec.factory] as (
+      config: { apiKey: string; baseURL?: string },
+    ) => (model: string) => LanguageModelV3Like;
+    const modelId = this.env[spec.modelEnv] ?? spec.model;
+    const model = factory(config)(modelId);
+    this.announce(credential, ` → ${modelId}${announceSuffix}`);
+    return { mode: "delegate", credential, model };
+  }
+
   private async resolveOnce(): Promise<Resolution> {
     const options: ResolveDevCredentialOptions = { env: this.env };
     const credential = await resolveDevCredential(options);
 
     if (credential.rung === "env-key") {
-      const spec = DEFAULT_MODELS[credential.provider]!;
-      let loaded: Record<string, unknown>;
-      try {
-        loaded = await this.importModule(this.root, spec.module);
-      } catch {
-        const message = `${credential.envVar} is set but ${spec.module} is not installed in this app; install it (\`${spec.install}\`).`;
-        this.announce(credential, ` — but ${spec.module} is missing`);
-        return { mode: "unavailable", credential, message };
-      }
-      const factory = loaded[spec.factory] as (config: { apiKey: string }) => (model: string) => LanguageModelV3Like;
-      const modelId = this.env[spec.modelEnv] ?? spec.model;
-      const model = factory({ apiKey: this.env[credential.envVar]! })(modelId);
-      this.announce(credential, ` → ${modelId}`);
-      return { mode: "delegate", credential, model };
+      return this.delegate(
+        credential,
+        DEFAULT_MODELS[credential.provider]!,
+        credential.envVar,
+        { apiKey: this.env[credential.envVar]! },
+        "",
+      );
     }
 
     if (credential.rung === "vendo-cloud") {
       // The gateway speaks the Anthropic Messages wire, so the anthropic
       // provider serves it — pointed at the console instead of Anthropic.
-      const spec = DEFAULT_MODELS["anthropic"]!;
-      let loaded: Record<string, unknown>;
-      try {
-        loaded = await this.importModule(this.root, spec.module);
-      } catch {
-        const message = `VENDO_API_KEY is set but ${spec.module} is not installed in this app; install it (\`${spec.install}\`).`;
-        this.announce(credential, ` — but ${spec.module} is missing`);
-        return { mode: "unavailable", credential, message };
-      }
-      const factory = loaded[spec.factory] as (
-        config: { apiKey: string; baseURL: string },
-      ) => (model: string) => LanguageModelV3Like;
       const base = resolveCloudBaseUrl({ env: this.env });
       const baseURL = base.endsWith("/api/v1") ? base : `${base}/api/v1`;
-      const modelId = this.env[spec.modelEnv] ?? spec.model;
-      const model = factory({ apiKey: this.env["VENDO_API_KEY"]!, baseURL })(modelId);
-      this.announce(credential, ` → ${modelId} via the Cloud gateway`);
-      return { mode: "delegate", credential, model };
+      return this.delegate(
+        credential,
+        DEFAULT_MODELS["anthropic"]!,
+        "VENDO_API_KEY",
+        { apiKey: this.env["VENDO_API_KEY"]!, baseURL },
+        " via the Cloud gateway",
+      );
     }
 
     this.announce(credential);

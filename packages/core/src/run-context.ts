@@ -14,7 +14,7 @@ export interface McpConsent {
 }
 
 /** CORE-2 */
-export const mcpConsentSchema = z.object({
+const mcpConsentSchema = z.object({
   clientId: z.string(),
   scopes: z.array(z.string()),
 }).passthrough() satisfies z.ZodType<McpConsent>;

@@ -6,7 +6,7 @@
  * the ScriptedTransport at the provider seam.
  */
 import { VendoError, type AppDocument } from "@vendoai/core";
-import type { VendoClient } from "@vendoai/ui";
+import type { ApprovalResolution, VendoClient } from "@vendoai/ui";
 import type { PlaygroundFixtures } from "./fixtures.js";
 
 export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
@@ -16,6 +16,7 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
     automations: fixtures.automations.map((entry) => ({ ...entry })),
     connections: [...fixtures.connections],
     approvals: [...fixtures.approvals],
+    approvalResolutions: new Map<string, ApprovalResolution>(),
     grants: [...fixtures.grants],
     runs: [...fixtures.runs],
   };
@@ -47,9 +48,26 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
 
     approvals: {
       pending: async () => [...state.approvals],
-      decide: async (ids) => {
+      decide: async (ids, decision) => {
         const decided = new Set(Array.isArray(ids) ? ids : [ids]);
         state.approvals = state.approvals.filter((approval) => !decided.has(approval.id));
+        // Existing-agents — mirror the wire's park→resume so a scenario's
+        // <VendoApprovalEmbed> resolves in place after a decision.
+        for (const id of decided) {
+          state.approvalResolutions.set(
+            id,
+            decision.approve
+              ? { state: "executed", outcome: { status: "ok", output: { delivered: true } } }
+              : { state: "declined" },
+          );
+        }
+      },
+      get: async (id) => {
+        const pending = state.approvals.find((approval) => approval.id === id);
+        if (pending) return { state: "pending", request: pending };
+        const resolved = state.approvalResolutions.get(id);
+        if (resolved) return resolved;
+        throw new VendoError("not-found", `Unknown approval ${id}`);
       },
     },
 
@@ -62,6 +80,12 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
 
     connections: {
       list: async () => [...state.connections],
+      // The scripted catalog mirrors the scenarios' explicit connectors prop;
+      // surfaces resolving in auto mode see the same two toolkits.
+      catalog: async () => [
+        { toolkit: "slack", connector: "composio" },
+        { toolkit: "github", connector: "composio" },
+      ],
       initiate: async ({ toolkit, connector }) => ({
         id: `conn_${toolkit}_new`,
         connector: connector ?? "composio",
@@ -101,6 +125,7 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
         return { kind: "tree", payload: document.tree };
       },
       call: async () => ({ status: "ok", output: { ok: true } }),
+      pingMachine: async () => ({ state: "awake" }),
       edit: async (id) => ({ app: app(id), version: { at: new Date().toISOString(), intent: "edit", rung: 2 } }),
       history: async () => [{ at: "2026-07-18T09:05:30.000Z", intent: "create", rung: 2 }],
       undo: async (id) => app(id),

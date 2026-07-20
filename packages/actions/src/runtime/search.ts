@@ -24,7 +24,7 @@ const DESCRIPTION_MATCH = 2;
 const WHOLE_QUERY_IN_NAME = 5;
 
 /** Lowercase alphanumeric tokens, de-duplicated, order-preserving. */
-function tokenize(value: string): string[] {
+export function tokenize(value: string): string[] {
   const seen = new Set<string>();
   const tokens: string[] = [];
   for (const raw of value.toLowerCase().split(/[^a-z0-9]+/)) {

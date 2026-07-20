@@ -1,14 +1,14 @@
 /** 09-vendo §2.1 — host-identity presets: one config key (`createVendo({ auth })`)
     filling the principal, actAs, and oauth seams from a single identity story.
-    Shipped on the umbrella's server entry. */
-export { auth0 } from "./auth0.js";
-export { authJs } from "./auth-js.js";
-export { clerk } from "./clerk.js";
-export { jwt } from "./jwt.js";
-export { supabase, type SupabaseHostAuthPresetOptions } from "./supabase.js";
-// The three-seam conformance kit ships publicly (the @vendoai/core
-// "./conformance" precedent): the named presets above and host-custom presets
-// are its consumers.
+    The five zero-arg preset FUNCTIONS do NOT ship from this barrel — each has
+    its own subpath (@vendoai/vendo/auth/<name>) instead. A bundler resolves
+    every `export ... from` target in a barrel file regardless of which named
+    export a consumer actually uses, so combining all five here (as before
+    corpus-triage Task 9) meant any host importing even one preset — or none —
+    forced every preset's optional peer dep (jose/@auth/core/@clerk/backend) to
+    resolve, breaking builds for hosts lacking one. Only the conformance kit and
+    the shared types (erased before any bundler sees them) stay on this barrel;
+    server.ts re-exports both from here unchanged. */
 export {
   hostAuthPresetConformance,
   type HostAuthPresetConformanceOptions,
@@ -19,3 +19,4 @@ export type {
   HostAuthPresetUser,
   HostAuthPresetUserResolver,
 } from "./shared.js";
+export type { SupabaseHostAuthPresetOptions } from "./supabase.js";

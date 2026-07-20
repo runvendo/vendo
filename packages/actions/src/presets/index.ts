@@ -1,4 +1,10 @@
-export { authJsPreset, type AuthJsPresetOptions } from "./auth-js.js";
+// authJsPreset ships on its own subpath ("./presets/auth-js"), not here: it is
+// the only preset in this barrel with a top-level optional-peer dynamic
+// import (`@auth/core/jwt`), and bundlers resolve every `export ... from`
+// target in a barrel file regardless of which named export a consumer
+// actually uses — keeping it out of this file means importing ANY of the
+// presets below never forces a host to have @auth/core installed
+// (corpus-triage Task 9).
 export { supabasePreset, type SupabasePresetOptions } from "./supabase.js";
 export {
   genericJwtPreset,

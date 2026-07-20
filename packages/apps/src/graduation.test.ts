@@ -55,6 +55,17 @@ const chaserAgent: FakeBoxAgent = ({ box }) => {
 /** The scripted tree edit that lands the fn: bindings after the box work. */
 const FN_BINDING_EDIT = '<Edit><Query id="digest" tool="fn:getDigest"/><Insert into="root"><Text text={digest.summary}/></Insert></Edit>';
 
+/** The em-dash class (PR #418 evidence run): a rebind that keeps the host
+ *  tool's `/data/` response envelope in the binding path. The fn unwraps its
+ *  `{result}` envelope, so `/digest/data/…` binds nothing and the board
+ *  renders em-dashes. */
+const ENVELOPE_PATH_EDIT = '<Edit><Query id="digest" tool="fn:getDigest"/><Insert into="root"><Text text={digest.data.summary}/></Insert></Edit>';
+
+const promptTextOf = (call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }): string =>
+  call.prompt.map((message) => typeof message.content === "string"
+    ? message.content
+    : message.content.map((part) => part.text ?? "").join("")).join("\n");
+
 const setup = (options: { agent?: FakeBoxAgent; doc?: AppDocument; edit?: string } = {}) => {
   const store = memoryStore();
   const guard = guardFixture();
@@ -92,6 +103,114 @@ describe("graduation 1→2 through the in-box agent", () => {
     expect(tree.queries?.some((q) => q.tool === "fn:getDigest")).toBe(true);
     // Exactly one machine created (the provision), snapshotted across the box edit.
     expect(sandbox.machines.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("emits the post-graduation view with resolved fn: query data (create never blanks the screen)", async () => {
+    // create() resolves queries for the pre-graduation final emit; the
+    // graduated tree emit must do the same — its fn: queries are resolvable
+    // (the machine exists), and the streamed view parts are last-write-wins,
+    // so an unresolved emit would blank the just-painted data on screen.
+    const store = memoryStore();
+    // No egress declaration: the graduated machine wakes freely, so the fn:
+    // query is resolvable the moment the graduated tree is emitted.
+    const digestAgent: FakeBoxAgent = ({ box }) => {
+      box.fns.set("getDigest", () => ({ summary: "3 unpaid invoices", count: 3 }));
+      box.manifest = { schedules: [{ cron: "0 8 * * *", fn: "getDigest" }] };
+      return { ok: true, summary: "wrote digest", filesChanged: ["/app/server.js"], testsRun: 1, fns: ["getDigest"] };
+    };
+    const sandbox = fakeBoxSandbox({ agent: digestAgent });
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(
+        '<App name="Invoice watcher"><Text text="Invoices"/></App>',
+        FN_BINDING_EDIT,
+      ),
+      machine: { sandbox, buildEnv: () => ({ PORT: "8080" }), boxEditPollMs: 5 },
+    });
+    const views: Array<{ payload: { queries?: Array<{ tool: string }>; data?: { digest?: { summary?: string } } } }> = [];
+
+    const app = await runtime.create({
+      prompt: "Watch my unpaid invoices and email me a daily digest; show a status board",
+      onView: (part) => views.push(part as unknown as typeof views[number]),
+    }, ctx());
+
+    // The create graduated: the machine exists and the tree gained the fn: query.
+    expect(app.machine?.snapshotRef).toBeDefined();
+    const final = views.at(-1)?.payload;
+    expect(final?.queries?.some((query) => query.tool === "fn:getDigest")).toBe(true);
+    // The last emitted view carries the RESOLVED query data, not a blank slot.
+    expect(final?.data?.digest).toEqual({ summary: "3 unpaid invoices", count: 3 });
+  });
+
+  it("rejects fn: bindings that keep the host-tool /data/ envelope (em-dash regression, PR #418)", async () => {
+    // Wave 7 H2 item 1 — the rebind model reuses the host tool's `/data/`
+    // envelope in the fn: binding path. The graduation path must sample the
+    // fn's real {result} shape, catch the miss, and repair the binding —
+    // never persist a tree whose board renders em-dashes.
+    const store = memoryStore();
+    const digestAgent: FakeBoxAgent = ({ box }) => {
+      box.fns.set("getDigest", () => ({ summary: "3 unpaid invoices", count: 3 }));
+      box.manifest = {};
+      return { ok: true, summary: "wrote digest", filesChanged: ["/app/server.js"], testsRun: 1, fns: ["getDigest"] };
+    };
+    let repairSawEnvelopeMiss = false;
+    const model = scriptedLanguageModel(
+      ENVELOPE_PATH_EDIT,
+      (call) => {
+        // The retry must carry the shape repair for the envelope path — that
+        // is what steers the model off the host-tool envelope.
+        if (promptTextOf(call).includes("/digest/data/summary")) repairSawEnvelopeMiss = true;
+        return FN_BINDING_EDIT;
+      },
+    );
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model,
+      machine: { sandbox: fakeBoxSandbox({ agent: digestAgent }), buildEnv: () => ({ PORT: "8080" }), boxEditPollMs: 5 },
+    });
+    await seedAppRow(store, treeApp(), "user_ada");
+
+    const result = await runtime.edit("app_grad", "Show a live status board backed by the server", ctx());
+
+    expect(result.failure).toBeUndefined();
+    expect(result.graduated).toBe(true);
+    const treeJson = JSON.stringify(result.app.tree);
+    expect(treeJson).toContain("/digest/summary");
+    expect(treeJson).not.toContain("/digest/data");
+    expect(repairSawEnvelopeMiss).toBe(true);
+  });
+
+  it("keeps an unsampleable fn shape defensive: a failed sample never blocks the rebind", async () => {
+    // The shape check only bites on a KNOWN shape. An fn whose sample call
+    // fails stays unknown, and the rebind lands exactly as the model wrote it
+    // (the runtime's contained-error rendering is the backstop).
+    const store = memoryStore();
+    const brokenAgent: FakeBoxAgent = ({ box }) => {
+      box.fns.set("getDigest", () => { throw new Error("boom on empty args"); });
+      box.manifest = {};
+      return { ok: true, summary: "wrote digest", filesChanged: ["/app/server.js"], testsRun: 1, fns: ["getDigest"] };
+    };
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(ENVELOPE_PATH_EDIT),
+      machine: { sandbox: fakeBoxSandbox({ agent: brokenAgent }), buildEnv: () => ({ PORT: "8080" }), boxEditPollMs: 5 },
+    });
+    await seedAppRow(store, treeApp(), "user_ada");
+
+    const result = await runtime.edit("app_grad", "Show a live status board backed by the server", ctx());
+
+    expect(result.failure).toBeUndefined();
+    expect(result.graduated).toBe(true);
+    expect(JSON.stringify(result.app.tree)).toContain("/digest/data/summary");
   });
 
   it("does NOT escalate a pure-UI edit (no machine, no box)", async () => {

@@ -27,7 +27,9 @@ export function useApp(appId: AppId): {
   const loadedRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    const generation = generationRef.current;
+    // Mirror useResource: bump per call, so overlapping refreshes (manual +
+    // edit + undo) can never let a stale response clobber newer app state.
+    const generation = (generationRef.current += 1);
     if (!loadedRef.current) setIsLoading(true);
     try {
       const [nextApp, nextSurface] = await Promise.all([client.apps.get(appId), client.apps.open(appId)]);
@@ -45,15 +47,15 @@ export function useApp(appId: AppId): {
   }, [appId, client]);
 
   useEffect(() => {
-    const generation = generationRef.current + 1;
-    generationRef.current = generation;
     loadedRef.current = false;
     setApp(undefined);
     setSurface(undefined);
     setError(undefined);
     void refresh();
+    // Bump the generation on unmount / appId change so an in-flight response
+    // can't land on a stale (or torn-down) app.
     return () => {
-      if (generationRef.current === generation) generationRef.current += 1;
+      generationRef.current += 1;
     };
   }, [refresh]);
 

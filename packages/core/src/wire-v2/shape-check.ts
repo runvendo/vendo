@@ -8,14 +8,18 @@
  * `$reshape` chain. A binding into fields absent from a KNOWN shape is the
  * compile error the spec routes to per-binding repair; unknown tools and
  * `json` regions stay defensive (the renderer's contained notice is the
- * runtime backstop). Only {@link BindingShapeError} is public (root export);
- * the checker itself stays internal.
+ * runtime backstop). {@link BindingShapeError} and {@link checkBindingShapes}
+ * are public (root exports): the checker's second consumer is the graduation
+ * fn-result post-pass (Wave 7 H2), which re-checks an already compiled tree
+ * once the fn: result shapes are sampled.
  */
 
 import { reshapeShape, type ReshapeStep } from "../reshape.js";
-import { shapeAtPointer, type ShapeType } from "../shape.js";
+import { walkShapePointer, type ShapePointerMiss, type ShapeType } from "../shape.js";
 import { isPathBinding, isPlainObject, type TreeNode } from "../tree.js";
 import type { TreeQueryV2 } from "../tree-v2.js";
+import type { WireIssue } from "./expression.js";
+import { mergeIssues, type CompileState } from "./state.js";
 
 /** v2 spec §3 — one per-binding compile error: the repair contract. The
  *  node/prop anchor tells the repair loop WHERE; missing/available tell the
@@ -34,57 +38,9 @@ export interface BindingShapeError {
   available?: string[];
 }
 
-interface MissReport {
-  message: string;
-  missing?: string[];
-  available?: string[];
-}
-
-/** Walks the response shape by the binding's sub-pointer, reporting the
- *  first miss with the field context repair needs. `null` miss + `null`
- *  shape means an undecodable pointer segment — treated as unknown, not an
- *  error (validate layers own pointer grammar). */
-const walkPointer = (
-  shape: ShapeType,
-  pointer: string,
-): { shape: ShapeType | null; miss: MissReport | null } => {
-  let current = shape;
-  if (pointer === "") return { shape: current, miss: null };
-  for (const encodedToken of pointer.slice(1).split("/")) {
-    if (/~(?:[^01]|$)/.test(encodedToken)) return { shape: null, miss: null };
-    const token = encodedToken.replace(/~1/g, "/").replace(/~0/g, "~");
-    if (current.kind === "json") return { shape: { kind: "json" }, miss: null };
-    if (current.kind === "object") {
-      if (!Object.prototype.hasOwnProperty.call(current.fields, token)) {
-        return {
-          shape: null,
-          miss: {
-            message: `field "${token}" is absent from the tool's response shape`,
-            missing: [token],
-            available: Object.keys(current.fields),
-          },
-        };
-      }
-      current = current.fields[token] as ShapeType;
-      continue;
-    }
-    if (current.kind === "array") {
-      if (!/^(?:0|[1-9]\d*)$/.test(token)) {
-        return {
-          shape: null,
-          miss: { message: `"${token}" indexes into an array in the tool's response shape (expected a numeric index)` },
-        };
-      }
-      current = current.items;
-      continue;
-    }
-    return {
-      shape: null,
-      miss: { message: `the response shape has a ${current.kind} at this point; "${token}" goes past it` },
-    };
-  }
-  return { shape: current, miss: null };
-};
+/** The pointer-walk / slot-check miss contract (shape.ts's walkShapePointer
+ *  produces the pointer-walk ones). */
+type MissReport = ShapePointerMiss;
 
 /** Splits a binding `$path` into the query name and the in-response
  *  sub-pointer. Query names are identifier-only (no ~ escapes). */
@@ -98,9 +54,10 @@ const splitPath = (path: string): { query: string; pointer: string } | null => {
 /** The prewired props whose bound value must be `[{value, label}]` items (a
  *  bare `string[]` is also fine), with the item fields that component requires.
  *  A fetched object array lacking a required field renders blank options/tabs —
- *  the projection gap {@link optionItemMiss} routes to
- *  `| asOptions(valueField, labelField)` repair. Select labels are optional;
- *  Tabs need both (a labelless tab is a blank button). */
+ *  {@link optionItemMiss} routes the gap to Kit-native repair (W5a: Select
+ *  labelField/valueField over RAW rows; the deprecated asOptions projection
+ *  compiles for stored apps but is never suggested). Select labels are
+ *  optional; Tabs need both (a labelless tab is a blank button). */
 const OPTION_ITEM_PROPS: ReadonlyMap<string, { props: ReadonlySet<string>; required: readonly string[] }> = new Map([
   ["Select", { props: new Set(["options"]), required: ["value"] }],
   ["Tabs", { props: new Set(["tabs", "items"]), required: ["value", "label"] }],
@@ -124,7 +81,7 @@ const DISPLAY_TEXT_PROPS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
 
 /** What a checked binding's resolved shape must satisfy for its slot. */
 type SlotCheck =
-  | { kind: "options"; required: readonly string[] }
+  | { kind: "options"; required: readonly string[]; hint: string }
   /** A text display slot (Text.text, Stat.value, Badge.label). */
   | { kind: "display"; prop: string }
   /** Table rows: every DISPLAYED column cell must be a scalar. `displayed`
@@ -151,7 +108,22 @@ const literalColumnKeys = (columns: unknown): ReadonlySet<string> | null => {
 
 const slotFor = (node: TreeNode, prop: string): SlotCheck | null => {
   const required = optionRequired(node.component, prop);
-  if (required !== null) return { kind: "options", required };
+  if (required !== null) {
+    // W5a (dialect retirement) — Select's taught path binds RAW rows with
+    // labelField/valueField naming their fields: the required item fields
+    // become the NAMED ones, and every repair hint is Kit-native (the
+    // asOptions projection still compiles for stored apps but is never
+    // suggested).
+    if (node.component === "Select") {
+      const named = [node.props?.valueField, node.props?.labelField]
+        .filter((field): field is string => typeof field === "string");
+      if (named.length > 0) {
+        return { kind: "options", required: named, hint: "labelField/valueField must name fields the rows actually carry" };
+      }
+      return { kind: "options", required, hint: 'bind the RAW rows and add labelField/valueField naming their fields (e.g. labelField="name" valueField="id")' };
+    }
+    return { kind: "options", required, hint: "bind rows that carry those fields, or write literal {value, label} items" };
+  }
   if (DISPLAY_TEXT_PROPS.get(node.component)?.has(prop) === true) return { kind: "display", prop };
   if (node.component === "Table" && prop === "rows") {
     const columns = node.props?.columns;
@@ -166,15 +138,16 @@ const slotFor = (node: TreeNode, prop: string): SlotCheck | null => {
 };
 
 /** A non-scalar shape in a text display slot renders raw JSON braces. The
- *  repair hint matches the kind: template projects OBJECTS to one string;
- *  arrays reduce through an aggregate (template cannot string an array). */
+ *  repair hint matches the kind and is Kit-native (W5a — never the deprecated
+ *  template projection): objects bind one nested scalar field; arrays reduce
+ *  through an aggregate. */
 const displaySlotMiss = (shape: ShapeType, prop: string): MissReport | null => {
   if (shape.kind !== "object" && shape.kind !== "array") return null;
   const hint = shape.kind === "object"
-    ? 'project it to one string with | template("…{field}…")'
-    : "reduce it with an aggregate (| count(), | sum(field))";
+    ? "bind ONE of its scalar fields instead (extend the binding path, e.g. .name)"
+    : "reduce it with an aggregate (| count(), | sum(field)) or bind a single row's scalar field";
   return {
-    message: `this binds an ${shape.kind} into the "${prop}" display slot — it renders as raw JSON braces; bind a scalar field instead, or ${hint}`,
+    message: `this binds an ${shape.kind} into the "${prop}" display slot — it renders as raw JSON braces; ${hint}`,
     ...(shape.kind === "object" ? { available: Object.keys(shape.fields) } : {}),
   };
 };
@@ -187,29 +160,34 @@ const cellsMiss = (shape: ShapeType, displayed: ReadonlySet<string> | null): Mis
   const offenders = Object.entries(fields).filter(([field, fieldShape]) =>
     (displayed === null || displayed.has(field)) && (fieldShape.kind === "object" || fieldShape.kind === "array"));
   if (offenders.length === 0) return null;
+  // W5a — Kit-native repair: DataTable resolves dot-path column keys, so the
+  // remedy is the Kit table (or scalar-only columns), never the deprecated
+  // template projection.
   const hints = offenders.map(([field, fieldShape]) => {
     const sub = fieldShape.kind === "object" ? Object.keys(fieldShape.fields)[0] : undefined;
-    return `| template(${field}, "{${field}${sub === undefined ? "" : `.${sub}`}}")`;
+    return `{key:"${field}${sub === undefined ? "" : `.${sub}`}"}`;
   });
   return {
-    message: `these rows carry object-valued column(s) ${offenders.map(([field]) => `"${field}"`).join(", ")} — a Table cell renders an object as raw JSON braces; project each to one string (e.g. ${hints.join(" ")}) or list only scalar keys in columns`,
+    message: `these rows carry object-valued column(s) ${offenders.map(([field]) => `"${field}"`).join(", ")} — a Table cell renders an object as raw JSON braces; use the Kit <DataTable> with dot-path column keys reaching the nested scalars (e.g. columns={[${hints.join(", ")}]}) or list only scalar keys in columns`,
     available: Object.keys(fields),
   };
 };
 
 const slotMiss = (slot: SlotCheck, shape: ShapeType): MissReport | null => {
-  if (slot.kind === "options") return optionItemMiss(shape, slot.required);
+  if (slot.kind === "options") return optionItemMiss(shape, slot.required, slot.hint);
   if (slot.kind === "display") return displaySlotMiss(shape, slot.prop);
   return cellsMiss(shape, slot.displayed);
 };
 
 /** A resolved shape feeding an option prop must be a `string[]` or an object
- *  array carrying the fields that component's items need: Select items are
- *  `{value, label?}` (value required), Tabs items `{value, label}` (both
- *  required — a labelless tab renders a blank button). An object array missing
- *  a required field is the blank-option class; anything else (scalar, json,
- *  non-array) stays defensive. */
-const optionItemMiss = (shape: ShapeType, required: readonly string[]): MissReport | null => {
+ *  array carrying the fields that component's items need: Select reads RAW
+ *  rows via labelField/valueField (default `{value, label?}` items when the
+ *  fields are unnamed), Tabs items are `{value, label}` (both required — a
+ *  labelless tab renders a blank button). An object array missing a required
+ *  field is the blank-option class; anything else (scalar, json, non-array)
+ *  stays defensive. The repair hint arrives from {@link slotFor} and is
+ *  Kit-native (W5a — never the deprecated asOptions projection). */
+const optionItemMiss = (shape: ShapeType, required: readonly string[], hint: string): MissReport | null => {
   if (shape.kind !== "array") return null;
   const items = shape.items;
   if (items.kind !== "object") return null;
@@ -217,7 +195,7 @@ const optionItemMiss = (shape: ShapeType, required: readonly string[]): MissRepo
   if (missing.length === 0) return null;
   const available = Object.keys(items.fields);
   return {
-    message: `this binds an array of {${available.join(", ")}}, missing ${missing.map((field) => `"${field}"`).join(", ")}, but the list prop needs [{value, label}] items — project it with | asOptions(valueField, labelField) (e.g. | asOptions(id, name))`,
+    message: `this binds an array of {${available.join(", ")}}, missing ${missing.map((field) => `"${field}"`).join(", ")} — ${hint}`,
     available,
   };
 };
@@ -240,7 +218,7 @@ const checkBinding = (
     ? (toolShapes as Record<string, ShapeType | undefined>)[tool]
     : undefined;
   if (toolShape === undefined) return { status: "ok", shape: null }; // no shape card — Json, defensive
-  const walked = walkPointer(toolShape, split.pointer);
+  const walked = walkShapePointer(toolShape, split.pointer);
   if (walked.miss !== null) return { status: "miss", query: split.query, tool, report: walked.miss };
   if (walked.shape === null) return { status: "ok", query: split.query, tool, shape: null };
   let current = walked.shape;
@@ -310,6 +288,17 @@ const collectFromValue = (
   for (const child of Object.values(value)) {
     collectFromValue(child, nodeId, prop, queryTools, toolShapes, errors, null);
   }
+};
+
+/** Mirrors binding shape errors into the issue stream (capped like every
+ *  issue; no index — post-pass, not a cursor). Shared by compileWireV2's
+ *  finishResult and the patch compiler, keeping the message format
+ *  byte-identical. */
+export const mirrorBindingIssues = (state: CompileState, bindingErrors: readonly BindingShapeError[]): void => {
+  mergeIssues(state, bindingErrors.map((error): WireIssue => ({
+    code: "shape-mismatch",
+    message: `node "${error.nodeId}" prop "${error.prop}" (${error.path}): ${error.message}`,
+  })));
 };
 
 /**

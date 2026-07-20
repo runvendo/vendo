@@ -6,8 +6,8 @@ generated UI in a sandboxed, brand-native surface.
 
 ## Layout
 
-- `packages/` — the nine `@vendoai/*` blocks + the `@vendoai/vendo` umbrella and
-  `vendoai` alias, built against the FROZEN contracts in `docs/contracts/`
+- `packages/` — the ten `@vendoai/*` blocks + the `@vendoai/vendo` umbrella and
+  `vendoai` alias, built against the archived contracts in `docs/archive/contracts/`
   (read `00-overview.md` first); layering enforced by `scripts/dependency-guard.mjs`
   in `pnpm lint`
 - `apps/` — the two demo hosts: `demo-bank` (Maple) and `demo-accounting` (Cadence)

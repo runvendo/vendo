@@ -110,6 +110,7 @@ function fakeBox(): { sandbox: SandboxAdapter; setEnv(env: Record<string, string
       const result = await handler();
       return { status: 200, headers, body: encoder.encode(JSON.stringify(result)) };
     },
+    async url(port?: number) { return `https://${port ?? 8080}-fake_box_machine.skin.test`; },
     async snapshot() { return "fake:machine-skin"; },
     async stop() { /* sleep */ },
     async destroy() { /* gone */ },

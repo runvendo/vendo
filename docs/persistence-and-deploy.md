@@ -3,6 +3,12 @@
 Vendo uses Postgres only. Development defaults to embedded PGlite at
 `.vendo/data`; production points the same schema at Postgres.
 
+One exception to that default: with `VENDO_API_KEY` set and no `store` passed
+to `createVendo`, the composition fills the store slot with the Cloud hosted
+store — threads, apps, records, grants, and audit then persist in Vendo
+Cloud, not locally. Pass `store: createStore(...)` to keep data local; an
+explicitly passed store always wins over the Cloud default.
+
 ## Store configuration
 
 ```ts
@@ -60,6 +66,9 @@ rotate the key by hand — existing ciphertext would be orphaned.
 | `vendo_audit` | `id, at, kind, subject, venue, presence, app_id, tool, event` | append-only audit log |
 | `vendo_runs` | `id, app_id, trigger, status, record, started_at, finished_at` | automation runs |
 | `vendo_secrets` | `name, ciphertext, created_at` | optional encrypted secrets |
+| `vendo_sessions` | `subject, touched_at` | ephemeral (anonymous) session registry the TTL sweep reads |
+| `vendo_mcp_clients` | `id, data, refs, created_at, updated_at` | registered MCP door clients |
+| `vendo_mcp_grants` | `id, data, refs, created_at, updated_at` | MCP door OAuth grants |
 
 All JSON columns use `jsonb`. `vendo_records.refs` is GIN-indexed. App storage
 collections use `app:<appId>:<name>`.
@@ -96,12 +105,29 @@ The `/tick` endpoint is outside cookie auth and requires this bearer secret
 (`VENDO_TICK_SECRET`). One tick drives both schedulers: automation schedules
 and graduated apps' `vendo.json` machine schedules (each due target fires as
 `POST /fn/<name>` on the app's machine, exactly once per cron window).
+Registration is just pointing a caller at the endpoint: any external cron
+works (Vercel cron, a GitHub Actions schedule, crontab), and Vendo Cloud's
+hosted broker is another caller of the same surface, not a separate protocol.
+See [the machine model](./machine-model.md) for how machine schedules are
+declared and fired.
+
 Use hosted Postgres for serverless deployment. Local PGlite files are suitable
 for a durable single-process host, not an ephemeral filesystem.
 
 Serverless platforms give no timer guarantee, so anonymous-session eviction
 also runs amortized on request: any request arriving `sessions.sweepIntervalMs`
 after the last sweep triggers one before it is handled.
+
+## Machine data
+
+Graduated apps follow one data rule: anything durable goes through the store,
+via the box's `/box/rows` callback surface (rows land in `vendo_records`
+under `app:<appId>:box:<collection>`) or a guarded host tool. The machine's
+disk is scratch: caches, working files, build artifacts. Snapshots are not a
+database; a provider sweep can cost scratch state written since the last
+snapshot, and durable rows are what survive by design. Schedule last-fired
+state is host-cached in the `vendo_app_schedules` record collection so a tick
+never wakes a sleeping machine just to check due-ness.
 
 ## Host events and webhooks
 

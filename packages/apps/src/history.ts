@@ -9,7 +9,7 @@ import {
   type VendoRecord,
 } from "@vendoai/core";
 import { z } from "zod";
-import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord, validateDocument } from "./persistence.js";
+import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, rowFromRecord, validateDocument } from "./persistence.js";
 import type { VersionEntry } from "./runtime.js";
 
 const HISTORY_LIMIT = 50;
@@ -49,16 +49,7 @@ const storedPinIntentSchema = pinIntentEntrySchema.extend({
   seq: z.number().int().nonnegative(),
 }) satisfies z.ZodType<StoredPinIntent>;
 
-const allRecords = async (records: RecordStore): Promise<VendoRecord[]> => {
-  const found: VendoRecord[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await records.list(cursor === undefined ? {} : { cursor });
-    found.push(...page.records);
-    cursor = page.cursor;
-  } while (cursor !== undefined);
-  return found;
-};
+const allRecords = (records: RecordStore): Promise<VendoRecord[]> => listAllRecords(records);
 
 const snapshotFromRecord = (record: VendoRecord, appId: AppId): HistorySnapshot => {
   if (typeof record.data !== "object" || record.data === null || Array.isArray(record.data)) {

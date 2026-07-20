@@ -519,6 +519,64 @@ describe("memoryStoreAdapter reserved routing", () => {
     }
   });
 
+  it("round-trips the optional thread title through the vendo_threads projection", async () => {
+    const threads = memoryStoreAdapter().records("vendo_threads");
+    const untitled = await threads.put({
+      id: "thr_titled",
+      data: { subject: principal.subject, messages: [] },
+    });
+    expect(untitled.data).toEqual({ subject: principal.subject, messages: [] });
+    const stored = await threads.put({
+      id: "thr_titled",
+      data: { subject: principal.subject, messages: [], title: "Renaming invoices" },
+    });
+    expect(stored.data).toEqual({ subject: principal.subject, messages: [], title: "Renaming invoices" });
+    // Mirrors the routed door's parseThreadData: a non-string title is refused.
+    await expect(threads.put({
+      id: "thr_titled",
+      data: { subject: principal.subject, messages: [], title: 5 } as never,
+    })).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("honors the injected clock and reserved projection on atomic writes", async () => {
+    const fixed = "2026-07-11T16:04:00.000Z";
+    const threads = memoryStoreAdapter({ timestamp: () => fixed }).records("vendo_threads");
+    const inserted = await threads.atomic.insertIfAbsent({
+      id: "thr_atomic",
+      data: { subject: principal.subject, messages: [], title: "Atomic", ignored: true },
+      refs: { forged: "caller refs must be ignored" },
+    });
+    expect(inserted).toMatchObject({
+      data: { subject: principal.subject, messages: [], title: "Atomic" },
+      refs: { subject: principal.subject },
+      createdAt: fixed,
+      updatedAt: fixed,
+      revision: "1",
+    });
+    expect((inserted?.data as Record<string, unknown>)["ignored"]).toBeUndefined();
+    const swapped = await threads.atomic.compareAndSwap({
+      id: "thr_atomic",
+      data: { subject: principal.subject, messages: [{ role: "user", content: "hi" }] },
+      refs: { forged: "still ignored" },
+    }, "1");
+    expect(swapped).toMatchObject({
+      refs: { subject: principal.subject },
+      createdAt: fixed,
+      updatedAt: fixed,
+      revision: "2",
+    });
+  });
+
+  it("mirrors the routed door's validation on atomic writes", async () => {
+    const adapter = memoryStoreAdapter();
+    await expect(adapter.records("vendo_audit").atomic.insertIfAbsent({ id: "aud_invalid", data: {} }))
+      .rejects.toMatchObject({ code: "validation" });
+    await expect(adapter.records("vendo_threads").atomic.insertIfAbsent({
+      id: "thr_invalid_atomic",
+      data: { subject: 5, messages: [] },
+    })).rejects.toMatchObject({ code: "validation" });
+  });
+
   it("requires well-formed vendo_state ids on put and delete", async () => {
     const state = memoryStoreAdapter().records("vendo_state");
     await expect(state.put({ id: "no-colon", data: {} })).rejects.toMatchObject({ code: "validation" });

@@ -3,6 +3,11 @@ import {
   compileWirePatchV2,
   printWireV2,
   isPathBinding,
+  isStateBinding,
+  kitPropClasses,
+  KIT_WIRE_COMPONENT_NAMES,
+  shapeAtPointer,
+  type NormalizedCatalog,
   type ShapeType,
   type TreeNode,
   type TreeV2,
@@ -97,39 +102,148 @@ export const actionBindingsInProps = (
 };
 
 /** One structured action-honesty failure (the string rendering lives in
- *  engine.actionIssues; this shape feeds the repair fix space). */
+ *  engine.actionIssues; this shape feeds the repair fix space). W3 adds the
+ *  law-2 grounding kinds: an action must name a REAL tool, and its payload
+ *  fields must be the tool's REAL input parameters. */
 export interface ActionFault {
   nodeId: string;
-  kind: "dead-submit" | "missing-payload" | "read-only-submit";
+  kind: "dead-submit" | "missing-payload" | "read-only-submit" | "unknown-tool" | "ungrounded-payload";
   prop?: string;
   action?: string;
   label?: string;
+  /** ungrounded-payload — the payload keys the tool's input schema does not declare. */
+  unknownFields?: string[];
+  /** ungrounded-payload — the tool's real input parameter names. */
+  allowedFields?: string[];
+  /** ungrounded-payload — REQUIRED input parameters absent from the payload. */
+  missingFields?: string[];
 }
 
 export const actionFaults = (
   tree: TreeV2,
   tools: readonly HostToolInfo[] | undefined,
 ): ActionFault[] => {
-  const risk = new Map((tools ?? []).map((tool) => [tool.name, tool.risk]));
+  const byName = new Map((tools ?? []).map((tool) => [tool.name, tool]));
   const faults: ActionFault[] = [];
   for (const node of tree.nodes) {
     const props = node.props;
-    const label = node.component === "Button" && typeof props?.label === "string" ? props.label : "";
-    const submitLike = label !== "" && SUBMIT_LABEL.test(label);
+    const buttonLabel = node.component === "Button" && typeof props?.label === "string" ? props.label : "";
+    // W3 law 2 — a Kit <Form> IS a submit affordance whatever its label says.
+    const isForm = node.component === "Form";
+    const label = isForm
+      ? (typeof props?.submitLabel === "string" ? props.submitLabel : "Submit")
+      : buttonLabel;
+    const submitLike = isForm || (buttonLabel !== "" && SUBMIT_LABEL.test(buttonLabel));
     const bindings = props === undefined ? [] : actionBindingsInProps(props);
     if (submitLike && bindings.length === 0) {
       faults.push({ nodeId: node.id, kind: "dead-submit", label });
     }
     for (const { prop, action, payload } of bindings) {
       if (action.startsWith("fn:")) continue;
-      const toolRisk = risk.get(action);
-      if (toolRisk === undefined) continue;
-      if (isMutatingRisk(toolRisk) && !hasPayload(payload)) {
+      const tool = byName.get(action);
+      if (tool === undefined) {
+        // W3 law 2 — grounding is checkable only when the registry is known.
+        if (byName.size > 0) faults.push({ nodeId: node.id, kind: "unknown-tool", prop, action, label });
+        continue;
+      }
+      if (isMutatingRisk(tool.risk) && !hasPayload(payload)) {
         faults.push({ nodeId: node.id, kind: "missing-payload", prop, action });
       }
-      if (submitLike && toolRisk === "read") {
+      if (submitLike && tool.risk === "read") {
         faults.push({ nodeId: node.id, kind: "read-only-submit", prop, action, label });
       }
+      // W3 law 2 — payload fields must be the tool's real input parameters,
+      // and every REQUIRED parameter must be present (a nonempty partial
+      // payload would otherwise invoke the tool without e.g. its invoiceId).
+      if (hasPayload(payload) && isRecord(payload)) {
+        const schema = tool.inputSchema;
+        const properties = isRecord(schema) && isRecord(schema.properties) ? schema.properties : undefined;
+        const open = isRecord(schema) && schema.additionalProperties === true;
+        if (properties !== undefined && !open) {
+          const allowed = Object.keys(properties);
+          const unknown = Object.keys(payload).filter((field) => !allowed.includes(field));
+          const required = isRecord(schema) && Array.isArray(schema.required)
+            ? schema.required.filter((field): field is string => typeof field === "string")
+            : [];
+          const missing = required.filter((field) => !(field in payload));
+          if (unknown.length > 0 || missing.length > 0) {
+            faults.push({ nodeId: node.id, kind: "ungrounded-payload", prop, action, unknownFields: unknown, allowedFields: allowed, missingFields: missing });
+          }
+        }
+      }
+    }
+  }
+  return faults;
+};
+
+// ---------------------------------------------------------------------------
+// Law 1 (W3, v3 spec §The design in five lines) — data-classed props must be
+// bindings. One detector, shared by the engine's validation (message
+// rendering) and the structured-repair fix space.
+// ---------------------------------------------------------------------------
+
+/** Legacy prewired data props (the Kit carries classes in its specs; the
+ *  legacy set is classed here until the Wave-5 retirement). */
+const LEGACY_DATA_PROPS: Readonly<Record<string, readonly string[]>> = {
+  Table: ["rows"],
+  Select: ["options"],
+  Stat: ["value"],
+};
+
+const KIT_WIRE_NAMES: ReadonlySet<string> = new Set(KIT_WIRE_COMPONENT_NAMES);
+
+/** A HOST catalog prop counts as data-classed when its declared JSON-schema
+ *  type is a number or an array, its name says business data, and it is not
+ *  enum-constrained (enums are config by construction). Strings stay free —
+ *  they are labels/copy far more often than data. */
+const HOST_DATA_PROP = /(cents|amount|balance|total|value|series|rows|items|data|points|slices|history)/i;
+
+const hostDataProps = (schema: unknown): string[] => {
+  if (!isRecord(schema) || !isRecord(schema.properties)) return [];
+  return Object.entries(schema.properties).flatMap(([name, propSchema]) => {
+    if (!isRecord(propSchema) || Array.isArray(propSchema.enum)) return [];
+    const type = propSchema.type;
+    if (type !== "number" && type !== "integer" && type !== "array") return [];
+    return HOST_DATA_PROP.test(name) ? [name] : [];
+  });
+};
+
+/** The data-classed prop names of one node: Kit prop classes for adopted Kit
+ *  names, the legacy map for the old prewired set, schema-derived for host
+ *  catalog components. */
+export const dataClassedProps = (node: TreeNode, catalog: NormalizedCatalog): readonly string[] => {
+  if (node.source === "host") {
+    const entry = catalog.find((component) => component.name === node.component);
+    return hostDataProps(entry?.propsJsonSchema);
+  }
+  if (node.source === "generated") return [];
+  if (KIT_WIRE_NAMES.has(node.component)) {
+    const classes = kitPropClasses(node.component);
+    return classes === undefined ? [] : Object.entries(classes).flatMap(([prop, cls]) => cls === "data" ? [prop] : []);
+  }
+  return LEGACY_DATA_PROPS[node.component] ?? [];
+};
+
+export interface LiteralDataFault {
+  nodeId: string;
+  component: string;
+  prop: string;
+}
+
+const isBindingValue = (value: unknown): boolean => isPathBinding(value) || isStateBinding(value);
+
+/** Law 1 — every data-classed prop present on a node must be a `$path` /
+ *  `$state` binding. A literal there is hand-typed business data. */
+export const literalDataFaults = (tree: TreeV2, catalog: NormalizedCatalog): LiteralDataFault[] => {
+  const faults: LiteralDataFault[] = [];
+  for (const node of tree.nodes) {
+    const props = node.props;
+    if (props === undefined) continue;
+    for (const prop of dataClassedProps(node, catalog)) {
+      const value = props[prop];
+      if (value === undefined || value === null) continue;
+      if (isBindingValue(value)) continue;
+      faults.push({ nodeId: node.id, component: node.component, prop });
     }
   }
   return faults;
@@ -164,22 +278,6 @@ const enumerateShapePaths = (shape: ShapeType, prefix: string): string[] => {
   };
   walk(shape, prefix, 0);
   return out;
-};
-
-const shapeAt = (shape: ShapeType, pointer: string): ShapeType | undefined => {
-  let current = shape;
-  if (pointer === "") return current;
-  for (const token of pointer.slice(1).split("/")) {
-    const key = token.replaceAll("~1", "/").replaceAll("~0", "~");
-    if (current.kind === "object" && key in current.fields) {
-      current = current.fields[key] as ShapeType;
-    } else if (current.kind === "array" && /^\d+$/.test(key)) {
-      current = current.items;
-    } else {
-      return undefined;
-    }
-  }
-  return current;
 };
 
 const kindMatchesSchemaType = (kind: ShapeType["kind"], type: string): boolean => {
@@ -225,9 +323,32 @@ interface ActionPayloadFix {
   fields: string[];
   requiredFields: string[];
   options: string[];
+  /** W3 law 2 — true when an EXISTING (ungrounded) payload is replaced whole
+   *  rather than a missing one filled. */
+  replace?: boolean;
 }
 
-type RepairFix = BindingFix | QueryToolFix | ActionDisclaimFix | ActionPayloadFix;
+/** W3 law 2 — an action naming a tool absent from the registry: pick the
+ *  real tool, or no-valid-fix → honest disclaimer. */
+interface ActionToolFix {
+  kind: "action-tool";
+  nodeId: string;
+  prop: string;
+  action: string;
+  options: string[];
+}
+
+/** W3 law 1 — a literal on a data-classed prop: bind a real field path, or
+ *  no-valid-fix → honest disclaimer. */
+interface LiteralDataFix {
+  kind: "literal-data";
+  nodeId: string;
+  component: string;
+  prop: string;
+  options: string[];
+}
+
+type RepairFix = BindingFix | QueryToolFix | ActionDisclaimFix | ActionPayloadFix | ActionToolFix | LiteralDataFix;
 
 const hostPropRequirement = (
   deps: GenerationDependencies,
@@ -290,7 +411,7 @@ const deriveFixes = (
       && !("$reshape" in (propValue as unknown as Record<string, unknown>));
     if (wholeProp && requirement.type !== undefined) {
       const filtered = options.filter((path) => {
-        const bound = shapeAt(shape, path.slice(`/${error.query}`.length));
+        const bound = shapeAtPointer(shape, path.slice(`/${error.query}`.length));
         return bound !== undefined && kindMatchesSchemaType(bound.kind, requirement.type as string);
       });
       if (filtered.length > 0) options = filtered;
@@ -315,11 +436,59 @@ const deriveFixes = (
       fixes.push({ kind: "query-tool", query: query.name, tool: query.tool, options: readTools });
     }
   }
+  // W3 law 1 — literal business data on data-classed props: the legal fixes
+  // are the bounded real field paths (or the disclaimer arm).
+  for (const fault of literalDataFaults(compiled.tree, deps.catalog)) {
+    fixes.push({
+      kind: "literal-data",
+      nodeId: fault.nodeId,
+      component: fault.component,
+      prop: fault.prop,
+      options: contextPaths(compiled.tree, deps),
+    });
+  }
   const toolByName = new Map((deps.tools ?? []).map((tool) => [tool.name, tool]));
   const seenActions = new Set<string>();
   for (const fault of actionFaults(compiled.tree, deps.tools)) {
     if (seenActions.has(fault.nodeId)) continue;
     seenActions.add(fault.nodeId);
+    // W3 law 2 — an invented action tool: choose from the real registry.
+    if (fault.kind === "unknown-tool" && fault.action !== undefined && fault.prop !== undefined) {
+      fixes.push({
+        kind: "action-tool",
+        nodeId: fault.nodeId,
+        prop: fault.prop,
+        action: fault.action,
+        options: (deps.tools ?? []).map((tool) => tool.name),
+      });
+      continue;
+    }
+    // W3 law 2 — an ungrounded payload is rebuilt whole from the tool's REAL
+    // input schema (same strict shape as the missing-payload fill).
+    if (fault.kind === "ungrounded-payload" && fault.action !== undefined && fault.prop !== undefined) {
+      const schema = toolByName.get(fault.action)?.inputSchema;
+      const properties = isRecord(schema) && isRecord(schema.properties) ? schema.properties : undefined;
+      const fields = properties === undefined ? [] : Object.keys(properties);
+      const requiredFields = isRecord(schema) && Array.isArray(schema.required)
+        ? schema.required.filter((field): field is string => typeof field === "string")
+        : [];
+      const options = contextPaths(compiled.tree, deps);
+      if (fields.length > 0 && options.length > 0) {
+        fixes.push({
+          kind: "action-payload",
+          nodeId: fault.nodeId,
+          prop: fault.prop,
+          action: fault.action,
+          fields,
+          requiredFields,
+          options,
+          replace: true,
+        });
+        continue;
+      }
+      fixes.push({ kind: "action-disclaim", nodeId: fault.nodeId, reason: `action "${fault.action}" carries payload fields (${(fault.unknownFields ?? []).join(", ")}) the tool does not declare` });
+      continue;
+    }
     if (fault.kind === "missing-payload" && fault.action !== undefined && fault.prop !== undefined) {
       const schema = toolByName.get(fault.action)?.inputSchema;
       const properties = isRecord(schema) && isRecord(schema.properties) ? schema.properties : undefined;
@@ -370,6 +539,18 @@ const buildFixSchema = (fixes: RepairFix[]): Record<string, unknown> => {
         type: "string",
         enum: [...fix.options, NO_VALID_FIX],
         description: `Query "${fix.query}" names unknown tool "${fix.tool}". Choose the real host tool it should call, or ${NO_VALID_FIX} to remove the query (dependent content becomes an honest disclaimer).`,
+      };
+    } else if (fix.kind === "literal-data") {
+      properties[fixKey(index)] = {
+        type: "string",
+        enum: [...fix.options, NO_VALID_FIX],
+        description: `Node "${fix.nodeId}" prop "${fix.prop}" on <${fix.component}> carries hand-typed LITERAL business data — law 1: data props must bind a tool result. Choose the real field path to bind, or ${NO_VALID_FIX} to replace the node with an honest disclaimer.`,
+      };
+    } else if (fix.kind === "action-tool") {
+      properties[fixKey(index)] = {
+        type: "string",
+        enum: [...fix.options, NO_VALID_FIX],
+        description: `Node "${fix.nodeId}" prop "${fix.prop}" invokes unknown tool "${fix.action}" — law 2: actions must name a REAL host tool. Choose the real tool, or ${NO_VALID_FIX} to replace the control with an honest disclaimer.`,
       };
     } else if (fix.kind === "action-payload") {
       properties[fixKey(index)] = {
@@ -547,6 +728,34 @@ const spliceFixes = (
       } else {
         query.tool = pick;
       }
+    } else if (fix.kind === "literal-data") {
+      const node = nodes.get(fix.nodeId);
+      if (node?.props === undefined) return;
+      const pick = typeof value === "string" && fix.options.includes(value) ? value : NO_VALID_FIX;
+      if (pick === NO_VALID_FIX) {
+        disclaimNode(tree, fix.nodeId);
+      } else {
+        node.props[fix.prop] = { $path: pick };
+      }
+    } else if (fix.kind === "action-tool") {
+      const node = nodes.get(fix.nodeId);
+      if (node?.props === undefined) return;
+      const pick = typeof value === "string" && fix.options.includes(value) ? value : NO_VALID_FIX;
+      if (pick === NO_VALID_FIX) {
+        disclaimNode(tree, fix.nodeId);
+      } else {
+        const rename = (container: Record<string, unknown> | unknown[]): void => {
+          const values = Array.isArray(container) ? container : Object.values(container);
+          for (const candidate of values) {
+            if (isRecord(candidate) && candidate.action === fix.action) {
+              candidate.action = pick;
+            } else if (isRecord(candidate) || Array.isArray(candidate)) {
+              rename(candidate as Record<string, unknown>);
+            }
+          }
+        };
+        rename(node.props);
+      }
     } else if (fix.kind === "action-payload") {
       const node = nodes.get(fix.nodeId);
       if (node?.props === undefined) return;
@@ -564,7 +773,8 @@ const spliceFixes = (
         const apply = (container: Record<string, unknown> | unknown[]): void => {
           const values = Array.isArray(container) ? container : Object.values(container);
           for (const candidate of values) {
-            if (isRecord(candidate) && candidate.action === fix.action && !hasPayload(candidate.payload)) {
+            if (isRecord(candidate) && candidate.action === fix.action
+              && (fix.replace === true || !hasPayload(candidate.payload))) {
               candidate.payload = structuredClone(payload);
             } else if (isRecord(candidate) || Array.isArray(candidate)) {
               apply(candidate as Record<string, unknown>);
@@ -686,7 +896,9 @@ Ops (patch the CURRENT_APP wire against its id="..." anchors):
 - <SetName name="..."/> renames the app.
 If nothing needs polish, emit exactly <Edit></Edit>.`;
 
-const extractEdit = (text: string): string => {
+/** Same fence tolerance as engine.ts's extractWire, for <Edit> documents
+ *  (shared by the edit dialect and the end pass). */
+export const extractEdit = (text: string): string => {
   const start = text.indexOf("<Edit");
   if (start === -1) return text;
   const closeTag = "</Edit>";

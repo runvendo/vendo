@@ -462,9 +462,11 @@ function schemaForType(
     return { unsupported: `unsupported type ${checker.typeToString(type)}` };
   }
 
+  // Operate on the members that survive undefined/void stripping (an optional
+  // prop's `T | undefined` reduces to T; a pure union keeps every member).
   const members = withoutUndefined(type);
-  if (members.length !== (type.isUnion() ? type.types.length : 1)) {
-    if (members.length === 0) return { unsupported: `unsupported type ${checker.typeToString(type)}` };
+  if (members.length === 0) return { unsupported: `unsupported type ${checker.typeToString(type)}` };
+  if (type.isUnion()) {
     if (members.length === 1) return schemaForType(checker, members[0]!, location, seen, depth);
     if (members.every((member) => (member.flags & ts.TypeFlags.BooleanLiteral) !== 0)) {
       return { schema: { type: "boolean" } };
@@ -473,21 +475,6 @@ function schemaForType(
     if (values.every((value) => value !== undefined)) return { schema: { enum: values } };
     const variants: JsonSchema[] = [];
     for (const member of members) {
-      const converted = schemaForType(checker, member, location, new Set(seen), depth + 1);
-      if (converted.schema === undefined) return converted;
-      variants.push(converted.schema);
-    }
-    return { schema: { anyOf: variants } };
-  }
-
-  if (type.isUnion()) {
-    if (type.types.every((member) => (member.flags & ts.TypeFlags.BooleanLiteral) !== 0)) {
-      return { schema: { type: "boolean" } };
-    }
-    const values = type.types.map(literalValue);
-    if (values.every((value) => value !== undefined)) return { schema: { enum: values } };
-    const variants: JsonSchema[] = [];
-    for (const member of type.types) {
       const converted = schemaForType(checker, member, location, new Set(seen), depth + 1);
       if (converted.schema === undefined) return converted;
       variants.push(converted.schema);

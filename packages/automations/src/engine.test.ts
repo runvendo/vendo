@@ -508,6 +508,52 @@ describe("steps execution, parking, and resumption", () => {
     expect(await store.records("automations:parked").get("apr_disabled")).toBeNull();
   });
 
+  it("terminates a parked run instead of stranding it when the trigger changed before resume", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    const tools = registry([writeTool], async (call, runCtx) => {
+      const request = {
+        id: "apr_reshaped",
+        call,
+        descriptor: writeTool,
+        inputPreview: "write",
+        ctx: { principal: runCtx.principal, venue: runCtx.venue, presence: runCtx.presence, appId: runCtx.appId, trigger: runCtx.trigger },
+        createdAt: NOW.toISOString(),
+      };
+      await store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
+      return { status: "pending-approval", approvalId: request.id };
+    });
+    const doc = app("app_reshaped_resume", {
+      on: { kind: "host-event", event: "go" },
+      run: { kind: "steps", steps: [{ id: "write", tool: writeTool.name }] },
+    });
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+    const [runId] = await engine.emit("go", {}, ctx().principal);
+
+    // The user edits the trigger to agentic (auto-disable), re-enables the app, and
+    // only then approves the stale parked approval — the parked steps state no longer
+    // matches the trigger, so resume must fail the run cleanly, not strand it.
+    await seedApp(store, app(doc.id, {
+      on: { kind: "host-event", event: "go" },
+      run: { kind: "agentic", prompt: "work" },
+    }), "user_a", true);
+    const approval = await store.records("vendo_approvals").get("apr_reshaped");
+    await store.records("vendo_approvals").put({
+      id: "apr_reshaped",
+      data: { ...(approval?.data as object), status: "approved", decidedAt: NOW.toISOString() },
+    });
+
+    await engine.tick();
+
+    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
+      status: "error",
+      summary: "stopped at resume: parked agentic run is invalid",
+      error: { code: "validation", message: "parked agentic run is invalid" },
+    });
+    expect(await store.records("automations:parked").get("apr_reshaped")).toBeNull();
+  });
+
   it("contains oversized forEach fan-out and persisted resume state", async () => {
     const store = memoryStoreAdapter();
     const guard = new GuardDouble();
@@ -905,6 +951,35 @@ describe("dry runs, run visibility, agentic execution, and stopping", () => {
     expect(await engine.runs.get(running.id, ctx())).toMatchObject({ status: "stopped", summary: "stopped by user", finishedAt: NOW.toISOString() });
     await expect(engine.runs.stop(running.id, ctx())).rejects.toMatchObject({ code: "conflict" });
     expect(guard.audit.map((event) => (event.detail as { status: string }).status)).toEqual(["running", "stopped"]);
+  });
+
+  it("start survives a failing tick without an unhandled rejection", async () => {
+    vi.useFakeTimers();
+    const rejections: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown): void => { rejections.push(reason); };
+    process.on("unhandledRejection", onUnhandledRejection);
+    try {
+      const base = memoryStoreAdapter();
+      // A store hiccup (or a corrupt row) makes every runTick reject.
+      const store: StoreAdapter = {
+        ensureSchema: () => base.ensureSchema(),
+        blobs: (namespace) => base.blobs(namespace),
+        records: (collection) => ({
+          ...base.records(collection),
+          list: async () => { throw new Error("store unavailable"); },
+        }),
+      };
+      const engine = createAutomations({
+        apps: appsDouble(), tools: registry(), guard: new GuardDouble(), store, now: () => NOW,
+      });
+      const stop = engine.start(1_000);
+      await vi.advanceTimersByTimeAsync(2_000);
+      stop();
+      expect(rejections).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandledRejection);
+      vi.useRealTimers();
+    }
   });
 
   it("start skips overlapping ticks and returned stop functions are independent", async () => {

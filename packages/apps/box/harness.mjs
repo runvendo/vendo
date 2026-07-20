@@ -1,11 +1,12 @@
 /**
  * execution-v2 Wave 3 — the box bootstrap supervisor + agent harness (factory).
  *
- * This module (plus agent-loop.mjs) IS the "agent lives in the box" half of the
- * base box template: a single zero-dependency Node process baked into the
- * machine snapshot. `createHarness()` builds it without side effects (so it is
- * unit-testable); `bootstrap.mjs` is the thin entrypoint that starts it. It
- * owns two jobs:
+ * This module (plus agent-sdk.mjs) IS the "agent lives in the box" half of the
+ * base box template: the supervisor/control-port process is zero-dependency;
+ * the agent engine underneath it is the Claude Agent SDK, baked into the
+ * template beside it (Wave 8). `createHarness()` builds it without side
+ * effects (so it is unit-testable); `bootstrap.mjs` is the thin entrypoint
+ * that starts it. It owns two jobs:
  *
  *   1. Supervise the app process. The app is whatever the in-box agent wrote
  *      under /app; its Procfile-style entry is ONE shell line in
@@ -33,7 +34,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { runAgentTask as defaultRunAgentTask } from "./agent-loop.mjs";
+import { runAgentTask as defaultRunAgentTask } from "./agent-sdk.mjs";
 
 const RESPAWN_DELAY_MS = 1_000;
 const RUN_WATCH_INTERVAL_MS = 2_000;
@@ -102,7 +103,11 @@ export const createHarness = (options = {}) => {
     const entry = readRunEntry();
     if (entry === null) return;
     const generation = ++appGeneration;
-    const child = spawn("bash", ["-lc", entry], {
+    // Plain `bash -c`, NEVER a login shell: a Procfile entry is one shell
+    // line whose env is the boundary env below. Sourcing the machine's shell
+    // profiles (-l) leaked host profile env into the app and made spawn
+    // latency track the profile's cost — the Wave-6 load-40 test flake.
+    const child = spawn("bash", ["-c", entry], {
       cwd: appDir,
       env: boundaryEnv(),
       stdio: ["ignore", "inherit", "inherit"],
@@ -146,7 +151,9 @@ export const createHarness = (options = {}) => {
     activeTask = taskId;
     const log = (line) => {
       try {
-        appendFileSync(logPath(taskId), `${line}\n`);
+        // ISO-stamped so a live agent log doubles as a build-phase profile
+        // (Wave 7 H2 — where do the 4.5 layer-3 minutes go).
+        appendFileSync(logPath(taskId), `${new Date().toISOString()} ${line}\n`);
       } catch {
         // Logging must never kill the task.
       }

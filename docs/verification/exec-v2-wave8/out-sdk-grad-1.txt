@@ -1,0 +1,14 @@
+[sdk-grad-1] mode=graduation creating sandbox from pbgk5vxvhmtjmcn8lgeo…
+[sdk-grad-1] boot→control-port: 1.3s
+[sdk-grad-1] task boxtask_d181f29e-6d03-44de-8ea2-206f98d35c60 started (1.6s)
+...........
+[sdk-grad-1] BUILD 61.8s ok=true servesUi=false fns=chaseInvoices,getDigest
+[sdk-grad-1] summary: Built zero-dependency Node server with chaseInvoices (computes digest, POSTs to httpbin.org, stores in memory) and getDigest (returns latest or fresh digest). Scheduled daily 8am runs via vendo.json. Verified both endpoints answer correctly.
+[sdk-grad-1] POST /fn/getDigest → 200 {"result":{"count":3,"totalCents":415500,"invoices":[{"id":"INV-001","customer":"Acme Corp","amountCents":125000,"dueDate":"2026-07-15","daysPastDue":5},{"id":"INV-002","customer":"Widget Inc","amountCents":87500,"dueDate":"2026-07-10","daysPastDue":10},{"id":"INV-003","customer":"Gadget LLC","amoun
+[sdk-grad-1] phase profile over 17 log lines (~4 assistant turns):
+  model        29.9s (48%)
+  bash         15.2s (25%)
+  npm-install  0.0s (0%)
+  other        12.8s (21%)
+[sdk-grad-1] full log: /Users/yousefh/orca/workspaces/flowlet/exec-wave8-sdk/docs/verification/exec-v2-wave8/agent-log-sdk-grad-1.txt
+[sdk-grad-1] sandbox killed (63.9s)

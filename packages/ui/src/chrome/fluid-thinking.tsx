@@ -12,9 +12,6 @@ export interface FluidThinkingProps {
   label?: string;
   /** Drop diameter in px (fluidkit Thinking `size`). */
   size?: number;
-  /** Legacy cluster extent — fluidkit 0.5 auto-scales the canvas, so this is
-   *  accepted for call-site compatibility but no longer forwarded. */
-  spread?: number;
 }
 
 /**

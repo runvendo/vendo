@@ -1,0 +1,114 @@
+data: {"type":"start"}
+
+data: {"type":"start-step"}
+
+data: {"type":"text-start","id":"0"}
+
+data: {"type":"text-delta","id":"0","delta":"I'll start"}
+
+data: {"type":"text-delta","id":"0","delta":" by fetching the weather for all three cities at the same time, then build the"}
+
+data: {"type":"text-delta","id":"0","delta":" dashboard!"}
+
+data: {"type":"text-end","id":"0"}
+
+data: {"type":"tool-input-start","toolCallId":"toolu_01SodY1Ef5U4HVaJstGXu97h","toolName":"vendo_host_get_weather","dynamic":true}
+
+data: {"type":"tool-input-delta","toolCallId":"toolu_01SodY1Ef5U4HVaJstGXu97h","inputTextDelta":"{\"city\": \"Paris"}
+
+data: {"type":"tool-input-delta","toolCallId":"toolu_01SodY1Ef5U4HVaJstGXu97h","inputTextDelta":"\"}"}
+
+data: {"type":"tool-input-available","toolCallId":"toolu_01SodY1Ef5U4HVaJstGXu97h","toolName":"vendo_host_get_weather","input":{"city":"Paris"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}},"dynamic":true}
+
+data: {"type":"tool-output-available","toolCallId":"toolu_01SodY1Ef5U4HVaJstGXu97h","output":{"city":"Paris","temperature":52,"conditions":"cloudy"},"dynamic":true}
+
+data: {"type":"tool-input-start","toolCallId":"toolu_01RKbtmDuJanVRNcG8G7r9ji","toolName":"vendo_host_get_weather","dynamic":true}
+
+data: {"type":"tool-input-delta","toolCallId":"toolu_01RKbtmDuJanVRNcG8G7r9ji","inputTextDelta":"{\"city\": \"London"}
+
+data: {"type":"tool-input-delta","toolCallId":"toolu_01RKbtmDuJanVRNcG8G7r9ji","inputTextDelta":"\"}"}
+
+data: {"type":"tool-input-available","toolCallId":"toolu_01RKbtmDuJanVRNcG8G7r9ji","toolName":"vendo_host_get_weather","input":{"city":"London"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}},"dynamic":true}
+
+data: {"type":"tool-output-available","toolCallId":"toolu_01RKbtmDuJanVRNcG8G7r9ji","output":{"city":"London","temperature":47,"conditions":"rainy"},"dynamic":true}
+
+data: {"type":"tool-input-start","toolCallId":"toolu_01CwjP2th6bKKQ58af4JdDHE","toolName":"vendo_host_get_weather","dynamic":true}
+
+data: {"type":"tool-input-delta","toolCallId":"toolu_01CwjP2th6bKKQ58af4JdDHE","inputTextDelta":"{\"city\": \"Tokyo"}
+
+data: {"type":"tool-input-delta","toolCallId":"toolu_01CwjP2th6bKKQ58af4JdDHE","inputTextDelta":"\"}"}
+
+data: {"type":"tool-input-available","toolCallId":"toolu_01CwjP2th6bKKQ58af4JdDHE","toolName":"vendo_host_get_weather","input":{"city":"Tokyo"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}},"dynamic":true}
+
+data: {"type":"tool-output-available","toolCallId":"toolu_01CwjP2th6bKKQ58af4JdDHE","output":{"city":"Tokyo","temperature":36,"conditions":"cloudy"},"dynamic":true}
+
+data: {"type":"finish-step"}
+
+data: {"type":"start-step"}
+
+data: {"type":"text-start","id":"0"}
+
+data: {"type":"text-delta","id":"0","delta":"Got"}
+
+data: {"type":"text-delta","id":"0","delta":" the data! Now I'll create the dashboard app with all three cities'"}
+
+data: {"type":"text-delta","id":"0","delta":" weather."}
+
+data: {"type":"text-end","id":"0"}
+
+data: {"type":"tool-input-start","toolCallId":"toolu_014Ysdv9NkGSHZc35BL4JorA","toolName":"vendo_create_app","dynamic":true}
+
+data: {"type":"tool-input-delta","toolCallId":"toolu_014Ysdv9NkGSHZc35BL4JorA","inputTextDelta":"{\"prompt\": \"Create a weather comparison dashboard for three cities using"}
+
+data: {"type":"tool-input-delta","toolCallId":"toolu_014Ysdv9NkGSHZc35BL4JorA","inputTextDelta":" the following current weather data:\\n\\n- Paris: 52°F, Cloudy\\n- London: 47"}
+
+data: {"type":"tool-input-delta","toolCallId":"toolu_014Ysdv9NkGSHZc35BL4JorA","inputTextDelta":"°F, Rainy\\n- Tokyo: 36°F, Cloudy\\n\\nThe dashboard should:\\n- Display a card"}
+
+data: {"type":"tool-input-delta","toolCallId":"toolu_014Ysdv9NkGSHZc35BL4JorA","inputTextDelta":" for each city with its name, temperature (in both °"}
+
+data: {"type":"tool-input-delta","toolCallId":"toolu_014Ysdv9NkGSHZc35BL4JorA","inputTextDelta":"F and °C), and weather conditions\\n- Use appropriate weather icons or emojis (e"}
+
+data: {"type":"tool-input-delta","toolCallId":"toolu_014Ysdv9NkGSHZc35BL4JorA","inputTextDelta":".g. ☁️ for cloudy, 🌧️ for rainy)\\n- Include a bar chart or"}
+
+data: {"type":"tool-input-delta","toolCallId":"toolu_014Ysdv9NkGSHZc35BL4JorA","inputTextDelta":" visual comparison of the three temperatures\\n- Highlight the warm"}
+
+data: {"type":"tool-input-delta","toolCallId":"toolu_014Ysdv9NkGSHZc35BL4JorA","inputTextDelta":"est and coldest cities\\n- Use a clean, modern design with a pleasing color scheme"}
+
+data: {"type":"tool-input-delta","toolCallId":"toolu_014Ysdv9NkGSHZc35BL4JorA","inputTextDelta":"\"}"}
+
+data: {"type":"tool-input-available","toolCallId":"toolu_014Ysdv9NkGSHZc35BL4JorA","toolName":"vendo_create_app","input":{"prompt":"Create a weather comparison dashboard for three cities using the following current weather data:\n\n- Paris: 52°F, Cloudy\n- London: 47°F, Rainy\n- Tokyo: 36°F, Cloudy\n\nThe dashboard should:\n- Display a card for each city with its name, temperature (in both °F and °C), and weather conditions\n- Use appropriate weather icons or emojis (e.g. ☁️ for cloudy, 🌧️ for rainy)\n- Include a bar chart or visual comparison of the three temperatures\n- Highlight the warmest and coldest cities\n- Use a clean, modern design with a pleasing color scheme"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}},"dynamic":true}
+
+data: {"type":"tool-output-available","toolCallId":"toolu_014Ysdv9NkGSHZc35BL4JorA","output":{"kind":"vendo/app-ref@1","appId":"app_79a13a9d-5a48-4a3d-a8cf-c19e8e24bbdc","title":"Create a weather comparison dashboard for three cities using the following curr…"},"dynamic":true}
+
+data: {"type":"finish-step"}
+
+data: {"type":"start-step"}
+
+data: {"type":"text-start","id":"0"}
+
+data: {"type":"text-delta","id":"0","delta":"Here"}
+
+data: {"type":"text-delta","id":"0","delta":"'s your weather comparison dashboard! 🌍 Here's a quick summary of what's"}
+
+data: {"type":"text-delta","id":"0","delta":" inside based on the live data:\n\n| City | Temp (°F) | Temp (°C) |"}
+
+data: {"type":"text-delta","id":"0","delta":" Conditions |\n|--------|-----------|-----------|------------|\n| 🗼 Paris | 52°F | 11°C | "}
+
+data: {"type":"text-delta","id":"0","delta":"☁️ Cloudy |\n| 🎡 London | 47°F | 8°C | 🌧️ Rainy |\n| 🗾"}
+
+data: {"type":"text-delta","id":"0","delta":" Tokyo | 36°F | 2°C | ☁️ Cloudy |\n\nThe dashboard includes:\n- **City cards** with temperatures"}
+
+data: {"type":"text-delta","id":"0","delta":" in both °F and °C and condition icons\n- **A temperature bar"}
+
+data: {"type":"text-delta","id":"0","delta":" chart** for a quick visual comparison\n- **Highlights** for the warmest city (Paris 🏆"}
+
+data: {"type":"text-delta","id":"0","delta":") and coldest city (Tokyo 🥶)\n\nLet me know if you'd like any changes to the layout, colors, or data!"}
+
+data: {"type":"text-end","id":"0"}
+
+data: {"type":"finish-step"}
+
+data: {"type":"finish","finishReason":"stop"}
+
+data: [DONE]
+

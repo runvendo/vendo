@@ -35,7 +35,7 @@ import {
 } from "../formats.js";
 import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
 import { error, isArgsObject } from "./outcome.js";
-import { searchToolDescriptors, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
+import { searchToolDescriptors, tokenize, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
 
 export interface ActionsRegistry extends ToolRegistry {
   add(tools: ToolRegistry): void;
@@ -47,6 +47,13 @@ export interface ActionsRegistry extends ToolRegistry {
    * descriptor set), so a hit is always a loadable, guard-bound tool.
    */
   search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]>;
+  /** Fetch + register the named lazy toolkits' tools (idempotent, global —
+   * descriptors are the same for every principal; per-USER scoping lives in
+   * the agent's loadout, spec 2026-07-20). */
+  expandToolkits(toolkits: string[]): Promise<void>;
+  /** The per-turn initial loadout: host/eager tools first, then the given
+   * (connected) toolkits' tools — never an alphabetical slice of the catalog. */
+  loadoutSeed(connectedToolkits: string[]): Promise<string[]>;
 }
 
 /** CORE-2 (wave 5): `grant` and `mcpConsent` are first-class optional fields
@@ -315,7 +322,7 @@ function setHeader(headers: Record<string, string>, name: string, value: string)
  * design cross-cutting audit enrichment — the same mechanism as
  * `connectorAccount`). "declined" IS the away re-verification outcome: the
  * host refusing to mint fails the run closed; there is no second seam. */
-export type ActAsDisposition = "minted" | "declined" | "mismatch" | "error";
+type ActAsDisposition = "minted" | "declined" | "mismatch" | "error";
 
 function withActAs(outcome: ToolOutcome, actAs: ActAsDisposition): ToolOutcome {
   return { ...outcome, actAs } as unknown as ToolOutcome;
@@ -693,8 +700,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
   const connectors = config.connectors ?? [];
   const added: ToolRegistry[] = [];
   let hostPromise: Promise<LoadedHost> | undefined;
-  const connectorPromises = new Map<Connector, Promise<ToolDescriptor[]>>();
-  const registryPromises = new Map<ToolRegistry, Promise<ToolDescriptor[]>>();
+  const descriptorPromises = new Map<Connector | ToolRegistry, Promise<ToolDescriptor[]>>();
   let loadedPromise: Promise<LoadedRegistry> | undefined;
 
   function parseCapabilities(value: unknown, source: string): CapabilitiesFile {
@@ -738,44 +744,31 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
     return hostPromise;
   }
 
-  function connectorDescriptors(connector: Connector): Promise<ToolDescriptor[]> {
-    let promise = connectorPromises.get(connector);
+  function cachedDescriptors(source: Connector | ToolRegistry): Promise<ToolDescriptor[]> {
+    let promise = descriptorPromises.get(source);
     if (!promise) {
-      promise = connector.descriptors();
-      connectorPromises.set(connector, promise);
+      promise = source.descriptors();
+      descriptorPromises.set(source, promise);
     }
-    return promise!;
-  }
-
-  function addedDescriptors(registry: ToolRegistry): Promise<ToolDescriptor[]> {
-    let promise = registryPromises.get(registry);
-    if (!promise) {
-      promise = registry.descriptors();
-      registryPromises.set(registry, promise);
-    }
-    return promise!;
+    return promise;
   }
 
   function load(): Promise<LoadedRegistry> {
     loadedPromise ??= (async () => {
       const host = await loadHost();
-      const connectorLists = await Promise.all(connectors.map((connector) => connectorDescriptors(connector)));
-      const registryLists = await Promise.all(added.map((registry) => addedDescriptors(registry)));
-      const dispatch = new Map<string, Dispatch>();
+      const connectorLists = await Promise.all(connectors.map((connector) => cachedDescriptors(connector)));
+      const registryLists = await Promise.all(added.map((registry) => cachedDescriptors(registry)));
+      const reserved = new Map<string, Dispatch | undefined>();
       const descriptors: ToolDescriptor[] = [];
       // The primitive table compound steps validate against: post-override host +
       // connector tools ONLY — never compounds, never `add()`-registry tools.
       const primitives = new Map<string, PrimitiveStepTarget>();
 
       function register(name: string, source: string, entry?: Dispatch): void {
-        if (dispatch.has(name)) throw new VendoError("conflict", `Duplicate tool name ${name} from ${source}`);
-        if (entry) {
-          dispatch.set(name, entry);
-          descriptors.push(entry.descriptor);
-        } else {
-          // Disabled tools still reserve their name so ambiguous overrides cannot hide collisions.
-          dispatch.set(name, undefined as unknown as Dispatch);
-        }
+        if (reserved.has(name)) throw new VendoError("conflict", `Duplicate tool name ${name} from ${source}`);
+        // Disabled tools still reserve their name so ambiguous overrides cannot hide collisions.
+        reserved.set(name, entry);
+        if (entry) descriptors.push(entry.descriptor);
       }
 
       for (const extracted of host.tools) {
@@ -840,11 +833,42 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
         register(compound.name, "capabilities", { kind: "compound", descriptor: descriptorOf(compound), tool: compound });
       }
 
-      // Strip disabled reservations from runtime dispatch after all collision checks.
-      for (const [name, entry] of dispatch) if (!entry) dispatch.delete(name);
+      // Runtime dispatch keeps only enabled entries once all collision checks ran.
+      const dispatch = new Map<string, Dispatch>();
+      for (const [name, entry] of reserved) if (entry) dispatch.set(name, entry);
       return { descriptors, dispatch };
     })();
     return loadedPromise;
+  }
+
+  /** Search may expand at most this many toolkits per query — bounds fan-out
+   * when a broad intent matches many index blurbs. */
+  const MAX_SEARCH_EXPANSIONS = 3;
+  let indexPromise: Promise<Array<{ toolkit: string; label?: string; description?: string }>> | undefined;
+
+  function discoveryEntries() {
+    indexPromise ??= (async () => {
+      const lists = await Promise.all(connectors.map((connector) => connector.discoveryIndex?.() ?? Promise.resolve([])));
+      return lists.flat();
+    })();
+    return indexPromise;
+  }
+
+  /** Expand named toolkits on every lazy connector; on any growth, bust that
+   * connector's descriptor memo and the load memo (the same invalidation
+   * add() performs) so the next read sees the new tools. */
+  async function expand(toolkits: string[]): Promise<boolean> {
+    if (toolkits.length === 0) return false;
+    let changed = false;
+    for (const connector of connectors) {
+      if (connector.expandToolkits === undefined) continue;
+      if (await connector.expandToolkits(toolkits)) {
+        descriptorPromises.delete(connector);
+        changed = true;
+      }
+    }
+    if (changed) loadedPromise = undefined;
+    return changed;
   }
 
   const compoundExecutor = createCompoundExecutor({
@@ -869,10 +893,66 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       return (await loadHost()).capabilities?.briefs ?? [];
     },
 
+    async expandToolkits(toolkits: string[]): Promise<void> {
+      await expand(toolkits);
+    },
+
+    async loadoutSeed(connectedToolkits: string[]): Promise<string[]> {
+      await expand(connectedToolkits);
+      const { descriptors: all, dispatch } = await load();
+      const eager: string[] = [];
+      const connected: string[] = [];
+      for (const descriptor of all) {
+        const entry = dispatch.get(descriptor.name);
+        if (!entry) continue;
+        const isLazyConnectorTool = entry.kind === "connector" && entry.connector.expandToolkits !== undefined;
+        if (!isLazyConnectorTool) {
+          eager.push(descriptor.name);
+          continue;
+        }
+        if (connectedToolkits.some((toolkit) => descriptor.name.startsWith(`${toolkit}_`))) connected.push(descriptor.name);
+      }
+      return [...eager, ...connected];
+    },
+
     async search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]> {
+      // Rank the discovery index FIRST (toolkit-level pseudo-descriptors for
+      // lazily-loaded connectors) and expand the top matches, so an unloaded
+      // toolkit's tools are findable by intent ("send email" → gmail).
+      const index = await discoveryEntries();
+      const expandedNames = new Set<string>();
+      if (index.length > 0) {
+        // Whole-word overlap scoring: the tool scorer's substring matching
+        // lets stopwords ("an" ⊂ "channels") expand unrelated toolkits, so the
+        // index ranks on exact word tokens only, ignoring 1–2 char tokens.
+        const queryTokens = tokenize(query).filter((token) => token.length >= 3);
+        const scored = index
+          .map((entry) => {
+            const words = new Set(tokenize(`${entry.label ?? ""} ${entry.description ?? ""}`));
+            let score = 0;
+            for (const token of queryTokens) {
+              if (token === entry.toolkit.toLowerCase()) score += 8;
+              else if (words.has(token)) score += 2;
+            }
+            return { toolkit: entry.toolkit, score };
+          })
+          .filter((hit) => hit.score > 0)
+          .sort((a, b) => (b.score - a.score) || (a.toolkit < b.toolkit ? -1 : 1))
+          .slice(0, MAX_SEARCH_EXPANSIONS);
+        await expand(scored.map((hit) => hit.toolkit));
+        for (const hit of scored) expandedNames.add(hit.toolkit);
+      }
       // load().descriptors is the post-override, enabled-only surface — disabled
       // tools never reach it, so they can never be returned as loadable.
-      return searchToolDescriptors((await load()).descriptors, query, options);
+      const matches = searchToolDescriptors((await load()).descriptors, query, options);
+      if (expandedNames.size === 0) return matches;
+      return matches.map((match) => {
+        const toolkit = [...expandedNames].find((name) => match.name.startsWith(`${name}_`));
+        return toolkit === undefined ? match : {
+          ...match,
+          description: `${match.description} (part of the ${toolkit} toolkit — if the user hasn't connected ${toolkit}, calling this will prompt them to connect)`,
+        };
+      });
     },
 
     async execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {

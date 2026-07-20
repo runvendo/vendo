@@ -169,7 +169,7 @@ interface LoadedSdk {
 
 /**
  * The Claude Agent SDK deliberately exists NOWHERE in the workspace: the
- * dev-riders doctrine (and its missing-install test) is that the SDK resolves
+ * host-only resolution doctrine is that the SDK resolves
  * from a HOST app only — and pnpm's hidden hoist plus NODE_PATH would make a
  * workspace copy resolvable from anywhere under test runners. The matrix
  * therefore provisions its own pinned copy into a gitignored cache under

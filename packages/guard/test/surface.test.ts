@@ -1,7 +1,8 @@
 import { VENDO_POLICY_FORMAT, VendoError } from "@vendoai/core";
 import type { Guard, ToolRegistry } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { createGuard, policyFileSchema, policyRuleSchema } from "../src/index.js";
+import { createGuard } from "../src/index.js";
+import { policyFileSchema, policyRuleSchema } from "../src/types.js";
 import { createMemoryStore } from "./fixtures/memory-store.js";
 import { alice, call, context, descriptor, FixtureTools, seedGrant } from "./fixtures/tools.js";
 

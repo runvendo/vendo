@@ -1,8 +1,7 @@
 /** @vendoai/automations — apps that run on triggers while the user is away
  * (docs/contracts/07-automations.md).
  *
- * The package root exports exactly the 07 §1 public API plus the zod schemas
- * the conventions require for every persisted shape (00-overview conventions).
+ * The package root exports exactly the 07 §1 public API.
  * Depends on core + apps only (the one chain); agentic runs go through the
  * core `AgentRunner` seam — this package never imports the agent.
  */
@@ -23,7 +22,6 @@ import type {
   TriggerSource,
 } from "@vendoai/core";
 import type { AppsRuntime } from "@vendoai/apps";
-import { z } from "zod";
 import { createAutomationsEngine } from "./engine.js";
 
 /** 07 §1 — createAutomations config. */
@@ -102,36 +100,6 @@ export interface AutomationsEngine {
   /** Preview: what would run, nothing executes. */
   dryRun(appId: AppId, ctx: RunContext, event?: Json): Promise<RunPlan>;
 }
-
-export const runStatusSchema = z.enum(["running", "ok", "error", "stopped", "pending-approval"]);
-
-export const runRecordSchema = z.object({
-  id: z.string(),
-  appId: z.string(),
-  trigger: z.object({
-    kind: z.enum(["schedule", "host-event", "external"]),
-    event: z.string().optional(),
-  }),
-  status: runStatusSchema,
-  startedAt: z.string(),
-  finishedAt: z.string().optional(),
-  steps: z.array(
-    z.object({
-      id: z.string(),
-      tool: z.string(),
-      outcome: z.enum(["ok", "error", "pending-approval", "blocked", "connect-required"]),
-      at: z.string(),
-      detail: z.string().optional(),
-    }),
-  ),
-  summary: z.string().optional(),
-  error: z.object({ code: z.string(), message: z.string() }).optional(),
-});
-
-export const runPlanSchema = z.object({
-  steps: z.array(z.object({ id: z.string(), tool: z.string(), wouldAsk: z.boolean() })),
-  grantsMissing: z.array(z.string()),
-});
 
 /** 07 §1 — the engine. */
 export function createAutomations(config: AutomationsConfig): AutomationsEngine {

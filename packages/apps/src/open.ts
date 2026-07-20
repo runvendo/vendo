@@ -118,9 +118,8 @@ export const createProgressiveQueryResolver = (
     const data = structuredClone(baseData);
     for (const state of states) {
       if (!state.settled || state.result === undefined) continue;
-      const { outcome, uiEnvelope } = state.result;
-      if (outcome.status !== "ok" || uiEnvelope) continue;
-      setQueryData(data, queryPointer(state.query), outcome.output);
+      if (state.result.status !== "ok") continue;
+      setQueryData(data, queryPointer(state.query), state.result.output);
     }
     resolvedData = data;
     if (notify) onData?.(structuredClone(data));
@@ -172,9 +171,10 @@ export const createProgressiveQueryResolver = (
  * SERVER-AUTHORITATIVE. The stored tree is model-written or imported from an
  * untrusted `.vendoapp`, so a forged `inClient` or `pinDrift` riding the
  * document must never reach the client: strip both before the verified
- * verdict and the computed drift (when any) are attached.
+ * verdict and the computed drift (when any) are attached — and strip at
+ * persist time too (the runtime shares this helper), streamed or at rest.
  */
-const stripForgedServerFields = <T extends object>(payload: T): T => {
+export const stripServerAuthoritativeFields = <T extends object>(payload: T): T => {
   delete (payload as { inClient?: unknown }).inClient;
   delete (payload as { pinDrift?: unknown }).pinDrift;
   return payload;
@@ -202,17 +202,50 @@ const attachPinFurnishings = (
   }
 };
 
+/**
+ * execution-v2 Wave 4 — the layer-3 served surface seam the runtime injects:
+ * `enabled` mirrors the host's experimental flag, and `urlFor` wakes the app's
+ * machine (wake-on-open) and resolves its public ingress URL for $PORT.
+ */
+export interface ServedSurface {
+  enabled: boolean;
+  urlFor(app: AppDocument): Promise<string>;
+}
+
+/** Wave 4 — the one refusal for every layer-3 path while the flag is off. */
+export const servedAppsDisabledError = (): VendoError => new VendoError(
+  "not-implemented",
+  "served (layer-3) app surfaces are experimental and disabled for this project — enable them with createVendo({ apps: { experimentalServedApps: true } }) (AppsConfig.experimentalServedApps) to let a machine serve the app surface",
+  { experiment: "servedApps", flag: "experimentalServedApps" },
+);
+
 /** 06-apps §§1–2 — construct the open surface. */
 export const createAppOpener = (
   caller: AppCaller,
   pinBaselines: readonly PinBaseline[] = [],
   inClientVenue?: (app: AppDocument) => Promise<InClientVenueState | undefined>,
+  served?: ServedSurface,
 ): ((app: AppDocument, ctx: RunContext) => Promise<OpenSurface>) => async (app, ctx) => {
   if (app.ui === "http") {
-    // execution-v2 — the v1 rung-4 served surface is deleted; the layer-3
-    // "machine serves the app" surface (experimental, host-gated) arrives in a
-    // later wave over the machine lifecycle.
-    throw new VendoError("not-implemented", "served (http) app surfaces return with execution-v2 layer 3");
+    // execution-v2 Wave 4 — the layer-3 served surface, host-gated behind the
+    // experimental flag: opening a served app while the flag is off refuses
+    // with the SAME typed error as generation (a served app that exists from
+    // elsewhere is refused too, not just new builds).
+    if (served === undefined || !served.enabled) {
+      throw servedAppsDisabledError();
+    }
+    // A served document without a machine has NO surface anywhere (a v1-era
+    // import or a de-graduated doc): say so instead of a confusing wake error.
+    if (app.machine === undefined) {
+      throw new VendoError(
+        "validation",
+        "this served app has no machine — its surface is gone; re-graduate it with an edit or re-create the app",
+      );
+    }
+    // Wake-on-open: a sleeping machine resumes here (the accepted wake
+    // latency; the host shows its ordinary loading state — no v1 cover or
+    // screenshot machinery).
+    return { kind: "http", url: await served.urlFor(app) };
   }
 
   if (app.tree === undefined) {
@@ -224,7 +257,7 @@ export const createAppOpener = (
   if (app.tree.formatVersion === VENDO_TREE_FORMAT_V2) {
     const validation = validateTreeV2(app.tree);
     if (!validation.ok) throw new VendoError("validation", validation.error.message);
-    const tree = stripForgedServerFields(structuredClone(validation.tree));
+    const tree = stripServerAuthoritativeFields(structuredClone(validation.tree));
     const inClient = await inClientVenue?.(app);
     if (inClient !== undefined) {
       (tree as TreeV2 & { inClient: InClientVenueState }).inClient = inClient;
@@ -240,6 +273,9 @@ export const createAppOpener = (
     const payload = {
       ...tree,
       ...(app.components === undefined ? {} : { components: structuredClone(app.components) }),
+      // W4b — the stamped per-island tool manifests ride the payload beside
+      // the sources; the renderer exposes ONLY these tools to each island.
+      ...(app.componentTools === undefined ? {} : { componentTools: structuredClone(app.componentTools) }),
     } as unknown as UIPayload;
     return app.components === undefined
       ? { kind: "tree", payload }
@@ -248,7 +284,7 @@ export const createAppOpener = (
   // 01-core §8 — an unregistered format tag is a contained failure: the payload
   // passes through untouched (no query resolution) and the renderer shows the
   // notice. v2 is the only registered tree format (v1 is discarded).
-  const payload = stripForgedServerFields(structuredClone(app.tree));
+  const payload = stripServerAuthoritativeFields(structuredClone(app.tree));
   return app.components === undefined
     ? { kind: "tree", payload }
     : { kind: "tree", payload, components: structuredClone(app.components) };

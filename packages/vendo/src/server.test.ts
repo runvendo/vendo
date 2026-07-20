@@ -19,7 +19,10 @@ import { createStore, secretStore, storeSecrets, type VendoStore } from "@vendoa
 import { createHmac, randomBytes } from "node:crypto";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { authJs, createVendo, nextVendoHandler, wellKnownVendoHandler, type CreateVendoConfig, type Vendo } from "./server.js";
+// authJs now ships on its own subpath (@vendoai/vendo/auth/auth-js), not
+// "./server.js" — corpus-triage Task 9.
+import { authJs } from "./auth-presets/auth-js.js";
+import { createVendo, nextVendoHandler, wellKnownVendoHandler, type CreateVendoConfig, type Vendo } from "./server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -387,8 +390,7 @@ describe("09 §3 public wire", () => {
     // execution-v2 Wave 1.5 — the v1 fork path (resume → snapshot → stop
     // through config.sandbox) is deleted: a fork carries no machine and no
     // retired v1 server ref, so even with the Cloud sandbox selected the
-    // console sees no traffic. (cloudSandbox itself is Wave-5-ported; until
-    // then it fills no runtime slot.)
+    // console sees no traffic.
     vi.stubEnv("E2B_API_KEY", "");
     vi.stubEnv("MODAL_TOKEN_ID", "");
     vi.stubEnv("MODAL_TOKEN_SECRET", "");
@@ -405,7 +407,7 @@ describe("09 §3 public wire", () => {
       });
       const url = new URL(sent.url);
       if (url.pathname === "/api/v1/sandboxes/resume") {
-        return Response.json({ id: machineId, url: `https://${machineId}.m.vendo.run` });
+        return Response.json({ id: machineId, url: `https://m-${machineId}.vendo.run` });
       }
       if (url.pathname.endsWith("/snapshot")) {
         return Response.json({ ref: `vendo:snap_${"b".repeat(40)}` });
@@ -460,6 +462,7 @@ describe("09 §3 public wire", () => {
         initiate: async () => ({ id: "ca_x", redirectUrl: "https://connect.test/x" }),
         status: async () => null,
         disconnect: async () => {},
+        listConnectable: async () => [{ toolkit: "gmail" }, { toolkit: "slack" }],
       },
     };
 
@@ -471,11 +474,24 @@ describe("09 §3 public wire", () => {
       initiate: async () => { throw new Error("unused"); },
       status: async () => null,
       disconnect: async () => {},
+      catalog: async () => [],
     };
     expect((await compose({ connections: explicit, connectors: [broker] })).connections).toBe(explicit);
 
     // A BYO connector's connections capability beats the key.
-    expect((await compose({ connectors: [broker] })).connections.posture).toBe("byo");
+    const byo = await compose({ connectors: [broker] });
+    expect(byo.connections.posture).toBe("byo");
+
+    // The catalog endpoint serves the broker's connectable toolkits; the
+    // route must not be swallowed by /connections/:id.
+    const catalogResponse = await byo.handler(request("GET", "/connections/catalog"));
+    expect(catalogResponse.status).toBe(200);
+    expect(await catalogResponse.json()).toEqual({
+      available: [
+        { toolkit: "gmail", connector: "composio" },
+        { toolkit: "slack", connector: "composio" },
+      ],
+    });
 
     // The key alone defaults the Cloud adapter for the unfilled seam.
     expect((await compose({})).connections.posture).toBe("cloud");
@@ -483,6 +499,127 @@ describe("09 §3 public wire", () => {
     // Neither → the unconfigured fallback.
     vi.stubEnv("VENDO_API_KEY", "");
     expect((await compose({})).connections.posture).toBe(false);
+  });
+
+  it("selects the connectors seam: VENDO_API_KEY defaults the Cloud tools connector for an unset slot", async () => {
+    // A stub console serving the tools broker wire, so the composed cloud
+    // connector resolves real descriptors without leaving the test.
+    const { createServer } = await import("node:http");
+    const stub = createServer((req, res) => {
+      const url = new URL(req.url ?? "/", "http://stub");
+      res.setHeader("content-type", "application/json");
+      if (url.pathname === "/api/v1/connections/catalog") {
+        res.end(JSON.stringify({ available: [
+          { toolkit: "gmail", connector: "composio", description: "Send and read email with Gmail" },
+          { toolkit: "slack", connector: "composio", description: "Post messages to Slack channels" },
+        ] }));
+        return;
+      }
+      if (url.pathname === "/api/v1/connections") {
+        // gmail is ACTIVE for the composed principal; nothing else.
+        res.end(JSON.stringify({ connections: [
+          { id: "ca_1", connector: "composio", toolkit: "gmail", status: "active" },
+        ] }));
+        return;
+      }
+      if (url.pathname === "/api/v1/tools") {
+        const toolkit = url.searchParams.get("toolkits") ?? "gmail";
+        const raw = `${toolkit.toUpperCase()}_SEND_THING`;
+        res.end(JSON.stringify({ tools: [{
+          slug: toolkit === "gmail" ? "GMAIL_SEND_EMAIL" : raw,
+          toolkit,
+          description: toolkit === "gmail" ? "Send email" : `use ${toolkit}`,
+          inputParameters: { type: "object" },
+          tags: [],
+        }] }));
+        return;
+      }
+      res.statusCode = 404;
+      res.end("{}");
+    });
+    await new Promise<void>((resolve) => stub.listen(0, "127.0.0.1", resolve));
+    const port = (stub.address() as { port: number }).port;
+    cleanups.push(async () => {
+      stub.close();
+      stub.closeAllConnections();
+    });
+    vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
+    vi.stubEnv("VENDO_CLOUD_URL", `http://127.0.0.1:${port}`);
+
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-connectors-seam-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    // Settled through /status like the other precedence tests, so teardown
+    // never races an in-flight migration.
+    const compose = async (config: Partial<CreateVendoConfig>): Promise<Vendo> => {
+      const vendo = createVendo({
+        model: {} as LanguageModel,
+        principal: vi.fn(async () => principal),
+        store,
+        ...config,
+      });
+      await vendo.handler(request("GET", "/status"));
+      return vendo;
+    };
+
+    // Unset slot + key → the Cloud tools connector composes LAZILY: nothing
+    // eager at boot; expansion pulls exactly the asked-for toolkit through
+    // the console broker with BYO-identical names.
+    const auto = await compose({});
+    const bootNames = (await auto.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(bootNames.some((name) => name.startsWith("gmail_") || name.startsWith("slack_"))).toBe(false);
+    await auto.actions.expandToolkits(["gmail"]);
+    const expanded = (await auto.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(expanded).toContain("gmail_GMAIL_SEND_EMAIL");
+
+    // The loadout seed: connected toolkits' tools in, unconnected out.
+    const seed = await auto.actions.loadoutSeed(["gmail"]);
+    expect(seed).toContain("gmail_GMAIL_SEND_EMAIL");
+    expect(seed.some((name) => name.startsWith("slack_"))).toBe(false);
+
+    // Search discovers the UNCONNECTED toolkit by intent and annotates it.
+    const matches = await auto.actions.search("post a message to slack channels");
+    const slack = matches.find((match) => match.name.startsWith("slack_"));
+    expect(slack).toBeDefined();
+    expect(slack!.description).toMatch(/connect/i);
+
+    // An explicit connectors array — even empty — always wins over the key.
+    const explicit = await compose({ connectors: [] });
+    const explicitNames = (await explicit.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(explicitNames).not.toContain("gmail_GMAIL_SEND_EMAIL");
+  });
+
+  it("wires the Cloud share/publish client into the apps seam from VENDO_API_KEY (adapter rule)", async () => {
+    vi.stubEnv("VENDO_API_KEY", "vnd_apps_key");
+    vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-apps.test");
+    const calls: Array<{ url: string; authorization: string | null }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const sent = new Request(input, init);
+      calls.push({ url: sent.url, authorization: sent.headers.get("authorization") });
+      return Response.json({ id: "share_1", doc: app("app_share"), createdAt: new Date().toISOString() });
+    }));
+    const store = await tempStore("vendo-apps-cloud-");
+    await store.ensureSchema();
+    await store.records("vendo_apps").put({
+      id: "app_share",
+      data: { subject: principal.subject, enabled: true, doc: app("app_share") },
+      refs: { subject: principal.subject },
+    });
+    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+
+    const snapshot = await vendo.apps.share("app_share", ctx);
+    expect(snapshot.id).toBe("share_1");
+    expect(calls[0]).toMatchObject({
+      url: "https://cloud-apps.test/api/v1/apps/share",
+      authorization: "Bearer vnd_apps_key",
+    });
+
+    // No key → the seam stays unfilled and refuses honestly, without a fetch.
+    vi.stubEnv("VENDO_API_KEY", "");
+    const bare = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    const sent = calls.length;
+    await expect(bare.apps.share("app_share", ctx)).rejects.toMatchObject({ code: "cloud-required" });
+    expect(calls).toHaveLength(sent);
   });
 
   it("selects the inference adapter with the adapter-rule precedence", async () => {
@@ -529,6 +666,11 @@ describe("09 §3 public wire", () => {
     const compose = (config: Partial<CreateVendoConfig>): Vendo => createVendo({
       model: {} as LanguageModel,
       principal: vi.fn(async () => principal),
+      // The store seam under test must stay isolated from the connectors
+      // seam: with the key stubbed, an unset connectors slot would compose
+      // the Cloud tools connector, whose /status-triggered descriptor fetch
+      // would land in consoleCalls.
+      connectors: [],
       ...config,
     });
 
@@ -593,6 +735,25 @@ describe("09 §3 public wire", () => {
     expect(blocked.status).toBe(403);
     expect(await blocked.json()).toEqual({
       error: { code: "blocked", message: "sync impact is only available on a dev server" },
+    });
+  });
+
+  it("serves sync semantics inference on dev servers and blocks it in production", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const { vendo } = await setup();
+
+    // No extracted host tools in this composition → an empty inference map;
+    // the shape of the seam (and its dev-only gate) is what this pins. The
+    // inference itself is unit-tested in core (inferToolSemantics).
+    const response = await vendo.handler(request("POST", "/sync/semantics", {}));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ tools: {} });
+
+    vi.stubEnv("NODE_ENV", "production");
+    const blocked = await vendo.handler(request("POST", "/sync/semantics", {}));
+    expect(blocked.status).toBe(403);
+    expect(await blocked.json()).toEqual({
+      error: { code: "blocked", message: "sync semantics is only available on a dev server" },
     });
   });
 
@@ -1575,6 +1736,65 @@ describe("09 §3 conversational turn against the real composed store", () => {
   });
 });
 
+describe("ENG-252 agent.loadout through createVendo", () => {
+  it("forwards agent.loadout to the tool-search seam: only curated host tools are offered", async () => {
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+    const toolNamesPerCall: string[][] = [];
+    const model = new MockLanguageModelV3({
+      doStream: async (request) => {
+        toolNamesPerCall.push(((request as { tools?: Array<{ name: string }> }).tools ?? []).map((tool) => tool.name));
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "t1" },
+              { type: "text-delta", id: "t1", delta: "Done." },
+              { type: "text-end", id: "t1" },
+              {
+                type: "finish",
+                usage: {
+                  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+                  outputTokens: { total: 0, text: 0, reasoning: 0 },
+                },
+                finishReason: { unified: "stop", raw: undefined },
+              },
+            ],
+          }),
+        };
+      },
+    });
+    const connector: Connector = {
+      name: "host",
+      descriptors: async () => [
+        { name: "host_alpha", description: "Alpha", inputSchema: { type: "object" }, risk: "read" },
+        { name: "host_beta", description: "Beta", inputSchema: { type: "object" }, risk: "read" },
+      ],
+      execute: async () => ({ status: "ok", output: {} }),
+    };
+    const store = await tempStore("vendo-loadout-");
+    const vendo = createVendo({
+      model: model as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+      connectors: [connector],
+      agent: { loadout: ["host_beta"] },
+    });
+
+    const turn = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_loadout",
+      message: { id: "m1", role: "user", parts: [{ type: "text", text: "hello" }] },
+    }));
+    expect(turn.status).toBe(200);
+    await turn.text();
+
+    // The curated loadout gates the host surface: only the named tool is
+    // offered; the rest stay discoverable via vendo_tools_search.
+    expect(toolNamesPerCall).toHaveLength(1);
+    expect(toolNamesPerCall[0]).toContain("host_beta");
+    expect(toolNamesPerCall[0]).not.toContain("host_alpha");
+    expect(toolNamesPerCall[0]).toContain("vendo_tools_search");
+  });
+});
+
 describe("09 §2 apps composition", () => {
   it("passes host-component catalog registrations to createApps", { timeout: 120_000 }, async () => {
     const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
@@ -1673,14 +1893,16 @@ describe("09 §2 apps composition", () => {
       entries: [{
         name: "DiskMetric",
         exportPath: "./src/disk-metric.tsx#DiskMetric",
-        propsSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"], additionalProperties: false },
+        // "level" (config-ish) — a number prop named "value" is data-classed since
+        // W3 law 1 and a literal there is a compile error by design.
+        propsSchema: { type: "object", properties: { level: { type: "number" } }, required: ["level"], additionalProperties: false },
         description: "Use for a metric loaded from the generated catalog.",
         source: "scanned",
       }],
     }));
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
-    const generated = '<App name="Disk catalog app"><DiskMetric value={42}/></App>';
+    const generated = '<App name="Disk catalog app"><DiskMetric level={42}/></App>';
     const model = new MockLanguageModelV3({
       doStream: async () => ({
         stream: simulateReadableStream({ chunks: [
@@ -1710,7 +1932,7 @@ describe("09 §2 apps composition", () => {
     await store.ensureSchema();
 
     await expect(vendo.apps.create({ prompt: "Show the disk metric" }, ctx)).resolves.toMatchObject({
-      tree: { nodes: [{ component: "Stack" }, { component: "DiskMetric", source: "host", props: { value: 42 } }] },
+      tree: { nodes: [{ component: "Stack" }, { component: "DiskMetric", source: "host", props: { level: 42 } }] },
     });
   });
 
@@ -1727,6 +1949,8 @@ describe("09 §2 apps composition", () => {
       entries: [{
         name: "DiskMetric",
         exportPath: "./src/disk-metric.tsx#DiskMetric",
+        // "value" stays: this test binds it (law 1 exempts bindings); the
+        // literal-violation arm below is doubly illegal (ajv + law 1).
         propsSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"], additionalProperties: false },
         description: "Use for a metric loaded from the generated catalog.",
         source: "scanned",
@@ -2260,5 +2484,35 @@ describe("ENG-353 — turn liveness: heartbeat-armed idle abort for disconnects 
     const reader = response.body!.getReader();
     while (!(await reader.read()).done) { /* drain */ }
     expect(await (await beat(vendo, "thr_done")).json()).toEqual({ active: false });
+  });
+});
+
+describe("execution-v2 — box-edit env knobs", () => {
+  it("rejects malformed VENDO_BOX_EDIT_TIMEOUT_MS/POLL_MS at compose time instead of passing NaN into the machine config", async () => {
+    // A units-suffixed operator value like "8m" would flow as NaN into
+    // runBoxEdit, where NaN defeats the ?? defaults: deadline = NaN makes
+    // every box edit "time out after NaNs" instantly (and roll the edit
+    // back), and pollIntervalMs = NaN hot-polls the box control port. Same
+    // posture as validateSessionsConfig: fail loudly at compose time.
+    const store = await tempStore("vendo-box-env-");
+    vi.stubEnv("VENDO_BOX_EDIT_TIMEOUT_MS", "8m");
+    let thrown: unknown;
+    try {
+      createVendo({ model: {} as LanguageModel, store });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(VendoError);
+    expect((thrown as VendoError).code).toBe("validation");
+    expect((thrown as VendoError).message).toContain("VENDO_BOX_EDIT_TIMEOUT_MS");
+
+    vi.stubEnv("VENDO_BOX_EDIT_TIMEOUT_MS", "480000");
+    vi.stubEnv("VENDO_BOX_EDIT_POLL_MS", "0");
+    expect(() => createVendo({ model: {} as LanguageModel, store }))
+      .toThrowError(/VENDO_BOX_EDIT_POLL_MS/);
+
+    // Valid positive-integer values still compose.
+    vi.stubEnv("VENDO_BOX_EDIT_POLL_MS", "2500");
+    expect(() => createVendo({ model: {} as LanguageModel, store })).not.toThrow();
   });
 });

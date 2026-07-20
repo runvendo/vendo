@@ -1,5 +1,6 @@
-import type { ApprovalRequest, Json } from "@vendoai/core";
-import { approvalTitle, humanize, type VoiceApprovalReceipt } from "./use-voice-approvals.js";
+import { isPlainObject as isRecord, type ApprovalRequest } from "@vendoai/core";
+import { humanizeToolName } from "../chrome/humanize.js";
+import { approvalTitle, type VoiceApprovalReceipt } from "./use-voice-approvals.js";
 
 export interface VoiceConsentProps {
   request?: ApprovalRequest;
@@ -108,7 +109,7 @@ function approvalFact(request: ApprovalRequest): string | undefined {
     for (const key of keys) {
       const value = args[key];
       if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-        return `${humanize(key)}: ${String(value)}`;
+        return `${humanizeToolName(key)}: ${String(value)}`;
       }
     }
   }
@@ -122,10 +123,6 @@ function approvalFact(request: ApprovalRequest): string | undefined {
 export function isAutomation(request: ApprovalRequest): boolean {
   return request.ctx.venue === "automation" || [request.descriptor.name, request.descriptor.description, request.call.tool]
     .some((value) => /automation|schedule|recurring/i.test(value));
-}
-
-function isRecord(value: Json): value is Record<string, Json> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function ShieldIcon() {

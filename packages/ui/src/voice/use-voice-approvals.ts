@@ -1,5 +1,6 @@
 import type { ApprovalRequest } from "@vendoai/core";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { humanizeToolName } from "../chrome/humanize.js";
 import type { VendoClient } from "../client.js";
 
 const POLL_MS = 1_200;
@@ -77,15 +78,6 @@ export function useVoiceApprovals(client: VendoClient, active: boolean) {
 
 export function approvalTitle(request: ApprovalRequest): string {
   const description = request.descriptor.description.trim();
-  return description || humanize(request.descriptor.name);
-}
-
-export function humanize(value: string): string {
-  const words = value
-    .replace(/^host[_:. -]?/i, "")
-    .replace(/^fn:/i, "")
-    .replace(/[._:-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return words ? words[0]!.toUpperCase() + words.slice(1) : "Requested action";
+  const pretty = humanizeToolName(request.descriptor.name);
+  return description || (pretty.trim() ? pretty : "Requested action");
 }

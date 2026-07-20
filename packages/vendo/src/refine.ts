@@ -226,7 +226,8 @@ async function loadInputs(root: string, options: RefineOptions): Promise<RefineI
     }
   }
   const maxMisses = options.maxMisses ?? DEFAULT_MAX_MISSES;
-  return { tools, overrides, capabilities, brief, misses: misses.slice(-maxMisses) };
+  // slice(-0) is slice(0) — the WHOLE feed — so a zero cap needs its own leg.
+  return { tools, overrides, capabilities, brief, misses: maxMisses <= 0 ? [] : misses.slice(-maxMisses) };
 }
 
 /** Post-override-merge primitive targets — the same view the registry loads,

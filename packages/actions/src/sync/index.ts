@@ -6,14 +6,14 @@ import {
   toolsFileSchema,
   type BreakingChange,
   type ExtractedTool,
-  type HttpMethod,
   type OverridesFile,
   type SyncReport,
   type ToolOverride,
   type ToolsFile,
   type UnresolvedPin,
 } from "../formats.js";
-import { bindingIdentity, clearAliasCache, routeToolFullName, withUniqueNames } from "./common.js";
+import { bindingIdentity, clearAliasCache, withUniqueNames, writeIfChanged } from "./common.js";
+import { withGeneratedDescriptions } from "./describe.js";
 import { scanComponentCatalog } from "./catalog-scan.js";
 import { writeCatalog } from "./catalog.js";
 import { runExtractors } from "./extractors.js";
@@ -23,16 +23,6 @@ export type SyncReportWithWarnings = SyncReport & {
   warnings: string[];
   unresolvedPins: UnresolvedPin[];
 };
-
-export function hostToolName(method: HttpMethod, routePath: string): string {
-  return withUniqueNames([{
-    name: routeToolFullName(method, routePath),
-    description: "",
-    inputSchema: {},
-    risk: "write",
-    binding: { kind: "route", method, path: routePath, argsIn: "body" },
-  }])[0]!.name;
-}
 
 function definedOverride(override: ToolOverride): ToolOverride {
   return Object.fromEntries(
@@ -113,6 +103,11 @@ function sameJson(left: unknown, right: unknown): boolean {
   return canonicalJson(left) === canonicalJson(right);
 }
 
+function typeNames(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : value === undefined ? [] : [value];
+  return values.filter((entry): entry is string => typeof entry === "string");
+}
+
 export function inputNarrowed(previous: ExtractedTool, next: ExtractedTool): boolean {
   const oldSchema = objectValue(previous.inputSchema);
   const newSchema = objectValue(next.inputSchema);
@@ -126,7 +121,15 @@ export function inputNarrowed(previous: ExtractedTool, next: ExtractedTool): boo
     if (!Object.prototype.hasOwnProperty.call(newProperties, name)) return true;
     const oldProperty = objectValue(oldRawProperty);
     const newProperty = objectValue(newProperties[name]);
-    if (!sameJson(oldProperty.type, newProperty.type)) return true;
+    // Type changes are narrowing only when the new type set drops an old type
+    // (mirrors the enum logic below: widenings are backward-compatible).
+    const oldTypes = typeNames(oldProperty.type);
+    const newTypes = typeNames(newProperty.type);
+    if (oldTypes.length === 0 && newTypes.length > 0) return true;
+    if (oldTypes.length > 0 && newTypes.length > 0) {
+      const newTypeSet = new Set(newTypes);
+      if (oldTypes.some((name) => !newTypeSet.has(name))) return true;
+    }
     const oldEnum = arrayValue(oldProperty.enum);
     const newEnum = arrayValue(newProperty.enum);
     if (oldEnum.length === 0 && newEnum.length > 0) return true;
@@ -176,16 +179,6 @@ function compareTools(previous: ExtractedTool[], next: ExtractedTool[]): Pick<Sy
   return { tools: { added, removed, changed }, breaking };
 }
 
-async function writeIfChanged(file: string, bytes: string): Promise<void> {
-  try {
-    if (await fs.readFile(file, "utf8") === bytes) return;
-  } catch {
-    // A missing artifact is created below.
-  }
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, bytes, "utf8");
-}
-
 export async function vendoSync(options: {
   root: string;
   out?: string;
@@ -203,7 +196,9 @@ export async function vendoSync(options: {
   warnings.push(...extraction.warnings);
   const extracted = toolsFileSchema.parse({
     format: "vendo/tools@1",
-    tools: unionExtracted(extraction.tools),
+    // W3 — empty descriptions get a deterministic "use this when…" line
+    // (reviewable here, overridable forever via overrides.json).
+    tools: withGeneratedDescriptions(unionExtracted(extraction.tools)),
   });
   if (overrides) {
     const extractedNames = new Set(extracted.tools.map((tool) => tool.name));

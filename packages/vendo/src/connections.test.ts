@@ -6,7 +6,11 @@ import { byoConnections, cloudConnections, unconfiguredConnections } from "./con
 const ada: Principal = { kind: "user", subject: "user_ada" };
 const anonymous: Principal = { kind: "user", subject: "anonymous_abc", ephemeral: true };
 
-function fakeConnector(name: string, accounts: Record<string, ConnectorAccount[]>): Connector {
+function fakeConnector(
+  name: string,
+  accounts: Record<string, ConnectorAccount[]>,
+  connectable?: string[],
+): Connector {
   return {
     name,
     descriptors: async () => [],
@@ -18,6 +22,9 @@ function fakeConnector(name: string, accounts: Record<string, ConnectorAccount[]
       disconnect: async (subject, id) => {
         if (!(accounts[subject] ?? []).some((account) => account.id === id)) throw new Error(`not found: ${id}`);
       },
+      ...(connectable === undefined
+        ? {}
+        : { listConnectable: async () => connectable.map((toolkit) => ({ toolkit })) }),
     },
   };
 }
@@ -69,6 +76,22 @@ describe("byoConnections", () => {
 
   it("rejects an unknown connector name", async () => {
     await expect(service().initiate(ada, { connector: "zapier", toolkit: "gmail" })).rejects.toThrow(/connector/i);
+  });
+
+  it("aggregates the catalog across brokers, tagging each row with its connector", async () => {
+    const catalog = await byoConnections([
+      fakeConnector("composio", {}, ["gmail", "slack"]),
+      fakeConnector("other", {}, ["jira"]),
+    ]).catalog();
+    expect(catalog).toEqual([
+      { toolkit: "gmail", connector: "composio" },
+      { toolkit: "slack", connector: "composio" },
+      { toolkit: "jira", connector: "other" },
+    ]);
+  });
+
+  it("treats a broker without listConnectable as advertising nothing", async () => {
+    await expect(service().catalog()).resolves.toEqual([]);
   });
 });
 
@@ -139,6 +162,34 @@ describe("cloudConnections", () => {
     expect(cloudFetch.mock.calls[0]![0]).toContain("https://console.vendo.run/api/v1/connections");
   });
 
+  it("fails loudly when a misdeployed Cloud base answers 2xx with non-JSON instead of masking it as empty", async () => {
+    // An SPA host or reverse proxy that 200s unknown paths with text/html
+    // must surface as a config error — not render the honest-looking empty
+    // connections state forever, or read a known-connected account as
+    // not-found (hosted-store's malformed-200 posture).
+    const cloudFetch = vi.fn(async () => new Response("<!doctype html><html></html>", {
+      status: 200,
+      headers: { "content-type": "text/html" },
+    }));
+    const service = cloudConnections({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: cloudFetch as unknown as typeof fetch,
+    });
+    await expect(service.list(ada)).rejects.toThrow(/non-JSON/i);
+    await expect(service.status(ada, "composio", "ca_1")).rejects.toThrow(/non-JSON/i);
+  });
+
+  it("rejects a 2xx JSON body without the connections envelope instead of listing empty", async () => {
+    const cloudFetch = vi.fn(async () => Response.json({ ok: true }));
+    const service = cloudConnections({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: cloudFetch as unknown as typeof fetch,
+    });
+    await expect(service.list(ada)).rejects.toThrow(/connections array/i);
+  });
+
   it("maps a cloud plan rejection to a cloud-required error", async () => {
     const cloudFetch = vi.fn(async () =>
       Response.json({ error: { code: "cloud-required", message: "plan does not include connections" } }, { status: 402 }));
@@ -149,6 +200,81 @@ describe("cloudConnections", () => {
     });
     await expect(service.initiate(ada, { toolkit: "gmail" })).rejects.toThrow(/plan does not include/i);
   });
+
+  // Release-gap fixes (2026-07-20): the connections client joins the shared
+  // console-client posture (cloud-console.ts) — per-request abort timeout and
+  // the honest 401/402 → cloud-required error table.
+  it("maps an invalid or revoked key (401) to cloud-required, never caller validation", async () => {
+    const cloudFetch = vi.fn(async () =>
+      Response.json({ error: { code: "unauthorized", message: "invalid API key" } }, { status: 401 }));
+    const service = cloudConnections({
+      apiKey: "vnd_revoked",
+      baseUrl: "https://cloud.test",
+      fetch: cloudFetch as unknown as typeof fetch,
+    });
+    await expect(service.list(ada)).rejects.toMatchObject({
+      code: "cloud-required",
+      message: "invalid API key",
+    });
+  });
+
+  it("a console 5xx does not read as a caller validation error", async () => {
+    const cloudFetch = vi.fn(async () => new Response("bad gateway", { status: 502 }));
+    const service = cloudConnections({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: cloudFetch as unknown as typeof fetch,
+    });
+    const failure = await service.list(ada).then(
+      () => { throw new Error("expected list to reject"); },
+      (error: unknown) => error as { code?: string; message: string },
+    );
+    expect(failure.code).not.toBe("validation");
+    expect(failure.message).toMatch(/502/);
+  });
+
+  it("forwards wire-legal console error codes as VendoErrors", async () => {
+    const cloudFetch = vi.fn(async () =>
+      Response.json({ error: { code: "not-found", message: "no such connection" } }, { status: 404 }));
+    const service = cloudConnections({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: cloudFetch as unknown as typeof fetch,
+    });
+    await expect(service.status(ada, "composio", "ca_missing")).rejects.toMatchObject({
+      code: "not-found",
+      message: "no such connection",
+    });
+  });
+
+  it("aborts a hung console request after timeoutMs instead of wedging the connections surface", async () => {
+    const cloudFetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+      }));
+    const service = cloudConnections({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: cloudFetch as unknown as typeof fetch,
+      timeoutMs: 25,
+    });
+    await expect(service.list(ada)).rejects.toMatchObject({ name: "TimeoutError" });
+  });
+
+  it("sends an abort signal with every request (the default timeout)", async () => {
+    const signals: Array<AbortSignal | null | undefined> = [];
+    const cloudFetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      signals.push(init?.signal);
+      return Response.json({ connections: [] });
+    });
+    const service = cloudConnections({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: cloudFetch as unknown as typeof fetch,
+    });
+    await service.list(ada);
+    expect(signals[0]).toBeInstanceOf(AbortSignal);
+  });
 });
 
 describe("unconfiguredConnections", () => {
@@ -157,6 +283,20 @@ describe("unconfiguredConnections", () => {
     expect(service.posture).toBe(false);
     await expect(service.list(ada)).resolves.toEqual([]);
     await expect(service.initiate(ada, { toolkit: "gmail" })).rejects.toThrow(/connected accounts/i);
+  });
+});
+
+describe("catalog posture", () => {
+  it("cloud rides the console's catalog endpoint", async () => {
+    const cloudFetch = vi.fn(async () =>
+      Response.json({ available: [{ toolkit: "gmail", connector: "composio" }] }));
+    const cloud = cloudConnections({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: cloudFetch as unknown as typeof fetch });
+    await expect(cloud.catalog()).resolves.toEqual([{ toolkit: "gmail", connector: "composio" }]);
+    expect(String(cloudFetch.mock.calls[0]![0])).toBe("https://cloud.test/api/v1/connections/catalog");
+  });
+
+  it("unconfigured advertises nothing", async () => {
+    await expect(unconfiguredConnections().catalog()).resolves.toEqual([]);
   });
 });
 

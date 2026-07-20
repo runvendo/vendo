@@ -151,7 +151,8 @@ which intent failed with its issues. On success, `pins[].base` moves to the
 new baseline hash and the new version invalidates any existing in-client
 approval — a reviewer must re-approve.
 
-Rebase requires a tree (rung 1) app with a recorded edit trail. A pin that
+Rebase requires a tree-surfaced app (layer 1 or 2) with a recorded edit
+trail. A pin that
 was forked without any subsequent edits, or an app that has graduated to a
 served HTTP surface, fails closed with `conflict` — there is no reproducible
 trail to replay.

@@ -1,0 +1,276 @@
+data: {"type":"start","messageId":"738530d9-0be8-4216-b0a0-b06b1816e234"}
+
+data: {"type":"start-step"}
+
+data: {"type":"tool-input-start","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","toolName":"vendo_create_app","dynamic":false}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":"{\""}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":"prompt"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":"\":\""}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":"Create"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" a"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" weather"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" comparison"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" dashboard"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" that"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" shows"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" the"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" current"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" temperature"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":","}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" humidity"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":","}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" wind"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" conditions"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":","}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" and"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" precipitation"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" for"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" Paris"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":","}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" London"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":","}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" and"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" Tokyo"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" side"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" by"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" side"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":"."}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" Include"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" visually"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" clear"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" sections"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" for"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" each"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" city"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" with"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" easy"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":"-to"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":"-read"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" metrics"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" and"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" icons"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" representing"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" weather"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":" conditions"}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":".\""}
+
+data: {"type":"tool-input-delta","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","inputTextDelta":"}"}
+
+data: {"type":"tool-input-available","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","toolName":"vendo_create_app","input":{"prompt":"Create a weather comparison dashboard that shows the current temperature, humidity, wind conditions, and precipitation for Paris, London, and Tokyo side by side. Include visually clear sections for each city with easy-to-read metrics and icons representing weather conditions."}}
+
+data: {"type":"tool-output-available","toolCallId":"call_ZUhXZUN0wd68CGmLRyZkPjSg","output":{"kind":"vendo/app-ref@1","appId":"app_1996b3a1-e074-46af-82c6-adb630402667","title":"Create a weather comparison dashboard that shows the current temperature, humid…"}}
+
+data: {"type":"finish-step"}
+
+data: {"type":"start-step"}
+
+data: {"type":"text-start","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","providerMetadata":{"openai":{"itemId":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0"}}}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":"I"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" have"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" created"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" a"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" weather"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" comparison"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" dashboard"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" for"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" Paris"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":","}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" London"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":","}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" and"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" Tokyo"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":"."}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" It"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" displays"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" the"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" current"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" temperature"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":","}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" humidity"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":","}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" wind"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" conditions"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":","}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" and"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" precipitation"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" for"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" each"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" city"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" side"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" by"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" side"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" in"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" a"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" clear"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" and"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" easy"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":"-to"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":"-read"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" format"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":"."}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" You"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" can"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" interact"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" with"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" it"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" directly"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" here"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":"."}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" If"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" you"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" want"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":","}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" I"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" can"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" also"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" provide"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" the"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" current"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" weather"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" details"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" for"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" these"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" cities"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":"."}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" Would"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" you"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" like"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" me"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" to"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" do"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":" that"}
+
+data: {"type":"text-delta","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","delta":"?"}
+
+data: {"type":"text-end","id":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0","providerMetadata":{"openai":{"itemId":"msg_004392061857f87d006a5e1ca84aec819a8e75dbf4921863a0"}}}
+
+data: {"type":"finish-step"}
+
+data: {"type":"finish"}
+
+data: [DONE]
+

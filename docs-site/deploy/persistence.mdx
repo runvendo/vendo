@@ -14,6 +14,13 @@ export function createStore(config?: {
 Omit `url` for PGlite. `dataDir` defaults to `.vendo/data`. Set `url` for a
 hosted Postgres database. Both use the same schema and migration path.
 
+The PGlite default applies only while no `VENDO_API_KEY` is set. With the key
+set and no `store` passed to `createVendo`, the store slot fills with the
+Cloud hosted store — threads, apps, records, grants, and audit then persist
+in Vendo Cloud, not locally. Pass `store: createStore(...)` to keep data
+local; an explicitly passed store always wins. See
+[Vendo Cloud](/deploy/vendo-cloud#hosted-store).
+
 PGlite is single-writer: the store enforces one live instance per data dir with
 a lock file inside it (`<dataDir>/.vendo-writer.lock`). A second process pointed at the same
 dir waits for the holder to exit instead of opening (and corrupting) it — dev
@@ -31,13 +38,15 @@ All structured payloads use `jsonb`. App record refs are GIN-indexed and can be
 joined to host tables with containment queries. Collection names use
 `app:<appId>:<name>`.
 
-App machines reach `vendo_records` and `vendo_blobs` through the guarded proxy,
-not directly. Each collection must appear in the app's `storage` declaration
-with the `refs` keys it will write; the reserved name `state` is rejected.
-Records are capped at 256 KB, blobs at 5 MB, and every declared `refs` key must
-carry a non-empty string value at write time. See the [app machine
+App machines reach `vendo_records` through the app-token `/box` callback
+surface, not directly. Box-written rows land in their own namespace,
+`app:<appId>:box:<collection>`, capped at 256 KB per row. App-declared
+storage collections (`app:<appId>:<name>`; records 256 KB, blobs 5 MB, the
+reserved name `state` rejected, every written `refs` key declared with a
+non-empty string value) are served by the apps runtime for tree apps and
+host tools. See the [app machine
 environment](/reference/environment-variables#app-machine-environment) for the
-`/data` and `/files` proxy routes.
+`/box` callback routes.
 
 `encryption.key` encrypts secret values in `vendo_secrets` only. App records
 stay queryable. Ephemeral (anonymous) principals write ordinary rows under

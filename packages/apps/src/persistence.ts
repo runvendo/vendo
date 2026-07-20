@@ -4,8 +4,27 @@ import {
   validateAppDocument,
   type AppDocument,
   type AppId,
+  type RecordQuery,
+  type RecordStore,
   type VendoRecord,
 } from "@vendoai/core";
+
+/** Drain a cursor-paginated listing. A page that repeats its cursor (or drops
+ *  it) terminates the loop, so a misbehaving adapter cannot spin forever. */
+export const listAllRecords = async (
+  records: RecordStore,
+  query: Omit<RecordQuery, "cursor"> = {},
+): Promise<VendoRecord[]> => {
+  const found: VendoRecord[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await records.list(cursor === undefined ? query : { ...query, cursor });
+    found.push(...page.records);
+    if (page.cursor === undefined || page.cursor === cursor) break;
+    cursor = page.cursor;
+  } while (cursor !== undefined);
+  return found;
+};
 
 export const validateDocument = (input: unknown, appId: AppId): AppDocument => {
   const result = validateAppDocument(input);
@@ -77,3 +96,39 @@ export const appRecordInput = (
   // vendo_apps store derives the same value from a column; a generic StoreAdapter keeps this.
   refs: { subject, ...(app.trigger === undefined ? {} : { trigger_kind: app.trigger.on.kind }) },
 });
+
+/**
+ * Wave 7 — mint the next `machine.envStaleAt` marker, strictly greater than
+ * the previous one. Two grant flips in the same millisecond must never mint
+ * EQUAL markers: a wake that read the first would clear the second's marker
+ * after injecting the older env, losing the newer flip (e.g. a revocation).
+ * Marks serialize through the app row's CAS, so bumping past the previous
+ * marker is enough.
+ */
+export const nextEnvStaleAt = (previous?: string): string => {
+  const now = Date.now();
+  const floor = previous === undefined ? Number.NaN : Date.parse(previous);
+  return new Date(Number.isFinite(floor) && floor >= now ? floor + 1 : now).toISOString();
+};
+
+/** Bounded read-mutate-CAS on the app row; the store's revision receipt
+ *  arbitrates racers (adapters without atomic/revision fall back to put). */
+export const updateAppRow = async (
+  records: RecordStore,
+  appId: AppId,
+  mutate: (doc: AppDocument) => AppDocument,
+): Promise<AppDocument> => {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const record = await records.get(appId);
+    if (record === null) throw new VendoError("not-found", `app not found: ${appId}`, { appId });
+    const row = rowFromRecord(record);
+    const next = mutate(structuredClone(row.doc));
+    const input = appRecordInput(next, row.subject, row.enabled);
+    if (records.atomic === undefined || record.revision === undefined) {
+      await records.put(input);
+      return next;
+    }
+    if (await records.atomic.compareAndSwap(input, record.revision) !== null) return next;
+  }
+  throw new VendoError("conflict", `app ${appId} was concurrently modified`, { appId });
+};

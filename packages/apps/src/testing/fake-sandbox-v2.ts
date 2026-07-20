@@ -1,5 +1,5 @@
-import type { SandboxMachine } from "../sandbox.js";
-import type { MachineSandboxAdapter } from "../machine-lifecycle.js";
+import { VendoError } from "@vendoai/core";
+import type { SandboxAdapter, SandboxMachine } from "../sandbox.js";
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -31,6 +31,8 @@ export class FakeMachineV2 implements SandboxMachine {
   stopped = false;
   /** True after the live-machine destroy() (distinct from a snapshot-preserving stop). */
   destroyedSelf = false;
+  /** True after the PROVIDER reaped the machine out from under us (TTL, sweep). */
+  reaped = false;
   readonly env: Readonly<Record<string, string>>;
   readonly state: Map<string, string>;
 
@@ -52,6 +54,9 @@ export class FakeMachineV2 implements SandboxMachine {
     headers?: Record<string, string>;
     body?: Uint8Array | string;
   }): Promise<{ status: number; headers: Record<string, string>; body: Uint8Array }> {
+    // The seam's dead-machine signal (sandbox.ts): provider state gone under a
+    // live handle throws VendoError not-found, never an app-level status.
+    if (this.reaped) throw new VendoError("not-found", `fake v2 machine ${this.id} was reaped by the provider`);
     if (this.stopped) throw new Error(`fake v2 machine ${this.id} is stopped`);
     const key = /^\/state\/([A-Za-z0-9_-]+)$/.exec(req.path)?.[1];
     if (key !== undefined) {
@@ -68,6 +73,11 @@ export class FakeMachineV2 implements SandboxMachine {
     return respond(200, "ok");
   }
 
+  async url(port?: number): Promise<string> {
+    const target = port ?? Number(this.env.PORT ?? 8080);
+    return `https://${target}-${this.id}.fake-v2.test`;
+  }
+
   async snapshot(): Promise<string> {
     return this.saveSnapshot(this);
   }
@@ -81,9 +91,14 @@ export class FakeMachineV2 implements SandboxMachine {
     this.stopped = true;
     this.destroyedSelf = true;
   }
+
+  /** Simulate the PROVIDER killing the machine (TTL expiry, idle sweep). */
+  reap(): void {
+    this.reaped = true;
+  }
 }
 
-export interface FakeSandboxV2 extends MachineSandboxAdapter {
+export interface FakeSandboxV2 extends SandboxAdapter {
   /** Every machine this adapter ever booted, in boot order. */
   readonly machines: FakeMachineV2[];
   /** Live provider-side snapshots (destroy removes its ref from here). */
@@ -94,7 +109,7 @@ export interface FakeSandboxV2 extends MachineSandboxAdapter {
   resumes: number;
 }
 
-/** In-process MachineSandboxAdapter with inspectable machines, snapshots, and destroys. */
+/** In-process SandboxAdapter with inspectable machines, snapshots, and destroys. */
 export const fakeSandboxV2 = (): FakeSandboxV2 => {
   const machines: FakeMachineV2[] = [];
   const snapshots = new Map<string, FakeSnapshotV2>();

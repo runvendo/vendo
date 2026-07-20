@@ -21,7 +21,9 @@ import type {
 } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import type {
+  ApprovalResolution,
   AutomationEntry,
+  ConnectableToolkit,
   ConnectionAccount,
   EditResult,
   EnableResult,
@@ -61,6 +63,9 @@ export interface VendoClient {
     pending(): Promise<ApprovalRequest[]>;
     /** Batch-capable: POST /approvals/decide { ids, decision }. */
     decide(ids: ApprovalId | ApprovalId[], decision: ApprovalDecision): Promise<void>;
+    /** Existing-agents — GET /approvals/:id, the per-approval state
+        `<VendoApprovalEmbed>` polls (pending/executed/declined/expired). */
+    get(id: ApprovalId): Promise<ApprovalResolution>;
   };
 
   grants: {
@@ -76,6 +81,9 @@ export interface VendoClient {
     /** GET /connections/:id — poll while the user completes the redirect. */
     status(id: string, connector?: string): Promise<ConnectionAccount>;
     disconnect(id: string, connector?: string): Promise<void>;
+    /** GET /connections/catalog — the host-level connectable toolkits; feeds
+        the connect dock when no explicit `connectors` prop is passed. */
+    catalog(): Promise<ConnectableToolkit[]>;
   };
 
   apps: {
@@ -97,6 +105,13 @@ export interface VendoClient {
     pinDrift(id: AppId): Promise<PinDrift[]>;
     /** POST /apps/:id/rebase-pin — re-fork one drifted pin from the new baseline and replay its recorded intents (06 §8). */
     rebasePin(id: AppId, slot: string): Promise<PinRebaseResult>;
+    /**
+     * POST /apps/:id/machine/ping — the embed surface's keepalive (Wave 7 H2):
+     * user activity on an embedded served app rides one host-proxied HEAD
+     * through the machine, keeping it from idling out under the user. "woke"
+     * means the machine had slept — the embed's URL is stale; re-open.
+     */
+    pingMachine(id: AppId): Promise<{ state: "awake" | "woke" }>;
   };
 
   automations: {

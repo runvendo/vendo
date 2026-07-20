@@ -5,9 +5,12 @@ import {
   toVendoWirePart,
   vendoViewStreamId,
   vendoViewPartSchema,
+  type ApprovalId,
   type Guard,
+  type RiskLabel,
   type RunContext,
   type ToolCall,
+  type ToolDescriptor,
   type ToolOutcome,
   type ToolRegistry,
   type VendoApprovalPart,
@@ -48,6 +51,23 @@ function writePart(
   writer.write(toVendoWirePart(part, id) as never);
 }
 
+/** The flat §16 approval part shared by every consent surface (native
+ *  needsApproval, pending-approval outcomes). */
+export function approvalPart(
+  toolCallId: string,
+  risk: RiskLabel,
+  approvalId: ApprovalId,
+  invalidatedGrant?: VendoApprovalPart["invalidatedGrant"],
+): VendoApprovalPart {
+  return {
+    type: "data-vendo-approval",
+    toolCallId,
+    risk,
+    approvalId,
+    ...(invalidatedGrant === undefined ? {} : { invalidatedGrant }),
+  };
+}
+
 function executionError(): ToolOutcome {
   return {
     status: "error",
@@ -81,8 +101,15 @@ function capOutcome(outcome: ToolOutcome, cap: number | undefined): ToolOutcome 
 export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolSet> {
   const descriptors = await options.registry.descriptors();
   const tools: ToolSet = {};
+  for (const descriptor of descriptors) addAgentTool(tools, descriptor, options);
+  return tools;
+}
 
-  for (const descriptor of descriptors) {
+/** Build ONE guard-bound agent tool and insert it into `tools`. Exported so a
+ * tool lazily expanded mid-turn (vendo_tools_search, spec 2026-07-20)
+ * materializes with the exact wrapper the boot-time toolset uses. */
+export function addAgentTool(tools: ToolSet, descriptor: ToolDescriptor, options: ToolBridgeOptions): void {
+  {
     const execute = async (input: unknown, { toolCallId }: { toolCallId: string }): Promise<ToolOutcome> => {
       const call: VendoViewStreamingToolCall = { id: toolCallId, tool: descriptor.name, args: input };
       if (descriptor.name === VENDO_APPS_CREATE_TOOL && options.writer !== undefined) {
@@ -127,12 +154,7 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
         const view = vendoViewPartSchema.safeParse(candidate);
         if (view.success) writePart(options.writer, view.data, vendoViewStreamId(view.data.appId));
       } else if (outcome.status === "pending-approval") {
-        writePart(options.writer, {
-          type: "data-vendo-approval",
-          toolCallId,
-          risk: descriptor.risk,
-          approvalId: outcome.approvalId,
-        });
+        writePart(options.writer, approvalPart(toolCallId, descriptor.risk, outcome.approvalId));
       } else if (outcome.status === "connect-required") {
         // The inline connect card (04-actions §3): emitted beside the native
         // tool part exactly like the approval part, keyed by toolCallId.
@@ -159,15 +181,12 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
               options.ctx,
             );
             if (decision.action !== "ask") return false;
-            writePart(options.writer, {
-              type: "data-vendo-approval",
+            writePart(options.writer, approvalPart(
               toolCallId,
-              risk: descriptor.risk,
-              approvalId: decision.approval.id,
-              ...(decision.approval.invalidatedGrant === undefined
-                ? {}
-                : { invalidatedGrant: decision.approval.invalidatedGrant }),
-            });
+              descriptor.risk,
+              decision.approval.id,
+              decision.approval.invalidatedGrant,
+            ));
             return true;
           } catch {
             return true;
@@ -182,6 +201,4 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
       ...(needsApproval ? { needsApproval } : {}),
     });
   }
-
-  return tools;
 }

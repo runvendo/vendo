@@ -1,7 +1,7 @@
 import { option } from "./args.js";
 import { cloudFetch, type CloudFetchOptions } from "./client.js";
-import { cloudConsoleOutput, errorMessage, printJson } from "./output.js";
-import type { Output } from "../shared.js";
+import { errorMessage, printJson } from "./output.js";
+import { consoleOutput, type Output } from "../shared.js";
 
 export type CloudFetcher = (path: string, options?: CloudFetchOptions) => Promise<unknown>;
 
@@ -23,8 +23,8 @@ export interface CloudCommandContext {
 
 export function commandContext(options: CloudCommandOptions): CloudCommandContext {
   return {
-    output: options.output ?? cloudConsoleOutput,
-    fetcher: options.fetcher ?? ((path, fetchOptions) => cloudFetch(path, fetchOptions)),
+    output: options.output ?? consoleOutput,
+    fetcher: options.fetcher ?? cloudFetch,
     home: options.home,
     env: options.env ?? process.env,
     now: options.now,

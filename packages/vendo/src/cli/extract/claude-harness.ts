@@ -22,7 +22,7 @@ interface SdkModule {
   query(params: { prompt: string; options: Record<string, unknown> }): AsyncIterable<Record<string, unknown>>;
 }
 
-/** Bundler-proof dynamic import (same pattern as dev-riders/dev-creds): the
+/** Bundler-proof dynamic import (same pattern as dev-creds): the
  *  Function body is a FIXED literal — the specifier is a parameter, never
  *  interpolated into code — so there is no injection surface. */
 async function dynamicImport(url: string): Promise<Record<string, unknown>> {

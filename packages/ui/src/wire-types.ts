@@ -123,6 +123,16 @@ export interface InitiatedConnection {
   redirectUrl: string;
 }
 
+/** One connectable toolkit as `GET /connections/catalog` advertises it — the
+    connect dock's auto catalog when the host passes no explicit list. */
+export interface ConnectableToolkit {
+  toolkit: string;
+  connector: string;
+  label?: string;
+  /** One-line capability blurb (provider metadata); surfaces may ignore it. */
+  description?: string;
+}
+
 /** 07-automations §5 */
 export type RunStatus = "running" | "ok" | "error" | "stopped" | "pending-approval";
 
@@ -156,6 +166,18 @@ export interface EnableResult {
   enabled: boolean;
   missing: ApprovalRequest[];
 }
+
+/** Existing-agents — what `GET /approvals/:id` returns for a parked BYO
+ *  guarded call: the frozen `VendoApprovalEmbedState` vocabulary, carrying
+ *  the full request while pending (the consent card shows real inputs) and
+ *  the resumed call's outcome once executed (errors included — the embed
+ *  renders them with the existing failed vocabulary, never a blank).
+ *  Mirrors the umbrella's `ByoApprovalResolution`. */
+export type ApprovalResolution =
+  | { state: "pending"; request: ApprovalRequest }
+  | { state: "executed"; outcome: ToolOutcome }
+  | { state: "declined" }
+  | { state: "expired" };
 
 /** 03-agent §5 — what `GET /threads/:id` returns. */
 export interface Thread {

@@ -10,6 +10,7 @@ import {
 import type { Db } from "./db.js";
 import {
   appScopeId,
+  cursorMs,
   decodeCursor,
   encodeCursor,
   iso,
@@ -259,13 +260,13 @@ export function createRecordStore(
       if (query.cursor !== undefined) {
         const cursor = decodeCursor(query.cursor);
         params.push(cursor.c, cursor.i);
-        clauses.push(`(created_at, id) < ($${params.length - 1}, $${params.length})`);
+        clauses.push(`(${cursorMs("created_at")}, id) < (${cursorMs(`$${params.length - 1}::timestamptz`)}, $${params.length})`);
       }
       params.push(limit + 1);
       const result = await db.query(
         `SELECT id, data, refs, created_at, updated_at${usesCollection ? ", revision" : ""} FROM ${table}
          ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
-         ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
+         ORDER BY ${cursorMs("created_at")} DESC, id DESC LIMIT $${params.length}`,
         params,
       );
       const rows = result.rows.slice(0, limit).map(recordFromRow);

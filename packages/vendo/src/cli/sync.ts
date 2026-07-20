@@ -2,6 +2,7 @@ import { join, resolve } from "node:path";
 import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions";
 import type { ToolImpact } from "../sync-impact.js";
 import { pushSyncReport } from "./cloud/services.js";
+import { syncSemantics } from "./semantics.js";
 import { consoleOutput, type Output } from "./shared.js";
 
 export interface SyncReportPayload {
@@ -114,13 +115,28 @@ export async function runSync(options: SyncOptions): Promise<number> {
       unresolvedExit = 2;
     }
 
+    const wireUrl = (options.url ?? process.env.VENDO_URL ?? "http://localhost:3000/api/vendo").replace(/\/+$/, "");
+    // W3 — field semantics + domain manifest into .vendo/semantics.json
+    // (one-time inference via the dev server; host edits preserved).
+    // Fail-soft like everything else in sync.
+    try {
+      await syncSemantics({
+        vendoDir: join(root, ".vendo"),
+        url: wireUrl,
+        ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+        note,
+      });
+    } catch (error) {
+      note(`semantics sync failed soft: ${error instanceof Error ? error.message : "unknown error"}`);
+    }
+
     const tools = [...new Set([
       ...report.breaking.map((breaking) => breaking.tool),
       ...report.tools.changed,
     ])];
     let impact: ToolImpact[] | undefined;
     if (tools.length > 0) {
-      const impactUrl = (options.url ?? process.env.VENDO_URL ?? "http://localhost:3000/api/vendo").replace(/\/+$/, "");
+      const impactUrl = wireUrl;
       try {
         const response = await (options.fetchImpl ?? fetch)(`${impactUrl}/sync/impact`, {
           method: "POST",

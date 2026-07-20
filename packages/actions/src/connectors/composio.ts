@@ -1,5 +1,5 @@
 import { VendoError, type RunContext, type ToolCall, type ToolDescriptor, type ToolOutcome } from "@vendoai/core";
-import type { Connector, ConnectorAccount, ConnectorAccountIdentity } from "./connector.js";
+import type { Connector, ConnectorAccount, ConnectorAccountIdentity, ConnectorCatalogEntry, ToolkitIndexEntry } from "./connector.js";
 import { composioToolRisk } from "./composio-risk.js";
 import { normalizeToolName } from "./names.js";
 
@@ -27,6 +27,22 @@ interface ComposioConnectedAccount {
 }
 
 const MAX_PAGES = 50;
+
+/** Auth configs change on dashboard timescales; thread mounts must not
+ * re-walk them. */
+const CONNECTABLE_CACHE_TTL_MS = 5 * 60_000;
+
+/** Fallback discovery blurbs for toolkits whose provider metadata is
+ * unavailable — index recall depends on descriptions ("send email" must
+ * match gmail), so silence is not an option for the majors. */
+const STATIC_BLURBS: Record<string, string> = {
+  gmail: "Send, read, and manage email with Gmail",
+  googlecalendar: "Create and manage Google Calendar events",
+  slack: "Post messages and interact with Slack channels",
+  github: "Manage GitHub repos, issues, and pull requests",
+  notion: "Create and edit Notion pages and databases",
+  linear: "Create and manage Linear issues",
+};
 
 /** Composio's deterministic missing-connection signal on tool execution. */
 const NO_CONNECTED_ACCOUNT_SLUG = "ActionExecute_ConnectedAccountNotFound";
@@ -110,87 +126,197 @@ export function composioConnector(config: {
     return { ok: response.ok, status: response.status, payload };
   }
 
-  async function fetchTools(app?: string): Promise<ComposioTool[]> {
-    const tools: ComposioTool[] = [];
+  /** Walk a cursor-paginated Composio listing to completion (fail-closed on
+   * cursor loops and runaway page counts). */
+  async function paginate(
+    path: string,
+    label: string,
+    query: (cursor?: string) => Record<string, string>,
+  ): Promise<unknown[]> {
+    const items: unknown[] = [];
     let cursor: string | undefined;
     const seenCursors = new Set<string>();
 
     for (let page = 0; page < MAX_PAGES; page += 1) {
-      const response = await composioFetch("/api/v3/tools", {
-        query: {
-          // Composio's real catalog is 1,000+ toolkits and 20,000+ tools
-          // (docs.composio.dev/toolkits). An unscoped fetch (bare `apps`)
-          // walks that whole catalog, so every page requests the API's max
-          // page size — 1000, per docs.composio.dev/reference/api-reference/
-          // tools/getTools — to keep the walk inside MAX_PAGES regardless of
-          // whatever smaller default the API would otherwise apply.
-          limit: "1000",
-          ...(app === undefined ? {} : { toolkit_slug: app }),
-          ...(cursor === undefined ? {} : { cursor }),
-        },
-      });
+      const response = await composioFetch(path, { query: query(cursor) });
       if (!response.ok) {
         const { message } = responseErrorParts(response.payload);
-        throw new Error(`Composio tools request failed with ${response.status}: ${message ?? ""}`.trim());
+        throw new Error(`${label} request failed with ${response.status}: ${message ?? ""}`.trim());
       }
       const parsed = pageParts(response.payload as ComposioPage);
-      tools.push(...(parsed.items as ComposioTool[]));
+      items.push(...parsed.items);
       cursor = parsed.nextCursor;
-      if (!cursor) return tools;
+      if (!cursor) return items;
       if (seenCursors.has(cursor)) throw new Error(`Composio pagination loop at cursor ${cursor}`);
       seenCursors.add(cursor);
     }
 
-    throw new Error(`Composio tools pagination exceeded ${MAX_PAGES} pages`);
+    throw new Error(`${label} pagination exceeded ${MAX_PAGES} pages`);
+  }
+
+  async function fetchTools(app?: string): Promise<ComposioTool[]> {
+    const items = await paginate("/api/v3/tools", "Composio tools", (cursor) => ({
+      // Composio's real catalog is 1,000+ toolkits and 20,000+ tools
+      // (docs.composio.dev/toolkits). An unscoped fetch (bare `apps`)
+      // walks that whole catalog, so every page requests the API's max
+      // page size — 1000, per docs.composio.dev/reference/api-reference/
+      // tools/getTools — to keep the walk inside MAX_PAGES regardless of
+      // whatever smaller default the API would otherwise apply.
+      limit: "1000",
+      ...(app === undefined ? {} : { toolkit_slug: app }),
+      ...(cursor === undefined ? {} : { cursor }),
+    }));
+    return items as ComposioTool[];
   }
 
   /** Connected accounts scoped to ONE subject. Every Composio read filters by
    * user_ids=subject so one principal can never observe another's accounts. */
   async function listAccounts(subject: string, connectedAccountId?: string): Promise<ConnectorAccount[]> {
+    const items = await paginate("/api/v3/connected_accounts", "Composio connected-accounts", (cursor) => ({
+      user_ids: subject,
+      ...(connectedAccountId === undefined ? {} : { connected_account_ids: connectedAccountId }),
+      ...(cursor === undefined ? {} : { cursor }),
+    }));
     const accounts: ConnectorAccount[] = [];
-    let cursor: string | undefined;
-    const seenCursors = new Set<string>();
+    for (const item of items as ComposioConnectedAccount[]) {
+      if (typeof item.id !== "string" || typeof item.toolkit?.slug !== "string") continue;
+      accounts.push({
+        id: item.id,
+        connector: "composio",
+        toolkit: item.toolkit.slug,
+        status: accountStatus(item.status),
+        ...(typeof item.created_at === "string" ? { createdAt: item.created_at } : {}),
+      });
+    }
+    return accounts;
+  }
 
-    for (let page = 0; page < MAX_PAGES; page += 1) {
-      const response = await composioFetch("/api/v3/connected_accounts", {
-        query: {
-          user_ids: subject,
-          ...(connectedAccountId === undefined ? {} : { connected_account_ids: connectedAccountId }),
-          ...(cursor === undefined ? {} : { cursor }),
-        },
+  let connectableCache: { at: number; entries: ConnectorCatalogEntry[] } | undefined;
+
+  // Connection-scoped tool loading (spec 2026-07-20): without an explicit
+  // `apps` scoping the connector defers ALL schema loading — descriptors()
+  // covers only lazily expanded toolkits, and discovery rides a cheap index.
+  const lazy = config.apps === undefined;
+  const expandedToolkits = new Set<string>();
+  const toolkitToolCache = new Map<string, Promise<ComposioTool[]>>();
+  let indexPromise: Promise<ToolkitIndexEntry[]> | undefined;
+  let connectableSlugsPromise: Promise<Set<string>> | undefined;
+
+  function toolkitTools(toolkit: string): Promise<ComposioTool[]> {
+    let promise = toolkitToolCache.get(toolkit);
+    if (!promise) {
+      promise = fetchTools(toolkit);
+      toolkitToolCache.set(toolkit, promise);
+    }
+    return promise;
+  }
+
+  /** Per-slug toolkit metadata (label + description). Best-effort: a missing
+   * or failing slug degrades to the static blurb, never throws. */
+  async function toolkitMeta(slug: string): Promise<{ label?: string; description?: string }> {
+    try {
+      const response = await composioFetch(`/api/v3/toolkits/${encodeURIComponent(slug)}`);
+      if (!response.ok) return {};
+      const payload = response.payload as { name?: unknown; meta?: { description?: unknown } };
+      return {
+        ...(typeof payload.name === "string" && payload.name ? { label: payload.name } : {}),
+        ...(typeof payload.meta?.description === "string" && payload.meta.description
+          ? { description: payload.meta.description }
+          : {}),
+      };
+    } catch {
+      return {};
+    }
+  }
+
+  async function buildIndex(): Promise<ToolkitIndexEntry[]> {
+    const slugs = config.apps ?? (await listConnectable()).map((entry) => entry.toolkit);
+    const metas = await Promise.all(slugs.map((slug) => toolkitMeta(slug)));
+    return slugs.map((toolkit, i) => {
+      const description = metas[i]!.description ?? STATIC_BLURBS[toolkit];
+      return {
+        toolkit,
+        ...(metas[i]!.label === undefined ? {} : { label: metas[i]!.label }),
+        ...(description === undefined ? {} : { description }),
+      };
+    });
+  }
+
+  /** The dock catalog: the host's `apps` scoping verbatim when set, else the
+   * distinct toolkits with an enabled auth config — exactly the set a user
+   * can finish connecting (initiate refuses anything else). Host-level, so
+   * the auth-config walk is cached across principals. */
+  async function listConnectable(): Promise<ConnectorCatalogEntry[]> {
+    if (config.apps !== undefined) return config.apps.map((toolkit) => ({ toolkit }));
+    if (connectableCache !== undefined && Date.now() - connectableCache.at < CONNECTABLE_CACHE_TTL_MS) {
+      return connectableCache.entries;
+    }
+
+    // auth_configs paginates by PAGE NUMBER, not cursor: live-probed
+    // 2026-07-20, the API clamps limit to 50 and answers `total_pages: 1,
+    // next_cursor: null` even when total_items is larger — cursor-following
+    // silently drops the tail. Walk `cursor=1,2,…` until the item count
+    // reaches total_items.
+    const toolkits = new Set<string>();
+    let itemsSeen = 0;
+
+    for (let page = 1; page <= MAX_PAGES; page += 1) {
+      const response = await composioFetch("/api/v3/auth_configs", {
+        query: { limit: "100", cursor: String(page) },
       });
       if (!response.ok) {
         const { message } = responseErrorParts(response.payload);
-        throw new Error(`Composio connected-accounts request failed with ${response.status}: ${message ?? ""}`.trim());
+        throw new Error(`Composio auth-configs request failed with ${response.status}: ${message ?? ""}`.trim());
       }
       const parsed = pageParts(response.payload as ComposioPage);
-      for (const item of parsed.items as ComposioConnectedAccount[]) {
-        if (typeof item.id !== "string" || typeof item.toolkit?.slug !== "string") continue;
-        accounts.push({
-          id: item.id,
-          connector: "composio",
-          toolkit: item.toolkit.slug,
-          status: accountStatus(item.status),
-          ...(typeof item.created_at === "string" ? { createdAt: item.created_at } : {}),
-        });
+      for (const item of parsed.items as Array<{ status?: unknown; toolkit?: { slug?: unknown } }>) {
+        // The same enablement test initiate applies (anything not DISABLED).
+        if (item.status === "DISABLED") continue;
+        if (typeof item.toolkit?.slug === "string") toolkits.add(item.toolkit.slug);
       }
-      cursor = parsed.nextCursor;
-      if (!cursor) return accounts;
-      if (seenCursors.has(cursor)) throw new Error(`Composio pagination loop at cursor ${cursor}`);
-      seenCursors.add(cursor);
+      itemsSeen += parsed.items.length;
+      const totalItems = (response.payload as { total_items?: unknown }).total_items;
+      const done = parsed.items.length === 0
+        || typeof totalItems !== "number"
+        || itemsSeen >= totalItems;
+      if (done) {
+        const entries = [...toolkits].map((toolkit) => ({ toolkit }));
+        connectableCache = { at: Date.now(), entries };
+        return entries;
+      }
     }
 
-    throw new Error(`Composio connected-accounts pagination exceeded ${MAX_PAGES} pages`);
+    throw new Error(`Composio auth-configs pagination exceeded ${MAX_PAGES} pages`);
   }
 
   return {
     name: "composio",
 
+    discoveryIndex: () => (indexPromise ??= buildIndex()),
+
+    async expandToolkits(toolkits: string[]): Promise<boolean> {
+      if (!lazy) return false;
+      connectableSlugsPromise ??= (async () => new Set((await listConnectable()).map((entry) => entry.toolkit)))();
+      const connectable = await connectableSlugsPromise;
+      let changed = false;
+      for (const toolkit of toolkits) {
+        if (!connectable.has(toolkit) || expandedToolkits.has(toolkit)) continue;
+        expandedToolkits.add(toolkit);
+        changed = true;
+      }
+      return changed;
+    },
+
     async descriptors(): Promise<ToolDescriptor[]> {
       // Built fresh and swapped in atomically so a concurrent execute() never sees a half-empty map.
       const nextNormalizedToRaw = new Map<string, { raw: string; toolkit: string }>();
-      const appFilters = config.apps === undefined ? [undefined] : config.apps;
-      const pages = await Promise.all(appFilters.map((app) => fetchTools(app)));
+      // Lazy mode: only expanded toolkits materialize; nothing loads eagerly.
+      const appFilters = lazy ? [...expandedToolkits] : config.apps!;
+      if (appFilters.length === 0) {
+        normalizedToRaw = nextNormalizedToRaw;
+        return [];
+      }
+      const pages = await Promise.all(appFilters.map((app) => toolkitTools(app)));
       const descriptors: ToolDescriptor[] = [];
 
       for (const item of pages.flat()) {
@@ -267,6 +393,7 @@ export function composioConnector(config: {
 
     connections: {
       list: (subject) => listAccounts(subject),
+      listConnectable,
 
       async initiate(subject, toolkit, options) {
         const configs = await composioFetch("/api/v3/auth_configs", { query: { toolkit_slug: toolkit } });
