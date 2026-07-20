@@ -113,6 +113,12 @@ export interface VendoGuard extends Guard {
     ): Promise<void>;
   };
 
+  /** Spec 2026-07-20 (#5): TTL backstop over the general approvals collection —
+   *  denies every pending approval older than `ttlMs` (across subjects, via the
+   *  idempotent abandon path) so away/automation/stranded approvals self-heal.
+   *  Optional: the umbrella feature-detects it. Returns the count swept. */
+  sweepExpiredApprovals?(ttlMs: number, at?: number): Promise<number>;
+
   grants: {
     list(principal: Principal): Promise<PermissionGrant[]>;
     revoke(id: GrantId, principal: Principal): Promise<void>;
