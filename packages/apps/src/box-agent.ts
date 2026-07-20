@@ -33,6 +33,13 @@ export interface BoxEditResult {
   testsRun: number;
   /** The POST /fn/<name> functions the box now serves (agent-declared). */
   fns?: string[];
+  /**
+   * Wave 4 (layer 3) — the agent's declaration that the box now serves a real
+   * web app on non-/fn paths of $PORT. DATA like every other field: the host
+   * verifies the served root itself and the experimental flag gates any
+   * surface flip; this bit alone changes nothing.
+   */
+  servesUi?: boolean;
 }
 
 /** A minimal sleep seam so tests drive the poll loop without real time. */
@@ -92,6 +99,7 @@ const asResult = (value: unknown): BoxEditResult => {
     ...(Array.isArray(record.fns)
       ? { fns: record.fns.filter((entry): entry is string => typeof entry === "string") }
       : {}),
+    ...(record.servesUi === true ? { servesUi: true } : {}),
   };
 };
 

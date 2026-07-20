@@ -207,6 +207,7 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
         armIdleTimer(appId);
       }
     },
+    url: (port) => raw.url(port),
     snapshot: () => raw.snapshot(),
     stop: () => raw.stop(),
     destroy: () => raw.destroy(),

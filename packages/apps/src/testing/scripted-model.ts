@@ -5,14 +5,25 @@ export interface ScriptedModelCall {
     role: string;
     content: string | Array<{ type?: string; text?: string }>;
   }>;
+  /** W4 pipeline — the tool definitions the caller passed (strict tool-use
+   *  calls), so tests can assert on the generated fix-space schema. */
+  tools?: Array<{ name: string; description?: string; inputSchema?: unknown }>;
+  toolChoice?: unknown;
 }
 
-type ScriptedText = string | string[];
+/** A scripted turn is either streamed text or one forced tool call
+ *  (W4 pipeline — structured repair / outline are strict tool-use calls). */
+export interface ScriptedToolCall { tool: string; input: unknown }
+
+type ScriptedText = string | string[] | ScriptedToolCall;
 
 export type ScriptedModelResponse = ScriptedText | ((
   call: ScriptedModelCall,
   index: number,
 ) => ScriptedText | Promise<ScriptedText>);
+
+const isToolCall = (value: ScriptedText): value is ScriptedToolCall =>
+  typeof value === "object" && !Array.isArray(value);
 
 const responseText = (
   response: ScriptedModelResponse,
@@ -32,8 +43,20 @@ export const scriptedLanguageModel = (...responses: ScriptedModelResponse[]): La
       const response = responses[Math.min(calls, responses.length - 1)];
       if (response === undefined) throw new Error("Scripted language model has no response");
       const value = await responseText(response, call, calls);
-      const text = Array.isArray(value) ? value.join("") : value;
       calls += 1;
+      if (isToolCall(value)) {
+        return {
+          content: [{
+            type: "tool-call" as const,
+            toolCallId: `call_${calls}`,
+            toolName: value.tool,
+            input: JSON.stringify(value.input),
+          }],
+          finishReason: "tool-calls" as const,
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      }
+      const text = Array.isArray(value) ? value.join("") : value;
       return {
         content: [{ type: "text" as const, text }],
         finishReason: "stop" as const,
@@ -44,6 +67,28 @@ export const scriptedLanguageModel = (...responses: ScriptedModelResponse[]): La
       const response = responses[Math.min(calls, responses.length - 1)];
       if (response === undefined) throw new Error("Scripted language model has no response");
       const value = await responseText(response, call, calls);
+      if (isToolCall(value)) {
+        calls += 1;
+        return {
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue({ type: "stream-start", warnings: [] });
+              controller.enqueue({
+                type: "tool-call",
+                toolCallId: `call_${calls}`,
+                toolName: value.tool,
+                input: JSON.stringify(value.input),
+              });
+              controller.enqueue({
+                type: "finish",
+                finishReason: "tool-calls",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              });
+              controller.close();
+            },
+          }),
+        };
+      }
       const chunks = Array.isArray(value) ? value : [value];
       calls += 1;
       return {
