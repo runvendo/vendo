@@ -131,9 +131,9 @@ describe("island tool manifest enforcement (host side)", () => {
     }), "*");
   });
 
-  it("rejects malformed tool-call paths", async () => {
+  it("rejects malformed tool-call paths and still answers (no hung island promise)", async () => {
     const onAction = vi.fn(async (): Promise<ToolOutcome> => ({ status: "ok", output: null }));
-    const { postToHost } = mountWithManifest(
+    const { postToHost, postedToJail } = mountWithManifest(
       { componentTools: { Lookup: ["clients_search"] } },
       onAction,
     );
@@ -142,6 +142,13 @@ describe("island tool manifest enforcement (host side)", () => {
     postToHost({ kind: "tool-call", requestId: "t8", path: ["not an identifier!"], args: {} });
     await flush();
     expect(onAction).not.toHaveBeenCalled();
+    for (const requestId of ["t6", "t7", "t8"]) {
+      expect(postedToJail).toHaveBeenCalledWith(expect.objectContaining({
+        kind: "tool-result",
+        requestId,
+        outcome: expect.objectContaining({ status: "blocked" }),
+      }), "*");
+    }
   });
 
   it("gates the legacy action channel to prop-embedded actions and the manifest", async () => {

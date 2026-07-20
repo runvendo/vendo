@@ -51,12 +51,19 @@ export const ISLAND_AMBIENT_KIT_NAMES = [
 /** `fmt` (Kit semantics formatters) and `tools` (the guarded host-tool pipe). */
 export const ISLAND_AMBIENT_HELPER_NAMES = ["fmt", "tools"] as const;
 
-/** Every name the jail evaluation scope provides to island code. */
-export const ISLAND_AMBIENT_NAMES: readonly string[] = [
+/** Every name the jail evaluation scope provides to island code. The literal
+ *  tuple type is load-bearing: the jail runtime's scope record is typed
+ *  `Record<IslandAmbientName, unknown>`, so adding a name here without
+ *  providing it there is a compile error (review: a `readonly string[]`
+ *  annotation would collapse that check to `Record<string, …>`). */
+export const ISLAND_AMBIENT_NAMES = [
   ...ISLAND_AMBIENT_REACT_NAMES,
   ...ISLAND_AMBIENT_KIT_NAMES,
   ...ISLAND_AMBIENT_HELPER_NAMES,
-];
+] as const;
+
+/** One name the ambient island scope provides. */
+export type IslandAmbientName = (typeof ISLAND_AMBIENT_NAMES)[number];
 
 /** Import specifiers the ambient scope already covers: react and the kit-ish
  *  names models emit out of habit. Static imports of these are silently
@@ -122,25 +129,46 @@ const clauseLocalNames = (clause: string): string[] => {
 };
 
 /** Silently strip static imports of {@link ISLAND_STRIPPED_SPECIFIERS};
- *  every other import form/specifier is left byte-for-byte for the gate. */
+ *  every other import form/specifier is left byte-for-byte for the gate.
+ *  Matching runs against the non-code-blanked view (offsets preserved), so
+ *  import-LIKE text inside strings or comments is never corrupted — a real
+ *  import is code and reads identically in both views. */
 export function stripIslandImports(source: string): IslandImportStrip {
   const issues: string[] = [];
-  const stripped = source.replace(
-    STATIC_IMPORT_PATTERN,
-    (statement, typeOnly: string | undefined, clause: string | undefined, specifier: string) => {
-      if (!STRIPPED_SPECIFIER_SET.has(specifier)) return statement;
-      if (clause !== undefined && typeOnly === undefined) {
-        for (const local of clauseLocalNames(clause)) {
-          if (!AMBIENT_NAME_SET.has(local)) {
-            issues.push(
-              `imports "${local}" from "${specifier}" — islands have NO imports; the ambient scope provides these names directly (React, the hooks, the Kit components, fmt, tools). Use the ambient name instead of an alias.`,
-            );
-          }
+  const blanked = blankNonCode(source);
+  const spans: Array<{ start: number; end: number }> = [];
+  for (const blankedMatch of blanked.matchAll(STATIC_IMPORT_PATTERN)) {
+    // The blanked view locates real (code) imports; the groups are read from
+    // the ORIGINAL at the same offsets, since the specifier's contents are
+    // blanked in the located view.
+    const match = new RegExp(STATIC_IMPORT_PATTERN.source).exec(
+      source.slice(blankedMatch.index, blankedMatch.index + blankedMatch[0].length),
+    );
+    if (match === null) continue;
+    const statement = match[0];
+    const typeOnly = match[1];
+    const clause = match[2];
+    const specifier = match[3];
+    if (specifier === undefined || !STRIPPED_SPECIFIER_SET.has(specifier)) continue;
+    if (clause !== undefined && typeOnly === undefined) {
+      for (const local of clauseLocalNames(clause)) {
+        if (!AMBIENT_NAME_SET.has(local)) {
+          issues.push(
+            `imports "${local}" from "${specifier}" — islands have NO imports; the ambient scope provides these names directly (React, the hooks, the Kit components, fmt, tools). Use the ambient name instead of an alias.`,
+          );
         }
       }
-      return "";
-    },
-  );
+    }
+    spans.push({ start: blankedMatch.index, end: blankedMatch.index + statement.length });
+  }
+  if (spans.length === 0) return { source, issues };
+  let stripped = "";
+  let cursor = 0;
+  for (const span of spans) {
+    stripped += source.slice(cursor, span.start);
+    cursor = span.end;
+  }
+  stripped += source.slice(cursor);
   return { source: stripped, issues };
 }
 
@@ -168,11 +196,13 @@ const blankNonCode = (source: string): string => {
     while (index < source.length) {
       if (source[index] === "\\") { index += 2; continue; }
       if (source[index] === "`") {
-        blank(from, index + 1);
+        // Keep the closing backtick visible: delimiters are code-shaped and
+        // the offset-consumers (import strip, action-name scan) need them.
+        blank(from, index);
         return { next: index + 1, interpolated: false };
       }
       if (source[index] === "$" && source[index + 1] === "{") {
-        blank(from, index + 2);
+        blank(from, index);
         return { next: index + 2, interpolated: true };
       }
       index += 1;
@@ -205,10 +235,11 @@ const blankNonCode = (source: string): string => {
         if (source[index] === "\\") index += 1;
         index += 1;
       }
+      const closedOnQuote = source[index] === char;
       index = Math.min(index + 1, source.length);
-      blank(start, index);
+      // Blank the CONTENTS, keep the delimiters (offset consumers need them).
+      blank(start + 1, closedOnQuote ? index - 1 : index);
     } else if (char === "`") {
-      blank(index, index + 1);
       const chunk = consumeTemplateText(index + 1);
       if (chunk.interpolated) {
         templateStack.push(braceDepth);
@@ -222,7 +253,6 @@ const blankNonCode = (source: string): string => {
       if (braceDepth === 0 && templateStack.length > 0) {
         // The interpolation closed — back inside the template's text.
         braceDepth = templateStack.pop() as number;
-        blank(index, index + 1);
         const chunk = consumeTemplateText(index + 1);
         if (chunk.interpolated) {
           templateStack.push(braceDepth);
@@ -246,9 +276,15 @@ const MEMBER_CHAIN = /^(?:\s*\??\.\s*[A-Za-z_$][\w$]*)+/;
 // has an identifier or tag character there instead, so prose never trips it.
 const ALIAS_CONTEXT = /(?:[=(,:[{]|\breturn|=>)\s*$/;
 
+// `[` or the optional-chained `?.[` — the same computed access (review).
+const startsComputedAccess = (text: string): boolean =>
+  text.startsWith("[") || /^\?\.\s*\[/.test(text);
+
 /** Scan island source for ambient `tools` usage. Literal member access only:
- *  computed access and aliasing are violations (TASK §2); chains are returned
- *  for manifest inference. */
+ *  computed access and aliasing are violations (TASK §2); CALLED chains are
+ *  returned for manifest inference. An un-called chain in prose (JSX text like
+ *  "great tools.Buy now") is ignored; an un-called chain being assigned or
+ *  passed around is the aliasing violation. */
 export function scanIslandTools(source: string): IslandToolScan {
   const code = blankNonCode(source);
   const paths: string[][] = [];
@@ -262,22 +298,33 @@ export function scanIslandTools(source: string): IslandToolScan {
     const chain = MEMBER_CHAIN.exec(rest);
     if (chain !== null) {
       const afterChain = rest.slice(chain[0].length).trimStart();
-      if (afterChain.startsWith("[")) {
+      if (startsComputedAccess(afterChain)) {
         violations.push(
           "uses computed member access on `tools` — literal member access only: call `tools.tool_name(args)` with the tool name written out",
         );
         continue;
       }
-      const path = (chain[0].match(/[A-Za-z_$][\w$]*/g) ?? []) as string[];
-      const key = path.join(".");
-      if (!seen.has(key)) {
-        seen.add(key);
-        paths.push(path);
+      if (afterChain.startsWith("(")) {
+        // A CALL — the only form that reaches a tool at runtime.
+        const path = (chain[0].match(/[A-Za-z_$][\w$]*/g) ?? []) as string[];
+        const key = path.join(".");
+        if (!seen.has(key)) {
+          seen.add(key);
+          paths.push(path);
+        }
+        continue;
+      }
+      // Un-called chain: aliasing when it sits in expression position;
+      // otherwise prose (JSX text) — ignore.
+      if (ALIAS_CONTEXT.test(code.slice(0, match.index))) {
+        violations.push(
+          "aliases or passes the `tools` object around — literal member access only: call `tools.tool_name(args)` directly where you need it",
+        );
       }
       continue;
     }
     const after = rest.trimStart();
-    if (after.startsWith("[")) {
+    if (startsComputedAccess(after)) {
       violations.push(
         "uses computed member access on `tools` — literal member access only: call `tools.tool_name(args)` with the tool name written out",
       );
@@ -290,6 +337,23 @@ export function scanIslandTools(source: string): IslandToolScan {
     }
   }
   return { paths, violations };
+}
+
+/** Literal legacy `vendo.action("tool_name", …)` names in island CODE (never
+ *  strings/comments) — the legacy action channel's own least-privilege set. */
+export function islandVendoActionNames(source: string): string[] {
+  const code = blankNonCode(source);
+  const names: string[] = [];
+  // The blanking erases the quoted name too, so read it from the ORIGINAL at
+  // the blanked match's offsets (blankNonCode preserves offsets).
+  const pattern = /\bvendo\s*\.\s*action\s*\(\s*(["'`])/g;
+  for (const match of code.matchAll(pattern)) {
+    const quote = match[1] as string;
+    const start = match.index + match[0].length;
+    const end = source.indexOf(quote, start);
+    if (end > start) names.push(source.slice(start, end));
+  }
+  return [...new Set(names)];
 }
 
 // The jail's CSP is connect-src 'none': these APIs silently die inside an

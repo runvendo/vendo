@@ -571,7 +571,10 @@ const prepareIslands = async (
       continue;
     }
     const hostTags = hostOnlyNames.filter((componentName) =>
-      new RegExp(`<\\s*${componentName}\\b`).test(source));
+      new RegExp(`<\\s*${componentName}\\b`).test(source)
+      // A locally-declared component of the same name is the island's own
+      // (review): the local binding wins inside the jail, so don't reject it.
+      && !new RegExp(`\\b(?:function|const|let|var|class)\\s+${componentName}\\b`).test(source));
     if (hostTags.length > 0) {
       issues.push(`island "${name}" renders ${hostTags.map((tag) => `<${tag}>`).join(", ")} — host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (${ISLAND_AMBIENT_KIT_NAMES.join(", ")}).`);
     }
@@ -1258,6 +1261,13 @@ const editTree = async (
           extensionIssues.push(...applyForkPin(app, extension.props, deps));
         }
         if (!changed) extensionIssues.push("the patch contained no effective ops; emit at least one op for the instruction");
+        // A <ForkPin> in this patch may have added a pinned component after
+        // the manifest restamp above. Keep componentTools DEFINED whenever
+        // components exist, so the renderer's stamped-era rule (missing key
+        // = zero tools) applies instead of the source-scan fallback (review).
+        if (app.components !== undefined && app.componentTools === undefined) {
+          app.componentTools = {};
+        }
         if (extensionIssues.length === 0) {
           const validationIssues = [...islandIssues, ...await validateEditedApp(app, deps, input.app)];
           if (validationIssues.length === 0) {

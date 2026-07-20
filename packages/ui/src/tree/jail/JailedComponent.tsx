@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { islandToolFallbackManifest, type Json, type ToolOutcome } from "@vendoai/core";
+import { islandToolFallbackManifest, islandVendoActionNames, type Json, type ToolOutcome } from "@vendoai/core";
 import { ContainedNotice } from "../notice.js";
 import { JAIL_RUNTIME_SOURCE } from "./runtime-bundle.gen.js";
 
@@ -145,15 +145,6 @@ const collectActionNames = (value: unknown, into: Set<string>): void => {
   for (const child of Object.values(record)) collectActionNames(child, into);
 };
 
-/** Legacy islands call `props.vendo.action("tool", …)` directly; their literal
- *  action names are part of the source the host holds, so they stay allowed. */
-const vendoActionLiterals = (source: string): string[] => {
-  const names: string[] = [];
-  const pattern = /\bvendo\s*\.\s*action\s*\(\s*["'`]([^"'`]+)["'`]/g;
-  for (const match of source.matchAll(pattern)) names.push(match[1] as string);
-  return names;
-};
-
 /** 08-ui §5 — generated code runs only in this opaque-origin iframe. */
 export function JailedComponent({
   name,
@@ -179,7 +170,10 @@ export function JailedComponent({
   const allowedActions = useMemo(() => {
     const allowed = new Set(manifest);
     collectActionNames(props ?? furnishing?.sampleProps ?? {}, allowed);
-    for (const literal of vendoActionLiterals(source)) allowed.add(literal);
+    // Legacy islands call `props.vendo.action("tool", …)` directly; their
+    // literal action names in CODE (never strings/comments — review) are part
+    // of the source the host holds, so they stay allowed.
+    for (const literal of islandVendoActionNames(source)) allowed.add(literal);
     return allowed;
   }, [furnishing, manifest, props, source]);
 
@@ -247,7 +241,17 @@ export function JailedComponent({
         // by underscore-join (tool names never contain dots); a resolved name
         // outside THIS island's manifest is blocked here, before the pipe.
         const requestId = message.requestId;
-        if (!isToolCallPath(message.path)) return;
+        if (!isToolCallPath(message.path)) {
+          // Answer even a malformed request: a silent drop would leave the
+          // island's promise pending forever (review).
+          iframe.contentWindow?.postMessage({
+            vendo: true,
+            kind: "tool-result",
+            requestId,
+            outcome: { status: "blocked", reason: "malformed tool call" },
+          }, "*");
+          return;
+        }
         const toolName = message.path.join("_");
         if (!manifest.has(toolName)) {
           iframe.contentWindow?.postMessage({

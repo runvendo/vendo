@@ -23,8 +23,14 @@ const { chromium } = require("@playwright/test");
 const BASE = process.env.W4B_BASE_URL ?? "http://localhost:3000";
 const shot = (name) => join(here, `${name}.png`);
 const log = (...args) => console.log("[w4b]", ...args);
+const SCENARIOS = ["p1", "p2", "p3", "p4"];
 const wanted = process.argv.slice(2);
-const runs = wanted.length === 0 ? ["p1", "p2", "p3", "p4"] : wanted;
+const unknown = wanted.filter((name) => !SCENARIOS.includes(name));
+if (unknown.length > 0) {
+  console.error(`[w4b] unknown scenario(s): ${unknown.join(", ")} — valid: ${SCENARIOS.join(", ")}`);
+  process.exit(2);
+}
+const runs = wanted.length === 0 ? SCENARIOS : wanted;
 
 const browser = await chromium.launch();
 const results = {};
@@ -165,7 +171,10 @@ if (runs.includes("p3")) {
     if (response.ok()) {
       const body = await response.json().catch(() => ({}));
       const rows = body?.data?.data ?? [];
-      const hit = rows.find((txn) => txn.amount === -4137);
+      // Match THIS run's approved call, never shared demo state: the amount
+      // AND the per-run memo token (islands put it in notes or descriptor).
+      const hit = rows.find((txn) => txn.amount === -4137
+        && (String(txn.notes ?? "").includes(memo) || String(txn.descriptor ?? "").includes(memo)));
       if (hit) {
         landed = true;
         log("P3 effect:", JSON.stringify({ merchant: hit.merchant, amount: hit.amount, descriptor: hit.descriptor, notes: hit.notes }));
@@ -194,7 +203,10 @@ if (runs.includes("p4")) {
   const before = await island.inner.locator("body").innerText();
   const picker = island.inner.locator("select").first();
   const values = await picker.locator("option").evaluateAll((options) => options.map((option) => option.value));
-  await picker.selectOption(values[values.length - 1]);
+  const current = await picker.inputValue();
+  const alternative = [...values].reverse().find((value) => value !== current);
+  if (alternative === undefined) throw new Error("P4 picker has no alternative option to select");
+  await picker.selectOption(alternative);
   await page.waitForTimeout(1_500);
   const after = await island.inner.locator("body").innerText();
   results.p4 = before !== after && /\$/.test(after);

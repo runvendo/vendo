@@ -7,6 +7,7 @@ import {
   ISLAND_STRIPPED_SPECIFIERS,
   islandNetworkViolations,
   islandToolFallbackManifest,
+  islandVendoActionNames,
   isStrippedIslandSpecifier,
   resolveIslandToolName,
   scanIslandTools,
@@ -94,6 +95,16 @@ describe("stripIslandImports", () => {
     const source = 'const m = import("react"); const n = require("react"); export default () => null;';
     expect(stripIslandImports(source).source).toBe(source);
   });
+
+  it("never strips import-like text inside strings or comments (review: corruption)", () => {
+    const source = [
+      'const example = `import React from "react";`;',
+      '// import { useState } from "react";',
+      "const doc = 'import \"react\";';",
+      "export default () => <p>{example}</p>;",
+    ].join("\n");
+    expect(stripIslandImports(source).source).toBe(source);
+  });
 });
 
 describe("scanIslandTools", () => {
@@ -153,6 +164,35 @@ describe("scanIslandTools", () => {
     const scan = scanIslandTools("const powertools = 1; const x = powertools.spin();");
     expect(scan.paths).toEqual([]);
     expect(scan.violations).toEqual([]);
+  });
+
+  it("ignores un-called member chains in JSX prose (review: tools.Buy)", () => {
+    const scan = scanIslandTools("export default () => <p>great tools.Buy now</p>;");
+    expect(scan.paths).toEqual([]);
+    expect(scan.violations).toEqual([]);
+  });
+
+  it("rejects optional-chained computed access (review: tools?.[expr])", () => {
+    for (const source of ['tools?.["danger"]();', 'const out = tools.clients?.["search"]({});']) {
+      const scan = scanIslandTools(source);
+      expect(scan.violations.some((violation) => violation.includes("computed")), source).toBe(true);
+    }
+  });
+
+  it("flags an un-called chain being passed around as aliasing", () => {
+    const scan = scanIslandTools("const c = tools.clients;");
+    expect(scan.violations.length).toBeGreaterThan(0);
+  });
+});
+
+describe("islandVendoActionNames", () => {
+  it("collects literal legacy action names from code only", () => {
+    const source = [
+      'vendo.action("send_reminders", { id: 1 });',
+      '// vendo.action("commented_out")',
+      "const s = 'vendo.action(\"in_a_string\")';",
+    ].join("\n");
+    expect(islandVendoActionNames(source)).toEqual(["send_reminders"]);
   });
 });
 
