@@ -10,3 +10,4 @@ Repair flag = did structured repair visibly engage (slow first paint / retries)?
 | id | prompt | verdict | timing | class-if-fail | repair? | note |
 |----|--------|---------|--------|---------------|---------|------|
 | M1 | show me my account balances at a glance | PASS | ~8s | — | no | Host balance card + 4 account cards, money formatted, no errors. Blemish: headline card label "Total balance" shows checking-only ($9,412.20 vs true total $54,907.15) — host component's baked-in label. |
+| M2 | a dashboard of my monthly cash flow with income vs spending | FAIL | 19.1s | raw-cents (stat tiles) | no | Working bar chart (income vs spending) + donut + two formatted tables — but the three headline stat tiles render raw cents: "$642000", "$75373", "$5490715" (should be $6,420.00 / $753.73 / $54,907.15). Explicit PASS-bar violation. |
