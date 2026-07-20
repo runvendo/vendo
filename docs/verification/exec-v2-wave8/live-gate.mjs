@@ -70,6 +70,7 @@ const { createAnthropic } = await import(requireVendo.resolve("@ai-sdk/anthropic
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "vendo-w8-gate-"));
 const store = createStore({ dataDir });
+await store.ensureSchema();
 const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const vendo = createVendo({
   model: anthropic("claude-sonnet-4-5"),
@@ -106,14 +107,15 @@ let exitCode = 0;
 const appIds = [];
 try {
   // ─── 1. tree app ────────────────────────────────────────────────────────
+  // create() returns the AppDocument itself.
   const created = await vendo.apps.create({
     prompt: "Show a status board for my invoices: total outstanding in dollars, invoice count, and the invoice list.",
   }, ctx);
-  appIds.push(created.app.id);
+  appIds.push(created.id);
   step("tree-created", {
-    id: created.app.id,
-    ui: created.app.ui ?? "tree",
-    hasMachine: created.app.machine !== undefined,
+    id: created.id,
+    ui: created.ui ?? "tree",
+    hasMachine: created.machine !== undefined,
   });
 
   // ─── 2. graduation through the SDK box agent ────────────────────────────
@@ -125,7 +127,7 @@ try {
     "- vendo.json must declare the 8am daily schedule for chaseInvoices and the httpbin.org egress.",
   ].join("\n");
   step("graduate-start", { instruction: `${instruction.slice(0, 200)}…` });
-  const graduated = await vendo.apps.edit(created.app.id, instruction, ctx);
+  const graduated = await vendo.apps.edit(created.id, instruction, ctx);
   step("graduated", {
     graduated: graduated.graduated === true,
     box: graduated.box,
@@ -143,7 +145,7 @@ try {
   const egressApprovals = pending.filter((entry) => JSON.stringify(entry).includes("egress"));
   if (egressApprovals.length === 0) throw new Error("no parked egress approval");
   await vendo.guard.approvals.decide(egressApprovals.map((entry) => entry.id), { approve: true }, ADA);
-  const afterApprove = await store.records("vendo_apps").get(created.app.id);
+  const afterApprove = await store.records("vendo_apps").get(created.id);
   step("egress-approved", { egressApproved: afterApprove?.data?.doc?.egressApproved });
 
   // ─── 4. the schedule fires (8am window, host clock faked Date-only) ─────
@@ -170,7 +172,7 @@ try {
   if (fired === undefined || fired.status !== "ok") throw new Error(`schedule did not fire ok: ${JSON.stringify(tick)}`);
 
   // ─── 5. reopen: the digest is in the tree (durable /box row round trip) ─
-  const reopened = await vendo.apps.open(created.app.id, ctx);
+  const reopened = await vendo.apps.open(created.id, ctx);
   const reopenedText = JSON.stringify(reopened);
   step("reopened", {
     kind: reopened.kind ?? "tree",
@@ -180,9 +182,9 @@ try {
 
   // ─── 6. layer-3: one served-app build through the SDK engine ────────────
   const kanban = await vendo.apps.create({ prompt: "A board that lists my invoices grouped by status (Draft / Sent / Paid)." }, ctx);
-  appIds.push(kanban.app.id);
+  appIds.push(kanban.id);
   const escalated = await vendo.apps.edit(
-    kanban.app.id,
+    kanban.id,
     "Rebuild this as a full web app: a kanban board for my invoices with drag-and-drop between columns (Draft / Sent / Paid), moving a card updates its status server-side.",
     ctx,
   );
@@ -194,7 +196,7 @@ try {
     issues: escalated.issues,
   });
   if (escalated.failure !== undefined || escalated.box?.ok !== true) throw new Error("layer-3 build failed");
-  const opened = await vendo.apps.open(kanban.app.id, ctx);
+  const opened = await vendo.apps.open(kanban.id, ctx);
   const served = opened.kind === "http" ? await fetch(opened.url) : undefined;
   step("layer3-open", {
     kind: opened.kind,

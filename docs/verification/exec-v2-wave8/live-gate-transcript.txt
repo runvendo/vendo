@@ -1,0 +1,11 @@
+
+=== tunnel ===
+{
+  "url": "https://api.trycloudflare.com"
+}
+
+=== server ===
+{
+  "port": 3400,
+  "template": "pbgk5vxvhmtjmcn8lgeo"
+}
