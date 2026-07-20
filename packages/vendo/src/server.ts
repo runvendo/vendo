@@ -358,7 +358,18 @@ function selectSandbox(configured: SandboxAdapter | V1CloudSandboxAdapter | unde
   // create() dies on a missing module.
   const e2bApiKey = environment("E2B_API_KEY");
   if (e2bApiKey !== undefined && e2bInstalled()) {
-    return { adapter: e2bSandbox({ apiKey: e2bApiKey }), venue: "e2b" };
+    // Wave 4 — operator knob for the provider machine lifetime. The default
+    // 5-minute TTL kills a box mid-way through a long in-box agent build
+    // (the box agent loop runs for minutes); hosts that raise
+    // VENDO_BOX_EDIT_TIMEOUT_MS raise this alongside it.
+    const timeoutMs = Number(environment("VENDO_E2B_TIMEOUT_MS"));
+    return {
+      adapter: e2bSandbox({
+        apiKey: e2bApiKey,
+        ...(Number.isFinite(timeoutMs) && timeoutMs > 0 ? { timeoutMs } : {}),
+      }),
+      venue: "e2b",
+    };
   }
 
   const apiKey = environment("VENDO_API_KEY");
