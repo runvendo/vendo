@@ -6,10 +6,12 @@ instead of rendering a tree. This is layer 3 of the execution model: the tree
 is gone, the box owns the surface.
 
 The layer-3 code path ships fully built but disabled, and currently has one
-working venue (BYO e2b — see the matrix below). Enable it per project:
+working venue (BYO e2b — see the matrix below). Enable it per project — a
+served surface lives in a machine, so `experimentalServedApps` **requires**
+`experimentalMachines` (layer 2); `createVendo` refuses one without the other:
 
 ```ts
-createVendo({ apps: { experimentalServedApps: true } });
+createVendo({ apps: { experimentalServedApps: true, experimentalMachines: true } });
 ```
 
 Both venues serve layer-3 URLs: a BYO sandbox (`E2B_API_KEY`) on the

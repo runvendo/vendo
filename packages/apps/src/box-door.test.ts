@@ -66,6 +66,7 @@ describe("AppsRuntime.box.request (execution-v2 fn door over the machine lifecyc
       tools: emptyTools,
       catalog: [],
       model,
+      experimentalMachines: true,
       machine: {
         sandbox: handlerSandbox((request) => {
           seen.push(request);
@@ -95,6 +96,7 @@ describe("AppsRuntime.box.request (execution-v2 fn door over the machine lifecyc
       tools: emptyTools,
       catalog: [],
       model,
+      experimentalMachines: true,
       machine: { sandbox: handlerSandbox(() => ({ status: 200 })) },
     });
     await seedAppRow(store, doc, "user_ada");
@@ -111,6 +113,7 @@ describe("AppsRuntime.box.request (execution-v2 fn door over the machine lifecyc
       tools: emptyTools,
       catalog: [],
       model,
+      experimentalMachines: true,
       machine: { sandbox: handlerSandbox(() => ({ status: 200 })) },
     });
     await seedAppRow(store, doc, "user_ada");
@@ -120,7 +123,7 @@ describe("AppsRuntime.box.request (execution-v2 fn door over the machine lifecyc
 
   it("fails honestly without a sandbox adapter", async () => {
     const store = memoryStore();
-    const runtime = createApps({ store, guard: guardFixture(), tools: emptyTools, catalog: [], model });
+    const runtime = createApps({ store, guard: guardFixture(), tools: emptyTools, catalog: [], model, experimentalMachines: true });
     await seedAppRow(store, doc, "user_ada");
     await expect(runtime.machine.provision(doc.id, ctx()))
       .rejects.toMatchObject({ code: "sandbox-unavailable" });

@@ -84,7 +84,13 @@ async function setup(options: { experimentalServedApps?: boolean } = {}): Promis
     },
     store,
     sandbox: servingSandbox(),
-    ...(options.experimentalServedApps === undefined ? {} : { apps: { experimentalServedApps: options.experimentalServedApps } }),
+    // Wave 9 — machines (layer 2) stay on for every setup here (the fixture
+    // provisions a machine either way); the SERVED flag is what this suite
+    // exercises, and served-on requires machines-on.
+    apps: {
+      experimentalMachines: true,
+      ...(options.experimentalServedApps === undefined ? {} : { experimentalServedApps: options.experimentalServedApps }),
+    },
   });
   // Seed a tree app, provision its machine (graduation's Lane B step), then
   // flip the stored surface — the wire test targets serving, not generation.
