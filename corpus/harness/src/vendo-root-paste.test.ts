@@ -122,6 +122,69 @@ describe("applyVendoRootPaste", () => {
     expect(layout).toContain("<VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>");
   });
 
+  it("keeps a comment-prefixed 'use client' directive ahead of the pasted imports", async () => {
+    const repoDir = await makeTempRepo();
+    await mkdir(path.join(repoDir, "app"), { recursive: true });
+    const original = [
+      "/* Copyright (c) Fixture Corp.",
+      " * SPDX-License-Identifier: MIT */",
+      "// keep this layout client-side",
+      '"use client";',
+      "",
+      UNWRAPPED_LAYOUT,
+    ].join("\n");
+    await writeFile(path.join(repoDir, "app/layout.tsx"), original);
+
+    const result = await applyVendoRootPaste(repoDir, "next", INIT_STDOUT);
+
+    expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
+    const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
+    expect(layout.startsWith("/* Copyright (c) Fixture Corp.")).toBe(true);
+    expect(layout.indexOf('"use client";')).toBeLessThan(layout.indexOf('import { VendoRoot }'));
+  });
+
+  it("recognizes a 'use client' directive carrying a trailing comment", async () => {
+    const repoDir = await makeTempRepo();
+    await mkdir(path.join(repoDir, "app"), { recursive: true });
+    await writeFile(
+      path.join(repoDir, "app/layout.tsx"),
+      `"use client"; // needed for the theme hooks\n\n${UNWRAPPED_LAYOUT}`,
+    );
+
+    const result = await applyVendoRootPaste(repoDir, "next", INIT_STDOUT);
+
+    expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
+    const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
+    expect(layout.split(/\r?\n/)[0]).toBe('"use client"; // needed for the theme hooks');
+    expect(layout.indexOf('"use client";')).toBeLessThan(layout.indexOf('import { VendoRoot }'));
+  });
+
+  it("preserves CRLF line endings when inserting imports", async () => {
+    const repoDir = await makeTempRepo();
+    await mkdir(path.join(repoDir, "app"), { recursive: true });
+    await writeFile(path.join(repoDir, "app/layout.tsx"), UNWRAPPED_LAYOUT.replaceAll("\n", "\r\n"));
+
+    const result = await applyVendoRootPaste(repoDir, "next", INIT_STDOUT);
+
+    expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
+    const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
+    expect(layout).toContain('import { VendoRoot } from "@vendoai/vendo/react";');
+    // Every newline is still CRLF — no mixed endings after the paste.
+    expect(layout.replaceAll("\r\n", "")).not.toContain("\n");
+  });
+
+  it("fails when the layout has no children expression to wrap", async () => {
+    const repoDir = await makeTempRepo();
+    await mkdir(path.join(repoDir, "app"), { recursive: true });
+    await writeFile(
+      path.join(repoDir, "app/layout.tsx"),
+      "export default function RootLayout() {\n  return <html><body /></html>;\n}\n",
+    );
+
+    await expect(applyVendoRootPaste(repoDir, "next", INIT_STDOUT))
+      .rejects.toThrow(/no "\{children\}" expression/);
+  });
+
   it("wraps a whitespace-formatted { children } JSX expression", async () => {
     const repoDir = await makeTempRepo();
     await mkdir(path.join(repoDir, "app"), { recursive: true });
