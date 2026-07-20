@@ -1,0 +1,10 @@
+ .vendo/brief.md                       |  1 +
+ .vendo/catalog.json                   |  4 ++++
+ .vendo/overrides.json                 |  7 +++++++
+ .vendo/policy.json                    | 19 +++++++++++++++++++
+ .vendo/theme.json                     | 24 ++++++++++++++++++++++++
+ .vendo/tools.json                     | 21 +++++++++++++++++++++
+ package.json                          |  4 +++-
+ src/app/api/vendo/[...vendo]/route.ts |  9 +++++++++
+ src/vendo/registry.tsx                | 23 +++++++++++++++++++++++
+ 9 files changed, 111 insertions(+), 1 deletion(-)

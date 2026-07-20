@@ -78,6 +78,7 @@ export {
   type SupabaseHostAuthPresetOptions,
 } from "./auth-presets/index.js";
 import type { HostAuthPreset } from "./auth-presets/index.js";
+import { createByoApprovals } from "./byo-approvals.js";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
 import {
@@ -169,6 +170,13 @@ export interface Vendo {
   emit(event: string, payload: Json, principal: Principal): Promise<RunId[]>;
   agent: VendoAgent;
   guard: VendoGuard;
+  /** Existing-agents — the guard-bound registry with BYO approval parking:
+      the registry the `vendo_*` tool pack executes through. Same binding
+      chat, apps, and automations ride (no unguarded route); the one addition
+      is that a `pending-approval` outcome parks the exact call so the wire
+      resumes it on approve, discards it on deny, and expires it on the
+      parked-call TTL sweep. */
+  guardedTools: ToolRegistry;
   apps: AppsRuntime;
   automations: AutomationsEngine;
   actions: ActionsRegistry;
@@ -270,6 +278,16 @@ export interface CreateVendoConfig {
     sweepIntervalMs?: number;
     now?: () => number;
   };
+  /** Existing-agents — approval lifecycle knobs.
+      - `parkedCallTtlMs` idle timeout for a guarded call parked from a BYO
+        agent loop (a `vendo/approval-ref@1` envelope with no Vendo thread to
+        resume through). Past it, the sweep denies the approval through the
+        existing abandonment semantics and `<VendoApprovalEmbed>` reads
+        "expired". Default 60 min; `0` disables expiry. Vendo-thread approvals
+        are untouched — their abandonment stays turn-driven (AGENT-6). */
+  approvals?: {
+    parkedCallTtlMs?: number;
+  };
   /** execution-v2 Wave 4 — apps-block options. `experimentalServedApps` is the
       per-project layer-3 opt-in: a machine may serve the app surface itself
       (the host embeds its URL in a sandboxed iframe). OFF by default — layer-3
@@ -284,6 +302,11 @@ export interface CreateVendoConfig {
     09-vendo contract text). */
 const DEFAULT_SESSION_TTL_MS = 30 * 60_000;
 const DEFAULT_SESSION_SWEEP_INTERVAL_MS = 60_000;
+/** Existing-agents — a BYO loop has no turn-driven abandonment sweep, so an
+    orphaned approval card in a foreign chat expires on time instead: generous
+    enough to walk away and come back, bounded enough that stale writes can't
+    be approved days later. */
+const DEFAULT_PARKED_CALL_TTL_MS = 60 * 60_000;
 
 interface ResolvedSessions {
   ttlMs: number;
@@ -303,6 +326,17 @@ function validateSessionsConfig(sessions: CreateVendoConfig["sessions"]): Resolv
     throw new VendoError("validation", "sessions.sweepIntervalMs must be a positive integer");
   }
   return { ttlMs, sweepIntervalMs, ...(sessions?.now === undefined ? {} : { now: sessions.now }) };
+}
+
+function validateParkedCallTtl(approvals: CreateVendoConfig["approvals"]): number {
+  const parkedCallTtlMs = approvals?.parkedCallTtlMs ?? DEFAULT_PARKED_CALL_TTL_MS;
+  if (!Number.isInteger(parkedCallTtlMs) || parkedCallTtlMs < 0) {
+    throw new VendoError(
+      "validation",
+      "approvals.parkedCallTtlMs must be a non-negative integer (0 disables parked-call expiry)",
+    );
+  }
+  return parkedCallTtlMs;
 }
 
 /** Operator-tuned env knobs must be positive integer milliseconds. A typo
@@ -721,7 +755,7 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
   // failed sweep just means idle sessions live until the next interval.
   let lastSweepAt = deps.sessions.now();
   const maybeSweep = async (): Promise<void> => {
-    if (deps.sessions.ttlMs <= 0) return;
+    if (!deps.sweepEnabled) return;
     const now = deps.sessions.now();
     if (now - lastSweepAt < deps.sessions.sweepIntervalMs) return;
     lastSweepAt = now;
@@ -1010,6 +1044,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // execution path. createActions reads invokeTool at execution time (same
   // pattern as baseUrl above), so assigning after guard.bind is sound.
   actionsConfig.invokeTool = (call, ctx) => boundTools.execute(call, ctx);
+  // Existing-agents Lane B — parked guarded calls with no Vendo thread: the
+  // parking registry the BYO tool pack executes through (guardedTools below),
+  // the resume-on-decide subscriber (same onApprovalDecision seam apps and
+  // automations ride), the wire's per-approval read, and the TTL sweep leg.
+  const byoApprovals = createByoApprovals({ guard, tools: boundTools, store });
+  const parkedCallTtlMs = validateParkedCallTtl(config.approvals);
   const theme = dotVendoTheme();
   const designRules = dotVendoFile("design-rules.md");
   const pinBaselines = dotVendoPinBaselines();
@@ -1177,23 +1217,62 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // agent executes through — a searched-in tool has no unguarded path.
     toolSearch: {
       search: (query, options) => actions.search(query, options),
+      // Connection-scoped loadout seed (spec 2026-07-20): each turn starts
+      // with host tools + the principal's connected toolkits — never an
+      // alphabetical slice of a lazy catalog. `connections` is declared below
+      // this composition; turns only run after createVendo returns, so the
+      // closure reference is safe.
+      seed: (ctx) => loadoutSeedFor(ctx),
       ...(config.agent?.maxInitialTools === undefined ? {} : { maxInitialTools: config.agent.maxInitialTools }),
     },
   });
+  // Per-subject connected-toolkit lookups are cached briefly so a turn never
+  // pays a broker round-trip it doesn't need; failures degrade to host tools
+  // only (warn, never the turn). Bounded so long-lived deployments don't grow.
+  const CONNECTED_TOOLKITS_TTL_MS = 60_000;
+  const connectedToolkitsCache = new Map<string, { at: number; toolkits: string[] }>();
+  async function loadoutSeedFor(ctx: RunContext): Promise<string[]> {
+    const subject = ctx.principal.subject;
+    const cached = connectedToolkitsCache.get(subject);
+    let toolkits: string[];
+    if (cached !== undefined && Date.now() - cached.at < CONNECTED_TOOLKITS_TTL_MS) {
+      toolkits = cached.toolkits;
+    } else {
+      try {
+        const accounts = await connections.list(ctx.principal);
+        toolkits = [...new Set(accounts.filter((account) => account.status === "active").map((account) => account.toolkit))];
+      } catch (error) {
+        console.warn(
+          "[vendo] connected-toolkits lookup failed; seeding host tools only:",
+          error instanceof Error ? error.message : error,
+        );
+        toolkits = [];
+      }
+      if (connectedToolkitsCache.size > 1_000) connectedToolkitsCache.clear();
+      connectedToolkitsCache.set(subject, { at: Date.now(), toolkits });
+    }
+    return actions.loadoutSeed(toolkits);
+  }
   // 02-store §4 (kill-list B3) TTL sweep: erase every idle ephemeral session's
   // disk rows, then cascade each swept subject into the agent's in-memory
   // threads (store-first — a concurrent request then fails closed at the store
   // rather than finding threads without store state). Disabled when ttlMs is 0.
   const runSweep = async (): Promise<void> => {
+    // Existing-agents Lane B — expire orphaned parked BYO calls on the same
+    // cadence (deny path, idempotent); disabled by parkedCallTtlMs 0.
+    if (parkedCallTtlMs > 0) {
+      await byoApprovals.sweepExpired(parkedCallTtlMs, sessionNow());
+    }
     if (sessionsConfig.ttlMs <= 0) return;
     for (const subject of await sessionOps.sweep(sessionsConfig.ttlMs, sessionNow())) {
       agent.evictSubject(subject);
     }
   };
+  const sweepEnabled = sessionsConfig.ttlMs > 0 || parkedCallTtlMs > 0;
   // Long-lived hosts also get a background sweep on an UNREF'd timer (automations
   // engine pattern) so an idle process still reclaims sessions with no traffic;
   // unref'd means it never keeps the event loop alive. Torn down with the store.
-  if (sessionsConfig.ttlMs > 0) {
+  if (sweepEnabled) {
     const sweepTimer = setInterval(() => {
       runSweep().catch((error: unknown) => {
         console.warn(`[vendo] session sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`);
@@ -1309,6 +1388,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     tools: boundTools,
     appTokens,
     automations,
+    byoApprovals,
     connections,
     sandbox: sandbox.venue,
     model: inference.venue,
@@ -1322,6 +1402,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     },
     sessionStore: sessionOps,
     sweep: runSweep,
+    sweepEnabled,
     ...(door === undefined ? {} : { door }),
     ...(runtimeCapture === null ? {} : { runtimeCapture }),
     onRequestOrigin: (origin) => {
@@ -1349,6 +1430,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     },
     agent,
     guard,
+    guardedTools: byoApprovals.registry,
     apps,
     automations,
     actions,

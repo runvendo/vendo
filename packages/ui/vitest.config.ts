@@ -25,6 +25,12 @@ export default defineConfig({
     // windows actually apply; passing tests still resolve the instant their
     // condition is met, so this only adds headroom under load.
     testTimeout: 30000,
+    // Same headroom for hooks: the embeds suite's afterEach unmounts components
+    // with live poll timers against the fake wire, and under the CI coverage
+    // job that cleanup ran past vitest's 10s default hookTimeout ("Hook timed
+    // out in 10000ms"), leaving stale DOM that cascaded duplicate-element
+    // failures into the NEXT test. Hooks that finish fast are unaffected.
+    hookTimeout: 30000,
   },
   resolve: {
     alias: {

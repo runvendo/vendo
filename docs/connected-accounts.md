@@ -33,6 +33,24 @@ when both are configured, because connections must live where the connector
 executes. `GET /api/vendo/status` reports the active posture under
 `blocks.connections`: `"byo"`, `"cloud"`, or `false`.
 
+## Connection-scoped tool loading
+
+Without an explicit `apps` scoping, connector tools load in two tiers rather
+than all at once:
+
+- a **discovery index** — one searchable entry per connectable toolkit
+  (slug, label, one-line description) — is always available to the agent's
+  tool search;
+- **full tool schemas** load only for toolkits the current user has an
+  active connection to, and they seed the turn's initial tool loadout
+  (host tools first, then the connected toolkits' tools).
+
+When the agent searches by intent ("send an email") and the match is a
+toolkit the user has NOT connected, the tools load on demand and calling one
+returns the typed `connect-required` outcome — the thread renders the inline
+connect card, exactly like any other unconnected call. Nothing outside the
+user's connections ever occupies the model's context uninvited.
+
 ## The in-flow connect card
 
 When a connector call needs a connection the user doesn't have, the tool

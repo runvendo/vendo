@@ -24,7 +24,7 @@ import {
 import { assembleSystemPrompt } from "./prompt.js";
 import { createRunner } from "./runner.js";
 import { ThreadRepository, type Thread, type ThreadSummary } from "./threads.js";
-import { buildAgentTools } from "./tools.js";
+import { addAgentTool, buildAgentTools } from "./tools.js";
 import {
   createCapabilityMissDetector,
   latestUserIntent,
@@ -394,14 +394,27 @@ export function createAgent(config: AgentConfig): VendoAgent {
                 threadId: thread.id,
                 intent: latestUserIntent(thread.messages),
               });
-          const tools = await buildAgentTools({
+          // Connection-scoped loadout (spec 2026-07-20): resolve + expand the
+          // principal's connected toolkits FIRST so the built toolset includes
+          // them; a failed seed degrades to the risk/name fallback, never the
+          // turn.
+          let seedNames: string[] | undefined;
+          if (config.toolSearch?.seed !== undefined) {
+            try {
+              seedNames = await config.toolSearch.seed(input.ctx);
+            } catch {
+              seedNames = undefined;
+            }
+          }
+          const bridgeOptions = {
             registry: config.tools,
             guard: config.guard,
             ctx: input.ctx,
             writer,
             toolOutputCap: config.context?.toolOutputCap,
             ...(missDetector === undefined ? {} : { onCall: missDetector.onCall }),
-          });
+          };
+          const tools = await buildAgentTools(bridgeOptions);
           missDetector?.attach(tools);
           const toolSearch = config.toolSearch === undefined
             ? undefined
@@ -409,6 +422,12 @@ export function createAgent(config: AgentConfig): VendoAgent {
                 config: config.toolSearch,
                 descriptors: await config.tools.descriptors(),
                 loaded: loadedFor(thread.id),
+                ...(seedNames === undefined ? {} : { seedNames }),
+                // Search hits expanded mid-turn resolve to full descriptors and
+                // materialize into the LIVE toolset — prepareStep re-reads the
+                // active names each step, so they are callable next step.
+                resolve: async (names) => (await config.tools.descriptors()).filter((d) => names.includes(d.name)),
+                materialize: (descriptor) => addAgentTool(tools, descriptor, bridgeOptions),
               });
           toolSearch?.attach(tools);
           // History windowing: bound what is re-sent per turn to the last N whole messages.

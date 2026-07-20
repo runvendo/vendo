@@ -13,6 +13,7 @@ import type { McpDoor } from "@vendoai/mcp";
 import type { SubjectMergeReport, VendoStore } from "@vendoai/store";
 import type { Telemetry } from "@vendoai/telemetry";
 import type { VendoAgent } from "@vendoai/agent";
+import type { ByoApprovalResolution } from "../byo-approvals.js";
 import type { ConnectionsService } from "../connections.js";
 import type { RuntimeCaptureHandler } from "../runtime-capture.js";
 
@@ -62,6 +63,12 @@ export interface WireDeps {
       (createAppTokens over the composed store; mint lives with provision). */
   appTokens: Pick<AppTokens, "verify">;
   automations: AutomationsEngine;
+  /** Existing-agents Lane B — the per-approval state read `<VendoApprovalEmbed>`
+      polls: pending (with the full request for the consent card), executed
+      (with the resumed call's outcome), declined, or expired. */
+  byoApprovals: {
+    read(approvalId: string, principal: Principal): Promise<ByoApprovalResolution>;
+  };
   connections: ConnectionsService;
   sandbox: SandboxVenue;
   model: ModelVenue;
@@ -79,6 +86,9 @@ export interface WireDeps {
       (possibly injected) session clock; `sweep` runs the store TTL sweep and
       cascades swept subjects into the agent. */
   sessions: { ttlMs: number; sweepIntervalMs: number; now: () => number };
+  /** True when any sweep leg is active (session TTL, parked-approval TTL) —
+      gates the amortized on-request sweep; each leg still no-ops itself. */
+  sweepEnabled: boolean;
   /** The session doors bound to the composed store (selectStore): the local
       engine's SQL registry, or the hosted store's wire doors. */
   sessionStore: {

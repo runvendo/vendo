@@ -31,6 +31,7 @@ const CONFIG_KEYS = [
   "oauth",
   "agent",
   "sessions",
+  "approvals",
   "apps",
 ] as const;
 

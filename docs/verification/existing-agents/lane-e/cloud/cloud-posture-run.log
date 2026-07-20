@@ -1,0 +1,33 @@
+
+ RUN  v3.2.7 /Users/yousefh/orca/workspaces/flowlet/existing-agents-lane-e/examples/ai-sdk-agent
+
+stderr | e2e/cloud-posture.e2e.test.ts > examples/ai-sdk-agent — full Vendo Cloud posture (VENDO_API_KEY only) > reports cloud postures on /status and drives a live managed-inference app creation
+[vendo] session sweep failed; will retry next interval: Vendo Cloud store request failed with 404
+
+stderr | e2e/cloud-posture.e2e.test.ts > examples/ai-sdk-agent — full Vendo Cloud posture (VENDO_API_KEY only) > reports cloud postures on /status and drives a live managed-inference app creation
+[vendo] session sweep failed; will retry next interval: Vendo Cloud store request failed with 404
+
+stdout | e2e/cloud-posture.e2e.test.ts > examples/ai-sdk-agent — full Vendo Cloud posture (VENDO_API_KEY only) > reports cloud postures on /status and drives a live managed-inference app creation
+[vendo] model: VENDO_API_KEY (Vendo Cloud) → claude-sonnet-4-6 via the Cloud gateway
+
+stderr | e2e/cloud-posture.e2e.test.ts > examples/ai-sdk-agent — full Vendo Cloud posture (VENDO_API_KEY only) > reports cloud postures on /status and drives a live managed-inference app creation
+[vendo] session sweep failed; will retry next interval: Vendo Cloud store request failed with 404
+
+stderr | e2e/cloud-posture.e2e.test.ts > examples/ai-sdk-agent — full Vendo Cloud posture (VENDO_API_KEY only) > reports cloud postures on /status and drives a live managed-inference app creation
+[vendo] session sweep failed; will retry next interval: Vendo Cloud store request failed with 404
+
+stderr | e2e/cloud-posture.e2e.test.ts > examples/ai-sdk-agent — full Vendo Cloud posture (VENDO_API_KEY only) > reports cloud postures on /status and drives a live managed-inference app creation
+[vendo] session sweep failed; will retry next interval: Vendo Cloud store request failed with 404
+
+stdout | e2e/cloud-posture.e2e.test.ts > examples/ai-sdk-agent — full Vendo Cloud posture (VENDO_API_KEY only) > reports cloud postures on /status and drives a live managed-inference app creation
+cloud posture app created: app_96b1c05c-7520-4f2b-a7b7-19a0633739aa
+
+ ✓ e2e/cloud-posture.e2e.test.ts (2 tests) 150784ms
+   ✓ examples/ai-sdk-agent — full Vendo Cloud posture (VENDO_API_KEY only) > reports cloud postures on /status and drives a live managed-inference app creation  125981ms
+   ✓ examples/ai-sdk-agent — full Vendo Cloud posture (VENDO_API_KEY only) > adapter rule: an explicitly passed adapter beats the Cloud default, seam by seam  24802ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  06:04:35
+   Duration  152.14s (transform 594ms, setup 0ms, collect 1.11s, tests 150.78s, environment 0ms, prepare 41ms)
+
