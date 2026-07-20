@@ -685,7 +685,16 @@ function destructuredSearchParamsInitializer(ts: typeof TS, functionBody: TS.Nod
  * resolved — that receiver (`url.searchParams`) isn't a bare identifier, so
  * it never reaches either one-hop check. Documented fail-closed scope,
  * matching the collector's existing "no data-flow analysis, one hop only"
- * precedent rather than adding a second one. */
+ * precedent rather than adding a second one.
+ *
+ * Coverage note: `isUrlLikeAccessorBase` accepts `new URL(<y>)` for ANY `<y>`,
+ * not just `req.url` — a handler that builds a `URL` from something other
+ * than the incoming request (a third-party link, a redirect target) would
+ * have its `.get`/`.getAll` reads picked up here just the same, producing a
+ * phantom query property that doesn't correspond to anything the caller can
+ * actually send. Accepted scope (matching the zod collector's equally
+ * receiver-shape-only checks): this module has no data-flow analysis to tell
+ * "the request's URL" from "some other URL" apart. */
 function resolvesToSearchParams(ts: typeof TS, functionBody: TS.Node, receiver: TS.Expression): boolean {
   if (isSearchParamsAccessor(ts, receiver)) return true;
   if (!ts.isIdentifier(receiver)) return false;

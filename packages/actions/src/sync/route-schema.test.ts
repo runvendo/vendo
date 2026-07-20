@@ -954,3 +954,140 @@ export async function GET(req: Request) {
     });
   });
 });
+
+/** Task 5 PART B, review-queued decisions on `mergeRouteInput` (route-scan.ts):
+ * body-bound methods drop query-only evidence to a blank schema with no note
+ * (decision 1); a note only ever surfaces when it describes evidence that was
+ * actually merged onto the tool — never for a query-bound tool's dropped body
+ * evidence (decision 2) — except a recognized-but-non-object top-level body
+ * schema, which earns its OWN note on a body-bound tool precisely because the
+ * evidence was real but unrepresentable (decision 3). All four fixtures below
+ * go through `scanRoutes`, exercising `mergeRouteInput` end to end. */
+describe("mergeRouteInput — note honesty and the body-bound drop invariant (Task 5 PART B)", () => {
+  it("(1) a POST handler reading only searchParams (no body evidence) emits exactly the blank base schema, no note", async () => {
+    const root = await temporaryRoot();
+    await write(root, "app/api/widgets/route.ts", `
+export async function POST(req: Request) {
+  const status = req.nextUrl.searchParams.get("status");
+  return Response.json({ status });
+}
+`);
+    const { tools } = await scanRoutes(root);
+    const tool = tools.find((candidate) => candidate.binding.kind === "route" && candidate.binding.method === "POST");
+    expect(tool?.inputSchema).toEqual({ type: "object", properties: {}, additionalProperties: true });
+    expect(tool?.note).toBeUndefined();
+  });
+
+  it("(2) a GET handler whose body-validator is uninterpretable emits the blank base schema, no note (the note describes evidence never delivered to a query-bound tool)", async () => {
+    const root = await temporaryRoot();
+    await write(root, "app/api/widgets/route.ts", `
+export async function GET(req: Request) {
+  const schema = makeValidator();
+  const body = schema.parse(await req.json());
+  return Response.json(body);
+}
+`);
+    const { tools } = await scanRoutes(root);
+    const tool = tools.find((candidate) => candidate.binding.kind === "route" && candidate.binding.method === "GET");
+    expect(tool?.inputSchema).toEqual({ type: "object", properties: {}, additionalProperties: true });
+    expect(tool?.note).toBeUndefined();
+  });
+
+  it("(3a) a POST validating the whole body as z.array(...) emits the blank base schema PLUS a non-object-body note", async () => {
+    const root = await temporaryRoot();
+    await write(root, "app/api/widgets/route.ts", `
+import { z } from "zod";
+const schema = z.array(z.string());
+export async function POST(req: Request) {
+  const body = schema.parse(await req.json());
+  return Response.json(body);
+}
+`);
+    const { tools } = await scanRoutes(root);
+    const tool = tools.find((candidate) => candidate.binding.kind === "route" && candidate.binding.method === "POST");
+    expect(tool?.inputSchema).toEqual({ type: "object", properties: {}, additionalProperties: true });
+    expect(tool?.note).toBe(
+      "recognized non-object body schema (array) cannot be represented on a route tool; permissive schema emitted",
+    );
+  });
+
+  it("(3b) the same whole-body z.array(...) validator on a GET handler emits the blank base schema, no note (query-bound: the body is never merged, so the non-object note never fires either)", async () => {
+    const root = await temporaryRoot();
+    await write(root, "app/api/widgets/route.ts", `
+import { z } from "zod";
+const schema = z.array(z.string());
+export async function GET(req: Request) {
+  const body = schema.parse(await req.json());
+  return Response.json(body);
+}
+`);
+    const { tools } = await scanRoutes(root);
+    const tool = tools.find((candidate) => candidate.binding.kind === "route" && candidate.binding.method === "GET");
+    expect(tool?.inputSchema).toEqual({ type: "object", properties: {}, additionalProperties: true });
+    expect(tool?.note).toBeUndefined();
+  });
+});
+
+/** Task 5 PART B item 4: coverage minors flagged by review — a renamed
+ * destructuring binding, the fully-direct `new URL(req.url).searchParams.get`
+ * chain with no intermediate variable at all, and a DELETE (query-bound,
+ * like GET) query merge through the full `scanRoutes` path. None of these
+ * exercise new collector logic — `resolvesToSearchParams`/`isSearchParamsAccessor`
+ * already cover these shapes; these fixtures just prove it. */
+describe("query collector — coverage minors (Task 5 PART B item 4)", () => {
+  it("resolves a renamed destructuring binding: const { searchParams: sp } = req.nextUrl", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+export async function GET(req: Request) {
+  const { searchParams: sp } = req.nextUrl;
+  const status = sp.get("status");
+  return Response.json({ status });
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    const result = await inferRouteInput(route, "GET", state);
+    expect(result?.queryProperties).toEqual({ status: { type: "string" } });
+  });
+
+  it("resolves the fully-direct new URL(req.url).searchParams.get(...) chain with no intermediate variable", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+export async function GET(req: Request) {
+  const status = new URL(req.url).searchParams.get("status");
+  return Response.json({ status });
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    const result = await inferRouteInput(route, "GET", state);
+    expect(result?.queryProperties).toEqual({ status: { type: "string" } });
+  });
+
+  it("merges query properties into a DELETE tool's schema alongside its path params (query-bound like GET)", async () => {
+    const root = await temporaryRoot();
+    await write(root, "app/api/widgets/[id]/route.ts", `
+export async function DELETE(req: Request) {
+  const reason = req.nextUrl.searchParams.get("reason");
+  return Response.json({ reason });
+}
+`);
+    const { tools } = await scanRoutes(root);
+    const tool = tools.find((candidate) => candidate.binding.kind === "route" && candidate.binding.method === "DELETE");
+    expect(tool?.inputSchema).toEqual({
+      type: "object",
+      properties: { id: { type: "string" }, reason: { type: "string" } },
+      required: ["id"],
+      additionalProperties: true,
+    });
+    expect(tool?.note).toBeUndefined();
+  });
+});

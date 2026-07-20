@@ -407,6 +407,33 @@ function routeInputSchema(urlPath: string): Record<string, unknown> {
  * not a recognition failure. Query-derived properties never join `required`
  * either way (fail-closed: absence of a query param is never proof it's
  * missing).
+ *
+ * Notes follow the SAME argsIn gate as the body schema they describe
+ * (review carry-over, PR 2 Task 5). Every note a collector can produce
+ * (`route-schema.ts`'s zod/checker collectors; the query collector never
+ * sets one — Task 4) describes the BODY half of its verdict, so a note only
+ * reaches the emitted tool when `body` above was actually populated — i.e.
+ * `argsIn === "body"` AND the collector found something for the body. A note
+ * attached to a query-bound (GET/DELETE) tool would describe a schema the
+ * runtime never delivers to that handler (query args arrive via
+ * `searchParams`, never a JSON body): surfacing it would misattribute
+ * evidence the agent can't act on, exactly the same honesty problem the
+ * query-properties gate above solves for properties. So it's dropped
+ * silently, right alongside them.
+ *
+ * One case needs a note of its own, generated here rather than by a
+ * collector: a RECOGNIZED but non-object top-level body schema — a route
+ * whose entire body is validated as `z.array(...)` or cast to `string[]`,
+ * not an object with properties — has no `properties`/`required` to fold
+ * into the object-shaped schema every route tool emits. Silently falling
+ * through the merge above (as it does today) reads identically to "no
+ * evidence found," which is false: real evidence was found and is being
+ * dropped only because it can't be represented on this tool shape. That
+ * drop gets its own note, gated by the exact same argsIn rule as everything
+ * else here — a body-bound method sees it (the schema, if representable,
+ * would have described what the runtime actually delivers); a query-bound
+ * method never merges a body schema in the first place, so it never earns
+ * this note either.
  */
 function mergeRouteInput(
   urlPath: string,
@@ -419,14 +446,20 @@ function mergeRouteInput(
   const properties: Record<string, unknown> = { ...(base.properties as Record<string, unknown>) };
   const required = new Set<string>((base.required as string[] | undefined) ?? []);
   let additionalProperties = base.additionalProperties;
+  let note: string | undefined;
 
   const body = argsIn === "body" ? inferred.bodySchema : undefined;
   if (body) {
-    for (const [key, value] of Object.entries((body.properties as Record<string, unknown> | undefined) ?? {})) {
-      properties[key] = value;
+    if (typeof body.type === "string" && body.type !== "object") {
+      note = `recognized non-object body schema (${body.type}) cannot be represented on a route tool; permissive schema emitted`;
+    } else {
+      for (const [key, value] of Object.entries((body.properties as Record<string, unknown> | undefined) ?? {})) {
+        properties[key] = value;
+      }
+      for (const key of (body.required as string[] | undefined) ?? []) required.add(key);
+      if (typeof body.additionalProperties === "boolean") additionalProperties = body.additionalProperties;
+      note = inferred.note;
     }
-    for (const key of (body.required as string[] | undefined) ?? []) required.add(key);
-    if (typeof body.additionalProperties === "boolean") additionalProperties = body.additionalProperties;
   }
 
   if (argsIn === "query" && inferred.queryProperties) {
@@ -440,7 +473,7 @@ function mergeRouteInput(
       ...(required.size > 0 ? { required: [...required] } : {}),
       additionalProperties,
     },
-    note: inferred.note,
+    note,
   };
 }
 
