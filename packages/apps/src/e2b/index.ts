@@ -2,6 +2,8 @@ import { VendoError } from "@vendoai/core";
 import type { SandboxAdapter, SandboxMachine } from "../sandbox.js";
 
 const DEFAULT_TIMEOUT_MS = 300_000;
+/** Throttle for sliding the provider deadline on request activity. */
+const TTL_EXTEND_INTERVAL_MS = 60_000;
 const DEFAULT_PORT = 8080;
 const SNAPSHOT_REF_PREFIX = "e2b:v2:";
 /** Refs minted by the retired v1 adapter, still present in persisted app documents. */
@@ -16,18 +18,12 @@ export interface E2BSandboxOptions {
 
 type E2BMachine = InstanceType<typeof import("e2b").Sandbox>;
 
-/** The v2 create spec plus the deprecated v1 compat extras this adapter still
-    honors for the dying v1 call sites (kept local so this adapter never
-    depends on the temporary sandbox-v1-compat module; both extras die with
-    the v1 paths). */
+/** The v2 create spec (the seam's SandboxAdapter.create parameter, kept local
+    for the adapter's internal signatures). */
 type E2BCreateSpec = {
   template?: string;
   env: Record<string, string>;
   allowedDomains?: string[];
-  /** @deprecated v1 initial-files seeding; the in-box agent replaced it. */
-  files?: Record<string, Uint8Array | string>;
-  /** @deprecated v1 name for allowedDomains. */
-  egress?: string[];
 };
 
 const toArrayBuffer = (value: Uint8Array): ArrayBuffer => value.slice().buffer as ArrayBuffer;
@@ -165,10 +161,23 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
     // destroy during an in-flight pause serializes after it.
     let sleeping: Promise<void> | undefined;
     let destroying: Promise<void> | undefined;
+    // E2B's timeoutMs is a HARD deadline fixed at create/resume — proxied
+    // traffic does not extend it, so a busy box would be provider-killed
+    // mid-session (before the idle lifecycle ever snapshots it). Slide the
+    // deadline on activity instead: best-effort and throttled, so the idle
+    // auto-sleep — not the provider TTL — decides when the machine stops.
+    let ttlExtendedAt = 0;
+    const extendTtl = (): void => {
+      const now = Date.now();
+      if (now - ttlExtendedAt < TTL_EXTEND_INTERVAL_MS) return;
+      ttlExtendedAt = now;
+      void Promise.resolve(sandbox.setTimeout(timeoutMs)).catch(() => undefined);
+    };
 
     return {
       id: sandbox.sandboxId,
       async request(request) {
+        extendTtl();
         const response = await fetch(`${baseUrl(request.port ?? state.port)}${request.path.startsWith("/") ? request.path : `/${request.path}`}`, {
           method: request.method,
           headers: request.headers,
@@ -244,7 +253,7 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
       // Optional SDK: keep it a runtime import so hosts without e2b installed
       // don't fail Next's (webpack/Turbopack) bundling of the vendo route.
       const { ALL_TRAFFIC, Sandbox } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "e2b");
-      const allowedDomains = spec.allowedDomains ?? spec.egress;
+      const allowedDomains = spec.allowedDomains;
       const createOptions = {
         ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
         envs: spec.env,
@@ -254,12 +263,6 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
       const sandbox = spec.template === undefined
         ? await Sandbox.create(createOptions)
         : await Sandbox.create(spec.template, createOptions);
-      // v1 compat: initial-files seeding for the dying v1 call sites.
-      const initialFiles = Object.entries(spec.files ?? {}).map(([path, data]) => ({
-        path,
-        data: typeof data === "string" ? data : toArrayBuffer(data),
-      }));
-      if (initialFiles.length > 0) await sandbox.files.write(initialFiles);
       return wrap(sandbox, { allowedDomains, port: parsePort(spec.env) });
     },
     async resume(snapshotRef, policy) {

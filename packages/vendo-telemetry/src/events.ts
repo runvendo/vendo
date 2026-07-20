@@ -42,8 +42,3 @@ export const EVENT_ALLOWLIST: Record<EventName, ReadonlySet<string>> = {
   agent_run: new Set([...BASE_PROP_KEYS]),
   error_class: new Set([...BASE_PROP_KEYS, "errorClass"]),
 } as const;
-
-export function isAllowedProps(event: EventName, props: Record<string, unknown>): boolean {
-  const allowed = EVENT_ALLOWLIST[event];
-  return Object.keys(props).every((k) => allowed.has(k));
-}

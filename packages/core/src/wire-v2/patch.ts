@@ -21,10 +21,13 @@
  */
 
 import { VENDO_TREE_FORMAT_V2 } from "../formats.js";
+// CORE-6: the §8-capped generated-components byte measure is the shared
+// UTF-8 counter (the limits.ts pattern).
+import { utf8ByteLength } from "../component-map.js";
 import { safeErrorMessage } from "../errors.js";
 import type { Json } from "../ids.js";
 import { TREE_MAX_GENERATED_COMPONENTS, TREE_MAX_QUERIES, TREE_MAX_TOTAL_COMPONENT_BYTES } from "../tree-limits.js";
-import type { TreeNode } from "../tree.js";
+import { defineOwn, type TreeNode } from "../tree.js";
 import { validateTreeV2, type TreeQueryV2, type TreeV2 } from "../tree-v2.js";
 import { parseAttributes } from "./attributes.js";
 import {
@@ -38,9 +41,9 @@ import {
   type WireCompileResult,
 } from "./compile.js";
 import type { WireIssue } from "./expression.js";
-import { checkBindingShapes } from "./shape-check.js";
-import { collectText, readName, scanTagEnd, skipElement, skipWhitespace } from "./scan.js";
-import { FAILED, issue, mergeIssues, type CompileState, type Frame } from "./state.js";
+import { checkBindingShapes, mirrorBindingIssues } from "./shape-check.js";
+import { collectText, readName, scanCloseTag, skipElement, skipWhitespace } from "./scan.js";
+import { FAILED, issue, type CompileState, type Frame } from "./state.js";
 
 /** v2 spec §5 — the patch input: a prior compile (or patch) result. */
 export type WirePatchBase = Pick<WireCompileResult, "tree" | "components" | "name">;
@@ -83,9 +86,6 @@ const ATTRIBUTE_OPS: ReadonlySet<string> = new Set([
   "RemoveQuery",
   "RemoveIsland",
 ]);
-
-/** The §8-capped generated-components byte measure (mirrors limits.ts). */
-const utf8Bytes = (text: string): number => new TextEncoder().encode(text).length;
 
 interface PatchTree {
   /** Node order: base order, then inserts, minus removals (applied last). */
@@ -274,16 +274,13 @@ const compileWirePatchV2Unsafe = (
     }
     if (state.index >= state.source.length) break;
     if (state.source[state.index + 1] === "/") {
-      state.index += 2;
-      const closeName = readName(state);
-      while (state.index < state.source.length && state.source[state.index] !== ">") state.index += 1;
-      if (state.index >= state.source.length) break;
-      state.index += 1;
-      if (closeName === "Edit") {
+      const close = scanCloseTag(state);
+      if (close === FAILED) break;
+      if (close.name === "Edit") {
         editClosed = true;
         break;
       }
-      issue(state, "stray-close-tag", `</${closeName}> does not match any open element`);
+      issue(state, "stray-close-tag", `</${close.name}> does not match any open element`);
       continue;
     }
     state.index += 1;
@@ -294,11 +291,25 @@ const compileWirePatchV2Unsafe = (
     }
 
     if (op === "Query") {
+      // Document order: a hoist AFTER a <RemoveQuery> of the same name is a
+      // replacement, so the removal must not suppress it at assembly.
+      const hoistedBefore = state.queries.length;
       compileQuery(state, [{ tag: "Edit", node: { id: "", component: "Edit" } }]);
+      if (state.queries.length > hoistedBefore) {
+        removedQueries.delete((state.queries[hoistedBefore] as TreeQueryV2).name);
+      }
       continue;
     }
     if (op === "Island") {
+      // Document order, same as Query: an admitted source un-does an earlier
+      // <RemoveIsland> of the same name (defineOwn appends, so the new name
+      // is the last key).
+      const admittedBefore = Object.keys(state.components).length;
       compileIsland(state);
+      const islandNames = Object.keys(state.components);
+      if (islandNames.length > admittedBefore) {
+        removedIslands?.delete(islandNames[islandNames.length - 1] as string);
+      }
       continue;
     }
     if (op === "Insert") {
@@ -388,7 +399,7 @@ const compileWirePatchV2Unsafe = (
         if (entries.length === 0) continue;
         const merged: Record<string, Json> = { ...(node.props ?? {}) };
         for (const [key, value] of entries) {
-          Object.defineProperty(merged, key, { value, enumerable: true, writable: true, configurable: true });
+          defineOwn(merged, key, value);
         }
         node.props = merged;
         appliedOps += 1;
@@ -532,27 +543,24 @@ const compileWirePatchV2Unsafe = (
 
   // — islands (upsert − removals, §8 count/byte caps re-enforced globally) —
   const components: Record<string, string> = {};
-  const defineComponent = (key: string, source: string): void => {
-    Object.defineProperty(components, key, { value: source, enumerable: true, writable: true, configurable: true });
-  };
   for (const [key, source] of Object.entries(base.components)) {
     if (removedIslands?.has(key)) continue;
-    defineComponent(key, Object.prototype.hasOwnProperty.call(state.components, key)
+    defineOwn(components, key, Object.prototype.hasOwnProperty.call(state.components, key)
       ? state.components[key] as string
       : source);
   }
   for (const [key, source] of Object.entries(state.components)) {
     if (Object.prototype.hasOwnProperty.call(components, key) || removedIslands?.has(key)) continue;
     const names = Object.keys(components);
-    const totalBytes = names.reduce((total, existing) => total + utf8Bytes(components[existing] as string), 0);
-    if (names.length >= TREE_MAX_GENERATED_COMPONENTS || totalBytes + utf8Bytes(source) > TREE_MAX_TOTAL_COMPONENT_BYTES) {
+    const totalBytes = names.reduce((total, existing) => total + utf8ByteLength(components[existing] as string), 0);
+    if (names.length >= TREE_MAX_GENERATED_COMPONENTS || totalBytes + utf8ByteLength(source) > TREE_MAX_TOTAL_COMPONENT_BYTES) {
       if (!state.componentLimitIssued) {
         state.componentLimitIssued = true;
         issue(state, "component-limit", "generated-component caps reached; further islands were dropped");
       }
       continue;
     }
-    defineComponent(key, source);
+    defineOwn(components, key, source);
   }
 
   // — nodes: base order + inserts − removals; dangling-generated degrades
@@ -560,10 +568,9 @@ const compileWirePatchV2Unsafe = (
   const nodes: TreeNode[] = [];
   for (const id of patch.order) {
     if (patch.removed.has(id)) continue;
-    let node = patch.byId.get(id) as TreeNode;
+    const node = patch.byId.get(id) as TreeNode;
     if (node.source === "generated" && components[node.component] === undefined) {
-      if (!patch.owned.has(id)) node = mutable(patch, id);
-      delete node.source;
+      delete mutable(patch, id).source; // mutable() is a no-op copy on owned nodes
     }
     nodes.push(patch.byId.get(id) as TreeNode);
   }
@@ -589,10 +596,7 @@ const compileWirePatchV2Unsafe = (
   const bindingErrors = options?.toolShapes === undefined
     ? []
     : checkBindingShapes(nodes, queries, options.toolShapes);
-  mergeIssues(state, bindingErrors.map((error): WireIssue => ({
-    code: "shape-mismatch",
-    message: `node "${error.nodeId}" prop "${error.prop}" (${error.path}): ${error.message}`,
-  })));
+  mirrorBindingIssues(state, bindingErrors);
 
   const result: WirePatchResult = {
     tree,

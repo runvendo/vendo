@@ -13,9 +13,11 @@
  */
 
 import { reshapeShape, type ReshapeStep } from "../reshape.js";
-import { shapeAtPointer, type ShapeType } from "../shape.js";
+import { walkShapePointer, type ShapePointerMiss, type ShapeType } from "../shape.js";
 import { isPathBinding, isPlainObject, type TreeNode } from "../tree.js";
 import type { TreeQueryV2 } from "../tree-v2.js";
+import type { WireIssue } from "./expression.js";
+import { mergeIssues, type CompileState } from "./state.js";
 
 /** v2 spec §3 — one per-binding compile error: the repair contract. The
  *  node/prop anchor tells the repair loop WHERE; missing/available tell the
@@ -34,57 +36,9 @@ export interface BindingShapeError {
   available?: string[];
 }
 
-interface MissReport {
-  message: string;
-  missing?: string[];
-  available?: string[];
-}
-
-/** Walks the response shape by the binding's sub-pointer, reporting the
- *  first miss with the field context repair needs. `null` miss + `null`
- *  shape means an undecodable pointer segment — treated as unknown, not an
- *  error (validate layers own pointer grammar). */
-const walkPointer = (
-  shape: ShapeType,
-  pointer: string,
-): { shape: ShapeType | null; miss: MissReport | null } => {
-  let current = shape;
-  if (pointer === "") return { shape: current, miss: null };
-  for (const encodedToken of pointer.slice(1).split("/")) {
-    if (/~(?:[^01]|$)/.test(encodedToken)) return { shape: null, miss: null };
-    const token = encodedToken.replace(/~1/g, "/").replace(/~0/g, "~");
-    if (current.kind === "json") return { shape: { kind: "json" }, miss: null };
-    if (current.kind === "object") {
-      if (!Object.prototype.hasOwnProperty.call(current.fields, token)) {
-        return {
-          shape: null,
-          miss: {
-            message: `field "${token}" is absent from the tool's response shape`,
-            missing: [token],
-            available: Object.keys(current.fields),
-          },
-        };
-      }
-      current = current.fields[token] as ShapeType;
-      continue;
-    }
-    if (current.kind === "array") {
-      if (!/^(?:0|[1-9]\d*)$/.test(token)) {
-        return {
-          shape: null,
-          miss: { message: `"${token}" indexes into an array in the tool's response shape (expected a numeric index)` },
-        };
-      }
-      current = current.items;
-      continue;
-    }
-    return {
-      shape: null,
-      miss: { message: `the response shape has a ${current.kind} at this point; "${token}" goes past it` },
-    };
-  }
-  return { shape: current, miss: null };
-};
+/** The pointer-walk / slot-check miss contract (shape.ts's walkShapePointer
+ *  produces the pointer-walk ones). */
+type MissReport = ShapePointerMiss;
 
 /** Splits a binding `$path` into the query name and the in-response
  *  sub-pointer. Query names are identifier-only (no ~ escapes). */
@@ -240,7 +194,7 @@ const checkBinding = (
     ? (toolShapes as Record<string, ShapeType | undefined>)[tool]
     : undefined;
   if (toolShape === undefined) return { status: "ok", shape: null }; // no shape card — Json, defensive
-  const walked = walkPointer(toolShape, split.pointer);
+  const walked = walkShapePointer(toolShape, split.pointer);
   if (walked.miss !== null) return { status: "miss", query: split.query, tool, report: walked.miss };
   if (walked.shape === null) return { status: "ok", query: split.query, tool, shape: null };
   let current = walked.shape;
@@ -310,6 +264,17 @@ const collectFromValue = (
   for (const child of Object.values(value)) {
     collectFromValue(child, nodeId, prop, queryTools, toolShapes, errors, null);
   }
+};
+
+/** Mirrors binding shape errors into the issue stream (capped like every
+ *  issue; no index — post-pass, not a cursor). Shared by compileWireV2's
+ *  finishResult and the patch compiler, keeping the message format
+ *  byte-identical. */
+export const mirrorBindingIssues = (state: CompileState, bindingErrors: readonly BindingShapeError[]): void => {
+  mergeIssues(state, bindingErrors.map((error): WireIssue => ({
+    code: "shape-mismatch",
+    message: `node "${error.nodeId}" prop "${error.prop}" (${error.path}): ${error.message}`,
+  })));
 };
 
 /**

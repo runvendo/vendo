@@ -10,6 +10,7 @@
 import { FN_REFERENCE_PATTERN, findInvalidActionReference } from "../fn-references.js";
 import type { Json } from "../ids.js";
 import { TOOL_NAME_PATTERN } from "../tools.js";
+import { defineOwn } from "../tree.js";
 import { parseExpression } from "./expression.js";
 import { NAME_START, readName, skipBraceBlock, skipQuotedRun, skipWhitespace } from "./scan.js";
 import {
@@ -203,14 +204,8 @@ export const parseAttributes = (state: CompileState, element: AttributeElement):
       continue;
     }
     if (value === DROPPED) continue;
-    // Own-property define, not `props[name] = value`: a wire attribute named
-    // __proto__ must become data, never the props object's prototype (same
-    // rule as expression.ts's object parser).
-    Object.defineProperty(props, name, {
-      value,
-      enumerable: true,
-      writable: true,
-      configurable: true,
-    });
+    // defineOwn: a wire attribute named __proto__ must become data, never
+    // the props object's prototype.
+    defineOwn(props, name, value);
   }
 };

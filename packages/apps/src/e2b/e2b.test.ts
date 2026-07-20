@@ -19,6 +19,7 @@ const sdk = vi.hoisted(() => {
     createSnapshot: vi.fn(async () => ({ snapshotId: "snapshot_789" })),
     pause: vi.fn(async () => true),
     kill: vi.fn(async () => true),
+    setTimeout: vi.fn(async () => undefined),
     commands: {
       run: vi.fn(async () => ({ exitCode: 7, stdout: "out", stderr: "err" })),
     },
@@ -32,6 +33,7 @@ const sdk = vi.hoisted(() => {
     ...sandbox,
     sandboxId: "sandbox_456",
     getHost: vi.fn((port: number) => `${port}-sandbox_456.e2b.app`),
+    setTimeout: vi.fn(async () => undefined),
   };
   return {
     sandbox,
@@ -117,6 +119,25 @@ describe("e2bSandbox", () => {
     }));
     await machine.request({ method: "GET", path: "/other", port: 3000 });
     expect(fetch).toHaveBeenLastCalledWith("https://3000-sandbox_123.e2b.app/other", expect.anything());
+  });
+
+  it("extends the provider TTL on request activity so a busy box outlives timeoutMs", async () => {
+    // The provider deadline is fixed at create/resume; without sliding it, a
+    // machine under steady traffic is killed mid-session at timeoutMs before
+    // the idle lifecycle ever snapshots it.
+    const machine = await e2bSandbox({ apiKey: "key_test", timeoutMs: 12_345 }).create({ env: {} });
+    await machine.request({ method: "GET", path: "/a" });
+    expect(sdk.sandbox.setTimeout).toHaveBeenCalledWith(12_345);
+    // Throttled: back-to-back requests share one provider extension call.
+    await machine.request({ method: "GET", path: "/b" });
+    expect(sdk.sandbox.setTimeout).toHaveBeenCalledOnce();
+
+    // A resumed machine slides its deadline the same way…
+    const resumed = await e2bSandbox({ apiKey: "key_test", timeoutMs: 9_000 }).resume(v2SnapshotRef);
+    // …and the extension is best-effort: a provider failure never fails the request.
+    sdk.resumedSandbox.setTimeout.mockRejectedValueOnce(new Error("e2b is down"));
+    await expect(resumed.request({ method: "GET", path: "/c" })).resolves.toMatchObject({ status: 201 });
+    expect(sdk.resumedSandbox.setTimeout).toHaveBeenCalledWith(9_000);
   });
 
   it("snapshots to a v2 ref, sleeps with pause, and destroys with kill", async () => {
@@ -225,22 +246,16 @@ describe("e2bSandbox", () => {
     await expect(machine.url(9090)).resolves.toBe("https://9090-sandbox_123.e2b.app");
   });
 
-  it("keeps adapter-private exec, files, url, and deprecated create extras", async () => {
+  it("keeps adapter-private exec and files", async () => {
     const adapter = e2bSandbox({ apiKey: "key_test", timeoutMs: 5_000 });
     const created = await adapter.create({
       env: { PORT: "8080" },
-      files: { "/app/a.txt": "alpha", "/app/b.bin": new Uint8Array([4, 5]) },
-      egress: ["api.example.com"],
-    } as Parameters<typeof adapter.create>[0]);
+      allowedDomains: ["api.example.com"],
+    });
     const machine = created as unknown as AdapterPrivateMachine;
     expect(sdk.create).toHaveBeenCalledWith(expect.objectContaining({
       network: { allowOut: ["api.example.com"], denyOut: ["0.0.0.0/0"] },
     }));
-    const batch = sdk.sandbox.files.write.mock.calls[0]?.[0];
-    expect(batch).toEqual([
-      { path: "/app/a.txt", data: "alpha" },
-      { path: "/app/b.bin", data: expect.any(ArrayBuffer) },
-    ]);
 
     await expect(machine.exec("pwd", { cwd: "/app", timeoutMs: 200 })).resolves.toEqual({
       code: 7,

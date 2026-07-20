@@ -1,8 +1,11 @@
+import type { ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import {
   cloudDoctor,
   CLOUD_UNLOCKS,
   liveModelTurn,
+  startDevServerForProbe,
 } from "./doctor-live.js";
 
 function sseResponse(frames: string[]): Response {
@@ -72,5 +75,27 @@ describe("cloudDoctor", () => {
   it("accepts a well-formed key", async () => {
     const result = await cloudDoctor({ env: { VENDO_API_KEY: `vnd_${"a".repeat(40)}` } });
     expect(result).toEqual({ present: true, ok: true, unlocks: CLOUD_UNLOCKS });
+  });
+});
+
+describe("startDevServerForProbe", () => {
+  it("degrades to ok:false when the spawn itself fails (package manager missing from PATH)", async () => {
+    // A lockfile-derived package manager that is not installed makes spawn emit
+    // 'error' (ENOENT); with no listener that crashes the whole doctor process.
+    const child = new EventEmitter() as unknown as ChildProcess & EventEmitter;
+    (child as unknown as { kill: () => void }).kill = vi.fn();
+    const fetchImpl = vi.fn(async () => { throw new Error("connection refused"); }) as unknown as typeof fetch;
+    const started = await startDevServerForProbe({
+      root: "/nonexistent/vendo-doctor-spawn-test",
+      statusUrl: "http://localhost:3000/api/vendo",
+      fetchImpl,
+      timeoutMs: 10_000,
+      spawnDev: () => {
+        setImmediate(() => child.emit("error", new Error("spawn yarn ENOENT")));
+        return child;
+      },
+    });
+    expect(started.ok).toBe(false);
+    expect(started.log.join("")).toContain("spawn yarn ENOENT");
   });
 });

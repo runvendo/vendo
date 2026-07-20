@@ -2,7 +2,8 @@ import { VendoError, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
 import { appFixture, persistentPrincipal } from "./fixtures.test-util.js";
-import { appStore, createStore, stateStore } from "./index.js";
+import { stateStore } from "./helpers/state.js";
+import { appStore, createStore } from "./index.js";
 
 for (const backend of backends()) {
   describe(`${backend.name} vendo_state routing`, () => {

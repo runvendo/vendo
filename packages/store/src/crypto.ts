@@ -1,8 +1,6 @@
 import { VendoError } from "@vendoai/core";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
-const keys = new WeakMap<object, Buffer>();
-
 /** 02-store §4 */
 export function validateEncryptionKey(value: string): Buffer {
   const validCharacters = /^[A-Za-z0-9+/]+={0,2}$/.test(value);
@@ -11,31 +9,6 @@ export function validateEncryptionKey(value: string): Buffer {
     throw new VendoError("validation", "encryption.key must be a base64-encoded 32-byte key");
   }
   return decoded;
-}
-
-export function setEncryptionKey(store: object, key: Buffer | undefined): void {
-  if (key) keys.set(store, key);
-}
-
-export function getEncryptionKey(store: object): Buffer | undefined {
-  return keys.get(store);
-}
-
-export function dropEncryptionKey(store: object): void {
-  keys.delete(store);
-  plaintextAllowed.delete(store);
-}
-
-/** 02-store §4 — dev-mode plaintext secrets. Tracked per store handle like the
- *  key itself; production composition never sets this. */
-const plaintextAllowed = new WeakSet<object>();
-
-export function setPlaintextSecretsAllowed(store: object, allowed: boolean): void {
-  if (allowed) plaintextAllowed.add(store);
-}
-
-export function plaintextSecretsAllowed(store: object): boolean {
-  return plaintextAllowed.has(store);
 }
 
 /** 02-store §4 — envelope version `v2`: AES-256-GCM with the secret NAME

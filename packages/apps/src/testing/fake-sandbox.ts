@@ -37,17 +37,12 @@ export interface FakeExecCall {
   opts?: { cwd?: string; timeoutMs?: number };
 }
 
-/** The v2 create spec plus the deprecated v1 compat extras the fake still
-    models (kept local so the fake never depends on the temporary
-    sandbox-v1-compat module; both extras die with the v1 paths). */
+/** The v2 create spec (the seam's SandboxAdapter.create parameter, kept local
+    for the fake's internal signatures). */
 export interface FakeCreateSpec {
   template?: string;
   env: Record<string, string>;
   allowedDomains?: string[];
-  /** @deprecated v1 initial-files seeding; the in-box agent replaced it. */
-  files?: Record<string, Uint8Array | string>;
-  /** @deprecated v1 name for allowedDomains. */
-  egress?: string[];
 }
 
 interface FakeSnapshot {
@@ -158,11 +153,6 @@ export class FakeSandboxMachine implements SandboxMachine {
     this.port = parsePort(this.env);
     this.fileContents = new Map([...files].map(([path, bytes]) => [path, bytes.slice()]));
     this.app = app;
-  }
-
-  /** @deprecated v1 alias for allowedDomains, kept for the dying v1 call sites. */
-  get egress(): readonly string[] | undefined {
-    return this.allowedDomains;
   }
 
   private appContext(): MachineAppContext {
@@ -330,10 +320,9 @@ export const fakeSandbox = (options: { app?: MachineApp } = {}): FakeSandboxAdap
       // matching real providers where snapshots double as templates.
       const seed = spec.template === undefined ? undefined : providerSnapshots.get(spec.template);
       for (const [path, bytes] of seed?.files ?? []) files.set(path, bytes.slice());
-      for (const [path, bytes] of Object.entries(spec.files ?? {})) files.set(path, toBytes(bytes));
       return makeMachine(
         spec.env,
-        spec.allowedDomains ?? spec.egress,
+        spec.allowedDomains,
         spec.template,
         files,
         installedApp ?? seed?.app,

@@ -4,7 +4,7 @@
     it out so callers only show "Copied" when it's true. */
 import { useEffect, useRef, useState } from "react";
 
-export async function writeClipboard(text: string): Promise<boolean> {
+async function writeClipboard(text: string): Promise<boolean> {
   try {
     if (typeof navigator !== "undefined" && navigator.clipboard !== undefined) {
       await navigator.clipboard.writeText(text);

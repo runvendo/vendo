@@ -2261,3 +2261,33 @@ describe("ENG-353 — turn liveness: heartbeat-armed idle abort for disconnects 
     expect(await (await beat(vendo, "thr_done")).json()).toEqual({ active: false });
   });
 });
+
+describe("execution-v2 — box-edit env knobs", () => {
+  it("rejects malformed VENDO_BOX_EDIT_TIMEOUT_MS/POLL_MS at compose time instead of passing NaN into the machine config", async () => {
+    // A units-suffixed operator value like "8m" would flow as NaN into
+    // runBoxEdit, where NaN defeats the ?? defaults: deadline = NaN makes
+    // every box edit "time out after NaNs" instantly (and roll the edit
+    // back), and pollIntervalMs = NaN hot-polls the box control port. Same
+    // posture as validateSessionsConfig: fail loudly at compose time.
+    const store = await tempStore("vendo-box-env-");
+    vi.stubEnv("VENDO_BOX_EDIT_TIMEOUT_MS", "8m");
+    let thrown: unknown;
+    try {
+      createVendo({ model: {} as LanguageModel, store });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(VendoError);
+    expect((thrown as VendoError).code).toBe("validation");
+    expect((thrown as VendoError).message).toContain("VENDO_BOX_EDIT_TIMEOUT_MS");
+
+    vi.stubEnv("VENDO_BOX_EDIT_TIMEOUT_MS", "480000");
+    vi.stubEnv("VENDO_BOX_EDIT_POLL_MS", "0");
+    expect(() => createVendo({ model: {} as LanguageModel, store }))
+      .toThrowError(/VENDO_BOX_EDIT_POLL_MS/);
+
+    // Valid positive-integer values still compose.
+    vi.stubEnv("VENDO_BOX_EDIT_POLL_MS", "2500");
+    expect(() => createVendo({ model: {} as LanguageModel, store })).not.toThrow();
+  });
+});

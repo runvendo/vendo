@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { EVENT_ALLOWLIST, isAllowedProps, type EventName } from "./events.js";
+import { EVENT_ALLOWLIST, type EventName } from "./events.js";
 
 describe("event allowlist", () => {
   it("lists every event with an explicit allowed-key set", () => {
@@ -14,11 +14,6 @@ describe("event allowlist", () => {
     for (const name of names) {
       expect(EVENT_ALLOWLIST[name]).toBeInstanceOf(Set);
     }
-  });
-
-  it("rejects a property key not in the event's allowlist", () => {
-    expect(isAllowedProps("init_started", { vendoVersion: "0.0.0" })).toBe(true);
-    expect(isAllowedProps("init_started", { sourceCode: "secret" })).toBe(false);
   });
 
   it("never allows a content-shaped key on any event", () => {

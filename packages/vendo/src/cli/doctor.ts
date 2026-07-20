@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import type { Telemetry } from "@vendoai/telemetry";
 import {
@@ -15,7 +14,7 @@ import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { detectFramework, detectVendoWiring } from "./framework.js";
 import { walk } from "./theme/walk.js";
 import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
-import { CLI_VERSION, consoleOutput, exists, readOptional, toolingTelemetry, type Output } from "./shared.js";
+import { askYesNo, CLI_VERSION, consoleOutput, exists, readOptional, toolingTelemetry, type Output } from "./shared.js";
 
 export interface DoctorOptions {
   targetDir: string;
@@ -24,7 +23,8 @@ export interface DoctorOptions {
   output?: Output;
   /** Machine-readable single-object output (design §5). */
   json?: boolean;
-  /** Auto-confirm the dev-server-probe consent (non-interactive). */
+  /** Auto-confirm the dev-server-probe consent — works non-interactively
+   *  (piped stdio / CI); --json runs never start the server. */
   yes?: boolean;
   env?: Record<string, string | undefined>;
   telemetry?: {
@@ -53,18 +53,6 @@ interface DoctorCheck {
   message: string;
   error_code?: DoctorErrorCode;
   fix_ref?: string;
-}
-
-async function askYesNo(question: string, defaultYes = false): Promise<boolean> {
-  if (!stdin.isTTY || !stdout.isTTY) return false;
-  const prompt = createInterface({ input: stdin, output: stdout });
-  try {
-    const answer = (await prompt.question(`${question} ${defaultYes ? "[Y/n]" : "[y/N]"} `)).trim().toLowerCase();
-    if (answer === "") return defaultYes;
-    return ["y", "yes"].includes(answer);
-  } finally {
-    prompt.close();
-  }
 }
 
 async function hasDependency(root: string): Promise<boolean> {
@@ -188,11 +176,13 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
 
   // Consent-gated dev-server start (design §5): when nothing is listening on
   // the dev port and doctor is interactive, offer to boot it so the live probes
-  // have something to reach. Skipped in --json and non-interactive runs.
+  // have something to reach. --yes is the documented non-interactive consent
+  // (quickstart: "pass --yes to start it non-interactively"), so it bypasses
+  // the TTY gate. Skipped in --json runs (stdout carries only the final object).
   const interactive = options.interactive ?? (Boolean(stdout.isTTY) && Boolean(stdin.isTTY));
   const confirm = options.confirm ?? askYesNo;
   let devServerStop: (() => void) | null = null;
-  if (!json && interactive) {
+  if (!json && (interactive || options.yes === true)) {
     let listening = false;
     try { listening = (await fetchImpl(`${statusUrl}/status`)).ok; } catch { listening = false; }
     if (!listening) {
@@ -200,8 +190,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
         || await confirm("Nothing is listening on the dev port. Start the dev server for the probe?", true);
       if (go) {
         note(`\nStarting the dev server so the probe has a live composition to reach…`);
-        const start = options.startDevServer
-          ?? ((o) => startDevServerForProbe(o));
+        const start = options.startDevServer ?? startDevServerForProbe;
         const started = await start({ root, statusUrl, env, fetchImpl });
         if (started.ok) { devServerStop = started.stop; pass("dev/start", "started the dev server for the probe"); }
         else warn("dev/start", "E-DEV-001", "could not start the dev server for the probe; start it yourself (e.g. `npm run dev`) and re-run `vendo doctor`");
@@ -437,7 +426,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
 
   // VENDO_API_KEY local shape check + what Cloud unlocks (design §5-6). Key
   // problems surface on the first real service call — no validate round-trip.
-  const cloud = await (options.cloudProbe ?? ((o) => cloudDoctor(o)))({ env });
+  const cloud = await (options.cloudProbe ?? cloudDoctor)({ env });
   if (cloud.present && cloud.ok) {
     pass("cloud/key", "Vendo Cloud key present and well-formed");
   } else if (cloud.present) {

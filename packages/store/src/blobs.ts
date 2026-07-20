@@ -1,10 +1,6 @@
 import type { BlobStore } from "@vendoai/core";
 import type { Db } from "./db.js";
-import { appScopeId, requireKnownApp, text, unknownAppError } from "./helpers/utils.js";
-
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, "\\$&");
-}
+import { appScopeId, escapeLike, requireKnownApp, text, unknownAppError } from "./helpers/utils.js";
 
 /** 01-core §12 */
 export function createBlobStore(db: Db, namespace: string): BlobStore {

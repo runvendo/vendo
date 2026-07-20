@@ -80,3 +80,10 @@ export const treeNodeSchema = z.object({
 export const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** The one canonical own-property define (the isPlainObject precedent): a
+ *  wire/sample key named __proto__ must become data, never the record's
+ *  prototype. */
+export const defineOwn = <T>(record: Record<string, T>, key: string, value: T): void => {
+  Object.defineProperty(record, key, { value, enumerable: true, writable: true, configurable: true });
+};
+

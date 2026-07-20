@@ -1,13 +1,13 @@
 import type { ToolDescriptor } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
+import { CAPABILITY_MISS_TOOL_NAME } from "./capability-miss.js";
+import { createAgent } from "./index.js";
 import {
-  CAPABILITY_MISS_TOOL_NAME,
   DEFAULT_MAX_INITIAL_TOOLS,
   VENDO_TOOLS_SEARCH_TOOL_NAME,
   computeInitialLoadout,
-  createAgent,
   type ToolSearchFn,
-} from "./index.js";
+} from "./tool-search.js";
 import {
   boundRegistry,
   ctx,

@@ -194,17 +194,10 @@ function normalizeCodeDecision(decision: GuardDecision): DraftDecision {
   // dropping any code-supplied grantId) makes a code-sourced run behave exactly
   // like a rule-sourced run: away-downgraded to a park, and honestly attributed
   // in the audit trail. This mirrors how code ERRORS already fail to "rule".
-  if (decision.action === "run") {
-    return { action: "run", decidedBy: "rule" };
+  if (decision.action === "block") {
+    return { action: "block", reason: decision.reason, decidedBy: "rule" };
   }
-  if (decision.action === "ask") {
-    return { action: "ask", decidedBy: "rule" };
-  }
-  return {
-    action: "block",
-    reason: decision.reason,
-    decidedBy: "rule",
-  };
+  return { action: decision.action, decidedBy: "rule" };
 }
 
 function normalizeRememberedScope(scope: GrantScope, request: ApprovalRequest): GrantScope {
@@ -457,26 +450,24 @@ class GuardImplementation implements VendoGuard {
         approval,
         decidedBy: draft.decidedBy,
       };
-      if (invalidated.length > 0) {
-        const first = invalidated[0];
-        if (first !== undefined) {
-          await this.report(
-            eventFromContext(ctx, {
-              kind: "policy-decision",
+      const first = invalidated[0];
+      if (first !== undefined) {
+        await this.report(
+          eventFromContext(ctx, {
+            kind: "policy-decision",
+            tool: call.tool,
+            inputPreview: approval.inputPreview,
+            outcome: "pending-approval",
+            decidedBy: "default",
+            detail: {
+              reason: "grant-invalidated",
+              grantIds: invalidated.map((grant) => grant.id),
               tool: call.tool,
-              inputPreview: approval.inputPreview,
-              outcome: "pending-approval",
-              decidedBy: "default",
-              detail: {
-                reason: "grant-invalidated",
-                grantIds: invalidated.map((grant) => grant.id),
-                tool: call.tool,
-                staleHash: first.descriptorHash,
-                currentHash: descriptorHash(effectiveDescriptor),
-              },
-            }),
-          );
-        }
+              staleHash: first.descriptorHash,
+              currentHash: descriptorHash(effectiveDescriptor),
+            },
+          }),
+        );
       }
       await this.report(
         eventFromContext(ctx, {
@@ -497,27 +488,19 @@ class GuardImplementation implements VendoGuard {
       };
     }
 
-    if (draft.action === "block") {
-      if (!metadata.blockAlreadyAudited) {
-        await this.report(
-          eventFromContext(ctx, {
-            kind: "policy-decision",
-            tool: call.tool,
-            inputPreview: inputPreview(call),
-            outcome: "blocked",
-            decidedBy: draft.decidedBy,
-            ...(metadata.rationale === undefined
-              ? {}
-              : { detail: { rationale: metadata.rationale } }),
-          }),
-        );
-      }
-      const decision: GuardDecision = draft;
-      return {
-        decision,
-        descriptor: effectiveDescriptor,
-        ...(metadata.rationale === undefined ? {} : { rationale: metadata.rationale }),
-      };
+    if (draft.action === "block" && !metadata.blockAlreadyAudited) {
+      await this.report(
+        eventFromContext(ctx, {
+          kind: "policy-decision",
+          tool: call.tool,
+          inputPreview: inputPreview(call),
+          outcome: "blocked",
+          decidedBy: draft.decidedBy,
+          ...(metadata.rationale === undefined
+            ? {}
+            : { detail: { rationale: metadata.rationale } }),
+        }),
+      );
     }
 
     return {
@@ -614,19 +597,12 @@ class GuardImplementation implements VendoGuard {
     const rules = await this.#policy.rules();
     for (const rule of rules) {
       if (!ruleMatches(rule, call.tool, descriptor.risk, ctx.venue, ctx.presence)) continue;
-      if (rule.action === "run") {
-        return withInvalidated({ decision: { action: "run", decidedBy: "rule" } });
+      if (rule.action === "block") {
+        return withInvalidated({
+          decision: { action: "block", reason: rule.note ?? "blocked by policy rule", decidedBy: "rule" },
+        });
       }
-      if (rule.action === "ask") {
-        return withInvalidated({ decision: { action: "ask", decidedBy: "rule" } });
-      }
-      return withInvalidated({
-        decision: {
-          action: "block",
-          reason: rule.note ?? "blocked by policy rule",
-          decidedBy: "rule",
-        },
-      });
+      return withInvalidated({ decision: { action: rule.action, decidedBy: "rule" } });
     }
 
     const code = this.#policyConfig?.code;
@@ -655,26 +631,10 @@ class GuardImplementation implements VendoGuard {
           recent,
           directions,
         });
-        if (judged.action === "run") {
-          return withInvalidated({
-            decision: { action: "run", decidedBy: "judge" },
-            rationale: judged.rationale,
-          });
-        }
-        if (judged.action === "ask") {
-          return withInvalidated({
-            decision: { action: "ask", decidedBy: "judge" },
-            rationale: judged.rationale,
-          });
-        }
-        return withInvalidated({
-          decision: {
-            action: "block",
-            reason: judged.rationale,
-            decidedBy: "judge",
-          },
-          rationale: judged.rationale,
-        });
+        const decision: DraftDecision = judged.action === "block"
+          ? { action: "block", reason: judged.rationale, decidedBy: "judge" }
+          : { action: judged.action, decidedBy: "judge" };
+        return withInvalidated({ decision, rationale: judged.rationale });
       } catch (error) {
         return withInvalidated({
           decision: { action: "ask", decidedBy: "judge" },
@@ -1052,6 +1012,8 @@ class GuardImplementation implements VendoGuard {
     const store = this.#store.records(AUDIT_COLLECTION);
     let cursor = filter.cursor;
     let resultCursor: string | undefined;
+    const fromInstant = filter.from === undefined ? undefined : Date.parse(filter.from);
+    const toInstant = filter.to === undefined ? undefined : Date.parse(filter.to);
 
     while (events.length < limit) {
       const remaining = limit - events.length;
@@ -1060,8 +1022,6 @@ class GuardImplementation implements VendoGuard {
         limit: remaining,
         ...(cursor === undefined ? {} : { cursor }),
       });
-      const fromInstant = filter.from === undefined ? undefined : Date.parse(filter.from);
-      const toInstant = filter.to === undefined ? undefined : Date.parse(filter.to);
       for (const record of page.records) {
         const event = auditData(record);
         // Compare instants, not ISO strings: "…00:00:00Z" and "…00:00:00.000Z"

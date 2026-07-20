@@ -33,12 +33,8 @@ export function FluidReveal({
   // Render-phase capture of the outgoing subtree (the documented
   // derived-state-from-props pattern): the switch must be observed on the
   // exact render where the key flips, or the old content is already gone.
-  if (previous.current.key !== stateKey) {
-    setExiting(previous.current);
-    previous.current = { key: stateKey, node: children };
-  } else {
-    previous.current = { key: stateKey, node: children };
-  }
+  if (previous.current.key !== stateKey) setExiting(previous.current);
+  previous.current = { key: stateKey, node: children };
 
   useEffect(() => {
     if (!exiting) return;

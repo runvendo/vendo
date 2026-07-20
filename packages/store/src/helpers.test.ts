@@ -9,13 +9,13 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
 import { appFixture, approvalFixture, at, auditFixture, grantFixture, persistentPrincipal } from "./fixtures.test-util.js";
+import { approvalStore } from "./helpers/approvals.js";
+import { stateStore } from "./helpers/state.js";
 import {
   appStore,
-  approvalStore,
   auditStore,
   grantStore,
   runStore,
-  stateStore,
   threadStore,
 } from "./index.js";
 

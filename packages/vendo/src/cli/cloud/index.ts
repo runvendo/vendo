@@ -3,12 +3,12 @@ import type { CloudCommandOptions } from "./command.js";
 import { runDeviceLogin, type DeviceLoginOptions } from "./device-login.js";
 import { runKeys } from "./keys.js";
 import { runInvite, runMembers } from "./members.js";
-import { cloudConsoleOutput } from "./output.js";
+import { consoleOutput } from "../shared.js";
 import { runBilling, runDeployments, runOrgs, runUsage } from "./read.js";
 import { runPinShip, runPublish, runShare } from "./services.js";
 import { runDeploy, type CloudDeployOptions } from "./deploy.js";
 
-export const CLOUD_HELP = `vendo cloud — Vendo Cloud API client
+const CLOUD_HELP = `vendo cloud — Vendo Cloud API client
 
 Usage: vendo cloud <command> [options]
 
@@ -51,7 +51,7 @@ export type RunCloudOptions = CloudCommandOptions & CloudAuthOptions & CloudDepl
 
 export async function runCloud(args: string[], options: RunCloudOptions = {}): Promise<number> {
   const [command, ...commandArgs] = args;
-  const output = options.output ?? cloudConsoleOutput;
+  const output = options.output ?? consoleOutput;
   if (command === undefined || command === "--help" || command === "-h" || command === "help") {
     output.log(CLOUD_HELP);
     return 0;

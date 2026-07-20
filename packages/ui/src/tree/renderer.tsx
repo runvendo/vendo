@@ -390,7 +390,8 @@ function NodeRenderer(props: NodeRendererProps) {
       // The jail element stays wired as the drop-back for any mount failure.
       const hostBind = bindProps(node.props, "host", props.data, props.state, invoke);
       const jailBind = bindProps(node.props, "jail", props.data, props.state, invoke);
-      const mismatch = hostBind.mismatch ?? jailBind.mismatch;
+      // Reshape mismatches are mode-independent, so both binds report the same one.
+      const mismatch = hostBind.mismatch;
       if (mismatch !== null) {
         content = <>{dataShapeNotice(mismatch)}{children}</>;
       } else {

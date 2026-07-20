@@ -24,13 +24,17 @@ fetch it when you need more detail than this skill carries.
 
    ```bash
    npx vendo init --agent   # read-only JSON plan: framework, code diffs, extracted tools, risk recommendations, aiPolish delegation contract
-   npx vendo init --yes --model-import "@/lib/ai" --brief "<one-paragraph product brief>"
+   npx vendo init --yes
    ```
 
-   `--agent` writes nothing. `--yes` approves every displayed diff, so read the
-   plan's `codeChanges` before running it. Without `--yes`, init interviews the
-   user (four questions) and asks per-diff consent — prefer that when a human
-   is present.
+   `--agent` writes nothing. Init applies its bounded change set and lists
+   it; the only questions are an auth confirm when detection is uncertain, a
+   review of uncertain theme slots, and the end-of-init cloud-login offer
+   (`--yes` skips it). Each question has a non-interactive answer flag:
+   `--auth <preset>`, `--framework <name>`, `--theme <slot=value>`
+   (repeatable), `--cloud-key <key>` or `--byo`, and `--ai-polish` to consent
+   to the AI extraction pass. Prefer the interactive run when a human is
+   present.
 
 3. What init does (framework detected from `package.json`, `next` beats
    `express`; anything else is treated as Next):
@@ -58,8 +62,8 @@ fetch it when you need more detail than this skill carries.
    ```
 
    Never invent a key; ask the user for one if none is set. Any AI SDK
-   provider works — point `--model-import` at the host's own model module
-   when one exists.
+   provider works — point `vendo refine --model-import` at the host's own
+   model module when one exists.
 
 5. Verify. Start the dev server, then:
 

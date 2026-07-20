@@ -2,14 +2,14 @@ import { VendoError, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../backends.test-util.js";
 import { appFixture, approvalFixture, grantFixture } from "../fixtures.test-util.js";
+import { approvalStore } from "./approvals.js";
+import { stateStore } from "./state.js";
 import {
   adoptEphemeralSubject,
   appStore,
-  approvalStore,
   createStore,
   grantStore,
   registerEphemeralSubject,
-  stateStore,
   sweepEphemeralSubjects,
   threadStore,
 } from "../index.js";

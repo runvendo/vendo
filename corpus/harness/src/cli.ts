@@ -944,7 +944,7 @@ async function runAiCommand(options: AiCommandOptions, deps: ResolvedDeps): Prom
 
   // Fail fast, never hang: the matrix runs a real model and is useless
   // without the SDK and a credential. The SDK lives in a gitignored cache,
-  // never in the workspace (the dev-riders host-only resolution doctrine).
+  // never in the workspace (the host-only SDK resolution doctrine).
   const sdkDir = agentSdkDir(context.reposDir);
   await deps.ensureAgentSdk(sdkDir);
   const harness = deps.createExtractionHarness(sdkDir);

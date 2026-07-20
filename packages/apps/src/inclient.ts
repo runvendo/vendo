@@ -1,4 +1,5 @@
 import type { AppDocument, AppId, RecordStore, StoreAdapter } from "@vendoai/core";
+import { listAllRecords } from "./persistence.js";
 import { inClientApprovalSchema, type InClientApproval } from "./pins.js";
 import { appVersionHash } from "./version-hash.js";
 
@@ -37,18 +38,8 @@ export interface InClientApprovalAccess {
 
 const COLLECTION = "vendo_inclient_approvals";
 
-const allRecords = async (records: RecordStore, appId: AppId) => {
-  const found = [];
-  let cursor: string | undefined;
-  do {
-    const page = await records.list(cursor === undefined
-      ? { refs: { appId } }
-      : { refs: { appId }, cursor });
-    found.push(...page.records);
-    cursor = page.cursor;
-  } while (cursor !== undefined);
-  return found;
-};
+const allRecords = (records: RecordStore, appId: AppId) =>
+  listAllRecords(records, { refs: { appId } });
 
 /** 06-apps §9 — hash-pinned in-client approvals over the store seam. */
 export const createInClientApprovals = (store: StoreAdapter): InClientApprovalAccess => {

@@ -119,7 +119,8 @@ interface PinBoundaryState {
   failed: boolean;
 }
 
-class PinErrorBoundary extends Component<PinBoundaryProps, PinBoundaryState> {
+/** 06-apps §8 — an approved pin may degrade; the original product remains. */
+export class PinMount extends Component<PinBoundaryProps, PinBoundaryState> {
   state: PinBoundaryState = { failed: false };
 
   static getDerivedStateFromError(): PinBoundaryState {
@@ -138,9 +139,4 @@ class PinErrorBoundary extends Component<PinBoundaryProps, PinBoundaryState> {
     const Fallback = this.props.fallback;
     return this.state.failed ? <Fallback /> : this.props.children;
   }
-}
-
-/** 06-apps §8 — an approved pin may degrade; the original product remains. */
-export function PinMount(props: PinBoundaryProps) {
-  return <PinErrorBoundary {...props} />;
 }

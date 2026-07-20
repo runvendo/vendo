@@ -149,7 +149,8 @@ hand-write one.
 ### The catch-all route — the composition
 
 ```ts
-// app/api/vendo/[...vendo]/route.ts — what `vendo init` scaffolds
+// app/api/vendo/[...vendo]/route.ts — the `vendo init` scaffold, plus an
+// explicit model pin (init itself writes no model line)
 import { anthropic } from "@ai-sdk/anthropic";
 import { authJs, createVendo, nextVendoHandler } from "@vendoai/vendo/server";
 import { registry } from "@/vendo/registry";
@@ -196,18 +197,20 @@ import type { VendoStore } from "@vendoai/store";
 import type { VendoAgent } from "@vendoai/agent";
 import type { Connector, ActionsRegistry, ServerActionHandler } from "@vendoai/actions";
 import type { VendoGuard, PolicyConfig, Judge } from "@vendoai/guard";
-import type { AppsRuntime, SandboxAdapter } from "@vendoai/apps";
+import type { AppsConfig, AppsRuntime, SandboxAdapter } from "@vendoai/apps";
 import type { AutomationsEngine } from "@vendoai/automations";
-import type { HostAuthPreset, HostOAuthAdapter } from "@vendoai/vendo/server";
+import type { ConnectionsService, HostAuthPreset, HostOAuthAdapter } from "@vendoai/vendo/server";
 
 export function createVendo(config: {
   model?: LanguageModel;       // absent → env-resolved key (see Model keys above)
+  paint?: AppsConfig["paint"]; // paint-lane knob for app generation (no-think model, or `disabled`)
   auth?: HostAuthPreset;       // one preset fills principal + actAs + oauth
   principal?: (req: Request) => Promise<Principal | null>; // escape hatch
   catalog?: ComponentCatalog | ComponentRegistry;           // registry.tsx, or the array form
   store?: VendoStore;
   sandbox?: SandboxAdapter;
   connectors?: Connector[];
+  connections?: ConnectionsService; // explicit connections adapter; always wins over defaults
   actAs?: ActAs;                // escape hatch
   policy?: PolicyConfig;        // "cautious" | "readonly" | "autopilot" | { file } | { rules }
   judge?: Judge;

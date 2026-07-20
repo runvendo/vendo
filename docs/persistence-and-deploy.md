@@ -60,6 +60,9 @@ rotate the key by hand — existing ciphertext would be orphaned.
 | `vendo_audit` | `id, at, kind, subject, venue, presence, app_id, tool, event` | append-only audit log |
 | `vendo_runs` | `id, app_id, trigger, status, record, started_at, finished_at` | automation runs |
 | `vendo_secrets` | `name, ciphertext, created_at` | optional encrypted secrets |
+| `vendo_sessions` | `subject, touched_at` | ephemeral (anonymous) session registry the TTL sweep reads |
+| `vendo_mcp_clients` | `id, data, refs, created_at, updated_at` | registered MCP door clients |
+| `vendo_mcp_grants` | `id, data, refs, created_at, updated_at` | MCP door OAuth grants |
 
 All JSON columns use `jsonb`. `vendo_records.refs` is GIN-indexed. App storage
 collections use `app:<appId>:<name>`.

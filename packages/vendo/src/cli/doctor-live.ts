@@ -1,5 +1,4 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { stdout } from "node:process";
 import {
   describeDevCredential,
   resolveDevCredential,
@@ -223,13 +222,21 @@ export async function startDevServerForProbe(options: StartDevServerOptions): Pr
   };
   child.stdout?.on("data", record);
   child.stderr?.on("data", record);
+  // A spawn failure (e.g. lockfile-derived package manager missing from PATH →
+  // ENOENT) emits 'error'; without a listener that crashes the whole process.
+  // Record it and short-circuit the status wait so the caller degrades to the
+  // "could not start" warning instead.
+  let failSpawn: () => void = () => {};
+  const spawnFailed = new Promise<false>((resolve) => { failSpawn = () => resolve(false); });
+  child.on("error", (error: Error) => {
+    log.push(`spawn error: ${error.message}\n`);
+    failSpawn();
+  });
   const stop = (): void => { child.kill("SIGTERM"); };
-  const up = await waitForStatus(options.statusUrl, fetchImpl, options.timeoutMs ?? 120_000);
+  const up = await Promise.race([
+    waitForStatus(options.statusUrl, fetchImpl, options.timeoutMs ?? 120_000),
+    spawnFailed,
+  ]);
   if (!up) stop();
   return { ok: up, stop, log };
-}
-
-/** Stream a delta to the terminal (default onDelta for the live turn). */
-export function writeDelta(delta: string): void {
-  stdout.write(delta);
 }

@@ -67,4 +67,57 @@ describe("VendoPage thread sidebar refresh", () => {
       { timeout: 12000 },
     );
   });
+
+  it("re-polls a not-yet-persisted mint on a slow cadence, never a hot GET /threads loop", async () => {
+    // A real server stamps the mint header at turn START but persists the
+    // thread row at turn END — emulate that window by hiding minted threads
+    // from the list until released. Every refresh replaces `threads` with a
+    // fresh array, so a refresh-on-every-list effect re-fires per round trip.
+    let hideMinted = true;
+    let listCalls = 0;
+    const gatedClient = {
+      ...client,
+      threads: {
+        ...client.threads,
+        list: async () => {
+          listCalls += 1;
+          const summaries = await client.threads.list();
+          return hideMinted ? summaries.filter(summary => !summary.id.startsWith("thr_minted")) : summaries;
+        },
+      },
+    } satisfies VendoClient;
+    render(<VendoProvider client={gatedClient}><VendoPage /></VendoProvider>);
+    await waitFor(
+      () => expect(screen.getAllByRole("button", { name: "Fixture thread" })).toHaveLength(1),
+      { timeout: 12000 },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
+    const composer = screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
+    fireEvent.change(composer, { target: { value: "Kick off a new conversation" } });
+    const send = screen.getByRole("button", { name: "Send" });
+    await waitFor(() => expect((send as HTMLButtonElement).disabled).toBe(false), { timeout: 12000 });
+    fireEvent.click(send);
+
+    // The turn posted (minting the thr_) and the sidebar refreshed for it once.
+    await waitFor(
+      () => expect(wire.requests.some(r => r.method === "POST" && r.path === "/threads")).toBe(true),
+      { timeout: 12000 },
+    );
+    await waitFor(() => expect(listCalls).toBeGreaterThanOrEqual(2), { timeout: 12000 });
+
+    // While the mint is still absent from the list, the page must not re-fire
+    // per response: over half a second that is at most one paced retry — not
+    // a fresh GET /threads at network-RTT cadence.
+    const before = listCalls;
+    await new Promise(resolve => setTimeout(resolve, 500));
+    expect(listCalls - before).toBeLessThanOrEqual(1);
+
+    // Once the persisted row lands, the paced retry still surfaces it.
+    hideMinted = false;
+    await waitFor(
+      () => expect(screen.getAllByRole("button", { name: "Fixture thread" })).toHaveLength(2),
+      { timeout: 12000 },
+    );
+  });
 });

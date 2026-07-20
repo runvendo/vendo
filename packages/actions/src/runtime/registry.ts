@@ -315,7 +315,7 @@ function setHeader(headers: Record<string, string>, name: string, value: string)
  * design cross-cutting audit enrichment — the same mechanism as
  * `connectorAccount`). "declined" IS the away re-verification outcome: the
  * host refusing to mint fails the run closed; there is no second seam. */
-export type ActAsDisposition = "minted" | "declined" | "mismatch" | "error";
+type ActAsDisposition = "minted" | "declined" | "mismatch" | "error";
 
 function withActAs(outcome: ToolOutcome, actAs: ActAsDisposition): ToolOutcome {
   return { ...outcome, actAs } as unknown as ToolOutcome;
@@ -693,8 +693,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
   const connectors = config.connectors ?? [];
   const added: ToolRegistry[] = [];
   let hostPromise: Promise<LoadedHost> | undefined;
-  const connectorPromises = new Map<Connector, Promise<ToolDescriptor[]>>();
-  const registryPromises = new Map<ToolRegistry, Promise<ToolDescriptor[]>>();
+  const descriptorPromises = new Map<Connector | ToolRegistry, Promise<ToolDescriptor[]>>();
   let loadedPromise: Promise<LoadedRegistry> | undefined;
 
   function parseCapabilities(value: unknown, source: string): CapabilitiesFile {
@@ -738,44 +737,31 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
     return hostPromise;
   }
 
-  function connectorDescriptors(connector: Connector): Promise<ToolDescriptor[]> {
-    let promise = connectorPromises.get(connector);
+  function cachedDescriptors(source: Connector | ToolRegistry): Promise<ToolDescriptor[]> {
+    let promise = descriptorPromises.get(source);
     if (!promise) {
-      promise = connector.descriptors();
-      connectorPromises.set(connector, promise);
+      promise = source.descriptors();
+      descriptorPromises.set(source, promise);
     }
-    return promise!;
-  }
-
-  function addedDescriptors(registry: ToolRegistry): Promise<ToolDescriptor[]> {
-    let promise = registryPromises.get(registry);
-    if (!promise) {
-      promise = registry.descriptors();
-      registryPromises.set(registry, promise);
-    }
-    return promise!;
+    return promise;
   }
 
   function load(): Promise<LoadedRegistry> {
     loadedPromise ??= (async () => {
       const host = await loadHost();
-      const connectorLists = await Promise.all(connectors.map((connector) => connectorDescriptors(connector)));
-      const registryLists = await Promise.all(added.map((registry) => addedDescriptors(registry)));
-      const dispatch = new Map<string, Dispatch>();
+      const connectorLists = await Promise.all(connectors.map((connector) => cachedDescriptors(connector)));
+      const registryLists = await Promise.all(added.map((registry) => cachedDescriptors(registry)));
+      const reserved = new Map<string, Dispatch | undefined>();
       const descriptors: ToolDescriptor[] = [];
       // The primitive table compound steps validate against: post-override host +
       // connector tools ONLY — never compounds, never `add()`-registry tools.
       const primitives = new Map<string, PrimitiveStepTarget>();
 
       function register(name: string, source: string, entry?: Dispatch): void {
-        if (dispatch.has(name)) throw new VendoError("conflict", `Duplicate tool name ${name} from ${source}`);
-        if (entry) {
-          dispatch.set(name, entry);
-          descriptors.push(entry.descriptor);
-        } else {
-          // Disabled tools still reserve their name so ambiguous overrides cannot hide collisions.
-          dispatch.set(name, undefined as unknown as Dispatch);
-        }
+        if (reserved.has(name)) throw new VendoError("conflict", `Duplicate tool name ${name} from ${source}`);
+        // Disabled tools still reserve their name so ambiguous overrides cannot hide collisions.
+        reserved.set(name, entry);
+        if (entry) descriptors.push(entry.descriptor);
       }
 
       for (const extracted of host.tools) {
@@ -840,8 +826,9 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
         register(compound.name, "capabilities", { kind: "compound", descriptor: descriptorOf(compound), tool: compound });
       }
 
-      // Strip disabled reservations from runtime dispatch after all collision checks.
-      for (const [name, entry] of dispatch) if (!entry) dispatch.delete(name);
+      // Runtime dispatch keeps only enabled entries once all collision checks ran.
+      const dispatch = new Map<string, Dispatch>();
+      for (const [name, entry] of reserved) if (entry) dispatch.set(name, entry);
       return { descriptors, dispatch };
     })();
     return loadedPromise;

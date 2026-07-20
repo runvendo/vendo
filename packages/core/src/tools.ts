@@ -69,7 +69,7 @@ export interface ConnectRequired {
 }
 
 /** 01-core §4 */
-export const connectRequiredSchema = z.object({
+const connectRequiredSchema = z.object({
   connector: z.string().min(1),
   toolkit: z.string().min(1),
   message: z.string(),

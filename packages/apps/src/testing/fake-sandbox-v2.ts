@@ -1,5 +1,4 @@
-import type { SandboxMachine } from "../sandbox.js";
-import type { MachineSandboxAdapter } from "../machine-lifecycle.js";
+import type { SandboxAdapter, SandboxMachine } from "../sandbox.js";
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -88,7 +87,7 @@ export class FakeMachineV2 implements SandboxMachine {
   }
 }
 
-export interface FakeSandboxV2 extends MachineSandboxAdapter {
+export interface FakeSandboxV2 extends SandboxAdapter {
   /** Every machine this adapter ever booted, in boot order. */
   readonly machines: FakeMachineV2[];
   /** Live provider-side snapshots (destroy removes its ref from here). */
@@ -99,7 +98,7 @@ export interface FakeSandboxV2 extends MachineSandboxAdapter {
   resumes: number;
 }
 
-/** In-process MachineSandboxAdapter with inspectable machines, snapshots, and destroys. */
+/** In-process SandboxAdapter with inspectable machines, snapshots, and destroys. */
 export const fakeSandboxV2 = (): FakeSandboxV2 => {
   const machines: FakeMachineV2[] = [];
   const snapshots = new Map<string, FakeSnapshotV2>();

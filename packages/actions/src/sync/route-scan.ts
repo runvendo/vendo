@@ -345,14 +345,14 @@ async function verbsFromSource(
   visited.add(key);
   const module = parseModuleSource(source, file);
   if (!module) return new Set();
-  const direct = exportedVerbs(module, route.kind);
-  if (direct.size > 0) return direct;
+  // A route file can mix evidence kinds (e.g. an inline GET plus a re-exported
+  // POST), so union every source instead of returning the first non-empty one.
+  const methods = exportedVerbs(module, route.kind);
   const mapped = routeMapVerbs(module, route);
-  if (mapped) return mapped;
+  if (mapped) for (const method of mapped) methods.add(method);
   const objectMethods = methodKeyObjectVerbs(module);
-  if (objectMethods) return objectMethods;
+  if (objectMethods) for (const method of objectMethods) methods.add(method);
   if (depth < MAX_REEXPORT_DEPTH) {
-    const resolvedMethods = new Set<HttpMethod>();
     for (const target of await reExportTargets(module, source)) {
       const resolved = await resolveImportSource(file, target.specifier, root);
       if (!resolved) continue;
@@ -365,10 +365,10 @@ async function verbsFromSource(
         depth + 1,
         target.assumeDefaultExport,
       );
-      for (const method of nested) resolvedMethods.add(method);
+      for (const method of nested) methods.add(method);
     }
-    if (resolvedMethods.size > 0) return resolvedMethods;
   }
+  if (methods.size > 0) return methods;
   return inferredPageVerbs(module, route, assumeDefaultExport);
 }
 

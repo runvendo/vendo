@@ -5,7 +5,9 @@ import {
   toVendoWirePart,
   vendoViewStreamId,
   vendoViewPartSchema,
+  type ApprovalId,
   type Guard,
+  type RiskLabel,
   type RunContext,
   type ToolCall,
   type ToolOutcome,
@@ -46,6 +48,23 @@ function writePart(
   // payload under `data` ({ type: "data-*", data }); the stock client's chunk
   // schema hard-rejects the flat form. Core owns that envelope (AGENT-10).
   writer.write(toVendoWirePart(part, id) as never);
+}
+
+/** The flat §16 approval part shared by every consent surface (native
+ *  needsApproval, pending-approval outcomes). */
+export function approvalPart(
+  toolCallId: string,
+  risk: RiskLabel,
+  approvalId: ApprovalId,
+  invalidatedGrant?: VendoApprovalPart["invalidatedGrant"],
+): VendoApprovalPart {
+  return {
+    type: "data-vendo-approval",
+    toolCallId,
+    risk,
+    approvalId,
+    ...(invalidatedGrant === undefined ? {} : { invalidatedGrant }),
+  };
 }
 
 function executionError(): ToolOutcome {
@@ -127,12 +146,7 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
         const view = vendoViewPartSchema.safeParse(candidate);
         if (view.success) writePart(options.writer, view.data, vendoViewStreamId(view.data.appId));
       } else if (outcome.status === "pending-approval") {
-        writePart(options.writer, {
-          type: "data-vendo-approval",
-          toolCallId,
-          risk: descriptor.risk,
-          approvalId: outcome.approvalId,
-        });
+        writePart(options.writer, approvalPart(toolCallId, descriptor.risk, outcome.approvalId));
       } else if (outcome.status === "connect-required") {
         // The inline connect card (04-actions §3): emitted beside the native
         // tool part exactly like the approval part, keyed by toolCallId.
@@ -159,15 +173,12 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
               options.ctx,
             );
             if (decision.action !== "ask") return false;
-            writePart(options.writer, {
-              type: "data-vendo-approval",
+            writePart(options.writer, approvalPart(
               toolCallId,
-              risk: descriptor.risk,
-              approvalId: decision.approval.id,
-              ...(decision.approval.invalidatedGrant === undefined
-                ? {}
-                : { invalidatedGrant: decision.approval.invalidatedGrant }),
-            });
+              descriptor.risk,
+              decision.approval.id,
+              decision.approval.invalidatedGrant,
+            ));
             return true;
           } catch {
             return true;

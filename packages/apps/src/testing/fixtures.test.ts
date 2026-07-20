@@ -57,8 +57,8 @@ describe("fake sandbox fixture", () => {
     const adapter = fakeSandbox();
     const machine = await adapter.create({
       env: { PORT: "3000", FEATURE: "on" },
-      files: { "/app/message.txt": "before" },
     });
+    await machine.files.write("/app/message.txt", "before");
     const response = await machine.request({
       method: "POST",
       path: "/fn/greet",

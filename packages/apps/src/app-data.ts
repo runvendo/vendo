@@ -8,6 +8,7 @@ import type {
   StoreAdapter,
 } from "@vendoai/core";
 import { VendoError } from "@vendoai/core";
+import { listAllRecords } from "./persistence.js";
 
 export const APP_RECORD_MAX_BYTES = 256 * 1024;
 /** ENG-289 M1 — app-declared file collections accept blobs up to 5 MB each. */
@@ -29,16 +30,8 @@ export const resolveAppStorage = (
   ? { kind: "files", blobs: store.blobs(`app:${appId}:${name}`) }
   : { kind: "records", records: store.records(`app:${appId}:${name}`) };
 
-const allRecordIds = async (records: RecordStore): Promise<string[]> => {
-  const ids: string[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await records.list(cursor === undefined ? {} : { cursor });
-    ids.push(...page.records.map((record) => record.id));
-    cursor = page.cursor;
-  } while (cursor !== undefined);
-  return ids;
-};
+const allRecordIds = async (records: RecordStore): Promise<string[]> =>
+  (await listAllRecords(records)).map((record) => record.id);
 
 const clearRecords = async (records: RecordStore): Promise<void> => {
   for (const id of await allRecordIds(records)) await records.delete(id);

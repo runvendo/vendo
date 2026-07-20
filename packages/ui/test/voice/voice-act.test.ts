@@ -142,6 +142,56 @@ describe("voice act bridge (ENG-319)", () => {
     expect(posts).toHaveLength(2);
   });
 
+  it("emits a post-approval view minted on a resume pass, even at a colliding part index", async () => {
+    const wire = scriptedWire([
+      // Turn 1: a preview view (part index 0) + a parked approval.
+      (w) => {
+        w.write({ type: "start", messageId: "msg_first" } as UIMessageChunk);
+        w.write({ type: "data-vendo-view", data: { appId: "app_1", payload: VIEW_PAYLOAD } } as unknown as UIMessageChunk);
+        w.write({ type: "tool-input-available", toolCallId: "call_send", toolName: "host_email_send", input: { to: "a@x.com" }, dynamic: true });
+        w.write({ type: "tool-approval-request", toolCallId: "call_send", approvalId: "apr_g" });
+        w.write({ type: "data-vendo-approval", data: { toolCallId: "call_send", risk: "write", approvalId: "apr_g" } } as unknown as UIMessageChunk);
+        w.write({ type: "text-start", id: "t1" });
+        w.write({ type: "text-delta", id: "t1", delta: "This needs your approval." });
+        w.write({ type: "text-end", id: "t1" });
+      },
+      // Turn 2 (post-approval resume): a FRESH assistant message whose updated
+      // view also lands at part index 0 — the index the preview occupied.
+      (w) => {
+        w.write({ type: "start", messageId: "msg_resumed" } as UIMessageChunk);
+        w.write({ type: "data-vendo-view", data: { appId: "app_1", payload: VIEW_PAYLOAD } } as unknown as UIMessageChunk);
+        w.write({ type: "text-start", id: "t2" });
+        w.write({ type: "text-delta", id: "t2", delta: "Sent — here's the updated view." });
+        w.write({ type: "text-end", id: "t2" });
+      },
+    ]);
+    wire.setPending([{
+      id: "apr_g",
+      call: { id: "call_send", tool: "host_email_send", args: { to: "a@x.com" } },
+      descriptor: { name: "host_email_send", description: "Send email", inputSchema: {}, risk: "write" },
+      inputPreview: "to a@x.com",
+      ctx: { principal: { kind: "user", subject: "u" }, venue: "voice", presence: "present" },
+      createdAt: "2026-07-11T12:00:00.000Z",
+    }]);
+    const bridge = createVoiceActBridge({
+      client: createVendoClient({ baseUrl: BASE }),
+      decidePollMs: 10,
+      approvalTimeoutMs: 2_000,
+    });
+    setTimeout(() => wire.decide("apr_g"), 40);
+    const views: VoiceSessionView[] = [];
+    const result = await bridge.onToolCall(
+      { callId: "c1", name: "vendo_act", args: { request: "send the reminder" } },
+      { emitView: (view) => views.push(view) },
+    ) as { result: string; viewsShown: number };
+    expect(result.result).toBe("Sent — here's the updated view.");
+    // The resume pass's view reaches the feed — distinct messages never
+    // collide on the same part index.
+    expect(views).toHaveLength(2);
+    expect(views[0]?.id).not.toBe(views[1]?.id);
+    expect(result.viewsShown).toBe(2);
+  });
+
   it("reports an unanswered approval when the decision times out", async () => {
     const wire = scriptedWire([
       (w) => {

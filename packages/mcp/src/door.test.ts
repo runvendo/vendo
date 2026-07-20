@@ -380,6 +380,33 @@ describe("createMcpDoor routing and OAuth", () => {
     expect(successorReuse.status).toBe(400);
   });
 
+  it("still delivers rotated tokens when the refresh audit write fails", async () => {
+    let failReports = false;
+    const harness = makeHarness({
+      report: async () => {
+        if (failReports) throw new Error("audit store unavailable");
+      },
+    });
+    const client = await register(harness.door);
+    const first = await issue(harness.door, client.body.client_id);
+
+    // The rotation commits (new grants persisted, old grant marked rotated)
+    // BEFORE the audit write, so a failing audit sink must not eat the
+    // response — otherwise the client retries its only refresh token and
+    // reuse detection revokes the whole (undelivered) grant family.
+    failReports = true;
+    const rotatedResponse = await refresh(harness.door, first.refresh_token, client.body.client_id);
+    expect(rotatedResponse.status).toBe(200);
+    const rotated = await rotatedResponse.json() as TokenResponse;
+    expect(rotated.refresh_token).not.toBe(first.refresh_token);
+
+    // The delivered successor still refreshes: the family was not poisoned
+    // into reuse-revocation by a lost response.
+    failReports = false;
+    const next = await refresh(harness.door, rotated.refresh_token, client.body.client_id);
+    expect(next.status).toBe(200);
+  });
+
   it("returns an empty 200 for an unknown token and ignores an unknown token type hint", async () => {
     const harness = makeHarness();
     const client = await register(harness.door);
@@ -1400,6 +1427,33 @@ describe("createMcpDoor MCP protocol", () => {
     await connected.client.close();
   });
 
+  it("returns the executed apps-tool result even when the audit write fails", async () => {
+    const apps: AppsPort = {
+      async list() { return []; },
+      async open() { return { kind: "tree", payload: { formatVersion: "vendo-genui/v2" } }; },
+      async call() { return { done: true }; },
+    };
+    let failReports = false;
+    const harness = makeHarness({
+      apps,
+      report: async () => {
+        if (failReports) throw new Error("audit store unavailable");
+      },
+    });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+
+    // The tool already executed before the audit write; a failing report must
+    // surface the computed in-band result, never a JSON-RPC protocol error
+    // (10-mcp §2) that would invite a double-executing retry.
+    failReports = true;
+    const result = await connected.client.callTool({ name: "vendo_apps_list", arguments: {} });
+    expect(result.isError ?? false).toBe(false);
+    expect(textOf(result)).toBe("[]");
+    await connected.client.close();
+  });
+
   it("keeps a registry-owned vendo_apps_* verbatim but attaches the shim _meta and renders its payload (FIX E)", async () => {
     const treePayload = {
       formatVersion: "vendo-genui/v2",
@@ -1575,6 +1629,8 @@ interface HarnessOptions {
    * a test mint tokens for two different subjects against one door (FIX G). */
   authorizeSubject?: () => string;
   oauth?: HostOAuthAdapter;
+  /** Override the guard's audit sink (e.g. to simulate a failing store write). */
+  report?: Guard["report"];
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -1585,7 +1641,7 @@ function makeHarness(options: HarnessOptions = {}) {
   const executions: Array<{ id: string; ctx: Parameters<ToolRegistry["execute"]>[1] }> = [];
   const guard: Guard = {
     check: options.check ?? (async () => ({ action: "run", decidedBy: "default" })),
-    async report(event) { audits.push(event); },
+    report: options.report ?? (async (event) => { audits.push(event); }),
     async directions() { return []; },
     onApprovalDecision() { return () => undefined; },
   };

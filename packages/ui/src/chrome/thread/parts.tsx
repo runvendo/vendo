@@ -24,7 +24,7 @@ import {
 /** ENG-218 — a plain user turn (rendered verbatim, not markdown) collapses when
     huge so a pasted log doesn't flood the thread with DOM. Assistant turns get
     the same treatment inside <Markdown>. */
-export function UserText({ text, restored }: { text: string; restored?: boolean }) {
+function UserText({ text, restored }: { text: string; restored?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const collapsible = restored === true && text.length > LONG_TEXT_CAP;
   const shown = collapsible && !expanded ? truncateHead(text) : text;

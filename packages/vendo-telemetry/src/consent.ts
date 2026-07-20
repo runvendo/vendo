@@ -15,22 +15,27 @@ function truthy(v: string | undefined): boolean {
   return v === "1" || v === "true";
 }
 
+function envOptOutReason(
+  env: Record<string, string | undefined>,
+): "env-disabled" | "do-not-track" | "ci" | undefined {
+  if (truthy(env.VENDO_TELEMETRY_DISABLED)) return "env-disabled";
+  if (truthy(env.DO_NOT_TRACK)) return "do-not-track";
+  if (env.CI !== undefined && env.CI !== "" && env.CI !== "0" && env.CI !== "false") return "ci";
+  return undefined;
+}
+
 /**
  * True when an environment opt-out is in effect (VENDO_TELEMETRY_DISABLED,
  * DO_NOT_TRACK, or CI). Used both by resolveConsent (to gate track()) and by
  * loadConfig (to avoid minting/persisting a tracking id the user opted out of).
  */
 export function envOptOut(env: Record<string, string | undefined>): boolean {
-  if (truthy(env.VENDO_TELEMETRY_DISABLED)) return true;
-  if (truthy(env.DO_NOT_TRACK)) return true;
-  return env.CI !== undefined && env.CI !== "" && env.CI !== "0" && env.CI !== "false";
+  return envOptOutReason(env) !== undefined;
 }
 
 export function resolveConsent({ env, optedOut, runtime }: ConsentInputs): ConsentResult {
-  if (truthy(env.VENDO_TELEMETRY_DISABLED)) return { allowed: false, reason: "env-disabled" };
-  if (truthy(env.DO_NOT_TRACK)) return { allowed: false, reason: "do-not-track" };
-  if (env.CI !== undefined && env.CI !== "" && env.CI !== "0" && env.CI !== "false")
-    return { allowed: false, reason: "ci" };
+  const envReason = envOptOutReason(env);
+  if (envReason !== undefined) return { allowed: false, reason: envReason };
   if (optedOut) return { allowed: false, reason: "config-opt-out" };
   // Runtime (dev-server) collection is allowed ONLY when NODE_ENV explicitly
   // names a dev environment. An unset/unknown NODE_ENV is treated as production

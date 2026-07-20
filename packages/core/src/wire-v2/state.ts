@@ -73,7 +73,7 @@ export interface Frame {
  *  `issues-truncated` marker is appended (so the array never exceeds
  *  {@link WIRE_MAX_ISSUES} + 1 entries). Hostile input can otherwise mint an
  *  issue per byte. */
-export const WIRE_MAX_ISSUES = 256;
+const WIRE_MAX_ISSUES = 256;
 
 const pushCapped = (state: CompileState, entry: WireIssue): void => {
   if (state.issues.length > WIRE_MAX_ISSUES) return;
@@ -99,10 +99,8 @@ export const mergeIssues = (state: CompileState, issues: readonly WireIssue[]): 
   for (const entry of issues) pushCapped(state, entry);
 };
 
-/** ES2024 String.prototype.isWellFormed — guaranteed at runtime by the
- *  package's engines floor (node >= 20) but absent from this tsconfig's
- *  ES2022 lib, hence the local cast (canonicalJson in jcs.ts throws on lone
- *  surrogates, so ill-formed UTF-16 must never enter props). Shared by the
- *  markup layer (attributes.ts) and the expression layer (expression.ts). */
-export const isWellFormedUtf16 = (text: string): boolean =>
-  (text as string & { isWellFormed(): boolean }).isWellFormed();
+/** The shared UTF-16 well-formedness guard, canonically in jcs.ts (whose
+ *  canonicalJson throws on lone surrogates, so ill-formed UTF-16 must never
+ *  enter props). Re-exported for the markup layer (attributes.ts, compile.ts,
+ *  limits.ts) and the expression layer (expression.ts). */
+export { isWellFormedUtf16 } from "../jcs.js";

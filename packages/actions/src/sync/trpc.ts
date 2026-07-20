@@ -12,9 +12,11 @@ import {
 import {
   MAX_RESOLVE_DEPTH,
   PERMISSIVE_INPUT,
+  apiPathFromRouteFile,
   calleeName,
   hasDependency,
   importMap,
+  isApiRouteFileCandidate,
   loadTypescript,
   parseModule,
   propertyKeyName,
@@ -42,7 +44,6 @@ export interface TrpcExtractResult {
   warnings: string[];
 }
 
-const SOURCE_FILE_PATTERN = /\.(?:tsx?|jsx?)$/;
 const ROUTER_FACTORY_NAMES = new Set(["router", "createTRPCRouter", "createRouter"]);
 const MERGE_ROUTERS_NAMES = new Set(["mergeRouters"]);
 const PROCEDURE_KINDS = new Set(["query", "mutation", "subscription"]);
@@ -203,38 +204,6 @@ interface TrpcMount {
   module: FileModule;
 }
 
-function isRouteFileCandidate(relativePath: string): boolean {
-  const normalized = relativePath.replace(/\\/g, "/");
-  const parts = normalized.split("/");
-  const file = parts.at(-1) ?? "";
-  if (/^route\.(?:tsx?|jsx?)$/.test(file) && parts.includes("app")) return true;
-  const pagesIndex = parts.findIndex((part) => part === "pages");
-  return pagesIndex !== -1 && parts[pagesIndex + 1] === "api" && SOURCE_FILE_PATTERN.test(file) && !/\.d\.ts$/.test(file);
-}
-
-function isDynamicSegment(segment: string): boolean {
-  return /^\[.*\]$/.test(segment);
-}
-
-function mountPathFromFile(relativePath: string): string | null {
-  const parts = relativePath.replace(/\\/g, "/").split("/");
-  const file = parts.at(-1) ?? "";
-  if (/^route\.(?:tsx?|jsx?)$/.test(file)) {
-    const appIndex = parts.findIndex((part) => part === "app");
-    if (appIndex === -1) return null;
-    const segments = parts.slice(appIndex + 1, -1)
-      .filter((segment) => !(segment.startsWith("(") && segment.endsWith(")")) && !segment.startsWith("@"))
-      .filter((segment) => !isDynamicSegment(segment));
-    return `/${segments.join("/")}`.replace(/\/+/g, "/");
-  }
-  const pagesIndex = parts.findIndex((part) => part === "pages");
-  if (pagesIndex === -1) return null;
-  const fileBase = file.replace(/\.(?:tsx?|jsx?)$/, "");
-  const segments = [...parts.slice(pagesIndex + 1, -1), fileBase]
-    .filter((segment) => segment !== "index" && !isDynamicSegment(segment));
-  return `/${segments.join("/")}`.replace(/\/+/g, "/");
-}
-
 function handlerOptions(extraction: Extraction, module: FileModule): { endpoint?: string; routerName: string | null } | null {
   const { ts } = extraction;
   let found: { endpoint?: string; routerName: string | null } | null = null;
@@ -265,7 +234,7 @@ function handlerOptions(extraction: Extraction, module: FileModule): { endpoint?
 }
 
 async function findMounts(extraction: Extraction): Promise<TrpcMount[]> {
-  const files = await walk(extraction.root, isRouteFileCandidate);
+  const files = await walk(extraction.root, isApiRouteFileCandidate);
   const mounts: TrpcMount[] = [];
   for (const file of files) {
     let source: string;
@@ -279,7 +248,7 @@ async function findMounts(extraction: Extraction): Promise<TrpcMount[]> {
     const options = handlerOptions(extraction, module);
     if (!options) continue;
     const relativePath = path.relative(extraction.root, file);
-    const rawMount = options.endpoint ?? mountPathFromFile(relativePath) ?? DEFAULT_MOUNT;
+    const rawMount = options.endpoint ?? apiPathFromRouteFile(relativePath) ?? DEFAULT_MOUNT;
     // Normalize a trailing slash (an `endpoint: "/api/trpc/"` literal) so the
     // mount matches route-scan's `/api/trpc/{trpc}` shadowing and stays a
     // single identity; the root mount "/" is preserved.

@@ -158,6 +158,35 @@ describe("vendo CLI commands", () => {
     error.mockRestore();
   });
 
+  // ENG-335 applies to every command: doctor, refine, and sync must fail
+  // loudly on unknown options too, and a flag-like next token is a missing
+  // value, not a value — otherwise `vendo sync --key --report` pushes to
+  // Vendo Cloud authenticated as the literal bearer key "--report".
+  it("doctor/refine/sync reject unknown options and flag-like values (ENG-335)", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const root = await mkdtemp(join(tmpdir(), "vendo-cli-guarded-"));
+    cleanup.push(root);
+
+    expect(await main(["sync", root, "--key", "--report"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--key requires a value");
+
+    expect(await main(["doctor", root, "--url", "--json"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--url requires a value");
+
+    expect(await main(["refine", root, "--model-import", "--yes"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--model-import requires a value");
+
+    expect(await main(["doctor", root, "--jsn"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("unknown option: --jsn");
+    expect(await main(["refine", root, "--dry-run"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("unknown option: --dry-run");
+    expect(await main(["sync", root, "--strictt"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("unknown option: --strictt");
+
+    expect(await readdir(root)).toEqual([]); // nothing ever ran
+    error.mockRestore();
+  });
+
   it("wires eject: --list routes, surface + dir + --force parse, help documents it", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const error = vi.spyOn(console, "error").mockImplementation(() => {});

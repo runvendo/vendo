@@ -13,6 +13,7 @@ import { z } from "zod";
 import { requestAppWithBootRetry } from "./box-agent.js";
 import type { MachineLifecycle } from "./machine-lifecycle.js";
 import { parseVendoManifest } from "./manifest.js";
+import { appLifecycleEvent } from "./audit.js";
 import { rowFromRecord } from "./persistence.js";
 
 /**
@@ -371,17 +372,13 @@ export const createScheduleEngine = (config: ScheduleEngineConfig): ScheduleEngi
         ...(outcome.status === "error" ? { message: outcome.error.message } : {}),
       });
       await recordOutcome(row.id, fn, cron, status);
-      await config.audit?.({
-        id: `aud_${globalThis.crypto.randomUUID()}`,
-        at: new Date().toISOString(),
-        kind: "app-lifecycle",
-        principal: { kind: "user", subject: row.subject },
-        venue: "app",
-        presence: "away",
-        appId: row.id,
-        outcome: outcome.status,
-        detail: { operation: "schedule-fire", fn, cron, scheduledFor },
-      });
+      await config.audit?.(appLifecycleEvent(
+        { kind: "user", subject: row.subject },
+        { venue: "app", presence: "away" },
+        row.id,
+        { operation: "schedule-fire", fn, cron, scheduledFor },
+        outcome.status,
+      ));
     }
   };
 

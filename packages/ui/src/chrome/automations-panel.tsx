@@ -7,6 +7,7 @@ import type { RunPlan, RunRecord, RunStatus } from "../wire-types.js";
 import { formatAuditTime } from "./activity-semantics.js";
 import { ApprovalCard } from "./approval-card.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { humanizeToolName } from "./humanize.js";
 
 const ENABLE_CELEBRATION_MS = 3_100;
 const REDUCED_ENABLE_CELEBRATION_MS = 900;
@@ -91,15 +92,6 @@ function nextRunLabel(trigger: Trigger | undefined, lastStartedAt: string | unde
   return null;
 }
 
-function humanize(value: string): string {
-  const words = value
-    .replace(/^host[_:. -]?/i, "")
-    .replace(/^fn:/i, "")
-    .replace(/[._:-]+/g, " ")
-    .trim();
-  return words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}` : value;
-}
-
 function triggerLabel(trigger: Trigger): { title: string; sub: string } {
   const source = trigger.on;
   if (source.kind === "schedule") {
@@ -108,9 +100,9 @@ function triggerLabel(trigger: Trigger): { title: string; sub: string } {
     return { title: source.cron ?? "Scheduled", sub: "Schedule" };
   }
   if (source.kind === "external") {
-    return { title: humanize(source.event), sub: humanize(source.connector) };
+    return { title: humanizeToolName(source.event), sub: humanizeToolName(source.connector) };
   }
-  return { title: humanize(source.event), sub: "Host event" };
+  return { title: humanizeToolName(source.event), sub: "Host event" };
 }
 
 function automationFlow(trigger: Trigger | undefined): {
@@ -134,7 +126,7 @@ function automationFlow(trigger: Trigger | undefined): {
   return {
     trigger: triggerLabel(trigger),
     action: {
-      title: humanize(firstStep.tool),
+      title: humanizeToolName(firstStep.tool),
       sub: trigger.run.steps.length === 1 ? "1 action" : `${trigger.run.steps.length} steps`,
     },
   };

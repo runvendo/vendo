@@ -16,7 +16,7 @@
 import { safeErrorMessage } from "../errors.js";
 import type { Json } from "../ids.js";
 import { findInvalidReshapeSteps, type ReshapeStep } from "../reshape.js";
-import { isPathBinding, isStateBinding, type PathBinding, type StateBinding } from "../tree.js";
+import { defineOwn, isPathBinding, isStateBinding, type PathBinding, type StateBinding } from "../tree.js";
 import { isWellFormedUtf16 } from "./state.js";
 
 /**
@@ -450,14 +450,9 @@ const parseObject = (state: ParserState): Record<string, Json> | Failed => {
     state.index += 1;
     const value = parseValue(state);
     if (value === FAILED) return FAILED;
-    // Own-property define, not `record[key] = value`: a wire key named
-    // __proto__ must become data, never the result's prototype.
-    Object.defineProperty(record, key, {
-      value,
-      enumerable: true,
-      writable: true,
-      configurable: true,
-    });
+    // defineOwn: a wire key named __proto__ must become data, never the
+    // result's prototype.
+    defineOwn(record, key, value);
     skipWhitespace(state);
     const next = state.source[state.index];
     if (next === ",") {

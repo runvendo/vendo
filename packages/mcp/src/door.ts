@@ -23,7 +23,7 @@ import type { HostOAuthAdapter } from "./oauth/adapter.js";
 import type { AppsPort } from "./apps-port.js";
 import { handleFederation } from "./oauth/federation.js";
 import { RemoteAsVerifier } from "./oauth/remote-as.js";
-import { canonicalUri, OAuthServer, sameCanonicalUri } from "./oauth/server.js";
+import { canonicalUri, json, OAuthServer, randomHex, sameCanonicalUri } from "./oauth/server.js";
 import { SHIM_HTML } from "./shim/shim-html.gen.js";
 import {
   InMemoryMcpDoorState,
@@ -51,7 +51,6 @@ interface HostIdentity {
 
 interface SessionState extends McpStateSession {
   server: Server;
-  transport: WebStandardStreamableHTTPServerTransport;
   sessionId?: string;
 }
 
@@ -351,7 +350,6 @@ class Door {
       replayScope: initialContextKey,
       context: mcpContext(principal, initialContextKey, consent),
       server,
-      transport,
       handleRequest: (req) => transport.handleRequest(req),
       close: () => transport.close(),
     };
@@ -468,18 +466,30 @@ class Door {
         ? { status: "pending-approval", approvalId: decision.approval.id }
         : await this.#executeAppsTool(name, args, ctx, identity);
     await this.#recordReplay(state, name, args, id, outcome.status);
-    await this.#config.guard.report({
-      id: `aud_${randomHex(12)}`,
-      at: new Date().toISOString(),
-      kind: "tool-call",
-      principal: ctx.principal,
-      venue: ctx.venue,
-      presence: ctx.presence,
-      tool: name,
-      inputPreview: appToolPreview(name, args),
-      outcome: outcome.status,
-      decidedBy: decision.decidedBy,
-    });
+    // The tool already executed (and the replay entry was spent) by the time
+    // the audit runs. A failing report must not replace the computed outcome
+    // with a JSON-RPC protocol error (10-mcp §2: execution errors stay
+    // in-band) — that would invite a retry that re-executes the write.
+    try {
+      await this.#config.guard.report({
+        id: `aud_${randomHex(12)}`,
+        at: new Date().toISOString(),
+        kind: "tool-call",
+        principal: ctx.principal,
+        venue: ctx.venue,
+        presence: ctx.presence,
+        tool: name,
+        inputPreview: appToolPreview(name, args),
+        outcome: outcome.status,
+        decidedBy: decision.decidedBy,
+      });
+    } catch (error) {
+      console.error("[vendo] mcp door: apps-tool audit report failed", {
+        tool: name,
+        outcome: outcome.status,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     return mapOutcome(outcome, identity.name);
   }
 
@@ -566,27 +576,15 @@ class Door {
         // a secondary list failure must not hide the safe link-out path.
       }
     }
-    return mcpAppsOpenOutput(output, { productName: identity.name, appName });
+    return projectAppsOpenOutput(output, { productName: identity.name, appName });
   }
 
   async #sweepIdleSessions(): Promise<void> {
-    for (const session of await this.#state.sweepExpiredSessions(Date.now())) {
-      try {
-        await session.close();
-      } catch {
-        // A transport already closing is exactly the state we want it in.
-      }
-    }
+    await this.#closeSessions(await this.#state.sweepExpiredSessions(Date.now()));
   }
 
   async #killSubject(subject: string): Promise<void> {
-    for (const session of await this.#state.deleteSessionsBySubject(subject)) {
-      try {
-        await session.close();
-      } catch {
-        // Revocation must remain fail-closed even if a transport is already closing.
-      }
-    }
+    await this.#closeSessions(await this.#state.deleteSessionsBySubject(subject));
   }
 
   async revokeClient(subject: string, clientId: string): Promise<void> {
@@ -608,7 +606,8 @@ class Door {
       try {
         await session.close();
       } catch {
-        // Revocation must remain fail-closed even if a transport is already closing.
+        // A transport already closing is exactly the state we want it in;
+        // sweep and revocation both remain fail-closed regardless.
       }
     }
   }
@@ -785,20 +784,6 @@ function appTools(): Tool[] {
   }));
 }
 
-/** FIX E — the registry's vendo_apps_open returns an OpenSurface envelope
- * (`{ kind: "tree", payload } | { kind: "http", url } | { kind: "resuming" }`);
- * the door's own apps path projects that same envelope. Unwrap tree surfaces so
- * a registry-executed open renders identically over MCP Apps. HTTP surfaces are
- * retained for the explicitly-tagged link-out projection below. A
- * `resuming` (or any other shape) passes through untouched — the shim's core-§8
- * dispatch contains an unrenderable payload gracefully. */
-function unwrapAppsOpen(output: unknown): unknown {
-  if (isRecord(output) && typeof output.kind === "string") {
-    if (output.kind === "tree") return output.payload;
-  }
-  return output;
-}
-
 function isHttpOpenSurface(output: unknown): output is { kind: "http"; url: string } {
   return isRecord(output) && output.kind === "http" && typeof output.url === "string";
 }
@@ -816,7 +801,7 @@ interface OpenInProductPayload {
  * shim would execute every query a second time. Project the already-resolved
  * payload immutably and keep the shim resolver only as a compatibility fallback
  * for non-door hosts that send unresolved trees directly. */
-function mcpAppsOpenOutput(
+function projectAppsOpenOutput(
   output: unknown,
   details: { productName: string; appName?: string },
 ): unknown {
@@ -829,7 +814,14 @@ function mcpAppsOpenOutput(
     };
     return projected;
   }
-  const payload = unwrapAppsOpen(output);
+  // FIX E — the registry's vendo_apps_open returns an OpenSurface envelope
+  // (`{ kind: "tree", payload } | { kind: "http", url } | { kind: "resuming" }`);
+  // the door's own apps path projects that same envelope. Unwrap tree surfaces
+  // so a registry-executed open renders identically over MCP Apps. HTTP
+  // surfaces take the explicitly-tagged link-out projection above. A
+  // `resuming` (or any other shape) passes through untouched — the shim's
+  // core-§8 dispatch contains an unrenderable payload gracefully.
+  const payload = isRecord(output) && output.kind === "tree" ? output.payload : output;
   if (!isRecord(payload) || payload.formatVersion !== "vendo-genui/v2" || !Object.hasOwn(payload, "queries")) {
     return payload;
   }
@@ -971,12 +963,6 @@ async function readHostIdentity(): Promise<HostIdentity> {
   }
 }
 
-function randomHex(byteLength: number): string {
-  return [...crypto.getRandomValues(new Uint8Array(byteLength))]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
 }
@@ -984,11 +970,4 @@ function errorMessage(error: unknown): string {
 function errorCode(error: unknown): string {
   const code = (error as { code?: unknown })?.code;
   return typeof code === "string" ? code : "error";
-}
-
-function json(body: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json", ...extraHeaders },
-  });
 }

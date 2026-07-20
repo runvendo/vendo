@@ -9,6 +9,7 @@ import {
   type StoreAdapter,
 } from "@vendoai/core";
 import { unzipSync, zipSync, type Zippable } from "fflate";
+import { appLifecycleEvent } from "./audit.js";
 import { appRecordInput } from "./persistence.js";
 import { assertPinsExportable, type PinBaseline } from "./pins.js";
 
@@ -145,18 +146,9 @@ export const createAppInterchange = (
     ctx: RunContext,
     extra: Record<string, Json> = {},
   ): Promise<void> => {
-    await dependencies.guard.report({
-      id: `aud_${globalThis.crypto.randomUUID()}`,
-      at: new Date().toISOString(),
-      kind: "app-lifecycle",
-      principal: { ...ctx.principal },
-      venue: ctx.venue,
-      presence: ctx.presence,
-      appId,
-      trigger: ctx.trigger === undefined ? undefined : { ...ctx.trigger },
-      outcome: "ok",
-      detail: { operation, ...extra },
-    });
+    await dependencies.guard.report(
+      appLifecycleEvent(ctx.principal, ctx, appId, { operation, ...extra }),
+    );
   };
 
   return {

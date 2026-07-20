@@ -25,7 +25,7 @@ import {
   threadFromRow,
 } from "./helpers/rows.js";
 import type { AppRow, ApprovalRow, RunRow, StateRow, ThreadRow } from "./helpers/types.js";
-import { decodeCursor, encodeCursor, pageLimit } from "./helpers/utils.js";
+import { cursorMs, decodeCursor, encodeCursor, pageLimit } from "./helpers/utils.js";
 import {
   invalid,
   parseAppData,
@@ -248,12 +248,12 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
       if (query.cursor !== undefined) {
         const cursor = decodeCursor(query.cursor);
         params.push(cursor.c, cursor.i);
-        clauses.push(`(${config.cursorColumn}, id) < ($${params.length - 1}, $${params.length})`);
+        clauses.push(`(${cursorMs(config.cursorColumn)}, id) < (${cursorMs(`$${params.length - 1}::timestamptz`)}, $${params.length})`);
       }
       params.push(limit + 1);
       const result = await db.query(
         `${config.listSelect ?? config.select}${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""}
-         ORDER BY ${config.cursorColumn} DESC, id DESC LIMIT $${params.length}`,
+         ORDER BY ${cursorMs(config.cursorColumn)} DESC, id DESC LIMIT $${params.length}`,
         params,
       );
       const records = result.rows.slice(0, limit).map(config.fromDb);

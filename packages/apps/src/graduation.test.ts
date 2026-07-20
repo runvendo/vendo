@@ -94,6 +94,46 @@ describe("graduation 1→2 through the in-box agent", () => {
     expect(sandbox.machines.length).toBeGreaterThanOrEqual(1);
   });
 
+  it("emits the post-graduation view with resolved fn: query data (create never blanks the screen)", async () => {
+    // create() resolves queries for the pre-graduation final emit; the
+    // graduated tree emit must do the same — its fn: queries are resolvable
+    // (the machine exists), and the streamed view parts are last-write-wins,
+    // so an unresolved emit would blank the just-painted data on screen.
+    const store = memoryStore();
+    // No egress declaration: the graduated machine wakes freely, so the fn:
+    // query is resolvable the moment the graduated tree is emitted.
+    const digestAgent: FakeBoxAgent = ({ box }) => {
+      box.fns.set("getDigest", () => ({ summary: "3 unpaid invoices", count: 3 }));
+      box.manifest = { schedules: [{ cron: "0 8 * * *", fn: "getDigest" }] };
+      return { ok: true, summary: "wrote digest", filesChanged: ["/app/server.js"], testsRun: 1, fns: ["getDigest"] };
+    };
+    const sandbox = fakeBoxSandbox({ agent: digestAgent });
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(
+        '<App name="Invoice watcher"><Text text="Invoices"/></App>',
+        FN_BINDING_EDIT,
+      ),
+      machine: { sandbox, buildEnv: () => ({ PORT: "8080" }), boxEditPollMs: 5 },
+    });
+    const views: Array<{ payload: { queries?: Array<{ tool: string }>; data?: { digest?: { summary?: string } } } }> = [];
+
+    const app = await runtime.create({
+      prompt: "Watch my unpaid invoices and email me a daily digest; show a status board",
+      onView: (part) => views.push(part as unknown as typeof views[number]),
+    }, ctx());
+
+    // The create graduated: the machine exists and the tree gained the fn: query.
+    expect(app.machine?.snapshotRef).toBeDefined();
+    const final = views.at(-1)?.payload;
+    expect(final?.queries?.some((query) => query.tool === "fn:getDigest")).toBe(true);
+    // The last emitted view carries the RESOLVED query data, not a blank slot.
+    expect(final?.data?.digest).toEqual({ summary: "3 unpaid invoices", count: 3 });
+  });
+
   it("does NOT escalate a pure-UI edit (no machine, no box)", async () => {
     const { store, sandbox, runtime } = setup({ edit: '<Edit><SetName name="Prettier board"/></Edit>' });
     await seedAppRow(store, treeApp(), "user_ada");

@@ -5,6 +5,7 @@ import {
   type StoreAdapter,
   type VendoRecord,
 } from "@vendoai/core";
+import { listAllRecords } from "./persistence.js";
 
 /**
  * ENG-345 — the guarded per-secret in-sandbox exposure grant (secrets
@@ -47,22 +48,8 @@ const COLLECTION = "vendo_secret_exposure";
 
 const grantData = (record: VendoRecord): SecretExposureGrant => record.data as SecretExposureGrant;
 
-const listAll = async (
-  store: StoreAdapter,
-  refs: Record<string, string>,
-): Promise<VendoRecord[]> => {
-  const records: VendoRecord[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await store.records(COLLECTION).list(
-      cursor === undefined ? { refs } : { refs, cursor },
-    );
-    records.push(...page.records);
-    if (page.cursor === undefined || page.cursor === cursor) break;
-    cursor = page.cursor;
-  } while (cursor !== undefined);
-  return records;
-};
+const listAll = (store: StoreAdapter, refs: Record<string, string>): Promise<VendoRecord[]> =>
+  listAllRecords(store.records(COLLECTION), { refs });
 
 /** ENG-345 — persistence for per-secret × per-app in-sandbox exposure grants. */
 export interface SecretExposure {

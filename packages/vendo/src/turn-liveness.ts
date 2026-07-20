@@ -16,6 +16,8 @@
  * beatable after it.
  */
 
+import { environment } from "./wire/shared.js";
+
 const IDLE_ABORT_MS = 15_000;
 
 interface ActiveTurn {
@@ -32,9 +34,11 @@ function activeTurns(): Set<ActiveTurn> {
   return (holder[ACTIVE_TURNS_KEY] ??= new Set());
 }
 
-/** Test seam only: the idle window, overridable per call site via env. */
+/** Test seam only: the idle window, overridable per call site via env. The
+ *  process-guarded `environment` helper keeps every beat working on
+ *  edge/Worker targets with no `process` global. */
 function idleAbortMs(): number {
-  const configured = Number(process.env.VENDO_TURN_IDLE_ABORT_MS);
+  const configured = Number(environment("VENDO_TURN_IDLE_ABORT_MS"));
   return Number.isFinite(configured) && configured > 0 ? configured : IDLE_ABORT_MS;
 }
 

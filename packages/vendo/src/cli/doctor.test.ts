@@ -626,6 +626,46 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
     expect(stop).toHaveBeenCalledOnce();
   });
 
+  it("--yes auto-starts the dev server without a prompt in non-interactive runs", async () => {
+    // The flag's documented purpose (quickstart: "pass --yes to start it
+    // non-interactively") — agents and CI run with piped stdio, so the
+    // auto-start must not require a TTY.
+    let serverUp = false;
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/status")) {
+        if (!serverUp) throw new Error("connection refused");
+        return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { store: true, sandbox: "e2b" } });
+      }
+      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
+      if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
+      if (url.endsWith("/threads") && init?.method === "POST") {
+        return new Response('data: {"type":"text-delta","delta":"hi"}\n\ndata: [DONE]\n\n', { headers: { "content-type": "text/event-stream" } });
+      }
+      return Response.json({ error: { message: "unexpected" } }, { status: 404 });
+    });
+    const stop = vi.fn();
+    const startDevServer = vi.fn(async () => { serverUp = true; return { ok: true, stop }; });
+    const confirm = vi.fn(async () => { throw new Error("--yes must not prompt"); });
+    const messages = output();
+    expect(await runDoctor({
+      targetDir: await healthy(),
+      fetchImpl,
+      env: { ANTHROPIC_API_KEY: "sk-test" },
+      interactive: false,
+      yes: true,
+      confirm,
+      startDevServer,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(startDevServer).toHaveBeenCalledOnce();
+    expect(messages.logs).toContain("ok: started the dev server for the probe");
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
   // §4 customization ladder — ejected chrome is the host's code; doctor only
   // raises awareness when it predates the installed @vendoai/ui. Warn, never fail.
   it("warns — never fails — when an ejected surface predates the installed @vendoai/ui", async () => {

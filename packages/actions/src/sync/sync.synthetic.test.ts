@@ -4,7 +4,8 @@ import path from "node:path";
 import { descriptorHash, VendoError } from "@vendoai/core";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ExtractedTool } from "../formats.js";
-import { hostToolName, inputNarrowed, mergeOverrides, vendoSync } from "./index.js";
+import { routeToolFullName, withUniqueNames } from "./common.js";
+import { inputNarrowed, mergeOverrides, vendoSync } from "./index.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -76,8 +77,15 @@ describe("sync public helpers", () => {
 
   it("keeps long route names stable and provider-safe", () => {
     const route = `/api/${"very-long-segment-".repeat(8)}`;
-    const first = hostToolName("GET", route);
-    expect(first).toBe(hostToolName("GET", route));
+    const toolName = (method: "GET", routePath: string): string => withUniqueNames([{
+      name: routeToolFullName(method, routePath),
+      description: "",
+      inputSchema: {},
+      risk: "write",
+      binding: { kind: "route", method, path: routePath, argsIn: "body" },
+    }])[0]!.name;
+    const first = toolName("GET", route);
+    expect(first).toBe(toolName("GET", route));
     expect(first).toMatch(/^[a-zA-Z0-9_-]{1,64}$/);
     expect(first).toHaveLength(64);
   });
@@ -338,6 +346,28 @@ describe("breaking change diff", () => {
     expect(inputNarrowed(
       extracted({ type: "object", properties: {} }),
       extracted({ type: "object", properties: {}, additionalProperties: false }),
+    )).toBe(true);
+  });
+
+  it("does not flag property type widenings as narrowing", () => {
+    expect(inputNarrowed(
+      extracted({ type: "object", properties: { value: { type: "number" } } }),
+      extracted({ type: "object", properties: { value: { type: ["number", "string"] } } }),
+    )).toBe(false);
+    expect(inputNarrowed(
+      extracted({ type: "object", properties: { value: { type: "number" } } }),
+      extracted({ type: "object", properties: { value: {} } }),
+    )).toBe(false);
+  });
+
+  it("flags property type narrowings", () => {
+    expect(inputNarrowed(
+      extracted({ type: "object", properties: { value: { type: ["number", "string"] } } }),
+      extracted({ type: "object", properties: { value: { type: "number" } } }),
+    )).toBe(true);
+    expect(inputNarrowed(
+      extracted({ type: "object", properties: { value: {} } }),
+      extracted({ type: "object", properties: { value: { type: "number" } } }),
     )).toBe(true);
   });
 

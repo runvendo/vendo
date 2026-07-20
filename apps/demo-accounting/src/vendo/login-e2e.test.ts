@@ -33,12 +33,32 @@ let app: CadenceApp | undefined
 
 async function login(email: string, password: string): Promise<Response> {
   const form = new URLSearchParams({ email, password, returnTo: "/" })
-  return appFetch(`${app!.baseUrl}/login`, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: form.toString(),
-    redirect: "manual",
-  })
+  const post = () =>
+    appFetch(`${app!.baseUrl}/login`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
+      redirect: "manual",
+    })
+  // GoTrue is shared machine-wide (one `supabase start` stack on a fixed
+  // port), so parallel test/dev load can make it answer 429/5xx even for
+  // correct credentials; the route surfaces those as 429/502. Retry only the
+  // transient answers — a real credential verdict (303/401) stands as-is.
+  let response = await post()
+  for (let attempt = 1; attempt <= 4 && [429, 502, 503].includes(response.status); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, attempt * 2_000))
+    response = await post()
+  }
+  return response
+}
+
+/** Empty for the expected 303; otherwise the login page's own error line, so
+ * an intermittent failure reports WHY GoTrue declined, not just the status. */
+async function loginFailureDetail(response: Response): Promise<string> {
+  if (response.status === 303) return ""
+  const html = await response.text()
+  const error = /<div class="error"[^>]*>([^<]*)<\/div>/u.exec(html)
+  return `login answered ${response.status}: ${error?.[1] ?? html.slice(0, 200)}`
 }
 
 function sessionCookieFrom(response: Response): string {
@@ -69,7 +89,7 @@ describe.skipIf(!supabaseRunning)("Cadence Supabase login (ENG-260)", () => {
 
   it("signs the seeded user in through GoTrue's real password grant", { timeout: 120_000 }, async () => {
     const response = await login(cadenceDemoEmail(), cadenceDemoPassword())
-    expect(response.status).toBe(303)
+    expect(response.status, await loginFailureDetail(response)).toBe(303)
     const cookie = sessionCookieFrom(response)
 
     // The session cookie passes the proxy wall and resolves to the seeded
@@ -100,7 +120,7 @@ describe.skipIf(!supabaseRunning)("Cadence Supabase login (ENG-260)", () => {
   it("signs in the second seeded user too", { timeout: 120_000 }, async () => {
     const [, daniel] = cadenceDemoUsers()
     const response = await login(daniel!.email, cadenceDemoPassword())
-    expect(response.status).toBe(303)
+    expect(response.status, await loginFailureDetail(response)).toBe(303)
     expect(sessionCookieFrom(response)).toContain(`${SESSION_COOKIE}=`)
   })
 })

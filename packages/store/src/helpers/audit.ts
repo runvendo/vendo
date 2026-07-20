@@ -1,7 +1,7 @@
 import type { AppId, AuditEvent, IsoDateTime, Principal } from "@vendoai/core";
 import { dbFor, type VendoStore } from "../store.js";
 import { putAuditRow } from "./rows.js";
-import { decodeCursor, encodeCursor, iso, pageLimit, text } from "./utils.js";
+import { cursorMs, decodeCursor, encodeCursor, iso, pageLimit, text } from "./utils.js";
 import { parseAuditEvent } from "../validate.js";
 
 export interface AuditQuery {
@@ -42,20 +42,21 @@ export function auditStore(store: VendoStore): {
       if (filter.cursor !== undefined) {
         const cursor = decodeCursor(filter.cursor);
         params.push(cursor.c, cursor.i);
-        clauses.push(`(at, id) < ($${params.length - 1}, $${params.length})`);
+        clauses.push(`(${cursorMs("at")}, id) < (${cursorMs(`$${params.length - 1}::timestamptz`)}, $${params.length})`);
       }
       params.push(limit + 1);
       const result = await db.query(
         `SELECT id, at, event FROM vendo_audit${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""}
-         ORDER BY at DESC, id DESC LIMIT $${params.length}`,
+         ORDER BY ${cursorMs("at")} DESC, id DESC LIMIT $${params.length}`,
         params,
       );
-      const events = result.rows.slice(0, limit).map((row) => row["event"] as AuditEvent);
-      const lastRow = result.rows[Math.min(limit, result.rows.length) - 1];
+      const page = result.rows.slice(0, limit);
+      const events = page.map((row) => row["event"] as AuditEvent);
+      const last = page.at(-1);
       return {
         events,
-        ...(result.rows.length > limit && lastRow
-          ? { cursor: encodeCursor(iso(lastRow["at"]), text(lastRow["id"])) }
+        ...(result.rows.length > limit && last
+          ? { cursor: encodeCursor(iso(last["at"]), text(last["id"])) }
           : {}),
       };
     },
@@ -74,12 +75,12 @@ export function auditStore(store: VendoStore): {
         }
         if (cursor) {
           params.push(cursor.c, cursor.i);
-          clauses.push(`(at, id) > ($${params.length - 1}, $${params.length})`);
+          clauses.push(`(${cursorMs("at")}, id) > (${cursorMs(`$${params.length - 1}::timestamptz`)}, $${params.length})`);
         }
         params.push(500);
         const result = await db.query(
           `SELECT id, at, event FROM vendo_audit${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""}
-           ORDER BY at ASC, id ASC LIMIT $${params.length}`,
+           ORDER BY ${cursorMs("at")} ASC, id ASC LIMIT $${params.length}`,
           params,
         );
         for (const row of result.rows) yield `${JSON.stringify(row["event"])}\n`;

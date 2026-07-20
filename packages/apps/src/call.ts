@@ -8,18 +8,14 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 
-const FN_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+/** The name half of core's 01 §8 `fn:<name>` grammar. */
+export const FN_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 
 /** 06-apps §4.1 — internal execution surface shared by open() and call(). */
 export interface AppCaller {
   call(app: AppDocument, ref: string, args: Json, ctx: RunContext): Promise<ToolOutcome>;
   callFn(app: AppDocument, name: string, args: Json, ctx: RunContext): Promise<ToolOutcome>;
-  callQuery(
-    app: AppDocument,
-    ref: string,
-    args: Json,
-    ctx: RunContext,
-  ): Promise<{ outcome: ToolOutcome; uiEnvelope: boolean }>;
+  callQuery(app: AppDocument, ref: string, args: Json, ctx: RunContext): Promise<ToolOutcome>;
 }
 
 /**
@@ -43,9 +39,9 @@ export interface AppCallerHooks {
 // caller in createApps); what remains HERE is the fallthrough for an app with
 // no machine, which settles as a CONTAINED error outcome — a stale binding
 // must not take down open() or an automation run.
-const fnOutcome = (name: string): ToolOutcome => ({
+export const fnOutcome = (name: string): ToolOutcome => ({
   status: "error",
-  error: FN_PATTERN.test(name)
+  error: FN_NAME_PATTERN.test(name)
     ? { code: "validation", message: `fn:${name} requires a machine; the app has not graduated` }
     : { code: "validation", message: `invalid fn reference: fn:${name}` },
 });
@@ -80,8 +76,8 @@ export const createAppCaller = (tools: ToolRegistry, hooks?: AppCallerHooks): Ap
       return fnOutcome(name);
     },
     async callQuery(app, ref, args, ctx) {
-      if (ref.startsWith("fn:")) return { outcome: fnOutcome(ref.slice(3)), uiEnvelope: false };
-      return { outcome: (await hostTool(app, ref, args, ctx)).outcome, uiEnvelope: false };
+      if (ref.startsWith("fn:")) return fnOutcome(ref.slice(3));
+      return (await hostTool(app, ref, args, ctx)).outcome;
     },
   };
 };

@@ -140,22 +140,8 @@ export const vendoStepLimitPartSchema = z.object({
   message: z.string(),
 }).passthrough() satisfies z.ZodType<VendoStepLimitPart>;
 
-export type VendoStepLimitWirePart = VendoWirePart<VendoStepLimitPart>;
-
 /** AGENT-10 — the nested wire envelope of {@link vendoViewPartSchema}. */
 export const vendoViewWirePartSchema = wirePartSchema(
   "data-vendo-view",
   vendoViewPartSchema.omit({ type: true }),
 ) satisfies z.ZodType<VendoViewWirePart>;
-
-/** AGENT-10 — the nested wire envelope of {@link vendoApprovalPartSchema}. */
-export const vendoApprovalWirePartSchema = wirePartSchema(
-  "data-vendo-approval",
-  vendoApprovalPartSchema.omit({ type: true }),
-) satisfies z.ZodType<VendoApprovalWirePart>;
-
-/** AGENT-10 — the nested wire envelope of {@link vendoConnectPartSchema}. */
-export const vendoConnectWirePartSchema = wirePartSchema(
-  "data-vendo-connect",
-  vendoConnectPartSchema.omit({ type: true }),
-) satisfies z.ZodType<VendoConnectWirePart>;

@@ -115,9 +115,15 @@ function ApprovalToasts({ pollMs }: { pollMs: number }) {
           label: "Approve",
           primary: true,
           onAction: () => {
-            void decide(approval.id, { approve: true });
-            dismissers.get(approval.id)?.();
-            dismissers.delete(approval.id);
+            void decide(approval.id, { approve: true }).then(() => {
+              dismissers.get(approval.id)?.();
+              dismissers.delete(approval.id);
+            }).catch(() => {
+              // The decide failed — the approval is still parked server-side.
+              // Keep the toast so Approve stays retryable, and un-see the id
+              // so a later poll can re-raise it once this card is gone.
+              seen.delete(approval.id);
+            });
           },
         }],
       });

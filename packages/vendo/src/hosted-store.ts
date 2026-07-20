@@ -1,11 +1,9 @@
 import {
-  VendoError,
   vendoRecordSchema,
   type BlobStore,
   type RecordInput,
   type RecordQuery,
   type RecordStore,
-  type VendoErrorCode,
   type VendoRecord,
 } from "@vendoai/core";
 import {
@@ -15,26 +13,12 @@ import {
   type SubjectMergeReport,
   type VendoStore,
 } from "@vendoai/store";
+import { consoleSender, raiseCloudError, toArrayBuffer } from "./cloud-console.js";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
 
 /** The console mounts the hosted-store surface here
  * (apps/console/app/api/v1/store/*). */
 const CONSOLE_STORE_PATH = "/api/v1/store";
-
-/** Console error codes forwarded as-is when they are wire-legal VendoError
- * codes (same table as cloudSandbox). The console's "unauthorized" and
- * "quota-exhausted" have no VendoError twin; both ride the 402/401 →
- * cloud-required mapping below. Anything else (unknown codes, 5xx, non-JSON
- * bodies) is carried on a plain Error with the server's code attached — the
- * packages/apps cloud client's posture. */
-const CLOUD_ERROR_CODES: ReadonlySet<string> = new Set([
-  "validation",
-  "blocked",
-  "not-implemented",
-  "cloud-required",
-  "not-found",
-  "conflict",
-] satisfies VendoErrorCode[]);
 
 /** Store calls are row/blob CRUD, not machine boots: generous enough for a
  * large blob transfer on a slow link, small enough that a hung console
@@ -73,8 +57,6 @@ export interface HostedStore extends VendoStore {
   };
 }
 
-const toArrayBuffer = (value: Uint8Array): ArrayBuffer => value.slice().buffer as ArrayBuffer;
-
 /** Console garbage on a 2xx is the SERVICE misbehaving, never the caller's
  * fault — same posture as cloudSandbox's malformed-200 defenses. No VendoError
  * code fits "your storage backend answered nonsense", so this stays a plain
@@ -83,33 +65,14 @@ const invalidResponse = (what: string): never => {
   throw new Error(`Vendo Cloud store returned an ${what} response`);
 };
 
-async function raiseCloudError(response: Response): Promise<never> {
-  let payload: unknown;
-  try {
-    payload = JSON.parse(await response.text());
-  } catch {
-    payload = undefined;
-  }
-  const error = typeof payload === "object" && payload !== null && "error" in payload
-    ? (payload as { error?: { code?: unknown; message?: unknown } }).error
-    : undefined;
-  const message = typeof error?.message === "string"
-    ? error.message
-    : `Vendo Cloud store request failed with ${response.status}`;
-  // The console's meter gate (quota-exhausted, e.g. past the storage_gb soft
-  // cap) rides HTTP 402 — the one "pay/upgrade to proceed" signal. 401
-  // (bad/revoked key) is the same "fix your Cloud standing" story for the
-  // host operator — the cloudSandbox mapping, with the server's own message
-  // preserved.
-  if (response.status === 402 || response.status === 401) {
-    throw new VendoError("cloud-required", message);
-  }
-  const code = typeof error?.code === "string" ? error.code : "unavailable";
-  if (CLOUD_ERROR_CODES.has(code)) {
-    throw new VendoError(code as VendoErrorCode, message);
-  }
-  throw Object.assign(new Error(message), { code });
-}
+/** The console's "unauthorized"/"quota-exhausted" have no VendoError twin;
+ * both ride the shared 402/401 → cloud-required mapping. Anything else
+ * (unknown codes, 5xx, non-JSON bodies) is carried on a plain Error with the
+ * server's code attached — the packages/apps cloud client's posture. */
+const raiseStoreError = (response: Response): Promise<never> =>
+  raiseCloudError(response, "store", (code, message) => {
+    throw Object.assign(new Error(message), { code: code ?? "unavailable" });
+  });
 
 function parseRecord(value: unknown): VendoRecord {
   const parsed = vendoRecordSchema.safeParse(value);
@@ -137,22 +100,14 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchImpl = options.fetch ?? globalThis.fetch;
 
-  const send = async (path: string, init: RequestInit = {}): Promise<Response> => {
-    const response = await fetchImpl(`${base}${CONSOLE_STORE_PATH}${path}`, {
-      ...init,
-      headers: {
-        authorization: `Bearer ${options.apiKey}`,
-        accept: "application/json",
-        // Interaction model: key-authed Cloud requests carry the deployment
-        // identity; the console meters usage from real traffic.
-        ...(await deploymentIdentityHeaders()),
-        ...init.headers,
-      },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!response.ok) await raiseCloudError(response);
-    return response;
-  };
+  const send = consoleSender({
+    base,
+    mountPath: CONSOLE_STORE_PATH,
+    apiKey: options.apiKey,
+    timeoutMs,
+    fetchImpl,
+    raise: raiseStoreError,
+  });
 
   const sendJson = async (path: string, body: unknown): Promise<unknown> => {
     const response = await send(path, {
@@ -274,7 +229,7 @@ export function hostedStore(options: HostedStoreOptions): HostedStore {
             "Vendo Cloud store request failed with a bare 404 (no error envelope) — is the base URL a Vendo console?",
           );
         }
-        if (!response.ok) await raiseCloudError(response);
+        if (!response.ok) await raiseStoreError(response);
         const contentType = response.headers.get("content-type");
         return {
           bytes: new Uint8Array(await response.arrayBuffer()),

@@ -1,10 +1,12 @@
 import { auditEventSchema, permissionGrantSchema, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
+import { dbFor } from "./store.js";
 import { appFixture, approvalFixture, at, auditFixture, grantFixture, persistentPrincipal } from "./fixtures.test-util.js";
+import { approvalStore } from "./helpers/approvals.js";
+import { stateStore } from "./helpers/state.js";
 import {
   appStore,
-  approvalStore,
   auditStore,
   claimEphemeralSubject,
   createStore,
@@ -12,7 +14,6 @@ import {
   listStaleEphemeralSubjects,
   registerEphemeralSubject,
   runStore,
-  stateStore,
   sweepEphemeralSubjects,
   threadStore,
 } from "./index.js";
@@ -183,6 +184,37 @@ for (const backend of backends()) {
       await registerEphemeralSubject(made.store, "sess_stale", base);
       expect(await claimEphemeralSubject(made.store, "sess_stale", opts)).toBe(true);
       expect(await claimEphemeralSubject(made.store, "sess_stale", opts)).toBe(false);
+    });
+
+    it("restores the session claim when the erase cascade fails, so a later sweep retries", async () => {
+      // The claim DELETEs the session row before the erase cascade runs. If a
+      // cascade statement fails transiently, the row must be given back —
+      // otherwise every future sweep is blind to the subject and its data is
+      // stranded forever, while the callers log "will retry next interval".
+      const base = Date.parse("2026-02-01T00:00:00Z");
+      const opts = { idleMs: 30_000, now: base + 60_000 };
+      await registerEphemeralSubject(made.store, "sess_erase_fail", base);
+      const db = dbFor(made.store);
+      const original = db.query.bind(db);
+      let failed = false;
+      db.query = async (text, params) => {
+        if (text.includes("DELETE FROM vendo_threads") && params?.[0] === "sess_erase_fail") {
+          failed = true;
+          throw new Error("transient erase failure");
+        }
+        return original(text, params);
+      };
+      try {
+        await expect(sweepEphemeralSubjects(made.store, opts)).rejects.toThrow("transient erase failure");
+      } finally {
+        db.query = original;
+      }
+      expect(failed).toBe(true);
+      // The subject is registered again and still sweep-eligible.
+      expect(await made.sql("SELECT 1 FROM vendo_sessions WHERE subject = $1", ["sess_erase_fail"])).toHaveLength(1);
+      const retried = await sweepEphemeralSubjects(made.store, opts);
+      expect(retried).toContain("sess_erase_fail");
+      expect(await made.sql("SELECT 1 FROM vendo_sessions WHERE subject = $1", ["sess_erase_fail"])).toHaveLength(0);
     });
   });
 }

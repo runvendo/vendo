@@ -5,7 +5,7 @@ import type { DevCredential } from "../dev-creds/resolve.js";
 import { runLogin } from "./cloud/auth.js";
 import { CloudError, cloudFetch, isVendoKey, type CloudFetchOptions } from "./cloud/client.js";
 import { cloudDoctor, type CloudDoctorResult } from "./doctor-live.js";
-import { readOptional, writeText, type Output } from "./shared.js";
+import { askYesNo, readOptional, writeText, type Output } from "./shared.js";
 
 /**
  * ENG-339 (install-dx design §6) — cloud in init. Detect VENDO_API_KEY when
@@ -19,18 +19,6 @@ import { readOptional, writeText, type Output } from "./shared.js";
  * (purpose: "dev-mode"); against a console that lacks it, mint returns null
  * and the step degrades to a clear pointer instead of blocking init.
  */
-
-async function askYesNo(question: string, defaultYes = false): Promise<boolean> {
-  if (!stdin.isTTY || !stdout.isTTY) return false;
-  const prompt = createInterface({ input: stdin, output: stdout });
-  try {
-    const answer = (await prompt.question(`${question} ${defaultYes ? "[Y/n]" : "[y/N]"} `)).trim().toLowerCase();
-    if (answer === "") return defaultYes;
-    return ["y", "yes"].includes(answer);
-  } finally {
-    prompt.close();
-  }
-}
 
 async function askText(question: string): Promise<string> {
   const prompt = createInterface({ input: stdin, output: stdout });
@@ -146,7 +134,7 @@ export interface CloudStepResult {
 export async function runCloudStep(options: CloudStepOptions): Promise<CloudStepResult> {
   const { root, output, credential } = options;
   const env = options.env ?? process.env;
-  const cloud = await (options.cloudProbe ?? ((o) => cloudDoctor(o)))({ env });
+  const cloud = await (options.cloudProbe ?? cloudDoctor)({ env });
 
   if (cloud.present && cloud.ok) {
     output.log("\nVendo Cloud: VENDO_API_KEY present and well-formed.");

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { IsoDateTime, Json } from "./ids.js";
+import { defineOwn } from "./tree.js";
 
 /**
  * v2 spec §3 (docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md) —
@@ -19,7 +20,7 @@ export type ShapeType =
   | { kind: "object"; fields: Record<string, ShapeType>; optional?: string[] };
 
 /** v2 spec §3 — structural shape only (the types+zod pairing convention). */
-export const shapeTypeSchema: z.ZodType<ShapeType> = z.lazy(() => z.union([
+const shapeTypeSchema: z.ZodType<ShapeType> = z.lazy(() => z.union([
   z.object({ kind: z.enum(["string", "number", "boolean", "null", "json"]) }),
   z.object({ kind: z.literal("array"), items: shapeTypeSchema }),
   z.object({
@@ -53,12 +54,6 @@ const JSON_SHAPE: ShapeType = { kind: "json" };
  *  samples. Deeper than any real tool response. */
 const SHAPE_MAX_DEPTH = 32;
 
-/** Own-property define (repo-wide rule): a sample key named __proto__ must
- *  become data, never the fields object's prototype. */
-const defineField = (fields: Record<string, ShapeType>, key: string, value: ShapeType): void => {
-  Object.defineProperty(fields, key, { value, enumerable: true, writable: true, configurable: true });
-};
-
 const deriveShapeAt = (sample: unknown, depth: number): ShapeType => {
   if (depth >= SHAPE_MAX_DEPTH) return JSON_SHAPE;
   if (sample === null) return { kind: "null" };
@@ -76,7 +71,7 @@ const deriveShapeAt = (sample: unknown, depth: number): ShapeType => {
   if (typeof sample === "object") {
     const fields: Record<string, ShapeType> = {};
     for (const [key, value] of Object.entries(sample)) {
-      defineField(fields, key, deriveShapeAt(value, depth + 1));
+      defineOwn(fields, key, deriveShapeAt(value, depth + 1));
     }
     return { kind: "object", fields };
   }
@@ -106,12 +101,12 @@ const mergeShapesAt = (a: ShapeType, b: ShapeType, depth: number): ShapeType => 
       const other = bFields.has(key)
         ? (b.fields as Record<string, ShapeType | undefined>)[key]
         : undefined;
-      defineField(fields, key, other === undefined ? shape : mergeShapesAt(shape, other, depth + 1));
+      defineOwn(fields, key, other === undefined ? shape : mergeShapesAt(shape, other, depth + 1));
       if (other === undefined || aOptional.has(key) || bOptional.has(key)) optional.push(key);
     }
     for (const [key, shape] of Object.entries(b.fields)) {
       if (Object.prototype.hasOwnProperty.call(fields, key)) continue;
-      defineField(fields, key, shape);
+      defineOwn(fields, key, shape);
       optional.push(key);
     }
     return optional.length > 0 ? { kind: "object", fields, optional } : { kind: "object", fields };
@@ -123,40 +118,78 @@ const mergeShapesAt = (a: ShapeType, b: ShapeType, depth: number): ShapeType => 
 /** v2 spec §3 — union two shapes (multi-sample derivation): objects merge
  *  field-wise with one-sided fields optional, arrays merge item-wise,
  *  anything mismatched degrades to `json`. */
-export function mergeShapes(a: ShapeType, b: ShapeType): ShapeType {
+function mergeShapes(a: ShapeType, b: ShapeType): ShapeType {
   return mergeShapesAt(a, b, 0);
 }
 
 const ARRAY_INDEX_PATTERN = /^(?:0|[1-9]\d*)$/;
 
+/** One pointer-walk miss, with the field context per-binding repair needs
+ *  (wire-v2/shape-check.ts). */
+export interface ShapePointerMiss {
+  message: string;
+  missing?: string[];
+  available?: string[];
+}
+
 /**
  * v2 spec §3 — walk a shape by RFC 6901 JSON Pointer (`""` is the whole
- * shape). `json` stays `json` at any depth (the unknown type is closed under
- * projection); absent fields, non-index segments into arrays, and segments
- * past scalars return `undefined` — the compile-time miss the shape check
- * reports.
+ * shape), reporting the first miss with the field context repair needs.
+ * `json` stays `json` at any depth (the unknown type is closed under
+ * projection). `null` shape + `null` miss means an undecodable pointer
+ * segment — treated as unknown, not an error (validate layers own pointer
+ * grammar). The pointer must be `""` or start with `/`.
  */
-export function shapeAtPointer(shape: ShapeType, pointer: string): ShapeType | undefined {
-  if (pointer === "") return shape;
-  if (!pointer.startsWith("/")) return undefined;
+export const walkShapePointer = (
+  shape: ShapeType,
+  pointer: string,
+): { shape: ShapeType | null; miss: ShapePointerMiss | null } => {
   let current = shape;
+  if (pointer === "") return { shape: current, miss: null };
   for (const encodedToken of pointer.slice(1).split("/")) {
-    if (/~(?:[^01]|$)/.test(encodedToken)) return undefined;
+    if (/~(?:[^01]|$)/.test(encodedToken)) return { shape: null, miss: null };
     const token = encodedToken.replace(/~1/g, "/").replace(/~0/g, "~");
-    if (current.kind === "json") return JSON_SHAPE;
-    if (current.kind === "array") {
-      if (!ARRAY_INDEX_PATTERN.test(token)) return undefined;
-      current = current.items;
-      continue;
-    }
+    if (current.kind === "json") return { shape: JSON_SHAPE, miss: null };
     if (current.kind === "object") {
-      if (!Object.prototype.hasOwnProperty.call(current.fields, token)) return undefined;
+      if (!Object.prototype.hasOwnProperty.call(current.fields, token)) {
+        return {
+          shape: null,
+          miss: {
+            message: `field "${token}" is absent from the tool's response shape`,
+            missing: [token],
+            available: Object.keys(current.fields),
+          },
+        };
+      }
       current = current.fields[token] as ShapeType;
       continue;
     }
-    return undefined; // scalar with segments left
+    if (current.kind === "array") {
+      if (!ARRAY_INDEX_PATTERN.test(token)) {
+        return {
+          shape: null,
+          miss: { message: `"${token}" indexes into an array in the tool's response shape (expected a numeric index)` },
+        };
+      }
+      current = current.items;
+      continue;
+    }
+    return {
+      shape: null,
+      miss: { message: `the response shape has a ${current.kind} at this point; "${token}" goes past it` },
+    };
   }
-  return current;
+  return { shape: current, miss: null };
+};
+
+/**
+ * v2 spec §3 — the miss-blind view of {@link walkShapePointer}: absent
+ * fields, non-index segments into arrays, and segments past scalars return
+ * `undefined` — the compile-time miss the shape check reports.
+ */
+export function shapeAtPointer(shape: ShapeType, pointer: string): ShapeType | undefined {
+  if (pointer !== "" && !pointer.startsWith("/")) return undefined;
+  return walkShapePointer(shape, pointer).shape ?? undefined;
 }
 
 /** Default {@link describeShape} depth: enough for any real tool response
