@@ -28,6 +28,9 @@ export const VendoEmbed = ({ surface, poster, alt, height = 480, caption }) => {
 
     const onReady = () => mount();
     const onError = () => { if (!cancelled) setFailed(true); };
+    // A load failure that happened before this instance mounted is persisted
+    // on window — the ephemeral error event alone would never reach us.
+    if (window.__vendoDocsEmbedFailed) { setFailed(true); return; }
     if (window.VendoDocsEmbed) {
       mount();
     } else {
@@ -40,7 +43,7 @@ export const VendoEmbed = ({ surface, poster, alt, height = 480, caption }) => {
         script.src = "https://vendo.run/playground/embed.js";
         script.async = true;
         script.dataset.vendoDocsEmbed = "";
-        script.onerror = () => window.dispatchEvent(new Event("vendo-docs-embed-error"));
+        script.onerror = () => { window.__vendoDocsEmbedFailed = true; window.dispatchEvent(new Event("vendo-docs-embed-error")); };
         document.head.appendChild(script);
       }
       // The bundle may have finished between the check above and the listener
@@ -118,6 +121,7 @@ export const VendoLauncher = () => {
       if (cancelled || dispose || !window.VendoDocsEmbed) return;
       try { dispose = window.VendoDocsEmbed.mountLauncher(); } catch (error) { console.error("[vendo-embed]", error); }
     };
+    if (window.__vendoDocsEmbedFailed) return;
     if (window.VendoDocsEmbed) {
       mountIt();
     } else {
@@ -130,7 +134,7 @@ export const VendoLauncher = () => {
         script.dataset.vendoDocsEmbed = "";
         // A failed bundle means no launcher — silent by design, but announce
         // for any VendoEmbed instances sharing the tag.
-        script.onerror = () => window.dispatchEvent(new Event("vendo-docs-embed-error"));
+        script.onerror = () => { window.__vendoDocsEmbedFailed = true; window.dispatchEvent(new Event("vendo-docs-embed-error")); };
         document.head.appendChild(script);
       }
       if (window.VendoDocsEmbed) mountIt();
