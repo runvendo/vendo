@@ -1,0 +1,35 @@
+{
+  "gate": "execution-v2 wave 3 — invoice-chaser",
+  "outcome": "PASS",
+  "infra": "real e2b + real Claude (claude-sonnet-4-5), driven against the real wired createVendo server through a public cloudflared tunnel",
+  "boxTemplate": "h5pf20fap7ows6io81kr",
+  "transcript": "live-gate-transcript-clean-pass.txt",
+  "steps": {
+    "1_tree_created": { "ui": "tree", "hasMachine": false, "nodes": 7 },
+    "2_graduated": {
+      "graduated": true,
+      "box": {
+        "ok": true,
+        "fns": ["chaseInvoices", "getDigest"],
+        "summary": "zero-dependency Node server; chaseInvoices computes a 3-invoice digest, POSTs to httpbin.org, stores to the Vendo store; getDigest retrieves it; vendo.json declares an 8am schedule + httpbin.org egress"
+      },
+      "egressDeclared": ["httpbin.org"],
+      "treeQueries": [{ "name": "digest", "tool": "fn:getDigest" }]
+    },
+    "3_egress_approved": { "card": "vendo_egress_allow", "egressApproved": ["httpbin.org"] },
+    "4_schedule_fired": {
+      "fn": "chaseInvoices",
+      "cron": "0 8 * * *",
+      "scheduledFor": "2026-07-21T08:00:00.000Z",
+      "status": "ok",
+      "note": "the box woke, did allowlisted httpbin.org egress, and wrote a durable digest row through /box over the tunnel"
+    },
+    "5_reopen_shows_digest": {
+      "kind": "tree",
+      "data": { "digest": { "count": 3, "totalCents": 48500, "invoices": ["INV-001 Acme Corp", "INV-002 Widget Inc", "INV-003 Tech Solutions"] } }
+    },
+    "6_durable_rows": { "count": 1, "collection": "app:<id>:box:digests", "sample": { "count": 3, "totalCents": 48500 } }
+  },
+  "notes": "The wire /tick endpoint (POST /api/vendo/tick, VENDO_TICK_SECRET) was separately verified returning 200 and driving the scheduler in a later run; on this clean-pass run the 8am window was driven via schedules.tick(at). Every sandbox created was destroyed; snapshots reaped. See README.md for the generation-time-variance caveats.",
+  "cleanupNote": "The trailing 'destroy-error' in the transcript is the machine.destroy (de-graduation) path re-validating a machine-cleared tree whose fn: refs then dangle; this PR routes delete through lifecycle.destroyResources (no re-validation) so provider resources are always reaped. The run's snapshot was swept manually."
+}

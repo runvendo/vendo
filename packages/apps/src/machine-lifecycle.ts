@@ -89,8 +89,32 @@ export interface MachineLifecycle {
   wake(app: AppDocument): Promise<SandboxMachine>;
   /** Snapshot the live machine, store the new ref, stop it. No-op when not awake. */
   sleep(app: AppDocument): Promise<AppDocument>;
+  /**
+   * execution-v2 Wave 3 — drop the live machine WITHOUT snapshotting it,
+   * leaving the document's `machine.snapshotRef` untouched: the app rolls back
+   * to its pre-edit snapshot (the next wake re-provisions from the prior ref).
+   * This is the failed-edit rollback — no new fork machinery, just "don't keep
+   * what the box just did". No-op when the app is not awake.
+   */
+  discard(app: AppDocument): Promise<void>;
   /** Destroy the sandbox and clear the document's machine field. */
   destroyMachine(app: AppDocument): Promise<AppDocument>;
+  /**
+   * execution-v2 Wave 3 — reap ALL provider resources for an app (live machine
+   * + stored snapshot) WITHOUT rewriting the document. The delete path uses
+   * this: the row is about to be removed, so re-validating a machine-cleared
+   * document (which a graduated tree's `fn:` refs would fail) must never block
+   * the provider cleanup. Best-effort and idempotent.
+   */
+  destroyResources(app: AppDocument): Promise<void>;
+  /**
+   * execution-v2 Wave 3 — the CURRENT boundary env for an app (PORT, granted
+   * secrets, skin URLs, inference), assembled by the injected buildEnv seam.
+   * The Wave-3 edit flow pushes this to the box's control port before an edit
+   * so a grant flipped while the machine slept lands via the in-box restart
+   * loop (Lane E's env-baked-at-provision gap).
+   */
+  buildAppEnv(app: AppDocument): Promise<Record<string, string>>;
 }
 
 interface LiveEntry {
@@ -319,6 +343,14 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
     return slept ?? await currentDocument(app.id);
   };
 
+  const discard = async (app: AppDocument): Promise<void> => {
+    // Rollback: take the live machine off the books and destroy it WITHOUT a
+    // snapshot, so the document keeps pointing at its pre-edit ref. A mere
+    // stop would leave a paused provider resource beside the untouched ref.
+    const entry = await takeLive(app.id);
+    if (entry !== undefined) await entry.raw.destroy().catch(() => undefined);
+  };
+
   const destroyMachine = async (app: AppDocument): Promise<AppDocument> => {
     const doc = await currentDocument(app.id);
     if (doc.machine === undefined && !live.has(app.id) && !waking.has(app.id)) {
@@ -341,12 +373,29 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
     return updated;
   };
 
+  const buildAppEnv = async (app: AppDocument): Promise<Record<string, string>> =>
+    buildEnv(await currentDocument(app.id));
+
+  const destroyResources = async (app: AppDocument): Promise<void> => {
+    const entry = await takeLive(app.id);
+    if (entry !== undefined) await entry.raw.destroy().catch(() => undefined);
+    // Read the stored ref (the caller's copy may predate a sleep's re-snapshot)
+    // and reap it directly — no document write, so a machine-cleared tree that
+    // still names fn: refs cannot fail validation and strand the snapshot.
+    const doc = await currentDocument(app.id).catch(() => app);
+    const ref = doc.machine?.snapshotRef;
+    if (ref !== undefined) await config.sandbox?.destroy(ref).catch(() => undefined);
+  };
+
   return {
     available: () => config.sandbox !== undefined,
     peek: (appId) => live.get(appId)?.wrapped,
     provision,
     wake,
     sleep,
+    discard,
     destroyMachine,
+    destroyResources,
+    buildAppEnv,
   };
 };

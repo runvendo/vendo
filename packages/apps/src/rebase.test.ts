@@ -376,12 +376,12 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     await expect(runtime.pins.drift(appId, ctx)).resolves.toMatchObject([{ slot: SLOT }]);
   });
 
-  it("fails closed when a trail intent routes to the server code dialect instead of a tree edit", async () => {
+  it("fails closed when a replayed trail intent does not produce a valid tree edit", async () => {
     const store = memoryStore();
     const appId = await seedForkedHistory(store);
-    // A recorded intent only ever comes from a tree edit that touched the pin,
-    // so a server-classified instruction in the trail means the trail was
-    // tampered with (it is an internal store collection) — never half-apply it.
+    // execution-v2 Wave 3 — every rebase replay rides the ONE tree-edit
+    // dialect (the server code lane is gone). A trail intent whose model
+    // output is not a valid <Edit> fails the rebase, never half-applying it.
     await store.records(`vendo:app-pin-intents:${appId}`).put({
       id: "pinint_tampered",
       data: {
@@ -404,7 +404,7 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     if (result.status !== "failed") throw new Error("expected a failed rebase");
     expect(result.replayed).toEqual(["Show it in green"]);
     expect(result.failed.intent).toBe("Persist the card to the database");
-    expect(result.failed.issues).toEqual([expect.stringContaining("server code edit")]);
+    expect(result.failed.issues.length).toBeGreaterThan(0);
     await expect(runtime.get(appId, ctx)).resolves.toEqual(before);
   });
 

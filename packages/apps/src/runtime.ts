@@ -52,6 +52,13 @@ import {
   type MachineSandboxAdapter,
 } from "./machine-lifecycle.js";
 import { createFnCaller } from "./fn.js";
+import {
+  pushBoxEnv,
+  readBoxManifest,
+  runBoxEdit,
+  type BoxEditResult,
+} from "./box-agent.js";
+import { parseVendoManifest } from "./manifest.js";
 import { createAppOpener, createProgressiveQueryResolver } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
 import { detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
@@ -99,6 +106,13 @@ export interface AppsConfig {
     template?: string;
     idleMs?: number;
     clock?: LifecycleClock;
+    /**
+     * execution-v2 Wave 3 — the in-box agent edit is a minutes-long loop the
+     * host long-polls. These tune that poll; defaults suit a live box (8-min
+     * budget). Tests shrink them to run without real time.
+     */
+    boxEditPollMs?: number;
+    boxEditTimeoutMs?: number;
   };
   model?: LanguageModel;
   /** v2 spec §4 — tier-0 paint lane knob, passed to the generation engine.
@@ -124,12 +138,41 @@ export interface EditResult {
    * fork. Present on every edit result over a drifted app so drift is loud at
    * edit time, not only in sync output or the ship-diff. */
   driftedPins?: PinDrift[];
+  /**
+   * execution-v2 Wave 3 — set when this edit graduated the app 1→2 (or edited
+   * an already-graduated app's server): the machine was provisioned, the box
+   * agent wrote/updated the server code, and the tree gained its fn: bindings.
+   */
+  graduated?: boolean;
+  /** The in-box agent's structured report for a graduating/server edit (DATA:
+   * it carries no host authority — approvals still gate every mutation). */
+  box?: { ok: boolean; summary: string; fns?: string[]; filesChanged?: string[] };
+  /**
+   * execution-v2 Wave 3 — a graduating edit whose server code declares egress
+   * the owner has not approved surfaces the parked approval HERE (not a silent
+   * failure). The code is written and snapshotted; the fn does real egress only
+   * once the owner approves this card.
+   */
+  pendingEgress?: { approvalId?: ApprovalId; domains: string[] };
 }
 
 export interface EditFailure {
   code: "edit-rejected";
   retryable: boolean;
   message: string;
+}
+
+/** execution-v2 Wave 3 — the outcome of a machine.editApp() box edit. */
+export interface MachineEditResult {
+  ok: boolean;
+  /** The in-box agent's summary (data-only; carries no host authority). */
+  summary: string;
+  fns?: string[];
+  filesChanged?: string[];
+  /** The synced document after a successful edit (schedules + egress declaration). */
+  app?: AppDocument;
+  /** A parked egress-approval card for the domains the server code declared. */
+  pendingEgress?: { approvalId?: ApprovalId; domains: string[] };
 }
 
 /** 06-apps §1 */
@@ -296,6 +339,15 @@ export interface AppsRuntime {
     wake(appId: AppId, ctx: RunContext): Promise<SandboxMachine>;
     /** Snapshot the live machine, store the new ref, stop it. No-op when not awake. */
     sleep(appId: AppId, ctx: RunContext): Promise<AppDocument>;
+    /**
+     * execution-v2 Wave 3 — send one edit instruction to the IN-BOX agent of
+     * an already-graduated app: wake the box, re-inject the current env, run
+     * the agent, and on success sync schedules + the egress declaration and
+     * snapshot. On failure the box is discarded and the app rolls back to its
+     * pre-edit snapshot. This edits the SERVER only; graduation (runtime.edit)
+     * is what also lands the tree's fn: bindings.
+     */
+    editApp(appId: AppId, instruction: string, ctx: RunContext): Promise<MachineEditResult>;
     /** Destroy the sandbox and clear the document's machine field (de-graduation). */
     destroy(appId: AppId, ctx: RunContext): Promise<AppDocument>;
   };
@@ -360,7 +412,9 @@ const rungFor = (
   declared?: VersionEntry["rung"],
 ): VersionEntry["rung"] => {
   if (app.ui === "http") return 4;
-  if (app.server !== undefined) return declared === 3 ? 3 : 2;
+  // execution-v2 — a machine (Wave 1 Lane B) is layer 2, exactly like the
+  // retired v1 `server`; presence, never a stored rung, is the source of truth.
+  if (app.machine !== undefined || app.server !== undefined) return declared === 3 ? 3 : 2;
   return 1;
 };
 
@@ -454,7 +508,13 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
   // execution-v2 — the v2 machine lifecycle (provision/wake/sleep/destroy);
   // the v1 MachineSessions cache is deleted.
-  const { implicitDomains, buildEnv: hostBuildEnv, ...machineConfig } = config.machine ?? {};
+  const {
+    implicitDomains,
+    buildEnv: hostBuildEnv,
+    boxEditPollMs,
+    boxEditTimeoutMs,
+    ...machineConfig
+  } = config.machine ?? {};
   const implicitEgress = (implicitDomains ?? [])
     .map(normalizeEgressDomain)
     .filter((domain) => domain !== "");
@@ -606,15 +666,19 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   };
 
   /**
-   * Lane E — the ctx-carrying pre-flight run by provision/wake/box surfaces:
-   * declared domains without a grant route through the guard (which parks the
-   * approval card), and the operation refuses loudly until the owner decides.
-   * The lifecycle's policy callback re-checks on every path; this seam is the
-   * one that can ASK, because it has the acting principal.
+   * Lane E — request approval for an app's declared-but-unapproved egress. On
+   * "block" it throws; a pre-approved replay commits immediately; otherwise it
+   * PARKS the approval card and returns its id and domains WITHOUT throwing, so
+   * a caller (graduation) can surface a pending approval as an edit outcome
+   * rather than a failure. This is the one seam that can ASK — it has the
+   * acting principal; the lifecycle's ctx-less policy callback only refuses.
    */
-  const ensureEgressApproved = async (app: AppDocument, ctx: RunContext): Promise<void> => {
+  const requestEgressApproval = async (
+    app: AppDocument,
+    ctx: RunContext,
+  ): Promise<{ status: "none" } | { status: "approved"; domains: string[] } | { status: "pending"; approvalId: ApprovalId; domains: string[] }> => {
     const unapproved = unapprovedEgress(app);
-    if (unapproved.length === 0) return;
+    if (unapproved.length === 0) return { status: "none" };
     const guardCtx: RunContext = { ...ctx, appId: app.id };
     const decision = await config.guard.check(egressCall(app.id, unapproved), egressDescriptor(), guardCtx);
     if (decision.action === "block") {
@@ -623,7 +687,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     if (decision.action === "run") {
       // A pre-approved replay already cleared the high-risk gate — commit now.
       await commitEgressApproval(app.id, unapproved, ctx.principal.subject);
-      return;
+      return { status: "approved", domains: unapproved };
     }
     const requestedAt = new Date().toISOString();
     for (const domain of unapproved) {
@@ -635,11 +699,24 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         requestedAt,
       });
     }
-    throw new VendoError(
-      "blocked",
-      `machine egress requires approval for: ${unapproved.join(", ")}`,
-      { status: "pending-approval", approvalId: decision.approval.id, unapprovedDomains: unapproved },
-    );
+    return { status: "pending", approvalId: decision.approval.id, domains: unapproved };
+  };
+
+  /**
+   * Lane E — the ctx-carrying pre-flight run by provision/wake/box surfaces:
+   * declared domains without a grant park the approval card and the operation
+   * refuses loudly until the owner decides. Graduation uses the non-throwing
+   * {@link requestEgressApproval} directly.
+   */
+  const ensureEgressApproved = async (app: AppDocument, ctx: RunContext): Promise<void> => {
+    const outcome = await requestEgressApproval(app, ctx);
+    if (outcome.status === "pending") {
+      throw new VendoError(
+        "blocked",
+        `machine egress requires approval for: ${outcome.domains.join(", ")}`,
+        { status: "pending-approval", approvalId: outcome.approvalId, unapprovedDomains: outcome.domains },
+      );
+    }
   };
 
   const onApprovalDecision = async (id: ApprovalId, approved: boolean): Promise<void> => {
@@ -843,6 +920,179 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     };
   };
 
+  // ─── execution-v2 Wave 3: the agent in the box + graduation ────────────────
+
+  /** The skin-contract summary carried to the in-box agent as task context.
+   *  Values never cross — only the env-var NAMES the box will find, the /fn
+   *  convention, the vendo.json schema, and curl shapes for the store/tools
+   *  callback surfaces. */
+  const skinContractPrompt = (app: AppDocument): string => {
+    const secretNames = (app.secrets ?? []).join(", ") || "(none declared)";
+    return [
+      "SKIN CONTRACT (the box boundary you build against):",
+      "- Listen on the PORT env var. Serve POST /fn/<name> answering {\"result\": ...} (or {\"error\":{\"code\",\"message\"}}), and GET /vendo.json returning the manifest file.",
+      "- Manifest vendo.json: {\"schedules\":[{\"cron\":\"0 8 * * *\",\"fn\":\"<name>\"}], \"egress\":[\"host.example.com\"]}. Declare EVERY third-party domain you fetch; undeclared egress is blocked at the network layer.",
+      "- .vendo/run holds ONE shell line that starts the app (e.g. \"node server.js\"). Write it; a supervisor runs it.",
+      "- Durable rows go through the Vendo store, NOT disk: PUT \"$VENDO_STORE_URL/rows/<collection>/<id>\" with header \"authorization: Bearer $VENDO_APP_TOKEN\" and body {\"data\":{...}}; list with GET \"$VENDO_STORE_URL/rows/<collection>\".",
+      "- Host tools ride POST \"$VENDO_HOST_URL/tools/<name>\" with the same bearer; approvals/audit happen host-side.",
+      `- Env vars available in the box: PORT, VENDO_STORE_URL, VENDO_APP_TOKEN, VENDO_HOST_URL, VENDO_INFERENCE_URL, VENDO_INFERENCE_KEY, and these declared secrets by name: ${secretNames}.`,
+    ].join("\n");
+  };
+
+  /**
+   * The box server-edit primitive: wake the (already-provisioned) machine,
+   * re-inject the current boundary env (grant-flip restart loop), send the
+   * instruction to the in-box agent, and on success sync schedules + the
+   * egress declaration and snapshot the new state. On failure the box is
+   * DISCARDED — the app rolls back to its pre-edit snapshot. Returns the box's
+   * (data-only) result and the synced document.
+   */
+  const editServerViaBox = async (
+    app: AppDocument,
+    instruction: string,
+    _ctx: RunContext,
+  ): Promise<{ ok: true; result: BoxEditResult; doc: AppDocument } | { ok: false; result: BoxEditResult }> => {
+    const machine = await lifecycle.wake(app);
+    await pushBoxEnv(machine, await lifecycle.buildAppEnv(app)).catch(() => undefined);
+    const result = await runBoxEdit(machine, {
+      prompt: instruction,
+      context: skinContractPrompt(app),
+      ...(boxEditPollMs === undefined ? {} : { pollIntervalMs: boxEditPollMs }),
+      ...(boxEditTimeoutMs === undefined ? {} : { timeoutMs: boxEditTimeoutMs }),
+    });
+    if (!result.ok) {
+      // Rollback: drop the live machine without snapshotting — the doc keeps
+      // its pre-edit ref (no new fork machinery, just "don't keep this").
+      await lifecycle.discard(app).catch(() => undefined);
+      return { ok: false, result };
+    }
+    // Sync schedule state while the box is awake and its egress declaration is
+    // not yet on the doc (so this wake's allowlist still passes).
+    await scheduleEngine.syncManifest(app).catch(() => undefined);
+    // Sync the egress DECLARATION (mirrors vendo.json) onto the doc; the
+    // owner-approval grant is a separate, guard-gated step (Lane E).
+    let egressDecl: string[] = [];
+    const manifestSource = await readBoxManifest(machine).catch(() => undefined);
+    if (manifestSource !== undefined) {
+      try {
+        egressDecl = (parseVendoManifest(manifestSource).egress ?? []).map(normalizeEgressDomain).filter((d) => d !== "");
+      } catch {
+        // An invalid manifest declares nothing; the box just cannot egress.
+      }
+    }
+    const synced = await updateAppDocument(app.id, (doc) => {
+      const next = { ...doc };
+      if (egressDecl.length === 0) delete next.egress;
+      else next.egress = [...new Set(egressDecl)];
+      return next;
+    });
+    // Snapshot the new code + state (sleep does not consult the allowlist).
+    // Sleep advances machine.snapshotRef via CAS, so the post-sleep document —
+    // not the pre-sleep `synced` — is the current stored row a later persist
+    // must build on.
+    const slept = await lifecycle.sleep(synced);
+    return { ok: true, result, doc: slept };
+  };
+
+  /**
+   * Graduation 1→2 (invisible, additive): provision a machine if the app has
+   * none, delegate the server work to the in-box agent, then land the tree's
+   * fn: bindings through the NORMAL v2 tree-edit dialect. The tree keeps
+   * working throughout; the user never picks a tier. A graduating edit whose
+   * server declares unapproved egress SURFACES the parked approval (the code is
+   * written and snapshotted; the fn does real egress only once approved).
+   */
+  const graduate = async (
+    previous: AppDocument,
+    instruction: string,
+    ctx: RunContext,
+  ): Promise<EditResult> => {
+    if (config.model === undefined) {
+      throw new VendoError("not-implemented", "generation requires a model");
+    }
+    if (!lifecycle.available()) {
+      return failedEdit(previous, instruction, [
+        "this instruction needs server capability (schedule / egress / heavy logic / app state), but no sandbox adapter is configured — set machine.sandbox to graduate",
+      ], false);
+    }
+    // Provision on first graduation. A fresh app declares no egress, so this
+    // does not park anything; a re-graduation of an app with pending egress
+    // surfaces that card here (ensureEgressApproved throws).
+    let provisioned = previous;
+    if (previous.machine === undefined) {
+      await ensureEgressApproved(previous, ctx);
+      provisioned = await lifecycle.provision(previous);
+      await reportLifecycle("machine-provision", previous.id, ctx);
+    }
+    const box = await editServerViaBox(provisioned, instruction, ctx);
+    if (!box.ok) {
+      return failedEdit(provisioned, instruction, [
+        `the in-box agent could not complete the server work: ${box.result.summary}`,
+      ], true);
+    }
+    const base = box.doc;
+    // Park the approval card for the domains the server code declared.
+    const pending = await requestEgressApproval(base, ctx);
+    const pendingEgress = pending.status === "pending"
+      ? { pendingEgress: { approvalId: pending.approvalId, domains: pending.domains } }
+      : {};
+    const boxReport = {
+      box: {
+        ok: box.result.ok,
+        summary: box.result.summary,
+        ...(box.result.fns === undefined ? {} : { fns: box.result.fns }),
+        filesChanged: box.result.filesChanged,
+      },
+    };
+    // Land fn: bindings via the normal tree-edit dialect. The app now carries a
+    // machine, so fn: refs validate (core machine-presence rule).
+    const fns = box.result.fns ?? [];
+    // A FOCUSED rebind directive — not the full server spec (which is noise to
+    // the tree-edit model). The only job here is repointing the tree's data
+    // queries and actions at the new fn: functions.
+    const treeInstruction = `The app just graduated to a machine that serves these functions: ${fns.map((fn) => `fn:${fn}`).join(", ") || "(none reported)"}. Rewire the tree to use them:\n- Repoint the query that feeds the main board/list/digest so its tool is the matching data function (e.g. change its tool to "fn:getDigest"); if no such query exists, add one with <Query id="data" tool="fn:..."/> and bind a node to it. Do not leave a stale placeholder or host-tool query where the server now provides the data.\n- Wire any submit/refresh/run control's action to the matching fn:.\nChange ONLY the data source and actions; keep the layout. Emit no id attributes on nodes (ids are compiler-owned); a <Query> id is its name.`;
+    let treeIssues: string[] = [];
+    let bound: AppDocument | undefined;
+    for (let attempt = 0; attempt < 3 && bound === undefined; attempt += 1) {
+      const generated = await engine.edit(
+        {
+          app: structuredClone(base),
+          instruction: treeInstruction,
+          ...(treeIssues.length === 0 ? {} : { repairIssues: treeIssues }),
+        },
+        generationDependencies(config, config.model, await generationToolContext(ctx)),
+      );
+      if (generated.kind === "document") {
+        bound = { ...generated.document, id: base.id };
+      } else {
+        treeIssues = appendIssues(treeIssues, generated.issues);
+      }
+    }
+    const version: VersionEntry = { at: new Date().toISOString(), intent: instruction, rung: rungFor(base) };
+    if (bound === undefined) {
+      // Server graduated + snapshotted, but the model couldn't validate the
+      // fn: bindings. The machine sticks (already persisted by editServerViaBox);
+      // report the miss instead of silently dropping the graduation.
+      return withPinDrift({
+        app: structuredClone(base),
+        version,
+        issues: ["graduated: machine provisioned and server code written, but the tree fn: bindings did not validate — retry the edit to wire them", ...treeIssues],
+        graduated: true,
+        ...boxReport,
+        ...pendingEgress,
+      });
+    }
+    if (bound.tree !== undefined) stripServerAuthoritativeFields(bound.tree);
+    const persisted = await persistEdit(base, bound, version, ctx.principal.subject);
+    return withPinDrift({
+      app: persisted,
+      version: { ...version },
+      graduated: true,
+      ...boxReport,
+      ...pendingEgress,
+    });
+  };
+
   const runtime: AppsRuntime = {
     async prewarm() {
       const models = [config.model, config.paint?.model].filter(
@@ -917,6 +1167,30 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       await apps.put(appRecordInput(app, ctx.principal.subject));
       await reportLifecycle("create", app.id, ctx);
       if (finalTree !== undefined) emit(finalTree);
+      // execution-v2 Wave 3 — graduate on create when the prompt needs server
+      // capability (schedule / egress / heavy logic / app state). The tree is
+      // already on screen; the machine, the box-written server code, and the
+      // tree's fn: bindings land additively (the user never picks a tier).
+      // Best-effort: a graduation failure leaves the working tree app to retry
+      // via edit, so create never regresses to a white box.
+      if (lifecycle.available() && instructionRequiresServer(app, input.prompt)) {
+        try {
+          const graduated = await graduate(structuredClone(app), input.prompt, ctx);
+          if (graduated.failure === undefined) {
+            if (input.onView !== undefined && graduated.app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
+              const tree = {
+                ...structuredClone(graduated.app.tree),
+                ...(graduated.app.components === undefined ? {} : { components: structuredClone(graduated.app.components) }),
+              } as TreeV2;
+              stripServerAuthoritativeFields(tree);
+              emit(tree);
+            }
+            return structuredClone(graduated.app);
+          }
+        } catch {
+          // Graduation is best-effort on create; the working tree app stands.
+        }
+      }
       return structuredClone(app);
     },
 
@@ -940,8 +1214,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     async delete(appId, ctx) {
       const app = await requireOwned(appId, ctx.principal.subject);
-      // execution-v2 — deleting the app destroys its machine (sandbox + snapshot).
-      await lifecycle.destroyMachine(app);
+      // execution-v2 — deleting the app reaps its machine (live sandbox +
+      // stored snapshot) directly, without rewriting the doomed document: a
+      // graduated tree's fn: refs would fail a machine-cleared re-validation
+      // and otherwise strand the provider snapshot.
+      await lifecycle.destroyResources(app);
       await scheduleEngine.clearForApp(appId);
       await data.clear(app, ctx.principal.subject, await history.documents(appId));
       await history.clear(appId);
@@ -990,6 +1267,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         throw new VendoError("not-implemented", "generation requires a model");
       }
       const previous = await requireOwned(appId, ctx.principal.subject);
+      // execution-v2 Wave 3 — an instruction that needs server capability
+      // graduates the app (provision a machine, delegate to the in-box agent,
+      // land fn: bindings). A pure-UI instruction stays on the cheap tree path.
+      if (instructionRequiresServer(previous, instruction)) {
+        return graduate(previous, instruction, ctx);
+      }
       let repairIssues: string[] | undefined;
       let collectedIssues: string[] = [];
       for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -1006,31 +1289,19 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           repairIssues = collectedIssues;
           continue;
         }
-
-        if (generated.kind === "document") {
-          const app: AppDocument = { ...generated.document, id: appId };
-          // Same strip-before-persist rule as create(): open() strips at serve
-          // time, but a model-forged venue or drift field must not be
-          // persisted either.
-          if (app.tree !== undefined) stripServerAuthoritativeFields(app.tree);
-          const version: VersionEntry = {
-            at: new Date().toISOString(),
-            intent: instruction,
-            rung: rungFor(app, generated.rung),
-          };
-          return withPinDrift({
-            app: await persistEdit(previous, app, version, ctx.principal.subject),
-            version: { ...version },
-          });
-        }
-
-        // execution-v2 — the v1 code-edit application path (fork, write files,
-        // probe $PORT, snapshot) is deleted; server code lands via the in-box
-        // agent in a later wave. A code-kind result is a terminal failure, not
-        // a repair loop: re-generating cannot change what this build can apply.
-        return failedEdit(previous, instruction, [
-          "not-implemented: server code edits ride the execution-v2 in-box agent; this build applies tree edits only",
-        ], false);
+        const app: AppDocument = { ...generated.document, id: appId };
+        // Same strip-before-persist rule as create(): open() strips at serve
+        // time, but a model-forged venue or drift field must not be persisted.
+        if (app.tree !== undefined) stripServerAuthoritativeFields(app.tree);
+        const version: VersionEntry = {
+          at: new Date().toISOString(),
+          intent: instruction,
+          rung: rungFor(app, generated.rung),
+        };
+        return withPinDrift({
+          app: await persistEdit(previous, app, version, ctx.principal.subject),
+          version: { ...version },
+        });
       }
       return failedEdit(
         previous,
@@ -1193,10 +1464,8 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             generationDependencies(config, config.model, await generationToolContext(ctx)),
           );
           const remaining = replayIntents.slice(index + 1);
-          if (generated.kind !== "document") {
-            return failedRebase(intent, generated.kind === "failure"
-              ? [...generated.issues]
-              : ["replayed intent produced a server code edit; pin intents replay through the tree edit path only"], remaining);
+          if (generated.kind === "failure") {
+            return failedRebase(intent, [...generated.issues], remaining);
           }
           const next: AppDocument = { ...structuredClone(generated.document), id: app.id };
           if (next.tree !== undefined) stripServerAuthoritativeFields(next.tree);
@@ -1261,6 +1530,28 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       async sleep(appId, ctx) {
         const app = await requireOwned(appId, ctx.principal.subject);
         return lifecycle.sleep(app);
+      },
+      async editApp(appId, instruction, ctx) {
+        const app = await requireOwned(appId, ctx.principal.subject);
+        if (app.machine === undefined) {
+          throw new VendoError("validation", `app ${appId} has not graduated; use edit to graduate it first`);
+        }
+        // A pre-declared unapproved egress must clear (or park) before we wake
+        // the box — the wake would refuse it anyway (Lane E boxAllowlist).
+        await ensureEgressApproved(app, ctx);
+        const outcome = await editServerViaBox(app, instruction, ctx);
+        if (!outcome.ok) {
+          return { ok: false, summary: outcome.result.summary, filesChanged: outcome.result.filesChanged };
+        }
+        const pending = await requestEgressApproval(outcome.doc, ctx);
+        return {
+          ok: true,
+          summary: outcome.result.summary,
+          ...(outcome.result.fns === undefined ? {} : { fns: outcome.result.fns }),
+          filesChanged: outcome.result.filesChanged,
+          app: outcome.doc,
+          ...(pending.status === "pending" ? { pendingEgress: { approvalId: pending.approvalId, domains: pending.domains } } : {}),
+        };
       },
       async destroy(appId, ctx) {
         const app = await requireOwned(appId, ctx.principal.subject);

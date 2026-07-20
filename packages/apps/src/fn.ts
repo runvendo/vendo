@@ -6,6 +6,7 @@ import {
   type ToolOutcome,
 } from "@vendoai/core";
 import type { AppCaller } from "./call.js";
+import { requestAppWithBootRetry, type BootRetryOptions } from "./box-agent.js";
 import type { SandboxMachine } from "./sandbox.js";
 
 /**
@@ -37,6 +38,8 @@ const own = (value: object, key: string): boolean => Object.prototype.hasOwnProp
 export interface FnCallerConfig {
   /** Lane B's machine lifecycle wake — the only runtime door into the box. */
   wake(app: AppDocument): Promise<SandboxMachine>;
+  /** Test seam: shrink the post-resume boot-retry so fn tests run instantly. */
+  bootRetry?: BootRetryOptions;
 }
 
 export interface FnCaller {
@@ -101,12 +104,15 @@ export const createFnCaller = (config: FnCallerConfig): FnCaller => {
     }
     try {
       const machine = await config.wake(app);
-      const answer = await machine.request({
+      // A memory-snapshot resume boots the app fresh; retry the provider's
+      // "port not open" (502/503) for a short window so a fn call right after
+      // a wake does not race the app's startup.
+      const answer = await requestAppWithBootRetry(machine, {
         method: "POST",
         path: `/fn/${name}`,
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ args }),
-      });
+      }, config.bootRetry ?? {});
       return outcomeFromBoxAnswer(answer.status, answer.body);
     } catch (error) {
       // Containment: wake and transport failures surface as error outcomes

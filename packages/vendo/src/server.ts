@@ -997,6 +997,23 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // E), so only declared ∩ granted secret values enter the box. A BYO model
   // key is just such a secret: declare it, grant it, and it rides the same
   // injection path as any other key.
+  // execution-v2 Wave 3 — the box's inference door (the in-box coding agent's
+  // model). Explicit VENDO_INFERENCE_URL/KEY win; otherwise the BYO Anthropic
+  // key rides api.anthropic.com. The Cloud metered gateway is the Wave-5
+  // slot-in behind the same two env vars — no host change needed then.
+  const boxInference = (): { url: string; key: string; model?: string } | undefined => {
+    const url = environment("VENDO_INFERENCE_URL");
+    const key = environment("VENDO_INFERENCE_KEY");
+    const model = environment("VENDO_INFERENCE_MODEL");
+    if (url !== undefined && key !== undefined) {
+      return { url, key, ...(model === undefined ? {} : { model }) };
+    }
+    const anthropic = environment("ANTHROPIC_API_KEY");
+    if (anthropic !== undefined) {
+      return { url: "https://api.anthropic.com", key: anthropic, ...(model === undefined ? {} : { model }) };
+    }
+    return undefined;
+  };
   const machineEnv = async (
     app: AppDocument,
     grants?: { grantedSecrets: ReadonlySet<string> },
@@ -1013,28 +1030,34 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       );
     }
     const boxBase = `${configuredBaseUrl.replace(/\/+$/, "")}${BASE_PATH}/box`;
+    const inferenceEndpoint = boxInference();
     const built = await buildEnv(app, {
       granted: grants?.grantedSecrets ?? new Set<string>(),
       secrets: config.secrets ?? envSecrets(),
       storeUrl: boxBase,
       hostUrl: boxBase,
       appToken: await appTokens.mint(app.id, subject),
+      // The in-box agent's model door (box-env sets VENDO_INFERENCE_URL/KEY).
+      ...(inferenceEndpoint === undefined ? {} : { inference: async () => ({ url: inferenceEndpoint.url, key: inferenceEndpoint.key }) }),
     });
+    // Pass the box's model choice through as a plain env var the harness reads.
+    if (inferenceEndpoint?.model !== undefined) built.env["VENDO_INFERENCE_MODEL"] = inferenceEndpoint.model;
     return built.env;
   };
   // Lane E — the implicit skin domains for the machine egress allowlist: the
-  // box must always reach its own boundary, and in OSS the store surface and
-  // the host-callback surface share the deployment origin (the /box mount
-  // above). The inference endpoint host joins this list when Wave 3 wires the
-  // box inference resolver. Assembled here because this file owns the same
-  // URLs it injects as VENDO_STORE_URL / VENDO_HOST_URL.
+  // box must always reach its own boundary (store + host-callback surface on
+  // the deployment origin, and — Wave 3 — the inference endpoint host), never
+  // subject to declaration or approval. Assembled here because this file owns
+  // the same URLs it injects as VENDO_STORE_URL / VENDO_HOST_URL / inference.
   const implicitMachineDomains = (): string[] => {
-    if (configuredBaseUrl === undefined) return [];
-    try {
-      return [new URL(configuredBaseUrl).hostname];
-    } catch {
-      return [];
-    }
+    const domains = new Set<string>();
+    const add = (value: string | undefined): void => {
+      if (value === undefined) return;
+      try { domains.add(new URL(value).hostname); } catch { /* not a URL */ }
+    };
+    add(configuredBaseUrl);
+    add(boxInference()?.url);
+    return [...domains];
   };
   const apps = createApps({
     store,
@@ -1050,11 +1073,18 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // execution-v2 — the machine lifecycle's seams: the selected adapter when
     // it speaks the canonical v2 seam (destroy-by-ref is the marker the
     // @deprecated v1-only cloudSandbox lacks — a v1-only adapter gets no
-    // machine lifecycle until its Wave 5 port) and Lane C's env assembly.
+    // machine lifecycle until its Wave 5 port) and Lane C's env assembly. The
+    // box template (Node + the in-box agent harness) is set by VENDO_BOX_TEMPLATE.
     machine: {
       ...(sandbox.adapter !== undefined && "destroy" in sandbox.adapter ? { sandbox: sandbox.adapter } : {}),
       buildEnv: machineEnv,
       implicitDomains: implicitMachineDomains(),
+      ...(environment("VENDO_BOX_TEMPLATE") === undefined ? {} : { template: environment("VENDO_BOX_TEMPLATE") }),
+      // The in-box agent edit is a minutes-long loop; operators tune its
+      // long-poll budget when a base image or task needs longer than the
+      // 8-minute default.
+      ...(environment("VENDO_BOX_EDIT_TIMEOUT_MS") === undefined ? {} : { boxEditTimeoutMs: Number(environment("VENDO_BOX_EDIT_TIMEOUT_MS")) }),
+      ...(environment("VENDO_BOX_EDIT_POLL_MS") === undefined ? {} : { boxEditPollMs: Number(environment("VENDO_BOX_EDIT_POLL_MS")) }),
     },
   });
   resolveAppToolRisk = apps.agentToolRisk;

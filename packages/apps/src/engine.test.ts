@@ -20,6 +20,7 @@ import {
   type ScriptedModelCall,
 } from "./testing/index.js";
 import { instructionRequiresServer, modelEngine } from "./engine.js";
+import { fakeBoxSandbox } from "./testing/fake-box.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_engine" },
@@ -94,11 +95,13 @@ const generatedTreeApp = (): AppDocument => ({
 });
 
 describe("generation engine through createApps", () => {
-  it("fails closed when a tree-classified edit unexpectedly yields server code", async () => {
+  it("fails closed when a server-needing edit has no sandbox adapter to graduate onto", async () => {
+    // execution-v2 Wave 3 — server capability rides a machine; with no adapter
+    // configured, graduation refuses loudly (non-retryable) and changes nothing.
     const store = memoryStore();
     const original: AppDocument = {
       format: "vendo/app@1",
-      id: "app_unexpected_code",
+      id: "app_no_adapter",
       name: "Safe tree",
       ui: "tree",
       tree: {
@@ -108,35 +111,21 @@ describe("generation engine through createApps", () => {
       },
     };
     await putApp(store, original);
-    vi.spyOn(modelEngine, "edit").mockResolvedValueOnce({
-      kind: "code",
-      rung: 2,
-      files: [{ path: "/app/server.js", content: "export const changed = true;" }],
-    });
-    const sandbox = fakeSandbox();
-    const createMachine = vi.spyOn(sandbox, "create");
-    const resumeMachine = vi.spyOn(sandbox, "resume");
     const runtime = createApps({
       store,
       guard: guardFixture(),
       tools,
-      sandbox,
       catalog,
       model: scriptedLanguageModel("unused"),
     });
 
-    const result = await runtime.edit(original.id, "Make the heading blue", ctx);
+    const result = await runtime.edit(original.id, "Add a daily email digest of unpaid invoices", ctx);
 
-    expect(result.issues).toEqual([
-      "not-implemented: server code edits ride the execution-v2 in-box agent; this build applies tree edits only",
-    ]);
     expect(result.failure).toMatchObject({ code: "edit-rejected", retryable: false });
+    expect(result.issues?.[0]).toContain("no sandbox adapter is configured");
     expect(result.app).toEqual(original);
     expect(await runtime.get(original.id, ctx)).toEqual(original);
     expect(await runtime.history(original.id).list()).toEqual([]);
-    expect(sandbox.machines.size).toBe(0);
-    expect(createMachine).not.toHaveBeenCalled();
-    expect(resumeMachine).not.toHaveBeenCalled();
   });
 
   it("includes catalog schemas, when-to-use guidance, and usage examples in the model prompt", async () => {
@@ -711,30 +700,30 @@ describe("generation engine through createApps", () => {
     await expect(runtime.get(original.id, ctx)).resolves.toEqual(concurrent);
   });
 
-  it("returns a non-retryable contained failure when the model answers with server code", async () => {
-    // execution-v2 — the v1 apply path (fork, write files, snapshot) is
-    // deleted; server code lands via the in-box agent in a later wave.
+  it("keeps a pure-UI edit on the cheap tree path even when a sandbox is available (no escalation)", async () => {
+    // execution-v2 Wave 3 — the graduation judgment must NOT escalate a
+    // visible-element edit: the box is never woken and no machine is provisioned.
     const store = memoryStore();
+    const sandbox = fakeBoxSandbox();
+    const createMachine = vi.spyOn(sandbox, "create");
     const runtime = createApps({
       store,
       guard: guardFixture(),
       tools,
       catalog,
-      model: scriptedLanguageModel(validCreate(), JSON.stringify({
-        rung: 2,
-        files: [{ path: "/app/server.js", content: "export const ready = true;" }],
-      })),
+      model: scriptedLanguageModel(validCreate(), '<Edit><SetName name="Renamed dashboard"/></Edit>'),
+      machine: { sandbox },
     });
     const original = await runtime.create({ prompt: "Dashboard" }, ctx);
 
-    const result = await runtime.edit(original.id, "Persist mutations in server state", ctx);
+    const result = await runtime.edit(original.id, "Rename the dashboard heading", ctx);
 
-    expect(result.app).toEqual(original);
-    expect(result.failure).toMatchObject({ code: "edit-rejected", retryable: false });
-    expect(result.issues).toEqual([
-      "not-implemented: server code edits ride the execution-v2 in-box agent; this build applies tree edits only",
-    ]);
-    expect(await runtime.history(original.id).list()).toEqual([]);
+    expect(result.failure).toBeUndefined();
+    expect(result.graduated).toBeUndefined();
+    expect(result.app.name).toBe("Renamed dashboard");
+    expect(result.app.machine).toBeUndefined();
+    expect(createMachine).not.toHaveBeenCalled();
+    expect(sandbox.machines).toHaveLength(0);
   });
 });
 
