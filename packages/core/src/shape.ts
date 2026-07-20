@@ -81,7 +81,7 @@ const deriveShapeAt = (sample: unknown, depth: number): ShapeType => {
 
 /** v2 spec §3 — derive the structural shape of one recorded sample value.
  *  Total: non-Json values degrade to `json`, never a throw. */
-function deriveShape(sample: Json): ShapeType {
+export function deriveShape(sample: Json): ShapeType {
   return deriveShapeAt(sample, 0);
 }
 
