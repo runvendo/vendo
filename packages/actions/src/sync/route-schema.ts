@@ -260,6 +260,27 @@ function excludePathParams(schema: Record<string, unknown>, urlPath: string): Re
   return result;
 }
 
+/** Shared by both collectors: fold one collector's `{schema, recognized,
+ * reason}` verdict (the `ZodSchemaResult`/`CheckerTypeResult` shapes are
+ * structurally identical) into a `RouteInputResult` — permissive schema plus
+ * a fail-closed note when nothing (or only part) was recognized, path-params
+ * excluded either way. `fallbackReason` fills in when a fully-unrecognized
+ * verdict carries no specific reason string of its own. */
+function interpretedToResult(
+  urlPath: string,
+  interpreted: { schema: Record<string, unknown>; recognized: boolean; reason?: string },
+  fallbackReason: string,
+): RouteInputResult {
+  const bodySchema = interpreted.recognized ? interpreted.schema : { ...PERMISSIVE_INPUT };
+  const note = interpreted.recognized
+    ? interpreted.reason
+      ? `input schema partially interpreted; permissive where unknown (${interpreted.reason})`
+      : undefined
+    : `input schema not statically interpreted (${interpreted.reason ?? fallbackReason}); permissive schema emitted`;
+
+  return { bodySchema: excludePathParams(bodySchema, urlPath), ...(note ? { note } : {}) };
+}
+
 async function zodCollector(
   route: RouteContext,
   method: HttpMethod,
@@ -274,14 +295,7 @@ async function zodCollector(
   if (!receiver) return null;
 
   const interpreted = await zodFromExpression(extraction, module, receiver, 0);
-  const bodySchema = interpreted.recognized ? interpreted.schema : { ...PERMISSIVE_INPUT };
-  const note = interpreted.recognized
-    ? interpreted.reason
-      ? `input schema partially interpreted; permissive where unknown (${interpreted.reason})`
-      : undefined
-    : `input schema not statically interpreted (${interpreted.reason ?? "unrecognized validator"}); permissive schema emitted`;
-
-  return { bodySchema: excludePathParams(bodySchema, route.urlPath), ...(note ? { note } : {}) };
+  return interpretedToResult(route.urlPath, interpreted, "unrecognized validator");
 }
 
 // ---------------------------------------------------------------------------
@@ -413,22 +427,46 @@ function withoutUndefinedMembers(ts: typeof TS, type: TS.Type): TS.Type[] {
   return type.types.filter((member) => (member.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Void)) === 0);
 }
 
+/** True for a type declared in a default-lib `.d.ts` (`Date`, `Map`,
+ * `ReadableStream`, ...) or a class-instance type (`new Account()`'s type):
+ * both structurally "look like" a plain object to `getPropertiesOfType`
+ * (enumerable own properties, accessor/method members and all), but neither
+ * is representable as a JSON body — a schema built from `Date`'s ~48 own
+ * methods, or a class's private fields, is one nothing could ever satisfy.
+ * Review-caught (Stage 2, empirically probed): without this guard `dueDate:
+ * Date` silently became a required-methods object instead of failing
+ * closed. */
+function isLibOrClassInstanceType(ts: typeof TS, program: TS.Program, type: TS.Type): boolean {
+  const symbol = type.getSymbol();
+  if (!symbol) return false;
+  if ((symbol.flags & ts.SymbolFlags.Class) !== 0) return true;
+  const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0];
+  if (!declaration) return false;
+  return program.isSourceFileDefaultLibrary(declaration.getSourceFile());
+}
+
 /** Bounded TS type → JSON Schema conversion (04 §1 Task 3's supported
  * subset): primitives, string/number literal unions → `enum`, arrays,
  * nested object literals, optionality from `?` or a `| undefined` union.
  * Depth-capped at `MAX_RESOLVE_DEPTH` (the same static-interpretation-depth
  * precedent `static-ts.ts`'s `zodFromExpression` uses). Mapped types,
- * generic type parameters, tuples, and callable types are outside the
- * supported subset and fail closed (`recognized: false`) rather than risk a
- * wrong schema. */
-function schemaForCheckerType(ts: typeof TS, checker: TS.TypeChecker, type: TS.Type, depth: number): CheckerTypeResult {
+ * generic type parameters, tuples, callable types, lib/class-instance types,
+ * and index signatures are outside the supported subset and fail closed
+ * (`recognized: false`) rather than risk a wrong schema. */
+function schemaForCheckerType(
+  ts: typeof TS,
+  checker: TS.TypeChecker,
+  program: TS.Program,
+  type: TS.Type,
+  depth: number,
+): CheckerTypeResult {
   if (depth > MAX_RESOLVE_DEPTH) {
     return checkerUnrecognized(`type nesting exceeded the static interpretation depth (${checker.typeToString(type)})`);
   }
 
   const members = withoutUndefinedMembers(ts, type);
   if (members.length === 0) return { schema: {}, recognized: true };
-  if (type.isUnion() && members.length === 1) return schemaForCheckerType(ts, checker, members[0]!, depth);
+  if (type.isUnion() && members.length === 1) return schemaForCheckerType(ts, checker, program, members[0]!, depth);
 
   if (type.isUnion()) {
     if (members.every((member) => (member.flags & ts.TypeFlags.BooleanLiteral) !== 0)) {
@@ -454,7 +492,7 @@ function schemaForCheckerType(ts: typeof TS, checker: TS.TypeChecker, type: TS.T
   if (checker.isArrayType(type)) {
     const itemType = checker.getIndexTypeOfType(type, ts.IndexKind.Number);
     if (!itemType) return checkerUnrecognized(`array item type could not be resolved (${checker.typeToString(type)})`);
-    const item = schemaForCheckerType(ts, checker, itemType, depth + 1);
+    const item = schemaForCheckerType(ts, checker, program, itemType, depth + 1);
     return item.recognized
       ? { schema: { type: "array", items: item.schema }, recognized: true, ...(item.reason ? { reason: item.reason } : {}) }
       : { schema: { type: "array" }, recognized: true, reason: item.reason };
@@ -469,6 +507,12 @@ function schemaForCheckerType(ts: typeof TS, checker: TS.TypeChecker, type: TS.T
   const objectFlags = (type as TS.Type & { objectFlags?: number }).objectFlags ?? 0;
   if ((objectFlags & ts.ObjectFlags.Mapped) !== 0) return checkerUnrecognized(`mapped type is not statically interpreted (${checker.typeToString(type)})`);
   if (type.isTypeParameter()) return checkerUnrecognized(`generic type parameter is not statically interpreted (${checker.typeToString(type)})`);
+  if (isLibOrClassInstanceType(ts, program, type)) {
+    return checkerUnrecognized(`lib-declared or class-instance type is not statically interpreted (${checker.typeToString(type)})`);
+  }
+  if (checker.getIndexInfosOfType(type).length > 0) {
+    return checkerUnrecognized(`index signature is not statically interpreted (${checker.typeToString(type)})`);
+  }
 
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
@@ -481,13 +525,20 @@ function schemaForCheckerType(ts: typeof TS, checker: TS.TypeChecker, type: TS.T
       continue;
     }
     const propertyType = checker.getTypeOfSymbolAtLocation(property, declaration);
-    const converted = schemaForCheckerType(ts, checker, propertyType, depth + 1);
+    const converted = schemaForCheckerType(ts, checker, program, propertyType, depth + 1);
     properties[property.name] = converted.recognized ? converted.schema : {};
     if (converted.reason) reasons.push(`${property.name}: ${converted.reason}`);
     const isOptionalFlag = (property.flags & ts.SymbolFlags.Optional) !== 0;
     const strippedLength = withoutUndefinedMembers(ts, propertyType).length;
     const fullLength = propertyType.isUnion() ? propertyType.types.length : 1;
-    if (!isOptionalFlag && strippedLength === fullLength) required.push(property.name);
+    // Same rule as `zodBase`'s object case (static-ts.ts): only a RECOGNIZED
+    // property can join `required` — an unrecognized shape (Date, a class
+    // instance, an index signature...) degrades to permissive `{}`, and
+    // pairing that with a hard presence requirement overclaims confidence
+    // the collector doesn't have (an `as`-cast is an unchecked assertion in
+    // the first place; nothing here should read as stronger evidence than
+    // zod gets for the identical situation).
+    if (!isOptionalFlag && strippedLength === fullLength && converted.recognized) required.push(property.name);
   }
 
   const schema: Record<string, unknown> = {
@@ -529,15 +580,17 @@ async function checkerCollector(
   const typeNode = findCheckerCandidateType(ts, body);
   if (!typeNode) return null;
 
-  const checker = program.getTypeChecker();
-  const type = checker.getTypeFromTypeNode(typeNode);
-  const interpreted = schemaForCheckerType(ts, checker, type, 0);
-  const bodySchema = interpreted.recognized ? interpreted.schema : { ...PERMISSIVE_INPUT };
-  const note = interpreted.recognized
-    ? interpreted.reason
-      ? `input schema partially interpreted; permissive where unknown (${interpreted.reason})`
-      : undefined
-    : `input schema not statically interpreted (${interpreted.reason ?? "unsupported type"}); permissive schema emitted`;
-
-  return { bodySchema: excludePathParams(bodySchema, route.urlPath), ...(note ? { note } : {}) };
+  // The checker never throws for the shapes this collector already excludes,
+  // but it is a large, host-resolved dependency operating over host-authored
+  // types the collector cannot fully enumerate in advance (04 §1 Task 3's
+  // never-throw rule) — any unexpected exception degrades to `null` (today's
+  // fail-closed path-params-only emission) rather than crashing the scan.
+  try {
+    const checker = program.getTypeChecker();
+    const type = checker.getTypeFromTypeNode(typeNode);
+    const interpreted = schemaForCheckerType(ts, checker, program, type, 0);
+    return interpretedToResult(route.urlPath, interpreted, "unsupported type");
+  } catch {
+    return null;
+  }
 }

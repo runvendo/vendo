@@ -548,14 +548,70 @@ export async function POST(req: Request) {
     );
   });
 
-  it("(g) fails closed with exactly one scan-level warning when no tsconfig exists (JS-only repo)", async () => {
+  it("(i) fails closed per-property for a lib-declared type (Date) and a class-instance type, while siblings survive", async () => {
     const root = await temporaryRoot();
-    // The TypeScript parser still parses an `as`-cast structurally even in a
-    // `.js`-scriptkind file (it just wouldn't type-check it) — real evidence
-    // the checker collector is willing to chase, which is why attempting
-    // (and failing) to build the program here is the CORRECT behavior rather
-    // than a silent no-op: this repo has no tsconfig at all, so there is no
-    // way to resolve `TransferBody` even though the syntax looks promising.
+    await writeTsconfig(root);
+    const file = path.join(root, "app/api/widgets/route.ts");
+    await write(root, "app/api/widgets/route.ts", `
+class Account { id = "x"; }
+type TransferBody = { amount: number; dueDate: Date; owner: Account };
+export async function POST(req: Request) {
+  const body = (await req.json()) as TransferBody;
+  return Response.json(body);
+}
+`);
+    const route: RouteContext = { file, source: await fs.readFile(file, "utf8"), urlPath: "/api/widgets", kind: "app" };
+    const state = createRouteScanState(root, [file]);
+
+    const result = await inferRouteInput(route, "POST", state);
+    // A schema requiring `dueDate`/`owner` shaped like `Date`'s ~48 own
+    // methods (or a class's private internals) is one no real JSON body can
+    // ever satisfy — both properties fail closed to `{}` instead, and
+    // `amount` (an ordinary property) is untouched.
+    expect(result?.bodySchema).toEqual({
+      type: "object",
+      properties: { amount: { type: "number" }, dueDate: {}, owner: {} },
+      required: ["amount"],
+      additionalProperties: false,
+    });
+    expect(result?.note).toMatch(/dueDate: .*not statically interpreted/);
+    expect(result?.note).toMatch(/owner: .*not statically interpreted/);
+  });
+
+  it("(j) falls back to a permissive schema with a note for an index-signature type", async () => {
+    const root = await temporaryRoot();
+    await writeTsconfig(root);
+    const file = path.join(root, "app/api/widgets/route.ts");
+    await write(root, "app/api/widgets/route.ts", `
+type TransferBody = { [key: string]: string };
+export async function POST(req: Request) {
+  const body = (await req.json()) as TransferBody;
+  return Response.json(body);
+}
+`);
+    const route: RouteContext = { file, source: await fs.readFile(file, "utf8"), urlPath: "/api/widgets", kind: "app" };
+    const state = createRouteScanState(root, [file]);
+
+    const result = await inferRouteInput(route, "POST", state);
+    // Zero named properties with `additionalProperties: false` rejects
+    // every real body — the checker collector must not claim this shape.
+    expect(result?.bodySchema).toEqual({ type: "object", additionalProperties: true });
+    expect(result?.note).toMatch(/^input schema not statically interpreted \(index signature/);
+  });
+
+  it("(g) fails closed with exactly one scan-level warning when no tsconfig exists (JS-only repo), even with two candidate-bearing routes", async () => {
+    const root = await temporaryRoot();
+    // The pre-check that gates the program build (`checkerCollector`'s
+    // syntactic candidate search) runs over the SAME parse the zod collector
+    // already cached via `parseModule` (static-ts.ts:~112), which assigns
+    // every non-.tsx/.jsx file — `.js` included — `ts.ScriptKind.TS`. That
+    // TS-flavored parse is what lets an `as`-cast read as real evidence here,
+    // not some general cast-tolerance of the TS parser in JS-scriptkind
+    // files. Two routes each carry that evidence, both reach
+    // `checkerProgramFor`, and the build is attempted (and fails, since this
+    // repo has no tsconfig.json at all) exactly once — the second call hits
+    // the cached `null` instead of re-attempting, so only one warning comes
+    // out the other end.
     await write(root, "app/api/widgets/route.js", `
 export async function POST(req) {
   const body = (await req.json()) as TransferBody;
@@ -564,7 +620,8 @@ export async function POST(req) {
 `);
     await write(root, "app/api/other/route.js", `
 export async function GET(req) {
-  return Response.json({ ok: true });
+  const body = (await req.json()) as OtherBody;
+  return Response.json(body);
 }
 `);
 
@@ -573,6 +630,23 @@ export async function GET(req) {
     expect(postTool?.inputSchema).toEqual({ type: "object", properties: {}, additionalProperties: true });
     const checkerWarnings = result.warnings.filter((warning) => warning.includes("checker collector"));
     expect(checkerWarnings).toEqual([`route-scan checker collector skipped: no tsconfig.json found under ${root}`]);
+  });
+
+  it("(g2) returns null with one scan-level warning for a typed .ts handler in a repo with no tsconfig (the realistic no-tsconfig case)", async () => {
+    const root = await temporaryRoot();
+    const file = path.join(root, "app/api/widgets/route.ts");
+    await write(root, "app/api/widgets/route.ts", `
+type TransferBody = { amount: number };
+export async function POST(req: Request) {
+  const body = (await req.json()) as TransferBody;
+  return Response.json(body);
+}
+`);
+    const route: RouteContext = { file, source: await fs.readFile(file, "utf8"), urlPath: "/api/widgets", kind: "app" };
+    const state = createRouteScanState(root, [file]);
+
+    expect(await inferRouteInput(route, "POST", state)).toBeNull();
+    expect(state.warnings).toEqual([`route-scan checker collector skipped: no tsconfig.json found under ${root}`]);
   });
 
   it("(h) returns null for an unannotated, uncast json read with no other reads (voice-proxy case)", async () => {
