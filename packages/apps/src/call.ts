@@ -71,6 +71,13 @@ export const createAppCaller = (tools: ToolRegistry, hooks?: AppCallerHooks): Ap
       const { call, appCtx, outcome } = await hostTool(app, ref, args, ctx);
       // An action the guard sent to approval is remembered so its effect can
       // land the moment the owner approves — the bug was that nobody did this.
+      // Park-then-record, exactly like the runtime's egress/exposure flows
+      // (check() parks, then putPending): the real approval path carries no
+      // race, because no approver learns this approvalId until apps.call has
+      // fully resolved — long after this write. The only theoretical window is
+      // a separate actor enumerating pending() and deciding in the sub-await
+      // gap; the resume is idempotent and the record self-clears on decision or
+      // app delete, so a missed decision leaks at worst an inert row.
       if (outcome.status === "pending-approval" && hooks !== undefined) {
         await hooks.onParkedAction(app, call, appCtx, outcome.approvalId);
       }
