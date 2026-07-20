@@ -227,6 +227,60 @@ describe("bootstrapRepo", () => {
     await expect(readFile(path.join(context.logsDir(repo.name), "bootstrap.stdout.log"), "utf8")).resolves.toMatch(/normalized.*--no-frozen-lockfile --force/i);
   });
 
+  it("omits dangerouslyAllowAllBuilds when pnpm-workspace.yaml declares onlyBuiltDependencies", async () => {
+    const { corpusRoot, repo, repoDir } = await makeRepo();
+    const context = createRunContext({ corpusRoot });
+    const binDir = path.join(corpusRoot, "bin");
+    repo.bootstrap.installCommand = "pnpm install --frozen-lockfile --force --ignore-workspace";
+    await writeFile(
+      path.join(repoDir, "pnpm-workspace.yaml"),
+      "packages:\n  - '.'\nonlyBuiltDependencies:\n  - prisma\n",
+    );
+    await writeNodeBin(path.join(binDir, "pnpm"), `
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(${JSON.stringify(path.join(repoDir, "pnpm-curated-argv.txt"))}, process.argv.slice(2).join(" "));
+      console.log("fake pnpm curated-builds install");
+    `);
+
+    await bootstrapRepo(repo, {
+      context,
+      env: {
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
+      },
+    });
+
+    await expect(readFile(path.join(repoDir, "pnpm-curated-argv.txt"), "utf8")).resolves.toBe(
+      "--config.minimumReleaseAge=0 install --no-frozen-lockfile --force",
+    );
+  });
+
+  it("omits dangerouslyAllowAllBuilds when package.json's pnpm field declares neverBuiltDependencies", async () => {
+    const { corpusRoot, repo, repoDir } = await makeRepo();
+    const context = createRunContext({ corpusRoot });
+    const binDir = path.join(corpusRoot, "bin");
+    repo.bootstrap.installCommand = "pnpm install --frozen-lockfile --force --ignore-workspace";
+    await writeFile(
+      path.join(repoDir, "package.json"),
+      `${JSON.stringify({ name: "fixture-app", pnpm: { neverBuiltDependencies: ["esbuild"] } }, null, 2)}\n`,
+    );
+    await writeNodeBin(path.join(binDir, "pnpm"), `
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(${JSON.stringify(path.join(repoDir, "pnpm-never-argv.txt"))}, process.argv.slice(2).join(" "));
+      console.log("fake pnpm never-built-deps install");
+    `);
+
+    await bootstrapRepo(repo, {
+      context,
+      env: {
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
+      },
+    });
+
+    await expect(readFile(path.join(repoDir, "pnpm-never-argv.txt"), "utf8")).resolves.toBe(
+      "--config.minimumReleaseAge=0 install --no-frozen-lockfile --force --ignore-workspace",
+    );
+  });
+
   it("degrades npm ci bootstrap recipes to npm install", async () => {
     const { corpusRoot, repo, repoDir } = await makeRepo();
     const context = createRunContext({ corpusRoot });
