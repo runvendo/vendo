@@ -441,7 +441,9 @@ const cases: OracleCase[] = [
     name: "unresolvable schema reference: externalSchema",
     snippet: "externalSchema",
     mode: "permissive",
-    reasonIncludes: "could not be statically resolved",
+    // Asserts the stable identifier, not the surrounding prose — proves the
+    // mimic named the right identifier and survives message rewording.
+    reasonIncludes: "externalSchema",
   },
   {
     // Chains one modifier call beyond MAX_RESOLVE_DEPTH so the recursive
@@ -473,6 +475,12 @@ describe("static-ts oracle differential", () => {
         expect(mimic.recognized).toBe(false);
         expect(mimic.reason).toBeDefined();
         expect(mimic.reason).toContain(testCase.reasonIncludes);
+        // `unrecognized()` (static-ts.ts:226) always returns `optional: false`
+        // and `schema: {}` — pin both so an authored `optional: true` on a
+        // permissive row (silently ignored otherwise, since these two
+        // fields never vary) gets caught here instead of nowhere.
+        expect(mimic.optional).toBe(false);
+        expect(mimic.schema).toEqual({});
         return;
       }
 
