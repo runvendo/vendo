@@ -82,12 +82,20 @@ Semantics frozen with them:
     — AI SDK `ToolSet` (the umbrella's existing `ai` peer, `>=6.0.0 <7`;
     the spec's "v5 ToolSet" reads as the current peer range), built per
     request because execution needs a principal-scoped `RunContext`.
-  - `@vendoai/vendo/mastra`: `vendoMastraTools(vendo: Vendo, options?: VendoToolPackFilter): Record<string, MastraTool>`
+  - `@vendoai/vendo/mastra`: `vendoMastraTools(vendo: Vendo, options?: VendoToolPackFilter): Promise<Record<string, MastraTool>>`
     — Mastra `createTool` shapes for `Agent({ tools })`. Mastra agent
     definitions are static, so this shim takes NO principal; it resolves the
-    principal (and optional session id) lazily per call from Mastra's runtime
-    context. The runtime-context key names are Lane A's to pick and document;
-    `@mastra/core` becomes an optional peer dep used only by this subpath.
+    principal (and optional session id) lazily per call from Mastra's
+    request context under the keys `"vendo-principal"` (a `Principal`,
+    required — a call without one fails closed) and `"vendo-session-id"`
+    (optional; unset mints one per call). `@mastra/core` (v1.x:
+    `execute(inputData, context)` with `context.requestContext`) becomes an
+    optional peer dep used only by this subpath.
+    *Wave-1 amendment (coordinator-approved): the return type became a
+    Promise — `createVendo` is sync and `ToolRegistry.descriptors()` is
+    async, so no synchronous descriptor snapshot can exist at call time;
+    hosts write `tools: await vendoMastraTools(vendo)` or
+    `tools: () => vendoMastraTools(vendo)`.*
 - **Envelope outputs.** `vendo_create_app` returns a `VendoAppRef` fast (the
   build streams over the wire; the loop never blocks on generation). Any
   guarded call the policy sends to approval returns a `VendoApprovalRef`
