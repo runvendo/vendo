@@ -194,7 +194,7 @@ describe("eject templates pack-and-inspect", () => {
       exports: Record<string, unknown>;
       files: string[];
     };
-    expect(Object.keys(packageJson.exports)).toEqual([".", "./chrome", "./tree", "./voice"]);
+    expect(Object.keys(packageJson.exports)).toEqual([".", "./chrome", "./tree", "./kit", "./voice"]);
     expect(packageJson.files).toEqual(["dist", "README.md"]);
   }, 60_000);
 });
