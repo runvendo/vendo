@@ -109,6 +109,11 @@ import { cloudSandbox } from "./sandbox.js";
 // adapters: a host can pass it explicitly via createVendo({ sandbox }) with
 // its own options instead of relying on the VENDO_API_KEY default.
 export { cloudSandbox, type CloudSandboxOptions } from "./sandbox.js";
+import { cloudTools } from "./cloud-tools.js";
+// The Cloud tools adapter (the execution half of the zero-key Composio seam)
+// rides the server surface the same way: pass it explicitly via
+// createVendo({ connectors: [cloudTools({...})] }) to scope with `apps`.
+export { cloudTools, type CloudToolsOptions } from "./cloud-tools.js";
 import { hostedStore, type HostedStore } from "./hosted-store.js";
 // The hosted-store adapter rides the server surface like the other Cloud
 // adapters: a host can pass it explicitly via createVendo({ store }) with its
@@ -373,6 +378,22 @@ function selectSandbox(configured: SandboxAdapter | undefined): {
   }
 
   return { adapter: undefined, venue: false };
+}
+
+/** ADAPTER RULE, connectors seam: which Connector[] feeds the actions
+    registry. An explicitly passed array always wins — including an empty one
+    ("no connectors" is a choice). Only a wholly unset slot lets
+    VENDO_API_KEY default the Cloud tools connector (Composio tools brokered
+    through the console; the connections seam below independently resolves to
+    the cloud broker for the SAME posture, so connect and use stay paired). */
+function selectConnectors(configured: Connector[] | undefined): Connector[] {
+  if (configured !== undefined) return configured;
+  const apiKey = environment("VENDO_API_KEY");
+  if (apiKey !== undefined) {
+    const baseUrl = environment("VENDO_CLOUD_URL");
+    return [cloudTools({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) })];
+  }
+  return [];
 }
 
 /** ADAPTER RULE (docs/superpowers/specs/2026-07-17-vendo-cloud-definition-design.md):
@@ -925,6 +946,9 @@ export function createVendo(config: CreateVendoConfig): Vendo {
         + "public origin and restart the server.",
     );
   }
+  // Connectors seam (adapter rule): explicit array wins, VENDO_API_KEY
+  // defaults the Cloud tools connector for a wholly unset slot.
+  const resolvedConnectors = selectConnectors(config.connectors);
   const actionsConfig: {
     dir: string;
     connectors?: Connector[];
@@ -937,7 +961,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     invokeTool?: ToolRegistry["execute"];
   } = {
     dir: ".",
-    ...(config.connectors === undefined ? {} : { connectors: config.connectors }),
+    ...(resolvedConnectors.length === 0 ? {} : { connectors: resolvedConnectors }),
     ...(actAsSeam === undefined ? {} : { actAs: actAsSeam }),
     ...(config.serverActions === undefined ? {} : { serverActions: config.serverActions }),
     ...(configuredBaseUrl === undefined ? {} : { baseUrl: configuredBaseUrl, baseUrlTrusted: true }),
@@ -1175,7 +1199,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   });
   // 04-actions §3 — per-principal connected accounts, selected by the adapter
   // rule at this composition seam (selectConnections above).
-  const connections = selectConnections(config.connections, config.connectors ?? []);
+  const connections = selectConnections(config.connections, resolvedConnectors);
   // 10-mcp §1 — construct the door from the parts already assembled: the SAME
   // guard-bound registry chat/apps/automations use, the guard (its core seam is
   // what the door holds for auth audit), the store (a StoreAdapter for the door's

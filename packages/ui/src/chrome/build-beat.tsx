@@ -24,19 +24,12 @@ function toolkitFromToolName(name: string): string | undefined {
   return match ? match[1]!.toLowerCase() : undefined;
 }
 
-/** Toolkit domains with clean, recognizable marks (chrome surfaces only — the jail blocks remote images). */
-const TOOLKIT_DOMAINS: Record<string, string> = {
-  slack: "slack.com",
-  gmail: "gmail.com",
-  googlecalendar: "calendar.google.com",
-  github: "github.com",
-  notion: "notion.so",
-  linear: "linear.app",
-};
-
-export function toolkitLogoUrl(toolkit: string): string | undefined {
-  const domain = TOOLKIT_DOMAINS[toolkit];
-  return domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : undefined;
+/** Toolkit marks come from Composio's logo CDN, which covers its full catalog
+    (chrome surfaces only — the jail blocks remote images). Unknown slugs get
+    Composio's neutral placeholder rather than a 404, so `onError` fallbacks
+    only fire on real network failures. */
+export function toolkitLogoUrl(toolkit: string): string {
+  return `https://logos.composio.dev/api/${encodeURIComponent(toolkit)}`;
 }
 
 /**
