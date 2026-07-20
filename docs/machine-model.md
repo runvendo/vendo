@@ -104,7 +104,9 @@ own allowlisted egress with them (no handles, no egress proxy).
 
 The inference door resolves host-side: explicit `VENDO_INFERENCE_URL` and
 `VENDO_INFERENCE_KEY` win; otherwise `ANTHROPIC_API_KEY` rides
-`https://api.anthropic.com`; otherwise the box gets no inference vars.
+`https://api.anthropic.com`; otherwise `VENDO_API_KEY` rides the Vendo Cloud
+model gateway (`<console>/api/v1`) — the same key that provisions a Cloud
+machine funds its model; otherwise the box gets no inference vars.
 
 ### Out: HTTP on `$PORT`
 

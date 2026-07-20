@@ -12,6 +12,10 @@ working venue (BYO e2b — see the matrix below). Enable it per project:
 createVendo({ apps: { experimentalServedApps: true } });
 ```
 
+Both venues serve layer-3 URLs: a BYO sandbox (`E2B_API_KEY`) on the
+provider's own hosts, and the Vendo Cloud sandbox on single-label
+`m-<id>.vendo.run` ingress hosts.
+
 With the flag off (the default), three things refuse with a typed
 `VendoError("not-implemented")` naming the flag: layer-3 generation, the 2-to-3
 surface flip, and `open()` on an app whose surface is already served.

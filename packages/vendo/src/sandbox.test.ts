@@ -96,7 +96,7 @@ function fakeConsole() {
         allowedDomains: body.egress === undefined ? undefined : [...body.egress],
         files: new Map(),
       });
-      return json({ id, url: `https://${id}.m.vendo.run` }, 201);
+      return json({ id, url: `https://m-${id}.vendo.run` }, 201);
     }
     if (path === `${CLOUD_SANDBOX_PATH}/resume` && request.method === "POST") {
       const body = recorded.json as { ref: string; egress?: string[] };
@@ -113,7 +113,7 @@ function fakeConsole() {
         ...(snapshot.app === undefined ? {} : { app: snapshot.app }),
         files: new Map(snapshot.files),
       });
-      return json({ id, url: `https://${id}.m.vendo.run` });
+      return json({ id, url: `https://m-${id}.vendo.run` });
     }
     const gc = new RegExp(`^${CLOUD_SANDBOX_PATH}/snapshots/([^/]+)$`).exec(path);
     if (gc && request.method === "DELETE") {
@@ -367,18 +367,22 @@ describe("cloudSandbox", () => {
   });
 
   it("url() defaults to the app's $PORT and prefixes non-canonical ports onto the ingress host", async () => {
+    // Single-label scheme (locked 2026-07-20): the console mints
+    // `https://m-<id>.vendo.run` so the existing *.vendo.run Universal SSL
+    // cert covers it; port-prefixed labels stay single-label too
+    // (`https://<port>-m-<id>.vendo.run`).
     const console_ = fakeConsole();
     const adapter = adapterFor(console_);
     const canonical = await adapter.create({ env: { PORT: "8080" } });
-    expect(await canonical.url()).toBe(`https://${canonical.id}.m.vendo.run`);
-    expect(await canonical.url(9090)).toBe(`https://9090-${canonical.id}.m.vendo.run`);
+    expect(await canonical.url()).toBe(`https://m-${canonical.id}.vendo.run`);
+    expect(await canonical.url(9090)).toBe(`https://9090-m-${canonical.id}.vendo.run`);
 
     // An app listening elsewhere gets its OWN port surface by default, and
     // the $PORT rides refs so a resumed machine keeps it.
     const ported = await adapter.create({ env: { PORT: "9090" } });
-    expect(await ported.url()).toBe(`https://9090-${ported.id}.m.vendo.run`);
+    expect(await ported.url()).toBe(`https://9090-m-${ported.id}.vendo.run`);
     const woken = await adapter.resume(await ported.snapshot());
-    expect(await woken.url()).toBe(`https://9090-${woken.id}.m.vendo.run`);
+    expect(await woken.url()).toBe(`https://9090-m-${woken.id}.vendo.run`);
   });
 
   it("states the applicable allowlist explicitly on every resume — the wire inherits nothing", async () => {

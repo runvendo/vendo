@@ -112,6 +112,7 @@ import { cloudSandbox } from "./sandbox.js";
 // adapters: a host can pass it explicitly via createVendo({ sandbox }) with
 // its own options instead of relying on the VENDO_API_KEY default.
 export { cloudSandbox, type CloudSandboxOptions } from "./sandbox.js";
+import { cloudApps } from "./cloud-apps.js";
 import { cloudTools } from "./cloud-tools.js";
 // The Cloud tools adapter (the execution half of the zero-key Composio seam)
 // rides the server surface the same way: pass it explicitly via
@@ -260,6 +261,11 @@ export interface CreateVendoConfig {
         discoverable via `vendo_tools_search`. Defaults to the agent block's
         DEFAULT_MAX_INITIAL_TOOLS. */
     maxInitialTools?: number;
+    /** ENG-252 — explicit curated initial loadout by tool name. When set,
+        exactly these host tools (that exist and are enabled) start active —
+        the cap is not applied; the rest stay discoverable via
+        `vendo_tools_search`. Vendo's own `vendo_*` tools are always active. */
+    loadout?: string[];
     /** AGENT-7: agent-loop step cap per turn (default 20). Exhaustion streams a
         renderable `data-vendo-step-limit` part instead of ending silently. */
     maxSteps?: number;
@@ -1083,8 +1089,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // injection path as any other key.
   // execution-v2 Wave 3 — the box's inference door (the in-box coding agent's
   // model). Explicit VENDO_INFERENCE_URL/KEY win; otherwise the BYO Anthropic
-  // key rides api.anthropic.com. The Cloud metered gateway is the Wave-5
-  // slot-in behind the same two env vars — no host change needed then.
+  // key rides api.anthropic.com; otherwise VENDO_API_KEY rides the console's
+  // Anthropic-compatible model gateway — the same key that provisions the
+  // Cloud machine funds its model (chat inference already does, via devModel's
+  // vendo-cloud rung; a machine without this rung fails every in-box task).
   const boxInference = (): { url: string; key: string; model?: string } | undefined => {
     const url = environment("VENDO_INFERENCE_URL");
     const key = environment("VENDO_INFERENCE_KEY");
@@ -1095,6 +1103,16 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     const anthropic = environment("ANTHROPIC_API_KEY");
     if (anthropic !== undefined) {
       return { url: "https://api.anthropic.com", key: anthropic, ...(model === undefined ? {} : { model }) };
+    }
+    const cloud = cloudKeyOptions();
+    if (cloud !== undefined) {
+      // The gateway base mirrors devModel's vendo-cloud rung: `<console>/api/v1`.
+      const base = (cloud.baseUrl ?? "https://console.vendo.run").replace(/\/+$/, "");
+      return {
+        url: base.endsWith("/api/v1") ? base : `${base}/api/v1`,
+        key: cloud.apiKey,
+        ...(model === undefined ? {} : { model }),
+      };
     }
     return undefined;
   };
@@ -1146,6 +1164,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const boxTemplate = environment("VENDO_BOX_TEMPLATE");
   const boxEditTimeoutMs = positiveIntegerEnv("VENDO_BOX_EDIT_TIMEOUT_MS");
   const boxEditPollMs = positiveIntegerEnv("VENDO_BOX_EDIT_POLL_MS");
+  // ADAPTER RULE, share/publish seam: the apps block never reads the
+  // environment — VENDO_API_KEY fills its CloudAppsClient slot HERE, at the
+  // composition seam; unfilled, share/publish refuse with cloud-required.
+  const appsCloud = cloudKeyOptions();
   const apps = createApps({
     store,
     guard,
@@ -1160,6 +1182,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(config.paint === undefined ? {} : { paint: config.paint }),
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
+    ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
     ...(semanticsFile === undefined ? {} : { semantics: semanticsFile.tools, domains: semanticsFile.domains }),
     secrets: config.secrets ?? envSecrets(),
     // execution-v2 — the machine lifecycle's seams: the selected v2 adapter
@@ -1224,6 +1247,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       // closure reference is safe.
       seed: (ctx) => loadoutSeedFor(ctx),
       ...(config.agent?.maxInitialTools === undefined ? {} : { maxInitialTools: config.agent.maxInitialTools }),
+      ...(config.agent?.loadout === undefined ? {} : { loadout: config.agent.loadout }),
     },
   });
   // Per-subject connected-toolkit lookups are cached briefly so a turn never
