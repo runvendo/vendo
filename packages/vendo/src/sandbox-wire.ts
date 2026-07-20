@@ -3,85 +3,72 @@
  *
  * execution-v2 Wave 5: every Cloud-side wire fact the adapter and its mock
  * rely on lives HERE, in one module, so a Cloud-side change lands in one
- * place. Authoritative per the Cloud session's from-code answers PLUS live
- * probes against prod (2026-07-19, real key): every behavior below marked
- * (probed) was observed on console.vendo.run.
+ * place. Authoritative per the Cloud session's 2026-07-19 ship note (the
+ * ARTIFACT model — persistent snapshot artifacts, verified live in prod
+ * with a full snapshot → destroy → resume → fork cycle) plus this lane's
+ * own live probes and conformance runs against console.vendo.run.
  *
  * The surface (under `{base}/api/v1/sandboxes`, key-authed with a
  * `Bearer VENDO_API_KEY` header; errors are `{error:{code,message}}`
  * envelopes; 402 = metered quota, 401 = bad key):
  *
  * - create   `POST /` body `{env, files?, egress?: string[]}` →
- *   201 `{id, url}` (probed). No template field — the pooled base image is
- *   Cloud's own; the adapter drops `spec.template` and documents it.
- *   `egress` absent = unrestricted, `[]` = deny-all — mirroring the
+ *   201 `{id, url}`. No template field — the pooled base image is Cloud's
+ *   own; the adapter drops `spec.template` and documents it. `egress`
+ *   absent = unrestricted, `[]` = deny-all — mirroring the
  *   SandboxAdapter.create seam contract verbatim; deny-by-default is
  *   enforced ABOVE the seam (Wave 2 Lane E always passes the grant-derived
  *   list). The filter is HTTP(S)-only: raw TCP is severed even to
  *   allowlisted hosts (raw Postgres never works; the HTTPS store API does).
  * - snapshot `POST /{id}/snapshot` → 200 `{ref}` with ref
- *   `vendo:snap_<40hex>` (probed). A snapshot IS a state-preserving PAUSE:
- *   the machine stops serving (exec/request on a paused box = 409
- *   "Sandbox is paused", probed), and the ref revives it. Multiple
- *   snapshots per machine mint distinct refs (probed). Storage is metered
- *   (storage_gb; 402 on exhausted).
- * - resume   `POST /resume` body `{ref}` → 200 `{id, url}` reviving the
- *   SAME machine id (pause model — no fork; probed). A ref only revives a
- *   PAUSED machine: resume while it runs = 409 "Sandbox is live"; resume
- *   after the machine was deleted = 409 "Sandbox is stopped" (both
- *   probed). No egress field yet — a changed resume policy raises the
- *   typed `cloud-egress-override-unsupported` error (see resume()).
+ *   `vendo:snap_<40hex>` — a persistent ARTIFACT of the machine's state.
+ *   The source machine keeps running (and billing); artifacts survive the
+ *   machine's destruction. (Cloud-side caveat, no wire impact: artifact
+ *   storage meters 0 GB for now.)
+ * - resume   `POST /resume` body `{ref, egress?: string[]}` → 200
+ *   `{id, url}` booting a NEW machine from the artifact (a live source
+ *   makes it a fork; a destroyed one a wake). BREAKING vs create-config
+ *   intuition: the new machine does NOT inherit network config — `egress`
+ *   absent = unrestricted (Free orgs coerce deny-all) — so the adapter
+ *   sends the applicable allowlist EXPLICITLY on every resume: the
+ *   ref-recorded one for a bare resume, the SandboxResumePolicy one when
+ *   the caller re-polices a wake (Lane E replace semantics, native).
+ *   Resume of a GC'd or pre-artifact ref answers 404.
  * - destroy  `DELETE /{id}` → 200 `{ok:true}`; MACHINE ids only (a
- *   URL-encoded ref answers 404, probed); repeat-delete = 200 (probed).
- *   Deletion is terminal: the machine's snapshot refs die with it
- *   (409 "Sandbox is stopped" on resume, probed) and its snapshot rows
- *   keep metering storage_gb with no way to reclaim them yet.
+ *   URL-encoded ref answers 404); repeat-delete = 200. Snapshot artifacts
+ *   SURVIVE the machine — sleep is snapshot-then-destroy, wake is resume.
+ * - snapshot GC `DELETE /snapshots/{url-encoded ref}` → 200 `{ok:true}`,
+ *   404 = already gone (treat as the seam's idempotent no-op); reclaims
+ *   the artifact and its storage row.
  * - request  `POST /{id}/request` body `{method, path, port?, headers?,
  *   body_b64}` → `{status, headers, body_b64}`, relayed into the box.
- *   `port` absent targets the canonical box port {@link CLOUD_BOX_PORT};
- *   any 1-65535 routes (probed live — out-of-range answers a clean 400
- *   validation error), so the in-box agent control port (8811) works.
+ *   `port` absent targets the canonical box port {@link CLOUD_BOX_PORT}
+ *   (NOT the box's $PORT — the one provider divergence the conformance
+ *   multiPort flag covers); any explicit 1-65535 routes (probed — an
+ *   out-of-range port answers a clean 400 validation error), so the
+ *   in-box agent control port (8811) works.
  * - exec/files also exist server-side (`POST /{id}/exec`,
  *   `GET|PUT /{id}/files?path=`, `GET /{id}/files/list?dir=`) — adapter-
  *   private, used for live-lane bootstrap and diagnostics only.
  *
- * Adapter reconstruction over the pause model:
- * - `machine.snapshot()` = snapshot (pause) + immediate resume, so the seam
- *   law "the source keeps serving after a snapshot" holds; the returned ref
- *   is the adapter-minted composite {@link CLOUD_SNAPSHOT_REF_PREFIX} +
- *   base64url(JSON {machineId, ref, allowedDomains?}) — destroy-by-ref
- *   needs the machine id (DELETE is machine-only) and resume-policy
- *   comparison needs the snapshot-time allowlist.
- * - `machine.stop()` = a bare snapshot (pause), its ref discarded — the
- *   sleep flows that need a ref mint their own first (machine-lifecycle).
- *   Each stop therefore leaks one snapshot row until follow-up (A) below.
- * - `adapter.destroy(ref)` = DELETE the encoded machine id (idempotent).
+ * Adapter mapping:
+ * - `machine.snapshot()` = the artifact mint, wrapped in the adapter's
+ *   composite ref {@link CLOUD_SNAPSHOT_REF_PREFIX} + base64url(JSON
+ *   {machineId, ref, allowedDomains?}): the machine id lets destroy-by-ref
+ *   reap a still-running source, and the allowlist is what a bare resume
+ *   re-applies (the wire inherits nothing).
+ * - `machine.stop()` = destroy: Cloud has no pause — with artifacts
+ *   surviving the machine, snapshot-then-destroy IS the sleep semantics
+ *   (exactly the machine-lifecycle flow), and previously minted refs stay
+ *   valid through it (the seam law).
+ * - `adapter.destroy(ref)` = best-effort reap of the recorded source
+ *   machine, then artifact GC.
  *
- * IN-FLIGHT Cloud follow-ups (accepted, behind the tick-broker deploy —
- * "stage, don't block"):
- * - (A) `DELETE /api/v1/sandboxes/snapshots/{url-encoded ref}` → 200,
- *   404 = already gone; reclaims the paused sandbox + storage_gb. Once
- *   live, destroy-by-ref and stop() stop leaking snapshot rows.
- * - (B) `POST /resume` gains `egress?: string[]` (absent = keep the created
- *   config, list = REPLACE, [] = deny-all). Once live, resume() sends a
- *   changed policy instead of raising cloud-egress-override-unsupported
- *   (an unrestricted override — allowedDomains: undefined — still has no
- *   wire shape and keeps the typed error).
- *
- * OPEN BLOCKER (reported to the coordinator 2026-07-19, probed): because
- * refs die with their machine, the OSS machine lifecycle's sleep
- * (snapshot → destroy the source) and provision (create → snapshot →
- * destroy) leave Cloud apps UNWAKEABLE — resume answers 409. Requested
- * Cloud fix: resume of a ref whose machine is stopped/deleted provisions a
- * NEW machine from the stored snapshot row, which also restores the seam
- * laws (refs survive destroy; fork-on-resume) and the two conformance
- * cases now gated behind resumeForks.
- *
- * Lifecycle interaction: Vendo auto-sleeps an idle machine after 5 minutes;
- * Cloud independently sweeps at 10 minutes idle and 24 hours max age. Our
- * sleep normally wins; when the Cloud sweep gets there first the next wake
- * resumes from the last stored ref (once the blocker above is fixed),
- * losing at most scratch state — acceptable, because the data rule keeps
+ * Lifecycle interaction: Vendo auto-sleeps an idle machine after 5 minutes
+ * (snapshot → destroy); Cloud independently sweeps at 10 minutes idle and
+ * 24 hours max age. Our sleep normally wins; when the Cloud sweep gets
+ * there first the next wake resumes from the last stored ref, losing at
+ * most scratch state since it — acceptable, because the data rule keeps
  * anything durable in the Vendo store, never on the VM disk.
  */
 
@@ -89,12 +76,15 @@
  * (apps/console/app/api/v1/sandboxes/*). */
 export const CLOUD_SANDBOX_PATH = "/api/v1/sandboxes";
 
+/** Snapshot-artifact GC route (under {@link CLOUD_SANDBOX_PATH}). */
+export const CLOUD_SNAPSHOTS_SUBPATH = "/snapshots";
+
 /** Adapter-minted snapshot refs: this prefix + base64url(JSON state).
  * These are what the seam (and app documents) carry. */
 export const CLOUD_SNAPSHOT_REF_PREFIX = "vendo:v2:";
 
-/** Console-minted snapshot refs (`vendo:snap_<40hex>`, probed) — carried
- * INSIDE the adapter's composite ref, never handed to the seam bare. */
+/** Console-minted artifact refs (`vendo:snap_<40hex>`) — carried INSIDE the
+ * adapter's composite ref, never handed to the seam bare. */
 export const CONSOLE_SNAPSHOT_REF_PREFIX = "vendo:";
 
 /** The canonical box port the relay targets when no port rides the wire

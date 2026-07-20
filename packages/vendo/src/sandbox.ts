@@ -4,6 +4,7 @@ import { deploymentIdentityHeaders } from "./deployment-identity.js";
 import {
   CLOUD_SANDBOX_PATH,
   CLOUD_SNAPSHOT_REF_PREFIX,
+  CLOUD_SNAPSHOTS_SUBPATH,
   CONSOLE_SNAPSHOT_REF_PREFIX,
 } from "./sandbox-wire.js";
 
@@ -142,41 +143,33 @@ const decodeSnapshotRef = (snapshotRef: string): CloudSnapshotState => {
   }
 };
 
-/** Two seam egress policies are the same grant state (order-insensitive;
- * undefined means unrestricted on both sides). */
-const sameDomains = (a: string[] | undefined, b: string[] | undefined): boolean => {
-  if (a === undefined || b === undefined) return a === b;
-  const left = [...new Set(a)].sort();
-  const right = [...new Set(b)].sort();
-  return left.length === right.length && left.every((host, index) => host === right[index]);
-};
-
 /** True exactly for the "that state is already gone" answer that the seam's
  * idempotent transitions (destroy twice, stop of a dead machine) absorb. */
 const isGone = (error: unknown): boolean =>
-  error instanceof VendoError && (error.code === "not-found" || error.code === "conflict");
+  error instanceof VendoError && error.code === "not-found";
 
 /** The Cloud sandbox adapter — the OSS side of the managed-sandbox seam: the
  * execution-v2 SandboxAdapter speaking HTTP to the console's /api/v1/sandboxes
  * routes (Vendo's pooled provider capacity, metered as sandbox_minutes). The
- * wire contract — probed against prod — lives in sandbox-wire.ts. Cloned from
- * cloudConnections' shape: behavior comes ONLY from constructor arguments
- * (adapter rule — see selectSandbox in server.ts); the adapter never reads
- * the environment.
+ * wire contract — the ARTIFACT model, verified live — lives in
+ * sandbox-wire.ts. Cloned from cloudConnections' shape: behavior comes ONLY
+ * from constructor arguments (adapter rule — see selectSandbox in server.ts);
+ * the adapter never reads the environment.
  *
- * Provider particulars, versus the e2b reference port (details and the two
- * in-flight Cloud follow-ups in sandbox-wire.ts):
- * - Pause model: the console's snapshot IS a pause and resume revives the
- *   SAME machine (no fork). snapshot() therefore pauses and immediately
- *   resumes so the seam's "source keeps serving" law holds; stop() is a
- *   bare pause (its console ref discarded — a snapshot-row leak until the
- *   Cloud GC endpoint ships).
+ * Provider particulars, versus the e2b reference port:
+ * - Snapshots are persistent artifacts that survive the machine; resume
+ *   boots a NEW machine from one (fork when the source lives, wake when it
+ *   is gone) and inherits NO network config, so every resume sends the
+ *   applicable allowlist explicitly — the ref-recorded one bare, the
+ *   caller's SandboxResumePolicy when a wake re-polices (Lane E replace
+ *   semantics, native on the wire).
+ * - stop() destroys the machine: Cloud has no pause, and with artifacts
+ *   surviving it, snapshot-then-destroy IS the sleep semantics; previously
+ *   minted refs stay valid through it (the seam law).
  * - Composite refs: the seam sees `vendo:v2:<base64url state>` carrying the
- *   machine id (destroy-by-ref is machine-only on the wire) and the
- *   snapshot-time allowlist.
- * - No egress override on resume yet: a CHANGED policy raises the typed
- *   `cloud-egress-override-unsupported` error (code "not-implemented") —
- *   never a silent stale-policy wake; an UNCHANGED policy proceeds.
+ *   console artifact ref, the source machine id (destroy-by-ref reaps a
+ *   still-running source best-effort before the artifact GC), and the
+ *   snapshot-time allowlist a bare resume re-applies.
  * - `spec.template` is dropped from the wire: the create route takes none —
  *   the pooled base image (Node + the in-box agent) is Cloud's own.
  *
@@ -233,8 +226,8 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
     state: { allowedDomains?: string[] | undefined },
   ): SandboxMachine => {
     const prefix = `/${encodeURIComponent(handle.id)}`;
-    /** POST /{id}/snapshot — a state-preserving PAUSE minting a console ref. */
-    const pauseIntoSnapshot = async (): Promise<string> => {
+    /** POST /{id}/snapshot — mint a persistent artifact; the source keeps running. */
+    const mintArtifact = async (): Promise<string> => {
       const payload = await sendJson(`${prefix}/snapshot`, "POST") as { ref?: unknown };
       if (typeof payload.ref !== "string" || payload.ref.length === 0) {
         throw new VendoError("sandbox-unavailable", "Vendo Cloud sandbox returned no snapshot reference");
@@ -284,21 +277,16 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
         return { status: payload.status, headers, body: decodeBase64(payload.body_b64) };
       },
       async snapshot() {
-        // A checkpoint of a machine this object already slept or destroyed
-        // must not silently reactivate it (the pause+revive below would).
+        // A checkpoint through a machine object that already slept or was
+        // destroyed is a caller bug — say so crisply instead of relaying
+        // whatever the console answers for the dead machine.
         if (sleeping !== undefined || destroying !== undefined) {
           throw new VendoError("conflict", "the machine is asleep or destroyed; resume its snapshot ref instead of checkpointing it");
         }
-        // The console's snapshot pauses the source; the immediate resume
-        // restores the seam law that a checkpoint leaves it serving. A resume
-        // failure propagates — the machine is then paused, not lost: the ref
-        // below revives it.
-        const consoleRef = await pauseIntoSnapshot();
-        await sendJson("/resume", "POST", { ref: consoleRef });
         return encodeSnapshotRef({
           version: 2,
           machineId: handle.id,
-          ref: consoleRef,
+          ref: await mintArtifact(),
           ...(state.allowedDomains === undefined ? {} : { allowedDomains: [...state.allowedDomains] }),
         });
       },
@@ -307,15 +295,10 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
           await destroying;
           return;
         }
-        // Cloud sleep IS the pause-flavored snapshot; the minted console ref
-        // is discarded — the sleep flows that need a ref mint their own
-        // BEFORE stopping (machine-lifecycle.ts). One snapshot row leaks per
-        // stop until the Cloud GC endpoint ships (sandbox-wire.ts follow-up
-        // A). An already-paused/gone machine is the seam's no-op.
-        sleeping ??= pauseIntoSnapshot()
-          .then(() => undefined, (error) => {
-            if (!isGone(error)) throw error;
-          });
+        // Cloud sleep IS destruction: there is no pause, and snapshot
+        // artifacts survive the machine — the sleep flows mint their ref
+        // BEFORE stopping (machine-lifecycle.ts) and wake by resuming it.
+        sleeping ??= remove();
         await sleeping;
       },
       async destroy() {
@@ -383,34 +366,25 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
     },
     async resume(snapshotRef, policy?: SandboxResumePolicy) {
       const state = decodeSnapshotRef(snapshotRef);
-      // Lane E — a wake must enforce the CURRENT egress policy. The Cloud
-      // resume cannot re-police yet (sandbox-wire.ts follow-up B), so an
-      // UNCHANGED policy proceeds and a CHANGED one fails typed — never a
-      // silent wake under a stale allowlist.
-      if (policy !== undefined && !sameDomains(policy.allowedDomains, state.allowedDomains)) {
-        throw new VendoError(
-          "not-implemented",
-          "Vendo Cloud sandboxes cannot change the egress allowlist on resume yet (cloud-egress-override-unsupported); the machine keeps its create-time policy",
-          {
-            reason: "cloud-egress-override-unsupported",
-            snapshotDomains: state.allowedDomains ?? null,
-            requestedDomains: policy.allowedDomains ?? null,
-          },
-        );
-      }
-      return wrap(parseHandle(await sendJson("/resume", "POST", { ref: state.ref })), {
-        allowedDomains: state.allowedDomains,
-      });
+      // The new machine inherits NO network config from the artifact
+      // (sandbox-wire.ts), so every resume states the applicable allowlist:
+      // Lane E's replace semantics when the caller re-polices the wake, the
+      // ref-recorded snapshot-time policy otherwise. undefined stays the
+      // seam's "unrestricted" (absent field on the wire).
+      const allowedDomains = policy === undefined ? state.allowedDomains : policy.allowedDomains;
+      return wrap(parseHandle(await sendJson("/resume", "POST", {
+        ref: state.ref,
+        ...(allowedDomains === undefined ? {} : { egress: [...allowedDomains] }),
+      })), { allowedDomains: allowedDomains === undefined ? undefined : [...allowedDomains] });
     },
     async destroy(snapshotRef) {
       const state = decodeSnapshotRef(snapshotRef);
-      // The console DELETE route is machine-only; the composite ref carries
-      // the machine id for exactly this call. Repeat-deletes answer 200 and
-      // an unknown machine 404 — both are the seam's idempotent no-op. The
-      // snapshot row itself keeps metering storage until the Cloud GC
-      // endpoint ships (sandbox-wire.ts follow-up A).
+      // Best-effort reap of the recorded source machine (it is usually
+      // already gone — the sleep flow destroyed it), then the artifact GC.
+      // A 404 from either is the seam's idempotent no-op.
+      await sendJson(`/${encodeURIComponent(state.machineId)}`, "DELETE").catch(() => undefined);
       try {
-        await sendJson(`/${encodeURIComponent(state.machineId)}`, "DELETE");
+        await sendJson(`${CLOUD_SNAPSHOTS_SUBPATH}/${encodeURIComponent(state.ref)}`, "DELETE");
       } catch (error) {
         if (!isGone(error)) throw error;
       }

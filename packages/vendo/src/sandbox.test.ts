@@ -32,8 +32,10 @@ type BoxApp = (
 ) => { status: number; headers: Record<string, string>; body: Uint8Array | string };
 
 interface MockMachine {
-  /** Pause model, probed live: snapshot pauses; resume revives; DELETE is terminal. */
-  state: "live" | "paused" | "stopped";
+  /** Artifact model (Cloud ship note 2026-07-19): snapshots are persistent
+   * artifacts, the source keeps running; DELETE stops the machine but its
+   * artifacts survive. */
+  state: "live" | "stopped";
   env: Record<string, string>;
   /** undefined = unrestricted egress (seam + wire-contract semantics). */
   allowedDomains: string[] | undefined;
@@ -41,18 +43,26 @@ interface MockMachine {
   files: Map<string, Uint8Array>;
 }
 
+/** What an artifact snapshots: the box state a resume boots a NEW machine
+ * from. Network config is NOT part of it — resume states egress explicitly. */
+interface MockSnapshot {
+  env: Record<string, string>;
+  app?: BoxApp;
+  files: Map<string, Uint8Array>;
+}
+
 /** In-memory fake of the console's /api/v1/sandboxes surface, faithful to the
- * wire contract in sandbox-wire.ts as PROBED against prod 2026-07-19 — the
- * ONE place a Cloud-side change must land alongside the adapter. */
+ * wire contract in sandbox-wire.ts (artifact model, verified live) — the ONE
+ * place a Cloud-side change must land alongside the adapter. */
 function fakeConsole() {
   const requests: RecordedRequest[] = [];
   const machines = new Map<string, MockMachine>();
-  const snapshots = new Map<string, string>(); // console ref → machine id
+  const snapshots = new Map<string, MockSnapshot>();
   let mintedMachines = 0;
   let mintedSnapshots = 0;
 
   const json = (body: unknown, status = 200): Response => Response.json(body, { status });
-  const conflict = (state: "paused" | "stopped"): Response =>
+  const conflict = (state: string): Response =>
     json({ error: { code: "conflict", message: `Sandbox is ${state}.` } }, 409);
   const notFound = (what: string): Response =>
     json({ error: { code: "not-found", message: `${what} not found.` } }, 404);
@@ -89,16 +99,26 @@ function fakeConsole() {
       return json({ id, url: `https://${id}.m.vendo.run` }, 201);
     }
     if (path === `${CLOUD_SANDBOX_PATH}/resume` && request.method === "POST") {
-      const body = recorded.json as { ref: string };
-      // Probed: resume takes {ref} ONLY and unpauses the ONE machine the
-      // snapshot came from; live → 409, deleted → 409 (refs die with it).
-      expect(Object.keys(body).sort()).toEqual(["ref"]);
-      const id = snapshots.get(body.ref);
-      const machine = id === undefined ? undefined : machines.get(id);
-      if (id === undefined || machine === undefined) return notFound("Snapshot");
-      if (machine.state !== "paused") return conflict(machine.state === "live" ? "paused" : "stopped");
-      machine.state = "live";
+      const body = recorded.json as { ref: string; egress?: string[] };
+      // Artifact model: resume boots a NEW machine from the artifact (fork
+      // when the source lives, wake when it is gone) and inherits NO network
+      // config — egress absent = unrestricted.
+      const snapshot = snapshots.get(body.ref);
+      if (snapshot === undefined) return notFound("Snapshot");
+      const id = `m_${(++mintedMachines).toString(36).padStart(24, "0")}`;
+      machines.set(id, {
+        state: "live",
+        env: { ...snapshot.env },
+        allowedDomains: body.egress === undefined ? undefined : [...body.egress],
+        ...(snapshot.app === undefined ? {} : { app: snapshot.app }),
+        files: new Map(snapshot.files),
+      });
       return json({ id, url: `https://${id}.m.vendo.run` });
+    }
+    const gc = new RegExp(`^${CLOUD_SANDBOX_PATH}/snapshots/([^/]+)$`).exec(path);
+    if (gc && request.method === "DELETE") {
+      // Artifact GC: 200 on reclaim, 404 = already gone.
+      return snapshots.delete(decodeURIComponent(gc[1]!)) ? json({ ok: true }) : notFound("Snapshot");
     }
 
     const match = new RegExp(`^${CLOUD_SANDBOX_PATH}/([^/]+)(/.*)?$`).exec(path);
@@ -107,8 +127,8 @@ function fakeConsole() {
     const rest = match[2] ?? "";
 
     if (request.method === "DELETE" && rest === "") {
-      // Probed: MACHINE ids only (a ref answers 404); repeat-delete = 200;
-      // deletion is terminal for the machine's refs.
+      // MACHINE ids only (a ref answers 404); repeat-delete = 200; snapshot
+      // artifacts SURVIVE the machine.
       const machine = machines.get(key);
       if (machine === undefined) return notFound("Sandbox");
       machine.state = "stopped";
@@ -119,7 +139,7 @@ function fakeConsole() {
 
     switch (`${request.method} ${rest}`) {
       case "POST /request": {
-        if (machine.state !== "live") return conflict(machine.state as "paused" | "stopped");
+        if (machine.state !== "live") return conflict(machine.state);
         const body = recorded.json as {
           method: string; path: string; port?: number; headers?: Record<string, string>; body_b64?: string;
         };
@@ -152,16 +172,19 @@ function fakeConsole() {
         });
       }
       case "POST /snapshot": {
-        // Probed: snapshot is a state-preserving PAUSE; snapshotting an
-        // already-paused machine mints another ref (200); a stopped one 409s.
+        // Artifact model: mint a persistent artifact; the source keeps
+        // running (a stopped machine has nothing left to checkpoint).
         if (machine.state === "stopped") return conflict("stopped");
         const ref = `vendo:snap_${(++mintedSnapshots).toString(16).padStart(40, "0")}`;
-        snapshots.set(ref, key);
-        machine.state = "paused";
+        snapshots.set(ref, {
+          env: { ...machine.env },
+          ...(machine.app === undefined ? {} : { app: machine.app }),
+          files: new Map(machine.files),
+        });
         return json({ ref });
       }
       case "POST /exec":
-        if (machine.state !== "live") return conflict(machine.state as "paused" | "stopped");
+        if (machine.state !== "live") return conflict(machine.state);
         return json({ code: 0, stdout: "ran", stderr: "" });
       case "GET /files": {
         const bytes = machine.files.get(url.searchParams.get("path") ?? "");
@@ -247,10 +270,10 @@ const harness: SandboxConformanceHarness = {
   // The Cloud relay defaults to the canonical box port, not $PORT; explicit
   // ports route fine and are covered beside the adapter below.
   multiPort: false,
-  // Pause model: resume revives the ONE machine a snapshot came from.
-  resumeForks: false,
-  // Resume takes the bare ref until Cloud follow-up B (sandbox-wire.ts).
-  resumeReplacesPolicy: false,
+  // Artifact model: resume boots an independent machine per call, and the
+  // adapter states the allowlist (recorded or replaced) on every resume.
+  resumeForks: true,
+  resumeReplacesPolicy: true,
 };
 sandboxAdapterConformance("cloudSandbox (mock console)", harness);
 
@@ -296,22 +319,25 @@ describe("cloudSandbox", () => {
     expect(console_.requests[1]!.json).not.toHaveProperty("port");
     expect(decoder.decode(proxied.body)).toBe("ping");
 
-    // snapshot = console pause + immediate revive, minting OUR composite ref.
+    // snapshot mints the artifact and wraps it in OUR composite ref; the
+    // source keeps running (no other wire call).
     const ref = await machine.snapshot();
     expect(ref.startsWith(CLOUD_SNAPSHOT_REF_PREFIX)).toBe(true);
     expect(ref).toMatch(/^[A-Za-z][A-Za-z0-9_-]*:.+/);
-    expect(wireOf(console_).slice(2)).toEqual([
-      `POST /${machine.id}/snapshot`,
-      "POST /resume",
-    ]);
+    expect(wireOf(console_).slice(2)).toEqual([`POST /${machine.id}/snapshot`]);
+    const still = await machine.request({ method: "POST", path: "/fn/echo", body: "alive" });
+    expect(decoder.decode(still.body)).toBe("alive");
 
     await machine.destroy();
     expect(wireOf(console_).at(-1)).toBe(`DELETE /${machine.id}`);
 
-    // destroy-by-ref addresses the MACHINE id carried in the composite ref.
+    // destroy-by-ref reaps the recorded source machine, then GCs the artifact.
     await adapter.destroy(ref);
-    expect(wireOf(console_).at(-1)).toBe(`DELETE /${machine.id}`);
-    await expect(adapter.resume(ref)).rejects.toMatchObject({ code: "conflict" });
+    expect(wireOf(console_).slice(-2)).toEqual([
+      `DELETE /${machine.id}`,
+      expect.stringMatching(/^DELETE \/snapshots\/vendo%3Asnap_[0-9a-f]{40}$/),
+    ]);
+    await expect(adapter.resume(ref)).rejects.toMatchObject({ code: "not-found" });
   });
 
   it("relays explicit ports as-is — the in-box agent control port works", async () => {
@@ -340,44 +366,30 @@ describe("cloudSandbox", () => {
       .rejects.toMatchObject({ code: "validation" });
   });
 
-  it("resume sends the bare console ref; a CHANGED egress policy fails typed, an unchanged one proceeds", async () => {
+  it("states the applicable allowlist explicitly on every resume — the wire inherits nothing", async () => {
     const console_ = fakeConsole();
     const adapter = adapterFor(console_);
     const machine = await adapter.create({ env: {}, allowedDomains: ["example.com", "api.example.com"] });
     const ref = await machine.snapshot();
     await machine.stop();
 
-    // A changed policy must NEVER wake the box under the stale allowlist —
-    // Cloud cannot re-police a resume yet (sandbox-wire.ts follow-up B).
-    const sent = console_.requests.length;
-    await expect(adapter.resume(ref, { allowedDomains: ["example.org"] }))
-      .rejects.toMatchObject({
-        code: "not-implemented",
-        detail: {
-          reason: "cloud-egress-override-unsupported",
-          snapshotDomains: ["example.com", "api.example.com"],
-          requestedDomains: ["example.org"],
-        },
-      });
-    await expect(adapter.resume(ref, { allowedDomains: undefined }))
-      .rejects.toMatchObject({ code: "not-implemented" });
-    expect(console_.requests.length).toBe(sent);
-
-    // The SAME grant state (order-insensitive) is not an override.
-    const resumed = await adapter.resume(ref, { allowedDomains: ["api.example.com", "example.com"] });
-    expect(resumed.id).toBe(machine.id);
+    // A bare resume re-applies the ref-recorded snapshot-time policy.
+    const woken = await adapter.resume(ref);
+    expect(woken.id).not.toBe(machine.id);
     expect(console_.requests.at(-1)!.json).toEqual({
       ref: expect.stringMatching(/^vendo:snap_[0-9a-f]{40}$/),
+      egress: ["example.com", "api.example.com"],
     });
 
-    // An unrestricted snapshot resumed with an unrestricted policy proceeds.
-    const open = await adapter.create({ env: {} });
-    const openRef = await open.snapshot();
-    await open.stop();
-    await adapter.resume(openRef, { allowedDomains: undefined });
+    // A policy REPLACES it (Lane E), and undefined means unrestricted —
+    // the egress field stays off the wire entirely.
+    await adapter.resume(ref, { allowedDomains: ["example.org"] });
+    expect(console_.requests.at(-1)!.json).toMatchObject({ egress: ["example.org"] });
+    await adapter.resume(ref, { allowedDomains: undefined });
+    expect(console_.requests.at(-1)!.json).not.toHaveProperty("egress");
   });
 
-  it("stop() is the console pause; refs minted before it still revive the machine", async () => {
+  it("stop() destroys the machine; refs minted before it still wake a fresh one", async () => {
     const console_ = fakeConsole();
     const adapter = adapterFor(console_);
     const machine = await adapter.create({ env: {} });
@@ -386,14 +398,12 @@ describe("cloudSandbox", () => {
     await machine.stop(); // sleeping twice shares the one transition
     expect(wireOf(console_).slice(1)).toEqual([
       `POST /${machine.id}/snapshot`,
-      "POST /resume",
-      `POST /${machine.id}/snapshot`,
+      `DELETE /${machine.id}`,
     ]);
-    // A checkpoint through the slept machine object must not silently
-    // reactivate it — the pause+revive shim would wake the box.
+    // A checkpoint through the slept machine object is a caller bug.
     await expect(machine.snapshot()).rejects.toMatchObject({ code: "conflict" });
-    const revived = await adapter.resume(ref);
-    expect(revived.id).toBe(machine.id);
+    const woken = await adapter.resume(ref);
+    expect(woken.id).not.toBe(machine.id);
     // destroy() after a sleep stays the seam's no-op chain (repeat tolerated).
     await machine.destroy();
     await machine.destroy();
@@ -407,10 +417,9 @@ describe("cloudSandbox", () => {
     domains.push("attacker.example"); // the caller's array is theirs to mutate
     const ref = await machine.snapshot();
     await machine.stop();
-    // The unchanged CREATE-time policy proceeds; the mutated one is a change.
-    await adapter.resume(ref, { allowedDomains: ["example.com"] });
-    await expect(adapter.resume(ref, { allowedDomains: domains }))
-      .rejects.toMatchObject({ code: "not-implemented" });
+    // The bare resume re-applies what the machine was CREATED with.
+    await adapter.resume(ref);
+    expect(console_.requests.at(-1)!.json).toMatchObject({ egress: ["example.com"] });
   });
 
   it("rejects snapshot refs it did not mint before anything rides the wire", async () => {
@@ -431,14 +440,14 @@ describe("cloudSandbox", () => {
     expect(console_.requests).toEqual([]);
   });
 
-  it("destroy(ref) treats already-gone state as the seam's no-op but propagates real failures", async () => {
+  it("destroy(ref) treats already-gone state as the seam's no-op but propagates real GC failures", async () => {
     const console_ = fakeConsole();
     const adapter = adapterFor(console_);
     const machine = await adapter.create({ env: {} });
     const ref = await machine.snapshot();
     await adapter.destroy(ref);
-    await adapter.destroy(ref); // repeat-delete answers 200 (probed) — no-op
-    await expect(adapter.resume(ref)).rejects.toMatchObject({ code: "conflict" });
+    await adapter.destroy(ref); // artifact already GC'd (404) — no-op
+    await expect(adapter.resume(ref)).rejects.toMatchObject({ code: "not-found" });
 
     const failing = cloudSandbox({
       apiKey: "vnd_secret",
@@ -448,6 +457,7 @@ describe("cloudSandbox", () => {
         { status: 503 },
       )) as unknown as typeof fetch,
     });
+    // The best-effort source reap swallows its failure; the artifact GC does not.
     await expect(failing.destroy(ref)).rejects.toMatchObject({ code: "sandbox-unavailable" });
   });
 

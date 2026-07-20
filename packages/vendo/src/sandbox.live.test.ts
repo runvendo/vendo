@@ -101,10 +101,10 @@ describe.skipIf(!LIVE)("cloudSandbox live", () => {
     // The Cloud relay defaults to the canonical box port, not $PORT
     // (explicit ports route fine — probed live).
     multiPort: false,
-    // Pause model: resume revives the ONE machine a snapshot came from.
-    resumeForks: false,
-    // Bare-ref resume until Cloud follow-up B (sandbox-wire.ts).
-    resumeReplacesPolicy: false,
+    // Artifact model (verified live): resume boots an independent machine
+    // and the adapter states the allowlist on every resume.
+    resumeForks: true,
+    resumeReplacesPolicy: true,
   };
   sandboxAdapterConformance("real Vendo Cloud", harness);
 
@@ -135,7 +135,7 @@ describe.skipIf(!LIVE)("cloudSandbox live", () => {
       ref = await created.snapshot();
       log(`snapshot → ${ref.slice(0, 24)}… (${ref.length} chars)`);
       await created.stop();
-      log("stop → console pause (state-preserving snapshot)");
+      log("stop → machine destroyed (artifacts survive it)");
 
       resumed = await adapter.resume(ref);
       log(`resume(ref) → machine ${resumed.id}`);
