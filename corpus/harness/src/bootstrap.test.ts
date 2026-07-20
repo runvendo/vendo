@@ -254,14 +254,14 @@ describe("bootstrapRepo", () => {
     );
   });
 
-  it("omits dangerouslyAllowAllBuilds when package.json's pnpm field declares neverBuiltDependencies", async () => {
+  it("omits dangerouslyAllowAllBuilds when package.json's pnpm field declares neverBuiltDependencies under a pnpm ≤10 pin", async () => {
     const { corpusRoot, repo, repoDir } = await makeRepo();
     const context = createRunContext({ corpusRoot });
     const binDir = path.join(corpusRoot, "bin");
     repo.bootstrap.installCommand = "pnpm install --frozen-lockfile --force --ignore-workspace";
     await writeFile(
       path.join(repoDir, "package.json"),
-      `${JSON.stringify({ name: "fixture-app", pnpm: { neverBuiltDependencies: ["esbuild"] } }, null, 2)}\n`,
+      `${JSON.stringify({ name: "fixture-app", packageManager: "pnpm@10.4.1", pnpm: { neverBuiltDependencies: ["esbuild"] } }, null, 2)}\n`,
     );
     await writeNodeBin(path.join(binDir, "pnpm"), `
       const { writeFileSync } = await import("node:fs");
