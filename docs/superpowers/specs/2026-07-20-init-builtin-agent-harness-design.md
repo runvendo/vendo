@@ -27,7 +27,11 @@ a resolvable Agent SDK or a `claude` binary on PATH. Two gaps:
 1. **The vendo CLI ships a built-in agent engine.** The official Anthropic
    SDK (`@anthropic-ai/sdk`, a few MB, a real dependency of the CLI, never
    resolved from the host) running its agentic tool loop with vendo-provided
-   read-only repo tools (Read/Glob/Grep equivalents). It implements the same
+   read-only repo tools (Read/Glob/Grep equivalents). Not to be confused
+   with `@anthropic-ai/claude-agent-sdk` (the Agent SDK), which is Claude
+   Code itself packaged programmatically: same model either way, but the
+   built-in engine carries our minimal tool scaffolding instead of Claude
+   Code's full harness, which is what the 245 MB buys. It implements the same
    `ExtractionHarness` interface: same stages, same prompts, same consent
    gate, same artifact trail. No ai-sdk (`ai` / `@ai-sdk/*`) anywhere in init.
 2. **Codex driver ships in the same program.** A harness that drives the
