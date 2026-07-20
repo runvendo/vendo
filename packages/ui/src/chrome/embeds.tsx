@@ -209,15 +209,23 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     // Self-scheduling poll (useResource's pacing rule): the next attempt is
     // armed only after the current one settles. `vendo_create_app` returns
-    // fast and the build streams server-side, so open() simply fails until
-    // there is an app to serve — keep asking until it lands or the deadline
-    // turns the beat into the failed vocabulary.
+    // fast and the build streams server-side, so until there is an app to
+    // serve the flagged poll answers a quiet `{kind:"pending"}` (a wire that
+    // predates the flag still 404s — the catch arm keeps the same cadence, so
+    // older servers only lose the quiet console). Keep asking until the app
+    // lands or the deadline turns the beat into the failed vocabulary.
     const attempt = async () => {
       try {
-        const next = await client.apps.open(appId);
+        const next = await client.apps.open(appId, { pending: true });
         if (cancelled) return;
-        setSurface(next);
-        return;
+        if (next.kind !== "pending") {
+          setSurface(next);
+          return;
+        }
+        if (Date.now() - startedAt >= APP_BUILD_DEADLINE_MS) {
+          setFailed(new Error(`app never became servable: ${appId}`));
+          return;
+        }
       } catch (reason) {
         if (cancelled) return;
         if (Date.now() - startedAt >= APP_BUILD_DEADLINE_MS) {

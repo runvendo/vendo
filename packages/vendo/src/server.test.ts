@@ -217,6 +217,39 @@ describe("09 §3 public wire", () => {
     }
   });
 
+  it("open answers 200 {kind:'pending'} for a not-yet-servable app only under the ?pending=1 flag", async () => {
+    // Existing-agents polish — the embed's build-window poll: the app record
+    // lands at build completion, so open() 404s until then and every poll
+    // logged a browser console error. The flag turns ONLY that expected
+    // pre-servable miss into a quiet 200 envelope; unflagged callers keep the
+    // contracted 404.
+    const { vendo } = await setup();
+    stubRouteBlocks(vendo);
+    vi.spyOn(vendo.apps, "open").mockRejectedValue(new VendoError("not-found", "app not found: app_building"));
+
+    const bare = await vendo.handler(request("GET", "/apps/app_building/open"));
+    expect(bare.status).toBe(404);
+
+    const flagged = await vendo.handler(request("GET", "/apps/app_building/open?pending=1"));
+    expect(flagged.status).toBe(200);
+    expect(await flagged.json()).toEqual({ kind: "pending" });
+  });
+
+  it("open?pending=1 serves a servable app unchanged and passes through non-not-found failures", async () => {
+    const { vendo } = await setup();
+    stubRouteBlocks(vendo);
+
+    const served = await vendo.handler(request("GET", "/apps/app_wire/open?pending=1"));
+    expect(served.status).toBe(200);
+    expect((await served.json() as { kind: string }).kind).toBe("tree");
+
+    // Only the expected pre-servable miss goes quiet — a real failure keeps
+    // its envelope and status.
+    vi.spyOn(vendo.apps, "open").mockRejectedValueOnce(new VendoError("blocked", "no"));
+    const blocked = await vendo.handler(request("GET", "/apps/app_wire/open?pending=1"));
+    expect(blocked.status).toBe(403);
+  });
+
   it("does not read history for an unowned app on GET or undo", async () => {
     const { vendo } = await setup();
     stubRouteBlocks(vendo);

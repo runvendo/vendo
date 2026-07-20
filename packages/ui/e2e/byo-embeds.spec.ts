@@ -39,3 +39,27 @@ test("a generated island with viewport-height stylesheet CSS fits its content (n
   expect(Math.abs(second - first), "island frame keeps growing").toBeLessThan(4);
   expect(second, "island frame is far taller than its content").toBeLessThan(900);
 });
+
+/**
+ * The build window: `app_building_lands` misses its first open polls (the
+ * wire fixture lands the build after two), and each miss used to log a
+ * browser console 404. The embed now polls under the wire's `?pending=1`
+ * flag — a miss is a quiet 200 envelope — so the whole window must produce
+ * ZERO console errors while still resolving to the live app.
+ */
+test("the build window stays quiet: no console errors while the embed polls a not-yet-servable app", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("console", message => {
+    // The harness ships no favicon; that 404 is the page's, not the embed's.
+    if (message.type() === "error" && !message.text().includes("favicon")) errors.push(message.text());
+  });
+  page.on("pageerror", error => errors.push(String(error)));
+
+  await openScenario(page, "byo-embed-building");
+  await expect(page.locator('.fl-appcard-bar[data-state="building"]')).toBeVisible();
+  await expect(page.locator('.fl-appcard-bar[data-state="ready"]')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Trip planner app surface")).toBeVisible();
+  await page.screenshot({ path: screenshotPath("byo-embed-building") });
+
+  expect(errors).toEqual([]);
+});

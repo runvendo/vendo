@@ -213,6 +213,9 @@ export async function createWireServer() {
     ]),
     history: [{ at: NOW, intent: "create", rung: 1 }] satisfies VersionEntry[],
     importBytes: new Uint8Array(),
+    // Existing-agents polish — how many open polls `app_building_lands`
+    // misses before its build "lands" (the browser harness's build window).
+    buildingOpensRemaining: 2,
     statusErrorCode: undefined as string | undefined,
     failures: [] as Array<{ method: string; path: string; code: string; message: string; status: number }>,
     // ENG-214 — how many upcoming /threads turns die MID-stream (a partial
@@ -547,8 +550,23 @@ export async function createWireServer() {
       if (appActionMatch) {
         const id = decodeURIComponent(appActionMatch[1] ?? "");
         const action = appActionMatch[2];
+        // Existing-agents polish — the browser harness's build window: this
+        // app becomes servable after a couple of open polls, like a real
+        // build landing mid-poll.
+        if (id === "app_building_lands" && action === "open" && method === "GET"
+          && !state.apps.some(item => item.id === id)
+          && --state.buildingOpensRemaining <= 0) {
+          state.apps.push(app(id, "Trip planner"));
+        }
         const index = state.apps.findIndex(item => item.id === id);
-        if (index < 0) return wireError(response, "not-found", "App not found", 404);
+        if (index < 0) {
+          // The real wire's flag-gated build-window answer: a flagged open
+          // poll gets a quiet 200 pending envelope instead of the 404.
+          if (action === "open" && method === "GET" && url.searchParams.get("pending") === "1") {
+            return json(response, { kind: "pending" });
+          }
+          return wireError(response, "not-found", "App not found", 404);
+        }
         if (action === "open" && method === "GET") {
           return json(response, { kind: "tree", payload: state.apps[index]?.tree });
         }

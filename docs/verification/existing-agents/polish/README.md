@@ -26,3 +26,24 @@ up to the 8192px cap. Fix: the same normalization now covers stylesheet text
 
 Guard: `packages/ui/e2e/byo-embeds.spec.ts` (frame must be stable and
 content-sized) + `packages/ui/test/viewport-css.test.ts`.
+
+## Fix 2 — build-window 404 console noise
+
+`VendoAppEmbed` polls `GET /apps/:id/open` every 1.2s while the build
+streams, and the app record lands only at build completion — so every miss
+logged a browser console 404 (meta polling was no alternative: `GET
+/apps/:id` 404s identically until the record lands). The wire now answers a
+flagged poll (`?pending=1`) with a quiet `200 {kind:"pending"}` for exactly
+that expected pre-servable miss; unflagged callers keep the contracted 404,
+and every other failure keeps its envelope and status. Against a wire that
+predates the flag the embed's catch arm keeps the old polling cadence — the
+degradation is only the console noise.
+
+- `polish-2-build-window-quiet.png` — `/byo-embed-building`: the fixture
+  lands the build after two missed polls; the bar resolves building → ready
+  with the served app inline, and the spec asserts ZERO console errors
+  (verified to fail against the unflagged poll).
+
+Guard: the same spec's build-window test, `packages/vendo/src/server.test.ts`
+(flag-gated pending vs contracted 404), and the embeds unit suite (every
+poll carries `?pending=1`).
