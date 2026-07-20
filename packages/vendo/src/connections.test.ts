@@ -212,11 +212,15 @@ describe("unconfiguredConnections", () => {
 });
 
 describe("catalog posture", () => {
-  it("cloud and unconfigured advertise nothing (the console serves no catalog endpoint yet)", async () => {
-    const cloudFetch = vi.fn(async () => Response.json({}));
+  it("cloud rides the console's catalog endpoint", async () => {
+    const cloudFetch = vi.fn(async () =>
+      Response.json({ available: [{ toolkit: "gmail", connector: "composio" }] }));
     const cloud = cloudConnections({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: cloudFetch as unknown as typeof fetch });
-    await expect(cloud.catalog()).resolves.toEqual([]);
-    expect(cloudFetch).not.toHaveBeenCalled();
+    await expect(cloud.catalog()).resolves.toEqual([{ toolkit: "gmail", connector: "composio" }]);
+    expect(String(cloudFetch.mock.calls[0]![0])).toBe("https://cloud.test/api/v1/connections/catalog");
+  });
+
+  it("unconfigured advertises nothing", async () => {
     await expect(unconfiguredConnections().catalog()).resolves.toEqual([]);
   });
 });

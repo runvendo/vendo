@@ -229,11 +229,10 @@ export function cloudConnections(options: CloudConnectionsOptions): ConnectionsS
         { method: "DELETE" },
       );
     },
-    // The console does not serve a catalog endpoint yet, so the cloud posture
-    // honestly advertises nothing (the dock stays hidden) rather than guessing.
-    // When the console ships GET /api/v1/connections/catalog this becomes a
-    // cloudFetch passthrough.
-    catalog: async () => [],
+    async catalog() {
+      const payload = await cloudFetch("/api/v1/connections/catalog") as { available?: unknown };
+      return Array.isArray(payload.available) ? (payload.available as ConnectableToolkit[]) : [];
+    },
   };
 }
 

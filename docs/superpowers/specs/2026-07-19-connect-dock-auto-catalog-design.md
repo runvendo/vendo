@@ -34,9 +34,10 @@ Decisions locked with Yousef:
   explicit. Names via `toolkitDisplayName` unless the catalog carries a label;
   logos via the Composio CDN (`toolkitLogoUrl`).
 - **Cloud**: the catalog method rides the existing connections adapter seam.
-  The cloud broker returns its own catalog when the cloud service ships the
-  endpoint; until then the cloud posture serves an empty catalog (documented,
-  not silent).
+  The console serves the full connections broker — all five
+  `/api/v1/connections*` endpoints, org-namespaced Composio entities, catalog
+  included (vendo-web #81) — and the cloud adapter's `catalog()` is a
+  passthrough to it.
 - **Docs**: a short "the dock advertises your connector's apps automatically"
   paragraph in `docs/connected-accounts.md`.
 
