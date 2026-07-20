@@ -15,8 +15,12 @@ import {
   describeShapeWithSemantics,
   kitPrompt,
   kitSpec,
-  JAIL_ALLOWED_MODULES,
+  ISLAND_AMBIENT_KIT_NAMES,
+  ISLAND_STRIPPED_SPECIFIERS,
+  resolveIslandToolName,
+  scanIslandTools,
   shapeAtPointer,
+  stripIslandImports,
   printWireV2,
   isPathBinding,
   isStateBinding,
@@ -262,6 +266,16 @@ ${kitPrompt({ only: [...KIT_WIRE_COMPONENT_NAMES] })}
 # Legacy primitives (also available)
 ${prewiredSchemaPrompt()}`;
 
+/** W4b §3 — the island contract, shared by the create and edit dialects. The
+ *  "LAST RESORT" fear rules are retired (spec §format Islands): use the Kit
+ *  when it covers the need (faster, branded); write an island for custom
+ *  visuals/logic/interaction. Byte caps, the TSX + default-export gate, and
+ *  the no-network CSP all stand. */
+const islandContract = (): string => `- <Island name="PascalName">TSX with an \`export default\` component</Island> defines a generated component, referenced as <PascalName/> — plain source, never wrapped in braces, template literals, or fences. Use a host catalog or Kit/prewired component when it covers the need (faster, brand-native); write an island for custom visuals, novel interactions, or client-side logic they cannot express (search-as-you-type, derived calculations, bespoke visualizations). Never put the whole app or its layout inside one island: compose regions so the app streams in progressively.
+- Islands have NO import statements — everything is already in scope: React and its hooks (useState, useEffect, useMemo, useCallback, useRef), the entire Kit (${ISLAND_AMBIENT_KIT_NAMES.join(", ")}), and \`fmt\` value helpers (fmt.money(cents), fmt.dateTime(iso), fmt.percent(ratio), fmt.num(n)). Never write an import: known react/kit imports are stripped, and anything else (recharts, d3, lodash…) cannot load in the network-denied sandbox — the ambient Kit charts cover charting.
+- Islands call host tools directly with the ambient tools API: \`const result = await tools.<tool_name>(args)\`, where <tool_name> is a HOST TOOLS name written as a LITERAL member access — never tools[expr], never aliasing or passing \`tools\` around. A read tool resolves with the tool's output. A MUTATING tool pauses at the user approval gate: the call resolves {status:"pending-approval"} and its effect lands after the user approves — render a pending/awaiting-approval state, never treat it as a failure. An island can only reach the tools its own source literally names.
+- Data honesty holds inside islands: every number or row an island renders comes from its props (bound to a <Query>) or from an ambient tools read — never hand-typed.`;
+
 /** v2 spec §2 — the JSX-wire create contract. The model emits markup, never
  *  JSON; the deterministic compiler owns ids, bindings, and validation. */
 const wireContractSections = (deps: GenerationDependencies): GenerationPromptSection[] => [{
@@ -279,8 +293,7 @@ const wireContractSections = (deps: GenerationDependencies): GenerationPromptSec
 - Never hardcode business data (invoices, balances, metrics, rows). Every number, label, and row the user sees must come from a tool binding (inline reference or <Query>); if no tool provides it, leave the region out rather than inventing data. This applies to CHARTS and METRICS too: when NO host tool supplies the numbers, render an honest empty-state (a short Text/Badge that the data isn't available), never fabricated, placeholder, or example figures.
 - Actions are on* attributes naming a host tool or fn:<name> (name matches [A-Za-z_][A-Za-z0-9_-]*), e.g. onClick="host_tool" or onRun="fn:submit". A rung-1 app has no server, so never use fn: on create.
 - An action that CHANGES host state (a write/destructive tool) MUST carry a payload binding the context it acts on — the per-row id for a row action, the form field values for a submit — e.g. onClick={{action:"host_send_reminder", payload:{invoiceId: invoices.rows.0.id}}}. Never wire a submit/primary Button to a read-only tool, and never leave a submit/primary Button with no action: a button that does nothing is a fake affordance. When NO host tool can perform the requested action, do NOT render a dead Submit — render an honest disclaimer (Text/Badge) saying the action isn't available on this host.
-- <Island> generated components are a LAST RESORT: one small, self-contained visual piece that no catalog or prewired component can express (a custom chart, a novel visualization). NEVER put the whole app, layout, data, or fetching inside an island. Island content is top-level <Island name="PascalName">raw TSX with an \`export default\`</Island>, referenced as <PascalName/> — plain source, never wrapped in braces, template literals, or fences.
-- An island runs in a network-denied sandbox and may import ONLY react/react-dom (${JAIL_ALLOWED_MODULES.join(", ")}); NOTHING else loads. NEVER import a chart or utility library (no recharts, d3, chart.js, victory, nivo, lodash): render a chart as dependency-free INLINE SVG inside the island, or use a prewired/host component instead. Pass the chart's numbers in as props bound to a <Query>; never fabricate them.
+${islandContract()}
 - Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} islands, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per island, ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes of island source total.`,
 }, {
   id: "prewired-props",
@@ -474,8 +487,8 @@ const esbuildTransform = (async () => {
 /** Every module specifier an island source imports — static (`import … from`,
  *  side-effect `import "x"`, `export … from`), dynamic `import("x")`, and
  *  `require("x")`. The jail's sucrase loader rewrites all of these to its
- *  require table, so any specifier here that is not a `JAIL_ALLOWED_MODULES`
- *  entry cannot resolve at runtime. */
+ *  require table, so any specifier here that is not an island-resolvable
+ *  module (`ISLAND_STRIPPED_SPECIFIERS`) cannot resolve at runtime. */
 const IMPORT_SPECIFIER =
   /(?:\bimport\b|\bexport\b)[^'"]*?\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)|\brequire\s*\(\s*["']([^"']+)["']\s*\)/g;
 
@@ -488,26 +501,68 @@ const islandImportSpecifiers = (source: string): string[] => {
   return specifiers;
 };
 
-const JAIL_ALLOWED_MODULE_SET = new Set<string>(JAIL_ALLOWED_MODULES);
+const ISLAND_RESOLVABLE_MODULE_SET = new Set<string>(ISLAND_STRIPPED_SPECIFIERS);
 
-/** verify-v2 fixes — a broken island must never persist: it renders as a
- *  contained error instead of an app. Checked at create, routed to repair.
- *  An island reaching for a module the jail cannot load (a chart library, a
- *  util) error-boxes the whole app (verify-v2 #5: `recharts`), so a disallowed
- *  import is rejected before the syntax gate. */
-const islandIssues = async (components: Record<string, string>): Promise<string[]> => {
+/** W4b — one island through the ambient contract: normalize the wrapper,
+ *  silently strip the known react/kit imports (pretraining habit), gate the
+ *  rest, and infer the tool manifest from the literal `tools` member chains
+ *  (validated against the live registry when the host supplied one). */
+interface PreparedIslands {
+  /** name → stripped canonical source. Empty record when there are no islands. */
+  components: Record<string, string>;
+  /** name → sorted registry tool names its source reaches (may be empty). */
+  componentTools: Record<string, string[]>;
+  issues: string[];
+}
+
+/** verify-v2 fixes + W4b — a broken island must never persist: it renders as
+ *  a contained error instead of an app. Checked at create AND edit, routed to
+ *  repair. An island reaching for a module the ambient scope cannot provide
+ *  error-boxes the whole app (verify-v2 #5: `recharts`), so a disallowed
+ *  import is rejected before the syntax gate; computed/aliased `tools` access
+ *  and unknown tool names are rejected before they can reach the runtime. */
+const prepareIslands = async (
+  rawComponents: Record<string, string>,
+  tools: readonly HostToolInfo[] | undefined,
+): Promise<PreparedIslands> => {
   const issues: string[] = [];
+  const components: Record<string, string> = {};
+  const componentTools: Record<string, string[]> = {};
+  const knownTools = tools === undefined ? undefined : new Set(tools.map((tool) => tool.name));
   const transform = await esbuildTransform;
-  for (const [name, source] of Object.entries(components)) {
+  for (const [name, rawSource] of Object.entries(rawComponents)) {
+    const stripped = stripIslandImports(normalizeIslandSource(rawSource));
+    issues.push(...stripped.issues.map((issue) => `island "${name}" ${issue}`));
+    const source = stripped.source.trim();
+    components[name] = source;
     if (!hasDefaultExport(source)) {
       issues.push(`island "${name}" must be plain TSX with an \`export default\` component — no braces, template literals, or fences around the source`);
       continue;
     }
-    const disallowed = [...new Set(islandImportSpecifiers(source))].filter((specifier) => !JAIL_ALLOWED_MODULE_SET.has(specifier));
+    const disallowed = [...new Set(islandImportSpecifiers(source))].filter((specifier) => !ISLAND_RESOLVABLE_MODULE_SET.has(specifier));
     if (disallowed.length > 0) {
-      issues.push(`island "${name}" imports ${disallowed.map((specifier) => `"${specifier}"`).join(", ")} — the Vendo jail can load ONLY ${JAIL_ALLOWED_MODULES.join(", ")}. Remove the import: render charts as dependency-free inline SVG, or use a prewired/host component; never import an external chart or utility library.`);
+      issues.push(`island "${name}" imports ${disallowed.map((specifier) => `"${specifier}"`).join(", ")} — islands have NO imports; React, the Kit components (including the ambient Kit charts), fmt, and tools are already in scope, and nothing else can load in the network-denied sandbox. Remove the import and use the ambient names.`);
       continue;
     }
+    // The ambient tools contract: literal member access only, every chain
+    // resolved against the live registry, the result stamped as the island's
+    // entire runtime tool surface.
+    const scan = scanIslandTools(source);
+    issues.push(...scan.violations.map((violation) => `island "${name}" ${violation}`));
+    const manifest = new Set<string>();
+    for (const path of scan.paths) {
+      if (knownTools === undefined) {
+        manifest.add(path.join("_"));
+        continue;
+      }
+      const resolved = resolveIslandToolName(path, knownTools);
+      if (resolved === null) {
+        issues.push(`island "${name}" calls unknown tool "tools.${path.join(".")}" — the host tools are: ${[...knownTools].join(", ")}`);
+      } else {
+        manifest.add(resolved);
+      }
+    }
+    componentTools[name] = [...manifest].sort();
     if (transform === undefined) continue;
     try {
       transform(source);
@@ -515,7 +570,7 @@ const islandIssues = async (components: Record<string, string>): Promise<string[
       issues.push(`island "${name}" is not valid TSX: ${error instanceof Error ? error.message.split("\n")[0] : "syntax error"}`);
     }
   }
-  return issues;
+  return { components, componentTools, issues };
 };
 
 
@@ -710,11 +765,9 @@ const validateCompiledCreate = async (
   issues.push(...compiled.issues.map(({ code, message }) => `wire ${code}: ${message}`));
   const name = compiled.name?.trim() ?? "";
   if (name === "") issues.push('App must carry a non-empty name="..." attribute');
-  const normalized = Object.fromEntries(
-    Object.entries(compiled.components).map(([islandName, source]) => [islandName, normalizeIslandSource(source)]),
-  );
-  const components = Object.keys(normalized).length === 0 ? undefined : normalized;
-  issues.push(...await islandIssues(normalized));
+  const prepared = await prepareIslands(compiled.components, deps.tools);
+  const components = Object.keys(prepared.components).length === 0 ? undefined : prepared.components;
+  issues.push(...prepared.issues);
   if (deps.tools !== undefined) {
     const known = new Set(deps.tools.map((tool) => tool.name));
     for (const query of compiled.tree.queries ?? []) {
@@ -744,7 +797,12 @@ const validateCompiledCreate = async (
     name,
     ui: "tree",
     tree: structuredClone(compiled.tree) as unknown as NonNullable<AppDocument["tree"]>,
-    ...(components === undefined ? {} : { components: structuredClone(components) }),
+    ...(components === undefined ? {} : {
+      components: structuredClone(components),
+      // W4b §2 — the compiler-stamped per-island tool manifest (least
+      // privilege: an island with no tools carries an explicit empty list).
+      componentTools: structuredClone(prepared.componentTools),
+    }),
   };
   const appValidation = validateAppDocument({ ...document, id: "app_generation_validation" });
   if (!appValidation.ok) return { issues: [appValidation.error.message] };
@@ -1002,7 +1060,8 @@ Ops (attribute-only elements unless noted):
 - <Remove id="node-id"/> removes the node and its subtree. The root cannot be removed.
 - <Move id="node-id" into="parent-id" at={index}/> reparents/reorders.
 - <Query id="name" tool="tool_name" input={{...}}/> adds or replaces a query; <RemoveQuery id="name"/> deletes it.
-- <Island name="PascalName">raw TSX with a default export</Island> adds or replaces a generated component; <RemoveIsland name="PascalName"/> deletes it.
+- <Island name="PascalName">raw TSX with a default export</Island> adds or replaces a generated component; <RemoveIsland name="PascalName"/> deletes it. Island rules:
+${islandContract()}
 - <SetName name="..."/> renames the app; <SetDescription text="..."/> sets its description.
 - <ForkPin slot="exact remixable slot" into="parent-id" at={index} props={{...}}/> forks a remixable host slot (see REMIXABLE HOST SLOTS).
 Emit at least one op. Keep patches minimal and local to the instruction.`,
@@ -1123,10 +1182,31 @@ const editTree = async (
           ...(patched.name === undefined ? {} : { name: patched.name }),
           tree: structuredClone(patched.tree) as unknown as NonNullable<AppDocument["tree"]>,
         };
-        if (Object.keys(patched.components).length === 0) {
+        // W4b — model islands go through the same ambient contract as create
+        // (strip + tools scan + manifest restamp). PINNED components are
+        // captured host source on the furnishing trust path: their real
+        // imports resolve through the captured tables, so they are neither
+        // stripped nor scanned — and get NO ambient-tools manifest.
+        const pinnedNames = new Set((input.app.pins ?? []).map((pin) => pinComponentName(pin.slot)));
+        const isPinned = ([componentName]: [string, string]) => pinnedNames.has(componentName);
+        const splitIslands = (all: Record<string, string>) => ({
+          pinned: Object.fromEntries(Object.entries(all).filter(isPinned)),
+          model: Object.fromEntries(Object.entries(all).filter((entry) => !isPinned(entry))),
+        });
+        const patchedIslands = splitIslands(patched.components);
+        const prepared = await prepareIslands(patchedIslands.model, deps.tools);
+        // Pre-existing island issues never block an unrelated edit (same
+        // filtering rule as catalog/action issues below).
+        const sourcePrepared = await prepareIslands(splitIslands(input.app.components ?? {}).model, deps.tools);
+        const sourceIslandIssues = new Set(sourcePrepared.issues);
+        const islandIssues = prepared.issues.filter((issue) => !sourceIslandIssues.has(issue));
+        const nextComponents = { ...patchedIslands.pinned, ...prepared.components };
+        if (Object.keys(nextComponents).length === 0) {
           delete app.components;
+          delete app.componentTools;
         } else {
-          app.components = structuredClone(patched.components);
+          app.components = structuredClone(nextComponents);
+          app.componentTools = structuredClone(prepared.componentTools);
         }
         const extensionIssues: string[] = [];
         const changed = patched.appliedOps > 0 || patched.extensionOps.length > 0;
@@ -1143,7 +1223,7 @@ const editTree = async (
         }
         if (!changed) extensionIssues.push("the patch contained no effective ops; emit at least one op for the instruction");
         if (extensionIssues.length === 0) {
-          const validationIssues = await validateEditedApp(app, deps, input.app);
+          const validationIssues = [...islandIssues, ...await validateEditedApp(app, deps, input.app)];
           if (validationIssues.length === 0) {
             return { kind: "document", document: withoutId(app) };
           }
