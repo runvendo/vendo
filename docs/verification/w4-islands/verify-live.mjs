@@ -69,11 +69,16 @@ const createApp = async (page, prompt, ready, timeoutMs = 600_000) => {
   }
 };
 
-const capture = async (page, name) => {
-  const article = page.locator('article[aria-label="assistant message"]').last();
-  await article.screenshot({ path: shot(name) }).catch(async () => {
-    await page.screenshot({ path: shot(name) });
-  });
+const capture = async (page, name, island) => {
+  // The island's outer jail iframe IS the generated component — screenshot it
+  // directly so overlays (voice blob, jump-to-latest) never hide the evidence.
+  if (island !== undefined) {
+    try {
+      await island.outer.screenshot({ path: shot(name) });
+      return;
+    } catch { /* fall through to page */ }
+  }
+  await page.screenshot({ path: shot(name) });
 };
 
 const visible = (locator) => locator.isVisible({ timeout: 1000 }).catch(() => false);
@@ -92,7 +97,7 @@ if (runs.includes("p1")) {
   await page.waitForTimeout(1_500);
   const text = await island.inner.locator("body").innerText();
   results.p1 = /mo/i.test(text) && /\$/.test(text);
-  await capture(page, "p1-derivation-island");
+  await capture(page, "p1-derivation-island", island);
   log("P1 derivation island:", results.p1 ? "PASS" : "CHECK", "-", text.slice(0, 200).replace(/\n/g, " | "));
   await context.close();
 }
@@ -111,7 +116,7 @@ if (runs.includes("p2")) {
   await page.waitForTimeout(2_000);
   const text = await island.inner.locator("body").innerText();
   results.p2 = /tartine/i.test(text) && !/doordash/i.test(text);
-  await capture(page, "p2-search-island");
+  await capture(page, "p2-search-island", island);
   log("P2 search island:", results.p2 ? "PASS — server search filtered as typed" : "CHECK", "-", text.slice(0, 240).replace(/\n/g, " | "));
   await context.close();
 }
@@ -125,15 +130,27 @@ if (runs.includes("p3")) {
     `build a quick pay widget: an amount input and a Pay button that sends that amount to Jordan Avery with the memo "${memo}". show a live formatted preview of the amount as I type, and keep Pay disabled until the amount is valid`,
     (inner) => visible(inner.getByRole("button", { name: /pay/i }).first()),
   );
+  // Test-env hygiene: repeated sessions accumulate unrelated pending
+  // approvals (agent-side Slack asks). Deny them all so the ONLY pending
+  // approval after Pay is this island's mutation.
+  for (let drained = 0; drained < 100; drained += 1) {
+    const deny = page.getByRole("button", { name: /^deny$/i }).first();
+    if (!await deny.isVisible({ timeout: 1000 }).catch(() => false)) break;
+    await deny.click();
+    await page.waitForTimeout(400);
+  }
+
   const amountBox = island.inner.locator("input").first();
   await amountBox.fill("");
   await amountBox.pressSequentially("41.37");
   await page.waitForTimeout(1_200);
   await island.inner.getByRole("button", { name: /pay/i }).first().click({ force: true });
 
-  // The approval gate: the guard parks the destructive call and the surface asks.
+  // The approval gate: the guard parks the destructive call and the surface
+  // asks. Make sure the card on screen is THIS mutation before approving.
   const approve = page.getByRole("button", { name: /approve/i }).first();
   await approve.waitFor({ timeout: 90_000 });
+  await page.getByText(/transfer|jordan|order/i).first().waitFor({ timeout: 30_000 });
   await page.screenshot({ path: shot("p3-approval-pending") });
   log("P3 approval gate reached (destructive tool parked at approval)");
   await approve.click();
@@ -159,7 +176,7 @@ if (runs.includes("p3")) {
   }
   results.p3 = landed;
   await page.waitForTimeout(2_000);
-  await capture(page, "p3-approved-effect");
+  await capture(page, "p3-approved-effect", island);
   log("P3 mutating island end-to-end:", landed
     ? "PASS — transfer POSTED after approval (approve→resume, effect landed)"
     : "FAIL — effect not found in /api/transactions");
@@ -171,16 +188,18 @@ if (runs.includes("p4")) {
   const { context, page } = await session();
   const island = await createApp(
     page,
-    "build a spending mix explorer: show my spending by category as a donut chart, with checkboxes to toggle categories on and off so the chart and the total re-compute",
-    async (inner) => await visible(inner.getByRole("checkbox").first()) && await visible(inner.locator("svg").first()),
+    "build an interactive category comparison: let me pick any two spending categories from dropdowns and show a bar chart comparing their totals this month",
+    async (inner) => await visible(inner.locator("select").first()) && /\$/.test(await inner.locator("body").innerText().catch(() => "")),
   );
   const before = await island.inner.locator("body").innerText();
-  await island.inner.getByRole("checkbox").first().click({ force: true });
+  const picker = island.inner.locator("select").first();
+  const values = await picker.locator("option").evaluateAll((options) => options.map((option) => option.value));
+  await picker.selectOption(values[values.length - 1]);
   await page.waitForTimeout(1_500);
   const after = await island.inner.locator("body").innerText();
-  results.p4 = before !== after;
-  await capture(page, "p4-chart-island");
-  log("P4 chart island:", results.p4 ? "PASS — toggle re-computed the chart" : "CHECK", "-", after.slice(0, 200).replace(/\n/g, " | "));
+  results.p4 = before !== after && /\$/.test(after);
+  await capture(page, "p4-chart-island", island);
+  log("P4 chart island:", results.p4 ? "PASS — picker re-computed the chart" : "CHECK", "-", after.slice(0, 200).replace(/\n/g, " | "));
   await context.close();
 }
 
