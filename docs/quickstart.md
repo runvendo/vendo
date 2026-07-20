@@ -302,7 +302,10 @@ and are audited, and shipped chrome displays the unconfigured-policy notice.
 - threads, approvals, grants, activity, and app lifecycle routes
 - schedule, host-event, and external-trigger automation machinery
 
-A sandbox adapter unlocks machine-backed apps. `auth` (or its `actAs`
+A sandbox adapter unlocks machine-backed apps: see
+[the machine model](./machine-model.md) for the three layers, graduation, and
+the box contract. Machine provisioning also requires `VENDO_BASE_URL`, since
+the box calls back to your deployment's public origin. `auth` (or its `actAs`
 half, hand-wired) unlocks host API calls while the user is away. Connectors
 add external tools. `VENDO_API_KEY` activates cloud-gated sharing, publishing,
 org overlays, and pinning — and fills the sandbox slot with the hosted

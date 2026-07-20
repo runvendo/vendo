@@ -141,3 +141,33 @@ access rides the same callback seam as layer 2.
 - Machine wake/sleep policy and idle timeout economics.
 - The in-box agent's harness choice and base-snapshot update story.
 - fn: binding syntax in the v2 wire format (format lane coordination).
+
+## Appendix: shipped-state deviations and backlog (2026-07-20, Wave 6 close-out)
+
+Deviations from this record as built, plus the known backlog. One line each.
+
+- In-box agent is a thin custom loop (box harness `agent-loop.mjs` against the
+  inference door), not the Claude Agent SDK; revisit when the SDK runs well
+  headless in a box.
+- e2b adapter never extends the provider TTL on activity; mitigated by the
+  `VENDO_E2B_TIMEOUT_MS` knob and the edit-budget-implied lifetime, root-cause
+  fix (extend-on-activity) still owed.
+- e2b snapshot refs whose provider state was reaped externally surface as wake
+  errors; not-found eviction (clear the stale ref, re-provision) still owed.
+- fn-binding tree edits occasionally emit `/data/`-style envelope paths the
+  validator rejects; graduation retries contain it, dialect-level fix owed.
+- Served-app iframes do not keep the machine awake; no keepalive ping or
+  TTL extend-on-activity, so a long-lived open tab can hit an idle sleep.
+- PGlite store has no atomic CAS capability on `vendo_apps`, so lifecycle and
+  schedule claims degrade to read-then-put on the dev store (multi-process
+  dev hosts can double-fire; Postgres is unaffected).
+- Cloud artifact storage meters 0 GB for now (console-side caveat, no wire
+  impact); snapshot storage becomes billable later.
+- Cloud served-app ingress TLS for `*.m.vendo.run` is broken in prod (one-label
+  Universal SSL); needs an advanced certificate before Cloud layer-3 URLs work.
+- Modal adapter stays deferred; it can return behind the same SandboxAdapter
+  seam.
+- A secret grant or egress change while a machine is awake does not restart
+  the app with new env in place; it lands via the env re-injection push at the
+  next edit or the policy re-check at the next wake, an in-place restart loop
+  is still owed.

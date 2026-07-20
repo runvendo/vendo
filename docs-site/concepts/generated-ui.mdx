@@ -1,62 +1,81 @@
 ---
-title: "Generated UI and apps: vendo/app@1 and the sandbox ladder"
-description: "How Vendo generates apps as vendo/app@1 documents, the four-rung sandbox ladder from tree-only to HTTP, and the user-owned import and fork model."
+title: "Generated UI and apps: vendo/app@1 and the machine model"
+description: "How Vendo generates apps as vendo/app@1 documents, the three-layer machine model from tree-only to machine-served, and the user-owned import and fork model."
 ---
 
 Everything Vendo builds is an `AppDocument` with format `vendo/app@1`. Every
 user owns their own copy. Import, fork, sharing, and publishing mint a fresh
 `app_` id, so artifacts carry no data, grants, or authority.
 
-## The ladder
+## The three layers
 
-1. Tree only, instant and jailed.
-2. Tree plus server functions reached with `fn:` references.
-3. Server-computed tree returned from a function.
-4. A machine-served HTTP app.
+1. **Tree app**: no server. The tree document, rendered by the host-embedded
+   renderer, interactive via `$state`, code islands, and guarded host tools.
+   Most apps stay here.
+2. **Tree app + machine**: the same tree UI plus a persistent per-app sandbox
+   where execution lives: schedules, third-party egress with secrets, heavy
+   logic, working data. The tree reaches it through `fn:<name>` references
+   that resolve to `POST /fn/<name>` on the box. The machine never draws UI.
+3. **Machine everything**: the machine also serves a real web app and the host
+   embeds its URL as the app surface. Experimental and off by default; the
+   host enables it per project with
+   `createVendo({ apps: { experimentalServedApps: true } })`.
 
-The agent escalates when needed. Users do not choose a rung. The last working
-surface remains available while the next rung builds.
+The agent escalates when an instruction demands it. Users do not choose a
+layer. The last working surface keeps serving while the next layer builds.
 
-Rung 1 create and tree-only edit calls run without an approval card because
-they cannot reach host tools, cannot perform egress, and render in the jailed
-UI surface. Edits that add server behavior stay approval-gated. See
+Tree-only creates and edits run without an approval card because they cannot
+reach host tools, cannot perform egress, and render in the jailed UI surface.
+Edits that add server behavior stay approval-gated. See
 [Effective risk resolution](/concepts/tools-and-safety#effective-risk-resolution).
 
-The instant payload dispatches by `formatVersion`. V0 registers only
-`vendo-genui/v1`. Unknown formats render a contained notice. Generated
-components run inside an iframe with `connect-src 'none'` by default. An
-approved version of an app can also render in the host page — see
+The instant payload dispatches by `formatVersion`. Unknown formats render a
+contained notice. Generated components run inside an iframe with
+`connect-src 'none'` by default. An approved version of an app can also render
+in the host page. See
 [In-client venue and approvals](/concepts/in-client-venue) for how approvals
 are recorded, how the version hash is pinned, and how new versions drop back
 to the jail.
 
-Rung 4 uses the sandbox provider URL directly. While a snapshot resumes, the
-UI shows a dimmed, non-interactive cover. Machine code reaches host tools only
-through `VENDO_PROXY_URL` with a short-lived `VENDO_RUN_TOKEN`.
+## The machine
+
+A graduated app owns one persistent sandbox. It sleeps as a snapshot, wakes in
+about a second when poked, and auto-sleeps after five minutes idle. Vendo owns
+only the boundary of the box (the environment in, HTTP on `$PORT` out, and a
+`vendo.json` manifest); inside it, any language and framework works. A coding
+agent lives in the box and does every server build and edit there, verifying
+its own endpoints before reporting done.
+
+The box holds no host credentials. Its single authority path is the `/box`
+callback surface on the host's Vendo server, authenticated by a per-app
+bearer token: durable rows over plain HTTP, and host tools through the same
+guard-bound registry chat uses, with approvals and audit intact. See the
+[app machine environment](/reference/environment-variables#app-machine-environment)
+for the exact variables and callback routes.
 
 ## Secrets and outbound requests
 
-Secret values never enter the machine. Each declared secret name is injected
-as an opaque handle (`vendo-secret:<name>:<nonce>`); app code reads
-`process.env.STRIPE_KEY` normally and never learns the value. Real values
-resolve only inside the runtime's egress proxy, only for hosts on the app's
-declared `egress` allowlist, after an SSRF guard on the resolved IP. Reflected
-secrets are stripped from responses before they return to app code.
+Machine egress is deny-by-default at the provider network layer, and both
+secrets and egress are approve-once owner grants:
 
-App code does not call the proxy itself. The runtime writes a fetch shim into
-every machine and loads it at boot: outbound `fetch()` to an external host is
-rewritten into `POST {VENDO_PROXY_URL}/egress` authenticated by the run token,
-so plain `fetch` with the secret env var in a header or body just works.
-Internal requests are never rewritten — relative URLs, the proxy itself, and
-loopback (the app's own `$PORT` server) pass straight through. The shim
-activates only when `VENDO_PROXY_URL` and `VENDO_RUN_TOKEN` are present.
+- An app declares secret names. Each declared secret needs one owner approval
+  before its real value enters the box environment; only declared and granted
+  secrets inject, at provision and at the env re-injection before each in-box
+  edit. An ordinary wake resumes the snapshot's environment, so a grant or
+  revocation decided while the machine slept fully lands at the next edit or
+  re-provision. Grants are never carried by shares, forks, or publishes.
+- An app declares the domains it talks to in `vendo.json`. Each declared
+  domain parks one approval card; a machine never provisions or wakes with an
+  unapproved declared domain. An app that declares nothing can reach only its
+  own boundary (the host callback origin and the inference endpoint).
 
-A request the proxy refuses (non-allowlisted host, private address) surfaces
-as an ordinary fetch error. One limitation to know: clients outside the Node
-fetch path — raw sockets, non-Node runtimes, binaries the app spawns — skip
-the shim, so those integrations do not authenticate. They also cannot leak:
-everything they can send is the opaque handle, because the machine never held
-a value.
+The egress allowlist, unlike the environment, is re-applied at every wake:
+a domain grant decided or revoked while the machine slept counts at the next
+resume. A
+redaction guard scrubs known secret values from everything that crosses back
+out of the box. This is the SSRF and exfiltration answer, including for a
+bring-your-own model key: the key sits in the box, and the box can only talk
+to approved domains.
 
 ## Progressive generation
 
@@ -72,39 +91,22 @@ You do not need to change your client. Existing consumers of `data-vendo-view`
 parts see progressive frames followed by the final tree under a single stable
 part id.
 
-## Invisible graduation to rung 4
+## Graduation
 
-When a tree app graduates to rung 4, the first served version renders the
-identical kept tree — users see no visible change. The runtime writes a
-served-app scaffold to the machine before the model's files, boots the
-scaffold's static server, captures a cover screenshot, then snapshots. The
-document only flips to `ui: "http"` after the edit persists. If any step
-fails, the previous rung keeps serving and the document is untouched.
+**Layer 1 to 2** is invisible and additive. When an instruction needs server
+capability (a schedule, egress with secrets, heavy logic, app-owned state),
+the runtime provisions a machine, sends the build to the in-box agent, syncs
+the box's `vendo.json` declarations, parks any needed egress approval, and
+rewires the tree's data bindings to the new `fn:` functions. The tree keeps
+working throughout. A failed server build rolls back to the pre-edit
+snapshot; a failed tree rebind keeps the working tree and reports the miss.
 
-The scaffold serves the kept tree from `/tree.json` and any document-level
-generated components from `/components.json`. It mounts them through the
-same renderer used before graduation, so component identity and jailed
-iframe boundaries are preserved. Tree references of the form `fn:<name>`
-become `POST /fn/<name>` requests to the app's own server on `$PORT`. The
-graduated app owns those routes, and the model's post-graduation edits
-supply the handlers.
-
-App server code follows a fixed boot convention on every rung that runs
-one. The machine boots `/app/start.sh` when present, otherwise
-`/app/server.js`. The server listens on `$PORT` and answers
-`POST /fn/<name>` with the `fn:` envelope. Before every snapshot on rungs
-2 and 3, the runtime confirms the server is actually listening. If
-nothing serves, the edit fails and the previous rung keeps serving.
-
-A few behaviors are specific to the served page and worth knowing when
-writing prompts or diagnosing a graduation:
-
-- Nodes that reference host-source components degrade to a contained
-  "unknown component" notice, because host components cannot ship inside
-  a served app. Prewired and generated components render identically.
-- The served page renders with the tree's at-rest data. Progressive query
-  re-resolution, which happens while the host still renders the tree,
-  does not run once the app is serving itself.
-- Non-`fn:` host actions are refused with a structured error outcome and
-  make no network calls. Mount failures surface as a visible alert
-  instead of a blank page.
+**Layer 2 to 3** is an honest UI rewrite in the same box, gated behind the
+experimental served-apps flag. The box agent builds a real web app beside the
+`/fn` endpoints, the tree keeps serving through the whole build, and the
+document flips to `ui: "http"` only after the host itself verifies the served
+root answers. Opening a served app wakes the machine and embeds its public
+URL in a sandboxed iframe; the wake latency is the loading state, and the URL
+is only valid for the current wake. With the flag off, layer-3 generation,
+the surface flip, and opening a served app all refuse with a typed
+`not-implemented` error naming the flag.
