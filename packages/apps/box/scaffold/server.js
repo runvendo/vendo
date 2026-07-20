@@ -11,15 +11,26 @@ import { fns } from "./fns.js";
 
 const PORT = Number(process.env.PORT ?? 8080);
 const FN_NAME = /^\/fn\/([A-Za-z_][A-Za-z0-9_-]{0,63})$/;
+const BODY_MAX_BYTES = 1024 * 1024;
 
 const json = (res, status, value) => {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(value));
 };
 
+/** Bounded read: one oversized request must not exhaust the app's memory. */
 const readBody = (req) => new Promise((resolve, reject) => {
   const chunks = [];
-  req.on("data", (chunk) => chunks.push(chunk));
+  let total = 0;
+  req.on("data", (chunk) => {
+    total += chunk.length;
+    if (total > BODY_MAX_BYTES) {
+      reject(Object.assign(new Error("body too large"), { tooLarge: true }));
+      req.destroy();
+      return;
+    }
+    chunks.push(chunk);
+  });
   req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
   req.on("error", reject);
 });
@@ -38,7 +49,10 @@ const server = http.createServer(async (req, res) => {
     // Skin contract: POST /fn/<name> → {result} on success, {error} otherwise.
     const fn = req.method === "POST" ? FN_NAME.exec(url.pathname) : null;
     if (fn !== null) {
-      const handler = fns[fn[1]];
+      // Own entries only: an inherited name like "toString" is not an fn.
+      const handler = Object.prototype.hasOwnProperty.call(fns, fn[1]) && typeof fns[fn[1]] === "function"
+        ? fns[fn[1]]
+        : undefined;
       if (handler === undefined) {
         json(res, 404, { error: { code: "not-found", message: `no fn ${fn[1]}` } });
         return;
@@ -46,7 +60,11 @@ const server = http.createServer(async (req, res) => {
       let args = {};
       try {
         args = JSON.parse(await readBody(req) || "{}").args ?? {};
-      } catch {
+      } catch (error) {
+        if (error !== null && typeof error === "object" && error.tooLarge === true) {
+          json(res, 413, { error: { code: "validation", message: `body exceeds ${BODY_MAX_BYTES} bytes` } });
+          return;
+        }
         json(res, 400, { error: { code: "validation", message: "body must be JSON like {\"args\": {...}}" } });
         return;
       }
@@ -58,10 +76,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // The served surface: GET / is the entry page (add more routes as needed).
-    if (req.method === "GET" && url.pathname === "/") {
+    // The served surface: GET / is the entry page (add more routes as
+    // needed). HEAD answers too — the host's keepalive probes it.
+    if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      res.end(readFileSync(new URL("./index.html", import.meta.url)));
+      res.end(req.method === "HEAD" ? undefined : readFileSync(new URL("./index.html", import.meta.url)));
       return;
     }
 

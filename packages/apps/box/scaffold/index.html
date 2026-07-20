@@ -18,8 +18,12 @@
 </style>
 <script>
   // Host theming handoff: the OPTIONAL vendoTheme query param carries the
-  // host's theme tokens; apply them when present, ignore when absent.
-  const vendoTheme = JSON.parse(new URLSearchParams(location.search).get("vendoTheme") ?? "null");
+  // host's theme tokens; apply them when present, ignore them when absent
+  // OR malformed (a bad param must never blank the app).
+  const vendoTheme = (() => {
+    try { return JSON.parse(new URLSearchParams(location.search).get("vendoTheme") ?? "null"); }
+    catch { return null; }
+  })();
   if (vendoTheme && typeof vendoTheme === "object") {
     const root = document.documentElement.style;
     const colors = vendoTheme.colors ?? {};

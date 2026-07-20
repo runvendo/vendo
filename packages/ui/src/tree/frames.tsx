@@ -114,18 +114,16 @@ function HttpFrame({ url, keepalive }: { url: string; keepalive?: AppFrameKeepal
       if (!active) return;
       busy = true;
       try {
-        const { state } = await keepalive.ping();
+        // An unreachable ping is the same stale-frame symptom as a woke one.
+        const { state } = await keepalive.ping().catch(() => ({ state: "woke" as const }));
         if (state === "woke") {
           // The machine had slept: every wake mints a new ingress URL, so
-          // this one is stale. Cover the frame and swap in the re-opened one.
+          // this one is stale. Cover the frame and swap in the re-opened
+          // one. Exactly ONE re-open per detection, its failure absorbed —
+          // never a retry loop, never a second re-open.
           setReopening(true);
-          await keepalive.reopen();
+          await keepalive.reopen().catch(() => undefined);
         }
-      } catch {
-        // Ping unreachable — the same stale-frame symptom; one re-open
-        // attempt (open() wakes the machine), never a retry loop.
-        setReopening(true);
-        await keepalive.reopen().catch(() => undefined);
       } finally {
         busy = false;
         setReopening(false);

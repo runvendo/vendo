@@ -42,6 +42,7 @@ const template = Template()
   // /fn envelopes, vendo.json, theme handoff — already wired and
   // conformance-tested in box-scaffold.test.ts). Zero-dependency by design,
   // so there is no node_modules to bake.
+  .copy("scaffold/package.json", "/opt/vendo-box/scaffold/package.json", { user: "root" })
   .copy("scaffold/server.js", "/opt/vendo-box/scaffold/server.js", { user: "root" })
   .copy("scaffold/fns.js", "/opt/vendo-box/scaffold/fns.js", { user: "root" })
   .copy("scaffold/index.html", "/opt/vendo-box/scaffold/index.html", { user: "root" })

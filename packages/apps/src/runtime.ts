@@ -1202,10 +1202,16 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // unknown — defensive, like an unsampled host tool.
       const tree = candidate.tree as unknown as TreeV2 | undefined;
       const queries = tree?.queries ?? [];
+      // Sampling adds no new authority and (at most) one extra invocation:
+      // a query-bound fn fires WITHOUT user action the moment the graduated
+      // tree is opened or emitted (the progressive resolver calls it with
+      // exactly this input), so an fn too dangerous to sample was already
+      // too dangerous for the model to wire as a query — that is a box-side
+      // design concern, not a host gate this pass could add.
       for (const query of queries) {
         if (!query.tool.startsWith("fn:") || sampledFns.has(query.tool)) continue;
         sampledFns.add(query.tool);
-        const outcome = await fnCaller.callFn(base, query.tool.slice(3), {}, ctx).catch(() => undefined);
+        const outcome = await fnCaller.callFn(base, query.tool.slice(3), query.input ?? {}, ctx).catch(() => undefined);
         if (outcome !== undefined && outcome.status === "ok") {
           fnShapes[query.tool] = deriveShapeCard(query.tool, [outcome.output]).output;
         }

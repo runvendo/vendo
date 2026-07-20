@@ -84,6 +84,27 @@ describe("served-app scaffold (the warm layer-3 start)", () => {
     expect(body.error.code).toBe("not-found");
   });
 
+  it("never treats inherited object properties as fns (/fn/toString is 404)", async () => {
+    const response = await fetch(`${base}/fn/toString`, { method: "POST", body: "{}" });
+    expect(response.status).toBe(404);
+  });
+
+  it("refuses an oversized fn body with 413 instead of buffering it", async () => {
+    const response = await fetch(`${base}/fn/listInvoices`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ args: { padding: "x".repeat(1024 * 1024 + 64) } }),
+    }).catch(() => undefined);
+    // The server may reset the connection mid-upload (req.destroy) or answer
+    // 413; both refuse the buffer, neither is a 200.
+    if (response !== undefined) expect(response.status).toBe(413);
+  });
+
+  it("answers HEAD / (the host keepalive probe) with 200", async () => {
+    const response = await fetch(`${base}/`, { method: "HEAD" });
+    expect(response.status).toBe(200);
+  });
+
   it("keeps the entry page self-contained with the vendoTheme hook (no CDN)", async () => {
     const page = await (await fetch(`${base}/`)).text();
     expect(page).toContain("vendoTheme");

@@ -10,6 +10,11 @@ kanban box edit ("full web app, drag-and-drop invoice kanban") against
 `claude-sonnet-4-5`, and profiles the ISO-stamped agent log (harness.mjs now
 timestamps task-log lines). Full logs beside this file (`agent-log-*.txt`).
 
+Profile-bucket caveat: `[bash]` lines are stamped when the command STARTS and
+there is no completion line, so the "bash" bucket includes the following
+model call's latency; buckets are directional, the BUILD totals (wall clock,
+task start to done) are the numbers that matter and are attribution-free.
+
 | run | template | build | notes |
 | --- | --- | --- | --- |
 | baseline | harness only (pre-scaffold) | 195.2s | 14.5KB server.js written by the model, then FULLY REWRITTEN once to fix a template-literal bug (~97s of codegen on plumbing) |
@@ -59,7 +64,8 @@ owner scoping) are covered by `packages/apps/src/served-apps.test.ts` and
 `packages/vendo/src/served-apps-wire.test.ts`; the AppFrame loop by
 `packages/ui/test/tree/frames-and-jail.test.tsx`.
 
-Rebuild the harness bundle with:
+Rebuild the harness bundle (the entry imports the BUILT ui package, so run
+`pnpm --filter @vendoai/ui build` first) with:
 
 ```
 node_modules/.pnpm/esbuild@0.25.12/node_modules/esbuild/bin/esbuild \
