@@ -23,11 +23,14 @@ createVendo({
 ```
 
 Vendo Cloud: set `VENDO_API_KEY` and bring no Composio key — connection
-endpoints ride the Vendo Cloud broker with Vendo's Composio credentials. A BYO
-connector always wins over the cloud broker when both are configured, because
-connections must live where the connector executes. `GET /api/vendo/status`
-reports the active posture under `blocks.connections`: `"byo"`, `"cloud"`, or
-`false`.
+endpoints ride the Vendo Cloud broker with Vendo's Composio credentials, and
+the agent's connector tools load and execute through the same broker
+(`cloudTools`, auto-composed when the `connectors` slot is left unset; pass
+`cloudTools({ apiKey, apps })` explicitly to scope toolkits, or
+`connectors: []` for none). A BYO connector always wins over the cloud broker
+when both are configured, because connections must live where the connector
+executes. `GET /api/vendo/status` reports the active posture under
+`blocks.connections`: `"byo"`, `"cloud"`, or `false`.
 
 ## The in-flow connect card
 

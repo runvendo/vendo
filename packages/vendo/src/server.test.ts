@@ -498,6 +498,62 @@ describe("09 §3 public wire", () => {
     expect((await compose({})).connections.posture).toBe(false);
   });
 
+  it("selects the connectors seam: VENDO_API_KEY defaults the Cloud tools connector for an unset slot", async () => {
+    // A stub console serving the tools broker wire, so the composed cloud
+    // connector resolves real descriptors without leaving the test.
+    const { createServer } = await import("node:http");
+    const stub = createServer((req, res) => {
+      res.setHeader("content-type", "application/json");
+      if (req.url?.startsWith("/api/v1/tools")) {
+        res.end(JSON.stringify({ tools: [{
+          slug: "GMAIL_SEND_EMAIL",
+          toolkit: "gmail",
+          description: "Send email",
+          inputParameters: { type: "object" },
+          tags: [],
+        }] }));
+        return;
+      }
+      res.statusCode = 404;
+      res.end("{}");
+    });
+    await new Promise<void>((resolve) => stub.listen(0, "127.0.0.1", resolve));
+    const port = (stub.address() as { port: number }).port;
+    cleanups.push(async () => {
+      stub.close();
+      stub.closeAllConnections();
+    });
+    vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
+    vi.stubEnv("VENDO_CLOUD_URL", `http://127.0.0.1:${port}`);
+
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-connectors-seam-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    // Settled through /status like the other precedence tests, so teardown
+    // never races an in-flight migration.
+    const compose = async (config: Partial<CreateVendoConfig>): Promise<Vendo> => {
+      const vendo = createVendo({
+        model: {} as LanguageModel,
+        principal: vi.fn(async () => principal),
+        store,
+        ...config,
+      });
+      await vendo.handler(request("GET", "/status"));
+      return vendo;
+    };
+
+    // Unset slot + key → the Cloud tools connector composes; its descriptors
+    // ride the console broker and carry BYO-identical names.
+    const auto = await compose({});
+    const autoNames = (await auto.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(autoNames).toContain("gmail_GMAIL_SEND_EMAIL");
+
+    // An explicit connectors array — even empty — always wins over the key.
+    const explicit = await compose({ connectors: [] });
+    const explicitNames = (await explicit.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(explicitNames).not.toContain("gmail_GMAIL_SEND_EMAIL");
+  });
+
   it("selects the inference adapter with the adapter-rule precedence", async () => {
     // Adapter rule (2026-07-17 cloud definition) unified with install-dx v1's
     // model-optional createVendo: explicit model → the composed devModel
@@ -542,6 +598,11 @@ describe("09 §3 public wire", () => {
     const compose = (config: Partial<CreateVendoConfig>): Vendo => createVendo({
       model: {} as LanguageModel,
       principal: vi.fn(async () => principal),
+      // The store seam under test must stay isolated from the connectors
+      // seam: with the key stubbed, an unset connectors slot would compose
+      // the Cloud tools connector, whose /status-triggered descriptor fetch
+      // would land in consoleCalls.
+      connectors: [],
       ...config,
     });
 
