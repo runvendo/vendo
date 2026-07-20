@@ -1229,6 +1229,39 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     ...extra,
   }) as unknown as Parameters<typeof modelEngine.create>[1];
 
+  it("logs a compile INFO — never an error — when a new create emits a deprecated reshape op (W5a staged retirement)", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const wire = '<App name="Legacy"><Select label="Account" options={host_listAccounts({}).data | asOptions(id, name)}/></App>';
+      const document = await modelEngine.create(
+        { prompt: "Build it" },
+        guardDeps(scriptedLanguageModel(wire), {
+          tools: [{ name: "host_listAccounts", description: "List accounts", risk: "read" }],
+        }),
+      );
+      // Staged retirement: the op still compiles for the document…
+      expect(document.name).toBe("Legacy");
+      // …and the usage is observable.
+      const lines = info.mock.calls.map((call) => String(call[0]));
+      expect(lines.some((line) => line.includes('deprecated reshape op "asOptions"'))).toBe(true);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it("a Kit-native create logs no deprecation INFO", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const wire = '<App name="Native"><Select label="Account" options={host_listAccounts({}).data} labelField="name" valueField="id"/></App>';
+      await modelEngine.create({ prompt: "Build it" }, guardDeps(scriptedLanguageModel(wire), {
+        tools: [{ name: "host_listAccounts", description: "List accounts", risk: "read" }],
+      }));
+      expect(info).not.toHaveBeenCalled();
+    } finally {
+      info.mockRestore();
+    }
+  });
+
   it("strips a template-literal island wrapper and persists plain TSX", async () => {
     const wire = [
       '<App name="Wrapped"><Note/>',
@@ -1569,12 +1602,17 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     expect(captured).not.toContain("LAST RESORT");
     expect(captured).toContain("covers the need");
     expect(captured).toContain("Never hardcode");
-    // vendo-v2-cells — the display-cell contract rides with the shapes:
-    // object cells project via template; date/cents display rides a Kit
-    // semantic component / format token or a legacy format step (W3).
+    // vendo-v2-cells — the display contract rides with the shapes: date/cents
+    // display rides a Kit semantic component / format token (W3).
     expect(captured).toContain("RESHAPE PIPES");
-    expect(captured).toContain("template(");
     expect(captured).toContain("is NOT optional");
+    // W5a dialect retirement — the prompt no longer teaches the deprecated
+    // micro-op dialect; the Kit's native props are the taught path.
+    expect(captured).not.toContain("asOptions");
+    expect(captured).not.toContain("currencyCents");
+    expect(captured).not.toContain("template(");
+    expect(captured).toContain("labelField");
+    expect(captured).toContain('format:"money"');
     // W3 — the COMPONENTS section is generated from the Kit specs.
     expect(captured).toContain("COMPONENTS (generated from the component schemas");
     expect(captured).toContain("<Money");

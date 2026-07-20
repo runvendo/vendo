@@ -13,6 +13,7 @@ import {
   compileWirePatchV2,
   compileWireV2,
   describeShapeWithSemantics,
+  findDeprecatedReshapeUsage,
   kitPrompt,
   kitSpec,
   ISLAND_AMBIENT_KIT_NAMES,
@@ -275,7 +276,7 @@ ${prewiredSchemaPrompt()}`;
 const islandContract = (): string => `- <Island name="PascalName">TSX with an \`export default\` component</Island> defines a generated component, referenced as <PascalName/> — plain source, never wrapped in braces, template literals, or fences. The island's name must be DISTINCT from every host catalog, Kit, and prewired component name (name resolution prefers those, so a colliding island never renders). Use a host catalog or Kit/prewired component when it covers the need (faster, brand-native); write an island for custom visuals, novel interactions, or client-side logic they cannot express (search-as-you-type, derived calculations, bespoke visualizations). Never put the whole app or its layout inside one island: compose regions so the app streams in progressively.
 - Islands have NO import statements — everything is already in scope: React and its hooks (useState, useEffect, useMemo, useCallback, useRef), the entire Kit (${ISLAND_AMBIENT_KIT_NAMES.join(", ")}), and \`fmt\` value helpers (fmt.money(cents), fmt.dateTime(iso), fmt.percent(ratio), fmt.num(n)). Never write an import: known react/kit imports are stripped, and anything else (recharts, d3, lodash…) cannot load in the network-denied sandbox — the ambient Kit charts cover charting. Host catalog and prewired components are NOT in island scope (they live in the host page): compose them in the tree, and inside an island use only the ambient Kit and your own local components. This holds even when a host catalog component matches the visualization — inside an island, its ambient Kit equivalent (LineChart, BarChart, DonutChart, Sparkline, Progress) is the correct choice.
 - Islands call host tools directly with the ambient tools API: \`const result = await tools.<tool_name>(args)\`, where <tool_name> is a HOST TOOLS name written as a LITERAL member access — never tools[expr], never aliasing or passing \`tools\` around. args must match that tool's (input: …) sketch exactly — field names AND nesting. The sandbox has NO network — fetch/XHR/WebSocket are blocked by CSP; the ambient tools API is the only way an island reads or acts. A read tool resolves with the tool's output. A MUTATING tool pauses at the user approval gate: the call resolves {status:"pending-approval"} and its effect lands after the user approves — render a pending/awaiting-approval state, never treat it as a failure. An island can only reach the tools its own source literally names.
-- Data honesty holds inside islands: every number or row an island renders comes from its props (bound to a <Query>) or from an ambient tools read — never hand-typed.`;
+- Data honesty holds inside islands: every number or row an island renders comes from its props (bound to a tool reference) or from an ambient tools read — never hand-typed.`;
 
 /** v2 spec §2 — the JSX-wire create contract. The model emits markup, never
  *  JSON; the deterministic compiler owns ids, bindings, and validation. */
@@ -326,7 +327,7 @@ const toolInputSketch = (inputSchema: Record<string, unknown> | undefined): stri
 const hostToolSections = (deps: GenerationDependencies): GenerationPromptSection[] => [
   ...(deps.tools === undefined || deps.tools.length === 0 ? [] : [{
     id: "catalog" as const,
-    content: `HOST TOOLS (the ONLY tools a <Query> or action may name — anything else is a validation error). Every call's args MUST match the tool's (input: …) sketch exactly — same field names, same nesting (a field shown as {body: {…}} means the args object carries a "body" object):\n${deps.tools.map(({ name, description, risk, inputSchema }) => `- ${name} [${risk}]${toolInputSketch(inputSchema)}: ${description}`).join("\n")}`,
+    content: `HOST TOOLS (the ONLY tools a binding — inline reference or <Query> — or an action may name; anything else is a validation error). Every call's args MUST match the tool's (input: …) sketch exactly — same field names, same nesting (a field shown as {body: {…}} means the args object carries a "body" object):\n${deps.tools.map(({ name, description, risk, inputSchema }) => `- ${name} [${risk}]${toolInputSketch(inputSchema)}: ${description}`).join("\n")}`,
   }]),
   // W3 — the domain manifest is FACT derived at sync, not guidance: it tells
   // the model what data exists at all, so an out-of-domain ask becomes an
@@ -341,17 +342,13 @@ const hostToolSections = (deps: GenerationDependencies): GenerationPromptSection
     content: `TOOL RESPONSE SHAPES (bind only to fields that exist; a binding outside these shapes fails validation). Field annotations mark semantics: :money.cents = integer CENTS (bind the RAW number into Money cents / a format:"money" column — never pre-format it), :money.dollars = whole dollars, :date.iso and :date.epoch = machine dates (DateTime / format:"date"), :enum(a|b) = closed vocabulary (EnumBadge), :id = OPAQUE host identifier (for action payloads — NEVER invent, guess, or abbreviate an id value; when a call would need an id you don't literally have, use the un-filtered list variant instead), :percent.ratio = 0..1, :percent.0-100 = whole percent.\n${Object.entries(deps.toolShapes).map(([tool, shape]) => `- ${tool}: ${describeShapeWithSemantics(shape, deps.semantics?.[tool] ?? {})}`).join("\n")}`,
   }, {
     id: "catalog" as const,
-    content: `RESHAPE PIPES — project & format bound data to the shape a component needs. A binding may end with a bounded \`| op(...)\` pipe (this is the ONLY computation allowed in a binding). PROJECT fetched object arrays into the component's shape, and never bind a raw object array into a slot that expects labeled items:
-- Select options / Tabs tabs need [{value, label}] items. Map a fetched object array with asOptions(valueField, labelField): options={accounts | asOptions(id, name)} — first arg becomes value, second becomes label. Binding a raw object array (e.g. options={accounts}) renders every option BLANK and fails validation.
-- Chart/points props need [{label, value}] items: points={revenue.rows | asPoints(month, revenue)}.
-FORMAT for DISPLAY — money from host tools is integer CENTS, and dates are raw ISO/epoch; a bare number or ISO string shown to the user is a defect, on EVERY host. The Kit formats for you — PREFER it: <Money cents={...}/> and <DateTime value={...}/> for single values, DataTable/CardList column/field format tokens ("money", "date") for rows, <EnumBadge value={...}/> for enum fields. When you instead show such a field through a LEGACY slot (Text value, legacy Table column, legacy Stat value, Badge label), a format(...) pipe is mandatory. format(...) turns a number into a STRING, so it is ONLY for text the user reads, NEVER for data a component computes on:
-- format(...) belongs on a legacy text/label slot: Money (integer cents): value={txn.amount | format(currencyCents)}, or a legacy Table column in place: rows={txns | format(amount, currencyCents)}. Dates: value={invoice.dueDate | format(date)}. Percents (0..1): format(percent). Plain numbers: format(number). Use format(currency) only when the field is already in whole dollars.
-- One way or the other is NOT optional: EVERY date/timestamp field and EVERY cents money field the user sees must ride a Kit semantic component / format token OR carry a format step. A raw ISO string like 2026-07-21T17:00:00-07:00 or raw cents like 285000 on screen is a defect.
-- NEVER format a value bound into a CHART or visualization component — anything that draws from numbers (a *Chart/*Donut/*Graph/*Plot host component, or its slices/series/points/segments/data/values prop), an <Island>, or a reshape aggregate (sum/avg/asPoints). Those need the RAW numeric field; a chart or total fed formatted STRINGS computes NaN and draws nothing. Example: for a spending donut + a table off the same query, bind slices={spending.data} (raw) but rows={spending.data | format(amount, currencyCents)} (formatted) — do NOT reuse the formatted binding for the donut.
-NEVER bind a raw object or array into a Text body, a Stat value, a Badge label, or a Table cell — it renders as raw JSON like {"received":3,"total":6} and fails validation. Project object-valued fields to ONE readable string with template:
-- Per-row (an object-valued Table column): rows={deadlines.data | template(progress, "{progress.received} of {progress.total}") | template(assignedTo, "{assignedTo.name}")} — template(field, "pattern") rewrites that field per row; {path} placeholders are dot-paths into the row, so nested scalars like {assignedTo.name} work.
-- Whole-value (a Text/Stat bound to one object): value={dashboard.data.nearestDeadline | template("{clientName} — {dueDate}")} — template("pattern") turns the object into the interpolated string.
-Otherwise bind the specific scalar field ({deadlines.data.0.client}) or exclude the object column via columns=[...scalar keys].`,
+    content: `RESHAPE PIPES — a binding may end with a bounded \`| op(...)\` pipe (this is the ONLY computation allowed in a binding). PREFER native field-name props over pipes: components read RAW tool rows directly — Select takes the raw object array plus labelField/valueField, DataTable/CardList columns resolve dot-path keys ({key:"client.name"}), Kit charts read raw rows via data + xKey + series. Never pre-project rows a component can read raw.
+- Only a HOST prop whose schema declares [{label, value}] items takes asPoints: points={revenue.rows | asPoints(month, revenue)}. Kit charts read raw rows and never need it.
+FORMAT for DISPLAY — money from host tools is integer CENTS, and dates are raw ISO/epoch; a bare number or ISO string shown to the user is a defect, on EVERY host. The Kit formats for you — USE it: <Money cents={...}/> and <DateTime value={...}/> for single values, DataTable/CardList column/field format tokens ("money", "date") for rows, <EnumBadge value={...}/> for enum fields. Cents money ALWAYS rides the Kit (<Money cents={...}/>, a format:"money" column) — never route a cents field through a legacy slot. When another such field must show through a LEGACY slot (Text value, legacy Table column, legacy Stat value, Badge label), a format(...) pipe is mandatory. format(...) turns a value into a STRING, so it is ONLY for text the user reads, NEVER for data a component computes on:
+- format(...) on a legacy text/label slot: dates value={invoice.dueDate | format(date)}, or a legacy Table column in place: rows={invoices | format(dueDate, date)}. Percents (0..1): format(percent). Plain numbers: format(number). Whole-dollar (non-cents) amounts: format(currency).
+- One way or the other is NOT optional: EVERY date/timestamp field and EVERY cents money field the user sees must ride a Kit semantic component / format token (dates in a legacy slot may carry a format step instead). A raw ISO string like 2026-07-21T17:00:00-07:00 or raw cents like 285000 on screen is a defect.
+- NEVER format a value bound into a CHART or visualization component — anything that draws from numbers (a *Chart/*Donut/*Graph/*Plot host component, or its slices/series/points/segments/data/values prop), an <Island>, or a reshape aggregate (sum/avg/asPoints). Those need the RAW numeric field; a chart or total fed formatted STRINGS computes NaN and draws nothing. Example: for a spending donut + a table off the same query, bind slices={spending.data} (raw) and give the DataTable the same raw rows with a format:"money" column — never bind pre-formatted strings into the donut.
+NEVER bind a raw object or array into a Text body, a Stat value, a Badge label, or a Table cell — it renders as raw JSON like {"received":3,"total":6} and fails validation. Reach the nested SCALAR instead: a DataTable/CardList dot-path column key ({key:"assignedTo.name"}, {key:"progress.received"}), or bind the specific scalar field ({dashboard.data.nearestDeadline.clientName}). Otherwise exclude the object column via columns=[...scalar keys].`,
   }]),
 ];
 
@@ -363,7 +360,7 @@ const wireContract = (deps: GenerationDependencies): string =>
 const tier0Contract = (deps: GenerationDependencies): string => `${wireContract(deps)}
 
 PAINT PASS (tier-0): emit a complete, minimal, fully-wired GENERIC app for the request RIGHT NOW.
-- Catalog components with conservative default props; real <Query> declarations for the most relevant read tools so live data flows immediately.
+- Catalog components with conservative default props; real inline tool references (or <Query> declarations) for the most relevant read tools so live data flows immediately.
 - NO <Island> code islands — catalog and prewired components only.
 - Keep it small (well under 40 nodes) and generic; a full-quality pass will replace it subtree-by-subtree, so favor a stable, conventional layout over cleverness.`;
 
@@ -1311,6 +1308,17 @@ export const prewarmModels = async (models: readonly LanguageModel[]): Promise<v
   );
 };
 
+/** W5a (v3 spec §Dialect retirement) — compile INFO, never an error: a NEW
+ *  create that emits a deprecated reshape op still compiles (stored apps
+ *  depend on the ops), but each distinct usage logs one observable line so
+ *  live traffic tells us when deletion is safe. */
+const logDeprecatedDialect = (document: GeneratedAppDocument): GeneratedAppDocument => {
+  for (const notice of findDeprecatedReshapeUsage(document.tree)) {
+    console.info(`[vendo] INFO generated app "${document.name}" uses a ${notice} (kept compiling for stored apps; W5a staged retirement)`);
+  }
+  return document;
+};
+
 /** 06-apps §§2,5; v2 spec §§2,4 — wire-backed rung-1 generation and
  *  two-dialect edit planning. */
 export const modelEngine: GenerationEngine = {
@@ -1327,7 +1335,7 @@ export const modelEngine: GenerationEngine = {
       validate: (compiled) => validateCompiledCreate(compiled, deps),
     };
     const finish = (document: GeneratedAppDocument): Promise<GeneratedAppDocument> =>
-      endPass(document, input.prompt, pipelineContext);
+      endPass(document, input.prompt, pipelineContext).then(logDeprecatedDialect);
     // Tier-0 paint lane (v2 spec §4): only with a streaming consumer — the
     // instant paint exists to reach a screen. One attempt, no repair loop:
     // an invalid paint is simply not resident (the full lane still runs).
@@ -1419,7 +1427,7 @@ export const modelEngine: GenerationEngine = {
     }
     // Never a white box: a failed full lane falls back to the resident
     // tier-0 app (v2 spec §4).
-    if (resident !== undefined) return resident;
+    if (resident !== undefined) return logDeprecatedDialect(resident);
     throw new VendoError("validation", "model could not produce a valid app", issues);
   },
   async edit(input, deps) {
