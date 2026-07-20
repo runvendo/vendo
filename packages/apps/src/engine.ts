@@ -272,7 +272,7 @@ ${prewiredSchemaPrompt()}`;
  *  when it covers the need (faster, branded); write an island for custom
  *  visuals/logic/interaction. Byte caps, the TSX + default-export gate, and
  *  the no-network CSP all stand. */
-const islandContract = (): string => `- <Island name="PascalName">TSX with an \`export default\` component</Island> defines a generated component, referenced as <PascalName/> — plain source, never wrapped in braces, template literals, or fences. Use a host catalog or Kit/prewired component when it covers the need (faster, brand-native); write an island for custom visuals, novel interactions, or client-side logic they cannot express (search-as-you-type, derived calculations, bespoke visualizations). Never put the whole app or its layout inside one island: compose regions so the app streams in progressively.
+const islandContract = (): string => `- <Island name="PascalName">TSX with an \`export default\` component</Island> defines a generated component, referenced as <PascalName/> — plain source, never wrapped in braces, template literals, or fences. The island's name must be DISTINCT from every host catalog, Kit, and prewired component name (name resolution prefers those, so a colliding island never renders). Use a host catalog or Kit/prewired component when it covers the need (faster, brand-native); write an island for custom visuals, novel interactions, or client-side logic they cannot express (search-as-you-type, derived calculations, bespoke visualizations). Never put the whole app or its layout inside one island: compose regions so the app streams in progressively.
 - Islands have NO import statements — everything is already in scope: React and its hooks (useState, useEffect, useMemo, useCallback, useRef), the entire Kit (${ISLAND_AMBIENT_KIT_NAMES.join(", ")}), and \`fmt\` value helpers (fmt.money(cents), fmt.dateTime(iso), fmt.percent(ratio), fmt.num(n)). Never write an import: known react/kit imports are stripped, and anything else (recharts, d3, lodash…) cannot load in the network-denied sandbox — the ambient Kit charts cover charting. Host catalog and prewired components are NOT in island scope (they live in the host page): compose them in the tree, and inside an island use only the ambient Kit and your own local components. This holds even when a host catalog component matches the visualization — inside an island, its ambient Kit equivalent (LineChart, BarChart, DonutChart, Sparkline, Progress) is the correct choice.
 - Islands call host tools directly with the ambient tools API: \`const result = await tools.<tool_name>(args)\`, where <tool_name> is a HOST TOOLS name written as a LITERAL member access — never tools[expr], never aliasing or passing \`tools\` around. args must match that tool's (input: …) sketch exactly — field names AND nesting. The sandbox has NO network — fetch/XHR/WebSocket are blocked by CSP; the ambient tools API is the only way an island reads or acts. A read tool resolves with the tool's output. A MUTATING tool pauses at the user approval gate: the call resolves {status:"pending-approval"} and its effect lands after the user approves — render a pending/awaiting-approval state, never treat it as a failure. An island can only reach the tools its own source literally names.
 - Data honesty holds inside islands: every number or row an island renders comes from its props (bound to a <Query>) or from an ambient tools read — never hand-typed.`;
@@ -555,8 +555,19 @@ const prepareIslands = async (
   const ambientNames = new Set<string>(ISLAND_AMBIENT_KIT_NAMES);
   const hostOnlyNames = [...new Set([...hostComponents, ...RESERVED_COMPONENT_NAMES])]
     .filter((componentName) => !ambientNames.has(componentName));
+  // W3 (#432) — name resolution is host catalog → built-ins → islands, so an
+  // island NAMED after any of those never renders: the built-in wins and the
+  // island is dead weight. Reject the name itself → repair to a distinct one.
+  const unreachableIslandNames = new Set<string>([
+    ...hostComponents,
+    ...RESERVED_COMPONENT_NAMES,
+    ...KIT_WIRE_COMPONENT_NAMES,
+  ]);
   const transform = await esbuildTransform;
   for (const [name, rawSource] of Object.entries(rawComponents)) {
+    if (unreachableIslandNames.has(name)) {
+      issues.push(`island "${name}" would never render — component names resolve host catalog → built-ins (Kit/prewired) → islands, so "${name}" always resolves to the built-in/host component instead. Rename the island to a distinct PascalCase name.`);
+    }
     const stripped = stripIslandImports(normalizeIslandSource(rawSource));
     issues.push(...stripped.issues.map((issue) => `island "${name}" ${issue}`));
     const source = stripped.source.trim();

@@ -1384,6 +1384,24 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     expect(prompts[1]).toContain("computed");
   });
 
+  it("rejects an island NAMED after a Kit/catalog/prewired component (W3: built-ins win collisions)", async () => {
+    // W3 (#432): name resolution is host catalog -> built-ins -> islands, so
+    // an island named "Sparkline" is unreachable — the Kit Sparkline renders
+    // instead and the island is dead weight. Compile issue → repair.
+    const broken = '<App name="Shadow"><Sparkline/><Island name="Sparkline">export default function Sparkline() { return <p>mine</p>; }</Island></App>';
+    const fixed = '<App name="Shadow"><PulseLine/><Island name="PulseLine">export default function PulseLine() { return <p>mine</p>; }</Island></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? broken : fixed;
+    });
+    const document = await modelEngine.create({ prompt: "Build it" }, guardDeps(model));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("Sparkline");
+    expect(prompts[1]).toContain("never render");
+    expect(document.components?.PulseLine).toBeDefined();
+  });
+
   it("rejects host catalog / prewired components inside island JSX and repairs to the ambient Kit", async () => {
     // Live P4 finding: the island rendered <MapleSpendingDonut/> (a host
     // catalog component) — host components live in the HOST page and can
