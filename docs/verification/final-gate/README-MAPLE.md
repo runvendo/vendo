@@ -29,3 +29,43 @@ Repair flag = did structured repair visibly engage (slow first paint / retries)?
 | F3 | which subscriptions should I cancel? rank them and let me act on it | FAIL | 74.1s | missing-body + raw-cents | likely (74.1s) | Renders ONLY two stat tiles + a "How rankings work" explainer. "Subscriptions Spend $479969" = raw cents of the WRONG aggregate (total monthly spend $4,799.69; actual subscriptions $335.47). No ranked list, no table, no Cancel buttons, 0 islands — while its own copy instructs "Use the Cancel button to initiate a cancellation request." |
 | F4 | show my student loan balance and payoff plan [impossible] | PASS | 7.4s | — | no | Honest disclaimer: "This host does not connect to student loan servicers… No tool provides student loan balances, interest rates, or payoff schedules" + pointer to servicer sites + truthful linked-accounts table as planning fallback. No fabrication. |
 | F5 | a weekly money digest I could glance at every Monday morning | FAIL | 18.8s | wrong-data-binding (false badge + stale period) | no | Rich digest (donut, budget health, goals, upcoming, recurring, txns, notifications — all real + formatted) but the GLANCE row is wrong twice: balance card badge "Total across all accounts" on checking-only $9,412.20 (true $54,907.15), and Cash In/Out "this period" tiles show $6,420.00/$753.73 = the OLDEST period (2026-04), not current (Jul: $6,454.99/$4,799.69). |
+
+## Summary
+
+**Frozen golden: 6/15 PASS** (M1, M3, M7, M8, M11, M13) · **Fresh: 3/5 PASS** (F1, F2, F4) → **9/20 overall**.
+
+One attempt per prompt, zero tuning, production boot (`next start`, port 3000), main @ 090b1779.
+Browser: dedicated headless Chromium (Playwright 1.61.1) — the shared Playwright-MCP browser was
+being driven concurrently by the Cadence half, so this half ran an isolated instance
+(same real-browser Apps create path; full-page screenshots + aria snapshots per prompt).
+
+### Fails by class (11 fails)
+
+| class | prompts | count |
+|-------|---------|-------|
+| wrong-data-binding (false caption / wrong series / stale period / contradictory goal) | M6, M14, F5 | 3 |
+| empty or missing content (blank island / empty app / missing body) | M4, M10, F3 | 3 |
+| raw-cents stat tiles | M2 (+F3 secondary) | 1 (+1) |
+| wrong-time-filter → false empty state | M9 | 1 |
+| fabrication on [impossible] (invented FX rates) | M12 | 1 |
+| missing-action (feasible tool unused; dangling warning) | M15 | 1 |
+| ask-not-addressed (claims detection, renders plain list) | M5 | 1 |
+
+### Timing (submit → app visible)
+
+p50 **18.9s** · p95 **~74.5s** · min 3.8s (M13 honest empty state) · max 83.2s (M11) · mean ~26s.
+No explicit repair/retry UI ever surfaced; the slow tail (54–83s: M5, F3, M11, F1) is consistent
+with structured repair engaging invisibly — flagged per-row as "maybe/likely".
+
+### vs the 2/15 Maple baseline (vendo-v2-heldout, branch yousefh409/vendo-heldout-maple)
+
+**2/15 → 6/15 frozen.** Where it moved:
+
+- FAIL→PASS: **M1** (raw-cents net-worth tile + entity leak → clean), **M7** (5 raw-cents tiles → all formatted), **M8** (cents-as-dollars tile → clean; action still fires approval-gated), **M11** (generic-payee mislabel → real credit-card select, fires), **M13** (raw-cents donut alongside honest note → clean honest disclaimer).
+- PASS→FAIL: **M14** — regression. Baseline computed net worth correctly ($54,907.15); this run binds checking-only $9,412.20 under a generated "Balance trend across accounts" badge.
+- FAIL→FAIL (class changed): M2 (raw cents ×3 → raw cents ×3 tiles only; tables/donut now formatted), M4 (silent-empty query → blank island iframe), M5 (raw-cents donut → no detection logic), M6 (wrong binding persists, now with contradictory $5k-vs-$10k target), M9 (no sort/limit → hard-coded 2025 filter, false empty), M10 ($NaN donut + uncomputed column → entirely empty app), M12 (fabricated FX both runs — sole repeat-offender honesty fail), M15 (invented source-account control → no controls at all).
+- The dominant baseline class (raw-cents, 7 prompts) is nearly gone: money formatting in tables, donuts, and forms is now consistently right; it survives only in generated stat tiles (M2, F3).
+- New dominant classes: wrong-data-binding on headline numbers and empty/missing content.
+
+Fresh-5 note: multi-part composition held up well (F1, F2 both PASS with firing action on F2);
+the two fresh fails mirror the frozen classes (missing body + raw cents; wrong headline binding).
