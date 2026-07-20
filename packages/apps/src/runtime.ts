@@ -29,6 +29,7 @@ import type { LanguageModel } from "ai";
 import { createAgentTools } from "./agent-tools.js";
 import { createAppData } from "./app-data.js";
 import { createAppCaller } from "./call.js";
+import { createParkedActions } from "./parked-action.js";
 import {
   publish,
   share,
@@ -129,6 +130,9 @@ export interface AppsConfig {
    *  `model` is the no-think switch (a thinking-disabled model instance);
    *  `disabled` forces single-lane generation. */
   paint?: GenerationDependencies["paint"];
+  /** W4 pipeline knobs, passed to the generation engine: structured repair
+   *  (default on), outline+region-parallel tier-2 and the end pass (opt-in). */
+  pipeline?: GenerationDependencies["pipeline"];
   /** The composition-normalized catalog (01 §14): derived schemas included. */
   catalog: NormalizedCatalog;
   theme?: VendoTheme;
@@ -443,6 +447,7 @@ const generationDependencies = (
   pinBaselines: config.pinBaselines,
   ...toolContext,
   ...(config.paint === undefined ? {} : { paint: config.paint }),
+  ...(config.pipeline === undefined ? {} : { pipeline: config.pipeline }),
   ...(onPartial === undefined ? {} : { onPartial }),
 });
 
@@ -496,6 +501,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   // Lane E — parked egress approvals (approved state lives on the document's
   // egressApproved field; this collection holds only undecided cards).
   const egressApprovals = createEgressApprovals(config.store);
+  // W0 — parked in-app actions: a mutating action the guard sent to approval
+  // is recorded here (keyed by its approval) so onApprovalDecision can
+  // re-dispatch the exact call the instant the owner approves. Holds only
+  // undecided actions; both decisions clear it.
+  const parkedActions = createParkedActions(config.store);
 
   const reportGuard = async (
     kind: "app-lifecycle",
@@ -772,6 +782,22 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         }
       }
     }
+
+    // W0 — resume a parked in-app action. Approval makes the exact parked call
+    // eligible for the guard's one-shot approved replay, so re-dispatching it
+    // through the guard-bound registry runs it and lands the host effect. The
+    // record clears either way (approve = ran; deny = fail closed, never runs).
+    const parkedAction = await parkedActions.byApproval(id);
+    if (parkedAction !== null) {
+      try {
+        // Contained: a failed resume must never roll back the approval (the
+        // guard already swallows subscriber throws, but be explicit here so
+        // the record is always cleared).
+        if (approved) await config.tools.execute(parkedAction.call, parkedAction.ctx);
+      } finally {
+        await parkedActions.remove(id);
+      }
+    }
   };
   config.guard.onApprovalDecision((id, approved) => onApprovalDecision(id, approved));
 
@@ -787,7 +813,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     callFn: fnCaller.callFn,
     audit: (event) => config.guard.report(event),
   });
-  const caller = fnCaller.wrap(createAppCaller(config.tools));
+  const caller = fnCaller.wrap(createAppCaller(config.tools, {
+    // W0 — remember every mutating in-app action the guard parks, so the
+    // approve→resume seam above can re-dispatch its exact call on approval.
+    onParkedAction: (app, call, appCtx, approvalId) =>
+      parkedActions.put({ approvalId, appId: app.id, owner: appCtx.principal.subject, call, ctx: appCtx }),
+  }));
   const opener = createAppOpener(
     caller,
     config.pinBaselines,
@@ -945,7 +976,16 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         }
       }));
     return {
-      tools: descriptors.map(({ name, description, risk }) => ({ name, description, risk })),
+      tools: descriptors.map(({ name, description, risk, inputSchema }) => ({
+        name,
+        description,
+        risk,
+        // W4 pipeline — the structured-repair payload skeleton derives from
+        // the tool's input schema (mutation-without-payload fixes).
+        ...(typeof inputSchema === "object" && inputSchema !== null && !Array.isArray(inputSchema)
+          ? { inputSchema: inputSchema as Record<string, unknown> }
+          : {}),
+      })),
       ...(sampledShapes.size === 0 ? {} : { toolShapes: Object.fromEntries(sampledShapes) }),
     };
   };
@@ -1351,6 +1391,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       await inClientApprovals.clear(appId);
       await exposure.clearForApp(appId);
       await egressApprovals.clearForApp(appId);
+      await parkedActions.clearForApp(appId);
       await apps.delete(appId);
       await reportLifecycle("delete", appId, ctx);
     },
