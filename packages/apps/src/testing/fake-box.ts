@@ -164,6 +164,7 @@ class FakeBoxMachine implements SandboxMachine {
   }
 
   async url(port?: number): Promise<string> {
+    if (this.destroyed || this.stopped) throw new Error(`box ${this.id} is not running`);
     return `https://${port ?? this.appPort()}-${this.id}.fake-box.test`;
   }
 

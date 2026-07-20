@@ -799,8 +799,17 @@ describe("instructionRequiresServedApp (Wave 4 layer 3)", () => {
     "Watch my unpaid invoices and email me a daily digest at 8am",
     "Add a nightly digest of overdue accounts",
     "Make the API status card blue",
+    // Cubic PR #419: served-app words that LABEL a visible element are tree
+    // asks (same ENG-349 rule as the ambiguous server terms).
+    "Make the kanban board heading blue",
+    "Move the whiteboard panel to the top",
   ])("keeps %j below layer 3", (instruction) => {
     expect(instructionRequiresServedApp(app(), instruction)).toBe(false);
+  });
+
+  it("counts an ambiguous served word used as the THING TO BUILD", () => {
+    expect(instructionRequiresServedApp(app(), "Build a kanban for my invoices")).toBe(true);
+    expect(instructionRequiresServedApp(app(), "I want a collaborative whiteboard")).toBe(true);
   });
 
   it("an already-served app is always a layer-3 subject", () => {

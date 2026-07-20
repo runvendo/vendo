@@ -1288,10 +1288,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // tree's fn: bindings land additively (the user never picks a tier).
       // Best-effort: a graduation failure leaves the working tree app to retry
       // via edit, so create never regresses to a white box.
-      if (lifecycle.available() && instructionRequiresServer(app, input.prompt)) {
+      const servedCreate = instructionRequiresServedApp(app, input.prompt);
+      if (lifecycle.available() && (servedCreate || instructionRequiresServer(app, input.prompt))) {
         try {
           const graduated = await graduate(structuredClone(app), input.prompt, ctx, {
-            served: instructionRequiresServedApp(app, input.prompt),
+            served: servedCreate,
           });
           if (graduated.failure === undefined) {
             if (input.onView !== undefined && graduated.app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
@@ -1348,6 +1349,16 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     async fork(appId, ctx) {
       const source = await requireOwned(appId, ctx.principal.subject);
+      // Wave 4 — a served (layer-3) app's ENTIRE surface lives in its machine,
+      // and machines never travel with a copy: the fork would be an app that
+      // can never open (ui: http, no tree, no machine). Refuse loudly instead
+      // of minting a broken document.
+      if (source.ui === "http") {
+        throw new VendoError(
+          "conflict",
+          "a served (layer-3) app cannot be forked: its surface lives in its machine, which never travels with a copy — create a new app instead",
+        );
+      }
       const fork: AppDocument = {
         ...structuredClone(source),
         id: `app_${globalThis.crypto.randomUUID()}`,
@@ -1393,8 +1404,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       }
       // execution-v2 Wave 3 — an instruction that needs server capability
       // graduates the app (provision a machine, delegate to the in-box agent,
-      // land fn: bindings). A pure-UI instruction stays on the cheap tree path.
-      if (instructionRequiresServer(previous, instruction)) {
+      // land fn: bindings). A pure-UI instruction stays on the cheap tree
+      // path. A served ask is a fortiori a graduation ask (Wave 4).
+      if (served || instructionRequiresServer(previous, instruction)) {
         return graduate(previous, instruction, ctx, { served });
       }
       let repairIssues: string[] | undefined;

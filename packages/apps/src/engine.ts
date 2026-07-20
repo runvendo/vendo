@@ -137,9 +137,14 @@ const SERVER_INSTRUCTION = /\b(server|server-side|backend|database|persist|mutat
 const AMBIGUOUS_SERVER_TERM = /\b(api|http|web app|function|external|secret|digest|watch|monitor|daily|nightly|hourly|periodic)\b/gi;
 const VISIBLE_ELEMENT_LABEL = /^(?:\w+\s+)?(card|button|badge|chip|header|heading|title|label|caption|text|list|table|column|row|cell|section|panel|chart|graph|icon|field|tab|menu|toolbar|sidebar|footer|banner|tile|widget)s?\b/i;
 /** Wave 4 (layer 3) — asks whose UI needs exceed the tree: a real served web
- *  app, or interaction vocabulary (drag-and-drop, kanban, whiteboard, rich
- *  text) the tree's component walk cannot express. */
-const SERVED_APP_INSTRUCTION = /\b(full web app|served web app|custom (?:ui|client|frontend)|drag[- ]?(?:and|&|'n')[- ]?drop|draggable|kanban|whiteboard|wysiwyg|rich[- ]text editor|ui:? ?http)\b/i;
+ *  app, or interaction vocabulary (drag-and-drop, rich text) the tree's
+ *  component walk cannot express. These are unambiguous — they never label a
+ *  visible element. */
+const SERVED_APP_INSTRUCTION = /\b(full web app|served web app|custom (?:ui|client|frontend)|drag[- ]?(?:and|&|'n')[- ]?drop|wysiwyg|rich[- ]text editor|ui:? ?http)\b/i;
+/** Wave 4 — served-app words that can also LABEL a visible element ("make the
+ *  kanban board heading blue" is a tree ask); same ENG-349 rule as the
+ *  ambiguous server terms. */
+const AMBIGUOUS_SERVED_TERM = /\b(kanban|whiteboard|draggable)\b/gi;
 const reserved = new Set<string>(PREWIRED_COMPONENT_NAMES);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -1142,7 +1147,10 @@ export const instructionRequiresServedApp = (
   app: Pick<AppDocument, "ui">,
   instruction: string,
 ): boolean =>
-  app.ui === "http" || SERVED_APP_INSTRUCTION.test(instruction);
+  app.ui === "http"
+  || SERVED_APP_INSTRUCTION.test(instruction)
+  || [...instruction.matchAll(AMBIGUOUS_SERVED_TERM)].some((match) =>
+    !VISIBLE_ELEMENT_LABEL.test(instruction.slice(match.index + match[0].length).trimStart()));
 
 /** 01-core §8 — generated component naming check exported for focused engine tests. */
 export const isGeneratedComponentName = (name: string): boolean =>

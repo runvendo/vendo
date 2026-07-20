@@ -223,6 +223,14 @@ describe("experimental flag ON: serving + wake-on-open", () => {
     expect(JSON.parse(handed as string)).toEqual(theme);
   });
 
+  it("refuses to fork a served app (its surface lives in the machine, which never travels)", async () => {
+    const { runtime } = await flipped();
+    const error = await runtime.fork("app_served", ctx()).then(() => undefined, (thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(VendoError);
+    expect((error as VendoError).code).toBe("conflict");
+    expect((error as VendoError).message).toContain("cannot be forked");
+  });
+
   it("every edit of a served app rides the box path (tree dialect is gone for it)", async () => {
     const { sandbox, runtime } = await flipped();
     const machinesBefore = sandbox.machines.length;
