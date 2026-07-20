@@ -163,6 +163,12 @@ New top-level docs-site group **"Use with your existing agent"**:
   programmatically → boot → drive a live turn to an actual app creation.
   No init changes in this project; an init existing-agent mode is an
   explicit follow-up candidate.
+- **Vendo Cloud e2e:** env-gated live test running one example in full Cloud
+  posture — `VENDO_API_KEY` only, no BYO keys: managed inference through the
+  gateway, cloud sandbox, cloud connections broker — driven to an actual app
+  creation. Proves the adapter rule holds from a BYO-agent loop (Cloud fills
+  only unset slots; explicitly passed adapters win) and that `/status`
+  reports the cloud postures.
 - **Browser evidence:** both examples verified in a real browser with
   screenshots (inline app build, approval card, approve-resume) on the PR.
 - Green gate: `pnpm build && pnpm test && pnpm typecheck && pnpm lint`.
@@ -188,3 +194,5 @@ New top-level docs-site group **"Use with your existing agent"**:
 | Docs | New top-level "Use with your existing agent" section |
 | Approach | Tool pack + embeds, umbrella subpath exports |
 | init | Used as-is in e2e; BYO mode deferred |
+| Cloud | Env-gated live e2e in full Cloud posture (VENDO_API_KEY only) |
+| Execution | Orchestrated to done/tested/merged without further check-ins (Yousef, 2026-07-20) |
