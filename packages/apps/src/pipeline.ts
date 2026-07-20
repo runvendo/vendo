@@ -25,6 +25,14 @@ export interface PipelineConfig {
   endPass?: boolean;
 }
 
+/** W4 pipeline — opt-in per-stage diagnostics: rounds, no-valid-fix
+ *  take-rate, region-parallel fallback reasons, end-pass adoption, wall-clock
+ *  per stage. Powers live measurement and production observability. */
+export type PipelineEvent =
+  | { stage: "repair"; rounds: number; repaired: boolean; noValidFix: number; ms: number }
+  | { stage: "region-parallel"; fallback?: "no-outline" | "sections-failed" | "assembly-invalid"; sectionsPlanned?: number; sectionsLanded?: number; ms: number }
+  | { stage: "end-pass"; applied: boolean; ms: number };
+
 /** The engine's create validation, passed in as a callback so pipeline.ts
  *  never imports engine internals (engine → pipeline stays one-directional). */
 export type CreateValidator = (
@@ -263,7 +271,7 @@ const deriveFixes = (
   const nodes = new Map(compiled.tree.nodes.map((node) => [node.id, node]));
   const seenBindings = new Set<string>();
   for (const error of compiled.bindingErrors) {
-    const bindingKey = `${error.nodeId} ${error.prop} ${error.path}`;
+    const bindingKey = `${error.nodeId} ${error.prop} ${error.path}`;
     if (seenBindings.has(bindingKey)) continue;
     seenBindings.add(bindingKey);
     const shape = deps.toolShapes?.[error.tool];
@@ -609,13 +617,26 @@ export const structuredRepair = async (
   context: PipelineContext,
   maxRounds = 2,
 ): Promise<StructuredRepairResult> => {
+  const repairStart = Date.now();
+  const finish = (result: StructuredRepairResult): StructuredRepairResult => {
+    if (result.rounds > 0) {
+      context.deps.onPipeline?.({
+        stage: "repair",
+        rounds: result.rounds,
+        repaired: result.document !== undefined,
+        noValidFix: result.noValidFixCount,
+        ms: Date.now() - repairStart,
+      });
+    }
+    return result;
+  };
   const { deps } = context;
   let current = compiled;
   let issues: string[] = [];
   let noValidFixCount = 0;
   for (let round = 0; round < maxRounds; round += 1) {
     const fixes = deriveFixes(current, deps);
-    if (fixes.length === 0) return { rounds: round, issues, noValidFixCount };
+    if (fixes.length === 0) return finish({ rounds: round, issues, noValidFixCount });
     const schema = buildFixSchema(fixes);
     const wire = printWireV2(
       { tree: current.tree, components: current.components, ...(current.name === undefined ? {} : { name: current.name }) },
@@ -630,7 +651,7 @@ export const structuredRepair = async (
       `USER_REQUEST: ${userRequest}\nCURRENT_APP (wire markup; id attributes locate the failing nodes):\n${wire}`,
     );
     deps.onTiming?.({ lane: "repair", phase: "complete", atMs: Date.now() - context.startedAt, thinking: false });
-    if (chosen === undefined) return { rounds: round + 1, issues, noValidFixCount };
+    if (chosen === undefined) return finish({ rounds: round + 1, issues, noValidFixCount });
     fixes.forEach((fix, index) => {
       const value = chosen[fixKey(index)];
       if (fix.kind === "action-disclaim") { noValidFixCount += 1; return; }
@@ -644,12 +665,12 @@ export const structuredRepair = async (
     const recompiled = recompile(spliceFixes(current, fixes, chosen), context);
     const validated = await context.validate(recompiled);
     if (validated.document !== undefined) {
-      return { document: validated.document, rounds: round + 1, issues, noValidFixCount };
+      return finish({ document: validated.document, rounds: round + 1, issues, noValidFixCount });
     }
     issues = [...new Set([...issues, ...validated.issues])];
     current = recompiled;
   }
-  return { rounds: maxRounds, issues, noValidFixCount };
+  return finish({ rounds: maxRounds, issues, noValidFixCount });
 };
 
 // ---------------------------------------------------------------------------
@@ -684,6 +705,11 @@ export const endPass = async (
 ): Promise<GeneratedAppDocument> => {
   if (context.deps.pipeline?.endPass !== true) return document;
   const { deps } = context;
+  const endPassStart = Date.now();
+  const finish = (polished: GeneratedAppDocument): GeneratedAppDocument => {
+    deps.onPipeline?.({ stage: "end-pass", applied: polished !== document, ms: Date.now() - endPassStart });
+    return polished;
+  };
   try {
     const base = {
       tree: structuredClone(document.tree) as unknown as TreeV2,
@@ -707,16 +733,16 @@ export const endPass = async (
       hostComponents: [...context.hostComponents],
       ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
     });
-    if (!patched.complete || patched.issues.length > 0 || patched.bindingErrors.length > 0) return document;
-    if (patched.appliedOps === 0 || patched.appliedOps > 2 || patched.extensionOps.length > 0) return document;
+    if (!patched.complete || patched.issues.length > 0 || patched.bindingErrors.length > 0) return finish(document);
+    if (patched.appliedOps === 0 || patched.appliedOps > 2 || patched.extensionOps.length > 0) return finish(document);
     const validated = await context.validate(recompile({
       tree: patched.tree,
       components: patched.components,
       ...(patched.name === undefined ? {} : { name: patched.name }),
     }, context));
-    return validated.document ?? document;
+    return finish(validated.document ?? document);
   } catch {
-    return document;
+    return finish(document);
   }
 };
 
@@ -852,8 +878,19 @@ export const regionParallelCreate = async (
   context: PipelineContext,
   hooks: RegionParallelHooks,
 ): Promise<RegionParallelResult> => {
+  const parallelStart = Date.now();
+  const finish = (result: RegionParallelResult): RegionParallelResult => {
+    context.deps.onPipeline?.({
+      stage: "region-parallel",
+      ...(result.fallback === undefined ? {} : { fallback: result.fallback }),
+      ...(result.sectionsPlanned === undefined ? {} : { sectionsPlanned: result.sectionsPlanned }),
+      ...(result.sectionsLanded === undefined ? {} : { sectionsLanded: result.sectionsLanded }),
+      ms: Date.now() - parallelStart,
+    });
+    return result;
+  };
   const outline = await planOutline(hooks.userRequest, context);
-  if (outline === undefined) return { fallback: "no-outline" };
+  if (outline === undefined) return finish({ fallback: "no-outline" });
   const appName = outline.appName.replaceAll('"', "'");
   const sectionPrompt = (section: OutlineSection, index: number): string => [
     `TASK: CREATE_APP\nUSER_REQUEST: ${hooks.userRequest}`,
@@ -880,7 +917,7 @@ export const regionParallelCreate = async (
   }));
   const landedCount = landed.filter((part) => part !== undefined).length;
   if (landedCount < 2) {
-    return { fallback: "sections-failed", sectionsPlanned: outline.sections.length, sectionsLanded: landedCount };
+    return finish({ fallback: "sections-failed", sectionsPlanned: outline.sections.length, sectionsLanded: landedCount });
   }
   const compiled = compileWireV2(assemble(), {
     hostComponents: [...context.hostComponents],
@@ -888,13 +925,13 @@ export const regionParallelCreate = async (
   });
   const validated = await context.validate(compiled);
   if (validated.document !== undefined) {
-    return { document: validated.document, sectionsPlanned: outline.sections.length, sectionsLanded: landedCount };
+    return finish({ document: validated.document, sectionsPlanned: outline.sections.length, sectionsLanded: landedCount });
   }
   if (context.deps.pipeline?.structuredRepair !== false) {
     const repaired = await structuredRepair(compiled, hooks.userRequest, context);
     if (repaired.document !== undefined) {
-      return { document: repaired.document, sectionsPlanned: outline.sections.length, sectionsLanded: landedCount };
+      return finish({ document: repaired.document, sectionsPlanned: outline.sections.length, sectionsLanded: landedCount });
     }
   }
-  return { fallback: "assembly-invalid", sectionsPlanned: outline.sections.length, sectionsLanded: landedCount };
+  return finish({ fallback: "assembly-invalid", sectionsPlanned: outline.sections.length, sectionsLanded: landedCount });
 };

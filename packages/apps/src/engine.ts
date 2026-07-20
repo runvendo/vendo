@@ -36,6 +36,7 @@ import {
   structuredRepair,
   type PipelineConfig,
   type PipelineContext,
+  type PipelineEvent,
 } from "./pipeline.js";
 import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "./pins.js";
 import { prewiredPropNames, prewiredSchemaPrompt } from "./prewired-schema.js";
@@ -106,6 +107,9 @@ export interface GenerationDependencies {
   onTiming?: (event: GenerationTimingEvent) => void;
   /** W4 pipeline knobs (structured repair / region-parallel / end pass). */
   pipeline?: PipelineConfig;
+  /** W4 pipeline — opt-in per-stage diagnostics (rounds, fallbacks, timing);
+   *  nothing is emitted unless wired. */
+  onPipeline?: (event: PipelineEvent) => void;
 }
 
 export interface GenerationCreateInput {
