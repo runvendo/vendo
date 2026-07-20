@@ -22,10 +22,15 @@ Your primary function is to help users get weather details for specific location
 Use the weatherTool to fetch current weather data.
 
 You also have vendo_* tools: use vendo_create_app to build live interactive UI
-(dashboards, comparisons) when the user asks to see something, and
+(dashboards, comparisons) when the user asks to see something — the app renders
+inline in the chat automatically, so never offer to show it. Use
 vendo_send_trip_report to email a report — it may return a pending approval the
 user resolves in the chat.`,
-  model: 'openai/gpt-5-mini',
+  // The starter pins openai/gpt-5-mini; multi-turn tool use with it currently
+  // trips OpenAI's "message without its required reasoning item" (Mastra
+  // #9005 / #7823 — history replay drops Responses-API reasoning items).
+  // gpt-4.1-mini is the documented workaround until that lands.
+  model: 'openai/gpt-4.1-mini',
   // VENDO — touch 3 of 4 (continued): the starter's weatherTool plus the
   // guard-wrapped Vendo pack (vendo_send_trip_report, vendo_create_app,
   // vendo_delegate). Every vendo_* call routes policy → approval → audit.

@@ -13,7 +13,7 @@ type ToolLikePart = { type: string; toolName?: string; state?: string; output?: 
 
 export default function Chat() {
   const [input, setInput] = useState("");
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, status, error } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
   });
 
@@ -63,6 +63,10 @@ export default function Chat() {
               })}
             </div>
           ))}
+
+          {error ? (
+            <p className="text-sm text-red-600 dark:text-red-400">Something went wrong: {error.message}</p>
+          ) : null}
         </main>
 
         <form

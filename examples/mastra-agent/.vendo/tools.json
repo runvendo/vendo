@@ -2,6 +2,28 @@
   "format": "vendo/tools@1",
   "tools": [
     {
+      "name": "get_weather",
+      "description": "Get current weather for a location: temperature, feels-like, humidity, wind, conditions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "City name"
+          }
+        },
+        "required": ["location"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "server-action",
+        "module": "src/lib/vendo-actions.ts",
+        "exportName": "getWeather",
+        "params": ["location"]
+      }
+    },
+    {
       "name": "send_trip_report",
       "description": "Email a weather/trip report to a recipient. Sends real mail on the user's behalf, so it needs their approval.",
       "inputSchema": {

@@ -17,7 +17,7 @@ Docs: the "Use with your existing agent" section of the Vendo docs site.
 
 | Touch | File | What it does |
 | --- | --- | --- |
-| 1 | `src/lib/vendo.ts` (+ `src/lib/vendo-actions.ts`, `.vendo/tools.json`) | One `createVendo` call: cautious policy + the risky `send_trip_report` host action |
+| 1 | `src/lib/vendo.ts` (+ `src/lib/vendo-actions.ts`, `.vendo/tools.json`) | One `createVendo` call: cautious policy + two host actions — `get_weather` (read; generated apps query it for live data) and the risky `send_trip_report` (write; exercises approvals) |
 | 2 | `src/app/api/vendo/[...vendo]/route.ts` | The stock Vendo wire route (what `vendo init` scaffolds) |
 | 3 | `src/mastra/agents/weather-agent.ts` | `tools: async () => ({ weatherTool, ...(await vendoMastraTools(vendo)) })` |
 | 4 | `src/app/page.tsx` (+ 2 lines in `src/app/api/chat/route.ts`) | `<VendoProvider>` wrap + `<VendoToolResult output>` per tool part; the principal set server-side on Mastra's `RequestContext` |
@@ -72,3 +72,9 @@ Two pins differ from a fresh scaffold, so the example lives in this monorepo:
 accepts it), and `ai`/`@ai-sdk/react` are pinned to a current release because
 `@mastra/core`'s loop requires `ai >= 6.0.182`. A standalone scaffold
 installing latest versions needs neither pin.
+
+One starter deviation: the agent's model is `openai/gpt-4.1-mini` instead of
+the scaffolded `openai/gpt-5-mini` — multi-turn tool use with GPT-5 reasoning
+models currently fails on history replay
+([mastra-ai/mastra#9005](https://github.com/mastra-ai/mastra/issues/9005));
+gpt-4.1-mini is the workaround those issues document.
