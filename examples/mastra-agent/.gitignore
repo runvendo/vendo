@@ -49,3 +49,4 @@ mastra.db*
 
 # keep the example env template
 !.env.example
+mastra.duckdb*
