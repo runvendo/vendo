@@ -107,6 +107,7 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
         return { kind: "tree", payload: document.tree };
       },
       call: async () => ({ status: "ok", output: { ok: true } }),
+      pingMachine: async () => ({ state: "awake" }),
       edit: async (id) => ({ app: app(id), version: { at: new Date().toISOString(), intent: "edit", rung: 2 } }),
       history: async () => [{ at: "2026-07-18T09:05:30.000Z", intent: "create", rung: 2 }],
       undo: async (id) => app(id),

@@ -8,8 +8,10 @@
  * `$reshape` chain. A binding into fields absent from a KNOWN shape is the
  * compile error the spec routes to per-binding repair; unknown tools and
  * `json` regions stay defensive (the renderer's contained notice is the
- * runtime backstop). Only {@link BindingShapeError} is public (root export);
- * the checker itself stays internal.
+ * runtime backstop). {@link BindingShapeError} and {@link checkBindingShapes}
+ * are public (root exports): the checker's second consumer is the graduation
+ * fn-result post-pass (Wave 7 H2), which re-checks an already compiled tree
+ * once the fn: result shapes are sampled.
  */
 
 import { reshapeShape, type ReshapeStep } from "../reshape.js";

@@ -102,7 +102,11 @@ export const createHarness = (options = {}) => {
     const entry = readRunEntry();
     if (entry === null) return;
     const generation = ++appGeneration;
-    const child = spawn("bash", ["-lc", entry], {
+    // Plain `bash -c`, NEVER a login shell: a Procfile entry is one shell
+    // line whose env is the boundary env below. Sourcing the machine's shell
+    // profiles (-l) leaked host profile env into the app and made spawn
+    // latency track the profile's cost — the Wave-6 load-40 test flake.
+    const child = spawn("bash", ["-c", entry], {
       cwd: appDir,
       env: boundaryEnv(),
       stdio: ["ignore", "inherit", "inherit"],
@@ -146,7 +150,9 @@ export const createHarness = (options = {}) => {
     activeTask = taskId;
     const log = (line) => {
       try {
-        appendFileSync(logPath(taskId), `${line}\n`);
+        // ISO-stamped so a live agent log doubles as a build-phase profile
+        // (Wave 7 H2 — where do the 4.5 layer-3 minutes go).
+        appendFileSync(logPath(taskId), `${new Date().toISOString()} ${line}\n`);
       } catch {
         // Logging must never kill the task.
       }
