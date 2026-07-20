@@ -277,6 +277,9 @@ describe("runStagedExtraction", () => {
     expect(themeRun?.input.instructions).toContain("#ffffff");
     // Slot glossary (the semantics, not just the rules) must survive the port.
     expect(themeRun?.input.instructions).toContain("primary interactive color");
+    // Same-role token collisions must be settled by counted dominance or flagged
+    // uncertain (live-gate finding: confident wrong mutedText pick on Cadence).
+    expect(themeRun?.input.instructions).toContain("COUNT their usages");
     expect(result.theme).toEqual(themeArtifact);
     expect(await readArtifact(root, "theme")).toEqual(themeArtifact);
   });
