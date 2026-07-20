@@ -6,6 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
+import type { RunContext, ToolDescriptor } from "@vendoai/core";
+import { createGuard } from "@vendoai/guard";
+import { createStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { runInit, starViaGh } from "./init.js";
 import type { Output } from "./shared.js";
@@ -945,6 +948,53 @@ describe("vendo init (zero-question)", () => {
     expect(await tree(wired)).toEqual(first);
     await expect(readFile(join(wired, "vendo", "server.ts"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(join(wired, "vendo", "registry.tsx"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("activates the init-written policy file in both scaffolds: destructive asks, reads run", async () => {
+    const root = await fixture();
+    expect(await run(root, output())).toBe(0);
+    const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain("policy: {},");
+
+    const express = await expressFixture(false);
+    expect(await run(express, output())).toBe(0);
+    const server = await readFile(join(express, "vendo", "server.ts"), "utf8");
+    expect(server).toContain("policy: {},");
+
+    // End to end: the config the scaffold passes plus the file init wrote
+    // really produce the documented posture (destructive asks, reads run).
+    const store = createStore({ dataDir: join(root, ".vendo", "data") });
+    await store.ensureSchema();
+    const cwd = process.cwd();
+    process.chdir(root);
+    try {
+      const guard = createGuard({ store, policy: {} });
+      const destructive: ToolDescriptor = {
+        name: "host_delete",
+        description: "destructive fixture tool",
+        inputSchema: { type: "object", additionalProperties: true },
+        risk: "destructive",
+      };
+      const read: ToolDescriptor = {
+        name: "host_read",
+        description: "read fixture tool",
+        inputSchema: { type: "object", additionalProperties: true },
+        risk: "read",
+      };
+      const ctx: RunContext = {
+        principal: { kind: "user", subject: "user_1", display: "User" },
+        venue: "chat",
+        presence: "present",
+        sessionId: "session_1",
+      };
+      await expect(guard.check({ id: "call_1", tool: destructive.name, args: {} }, destructive, ctx))
+        .resolves.toMatchObject({ action: "ask", decidedBy: "rule" });
+      await expect(guard.check({ id: "call_2", tool: read.name, args: {} }, read, ctx))
+        .resolves.toMatchObject({ action: "run", decidedBy: "rule" });
+    } finally {
+      process.chdir(cwd);
+      await store.close();
+    }
   });
 
   it("re-init on a scaffolded, not-yet-client-wired Express host changes nothing and stays silent", async () => {

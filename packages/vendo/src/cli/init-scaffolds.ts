@@ -57,6 +57,7 @@ export function routeSource(options: { serverActions: boolean; auth: AuthMatch |
     (options.auth === null ? `  principal: async () => null,\n` : authConfigLines(options.auth)) +
     `  catalog: registry,\n` +
     (options.serverActions ? `  serverActions,\n` : "") +
+    `  policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
     `});\n\n` +
     `export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);\n`;
 }
@@ -162,6 +163,7 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
     `\nconst vendo = createVendo({\n` +
     (auth === null ? `  principal: async () => null,\n` : authConfigLines(auth)) +
     `  catalog: registry,\n` +
+    `  policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
     `});\n\n` +
     `function requestHeaders${signatures.requestHeaders} {\n` +
     `  const result = new Headers();\n` +

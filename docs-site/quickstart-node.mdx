@@ -65,8 +65,13 @@ import { model } from "./ai";
 const vendo = createVendo({
   model,
   principal: async () => null,
+  policy: {}, // .vendo/policy.json: destructive asks, reads run
 });
 ```
+
+The `policy: {}` line activates the `.vendo/policy.json` file init wrote, so
+destructive tools ask and reads run. Without a `policy` key, every call
+auto-runs.
 
 Replace `principal` with your session resolver. It receives the `Request` and
 returns a `Principal`, or `null` for an anonymous session:
@@ -84,7 +89,7 @@ Outside Express, mount `vendo.handler` under one base path yourself. It takes a
 standard `Request` and returns a standard `Response`. The Node adapter that
 `vendo init` generates for Express is the pattern to copy. An adapter must:
 
-- Pass every method (GET, POST, DELETE) through unchanged.
+- Pass every method (GET, POST, PUT, PATCH, DELETE) through unchanged.
 - Preserve streaming for `POST /threads`, never buffering the response body.
 - Reconstruct the request URL from `req.originalUrl`, not `req.url`, when mounted
   with `app.use` on a base path (Express strips the mount path from `req.url`).
@@ -126,4 +131,9 @@ the [CLI reference](/reference/cli#vendo-doctor-dir) for the probe details.
 ## Persistence
 
 Pass `createStore({ url })` to use hosted Postgres for multi-process or
-serverless deployments. The default is PGlite at `.vendo/data`.
+serverless deployments. The default is PGlite at `.vendo/data` — unless
+`VENDO_API_KEY` is set and no `store` is passed, in which case the Cloud
+hosted store takes the slot and threads, apps, records, grants, and audit
+persist in Vendo Cloud. Pass `store: createStore(...)` to keep data local; an
+explicit store always wins. See
+[Vendo Cloud](/deploy/vendo-cloud#hosted-store).
