@@ -67,7 +67,7 @@ import {
 } from "./box-agent.js";
 import { parseVendoManifest } from "./manifest.js";
 import { createAppOpener, createProgressiveQueryResolver, servedAppsDisabledError, stripServerAuthoritativeFields } from "./open.js";
-import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, rowFromRecord, updateAppRow } from "./persistence.js";
+import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, updateAppRow } from "./persistence.js";
 import { detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "./redaction.js";
 import {
@@ -547,6 +547,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     ...(hostBuildEnv === undefined ? {} : {
       buildEnv: async (doc: AppDocument) =>
         hostBuildEnv(doc, { grantedSecrets: await exposure.activeNames(doc.id) }),
+      // Wave 7 — the wake-time env rebuild for grant changes (machine.envStaleAt)
+      // rides the same box control-port door the pre-edit re-injection uses;
+      // the in-box harness restarts the app with the new boundary set.
+      injectEnv: pushBoxEnv,
     }),
     // Lane E — the egress policy EVERY provision and wake consults (including
     // ctx-less paths like an idle resume or a schedule fire): approved
@@ -600,13 +604,37 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     args: { appId, secretName },
   });
 
+  /**
+   * Wave 7 — a grant change while a machine exists: resumes restore the
+   * SNAPSHOT's env on every provider, so mark the machine env-stale (the next
+   * wake rebuilds the boundary env through the box control port and the
+   * harness restarts the app) and put a RUNNING box to sleep so its next
+   * request takes that wake path. No machine → nothing to mark; an app
+   * deleted between park and decision is a no-op.
+   */
+  const markMachineEnvStale = async (appId: AppId): Promise<void> => {
+    let marked: AppDocument;
+    try {
+      marked = await updateAppDocument(appId, (doc) => doc.machine === undefined
+        ? doc
+        // Strictly-increasing marker (nextEnvStaleAt): same-millisecond flips
+        // must not mint equal values, or a concurrent wake's guarded clear
+        // would erase the newer flip after injecting the older env.
+        : { ...doc, machine: { ...doc.machine, envStaleAt: nextEnvStaleAt(doc.machine.envStaleAt) } });
+    } catch (error) {
+      if (error instanceof VendoError && error.code === "not-found") return;
+      throw error;
+    }
+    if (marked.machine === undefined) return;
+    await lifecycle.sleep(marked).catch(() => undefined);
+  };
+
   const commitExposure = async (grant: SecretExposureGrant): Promise<void> => {
     await exposure.activate(grant.appId, grant.secretName);
-    // Known v2 limit: a machine PROVISIONED before this grant keeps its
-    // provision-time env — a memory snapshot resumes already-started
-    // processes, so env can only change at a fresh provision (and Wave 3's
-    // in-box edit loop, which restarts the server, is where re-injection
-    // lands).
+    // A machine PROVISIONED before this grant keeps its provision-time env —
+    // mark it stale so the next wake's control-port rebuild (and the pre-edit
+    // re-injection) lands the new value.
+    await markMachineEnvStale(grant.appId);
     await reportGuard(grant.owner, grant.appId, { venue: "app", presence: "present" }, {
       operation: "secret-exposure-set",
       secretName: grant.secretName,
@@ -1812,6 +1840,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         if (input.expose === false) {
           // Turning OFF is safe — revert to the Option B handle default at once.
           await exposure.revoke(input.appId, input.secretName);
+          // Wave 7 — the revoked value is still baked into the box snapshot;
+          // the stale marker makes the next wake rebuild env without it.
+          await markMachineEnvStale(input.appId);
           await reportGuard(ctx.principal.subject, input.appId, ctx, {
             operation: "secret-exposure-set",
             secretName: input.secretName,
@@ -1845,6 +1876,8 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             requestedAt: new Date().toISOString(),
           });
           await exposure.activate(input.appId, input.secretName);
+          // Wave 7 — same stale marker as the approval-decided commit path.
+          await markMachineEnvStale(input.appId);
           await reportGuard(ctx.principal.subject, input.appId, ctx, {
             operation: "secret-exposure-set",
             secretName: input.secretName,

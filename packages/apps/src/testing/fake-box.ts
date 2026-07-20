@@ -106,7 +106,10 @@ class FakeBoxMachine implements SandboxMachine {
     if (route === "GET /agent/health") return json(200, { ok: true, harness: "fake-box/1", app: { running: true } });
     if (route === "POST /agent/env") {
       const env = (JSON.parse(bodyText) as { env: Record<string, string> }).env;
-      this.state.env = { ...this.state.env, ...env };
+      // Model the real harness (box/harness.mjs): the boundary env file is
+      // REPLACED and the app restarts with exactly the injected set — a
+      // revoked secret is gone, never merged over.
+      this.state.env = { ...env };
       return json(200, { ok: true });
     }
     if (route === "POST /agent/restart-app") return json(200, { ok: true });

@@ -28,22 +28,24 @@ export function appStore(store: VendoStore): {
     },
     async get(id) {
       const result = await db.query(
-        "SELECT id, subject, enabled, doc, created_at, updated_at FROM vendo_apps WHERE id = $1",
+        "SELECT id, subject, enabled, doc, created_at, updated_at, revision FROM vendo_apps WHERE id = $1",
         [id],
       );
       return result.rows[0] ? appFromRow(result.rows[0]) : null;
     },
     async list(principal) {
       const result = await db.query(
-        `SELECT id, subject, enabled, doc, created_at, updated_at FROM vendo_apps
+        `SELECT id, subject, enabled, doc, created_at, updated_at, revision FROM vendo_apps
          WHERE subject = $1 ORDER BY created_at ASC, id ASC`,
         [principal.subject],
       );
       return result.rows.map(appFromRow);
     },
     async setEnabled(id, enabled) {
+      // Wave 7 — every vendo_apps write door bumps the token: a CAS armed with
+      // a pre-flip revision must lose, or it would silently revert this flip.
       const result = await db.query(
-        "UPDATE vendo_apps SET enabled = $2, updated_at = $3 WHERE id = $1 RETURNING id",
+        "UPDATE vendo_apps SET enabled = $2, updated_at = $3, revision = revision + 1 WHERE id = $1 RETURNING id",
         [id, enabled, new Date().toISOString()],
       );
       if (result.rows.length === 0) throw new VendoError("not-found", `App ${id} was not found`);
