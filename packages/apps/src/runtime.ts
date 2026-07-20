@@ -39,6 +39,7 @@ import {
 } from "./cloud.js";
 import {
   distinctIssues,
+  instructionRequiresServedApp,
   instructionRequiresServer,
   modelEngine,
   prewarmModels,
@@ -57,11 +58,12 @@ import { createFnCaller } from "./fn.js";
 import {
   pushBoxEnv,
   readBoxManifest,
+  requestAppWithBootRetry,
   runBoxEdit,
   type BoxEditResult,
 } from "./box-agent.js";
 import { parseVendoManifest } from "./manifest.js";
-import { createAppOpener, createProgressiveQueryResolver, stripServerAuthoritativeFields } from "./open.js";
+import { createAppOpener, createProgressiveQueryResolver, servedAppsDisabledError, stripServerAuthoritativeFields } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, rowFromRecord, updateAppRow } from "./persistence.js";
 import { detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "./redaction.js";
@@ -116,6 +118,14 @@ export interface AppsConfig {
     boxEditPollMs?: number;
     boxEditTimeoutMs?: number;
   };
+  /**
+   * execution-v2 Wave 4 — the layer-3 (machine serves the app surface)
+   * experimental opt-in. OFF by default: layer-3 generation, the 2→3 surface
+   * flip, and open() on a served app all refuse with a typed VendoError naming
+   * this flag. The host enables it per project
+   * (`createVendo({ apps: { experimentalServedApps: true } })`).
+   */
+  experimentalServedApps?: boolean;
   model?: LanguageModel;
   /** v2 spec §4 — tier-0 paint lane knob, passed to the generation engine.
    *  `model` is the no-think switch (a thinking-disabled model instance);
@@ -399,11 +409,16 @@ export interface AppsRuntime {
 const allRecords = (store: StoreAdapter, refs: Record<string, string>): Promise<VendoRecord[]> =>
   listAllRecords(store.records("vendo_apps"), { refs });
 
-const rungFor = (app: AppDocument): VersionEntry["rung"] => {
-  if (app.ui === "http") return 4;
+const rungFor = (
+  app: AppDocument,
+  declared?: VersionEntry["rung"],
+): VersionEntry["rung"] => {
+  // execution-v2 Wave 4 — a machine-served surface is layer 3 (the v2 ladder);
+  // rung 4 remains only for the retired v1 `server`-backed http shape.
+  if (app.ui === "http") return app.machine !== undefined ? 3 : 4;
   // execution-v2 — a machine (Wave 1 Lane B) is layer 2, exactly like the
   // retired v1 `server`; presence, never a stored rung, is the source of truth.
-  if (app.machine !== undefined || app.server !== undefined) return 2;
+  if (app.machine !== undefined || app.server !== undefined) return declared === 3 ? 3 : 2;
   return 1;
 };
 
@@ -772,6 +787,24 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     caller,
     config.pinBaselines,
     (doc) => inClientApprovals.venueStateFor(doc),
+    // Wave 4 (layer 3) — the served surface: wake-on-open over the machine
+    // lifecycle, the provider's public ingress URL for $PORT, and the theming
+    // handoff (host theme tokens as a query param the served app MAY consume).
+    {
+      enabled: config.experimentalServedApps === true,
+      urlFor: async (app) => {
+        const machine = await lifecycle.wake(app);
+        // Absorb the fresh-boot 502 race server-side so the iframe's first
+        // paint is the app, not a provider error (the wake latency is the
+        // accepted loading state — no v1 cover machinery).
+        await requestAppWithBootRetry(machine, { method: "GET", path: "/" }).catch(() => undefined);
+        const url = new URL(await machine.url());
+        if (config.theme !== undefined) {
+          url.searchParams.set("vendoTheme", JSON.stringify(config.theme));
+        }
+        return url.toString();
+      },
+    },
   );
 
   // 06-apps §8 — every edit result over a drifted app carries the drift report,
@@ -925,6 +958,18 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     ].join("\n");
   };
 
+  /** Wave 4 (layer 3) — the extra contract lines for a served-app build: the
+   *  box now OWNS the app surface. Same data-only floor as everything else the
+   *  box reads; the host still verifies the served root itself before any
+   *  surface flip. */
+  const servedAppContractPrompt = (): string => [
+    "THIS TASK BUILDS THE APP SURFACE ITSELF (layer 3):",
+    "- Serve a REAL web app on the non-/fn paths of $PORT. GET / is the entry page and must answer 200 with text/html. Any framework or plain HTML+JS; keep it self-contained (no CDN dependencies unless their domains are declared egress).",
+    "- Keep every POST /fn/<name> endpoint working beside the pages; the page's own JavaScript may call relative /fn/<name> endpoints for data and actions.",
+    "- The page may read the OPTIONAL `vendoTheme` query param (JSON host theme tokens: colors/typography/radius/density) to match the host brand. Ignore it if absent.",
+    "- Verify by curling your own pages (GET / and every route you serve) until they answer 200 with the real content, then report servesUi: true.",
+  ].join("\n");
+
   /**
    * The box server-edit primitive: wake the (already-provisioned) machine,
    * re-inject the current boundary env (grant-flip restart loop), send the
@@ -937,12 +982,15 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     app: AppDocument,
     instruction: string,
     _ctx: RunContext,
-  ): Promise<{ ok: true; result: BoxEditResult; doc: AppDocument } | { ok: false; result: BoxEditResult }> => {
+    options: { served?: boolean } = {},
+  ): Promise<{ ok: true; result: BoxEditResult; doc: AppDocument; servedOk: boolean } | { ok: false; result: BoxEditResult }> => {
     const machine = await lifecycle.wake(app);
     await pushBoxEnv(machine, await lifecycle.buildAppEnv(app)).catch(() => undefined);
     const result = await runBoxEdit(machine, {
       prompt: instruction,
-      context: skinContractPrompt(app),
+      context: options.served === true
+        ? `${skinContractPrompt(app)}\n${servedAppContractPrompt()}`
+        : skinContractPrompt(app),
       ...(boxEditPollMs === undefined ? {} : { pollIntervalMs: boxEditPollMs }),
       ...(boxEditTimeoutMs === undefined ? {} : { timeoutMs: boxEditTimeoutMs }),
     });
@@ -951,6 +999,22 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // its pre-edit ref (no new fork machinery, just "don't keep this").
       await lifecycle.discard(app).catch(() => undefined);
       return { ok: false, result };
+    }
+    // Wave 4 (layer 3) — the box's servesUi is DATA; the HOST verifies the
+    // served root while the machine is still awake. A surface flip downstream
+    // requires this check, never the claim alone.
+    let servedOk = false;
+    if (result.servesUi === true) {
+      const root = await requestAppWithBootRetry(machine, { method: "GET", path: "/" }).catch(() => undefined);
+      // Header keys are matched case-insensitively: fetch normalizes to
+      // lowercase, but a provider adapter is not obliged to.
+      const contentType = root === undefined
+        ? ""
+        : Object.entries(root.headers).find(([key]) => key.toLowerCase() === "content-type")?.[1] ?? "";
+      servedOk = root !== undefined
+        && root.status >= 200 && root.status < 300
+        && contentType.includes("text/html")
+        && root.body.length > 0;
     }
     // Sync schedule state while the box is awake and its egress declaration is
     // not yet on the doc (so this wake's allowlist still passes).
@@ -977,7 +1041,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     // not the pre-sleep `synced` — is the current stored row a later persist
     // must build on.
     const slept = await lifecycle.sleep(synced);
-    return { ok: true, result, doc: slept };
+    return { ok: true, result, doc: slept, servedOk };
   };
 
   /**
@@ -992,6 +1056,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     previous: AppDocument,
     instruction: string,
     ctx: RunContext,
+    options: { served?: boolean } = {},
   ): Promise<EditResult> => {
     if (config.model === undefined) {
       throw new VendoError("not-implemented", "generation requires a model");
@@ -1010,7 +1075,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       provisioned = await lifecycle.provision(previous);
       await reportLifecycle("machine-provision", previous.id, ctx);
     }
-    const box = await editServerViaBox(provisioned, instruction, ctx);
+    const box = await editServerViaBox(provisioned, instruction, ctx, { served: options.served === true });
     if (!box.ok) {
       return failedEdit(provisioned, instruction, [
         `the in-box agent could not complete the server work: ${box.result.summary}`,
@@ -1034,6 +1099,56 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         filesChanged: box.result.filesChanged,
       },
     };
+    // ── Wave 4 (layer 3): the 2→3 surface flip ─────────────────────────────
+    // The tree kept serving through the whole box build; only NOW — box ok,
+    // servesUi declared, and the host's own served-root check green — does the
+    // document flip to the served surface (ui: http, the tree is gone). The
+    // experimental flag guards the FLIP itself, not just generation: a box
+    // that self-declares a served app while the flag is off is refused here,
+    // loudly (de-graduation guard).
+    const extraIssues: string[] = [];
+    if (options.served === true || box.result.servesUi === true) {
+      if (config.experimentalServedApps !== true) {
+        extraIssues.push(
+          "the box declared a served web app, but experimentalServedApps is disabled — the surface flip was refused and the tree keeps serving (enable createVendo({ apps: { experimentalServedApps: true } }))",
+        );
+      } else if (options.served === true && box.result.servesUi === true && box.servedOk) {
+        // The flip needs BOTH the escalation decision and the verified served
+        // surface: a box that spontaneously serves UI on a layer-2 instruction
+        // must never replace a tree the user did not ask to lose.
+        const flipped = structuredClone(base);
+        delete flipped.tree;
+        delete flipped.components;
+        delete flipped.pins;
+        flipped.ui = "http";
+        const flipVersion: VersionEntry = {
+          at: new Date().toISOString(),
+          intent: instruction,
+          rung: rungFor(flipped),
+        };
+        const persisted = await persistEdit(base, flipped, flipVersion, ctx.principal.subject);
+        return withPinDrift({
+          app: persisted,
+          version: { ...flipVersion },
+          graduated: true,
+          ...boxReport,
+          ...pendingEgress,
+        });
+      } else if (options.served === true) {
+        // The box work landed (machine + code snapshotted), but no verified
+        // served surface exists — the current surface stays live; retry edits.
+        return withPinDrift({
+          app: structuredClone(base),
+          version: { at: new Date().toISOString(), intent: instruction, rung: rungFor(base) },
+          issues: [
+            "the box did not produce a verified served web app (GET / must answer 200 text/html) — the surface was not flipped; retry the edit",
+          ],
+          graduated: true,
+          ...boxReport,
+          ...pendingEgress,
+        });
+      }
+    }
     // Land fn: bindings via the normal tree-edit dialect. The app now carries a
     // machine, so fn: refs validate (core machine-presence rule).
     const fns = box.result.fns ?? [];
@@ -1066,7 +1181,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return withPinDrift({
         app: structuredClone(base),
         version,
-        issues: ["graduated: machine provisioned and server code written, but the tree fn: bindings did not validate — retry the edit to wire them", ...treeIssues],
+        issues: ["graduated: machine provisioned and server code written, but the tree fn: bindings did not validate — retry the edit to wire them", ...treeIssues, ...extraIssues],
         graduated: true,
         ...boxReport,
         ...pendingEgress,
@@ -1077,6 +1192,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     return withPinDrift({
       app: persisted,
       version: { ...version },
+      ...(extraIssues.length === 0 ? {} : { issues: [...extraIssues] }),
       graduated: true,
       ...boxReport,
       ...pendingEgress,
@@ -1093,6 +1209,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     async create(input, ctx) {
       if (config.model === undefined) {
         throw new VendoError("not-implemented", "generation requires a model");
+      }
+      // execution-v2 Wave 4 — a prompt that needs a served web app (layer 3)
+      // refuses cleanly while the experimental flag is off: no tree is built
+      // that could only disappoint, and the error names the flag.
+      if (config.experimentalServedApps !== true && instructionRequiresServedApp({}, input.prompt)) {
+        throw servedAppsDisabledError();
       }
       // Mint before generation so every partial already carries its permanent id.
       const appId = `app_${globalThis.crypto.randomUUID()}`;
@@ -1157,9 +1279,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // tree's fn: bindings land additively (the user never picks a tier).
       // Best-effort: a graduation failure leaves the working tree app to retry
       // via edit, so create never regresses to a white box.
-      if (lifecycle.available() && instructionRequiresServer(app, input.prompt)) {
+      const servedCreate = instructionRequiresServedApp(app, input.prompt);
+      if (lifecycle.available() && (servedCreate || instructionRequiresServer(app, input.prompt))) {
         try {
-          const graduated = await graduate(structuredClone(app), input.prompt, ctx);
+          const graduated = await graduate(structuredClone(app), input.prompt, ctx, {
+            served: servedCreate,
+          });
           if (graduated.failure === undefined) {
             if (input.onView !== undefined && graduated.app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
               // The streamed view parts are last-write-wins, and the pre-
@@ -1226,6 +1351,18 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     async fork(appId, ctx) {
       const source = await requireOwned(appId, ctx.principal.subject);
+      // Wave 4 — a served (layer-3) app's ENTIRE surface lives in its machine,
+      // and machines never travel with a copy: the fork would be an app that
+      // can never open (ui: http, no tree, no machine). Refuse loudly instead
+      // of minting a broken document. Scoped to machine-backed docs — a
+      // retired v1 `server`-ref doc keeps its established fork semantics (the
+      // copy drops the dead ref; see the 09 §3 wire test).
+      if (source.ui === "http" && source.machine !== undefined) {
+        throw new VendoError(
+          "conflict",
+          "a served (layer-3) app cannot be forked: its surface lives in its machine, which never travels with a copy — create a new app instead",
+        );
+      }
       const fork: AppDocument = {
         ...structuredClone(source),
         id: `app_${globalThis.crypto.randomUUID()}`,
@@ -1262,11 +1399,19 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         throw new VendoError("not-implemented", "generation requires a model");
       }
       const previous = await requireOwned(appId, ctx.principal.subject);
+      // execution-v2 Wave 4 — an instruction whose UI needs exceed the tree
+      // escalates 2→3 (the box builds a real served web app). Experimental:
+      // the flag refuses this path CLEANLY before any box work happens.
+      const served = instructionRequiresServedApp(previous, instruction);
+      if (served && config.experimentalServedApps !== true) {
+        throw servedAppsDisabledError();
+      }
       // execution-v2 Wave 3 — an instruction that needs server capability
       // graduates the app (provision a machine, delegate to the in-box agent,
-      // land fn: bindings). A pure-UI instruction stays on the cheap tree path.
-      if (instructionRequiresServer(previous, instruction)) {
-        return graduate(previous, instruction, ctx);
+      // land fn: bindings). A pure-UI instruction stays on the cheap tree
+      // path. A served ask is a fortiori a graduation ask (Wave 4).
+      if (served || instructionRequiresServer(previous, instruction)) {
+        return graduate(previous, instruction, ctx, { served });
       }
       let repairIssues: string[] | undefined;
       let collectedIssues: string[] = [];

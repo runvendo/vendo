@@ -88,6 +88,9 @@ describe.skipIf(!LIVE)("e2bSandbox live", () => {
     makeAdapter,
     bootstrap,
     enforcesAllowedDomains: true,
+    multiPort: true,
+    resumeForks: true,
+    resumeReplacesPolicy: true,
   };
   sandboxAdapterConformance("real E2B", harness);
 

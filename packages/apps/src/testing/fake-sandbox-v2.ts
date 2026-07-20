@@ -67,6 +67,11 @@ export class FakeMachineV2 implements SandboxMachine {
     return respond(200, "ok");
   }
 
+  async url(port?: number): Promise<string> {
+    const target = port ?? Number(this.env.PORT ?? 8080);
+    return `https://${target}-${this.id}.fake-v2.test`;
+  }
+
   async snapshot(): Promise<string> {
     return this.saveSnapshot(this);
   }

@@ -19,7 +19,7 @@ import {
   scriptedLanguageModel,
   type ScriptedModelCall,
 } from "./testing/index.js";
-import { instructionRequiresServer, modelEngine } from "./engine.js";
+import { instructionRequiresServedApp, instructionRequiresServer, modelEngine } from "./engine.js";
 import { fakeBoxSandbox } from "./testing/fake-box.js";
 
 const ctx: RunContext = {
@@ -828,6 +828,49 @@ describe("instructionRequiresServer (ENG-349)", () => {
 
   it("always routes an http app to the code dialect", () => {
     expect(instructionRequiresServer(app("http"), "Make the heading blue")).toBe(true);
+  });
+});
+
+describe("instructionRequiresServedApp (Wave 4 layer 3)", () => {
+  const app = (ui?: "tree" | "http"): AppDocument => ({
+    format: "vendo/app@1",
+    id: "app_served",
+    name: "Served fixture",
+    ...(ui === undefined ? {} : { ui }),
+  });
+
+  it.each([
+    "Make me a full kanban board for my invoices with drag-and-drop between columns",
+    "Turn this into a full web app",
+    "Rebuild this as a served web app",
+    "I want a custom frontend with a whiteboard canvas",
+    "Add drag and drop reordering to the board",
+  ])("judges %j a served-app (layer 3) ask", (instruction) => {
+    expect(instructionRequiresServedApp(app(), instruction)).toBe(true);
+    // A served-app ask is a fortiori a server ask (it rides graduation).
+    expect(instructionRequiresServer(app(), instruction)).toBe(true);
+  });
+
+  it.each([
+    "Make the status board heading blue",
+    "Watch my unpaid invoices and email me a daily digest at 8am",
+    "Add a nightly digest of overdue accounts",
+    "Make the API status card blue",
+    // Cubic PR #419: served-app words that LABEL a visible element are tree
+    // asks (same ENG-349 rule as the ambiguous server terms).
+    "Make the kanban board heading blue",
+    "Move the whiteboard panel to the top",
+  ])("keeps %j below layer 3", (instruction) => {
+    expect(instructionRequiresServedApp(app(), instruction)).toBe(false);
+  });
+
+  it("counts an ambiguous served word used as the THING TO BUILD", () => {
+    expect(instructionRequiresServedApp(app(), "Build a kanban for my invoices")).toBe(true);
+    expect(instructionRequiresServedApp(app(), "I want a collaborative whiteboard")).toBe(true);
+  });
+
+  it("an already-served app is always a layer-3 subject", () => {
+    expect(instructionRequiresServedApp(app("http"), "Make the heading blue")).toBe(true);
   });
 });
 

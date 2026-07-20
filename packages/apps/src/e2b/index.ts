@@ -141,7 +141,7 @@ export const e2bInstalled = (): boolean => {
  * allowedDomains rides E2B's provider-native network allowlist plus an
  * all-traffic deny rule; undefined means unrestricted egress.
  *
- * The machine object also carries adapter-private exec/files/url used for
+ * The machine object also carries adapter-private exec/files used for
  * bootstrap, diagnostics, and the dying v1 compat paths — they are NOT part
  * of the public seam (the in-box agent owns the inside of the box).
  * The optional SDK is imported only when create/resume is called.
@@ -193,6 +193,9 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
           body: new Uint8Array(await response.arrayBuffer()),
         };
       },
+      async url(port?: number) {
+        return baseUrl(port ?? state.port);
+      },
       async snapshot() {
         const snapshot = await sandbox.createSnapshot();
         return encodeSnapshotRef(snapshot.snapshotId, sandbox.sandboxId, state.allowedDomains, state.port);
@@ -241,9 +244,6 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
         async list(dir: string) {
           return (await sandbox.files.list(dir)).map((entry) => entry.name);
         },
-      },
-      async url(port: number) {
-        return baseUrl(port);
       },
     } satisfies SandboxMachine & Record<string, unknown> as SandboxMachine;
   };

@@ -38,6 +38,7 @@ import type { ShapeType } from "../shape.js";
 import { parseAttributes } from "./attributes.js";
 import type { WireIssue } from "./expression.js";
 import { checkBindingShapes, mirrorBindingIssues, type BindingShapeError } from "./shape-check.js";
+import { expandInlineRefs } from "./inline-refs.js";
 import { admitIslandSource, claimNodeSlot, claimQuerySlot } from "./limits.js";
 import { collectText, NAME_CHAR, readName, scanCloseTag, scanTagEnd, skipComment, skipElement, skipWhitespace } from "./scan.js";
 import { FAILED, issue, isWellFormedUtf16, type CompileState, type Frame } from "./state.js";
@@ -50,6 +51,11 @@ import { FAILED, issue, isWellFormedUtf16, type CompileState, type Frame } from 
 export interface WireCompileOptions {
   hostComponents?: readonly string[];
   toolShapes?: Readonly<Record<string, ShapeType>>;
+  /** W1-bench prototype (docs/verification/w1-bench): expand inline tool
+   *  references (`rows={invoices.list({...}).data}`) into minted `<Query>`
+   *  declarations + plain bindings before compiling. Off by default; the
+   *  canonical `<Query>` dialect is unaffected. */
+  inlineRefs?: boolean;
 }
 
 /** v2 spec §2 / plan D6 — the compile result. */
@@ -524,7 +530,8 @@ const finishResult = (
   return result;
 };
 
-const compileWireV2Unsafe = (wire: string, options: WireCompileOptions | undefined): WireCompileResult => {
+const compileWireV2Unsafe = (rawWire: string, options: WireCompileOptions | undefined): WireCompileResult => {
+  const wire = options?.inlineRefs ? expandInlineRefs(rawWire).wire : rawWire;
   const declared = prescanDeclarations(wire);
   const state = makeState(wire, declared.queryNames, declared.islandNames, new Set(options?.hostComponents ?? []));
   const root: TreeNode = { id: "root", component: "Stack", source: "prewired" };

@@ -78,6 +78,10 @@ const TOOLS = [
           items: { type: "string" },
           description: "The POST /fn/<name> function names the app now serves.",
         },
+        servesUi: {
+          type: "boolean",
+          description: "True ONLY when the task asked for a real served web app and the app now serves verified pages (GET / answered 200) on non-/fn paths of $PORT.",
+        },
       },
       required: ["ok", "summary"],
     },
@@ -97,7 +101,8 @@ Working style:
 - STRONGLY prefer zero-dependency Node: node:http for the server, the global fetch for egress, node:crypto etc. The box egress is deny-by-default, so \`npm install\` reaches only registries you DECLARE in vendo.json egress — avoid it unless the task truly needs a package.
 - Verify against reality: after writing code, restart the app (curl the supervisor route above), wait a moment, then curl your own endpoints on http://localhost:$PORT and fix failures before reporting.
 - Never bind $PORT from a process you spawn yourself; the supervisor owns the app process.
-- Report honestly with report_done: ok=false with a clear summary beats a fake success. List the fn names you serve in fns.`;
+- Report honestly with report_done: ok=false with a clear summary beats a fake success. List the fn names you serve in fns.
+- If (and only if) the task asks you to serve a real web app: serve its pages on the non-/fn paths of $PORT (GET / is the entry page), keep any /fn/<name> endpoints working beside them, curl your pages until they answer 200 with real content, and then report servesUi: true. Never claim servesUi for an fn-only task.`;
 
 const truncate = (text, cap = TOOL_OUTPUT_CAP) =>
   text.length <= cap ? text : `${text.slice(0, cap)}\n…[truncated ${text.length - cap} chars]`;
@@ -210,6 +215,7 @@ export const runAgentTask = async ({ prompt, context, env, appDir, log }) => {
         filesChanged: [...new Set([...written, ...declared])],
         testsRun: Number.isInteger(input.testsRun) && input.testsRun >= 0 ? input.testsRun : 0,
         ...(Array.isArray(input.fns) ? { fns: input.fns.filter((entry) => typeof entry === "string") } : {}),
+        ...(input.servesUi === true ? { servesUi: true } : {}),
       };
       log(`[task] done ok=${result.ok} summary=${truncate(result.summary, 500)}`);
       return result;

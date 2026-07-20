@@ -387,8 +387,7 @@ describe("09 §3 public wire", () => {
     // execution-v2 Wave 1.5 — the v1 fork path (resume → snapshot → stop
     // through config.sandbox) is deleted: a fork carries no machine and no
     // retired v1 server ref, so even with the Cloud sandbox selected the
-    // console sees no traffic. (cloudSandbox itself is Wave-5-ported; until
-    // then it fills no runtime slot.)
+    // console sees no traffic.
     vi.stubEnv("E2B_API_KEY", "");
     vi.stubEnv("MODAL_TOKEN_ID", "");
     vi.stubEnv("MODAL_TOKEN_SECRET", "");

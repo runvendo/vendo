@@ -104,7 +104,7 @@ export {
   type CloudConnectionsOptions,
   type ConnectionsService,
 } from "./connections.js";
-import { cloudSandbox, type V1CloudSandboxAdapter } from "./sandbox.js";
+import { cloudSandbox } from "./sandbox.js";
 // The Cloud sandbox adapter rides the server surface like the connections
 // adapters: a host can pass it explicitly via createVendo({ sandbox }) with
 // its own options instead of relying on the VENDO_API_KEY default.
@@ -195,7 +195,7 @@ export interface CreateVendoConfig {
       mirror the client-side components map 1:1. */
   catalog?: ComponentCatalog | ComponentRegistry;
   store?: VendoStore;
-  sandbox?: SandboxAdapter | V1CloudSandboxAdapter;
+  sandbox?: SandboxAdapter;
   connectors?: Connector[];
   /** 04-actions §3 — an explicit connections adapter; always wins over the
       defaults (precedence: selectConnections). */
@@ -263,6 +263,14 @@ export interface CreateVendoConfig {
     sweepIntervalMs?: number;
     now?: () => number;
   };
+  /** execution-v2 Wave 4 — apps-block options. `experimentalServedApps` is the
+      per-project layer-3 opt-in: a machine may serve the app surface itself
+      (the host embeds its URL in a sandboxed iframe). OFF by default — layer-3
+      generation, the 2→3 surface flip, and open() on a served app all refuse
+      with a typed VendoError naming this flag until the host enables it. */
+  apps?: {
+    experimentalServedApps?: boolean;
+  };
 }
 
 /** ENG-237 recommended defaults (documented in the PR body; Yousef-gated as
@@ -326,8 +334,8 @@ function cloudKeyOptions(): { apiKey: string; baseUrl?: string } | undefined {
     sandbox env is present, so setting a Vendo key never shadows an existing
     provider account. (The v1 Modal adapter is retired with the execution-v2
     seam; Modal can return behind the same seam later.) */
-function selectSandbox(configured: SandboxAdapter | V1CloudSandboxAdapter | undefined): {
-  adapter: SandboxAdapter | V1CloudSandboxAdapter | undefined;
+function selectSandbox(configured: SandboxAdapter | undefined): {
+  adapter: SandboxAdapter | undefined;
   venue: SandboxVenue;
 } {
   if (configured !== undefined) return { adapter: configured, venue: "custom" };
@@ -337,7 +345,26 @@ function selectSandbox(configured: SandboxAdapter | V1CloudSandboxAdapter | unde
   // create() dies on a missing module.
   const e2bApiKey = environment("E2B_API_KEY");
   if (e2bApiKey !== undefined && e2bInstalled()) {
-    return { adapter: e2bSandbox({ apiKey: e2bApiKey }), venue: "e2b" };
+    // Wave 4 — operator knob for the provider machine lifetime. The default
+    // 5-minute TTL kills a box mid-way through a long in-box agent build
+    // (the box agent loop runs for minutes). Explicit VENDO_E2B_TIMEOUT_MS
+    // wins; otherwise a raised box-edit budget implies a matching machine
+    // lifetime (budget + 5-minute slack), so the two knobs cannot silently
+    // disagree.
+    const configured = Number(environment("VENDO_E2B_TIMEOUT_MS"));
+    const editBudget = Number(environment("VENDO_BOX_EDIT_TIMEOUT_MS"));
+    const timeoutMs = Number.isFinite(configured) && configured > 0
+      ? configured
+      : Number.isFinite(editBudget) && editBudget > 0
+        ? editBudget + 5 * 60_000
+        : undefined;
+    return {
+      adapter: e2bSandbox({
+        apiKey: e2bApiKey,
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      }),
+      venue: "e2b",
+    };
   }
 
   const cloud = cloudKeyOptions();
@@ -1047,17 +1074,20 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     model: inference.model,
     catalog,
     pinBaselines,
+    // execution-v2 Wave 4 — the layer-3 experimental opt-in, host-config only
+    // (never an env var: enabling a surface that runs generated web apps is a
+    // deliberate per-project decision).
+    ...(config.apps?.experimentalServedApps === undefined ? {} : { experimentalServedApps: config.apps.experimentalServedApps }),
     ...(config.paint === undefined ? {} : { paint: config.paint }),
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
     secrets: config.secrets ?? envSecrets(),
-    // execution-v2 — the machine lifecycle's seams: the selected adapter when
-    // it speaks the canonical v2 seam (destroy-by-ref is the marker the
-    // @deprecated v1-only cloudSandbox lacks — a v1-only adapter gets no
-    // machine lifecycle until its Wave 5 port) and Lane C's env assembly. The
-    // box template (Node + the in-box agent harness) is set by VENDO_BOX_TEMPLATE.
+    // execution-v2 — the machine lifecycle's seams: the selected v2 adapter
+    // (every provider speaks the canonical seam since the Wave 5 Cloud port)
+    // and Lane C's env assembly. The box template (Node + the in-box agent
+    // harness) is set by VENDO_BOX_TEMPLATE.
     machine: {
-      ...(sandbox.adapter !== undefined && "destroy" in sandbox.adapter ? { sandbox: sandbox.adapter } : {}),
+      ...(sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter }),
       buildEnv: machineEnv,
       implicitDomains: implicitMachineDomains(),
       ...(boxTemplate === undefined ? {} : { template: boxTemplate }),
