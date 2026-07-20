@@ -47,9 +47,17 @@
  *   multiPort flag covers); any explicit 1-65535 routes (probed — an
  *   out-of-range port answers a clean 400 validation error), so the
  *   in-box agent control port (8811) works.
- * - exec/files also exist server-side (`POST /{id}/exec`,
+ - exec/files also exist server-side (`POST /{id}/exec`,
  *   `GET|PUT /{id}/files?path=`, `GET /{id}/files/list?dir=`) — adapter-
  *   private, used for live-lane bootstrap and diagnostics only.
+ * - ingress  the create/resume handle `url` (`https://<id>.m.vendo.run`) is
+ *   the canonical-port public surface; `machine.url(port)` formats other
+ *   ports as an e2b-style port-prefixed label on the same host
+ *   (`https://<port>-<id>.m.vendo.run`) — PROVISIONAL, pending Cloud
+ *   confirmation of the non-canonical shape. KNOWN PROD BUG (probed
+ *   2026-07-20, reported): TLS for `*.m.vendo.run` fails entirely —
+ *   Cloudflare Universal SSL covers one label only, so the ingress needs an
+ *   advanced certificate before ANY served-app URL works.
  *
  * Adapter mapping:
  * - `machine.snapshot()` = the artifact mint, wrapped in the adapter's

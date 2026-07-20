@@ -366,6 +366,21 @@ describe("cloudSandbox", () => {
       .rejects.toMatchObject({ code: "validation" });
   });
 
+  it("url() defaults to the app's $PORT and prefixes non-canonical ports onto the ingress host", async () => {
+    const console_ = fakeConsole();
+    const adapter = adapterFor(console_);
+    const canonical = await adapter.create({ env: { PORT: "8080" } });
+    expect(await canonical.url()).toBe(`https://${canonical.id}.m.vendo.run`);
+    expect(await canonical.url(9090)).toBe(`https://9090-${canonical.id}.m.vendo.run`);
+
+    // An app listening elsewhere gets its OWN port surface by default, and
+    // the $PORT rides refs so a resumed machine keeps it.
+    const ported = await adapter.create({ env: { PORT: "9090" } });
+    expect(await ported.url()).toBe(`https://9090-${ported.id}.m.vendo.run`);
+    const woken = await adapter.resume(await ported.snapshot());
+    expect(await woken.url()).toBe(`https://9090-${woken.id}.m.vendo.run`);
+  });
+
   it("states the applicable allowlist explicitly on every resume — the wire inherits nothing", async () => {
     const console_ = fakeConsole();
     const adapter = adapterFor(console_);

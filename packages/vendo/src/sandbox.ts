@@ -2,6 +2,7 @@ import type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "@vendo
 import { VendoError, type VendoErrorCode } from "@vendoai/core";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
 import {
+  CLOUD_BOX_PORT,
   CLOUD_SANDBOX_PATH,
   CLOUD_SNAPSHOT_REF_PREFIX,
   CLOUD_SNAPSHOTS_SUBPATH,
@@ -93,15 +94,22 @@ async function raiseCloudError(response: Response): Promise<never> {
 
 /** The adapter-minted composite snapshot ref payload (sandbox-wire.ts): the
  * console ref alone cannot serve the seam — destroy-by-ref needs the machine
- * id (the console DELETE route is machine-only) and resume-policy comparison
- * needs the snapshot-time allowlist. */
+ * id (the console DELETE route is machine-only), a bare resume re-applies the
+ * snapshot-time allowlist, and url() needs the app's $PORT. */
 interface CloudSnapshotState {
   version: 2;
   machineId: string;
   /** The console-minted ref (`vendo:snap_<40hex>`), sent back on resume. */
   ref: string;
   allowedDomains?: string[];
+  /** The app's $PORT at snapshot time; the canonical box port when absent. */
+  port?: number;
 }
+
+const parsePort = (env: Record<string, string>): number => {
+  const port = Number(env.PORT ?? CLOUD_BOX_PORT);
+  return Number.isInteger(port) && port > 0 && port <= 65_535 ? port : CLOUD_BOX_PORT;
+};
 
 const toBase64Url = (value: string): string =>
   encodeBase64(encoder.encode(value)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
@@ -129,11 +137,16 @@ const decodeSnapshotRef = (snapshotRef: string): CloudSnapshotState => {
       && state.allowedDomains.every((host) => typeof host === "string"))) {
       throw new Error("invalid allowedDomains policy");
     }
+    if (state.port !== undefined && !(Number.isInteger(state.port)
+      && (state.port as number) > 0 && (state.port as number) <= 65_535)) {
+      throw new Error("invalid port");
+    }
     return {
       version: 2,
       machineId: state.machineId,
       ref: state.ref,
       ...(state.allowedDomains === undefined ? {} : { allowedDomains: [...state.allowedDomains as string[]] }),
+      ...(state.port === undefined ? {} : { port: state.port as number }),
     };
   } catch {
     throw new VendoError(
@@ -223,7 +236,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
 
   const wrap = (
     handle: { id: string; url: string },
-    state: { allowedDomains?: string[] | undefined },
+    state: { allowedDomains?: string[] | undefined; port: number },
   ): SandboxMachine => {
     const prefix = `/${encodeURIComponent(handle.id)}`;
     /** POST /{id}/snapshot — mint a persistent artifact; the source keeps running. */
@@ -288,6 +301,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
           machineId: handle.id,
           ref: await mintArtifact(),
           ...(state.allowedDomains === undefined ? {} : { allowedDomains: [...state.allowedDomains] }),
+          port: state.port,
         });
       },
       async stop() {
@@ -342,10 +356,17 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
             : [];
         },
       },
-      async url(_port: number) {
-        // The Cloud data plane serves the box port on the public ingress; the
-        // handle URL from create/resume IS the layer-3 serving origin.
-        return handle.url;
+      async url(port?: number) {
+        // Wave 4 (layer 3) — the browser→box serving path. The handle URL
+        // from create/resume IS the canonical-port ingress; other ports ride
+        // an e2b-style port-prefixed label on the same host (PROVISIONAL —
+        // sandbox-wire.ts ingress entry; the exact non-canonical shape is
+        // pending Cloud confirmation).
+        const target = port ?? state.port;
+        if (target === CLOUD_BOX_PORT) return handle.url;
+        const ingress = new URL(handle.url);
+        ingress.host = `${target}-${ingress.host}`;
+        return ingress.origin;
       },
     } satisfies SandboxMachine & Record<string, unknown> as SandboxMachine;
   };
@@ -362,7 +383,10 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
         ...(spec.allowedDomains === undefined ? {} : { egress: [...spec.allowedDomains] }),
         // Defensive copy: later refs must record the policy the machine was
         // CREATED with, immune to caller-side mutation of the array.
-      })), { allowedDomains: spec.allowedDomains === undefined ? undefined : [...spec.allowedDomains] });
+      })), {
+        allowedDomains: spec.allowedDomains === undefined ? undefined : [...spec.allowedDomains],
+        port: parsePort(spec.env),
+      });
     },
     async resume(snapshotRef, policy?: SandboxResumePolicy) {
       const state = decodeSnapshotRef(snapshotRef);
@@ -375,7 +399,10 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
       return wrap(parseHandle(await sendJson("/resume", "POST", {
         ref: state.ref,
         ...(allowedDomains === undefined ? {} : { egress: [...allowedDomains] }),
-      })), { allowedDomains: allowedDomains === undefined ? undefined : [...allowedDomains] });
+      })), {
+        allowedDomains: allowedDomains === undefined ? undefined : [...allowedDomains],
+        port: state.port ?? CLOUD_BOX_PORT,
+      });
     },
     async destroy(snapshotRef) {
       const state = decodeSnapshotRef(snapshotRef);
