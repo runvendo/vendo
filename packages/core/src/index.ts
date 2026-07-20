@@ -17,6 +17,7 @@ export * from "./kit/index.js";
 export * from "./principal.js";
 export * from "./reshape.js";
 export * from "./run-context.js";
+export * from "./semantics.js";
 export * from "./shape.js";
 export * from "./sha256.js";
 export * from "./store.js";
