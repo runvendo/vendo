@@ -1569,12 +1569,17 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     expect(captured).not.toContain("LAST RESORT");
     expect(captured).toContain("covers the need");
     expect(captured).toContain("Never hardcode");
-    // vendo-v2-cells — the display-cell contract rides with the shapes:
-    // object cells project via template; date/cents display rides a Kit
-    // semantic component / format token or a legacy format step (W3).
+    // vendo-v2-cells — the display contract rides with the shapes: date/cents
+    // display rides a Kit semantic component / format token (W3).
     expect(captured).toContain("RESHAPE PIPES");
-    expect(captured).toContain("template(");
     expect(captured).toContain("is NOT optional");
+    // W5a dialect retirement — the prompt no longer teaches the deprecated
+    // micro-op dialect; the Kit's native props are the taught path.
+    expect(captured).not.toContain("asOptions");
+    expect(captured).not.toContain("currencyCents");
+    expect(captured).not.toContain("template(");
+    expect(captured).toContain("labelField");
+    expect(captured).toContain('format:"money"');
     // W3 — the COMPONENTS section is generated from the Kit specs.
     expect(captured).toContain("COMPONENTS (generated from the component schemas");
     expect(captured).toContain("<Money");
