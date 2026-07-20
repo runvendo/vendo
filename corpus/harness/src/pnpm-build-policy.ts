@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { pnpmMajorFromField } from "./local-pack.js";
 
 const CURATION_KEYS = ["onlyBuiltDependencies", "neverBuiltDependencies", "allowBuilds"] as const;
 
@@ -10,7 +11,16 @@ const CURATION_KEYS = ["onlyBuiltDependencies", "neverBuiltDependencies", "allow
  * newer allowBuilds map umami uses) or in the package.json `pnpm` field
  * (ENG-334). Shared by the bootstrap and post-injection install-command
  * paths so both respect a repo's own build policy instead of forcing
- * dangerouslyAllowAllBuilds on top of it. */
+ * dangerouslyAllowAllBuilds on top of it.
+ *
+ * The package.json `pnpm` field only counts under a packageManager pin ≤10:
+ * pnpm 11 silently ignores the field, so for a repo that will run pnpm ≥11 —
+ * a pin ≥11, or no pin at all (the harness environment provides pnpm 11,
+ * same convention as inject.ts's writeStandalonePnpmWorkspaceOverrides) — a
+ * legacy field is neither applied by pnpm nor in conflict with the blanket
+ * flag, and dropping dangerouslyAllowAllBuilds for it would leave the repo
+ * on pnpm 11's default build policy with required dependency builds skipped
+ * (corpus-triage review finding: cubic P1). */
 export async function pnpmDeclaresBuiltDependencies(installDir: string): Promise<boolean> {
   try {
     const source = await readFile(path.join(installDir, "pnpm-workspace.yaml"), "utf8");
@@ -20,8 +30,11 @@ export async function pnpmDeclaresBuiltDependencies(installDir: string): Promise
   }
   try {
     const pkg = JSON.parse(await readFile(path.join(installDir, "package.json"), "utf8")) as {
+      packageManager?: unknown;
       pnpm?: Record<string, unknown>;
     };
+    const pnpmMajor = pnpmMajorFromField(pkg.packageManager);
+    if (pnpmMajor === null || pnpmMajor >= 11) return false;
     return CURATION_KEYS.some((key) => pkg.pnpm?.[key] !== undefined);
   } catch {
     return false;

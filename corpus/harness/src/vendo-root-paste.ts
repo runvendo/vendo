@@ -10,6 +10,40 @@ export interface VendoRootPasteResult {
 
 const LAST_STEPS_HEADER = "Last steps are yours:";
 const WRAP_LINE = /…\s*then wrap:\s*(.+)$/;
+// Tolerates formatting whitespace — a layout rendering `{ children }` is as
+// paste-able as `{children}` (corpus-triage review finding: cubic P2).
+const CHILDREN_EXPRESSION = /\{\s*children\s*\}/g;
+// A module directive prologue line ('use client', "use strict", ...),
+// optionally carrying a trailing comment. Pasted imports must land AFTER it:
+// a directive preceded by an import is a no-op string literal, silently
+// demoting a client layout to a server component (corpus-triage review
+// finding: cubic P1; trailing comments + comment prefixes from the PR #441
+// review round).
+const DIRECTIVE_LINE = /^\s*(['"])use [a-z][a-z0-9 -]*\1;?\s*(?:\/\/.*|\/\*.*\*\/\s*)?$/;
+
+/** Index of the first line AFTER the module's directive prologue (0 when the
+ * file has none) — directives sit at the top, possibly preceded or separated
+ * by blank lines and comments (a license header before 'use client' is still
+ * a valid prologue), and end at the first line of real code. */
+function directivePrologueEnd(lines: readonly string[]): number {
+  let end = 0;
+  let inBlockComment = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = (lines[index] ?? "").trim();
+    if (inBlockComment) {
+      if (line.includes("*/")) inBlockComment = false;
+      continue;
+    }
+    if (line === "" || line.startsWith("//")) continue;
+    if (line.startsWith("/*")) {
+      if (!line.includes("*/")) inBlockComment = true;
+      continue;
+    }
+    if (!DIRECTIVE_LINE.test(line)) break;
+    end = index + 1;
+  }
+  return end;
+}
 
 /** The block init prints (see packages/vendo/src/cli/init.ts's
  * vendoRootPasteLines, wrapped by output.log under the "Last steps are
@@ -72,27 +106,33 @@ export async function applyVendoRootPaste(
   if (!wrapMatch) {
     throw new Error(`printed paste instructions did not include a "… then wrap:" line for ${app.layoutRel}`);
   }
-  if (!original.includes("{children}")) {
-    throw new Error(`${app.layoutRel} has no "{children}" expression for the printed wrap to replace`);
-  }
-
   const importLines = block
     .map((line) => line.trim())
     .filter((line) => line.startsWith("import "));
   const wrapExpression = (wrapMatch[1] ?? "").trim();
 
-  const withImports = importLines.length === 0 ? original : `${importLines.join("\n")}\n${original}`;
-  // Replace the LAST "{children}" occurrence, not the first: a spaceless
-  // destructure param — `function RootLayout({children}: ...)` — puts a
-  // "{children}" in the signature ahead of the JSX one we actually want to
-  // wrap (corpus-triage review finding #2).
-  const lastIndex = withImports.lastIndexOf("{children}");
+  let withImports = original;
+  if (importLines.length > 0) {
+    const eol = original.includes("\r\n") ? "\r\n" : "\n";
+    const lines = original.split(/\r?\n/);
+    const prologueEnd = directivePrologueEnd(lines);
+    withImports = [...lines.slice(0, prologueEnd), ...importLines, ...lines.slice(prologueEnd)].join(eol);
+  }
+  // Replace the LAST children occurrence, not the first: a destructure
+  // param — `function RootLayout({children}: ...)` — puts a "{children}"
+  // in the signature ahead of the JSX one we actually want to wrap
+  // (corpus-triage review finding #2). Matching withImports is equivalent to
+  // matching original — init's printed import lines never contain a children
+  // expression.
+  const occurrences = [...withImports.matchAll(CHILDREN_EXPRESSION)];
+  const last = occurrences[occurrences.length - 1];
+  if (last === undefined) {
+    throw new Error(`${app.layoutRel} has no "{children}" expression for the printed wrap to replace`);
+  }
   const pasted =
-    lastIndex === -1
-      ? withImports
-      : withImports.slice(0, lastIndex) +
-        wrapExpression +
-        withImports.slice(lastIndex + "{children}".length);
+    withImports.slice(0, last.index) +
+    wrapExpression +
+    withImports.slice(last.index + last[0].length);
   await writeFile(filePath, pasted, "utf8");
 
   return { applied: true, file: app.layoutRel, reason: "pasted the printed VendoRoot import(s) + wrap into the layout" };

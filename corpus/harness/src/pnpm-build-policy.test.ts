@@ -44,22 +44,67 @@ describe("pnpmDeclaresBuiltDependencies", () => {
     await expect(pnpmDeclaresBuiltDependencies(dir)).resolves.toBe(true);
   });
 
-  it("is true when package.json's pnpm field declares onlyBuiltDependencies", async () => {
+  it("is true when package.json's pnpm field declares onlyBuiltDependencies under a pnpm ≤10 pin", async () => {
     const dir = await makeTempRoot();
     await writeJson(path.join(dir, "package.json"), {
       name: "fixture",
+      packageManager: "pnpm@10.4.1",
       pnpm: { onlyBuiltDependencies: ["prisma"] },
     });
 
     await expect(pnpmDeclaresBuiltDependencies(dir)).resolves.toBe(true);
   });
 
-  it("is true when package.json's pnpm field declares neverBuiltDependencies", async () => {
+  it("is true when package.json's pnpm field declares neverBuiltDependencies under a pnpm ≤10 pin", async () => {
     const dir = await makeTempRoot();
     await writeJson(path.join(dir, "package.json"), {
       name: "fixture",
+      packageManager: "pnpm@10.4.1",
       pnpm: { neverBuiltDependencies: ["esbuild"] },
     });
+
+    await expect(pnpmDeclaresBuiltDependencies(dir)).resolves.toBe(true);
+  });
+
+  it("is true when package.json's pnpm field declares allowBuilds under a pnpm ≤10 pin", async () => {
+    const dir = await makeTempRoot();
+    await writeJson(path.join(dir, "package.json"), {
+      name: "fixture",
+      packageManager: "pnpm@10.4.1",
+      pnpm: { allowBuilds: { "@prisma/engines": true } },
+    });
+
+    await expect(pnpmDeclaresBuiltDependencies(dir)).resolves.toBe(true);
+  });
+
+  it("is false for package.json pnpm-field curation under a pnpm ≥11 pin — pnpm 11 ignores the field", async () => {
+    const dir = await makeTempRoot();
+    await writeJson(path.join(dir, "package.json"), {
+      name: "fixture",
+      packageManager: "pnpm@11.10.0",
+      pnpm: { onlyBuiltDependencies: ["prisma"] },
+    });
+
+    await expect(pnpmDeclaresBuiltDependencies(dir)).resolves.toBe(false);
+  });
+
+  it("is false for package.json pnpm-field curation with no packageManager pin — the harness environment runs pnpm 11", async () => {
+    const dir = await makeTempRoot();
+    await writeJson(path.join(dir, "package.json"), {
+      name: "fixture",
+      pnpm: { onlyBuiltDependencies: ["prisma"] },
+    });
+
+    await expect(pnpmDeclaresBuiltDependencies(dir)).resolves.toBe(false);
+  });
+
+  it("is true when pnpm-workspace.yaml curates builds regardless of the pnpm pin — every pnpm ≥10 reads the yaml", async () => {
+    const dir = await makeTempRoot();
+    await writeJson(path.join(dir, "package.json"), {
+      name: "fixture",
+      packageManager: "pnpm@11.10.0",
+    });
+    await writeFile(path.join(dir, "pnpm-workspace.yaml"), "packages:\n  - '.'\nonlyBuiltDependencies:\n  - prisma\n");
 
     await expect(pnpmDeclaresBuiltDependencies(dir)).resolves.toBe(true);
   });
