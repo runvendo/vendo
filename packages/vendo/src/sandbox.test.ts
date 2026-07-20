@@ -54,7 +54,8 @@ interface MockSnapshot {
 /** In-memory fake of the console's /api/v1/sandboxes surface, faithful to the
  * wire contract in sandbox-wire.ts (artifact model, verified live) — the ONE
  * place a Cloud-side change must land alongside the adapter. */
-function fakeConsole() {
+function fakeConsole(options: { mintUrl?: (id: string) => string } = {}) {
+  const mintUrl = options.mintUrl ?? ((id: string) => `https://${id.slice(2)}-m.vendo.run`);
   const requests: RecordedRequest[] = [];
   const machines = new Map<string, MockMachine>();
   const snapshots = new Map<string, MockSnapshot>();
@@ -96,7 +97,7 @@ function fakeConsole() {
         allowedDomains: body.egress === undefined ? undefined : [...body.egress],
         files: new Map(),
       });
-      return json({ id, url: `https://m-${id}.vendo.run` }, 201);
+      return json({ id, url: mintUrl(id) }, 201);
     }
     if (path === `${CLOUD_SANDBOX_PATH}/resume` && request.method === "POST") {
       const body = recorded.json as { ref: string; egress?: string[] };
@@ -113,7 +114,7 @@ function fakeConsole() {
         ...(snapshot.app === undefined ? {} : { app: snapshot.app }),
         files: new Map(snapshot.files),
       });
-      return json({ id, url: `https://m-${id}.vendo.run` });
+      return json({ id, url: mintUrl(id) });
     }
     const gc = new RegExp(`^${CLOUD_SANDBOX_PATH}/snapshots/([^/]+)$`).exec(path);
     if (gc && request.method === "DELETE") {
@@ -366,23 +367,31 @@ describe("cloudSandbox", () => {
       .rejects.toMatchObject({ code: "validation" });
   });
 
-  it("url() defaults to the app's $PORT and prefixes non-canonical ports onto the ingress host", async () => {
-    // Single-label scheme (locked 2026-07-20): the console mints
-    // `https://m-<id>.vendo.run` so the existing *.vendo.run Universal SSL
-    // cert covers it; port-prefixed labels stay single-label too
-    // (`https://<port>-m-<id>.vendo.run`).
+  it("url() defaults to the app's $PORT and inserts non-canonical ports before the -m suffix", async () => {
+    // Single-label scheme as SHIPPED by the console (vendo-web #85): the
+    // handle is `https://<id-suffix>-m.vendo.run` (-m is a SUFFIX — CF
+    // routes only allow leading wildcards, `*-m.vendo.run/*`), and other
+    // ports ride `https://<id-suffix>-<port>-m.vendo.run`, matching the
+    // machine-proxy parse `^([a-z0-9]{24})(?:-(port))?-m\.vendo\.run$`.
     const console_ = fakeConsole();
     const adapter = adapterFor(console_);
     const canonical = await adapter.create({ env: { PORT: "8080" } });
-    expect(await canonical.url()).toBe(`https://m-${canonical.id}.vendo.run`);
-    expect(await canonical.url(9090)).toBe(`https://9090-m-${canonical.id}.vendo.run`);
+    const suffix = (id: string) => id.slice(2);
+    expect(await canonical.url()).toBe(`https://${suffix(canonical.id)}-m.vendo.run`);
+    expect(await canonical.url(9090)).toBe(`https://${suffix(canonical.id)}-9090-m.vendo.run`);
 
     // An app listening elsewhere gets its OWN port surface by default, and
     // the $PORT rides refs so a resumed machine keeps it.
     const ported = await adapter.create({ env: { PORT: "9090" } });
-    expect(await ported.url()).toBe(`https://9090-m-${ported.id}.vendo.run`);
+    expect(await ported.url()).toBe(`https://${suffix(ported.id)}-9090-m.vendo.run`);
     const woken = await adapter.resume(await ported.snapshot());
-    expect(await woken.url()).toBe(`https://9090-m-${woken.id}.vendo.run`);
+    expect(await woken.url()).toBe(`https://${suffix(woken.id)}-9090-m.vendo.run`);
+
+    // A handle whose host does not end in a -m label (custom console,
+    // future shapes) falls back to the e2b-style port prefix.
+    const foreignConsole = fakeConsole({ mintUrl: (id) => `https://${id}.machines.example.dev` });
+    const foreign = await adapterFor(foreignConsole).create({ env: { PORT: "8080" } });
+    expect(await foreign.url(9090)).toBe(`https://9090-${foreign.id}.machines.example.dev`);
   });
 
   it("states the applicable allowlist explicitly on every resume — the wire inherits nothing", async () => {

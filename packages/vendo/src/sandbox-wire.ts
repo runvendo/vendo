@@ -50,16 +50,19 @@
  - exec/files also exist server-side (`POST /{id}/exec`,
  *   `GET|PUT /{id}/files?path=`, `GET /{id}/files/list?dir=`) — adapter-
  *   private, used for live-lane bootstrap and diagnostics only.
- * - ingress  the create/resume handle `url` (`https://m-<id>.vendo.run`,
- *   single-label scheme locked 2026-07-20) is the canonical-port public
- *   surface; `machine.url(port)` formats other ports as an e2b-style
- *   port-prefixed label on the same host (`https://<port>-m-<id>.vendo.run`),
- *   still single-label. Single-label hosts ride the existing `*.vendo.run`
- *   Universal SSL cert — no advanced certificate needed (live-verified
- *   2026-07-20: TLS fails on `test123.m.vendo.run`, succeeds on
- *   `m-test123.vendo.run`, which answers a JSON 404 for the unknown id).
- *   The console mints `url`, so the hostname shape is console-side; this
- *   adapter echoes whatever handle it is given.
+ * - ingress  the create/resume handle `url`
+ *   (`https://<id-suffix>-m.vendo.run`, single-label scheme SHIPPED by
+ *   vendo-web #85 on 2026-07-20; the -m is a SUFFIX, not a prefix —
+ *   Cloudflare worker routes only allow leading wildcards, so the route is
+ *   `*-m.vendo.run/*`) is the canonical-port public surface;
+ *   `machine.url(port)` inserts other ports before the suffix
+ *   (`https://<id-suffix>-<port>-m.vendo.run`), matching the machine-proxy
+ *   parse `^([a-z0-9]{24})(?:-(port))?-m\.vendo\.run$`. Single-label hosts
+ *   ride the existing `*.vendo.run` Universal SSL cert — no advanced
+ *   certificate needed (live-verified 2026-07-20: TLS fails on the legacy
+ *   dot shape `test123.m.vendo.run`, succeeds single-label; unknown ids
+ *   answer a JSON 404). The console mints `url`, so the hostname shape is
+ *   console-side; this adapter echoes whatever handle it is given.
  *
  * Adapter mapping:
  * - `machine.snapshot()` = the artifact mint, wrapped in the adapter's
@@ -98,5 +101,6 @@ export const CLOUD_SNAPSHOT_REF_PREFIX = "vendo:v2:";
 export const CONSOLE_SNAPSHOT_REF_PREFIX = "vendo:";
 
 /** The canonical box port the relay targets when no port rides the wire
- * (and the one the public ingress `https://m-<id>.vendo.run` serves). */
+ * (and the one the public ingress `https://<id-suffix>-m.vendo.run`
+ * serves). */
 export const CLOUD_BOX_PORT = 8080;
