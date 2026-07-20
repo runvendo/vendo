@@ -912,7 +912,7 @@ export const regionParallelCreate = async (
     const inner = innerAppMarkup(text);
     if (inner === undefined) return;
     landed[index] = inner;
-    context.deps.onTiming?.({ lane: "section", phase: "complete", atMs: Date.now() - context.startedAt, thinking: false });
+    // (streamWire already emits the lane:"section" complete timing event.)
     hooks.emitPartial?.(assemble());
   }));
   const landedCount = landed.filter((part) => part !== undefined).length;
