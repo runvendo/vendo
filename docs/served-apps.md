@@ -41,6 +41,12 @@ same `/fn` and callback seams as layer 2.
 The machine sleeps again after the idle timeout. The next `open()` wakes it;
 the wake latency is the loading state.
 
+The served URL is not stable across wakes: a resume boots a fresh provider
+machine with a new id, so every wake mints a new public ingress URL. Treat
+the URL from `open()` as valid for the current wake only. Never bookmark it,
+store it in app data, or hand it to another user; the app surface is always
+reached through `open()`.
+
 ## Theming handoff
 
 The host theme rides the served URL as a `vendoTheme` query parameter: the

@@ -21,7 +21,7 @@ export function createVendo(config: {
   auth?: HostAuthPreset;                      // one preset fills principal + actAs + oauth; see /connect/act-as-presets
   principal?: (req: Request) => Promise<Principal | null>;   // escape hatch, mutually exclusive with auth; null → ephemeral anonymous
   store?: VendoStore;                         // default: createStore() (PGlite, .vendo/data)
-  sandbox?: SandboxAdapter;                   // e.g. vendoSandbox(), e2bSandbox({ apiKey }); absent → rung 1 only
+  sandbox?: SandboxAdapter;                   // e.g. cloudSandbox({ apiKey }), e2bSandbox({ apiKey }); absent → tree-only apps
   catalog?: ComponentCatalog | ComponentRegistry; // host components exposed to the generation prompt; see /connect/host-components
   connectors?: Connector[];
   actAs?: ActAs;                              // escape hatch, mutually exclusive with auth
