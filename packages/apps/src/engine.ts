@@ -250,6 +250,18 @@ ${pinBaselinesPrompt(deps.pinBaselines)}
 - After a slot is forked, edit its named generated component by re-declaring <Island name="componentName">...full source...</Island> while preserving the pin. Never reproduce or alter a baseline hash yourself.`,
 }];
 
+/** W3 — the COMPONENTS section is GENERATED from the component schemas
+ *  (kitPrompt over the Kit specs + the legacy primitive signatures); no
+ *  hand-written component list survives here. Deps-independent, so it is
+ *  rendered once per process (perf budget: gen-scripted:create). */
+let componentsPromptCache: string | undefined;
+const componentsPromptSection = (): string => componentsPromptCache ??= `COMPONENTS (generated from the component schemas — use these EXACT component and prop names; an unknown prop is silently dropped and fails validation):
+
+${kitPrompt({ only: [...KIT_WIRE_COMPONENT_NAMES] })}
+
+# Legacy primitives (also available)
+${prewiredSchemaPrompt()}`;
+
 /** v2 spec §2 — the JSX-wire create contract. The model emits markup, never
  *  JSON; the deterministic compiler owns ids, bindings, and validation. */
 const wireContractSections = (deps: GenerationDependencies): GenerationPromptSection[] => [{
@@ -272,15 +284,7 @@ const wireContractSections = (deps: GenerationDependencies): GenerationPromptSec
 - Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} islands, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per island, ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes of island source total.`,
 }, {
   id: "prewired-props",
-  // W3 — the COMPONENTS section is GENERATED from the component schemas
-  // (kitPrompt over the Kit specs + the legacy primitive signatures); no
-  // hand-written component list survives here.
-  content: `COMPONENTS (generated from the component schemas — use these EXACT component and prop names; an unknown prop is silently dropped and fails validation):
-
-${kitPrompt({ only: [...KIT_WIRE_COMPONENT_NAMES] })}
-
-# Legacy primitives (also available)
-${prewiredSchemaPrompt()}`,
+  content: componentsPromptSection(),
 }, ...hostToolSections(deps),
 ...generationPromptSections(deps).filter(({ id }) =>
   id === "component-styling" || id === "catalog" || id === "theme" || id === "design-rules")];
@@ -883,7 +887,13 @@ const actionIssues = (tree: TreeV2, tools: readonly HostToolInfo[] | undefined):
       return `node "${fault.nodeId}" prop "${fault.prop}" invokes unknown tool "${fault.action}" — law 2: an action must name a REAL host tool from the HOST TOOLS list (or fn:<name>). Pick the real tool, or render an honest disclaimer if the host has none.`;
     }
     if (fault.kind === "ungrounded-payload") {
-      return `node "${fault.nodeId}" prop "${fault.prop}" sends tool "${fault.action}" payload field(s) ${(fault.unknownFields ?? []).map((field) => `"${field}"`).join(", ")} it does not declare — law 2: payload fields must be the tool's real input parameters (${(fault.allowedFields ?? []).join(", ")}).`;
+      const unknown = fault.unknownFields ?? [];
+      const missing = fault.missingFields ?? [];
+      const parts = [
+        ...(unknown.length === 0 ? [] : [`sends payload field(s) ${unknown.map((field) => `"${field}"`).join(", ")} the tool does not declare`]),
+        ...(missing.length === 0 ? [] : [`omits the tool's REQUIRED input parameter(s) ${missing.map((field) => `"${field}"`).join(", ")}`]),
+      ];
+      return `node "${fault.nodeId}" prop "${fault.prop}" invokes tool "${fault.action}" but ${parts.join(" and ")} — law 2: the payload must carry exactly the tool's real input parameters (${(fault.allowedFields ?? []).join(", ")}).`;
     }
     return `node "${fault.nodeId}" submit affordance ("${fault.label}") prop "${fault.prop}" is wired to read-only tool "${fault.action}" — a submit that only reads is a fake affordance. Wire it to a mutating host tool with a payload, or render an honest disclaimer if the host has none.`;
   });

@@ -71,7 +71,10 @@ export const semanticsFileSchema = z.object({
 // ---------------------------------------------------------------------------
 
 const CENTS_NAME = /cents$/i;
-const MONEY_NAME = /(amount|balance|total|price|cost|fee|revenue|spend|paid|budget)/i;
+// "total" alone is NOT a money signal: documentsTotal / clientsTotal /
+// pagination totals are counts (cubic P1 on the Cadence artifact). A total
+// classifies as money only through a money token (totalAmount, totalCents).
+const MONEY_NAME = /(amount|balance|price|cost|fee|revenue|spend|paid|budget)/i;
 const NOT_MONEY_NAME = /(count|qty|quantity|number|num$|id$|rate|ratio|pct|percent)/i;
 const DATE_NAME = /(date|time|timestamp|at)$/i;
 const ID_NAME = /^id$|(.)Id$|_id$/;

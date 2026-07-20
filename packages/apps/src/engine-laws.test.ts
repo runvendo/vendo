@@ -185,6 +185,23 @@ describe("law 2 — actions ground in the real tool surface", () => {
     expect(prompts[1]).toContain("unknown tool");
   });
 
+  it("rejects a nonempty payload that omits the tool's REQUIRED input parameters (cubic P1)", async () => {
+    const partial = '<App name="Act"><Query id="metric" tool="host_metric"/><Button label="Send reminder" onClick={{"action":"host_send_reminder","payload":{"note":{"$path":"/metric/rows/0/client"}}}}/></App>';
+    const complete = '<App name="Act"><Query id="metric" tool="host_metric"/><Button label="Send reminder" onClick={{"action":"host_send_reminder","payload":{"invoiceId":{"$path":"/metric/rows/0/id"}}}}/></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? partial : complete;
+    });
+    await modelEngine.create(
+      { prompt: "Remind" },
+      deps(model, { pipeline: { structuredRepair: false } }),
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("invoiceId");
+    expect(prompts[1]).toMatch(/required/i);
+  });
+
   it("rejects a payload whose fields are not the tool's real input parameters", async () => {
     const ungrounded = '<App name="Act"><Query id="metric" tool="host_metric"/><Button label="Send reminder" onClick={{"action":"host_send_reminder","payload":{"bogusField":{"$path":"/metric/count"}}}}/></App>';
     const grounded = '<App name="Act"><Query id="metric" tool="host_metric"/><Button label="Send reminder" onClick={{"action":"host_send_reminder","payload":{"invoiceId":{"$path":"/metric/rows/0/id"}}}}/></App>';
