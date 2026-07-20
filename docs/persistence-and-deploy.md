@@ -3,6 +3,12 @@
 Vendo uses Postgres only. Development defaults to embedded PGlite at
 `.vendo/data`; production points the same schema at Postgres.
 
+One exception to that default: with `VENDO_API_KEY` set and no `store` passed
+to `createVendo`, the composition fills the store slot with the Cloud hosted
+store — threads, apps, records, grants, and audit then persist in Vendo
+Cloud, not locally. Pass `store: createStore(...)` to keep data local; an
+explicitly passed store always wins over the Cloud default.
+
 ## Store configuration
 
 ```ts
