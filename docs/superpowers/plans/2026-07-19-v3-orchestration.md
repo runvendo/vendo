@@ -11,10 +11,10 @@ workers self-triage AI reviewers + self-merge green PRs (standing authorization)
 | Lane | Worktree/branch (vendo-*) | Scope | Depends on | Status |
 |---|---|---|---|---|
 | W0 | w0-engine | approve→resume stall fix + e2e; freeze eval corpus | — | MERGED #412 |
-| W1 | w1-bench | measurements → VERDICTS.md | — | PR #414 green, in train |
+| W1 | w1-bench | measurements → VERDICTS.md | — | MERGED #414 |
 | W2 | w2-kit | the Kit: 31 components, superset | — | MERGED #415 |
 | W4a | w4-pipeline | structured repair ON (14.6s→1.4-3.1s) + region-parallel FLAGGED OFF + end pass opt-in | — | MERGED #417 |
-| W3 | w3-semantics | semantic sync + laws + inline refs adoption | W2 ✅ (+#414 for inline proto) | DISPATCHED |
+| W3 | w3-semantics | semantics.json both hosts + domain manifests + law1/law2 checks + inline refs ADOPTED | — | MERGED #425+#432 |
 | W4b | w4-islands | islands ambient scope + ambient tools + manifest | W2 ✅ | DISPATCHED |
 | W5 | (create: w5-regate) | dialect retirement + FINAL frozen-30 + 10 fresh gate + report | all merged | pending |
 
@@ -41,3 +41,10 @@ Exp2 builder-calls DEFER (composition survives, ref-error-free 65% vs 33%, but 4
 Exp3 fetch-then-generate DEFER (binding-err 0.00 but compile-ok 81% — prose refusals on negatives; revisit behind repair+Disclaimer-forcing);
 Exp4 CFG DEFER (wire-subset.lark + 1-day GPU protocol delivered — owned-serving evidence line).
 Cross-lane: both arms over-bind ~1 field/app at base — structured repair (W4a) is the designed fix.
+
+## W3 MERGED 2026-07-20 (#425 + #432): .vendo/semantics.json both hosts (money.cents/date.iso/enums/ids
++ has/hasNot domain manifests); law-1 literal-data compile rejection (routes to structured repair);
+law-2 payload = tool's exact required params + literal query inputs; inline refs ON in production
+(inlineTools extension for single-segment names; <Query> still accepted); kitPrompt hoisted to core;
+live 5/6 PASS + 1 PARTIAL-honest. CAVEAT for W4b: island names can't shadow Kit names anymore (forwarded).
+Remaining: W4b (running) → W5 (retirement + frozen-30 final gate + report).
