@@ -141,7 +141,7 @@ export {
   type CloudConnectionsOptions,
   type ConnectionsService,
 } from "./connections.js";
-import { cloudSandbox, type V1CloudSandboxAdapter } from "./sandbox.js";
+import { cloudSandbox } from "./sandbox.js";
 // The Cloud sandbox adapter rides the server surface like the connections
 // adapters: a host can pass it explicitly via createVendo({ sandbox }) with
 // its own options instead of relying on the VENDO_API_KEY default.
@@ -232,7 +232,7 @@ export interface CreateVendoConfig {
       mirror the client-side components map 1:1. */
   catalog?: ComponentCatalog | ComponentRegistry;
   store?: VendoStore;
-  sandbox?: SandboxAdapter | V1CloudSandboxAdapter;
+  sandbox?: SandboxAdapter;
   connectors?: Connector[];
   /** 04-actions §3 — an explicit connections adapter; always wins over the
       defaults (precedence: selectConnections). */
@@ -347,8 +347,8 @@ const DEFAULT_TOOL_OUTPUT_CAP = 32_000;
     sandbox env is present, so setting a Vendo key never shadows an existing
     provider account. (The v1 Modal adapter is retired with the execution-v2
     seam; Modal can return behind the same seam later.) */
-function selectSandbox(configured: SandboxAdapter | V1CloudSandboxAdapter | undefined): {
-  adapter: SandboxAdapter | V1CloudSandboxAdapter | undefined;
+function selectSandbox(configured: SandboxAdapter | undefined): {
+  adapter: SandboxAdapter | undefined;
   venue: SandboxVenue;
 } {
   if (configured !== undefined) return { adapter: configured, venue: "custom" };
@@ -1101,13 +1101,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
     secrets: config.secrets ?? envSecrets(),
-    // execution-v2 — the machine lifecycle's seams: the selected adapter when
-    // it speaks the canonical v2 seam (destroy-by-ref is the marker the
-    // @deprecated v1-only cloudSandbox lacks — a v1-only adapter gets no
-    // machine lifecycle until its Wave 5 port) and Lane C's env assembly. The
-    // box template (Node + the in-box agent harness) is set by VENDO_BOX_TEMPLATE.
+    // execution-v2 — the machine lifecycle's seams: the selected v2 adapter
+    // (every provider speaks the canonical seam since the Wave 5 Cloud port)
+    // and Lane C's env assembly. The box template (Node + the in-box agent
+    // harness) is set by VENDO_BOX_TEMPLATE.
     machine: {
-      ...(sandbox.adapter !== undefined && "destroy" in sandbox.adapter ? { sandbox: sandbox.adapter } : {}),
+      ...(sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter }),
       buildEnv: machineEnv,
       implicitDomains: implicitMachineDomains(),
       ...(environment("VENDO_BOX_TEMPLATE") === undefined ? {} : { template: environment("VENDO_BOX_TEMPLATE") }),
