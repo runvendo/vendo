@@ -211,7 +211,9 @@ describe("generation engine through createApps", () => {
   it("exempts path, state, and action bindings while validating the remaining host props", async () => {
     const boundProps = [
       '<App name="Bound metric"><Query id="headline" tool="host_headline"/>',
-      '<MetricCard label={headline.label} value={state.selectedValue} onSelect="selectMetric"/></App>',
+      // The action names a REAL registry tool — an invented one is a law-2
+      // unknown-tool error since W3 (covered in engine-laws.test.ts).
+      '<MetricCard label={headline.label} value={state.selectedValue} onSelect="host_headline"/></App>',
     ].join("");
     const bindingTools: ToolRegistry = {
       async descriptors() {

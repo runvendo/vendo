@@ -14,6 +14,7 @@ import {
   compileWireV2,
   describeShapeWithSemantics,
   kitPrompt,
+  kitSpec,
   JAIL_ALLOWED_MODULES,
   shapeAtPointer,
   printWireV2,
@@ -36,6 +37,7 @@ import {
   actionFaults,
   endPass,
   extractEdit,
+  literalDataFaults,
   regionParallelCreate,
   structuredRepair,
   type PipelineConfig,
@@ -555,6 +557,49 @@ const bindingKindIssues = (
   return issues;
 };
 
+/** W3 law 1 raw typing — probe values per shape kind, parsed against the Kit
+ *  prop's zod schema. Kind-level only: a string-shaped field bound into
+ *  Money.cents fails (pre-formatted money strings never reach a numeric
+ *  slot); unknown shapes stay silent. */
+const KIND_PROBES: Partial<Record<ShapeType["kind"], unknown>> = {
+  string: "probe",
+  number: 1,
+  boolean: true,
+  array: [],
+  object: {},
+};
+
+const KIT_WIRE_SET: ReadonlySet<string> = new Set(KIT_WIRE_COMPONENT_NAMES);
+
+const kitSlotIssues = (compiled: WireCompileResult, deps: GenerationDependencies): string[] => {
+  if (deps.toolShapes === undefined) return [];
+  const issues: string[] = [];
+  const queryTool = new Map((compiled.tree.queries ?? []).map((query) => [query.name, query.tool]));
+  for (const node of compiled.tree.nodes) {
+    if (node.source === "host" || node.source === "generated" || node.props === undefined) continue;
+    if (!KIT_WIRE_SET.has(node.component)) continue;
+    const spec = kitSpec(node.component);
+    if (spec === undefined) continue;
+    for (const [prop, value] of Object.entries(node.props)) {
+      if (!isPathBinding(value) || "$reshape" in (value as unknown as Record<string, unknown>)) continue;
+      const propSpec = spec.props[prop];
+      if (propSpec === undefined) continue;
+      const [, queryName = "", ...rest] = value.$path.split("/");
+      const tool = queryTool.get(queryName);
+      const shape = tool === undefined ? undefined : deps.toolShapes[tool];
+      if (shape === undefined) continue;
+      const bound = shapeAtPointer(shape, rest.length === 0 ? "" : `/${rest.join("/")}`);
+      if (bound === undefined || bound.kind === "json" || bound.kind === "null") continue;
+      const probe = KIND_PROBES[bound.kind];
+      if (probe === undefined) continue;
+      if (!propSpec.schema.safeParse(probe).success) {
+        issues.push(`node "${node.id}" prop "${prop}" on <${node.component}> binds ${value.$path}, a ${bound.kind} field, but this slot takes a different RAW type (${propSpec.doc}) — bind the raw field with that type (e.g. the integer-cents field, not a pre-formatted display string).`);
+      }
+    }
+  }
+  return issues;
+};
+
 /** verify-v2 fixes — models write "Total: {metric.total}" inside STRING
  *  attributes; the wire has no string interpolation, so the braces render
  *  literally. Any string prop embedding a declared query reference is a
@@ -614,8 +659,14 @@ const validateCompiledCreate = async (
   issues.push(...compiled.bindingErrors.map((error) =>
     `binding ${error.path} on node "${error.nodeId}" prop "${error.prop}": ${error.message}${error.available === undefined ? "" : ` (available: ${error.available.join(", ")})`}`));
   issues.push(...bindingKindIssues(compiled, deps));
+  issues.push(...kitSlotIssues(compiled, deps));
   issues.push(...interpolationIssues(compiled));
   issues.push(...await catalogIssues(compiled.tree, components, deps.catalog));
+  // Law 1 is checkable only when a tool surface exists to trace data to —
+  // a tool-less composition (fresh init, bare tests) has nothing to bind.
+  if (deps.tools !== undefined && deps.tools.length > 0) {
+    issues.push(...literalDataIssues(compiled.tree, deps.catalog));
+  }
   issues.push(...actionIssues(compiled.tree, deps.tools));
   issues.push(...rootedRenderIssues(compiled.tree));
   if (issues.length > 0) return { issues };
@@ -758,13 +809,26 @@ const catalogIssues = async (
 const actionIssues = (tree: TreeV2, tools: readonly HostToolInfo[] | undefined): string[] =>
   actionFaults(tree, tools).map((fault) => {
     if (fault.kind === "dead-submit") {
-      return `node "${fault.nodeId}" is a submit button ("${fault.label}") with no action — a button that does nothing is a fake affordance. Wire its onClick to a host tool that performs the action, binding the form/row context into payload; or if NO host tool can perform it, replace the button with an honest Text/Badge disclaimer that the action isn't available.`;
+      return `node "${fault.nodeId}" is a submit affordance ("${fault.label}") with no action — a submit that does nothing is a fake affordance. Wire its action to a host tool that performs it, binding the form/row context into payload; or if NO host tool can perform it, replace it with an honest disclaimer that the action isn't available.`;
     }
     if (fault.kind === "missing-payload") {
       return `node "${fault.nodeId}" prop "${fault.prop}" invokes mutating tool "${fault.action}" with no payload — bind the context it acts on (a per-row id, or the form field values) into payload:{...} so the action has something to change.`;
     }
-    return `node "${fault.nodeId}" submit button ("${fault.label}") prop "${fault.prop}" is wired to read-only tool "${fault.action}" — a submit that only reads is a fake affordance. Wire it to a mutating host tool with a payload, or render an honest disclaimer if the host has none.`;
+    if (fault.kind === "unknown-tool") {
+      return `node "${fault.nodeId}" prop "${fault.prop}" invokes unknown tool "${fault.action}" — law 2: an action must name a REAL host tool from the HOST TOOLS list (or fn:<name>). Pick the real tool, or render an honest disclaimer if the host has none.`;
+    }
+    if (fault.kind === "ungrounded-payload") {
+      return `node "${fault.nodeId}" prop "${fault.prop}" sends tool "${fault.action}" payload field(s) ${(fault.unknownFields ?? []).map((field) => `"${field}"`).join(", ")} it does not declare — law 2: payload fields must be the tool's real input parameters (${(fault.allowedFields ?? []).join(", ")}).`;
+    }
+    return `node "${fault.nodeId}" submit affordance ("${fault.label}") prop "${fault.prop}" is wired to read-only tool "${fault.action}" — a submit that only reads is a fake affordance. Wire it to a mutating host tool with a payload, or render an honest disclaimer if the host has none.`;
   });
+
+/** W3 law 1 — hand-typed business data on a data-classed prop (Kit prop
+ *  classes, legacy data props, host catalog schemas). Detection lives in
+ *  pipeline.ts (shared with the structured-repair fix space). */
+const literalDataIssues = (tree: TreeV2, catalog: NormalizedCatalog): string[] =>
+  literalDataFaults(tree, catalog).map((fault) =>
+    `node "${fault.nodeId}" prop "${fault.prop}" on <${fault.component}> carries hand-typed LITERAL business data — law 1: every data-classed prop must be a binding to a tool result, e.g. ${fault.prop}={queryName.field.path}. If NO host tool provides this data, render an honest <Disclaimer reason="..."/> instead — never invent figures.`);
 
 export const distinctIssues = (current: string[], next: string[]): string[] => [
   ...new Set([...current, ...next]),
@@ -832,12 +896,14 @@ const validateEditedApp = async (
   const sourceCatalogIssues = sourceTreeValidation.ok
     ? new Set([
       ...await catalogIssues(sourceTreeValidation.tree, source.components, deps.catalog),
+      ...literalDataIssues(sourceTreeValidation.tree, deps.catalog),
       ...actionIssues(sourceTreeValidation.tree, deps.tools),
     ])
     : new Set<string>();
   return [
     ...rootedRenderIssues(treeValidation.tree).filter((issue) => !sourceRenderIssues.has(issue)),
     ...(await catalogIssues(treeValidation.tree, app.components, deps.catalog)).filter((issue) => !sourceCatalogIssues.has(issue)),
+    ...literalDataIssues(treeValidation.tree, deps.catalog).filter((issue) => !sourceCatalogIssues.has(issue)),
     ...actionIssues(treeValidation.tree, deps.tools).filter((issue) => !sourceCatalogIssues.has(issue)),
   ];
 };
