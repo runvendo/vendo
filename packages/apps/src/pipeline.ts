@@ -115,6 +115,8 @@ export interface ActionFault {
   unknownFields?: string[];
   /** ungrounded-payload — the tool's real input parameter names. */
   allowedFields?: string[];
+  /** ungrounded-payload — REQUIRED input parameters absent from the payload. */
+  missingFields?: string[];
 }
 
 export const actionFaults = (
@@ -150,7 +152,9 @@ export const actionFaults = (
       if (submitLike && tool.risk === "read") {
         faults.push({ nodeId: node.id, kind: "read-only-submit", prop, action, label });
       }
-      // W3 law 2 — payload fields must be the tool's real input parameters.
+      // W3 law 2 — payload fields must be the tool's real input parameters,
+      // and every REQUIRED parameter must be present (a nonempty partial
+      // payload would otherwise invoke the tool without e.g. its invoiceId).
       if (hasPayload(payload) && isRecord(payload)) {
         const schema = tool.inputSchema;
         const properties = isRecord(schema) && isRecord(schema.properties) ? schema.properties : undefined;
@@ -158,8 +162,12 @@ export const actionFaults = (
         if (properties !== undefined && !open) {
           const allowed = Object.keys(properties);
           const unknown = Object.keys(payload).filter((field) => !allowed.includes(field));
-          if (unknown.length > 0) {
-            faults.push({ nodeId: node.id, kind: "ungrounded-payload", prop, action, unknownFields: unknown, allowedFields: allowed });
+          const required = isRecord(schema) && Array.isArray(schema.required)
+            ? schema.required.filter((field): field is string => typeof field === "string")
+            : [];
+          const missing = required.filter((field) => !(field in payload));
+          if (unknown.length > 0 || missing.length > 0) {
+            faults.push({ nodeId: node.id, kind: "ungrounded-payload", prop, action, unknownFields: unknown, allowedFields: allowed, missingFields: missing });
           }
         }
       }

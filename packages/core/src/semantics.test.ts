@@ -62,6 +62,16 @@ describe("inferToolSemantics", () => {
     expect(inferToolSemantics([{ balance: 123456 }])["balance"]).toEqual({ kind: "money", unit: "cents" });
   });
 
+  it("never classifies bare *Total / total count fields as money (cubic P1: documentsTotal, clientsTotal, pagination total are counts)", () => {
+    const inferred = inferToolSemantics([{ documentsTotal: 55, clientsTotal: 12, total: 30 }]);
+    expect(inferred["documentsTotal"]).toBeUndefined();
+    expect(inferred["clientsTotal"]).toBeUndefined();
+    expect(inferred["total"]).toBeUndefined();
+    // Money-token totals still classify.
+    expect(inferToolSemantics([{ totalAmount: 123456 }])["totalAmount"]).toEqual({ kind: "money", unit: "cents" });
+    expect(inferToolSemantics([{ totalCents: 123456 }])["totalCents"]).toEqual({ kind: "money", unit: "cents" });
+  });
+
   it("never classifies mixed-type or free-text fields", () => {
     const inferred = inferToolSemantics([{ status: "This invoice is very overdue indeed" }]);
     expect(inferred["status"]).toBeUndefined();

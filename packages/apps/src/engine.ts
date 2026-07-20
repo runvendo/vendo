@@ -883,7 +883,13 @@ const actionIssues = (tree: TreeV2, tools: readonly HostToolInfo[] | undefined):
       return `node "${fault.nodeId}" prop "${fault.prop}" invokes unknown tool "${fault.action}" — law 2: an action must name a REAL host tool from the HOST TOOLS list (or fn:<name>). Pick the real tool, or render an honest disclaimer if the host has none.`;
     }
     if (fault.kind === "ungrounded-payload") {
-      return `node "${fault.nodeId}" prop "${fault.prop}" sends tool "${fault.action}" payload field(s) ${(fault.unknownFields ?? []).map((field) => `"${field}"`).join(", ")} it does not declare — law 2: payload fields must be the tool's real input parameters (${(fault.allowedFields ?? []).join(", ")}).`;
+      const unknown = fault.unknownFields ?? [];
+      const missing = fault.missingFields ?? [];
+      const parts = [
+        ...(unknown.length === 0 ? [] : [`sends payload field(s) ${unknown.map((field) => `"${field}"`).join(", ")} the tool does not declare`]),
+        ...(missing.length === 0 ? [] : [`omits the tool's REQUIRED input parameter(s) ${missing.map((field) => `"${field}"`).join(", ")}`]),
+      ];
+      return `node "${fault.nodeId}" prop "${fault.prop}" invokes tool "${fault.action}" but ${parts.join(" and ")} — law 2: the payload must carry exactly the tool's real input parameters (${(fault.allowedFields ?? []).join(", ")}).`;
     }
     return `node "${fault.nodeId}" submit affordance ("${fault.label}") prop "${fault.prop}" is wired to read-only tool "${fault.action}" — a submit that only reads is a fake affordance. Wire it to a mutating host tool with a payload, or render an honest disclaimer if the host has none.`;
   });

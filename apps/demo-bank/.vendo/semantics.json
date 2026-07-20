@@ -195,10 +195,6 @@
       "data.data.recurringId": {
         "kind": "id",
         "entity": "recurring"
-      },
-      "data.total": {
-        "kind": "money",
-        "unit": "cents"
       }
     }
   },
