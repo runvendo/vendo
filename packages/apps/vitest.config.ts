@@ -6,7 +6,14 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "json-summary"],
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.{ts,tsx}", "src/**/*.test-util.{ts,tsx}"],
+      exclude: [
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.test-util.{ts,tsx}",
+        // W1-bench harness (docs/verification/w1-bench): measurement code
+        // exercised only by live *.bench.test.ts runs (skipped without a key),
+        // so it must not count against the product coverage floor.
+        "src/bench/**",
+      ],
       // Ratcheted line-coverage floor (ENG-255): set at/just below the measured
       // value so it can only rise. Regression below this fails CI.
       thresholds: { lines: 88 },
