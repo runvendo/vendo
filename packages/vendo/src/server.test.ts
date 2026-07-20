@@ -1747,9 +1747,9 @@ describe("09 §2 apps composition", () => {
       entries: [{
         name: "DiskMetric",
         exportPath: "./src/disk-metric.tsx#DiskMetric",
-        // "level" (config-ish) — a number prop named "value" is data-classed since
-        // W3 law 1 and a literal there is a compile error by design.
-        propsSchema: { type: "object", properties: { level: { type: "number" } }, required: ["level"], additionalProperties: false },
+        // "value" stays: this test binds it (law 1 exempts bindings); the
+        // literal-violation arm below is doubly illegal (ajv + law 1).
+        propsSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"], additionalProperties: false },
         description: "Use for a metric loaded from the generated catalog.",
         source: "scanned",
       }],
