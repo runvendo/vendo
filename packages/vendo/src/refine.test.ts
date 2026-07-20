@@ -356,6 +356,29 @@ describe("runRefine — inputs reach the model", () => {
     expect(prompt.sourceFiles.some((file) => file.path === "src/server/tasks.ts")).toBe(true);
     expect(prompt.tools.find((tool) => tool.name === "host_debugDump")?.disabled).toBe(true);
   });
+
+  it("maxMisses: 0 suppresses the miss feed entirely — slice(-0) must not include every miss", async () => {
+    // -0 === 0, so misses.slice(-maxMisses) with maxMisses 0 is slice(0):
+    // the ENTIRE feed, the exact opposite of a zero cap. A hosted caller
+    // passing 0 to suppress the feed must get an empty prompt section.
+    const miss = {
+      format: "vendo/capability-miss@1",
+      id: "mis_1",
+      at: "2026-07-15T00:00:00.000Z",
+      hostId: "host_1",
+      sessionId: "session_1",
+      intent: "complete every overdue task at once",
+      surface: { format: "vendo/tools@1", hash: `sha256:${"0".repeat(64)}` },
+      trigger: { kind: "no-matching-tool", toolsConsidered: ["host_completeTask"] },
+    };
+    const root = await makeRoot({ ".vendo/data/misses.jsonl": `${JSON.stringify(miss)}\n` });
+    const model = proposalModel({});
+    await runRefine({ root, model, interview: [], maxMisses: 0 });
+
+    expect(model.prompts).toHaveLength(1);
+    const prompt = JSON.parse(model.prompts[0]!) as { capabilityMisses: unknown[] };
+    expect(prompt.capabilityMisses).toEqual([]);
+  });
 });
 
 describe("runRefine — probe against the running dev app", () => {

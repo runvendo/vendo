@@ -20,14 +20,14 @@ const ESC = "\u001b";
 const style = (open: string, close: string) => (text: string): string =>
   `${ESC}[${open}m${text}${ESC}[${close}m`;
 
-export const bold = style("1", "22");
-export const dim = style("2", "22");
-export const red = style("31", "39");
-export const green = style("32", "39");
-export const yellow = style("33", "39");
-export const blue = style("34", "39");
-export const cyan = style("36", "39");
-export const brightCyan = style("96", "39");
+const bold = style("1", "22");
+const dim = style("2", "22");
+const red = style("31", "39");
+const green = style("32", "39");
+const yellow = style("33", "39");
+const blue = style("34", "39");
+const cyan = style("36", "39");
+const brightCyan = style("96", "39");
 
 /** TTY + no opt-outs → the pretty renderer; anything else keeps plain output.
     NO_COLOR and CI follow the "present and non-empty" convention. */

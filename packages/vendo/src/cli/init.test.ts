@@ -893,6 +893,35 @@ describe("vendo init (zero-question)", () => {
     expect(rewired).toContain("serverActions,");
   });
 
+  it("leaves a hand-customized route that passes its own serverActions untouched (no conflicting import)", async () => {
+    const root = await fixture();
+    const routeDir = join(root, "app", "api", "vendo", "[...vendo]");
+    await mkdir(routeDir, { recursive: true });
+    // A host that relocated the map: local `const serverActions` passed to
+    // createVendo. Injecting `import { serverActions } from "./vendo-actions"`
+    // here would conflict with the local declaration and break the build.
+    const custom = [
+      'import { createVendo } from "@vendoai/vendo/server";',
+      "",
+      "const serverActions = { later: async () => 1 };",
+      "",
+      "const vendo = createVendo({",
+      "  serverActions,",
+      "});",
+      "",
+      "export const { GET, POST } = vendo;",
+      "",
+    ].join("\n");
+    await writeFile(join(routeDir, "route.ts"), custom);
+    await mkdir(join(root, "app", "actions"), { recursive: true });
+    await writeFile(join(root, "app", "actions", "later.ts"),
+      '"use server";\n\nexport async function later() {\n  return 1;\n}\n');
+    expect(await run(root, output())).toBe(0);
+    const route = await readFile(join(routeDir, "route.ts"), "utf8");
+    expect(route).not.toContain('from "./vendo-actions"');
+    expect(route).toBe(custom);
+  });
+
   it("scaffolds an unwired Express host (server only, no model module) and leaves a wired one untouched", async () => {
     const unwired = await expressFixture(false);
     const sink = output();
@@ -1127,6 +1156,41 @@ describe("vendo init (zero-question)", () => {
     expect(logs).not.toContain("No model key yet");
     expect(seen.length).toBeGreaterThan(0);
     expect(seen[0]).toBe(key);
+  });
+
+  it("reads quoted .env.local values per dotenv semantics: quotes stripped, inline comments dropped", async () => {
+    const root = await fixture();
+    const key = `vnd_${"e".repeat(40)}`;
+    // Hand-authored .env.local entries are commonly quoted and commented —
+    // Next.js's dotenv loader strips both, so init's merge must too or the
+    // literal quoted string poisons every credential consumer.
+    await writeFile(join(root, ".env.local"), [
+      'ANTHROPIC_API_KEY="sk-ant-quoted"',
+      "OPENAI_API_KEY=sk-openai-plain # dev key",
+      `VENDO_API_KEY='${key}'`,
+      "",
+    ].join("\n"));
+    const seenEnv: Array<Record<string, string | undefined>> = [];
+    const sink = output();
+    expect(await runInit({
+      targetDir: root,
+      output: sink.output,
+      env: {},
+      themeModel: themeModelOf({ slots: {} }),
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+      resolveCredential: async ({ env }) => {
+        seenEnv.push(env);
+        return { rung: "env-key", provider: "anthropic", envVar: "ANTHROPIC_API_KEY" };
+      },
+      cloud: { confirm: async () => false },
+    })).toBe(0);
+    expect(seenEnv[0]?.ANTHROPIC_API_KEY).toBe("sk-ant-quoted");
+    expect(seenEnv[0]?.OPENAI_API_KEY).toBe("sk-openai-plain");
+    expect(seenEnv[0]?.VENDO_API_KEY).toBe(key);
+    // The default cloud probe sees the unquoted key: well-formed, not "malformed".
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Vendo Cloud: VENDO_API_KEY present and well-formed.");
+    expect(sink.errors.join("\n")).not.toContain("not usable");
   });
 
   // Agent-install-dx (§CLI-5): the star ask — ONE consent question at the end

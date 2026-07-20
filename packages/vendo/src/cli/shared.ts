@@ -1,5 +1,7 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { createInterface } from "node:readline/promises";
+import { stdin, stdout } from "node:process";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 
 export const CLI_VERSION = "0.3.0";
@@ -13,6 +15,18 @@ export const consoleOutput: Output = {
   log: (message) => console.log(message),
   error: (message) => console.error(message),
 };
+
+export async function askYesNo(question: string, defaultYes = false): Promise<boolean> {
+  if (!stdin.isTTY || !stdout.isTTY) return false;
+  const prompt = createInterface({ input: stdin, output: stdout });
+  try {
+    const answer = (await prompt.question(`${question} ${defaultYes ? "[Y/n]" : "[y/N]"} `)).trim().toLowerCase();
+    if (answer === "") return defaultYes;
+    return ["y", "yes"].includes(answer);
+  } finally {
+    prompt.close();
+  }
+}
 
 export async function exists(path: string): Promise<boolean> {
   return access(path).then(() => true, () => false);
@@ -32,7 +46,7 @@ export async function writeText(path: string, content: string): Promise<void> {
   await writeFile(path, content, "utf8");
 }
 
-export function noTelemetry(): Telemetry {
+function noTelemetry(): Telemetry {
   return { async track() {} };
 }
 

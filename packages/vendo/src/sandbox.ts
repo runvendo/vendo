@@ -1,5 +1,5 @@
-import { VendoError, type VendoErrorCode } from "@vendoai/core";
-import { deploymentIdentityHeaders } from "./deployment-identity.js";
+import { VendoError } from "@vendoai/core";
+import { consoleSender, raiseCloudError, toArrayBuffer } from "./cloud-console.js";
 
 // ─── Wave-5 port pending ────────────────────────────────────────────────────
 // execution-v2: cloudSandbox still speaks the archived v1 seam end-to-end
@@ -52,19 +52,6 @@ export interface V1CloudSandboxAdapter {
  * (apps/console/app/api/v1/sandboxes/*). */
 const CONSOLE_SANDBOX_PATH = "/api/v1/sandboxes";
 
-/** Console error codes forwarded as-is when they are wire-legal VendoError
- * codes (same posture as the apps block's cloud share/publish client). The
- * console's "unavailable"/"quota-exhausted" have no VendoError twin; they fall
- * to sandbox-unavailable and the 402 → cloud-required mapping respectively. */
-const CLOUD_ERROR_CODES: ReadonlySet<string> = new Set([
-  "validation",
-  "blocked",
-  "not-implemented",
-  "cloud-required",
-  "not-found",
-  "conflict",
-] satisfies VendoErrorCode[]);
-
 /** Same default as the e2b adapter and the retired ENG-295 broker client:
  * generous enough for a slow machine boot, small enough that a hung console
  * request can't wedge a generation forever. */
@@ -83,8 +70,6 @@ const encoder = new TextEncoder();
 
 const toBytes = (data: Uint8Array | string): Uint8Array =>
   typeof data === "string" ? encoder.encode(data) : data;
-
-const toArrayBuffer = (value: Uint8Array): ArrayBuffer => value.slice().buffer as ArrayBuffer;
 
 /** btoa/atob-based codecs (the console speaks base64 JSON envelopes); chunked
  * like the console's own encoder, and Buffer-free so the umbrella's server
@@ -107,32 +92,13 @@ function decodeBase64(value: string): Uint8Array {
   }
 }
 
-async function raiseCloudError(response: Response): Promise<never> {
-  let payload: unknown;
-  try {
-    payload = JSON.parse(await response.text());
-  } catch {
-    payload = undefined;
-  }
-  const error = typeof payload === "object" && payload !== null && "error" in payload
-    ? (payload as { error?: { code?: unknown; message?: unknown } }).error
-    : undefined;
-  const message = typeof error?.message === "string"
-    ? error.message
-    : `Vendo Cloud sandbox request failed with ${response.status}`;
-  // The console's meter gate (quota-exhausted) rides HTTP 402 — the one
-  // "pay/upgrade to proceed" signal, same mapping as cloudConnections. 401
-  // (bad/revoked key) is the same "fix your Cloud standing" story for the
-  // host operator, so it keeps the ENG-295 client's cloud-required mapping —
-  // with the server's own message preserved.
-  if (response.status === 402 || response.status === 401) {
-    throw new VendoError("cloud-required", message);
-  }
-  const code = typeof error?.code === "string" && CLOUD_ERROR_CODES.has(error.code)
-    ? (error.code as VendoErrorCode)
-    : "sandbox-unavailable";
-  throw new VendoError(code, message);
-}
+/** The console's "unavailable"/"quota-exhausted" have no VendoError twin;
+ * unknown codes fall to sandbox-unavailable (the 402/401 → cloud-required
+ * mapping lives in the shared raiseCloudError). */
+const raiseSandboxError = (response: Response): Promise<never> =>
+  raiseCloudError(response, "sandbox", (_code, message) => {
+    throw new VendoError("sandbox-unavailable", message);
+  });
 
 /** The Cloud sandbox adapter — the OSS side of the managed-sandbox seam: a
  * plain SandboxAdapter speaking HTTP to the console's /api/v1/sandboxes
@@ -145,22 +111,14 @@ export function cloudSandbox(options: CloudSandboxOptions): V1CloudSandboxAdapte
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchImpl = options.fetch ?? globalThis.fetch;
 
-  const send = async (path: string, init: RequestInit = {}): Promise<Response> => {
-    const response = await fetchImpl(`${base}${CONSOLE_SANDBOX_PATH}${path}`, {
-      ...init,
-      headers: {
-        authorization: `Bearer ${options.apiKey}`,
-        accept: "application/json",
-        // Interaction model: key-authed Cloud requests carry the deployment
-        // identity; the console meters usage from real traffic.
-        ...(await deploymentIdentityHeaders()),
-        ...init.headers,
-      },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!response.ok) await raiseCloudError(response);
-    return response;
-  };
+  const send = consoleSender({
+    base,
+    mountPath: CONSOLE_SANDBOX_PATH,
+    apiKey: options.apiKey,
+    timeoutMs,
+    fetchImpl,
+    raise: raiseSandboxError,
+  });
 
   const sendJson = async (path: string, method: string, body?: unknown): Promise<unknown> => {
     const response = await send(path, {

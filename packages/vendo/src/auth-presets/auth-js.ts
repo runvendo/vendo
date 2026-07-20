@@ -1,10 +1,18 @@
-import { authJsPreset, type SecretSource } from "@vendoai/actions/presets";
-import type { ActAs, Principal } from "@vendoai/core";
-import type { HostOAuthAdapter } from "@vendoai/mcp";
+import { authJsPreset } from "@vendoai/actions/presets";
+import type { ActAs } from "@vendoai/core";
 import { environment } from "../wire/shared.js";
-import type { HostAuthPreset, HostAuthPresetOptions, HostAuthPresetUser } from "./shared.js";
-
-type JwtClaims = Record<string, unknown>;
+import {
+  actAsClaimsFromUser,
+  composeHostAuthPreset,
+  lazyActAs,
+  lazyModule,
+  loginRedirect,
+  makeUserResolver,
+  resolvePresetSecret,
+  userFromNameEmailClaims,
+  type JwtClaims,
+} from "./identity.js";
+import type { HostAuthPreset, HostAuthPresetOptions } from "./shared.js";
 
 type AuthJsGetToken = (params: {
   req: Request | { headers: Headers | Record<string, string> };
@@ -20,6 +28,9 @@ type AuthJsGetToken = (params: {
 const MISSING_AUTH_CORE_MESSAGE =
   "authJs() reads the Auth.js session through @auth/core, which is not installed. Install it alongside your Auth.js setup: npm install @auth/core";
 
+const MISSING_SECRET_MESSAGE =
+  "authJs() has no session secret: set AUTH_SECRET (mirroring Auth.js itself) or pass authJs({ secret }).";
+
 /** Node's dynamic-import failure for a package that simply isn't installed. */
 function isAuthCoreNotFound(error: unknown): boolean {
   return error instanceof Error
@@ -27,17 +38,10 @@ function isAuthCoreNotFound(error: unknown): boolean {
     && error.message.includes("@auth/core");
 }
 
-let getTokenPromise: Promise<AuthJsGetToken> | undefined;
-function loadGetToken(): Promise<AuthJsGetToken> {
-  getTokenPromise ??= import("@auth/core/jwt").then(
-    (module) => module.getToken as unknown as AuthJsGetToken,
-    (cause) => {
-      getTokenPromise = undefined; // let a later call retry after an install
-      throw new Error(MISSING_AUTH_CORE_MESSAGE, { cause: cause as Error });
-    },
-  );
-  return getTokenPromise;
-}
+const loadGetToken = lazyModule<AuthJsGetToken>(
+  () => import("@auth/core/jwt").then((module) => module.getToken as unknown as AuthJsGetToken),
+  MISSING_AUTH_CORE_MESSAGE,
+);
 
 /** Secure-cookie posture, generalized from demo-bank's isSecureDeployment: the
     deployment is secure exactly when the operator-set VENDO_BASE_URL parses as
@@ -53,34 +57,6 @@ function isSecureDeployment(): boolean {
   } catch {
     return false;
   }
-}
-
-/** Resolved lazily per call (mirroring demo-bank's `() => authSecret()`), so
-    composition order never races env loading. Absence fails loud with the fix
-    in hand — Auth.js itself throws MissingSecret in the same spot. */
-async function resolveAuthSecret(source: SecretSource | undefined): Promise<string> {
-  const value = source === undefined
-    ? environment("AUTH_SECRET")
-    : typeof source === "function"
-      ? await source()
-      : source;
-  if (value === undefined || value.length === 0) {
-    throw new Error(
-      "authJs() has no session secret: set AUTH_SECRET (mirroring Auth.js itself) or pass authJs({ secret }).",
-    );
-  }
-  return value;
-}
-
-/** The operator-set public origin (VENDO_BASE_URL) or, failing that, the
-    request's own origin — mirrors how the door derives its URLs. */
-function publicOrigin(request: Request): URL {
-  return new URL(environment("VENDO_BASE_URL") ?? request.url);
-}
-
-function claimString(claims: JwtClaims, key: string): string | undefined {
-  const value = claims[key];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 /**
@@ -102,67 +78,26 @@ export function authJs(options: HostAuthPresetOptions = {}): HostAuthPreset {
     const getToken = await loadGetToken();
     return getToken({
       req: request,
-      secret: await resolveAuthSecret(secret),
+      secret: await resolvePresetSecret(secret, "AUTH_SECRET", MISSING_SECRET_MESSAGE),
       secureCookie: isSecureDeployment(),
     });
-  };
-
-  /** One identity lookup for all three seams. `claims` is the decoded token
-      where one exists, {} where none does (actAs minting, door subject lookup). */
-  const resolveUser = async (subject: string, claims: JwtClaims): Promise<HostAuthPresetUser | null> => {
-    if (user !== undefined) return user(subject, claims);
-    const email = claimString(claims, "email");
-    const display = claimString(claims, "name") ?? email;
-    return {
-      ...(display === undefined ? {} : { display }),
-      ...(email === undefined ? {} : { email }),
-    };
-  };
-
-  const principalFor = async (subject: string, claims: JwtClaims): Promise<Principal | null> => {
-    const resolved = await resolveUser(subject, claims);
-    if (resolved === null) return null;
-    return {
-      kind: "user",
-      subject,
-      ...(resolved.display === undefined ? {} : { display: resolved.display }),
-    };
-  };
-
-  const principal = async (request: Request): Promise<Principal | null> => {
-    const claims = await sessionClaims(request);
-    if (claims === null) return null;
-    const subject = claimString(claims, "sub");
-    return subject === undefined ? null : principalFor(subject, claims);
   };
 
   // Away + MCP execution: the shipped Auth.js minting preset, fed the same
-  // secret/posture/identity this preset resolves sessions with. Without a
-  // subject→user resolver nothing can decline, and the mint carries only `sub`
-  // (there are no claims to look up) — which is what lets the doctor's
-  // synthetic actAs probe round-trip. Built lazily on FIRST MINT and cached
-  // (its TokenCache survives across calls): the secure-cookie posture then
-  // resolves at use time like the secret does, never racing env loading at
-  // composition. A missing @auth/core fails with the same actionable install
-  // error as the other two halves, not the encoder's bare module-not-found.
-  let mint: ActAs | undefined;
-  const actAs: ActAs = async (grantPrincipal, grant) => {
-    mint ??= authJsPreset({
-      ...(secret === undefined ? {} : { secret }),
-      secureCookie: isSecureDeployment(),
-      ...(user === undefined ? {} : {
-        claims: async (claimsPrincipal: Principal) => {
-          const resolved = await user(claimsPrincipal.subject, {});
-          if (resolved === null) return null;
-          return {
-            ...(resolved.display === undefined ? {} : { name: resolved.display }),
-            ...(resolved.email === undefined ? {} : { email: resolved.email }),
-          };
-        },
-      }),
-    });
+  // secret/posture/identity this preset resolves sessions with. Built lazily
+  // on FIRST MINT and cached (its TokenCache survives across calls): the
+  // secure-cookie posture then resolves at use time like the secret does,
+  // never racing env loading at composition. A missing @auth/core fails with
+  // the same actionable install error as the other two halves, not the
+  // encoder's bare module-not-found.
+  const mint = lazyActAs(() => authJsPreset({
+    ...(secret === undefined ? {} : { secret }),
+    secureCookie: isSecureDeployment(),
+    ...(user === undefined ? {} : { claims: actAsClaimsFromUser(user) }),
+  }));
+  const actAs: ActAs = async (principal, grant) => {
     try {
-      return await mint(grantPrincipal, grant);
+      return await mint(principal, grant);
     } catch (error) {
       if (isAuthCoreNotFound(error)) {
         throw new Error(MISSING_AUTH_CORE_MESSAGE, { cause: error as Error });
@@ -171,26 +106,10 @@ export function authJs(options: HostAuthPresetOptions = {}): HostAuthPreset {
     }
   };
 
-  // The door's identity seam (10-mcp §3): host session lookup + subject
-  // resolution; the door owns consent, CSRF, replay, and redirects.
-  const oauth: HostOAuthAdapter = {
-    async session(request, { returnTo }) {
-      const claims = await sessionClaims(request);
-      const subject = claims === null ? undefined : claimString(claims, "sub");
-      if (subject !== undefined && claims !== null && await resolveUser(subject, claims) !== null) {
-        return { subject };
-      }
-      // Mirror demo-bank's returnTo handling: send the visitor to the host
-      // login on the public origin, carrying the exact authorization URL the
-      // login must return to.
-      const login = new URL("/login", publicOrigin(request));
-      login.searchParams.set("returnTo", returnTo);
-      return Response.redirect(login);
-    },
-    async principal(subject) {
-      return principalFor(subject, {});
-    },
-  };
-
-  return { principal, actAs, oauth };
+  return composeHostAuthPreset({
+    sessionClaims,
+    resolveUser: makeUserResolver(user, userFromNameEmailClaims),
+    actAs,
+    login: (request, returnTo) => loginRedirect(request, returnTo),
+  });
 }

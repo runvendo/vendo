@@ -1,8 +1,8 @@
 import { option, positionals } from "./args.js";
 import { isVendoKey, resolveCloudBaseUrl } from "./client.js";
-import { cloudConsoleOutput, errorMessage, printJson } from "./output.js";
+import { errorMessage, printJson } from "./output.js";
 import { upsertEnvLocal } from "../cloud-init.js";
-import { CLI_VERSION, type Output } from "../shared.js";
+import { CLI_VERSION, consoleOutput, type Output } from "../shared.js";
 
 /**
  * `vendo cloud device-login` — the auth.md user-claimed flow end to end
@@ -84,7 +84,7 @@ export async function runDeviceLogin(
   args: string[],
   options: DeviceLoginOptions = {},
 ): Promise<number> {
-  const output = options.output ?? cloudConsoleOutput;
+  const output = options.output ?? consoleOutput;
   const fetchImpl = options.fetchImpl ?? fetch;
   const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const now = options.now ?? Date.now;

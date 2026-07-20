@@ -139,6 +139,34 @@ describe("cloudConnections", () => {
     expect(cloudFetch.mock.calls[0]![0]).toContain("https://console.vendo.run/api/v1/connections");
   });
 
+  it("fails loudly when a misdeployed Cloud base answers 2xx with non-JSON instead of masking it as empty", async () => {
+    // An SPA host or reverse proxy that 200s unknown paths with text/html
+    // must surface as a config error — not render the honest-looking empty
+    // connections state forever, or read a known-connected account as
+    // not-found (hosted-store's malformed-200 posture).
+    const cloudFetch = vi.fn(async () => new Response("<!doctype html><html></html>", {
+      status: 200,
+      headers: { "content-type": "text/html" },
+    }));
+    const service = cloudConnections({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: cloudFetch as unknown as typeof fetch,
+    });
+    await expect(service.list(ada)).rejects.toThrow(/non-JSON/i);
+    await expect(service.status(ada, "composio", "ca_1")).rejects.toThrow(/non-JSON/i);
+  });
+
+  it("rejects a 2xx JSON body without the connections envelope instead of listing empty", async () => {
+    const cloudFetch = vi.fn(async () => Response.json({ ok: true }));
+    const service = cloudConnections({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: cloudFetch as unknown as typeof fetch,
+    });
+    await expect(service.list(ada)).rejects.toThrow(/connections array/i);
+  });
+
   it("maps a cloud plan rejection to a cloud-required error", async () => {
     const cloudFetch = vi.fn(async () =>
       Response.json({ error: { code: "cloud-required", message: "plan does not include connections" } }, { status: 402 }));

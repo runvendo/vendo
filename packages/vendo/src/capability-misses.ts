@@ -17,7 +17,7 @@ const DEFAULT_RETRY_DELAYS_MS = [250, 1_000] as const;
 
 export interface CapabilitySurfaceSnapshot {
   hash: string;
-  tools: Array<{ name: string; risk: RiskLabel; disabled?: boolean }>;
+  tools: Array<{ name: string; risk: RiskLabel }>;
 }
 
 interface AppendOptions {

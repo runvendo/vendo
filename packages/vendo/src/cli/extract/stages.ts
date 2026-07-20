@@ -64,13 +64,12 @@ export type Survey = z.infer<typeof surveySchema>;
 
 /** Draft and cross-check share one schema: the cross-check may only AMEND
  *  the draft within it. */
-export const surfaceDraftSchema = z.object({
+const surfaceDraftSchema = z.object({
   tools: z.array(draftToolSchema),
   missedSurfaces: z.array(z.string().max(300)).optional(),
 });
-export type SurfaceDraft = z.infer<typeof surfaceDraftSchema>;
 
-export const briefSchema = z.object({
+const briefSchema = z.object({
   brief: z.string().min(1).max(4000),
 });
 
@@ -89,7 +88,7 @@ export function staticFacts(tools: StaticTool[]): string {
   })), null, 2);
 }
 
-export function composeSurveyInstructions(tools: StaticTool[], appName: string): string {
+function composeSurveyInstructions(tools: StaticTool[], appName: string): string {
   return [
     "You are Vendo's extraction surveyor. Map this repo (Read/Glob/Grep only) so later",
     "focused passes can draft tool documentation surface by surface.",
@@ -140,7 +139,7 @@ export function composeInstructions(
   ].join("\n");
 }
 
-export function composeCrossCheckInstructions(
+function composeCrossCheckInstructions(
   drafted: DraftTool[],
   tools: StaticTool[],
   appName: string,
@@ -164,7 +163,7 @@ export function composeCrossCheckInstructions(
   ].join("\n");
 }
 
-export function composeBriefInstructions(input: {
+function composeBriefInstructions(input: {
   appName: string;
   survey: Survey | null;
   drafted: DraftTool[];

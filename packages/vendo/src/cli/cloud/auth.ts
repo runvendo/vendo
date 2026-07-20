@@ -7,8 +7,8 @@ import {
   writeCloudSession,
   type CloudSession,
 } from "./session.js";
-import { cloudConsoleOutput, errorMessage, printJson } from "./output.js";
-import type { Output } from "../shared.js";
+import { errorMessage, printJson } from "./output.js";
+import { consoleOutput, type Output } from "../shared.js";
 
 type CloudFetcher = (path: string, options?: CloudFetchOptions) => Promise<unknown>;
 
@@ -64,7 +64,7 @@ async function interactiveOtp(prompt: string): Promise<string> {
 }
 
 export async function runLogin(args: string[], options: CloudAuthOptions = {}): Promise<number> {
-  const output = options.output ?? cloudConsoleOutput;
+  const output = options.output ?? consoleOutput;
   const token = option(args, "--token");
   const writeSession = options.writeSession ?? ((session) => writeCloudSession(session, { home: options.home }));
   if (token) {
@@ -84,7 +84,7 @@ export async function runLogin(args: string[], options: CloudAuthOptions = {}): 
     return 1;
   }
 
-  const fetcher = options.fetcher ?? ((path, fetchOptions) => cloudFetch(path, fetchOptions));
+  const fetcher = options.fetcher ?? cloudFetch;
   const common = {
     apiUrl: option(args, "--api-url"),
     env: options.env ?? process.env,
@@ -108,7 +108,7 @@ export async function runLogin(args: string[], options: CloudAuthOptions = {}): 
 }
 
 export async function runLogout(_args: string[], options: CloudAuthOptions = {}): Promise<number> {
-  const output = options.output ?? cloudConsoleOutput;
+  const output = options.output ?? consoleOutput;
   try {
     await (options.deleteSession ?? (() => deleteCloudSession({ home: options.home })))();
     printJson(output, { loggedOut: true });
@@ -120,8 +120,8 @@ export async function runLogout(_args: string[], options: CloudAuthOptions = {})
 }
 
 export async function runWhoami(args: string[], options: CloudAuthOptions = {}): Promise<number> {
-  const output = options.output ?? cloudConsoleOutput;
-  const fetcher = options.fetcher ?? ((path, fetchOptions) => cloudFetch(path, fetchOptions));
+  const output = options.output ?? consoleOutput;
+  const fetcher = options.fetcher ?? cloudFetch;
   try {
     const orgs = await fetcher("/api/v1/orgs", {
       auth: "user",

@@ -16,21 +16,6 @@ import {
   type PinBaseline,
   type SandboxAdapter,
 } from "@vendoai/apps";
-// execution-v2 skin contract (Lane C): the manifest gate and the box env
-// assembly ride the server surface so hosts and later waves (broker, egress)
-// reach them without installing @vendoai/apps directly.
-export {
-  buildEnv,
-  createAppTokens,
-  parseVendoManifest,
-  vendoManifestSchema,
-  type AppTokens,
-  type BuildEnvContext,
-  type BuiltBoxEnv,
-  type InferenceResolver,
-  type VendoManifest,
-  type VendoManifestSchedule,
-} from "@vendoai/apps";
 import { e2bInstalled, e2bSandbox } from "@vendoai/apps/e2b";
 import {
   createAutomations,
@@ -74,17 +59,6 @@ export { eraseStore, type EraseReport, type EraseTable } from "@vendoai/store";
 // imports these from "@vendoai/vendo/server"); hosts never need to install
 // @vendoai/store directly.
 export { createStore, envSecrets, secretStore, storeSecrets } from "@vendoai/store";
-export {
-  runRefine,
-  type RefineChange,
-  type RefineDrop,
-  type RefineOptions,
-  type RefineProbe,
-  type RefineProbeCheck,
-  type RefineProposals,
-  type RefineResult,
-  type RefineTranscript,
-} from "./refine.js";
 // 09-vendo §2.1 — host-identity presets, shipped on the server entry: one
 // `auth` key fills the principal, actAs, and oauth seams from one config.
 export {
@@ -113,18 +87,7 @@ import { devModel } from "./dev-creds/model.js";
 // install-dx v1 — `devModel()` is the env-resolving model createVendo composes
 // when the host passes none; the resolver is shared by init and doctor (one
 // credential story, real keys only).
-export {
-  devModel,
-  DevModelController,
-  NO_CREDENTIAL_MESSAGE,
-  type DevModelOptions,
-} from "./dev-creds/model.js";
-export {
-  describeDevCredential,
-  resolveDevCredential,
-  type DevCredential,
-  type ResolveDevCredentialOptions,
-} from "./dev-creds/resolve.js";
+export { devModel, type DevModelOptions } from "./dev-creds/model.js";
 import {
   byoConnections,
   cloudConnections,
@@ -327,10 +290,34 @@ function validateSessionsConfig(sessions: CreateVendoConfig["sessions"]): Resolv
   return { ttlMs, sweepIntervalMs, ...(sessions?.now === undefined ? {} : { now: sessions.now }) };
 }
 
+/** Operator-tuned env knobs must be positive integer milliseconds. A typo
+    like "8m" fails loudly here (validateSessionsConfig's posture) instead of
+    flowing as NaN into the machine config, where NaN defeats runBoxEdit's
+    `??` defaults — every box edit would time out instantly and hot-poll the
+    box control port. */
+function positiveIntegerEnv(name: string): number | undefined {
+  const raw = environment(name);
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) {
+    throw new VendoError("validation", `${name} must be a positive integer of milliseconds, got ${JSON.stringify(raw)}`);
+  }
+  return value;
+}
+
 /** Default char cap on a single tool result before it reaches the model (03-agent §2).
     Generous enough for normal host responses, small enough that a runaway payload is
     truncated to a preview instead of blowing the context window. Override via config.agent. */
 const DEFAULT_TOOL_OUTPUT_CAP = 32_000;
+
+/** The shared Cloud-default leg of the ADAPTER RULE: VENDO_API_KEY fills a
+    seam the host left unset, VENDO_CLOUD_URL overrides the console base URL. */
+function cloudKeyOptions(): { apiKey: string; baseUrl?: string } | undefined {
+  const apiKey = environment("VENDO_API_KEY");
+  if (apiKey === undefined) return undefined;
+  const baseUrl = environment("VENDO_CLOUD_URL");
+  return { apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) };
+}
 
 /** Sandbox leg of the ADAPTER RULE (see the block comment at
     selectConnections below): explicit adapter → BYO sandbox env (e2b) →
@@ -353,13 +340,9 @@ function selectSandbox(configured: SandboxAdapter | V1CloudSandboxAdapter | unde
     return { adapter: e2bSandbox({ apiKey: e2bApiKey }), venue: "e2b" };
   }
 
-  const apiKey = environment("VENDO_API_KEY");
-  if (apiKey !== undefined) {
-    const baseUrl = environment("VENDO_CLOUD_URL");
-    return {
-      adapter: cloudSandbox({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) }),
-      venue: "cloud",
-    };
+  const cloud = cloudKeyOptions();
+  if (cloud !== undefined) {
+    return { adapter: cloudSandbox(cloud), venue: "cloud" };
   }
 
   return { adapter: undefined, venue: false };
@@ -383,12 +366,8 @@ function selectConnections(
 ): ConnectionsService {
   if (configured !== undefined) return configured;
   if (connectors.some(hasConnections)) return byoConnections(connectors);
-  const apiKey = environment("VENDO_API_KEY");
-  if (apiKey !== undefined) {
-    const baseUrl = environment("VENDO_CLOUD_URL");
-    return cloudConnections({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) });
-  }
-  return unconfiguredConnections();
+  const cloud = cloudKeyOptions();
+  return cloud !== undefined ? cloudConnections(cloud) : unconfiguredConnections();
 }
 
 /** ADAPTER RULE, inference seam (cloned from selectConnections): the agent and
@@ -520,10 +499,9 @@ function selectStore(configured: VendoStore | undefined, touchDebounceMs: number
         : localSessionOps(configured),
     };
   }
-  const apiKey = environment("VENDO_API_KEY");
-  if (apiKey !== undefined) {
-    const baseUrl = environment("VENDO_CLOUD_URL");
-    const hosted = hostedStore({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) });
+  const cloud = cloudKeyOptions();
+  if (cloud !== undefined) {
+    const hosted = hostedStore(cloud);
     return { store: hosted, sessions: hostedSessionOps(hosted, touchDebounceMs) };
   }
   const encryptionKey = environment("VENDO_STORE_ENCRYPTION_KEY");
@@ -1059,6 +1037,9 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     add(boxInference()?.url);
     return [...domains];
   };
+  const boxTemplate = environment("VENDO_BOX_TEMPLATE");
+  const boxEditTimeoutMs = positiveIntegerEnv("VENDO_BOX_EDIT_TIMEOUT_MS");
+  const boxEditPollMs = positiveIntegerEnv("VENDO_BOX_EDIT_POLL_MS");
   const apps = createApps({
     store,
     guard,
@@ -1079,12 +1060,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       ...(sandbox.adapter !== undefined && "destroy" in sandbox.adapter ? { sandbox: sandbox.adapter } : {}),
       buildEnv: machineEnv,
       implicitDomains: implicitMachineDomains(),
-      ...(environment("VENDO_BOX_TEMPLATE") === undefined ? {} : { template: environment("VENDO_BOX_TEMPLATE") }),
+      ...(boxTemplate === undefined ? {} : { template: boxTemplate }),
       // The in-box agent edit is a minutes-long loop; operators tune its
       // long-poll budget when a base image or task needs longer than the
       // 8-minute default.
-      ...(environment("VENDO_BOX_EDIT_TIMEOUT_MS") === undefined ? {} : { boxEditTimeoutMs: Number(environment("VENDO_BOX_EDIT_TIMEOUT_MS")) }),
-      ...(environment("VENDO_BOX_EDIT_POLL_MS") === undefined ? {} : { boxEditPollMs: Number(environment("VENDO_BOX_EDIT_POLL_MS")) }),
+      ...(boxEditTimeoutMs === undefined ? {} : { boxEditTimeoutMs }),
+      ...(boxEditPollMs === undefined ? {} : { boxEditPollMs }),
     },
   });
   resolveAppToolRisk = apps.agentToolRisk;
@@ -1238,9 +1219,9 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       return false;
     }
   })();
-  const explicitDevelopment = config.development !== undefined && config.development !== false;
-  const development = explicitDevelopment
-    || (config.development !== false && environment("NODE_ENV") === "development");
+  const development = config.development !== undefined
+    ? config.development !== false
+    : isDevelopmentEnv;
   const developmentPaths = typeof config.development === "object" ? config.development : {};
   const runtimeCapture = development ? createRuntimeCapture(developmentPaths) : null;
   const handler = createWireHandler({

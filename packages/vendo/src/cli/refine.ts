@@ -213,6 +213,3 @@ export async function runRefineCommand(options: RefineCommandOptions): Promise<n
   }
   return 0;
 }
-
-/** The end-of-init offer surface (spec §3): one engine, two surfaces. */
-export { INTERVIEW_QUESTIONS };

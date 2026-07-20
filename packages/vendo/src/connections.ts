@@ -138,10 +138,12 @@ export function cloudConnections(options: CloudConnectionsOptions): ConnectionsS
       },
     });
     let payload: unknown = {};
+    let parsed = true;
     try {
       payload = await response.json();
     } catch {
       // Non-JSON bodies fall through to the status check below.
+      parsed = false;
     }
     if (!response.ok) {
       const error = (payload as { error?: { message?: unknown } }).error;
@@ -149,6 +151,16 @@ export function cloudConnections(options: CloudConnectionsOptions): ConnectionsS
         ? error.message
         : `Vendo Cloud connections request failed with ${response.status}`;
       throw new VendoError(response.status === 402 ? "cloud-required" : "validation", message);
+    }
+    if (!parsed) {
+      // A 2xx that isn't JSON means a misdeployed Cloud base (an SPA host or
+      // reverse proxy that 200s unknown paths with text/html). Fail loudly —
+      // hosted-store's malformed-200 posture — instead of reading as an empty
+      // connections list (or a not-found account) forever.
+      throw new VendoError(
+        "validation",
+        `Vendo Cloud connections returned a non-JSON ${response.status} response — check VENDO_CLOUD_URL`,
+      );
     }
     return payload;
   }
@@ -159,7 +171,12 @@ export function cloudConnections(options: CloudConnectionsOptions): ConnectionsS
     posture: "cloud",
     async list(principal) {
       const payload = await cloudFetch(`/api/v1/connections?${subjectQuery(principal)}`) as { connections?: unknown };
-      return Array.isArray(payload.connections) ? (payload.connections as ConnectorAccount[]) : [];
+      if (!Array.isArray(payload.connections)) {
+        // A 2xx without the envelope is the SERVICE misbehaving — never
+        // indistinguishable from a genuinely empty connections panel.
+        throw new VendoError("validation", "Vendo Cloud connections returned an invalid list response (no connections array)");
+      }
+      return payload.connections as ConnectorAccount[];
     },
     async initiate(principal, options) {
       guardInitiatePrincipal(principal);

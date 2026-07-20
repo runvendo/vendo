@@ -13,7 +13,7 @@ export interface SessionOptions {
   home?: string;
 }
 
-export function cloudSessionPath(options: SessionOptions = {}): string {
+function cloudSessionPath(options: SessionOptions = {}): string {
   return join(options.home ?? homedir(), ".vendo", "cloud-session.json");
 }
 
