@@ -32,6 +32,7 @@ import { deriveFormShape, FormingSkeleton } from "./forming-skeleton.js";
 import { InClientMount } from "./host-mount.js";
 import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
+import { KIT_COMPONENTS } from "../kit/registry.js";
 import { PREWIRED_COMPONENTS } from "./primitives.js";
 
 export interface TreeViewProps {
@@ -452,7 +453,11 @@ function NodeRenderer(props: NodeRendererProps) {
       </FluidReveal>
     );
   } else {
-    const primitive = PREWIRED_COMPONENTS[node.component];
+    // W3 Kit adoption — legacy prewired names keep their implementations
+    // (retirement is Wave 5); the Kit fills the names the legacy set lacks
+    // (Money, DateTime, DataTable, charts, Form, Disclaimer, …).
+    const primitive = PREWIRED_COMPONENTS[node.component]
+      ?? (KIT_COMPONENTS[node.component] as ComponentType<Record<string, unknown>> | undefined);
     const host = props.components[node.component] as ComponentType<Record<string, unknown>> | undefined;
     // v2 spec §2 — an explicit `source: "host"` resolution means the host
     // brand won the name; only an undefined source keeps the historical

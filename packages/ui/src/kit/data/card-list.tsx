@@ -28,7 +28,9 @@ function resolve(row: Record<string, unknown>, key: string): unknown {
   return key.split(".").reduce<unknown>((acc, k) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[k] : undefined), row);
 }
 
-export function CardList({ items, titleField, badgeField, fields = [], columns, emptyState = "No items" }: CardListProps) {
+export function CardList({ items: rawItems, titleField, badgeField, fields = [], columns, emptyState = "No items" }: CardListProps) {
+  // W3 — fail SOFT on missing data (a failed query resolves to undefined).
+  const items = Array.isArray(rawItems) ? rawItems : [];
   if (items.length === 0) {
     return (
       <div
