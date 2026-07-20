@@ -78,6 +78,16 @@ const TRUTH: Record<string, GroundTruth> = {
   },
 };
 
+/** The token sheet each app's ground truth above is read from — the same file
+ *  the old fixed-context model pass got handed inline. Passed as evidence-path
+ *  hints so the stage isn't blind-exploring for the tokens the allowlist
+ *  already knows exist, matching the future init caller (which seeds
+ *  evidencePaths from gatherContext's own collected CSS files). */
+const EVIDENCE_PATHS: Record<string, string[]> = {
+  "demo-bank": ["src/app/globals.css"],
+  "demo-accounting": ["src/app/globals.css"],
+};
+
 describe.skipIf(!live || cliAvailability === null)("extractTheme live accuracy (both demo apps)", () => {
   it.each(Object.keys(TRUTH))("%s scores at least 6/7 with no silent misses", async (app) => {
     const root = join(appsDir, app);
@@ -114,7 +124,12 @@ describe.skipIf(!live || cliAvailability === null)("extractTheme live accuracy (
         if (provenance !== undefined && provenance.startsWith("--")) alreadyExact[slot] = String(exact.slots[slot]);
       }
 
-      const instructions = composeThemeInstructions({ needed, alreadyExact, evidencePaths: [], appName: app });
+      const instructions = composeThemeInstructions({
+        needed,
+        alreadyExact,
+        evidencePaths: EVIDENCE_PATHS[app] ?? [],
+        appName: app,
+      });
       const text = await harness.run({ root, env: process.env, instructions });
       const artifact = parseArtifact(text, modelThemeSchema);
 
