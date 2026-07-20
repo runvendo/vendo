@@ -26,29 +26,32 @@ export const VendoEmbed = ({ surface, poster, alt, height = 480, caption }) => {
       }
     };
 
+    const onReady = () => mount();
+    const onError = () => { if (!cancelled) setFailed(true); };
     if (window.VendoDocsEmbed) {
       mount();
     } else {
-      const existing = document.querySelector('script[data-vendo-docs-embed]');
-      const script = existing ?? document.createElement("script");
-      const onReady = () => mount();
       window.addEventListener("vendo-docs-embed-ready", onReady, { once: true });
+      // Every instance hears a shared load failure, not just the tag creator.
+      window.addEventListener("vendo-docs-embed-error", onError, { once: true });
+      const existing = document.querySelector('script[data-vendo-docs-embed]');
       if (!existing) {
+        const script = document.createElement("script");
         script.src = "https://vendo.run/playground/embed.js";
         script.async = true;
         script.dataset.vendoDocsEmbed = "";
-        script.onerror = () => { if (!cancelled) setFailed(true); };
+        script.onerror = () => window.dispatchEvent(new Event("vendo-docs-embed-error"));
         document.head.appendChild(script);
       }
-      return () => {
-        cancelled = true;
-        window.removeEventListener("vendo-docs-embed-ready", onReady);
-        if (disposeRef.current) { disposeRef.current(); disposeRef.current = null; }
-      };
+      // The bundle may have finished between the check above and the listener
+      // registration — re-check so a won race never strands the poster.
+      if (window.VendoDocsEmbed) mount();
     }
 
     return () => {
       cancelled = true;
+      window.removeEventListener("vendo-docs-embed-ready", onReady);
+      window.removeEventListener("vendo-docs-embed-error", onError);
       if (disposeRef.current) { disposeRef.current(); disposeRef.current = null; }
     };
   }, [surface]);
@@ -118,15 +121,19 @@ export const VendoLauncher = () => {
     if (window.VendoDocsEmbed) {
       mountIt();
     } else {
-      const existing = document.querySelector('script[data-vendo-docs-embed]');
-      const script = existing ?? document.createElement("script");
       window.addEventListener("vendo-docs-embed-ready", mountIt, { once: true });
+      const existing = document.querySelector('script[data-vendo-docs-embed]');
       if (!existing) {
+        const script = document.createElement("script");
         script.src = "https://vendo.run/playground/embed.js";
         script.async = true;
         script.dataset.vendoDocsEmbed = "";
+        // A failed bundle means no launcher — silent by design, but announce
+        // for any VendoEmbed instances sharing the tag.
+        script.onerror = () => window.dispatchEvent(new Event("vendo-docs-embed-error"));
         document.head.appendChild(script);
       }
+      if (window.VendoDocsEmbed) mountIt();
     }
     return () => {
       cancelled = true;
