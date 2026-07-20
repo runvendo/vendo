@@ -299,14 +299,14 @@ function readExact(vars: CssVarDecl[]): ExactReads {
  *  derive or default safely — accentText derives from the accent by WCAG
  *  contrast, headingFamily inherits fontFamily, and the rest have safe
  *  brand-neutral defaults — so they never trigger a call or a question. */
-const BRAND_SLOTS: readonly SlotKey[] = [
+export const BRAND_SLOTS: readonly SlotKey[] = [
   "accent", "background", "surface", "text", "mutedText",
   "border", "danger", "radius", "fontFamily",
 ];
 
 const SLOT_KEYS = Object.keys(DEFAULT_THEME_SLOTS) as SlotKey[];
 
-const modelThemeSchema = z.object({
+export const modelThemeSchema = z.object({
   slots: z.object({
     accent: z.string().optional(),
     accentText: z.string().optional(),

@@ -26,10 +26,11 @@ async function fixture(brief?: string): Promise<string> {
 }
 
 /** Identify which stage an instruction string belongs to. */
-function stageOf(instructions: string): "survey" | "draft" | "cross-check" | "brief" {
+function stageOf(instructions: string): "survey" | "draft" | "cross-check" | "brief" | "theme" {
   if (instructions.includes("extraction surveyor")) return "survey";
   if (instructions.includes("cross-checker")) return "cross-check";
   if (instructions.includes("drafting the product brief")) return "brief";
+  if (instructions.includes("filling the theme's brand slots")) return "theme";
   return "draft";
 }
 
@@ -244,6 +245,94 @@ describe("runStagedExtraction", () => {
     expect(result.briefFromStage).toBe(false);
     expect(result.draft.brief).toBe("The humans already described this product.");
     expect(result.notes).toEqual(["brief stage failed (timed out) — keeping the current brief"]);
+  });
+
+  it("runs a theme stage after brief when the theme input needs brand slots, landing the parsed artifact in the result and its artifact file", async () => {
+    const root = await fixture();
+    const themeArtifact = {
+      slots: { accent: "#112233", radius: "8px" },
+      uncertain: [{ slot: "accent", note: "two plausible brand colors" }],
+    };
+    const { harness, runs } = scriptedHarness((stage, input) => {
+      if (stage === "survey") return SURVEY;
+      if (stage === "draft") return draftFor(input.instructions);
+      if (stage === "cross-check") return { tools: [] };
+      if (stage === "brief") return { brief: "b" };
+      return themeArtifact;
+    });
+    const result = await runStagedExtraction({
+      root,
+      env: {},
+      harness,
+      tools: TOOLS,
+      appName: "maple",
+      theme: { needed: ["accent", "radius", "density"], alreadyExact: { background: "#ffffff" }, evidencePaths: ["app/globals.css"] },
+    });
+
+    expect(runs.map((run) => run.stage)).toEqual(["survey", "draft", "draft", "cross-check", "brief", "theme"]);
+    const themeRun = runs.find((run) => run.stage === "theme");
+    expect(themeRun?.input.instructions).toContain("accent");
+    expect(themeRun?.input.instructions).toContain("radius");
+    expect(themeRun?.input.instructions).toContain("app/globals.css");
+    expect(result.theme).toEqual(themeArtifact);
+    expect(await readArtifact(root, "theme")).toEqual(themeArtifact);
+  });
+
+  it("skips the theme stage when the needed list has no brand slots", async () => {
+    const root = await fixture();
+    const { harness, runs } = scriptedHarness((stage, input) => {
+      if (stage === "survey") return SURVEY;
+      if (stage === "draft") return draftFor(input.instructions);
+      if (stage === "cross-check") return { tools: [] };
+      return { brief: "b" };
+    });
+    const result = await runStagedExtraction({
+      root,
+      env: {},
+      harness,
+      tools: TOOLS,
+      appName: "maple",
+      theme: { needed: ["density", "motion"], alreadyExact: {}, evidencePaths: [] },
+    });
+    expect(runs.some((run) => run.stage === "theme")).toBe(false);
+    expect(result.theme).toBeUndefined();
+  });
+
+  it("skips the theme stage entirely when no theme input is provided", async () => {
+    const root = await fixture();
+    const { harness, runs } = scriptedHarness((stage, input) => {
+      if (stage === "survey") return SURVEY;
+      if (stage === "draft") return draftFor(input.instructions);
+      if (stage === "cross-check") return { tools: [] };
+      return { brief: "b" };
+    });
+    const result = await runStagedExtraction({ root, env: {}, harness, tools: TOOLS, appName: "maple" });
+    expect(runs.some((run) => run.stage === "theme")).toBe(false);
+    expect(result.theme).toBeUndefined();
+  });
+
+  it("a theme stage failure degrades to a note, never throws, and the rest of the result is intact", async () => {
+    const root = await fixture();
+    const { harness } = scriptedHarness((stage, input) => {
+      if (stage === "survey") return SURVEY;
+      if (stage === "draft") return draftFor(input.instructions);
+      if (stage === "cross-check") return { tools: [] };
+      if (stage === "brief") return { brief: "b" };
+      return new Error("model unreachable");
+    });
+    const result = await runStagedExtraction({
+      root,
+      env: {},
+      harness,
+      tools: TOOLS,
+      appName: "maple",
+      theme: { needed: ["accent"], alreadyExact: {}, evidencePaths: [] },
+    });
+    expect(result.theme).toBeUndefined();
+    expect(result.notes).toEqual(["theme stage failed (model unreachable) — exact reads and defaults stand"]);
+    expect(result.draft.tools).toHaveLength(3);
+    expect(result.briefFromStage).toBe(true);
+    expect(await readArtifact(root, "theme")).toMatchObject({ stage: "theme", error: "model unreachable" });
   });
 
   it("clears artifacts from a previous run before starting", async () => {
