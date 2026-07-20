@@ -29,3 +29,4 @@ export function composeVendo(overrides?: Parameters<typeof createVendo>[0]): Ven
 }
 
 export const vendo = composeVendo();
+// --- /vendo

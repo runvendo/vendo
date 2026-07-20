@@ -73,3 +73,4 @@ export async function sendTripReport(recipient: string, report: string): Promise
   console.log(`[mastra-agent example] trip report sent to ${recipient}: ${report}`);
   return { sent: true, recipient };
 }
+// --- /vendo
