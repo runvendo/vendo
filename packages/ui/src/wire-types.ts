@@ -123,6 +123,14 @@ export interface InitiatedConnection {
   redirectUrl: string;
 }
 
+/** One connectable toolkit as `GET /connections/catalog` advertises it — the
+    connect dock's auto catalog when the host passes no explicit list. */
+export interface ConnectableToolkit {
+  toolkit: string;
+  connector: string;
+  label?: string;
+}
+
 /** 07-automations §5 */
 export type RunStatus = "running" | "ok" | "error" | "stopped" | "pending-approval";
 

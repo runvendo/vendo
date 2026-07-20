@@ -153,30 +153,34 @@ describe("compileWirePatchV2 queries, islands, name", () => {
   });
 
   it("Island upserts and an inserted node resolves generated against it; RemoveIsland degrades sources", () => {
+    // "MiniTrend" — island names must not collide with the built-in set (the
+    // W3 Kit adoption made e.g. Sparkline a prewired name that wins resolution).
     const result = patch(`<Edit>
-      <Island name="Sparkline">export default function Sparkline() { return null; }</Island>
-      <Insert into="grid-1"><Sparkline/></Insert>
+      <Island name="MiniTrend">export default function MiniTrend() { return null; }</Island>
+      <Insert into="grid-1"><MiniTrend/></Insert>
     </Edit>`);
     expect(result.issues).toEqual([]);
-    expect(result.components.Sparkline).toContain("Sparkline");
-    expect(node(result, "sparkline-1")?.source).toBe("generated");
-    const removed = patch('<Edit><RemoveIsland name="Sparkline"/></Edit>', result);
+    expect(result.components.MiniTrend).toContain("MiniTrend");
+    expect(node(result, "minitrend-1")?.source).toBe("generated");
+    const removed = patch('<Edit><RemoveIsland name="MiniTrend"/></Edit>', result);
     expect(removed.components).toStrictEqual({});
-    expect(node(removed, "sparkline-1")?.source).toBeUndefined();
+    expect(node(removed, "minitrend-1")?.source).toBeUndefined();
   });
 
   it("RemoveIsland then Island in one patch replaces the island (document order)", () => {
+    // "MiniTrend" — island names must not collide with the built-in set (the
+    // W3 Kit adoption made e.g. Sparkline a prewired name that wins resolution).
     const withIsland = patch(`<Edit>
-      <Island name="Sparkline">export default function Sparkline() { return null; }</Island>
-      <Insert into="grid-1"><Sparkline/></Insert>
+      <Island name="MiniTrend">export default function MiniTrend() { return null; }</Island>
+      <Insert into="grid-1"><MiniTrend/></Insert>
     </Edit>`);
     const replaced = patch(`<Edit>
-      <RemoveIsland name="Sparkline"/>
-      <Island name="Sparkline">export default function Sparkline() { return "v2"; }</Island>
+      <RemoveIsland name="MiniTrend"/>
+      <Island name="MiniTrend">export default function MiniTrend() { return "v2"; }</Island>
     </Edit>`, withIsland);
     expect(replaced.issues).toEqual([]);
-    expect(replaced.components.Sparkline).toContain('"v2"');
-    expect(node(replaced, "sparkline-1")?.source).toBe("generated");
+    expect(replaced.components.MiniTrend).toContain('"v2"');
+    expect(node(replaced, "minitrend-1")?.source).toBe("generated");
   });
 
   it("Island then RemoveIsland in one patch still removes (document order)", () => {
@@ -242,6 +246,34 @@ describe("compileWirePatchV2 totality and re-validation", () => {
       nodeId: "linechart-1",
       prop: "points",
       missing: ["period", "amount"],
+    });
+  });
+
+  it("checks fn:-keyed shape cards exactly like host tools (the em-dash envelope class, Wave 7 H2)", () => {
+    // A graduation rebind that keeps the host tool's `/data/` response
+    // envelope in an fn: binding path: the fn's result carries no such
+    // segment (fn responses unwrap {result}), so a KNOWN fn shape card must
+    // reject it — same repair contract as a host-tool miss.
+    const withFnShape: WireCompileOptions = {
+      ...OPTIONS,
+      toolShapes: {
+        "fn:getDigest": {
+          kind: "object",
+          fields: { summary: { kind: "string" }, count: { kind: "number" } },
+        },
+      },
+    };
+    const result = compileWirePatchV2(
+      '<Edit><Query id="digest" tool="fn:getDigest"/><Set id="pageheader-1" title={digest.data.summary}/></Edit>',
+      compileWireV2(BASE_WIRE, withFnShape),
+      withFnShape,
+    );
+    expect(codes(result)).toEqual(["shape-mismatch"]);
+    expect(result.bindingErrors[0]).toMatchObject({
+      nodeId: "pageheader-1",
+      prop: "title",
+      tool: "fn:getDigest",
+      path: "/digest/data/summary",
     });
   });
 

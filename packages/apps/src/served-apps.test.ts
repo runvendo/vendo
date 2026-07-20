@@ -223,6 +223,47 @@ describe("experimental flag ON: serving + wake-on-open", () => {
     expect(JSON.parse(handed as string)).toEqual(theme);
   });
 
+  it("ping on an awake machine reports awake without waking anything new (the keepalive ride)", async () => {
+    // Wave 7 H2 — the embed surface's activity ping: one cheap HEAD through
+    // the idle-tracked machine wrapper, which is the activity signal that
+    // re-arms the idle timer (and rides any provider TTL extension).
+    const { sandbox, runtime } = await flipped();
+    await runtime.open("app_served", ctx());
+    const machinesBefore = sandbox.machines.length;
+
+    const pinged = await runtime.machine.ping("app_served", ctx());
+
+    expect(pinged).toEqual({ state: "awake" });
+    expect(sandbox.machines.length).toBe(machinesBefore);
+  });
+
+  it("ping on a sleeping machine wakes it and reports woke (the embed reloads once awake)", async () => {
+    // The 2→3 edit ends asleep. A ping that finds the machine asleep is the
+    // load-failure/stale-URL signal: it wakes the box and reports "woke" so
+    // the embed shows the resuming state and re-opens for the fresh URL.
+    const { sandbox, runtime } = await flipped();
+    const machinesBefore = sandbox.machines.length;
+
+    const pinged = await runtime.machine.ping("app_served", ctx());
+
+    expect(pinged).toEqual({ state: "woke" });
+    expect(sandbox.machines.length).toBeGreaterThan(machinesBefore);
+    // The wake is shared: the follow-up open() reuses the live machine
+    // instead of waking a second one.
+    const afterPing = sandbox.machines.length;
+    const surface = await runtime.open("app_served", ctx());
+    expect(surface.kind).toBe("http");
+    expect(sandbox.machines.length).toBe(afterPing);
+  });
+
+  it("ping refuses an app that has no machine", async () => {
+    const world = setup({ experimentalServedApps: true });
+    await seedAppRow(world.store, treeApp(), "user_ada");
+    const error = await world.runtime.machine.ping("app_served", ctx()).then(() => undefined, (thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(VendoError);
+    expect((error as VendoError).code).toBe("validation");
+  });
+
   it("refuses to fork a served app (its surface lives in the machine, which never travels)", async () => {
     const { runtime } = await flipped();
     const error = await runtime.fork("app_served", ctx()).then(() => undefined, (thrown: unknown) => thrown);

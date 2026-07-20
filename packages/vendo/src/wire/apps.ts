@@ -84,6 +84,12 @@ export const appRoutes: RouteEntry[] = [
       const body = await requestJson(request);
       return json(await deps.apps.pins.rebase({ appId, slot: string(body["slot"], "slot") }, ctx));
     }
+    // Wave 7 H2 — the embed surface's keepalive: user activity on an embedded
+    // served app rides one host-proxied HEAD through the machine (re-arming
+    // the idle timer); "woke" tells the embed its URL is stale — re-open.
+    if (request.method === "POST" && operation === "machine" && segments[3] === "ping" && segments.length === 4) {
+      return json(await deps.apps.machine.ping(appId, ctx));
+    }
     if (request.method === "GET" && operation === "export" && segments.length === 3) {
       const bytes = await deps.apps.exportApp(appId, ctx);
       return new Response(bytes as BodyInit, {

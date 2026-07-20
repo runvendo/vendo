@@ -1,5 +1,6 @@
 import {
-  PREWIRED_COMPONENT_NAMES,
+  KIT_WIRE_COMPONENT_NAMES,
+  WIRE_COMPONENT_NAMES,
   RESERVED_COMPONENT_NAMES,
   TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
@@ -11,7 +12,9 @@ import {
   VendoError,
   compileWirePatchV2,
   compileWireV2,
-  describeShape,
+  describeShapeWithSemantics,
+  kitPrompt,
+  kitSpec,
   JAIL_ALLOWED_MODULES,
   shapeAtPointer,
   printWireV2,
@@ -20,8 +23,10 @@ import {
   validateAppDocument,
   validateTreeV2,
   type AppDocument,
+  type DomainManifest,
   type NormalizedCatalog,
   type ShapeType,
+  type ToolSemantics,
   type TreeNode,
   type TreeV2,
   type VendoTheme,
@@ -32,6 +37,7 @@ import {
   actionFaults,
   endPass,
   extractEdit,
+  literalDataFaults,
   regionParallelCreate,
   structuredRepair,
   type PipelineConfig,
@@ -90,6 +96,13 @@ export interface GenerationDependencies {
    *  generation prompt and a query naming any other tool is a validation
    *  error routed to repair (verify-v2: the model invents tool names). */
   tools?: readonly HostToolInfo[];
+  /** W3 (v3 spec §Context) — per-tool field semantics from
+   *  `.vendo/semantics.json`: annotate the shape cards, drive Kit format
+   *  defaults, and feed the law checks. Keyed by tool name. */
+  semantics?: Readonly<Record<string, ToolSemantics>>;
+  /** W3 — the host's domain manifest (has / has-NOT), surfaced to generation
+   *  as fact so out-of-domain asks get a Disclaimer, never invented data. */
+  domains?: DomainManifest;
   /** 06-apps §5 — additive, optional partial-tree streaming seam. */
   onPartial?: (partial: GeneratedPartial) => void | Promise<void>;
   /**
@@ -160,7 +173,7 @@ const SERVED_APP_INSTRUCTION = /\b(full web app|served web app|custom (?:ui|clie
  *  kanban board heading blue" is a tree ask); same ENG-349 rule as the
  *  ambiguous server terms. */
 const AMBIGUOUS_SERVED_TERM = /\b(kanban|whiteboard|draggable)\b/gi;
-const reserved = new Set<string>(PREWIRED_COMPONENT_NAMES);
+const reserved = new Set<string>(WIRE_COMPONENT_NAMES);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -246,11 +259,12 @@ const wireContractSections = (deps: GenerationDependencies): GenerationPromptSec
   id: "tree-contract",
   content: `WIRE DIALECT (vendo-genui/v2):
 - Emit exactly one <App name="..."> element containing the whole app. No HTML/JSX comments anywhere — emit only elements. Positional nesting expresses the tree; NEVER emit id attributes — the compiler mints stable ids.
-- <Query id="queryName" tool="tool_name" input={{...}}/> declarations come FIRST inside <App>, before layout, so data fetching starts while the rest streams. A query result lives at the query's name; bind it into props with expressions like value={queryName} or value={queryName.field.path}.
-- Attribute values: "string", {42}, {true}, bare attribute for true, {{...}} objects, {[...]} arrays, and query bindings {queryName.path.segments}. Bindings are PLAIN FIELD REFERENCES ONLY — no arithmetic, no function/method calls (.filter/.map/.length), no bracket indexing (address array elements with dot-numeric segments, e.g. {accounts.data.0.sparkline}), no string concatenation. If a value would need computing, bind the closest raw field instead and let the component render it. There is NO string interpolation: never write {reference} inside a \"string\" attribute — bind the whole prop to one {reference} or use separate Text nodes.
-- Components resolve host catalog -> prewired primitives -> your <Island> components; the host brand wins a name collision. Prewired primitives: ${RESERVED_COMPONENT_NAMES.join(", ")}, Card, Button, Input, Select, Table, Badge, Stat, Tabs.
-- COMPOSE the app from host catalog and prewired components bound to query data. Prefer a host catalog component whenever it covers the need, with its exact name and props schema; use Stat/Card/Table/Badge and layout primitives for everything else. Matching the host brand is a hard goal.
-- Never hardcode business data (invoices, balances, metrics, rows). Every number, label, and row the user sees must come from a <Query> binding; if no tool provides it, leave the region out rather than inventing data. This applies to CHARTS and METRICS too: when NO host tool supplies the numbers, render an honest empty-state (a short Text/Badge that the data isn't available), never fabricated, placeholder, or example figures.
+- DATA comes from INLINE TOOL REFERENCES written directly in a prop: rows={host_listTransactions({limit:20}).data} or value={host_getBudgets({}).totalCents} — the tool call (exact HOST TOOLS name + an args object, {} when none) followed by the field path. The compiler turns each distinct call into one fetch; IDENTICAL call+args used twice is ONE fetch, so reuse the same expression for the same data. Explicit <Query id="name" tool="tool_name" input={{...}}/> declarations (bound as {name.field.path}) are also accepted.
+- Call args (and query inputs) are LITERAL JSON only — never put a reference/binding inside an args object: one call's input can NOT come from another call's result (the runtime executes inputs literally). When a tool needs an id you don't have literally, prefer the no-arg/list variant of the ask, or build the dependent lookup inside an <Island> using ambient tools.
+- Attribute values: "string", {42}, {true}, bare attribute for true, {{...}} objects, {[...]} arrays, and data bindings. A binding is ONE inline tool call plus a plain field path (or a declared query name plus a field path) — NO other computation: no arithmetic, no .filter/.map/.length, no bracket indexing (address array elements with dot-numeric segments, e.g. {host_listAccounts({}).data.0.sparkline}), no string concatenation, no chained or nested calls. If a value would need computing, bind the closest raw field instead and let the component render it. There is NO string interpolation: never write a binding inside a \"string\" attribute — bind the whole prop to one {reference} or use separate Text nodes.
+- Components resolve host catalog -> built-in components (the Kit and legacy primitives in the COMPONENTS section below) -> your <Island> components; the host brand wins a name collision.
+- COMPOSE the app from host catalog and built-in components bound to query data. Prefer a host catalog component whenever it covers the need, with its exact name and props schema; use the Kit (DataTable/Stat/Money/DateTime/charts) and layout primitives for everything else. Matching the host brand is a hard goal.
+- Never hardcode business data (invoices, balances, metrics, rows). Every number, label, and row the user sees must come from a tool binding (inline reference or <Query>); if no tool provides it, leave the region out rather than inventing data. This applies to CHARTS and METRICS too: when NO host tool supplies the numbers, render an honest empty-state (a short Text/Badge that the data isn't available), never fabricated, placeholder, or example figures.
 - Actions are on* attributes naming a host tool or fn:<name> (name matches [A-Za-z_][A-Za-z0-9_-]*), e.g. onClick="host_tool" or onRun="fn:submit". A rung-1 app has no server, so never use fn: on create.
 - An action that CHANGES host state (a write/destructive tool) MUST carry a payload binding the context it acts on — the per-row id for a row action, the form field values for a submit — e.g. onClick={{action:"host_send_reminder", payload:{invoiceId: invoices.rows.0.id}}}. Never wire a submit/primary Button to a read-only tool, and never leave a submit/primary Button with no action: a button that does nothing is a fake affordance. When NO host tool can perform the requested action, do NOT render a dead Submit — render an honest disclaimer (Text/Badge) saying the action isn't available on this host.
 - <Island> generated components are a LAST RESORT: one small, self-contained visual piece that no catalog or prewired component can express (a custom chart, a novel visualization). NEVER put the whole app, layout, data, or fetching inside an island. Island content is top-level <Island name="PascalName">raw TSX with an \`export default\`</Island>, referenced as <PascalName/> — plain source, never wrapped in braces, template literals, or fences.
@@ -258,7 +272,15 @@ const wireContractSections = (deps: GenerationDependencies): GenerationPromptSec
 - Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} islands, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per island, ${TREE_MAX_TOTAL_COMPONENT_BYTES} bytes of island source total.`,
 }, {
   id: "prewired-props",
-  content: `PREWIRED COMPONENT PROPS (use these EXACT prop names — any other name is silently dropped and fails validation):\n${prewiredSchemaPrompt()}`,
+  // W3 — the COMPONENTS section is GENERATED from the component schemas
+  // (kitPrompt over the Kit specs + the legacy primitive signatures); no
+  // hand-written component list survives here.
+  content: `COMPONENTS (generated from the component schemas — use these EXACT component and prop names; an unknown prop is silently dropped and fails validation):
+
+${kitPrompt({ only: [...KIT_WIRE_COMPONENT_NAMES] })}
+
+# Legacy primitives (also available)
+${prewiredSchemaPrompt()}`,
 }, ...hostToolSections(deps),
 ...generationPromptSections(deps).filter(({ id }) =>
   id === "component-styling" || id === "catalog" || id === "theme" || id === "design-rules")];
@@ -271,17 +293,25 @@ const hostToolSections = (deps: GenerationDependencies): GenerationPromptSection
     id: "catalog" as const,
     content: `HOST TOOLS (the ONLY tools a <Query> or action may name — anything else is a validation error):\n${deps.tools.map(({ name, description, risk }) => `- ${name} [${risk}]: ${description}`).join("\n")}`,
   }]),
+  // W3 — the domain manifest is FACT derived at sync, not guidance: it tells
+  // the model what data exists at all, so an out-of-domain ask becomes an
+  // honest disclaimer instead of a repurposed tool or invented figures.
+  ...(deps.domains === undefined || (deps.domains.has.length === 0 && deps.domains.hasNot.length === 0) ? [] : [{
+    id: "catalog" as const,
+    content: `DATA DOMAINS (fact, derived from this host's tools — not guidance):${deps.domains.has.length === 0 ? "" : `\n- This host HAS data for: ${deps.domains.has.join(", ")}.`}${deps.domains.hasNot.length === 0 ? "" : `\n- This host has NO data for: ${deps.domains.hasNot.join(", ")}.`}
+- An ask about a domain not covered above cannot be answered with real data: render an honest empty-state/disclaimer for that part, never repurpose an unrelated tool and never invent figures.`,
+  }]),
   ...(deps.toolShapes === undefined || Object.keys(deps.toolShapes).length === 0 ? [] : [{
     id: "catalog" as const,
-    content: `TOOL RESPONSE SHAPES (bind only to fields that exist; a binding outside these shapes fails validation):\n${Object.entries(deps.toolShapes).map(([tool, shape]) => `- ${tool}: ${describeShape(shape)}`).join("\n")}`,
+    content: `TOOL RESPONSE SHAPES (bind only to fields that exist; a binding outside these shapes fails validation). Field annotations mark semantics: :money.cents = integer CENTS (bind the RAW number into Money cents / a format:"money" column — never pre-format it), :money.dollars = whole dollars, :date.iso and :date.epoch = machine dates (DateTime / format:"date"), :enum(a|b) = closed vocabulary (EnumBadge), :id = OPAQUE host identifier (for action payloads — NEVER invent, guess, or abbreviate an id value; when a call would need an id you don't literally have, use the un-filtered list variant instead), :percent.ratio = 0..1, :percent.0-100 = whole percent.\n${Object.entries(deps.toolShapes).map(([tool, shape]) => `- ${tool}: ${describeShapeWithSemantics(shape, deps.semantics?.[tool] ?? {})}`).join("\n")}`,
   }, {
     id: "catalog" as const,
     content: `RESHAPE PIPES — project & format bound data to the shape a component needs. A binding may end with a bounded \`| op(...)\` pipe (this is the ONLY computation allowed in a binding). PROJECT fetched object arrays into the component's shape, and never bind a raw object array into a slot that expects labeled items:
 - Select options / Tabs tabs need [{value, label}] items. Map a fetched object array with asOptions(valueField, labelField): options={accounts | asOptions(id, name)} — first arg becomes value, second becomes label. Binding a raw object array (e.g. options={accounts}) renders every option BLANK and fails validation.
 - Chart/points props need [{label, value}] items: points={revenue.rows | asPoints(month, revenue)}.
-FORMAT for DISPLAY — money from host tools is integer CENTS, and dates are raw ISO/epoch; a bare number or ISO string shown to the user is a defect. But format(...) turns a number into a STRING, so it is ONLY for text the user reads, NEVER for data a component computes on:
-- format(...) belongs on a text/label slot: a Text/Stat value, a Badge label, or a Table column of a prewired Table. Money (integer cents): value={txn.amount | format(currencyCents)}, or a table column in place: rows={txns | format(amount, currencyCents)}. Dates: value={invoice.dueDate | format(date)}. Percents (0..1): format(percent). Plain numbers: format(number). Use format(currency) only when the field is already in whole dollars.
-- This is NOT optional: EVERY date/timestamp field and EVERY cents money field shown in a Table column, Stat, Text, or Badge MUST carry a format step — chain one per column, e.g. rows={deadlines.data | format(dueDate, date) | format(amount, currencyCents)}. A raw ISO string like 2026-07-21T17:00:00-07:00 or raw cents like 285000 on screen is a defect, on EVERY host.
+FORMAT for DISPLAY — money from host tools is integer CENTS, and dates are raw ISO/epoch; a bare number or ISO string shown to the user is a defect, on EVERY host. The Kit formats for you — PREFER it: <Money cents={...}/> and <DateTime value={...}/> for single values, DataTable/CardList column/field format tokens ("money", "date") for rows, <EnumBadge value={...}/> for enum fields. When you instead show such a field through a LEGACY slot (Text value, legacy Table column, legacy Stat value, Badge label), a format(...) pipe is mandatory. format(...) turns a number into a STRING, so it is ONLY for text the user reads, NEVER for data a component computes on:
+- format(...) belongs on a legacy text/label slot: Money (integer cents): value={txn.amount | format(currencyCents)}, or a legacy Table column in place: rows={txns | format(amount, currencyCents)}. Dates: value={invoice.dueDate | format(date)}. Percents (0..1): format(percent). Plain numbers: format(number). Use format(currency) only when the field is already in whole dollars.
+- One way or the other is NOT optional: EVERY date/timestamp field and EVERY cents money field the user sees must ride a Kit semantic component / format token OR carry a format step. A raw ISO string like 2026-07-21T17:00:00-07:00 or raw cents like 285000 on screen is a defect.
 - NEVER format a value bound into a CHART or visualization component — anything that draws from numbers (a *Chart/*Donut/*Graph/*Plot host component, or its slices/series/points/segments/data/values prop), an <Island>, or a reshape aggregate (sum/avg/asPoints). Those need the RAW numeric field; a chart or total fed formatted STRINGS computes NaN and draws nothing. Example: for a spending donut + a table off the same query, bind slices={spending.data} (raw) but rows={spending.data | format(amount, currencyCents)} (formatted) — do NOT reuse the formatted binding for the donut.
 NEVER bind a raw object or array into a Text body, a Stat value, a Badge label, or a Table cell — it renders as raw JSON like {"received":3,"total":6} and fails validation. Project object-valued fields to ONE readable string with template:
 - Per-row (an object-valued Table column): rows={deadlines.data | template(progress, "{progress.received} of {progress.total}") | template(assignedTo, "{assignedTo.name}")} — template(field, "pattern") rewrites that field per row; {path} placeholders are dot-paths into the row, so nested scalars like {assignedTo.name} work.
@@ -322,6 +352,20 @@ const extractWire = (text: string): string => {
   return close === -1 ? text.slice(start) : text.slice(start, close + closeTag.length);
 };
 
+/** W3 Part 3 (W1 Exp1 verdict: ADOPT) — the production compile options:
+ *  inline tool refs ON everywhere the engine compiles model wire (the
+ *  registry names enable single-segment production tool heads); `<Query>`
+ *  declarations stay accepted unchanged. */
+const wireCompileOptionsFor = (
+  deps: GenerationDependencies,
+  hostComponents: readonly string[],
+): Parameters<typeof compileWireV2>[1] => ({
+  hostComponents,
+  inlineRefs: true,
+  ...(deps.tools === undefined ? {} : { inlineTools: deps.tools.map(({ name }) => name) }),
+  ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
+});
+
 /** Stream the wire, compiling each accumulated prefix (throttled) into a
  *  valid-while-partial tree for the onPartial seam. */
 const streamWire = async (
@@ -344,7 +388,7 @@ const streamWire = async (
     if (deps.onPartial === undefined) return;
     if (firstPartialAt === 0) { firstPartialAt = Date.now(); reportTiming("first-partial"); }
     lastFlushAt = Date.now();
-    const compiled = compileWireV2(extractWire(text), { hostComponents, ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }) });
+    const compiled = compileWireV2(extractWire(text), wireCompileOptionsFor(deps, hostComponents));
     const partial: GeneratedPartial = {
       tree: compiled.tree,
       ...(compiled.name === undefined ? {} : { name: compiled.name }),
@@ -394,7 +438,7 @@ const streamWire = async (
       const usage = await Promise.resolve(result.usage).catch(() => undefined);
       reportTiming("complete", usage === undefined ? undefined : { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens });
     }
-    return { compiled: compileWireV2(extractWire(text), { hostComponents, ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }) }), raw: extractWire(text), issues: [] };
+    return { compiled: compileWireV2(extractWire(text), wireCompileOptionsFor(deps, hostComponents)), raw: extractWire(text), issues: [] };
   } catch (error) {
     await finishPartials();
     return { issues: [`model generation failed: ${error instanceof Error ? error.message : "unknown error"}`] };
@@ -528,6 +572,97 @@ const bindingKindIssues = (
   return issues;
 };
 
+/** W3 (live-verify finding) — asPoints/asOptions produce generic
+ *  {label,value}/{value,label} items; a HOST prop whose schema declares its
+ *  OWN item field names cannot read them (the Maple donut drew $NaN). The
+ *  raw rows are the legal binding — reject the reshape at compile. */
+const GENERIC_ITEM_RESHAPES = new Set(["asPoints", "asOptions"]);
+const hostReshapeIssues = (compiled: WireCompileResult, deps: GenerationDependencies): string[] => {
+  const issues: string[] = [];
+  const hostSchemas = new Map(deps.catalog.map((component) => [component.name, component.propsJsonSchema]));
+  for (const node of compiled.tree.nodes) {
+    if (node.source !== "host" || node.props === undefined) continue;
+    const schema = hostSchemas.get(node.component);
+    const properties = isRecord(schema) && isRecord(schema.properties) ? schema.properties : undefined;
+    if (properties === undefined) continue;
+    for (const [prop, value] of Object.entries(node.props)) {
+      if (!isPathBinding(value)) continue;
+      const reshape = (value as unknown as { $reshape?: Array<{ op?: string }> }).$reshape;
+      if (!Array.isArray(reshape) || !reshape.some((step) => GENERIC_ITEM_RESHAPES.has(step?.op ?? ""))) continue;
+      const propSchema = properties[prop];
+      const items = isRecord(propSchema) && isRecord(propSchema.items) ? propSchema.items : undefined;
+      const itemProperties = items !== undefined && isRecord(items.properties) ? Object.keys(items.properties) : [];
+      if (itemProperties.length === 0) continue;
+      if (itemProperties.includes("label") && itemProperties.includes("value")) continue;
+      issues.push(`node "${node.id}" prop "${prop}" reshapes with asPoints/asOptions, but host component "${node.component}" declares its own item fields (${itemProperties.join(", ")}) — it cannot read generic {label, value} items. Bind the RAW rows (drop the reshape) so the component receives the fields its schema names.`);
+    }
+  }
+  return issues;
+};
+
+/** W3 law 2 (live-verify finding) — a query input executes as LITERAL JSON:
+ *  the runtime never resolves bindings inside it, so a dependent call
+ *  (`accountId: accounts.data.0.id`) reaches the tool as an unresolved
+ *  binding object and the app ships broken. Reject at compile → repair. */
+const queryInputIssues = (tree: TreeV2): string[] => {
+  const issues: string[] = [];
+  const findBinding = (value: unknown): boolean => {
+    if (isPathBinding(value) || isStateBinding(value)) return true;
+    if (Array.isArray(value)) return value.some(findBinding);
+    if (isRecord(value)) return Object.values(value).some(findBinding);
+    return false;
+  };
+  for (const query of tree.queries ?? []) {
+    if (query.input !== undefined && findBinding(query.input)) {
+      issues.push(`query "${query.name}" (tool "${query.tool}") embeds a binding in its input — query inputs must be LITERAL JSON the tool can execute directly; another query's result can never feed a query input. Use a literal value (or drop the optional input), or build the dependent lookup inside an <Island> with ambient tools.`);
+    }
+  }
+  return issues;
+};
+
+/** W3 law 1 raw typing — probe values per shape kind, parsed against the Kit
+ *  prop's zod schema. Kind-level only: a string-shaped field bound into
+ *  Money.cents fails (pre-formatted money strings never reach a numeric
+ *  slot); unknown shapes stay silent. */
+const KIND_PROBES: Partial<Record<ShapeType["kind"], unknown>> = {
+  string: "probe",
+  number: 1,
+  boolean: true,
+  array: [],
+  object: {},
+};
+
+const KIT_WIRE_SET: ReadonlySet<string> = new Set(KIT_WIRE_COMPONENT_NAMES);
+
+const kitSlotIssues = (compiled: WireCompileResult, deps: GenerationDependencies): string[] => {
+  if (deps.toolShapes === undefined) return [];
+  const issues: string[] = [];
+  const queryTool = new Map((compiled.tree.queries ?? []).map((query) => [query.name, query.tool]));
+  for (const node of compiled.tree.nodes) {
+    if (node.source === "host" || node.source === "generated" || node.props === undefined) continue;
+    if (!KIT_WIRE_SET.has(node.component)) continue;
+    const spec = kitSpec(node.component);
+    if (spec === undefined) continue;
+    for (const [prop, value] of Object.entries(node.props)) {
+      if (!isPathBinding(value) || "$reshape" in (value as unknown as Record<string, unknown>)) continue;
+      const propSpec = spec.props[prop];
+      if (propSpec === undefined) continue;
+      const [, queryName = "", ...rest] = value.$path.split("/");
+      const tool = queryTool.get(queryName);
+      const shape = tool === undefined ? undefined : deps.toolShapes[tool];
+      if (shape === undefined) continue;
+      const bound = shapeAtPointer(shape, rest.length === 0 ? "" : `/${rest.join("/")}`);
+      if (bound === undefined || bound.kind === "json" || bound.kind === "null") continue;
+      const probe = KIND_PROBES[bound.kind];
+      if (probe === undefined) continue;
+      if (!propSpec.schema.safeParse(probe).success) {
+        issues.push(`node "${node.id}" prop "${prop}" on <${node.component}> binds ${value.$path}, a ${bound.kind} field, but this slot takes a different RAW type (${propSpec.doc}) — bind the raw field with that type (e.g. the integer-cents field, not a pre-formatted display string).`);
+      }
+    }
+  }
+  return issues;
+};
+
 /** verify-v2 fixes — models write "Total: {metric.total}" inside STRING
  *  attributes; the wire has no string interpolation, so the braces render
  *  literally. Any string prop embedding a declared query reference is a
@@ -587,8 +722,16 @@ const validateCompiledCreate = async (
   issues.push(...compiled.bindingErrors.map((error) =>
     `binding ${error.path} on node "${error.nodeId}" prop "${error.prop}": ${error.message}${error.available === undefined ? "" : ` (available: ${error.available.join(", ")})`}`));
   issues.push(...bindingKindIssues(compiled, deps));
+  issues.push(...kitSlotIssues(compiled, deps));
+  issues.push(...hostReshapeIssues(compiled, deps));
+  issues.push(...queryInputIssues(compiled.tree));
   issues.push(...interpolationIssues(compiled));
   issues.push(...await catalogIssues(compiled.tree, components, deps.catalog));
+  // Law 1 is checkable only when a tool surface exists to trace data to —
+  // a tool-less composition (fresh init, bare tests) has nothing to bind.
+  if (deps.tools !== undefined && deps.tools.length > 0) {
+    issues.push(...literalDataIssues(compiled.tree, deps.catalog));
+  }
   issues.push(...actionIssues(compiled.tree, deps.tools));
   issues.push(...rootedRenderIssues(compiled.tree));
   if (issues.length > 0) return { issues };
@@ -731,13 +874,26 @@ const catalogIssues = async (
 const actionIssues = (tree: TreeV2, tools: readonly HostToolInfo[] | undefined): string[] =>
   actionFaults(tree, tools).map((fault) => {
     if (fault.kind === "dead-submit") {
-      return `node "${fault.nodeId}" is a submit button ("${fault.label}") with no action — a button that does nothing is a fake affordance. Wire its onClick to a host tool that performs the action, binding the form/row context into payload; or if NO host tool can perform it, replace the button with an honest Text/Badge disclaimer that the action isn't available.`;
+      return `node "${fault.nodeId}" is a submit affordance ("${fault.label}") with no action — a submit that does nothing is a fake affordance. Wire its action to a host tool that performs it, binding the form/row context into payload; or if NO host tool can perform it, replace it with an honest disclaimer that the action isn't available.`;
     }
     if (fault.kind === "missing-payload") {
       return `node "${fault.nodeId}" prop "${fault.prop}" invokes mutating tool "${fault.action}" with no payload — bind the context it acts on (a per-row id, or the form field values) into payload:{...} so the action has something to change.`;
     }
-    return `node "${fault.nodeId}" submit button ("${fault.label}") prop "${fault.prop}" is wired to read-only tool "${fault.action}" — a submit that only reads is a fake affordance. Wire it to a mutating host tool with a payload, or render an honest disclaimer if the host has none.`;
+    if (fault.kind === "unknown-tool") {
+      return `node "${fault.nodeId}" prop "${fault.prop}" invokes unknown tool "${fault.action}" — law 2: an action must name a REAL host tool from the HOST TOOLS list (or fn:<name>). Pick the real tool, or render an honest disclaimer if the host has none.`;
+    }
+    if (fault.kind === "ungrounded-payload") {
+      return `node "${fault.nodeId}" prop "${fault.prop}" sends tool "${fault.action}" payload field(s) ${(fault.unknownFields ?? []).map((field) => `"${field}"`).join(", ")} it does not declare — law 2: payload fields must be the tool's real input parameters (${(fault.allowedFields ?? []).join(", ")}).`;
+    }
+    return `node "${fault.nodeId}" submit affordance ("${fault.label}") prop "${fault.prop}" is wired to read-only tool "${fault.action}" — a submit that only reads is a fake affordance. Wire it to a mutating host tool with a payload, or render an honest disclaimer if the host has none.`;
   });
+
+/** W3 law 1 — hand-typed business data on a data-classed prop (Kit prop
+ *  classes, legacy data props, host catalog schemas). Detection lives in
+ *  pipeline.ts (shared with the structured-repair fix space). */
+const literalDataIssues = (tree: TreeV2, catalog: NormalizedCatalog): string[] =>
+  literalDataFaults(tree, catalog).map((fault) =>
+    `node "${fault.nodeId}" prop "${fault.prop}" on <${fault.component}> carries hand-typed LITERAL business data — law 1: every data-classed prop must be a binding to a tool result, e.g. ${fault.prop}={queryName.field.path}. If NO host tool provides this data, render an honest <Disclaimer reason="..."/> instead — never invent figures.`);
 
 export const distinctIssues = (current: string[], next: string[]): string[] => [
   ...new Set([...current, ...next]),
@@ -805,12 +961,14 @@ const validateEditedApp = async (
   const sourceCatalogIssues = sourceTreeValidation.ok
     ? new Set([
       ...await catalogIssues(sourceTreeValidation.tree, source.components, deps.catalog),
+      ...literalDataIssues(sourceTreeValidation.tree, deps.catalog),
       ...actionIssues(sourceTreeValidation.tree, deps.tools),
     ])
     : new Set<string>();
   return [
     ...rootedRenderIssues(treeValidation.tree).filter((issue) => !sourceRenderIssues.has(issue)),
     ...(await catalogIssues(treeValidation.tree, app.components, deps.catalog)).filter((issue) => !sourceCatalogIssues.has(issue)),
+    ...literalDataIssues(treeValidation.tree, deps.catalog).filter((issue) => !sourceCatalogIssues.has(issue)),
     ...actionIssues(treeValidation.tree, deps.tools).filter((issue) => !sourceCatalogIssues.has(issue)),
   ];
 };
@@ -1073,7 +1231,7 @@ export const modelEngine: GenerationEngine = {
         },
         ...(fullLaneDeps.onPartial === undefined ? {} : {
           emitPartial: (assembledWire: string) => {
-            const compiled = compileWireV2(assembledWire, { hostComponents, ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }) });
+            const compiled = compileWireV2(assembledWire, wireCompileOptionsFor(deps, hostComponents));
             if (compiled.tree.nodes.length < residentNodes) return;
             void Promise.resolve(fullLaneDeps.onPartial?.({
               tree: compiled.tree,

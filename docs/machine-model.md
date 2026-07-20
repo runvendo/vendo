@@ -44,7 +44,9 @@ Which provider runs the box is the standard adapter decision, made once in
 Machine provisioning requires `VENDO_BASE_URL`: the box's callback URLs must
 be this deployment's public origin. `VENDO_BOX_TEMPLATE` sets the provider
 base template for BYO e2b (the image built by
-`packages/apps/box/build-template.mjs`: Node plus the in-box agent harness);
+`packages/apps/box/build-template.mjs`: Node plus the in-box agent harness,
+plus a pre-baked served-app scaffold at `/opt/vendo-box/scaffold` that layer-3
+builds copy and edit instead of writing the skin plumbing from scratch);
 the Cloud pool ships its own base image and takes no template.
 
 ## Graduation
@@ -57,6 +59,14 @@ approval card when the declaration needs one, and rewires the tree's data
 bindings to the new `fn:` functions. The tree keeps working throughout. A
 failed server build rolls back to the pre-edit snapshot; a failed tree rebind
 (3 attempts) keeps the working tree and reports the miss in `issues`.
+
+The rebind checks binding paths against the fn's real result shape: each fn a
+query binds is sampled once (the same call the query itself makes; fn
+responses unwrap their `{result}` envelope), the sampled shape feeds the edit
+compiler's binding type-check, and a mismatch (for example a host tool's
+`/data/` envelope path carried onto an fn: query) routes to per-binding
+repair instead of persisting a tree that renders blanks. A failed sample
+leaves that fn's shape unknown and defensive.
 
 **2 to 3** is an honest UI rewrite in the same box, gated behind the
 experimental served-apps flag. The tree keeps serving until the new surface is

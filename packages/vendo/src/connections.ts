@@ -20,6 +20,14 @@ export interface InitiatedConnection {
   redirectUrl: string;
 }
 
+/** One row of the connect dock's auto catalog: a toolkit a user could finish
+ * connecting, tagged with the broker that would carry it. */
+export interface ConnectableToolkit {
+  toolkit: string;
+  connector: string;
+  label?: string;
+}
+
 /** 04-actions §3 (block-actions design §B) — the umbrella's per-principal
  * connected-accounts surface. Which implementation composes is decided at the
  * seam, never in here (adapter rule — see selectConnections in server.ts).
@@ -35,6 +43,9 @@ export interface ConnectionsService {
   initiate(principal: Principal, options: InitiateOptions): Promise<InitiatedConnection>;
   status(principal: Principal, connector: string, connectionId: string): Promise<ConnectorAccount | null>;
   disconnect(principal: Principal, connector: string, connectionId: string): Promise<void>;
+  /** The connect dock's auto catalog — host-level (every principal sees the
+   * same rows), unlike everything above. Empty when nothing is connectable. */
+  catalog(): Promise<ConnectableToolkit[]>;
 }
 
 function guardInitiatePrincipal(principal: Principal): void {
@@ -106,6 +117,13 @@ export function byoConnections(connectors: Connector[]): ConnectionsService {
     async disconnect(principal, connector, connectionId) {
       await broker(connector).connections.disconnect(principal.subject, connectionId);
     },
+    async catalog() {
+      const catalogs = await Promise.all(brokers.map(async (candidate) => {
+        const entries = await candidate.connections.listConnectable?.() ?? [];
+        return entries.map((entry) => ({ ...entry, connector: candidate.name }));
+      }));
+      return catalogs.flat();
+    },
   };
 }
 
@@ -113,6 +131,11 @@ export interface CloudConnectionsOptions {
   apiKey: string;
   /** Defaults to the Vendo console; the composition seam passes VENDO_CLOUD_URL. */
   baseUrl?: string;
+  /** Catalog scoping, mirroring cloudTools' `apps`: a host that scopes its
+   * cloud tools explicitly passes the same list here so the connect dock
+   * never advertises a toolkit the agent cannot invoke. Unset = everything
+   * the console's catalog serves. */
+  apps?: string[];
   fetch?: typeof fetch;
 }
 
@@ -211,6 +234,13 @@ export function cloudConnections(options: CloudConnectionsOptions): ConnectionsS
         { method: "DELETE" },
       );
     },
+    async catalog() {
+      const payload = await cloudFetch("/api/v1/connections/catalog") as { available?: unknown };
+      const available = Array.isArray(payload.available) ? (payload.available as ConnectableToolkit[]) : [];
+      return options.apps === undefined
+        ? available
+        : available.filter((entry) => options.apps!.includes(entry.toolkit));
+    },
   };
 }
 
@@ -229,5 +259,6 @@ export function unconfiguredConnections(): ConnectionsService {
     initiate: async () => refuse(),
     status: async () => refuse(),
     disconnect: async () => refuse(),
+    catalog: async () => [],
   };
 }

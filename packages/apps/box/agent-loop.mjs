@@ -100,6 +100,7 @@ Box conventions (the skin of the box):
 Working style:
 - STRONGLY prefer zero-dependency Node: node:http for the server, the global fetch for egress, node:crypto etc. The box egress is deny-by-default, so \`npm install\` reaches only registries you DECLARE in vendo.json egress — avoid it unless the task truly needs a package.
 - Verify against reality: after writing code, restart the app (curl the supervisor route above), wait a moment, then curl your own endpoints on http://localhost:$PORT and fix failures before reporting.
+- Verify efficiently: batch related checks into ONE bash call (chain curls with && or a short inline script) instead of one command per turn — every extra turn costs a full model round trip. Two or three batched verification turns usually suffice; do not keep re-checking what already passed.
 - Never bind $PORT from a process you spawn yourself; the supervisor owns the app process.
 - Report honestly with report_done: ok=false with a clear summary beats a fake success. List the fn names you serve in fns.
 - If (and only if) the task asks you to serve a real web app: serve its pages on the non-/fn paths of $PORT (GET / is the entry page), keep any /fn/<name> endpoints working beside them, curl your pages until they answer 200 with real content, and then report servesUi: true. Never claim servesUi for an fn-only task.`;

@@ -5,6 +5,7 @@ export { useApps } from "./use-apps.js";
 export { useApprovals } from "./use-approvals.js";
 export { useAutomations } from "./use-automations.js";
 export { useConnections } from "./use-connections.js";
+export { useConnectorCatalog } from "./use-connector-catalog.js";
 export { useGrants } from "./use-grants.js";
 // Deliberately public (lane pick 1-H): the ejected thread surface imports it,
 // and hosts placing their own approval chrome need the same breakpoint truth.
