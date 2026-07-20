@@ -1,16 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { pnpmMajorFromField } from "./local-pack.js";
 
 const CURATION_KEYS = ["onlyBuiltDependencies", "neverBuiltDependencies", "allowBuilds"] as const;
-
-/** Major of a `packageManager: "pnpm@x.y.z"` pin, or null when the field is
- * absent or pins another manager. */
-function pinnedPnpmMajor(pkg: { packageManager?: unknown }): number | null {
-  const field = pkg.packageManager;
-  if (typeof field !== "string" || !field.startsWith("pnpm@")) return null;
-  const major = Number.parseInt(field.slice("pnpm@".length).split(".")[0] ?? "", 10);
-  return Number.isFinite(major) ? major : null;
-}
 
 /** pnpm ≥10 errors (ERR_PNPM_CONFIG_CONFLICT_BUILT_DEPENDENCIES) on
  * dangerouslyAllowAllBuilds when the workspace already declares a curated
@@ -41,7 +33,7 @@ export async function pnpmDeclaresBuiltDependencies(installDir: string): Promise
       packageManager?: unknown;
       pnpm?: Record<string, unknown>;
     };
-    const pnpmMajor = pinnedPnpmMajor(pkg);
+    const pnpmMajor = pnpmMajorFromField(pkg.packageManager);
     if (pnpmMajor === null || pnpmMajor >= 11) return false;
     return CURATION_KEYS.some((key) => pkg.pnpm?.[key] !== undefined);
   } catch {

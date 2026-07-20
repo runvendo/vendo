@@ -168,7 +168,10 @@ function packageManagerFromField(value: unknown): LocalPackageManager | null {
   return Number.isFinite(major) && major < 2 ? "yarn-classic" : "yarn-berry";
 }
 
-function pnpmMajorFromField(value: unknown): number | null {
+/** Major of a `packageManager: "pnpm@x.y.z"` pin, or null when the field is
+ * absent or pins another manager. Exported so pnpm-build-policy.ts gates on
+ * the SAME parse install detection uses — two copies could drift. */
+export function pnpmMajorFromField(value: unknown): number | null {
   if (typeof value !== "string" || !value.startsWith("pnpm@")) return null;
   const major = Number.parseInt(value.slice("pnpm@".length).split(".")[0] ?? "", 10);
   return Number.isFinite(major) ? major : null;
