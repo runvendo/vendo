@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore, type CSSProperties } from "r
 
 /** The takeover breakpoint from the designed CSS: full-bleed below 768px
  *  (chrome-css.ts, "full-screen mobile takeover"). */
-export const MOBILE_TAKEOVER_QUERY = "(max-width: 767px)";
+const MOBILE_TAKEOVER_QUERY = "(max-width: 767px)";
 
 function subscribe(onChange: () => void): () => void {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => {};

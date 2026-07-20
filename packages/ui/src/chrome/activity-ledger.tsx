@@ -18,7 +18,7 @@ import {
 
 /** The status glyph for an outcome tone. In-flight tones animate (pulse/spin);
     settled tones use a static tick / cross that reads without colour alone. */
-export function OutcomeIcon({ tone }: { tone: OutcomeTone }) {
+function OutcomeIcon({ tone }: { tone: OutcomeTone }) {
   if (tone === "running") return <span className="fl-act-pulse" aria-hidden="true" />;
   if (tone === "pending") return <span className="fl-act-spin" aria-hidden="true" />;
   const glyph = tone === "ok" ? "✓" : tone === "connect" ? "⭘" : "✕";

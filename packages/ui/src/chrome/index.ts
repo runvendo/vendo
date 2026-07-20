@@ -24,7 +24,7 @@ export { VendoStage } from "../voice/stage.js";
     (scripts/eject-templates-lib.mjs enforces this list at build). Exported
     deliberately — ejected chrome keeps data/wire logic as a package
     dependency and only forks pixels (§4 customization ladder). */
-export { ActivityLedger, OutcomeIcon } from "./activity-ledger.js";
+export { ActivityLedger } from "./activity-ledger.js";
 export {
   describeActivity,
   formatAuditTime,

@@ -5,6 +5,7 @@ import {
   type PropsWithChildren,
   type ReactNode,
 } from "react";
+import type { BRANDED_COMPONENT_NAMES } from "@vendoai/core";
 
 type PrimitiveAction = () => unknown;
 type PrimitiveValue = string | number | boolean | null | undefined;
@@ -601,7 +602,9 @@ export function Tabs({ label = "Tabs", value, tabs, items, onChange }: TabsProps
   );
 }
 
-/** The fixed branded primitive addition for ENG-242. */
+/** The fixed branded primitive addition for ENG-242. Keys must be exactly
+ *  core's BRANDED_COMPONENT_NAMES (the ONE list this file mirrors); the
+ *  `satisfies` check makes drift a compile error. */
 export const BRANDED_COMPONENTS = {
   Card,
   Button,
@@ -611,4 +614,4 @@ export const BRANDED_COMPONENTS = {
   Badge,
   Stat,
   Tabs,
-} as const;
+} as const satisfies Record<(typeof BRANDED_COMPONENT_NAMES)[number], unknown>;

@@ -44,7 +44,6 @@ const VALUE_EXPORTS = [
   // ui-lane-panels pick B — the shared icon-ledger rows (ActivityPanel +
   // VendoActivities render through them; ejected activities fork them).
   "ActivityLedger",
-  "OutcomeIcon",
   "formatRelativeAuditTime",
   "kindGlyph",
   "BuildBeat",

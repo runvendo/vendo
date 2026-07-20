@@ -186,6 +186,39 @@ describe("toasts (ENG-225)", () => {
     await waitFor(() => expect(screen.queryByText(/Waiting on you: Invoice delete/)).toBeNull());
     await wire.close();
   });
+
+  it("keeps the approval toast when the decide fails, so Approve stays retryable", async () => {
+    const wire = await createWireServer();
+    const client = createVendoClient({ baseUrl: wire.url });
+    render(<VendoProvider client={client}><VendoToasts approvals pollMs={40} /></VendoProvider>);
+
+    // Baseline settles, then a new approval parks and toasts.
+    await new Promise(resolve => setTimeout(resolve, 120));
+    wire.state.approvals.push({
+      ...wire.state.approvals[0]!,
+      id: "apr_2",
+      call: { id: "call_2", tool: "host_invoice_delete", args: {} },
+      descriptor: { name: "host_invoice_delete", description: "Delete invoice", inputSchema: {}, risk: "destructive" },
+    });
+    await screen.findByText(/Waiting on you: Invoice delete/);
+
+    // The wire rejects the next decide (server 500 / dropped connection).
+    wire.state.failures.push({ method: "POST", path: "/approvals/decide", code: "boom", message: "kaboom", status: 500 });
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(
+      wire.requests.filter(request => request.method === "POST" && request.path === "/approvals/decide"),
+    ).toHaveLength(1));
+    // The approval is still parked server-side — the toast must NOT vanish as
+    // if the approval succeeded (a dismissed card can never re-surface here).
+    expect(wire.state.approvals.some(item => item.id === "apr_2")).toBe(true);
+    expect(screen.queryByText(/Waiting on you: Invoice delete/)).not.toBeNull();
+
+    // The failure consumed, a second Approve decides it and withdraws the card.
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(wire.state.approvals.some(item => item.id === "apr_2")).toBe(false));
+    await waitFor(() => expect(screen.queryByText(/Waiting on you: Invoice delete/)).toBeNull());
+    await wire.close();
+  });
 });
 
 describe("connect dock + tray (ENG-225)", () => {

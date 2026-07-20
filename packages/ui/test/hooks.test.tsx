@@ -151,6 +151,60 @@ describe("headless hooks", () => {
     expect(result.current.surface).toMatchObject({ kind: "tree", payload: { root: "app_second" } });
   });
 
+  it("keeps the newest app state when overlapping refreshes resolve out of order", async () => {
+    // Refresh #2 is gated (a slow round trip); refresh #3 resolves first. The
+    // late #2 response — served pre-mutation — must NOT clobber #3's state.
+    let refreshIndex = 0;
+    let releaseSecond!: () => void;
+    const secondGate = new Promise<void>(resolve => { releaseSecond = resolve; });
+    const racingClient = {
+      ...client,
+      apps: {
+        ...client.apps,
+        get: async (id: string) => {
+          refreshIndex += 1;
+          const index = refreshIndex;
+          if (index === 2) await secondGate;
+          return { format: "vendo/app@1" as const, id, name: index === 2 ? "stale" : index === 3 ? "fresh" : "initial" };
+        },
+        open: async (id: string) => {
+          const index = refreshIndex;
+          if (index === 2) await secondGate;
+          return {
+            kind: "tree" as const,
+            payload: {
+              formatVersion: "vendo-genui/v2",
+              root: `r${index}`,
+              nodes: [{ id: `r${index}`, component: "Text", props: { text: id } }],
+            },
+          };
+        },
+      },
+    } satisfies VendoClient;
+    const racingWrapper = ({ children }: PropsWithChildren) => (
+      <VendoProvider client={racingClient}>{children}</VendoProvider>
+    );
+    const { result } = renderHook(() => useApp("app_1"), { wrapper: racingWrapper });
+    await waitFor(() => expect(result.current.app?.name).toBe("initial"));
+
+    let second!: Promise<void>;
+    let third!: Promise<void>;
+    act(() => {
+      second = result.current.refresh();
+      third = result.current.refresh();
+    });
+    await act(async () => { await third; });
+    expect(result.current.app?.name).toBe("fresh");
+
+    await act(async () => {
+      releaseSecond();
+      await second;
+    });
+    // The stale response must be dropped: the newer refresh already landed.
+    expect(result.current.app?.name).toBe("fresh");
+    expect(result.current.surface).toMatchObject({ kind: "tree", payload: { root: "r3" } });
+  });
+
   it("loads automations and proxies enable, disable, dry-run, filtered runs, and stop", async () => {
     const { result } = renderHook(() => useAutomations(), { wrapper });
     expect(result.current.automations).toEqual([]);

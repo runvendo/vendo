@@ -19,7 +19,7 @@ function rawToolName(part: AnyToolPart): string {
 }
 
 /** Connector tools ("slack_SLACK_SEND_MESSAGE", "GMAIL_SEND_EMAIL") → toolkit slug. */
-export function toolkitFromToolName(name: string): string | undefined {
+function toolkitFromToolName(name: string): string | undefined {
   const match = /^([a-z]+)_[A-Z0-9_]+$/.exec(name) ?? /^([A-Z]+)_[A-Z0-9_]+$/.exec(name);
   return match ? match[1]!.toLowerCase() : undefined;
 }

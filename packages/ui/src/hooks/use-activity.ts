@@ -1,8 +1,8 @@
 /** Self-scoped audit activity transport (08-ui §3). */
 import type { AuditEvent } from "@vendoai/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useVendoContext } from "../context.js";
-import type { PollOptions } from "./use-resource.js";
+import { useResource, type PollOptions } from "./use-resource.js";
 
 function dedupe(events: AuditEvent[]): AuditEvent[] {
   const seen = new Set<string>();
@@ -22,10 +22,6 @@ function pageCursor(event: AuditEvent | undefined): string | undefined {
   return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function asError(reason: unknown): Error {
-  return reason instanceof Error ? reason : new Error(String(reason));
-}
-
 export function useActivity(options?: PollOptions): {
   /** Back-compat alias for `data` (contract §3). */
   events: AuditEvent[];
@@ -40,69 +36,33 @@ export function useActivity(options?: PollOptions): {
   refresh(): Promise<void>;
 } {
   const { client } = useVendoContext();
-  const [events, setEvents] = useState<AuditEvent[]>([]);
-  const [error, setError] = useState<Error>();
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasMore, setHasMore] = useState(true);
-  const generationRef = useRef(0);
-  const loadedRef = useRef(false);
-  const pollMs = options?.pollMs;
-
-  const refresh = useCallback(async () => {
-    const generation = (generationRef.current += 1);
-    if (!loadedRef.current) setIsLoading(true);
-    try {
-      const firstPage = await client.activity.list();
-      if (generation !== generationRef.current) return;
-      // A refresh reloads the first page rather than appending — pagination
-      // continues from the reset head via loadMore.
-      setEvents(dedupe(firstPage));
-      // An empty first page is already the end; a full one may have more behind
-      // the cursor, proven (or disproven) by the next loadMore.
-      setHasMore(firstPage.length > 0);
-      setError(undefined);
-      loadedRef.current = true;
-    } catch (reason) {
-      if (generation !== generationRef.current) return;
-      setError(asError(reason));
-    } finally {
-      if (generation === generationRef.current) setIsLoading(false);
-    }
-  }, [client]);
+  const list = useCallback(() => client.activity.list(), [client]);
+  const { data: firstPage, error, isLoading, refresh } = useResource(list, [] as AuditEvent[], options);
+  // Pages appended by loadMore; a refresh (manual or poll) reloads the first
+  // page rather than appending, so a fresh first page resets pagination and
+  // loadMore continues from the reset head.
+  const [extra, setExtra] = useState<AuditEvent[]>([]);
+  const [ended, setEnded] = useState(false);
 
   useEffect(() => {
-    void refresh();
-    return () => {
-      generationRef.current += 1;
-    };
-  }, [refresh]);
+    setExtra([]);
+    setEnded(false);
+  }, [firstPage]);
 
-  // Self-scheduling so a slow request can't stack overlapping polls (see
-  // use-resource.ts for the rationale).
-  useEffect(() => {
-    if (pollMs === undefined || pollMs <= 0) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const tick = async () => {
-      await refresh();
-      if (!cancelled) timer = setTimeout(() => void tick(), pollMs);
-    };
-    timer = setTimeout(() => void tick(), pollMs);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [pollMs, refresh]);
+  const events = useMemo(() => dedupe([...firstPage, ...extra]), [firstPage, extra]);
+  // An empty first page is already the end; a full one may have more behind
+  // the cursor, proven (or disproven) by the next loadMore.
+  const hasMore = !ended && (isLoading || firstPage.length > 0);
 
   const loadMore = useCallback(async () => {
     const cursor = pageCursor(events.at(-1));
     const next = await client.activity.list(cursor === undefined ? undefined : { cursor });
     const known = new Set(events.map(event => event.id));
     const added = next.filter(event => !known.has(event.id));
-    setEvents(current => dedupe([...current, ...added]));
+    setExtra(current => [...current, ...added]);
     // No page, or a page that surfaced nothing new, means there is nothing
     // older left to fetch — we have reached the end of the audit history.
-    setHasMore(added.length > 0);
+    setEnded(added.length === 0);
   }, [client, events]);
 
   return { events, data: events, error, isLoading, hasMore, loadMore, refresh };
