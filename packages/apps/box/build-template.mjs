@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 /**
- * execution-v2 Wave 3 — build the base box template.
+ * execution-v2 Wave 3 (agent engine swapped Wave 8) — build the base box
+ * template.
  *
  * The template bakes Node + the in-box agent harness (bootstrap.mjs +
- * harness.mjs + agent-loop.mjs) and a curl toolbelt into a reproducible e2b
- * template. Its start command runs the harness, which serves the control port
- * (8811) and supervises the app the in-box agent writes under /app.
+ * harness.mjs + agent-sdk.mjs) + the Claude Agent SDK (npm-installed into
+ * /opt/vendo-box at BUILD time — install size is a template concern, never a
+ * wake concern) and a curl toolbelt into a reproducible e2b template. Its
+ * start command runs the harness, which serves the control port (8811) and
+ * supervises the app the in-box agent writes under /app.
  *
  *   node build-template.mjs [name]
  *
@@ -19,6 +22,10 @@ import process from "node:process";
 import { Template, waitForPort } from "e2b";
 
 const CONTROL_PORT = 8811;
+// The in-box agent engine (Wave 8): Claude Code as a library, pinned so the
+// template is reproducible. npm auto-installs its peers (zod, the Anthropic
+// SDK, the MCP SDK).
+const AGENT_SDK_VERSION = "0.3.215";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const name = process.argv[2] ?? "vendo-box";
 
@@ -34,8 +41,15 @@ const template = Template()
   // The sandbox runs as a non-root user, so create the dirs and land the
   // harness as root (the files stay world-readable for the start command).
   .runCmd("mkdir -p /app /app/.vendo /opt/vendo-box && chmod 777 /app /app/.vendo", { user: "root" })
+  // Wave 8 — the agent engine is the Claude Agent SDK, installed at BUILD
+  // time (the template bake has full network; the running box does not).
+  // agent-sdk.mjs resolves it from /opt/vendo-box/node_modules.
+  .runCmd(
+    `cd /opt/vendo-box && npm init -y >/dev/null && npm install --omit=dev @anthropic-ai/claude-agent-sdk@${AGENT_SDK_VERSION} && chmod -R a+rX /opt/vendo-box`,
+    { user: "root" },
+  )
   .copy("harness.mjs", "/opt/vendo-box/harness.mjs", { user: "root" })
-  .copy("agent-loop.mjs", "/opt/vendo-box/agent-loop.mjs", { user: "root" })
+  .copy("agent-sdk.mjs", "/opt/vendo-box/agent-sdk.mjs", { user: "root" })
   .copy("bootstrap.mjs", "/opt/vendo-box/bootstrap.mjs", { user: "root" })
   // Wave 7 H2 — the pre-baked served-app scaffold: a layer-3 build starts
   // warm by copying it into /app and EDITING (skin-contract plumbing —
