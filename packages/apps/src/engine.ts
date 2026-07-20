@@ -259,11 +259,11 @@ const wireContractSections = (deps: GenerationDependencies): GenerationPromptSec
   id: "tree-contract",
   content: `WIRE DIALECT (vendo-genui/v2):
 - Emit exactly one <App name="..."> element containing the whole app. No HTML/JSX comments anywhere — emit only elements. Positional nesting expresses the tree; NEVER emit id attributes — the compiler mints stable ids.
-- <Query id="queryName" tool="tool_name" input={{...}}/> declarations come FIRST inside <App>, before layout, so data fetching starts while the rest streams. A query result lives at the query's name; bind it into props with expressions like value={queryName} or value={queryName.field.path}.
-- Attribute values: "string", {42}, {true}, bare attribute for true, {{...}} objects, {[...]} arrays, and query bindings {queryName.path.segments}. Bindings are PLAIN FIELD REFERENCES ONLY — no arithmetic, no function/method calls (.filter/.map/.length), no bracket indexing (address array elements with dot-numeric segments, e.g. {accounts.data.0.sparkline}), no string concatenation. If a value would need computing, bind the closest raw field instead and let the component render it. There is NO string interpolation: never write {reference} inside a \"string\" attribute — bind the whole prop to one {reference} or use separate Text nodes.
+- DATA comes from INLINE TOOL REFERENCES written directly in a prop: rows={host_listTransactions({limit:20}).data} or value={host_getBudgets({}).totalCents} — the tool call (exact HOST TOOLS name + an args object, {} when none) followed by the field path. The compiler turns each distinct call into one fetch; IDENTICAL call+args used twice is ONE fetch, so reuse the same expression for the same data. Explicit <Query id="name" tool="tool_name" input={{...}}/> declarations (bound as {name.field.path}) are also accepted.
+- Attribute values: "string", {42}, {true}, bare attribute for true, {{...}} objects, {[...]} arrays, and data bindings. A binding is ONE inline tool call plus a plain field path (or a declared query name plus a field path) — NO other computation: no arithmetic, no .filter/.map/.length, no bracket indexing (address array elements with dot-numeric segments, e.g. {host_listAccounts({}).data.0.sparkline}), no string concatenation, no chained or nested calls. If a value would need computing, bind the closest raw field instead and let the component render it. There is NO string interpolation: never write a binding inside a \"string\" attribute — bind the whole prop to one {reference} or use separate Text nodes.
 - Components resolve host catalog -> built-in components (the Kit and legacy primitives in the COMPONENTS section below) -> your <Island> components; the host brand wins a name collision.
 - COMPOSE the app from host catalog and built-in components bound to query data. Prefer a host catalog component whenever it covers the need, with its exact name and props schema; use the Kit (DataTable/Stat/Money/DateTime/charts) and layout primitives for everything else. Matching the host brand is a hard goal.
-- Never hardcode business data (invoices, balances, metrics, rows). Every number, label, and row the user sees must come from a <Query> binding; if no tool provides it, leave the region out rather than inventing data. This applies to CHARTS and METRICS too: when NO host tool supplies the numbers, render an honest empty-state (a short Text/Badge that the data isn't available), never fabricated, placeholder, or example figures.
+- Never hardcode business data (invoices, balances, metrics, rows). Every number, label, and row the user sees must come from a tool binding (inline reference or <Query>); if no tool provides it, leave the region out rather than inventing data. This applies to CHARTS and METRICS too: when NO host tool supplies the numbers, render an honest empty-state (a short Text/Badge that the data isn't available), never fabricated, placeholder, or example figures.
 - Actions are on* attributes naming a host tool or fn:<name> (name matches [A-Za-z_][A-Za-z0-9_-]*), e.g. onClick="host_tool" or onRun="fn:submit". A rung-1 app has no server, so never use fn: on create.
 - An action that CHANGES host state (a write/destructive tool) MUST carry a payload binding the context it acts on — the per-row id for a row action, the form field values for a submit — e.g. onClick={{action:"host_send_reminder", payload:{invoiceId: invoices.rows.0.id}}}. Never wire a submit/primary Button to a read-only tool, and never leave a submit/primary Button with no action: a button that does nothing is a fake affordance. When NO host tool can perform the requested action, do NOT render a dead Submit — render an honest disclaimer (Text/Badge) saying the action isn't available on this host.
 - <Island> generated components are a LAST RESORT: one small, self-contained visual piece that no catalog or prewired component can express (a custom chart, a novel visualization). NEVER put the whole app, layout, data, or fetching inside an island. Island content is top-level <Island name="PascalName">raw TSX with an \`export default\`</Island>, referenced as <PascalName/> — plain source, never wrapped in braces, template literals, or fences.
@@ -351,6 +351,20 @@ const extractWire = (text: string): string => {
   return close === -1 ? text.slice(start) : text.slice(start, close + closeTag.length);
 };
 
+/** W3 Part 3 (W1 Exp1 verdict: ADOPT) — the production compile options:
+ *  inline tool refs ON everywhere the engine compiles model wire (the
+ *  registry names enable single-segment production tool heads); `<Query>`
+ *  declarations stay accepted unchanged. */
+const wireCompileOptionsFor = (
+  deps: GenerationDependencies,
+  hostComponents: readonly string[],
+): Parameters<typeof compileWireV2>[1] => ({
+  hostComponents,
+  inlineRefs: true,
+  ...(deps.tools === undefined ? {} : { inlineTools: deps.tools.map(({ name }) => name) }),
+  ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
+});
+
 /** Stream the wire, compiling each accumulated prefix (throttled) into a
  *  valid-while-partial tree for the onPartial seam. */
 const streamWire = async (
@@ -373,7 +387,7 @@ const streamWire = async (
     if (deps.onPartial === undefined) return;
     if (firstPartialAt === 0) { firstPartialAt = Date.now(); reportTiming("first-partial"); }
     lastFlushAt = Date.now();
-    const compiled = compileWireV2(extractWire(text), { hostComponents, ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }) });
+    const compiled = compileWireV2(extractWire(text), wireCompileOptionsFor(deps, hostComponents));
     const partial: GeneratedPartial = {
       tree: compiled.tree,
       ...(compiled.name === undefined ? {} : { name: compiled.name }),
@@ -423,7 +437,7 @@ const streamWire = async (
       const usage = await Promise.resolve(result.usage).catch(() => undefined);
       reportTiming("complete", usage === undefined ? undefined : { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens });
     }
-    return { compiled: compileWireV2(extractWire(text), { hostComponents, ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }) }), raw: extractWire(text), issues: [] };
+    return { compiled: compileWireV2(extractWire(text), wireCompileOptionsFor(deps, hostComponents)), raw: extractWire(text), issues: [] };
   } catch (error) {
     await finishPartials();
     return { issues: [`model generation failed: ${error instanceof Error ? error.message : "unknown error"}`] };
@@ -1166,7 +1180,7 @@ export const modelEngine: GenerationEngine = {
         },
         ...(fullLaneDeps.onPartial === undefined ? {} : {
           emitPartial: (assembledWire: string) => {
-            const compiled = compileWireV2(assembledWire, { hostComponents, ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }) });
+            const compiled = compileWireV2(assembledWire, wireCompileOptionsFor(deps, hostComponents));
             if (compiled.tree.nodes.length < residentNodes) return;
             void Promise.resolve(fullLaneDeps.onPartial?.({
               tree: compiled.tree,

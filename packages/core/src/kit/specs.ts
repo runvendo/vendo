@@ -89,7 +89,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       cents: data(z.number(), "amount in integer cents (minor units)", { required: true }),
       currency: config(z.string(), "ISO 4217 code, default USD"),
     },
-    examples: ["<Money cents={overview.totalCents}/>"],
+    examples: ["<Money cents={invoices.total({}).amountCents}/>"],
   },
   {
     name: "DateTime",
@@ -152,7 +152,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       caption: copy(z.string(), "table caption"),
     },
     examples: [
-      '<DataTable rows={invoices.data} sortBy="dueDate asc" limit={20} filterableBy={["client.name"]} columns={[{key:"client.name",label:"Client"},{key:"amountCents",format:"money",align:"end"},{key:"dueDate",format:"date"}]} emptyState="No overdue invoices"/>',
+      '<DataTable rows={invoices.list({status:"overdue"}).data} sortBy="dueDate asc" limit={20} filterableBy={["client.name"]} columns={[{key:"client.name",label:"Client"},{key:"amountCents",format:"money",align:"end"},{key:"dueDate",format:"date"}]} emptyState="No overdue invoices"/>',
     ],
   },
   {
@@ -167,7 +167,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       columns: config(z.number().int().positive(), "cards per row"),
       emptyState: copy(z.string(), "text when there are no items"),
     },
-    examples: ['<CardList items={clients.data} titleField="name" badgeField="status" fields={[{key:"balanceCents",label:"Balance",format:"money"}]}/>'],
+    examples: ['<CardList items={clients.list({}).data} titleField="name" badgeField="status" fields={[{key:"balanceCents",label:"Balance",format:"money"}]}/>'],
   },
   {
     name: "Stat",
@@ -180,7 +180,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       trend: copy(z.string(), "delta caption, e.g. +12% MoM"),
       tone: config(z.enum(["default", "accent", "danger"]), "emphasis"),
     },
-    examples: ['<Stat label="Total overdue" value={overview.totalCents} format="money" trend="+12% MoM"/>'],
+    examples: ['<Stat label="Total overdue" value={invoices.total({}).amountCents} format="money" trend="+12% MoM"/>'],
   },
   {
     name: "Badge",
@@ -203,7 +203,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       height: config(z.number().int().positive(), "chart height in px"),
       emptyState: copy(z.string(), "text when there is nothing to plot"),
     },
-    examples: ['<LineChart data={revenue.byMonth} xKey="month" series={["amountCents"]} format="money"/>'],
+    examples: ['<LineChart data={revenue.byMonth({}).data} xKey="month" series={["amountCents"]} format="money"/>'],
   },
   {
     name: "BarChart",
@@ -234,7 +234,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       height: config(z.number().int().positive(), "chart height in px"),
       emptyState: copy(z.string(), "text when there is nothing to plot"),
     },
-    examples: ['<DonutChart data={spend.byCategory} categoryKey="category" valueKey="amountCents" format="money"/>'],
+    examples: ['<DonutChart data={spend.byCategory({}).data} categoryKey="category" valueKey="amountCents" format="money"/>'],
   },
   {
     name: "Sparkline",
@@ -288,7 +288,7 @@ export const KIT_SPECS: KitComponentSpec[] = [
       multiple: config(z.boolean(), "allow several values"),
       onChange: config(action, "bound change handler"),
     },
-    examples: ['<Select label="Client" options={clients.data} labelField="name" valueField="id"/>'],
+    examples: ['<Select label="Client" options={clients.list({}).data} labelField="name" valueField="id"/>'],
   },
   {
     name: "DatePicker",

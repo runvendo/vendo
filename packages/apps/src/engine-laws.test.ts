@@ -222,6 +222,33 @@ describe("law 2 — actions ground in the real tool surface", () => {
   });
 });
 
+describe("inline tool refs in the production path (W1 Exp1 verdict — adopted)", () => {
+  it("accepts inline refs with production (underscore) tool names, minting ONE deduped query; <Query> stays accepted", async () => {
+    const wire = '<App name="Tx"><DataTable rows={host_metric({}).rows}/><Stat label="Count" value={host_metric({}).count}/></App>';
+    const model = scriptedLanguageModel(wire);
+    const document = await modelEngine.create({ prompt: "Transactions" }, deps(model));
+    const tree = document.tree as { queries?: Array<{ name: string; tool: string }>; nodes: Nodes };
+    expect(tree.queries).toHaveLength(1);
+    expect(tree.queries?.[0]?.tool).toBe("host_metric");
+    const queryName = tree.queries?.[0]?.name as string;
+    const table = tree.nodes.find((node) => node.component === "DataTable");
+    const stat = tree.nodes.find((node) => node.component === "Stat");
+    expect(table?.props?.rows).toEqual({ $path: `/${queryName}/rows` });
+    expect(stat?.props?.value).toEqual({ $path: `/${queryName}/count` });
+  });
+
+  it("teaches inline references in the WIRE DIALECT prompt", async () => {
+    let captured = "";
+    const model = scriptedLanguageModel((call) => {
+      captured = promptText(call);
+      return '<App name="Tx"><DataTable rows={host_metric({}).rows}/></App>';
+    });
+    await modelEngine.create({ prompt: "Transactions" }, deps(model));
+    expect(captured).toContain("INLINE TOOL REFERENCES");
+    expect(captured).toContain("also accepted");
+  });
+});
+
 describe("law 1 raw typing — bound field kinds must match the Kit slot", () => {
   it("rejects a string-shaped field bound into Money.cents (pre-formatted money strings fail)", async () => {
     const shapes = {
