@@ -197,8 +197,11 @@ const validatePlan = (
     const priorIds = new Set<string>();
     let publishesDeclaredCollection = false;
     for (const step of steps) {
-      if (step.id.trim() === "" || seen.has(step.id)) {
-        issues.push(`step ids must be non-empty and unique ("${step.id}")`);
+      // Bare-identifier ids only: a hyphenated id referenced as
+      // steps.invoice-rows parses as SUBTRACTION in jsonata, so the reference
+      // silently evaluates to nothing at run time.
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(step.id) || seen.has(step.id)) {
+        issues.push(`step ids must be unique bare identifiers ([A-Za-z_][A-Za-z0-9_]*) — "${step.id}" is not`);
       }
       seen.add(step.id);
       if (!known.has(step.tool)) {
@@ -212,7 +215,7 @@ const validatePlan = (
       // token or a forward reference publishes nothing at run time).
       if (step.tool === RESULTS_TOOL) {
         const dataExpression = (step.args?.data ?? "").replace(/'[^']*'/g, "");
-        const referencedPrior = [...dataExpression.matchAll(/\bsteps\.([A-Za-z_][\w-]*)/g)]
+        const referencedPrior = [...dataExpression.matchAll(/\bsteps\.([A-Za-z_][A-Za-z0-9_]*)/g)]
           .some((match) => priorIds.has(match[1] as string));
         if (!referencedPrior && !/\bevent\b/.test(dataExpression)) {
           issues.push(`step "${step.id}" publishes hand-typed data — the "${RESULTS_TOOL}" data expression must derive from an EARLIER step's output (steps.<priorStepId>...) or the trigger event; add the read step that fetches the live data first`);
