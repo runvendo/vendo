@@ -22,6 +22,11 @@ export interface FakeBoxState {
   manifest: { schedules?: Array<{ cron: string; fn: string }>; egress?: string[] };
   /** POST /fn/<name> handlers the agent installed. */
   fns: Map<string, (args: unknown, env: Record<string, string>) => unknown>;
+  /**
+   * Wave 4 (layer 3) — served pages the agent installed on non-/fn GET paths
+   * (path → HTML body). When present, the box "serves a real web app".
+   */
+  pages: Map<string, string>;
 }
 
 /** The injectable in-box coding agent: mutates box state, returns a result. */
@@ -36,6 +41,7 @@ interface BoxSnapshot {
   env: Record<string, string>;
   manifest: FakeBoxState["manifest"];
   fns: Map<string, (args: unknown, env: Record<string, string>) => unknown>;
+  pages: Map<string, string>;
   allowedDomains?: readonly string[];
 }
 
@@ -132,6 +138,16 @@ class FakeBoxMachine implements SandboxMachine {
       }
       return json(200, this.state.manifest);
     }
+    // Wave 4 (layer 3) — agent-installed served pages win over the default
+    // ok-stub, so tests can prove a real web app is served beside /fn.
+    const page = this.state.pages.get(path);
+    if (method === "GET" && page !== undefined) {
+      return {
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8" },
+        body: encoder.encode(page),
+      };
+    }
     const fnMatch = /^\/fn\/([A-Za-z_][A-Za-z0-9_-]*)$/.exec(path);
     if (method === "POST" && fnMatch?.[1] !== undefined) {
       const handler = this.state.fns.get(fnMatch[1]);
@@ -147,6 +163,11 @@ class FakeBoxMachine implements SandboxMachine {
     return json(200, { ok: true });
   }
 
+  async url(port?: number): Promise<string> {
+    if (this.destroyed || this.stopped) throw new Error(`box ${this.id} is not running`);
+    return `https://${port ?? this.appPort()}-${this.id}.fake-box.test`;
+  }
+
   async snapshot(): Promise<string> {
     if (this.destroyed || this.stopped) throw new Error(`box ${this.id} is not running`);
     const ref = `fakebox:snap_${nextSnap++}`;
@@ -154,6 +175,7 @@ class FakeBoxMachine implements SandboxMachine {
       env: { ...this.state.env },
       manifest: structuredClone(this.state.manifest),
       fns: new Map(this.state.fns),
+      pages: new Map(this.state.pages),
       ...(this.allowedDomains === undefined ? {} : { allowedDomains: [...this.allowedDomains] }),
     });
     return ref;
@@ -178,7 +200,7 @@ export const fakeBoxSandbox = (options: FakeBoxOptions = {}): FakeBoxAdapter => 
     machines,
     async create(spec) {
       return make(
-        { env: { ...spec.env }, manifest: {}, fns: new Map() },
+        { env: { ...spec.env }, manifest: {}, fns: new Map(), pages: new Map() },
         spec.allowedDomains,
       );
     },
@@ -186,7 +208,7 @@ export const fakeBoxSandbox = (options: FakeBoxOptions = {}): FakeBoxAdapter => 
       const snap = snapshots.get(snapshotRef);
       if (snap === undefined) throw new Error(`unknown fake-box snapshot: ${snapshotRef}`);
       return make(
-        { env: { ...snap.env }, manifest: structuredClone(snap.manifest), fns: new Map(snap.fns) },
+        { env: { ...snap.env }, manifest: structuredClone(snap.manifest), fns: new Map(snap.fns), pages: new Map(snap.pages) },
         policy === undefined ? snap.allowedDomains : policy.allowedDomains,
       );
     },

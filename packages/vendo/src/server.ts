@@ -300,6 +300,14 @@ export interface CreateVendoConfig {
     sweepIntervalMs?: number;
     now?: () => number;
   };
+  /** execution-v2 Wave 4 — apps-block options. `experimentalServedApps` is the
+      per-project layer-3 opt-in: a machine may serve the app surface itself
+      (the host embeds its URL in a sandboxed iframe). OFF by default — layer-3
+      generation, the 2→3 surface flip, and open() on a served app all refuse
+      with a typed VendoError naming this flag until the host enables it. */
+  apps?: {
+    experimentalServedApps?: boolean;
+  };
 }
 
 /** ENG-237 recommended defaults (documented in the PR body; Yousef-gated as
@@ -350,7 +358,26 @@ function selectSandbox(configured: SandboxAdapter | V1CloudSandboxAdapter | unde
   // create() dies on a missing module.
   const e2bApiKey = environment("E2B_API_KEY");
   if (e2bApiKey !== undefined && e2bInstalled()) {
-    return { adapter: e2bSandbox({ apiKey: e2bApiKey }), venue: "e2b" };
+    // Wave 4 — operator knob for the provider machine lifetime. The default
+    // 5-minute TTL kills a box mid-way through a long in-box agent build
+    // (the box agent loop runs for minutes). Explicit VENDO_E2B_TIMEOUT_MS
+    // wins; otherwise a raised box-edit budget implies a matching machine
+    // lifetime (budget + 5-minute slack), so the two knobs cannot silently
+    // disagree.
+    const configured = Number(environment("VENDO_E2B_TIMEOUT_MS"));
+    const editBudget = Number(environment("VENDO_BOX_EDIT_TIMEOUT_MS"));
+    const timeoutMs = Number.isFinite(configured) && configured > 0
+      ? configured
+      : Number.isFinite(editBudget) && editBudget > 0
+        ? editBudget + 5 * 60_000
+        : undefined;
+    return {
+      adapter: e2bSandbox({
+        apiKey: e2bApiKey,
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      }),
+      venue: "e2b",
+    };
   }
 
   const apiKey = environment("VENDO_API_KEY");
@@ -1066,6 +1093,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     model: inference.model,
     catalog,
     pinBaselines,
+    // execution-v2 Wave 4 — the layer-3 experimental opt-in, host-config only
+    // (never an env var: enabling a surface that runs generated web apps is a
+    // deliberate per-project decision).
+    ...(config.apps?.experimentalServedApps === undefined ? {} : { experimentalServedApps: config.apps.experimentalServedApps }),
     ...(config.paint === undefined ? {} : { paint: config.paint }),
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),

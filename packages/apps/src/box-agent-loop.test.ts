@@ -42,6 +42,21 @@ describe("in-box agent loop", () => {
     expect(logs.some((l) => l.includes("[bash] echo verified"))).toBe(true);
   });
 
+  it("passes the served-app declaration through (Wave 4 layer 3)", async () => {
+    vi.stubGlobal("fetch", scriptModel([
+      { content: [{ type: "tool_use", id: "c", name: "report_done", input: { ok: true, summary: "serving a web app", filesChanged: [], testsRun: 2, servesUi: true } }] },
+    ]));
+    const result = await runAgentTask({ prompt: "build a web app", env: env(), appDir: "/tmp", log: () => undefined });
+    expect(result.ok).toBe(true);
+    expect(result.servesUi).toBe(true);
+    // Anything but an explicit true is absent — data, never a default.
+    vi.stubGlobal("fetch", scriptModel([
+      { content: [{ type: "tool_use", id: "c", name: "report_done", input: { ok: true, summary: "fn only", servesUi: "yes" } }] },
+    ]));
+    const second = await runAgentTask({ prompt: "x", env: env(), appDir: "/tmp", log: () => undefined });
+    expect(second).not.toHaveProperty("servesUi");
+  });
+
   it("treats the box result purely as data — an ok:true is never authority", async () => {
     // Prompt-injection floor: even if the model claims success and asks to
     // 'approve egress', the harness only returns the declared fields; nothing

@@ -58,6 +58,7 @@ function boxSandbox(handler: BoxHandler): SandboxAdapter {
         body: new TextEncoder().encode(answer.body ?? ""),
       };
     },
+    async url(port?: number) { return `https://${port ?? 8080}-fake_box.wire.test`; },
     async snapshot() { return "fake:snap"; },
     async stop() { /* sleep */ },
     async destroy() { /* gone */ },

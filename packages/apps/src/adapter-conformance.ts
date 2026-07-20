@@ -217,6 +217,20 @@ export const sandboxAdapterConformance = (
       TEST_TIMEOUT_MS,
     );
 
+    it("exposes a public ingress URL, defaulting to the app's $PORT", async () => {
+      const adapter = await harness.makeAdapter();
+      const machine = track(await adapter.create({
+        env: { PORT: "8080" },
+      }));
+      // Wave 4 (layer 3) — the browser→box path: an absolute URL per port,
+      // defaulting to the app's $PORT. The exact host shape is the provider's.
+      const appUrl = await machine.url();
+      expect(new URL(appUrl).protocol).toMatch(/^https?:$/);
+      expect(await machine.url(8080)).toBe(appUrl);
+      expect(await machine.url(9090)).not.toBe(appUrl);
+      expect(new URL(await machine.url(9090)).protocol).toMatch(/^https?:$/);
+    }, TEST_TIMEOUT_MS);
+
     it("rejects a snapshot ref it did not issue", async () => {
       const adapter = await harness.makeAdapter();
       await expect(adapter.resume("bogus:not-a-real-ref")).rejects.toThrow();
