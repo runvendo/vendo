@@ -2,8 +2,11 @@ import { supabasePreset } from "@vendoai/actions/presets";
 import type { PermissionGrant } from "@vendoai/core";
 import { SignJWT } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
-// Imported through the same entry hosts use, pinning the re-export.
-import { hostAuthPresetConformance, supabase } from "./index.js";
+// supabase is pinned via its own module — the same file the
+// "@vendoai/vendo/auth/supabase" subpath re-exports (corpus-triage Task 9);
+// hostAuthPresetConformance still comes through the shared barrel.
+import { supabase } from "./supabase.js";
+import { hostAuthPresetConformance } from "./index.js";
 
 /** Hermetic GoTrue: jose is real (ES256 sign + verify run locally); ONLY the
     network-touching JWKS fetch is mocked at the lazy-import seam, resolving

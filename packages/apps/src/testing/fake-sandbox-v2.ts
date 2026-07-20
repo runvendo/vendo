@@ -1,3 +1,4 @@
+import { VendoError } from "@vendoai/core";
 import type { SandboxAdapter, SandboxMachine } from "../sandbox.js";
 
 const textEncoder = new TextEncoder();
@@ -30,6 +31,8 @@ export class FakeMachineV2 implements SandboxMachine {
   stopped = false;
   /** True after the live-machine destroy() (distinct from a snapshot-preserving stop). */
   destroyedSelf = false;
+  /** True after the PROVIDER reaped the machine out from under us (TTL, sweep). */
+  reaped = false;
   readonly env: Readonly<Record<string, string>>;
   readonly state: Map<string, string>;
 
@@ -51,6 +54,9 @@ export class FakeMachineV2 implements SandboxMachine {
     headers?: Record<string, string>;
     body?: Uint8Array | string;
   }): Promise<{ status: number; headers: Record<string, string>; body: Uint8Array }> {
+    // The seam's dead-machine signal (sandbox.ts): provider state gone under a
+    // live handle throws VendoError not-found, never an app-level status.
+    if (this.reaped) throw new VendoError("not-found", `fake v2 machine ${this.id} was reaped by the provider`);
     if (this.stopped) throw new Error(`fake v2 machine ${this.id} is stopped`);
     const key = /^\/state\/([A-Za-z0-9_-]+)$/.exec(req.path)?.[1];
     if (key !== undefined) {
@@ -84,6 +90,11 @@ export class FakeMachineV2 implements SandboxMachine {
   async destroy(): Promise<void> {
     this.stopped = true;
     this.destroyedSelf = true;
+  }
+
+  /** Simulate the PROVIDER killing the machine (TTL expiry, idle sweep). */
+  reap(): void {
+    this.reaped = true;
   }
 }
 

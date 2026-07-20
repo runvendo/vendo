@@ -1,7 +1,8 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { composioConnector } from "@vendoai/actions";
 import { createStore } from "@vendoai/store";
-import { authJs, createVendo } from "@vendoai/vendo/server";
+import { authJs } from "@vendoai/vendo/auth/auth-js";
+import { createVendo } from "@vendoai/vendo/server";
 import { authSecret, resolveMapleSubject } from "@/server/users";
 import { mapleMcpConfig } from "./mcp-config";
 import { mapleRegistry } from "./registry";

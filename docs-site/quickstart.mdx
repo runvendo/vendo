@@ -63,7 +63,8 @@ JSON Schema is derived from `props` internally; you never hand-write it.
 ```ts
 // app/api/vendo/[...vendo]/route.ts — what `vendo init` scaffolds
 import { anthropic } from "@ai-sdk/anthropic";
-import { authJs, createVendo, nextVendoHandler } from "@vendoai/vendo/server";
+import { authJs } from "@vendoai/vendo/auth/auth-js";
+import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
 import { registry } from "@/vendo/registry";
 
 const vendo = createVendo({

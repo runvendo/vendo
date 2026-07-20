@@ -1,5 +1,5 @@
 import type { PermissionGrant } from "@vendoai/core";
-import { authJs } from "@vendoai/vendo/server";
+import { authJs } from "@vendoai/vendo/auth/auth-js";
 import { encode } from "next-auth/jwt";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { authSecret, resolveMapleSubject } from "@/server/users";

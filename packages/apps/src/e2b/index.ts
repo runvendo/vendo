@@ -187,6 +187,17 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
               ? request.body
               : toArrayBuffer(request.body),
         });
+        // The e2b ingress answers 502 for BOTH "app port not open yet" (boot
+        // race, retried above the seam) and "sandbox reaped" (TTL, sweep).
+        // Only the SDK knows which: a dead sandbox becomes the seam's thrown
+        // not-found (the lifecycle evicts the live entry and re-wakes from
+        // the durable ref); an inconclusive probe fails open to the plain 502.
+        if (response.status === 502) {
+          const running = await sandbox.isRunning().catch(() => true);
+          if (!running) {
+            throw new VendoError("not-found", `e2b sandbox ${sandbox.sandboxId} is gone (reaped by the provider)`);
+          }
+        }
         return {
           status: response.status,
           headers: responseHeaders(response.headers),
@@ -217,6 +228,9 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
       },
       // ——— adapter-private below this line (bootstrap/diagnostics + v1 compat) ———
       async exec(cmd: string, execOptions?: { cwd?: string; timeoutMs?: number }) {
+        // Box bootstrap and diagnostics are activity too — a minutes-long
+        // command sequence must slide the provider deadline like requests do.
+        extendTtl();
         try {
           const result = await sandbox.commands.run(cmd, {
             ...(execOptions?.cwd === undefined ? {} : { cwd: execOptions.cwd }),

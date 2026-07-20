@@ -3,6 +3,7 @@ import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { resolveAppRoot } from "./app-root.js";
 import { normalizeBootstrapInstallCommand } from "./install-command.js";
+import { pnpmDeclaresBuiltDependencies } from "./pnpm-build-policy.js";
 import type { ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
 
@@ -122,8 +123,13 @@ export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptio
   }
 
   const hasPnpmWorkspace = await pathExists(path.join(repoDir, "pnpm-workspace.yaml"));
+  // pnpm ≥10 rejects dangerouslyAllowAllBuilds when the repo already curates
+  // its own build allowlist (onlyBuiltDependencies/neverBuiltDependencies) —
+  // respect the repo's explicit config instead of forcing the blanket flag.
+  const repoCuratesBuilds = await pnpmDeclaresBuiltDependencies(repoDir);
   const installCommand = normalizeBootstrapInstallCommand(repo.bootstrap.installCommand, {
     dropIgnoreWorkspace: hasPnpmWorkspace,
+    pnpmConfig: repoCuratesBuilds ? ["--config.minimumReleaseAge=0"] : undefined,
   });
   const result = await runInstallCommand(installCommand.command, repoDir, env);
   const normalizationNote = installCommand.changed

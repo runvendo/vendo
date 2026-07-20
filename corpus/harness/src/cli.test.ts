@@ -703,6 +703,129 @@ describe("runCli run", () => {
     expect(defaultRun.scorecard).toContain("clone exploded");
     expect(defaultRun.scorecard).toContain("\"repo\": \"repo-passes\"");
   });
+
+  it("applies the printed VendoRoot paste to the layout after a successful init (init no longer codemods it)", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repo = manifestEntry("repo-paste");
+    const repoDir = context.repoDir(repo.name);
+    const initStdout = [
+      "Last steps are yours:",
+      "  In app/layout.tsx:",
+      '    import { VendoRoot } from "@vendoai/vendo/react";',
+      "    … then wrap: <VendoRoot>{children}</VendoRoot>",
+      "",
+      "Then start your dev server — the agent is live in your app.",
+    ].join("\n");
+
+    const deps: CorpusCliDependencies = {
+      stdout: () => {},
+      stderr: () => {},
+      loadManifest: async () => [repo],
+      createContext: () => context,
+      ensureRepoCheckout: async (entry) => {
+        await writeHostPackage(context.repoDir(entry.name));
+        await mkdir(path.join(repoDir, "app"), { recursive: true });
+        await writeFile(
+          path.join(repoDir, "app/layout.tsx"),
+          'export default function RootLayout({ children }) {\n  return <html><body>{children}</body></html>;\n}\n',
+        );
+        return repoDir;
+      },
+      bootstrapRepo: async () => ({
+        repoDir,
+        envPath: path.join(repoDir, ".env"),
+        logs: { stdout: "bootstrap.stdout.log", stderr: "bootstrap.stderr.log" },
+      }),
+      createInjector: () => ({
+        async inject(entry) {
+          return {
+            repoDir: context.repoDir(entry.name),
+            packageManager: "pnpm",
+            packages: [],
+            vendorDir: path.join(repoDir, "vendor"),
+            installCommand: "pnpm install",
+          };
+        },
+      }),
+      commandRunner: async () => ({ code: 0, signal: null, stdout: "ok", stderr: "" }),
+      runInit: async (entry, options) => {
+        const logsDir = context.logsDir(entry.name);
+        await mkdir(logsDir, { recursive: true });
+        const log = path.join(logsDir, `${options?.artifactPrefix ?? "init"}.log`);
+        const diff = path.join(logsDir, `${options?.artifactPrefix ?? "init"}.diff`);
+        await writeFile(log, initStdout);
+        await writeFile(diff, "");
+        return makeInitResult(repoDir, log, diff);
+      },
+      runStructuralLayer: async () => [{ id: "files.expected", pass: true, detail: "ok" }],
+    };
+
+    const exitCode = await runCli(["run", "repo-paste", "--layer", "1"], deps);
+
+    expect(exitCode).toBe(0);
+    const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
+    expect(layout).toContain('import { VendoRoot } from "@vendoai/vendo/react";');
+    expect(layout).toContain("<VendoRoot>{children}</VendoRoot>");
+  });
+
+  it("fails the repo when init's stdout did not print the VendoRoot paste instructions", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repo = manifestEntry("repo-no-paste");
+    const repoDir = context.repoDir(repo.name);
+
+    const deps: CorpusCliDependencies = {
+      stdout: () => {},
+      stderr: () => {},
+      loadManifest: async () => [repo],
+      createContext: () => context,
+      ensureRepoCheckout: async (entry) => {
+        await writeHostPackage(context.repoDir(entry.name));
+        await mkdir(path.join(repoDir, "app"), { recursive: true });
+        await writeFile(
+          path.join(repoDir, "app/layout.tsx"),
+          'export default function RootLayout({ children }) {\n  return <html><body>{children}</body></html>;\n}\n',
+        );
+        return repoDir;
+      },
+      bootstrapRepo: async () => ({
+        repoDir,
+        envPath: path.join(repoDir, ".env"),
+        logs: { stdout: "bootstrap.stdout.log", stderr: "bootstrap.stderr.log" },
+      }),
+      createInjector: () => ({
+        async inject(entry) {
+          return {
+            repoDir: context.repoDir(entry.name),
+            packageManager: "pnpm",
+            packages: [],
+            vendorDir: path.join(repoDir, "vendor"),
+            installCommand: "pnpm install",
+          };
+        },
+      }),
+      commandRunner: async () => ({ code: 0, signal: null, stdout: "ok", stderr: "" }),
+      runInit: async (entry, options) => {
+        const logsDir = context.logsDir(entry.name);
+        await mkdir(logsDir, { recursive: true });
+        const log = path.join(logsDir, `${options?.artifactPrefix ?? "init"}.log`);
+        const diff = path.join(logsDir, `${options?.artifactPrefix ?? "init"}.diff`);
+        await writeFile(log, "vendo init finished with no summary of any kind");
+        await writeFile(diff, "");
+        return makeInitResult(repoDir, log, diff);
+      },
+      runStructuralLayer: async () => [{ id: "files.expected", pass: true, detail: "ok" }],
+    };
+
+    const exitCode = await runCli(["run", "repo-no-paste", "--layer", "1", "--strict"], deps);
+
+    expect(exitCode).toBe(1);
+    const scorecard = await readFile(path.join(context.reposDir, ".logs", "scorecard.json"), "utf8");
+    expect(scorecard).toContain("Last steps are yours");
+    const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
+    expect(layout).not.toContain("VendoRoot");
+  });
 });
 
 describe("runCli boot", () => {

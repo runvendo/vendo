@@ -44,12 +44,21 @@ interface AppMachine {
   /** Provider-prefixed snapshot reference (e.g. "e2b:snap_x91"), opaque past the colon. */
   snapshotRef: string;
   provisionedAt: IsoDateTime;
+  /**
+   * Wave 7 — set when a secret grant changed after the last env injection
+   * (secrets are baked into the box at provision and at pre-edit
+   * re-injection; a resume restores the snapshot's env on every provider).
+   * The next wake rebuilds the boundary env through the box control port and
+   * clears this marker.
+   */
+  envStaleAt?: IsoDateTime;
 }
 
 /** execution-v2 */
 const appMachineSchema = z.object({
   snapshotRef: z.string(),
   provisionedAt: isoDateTimeSchema,
+  envStaleAt: isoDateTimeSchema.optional(),
 }).passthrough() satisfies z.ZodType<AppMachine>;
 
 /** 01-core §9 */
@@ -61,6 +70,14 @@ export interface AppDocument {
   ui?: "tree" | "http";
   tree?: UIPayload;
   components?: Record<string, string>;
+  /**
+   * W4b — the compiler-stamped per-island tool manifest: for each generated
+   * component, the registry tool names its source reaches through the ambient
+   * `tools` API (literal member access, scanned at compile). The runtime
+   * exposes ONLY these tools to that island's jail; derived data, so it
+   * travels with `components` on copy.
+   */
+  componentTools?: Record<string, string[]>;
   storage?: Record<string, StorageDecl>;
   server?: string;
   machine?: AppMachine;
@@ -97,6 +114,7 @@ export const appDocumentSchema = z.object({
   ui: z.enum(["tree", "http"]).optional(),
   tree: uiPayloadSchema.optional(),
   components: z.record(z.string()).optional(),
+  componentTools: z.record(z.array(z.string())).optional(),
   storage: z.record(storageDeclSchema).optional(),
   server: z.string().optional(),
   machine: appMachineSchema.optional(),
@@ -183,6 +201,20 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
     const componentError = componentMapError(app.components);
     if (componentError !== null) {
       return fail("validation", componentError);
+    }
+  }
+
+  // W4b — a stamped island tool manifest must name a real island and real
+  // (grammar-valid) registry tool names; the runtime trusts this map as the
+  // island's entire tool surface.
+  for (const [componentName, manifest] of Object.entries(app.componentTools ?? {})) {
+    if (!Object.prototype.hasOwnProperty.call(app.components ?? {}, componentName)) {
+      return fail("validation", `componentTools names "${componentName}" which has no components entry`);
+    }
+    for (const toolName of manifest) {
+      if (!TOOL_NAME_PATTERN.test(toolName)) {
+        return fail("validation", `componentTools["${componentName}"] entry "${toolName}" is not a valid tool name`);
+      }
     }
   }
 

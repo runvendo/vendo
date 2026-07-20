@@ -19,9 +19,11 @@
  * `<Query>` arm and the inline arm, so the A/B measures the surface only.
  */
 
-/** A dotted identifier followed by `(` — the head of a tool call. Requiring a
- *  dot excludes single-segment reshape ops (format/asOptions/asPoints/…). */
-const CALL_HEAD = /([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)\s*\(/g;
+/** An identifier chain followed by `(` — the head of a tool call. A DOTTED
+ *  head is always a candidate (dots exclude the single-segment reshape ops:
+ *  format/asOptions/asPoints/…); a SINGLE-segment head counts only when it is
+ *  a KNOWN tool name (W3 — production extraction names are `host_listX`). */
+const CALL_HEAD = /([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\(/g;
 
 const camel = (tool: string): string => {
   const parts = tool.split(/[.\-_]/).filter(Boolean);
@@ -67,6 +69,7 @@ const readPath = (s: string, i: number): { path: string; end: number } => {
 const rewriteSegment = (
   seg: string,
   mint: (tool: string, argsRaw: string) => string,
+  knownTools: ReadonlySet<string>,
 ): string => {
   let out = "";
   let cursor = 0;
@@ -74,6 +77,9 @@ const rewriteSegment = (
   let m: RegExpExecArray | null;
   while ((m = CALL_HEAD.exec(seg)) !== null) {
     const tool = m[1]!;
+    // Single-segment heads are tool calls only when the registry says so —
+    // otherwise they are reshape ops or plain text and stay untouched.
+    if (!tool.includes(".") && !knownTools.has(tool)) continue;
     const parenOpen = m.index + m[0].length - 1;
     // A reshape pipe (`| format(...)`) is never a data source; skip if the
     // token is immediately preceded by `|`.
@@ -98,8 +104,16 @@ export interface InlineRefsResult {
   minted: number;
 }
 
+export interface InlineRefsOptions {
+  /** Known tool names: enables single-segment inline heads (production
+   *  extraction names like `host_listTransactions`). Dotted heads expand
+   *  regardless. */
+  tools?: readonly string[];
+}
+
 /** Expand inline tool references into `<Query>` declarations + plain bindings. */
-export const expandInlineRefs = (wire: string): InlineRefsResult => {
+export const expandInlineRefs = (wire: string, options?: InlineRefsOptions): InlineRefsResult => {
+  const knownTools: ReadonlySet<string> = new Set(options?.tools ?? []);
   // Split off island regions so their ambient tools.* calls are untouched.
   const segments: { text: string; island: boolean }[] = [];
   let i = 0;
@@ -138,7 +152,7 @@ export const expandInlineRefs = (wire: string): InlineRefsResult => {
   };
 
   const rewritten = segments
-    .map((s) => (s.island ? s.text : rewriteSegment(s.text, mint)))
+    .map((s) => (s.island ? s.text : rewriteSegment(s.text, mint, knownTools)))
     .join("");
 
   if (queries.size === 0) return { wire: rewritten, minted: 0 };

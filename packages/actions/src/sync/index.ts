@@ -13,6 +13,7 @@ import {
   type UnresolvedPin,
 } from "../formats.js";
 import { bindingIdentity, clearAliasCache, withUniqueNames, writeIfChanged } from "./common.js";
+import { withGeneratedDescriptions } from "./describe.js";
 import { scanComponentCatalog } from "./catalog-scan.js";
 import { writeCatalog } from "./catalog.js";
 import { runExtractors } from "./extractors.js";
@@ -195,7 +196,9 @@ export async function vendoSync(options: {
   warnings.push(...extraction.warnings);
   const extracted = toolsFileSchema.parse({
     format: "vendo/tools@1",
-    tools: unionExtracted(extraction.tools),
+    // W3 — empty descriptions get a deterministic "use this when…" line
+    // (reviewable here, overridable forever via overrides.json).
+    tools: withGeneratedDescriptions(unionExtracted(extraction.tools)),
   });
   if (overrides) {
     const extractedNames = new Set(extracted.tools.map((tool) => tool.name));

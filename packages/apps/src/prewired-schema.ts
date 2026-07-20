@@ -12,6 +12,8 @@
  *  `@vendoai/ui` `packages/ui/src/tree/{primitives,branded}.tsx`. The drift test
  *  (`prewired-schema.test.ts`) asserts this covers exactly
  *  PREWIRED_COMPONENT_NAMES so a new/renamed primitive can't silently diverge. */
+import { KIT_WIRE_COMPONENT_NAMES, kitSpec } from "@vendoai/core";
+
 export interface PrewiredSchema {
   /** Compact, model-facing signature listing the exact prop names + shapes. */
   readonly signature: string;
@@ -33,19 +35,26 @@ export const PREWIRED_SCHEMAS: Readonly<Record<string, PrewiredSchema>> = {
   Card: { signature: `Card(title?: string, description?: string, tone?: "default"|"accent"|"danger") — children are nodes`, props: ["title", "description", "tone"] },
   Button: { signature: `Button(label: string, variant?: "primary"|"secondary"|"danger", disabled?: boolean, onClick?: <tool-or-fn>) — action prop is onClick, NOT onPress`, props: ["label", "variant", "disabled", "onClick"] },
   Input: { signature: `Input(label?, name?, type?, value?, placeholder?, autoComplete?, disabled?, required?, error?, hint?, onChange?: <tool-or-fn>)`, props: ["label", "name", "type", "value", "placeholder", "autoComplete", "disabled", "required", "error", "hint", "onChange"] },
-  Select: { signature: `Select(options: (string | {value, label?, disabled?})[], value?, label?, placeholder?, name?, hint?, disabled?, required?, onChange?: <tool-or-fn>) — the list prop is options with {value,label} items, NOT labelKey/valueKey`, props: ["options", "value", "label", "placeholder", "name", "hint", "disabled", "required", "onChange"] },
-  Table: { signature: `Table(columns: (string | {key, label?, align?})[], rows: object[], caption?, emptyLabel?, rowKey? = "id") — the data prop is rows (bind it to a Query), NOT data`, props: ["columns", "rows", "caption", "emptyLabel", "rowKey"] },
+  Select: { signature: `Select(options: (string | object)[], labelField?, valueField?, value?, label?, placeholder?, name?, hint?, disabled?, required?, onChange?: <tool-or-fn>) — bind RAW tool rows to options and name the fields with labelField/valueField (visible label / submitted value); primitive items render as-is`, props: ["options", "labelField", "valueField", "value", "label", "placeholder", "name", "hint", "disabled", "required", "onChange"] },
+  Table: { signature: `Table(columns: (string | {key, label?, align?})[], rows: object[], caption?, emptyLabel?, rowKey? = "id") — the data prop is rows (bind it to tool rows), NOT data`, props: ["columns", "rows", "caption", "emptyLabel", "rowKey"] },
   Badge: { signature: `Badge(label: string, tone?: "neutral"|"accent"|"danger")`, props: ["label", "tone"] },
   Stat: { signature: `Stat(label: string, value?, trend?, prefix?, suffix?, tone?: "default"|"accent"|"danger")`, props: ["label", "value", "trend", "prefix", "suffix", "tone"] },
   Tabs: { signature: `Tabs(tabs: (string | {value, label, disabled?})[], value?, label?, onChange?: <tool-or-fn>) — items is an accepted alias for tabs`, props: ["tabs", "items", "value", "label", "onChange"] },
 };
 
-/** Allowed prop-name set per prewired component, for validation. */
-export const prewiredPropNames: ReadonlyMap<string, ReadonlySet<string>> = new Map(
-  Object.entries(PREWIRED_SCHEMAS).map(([name, schema]) => [name, new Set(schema.props)]),
-);
+/** Allowed prop-name set per prewired component, for validation. W3: the
+ *  adopted Kit names carry their spec's exact prop-name sets — one map for
+ *  every wire-built-in component. */
+export const prewiredPropNames: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ...Object.entries(PREWIRED_SCHEMAS).map(([name, schema]) =>
+    [name, new Set(schema.props)] as const),
+  ...KIT_WIRE_COMPONENT_NAMES.map((name) =>
+    [name, new Set(Object.keys(kitSpec(name)?.props ?? {}))] as const),
+]);
 
-/** The model-facing block: one line per primitive, exact prop names. */
+/** The model-facing block for the LEGACY prewired primitives (the Kit section
+ *  is `kitPrompt()`; these lines are generated from PREWIRED_SCHEMAS — no
+ *  hand-written prompt list). */
 export const prewiredSchemaPrompt = (): string =>
   Object.entries(PREWIRED_SCHEMAS)
     .map(([, schema]) => `- ${schema.signature}`)
