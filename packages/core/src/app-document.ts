@@ -44,12 +44,21 @@ interface AppMachine {
   /** Provider-prefixed snapshot reference (e.g. "e2b:snap_x91"), opaque past the colon. */
   snapshotRef: string;
   provisionedAt: IsoDateTime;
+  /**
+   * Wave 7 — set when a secret grant changed after the last env injection
+   * (secrets are baked into the box at provision and at pre-edit
+   * re-injection; a resume restores the snapshot's env on every provider).
+   * The next wake rebuilds the boundary env through the box control port and
+   * clears this marker.
+   */
+  envStaleAt?: IsoDateTime;
 }
 
 /** execution-v2 */
 const appMachineSchema = z.object({
   snapshotRef: z.string(),
   provisionedAt: isoDateTimeSchema,
+  envStaleAt: isoDateTimeSchema.optional(),
 }).passthrough() satisfies z.ZodType<AppMachine>;
 
 /** 01-core §9 */

@@ -352,6 +352,178 @@ describe("machine lifecycle: in-flight requests defer auto-sleep", () => {
   });
 });
 
+describe("machine lifecycle: stale-live-ref eviction (Wave 7)", () => {
+  it("transparently re-wakes from the durable ref when the provider reaped the live machine", async () => {
+    const { sandbox, lifecycle, doc } = await setup();
+    const withMachine = await lifecycle.provision(doc);
+    const machine = await lifecycle.wake(withMachine);
+    await machine.request({ method: "POST", path: "/state/note", body: "survives the reap" });
+    const slept = await lifecycle.sleep(withMachine);
+    const handle = await lifecycle.wake(slept);
+
+    // The provider kills the box out from under us (TTL expiry, idle sweep):
+    // the live handle must not 502 until the idle sweep — it evicts the dead
+    // entry and resumes the durable snapshot ref transparently.
+    sandbox.machines.at(-1)?.reap();
+    const read = await handle.request({ method: "GET", path: "/state/note" });
+
+    expect(read.status).toBe(200);
+    expect(bodyText(read.body)).toBe("survives the reap");
+    // wake, post-sleep wake, and ONE recovery resume from the ref the sleep stored.
+    expect(sandbox.resumes).toBe(3);
+    expect(lifecycle.peek(doc.id)).toBeDefined();
+  });
+
+  it("retries exactly once: a recovery machine that is also gone surfaces the error", async () => {
+    const { sandbox, lifecycle, doc } = await setup();
+    const withMachine = await lifecycle.provision(doc);
+    const handle = await lifecycle.wake(withMachine);
+
+    // Every machine the provider hands back is instantly reaped too — the
+    // single-retry recovery must SURFACE the failure, never spin resumes.
+    sandbox.machines.at(-1)?.reap();
+    const resume = sandbox.resume.bind(sandbox);
+    sandbox.resume = async (ref, policy) => {
+      const machine = await resume(ref, policy);
+      (machine as InstanceType<typeof import("./testing/fake-sandbox-v2.js").FakeMachineV2>).reap();
+      return machine;
+    };
+
+    await expect(handle.request({ method: "GET", path: "/state/anything" })).rejects.toMatchObject({
+      name: "VendoError",
+      code: "not-found",
+    });
+    expect(sandbox.resumes).toBe(2); // initial wake + ONE recovery resume
+  });
+
+  it("a stale handle held across a concurrent recovery still answers through the fresh machine", async () => {
+    const { sandbox, lifecycle, doc } = await setup();
+    const withMachine = await lifecycle.provision(doc);
+    await lifecycle.wake(withMachine);
+    await lifecycle.sleep(withMachine);
+    const handle = await lifecycle.wake(withMachine);
+    sandbox.machines.at(-1)?.reap();
+
+    // Two callers hit the dead machine concurrently: recovery coalesces onto
+    // one resume, and both answers come from the fresh machine.
+    const [first, second] = await Promise.all([
+      handle.request({ method: "GET", path: "/" }),
+      handle.request({ method: "GET", path: "/" }),
+    ]);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(sandbox.resumes).toBe(3); // wake, re-wake, ONE shared recovery
+  });
+});
+
+describe("machine lifecycle: env-stale wake rebuild (Wave 7)", () => {
+  const seedStale = async (
+    store: import("./testing/index.js").MemoryStoreAdapter,
+    doc: AppDocument,
+  ): Promise<void> => {
+    const records = store.records("vendo_apps");
+    const record = await records.get(doc.id);
+    if (record === null) throw new Error("app row is gone");
+    const row = (record.data as { subject: string; enabled: boolean; doc: AppDocument });
+    await records.put({
+      id: doc.id,
+      data: {
+        ...row,
+        doc: {
+          ...row.doc,
+          machine: { ...row.doc.machine!, envStaleAt: "2026-07-20T00:00:00.000Z" },
+        },
+      },
+      refs: { subject: row.subject },
+    });
+  };
+
+  it("a failed env rebuild fails the wake CLOSED — no live machine serves stale secrets", async () => {
+    const store = memoryStore();
+    const sandbox = fakeSandboxV2();
+    const timers = fakeClock();
+    const doc = app();
+    await seedAppRow(store, doc, "owner");
+    let injections = 0;
+    const lifecycle = createMachineLifecycle({
+      store,
+      sandbox,
+      buildEnv: () => ({ PORT: "8080", FRESH: "yes" }),
+      injectEnv: async () => {
+        injections += 1;
+        if (injections === 1) throw new Error("control port hiccup");
+      },
+      clock: timers.clock,
+    });
+    await lifecycle.provision(doc);
+    await seedStale(store, doc);
+
+    // A box we cannot re-police must not serve: a revoked secret would stay
+    // usable inside it until the idle sweep otherwise.
+    await expect(lifecycle.wake(doc)).rejects.toMatchObject({
+      name: "VendoError",
+      code: "sandbox-unavailable",
+    });
+    expect(lifecycle.peek(doc.id)).toBeUndefined();
+    // The resumed machine was torn down, and the document ref is untouched.
+    expect(sandbox.machines.at(-1)?.destroyedSelf).toBe(true);
+
+    // The marker survived the failure, so the retry wake rebuilds and clears it.
+    const machine = await lifecycle.wake(doc);
+    expect(machine).toBeDefined();
+    expect(injections).toBe(2);
+    const record = await store.records("vendo_apps").get(doc.id);
+    const stored = (record?.data as { doc: AppDocument }).doc;
+    expect(stored.machine?.envStaleAt).toBeUndefined();
+  });
+
+  it("a WARM wake honors a marker written by another process: the live box is re-policed", async () => {
+    const store = memoryStore();
+    const sandbox = fakeSandboxV2();
+    const timers = fakeClock();
+    const doc = app();
+    await seedAppRow(store, doc, "owner");
+    const injected: Record<string, string>[] = [];
+    let secret: string | undefined;
+    const lifecycle = createMachineLifecycle({
+      store,
+      sandbox,
+      buildEnv: () => ({ PORT: "8080", ...(secret === undefined ? {} : { STRIPE_KEY: secret }) }),
+      injectEnv: async (_machine, env) => {
+        injected.push(env);
+      },
+      clock: timers.clock,
+    });
+    await lifecycle.provision(doc);
+    const first = await lifecycle.wake(doc);
+    expect(injected).toHaveLength(0);
+
+    // ANOTHER process commits a grant: the durable marker lands on the row,
+    // but that process cannot reach THIS process's live entry to sleep it.
+    secret = "sk_live_from_other_process";
+    await seedStale(store, doc);
+
+    // The next warm wake here must re-police the live box, not ride the
+    // stale entry until the idle sweep.
+    const second = await lifecycle.wake(doc);
+    expect(second).toBe(first);
+    expect(injected).toEqual([{ PORT: "8080", STRIPE_KEY: "sk_live_from_other_process" }]);
+    const record = await store.records("vendo_apps").get(doc.id);
+    expect(((record?.data as { doc: AppDocument }).doc).machine?.envStaleAt).toBeUndefined();
+    // Marker gone → the wake after that injects nothing new.
+    await lifecycle.wake(doc);
+    expect(injected).toHaveLength(1);
+  });
+
+  it("a wake with no injectEnv seam ignores the marker (pre-Wave-7 hosts)", async () => {
+    const { lifecycle, store, doc } = await setup();
+    await lifecycle.provision(doc);
+    await seedStale(store, doc);
+    await expect(lifecycle.wake(doc)).resolves.toBeDefined();
+  });
+});
+
 describe("machine lifecycle: destroy", () => {
   it("destroys the sandbox and clears the machine field", async () => {
     const { sandbox, lifecycle, doc, stored } = await setup();
