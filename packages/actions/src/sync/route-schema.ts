@@ -18,11 +18,27 @@ import {
  * oracle-hardened `zodFromExpression` from `static-ts.ts`), then the
  * TypeScript-checker collector (Task 3, one lazily built `ts.Program` per
  * scan), with the query collector (Task 4) merging additively into whichever
- * of those two results comes back. Every collector fails closed: no
- * recognizable evidence means `null`, and route-scan emits exactly what it
- * emits today (path params only, blank body/query). Task 2 (zod-in-handler)
- * and Task 3 (TypeScript checker, this module's second half) are wired below;
- * Task 4 (query) still returns nothing.
+ * of those two results comes back — the query collector runs unconditionally
+ * for every (route, method), regardless of which (if any) body collector
+ * answered. Every collector fails closed: no recognizable evidence means
+ * `null`, and route-scan emits exactly what it emits today (path params
+ * only, blank body/query).
+ *
+ * Review carry-over on the query collector (Task 4): this module reports
+ * query evidence whenever it finds it, on ANY method — it does NOT know or
+ * care whether the tool that evidence would attach to is query-bound or
+ * body-bound. That gate lives one layer up, in route-scan.ts's
+ * `mergeRouteInput`, because only route-scan.ts knows a tool's `argsIn`. The
+ * reason the gate has to exist at all: `runtime/registry.ts`'s route
+ * execution (~560-564) sends every non-path argument as `searchParams` for a
+ * query-bound tool (`argsIn: "query"`, GET/DELETE) but as a single JSON body
+ * for a body-bound tool (`argsIn: "body"`, POST/PUT/PATCH) — never split
+ * across both. A query-derived property advertised on a body-bound tool
+ * would be delivered in the JSON body and never reach `searchParams`, so the
+ * handler would never see it: a lie to the calling agent. `mergeRouteInput`
+ * therefore keeps query properties for query-bound tools and drops them
+ * (silently — this is a scope decision, not a recognition failure, so it
+ * carries no `note`) for body-bound ones.
  */
 
 /** The minimal route facts a collector needs. A structural subset of
@@ -104,8 +120,12 @@ export interface RouteInputResult {
  * The zod collector runs first (a validator is stronger evidence than a
  * bare type) and short-circuits: the checker collector below is never even
  * asked when zod already answered, so its `ts.Program` is never built for a
- * handler zod already covers. Task 4 (query) still returns nothing and lands
- * in a later commit.
+ * handler zod already covers. The query collector (Task 4) then runs
+ * unconditionally — win or lose for the body half — and merges additively
+ * into whatever the body collectors returned (or answers on its own when
+ * they found nothing): `queryProperties` from the query collector always
+ * wins over any (empty, in practice) `queryProperties` a body collector
+ * might have set, since only the query collector ever populates that field.
  */
 export async function inferRouteInput(
   route: RouteContext,
@@ -113,8 +133,14 @@ export async function inferRouteInput(
   state: RouteScanState,
 ): Promise<RouteInputResult | null> {
   const zodResult = await zodCollector(route, method, state);
-  if (zodResult) return zodResult;
-  return checkerCollector(route, method, state);
+  const bodyResult = zodResult ?? await checkerCollector(route, method, state);
+  const queryResult = await queryCollector(route, method, state);
+  if (!queryResult) return bodyResult;
+  if (!bodyResult) return queryResult;
+  return {
+    ...bodyResult,
+    queryProperties: { ...bodyResult.queryProperties, ...queryResult.queryProperties },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -593,4 +619,140 @@ async function checkerCollector(
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Task 4: query collector
+// ---------------------------------------------------------------------------
+
+/** True for the base object a `.searchParams` accessor is expected to hang
+ * off (04 §1 Task 4's two receiver shapes): `<x>.nextUrl` (the Next.js
+ * `NextRequest` accessor — any `<x>`, typically `req`) or `new URL(<y>)` (the
+ * standard-`Request` escape hatch — any `<y>`, typically `req.url`). Shared
+ * by the direct-chain check below and the destructuring form
+ * (`const { searchParams } = req.nextUrl`), which pulls `searchParams` off
+ * exactly the same kind of base without a `.searchParams` property access at
+ * all. */
+function isUrlLikeAccessorBase(ts: typeof TS, node: TS.Node): boolean {
+  if (ts.isPropertyAccessExpression(node) && node.name.text === "nextUrl") return true;
+  return ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "URL";
+}
+
+/** True for a `searchParams` accessor expression in one of the two receiver
+ * shapes the plan calls out (04 §1 Task 4): `<x>.nextUrl.searchParams` and
+ * `new URL(<y>).searchParams`. Anything else (a hand-rolled
+ * `URLSearchParams`, a differently named accessor, a `.searchParams` off
+ * some other object entirely) fails closed: not recognized. */
+function isSearchParamsAccessor(ts: typeof TS, node: TS.Node): boolean {
+  return ts.isPropertyAccessExpression(node) && node.name.text === "searchParams" && isUrlLikeAccessorBase(ts, node.expression);
+}
+
+/** The initializer `searchParams` was destructured FROM, when `name` is
+ * bound at the top level of `functionBody` by an object-binding-pattern
+ * declaration whose destructured property is literally `searchParams`
+ * (`const { searchParams } = req.nextUrl;` — the shorthand form — or
+ * `const { searchParams: sp } = req.nextUrl;`, renamed). Returns `null` for
+ * anything else (a different scope, no matching declaration, a property
+ * name other than `searchParams`), matching the collector's one-hop,
+ * no-data-flow-analysis discipline. */
+function destructuredSearchParamsInitializer(ts: typeof TS, functionBody: TS.Node, name: string): TS.Expression | null {
+  if (!ts.isBlock(functionBody)) return null;
+  for (const statement of functionBody.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isObjectBindingPattern(declaration.name) || !declaration.initializer) continue;
+      for (const element of declaration.name.elements) {
+        if (ts.isOmittedExpression(element) || !ts.isIdentifier(element.name) || element.name.text !== name) continue;
+        const propertyName = element.propertyName
+          ? (ts.isIdentifier(element.propertyName) ? element.propertyName.text : null)
+          : name;
+        if (propertyName === "searchParams") return declaration.initializer;
+      }
+    }
+  }
+  return null;
+}
+
+/** True when `receiver` — the thing `.get`/`.getAll` is called on — is a
+ * `searchParams` accessor, directly (`req.nextUrl.searchParams.get(...)`,
+ * `new URL(req.url).searchParams.get(...)`), through the SAME one-hop local
+ * resolution the zod collector uses for its two-statement json-read form
+ * (`localDeclarationInitializer`: `const searchParams = req.nextUrl.searchParams;
+ * ...; searchParams.get(...)`), or through the destructuring form
+ * (`const { searchParams } = req.nextUrl; ...; searchParams.get(...)`). A
+ * local that instead stores the `URL` object one hop further back
+ * (`const url = new URL(req.url); url.searchParams.get(...)`) is NOT
+ * resolved — that receiver (`url.searchParams`) isn't a bare identifier, so
+ * it never reaches either one-hop check. Documented fail-closed scope,
+ * matching the collector's existing "no data-flow analysis, one hop only"
+ * precedent rather than adding a second one. */
+function resolvesToSearchParams(ts: typeof TS, functionBody: TS.Node, receiver: TS.Expression): boolean {
+  if (isSearchParamsAccessor(ts, receiver)) return true;
+  if (!ts.isIdentifier(receiver)) return false;
+  const initializer = localDeclarationInitializer(ts, functionBody, receiver.text);
+  if (initializer && isSearchParamsAccessor(ts, initializer)) return true;
+  const destructured = destructuredSearchParamsInitializer(ts, functionBody, receiver.text);
+  return destructured !== null && isUrlLikeAccessorBase(ts, destructured);
+}
+
+/** Additive: every literal-keyed `searchParams.get("x")` becomes an optional
+ * string property; every `searchParams.getAll("x")` becomes an optional
+ * array-of-string property (query-derived properties are ALWAYS optional —
+ * 04 §1 Task 4's fail-closed rule; nothing here ever joins a `required`
+ * set). A computed key (`searchParams.get(key)`) carries no static evidence
+ * of the property's NAME, so it is silently skipped — absence of evidence,
+ * not a recognized-but-uninterpretable shape, so it carries no `note`
+ * either (04 §1 Task 4's "(c) ignored, no note" case). */
+function collectQueryProperties(ts: typeof TS, body: TS.Node): Record<string, unknown> {
+  const properties: Record<string, unknown> = {};
+  const visit = (node: TS.Node): void => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const methodName = node.expression.name.text;
+      if (methodName === "get" || methodName === "getAll") {
+        const argument = node.arguments[0];
+        const isLiteralKey = argument !== undefined
+          && (ts.isStringLiteral(argument) || ts.isNoSubstitutionTemplateLiteral(argument));
+        if (isLiteralKey && resolvesToSearchParams(ts, body, node.expression.expression)) {
+          properties[(argument as TS.StringLiteral | TS.NoSubstitutionTemplateLiteral).text] = methodName === "getAll"
+            ? { type: "array", items: { type: "string" } }
+            : { type: "string" };
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(body);
+  return properties;
+}
+
+/**
+ * Task 4: the query collector. Additive and unconditional — `inferRouteInput`
+ * asks it for EVERY (route, method), regardless of whether the zod or
+ * checker collector already answered for the body half (this is what "runs
+ * regardless of which body collector answered" means). Recognizes
+ * literal-keyed `searchParams.get`/`.getAll` reads via both receiver shapes
+ * (`req.nextUrl.searchParams`, `new URL(req.url).searchParams`), including
+ * one hop through a local variable holding the `searchParams` object itself.
+ *
+ * This collector reports evidence; it does NOT decide whether that evidence
+ * is safe to advertise on the emitted tool — see this module's top comment
+ * and route-scan.ts's `mergeRouteInput` for the argsIn-gated honesty rule
+ * that actually withholds query findings from body-bound tools.
+ */
+async function queryCollector(
+  route: RouteContext,
+  method: HttpMethod,
+  state: RouteScanState,
+): Promise<RouteInputResult | null> {
+  const extraction = zodExtractionFor(state);
+  if (!extraction) return null;
+  const module = parseModule(extraction, route.file, route.source);
+  const body = methodHandlerBody(module, extraction.ts, method);
+  if (!body) return null;
+
+  const properties = collectQueryProperties(extraction.ts, body);
+  for (const key of pathParamNames(route.urlPath)) delete properties[key];
+  if (Object.keys(properties).length === 0) return null;
+
+  return { queryProperties: properties };
 }

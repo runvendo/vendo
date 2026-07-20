@@ -720,3 +720,237 @@ export async function POST(req: Request) {
     expect(state.checkerProgramBuilds).toBe(0);
   });
 });
+
+/** Task 4: the query collector. Additive — asked for every (route, method)
+ * regardless of whether a body collector already answered (04 §1 Task 4).
+ * These fixtures exercise `inferRouteInput` directly, so `queryProperties`
+ * is asserted unconditionally here: whether those findings actually reach
+ * the emitted tool schema is `route-scan.ts`'s `mergeRouteInput` decision
+ * (argsIn-gated — see the "argsIn honesty" describe block below, which goes
+ * through `scanRoutes`). */
+describe("inferRouteInput (query collector)", () => {
+  it("(a) recognizes searchParams.get and .getAll literal reads as optional properties", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+export async function GET(req: Request) {
+  const { searchParams } = req.nextUrl;
+  const status = searchParams.get("status");
+  const tags = searchParams.getAll("tag");
+  return Response.json({ status, tags });
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    const result = await inferRouteInput(route, "GET", state);
+    expect(result?.queryProperties).toEqual({
+      status: { type: "string" },
+      tag: { type: "array", items: { type: "string" } },
+    });
+    expect(result?.note).toBeUndefined();
+  });
+
+  it("(a2) recognizes the direct req.nextUrl.searchParams.get(...) chain with no intermediate variable", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+export async function GET(req: Request) {
+  const status = req.nextUrl.searchParams.get("status");
+  return Response.json({ status });
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    const result = await inferRouteInput(route, "GET", state);
+    expect(result?.queryProperties).toEqual({ status: { type: "string" } });
+  });
+
+  it("(a3) recognizes new URL(req.url).searchParams via a local const", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+export async function GET(req: Request) {
+  const searchParams = new URL(req.url).searchParams;
+  const status = searchParams.get("status");
+  return Response.json({ status });
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    const result = await inferRouteInput(route, "GET", state);
+    expect(result?.queryProperties).toEqual({ status: { type: "string" } });
+  });
+
+  it("(b) still runs and reports query findings on a handler that also has a recognized zod body schema", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+import { z } from "zod";
+const schema = z.object({ name: z.string() });
+export async function POST(req: Request) {
+  const status = req.nextUrl.searchParams.get("status");
+  const body = schema.parse(await req.json());
+  return Response.json({ body, status });
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    const result = await inferRouteInput(route, "POST", state);
+    expect(result?.bodySchema).toEqual({
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
+      additionalProperties: false,
+    });
+    expect(result?.queryProperties).toEqual({ status: { type: "string" } });
+  });
+
+  it("(c) ignores a computed searchParams.get(key) — no property, no note", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+export async function GET(req: Request) {
+  const key = pickKey();
+  const value = req.nextUrl.searchParams.get(key);
+  return Response.json({ value });
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    expect(await inferRouteInput(route, "GET", state)).toBeNull();
+  });
+
+  it("excludes a query property that collides with a path param", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+export async function GET(req: Request) {
+  const id = req.nextUrl.searchParams.get("id");
+  const status = req.nextUrl.searchParams.get("status");
+  return Response.json({ id, status });
+}
+`,
+      urlPath: "/api/widgets/{id}",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    const result = await inferRouteInput(route, "GET", state);
+    expect(result?.queryProperties).toEqual({ status: { type: "string" } });
+  });
+
+  it("does not resolve a two-hop local (the URL object stored locally, searchParams accessed off it) — documented fail-closed", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const status = url.searchParams.get("status");
+  return Response.json({ status });
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    expect(await inferRouteInput(route, "GET", state)).toBeNull();
+  });
+});
+
+/** The review carry-over (04 §1 Task 4, and Task 1's `mergeRouteInput` doc
+ * comment): the runtime (`runtime/registry.ts`'s route execution) sends every
+ * non-path argument as `searchParams` for a query-bound tool but as a single
+ * JSON body for a body-bound tool — never split. So a query-derived property
+ * is only honest to advertise on a query-bound tool (GET/DELETE); for a
+ * body-bound tool (POST/PUT/PATCH) the collector's findings are dropped by
+ * `mergeRouteInput`, even though `inferRouteInput` itself always reports
+ * them (asserted above). These fixtures go through the full `scanRoutes` ->
+ * `mergeRouteInput` path to prove the drop actually happens at emission. */
+describe("query collector — argsIn honesty (route-scan merge)", () => {
+  it("merges query properties into a GET tool's schema alongside its path params", async () => {
+    const root = await temporaryRoot();
+    await write(root, "app/api/widgets/[id]/route.ts", `
+export async function GET(req: Request) {
+  const status = req.nextUrl.searchParams.get("status");
+  const tags = req.nextUrl.searchParams.getAll("tag");
+  return Response.json({ status, tags });
+}
+`);
+    const { tools } = await scanRoutes(root);
+    const tool = tools.find((candidate) => candidate.binding.kind === "route" && candidate.binding.method === "GET");
+    expect(tool?.inputSchema).toEqual({
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        status: { type: "string" },
+        tag: { type: "array", items: { type: "string" } },
+      },
+      required: ["id"],
+      additionalProperties: true,
+    });
+  });
+
+  it("drops query findings from a POST (body-bound) tool's schema even though the collector found them", async () => {
+    const root = await temporaryRoot();
+    await write(root, "app/api/widgets/route.ts", `
+import { z } from "zod";
+const schema = z.object({ name: z.string() });
+export async function POST(req: Request) {
+  const status = req.nextUrl.searchParams.get("status");
+  const body = schema.parse(await req.json());
+  return Response.json({ body, status });
+}
+`);
+    const { tools } = await scanRoutes(root);
+    const tool = tools.find((candidate) => candidate.binding.kind === "route" && candidate.binding.method === "POST");
+    // The zod-recognized body schema is present; "status" (query-derived) is
+    // NOT — POST args are delivered as a JSON body by the runtime, so a
+    // "status" property here would never reach searchParams.
+    expect(tool?.inputSchema).toEqual({
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
+      additionalProperties: false,
+    });
+  });
+
+  it("a GET handler's query findings still merge even when the (unused, argsIn=query) body evidence is ignored", async () => {
+    const root = await temporaryRoot();
+    // A GET handler that also happens to read/validate a body is unusual, but
+    // the zod collector doesn't gate on method — this proves route-scan.ts's
+    // existing argsIn gate (body only applies for body-bound methods) still
+    // holds unchanged alongside the new query gate.
+    await write(root, "app/api/widgets/route.ts", `
+import { z } from "zod";
+const schema = z.object({ name: z.string() });
+export async function GET(req: Request) {
+  const status = req.nextUrl.searchParams.get("status");
+  const body = schema.parse(await req.json());
+  return Response.json({ body, status });
+}
+`);
+    const { tools } = await scanRoutes(root);
+    const tool = tools.find((candidate) => candidate.binding.kind === "route" && candidate.binding.method === "GET");
+    expect(tool?.inputSchema).toEqual({
+      type: "object",
+      properties: { status: { type: "string" } },
+      additionalProperties: true,
+    });
+  });
+});

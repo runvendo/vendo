@@ -388,12 +388,25 @@ function routeInputSchema(urlPath: string): Record<string, unknown> {
  * Fold a collector's verdict (route-schema.ts) into the path-params-only
  * schema `routeInputSchema` always produces. `inferred === null` (no
  * collector recognized anything) reproduces today's exact output — the
- * fail-closed default. Otherwise: path params are kept, a body schema
- * replaces the blank permissive default for body-bound methods, and query
- * properties merge in additively regardless of `argsIn` (a body-bound
- * handler can still read `searchParams` — Task 4 wires that case). Query-
- * derived properties never join `required` (fail-closed: absence of a query
- * param is never proof it's missing).
+ * fail-closed default. Otherwise: path params are kept, and a body schema
+ * replaces the blank permissive default for body-bound methods.
+ *
+ * Query properties merge in ONLY for query-bound methods (`argsIn:
+ * "query"`, GET/DELETE) — NOT "regardless of argsIn" as an earlier draft of
+ * this comment claimed (review carry-over, PR 2 Task 4). The runtime
+ * (`runtime/registry.ts`'s route execution, ~560-564) sends every non-path
+ * argument as `searchParams` for a query-bound tool but as a single JSON
+ * body for a body-bound tool — never split across both. Advertising a
+ * query-derived property on a body-bound (POST/PUT/PATCH) tool would be a
+ * lie: the runtime would deliver it in the JSON body, and the handler
+ * (which reads it off `searchParams`) would never see it. `route-schema.ts`'s
+ * query collector (Task 4) still runs unconditionally and still reports what
+ * it finds for a body-bound route+method — this function is what drops
+ * those findings before they reach the emitted tool. The drop is silent (no
+ * `note`): it's a scope decision about where evidence is safe to surface,
+ * not a recognition failure. Query-derived properties never join `required`
+ * either way (fail-closed: absence of a query param is never proof it's
+ * missing).
  */
 function mergeRouteInput(
   urlPath: string,
@@ -416,7 +429,7 @@ function mergeRouteInput(
     if (typeof body.additionalProperties === "boolean") additionalProperties = body.additionalProperties;
   }
 
-  if (inferred.queryProperties) {
+  if (argsIn === "query" && inferred.queryProperties) {
     for (const [key, value] of Object.entries(inferred.queryProperties)) properties[key] = value;
   }
 
