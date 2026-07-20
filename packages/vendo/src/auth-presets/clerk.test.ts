@@ -2,8 +2,11 @@ import { clerkPreset } from "@vendoai/actions/presets";
 import type { AuthMaterial, PermissionGrant } from "@vendoai/core";
 import { SignJWT, exportSPKI, generateKeyPair } from "jose";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-// Imported through the same entry hosts use, pinning the re-export.
-import { clerk, hostAuthPresetConformance } from "./index.js";
+// clerk is pinned via its own module — the same file the
+// "@vendoai/vendo/auth/clerk" subpath re-exports (corpus-triage Task 9);
+// hostAuthPresetConformance still comes through the shared barrel.
+import { clerk } from "./clerk.js";
+import { hostAuthPresetConformance } from "./index.js";
 
 afterEach(() => {
   vi.unstubAllEnvs();

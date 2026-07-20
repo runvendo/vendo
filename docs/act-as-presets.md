@@ -12,7 +12,8 @@ Pass a named preset as `auth`; it fills `principal`, `actAs`, and `oauth` from
 one config key (09-vendo §2.1):
 
 ```ts
-import { createVendo, authJs } from "@vendoai/vendo/server";
+import { authJs } from "@vendoai/vendo/auth/auth-js";
+import { createVendo } from "@vendoai/vendo/server";
 
 export const vendo = createVendo({ model, auth: authJs() });
 ```
@@ -58,7 +59,8 @@ A real example, resolving both display and away-execution claims from a
 host's own user table:
 
 ```ts
-import { createVendo, authJs } from "@vendoai/vendo/server";
+import { authJs } from "@vendoai/vendo/auth/auth-js";
+import { createVendo } from "@vendoai/vendo/server";
 
 export const vendo = createVendo({
   model,
@@ -102,7 +104,7 @@ away automations and MCP calls. Pass the resulting `actAs` function to
 
 ```ts
 import { createVendo } from "@vendoai/vendo";
-import { authJsPreset } from "@vendoai/actions/presets";
+import { authJsPreset } from "@vendoai/actions/presets/auth-js";
 
 const actAs = authJsPreset();
 export const vendo = createVendo({ model, principal, actAs });
@@ -129,7 +131,7 @@ The preset calls the real Auth.js v5 encoder lazily. It creates the encrypted
 session JWE that `getToken` accepts; a conventional signed JWT is not enough.
 
 ```ts
-import { authJsPreset } from "@vendoai/actions/presets";
+import { authJsPreset } from "@vendoai/actions/presets/auth-js";
 
 export const actAs = authJsPreset({
   // Defaults to process.env.AUTH_SECRET.

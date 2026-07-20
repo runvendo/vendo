@@ -2,11 +2,12 @@ import type { PermissionGrant, Principal } from "@vendoai/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   auth0Preset,
-  authJsPreset,
   clerkPreset,
   genericJwtPreset,
   supabasePreset,
 } from "./index.js";
+// authJsPreset lives on its own module (not the barrel) — see index.ts.
+import { authJsPreset } from "./auth-js.js";
 import { signHs256 } from "./shared.js";
 
 // Red-team suite for @vendoai/actions/presets. actAs material is host
