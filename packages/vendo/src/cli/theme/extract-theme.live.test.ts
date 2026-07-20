@@ -95,7 +95,7 @@ describe.skipIf(!live || cliAvailability === null)("extractTheme live accuracy (
     // Step 1: the deterministic allowlist pass ONLY — no resolveModel. This is
     // the same exact pass runStagedExtraction's caller runs before deciding
     // whether the theme stage is even needed.
-    const exact = await extractTheme(root, {});
+    const exact = await extractTheme(root);
     const slotKeys = Object.keys(exact.slots) as Array<keyof ThemeSlotValues>;
 
     // Step 2: slots the exact pass did not read exactly — a missing

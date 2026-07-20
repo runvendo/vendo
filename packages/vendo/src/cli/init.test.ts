@@ -1,12 +1,9 @@
 import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from "node:fs/promises";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { LanguageModel } from "ai";
-import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, describe, expect, it } from "vitest";
+import type { ExtractionHarness } from "./extract/harness.js";
 import { runInit, starViaGh } from "./init.js";
 import type { Output } from "./shared.js";
 
@@ -21,19 +18,25 @@ const NO_CLOUD = {
   cloudProbe: async () => ({ present: false, ok: false, unlocks: ["a starter allowance"] as readonly string[] }),
 };
 
-/** A canned theme-pass model (the refine-seam mock): returns the given slots. */
-function themeModelOf(payload: object): () => Promise<LanguageModel> {
-  return async () => new MockLanguageModelV3({
-    doGenerate: async () => ({
-      content: [{ type: "text", text: JSON.stringify(payload) }],
-      finishReason: { unified: "stop", raw: undefined },
-      usage: {
-        inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-        outputTokens: { total: 0, text: 0, reasoning: 0 },
-      },
-      warnings: [],
-    }),
-  }) as LanguageModel;
+function fenced(payload: object): string {
+  return "```json\n" + JSON.stringify(payload) + "\n```";
+}
+
+/** A scripted harness answering the AI-polish stages: trivial (empty) tool
+    passes and briefs, plus the given theme-stage payload. Used to exercise
+    init's consent-gated theme merge without a real Claude Code login/binary
+    (Task 4: theme finalization now rides this same harness seam). */
+function themeHarness(payload: object): ExtractionHarness {
+  return {
+    id: "test-theme-harness",
+    availability: async () => "a scripted harness",
+    run: async ({ instructions }) => {
+      if (instructions.includes("extraction surveyor")) return fenced({ surfaces: [{ name: "app", tools: [] }] });
+      if (instructions.includes("drafting the product brief")) return fenced({ brief: "A test product." });
+      if (instructions.includes("filling the theme's brand slots")) return fenced(payload);
+      return fenced({ tools: [] });
+    },
+  };
 }
 
 async function fixture(): Promise<string> {
@@ -90,7 +93,6 @@ function run(root: string, sink: { output: Output }, extra: Partial<Parameters<t
     output: sink.output,
     env: {},
     cloud: NO_CLOUD,
-    themeModel: themeModelOf({ slots: {} }),
     telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     ...extra,
   });
@@ -615,7 +617,6 @@ describe("vendo init (zero-question)", () => {
       output: sink.output,
       env: {},
       cloudKey: key,
-      themeModel: themeModelOf({ slots: {} }),
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
       cloud: {
         confirm: async () => {
@@ -700,14 +701,17 @@ describe("vendo init (zero-question)", () => {
     const reviewed: string[] = [];
     const sink = output();
     expect(await run(root, sink, {
+      aiPolish: true,
       themeAnswers: { accent: "#facc15" },
-      themeModel: themeModelOf({
-        slots: { accent: "#196b46", text: "#111111" },
-        uncertain: [
-          { slot: "accent", note: "green may be data-only" },
-          { slot: "border", note: "no border evidence" },
-        ],
-      }),
+      extract: {
+        harnesses: [themeHarness({
+          slots: { accent: "#196b46", text: "#111111" },
+          uncertain: [
+            { slot: "accent", note: "green may be data-only" },
+            { slot: "border", note: "no border evidence" },
+          ],
+        })],
+      },
       themeReview: async (summary) => {
         reviewed.push(...summary.uncertain.map((entry) => entry.slot));
         return {};
@@ -723,15 +727,33 @@ describe("vendo init (zero-question)", () => {
     const quiet = await fixture();
     expect(await run(quiet, output(), {
       yes: true,
+      aiPolish: true,
       themeAnswers: { accent: "#facc15" },
-      themeModel: themeModelOf({
-        slots: { accent: "#196b46" },
-        uncertain: [{ slot: "accent", note: "green may be data-only" }],
-      }),
+      extract: {
+        harnesses: [themeHarness({
+          slots: { accent: "#196b46" },
+          uncertain: [{ slot: "accent", note: "green may be data-only" }],
+        })],
+      },
       themeReview: async () => { throw new Error("prompted"); },
     })).toBe(0);
     const quietTheme = JSON.parse(await readFile(join(quiet, ".vendo", "theme.json"), "utf8"));
     expect(quietTheme.colors.accent).toBe("#facc15");
+  });
+
+  // Task 3(c): a --theme answer beats a model value for the same slot, even
+  // when the model didn't flag it uncertain at all.
+  it("--theme answers beat a model-filled value for the same slot outright", async () => {
+    const root = await fixture();
+    expect(await run(root, output(), {
+      aiPolish: true,
+      themeAnswers: { accent: "#00ff00" },
+      extract: { harnesses: [themeHarness({ slots: { accent: "#196b46", mutedText: "#908c85" } })] },
+    })).toBe(0);
+    const theme = JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"));
+    expect(theme.colors.accent).toBe("#00ff00");
+    // The model's other fill still lands — only the contested slot changed.
+    expect(theme.colors.muted).toBe("#908c85");
   });
 
   it("never clobbers an existing registry and still wires the route to it", async () => {
@@ -785,55 +807,27 @@ describe("vendo init (zero-question)", () => {
     expect(logs.match(/Vendo Cloud \(optional\)/g)).toHaveLength(1);
   });
 
-  it("picks up a starter key minted mid-run: the same run's theme model pass sees it", async () => {
+  it("a starter key minted mid-run lands in .env.local and suppresses the end-of-run reminder", async () => {
+    // Task 4: theme finalization no longer runs its own model resolution
+    // (devModel/generateObject) — a freshly minted key now only matters to
+    // the consent-gated AI-polish harness ladder, exercised elsewhere. This
+    // keeps the mint → .env.local → "no key" reminder story covered here.
     const root = await fixture();
     const sink = output();
     const key = `vnd_${"a".repeat(40)}`;
-    // A canned Cloud model gateway: records what credential the theme model
-    // pass presents, answers 401 so the pass degrades gracefully. VENDO_CLOUD_URL
-    // in the run's env points devModel's gateway at it — no real network.
-    const seen: Array<string | undefined> = [];
-    const gateway = createServer((request, response) => {
-      seen.push(request.headers["x-api-key"] as string | undefined);
-      response.statusCode = 401;
-      response.setHeader("content-type", "application/json");
-      response.end(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "starter key rejected by test gateway" } }));
-    });
-    await new Promise<void>((resolveListen) => gateway.listen(0, "127.0.0.1", resolveListen));
-    const port = (gateway.address() as AddressInfo).port;
+    expect(await run(root, sink, {
+      cloud: {
+        cloudProbe: async () => ({ present: false, ok: false, unlocks: ["a starter allowance"] as readonly string[] }),
+        confirm: async () => true,
+        promptEmail: async () => "dev@example.com",
+        login: async () => 0,
+        mint: async () => key,
+      },
+    })).toBe(0);
 
-    try {
-      // No themeModel seam here on purpose: the DEFAULT resolver must observe
-      // the key the cloud step just wrote to .env.local.
-      expect(await runInit({
-        targetDir: root,
-        output: sink.output,
-        env: { VENDO_CLOUD_URL: `http://127.0.0.1:${port}` },
-        telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-        cloud: {
-          cloudProbe: async () => ({ present: false, ok: false, unlocks: ["a starter allowance"] as readonly string[] }),
-          confirm: async () => true,
-          promptEmail: async () => "dev@example.com",
-          login: async () => 0,
-          mint: async () => key,
-        },
-      })).toBe(0);
-    } finally {
-      await new Promise<void>((resolveClose) => gateway.close(() => resolveClose()));
-    }
-
-    // The mint landed in .env.local…
     expect(await readFile(join(root, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${key}`);
     const logs = sink.logs.join("\n");
     expect(logs).toContain("Wrote VENDO_API_KEY to .env.local");
-    // …the SAME run's theme model pass presented the minted key to the model
-    // gateway (same-run pickup, end to end)…
-    expect(seen.length).toBeGreaterThan(0);
-    expect(seen[0]).toBe(key);
-    // …and degraded with the gateway's real answer, never "no key".
-    const warnings = sink.errors.join("\n");
-    expect(warnings).toContain("theme model pass unavailable:");
-    expect(warnings).not.toContain("Vendo found no model key");
     // A key now exists — the end-of-run reminder is suppressed.
     expect(logs).not.toContain("No model key yet");
   });
@@ -1028,6 +1022,80 @@ describe("vendo init (zero-question)", () => {
     });
   });
 
+  // Task 4(a): without consent (no --ai-polish, not interactive), theme
+  // finalization never reaches the harness at all — exact reads and visible
+  // defaults are the whole story.
+  it("a non-consented run finalizes the theme from exact reads and defaults, with zero model involvement", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "app", "globals.css"), ":root { --primary: #2b7fff; --border: #e5e7eb; }\n");
+    let harnessCalled = false;
+    const sink = output();
+    expect(await run(root, sink, {
+      extract: {
+        harnesses: [{
+          id: "spy",
+          availability: async () => { harnessCalled = true; return "spy"; },
+          run: async () => { throw new Error("must never run without consent"); },
+        }],
+      },
+    })).toBe(0);
+    expect(harnessCalled).toBe(false);
+    const theme = JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"));
+    expect(theme.colors.accent).toBe("#2b7fff"); // exact read
+    expect(theme.colors.border).toBe("#e5e7eb"); // exact read
+    expect(theme.colors.background).toBe("#ffffff"); // no evidence — neutral default
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Theme:");
+    expect(logs).toContain("No host evidence for");
+  });
+
+  // Task 4(e): the never-overwrite law holds even when this run has consent
+  // and a harness that WOULD fill brand slots — a pre-existing theme.json
+  // stays the sole source of truth.
+  it("never touches a pre-existing theme.json, even with AI-polish consent and a theme-filling harness", async () => {
+    const root = await fixture();
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    const existing = `${JSON.stringify({ colors: { accent: "#123456" } }, null, 2)}\n`;
+    await writeFile(join(root, ".vendo", "theme.json"), existing);
+    const sink = output();
+    expect(await run(root, sink, {
+      aiPolish: true,
+      extract: { harnesses: [themeHarness({ slots: { accent: "#ff0000" } })] },
+    })).toBe(0);
+    expect(await readFile(join(root, ".vendo", "theme.json"), "utf8")).toBe(existing);
+    expect(sink.logs.join("\n")).not.toContain("Theme:");
+  });
+
+  // Task 4(f): the consent prompt now covers theme too, not just tools.
+  it("the AI-polish consent prompt mentions theme alongside tools, risk, and the brief", async () => {
+    const root = await fixture();
+    const questions: string[] = [];
+    const sink = output();
+    expect(await run(root, sink, {
+      extract: {
+        // The extract-level seam's own `interactive`, distinct from init's —
+        // it just needs to reach the confirm() call without granting consent.
+        interactive: true,
+        harnesses: [themeHarness({ slots: {} })],
+        confirm: async (question) => { questions.push(question); return true; },
+      },
+    })).toBe(0);
+    expect(questions[0]).toContain("theme");
+  });
+
+  // Task 4(d): the uncertain review is asked ONLY about slots the model
+  // actually flagged — a clean model reply never reaches the review prompt.
+  it("never opens the uncertain review when the model reports no uncertainty", async () => {
+    const root = await fixture();
+    expect(await run(root, output(), {
+      aiPolish: true,
+      extract: { harnesses: [themeHarness({ slots: { accent: "#2b7fff" } })] },
+      themeReview: async () => { throw new Error("must never be asked"); },
+    })).toBe(0);
+    const theme = JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"));
+    expect(theme.colors.accent).toBe("#2b7fff");
+  });
+
   it("fills next/font gaps via the model pass and prints the one-glance summary", async () => {
     const root = await fixture();
     await writeFile(join(root, "app", "layout.tsx"),
@@ -1045,7 +1113,8 @@ describe("vendo init (zero-question)", () => {
     const sink = output();
     expect(await run(root, sink, {
       yes: true,
-      themeModel: themeModelOf({ slots: { fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif" } }),
+      aiPolish: true,
+      extract: { harnesses: [themeHarness({ slots: { fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif" } })] },
     })).toBe(0);
 
     expect(JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"))).toMatchObject({
@@ -1068,10 +1137,13 @@ describe("vendo init (zero-question)", () => {
     const reviewed: string[] = [];
     const sink = output();
     expect(await run(root, sink, {
-      themeModel: themeModelOf({
-        slots: { accent: "#196b46", text: "#111111" },
-        uncertain: [{ slot: "accent", note: "green may be data-only" }],
-      }),
+      aiPolish: true,
+      extract: {
+        harnesses: [themeHarness({
+          slots: { accent: "#196b46", text: "#111111" },
+          uncertain: [{ slot: "accent", note: "green may be data-only" }],
+        })],
+      },
       themeReview: async (summary) => {
         reviewed.push(...summary.uncertain.map((entry) => entry.slot));
         return { accent: "#facc15", border: "#ecebe8", danger: "chartreuse-ish", sparkle: "#123456" };
@@ -1100,7 +1172,6 @@ describe("vendo init (zero-question)", () => {
       targetDir: root,
       output: sink.output,
       env: { VENDO_API_KEY: `vnd_${"b".repeat(40)}` },
-      themeModel: themeModelOf({ slots: {} }),
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
       cloud: {
         confirm: async () => {
@@ -1115,47 +1186,25 @@ describe("vendo init (zero-question)", () => {
     expect(logs).not.toContain("No model key yet");
   });
 
-  it("a starter key from a PRIOR run's .env.local counts: no offer, and the theme pass sees it", async () => {
+  it("a starter key from a PRIOR run's .env.local counts: no offer, no reminder", async () => {
     const root = await fixture();
     const key = `vnd_${"d".repeat(40)}`;
     await writeFile(join(root, ".env.local"), `VENDO_API_KEY=${key}\n`);
-    // The canned gateway again: proves the DEFAULT theme resolver received
-    // the .env.local key without any mint happening this run.
-    const seen: Array<string | undefined> = [];
-    const gateway = createServer((request, response) => {
-      seen.push(request.headers["x-api-key"] as string | undefined);
-      response.statusCode = 401;
-      response.setHeader("content-type", "application/json");
-      response.end(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "rejected by test gateway" } }));
-    });
-    await new Promise<void>((resolveListen) => gateway.listen(0, "127.0.0.1", resolveListen));
-    const port = (gateway.address() as AddressInfo).port;
-
     const sink = output();
     let offered = 0;
-    try {
-      expect(await runInit({
-        targetDir: root,
-        output: sink.output,
-        env: { VENDO_CLOUD_URL: `http://127.0.0.1:${port}` },
-        telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
-        cloud: {
-          confirm: async () => {
-            offered += 1;
-            return false;
-          },
+    expect(await run(root, sink, {
+      cloud: {
+        confirm: async () => {
+          offered += 1;
+          return false;
         },
-      })).toBe(0);
-    } finally {
-      await new Promise<void>((resolveClose) => gateway.close(() => resolveClose()));
-    }
+      },
+    })).toBe(0);
 
     expect(offered).toBe(0);
     const logs = sink.logs.join("\n");
     expect(logs).toContain("Vendo Cloud: VENDO_API_KEY present and well-formed.");
     expect(logs).not.toContain("No model key yet");
-    expect(seen.length).toBeGreaterThan(0);
-    expect(seen[0]).toBe(key);
   });
 
   it("reads quoted .env.local values per dotenv semantics: quotes stripped, inline comments dropped", async () => {
@@ -1176,7 +1225,6 @@ describe("vendo init (zero-question)", () => {
       targetDir: root,
       output: sink.output,
       env: {},
-      themeModel: themeModelOf({ slots: {} }),
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
       resolveCredential: async ({ env }) => {
         seenEnv.push(env);

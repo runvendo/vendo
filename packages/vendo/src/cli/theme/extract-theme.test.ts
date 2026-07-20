@@ -2,10 +2,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { LanguageModel } from "ai";
-import { MockLanguageModelV3 } from "ai/test";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { extractTheme, validateSlotValue } from "./extract-theme.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { applyThemeDraft, extractTheme, validateSlotValue, type ThemeSummary } from "./extract-theme.js";
 
 const cleanup: string[] = [];
 const appsDir = fileURLToPath(new URL("../../../../../apps/", import.meta.url));
@@ -13,26 +11,6 @@ const appsDir = fileURLToPath(new URL("../../../../../apps/", import.meta.url));
 afterEach(async () => {
   await Promise.all(cleanup.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
-
-const ZERO_USAGE = {
-  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-  outputTokens: { total: 0, text: 0, reasoning: 0 },
-} as const;
-
-function themeModel(answer: unknown, prompts?: string[]): LanguageModel {
-  return new MockLanguageModelV3({
-    doGenerate: async (request) => {
-      const promptText = JSON.stringify(request.prompt);
-      if (prompts) prompts.push(promptText);
-      return {
-        content: [{ type: "text", text: JSON.stringify(answer) }],
-        finishReason: { unified: "stop", raw: undefined },
-        usage: ZERO_USAGE,
-        warnings: [],
-      };
-    },
-  }) as LanguageModel;
-}
 
 async function fixture(files: Record<string, string>): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "vendo-theme-"));
@@ -46,7 +24,7 @@ async function fixture(files: Record<string, string>): Promise<string> {
 }
 
 describe("extractTheme allowlist fast-path", () => {
-  it("reads a fully conventional shadcn sheet exactly, with zero model calls", async () => {
+  it("reads a fully conventional shadcn sheet exactly, with zero model involvement", async () => {
     const root = await fixture({
       "package.json": "{}\n",
       "app/layout.tsx": 'import "./globals.css";\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n',
@@ -69,11 +47,9 @@ describe("extractTheme allowlist fast-path", () => {
         .dark { --background: #09090b; --foreground: #fafafa; }
       `,
     });
-    const resolveModel = vi.fn(async () => themeModel({ slots: {} }));
 
-    const result = await extractTheme(root, { resolveModel });
+    const result = await extractTheme(root);
 
-    expect(resolveModel).not.toHaveBeenCalled();
     expect(result.usedModel).toBe(false);
     expect(result.slots).toMatchObject({
       background: "#fafafa",
@@ -93,6 +69,12 @@ describe("extractTheme allowlist fast-path", () => {
     expect(result.matched["accent"]).toBe("--primary");
     expect(result.defaulted).toEqual(["baseSize"]);
     expect(result.hasDarkVariant).toBe(true);
+    // Every slot but baseSize was read exactly — `needed` mirrors `defaulted`
+    // exactly when nothing derives (accentText/headingFamily were both exact
+    // reads here too).
+    expect(result.needed).toEqual(["baseSize"]);
+    // The context gatherer's own collected paths, repo-relative.
+    expect(result.evidencePaths).toEqual(expect.arrayContaining(["app/layout.tsx", "app/globals.css"]));
   });
 
   it("strips quotes from font family names (quotes are optional CSS syntax, not identity)", async () => {
@@ -102,7 +84,7 @@ describe("extractTheme allowlist fast-path", () => {
       "app/globals.css": ':root { --font-sans: "Outfit", sans-serif; --font-heading: \'Newsreader\', serif; }\n',
     });
 
-    const result = await extractTheme(root, {});
+    const result = await extractTheme(root);
 
     expect(result.slots.fontFamily).toBe("Outfit, sans-serif");
     expect(result.slots.headingFamily).toBe("Newsreader, serif");
@@ -140,7 +122,7 @@ describe("extractTheme allowlist fast-path", () => {
     expect(result.usedModel).toBe(false);
   });
 
-  it("derives accentText without a model call when every other core token is exact", async () => {
+  it("derives accentText without any model involvement when every other core token is exact", async () => {
     const root = await fixture({
       "package.json": "{}\n",
       "app/layout.tsx": 'import "./globals.css";\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n',
@@ -160,11 +142,10 @@ describe("extractTheme allowlist fast-path", () => {
         }
       `,
     });
-    const resolveModel = vi.fn(async () => themeModel({ slots: {} }));
 
-    const result = await extractTheme(root, { resolveModel });
+    const result = await extractTheme(root);
 
-    expect(resolveModel).not.toHaveBeenCalled();
+    expect(result.usedModel).toBe(false);
     expect(result.slots.accentText).toBe("#ffffff");
     expect(result.matched["accentText"]).toBe("(contrast) accent");
   });
@@ -188,104 +169,115 @@ describe("extractTheme allowlist fast-path", () => {
   });
 });
 
-describe("extractTheme LLM pass", () => {
-  const CUSTOM_TOKEN_APP = {
-    "package.json": "{}\n",
-    "app/layout.tsx": [
-      'import { Inter } from "next/font/google";',
-      'import "./globals.css";',
-      'const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });',
-      "export default function Layout({ children }) { return <html className={inter.variable}><body>{children}</body></html>; }",
-    ].join("\n"),
-    "app/globals.css": `
-      :root {
-        --border: #ecebe8;
-        --color-ink: #111111;
-        --color-bg: #fbfbfa;
-        --font-sans: var(--font-inter);
-      }
-    `,
-  };
+// A base fixture with exactly one exact read (--border) — every other slot
+// lands in `needed`, so it exercises applyThemeDraft's merge broadly.
+const CUSTOM_TOKEN_APP = {
+  "package.json": "{}\n",
+  "app/layout.tsx": [
+    'import { Inter } from "next/font/google";',
+    'import "./globals.css";',
+    'const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });',
+    "export default function Layout({ children }) { return <html className={inter.variable}><body>{children}</body></html>; }",
+  ].join("\n"),
+  "app/globals.css": `
+    :root {
+      --border: #ecebe8;
+      --color-ink: #111111;
+      --color-bg: #fbfbfa;
+      --font-sans: var(--font-inter);
+    }
+  `,
+};
 
-  it("asks the model once for the slots the allowlist could not read, and merges", async () => {
-    const prompts: string[] = [];
-    const resolveModel = vi.fn(async () => themeModel({
+describe("applyThemeDraft (merges a parsed theme-stage artifact onto an exact-only summary)", () => {
+  async function baseSummary(): Promise<ThemeSummary> {
+    return extractTheme(await fixture(CUSTOM_TOKEN_APP));
+  }
+
+  it("never overwrites an exact read, fills only needed slots, and drops invalid model values", async () => {
+    const summary = await baseSummary();
+    expect(summary.matched["border"]).toBe("--border");
+    expect(summary.needed).toContain("accent");
+    expect(summary.needed).not.toContain("border");
+
+    const merged = applyThemeDraft(summary, {
       slots: {
-        accent: "#111111",
-        background: "#fbfbfa",
-        surface: "#ffffff",
-        text: "#111111",
-        mutedText: "#908c85",
-        danger: "#b0473a",
-        radius: "8px",
-        fontFamily: "Inter, sans-serif",
         // Exact reads are authoritative: this must NOT override --border.
         border: "#ff0000",
+        accent: "#111111",
+        mutedText: "not-a-color",
       },
-    }, prompts));
-
-    const result = await extractTheme(await fixture(CUSTOM_TOKEN_APP), { resolveModel });
-
-    expect(resolveModel).toHaveBeenCalledTimes(1);
-    expect(result.usedModel).toBe(true);
-    expect(result.slots).toMatchObject({
-      accent: "#111111",
-      background: "#fbfbfa",
-      surface: "#ffffff",
-      mutedText: "#908c85",
-      danger: "#b0473a",
-      fontFamily: "Inter, sans-serif",
-      headingFamily: "Inter, sans-serif",
-      border: "#ecebe8",
     });
-    expect(result.matched["border"]).toBe("--border");
-    expect(result.matched["accent"]).toBe("(model)");
-    expect(result.matched["headingFamily"]).toBe("(inherit) fontFamily");
-    // The single call carries the evidence: layout + css, and the needed slots.
-    expect(prompts).toHaveLength(1);
-    expect(prompts[0]).toContain("globals.css");
-    expect(prompts[0]).toContain("next/font/google");
+
+    expect(merged.slots.border).toBe("#ecebe8");
+    expect(merged.matched["border"]).toBe("--border");
+    expect(merged.slots.accent).toBe("#111111");
+    expect(merged.matched["accent"]).toBe("(model)");
+    // Invalid value: ignored, the slot stays defaulted.
+    expect(merged.defaulted).toContain("mutedText");
+    expect(merged.defaulted).not.toContain("accent");
+    expect(merged.usedModel).toBe(true);
   });
 
-  it("surfaces model-flagged uncertainty and drops invalid model values", async () => {
-    const resolveModel = async () => themeModel({
-      slots: {
-        accent: "#196b46",
-        surface: "not-a-color",
-        radius: "calc(1px + 1rem)",
-      },
+  it("a model-provided accentText stands over the contrast derivation", async () => {
+    const summary = await baseSummary();
+    const merged = applyThemeDraft(summary, {
+      slots: { accent: "#111111", accentText: "#eeeeee" },
+    });
+    expect(merged.slots.accentText).toBe("#eeeeee");
+    expect(merged.matched["accentText"]).toBe("(model)");
+  });
+
+  it("re-derives accentText by contrast when the model fills accent but not accentText", async () => {
+    const summary = await baseSummary();
+    const merged = applyThemeDraft(summary, { slots: { accent: "#111111" } });
+    expect(merged.slots.accentText).toBe("#ffffff"); // WCAG contrast against a dark accent
+    expect(merged.matched["accentText"]).toBe("(contrast) accent");
+  });
+
+  it("headingFamily inherits fontFamily when neither is exact but the model fills fontFamily", async () => {
+    const summary = await baseSummary();
+    const merged = applyThemeDraft(summary, { slots: { fontFamily: "Geist, sans-serif" } });
+    expect(merged.slots.headingFamily).toBe("Geist, sans-serif");
+    expect(merged.matched["headingFamily"]).toBe("(inherit) fontFamily");
+  });
+
+  it("an exact accentText is never reconsidered, even if the draft tries to fill it", async () => {
+    const root = await fixture({
+      "package.json": "{}\n",
+      "app/layout.tsx": 'import "./globals.css";\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n',
+      "app/globals.css": ":root { --primary-foreground: #123456; }\n",
+    });
+    const summary = await extractTheme(root);
+    expect(summary.matched["accentText"]).toBe("--primary-foreground");
+    expect(summary.needed).not.toContain("accentText");
+
+    const merged = applyThemeDraft(summary, { slots: { accent: "#111111", accentText: "#000000" } });
+    expect(merged.slots.accentText).toBe("#123456");
+    expect(merged.matched["accentText"]).toBe("--primary-foreground");
+  });
+
+  it("filters uncertainty to brand slots that were actually needed", async () => {
+    const summary = await baseSummary();
+    const merged = applyThemeDraft(summary, {
+      slots: { accent: "#111111" },
       uncertain: [
-        { slot: "accent", note: "green appears only in data accents" },
-        { slot: "mutedText", note: "two plausible muted inks" },
-        // Uncertainty about an exact-read slot is moot, and unknown slots drop.
-        { slot: "border", note: "moot — read exactly from --border" },
+        { slot: "accent", note: "two plausible brand colors" },
+        // Moot: border was read exactly, so doubt about it is not actionable.
+        { slot: "border", note: "moot — read exactly" },
+        // Not a brand slot: density never triggers a question on its own.
+        { slot: "density", note: "unclear from the sheet" },
         { slot: "not-a-slot", note: "ignored" },
       ],
     });
-
-    const result = await extractTheme(await fixture(CUSTOM_TOKEN_APP), { resolveModel });
-
-    expect(result.slots.accent).toBe("#196b46");
-    expect(result.slots.surface).toBe("#f8fafc");
-    expect(result.slots.radius).toBe("8px");
-    expect(result.defaulted).toContain("surface");
-    expect(result.uncertain).toEqual([
-      { slot: "accent", note: "green appears only in data accents" },
-      { slot: "mutedText", note: "two plausible muted inks" },
-    ]);
+    expect(merged.uncertain).toEqual([{ slot: "accent", note: "two plausible brand colors" }]);
   });
 
-  it("degrades to reported defaults when no model resolves — never a silent guess", async () => {
-    const result = await extractTheme(await fixture(CUSTOM_TOKEN_APP), {
-      resolveModel: async () => { throw new Error("no model configured"); },
-    });
-
-    expect(result.usedModel).toBe(false);
-    expect(result.errors.join("\n")).toContain("no model configured");
-    expect(result.slots.accent).toBe("#2563eb");
-    expect(result.defaulted).toContain("accent");
-    // The one exact read still lands.
-    expect(result.slots.border).toBe("#ecebe8");
+  it("usedModel stays false when the draft contributes nothing accepted", async () => {
+    const summary = await baseSummary();
+    const merged = applyThemeDraft(summary, { slots: { mutedText: "not-a-color" } });
+    expect(merged.usedModel).toBe(false);
+    expect(merged.slots.accent).toBe(summary.slots.accent); // untouched default
   });
 });
 
