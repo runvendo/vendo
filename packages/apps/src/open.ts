@@ -202,17 +202,42 @@ const attachPinFurnishings = (
   }
 };
 
+/**
+ * execution-v2 Wave 4 — the layer-3 served surface seam the runtime injects:
+ * `enabled` mirrors the host's experimental flag, and `urlFor` wakes the app's
+ * machine (wake-on-open) and resolves its public ingress URL for $PORT.
+ */
+export interface ServedSurface {
+  enabled: boolean;
+  urlFor(app: AppDocument): Promise<string>;
+}
+
+/** Wave 4 — the one refusal for every layer-3 path while the flag is off. */
+export const servedAppsDisabledError = (): VendoError => new VendoError(
+  "not-implemented",
+  "served (layer-3) app surfaces are experimental and disabled for this project — enable them with createVendo({ apps: { experimentalServedApps: true } }) (AppsConfig.experimentalServedApps) to let a machine serve the app surface",
+  { experiment: "servedApps", flag: "experimentalServedApps" },
+);
+
 /** 06-apps §§1–2 — construct the open surface. */
 export const createAppOpener = (
   caller: AppCaller,
   pinBaselines: readonly PinBaseline[] = [],
   inClientVenue?: (app: AppDocument) => Promise<InClientVenueState | undefined>,
+  served?: ServedSurface,
 ): ((app: AppDocument, ctx: RunContext) => Promise<OpenSurface>) => async (app, ctx) => {
   if (app.ui === "http") {
-    // execution-v2 — the v1 rung-4 served surface is deleted; the layer-3
-    // "machine serves the app" surface (experimental, host-gated) arrives in a
-    // later wave over the machine lifecycle.
-    throw new VendoError("not-implemented", "served (http) app surfaces return with execution-v2 layer 3");
+    // execution-v2 Wave 4 — the layer-3 served surface, host-gated behind the
+    // experimental flag: opening a served app while the flag is off refuses
+    // with the SAME typed error as generation (a served app that exists from
+    // elsewhere is refused too, not just new builds).
+    if (served === undefined || !served.enabled) {
+      throw servedAppsDisabledError();
+    }
+    // Wake-on-open: a sleeping machine resumes here (the accepted wake
+    // latency; the host shows its ordinary loading state — no v1 cover or
+    // screenshot machinery).
+    return { kind: "http", url: await served.urlFor(app) };
   }
 
   if (app.tree === undefined) {

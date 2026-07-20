@@ -258,9 +258,9 @@ export class FakeSandboxMachine implements SandboxMachine {
     return onePixelPng.slice();
   }
 
-  async url(port: number): Promise<string> {
+  async url(port?: number): Promise<string> {
     this.ensureRunning("resolve a serving URL");
-    return `http://fake-machine-${this.id}.local:${port}`;
+    return `http://fake-machine-${this.id}.local:${port ?? this.port}`;
   }
 
   async stop(): Promise<void> {

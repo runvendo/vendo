@@ -68,6 +68,14 @@ export interface SandboxMachine {
     body?: Uint8Array | string;
   }): Promise<{ status: number; headers: Record<string, string>; body: Uint8Array }>;
 
+  /**
+   * Wave 4 (layer 3) — the machine's PUBLIC ingress URL for a port, defaulting
+   * to the app's $PORT. This is the browser→box serving path: the host embeds
+   * it as a served app's surface. Absolute http(s); the host shape is the
+   * provider's business (e.g. e2b's per-port public hostname).
+   */
+  url(port?: number): Promise<string>;
+
   /** Persist the machine's current state; the ref restores it via SandboxAdapter.resume. */
   snapshot(): Promise<string>;
 

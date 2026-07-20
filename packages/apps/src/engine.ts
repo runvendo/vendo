@@ -136,7 +136,10 @@ const SERVER_INSTRUCTION = /\b(server|server-side|backend|database|persist|mutat
 // "the watch list", "the API status card" stay on the cheap tree path.
 const AMBIGUOUS_SERVER_TERM = /\b(api|http|web app|function|external|secret|digest|watch|monitor|daily|nightly|hourly|periodic)\b/gi;
 const VISIBLE_ELEMENT_LABEL = /^(?:\w+\s+)?(card|button|badge|chip|header|heading|title|label|caption|text|list|table|column|row|cell|section|panel|chart|graph|icon|field|tab|menu|toolbar|sidebar|footer|banner|tile|widget)s?\b/i;
-const FULL_WEB_APP_INSTRUCTION = /\b(full web app|served web app|custom client|ui:? ?http)\b/i;
+/** Wave 4 (layer 3) — asks whose UI needs exceed the tree: a real served web
+ *  app, or interaction vocabulary (drag-and-drop, kanban, whiteboard, rich
+ *  text) the tree's component walk cannot express. */
+const SERVED_APP_INSTRUCTION = /\b(full web app|served web app|custom (?:ui|client|frontend)|drag[- ]?(?:and|&|'n')[- ]?drop|draggable|kanban|whiteboard|wysiwyg|rich[- ]text editor|ui:? ?http)\b/i;
 const reserved = new Set<string>(PREWIRED_COMPONENT_NAMES);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -1122,10 +1125,24 @@ export const modelEngine: GenerationEngine = {
  */
 export const instructionRequiresServer = (app: AppDocument, instruction: string): boolean =>
   SERVER_INSTRUCTION.test(instruction)
-  || FULL_WEB_APP_INSTRUCTION.test(instruction)
+  || SERVED_APP_INSTRUCTION.test(instruction)
   || app.ui === "http"
   || [...instruction.matchAll(AMBIGUOUS_SERVER_TERM)].some((match) =>
     !VISIBLE_ELEMENT_LABEL.test(instruction.slice(match.index + match[0].length).trimStart()));
+
+/**
+ * execution-v2 Wave 4 — the 2→3 escalation judgment (same judge shape as
+ * {@link instructionRequiresServer}): whether an instruction's UI needs exceed
+ * the tree, so the box agent must build a REAL web app the machine serves
+ * (layer 3, experimental — the runtime refuses this path unless the host
+ * enabled `experimentalServedApps`). An already-served app is always a
+ * layer-3 subject: every edit of it is served-app work.
+ */
+export const instructionRequiresServedApp = (
+  app: Pick<AppDocument, "ui">,
+  instruction: string,
+): boolean =>
+  app.ui === "http" || SERVED_APP_INSTRUCTION.test(instruction);
 
 /** 01-core §8 — generated component naming check exported for focused engine tests. */
 export const isGeneratedComponentName = (name: string): boolean =>

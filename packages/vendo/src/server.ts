@@ -300,6 +300,14 @@ export interface CreateVendoConfig {
     sweepIntervalMs?: number;
     now?: () => number;
   };
+  /** execution-v2 Wave 4 — apps-block options. `experimentalServedApps` is the
+      per-project layer-3 opt-in: a machine may serve the app surface itself
+      (the host embeds its URL in a sandboxed iframe). OFF by default — layer-3
+      generation, the 2→3 surface flip, and open() on a served app all refuse
+      with a typed VendoError naming this flag until the host enables it. */
+  apps?: {
+    experimentalServedApps?: boolean;
+  };
 }
 
 /** ENG-237 recommended defaults (documented in the PR body; Yousef-gated as
@@ -1066,6 +1074,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     model: inference.model,
     catalog,
     pinBaselines,
+    // execution-v2 Wave 4 — the layer-3 experimental opt-in, host-config only
+    // (never an env var: enabling a surface that runs generated web apps is a
+    // deliberate per-project decision).
+    ...(config.apps?.experimentalServedApps === undefined ? {} : { experimentalServedApps: config.apps.experimentalServedApps }),
     ...(config.paint === undefined ? {} : { paint: config.paint }),
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),

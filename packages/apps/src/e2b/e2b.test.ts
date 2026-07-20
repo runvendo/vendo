@@ -217,6 +217,14 @@ describe("e2bSandbox", () => {
     expect(sdk.deleteSnapshot).toHaveBeenCalledWith("snapshot_789", { apiKey: "key_test" });
   });
 
+  it("serves the sandbox public host as the seam machine URL (Wave 4 layer 3)", async () => {
+    const adapter = e2bSandbox({ apiKey: "key_test" });
+    const machine = await adapter.create({ env: { PORT: "8080" } });
+    // No-arg url() targets the app's $PORT — the browser→box serving path.
+    await expect(machine.url()).resolves.toBe("https://8080-sandbox_123.e2b.app");
+    await expect(machine.url(9090)).resolves.toBe("https://9090-sandbox_123.e2b.app");
+  });
+
   it("keeps adapter-private exec, files, url, and deprecated create extras", async () => {
     const adapter = e2bSandbox({ apiKey: "key_test", timeoutMs: 5_000 });
     const created = await adapter.create({
