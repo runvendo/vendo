@@ -82,7 +82,17 @@ export async function applyVendoRootPaste(
   const wrapExpression = (wrapMatch[1] ?? "").trim();
 
   const withImports = importLines.length === 0 ? original : `${importLines.join("\n")}\n${original}`;
-  const pasted = withImports.replace("{children}", wrapExpression);
+  // Replace the LAST "{children}" occurrence, not the first: a spaceless
+  // destructure param — `function RootLayout({children}: ...)` — puts a
+  // "{children}" in the signature ahead of the JSX one we actually want to
+  // wrap (corpus-triage review finding #2).
+  const lastIndex = withImports.lastIndexOf("{children}");
+  const pasted =
+    lastIndex === -1
+      ? withImports
+      : withImports.slice(0, lastIndex) +
+        wrapExpression +
+        withImports.slice(lastIndex + "{children}".length);
   await writeFile(filePath, pasted, "utf8");
 
   return { applied: true, file: app.layoutRel, reason: "pasted the printed VendoRoot import(s) + wrap into the layout" };

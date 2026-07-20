@@ -36,6 +36,26 @@ const WRAPPED_LAYOUT = UNWRAPPED_LAYOUT.replace(
   "<VendoRoot>{children}</VendoRoot>",
 );
 
+// Spaceless destructure: `{children}` appears in the function signature
+// BEFORE it appears in the JSX body. A naive first-occurrence replace
+// mangles the signature instead of wrapping the JSX (corpus-triage review
+// finding #2).
+const UNWRAPPED_LAYOUT_SPACELESS_DESTRUCTURE = [
+  'import type { ReactNode } from "react";',
+  'import "./globals.css";',
+  "",
+  "function RootLayout({children}: { children: ReactNode }) {",
+  "  return (",
+  '    <html lang="en">',
+  "      <body>{children}</body>",
+  "    </html>",
+  "  );",
+  "}",
+  "",
+  "export default RootLayout;",
+  "",
+].join("\n");
+
 // The exact shape `vendo init` prints today (init.ts's vendoRootPasteLines +
 // the "Last steps are yours:" preamble output.log wraps it in) — the harness
 // paste helper reads THIS, it does not regenerate its own copy of it.
@@ -66,6 +86,23 @@ describe("applyVendoRootPaste", () => {
     expect(layout).toContain('import theme from "../vendo/theme";');
     expect(layout).toContain('import type { VendoTheme } from "@vendoai/vendo";');
     expect(layout).toContain("<VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>");
+  });
+
+  it("wraps the JSX {children}, not a spaceless {children} destructure in the function signature", async () => {
+    const repoDir = await makeTempRepo();
+    await mkdir(path.join(repoDir, "app"), { recursive: true });
+    await writeFile(path.join(repoDir, "app/layout.tsx"), UNWRAPPED_LAYOUT_SPACELESS_DESTRUCTURE);
+
+    const result = await applyVendoRootPaste(repoDir, "next", INIT_STDOUT);
+
+    expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
+    const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
+    // Signature destructure left untouched.
+    expect(layout).toContain("function RootLayout({children}: { children: ReactNode }) {");
+    // JSX usage wrapped instead.
+    expect(layout).toContain(
+      "<body><VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot></body>",
+    );
   });
 
   it("fails when vendo init's stdout did not print the paste instructions", async () => {

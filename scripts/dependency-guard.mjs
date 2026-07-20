@@ -37,7 +37,6 @@
  *      ./v4 (skateshop landmine; six packages fixed in 174aa430, ui+agent
  *      missed and fixed alongside this rule).
  *
-
  * Runs in `pnpm lint` at the root. No dependencies; Node >= 20.
  *
  * Known residual gaps (accepted): computed dynamic imports (import(`@vendoai/${x}`))
