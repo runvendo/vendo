@@ -59,13 +59,17 @@
   },
   "peerDependencies": {
     "ai": ">=6.0.0 <7",
-    "e2b": "^2.32.0"
+    "e2b": "^2.32.0",
+    "vitest": "^2.0.0"
   },
   "peerDependenciesMeta": {
     "ai": {
       "optional": true
     },
     "e2b": {
+      "optional": true
+    },
+    "vitest": {
       "optional": true
     }
   },

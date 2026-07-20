@@ -31,6 +31,12 @@
  *   per machine (public ingress `https://<id>.m.vendo.run` targets the same
  *   listener). The adapter surfaces a non-default `port` as the typed
  *   `cloud-single-port` error; the e2b adapter keeps multi-port.
+ *   KNOWN CONFLICT (relayed to Cloud 2026-07-19): the in-box agent control
+ *   channel rides `machine.request({ port: BOX_CONTROL_PORT })` (8811,
+ *   box-agent.ts), so on Cloud the app-port plane (fn calls, schedules,
+ *   wake) works while in-box agent edits raise the typed error until the
+ *   relay learns to route the control port — at which point the allowed
+ *   set here widens by one constant.
  * - snapshot `POST /{id}/snapshot` → `{ref}`; the source machine KEEPS
  *   RUNNING (the checkpoint is what survives, v2 seam semantics).
  * - stop     — NO pause endpoint exists (PROVISIONAL). Cloud machines sleep
