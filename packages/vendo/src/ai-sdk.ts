@@ -7,8 +7,9 @@ import type { Vendo } from "./server.js";
  * `@vendoai/vendo/ai-sdk` — the BYO-agent seam for AI SDK loops (frozen
  * contract: docs/superpowers/specs/2026-07-20-existing-agents-contracts.md §2).
  * One thin format shim over the framework-neutral tool pack in
- * `@vendoai/agent`: the same guard-bound registry Vendo's own loop executes
- * through (`guard.bind` is a stateless wrapper over the composed guard), plus
+ * `@vendoai/agent`, executing through `vendo.guardedTools` — the guard-bound
+ * registry Vendo's own loop shares, decorated to park pending-approval calls
+ * so `<VendoApprovalEmbed>` can resume them over the wire — plus
  * `agent.asRunner()` behind `vendo_delegate`. No tool reachable from the host
  * loop has an unguarded route.
  */
@@ -56,7 +57,7 @@ export async function vendoTools(vendo: Vendo, options: VendoToolPackOptions): P
     sessionId: options.sessionId ?? `session_${globalThis.crypto.randomUUID()}`,
   };
   const pack = await buildVendoToolPack({
-    registry: vendo.guard.bind(vendo.actions),
+    registry: vendo.guardedTools,
     runner: vendo.agent.asRunner(),
     ...(options.include === undefined ? {} : { include: options.include }),
     ...(options.exclude === undefined ? {} : { exclude: options.exclude }),

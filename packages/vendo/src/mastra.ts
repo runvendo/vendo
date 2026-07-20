@@ -91,7 +91,7 @@ export async function vendoMastraTools(
   options?: VendoToolPackFilter,
 ): Promise<Record<string, VendoMastraTool>> {
   const pack = await buildVendoToolPack({
-    registry: vendo.guard.bind(vendo.actions),
+    registry: vendo.guardedTools,
     runner: vendo.agent.asRunner(),
     ...(options?.include === undefined ? {} : { include: options.include }),
     ...(options?.exclude === undefined ? {} : { exclude: options.exclude }),
