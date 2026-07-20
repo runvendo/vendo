@@ -3,11 +3,12 @@ import { actAsConformance, runConformance } from "@vendoai/core/conformance";
 import { describe, expect, it } from "vitest";
 import {
   auth0Preset,
-  authJsPreset,
   clerkPreset,
   genericJwtPreset,
   supabasePreset,
 } from "./index.js";
+// authJsPreset lives on its own module (not the barrel) — see index.ts.
+import { authJsPreset } from "./auth-js.js";
 
 const principal: Principal = { kind: "user", subject: "preset-conformance-user" };
 const grant: PermissionGrant = {

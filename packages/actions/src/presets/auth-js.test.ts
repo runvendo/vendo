@@ -1,7 +1,9 @@
 import { getToken } from "@auth/core/jwt";
 import type { PermissionGrant, Principal } from "@vendoai/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { authJsPreset } from "./index.js";
+// authJsPreset ships on its own module — not the shared "./index.js" barrel
+// (corpus-triage Task 9) — so import it directly here too.
+import { authJsPreset } from "./auth-js.js";
 
 const principal: Principal = { kind: "user", subject: "user_authjs" };
 const grant: PermissionGrant = {

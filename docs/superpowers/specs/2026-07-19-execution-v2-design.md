@@ -146,9 +146,15 @@ access rides the same callback seam as layer 2.
 
 Deviations from this record as built, plus the known backlog. One line each.
 
-- In-box agent is a thin custom loop (box harness `agent-loop.mjs` against the
-  inference door), not the Claude Agent SDK; revisit when the SDK runs well
-  headless in a box.
+- ~~In-box agent is a thin custom loop (box harness `agent-loop.mjs` against
+  the inference door), not the Claude Agent SDK~~ RESOLVED Wave 8: the box
+  agent IS the Claude Agent SDK (`agent-sdk.mjs`, headless `query()` with the
+  SDK's shell + file tools, structured result via an in-process `report_done`
+  MCP tool); the SDK is baked into the base template at build time (size = a
+  template concern), auth rides ANTHROPIC_API_KEY/ANTHROPIC_BASE_URL mapped
+  from the same VENDO_INFERENCE_URL/KEY door (BYO and gateway both
+  live-verified); the thin loop is deleted, the control-port protocol
+  unchanged, live-gated (invoice-chaser graduation + layer-3 build).
 - ~~e2b adapter never extends the provider TTL on activity~~ RESOLVED Wave 7:
   request and exec activity slide the provider deadline (throttled, coupled to
   the `VENDO_E2B_TIMEOUT_MS` knob), live-gated.

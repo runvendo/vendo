@@ -1,0 +1,21 @@
+[byo] creating sandbox from pbgk5vxvhmtjmcn8lgeo…
+.......
+[byo] result: {
+  "ok": true,
+  "summary": "Created zero-dependency Node server with /fn/ping endpoint returning {\"result\":{\"pong\":true}}, vendo.json manifest, and .vendo/run script. Server verified working on port 8080.",
+  "filesChanged": [
+    "/app/server.js",
+    "/app/vendo.json",
+    "/app/.vendo/run",
+    "server.js",
+    "vendo.json",
+    ".vendo/run"
+  ],
+  "testsRun": 0,
+  "fns": [
+    "ping"
+  ]
+}
+[byo] POST /fn/ping → 200 {"result":{"pong":true}}
+[byo] PASS (43.3s total)
+[byo] sandbox killed

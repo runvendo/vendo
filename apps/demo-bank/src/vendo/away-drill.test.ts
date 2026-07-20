@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AppDocument, Principal, ToolRegistry } from "@vendoai/core";
 import { createActions } from "@vendoai/actions";
-import { authJsPreset } from "@vendoai/actions/presets";
+import { authJsPreset } from "@vendoai/actions/presets/auth-js";
 import { createApps } from "@vendoai/apps";
 import { createAutomations, type AutomationsEngine } from "@vendoai/automations";
 import { createGuard, type VendoGuard } from "@vendoai/guard";
