@@ -24,6 +24,13 @@ description: "Every createVendo configuration option and fetch-handler setting, 
 | `remoteAs` | no | delegates MCP bearer authentication to an external ES256-signing authorization server (`{ issuer, audience, jwksUri? }`); disables the door's local OAuth endpoints. Also accepted under `mcp: { remoteAs }` — see [MCP door](/capabilities/mcp) |
 | `federation` | no | enables the `/api/vendo/mcp/federate` handshake so an external authorization server can borrow the host's login flow; takes a shared `{ secret }`. Also accepted under `mcp: { federation }` — see [MCP door](/capabilities/mcp) |
 | `agent` | no | chat context controls: `toolOutputCap`, `maxOutputTokens`, `historyWindow`, `maxInitialTools`, `loadout`, `maxSteps` (see [Agent context](#agent-context)) |
+| `approvals` | no | approval lifecycle knobs: `parkedCallTtlMs` is the idle timeout for a guarded call parked from a [BYO agent loop](/existing-agents) (default 60 min; `0` disables expiry). Past it, the sweep denies the approval and `<VendoApprovalEmbed>` reads "expired". Vendo-thread approvals are untouched |
+
+The umbrella also ships two subpath exports for hosts that keep their own
+agent loop: `@vendoai/vendo/ai-sdk` (`vendoTools`) and `@vendoai/vendo/mastra`
+(`vendoMastraTools`) build the guarded tool pack for AI SDK and Mastra
+agents. See [Use with your existing agent](/existing-agents) and the
+[server API reference](/reference/server-api#byo-agent-subpaths).
 
 ## Agent context
 
