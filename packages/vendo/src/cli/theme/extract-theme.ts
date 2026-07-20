@@ -237,7 +237,12 @@ function lastLightDecl(vars: CssVarDecl[], names: string[]): CssVarDecl | undefi
 }
 
 function normalizeFontStack(value: string): string {
-  const stack = value.split(",").map((part) => part.trim()).filter(Boolean).join(", ");
+  // Quotes are optional CSS syntax around family names, not identity: "Outfit"
+  // and Outfit are the same family (unquoted multi-word names are valid too).
+  const stack = value.split(",")
+    .map((part) => part.trim().replace(/^(["'])(.*)\1$/, "$2").trim())
+    .filter(Boolean)
+    .join(", ");
   return /(?:^|,\s*)(?:sans-serif|serif|monospace|cursive|fantasy)(?:\s*,|$)/i.test(stack)
     ? stack
     : `${stack}, sans-serif`;

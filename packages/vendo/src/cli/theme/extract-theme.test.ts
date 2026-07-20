@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { extractTheme } from "./extract-theme.js";
+import { extractTheme, validateSlotValue } from "./extract-theme.js";
 
 const cleanup: string[] = [];
 const appsDir = fileURLToPath(new URL("../../../../../apps/", import.meta.url));
@@ -93,6 +93,22 @@ describe("extractTheme allowlist fast-path", () => {
     expect(result.matched["accent"]).toBe("--primary");
     expect(result.defaulted).toEqual(["baseSize"]);
     expect(result.hasDarkVariant).toBe(true);
+  });
+
+  it("strips quotes from font family names (quotes are optional CSS syntax, not identity)", async () => {
+    const root = await fixture({
+      "package.json": "{}\n",
+      "app/layout.tsx": 'import "./globals.css";\nexport default function Layout({ children }) { return children; }\n',
+      "app/globals.css": ':root { --font-sans: "Outfit", sans-serif; --font-heading: \'Newsreader\', serif; }\n',
+    });
+
+    const result = await extractTheme(root, {});
+
+    expect(result.slots.fontFamily).toBe("Outfit, sans-serif");
+    expect(result.slots.headingFamily).toBe("Newsreader, serif");
+    // The same canonicalization gates proposed values (model or human).
+    expect(validateSlotValue("fontFamily", '"Outfit", sans-serif')).toBe("Outfit, sans-serif");
+    expect(validateSlotValue("fontFamily", 'Geist, "Apple Color Emoji", sans-serif')).toBe("Geist, Apple Color Emoji, sans-serif");
   });
 
   it("accepts the Tailwind-v4 --color-* spellings, !important noise, and @import chains", async () => {
