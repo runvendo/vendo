@@ -417,6 +417,75 @@ describe("machine lifecycle: stale-live-ref eviction (Wave 7)", () => {
   });
 });
 
+describe("machine lifecycle: env-stale wake rebuild (Wave 7)", () => {
+  const seedStale = async (
+    store: import("./testing/index.js").MemoryStoreAdapter,
+    doc: AppDocument,
+  ): Promise<void> => {
+    const records = store.records("vendo_apps");
+    const record = await records.get(doc.id);
+    if (record === null) throw new Error("app row is gone");
+    const row = (record.data as { subject: string; enabled: boolean; doc: AppDocument });
+    await records.put({
+      id: doc.id,
+      data: {
+        ...row,
+        doc: {
+          ...row.doc,
+          machine: { ...row.doc.machine!, envStaleAt: "2026-07-20T00:00:00.000Z" },
+        },
+      },
+      refs: { subject: row.subject },
+    });
+  };
+
+  it("a failed env rebuild fails the wake CLOSED — no live machine serves stale secrets", async () => {
+    const store = memoryStore();
+    const sandbox = fakeSandboxV2();
+    const timers = fakeClock();
+    const doc = app();
+    await seedAppRow(store, doc, "owner");
+    let injections = 0;
+    const lifecycle = createMachineLifecycle({
+      store,
+      sandbox,
+      buildEnv: () => ({ PORT: "8080", FRESH: "yes" }),
+      injectEnv: async () => {
+        injections += 1;
+        if (injections === 1) throw new Error("control port hiccup");
+      },
+      clock: timers.clock,
+    });
+    await lifecycle.provision(doc);
+    await seedStale(store, doc);
+
+    // A box we cannot re-police must not serve: a revoked secret would stay
+    // usable inside it until the idle sweep otherwise.
+    await expect(lifecycle.wake(doc)).rejects.toMatchObject({
+      name: "VendoError",
+      code: "sandbox-unavailable",
+    });
+    expect(lifecycle.peek(doc.id)).toBeUndefined();
+    // The resumed machine was torn down, and the document ref is untouched.
+    expect(sandbox.machines.at(-1)?.destroyedSelf).toBe(true);
+
+    // The marker survived the failure, so the retry wake rebuilds and clears it.
+    const machine = await lifecycle.wake(doc);
+    expect(machine).toBeDefined();
+    expect(injections).toBe(2);
+    const record = await store.records("vendo_apps").get(doc.id);
+    const stored = (record?.data as { doc: AppDocument }).doc;
+    expect(stored.machine?.envStaleAt).toBeUndefined();
+  });
+
+  it("a wake with no injectEnv seam ignores the marker (pre-Wave-7 hosts)", async () => {
+    const { lifecycle, store, doc } = await setup();
+    await lifecycle.provision(doc);
+    await seedStale(store, doc);
+    await expect(lifecycle.wake(doc)).resolves.toBeDefined();
+  });
+});
+
 describe("machine lifecycle: destroy", () => {
   it("destroys the sandbox and clears the machine field", async () => {
     const { sandbox, lifecycle, doc, stored } = await setup();

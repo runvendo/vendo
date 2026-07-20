@@ -64,8 +64,9 @@ export interface MachineLifecycleConfig {
    * A wake of a machine whose document carries `machine.envStaleAt` (a secret
    * grant changed while it slept — resumes restore the SNAPSHOT's env on
    * every provider) rebuilds the env through this seam and clears the marker.
-   * Best-effort: an injection failure keeps the marker so the next wake
-   * retries, and the wake itself still succeeds.
+   * Fail-closed: an injection failure destroys the resumed machine and fails
+   * the wake (a box we cannot re-police must not serve — a revoked secret
+   * would stay usable inside it); the marker and ref survive for the retry.
    */
   injectEnv?: (machine: SandboxMachine, env: Record<string, string>) => Promise<void>;
   /** Provider base template every provisioned machine boots from. */
@@ -359,20 +360,29 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
       // Wave 7 — a grant changed while the machine slept: the resumed snapshot
       // carries the OLD env (every provider restores snapshot env), so rebuild
       // the boundary env through the control port before anything rides this
-      // wake. Clearing is guarded on the marker we saw — a grant committed
-      // DURING this wake keeps its own fresher marker for the next one.
+      // wake. A failed rebuild fails the wake CLOSED — registering the machine
+      // live would let a revoked secret keep serving until the idle sweep. The
+      // marker and the document ref survive, so the next wake retries.
       const staleAt = doc.machine.envStaleAt;
       if (staleAt !== undefined && config.injectEnv !== undefined) {
         try {
           await config.injectEnv(raw, await buildEnv(doc));
-          await updateDocument(appId, (current) => {
-            if (current.machine === undefined || current.machine.envStaleAt !== staleAt) return current;
-            const { envStaleAt: _stale, ...machine } = current.machine;
-            return { ...current, machine };
-          });
-        } catch {
-          // Best-effort: the marker stays, so the next wake retries the rebuild.
+        } catch (error) {
+          await raw.destroy().catch(() => undefined);
+          throw new VendoError(
+            "sandbox-unavailable",
+            `machine env rebuild failed for ${appId} after a grant change`,
+            { appId, reason: error instanceof Error ? error.message : String(error) },
+          );
         }
+        // Clearing is guarded on the marker we saw — a grant committed DURING
+        // this wake keeps its own fresher marker for the next one. A failed
+        // clear is benign: the env is fresh and the re-push is idempotent.
+        await updateDocument(appId, (current) => {
+          if (current.machine === undefined || current.machine.envStaleAt !== staleAt) return current;
+          const { envStaleAt: _stale, ...machine } = current.machine;
+          return { ...current, machine };
+        }).catch(() => undefined);
       }
       const wrapped = withIdleTracking(appId, raw);
       live.set(appId, { raw, wrapped, inflight: 0 });
