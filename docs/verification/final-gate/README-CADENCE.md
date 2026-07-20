@@ -10,3 +10,4 @@ Browser: Playwright MCP, 1440x900. Timing = submit (Create click) → app visibl
 
 | id | prompt | verdict | timing | class-if-fail | note |
 |----|--------|---------|--------|---------------|------|
+| C1 | a client health dashboard: who's behind on documents | PASS | <=120s (poll bug: render moment missed; app fully rendered at 120s check) | — | stat cards + progress bar + 2 tables w/ populated staff/entity/status selects, formatted dates, pagination, activity feed; no errors. Raw enum text in status cells (missing_docs) noted, not a bar violation |
