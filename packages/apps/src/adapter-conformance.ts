@@ -22,6 +22,31 @@ export interface SandboxConformanceHarness {
   bootstrap(machine: SandboxMachine): Promise<void>;
   /** True when the adapter enforces create()'s allowedDomains; enables the egress case. */
   enforcesAllowedDomains: boolean;
+  /**
+   * True when a DEFAULT request() (no explicit port) reaches the app on its
+   * $PORT whatever that is (e2b). The Vendo Cloud relay defaults to the one
+   * canonical box port instead — explicit ports route fine, but the
+   * "$PORT by default" case is provider-specific and tested beside the
+   * adapter.
+   */
+  multiPort: boolean;
+  /**
+   * True when resume() mints an INDEPENDENT machine per call (e2b restores
+   * a checkpoint into fresh sandboxes). The Vendo Cloud resume revives the
+   * ONE machine a snapshot came from (pause model, same id) — no fork — so
+   * its harness disables the independent-machines case and the fresh-id
+   * assertion. Tracked Cloud follow-up: resume-from-a-stopped-machine
+   * provisioning a new box would flip this back on.
+   */
+  resumeForks: boolean;
+  /**
+   * True when resume(ref, policy) can REPLACE the snapshot-time egress
+   * allowlist (e2b, via provider network rules). The Cloud resume takes the
+   * bare ref today (a changed policy raises the typed
+   * cloud-egress-override-unsupported error); flips on when the Cloud
+   * resume grows its egress field (tracked follow-up).
+   */
+  resumeReplacesPolicy: boolean;
 }
 
 const requestEventually = async (
@@ -107,9 +132,11 @@ export const sandboxAdapterConformance = (
       await created.stop(); // sleeping twice is not an error
       expect(await noLongerServes(created, envRequest, "present")).toBe(true);
 
-      // A fresh adapter instance restores the ref: env and app carried.
+      // A fresh adapter instance restores the ref: env and app carried. A
+      // forking provider restores into a NEW machine; a pause-model provider
+      // (Cloud) revives the one it came from.
       const resumed = track(await (await harness.makeAdapter()).resume(snapshotRef));
-      expect(resumed.id).not.toBe(created.id);
+      if (harness.resumeForks) expect(resumed.id).not.toBe(created.id);
       await expect(requestEventually(resumed, envRequest))
         .resolves.toMatchObject({ status: 200, body: "present" });
 
@@ -120,7 +147,7 @@ export const sandboxAdapterConformance = (
       expect(await noLongerServes(resumed, envRequest, "present")).toBe(true);
     }, TEST_TIMEOUT_MS);
 
-    it("resumes one snapshot into independent machines", async () => {
+    it.skipIf(!harness.resumeForks)("resumes one snapshot into independent machines", async () => {
       const adapter = await harness.makeAdapter();
       const source = track(await adapter.create({
         env: { PORT: "8080", CONFORMANCE_VALUE: "independent" },
@@ -145,7 +172,7 @@ export const sandboxAdapterConformance = (
         .resolves.toMatchObject({ status: 200, body: "independent" });
     }, TEST_TIMEOUT_MS);
 
-    it("routes requests to the box $PORT by default, honoring an explicit port", async () => {
+    it.skipIf(!harness.multiPort)("routes requests to the box $PORT by default, honoring an explicit port", async () => {
       const adapter = await harness.makeAdapter();
       const machine = track(await adapter.create({
         env: { PORT: "9090", CONFORMANCE_VALUE: "ported" },
@@ -183,7 +210,7 @@ export const sandboxAdapterConformance = (
       TEST_TIMEOUT_MS,
     );
 
-    it.skipIf(!harness.enforcesAllowedDomains)(
+    it.skipIf(!harness.enforcesAllowedDomains || !harness.resumeReplacesPolicy)(
       "a resume-time policy replaces the snapshot's egress allowlist",
       async () => {
         const adapter = await harness.makeAdapter();
@@ -216,6 +243,20 @@ export const sandboxAdapterConformance = (
       },
       TEST_TIMEOUT_MS,
     );
+
+    it("exposes a public ingress URL, defaulting to the app's $PORT", async () => {
+      const adapter = await harness.makeAdapter();
+      const machine = track(await adapter.create({
+        env: { PORT: "8080" },
+      }));
+      // Wave 4 (layer 3) — the browser→box path: an absolute URL per port,
+      // defaulting to the app's $PORT. The exact host shape is the provider's.
+      const appUrl = await machine.url();
+      expect(new URL(appUrl).protocol).toMatch(/^https?:$/);
+      expect(await machine.url(8080)).toBe(appUrl);
+      expect(await machine.url(9090)).not.toBe(appUrl);
+      expect(new URL(await machine.url(9090)).protocol).toMatch(/^https?:$/);
+    }, TEST_TIMEOUT_MS);
 
     it("rejects a snapshot ref it did not issue", async () => {
       const adapter = await harness.makeAdapter();
