@@ -154,6 +154,18 @@ describe("existing-agents embeds", () => {
       expect(screen.getByText("Weather board")).toBeDefined();
     });
 
+    it("polls the build window under the pending flag, so a miss is a 200 envelope and never a console 404", async () => {
+      const building: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_building", title: "Weather board" };
+      mount(<VendoAppEmbed refValue={building} />);
+      await waitFor(() => {
+        const polls = wire.requests.filter(item => item.path.startsWith("/apps/app_building/open"));
+        expect(polls.length).toBeGreaterThan(0);
+        for (const poll of polls) expect(poll.path).toBe("/apps/app_building/open?pending=1");
+      });
+      // Still honestly building — the pending envelope resolves nothing.
+      expect(screen.getByText(/Building/)).toBeDefined();
+    });
+
     it("resolves the build beat into the app when the build lands mid-poll", async () => {
       const late: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_late", title: "Late app" };
       mount(<VendoAppEmbed refValue={late} />);
