@@ -51,7 +51,7 @@ describe("stripIslandImports", () => {
       'import * as ReactDOM from "react-dom";',
       'import React2, { useMemo } from "react";',
       'import "react";',
-      'import { Stat, DataTable } from "@vendoai/ui/kit";',
+      'import { Stat, DataTable } from "@vendo/kit";',
       "export default function View() { return <Stat label=\"a\" value={1}/>; }",
     ].join("\n");
     const stripped = stripIslandImports(source);

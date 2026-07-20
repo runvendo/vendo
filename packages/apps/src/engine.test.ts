@@ -1289,7 +1289,7 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     const wire = [
       '<App name="Ok"><Note/><Island name="Note">',
       'import React, { useState } from "react";',
-      'import { Stat } from "@vendoai/ui/kit";',
+      'import { Stat } from "@vendo/kit";',
       "export default function Note() { const [n] = useState(0); return <Stat label=\"n\" value={String(n)}/>; }",
       "</Island></App>",
     ].join("\n");
