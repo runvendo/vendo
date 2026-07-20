@@ -72,7 +72,7 @@ export interface StructuralLayerContext {
   env?: NodeJS.ProcessEnv;
 }
 
-interface AppRouterInfo {
+export interface AppRouterInfo {
   appDirRel: "app" | "src/app";
   layoutRel: string;
   ts: boolean;
@@ -124,7 +124,7 @@ function runShellCommand(command: string, options: StructuralCommandOptions): Pr
   });
 }
 
-async function findAppRouter(repoDir: string): Promise<AppRouterInfo | null> {
+export async function findAppRouter(repoDir: string): Promise<AppRouterInfo | null> {
   for (const appDirRel of ["app", "src/app"] as const) {
     for (const name of ["layout.tsx", "layout.jsx", "layout.js"] as const) {
       const layoutRel = path.posix.join(appDirRel, name);
