@@ -45,6 +45,21 @@ describe("expandInlineRefs", () => {
     expect(out).toContain("rows={invoicesList.data}");
   });
 
+  it("expands single-segment KNOWN tool names (production host_* extraction names) when a tools list is given", () => {
+    const wire = `<App name="Tx"><Table rows={host_listTransactions({limit:20}).data} columns={["merchant"]}/><Stat label="Count" value={host_listTransactions({limit:20}).count}/></App>`;
+    const { wire: out, minted } = expandInlineRefs(wire, { tools: ["host_listTransactions"] });
+    expect(minted).toBe(1);
+    expect(out).toContain(`<Query id="hostListTransactions" tool="host_listTransactions" input={{limit:20}}/>`);
+    expect(out).toContain("rows={hostListTransactions.data}");
+    expect(out).toContain("value={hostListTransactions.count}");
+  });
+
+  it("leaves single-segment calls alone without a tools list, and unknown single-segment names alone with one", () => {
+    const wire = `<App name="Tx"><Table rows={host_listTransactions({}).data} columns={["m"]}/></App>`;
+    expect(expandInlineRefs(wire).minted).toBe(0);
+    expect(expandInlineRefs(wire, { tools: ["host_other"] }).minted).toBe(0);
+  });
+
   it("compiles to the same canonical tree as the explicit <Query> arm", () => {
     const inline = `<App name="Overdue"><Table rows={invoices.list({status:"overdue"}).data} columns={[{key:"client"}]}/></App>`;
     const explicit = `<App name="Overdue"><Query id="invoicesList" tool="invoices.list" input={{status:"overdue"}}/><Table rows={invoicesList.data} columns={[{key:"client"}]}/></App>`;

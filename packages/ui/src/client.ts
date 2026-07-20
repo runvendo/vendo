@@ -105,6 +105,13 @@ export interface VendoClient {
     pinDrift(id: AppId): Promise<PinDrift[]>;
     /** POST /apps/:id/rebase-pin — re-fork one drifted pin from the new baseline and replay its recorded intents (06 §8). */
     rebasePin(id: AppId, slot: string): Promise<PinRebaseResult>;
+    /**
+     * POST /apps/:id/machine/ping — the embed surface's keepalive (Wave 7 H2):
+     * user activity on an embedded served app rides one host-proxied HEAD
+     * through the machine, keeping it from idling out under the user. "woke"
+     * means the machine had slept — the embed's URL is stale; re-open.
+     */
+    pingMachine(id: AppId): Promise<{ state: "awake" | "woke" }>;
   };
 
   automations: {

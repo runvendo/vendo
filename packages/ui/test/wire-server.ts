@@ -490,6 +490,12 @@ export async function createWireServer() {
         response.end(Buffer.from([0, 1, 255]));
         return;
       }
+      const pingMatch = url.pathname.match(/^\/apps\/([^/]+)\/machine\/ping$/);
+      if (pingMatch && method === "POST") {
+        const id = decodeURIComponent(pingMatch[1] ?? "");
+        if (!state.apps.some(item => item.id === id)) return wireError(response, "not-found", "App not found", 404);
+        return json(response, { state: "awake" });
+      }
       const appActionMatch = url.pathname.match(/^\/apps\/([^/]+)\/(open|call|edit|history|fork)$/);
       if (appActionMatch) {
         const id = decodeURIComponent(appActionMatch[1] ?? "");

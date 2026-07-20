@@ -273,6 +273,9 @@ export const createAppOpener = (
     const payload = {
       ...tree,
       ...(app.components === undefined ? {} : { components: structuredClone(app.components) }),
+      // W4b — the stamped per-island tool manifests ride the payload beside
+      // the sources; the renderer exposes ONLY these tools to each island.
+      ...(app.componentTools === undefined ? {} : { componentTools: structuredClone(app.componentTools) }),
     } as unknown as UIPayload;
     return app.components === undefined
       ? { kind: "tree", payload }

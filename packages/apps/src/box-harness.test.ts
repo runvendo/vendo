@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -152,5 +152,37 @@ describe("box control-port protocol", () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     expect(readFileSync(marker, "utf8")).toBe("ran");
+  }, 30_000);
+
+  it("spawns the Procfile entry without login-shell profiles (the Wave-6 load flake, and an env leak)", async () => {
+    // Wave 7 H2 item 4 — a Procfile entry is ONE shell line, not a login: the
+    // supervisor must never source the machine's shell profiles. Sourcing them
+    // is what flaked this suite under load-average 40 (a host ~/.bash_profile
+    // is arbitrarily slow), and it leaks host profile env into the app.
+    const appDir = mkdtempSync(path.join(tmpdir(), "vendo-box-"));
+    const home = mkdtempSync(path.join(tmpdir(), "vendo-home-"));
+    const profileRan = path.join(home, "profile-ran");
+    writeFileSync(
+      path.join(home, ".bash_profile"),
+      `export VENDO_PROFILE_LEAK=yes\ntouch ${JSON.stringify(profileRan)}\n`,
+    );
+    const marker = path.join(appDir, "started.txt");
+    const harness = createHarness({
+      appDir,
+      controlPort: 0,
+      runAgentTask: (async () => ({ ok: true, summary: "", filesChanged: [], testsRun: 0 })) as never,
+      baseEnv: { HOME: home },
+    });
+    cleanups.push(() => harness.stop());
+    writeFileSync(path.join(appDir, ".vendo", "run"), `printf %s "$VENDO_PROFILE_LEAK" > ${JSON.stringify(marker)}; sleep 30`);
+    await harness.start();
+    const deadline = Date.now() + 25_000;
+    while (Date.now() < deadline && !existsSync(marker)) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    // The entry ran with NO profile sourced: no leaked env, no profile side
+    // effects — and none of the profile's latency on the spawn path.
+    expect(readFileSync(marker, "utf8")).toBe("");
+    expect(existsSync(profileRan)).toBe(false);
   }, 30_000);
 });

@@ -41,6 +41,14 @@ same `/fn` and callback seams as layer 2.
 The machine sleeps again after the idle timeout. The next `open()` wakes it;
 the wake latency is the loading state.
 
+While the embed is open, user activity keeps the machine awake: the surface
+component pings `POST /apps/:id/machine/ping` (host-proxied, one cheap HEAD
+through the machine) at most once per interval while the user is active, which
+re-arms the idle timer and slides the provider TTL. A ping that finds the
+machine asleep answers `{ state: "woke" }`: the machine is awake again but the
+embedded URL is stale, so the surface shows the resuming state and re-opens
+for the fresh URL. One re-open per detection; there is no reconnect daemon.
+
 The served URL is not stable across wakes: a resume boots a fresh provider
 machine with a new id, so every wake mints a new public ingress URL. Treat
 the URL from `open()` as valid for the current wake only. Never bookmark it,

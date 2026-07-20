@@ -17,11 +17,12 @@ export const maplePinnedDashboard: UIPayload = {
       id: "donut",
       component: "MapleSpendingDonut",
       props: {
+        // Amounts are integer cents (the donut matches the spending API).
         slices: [
-          { category: "groceries", amount: 420 },
-          { category: "dining", amount: 285 },
-          { category: "subscriptions", amount: 96 },
-          { category: "transport", amount: 140 },
+          { category: "groceries", amount: 42000 },
+          { category: "dining", amount: 28500 },
+          { category: "subscriptions", amount: 9600 },
+          { category: "transport", amount: 14000 },
         ],
         size: 148,
       },

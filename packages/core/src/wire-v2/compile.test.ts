@@ -66,9 +66,10 @@ describe("compileWireV2 document shape", () => {
           props: { cols: 3 },
           children: ["linechart-1", "linechart-2", "datatable-1"],
         },
-        { id: "linechart-1", component: "LineChart", props: { title: "Revenue", points: [1, 2, 3] } },
-        { id: "linechart-2", component: "LineChart", props: { title: "Costs", points: [{ x: 1, y: 2 }] } },
-        { id: "datatable-1", component: "DataTable", props: { rows: [], dense: true } },
+        // W3 Kit adoption: LineChart/DataTable are prewired Kit names now.
+        { id: "linechart-1", component: "LineChart", source: "prewired", props: { title: "Revenue", points: [1, 2, 3] } },
+        { id: "linechart-2", component: "LineChart", source: "prewired", props: { title: "Costs", points: [{ x: 1, y: 2 }] } },
+        { id: "datatable-1", component: "DataTable", source: "prewired", props: { rows: [], dense: true } },
       ],
     });
     expect(result.name).toBe("Cash Overview");
@@ -784,11 +785,13 @@ describe("compileWireV2 full-spec-example gate (spec §2)", () => {
         {
           id: "linechart-1",
           component: "LineChart",
+          source: "prewired",
           props: { title: "Revenue", points: { $path: "/revenue" } },
         },
         {
           id: "datatable-1",
           component: "DataTable",
+          source: "prewired",
           props: { rows: { $path: "/payments" }, columns: [{ key: "amount", label: "Amount" }] },
         },
       ],
@@ -1102,30 +1105,53 @@ describe("compileWireV2 prewired option projection (v2 spec §3)", () => {
   <Select options={${options}}/>
 </App>`;
 
-  it("an object array bound straight to Select options fails: needs asOptions projection", () => {
+  it("an object array bound straight to Select options fails, and the repair hint is Kit-native (W5a: labelField/valueField, never asOptions)", () => {
     const result = compile(selectWire("accts.data"), shapes);
     expect(codes(result)).toEqual(["shape-mismatch"]);
     const error = result.bindingErrors[0];
     expect(error?.nodeId).toBe("select-1");
     expect(error?.prop).toBe("options");
-    expect(error?.message).toContain("asOptions");
+    expect(error?.message).toContain("labelField");
+    expect(error?.message).not.toContain("asOptions");
     expect(error?.available).toEqual(["id", "name"]);
   });
 
-  it("the same array projected with asOptions passes", () => {
+  it("the taught path passes: RAW rows with labelField/valueField naming their fields (W5a)", () => {
+    const result = compile(`
+<App name="Transfer">
+  <Query id="accts" tool="host_listAccounts"/>
+  <Select options={accts.data} labelField="name" valueField="id"/>
+</App>`, shapes);
+    expect(result.issues).toEqual([]);
+    expect(result.bindingErrors).toEqual([]);
+  });
+
+  it("named fields absent from the rows are the blank-option class: flagged with the named field (W5a)", () => {
+    const result = compile(`
+<App name="Transfer">
+  <Query id="accts" tool="host_listAccounts"/>
+  <Select options={accts.data} labelField="title" valueField="id"/>
+</App>`, shapes);
+    expect(codes(result)).toEqual(["shape-mismatch"]);
+    expect(result.bindingErrors[0]?.message).toContain('"title"');
+    expect(result.bindingErrors[0]?.available).toEqual(["id", "name"]);
+  });
+
+  it("the deprecated asOptions projection STILL compiles (stored apps; staged retirement)", () => {
     const result = compile(selectWire("accts.data | asOptions(id, name)"), shapes);
     expect(result.issues).toEqual([]);
     expect(result.bindingErrors).toEqual([]);
   });
 
-  it("Tabs tabs bound to a raw object array is flagged the same way", () => {
+  it("Tabs tabs bound to a raw object array is flagged with a literal-items hint (never asOptions)", () => {
     const result = compile(`
 <App name="T">
   <Query id="accts" tool="host_listAccounts"/>
   <Tabs tabs={accts.data}/>
 </App>`, shapes);
     expect(codes(result)).toEqual(["shape-mismatch"]);
-    expect(result.bindingErrors[0]?.message).toContain("asOptions");
+    expect(result.bindingErrors[0]?.message).toContain("literal {value, label}");
+    expect(result.bindingErrors[0]?.message).not.toContain("asOptions");
   });
 
   it("a literal options array with inline bindings is not flagged (already value/label shaped)", () => {
@@ -1169,7 +1195,7 @@ describe("compileWireV2 prewired option projection (v2 spec §3)", () => {
 /** vendo-v2-cells — the raw-braces class: object shapes bound into display
  *  slots (Table cells, Text/Stat/Badge) render raw JSON; the shape check
  *  flags them and routes to template/scalar-field repair, mirroring the
- *  asOptions projection check. */
+ *  option-item projection check. */
 describe("compileWireV2 display-slot object check (raw-braces class)", () => {
   const deadlinesShape = {
     kind: "object" as const,
@@ -1213,7 +1239,11 @@ describe("compileWireV2 display-slot object check (raw-braces class)", () => {
     expect(error?.prop).toBe("rows");
     expect(error?.message).toContain("progress");
     expect(error?.message).toContain("assignedTo");
-    expect(error?.message).toContain("template");
+    // W5a — the repair hint is Kit-native (DataTable dot-path columns), never
+    // the deprecated template projection.
+    expect(error?.message).toContain("DataTable");
+    expect(error?.message).toContain('{key:"assignedTo.id"}');
+    expect(error?.message).not.toContain("template");
     expect(error?.available).toEqual(["client", "dueDate", "progress", "assignedTo"]);
   });
 
@@ -1231,7 +1261,7 @@ describe("compileWireV2 display-slot object check (raw-braces class)", () => {
     expect(result.bindingErrors).toEqual([]);
   });
 
-  it("template projections clear the error", () => {
+  it("the deprecated template projection STILL clears the error (stored apps; staged retirement)", () => {
     const result = compile(tableWire(
       'rows={dl.data | template(progress, "{progress.received} of {progress.total}") | template(assignedTo, "{assignedTo.name}")}',
     ), shapes);
@@ -1239,7 +1269,7 @@ describe("compileWireV2 display-slot object check (raw-braces class)", () => {
     expect(result.bindingErrors).toEqual([]);
   });
 
-  it("an object bound into Text text / Stat value / Badge label is flagged with template repair", () => {
+  it("an object bound into Text text / Stat value / Badge label is flagged with scalar-field repair (never template — W5a)", () => {
     for (const element of ["Text text={dl.nearest}", "Stat label=\"Next\" value={dl.nearest}", "Badge label={dl.nearest}"]) {
       const result = compile(`
 <App name="D">
@@ -1247,7 +1277,8 @@ describe("compileWireV2 display-slot object check (raw-braces class)", () => {
   <${element}/>
 </App>`, shapes);
       expect(codes(result)).toEqual(["shape-mismatch"]);
-      expect(result.bindingErrors[0]?.message).toContain("template");
+      expect(result.bindingErrors[0]?.message).toContain("scalar field");
+      expect(result.bindingErrors[0]?.message).not.toContain("template");
     }
   });
 

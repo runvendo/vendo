@@ -1,5 +1,5 @@
 import type { Json, ToolOutcome, UIPayload } from "@vendoai/core";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import { useVendoContext } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useSlotApp } from "../hooks/use-slot-app.js";
@@ -43,9 +43,16 @@ function SlotGhost({ label, detail, loading = false }: { label: string; detail?:
 
 function MountedApp({ appId }: { appId: string }) {
   const { client, components } = useVendoContext();
-  const { surface } = useApp(appId);
+  const { surface, refresh } = useApp(appId);
+  // Wave 7 H2 — the served-surface keepalive: user activity pings the machine
+  // (host-proxied) so an embedded served app doesn't idle out under the user;
+  // a "woke" ping re-opens for the fresh machine URL.
+  const keepalive = useMemo(
+    () => ({ ping: () => client.apps.pingMachine(appId), reopen: refresh }),
+    [appId, client, refresh],
+  );
   if (!surface) return <SlotGhost label="Loading app…" loading />;
-  return <AppFrame key={appId} surface={surface} components={components} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
+  return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
 
 /** A generated view pinned into a slot (08-ui §4 — "or a pinned component").

@@ -20,7 +20,9 @@ function MapleSpendingDonut({
   slices: Array<{ category: SpendingSlice["category"]; amount: number }>;
   size?: number;
 }) {
-  return <Donut data={slices.map((slice) => ({ ...slice, amount: Math.round(slice.amount * 100) }))} size={size} />;
+  // W3 — Maple money is integer CENTS everywhere (the spending-insights API
+  // included); the old dollars surface silently 100×'d bound tool data.
+  return <Donut data={slices.map((slice) => ({ ...slice, amount: Math.round(slice.amount) }))} size={size} />;
 }
 
 const mapleCategorySchema = z.enum([
@@ -54,16 +56,16 @@ export const mapleRegistry = {
   },
   MapleSpendingDonut: {
     component: MapleSpendingDonut,
-    description: "The default Maple visualization for spending by category, where money went, or category mix. Use it whenever the request includes one of those intents; slice amounts are dollars, not cents.",
+    description: "The default Maple visualization for spending by category, where money went, or category mix. Use it whenever the request includes one of those intents; slice amounts are integer CENTS (matching the spending-insights tool).",
     props: z.object({
       slices: z.array(z.object({
         category: mapleCategorySchema,
-        amount: z.number().describe("Amount in dollars"),
+        amount: z.number().describe("Amount in integer cents"),
       })),
       size: z.number().optional(),
     }),
     examples: [
-      '{"slices":[{"category":"dining","amount":342.18},{"category":"groceries","amount":286.42}],"size":200}',
+      '{"slices":[{"category":"dining","amount":34218},{"category":"groceries","amount":28642}],"size":200}',
     ],
   },
   MapleNetWorthCard: {

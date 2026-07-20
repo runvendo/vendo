@@ -37,6 +37,19 @@ const template = Template()
   .copy("harness.mjs", "/opt/vendo-box/harness.mjs", { user: "root" })
   .copy("agent-loop.mjs", "/opt/vendo-box/agent-loop.mjs", { user: "root" })
   .copy("bootstrap.mjs", "/opt/vendo-box/bootstrap.mjs", { user: "root" })
+  // Wave 7 H2 — the pre-baked served-app scaffold: a layer-3 build starts
+  // warm by copying it into /app and EDITING (skin-contract plumbing —
+  // /fn envelopes, vendo.json, theme handoff — already wired and
+  // conformance-tested in box-scaffold.test.ts). Zero-dependency by design,
+  // so there is no node_modules to bake.
+  .copy("scaffold/package.json", "/opt/vendo-box/scaffold/package.json", { user: "root" })
+  .copy("scaffold/server.js", "/opt/vendo-box/scaffold/server.js", { user: "root" })
+  .copy("scaffold/fns.js", "/opt/vendo-box/scaffold/fns.js", { user: "root" })
+  .copy("scaffold/index.html", "/opt/vendo-box/scaffold/index.html", { user: "root" })
+  .copy("scaffold/vendo.json", "/opt/vendo-box/scaffold/vendo.json", { user: "root" })
+  // The Procfile entry lands under .vendo/ so one `cp -a scaffold/. /app/`
+  // arms the supervisor too.
+  .copy("scaffold/run", "/opt/vendo-box/scaffold/.vendo/run", { user: "root" })
   .setWorkdir("/app")
   // The harness owns the control port and supervises the app process; readiness
   // is the control port coming up (the app has no code until an edit lands).

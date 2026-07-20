@@ -10,6 +10,7 @@ import type { AppRow, ApprovalRow, RunRow, StateRow, ThreadRow } from "./types.j
 import { iso, optionalIso, text } from "./utils.js";
 
 export function appFromRow(row: Record<string, unknown>): AppRow {
+  const revision = row["revision"];
   return {
     id: text(row["id"]),
     subject: text(row["subject"]),
@@ -17,6 +18,9 @@ export function appFromRow(row: Record<string, unknown>): AppRow {
     doc: row["doc"] as AppDocument,
     createdAt: iso(row["created_at"]),
     updatedAt: iso(row["updated_at"]),
+    ...(typeof revision === "string" || typeof revision === "number" || typeof revision === "bigint"
+      ? { revision: String(revision) }
+      : {}),
   };
 }
 
@@ -30,13 +34,16 @@ export async function putAppRow(
   // existing row already belongs to EXCLUDED.subject — otherwise the WHERE
   // fails, RETURNING is empty, and the cross-subject flip is refused without a
   // TOCTOU window.
+  // Every write bumps the revision counter (Wave 7), so a token read before a
+  // plain put can no longer compareAndSwap — same discipline as putThreadRow.
   const result = await db.query(
-    `INSERT INTO vendo_apps (id, subject, enabled, doc, created_at, updated_at)
-     VALUES ($1, $2, $3, $4::jsonb, $5, $5)
+    `INSERT INTO vendo_apps (id, subject, enabled, doc, created_at, updated_at, revision)
+     VALUES ($1, $2, $3, $4::jsonb, $5, $5, 1)
      ON CONFLICT (id) DO UPDATE SET enabled = EXCLUDED.enabled,
-       doc = EXCLUDED.doc, updated_at = EXCLUDED.updated_at
+       doc = EXCLUDED.doc, updated_at = EXCLUDED.updated_at,
+       revision = vendo_apps.revision + 1
        WHERE vendo_apps.subject = EXCLUDED.subject
-     RETURNING id, subject, enabled, doc, created_at, updated_at`,
+     RETURNING id, subject, enabled, doc, created_at, updated_at, revision`,
     [input.id, input.subject, input.enabled, JSON.stringify(input.doc), now],
   );
   const row = result.rows[0];
