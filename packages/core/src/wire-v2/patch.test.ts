@@ -249,6 +249,34 @@ describe("compileWirePatchV2 totality and re-validation", () => {
     });
   });
 
+  it("checks fn:-keyed shape cards exactly like host tools (the em-dash envelope class, Wave 7 H2)", () => {
+    // A graduation rebind that keeps the host tool's `/data/` response
+    // envelope in an fn: binding path: the fn's result carries no such
+    // segment (fn responses unwrap {result}), so a KNOWN fn shape card must
+    // reject it — same repair contract as a host-tool miss.
+    const withFnShape: WireCompileOptions = {
+      ...OPTIONS,
+      toolShapes: {
+        "fn:getDigest": {
+          kind: "object",
+          fields: { summary: { kind: "string" }, count: { kind: "number" } },
+        },
+      },
+    };
+    const result = compileWirePatchV2(
+      '<Edit><Query id="digest" tool="fn:getDigest"/><Set id="pageheader-1" title={digest.data.summary}/></Edit>',
+      compileWireV2(BASE_WIRE, withFnShape),
+      withFnShape,
+    );
+    expect(codes(result)).toEqual(["shape-mismatch"]);
+    expect(result.bindingErrors[0]).toMatchObject({
+      nodeId: "pageheader-1",
+      prop: "title",
+      tool: "fn:getDigest",
+      path: "/digest/data/summary",
+    });
+  });
+
   it("is deterministic: identical patch on identical base twice is deep-equal", () => {
     const edit = '<Edit><Set id="pageheader-1" title="New"/><Insert into="grid-1"><Card/></Insert></Edit>';
     const first = patch(edit);

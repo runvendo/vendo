@@ -134,3 +134,29 @@ describe("GET /apps/:id/open on a served (layer-3) app", () => {
     expect(body.error.message).toContain("experimentalServedApps");
   });
 });
+
+describe("POST /apps/:id/machine/ping (Wave 7 H2 — the embed keepalive)", () => {
+  const pingRequest = (subject?: string): Request => {
+    const headers = new Headers({ "content-type": "application/json" });
+    if (subject !== undefined) headers.set("x-test-user", subject);
+    return new Request("http://wire.test/api/vendo/apps/app_served/machine/ping", {
+      method: "POST",
+      headers,
+      body: "{}",
+    });
+  };
+
+  it("relays the runtime's ping state (woke on a sleeping machine)", async () => {
+    const vendo = await setup({ experimentalServedApps: true });
+    const response = await vendo.handler(pingRequest(ADA.subject));
+    expect(response.status).toBe(200);
+    // The provisioned machine slept (snapshot) — the first ping wakes it.
+    expect(await response.json()).toEqual({ state: "woke" });
+  });
+
+  it("stays owner-scoped: a non-owner sees the app's absence", async () => {
+    const vendo = await setup({ experimentalServedApps: true });
+    const response = await vendo.handler(pingRequest("user_mallory"));
+    expect(response.status).toBe(404);
+  });
+});

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useVendoContext } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useApps } from "../hooks/use-apps.js";
@@ -125,9 +125,14 @@ function ChatWorkspace() {
 
 function OpenApp({ appId }: { appId: string }) {
   const { client, components } = useVendoContext();
-  const { surface } = useApp(appId);
+  const { surface, refresh } = useApp(appId);
+  // Wave 7 H2 — same keepalive as VendoSlot's MountedApp (see frames.tsx).
+  const keepalive = useMemo(
+    () => ({ ping: () => client.apps.pingMachine(appId), reopen: refresh }),
+    [appId, client, refresh],
+  );
   if (!surface) return <div role="status">Opening app…</div>;
-  return <AppFrame key={appId} surface={surface} components={components} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
+  return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
 
 function AppsWorkspace() {
