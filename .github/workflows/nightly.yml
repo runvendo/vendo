@@ -12,6 +12,12 @@ jobs:
   live-conformance:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    defaults:
+      run:
+        # An explicit `bash` gets `-o pipefail` (the implicit default is plain
+        # `bash -e`): the `vitest … | tee` legs must propagate vitest's exit
+        # code, or a failing live suite reads as success at the final gate.
+        shell: bash
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

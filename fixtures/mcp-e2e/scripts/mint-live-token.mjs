@@ -55,8 +55,11 @@ authorizeUrl.search = new URLSearchParams({
 const authorize = await fetch(authorizeUrl, { redirect: "manual" });
 const location = authorize.headers.get("location");
 if (authorize.status !== 302 || !location) await fail("authorize", authorize);
-const code = new URL(location).searchParams.get("code");
-const authorizeError = new URL(location).searchParams.get("error");
+// Base URL so a relative Location degrades to the staged error below instead
+// of an uncaught TypeError (the door emits absolute redirects today).
+const redirect = new URL(location, metadata.authorization_endpoint);
+const code = redirect.searchParams.get("code");
+const authorizeError = redirect.searchParams.get("error");
 if (!code) {
   console.error(`authorize did not return a code: ${authorizeError ?? location}`);
   process.exit(1);
