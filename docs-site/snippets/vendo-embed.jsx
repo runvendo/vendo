@@ -103,3 +103,36 @@ export const VendoEmbed = ({ surface, poster, alt, height = 480, caption }) => {
     </figure>
   );
 };
+
+{/* The live drop-in for a page: mounts the real corner launcher + overlay.
+    Renders nothing visible itself; the launcher portals to the body. */}
+
+export const VendoLauncher = () => {
+  useEffect(() => {
+    let dispose = null;
+    let cancelled = false;
+    const mountIt = () => {
+      if (cancelled || dispose || !window.VendoDocsEmbed) return;
+      try { dispose = window.VendoDocsEmbed.mountLauncher(); } catch (error) { console.error("[vendo-embed]", error); }
+    };
+    if (window.VendoDocsEmbed) {
+      mountIt();
+    } else {
+      const existing = document.querySelector('script[data-vendo-docs-embed]');
+      const script = existing ?? document.createElement("script");
+      window.addEventListener("vendo-docs-embed-ready", mountIt, { once: true });
+      if (!existing) {
+        script.src = "https://vendo.run/playground/embed.js";
+        script.async = true;
+        script.dataset.vendoDocsEmbed = "";
+        document.head.appendChild(script);
+      }
+    }
+    return () => {
+      cancelled = true;
+      window.removeEventListener("vendo-docs-embed-ready", mountIt);
+      if (dispose) dispose();
+    };
+  }, []);
+  return null;
+};
