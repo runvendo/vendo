@@ -206,11 +206,11 @@ data).
   Value slots are typed raw by semantics (cents ⇒ number), so model-written display
   strings ("$5,490,715.00") fail type-check.
 - **Law 1 in islands (honest limits):** island code's only possible data sources are
-  props and `tools.*` (no network exists), so provenance is structural; but a model
-  could still hardcode a literal dataset in island source. Mitigation: a compile lint
-  flags large business-data-shaped literals in island source → repair; plus the
-  domain manifest steers generation. Named residual risk, accepted and measured by
-  the eval (§7) rather than hidden.
+  props and `tools.*` (no network exists), so provenance is structural; a model could
+  still hardcode a literal dataset in island source. Deliberately NOT mechanized yet:
+  the prompt carries the rule, the frozen eval (§7) watches the class, and a check is
+  built only if the re-gate shows it surviving. Same policy for label-vs-binding
+  mismatches. Evidence first, mechanisms second.
 - **Law 2:** tree actions are validated attributes; island tool manifests are
   compiler-inferred (literal-member-access rule) and registry-checked. Unknown tool,
   wrong input shape, mutation without payload, control not matching a real tool
