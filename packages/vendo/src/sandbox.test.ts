@@ -479,6 +479,11 @@ describe("cloudSandbox", () => {
     await expect((await machineFor({})).snapshot())
       .rejects.toMatchObject({ code: "sandbox-unavailable", message: /no snapshot reference/ });
 
+    // A foreign snapshot ref would be stored and later refused by resume/
+    // destroy — rejected at the seam instead.
+    await expect((await machineFor({ ref: "e2b:v2:not-ours" })).snapshot())
+      .rejects.toMatchObject({ code: "sandbox-unavailable", message: /foreign snapshot reference/ });
+
     // Non-string proxy header values are dropped, not passed through.
     const mixed = await (await machineFor({
       status: 200,

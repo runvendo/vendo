@@ -175,6 +175,11 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
       if (typeof payload.ref !== "string" || payload.ref.length === 0) {
         throw new VendoError("sandbox-unavailable", "Vendo Cloud sandbox returned no snapshot reference");
       }
+      // A ref this adapter would itself refuse to resume/destroy must never
+      // reach a document — reject it as console garbage here instead.
+      if (!payload.ref.startsWith(CLOUD_SNAPSHOT_REF_PREFIX)) {
+        throw new VendoError("sandbox-unavailable", `Vendo Cloud sandbox returned a foreign snapshot reference (expected the "${CLOUD_SNAPSHOT_REF_PREFIX}" prefix)`);
+      }
       return payload.ref;
     };
     const remove = async (): Promise<void> => {
