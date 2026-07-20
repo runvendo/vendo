@@ -292,6 +292,23 @@ export function scanIslandTools(source: string): IslandToolScan {
   return { paths, violations };
 }
 
+// The jail's CSP is connect-src 'none': these APIs silently die inside an
+// island (live P3 finding: a habit-written fetch("/api/…") was blocked and the
+// island just rendered nothing). Caught at compile → repair to ambient tools.
+const NETWORK_API_PATTERN =
+  /\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon)\s*\(|\bnew\s+(XMLHttpRequest|WebSocket|EventSource)\b/g;
+
+/** The network API names an island source reaches for — always a defect: the
+ *  jail has no network, and the ambient tools API is the only channel. */
+export function islandNetworkViolations(source: string): string[] {
+  const code = blankNonCode(source);
+  const found = new Set<string>();
+  for (const match of code.matchAll(NETWORK_API_PATTERN)) {
+    found.add((match[1] ?? match[2]) as string);
+  }
+  return [...found];
+}
+
 /** Resolve one literal member chain to a registry tool name. Tool names never
  *  contain dots (TOOL_NAME_PATTERN), so `tools.clients.search` names the tool
  *  `clients_search` and `tools.list_invoices` names it directly. */

@@ -17,6 +17,7 @@ import {
   kitSpec,
   ISLAND_AMBIENT_KIT_NAMES,
   ISLAND_STRIPPED_SPECIFIERS,
+  islandNetworkViolations,
   resolveIslandToolName,
   scanIslandTools,
   shapeAtPointer,
@@ -272,8 +273,8 @@ ${prewiredSchemaPrompt()}`;
  *  visuals/logic/interaction. Byte caps, the TSX + default-export gate, and
  *  the no-network CSP all stand. */
 const islandContract = (): string => `- <Island name="PascalName">TSX with an \`export default\` component</Island> defines a generated component, referenced as <PascalName/> — plain source, never wrapped in braces, template literals, or fences. Use a host catalog or Kit/prewired component when it covers the need (faster, brand-native); write an island for custom visuals, novel interactions, or client-side logic they cannot express (search-as-you-type, derived calculations, bespoke visualizations). Never put the whole app or its layout inside one island: compose regions so the app streams in progressively.
-- Islands have NO import statements — everything is already in scope: React and its hooks (useState, useEffect, useMemo, useCallback, useRef), the entire Kit (${ISLAND_AMBIENT_KIT_NAMES.join(", ")}), and \`fmt\` value helpers (fmt.money(cents), fmt.dateTime(iso), fmt.percent(ratio), fmt.num(n)). Never write an import: known react/kit imports are stripped, and anything else (recharts, d3, lodash…) cannot load in the network-denied sandbox — the ambient Kit charts cover charting.
-- Islands call host tools directly with the ambient tools API: \`const result = await tools.<tool_name>(args)\`, where <tool_name> is a HOST TOOLS name written as a LITERAL member access — never tools[expr], never aliasing or passing \`tools\` around. A read tool resolves with the tool's output. A MUTATING tool pauses at the user approval gate: the call resolves {status:"pending-approval"} and its effect lands after the user approves — render a pending/awaiting-approval state, never treat it as a failure. An island can only reach the tools its own source literally names.
+- Islands have NO import statements — everything is already in scope: React and its hooks (useState, useEffect, useMemo, useCallback, useRef), the entire Kit (${ISLAND_AMBIENT_KIT_NAMES.join(", ")}), and \`fmt\` value helpers (fmt.money(cents), fmt.dateTime(iso), fmt.percent(ratio), fmt.num(n)). Never write an import: known react/kit imports are stripped, and anything else (recharts, d3, lodash…) cannot load in the network-denied sandbox — the ambient Kit charts cover charting. Host catalog and prewired components are NOT in island scope (they live in the host page): compose them in the tree, and inside an island use only the ambient Kit and your own local components. This holds even when a host catalog component matches the visualization — inside an island, its ambient Kit equivalent (LineChart, BarChart, DonutChart, Sparkline, Progress) is the correct choice.
+- Islands call host tools directly with the ambient tools API: \`const result = await tools.<tool_name>(args)\`, where <tool_name> is a HOST TOOLS name written as a LITERAL member access — never tools[expr], never aliasing or passing \`tools\` around. args must match that tool's (input: …) sketch exactly — field names AND nesting. The sandbox has NO network — fetch/XHR/WebSocket are blocked by CSP; the ambient tools API is the only way an island reads or acts. A read tool resolves with the tool's output. A MUTATING tool pauses at the user approval gate: the call resolves {status:"pending-approval"} and its effect lands after the user approves — render a pending/awaiting-approval state, never treat it as a failure. An island can only reach the tools its own source literally names.
 - Data honesty holds inside islands: every number or row an island renders comes from its props (bound to a <Query>) or from an ambient tools read — never hand-typed.`;
 
 /** v2 spec §2 — the JSX-wire create contract. The model emits markup, never
@@ -302,13 +303,30 @@ ${islandContract()}
 ...generationPromptSections(deps).filter(({ id }) =>
   id === "component-styling" || id === "catalog" || id === "theme" || id === "design-rules")];
 
+/** W4b — a one-line sketch of a tool's INPUT (top-level fields, one nesting
+ *  level deep). Without it the model guesses arg shapes: the live P3 island
+ *  called a body-nested tool with flat args, the host route read an empty
+ *  JSON body, and the approved mutation ran on defaults. */
+const toolInputSketch = (inputSchema: Record<string, unknown> | undefined): string => {
+  const properties = inputSchema?.properties;
+  if (typeof properties !== "object" || properties === null) return "";
+  const fields = Object.entries(properties as Record<string, unknown>).map(([field, schema]) => {
+    const child = (schema as Record<string, unknown> | null)?.properties;
+    if (typeof child === "object" && child !== null) {
+      return `${field}: {${Object.keys(child).join(", ")}}`;
+    }
+    return field;
+  });
+  return fields.length === 0 ? "" : ` (input: {${fields.join(", ")}})`;
+};
+
 /** verify-v2 fixes — the tools a query may name, and (v2 spec §3) the shape
  *  cards the model must bind against. Without the tool list the model invents
  *  tool names; without shapes it binds blind (the broken-chart class). */
 const hostToolSections = (deps: GenerationDependencies): GenerationPromptSection[] => [
   ...(deps.tools === undefined || deps.tools.length === 0 ? [] : [{
     id: "catalog" as const,
-    content: `HOST TOOLS (the ONLY tools a <Query> or action may name — anything else is a validation error):\n${deps.tools.map(({ name, description, risk }) => `- ${name} [${risk}]: ${description}`).join("\n")}`,
+    content: `HOST TOOLS (the ONLY tools a <Query> or action may name — anything else is a validation error). Every call's args MUST match the tool's (input: …) sketch exactly — same field names, same nesting (a field shown as {body: {…}} means the args object carries a "body" object):\n${deps.tools.map(({ name, description, risk, inputSchema }) => `- ${name} [${risk}]${toolInputSketch(inputSchema)}: ${description}`).join("\n")}`,
   }]),
   // W3 — the domain manifest is FACT derived at sync, not guidance: it tells
   // the model what data exists at all, so an out-of-domain ask becomes an
@@ -524,11 +542,19 @@ interface PreparedIslands {
 const prepareIslands = async (
   rawComponents: Record<string, string>,
   tools: readonly HostToolInfo[] | undefined,
+  hostComponents: readonly string[] = [],
 ): Promise<PreparedIslands> => {
   const issues: string[] = [];
   const components: Record<string, string> = {};
   const componentTools: Record<string, string[]> = {};
   const knownTools = tools === undefined ? undefined : new Set(tools.map((tool) => tool.name));
+  // Host catalog + prewired components render in the HOST page — they can
+  // never cross into the opaque-origin jail, so an island JSX tag naming one
+  // is a guaranteed ReferenceError (live P4: <MapleSpendingDonut/>). Names
+  // the ambient Kit also provides are fine — the Kit version renders.
+  const ambientNames = new Set<string>(ISLAND_AMBIENT_KIT_NAMES);
+  const hostOnlyNames = [...new Set([...hostComponents, ...RESERVED_COMPONENT_NAMES])]
+    .filter((componentName) => !ambientNames.has(componentName));
   const transform = await esbuildTransform;
   for (const [name, rawSource] of Object.entries(rawComponents)) {
     const stripped = stripIslandImports(normalizeIslandSource(rawSource));
@@ -543,6 +569,16 @@ const prepareIslands = async (
     if (disallowed.length > 0) {
       issues.push(`island "${name}" imports ${disallowed.map((specifier) => `"${specifier}"`).join(", ")} — islands have NO imports; React, the Kit components (including the ambient Kit charts), fmt, and tools are already in scope, and nothing else can load in the network-denied sandbox. Remove the import and use the ambient names.`);
       continue;
+    }
+    const hostTags = hostOnlyNames.filter((componentName) =>
+      new RegExp(`<\\s*${componentName}\\b`).test(source));
+    if (hostTags.length > 0) {
+      issues.push(`island "${name}" renders ${hostTags.map((tag) => `<${tag}>`).join(", ")} — host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (${ISLAND_AMBIENT_KIT_NAMES.join(", ")}).`);
+    }
+    // The jail has no network: a habit-written fetch/XHR dies silently at the
+    // CSP, so catch it here and repair to the ambient tools API instead.
+    for (const api of islandNetworkViolations(source)) {
+      issues.push(`island "${name}" calls ${api}(…) — an island has no network (the sandbox blocks fetch/XHR/WebSocket); the ambient tools API is the ONLY way to read or act: \`await tools.<tool_name>(args)\` with a HOST TOOLS name.`);
     }
     // The ambient tools contract: literal member access only, every chain
     // resolved against the live registry, the result stamped as the island's
@@ -765,7 +801,7 @@ const validateCompiledCreate = async (
   issues.push(...compiled.issues.map(({ code, message }) => `wire ${code}: ${message}`));
   const name = compiled.name?.trim() ?? "";
   if (name === "") issues.push('App must carry a non-empty name="..." attribute');
-  const prepared = await prepareIslands(compiled.components, deps.tools);
+  const prepared = await prepareIslands(compiled.components, deps.tools, deps.catalog.map(({ name: componentName }) => componentName));
   const components = Object.keys(prepared.components).length === 0 ? undefined : prepared.components;
   issues.push(...prepared.issues);
   if (deps.tools !== undefined) {
@@ -1194,10 +1230,10 @@ const editTree = async (
           model: Object.fromEntries(Object.entries(all).filter((entry) => !isPinned(entry))),
         });
         const patchedIslands = splitIslands(patched.components);
-        const prepared = await prepareIslands(patchedIslands.model, deps.tools);
+        const prepared = await prepareIslands(patchedIslands.model, deps.tools, hostComponents);
         // Pre-existing island issues never block an unrelated edit (same
         // filtering rule as catalog/action issues below).
-        const sourcePrepared = await prepareIslands(splitIslands(input.app.components ?? {}).model, deps.tools);
+        const sourcePrepared = await prepareIslands(splitIslands(input.app.components ?? {}).model, deps.tools, hostComponents);
         const sourceIslandIssues = new Set(sourcePrepared.issues);
         const islandIssues = prepared.issues.filter((issue) => !sourceIslandIssues.has(issue));
         const nextComponents = { ...patchedIslands.pinned, ...prepared.components };

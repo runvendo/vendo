@@ -5,6 +5,7 @@ import {
   ISLAND_AMBIENT_NAMES,
   ISLAND_AMBIENT_REACT_NAMES,
   ISLAND_STRIPPED_SPECIFIERS,
+  islandNetworkViolations,
   islandToolFallbackManifest,
   isStrippedIslandSpecifier,
   resolveIslandToolName,
@@ -152,6 +153,24 @@ describe("scanIslandTools", () => {
     const scan = scanIslandTools("const powertools = 1; const x = powertools.spin();");
     expect(scan.paths).toEqual([]);
     expect(scan.violations).toEqual([]);
+  });
+});
+
+describe("islandNetworkViolations", () => {
+  it("flags fetch/XHR/WebSocket/EventSource/sendBeacon usage", () => {
+    expect(islandNetworkViolations('fetch("/api/x")')).toEqual(["fetch"]);
+    expect(islandNetworkViolations("const ws = new WebSocket(url);")).toEqual(["WebSocket"]);
+    expect(islandNetworkViolations("const r = new XMLHttpRequest();")).toEqual(["XMLHttpRequest"]);
+    expect(islandNetworkViolations("navigator.sendBeacon(u, d);")).toEqual(["sendBeacon"]);
+    expect(islandNetworkViolations("new EventSource(u);")).toEqual(["EventSource"]);
+  });
+
+  it("ignores the words in strings and comments", () => {
+    expect(islandNetworkViolations('// fetch the data\nconst label = "fetch(now)";')).toEqual([]);
+  });
+
+  it("passes a clean tools-only island", () => {
+    expect(islandNetworkViolations("const r = await tools.clients.search({ q });")).toEqual([]);
   });
 });
 

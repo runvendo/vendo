@@ -1384,6 +1384,44 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     expect(prompts[1]).toContain("computed");
   });
 
+  it("rejects host catalog / prewired components inside island JSX and repairs to the ambient Kit", async () => {
+    // Live P4 finding: the island rendered <MapleSpendingDonut/> (a host
+    // catalog component) — host components live in the HOST page and can
+    // never cross into the jail, so the island died on a ReferenceError.
+    const broken = '<App name="Mix"><Note/><Island name="Note">export default function Note() { return <MetricCard label="x" value="1"/>; }</Island></App>';
+    const fixed = '<App name="Mix"><Note/><Island name="Note">export default function Note() { return <Stat label="x" value="1"/>; }</Island></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? broken : fixed;
+    });
+    const document = await modelEngine.create({ prompt: "Build it" }, guardDeps(model));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("MetricCard");
+    expect(prompts[1]).toContain("ambient Kit");
+    expect(document.components?.Note).toContain("<Stat");
+  });
+
+  it("rejects a raw network call inside an island and repairs to ambient tools", async () => {
+    // Live P3 finding: the model wrote fetch("/api/payments") from pretraining
+    // habit; the jail CSP blocked it silently (connect-src 'none') and the
+    // island just died. Catch it at compile and route to repair instead.
+    const broken = '<App name="Bad"><Note/><Island name="Note">export default function Note() { useEffect(() => { fetch("/api/payments"); }, []); return <p>x</p>; }</Island></App>';
+    const fixed = '<App name="Bad"><Note/><Island name="Note">export default function Note() { useEffect(() => { tools.host_metric({}); }, []); return <p>x</p>; }</Island></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? broken : fixed;
+    });
+    await modelEngine.create({ prompt: "Build it" }, guardDeps(model, {
+      tools: [{ name: "host_metric", description: "Metric", risk: "read" }],
+      pipeline: { structuredRepair: false },
+    }));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("no network");
+    expect(prompts[1]).toContain("tools");
+  });
+
   it("rejects aliasing the tools object and repairs (adversarial)", async () => {
     const broken = '<App name="Bad"><Note/><Island name="Note">export default function Note() { const t = tools; useEffect(() => { t.host_metric({}); }, []); return <p>x</p>; }</Island></App>';
     const fixed = '<App name="Bad"><Note/><Island name="Note">export default function Note() { useEffect(() => { tools.host_metric({}); }, []); return <p>x</p>; }</Island></App>';
@@ -1445,6 +1483,50 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     expect(calls).toBe(2);
     expect((document.tree as { nodes: Array<{ props?: Record<string, unknown> }> }).nodes.at(-1)?.props?.value)
       .toEqual({ $path: "/metric/total" });
+  });
+
+  it("sketches each tool's INPUT beside its name (W4b — islands and actions must match the real arg shape)", async () => {
+    let captured = "";
+    const model = scriptedLanguageModel((call) => {
+      captured = promptText(call);
+      return validCreate();
+    });
+    await modelEngine.create(
+      { prompt: "Build it" },
+      guardDeps(model, {
+        tools: [
+          {
+            name: "host_createOrder",
+            description: "Place an order",
+            risk: "write",
+            inputSchema: {
+              type: "object",
+              properties: {
+                body: {
+                  type: "object",
+                  properties: { merchant: { type: "string" }, amountCents: { type: "number" } },
+                },
+              },
+            },
+          },
+          {
+            name: "host_transfer",
+            description: "Send money",
+            risk: "destructive",
+            inputSchema: {
+              type: "object",
+              properties: { amount: { type: "integer" }, recipient_name: { type: "string" } },
+              required: ["amount", "recipient_name"],
+            },
+          },
+        ],
+      }),
+    );
+    // The nested `body` wrapper is visible — flat args against this tool were
+    // the live P3 failure (the host route read an empty JSON body and ran
+    // with defaults).
+    expect(captured).toContain("host_createOrder [write] (input: {body: {merchant, amountCents}})");
+    expect(captured).toContain("host_transfer [destructive] (input: {amount, recipient_name})");
   });
 
   it("lists host tools and response shapes in the create prompt and steers composition-first", async () => {
