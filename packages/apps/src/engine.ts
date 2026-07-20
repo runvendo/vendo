@@ -413,10 +413,27 @@ const normalizeIslandSource = (source: string): string => {
 
 /** TSX syntax gate for island sources. esbuild loads lazily (same pattern as
  *  the "ai" import); when unavailable the syntax check is skipped and the
- *  default-export check still applies. */
+ *  default-export check still applies.
+ *
+ *  The magic comments below are bundler directives, not runtime code — Node
+ *  ignores them and this stays a plain dynamic import (proven: still works
+ *  under Vitest's vm-sandboxed test runner, unlike a `new Function`-built
+ *  indirection, which throws ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING there).
+ *  `webpackIgnore`/`turbopackIgnore` tell the bundler to skip resolving this
+ *  specific specifier at build time instead of walking into esbuild's
+ *  package — which is where the real damage happens: esbuild's own
+ *  lib/main.js resolves its native binary with a dynamic require, and once a
+ *  bundler is inside esbuild's module graph at all, it tries to parse the
+ *  platform binary and its README.md as JS and hard-fails the build.
+ *  Confirmed empirically: without these comments (or `serverExternalPackages:
+ *  ["esbuild"]` in the host's next.config), `next build` on a host importing
+ *  "@vendoai/vendo/server" fails with "Unknown module type" /
+ *  "invalid utf-8 sequence" on esbuild's platform binary; with them, the
+ *  same host builds clean with esbuild left OUT of `serverExternalPackages`
+ *  entirely (corpus-triage Task 10). */
 const esbuildTransform = (async () => {
   try {
-    const esbuild = await import("esbuild");
+    const esbuild = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "esbuild");
     return (source: string) => void esbuild.transformSync(source, { loader: "tsx" });
   } catch {
     return undefined;
