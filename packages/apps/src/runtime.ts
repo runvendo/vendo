@@ -6,6 +6,7 @@ import {
   validateAppDocument,
   type AppDocument,
   type AppId,
+  type DomainManifest,
   type Guard,
   type IsoDateTime,
   type Json,
@@ -19,6 +20,7 @@ import {
   type ToolCall,
   type ToolDescriptor,
   type ToolOutcome,
+  type ToolSemantics,
   type TreeV2,
   type ToolRegistry,
   type UIPayload,
@@ -141,6 +143,12 @@ export interface AppsConfig {
   secrets?: SecretsProvider;
   designRules?: string;
   pinBaselines?: PinBaseline[];
+  /** W3 — per-tool field semantics from `.vendo/semantics.json`, passed to
+   *  the generation engine (annotated shape cards, law checks, Kit format
+   *  defaults). */
+  semantics?: Readonly<Record<string, ToolSemantics>>;
+  /** W3 — the host's domain manifest (has / has-NOT), generation fact. */
+  domains?: DomainManifest;
 }
 
 /** 06-apps §1 */
@@ -443,6 +451,8 @@ const generationDependencies = (
   theme: config.theme,
   designRules: config.designRules,
   pinBaselines: config.pinBaselines,
+  ...(config.semantics === undefined ? {} : { semantics: config.semantics }),
+  ...(config.domains === undefined ? {} : { domains: config.domains }),
   ...toolContext,
   ...(config.paint === undefined ? {} : { paint: config.paint }),
   ...(config.pipeline === undefined ? {} : { pipeline: config.pipeline }),

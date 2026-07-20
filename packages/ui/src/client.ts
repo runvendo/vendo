@@ -22,6 +22,7 @@ import type {
 import type { UIMessage } from "ai";
 import type {
   AutomationEntry,
+  ConnectableToolkit,
   ConnectionAccount,
   EditResult,
   EnableResult,
@@ -76,6 +77,9 @@ export interface VendoClient {
     /** GET /connections/:id — poll while the user completes the redirect. */
     status(id: string, connector?: string): Promise<ConnectionAccount>;
     disconnect(id: string, connector?: string): Promise<void>;
+    /** GET /connections/catalog — the host-level connectable toolkits; feeds
+        the connect dock when no explicit `connectors` prop is passed. */
+    catalog(): Promise<ConnectableToolkit[]>;
   };
 
   apps: {

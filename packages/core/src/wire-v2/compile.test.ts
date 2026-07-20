@@ -66,9 +66,10 @@ describe("compileWireV2 document shape", () => {
           props: { cols: 3 },
           children: ["linechart-1", "linechart-2", "datatable-1"],
         },
-        { id: "linechart-1", component: "LineChart", props: { title: "Revenue", points: [1, 2, 3] } },
-        { id: "linechart-2", component: "LineChart", props: { title: "Costs", points: [{ x: 1, y: 2 }] } },
-        { id: "datatable-1", component: "DataTable", props: { rows: [], dense: true } },
+        // W3 Kit adoption: LineChart/DataTable are prewired Kit names now.
+        { id: "linechart-1", component: "LineChart", source: "prewired", props: { title: "Revenue", points: [1, 2, 3] } },
+        { id: "linechart-2", component: "LineChart", source: "prewired", props: { title: "Costs", points: [{ x: 1, y: 2 }] } },
+        { id: "datatable-1", component: "DataTable", source: "prewired", props: { rows: [], dense: true } },
       ],
     });
     expect(result.name).toBe("Cash Overview");
@@ -784,11 +785,13 @@ describe("compileWireV2 full-spec-example gate (spec §2)", () => {
         {
           id: "linechart-1",
           component: "LineChart",
+          source: "prewired",
           props: { title: "Revenue", points: { $path: "/revenue" } },
         },
         {
           id: "datatable-1",
           component: "DataTable",
+          source: "prewired",
           props: { rows: { $path: "/payments" }, columns: [{ key: "amount", label: "Amount" }] },
         },
       ],

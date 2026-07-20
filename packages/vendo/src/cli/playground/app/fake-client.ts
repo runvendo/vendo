@@ -62,6 +62,12 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
 
     connections: {
       list: async () => [...state.connections],
+      // The scripted catalog mirrors the scenarios' explicit connectors prop;
+      // surfaces resolving in auto mode see the same two toolkits.
+      catalog: async () => [
+        { toolkit: "slack", connector: "composio" },
+        { toolkit: "github", connector: "composio" },
+      ],
       initiate: async ({ toolkit, connector }) => ({
         id: `conn_${toolkit}_new`,
         connector: connector ?? "composio",

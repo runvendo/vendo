@@ -211,7 +211,9 @@ describe("generation engine through createApps", () => {
   it("exempts path, state, and action bindings while validating the remaining host props", async () => {
     const boundProps = [
       '<App name="Bound metric"><Query id="headline" tool="host_headline"/>',
-      '<MetricCard label={headline.label} value={state.selectedValue} onSelect="selectMetric"/></App>',
+      // The action names a REAL registry tool — an invented one is a law-2
+      // unknown-tool error since W3 (covered in engine-laws.test.ts).
+      '<MetricCard label={headline.label} value={state.selectedValue} onSelect="host_headline"/></App>',
     ].join("");
     const bindingTools: ToolRegistry = {
       async descriptors() {
@@ -1369,10 +1371,15 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     expect(captured).toContain("LAST RESORT");
     expect(captured).toContain("Never hardcode");
     // vendo-v2-cells — the display-cell contract rides with the shapes:
-    // object cells project via template, date/cents display columns MUST format.
+    // object cells project via template; date/cents display rides a Kit
+    // semantic component / format token or a legacy format step (W3).
     expect(captured).toContain("RESHAPE PIPES");
     expect(captured).toContain("template(");
-    expect(captured).toContain("MUST carry a format step");
+    expect(captured).toContain("is NOT optional");
+    // W3 — the COMPONENTS section is generated from the Kit specs.
+    expect(captured).toContain("COMPONENTS (generated from the component schemas");
+    expect(captured).toContain("<Money");
+    expect(captured).toContain("DataTable");
   });
 });
 

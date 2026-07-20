@@ -148,6 +148,10 @@ export async function createWireServer() {
     connections: [
       { id: "ca_1", connector: "composio", toolkit: "gmail", status: "active" as const, createdAt: NOW },
     ],
+    catalog: [
+      { toolkit: "gmail", connector: "composio" },
+      { toolkit: "slack", connector: "composio" },
+    ],
     automations: [{ app: automationApp, enabled: false }] satisfies AutomationEntry[],
     runs: [run()],
     events: [audit("aud_1"), audit("aud_2"), audit("aud_3")],
@@ -397,6 +401,10 @@ export async function createWireServer() {
       }
       if (method === "GET" && url.pathname === "/connections") {
         return json(response, { connections: state.connections });
+      }
+      // Before the /connections/:id match below, which would swallow "catalog".
+      if (method === "GET" && url.pathname === "/connections/catalog") {
+        return json(response, { available: state.catalog });
       }
       if (method === "POST" && url.pathname === "/connections/initiate") {
         // The freshly initiated account is immediately pollable and flips
