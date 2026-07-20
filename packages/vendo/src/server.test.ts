@@ -595,6 +595,25 @@ describe("09 §3 public wire", () => {
     });
   });
 
+  it("serves sync semantics inference on dev servers and blocks it in production", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const { vendo } = await setup();
+
+    // No extracted host tools in this composition → an empty inference map;
+    // the shape of the seam (and its dev-only gate) is what this pins. The
+    // inference itself is unit-tested in core (inferToolSemantics).
+    const response = await vendo.handler(request("POST", "/sync/semantics", {}));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ tools: {} });
+
+    vi.stubEnv("NODE_ENV", "production");
+    const blocked = await vendo.handler(request("POST", "/sync/semantics", {}));
+    expect(blocked.status).toBe(403);
+    expect(await blocked.json()).toEqual({
+      error: { code: "blocked", message: "sync semantics is only available on a dev server" },
+    });
+  });
+
   it("validates sync impact tool arrays", async () => {
     vi.stubEnv("NODE_ENV", "development");
     const { vendo } = await setup();
