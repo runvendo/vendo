@@ -10,6 +10,7 @@ import {
 } from "@vendoai/core";
 import { Cron } from "croner";
 import { z } from "zod";
+import { requestAppWithBootRetry } from "./box-agent.js";
 import type { MachineLifecycle } from "./machine-lifecycle.js";
 import { parseVendoManifest } from "./manifest.js";
 import { rowFromRecord } from "./persistence.js";
@@ -101,6 +102,8 @@ export interface ScheduleEngineConfig {
   callFn(app: AppDocument, name: string, args: Json, ctx: RunContext): Promise<ToolOutcome>;
   /** Guard audit seam — every fire is reported as the owner's away execution. */
   audit?(event: AuditEvent): Promise<void>;
+  /** Test seam: shrink the post-resume boot-retry so tick tests run instantly. */
+  bootRetry?: import("./box-agent.js").BootRetryOptions;
 }
 
 export interface ScheduleEngine {
@@ -243,7 +246,9 @@ export const createScheduleEngine = (config: ScheduleEngineConfig): ScheduleEngi
 
   const syncManifest = async (app: AppDocument, at = new Date()): Promise<AppScheduleState> => {
     const machine = await config.lifecycle.wake(app);
-    const answer = await machine.request({ method: "GET", path: "/vendo.json" });
+    // A wake may resume a snapshot whose app is still booting; retry the
+    // manifest read past the provider's transient "port not open".
+    const answer = await requestAppWithBootRetry(machine, { method: "GET", path: "/vendo.json" }, config.bootRetry ?? {});
     let declared: Array<{ cron: string; fn: string }>;
     if (answer.status === 404) {
       // No manifest is a valid box: it just declares no schedules.

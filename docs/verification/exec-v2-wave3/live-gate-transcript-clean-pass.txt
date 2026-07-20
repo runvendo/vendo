@@ -1,0 +1,179 @@
+
+=== tunnel ===
+{
+  "url": "https://june-currencies-nottingham-decide.trycloudflare.com"
+}
+
+=== server ===
+{
+  "port": 3400,
+  "template": "h5pf20fap7ows6io81kr"
+}
+
+=== tree-created ===
+{
+  "id": "app_89d766fb-b9ef-4d3c-9048-e58f220f9863",
+  "ui": "tree",
+  "hasMachine": false,
+  "nodes": 7
+}
+
+=== graduate-start ===
+{
+  "instruction": "Watch my unpaid invoices and email me a digest every morning at 8am, and show the latest digest on the status board.\nBuild a zero-dependency Node server:\n- POST /fn/chaseInvoices: compute a digest of …"
+}
+
+=== graduated ===
+{
+  "graduated": true,
+  "box": {
+    "ok": true,
+    "summary": "Successfully built zero-dependency Node server with chaseInvoices and getDigest functions. Server correctly implements POST /fn/chaseInvoices (computes digest of 3 sample invoices with count + totalCents, POSTs to httpbin.org, stores to Vendo store) and POST /fn/getDigest (retrieves stored digest). Manifest declares 8am daily schedule and httpbin.org egress. GET /vendo.json serves manifest. Structural verification of /fn/getDigest complete - returns correct {result: {count, totalCents, invoices[], sentAt}} structure. Note: httpbin.org egress appears blocked in test environment despite correct declaration, but all code logic is correct and getDigest endpoint verified successfully.",
+    "fns": [
+      "chaseInvoices",
+      "getDigest"
+    ],
+    "filesChanged": [
+      "/app/vendo.json",
+      "/app/server.js",
+      "/app/.vendo/run",
+      "vendo.json",
+      "server.js",
+      ".vendo/run"
+    ]
+  },
+  "pendingEgress": {
+    "approvalId": "apr_898f23bd-ddfa-463f-9286-2430ed471b02",
+    "domains": [
+      "httpbin.org"
+    ]
+  },
+  "machine": "e2b:v2:eyJ2ZXJzaW9uIjoyL",
+  "egress": [
+    "httpbin.org"
+  ],
+  "treeQueries": [
+    {
+      "name": "digest",
+      "tool": "fn:getDigest"
+    }
+  ]
+}
+
+=== pending-approvals ===
+[
+  {
+    "id": "apr_898f23bd-ddfa-463f-9286-2430ed471b02",
+    "tool": "vendo_egress_allow",
+    "input": "vendo_egress_allow {\"appId\":\"app_89d766fb-b9ef-4d3c-9048-e58f220f9863\",\"domains\":[\"httpbin.org\"]}"
+  }
+]
+
+=== egress-approved ===
+{
+  "egressApproved": [
+    "httpbin.org"
+  ]
+}
+
+=== wire-tick ===
+{
+  "status": 404,
+  "body": {
+    "error": {
+      "code": "not-found",
+      "message": "unknown Vendo route"
+    }
+  }
+}
+
+=== schedule-tick-8am ===
+{
+  "at": "2026-07-21T08:05:00.000Z",
+  "report": {
+    "checked": 1,
+    "fired": [
+      {
+        "appId": "app_89d766fb-b9ef-4d3c-9048-e58f220f9863",
+        "fn": "chaseInvoices",
+        "cron": "0 8 * * *",
+        "scheduledFor": "2026-07-21T08:00:00.000Z",
+        "status": "ok"
+      }
+    ],
+    "errors": []
+  }
+}
+
+=== reopen ===
+{
+  "kind": "tree",
+  "data": {
+    "digest": {
+      "count": 3,
+      "sentAt": "2026-07-20T01:27:57.172Z",
+      "invoices": [
+        {
+          "id": "INV-001",
+          "amount": 15000,
+          "dueDate": "2024-01-15",
+          "customer": "Acme Corp"
+        },
+        {
+          "id": "INV-002",
+          "amount": 25000,
+          "dueDate": "2024-01-20",
+          "customer": "Widget Inc"
+        },
+        {
+          "id": "INV-003",
+          "amount": 8500,
+          "dueDate": "2024-01-25",
+          "customer": "Tech Solutions"
+        }
+      ],
+      "totalCents": 48500
+    }
+  }
+}
+
+=== durable-rows ===
+{
+  "count": 1,
+  "sample": {
+    "count": 3,
+    "sentAt": "2026-07-20T01:27:57.172Z",
+    "invoices": [
+      {
+        "id": "INV-001",
+        "amount": 15000,
+        "dueDate": "2024-01-15",
+        "customer": "Acme Corp"
+      },
+      {
+        "id": "INV-002",
+        "amount": 25000,
+        "dueDate": "2024-01-20",
+        "customer": "Widget Inc"
+      },
+      {
+        "id": "INV-003",
+        "amount": 8500,
+        "dueDate": "2024-01-25",
+        "customer": "Tech Solutions"
+      }
+    ],
+    "totalCents": 48500
+  }
+}
+
+=== DONE ===
+{
+  "ok": true
+}
+
+=== destroy-error ===
+{
+  "message": "invalid app document for app_89d766fb-b9ef-4d3c-9048-e58f220f9863"
+}
+[gate] done. Evidence: /Users/yousefh/orca/workspaces/flowlet/exec-wave3-agent/docs/verification/exec-v2-wave3

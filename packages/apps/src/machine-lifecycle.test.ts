@@ -476,3 +476,60 @@ describe("machine lifecycle: egress allowlist policy (Lane E)", () => {
     expect(sandbox.resumes).toBe(0);
   });
 });
+
+describe("machine lifecycle: discard (Wave 3 rollback) and buildAppEnv", () => {
+  it("discard drops the live machine WITHOUT snapshotting, keeping the pre-edit ref", async () => {
+    const { sandbox, lifecycle, doc, stored } = await setup();
+    const provisionedDoc = await lifecycle.provision(doc);
+    const preEditRef = provisionedDoc.machine?.snapshotRef;
+    await lifecycle.wake(provisionedDoc); // machine is now live
+    const snapshotsBefore = sandbox.snapshots.size;
+
+    await lifecycle.discard(provisionedDoc);
+
+    // No new snapshot was taken, and the document still points at the pre-edit ref.
+    expect(sandbox.snapshots.size).toBe(snapshotsBefore);
+    expect((await stored()).machine?.snapshotRef).toBe(preEditRef);
+    // The live machine was destroyed (not merely stopped).
+    expect(sandbox.machines.at(-1)?.destroyedSelf).toBe(true);
+    // The next wake resumes cleanly from the untouched pre-edit snapshot.
+    expect(lifecycle.peek(doc.id)).toBeUndefined();
+  });
+
+  it("discard is a no-op when the app is not awake", async () => {
+    const { sandbox, lifecycle, doc } = await setup();
+    const provisionedDoc = await lifecycle.provision(doc);
+    const destroysBefore = sandbox.destroyed.length;
+    await expect(lifecycle.discard(provisionedDoc)).resolves.toBeUndefined();
+    expect(sandbox.destroyed.length).toBe(destroysBefore);
+  });
+
+  it("buildAppEnv returns the current boundary env for the app", async () => {
+    const { lifecycle, doc } = await setup({ env: { PORT: "8080", VENDO_APP_TOKEN: "vat_x" } });
+    expect(await lifecycle.buildAppEnv(doc)).toEqual({ PORT: "8080", VENDO_APP_TOKEN: "vat_x" });
+  });
+});
+
+describe("machine lifecycle: destroyResources (Wave 3 delete-path reap)", () => {
+  it("reaps the live machine and stored snapshot without rewriting the document", async () => {
+    const { sandbox, lifecycle, doc, stored } = await setup();
+    const provisioned = await lifecycle.provision(doc);
+    await lifecycle.wake(provisioned);
+    const ref = (await stored()).machine?.snapshotRef;
+
+    await lifecycle.destroyResources(provisioned);
+
+    // The stored snapshot ref was destroyed and the live machine torn down.
+    expect(sandbox.destroyed).toContain(ref);
+    expect(sandbox.machines.at(-1)?.destroyedSelf).toBe(true);
+    // The document is left untouched (the delete path removes the row itself).
+    expect((await stored()).machine?.snapshotRef).toBe(ref);
+    expect(lifecycle.peek(doc.id)).toBeUndefined();
+  });
+
+  it("is a no-op when the app has no machine", async () => {
+    const { sandbox, lifecycle, doc } = await setup();
+    await expect(lifecycle.destroyResources(doc)).resolves.toBeUndefined();
+    expect(sandbox.destroyed).toEqual([]);
+  });
+});
