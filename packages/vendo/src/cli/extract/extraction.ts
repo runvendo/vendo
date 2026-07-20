@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { z } from "zod";
+import { claudeCliHarness } from "./claude-cli-harness.js";
 import { claudeHarness } from "./claude-harness.js";
 import { parseDraft, type ExtractionHarness } from "./harness.js";
 import { BRIEF_TEMPLATE, runStagedExtraction, staticToolSchema, type StaticTool } from "./stages.js";
@@ -199,7 +200,7 @@ export async function runAiExtraction(options: AiExtractionOptions): Promise<{ r
     return { ran: false };
   }
 
-  const harnesses = options.harnesses ?? [claudeHarness()];
+  const harnesses = options.harnesses ?? [claudeHarness(), claudeCliHarness()];
   let chosen: { harness: ExtractionHarness; credential: string } | null = null;
   for (const harness of harnesses) {
     const credential = await harness.availability({ root, env });
@@ -209,7 +210,7 @@ export async function runAiExtraction(options: AiExtractionOptions): Promise<{ r
     }
   }
   if (chosen === null) {
-    output.log("AI polish: unavailable — needs @anthropic-ai/claude-agent-sdk resolvable (`npm install -D @anthropic-ai/claude-agent-sdk`) plus a Claude Code login or ANTHROPIC_API_KEY. Extractor defaults stand; re-run `vendo init` once set up.");
+    output.log("AI polish: unavailable — needs Claude Code installed (`npm install -g @anthropic-ai/claude-code`) or @anthropic-ai/claude-agent-sdk resolvable, plus a Claude Code login or ANTHROPIC_API_KEY. Extractor defaults stand; re-run `vendo init` once set up.");
     return { ran: false };
   }
 
