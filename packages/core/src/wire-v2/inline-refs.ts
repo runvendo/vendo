@@ -118,7 +118,12 @@ export const expandInlineRefs = (wire: string): InlineRefsResult => {
   }
 
   const queries = new Map<string, { name: string; tool: string; argsRaw: string }>();
+  // Seed with names already claimed in the document — explicit <Query id="…">
+  // and <Island name="…"> — so a minted name can never collide with one the
+  // author declared (which would otherwise produce a duplicate-query / shadow).
   const usedNames = new Set<string>();
+  for (const m of wire.matchAll(/<Query\b[^>]*?\bid="([^"]+)"/g)) usedNames.add(m[1]!);
+  for (const m of wire.matchAll(/<Island\b[^>]*?\bname="([^"]+)"/g)) usedNames.add(m[1]!);
   const mint = (tool: string, argsRaw: string): string => {
     const key = `${tool}|${argsRaw.replace(/\s+/g, "")}`;
     const existing = queries.get(key);

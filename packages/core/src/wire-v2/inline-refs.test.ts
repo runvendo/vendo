@@ -33,6 +33,18 @@ describe("expandInlineRefs", () => {
     expect(minted).toBe(0);
   });
 
+  it("never mints a name that collides with an existing <Query id> (Greptile P1)", () => {
+    const wire = `<App name="X"><Query id="invoicesList" tool="invoices.list" input={{status:"paid"}}/><Table rows={invoicesList.data} columns={["c"]}/><Stat label="Overdue" value={invoices.list({status:"overdue"}).totalCents}/></App>`;
+    const { wire: out, minted } = expandInlineRefs(wire);
+    expect(minted).toBe(1);
+    // The minted query must NOT reuse the existing "invoicesList" id.
+    expect(out).toContain(`<Query id="invoicesList2" tool="invoices.list" input={{status:"overdue"}}/>`);
+    expect(out).toContain("value={invoicesList2.totalCents}");
+    // The pre-existing declaration and its binding are untouched.
+    expect(out).toContain(`<Query id="invoicesList" tool="invoices.list" input={{status:"paid"}}/>`);
+    expect(out).toContain("rows={invoicesList.data}");
+  });
+
   it("compiles to the same canonical tree as the explicit <Query> arm", () => {
     const inline = `<App name="Overdue"><Table rows={invoices.list({status:"overdue"}).data} columns={[{key:"client"}]}/></App>`;
     const explicit = `<App name="Overdue"><Query id="invoicesList" tool="invoices.list" input={{status:"overdue"}}/><Table rows={invoicesList.data} columns={[{key:"client"}]}/></App>`;
