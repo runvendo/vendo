@@ -84,14 +84,26 @@ const LAYERS = {
  */
 const ZOD_V4_EXPORT_FLOOR = [3, 25, 0];
 
-/** Extracts a [major, minor, patch] floor from a simple semver range token
- * ("^3.25.76", "~3.25.0", ">=3.25.76", or a bare "3.25.76"). Returns null for
- * anything without a plain x.y.z inside it — good enough for the ranges this
- * workspace actually declares. */
+/** A range token whose x.y.z IS its floor: "^3.25.76", "~3.25.0",
+ * ">=3.25.76", or a bare "3.25.76". Anything else (upper bounds like
+ * "<=3.25.0", wildcards, comparator intersections) is not modeled. */
+const FLOOR_TOKEN = /^(?:\^|~|>=)?\s*(\d+)\.(\d+)\.(\d+)$/;
+
+/** Extracts a [major, minor, patch] floor from a semver range: a single
+ * floor-shaped token, or a `||` union of them. A union is only as safe as
+ * its LOWEST satisfiable alternative, so the floor is the minimum across
+ * every `||` branch; any branch that is not floor-shaped (e.g. "<=3.25.0",
+ * whose x.y.z is a ceiling, not a floor) returns null so the guard fails
+ * closed instead of trusting a range it cannot model. */
 function parseVersionFloor(range) {
-  const match = /(\d+)\.(\d+)\.(\d+)/.exec(String(range));
-  if (!match) return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
+  let floor = null;
+  for (const alternative of String(range).split("||")) {
+    const match = FLOOR_TOKEN.exec(alternative.trim());
+    if (!match) return null;
+    const version = [Number(match[1]), Number(match[2]), Number(match[3])];
+    if (!floor || compareVersions(version, floor) < 0) floor = version;
+  }
+  return floor;
 }
 
 function compareVersions(a, b) {
@@ -187,7 +199,11 @@ for (const dir of dirs) {
       );
     } else {
       const floor = parseVersionFloor(zodRange);
-      if (!floor || compareVersions(floor, ZOD_V4_EXPORT_FLOOR) < 0) {
+      if (!floor) {
+        errors.push(
+          `${pkg.name}: "zod" range "${zodRange}" has no modelable floor (rule 4 accepts ^x.y.z, ~x.y.z, >=x.y.z, or bare x.y.z tokens, or a || union of them) — declare a simple floor at or above ${ZOD_V4_EXPORT_FLOOR.join(".")}.`,
+        );
+      } else if (compareVersions(floor, ZOD_V4_EXPORT_FLOOR) < 0) {
         errors.push(
           `${pkg.name}: "zod" floor "${zodRange}" is below ${ZOD_V4_EXPORT_FLOOR.join(".")}, the first zod release with the ./v4 export ai needs — raise it (see 174aa430).`,
         );
