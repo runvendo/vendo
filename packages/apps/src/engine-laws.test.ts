@@ -222,6 +222,30 @@ describe("law 2 — actions ground in the real tool surface", () => {
   });
 });
 
+describe("semantics + domain manifest reach the generation prompt (W3 §Context)", () => {
+  it("annotates shape cards with field semantics and states the domain manifest as fact", async () => {
+    let captured = "";
+    const model = scriptedLanguageModel((call) => {
+      captured = promptText(call);
+      return '<App name="Tx"><DataTable rows={host_metric({}).rows}/></App>';
+    });
+    await modelEngine.create({ prompt: "Transactions" }, deps(model, {
+      semantics: {
+        host_metric: {
+          totalCents: { kind: "money", unit: "cents" },
+          "rows.amountCents": { kind: "money", unit: "cents" },
+        },
+      },
+      domains: { has: ["accounts", "transactions"], hasNot: ["payroll", "crypto"] },
+    }));
+    expect(captured).toContain("totalCents: number:money.cents");
+    expect(captured).toContain("amountCents: number:money.cents");
+    expect(captured).toContain("DATA DOMAINS");
+    expect(captured).toContain("This host HAS data for: accounts, transactions.");
+    expect(captured).toContain("This host has NO data for: payroll, crypto.");
+  });
+});
+
 describe("inline tool refs in the production path (W1 Exp1 verdict — adopted)", () => {
   it("accepts inline refs with production (underscore) tool names, minting ONE deduped query; <Query> stays accepted", async () => {
     const wire = '<App name="Tx"><DataTable rows={host_metric({}).rows}/><Stat label="Count" value={host_metric({}).count}/></App>';
