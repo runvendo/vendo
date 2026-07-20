@@ -69,6 +69,10 @@ export interface ThemeSummary {
   evidencePaths: string[];
 }
 
+/** Key ORDER is load-bearing: assembleTheme derives accentText from the
+ *  already-settled accent and headingFamily from fontFamily within one pass
+ *  over SLOT_KEYS, so accent must precede accentText and fontFamily must
+ *  precede headingFamily. Do not alphabetize. */
 const DEFAULT_THEME_SLOTS: ThemeSlotValues = {
   accent: "#2563eb",
   accentText: "#ffffff",

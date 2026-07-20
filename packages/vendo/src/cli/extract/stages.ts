@@ -194,10 +194,10 @@ function composeBriefInstructions(input: {
 }
 
 /**
- * Instructions for the OPTIONAL theme stage. The judgment rules below are
- * PORTED from `MODEL_SYSTEM_PROMPT` in extract-theme.ts (that file's own copy
- * is left untouched) — this is temporary duplication until the held Task 2
- * deletes the old model pass there, at which point this becomes the only copy.
+ * Instructions for the OPTIONAL theme stage — the SOLE copy of the theme
+ * judgment rules (extract-theme.ts's old model pass and its prompt were
+ * deleted when the deterministic split landed; that file now owns only the
+ * exact pass, validators, and assembly).
  */
 export function composeThemeInstructions(input: {
   needed: string[];
