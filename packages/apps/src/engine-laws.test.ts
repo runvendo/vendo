@@ -295,6 +295,45 @@ describe("law 2 — query inputs are literal JSON (a dependent call cannot execu
   });
 });
 
+describe("host item schemas vs generic reshapes (live-verify finding)", () => {
+  it("rejects asPoints/asOptions into a host data prop that declares its own item fields", async () => {
+    // Maple P3: the model reshaped {category, amount} rows into {label, value}
+    // for MapleSpendingDonut — whose schema wants the RAW {category, amount}
+    // items — and the chart drew $NaN. The raw binding is the legal move.
+    const hostCatalog: NormalizedCatalog = [{
+      name: "SpendDonut",
+      description: "Spending donut.",
+      propsJsonSchema: {
+        type: "object",
+        properties: {
+          slices: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: { category: { type: "string" }, amount: { type: "number" } },
+              required: ["category", "amount"],
+            },
+          },
+        },
+        required: ["slices"],
+      },
+    }] as unknown as NormalizedCatalog;
+    const reshaped = '<App name="S"><Query id="metric" tool="host_metric"/><SpendDonut slices={metric.rows | asPoints(client, amountCents)}/></App>';
+    const raw = '<App name="S"><Query id="metric" tool="host_metric"/><SpendDonut slices={metric.rows}/></App>';
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? reshaped : raw;
+    });
+    await modelEngine.create(
+      { prompt: "Spending" },
+      deps(model, { catalog: hostCatalog, pipeline: { structuredRepair: false } }),
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("declares its own item fields");
+  });
+});
+
 describe("law 1 raw typing — bound field kinds must match the Kit slot", () => {
   it("rejects a string-shaped field bound into Money.cents (pre-formatted money strings fail)", async () => {
     const shapes = {

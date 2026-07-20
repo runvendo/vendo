@@ -303,7 +303,7 @@ const hostToolSections = (deps: GenerationDependencies): GenerationPromptSection
   }]),
   ...(deps.toolShapes === undefined || Object.keys(deps.toolShapes).length === 0 ? [] : [{
     id: "catalog" as const,
-    content: `TOOL RESPONSE SHAPES (bind only to fields that exist; a binding outside these shapes fails validation). Field annotations mark semantics: :money.cents = integer CENTS (bind the RAW number into Money cents / a format:"money" column — never pre-format it), :money.dollars = whole dollars, :date.iso and :date.epoch = machine dates (DateTime / format:"date"), :enum(a|b) = closed vocabulary (EnumBadge), :id = identifier (for action payloads and lookups, not a metric), :percent.ratio = 0..1, :percent.0-100 = whole percent.\n${Object.entries(deps.toolShapes).map(([tool, shape]) => `- ${tool}: ${describeShapeWithSemantics(shape, deps.semantics?.[tool] ?? {})}`).join("\n")}`,
+    content: `TOOL RESPONSE SHAPES (bind only to fields that exist; a binding outside these shapes fails validation). Field annotations mark semantics: :money.cents = integer CENTS (bind the RAW number into Money cents / a format:"money" column — never pre-format it), :money.dollars = whole dollars, :date.iso and :date.epoch = machine dates (DateTime / format:"date"), :enum(a|b) = closed vocabulary (EnumBadge), :id = OPAQUE host identifier (for action payloads — NEVER invent, guess, or abbreviate an id value; when a call would need an id you don't literally have, use the un-filtered list variant instead), :percent.ratio = 0..1, :percent.0-100 = whole percent.\n${Object.entries(deps.toolShapes).map(([tool, shape]) => `- ${tool}: ${describeShapeWithSemantics(shape, deps.semantics?.[tool] ?? {})}`).join("\n")}`,
   }, {
     id: "catalog" as const,
     content: `RESHAPE PIPES — project & format bound data to the shape a component needs. A binding may end with a bounded \`| op(...)\` pipe (this is the ONLY computation allowed in a binding). PROJECT fetched object arrays into the component's shape, and never bind a raw object array into a slot that expects labeled items:
@@ -572,6 +572,34 @@ const bindingKindIssues = (
   return issues;
 };
 
+/** W3 (live-verify finding) — asPoints/asOptions produce generic
+ *  {label,value}/{value,label} items; a HOST prop whose schema declares its
+ *  OWN item field names cannot read them (the Maple donut drew $NaN). The
+ *  raw rows are the legal binding — reject the reshape at compile. */
+const GENERIC_ITEM_RESHAPES = new Set(["asPoints", "asOptions"]);
+const hostReshapeIssues = (compiled: WireCompileResult, deps: GenerationDependencies): string[] => {
+  const issues: string[] = [];
+  const hostSchemas = new Map(deps.catalog.map((component) => [component.name, component.propsJsonSchema]));
+  for (const node of compiled.tree.nodes) {
+    if (node.source !== "host" || node.props === undefined) continue;
+    const schema = hostSchemas.get(node.component);
+    const properties = isRecord(schema) && isRecord(schema.properties) ? schema.properties : undefined;
+    if (properties === undefined) continue;
+    for (const [prop, value] of Object.entries(node.props)) {
+      if (!isPathBinding(value)) continue;
+      const reshape = (value as unknown as { $reshape?: Array<{ op?: string }> }).$reshape;
+      if (!Array.isArray(reshape) || !reshape.some((step) => GENERIC_ITEM_RESHAPES.has(step?.op ?? ""))) continue;
+      const propSchema = properties[prop];
+      const items = isRecord(propSchema) && isRecord(propSchema.items) ? propSchema.items : undefined;
+      const itemProperties = items !== undefined && isRecord(items.properties) ? Object.keys(items.properties) : [];
+      if (itemProperties.length === 0) continue;
+      if (itemProperties.includes("label") && itemProperties.includes("value")) continue;
+      issues.push(`node "${node.id}" prop "${prop}" reshapes with asPoints/asOptions, but host component "${node.component}" declares its own item fields (${itemProperties.join(", ")}) — it cannot read generic {label, value} items. Bind the RAW rows (drop the reshape) so the component receives the fields its schema names.`);
+    }
+  }
+  return issues;
+};
+
 /** W3 law 2 (live-verify finding) — a query input executes as LITERAL JSON:
  *  the runtime never resolves bindings inside it, so a dependent call
  *  (`accountId: accounts.data.0.id`) reaches the tool as an unresolved
@@ -695,6 +723,7 @@ const validateCompiledCreate = async (
     `binding ${error.path} on node "${error.nodeId}" prop "${error.prop}": ${error.message}${error.available === undefined ? "" : ` (available: ${error.available.join(", ")})`}`));
   issues.push(...bindingKindIssues(compiled, deps));
   issues.push(...kitSlotIssues(compiled, deps));
+  issues.push(...hostReshapeIssues(compiled, deps));
   issues.push(...queryInputIssues(compiled.tree));
   issues.push(...interpolationIssues(compiled));
   issues.push(...await catalogIssues(compiled.tree, components, deps.catalog));
