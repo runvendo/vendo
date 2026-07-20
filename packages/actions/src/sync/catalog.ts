@@ -7,6 +7,7 @@ import {
   type CatalogEntry,
   type CatalogFile,
 } from "../formats.js";
+import { writeIfChanged } from "./common.js";
 
 function validationError(file: string, error: unknown): VendoError {
   const detail = error && typeof error === "object" && "issues" in error
@@ -57,13 +58,6 @@ export async function writeCatalog(out: string, scanned: CatalogEntry[]): Promis
     format: VENDO_CATALOG_FORMAT,
     entries: mergeCatalogEntries(existing?.entries ?? [], scanned),
   });
-  const bytes = `${JSON.stringify(catalog, null, 2)}\n`;
-  try {
-    if (await fs.readFile(file, "utf8") === bytes) return catalog;
-  } catch {
-    // First scan writes the artifact below.
-  }
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, bytes, "utf8");
+  await writeIfChanged(file, `${JSON.stringify(catalog, null, 2)}\n`);
   return catalog;
 }

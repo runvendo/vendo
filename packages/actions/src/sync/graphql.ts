@@ -25,7 +25,16 @@ import {
   resolveImportSource,
   walk,
 } from "./common.js";
-import { loadTypescript } from "./static-ts.js";
+import {
+  apiPathFromRouteFile,
+  importMap,
+  isApiRouteFileCandidate,
+  loadTypescript,
+  parseModule,
+  readPackageJson,
+  type FileModule,
+  type StaticExtraction,
+} from "./static-ts.js";
 
 /**
  * Static GraphQL extraction (04 §1, additive within vendo/tools@1).
@@ -78,7 +87,7 @@ const ROUTE_SERVER_MARKER = /graphql-yoga|@apollo\/server|apollo-server-micro|gr
 /** Resolve the host's own graphql package (fail-closed). The fallback require
  * targets our devDependency so tests and monorepo dev work without a host
  * install. */
-export function loadGraphqlJs(root: string): GraphqlJs | null {
+function loadGraphqlJs(root: string): GraphqlJs | null {
   for (const base of [path.join(root, "package.json"), import.meta.url]) {
     try {
       return createRequire(base)("graphql") as GraphqlJs;
@@ -87,14 +96,6 @@ export function loadGraphqlJs(root: string): GraphqlJs | null {
     }
   }
   return null;
-}
-
-async function readPackageJson(root: string): Promise<Record<string, unknown> | null> {
-  try {
-    return JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
 }
 
 export async function detectGraphql(root: string): Promise<boolean> {
@@ -498,60 +499,11 @@ function sdlOperations(index: SdlIndex): OperationDef[] {
 // Code-first sources (@nestjs/graphql, type-graphql) — TypeScript AST
 // ---------------------------------------------------------------------------
 
-interface FileModule {
-  file: string;
-  source: string;
-  sf: TS.SourceFile;
-}
-
-interface Extraction {
-  ts: Ts;
-  root: string;
-  modules: Map<string, FileModule>;
-}
-
-function parseModule(extraction: Extraction, file: string, source: string): FileModule {
-  const cached = extraction.modules.get(file);
-  if (cached) return cached;
-  const { ts } = extraction;
-  const scriptKind = file.endsWith(".tsx") || file.endsWith(".jsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, scriptKind);
-  const module = { file, source, sf };
-  extraction.modules.set(file, module);
-  return module;
-}
-
-/** import local name → specifier + imported name, for one module. */
-function importMap(extraction: Extraction, module: FileModule): Map<string, { specifier: string; imported: string }> {
-  const { ts } = extraction;
-  const imports = new Map<string, { specifier: string; imported: string }>();
-  for (const statement of module.sf.statements) {
-    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
-    const specifier = statement.moduleSpecifier.text;
-    const clause = statement.importClause;
-    if (!clause) continue;
-    if (clause.name) imports.set(clause.name.text, { specifier, imported: "default" });
-    const bindings = clause.namedBindings;
-    if (bindings && ts.isNamedImports(bindings)) {
-      for (const element of bindings.elements) {
-        imports.set(element.name.text, {
-          specifier,
-          imported: (element.propertyName ?? element.name).text,
-        });
-      }
-    }
-    if (bindings && ts.isNamespaceImport(bindings)) {
-      imports.set(bindings.name.text, { specifier, imported: "*" });
-    }
-  }
-  return imports;
-}
-
 type ResolvedNode = { module: FileModule; node: TS.Node };
 
 /** Find a top-level declaration by name: variable initializer, class, enum,
  * or function declaration. */
-function localDeclaration(extraction: Extraction, module: FileModule, name: string): TS.Node | null {
+function localDeclaration(extraction: StaticExtraction, module: FileModule, name: string): TS.Node | null {
   const { ts } = extraction;
   for (const statement of module.sf.statements) {
     if (ts.isVariableStatement(statement)) {
@@ -571,7 +523,7 @@ function localDeclaration(extraction: Extraction, module: FileModule, name: stri
 
 /** Follow `export { x } from "./y"` and `export * from "./y"` chains. */
 async function resolveExport(
-  extraction: Extraction,
+  extraction: StaticExtraction,
   module: FileModule,
   name: string,
   depth: number,
@@ -608,7 +560,7 @@ async function resolveExport(
  * declarations and one-hop-per-level imports. Returns null (fail-closed) for
  * anything defined outside the host root. */
 async function resolveIdentifier(
-  extraction: Extraction,
+  extraction: StaticExtraction,
   module: FileModule,
   name: string,
   depth: number,
@@ -643,7 +595,7 @@ interface DecoratorCall {
 
 /** Decorator calls on a node whose factory is imported from a code-first
  * GraphQL library — a same-named local helper never counts. */
-function graphqlDecorators(extraction: Extraction, module: FileModule, node: TS.Node): DecoratorCall[] {
+function graphqlDecorators(extraction: StaticExtraction, module: FileModule, node: TS.Node): DecoratorCall[] {
   const { ts } = extraction;
   const imports = importMap(extraction, module);
   const calls: DecoratorCall[] = [];
@@ -712,9 +664,19 @@ function unresolvableType(reason: string): TypeInterpretation {
   return { typeName: null, schema: {}, selection: null, reason };
 }
 
+/** Wrap an interpreted element type as a GraphQL list. */
+function listOf(inner: TypeInterpretation): TypeInterpretation {
+  return {
+    typeName: inner.typeName === null ? null : `[${inner.typeName}!]`,
+    schema: { type: "array", items: inner.schema },
+    selection: inner.selection,
+    ...(inner.reason ? { reason: inner.reason } : {}),
+  };
+}
+
 /** Interpret a `() => T` type expression from a decorator argument. */
 async function interpretTypeExpression(
-  extraction: Extraction,
+  extraction: StaticExtraction,
   module: FileModule,
   expr: TS.Expression,
   depth: number,
@@ -729,13 +691,7 @@ async function interpretTypeExpression(
     if (!element) return unresolvableType("empty list type expression");
     // A list wrapper is not a nesting level: [Invoice] must produce the same
     // depth-limited selection set as a bare Invoice return.
-    const inner = await interpretTypeExpression(extraction, module, element, depth);
-    return {
-      typeName: inner.typeName === null ? null : `[${inner.typeName}!]`,
-      schema: { type: "array", items: inner.schema },
-      selection: inner.selection,
-      ...(inner.reason ? { reason: inner.reason } : {}),
-    };
+    return listOf(await interpretTypeExpression(extraction, module, element, depth));
   }
   if (ts.isIdentifier(expr)) {
     const scalar = scalarByName(expr.text);
@@ -753,7 +709,7 @@ async function interpretTypeExpression(
 }
 
 async function interpretResolvedType(
-  extraction: Extraction,
+  extraction: StaticExtraction,
   resolved: ResolvedNode,
   referenceName: string,
   depth: number,
@@ -795,7 +751,7 @@ interface ClassFieldInfo {
   hasArguments: boolean;
 }
 
-function graphqlClassName(extraction: Extraction, module: FileModule, node: TS.ClassDeclaration): string | null {
+function graphqlClassName(extraction: StaticExtraction, module: FileModule, node: TS.ClassDeclaration): string | null {
   const { ts } = extraction;
   for (const call of graphqlDecorators(extraction, module, node)) {
     if (!["ObjectType", "InputType", "ArgsType", "InterfaceType"].includes(call.name)) continue;
@@ -809,7 +765,7 @@ function graphqlClassName(extraction: Extraction, module: FileModule, node: TS.C
 /** Interpret a TS type annotation as a GraphQL type (the code-first implicit
  * scalar inference: string/number/boolean; class references resolve). */
 async function interpretTypeAnnotation(
-  extraction: Extraction,
+  extraction: StaticExtraction,
   module: FileModule,
   annotation: TS.TypeNode | undefined,
   depth: number,
@@ -820,13 +776,7 @@ async function interpretTypeAnnotation(
   if (annotation.kind === ts.SyntaxKind.NumberKeyword) return scalarByName("Number")!;
   if (annotation.kind === ts.SyntaxKind.BooleanKeyword) return scalarByName("Boolean")!;
   if (ts.isArrayTypeNode(annotation)) {
-    const inner = await interpretTypeAnnotation(extraction, module, annotation.elementType, depth);
-    return {
-      typeName: inner.typeName === null ? null : `[${inner.typeName}!]`,
-      schema: { type: "array", items: inner.schema },
-      selection: inner.selection,
-      ...(inner.reason ? { reason: inner.reason } : {}),
-    };
+    return listOf(await interpretTypeAnnotation(extraction, module, annotation.elementType, depth));
   }
   if (ts.isTypeReferenceNode(annotation) && ts.isIdentifier(annotation.typeName)) {
     const name = annotation.typeName.text;
@@ -836,13 +786,7 @@ async function interpretTypeAnnotation(
       return interpretTypeAnnotation(extraction, module, annotation.typeArguments?.[0], depth);
     }
     if (name === "Array") {
-      const inner = await interpretTypeAnnotation(extraction, module, annotation.typeArguments?.[0], depth);
-      return {
-        typeName: inner.typeName === null ? null : `[${inner.typeName}!]`,
-        schema: { type: "array", items: inner.schema },
-        selection: inner.selection,
-        ...(inner.reason ? { reason: inner.reason } : {}),
-      };
+      return listOf(await interpretTypeAnnotation(extraction, module, annotation.typeArguments?.[0], depth));
     }
     const scalar = scalarByName(name);
     if (scalar && name !== "Number") return scalar; // Date and friends
@@ -854,7 +798,7 @@ async function interpretTypeAnnotation(
 }
 
 async function classFields(
-  extraction: Extraction,
+  extraction: StaticExtraction,
   module: FileModule,
   node: TS.ClassDeclaration,
   depth: number,
@@ -890,7 +834,7 @@ async function classFields(
 }
 
 async function interpretClassType(
-  extraction: Extraction,
+  extraction: StaticExtraction,
   module: FileModule,
   node: TS.ClassDeclaration,
   depth: number,
@@ -943,7 +887,7 @@ function variableTypeFor(interpretation: TypeInterpretation, optional: boolean):
 /** Arguments for one resolver method: named @Args entries plus expanded
  * @Args() args-classes. */
 async function methodArgs(
-  extraction: Extraction,
+  extraction: StaticExtraction,
   module: FileModule,
   method: TS.MethodDeclaration,
 ): Promise<{ args: OperationArg[]; unresolved: string[] }> {
@@ -1007,7 +951,7 @@ async function methodArgs(
 const OPERATION_DECORATORS = new Set(["Query", "Mutation", "Subscription"]);
 
 async function codeFirstOperations(
-  extraction: Extraction,
+  extraction: StaticExtraction,
   module: FileModule,
   warnings: string[],
 ): Promise<OperationDef[]> {
@@ -1058,37 +1002,9 @@ async function codeFirstOperations(
 // Endpoint discovery
 // ---------------------------------------------------------------------------
 
-function isRouteFileCandidate(relativePath: string): boolean {
-  const normalized = relativePath.replace(/\\/g, "/");
-  const parts = normalized.split("/");
-  const file = parts.at(-1) ?? "";
-  if (/^route\.(?:tsx?|jsx?)$/.test(file) && parts.includes("app")) return true;
-  const pagesIndex = parts.findIndex((part) => part === "pages");
-  return pagesIndex !== -1 && parts[pagesIndex + 1] === "api" && SOURCE_FILE_PATTERN.test(file) && !/\.d\.ts$/.test(file);
-}
-
-function isDynamicSegment(segment: string): boolean {
-  return /^\[.*\]$/.test(segment);
-}
-
-function endpointFromRouteFile(relativePath: string): string | null {
-  const parts = relativePath.replace(/\\/g, "/").split("/");
-  const file = parts.at(-1) ?? "";
-  if (/^route\.(?:tsx?|jsx?)$/.test(file)) {
-    const appIndex = parts.findIndex((part) => part === "app");
-    if (appIndex === -1) return null;
-    const segments = parts.slice(appIndex + 1, -1)
-      .filter((segment) => !(segment.startsWith("(") && segment.endsWith(")")) && !segment.startsWith("@"))
-      .filter((segment) => !isDynamicSegment(segment));
-    return `/${segments.join("/")}`.replace(/\/+/g, "/");
-  }
-  const pagesIndex = parts.findIndex((part) => part === "pages");
-  if (pagesIndex === -1) return null;
-  const fileBase = file.replace(/\.(?:tsx?|jsx?)$/, "");
-  const segments = [...parts.slice(pagesIndex + 1, -1), fileBase]
-    .filter((segment) => segment !== "index" && !isDynamicSegment(segment));
-  return `/${segments.join("/")}`.replace(/\/+/g, "/");
-}
+/** Normalize a trailing slash on a discovered endpoint; "/" is preserved. */
+const normalizeEndpoint = (endpoint: string): string =>
+  endpoint.length > 1 ? endpoint.replace(/\/+$/, "") : endpoint;
 
 function graphqlEndpointLiteral(source: string): string | null {
   const match = source.match(/graphqlEndpoint\s*:\s*["'`](\/[^"'`\s]*)["'`]/);
@@ -1115,7 +1031,7 @@ function absolutePathLiterals(ts: Ts, node: TS.Node): string[] {
 }
 
 async function nestEndpoints(
-  extraction: Extraction,
+  extraction: StaticExtraction,
   module: FileModule,
 ): Promise<string[]> {
   const { ts } = extraction;
@@ -1191,8 +1107,8 @@ export async function extractGraphql(root: string): Promise<GraphqlExtractResult
 
   // --- Endpoint discovery -------------------------------------------------
   const endpointSet = new Set<string>();
-  let extraction: Extraction | null = null;
-  const ensureExtraction = (): Extraction | null => {
+  let extraction: StaticExtraction | null = null;
+  const ensureExtraction = (): StaticExtraction | null => {
     if (extraction) return extraction;
     const ts = loadTypescript(root);
     if (!ts) return null;
@@ -1202,9 +1118,9 @@ export async function extractGraphql(root: string): Promise<GraphqlExtractResult
 
   for (const [file, source] of sources) {
     const relativePath = path.relative(root, file);
-    if (isRouteFileCandidate(relativePath) && ROUTE_SERVER_MARKER.test(source)) {
-      const endpoint = graphqlEndpointLiteral(source) ?? endpointFromRouteFile(relativePath) ?? DEFAULT_ENDPOINT;
-      endpointSet.add(endpoint.length > 1 ? endpoint.replace(/\/+$/, "") : endpoint);
+    if (isApiRouteFileCandidate(relativePath) && ROUTE_SERVER_MARKER.test(source)) {
+      const endpoint = graphqlEndpointLiteral(source) ?? apiPathFromRouteFile(relativePath) ?? DEFAULT_ENDPOINT;
+      endpointSet.add(normalizeEndpoint(endpoint));
       continue;
     }
     if (source.includes("GraphQLModule")) {
@@ -1212,7 +1128,7 @@ export async function extractGraphql(root: string): Promise<GraphqlExtractResult
       if (active) {
         const module = parseModule(active, file, source);
         for (const endpoint of await nestEndpoints(active, module)) {
-          endpointSet.add(endpoint.length > 1 ? endpoint.replace(/\/+$/, "") : endpoint);
+          endpointSet.add(normalizeEndpoint(endpoint));
         }
       }
       continue;
@@ -1220,7 +1136,7 @@ export async function extractGraphql(root: string): Promise<GraphqlExtractResult
     // Standalone yoga servers declare their endpoint on createYoga.
     if (source.includes("createYoga(")) {
       const literal = graphqlEndpointLiteral(source);
-      if (literal) endpointSet.add(literal.length > 1 ? literal.replace(/\/+$/, "") : literal);
+      if (literal) endpointSet.add(normalizeEndpoint(literal));
     }
   }
 

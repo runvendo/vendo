@@ -39,9 +39,6 @@ interface PinRegistration {
   invalidSampleProps: boolean;
   /** Offset of the registration object literal's opening brace in its module source. */
   at: number;
-  /** True when the literal also carries a `path` field — a router-table entry,
-   * never offered for remix wrapping. */
-  routerTable: boolean;
 }
 
 export interface PinCaptureResult {
@@ -126,7 +123,6 @@ function registrationFromLiteral(ts: typeof TS, sf: TS.SourceFile, literal: TS.O
   let component: string | undefined;
   let remixable = isRemixableHelperArgument(ts, literal);
   let exportable = false;
-  let routerTable = false;
   let sampleProps: Record<string, unknown> | undefined;
   let invalidSampleProps = false;
   for (const property of literal.properties) {
@@ -137,7 +133,6 @@ function registrationFromLiteral(ts: typeof TS, sf: TS.SourceFile, literal: TS.O
     if (name === "component") component = initializer.getText(sf).trim();
     if (name === "remixable" && initializer.kind === ts.SyntaxKind.TrueKeyword) remixable = true;
     if (name === "exportable" && initializer.kind === ts.SyntaxKind.TrueKeyword) exportable = true;
-    if (name === "path") routerTable = true;
     if (name === "sampleProps") {
       const parsed = staticSampleProps(ts, initializer);
       if (parsed === null) invalidSampleProps = true;
@@ -152,7 +147,6 @@ function registrationFromLiteral(ts: typeof TS, sf: TS.SourceFile, literal: TS.O
         exportable,
         invalidSampleProps,
         at: literal.getStart(sf),
-        routerTable,
         ...(sampleProps === undefined ? {} : { sampleProps }),
       }
     : null;
@@ -391,60 +385,35 @@ export async function capturePins(
         ));
         continue;
       }
-      const fallbackPresent = async (): Promise<boolean> => hasCapturedBaseline(baselineFile, registration.slot);
-      if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?$/.test(registration.component)) {
-        if (!await fallbackPresent()) {
-          result.unresolved.push(unresolved(
-            registration,
-            "inline-component",
-            `use an imported component or ${RUNTIME_CAPTURE_HINT}`,
-          ));
+      // Unresolved is only reported when no runtime-captured baseline covers the slot.
+      const skipUnresolved = async (reason: UnresolvedPinReason, hint: string): Promise<void> => {
+        if (!(await hasCapturedBaseline(baselineFile, registration.slot))) {
+          result.unresolved.push(unresolved(registration, reason, hint));
         }
+      };
+      if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?$/.test(registration.component)) {
+        await skipUnresolved("inline-component", `use an imported component or ${RUNTIME_CAPTURE_HINT}`);
         continue;
       }
       const reference = await importReferenceFor(source, registration.component);
       if (!reference) {
-        if (!await fallbackPresent()) {
-          result.unresolved.push(unresolved(
-            registration,
-            "component-not-imported",
-            `use a static import or ${RUNTIME_CAPTURE_HINT}`,
-          ));
-        }
+        await skipUnresolved("component-not-imported", `use a static import or ${RUNTIME_CAPTURE_HINT}`);
         continue;
       }
       const resolved = await resolveImportSource(file, reference.specifier, root, reference.imported);
       if (!resolved) {
-        if (!await fallbackPresent()) {
-          result.unresolved.push(unresolved(
-            registration,
-            "import-not-found",
-            `fix the import path or ${RUNTIME_CAPTURE_HINT}`,
-          ));
-        }
+        await skipUnresolved("import-not-found", `fix the import path or ${RUNTIME_CAPTURE_HINT}`);
         continue;
       }
       let realResolved: string;
       try {
         realResolved = await fs.realpath(resolved.file);
       } catch {
-        if (!await fallbackPresent()) {
-          result.unresolved.push(unresolved(
-            registration,
-            "unsafe-source",
-            `keep the component source inside the host root or ${RUNTIME_CAPTURE_HINT}`,
-          ));
-        }
+        await skipUnresolved("unsafe-source", `keep the component source inside the host root or ${RUNTIME_CAPTURE_HINT}`);
         continue;
       }
       if (!isInside(realRoot, realResolved)) {
-        if (!await fallbackPresent()) {
-          result.unresolved.push(unresolved(
-            registration,
-            "unsafe-source",
-            `keep the component source inside the host root or ${RUNTIME_CAPTURE_HINT}`,
-          ));
-        }
+        await skipUnresolved("unsafe-source", `keep the component source inside the host root or ${RUNTIME_CAPTURE_HINT}`);
         continue;
       }
       const styles = await (stylesPromise ??= captureRootStyles(root, realRoot, files, result.warnings));
@@ -479,60 +448,4 @@ export async function capturePins(
   result.drifted.sort();
   result.unresolved.sort((left, right) => left.slot.localeCompare(right.slot));
   return result;
-}
-
-export interface RemixRegistrationSite {
-  /** Absolute path of the module holding the registration literal. */
-  file: string;
-  /** Portable root-relative path of that module. */
-  path: string;
-  slot: string;
-  component: string;
-  remixable: boolean;
-  exportable: boolean;
-  /** Offset of the registration object literal's opening brace in the module source. */
-  offset: number;
-}
-
-/**
- * Every `{ name, component }` host registration site, remixable or not — the
- * init codemod's remix-offer surface. Only statically importable, root-confined
- * component references are reported (the same bar `capturePins` applies), so a
- * site that gets wrapped can always be captured by the next sync.
- */
-export async function scanRemixRegistrations(root: string): Promise<RemixRegistrationSite[]> {
-  const sites: RemixRegistrationSite[] = [];
-  const realRoot = await fs.realpath(root);
-  const files = await walk(root, (relativePath) => /\.(?:[cm]?[jt]sx?)$/u.test(relativePath) && !/\.d\.ts$/u.test(relativePath));
-  for (const file of files) {
-    const source = await fs.readFile(file, "utf8");
-    for (const registration of registrations(source, file)) {
-      if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?$/.test(registration.component)) continue;
-      // A `path` field marks a router table (`{ path, name, component }`), not a
-      // host component registration — never offer to wrap those.
-      if (registration.routerTable) continue;
-      const reference = await importReferenceFor(source, registration.component);
-      if (!reference) continue;
-      const resolved = await resolveImportSource(file, reference.specifier, root, reference.imported);
-      if (!resolved) continue;
-      let realResolved: string;
-      try {
-        realResolved = await fs.realpath(resolved.file);
-      } catch {
-        continue;
-      }
-      if (!isInside(realRoot, realResolved)) continue;
-      sites.push({
-        file,
-        path: portablePath(root, file),
-        slot: registration.slot,
-        component: registration.component,
-        remixable: registration.remixable,
-        exportable: registration.exportable,
-        offset: registration.at,
-      });
-    }
-  }
-  sites.sort((left, right) => left.path.localeCompare(right.path) || left.offset - right.offset);
-  return sites;
 }

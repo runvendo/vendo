@@ -110,77 +110,69 @@ export function composioConnector(config: {
     return { ok: response.ok, status: response.status, payload };
   }
 
-  async function fetchTools(app?: string): Promise<ComposioTool[]> {
-    const tools: ComposioTool[] = [];
+  /** Walk a cursor-paginated Composio listing to completion (fail-closed on
+   * cursor loops and runaway page counts). */
+  async function paginate(
+    path: string,
+    label: string,
+    query: (cursor?: string) => Record<string, string>,
+  ): Promise<unknown[]> {
+    const items: unknown[] = [];
     let cursor: string | undefined;
     const seenCursors = new Set<string>();
 
     for (let page = 0; page < MAX_PAGES; page += 1) {
-      const response = await composioFetch("/api/v3/tools", {
-        query: {
-          // Composio's real catalog is 1,000+ toolkits and 20,000+ tools
-          // (docs.composio.dev/toolkits). An unscoped fetch (bare `apps`)
-          // walks that whole catalog, so every page requests the API's max
-          // page size — 1000, per docs.composio.dev/reference/api-reference/
-          // tools/getTools — to keep the walk inside MAX_PAGES regardless of
-          // whatever smaller default the API would otherwise apply.
-          limit: "1000",
-          ...(app === undefined ? {} : { toolkit_slug: app }),
-          ...(cursor === undefined ? {} : { cursor }),
-        },
-      });
+      const response = await composioFetch(path, { query: query(cursor) });
       if (!response.ok) {
         const { message } = responseErrorParts(response.payload);
-        throw new Error(`Composio tools request failed with ${response.status}: ${message ?? ""}`.trim());
+        throw new Error(`${label} request failed with ${response.status}: ${message ?? ""}`.trim());
       }
       const parsed = pageParts(response.payload as ComposioPage);
-      tools.push(...(parsed.items as ComposioTool[]));
+      items.push(...parsed.items);
       cursor = parsed.nextCursor;
-      if (!cursor) return tools;
+      if (!cursor) return items;
       if (seenCursors.has(cursor)) throw new Error(`Composio pagination loop at cursor ${cursor}`);
       seenCursors.add(cursor);
     }
 
-    throw new Error(`Composio tools pagination exceeded ${MAX_PAGES} pages`);
+    throw new Error(`${label} pagination exceeded ${MAX_PAGES} pages`);
+  }
+
+  async function fetchTools(app?: string): Promise<ComposioTool[]> {
+    const items = await paginate("/api/v3/tools", "Composio tools", (cursor) => ({
+      // Composio's real catalog is 1,000+ toolkits and 20,000+ tools
+      // (docs.composio.dev/toolkits). An unscoped fetch (bare `apps`)
+      // walks that whole catalog, so every page requests the API's max
+      // page size — 1000, per docs.composio.dev/reference/api-reference/
+      // tools/getTools — to keep the walk inside MAX_PAGES regardless of
+      // whatever smaller default the API would otherwise apply.
+      limit: "1000",
+      ...(app === undefined ? {} : { toolkit_slug: app }),
+      ...(cursor === undefined ? {} : { cursor }),
+    }));
+    return items as ComposioTool[];
   }
 
   /** Connected accounts scoped to ONE subject. Every Composio read filters by
    * user_ids=subject so one principal can never observe another's accounts. */
   async function listAccounts(subject: string, connectedAccountId?: string): Promise<ConnectorAccount[]> {
+    const items = await paginate("/api/v3/connected_accounts", "Composio connected-accounts", (cursor) => ({
+      user_ids: subject,
+      ...(connectedAccountId === undefined ? {} : { connected_account_ids: connectedAccountId }),
+      ...(cursor === undefined ? {} : { cursor }),
+    }));
     const accounts: ConnectorAccount[] = [];
-    let cursor: string | undefined;
-    const seenCursors = new Set<string>();
-
-    for (let page = 0; page < MAX_PAGES; page += 1) {
-      const response = await composioFetch("/api/v3/connected_accounts", {
-        query: {
-          user_ids: subject,
-          ...(connectedAccountId === undefined ? {} : { connected_account_ids: connectedAccountId }),
-          ...(cursor === undefined ? {} : { cursor }),
-        },
+    for (const item of items as ComposioConnectedAccount[]) {
+      if (typeof item.id !== "string" || typeof item.toolkit?.slug !== "string") continue;
+      accounts.push({
+        id: item.id,
+        connector: "composio",
+        toolkit: item.toolkit.slug,
+        status: accountStatus(item.status),
+        ...(typeof item.created_at === "string" ? { createdAt: item.created_at } : {}),
       });
-      if (!response.ok) {
-        const { message } = responseErrorParts(response.payload);
-        throw new Error(`Composio connected-accounts request failed with ${response.status}: ${message ?? ""}`.trim());
-      }
-      const parsed = pageParts(response.payload as ComposioPage);
-      for (const item of parsed.items as ComposioConnectedAccount[]) {
-        if (typeof item.id !== "string" || typeof item.toolkit?.slug !== "string") continue;
-        accounts.push({
-          id: item.id,
-          connector: "composio",
-          toolkit: item.toolkit.slug,
-          status: accountStatus(item.status),
-          ...(typeof item.created_at === "string" ? { createdAt: item.created_at } : {}),
-        });
-      }
-      cursor = parsed.nextCursor;
-      if (!cursor) return accounts;
-      if (seenCursors.has(cursor)) throw new Error(`Composio pagination loop at cursor ${cursor}`);
-      seenCursors.add(cursor);
     }
-
-    throw new Error(`Composio connected-accounts pagination exceeded ${MAX_PAGES} pages`);
+    return accounts;
   }
 
   return {

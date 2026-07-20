@@ -411,11 +411,6 @@ export interface BreakingChange {
   change: "removed" | "input-narrowed" | "renamed";
 }
 
-export const breakingChangeSchema = z.object({
-  tool: z.string(),
-  change: z.enum(["removed", "input-narrowed", "renamed"]),
-}).passthrough() satisfies z.ZodType<BreakingChange>;
-
 /** 04-actions §1 */
 export interface SyncReport {
   tools: { added: string[]; removed: string[]; changed: string[] };

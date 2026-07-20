@@ -61,6 +61,17 @@ export async function walk(
   return files.sort();
 }
 
+/** Write a sync artifact only when its bytes changed (keeps mtimes stable). */
+export async function writeIfChanged(file: string, bytes: string): Promise<void> {
+  try {
+    if (await fs.readFile(file, "utf8") === bytes) return;
+  } catch {
+    // A missing artifact is created below.
+  }
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, bytes, "utf8");
+}
+
 function extendsPath(value: unknown, configDir: string): string | null {
   if (typeof value !== "string" || (!value.startsWith(".") && !path.isAbsolute(value))) return null;
   const resolved = path.resolve(configDir, value);
@@ -361,7 +372,7 @@ export async function importReferenceFor(source: string, localExpression: string
   return undefined;
 }
 
-export function limitToolName(fullName: string): string {
+function limitToolName(fullName: string): string {
   return fullName.length <= 64 ? fullName : `${fullName.slice(0, 57)}_${sha256Hex(fullName).slice(0, 6)}`;
 }
 
