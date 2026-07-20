@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { VendoAppRef, VendoApprovalRef } from "@vendoai/core";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -35,6 +35,13 @@ describe("existing-agents embeds", () => {
   });
 
   afterEach(async () => {
+    // Unmount BEFORE closing the wire. Testing-library's automatic cleanup
+    // runs in its own, later hook — so without this, a still-mounted
+    // VendoAppEmbed whose app never became servable keeps polling open()
+    // into the closing server every APP_POLL_MS, the socket never goes
+    // idle, and server.close() livelocks until the hook timeout (the CI
+    // "Hook timed out" flake; local runs won the race by luck).
+    cleanup();
     await wire.close();
   });
 
