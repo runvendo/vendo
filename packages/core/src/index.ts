@@ -20,6 +20,7 @@ export * from "./shape.js";
 export * from "./sha256.js";
 export * from "./store.js";
 export * from "./stream-parts.js";
+export * from "./tool-envelopes.js";
 export * from "./tools.js";
 export * from "./tree.js";
 export * from "./tree-v2.js";
