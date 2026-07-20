@@ -105,6 +105,40 @@ describe("applyVendoRootPaste", () => {
     );
   });
 
+  it("keeps a leading 'use client' directive first — pasted imports go after it", async () => {
+    const repoDir = await makeTempRepo();
+    await mkdir(path.join(repoDir, "app"), { recursive: true });
+    await writeFile(path.join(repoDir, "app/layout.tsx"), `"use client";\n\n${UNWRAPPED_LAYOUT}`);
+
+    const result = await applyVendoRootPaste(repoDir, "next", INIT_STDOUT);
+
+    expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
+    const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
+    // The directive must stay the first statement of the module — imports
+    // pasted ahead of it would silently demote the layout to a server
+    // component and break its hooks/browser APIs.
+    expect(layout.split(/\r?\n/)[0]).toBe('"use client";');
+    expect(layout.indexOf('"use client";')).toBeLessThan(layout.indexOf('import { VendoRoot }'));
+    expect(layout).toContain("<VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>");
+  });
+
+  it("wraps a whitespace-formatted { children } JSX expression", async () => {
+    const repoDir = await makeTempRepo();
+    await mkdir(path.join(repoDir, "app"), { recursive: true });
+    await writeFile(
+      path.join(repoDir, "app/layout.tsx"),
+      UNWRAPPED_LAYOUT.replace("<body>{children}</body>", "<body>{ children }</body>"),
+    );
+
+    const result = await applyVendoRootPaste(repoDir, "next", INIT_STDOUT);
+
+    expect(result).toMatchObject({ applied: true, file: "app/layout.tsx" });
+    const layout = await readFile(path.join(repoDir, "app/layout.tsx"), "utf8");
+    expect(layout).toContain(
+      "<body><VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot></body>",
+    );
+  });
+
   it("fails when vendo init's stdout did not print the paste instructions", async () => {
     const repoDir = await makeTempRepo();
     await mkdir(path.join(repoDir, "app"), { recursive: true });
