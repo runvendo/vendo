@@ -14,9 +14,10 @@ Run: `node docs/verification/exec-v2-wave9/live-gate.mjs` (needs
 
 ## Result: PASS (transcript: `live-gate-transcript.txt`)
 
-- **Setup 28.0s** (second run; first run of the day measured 50.7s — the time
-  is two model calls: the automation plan + the tree rebind). Box graduation
-  for the same ask costs minutes of in-box agent round trips.
+- **Setup 21.1s** (committed transcript; earlier runs of the day measured
+  28.0s and 50.7s — the time is two model calls: the automation plan + the
+  tree rebind). Box graduation for the same ask costs minutes of in-box agent
+  round trips.
 - Authored plan (model-written, validated): `host_listUnpaidInvoices` →
   `host_sendEmail` (digest body built in jsonata from the read step's real
   rows) → `vendo_apps_data_put` into the declared `unpaid-invoices`

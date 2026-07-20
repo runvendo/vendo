@@ -9,8 +9,8 @@ what shipped.
 
 1. **Tree app**: no server. The v2 tree document, rendered by the
    host-embedded renderer, interactive via `$state`, code islands, and guarded
-   host tools. Most apps stay here. Server-shaped needs a tree app picks up
-   (schedules, away runs) usually ride an **automation** on the same document
+   host tools. Most apps stay here. Server-shaped needs that a tree app picks
+   up (schedules, away runs) usually ride an **automation** on the same document
    — a trigger the automations engine fires — not a machine; see the
    escalation ladder below.
 2. **Tree app + machine**: the same tree UI, plus a persistent per-app sandbox

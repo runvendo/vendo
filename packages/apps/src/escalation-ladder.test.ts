@@ -176,6 +176,25 @@ describe("rung (a): steps automation — setup in seconds, no machine", () => {
     expect(tree.queries?.some((query) => query.tool === "vendo_apps_data_list")).toBe(true);
   });
 
+  it("rejects a plan that declares a results collection no step publishes, then accepts the repair", async () => {
+    const unpublished = JSON.stringify({
+      resultsCollection: "digest",
+      trigger: {
+        on: { kind: "schedule", cron: "0 8 * * *" },
+        run: { kind: "steps", steps: [{ id: "invoices", tool: "host_list_unpaid_invoices" }] },
+      },
+    });
+    const { store, runtime } = setup({ responses: [unpublished, DIGEST_PLAN, RESULTS_REBIND_EDIT] });
+    await seedAppRow(store, treeApp(), "user_ada");
+
+    const result = await runtime.edit("app_ladder", "email me a digest of unpaid invoices at 8am", ctx());
+
+    expect(result.failure).toBeUndefined();
+    // The accepted repair publishes into the declared collection.
+    const steps = (result.app.trigger?.run as { steps: Array<{ tool: string }> }).steps;
+    expect(steps.some((step) => step.tool === "vendo_apps_data_put")).toBe(true);
+  });
+
   it("rejects a plan whose steps name unknown tools, then accepts the repair", async () => {
     const badPlan = JSON.stringify({
       trigger: {

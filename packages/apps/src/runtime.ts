@@ -1463,6 +1463,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       try {
         const armed = await config.armAutomation(previous.id, ctx);
         if (armed.missing.length > 0) pendingGrants = structuredClone(armed.missing);
+        // A seam that answers without arming is the same miss as a thrown one:
+        // the trigger must never sit silently disarmed.
+        if (!armed.enabled) {
+          issues.push("the automation was authored but the arming seam left it disabled — enable it explicitly via the automations engine (automations.enable / POST /automations/:appId/enable)");
+        }
       } catch (error) {
         // Never a silently dead automation: the trigger is on the document but
         // disarmed — say so, with the arming surface to use.

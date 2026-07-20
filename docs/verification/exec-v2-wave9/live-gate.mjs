@@ -189,6 +189,10 @@ if (!visible) {
   die("the digest result is not visible in the opened tree payload");
 }
 if (emails.length === 0) die("the 'email me' effect never fired (host_sendEmail was available)");
+// The email must carry the real digest, not an empty or unrelated body.
+if (!emails.some((email) => JSON.stringify(email).includes("Acme Robotics"))) {
+  die("the sent email does not carry the host tool's real invoice data");
+}
 
 // ── 5. ZERO sandbox creation ───────────────────────────────────────────────
 const after = await vendo.apps.get(seeded.id, ctx);

@@ -180,34 +180,56 @@ const validatePlan = (
   if (trigger.run.kind !== input.mode) {
     issues.push(`run.kind must be "${input.mode}" for this instruction`);
   }
+  const resultsCollection = candidate.resultsCollection;
+  if (resultsCollection !== undefined) {
+    if (typeof resultsCollection !== "string" || !COLLECTION_NAME.test(resultsCollection) || resultsCollection === "state") {
+      issues.push('resultsCollection must be a short bare identifier (and never the reserved "state")');
+    }
+  }
   if (trigger.run.kind === "steps") {
     const steps = trigger.run.steps;
     if (steps.length === 0) issues.push("steps must not be empty");
+    // The planning surface is the whole legal tool universe here: fn: refs
+    // are NOT accepted — the ladder only authors automations for machine-less
+    // apps this wave, and a machine-less app has no fn: to call.
     const known = new Set(plannerTools(input.tools).map(({ name }) => name));
     const seen = new Set<string>();
+    const priorIds = new Set<string>();
+    let publishesDeclaredCollection = false;
     for (const step of steps) {
       if (step.id.trim() === "" || seen.has(step.id)) {
         issues.push(`step ids must be non-empty and unique ("${step.id}")`);
       }
       seen.add(step.id);
-      if (!step.tool.startsWith("fn:") && !known.has(step.tool)) {
+      if (!known.has(step.tool)) {
         issues.push(`step "${step.id}" names unknown tool "${step.tool}"; the available tools are: ${[...known].join(", ") || "(none)"}`);
       }
-      // Law 1 for automations: a published result must be BUILT from a prior
+      // Law 1 for automations: a published result must be BUILT from a PRIOR
       // step's output (or the trigger event) — a hand-typed data payload is
-      // invented data on the board.
+      // invented data on the board. Quoted jsonata string literals are
+      // stripped first so 'a steps guide' cannot smuggle past the check, and
+      // the referenced step id must be one that ran EARLIER (a bare "steps"
+      // token or a forward reference publishes nothing at run time).
       if (step.tool === RESULTS_TOOL) {
-        const dataExpression = step.args?.data ?? "";
-        if (!/\b(steps|event)\b/.test(dataExpression)) {
-          issues.push(`step "${step.id}" publishes hand-typed data — the "${RESULTS_TOOL}" data expression must derive from a prior step's output (steps.<id>...) or the trigger event; add the read step that fetches the live data first`);
+        const dataExpression = (step.args?.data ?? "").replace(/'[^']*'/g, "");
+        const referencedPrior = [...dataExpression.matchAll(/\bsteps\.([A-Za-z_][\w-]*)/g)]
+          .some((match) => priorIds.has(match[1] as string));
+        if (!referencedPrior && !/\bevent\b/.test(dataExpression)) {
+          issues.push(`step "${step.id}" publishes hand-typed data — the "${RESULTS_TOOL}" data expression must derive from an EARLIER step's output (steps.<priorStepId>...) or the trigger event; add the read step that fetches the live data first`);
+        }
+        if (typeof resultsCollection === "string"
+          && step.args?.collection?.trim() === `'${resultsCollection}'`
+          && step.args?.appId?.trim() === `'${input.appId}'`) {
+          publishesDeclaredCollection = true;
         }
       }
+      priorIds.add(step.id);
     }
-  }
-  const resultsCollection = candidate.resultsCollection;
-  if (resultsCollection !== undefined) {
-    if (typeof resultsCollection !== "string" || !COLLECTION_NAME.test(resultsCollection) || resultsCollection === "state") {
-      issues.push('resultsCollection must be a short bare identifier (and never the reserved "state")');
+    // A declared results collection the run never writes leaves the rebound
+    // board permanently empty — require the publish step to target exactly
+    // this app and that collection (literal jsonata strings).
+    if (typeof resultsCollection === "string" && !publishesDeclaredCollection) {
+      issues.push(`resultsCollection "${resultsCollection}" is declared but no step publishes it — add a "${RESULTS_TOOL}" step with args {"appId":"'${input.appId}'","collection":"'${resultsCollection}'","id":"'latest'","data":...}`);
     }
   }
   const name = candidate.name;
