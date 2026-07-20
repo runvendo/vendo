@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { PLAYGROUND_BUNDLE_SOURCE } from "./playground/bundle.gen.js";
+import { EMBED_BUNDLE_SOURCE } from "./playground/embed-bundle.gen.js";
 import { consoleOutput, type Output } from "./shared.js";
 
 /**
@@ -44,6 +45,18 @@ export async function startPlaygroundServer(options: { port?: number }): Promise
     if (path === "/playground.js") {
       response.writeHead(200, { "content-type": "application/javascript; charset=utf-8", "cache-control": "no-store" });
       response.end(PLAYGROUND_BUNDLE_SOURCE);
+      return;
+    }
+    // The docs inline-embed bundle (window.VendoDocsEmbed) — served here so
+    // self-hosted docs/pages can mount surfaces without vendo.run. CORS-open:
+    // it's a public static script by design.
+    if (path === "/embed.js") {
+      response.writeHead(200, {
+        "content-type": "application/javascript; charset=utf-8",
+        "cache-control": "no-store",
+        "access-control-allow-origin": "*",
+      });
+      response.end(EMBED_BUNDLE_SOURCE);
       return;
     }
     if (path === "/favicon.ico") {
