@@ -1,6 +1,8 @@
-// VENDO — touch 1 of 4: the Vendo composition. One createVendo call; the
+// --- vendo: touch 1 of 4 — the Vendo composition. One createVendo call; the
 // weather agent's loop, model, and UI stay Mastra's — Vendo brings guarded
 // host actions, generated UI, and approvals ("Vendo minus the conversation").
+// Action descriptors (name, schema, risk) live in `.vendo/tools.json`, exactly
+// where `vendo init` extracts them in a real app.
 import type { Principal } from "@vendoai/core";
 import { createVendo, type Vendo } from "@vendoai/vendo/server";
 import { getWeather, sendTripReport } from "./vendo-actions";

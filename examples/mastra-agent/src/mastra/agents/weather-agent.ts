@@ -1,8 +1,9 @@
 import { Agent } from '@mastra/core/agent';
 import { Memory } from '@mastra/memory';
-// VENDO — touch 3 of 4: the guarded tool pack, spread into the agent's tools.
+// --- vendo: touch 3 of 4 — the guarded tool pack, spread into the agent's tools.
 import { vendoMastraTools } from '@vendoai/vendo/mastra';
 import { vendo } from '../../lib/vendo';
+// --- /vendo
 import { weatherTool } from '../tools/weather-tool';
 
 export const weatherAgent = new Agent({
@@ -31,9 +32,12 @@ user resolves in the chat.`,
   // #9005 / #7823 — history replay drops Responses-API reasoning items).
   // gpt-4.1-mini is the documented workaround until that lands.
   model: 'openai/gpt-4.1-mini',
-  // VENDO — touch 3 of 4 (continued): the starter's weatherTool plus the
-  // guard-wrapped Vendo pack (vendo_send_trip_report, vendo_create_app,
-  // vendo_delegate). Every vendo_* call routes policy → approval → audit.
+  // --- vendo: touch 3 of 4 (continued) — the starter's weatherTool plus the
+  // guard-wrapped pack (vendo_get_weather, vendo_send_trip_report,
+  // vendo_create_app, vendo_delegate). Every vendo_* call routes
+  // policy → approval → audit. vendoMastraTools returns a Promise, hence
+  // Mastra's tools-as-function form.
   tools: async () => ({ weatherTool, ...(await vendoMastraTools(vendo)) }),
+  // --- /vendo
   memory: new Memory(),
 });

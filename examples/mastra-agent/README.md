@@ -24,7 +24,8 @@ Docs: the "Use with your existing agent" section of the Vendo docs site.
 
 Everything else is the starter (`src/mastra/**` is `mastra init`'s output —
 only the agent file carries the marked diff) plus the guide's chat route and a
-plain `useChat` page. All Vendo lines are marked with `// VENDO` comments.
+plain `useChat` page. All Vendo lines sit inside `--- vendo:` … `--- /vendo`
+comment fences (same convention as `examples/ai-sdk-agent`).
 
 Notes on the seam:
 

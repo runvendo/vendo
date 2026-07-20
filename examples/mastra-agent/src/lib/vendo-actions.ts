@@ -1,6 +1,6 @@
-// VENDO — the two host actions .vendo/tools.json registers: the weather
-// lookup (risk: "read", so generated apps can query live data) and a
-// deliberately risky send action (risk: "write") that exercises Vendo's
+// --- vendo: the two host actions `.vendo/tools.json` registers — the weather
+// lookup (risk `read`, so generated apps can query live data) and a
+// deliberately risky send action (risk `write`) that exercises Vendo's
 // approval flow. In a real product sendTripReport would email; the demo
 // records it and logs.
 

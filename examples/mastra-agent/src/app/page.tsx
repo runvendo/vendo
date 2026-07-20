@@ -1,11 +1,10 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-// VENDO — touch 4 of 4: wrap the chat in VendoProvider (pointed at the wire
-// route) and hand every tool output to <VendoToolResult>. App refs render the
-// live generated app inline, approval refs render the approve/deny card, and
-// plain data (like the starter's weatherTool output) renders nothing.
+// --- vendo: the provider that points the embeds at the wire, and the one
+// dispatcher component that turns a `vendo_*` tool output into the right embed.
 import { VendoProvider, VendoToolResult } from "@vendoai/ui";
+// --- /vendo
 import { DefaultChatTransport } from "ai";
 import { useState } from "react";
 
@@ -18,7 +17,10 @@ export default function Chat() {
   });
 
   return (
+    // --- vendo: wrap the chat once — auth rides your session cookie, theme
+    // rides the --vendo-* tokens. Everything inside is the plain chat page.
     <VendoProvider>
+      {/* --- /vendo */}
       <div className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col bg-white font-sans dark:bg-black">
         <header className="border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
           <h1 className="text-lg font-semibold text-black dark:text-zinc-50">Weather Agent</h1>
@@ -46,19 +48,24 @@ export default function Chat() {
                     </p>
                   );
                 }
+                // --- vendo: tool calls stream as dynamic-tool / tool-* parts.
+                // Hand the finished output to <VendoToolResult> — it renders
+                // the app embed for `vendo/app-ref@1`, the approval card for
+                // `vendo/approval-ref@1`, and nothing for plain data (like the
+                // starter's own weatherTool output).
                 if (part.type === "dynamic-tool" || part.type.startsWith("tool-")) {
                   const tool = part as ToolLikePart;
                   const toolName = tool.toolName ?? part.type.slice("tool-".length);
                   return (
                     <div key={index} className="flex flex-col gap-2">
                       <span className="w-fit rounded-full border border-zinc-200 px-2 py-0.5 font-mono text-xs text-zinc-500 dark:border-zinc-800">
-                        {toolName}
-                        {tool.state === "output-available" ? "" : " …"}
+                        {tool.state === "output-available" ? toolName : `Running ${toolName}…`}
                       </span>
                       {tool.state === "output-available" ? <VendoToolResult output={tool.output} /> : null}
                     </div>
                   );
                 }
+                // --- /vendo
                 return null;
               })}
             </div>

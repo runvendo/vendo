@@ -4,18 +4,21 @@ import { handleChatStream } from '@mastra/ai-sdk';
 import { RequestContext } from '@mastra/core/request-context';
 import { createUIMessageStreamResponse } from 'ai';
 import { mastra } from '@/mastra';
-// VENDO — the caller's principal rides Mastra's request context; a vendo_*
+// --- vendo: the caller's principal rides Mastra's request context; a vendo_*
 // call without one fails closed. Set server-side, never from the client.
 import { VENDO_PRINCIPAL_KEY } from '@vendoai/vendo/mastra';
 import { DEMO_PRINCIPAL, vendo } from '@/lib/vendo';
+// --- /vendo
 
 export async function POST(req: Request) {
   const params = await req.json();
 
-  // VENDO — guarded tools hit the store before any wire request does.
+  // --- vendo: guarded tools hit the store before any wire request does, and
+  // every vendo_* call this turn runs as the (server-resolved) demo user.
   await vendo.store.ensureSchema();
   const requestContext = new RequestContext();
   requestContext.set(VENDO_PRINCIPAL_KEY, DEMO_PRINCIPAL);
+  // --- /vendo
 
   const stream = await handleChatStream({
     version: 'v6',
