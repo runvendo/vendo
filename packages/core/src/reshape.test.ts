@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   applyReshape,
+  DEPRECATED_FORMAT_KINDS,
+  DEPRECATED_RESHAPE_OPS,
   findDeprecatedReshapeUsage,
   findInvalidReshape,
   RESHAPE_MAX_STEPS,
+  RESHAPE_OPS,
   reshapeShape,
   type ReshapeStep,
 } from "./reshape.js";
@@ -514,5 +517,34 @@ describe("findDeprecatedReshapeUsage", () => {
     expect(applyReshape([{ id: "a", name: "Checking" }], [step("asOptions", "id", "name")]))
       .toEqual({ ok: true, value: [{ value: "a", label: "Checking" }] });
     expect(applyReshape(285000, [step("format", "currencyCents")])).toEqual({ ok: true, value: "$2,850.00" });
+  });
+});
+
+/** W5a (v3 spec §Dialect retirement) — "no new reshape ops ever". */
+describe("frozen reshape op registry", () => {
+  it("the registry is frozen at the retirement-era set — no new op can be added silently", () => {
+    // v3 spec §Also (Dialect retirement): deprecate asOptions/template/
+    // currencyCents/dotted keys (Kit makes them unnecessary); NO NEW RESHAPE
+    // OPS EVER. If this test is failing because you added an op: don't —
+    // "pressure for a new op = a missing Kit prop or an island case".
+    // Extend the Kit's native props or write an island instead.
+    expect(RESHAPE_OPS).toEqual([
+      "pick",
+      "rename",
+      "asPoints",
+      "asOptions",
+      "format",
+      "template",
+      "sum",
+      "avg",
+      "min",
+      "max",
+      "count",
+    ]);
+  });
+
+  it("the deprecated subset is exactly the retired dialect", () => {
+    expect(DEPRECATED_RESHAPE_OPS).toEqual(["asOptions", "template"]);
+    expect(DEPRECATED_FORMAT_KINDS).toEqual(["currencyCents"]);
   });
 });
