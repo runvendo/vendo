@@ -130,7 +130,9 @@ async function setup() {
     await store.close();
     await rm(dataDir, { recursive: true, force: true });
   });
-  const vendo = composeVendo({ model: vendoModel.model, store });
+  // The example pins a newer `ai` than the umbrella's dev pin, so the two
+  // LanguageModel type identities differ under tsc; runtime-compatible.
+  const vendo = composeVendo({ model: vendoModel.model as never, store });
   await vendo.store.ensureSchema();
   return { vendo };
 }
