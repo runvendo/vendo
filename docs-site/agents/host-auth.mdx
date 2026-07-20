@@ -6,9 +6,10 @@ description: "The auth presets vendo init can wire, how to detect which one a ho
 One `auth` key fills all three identity seams `createVendo` needs: the
 request-to-principal resolver, the away/MCP `actAs` seam, and the MCP door's
 OAuth adapter. `vendo init --auth <preset>` answers the auth question
-non-interactively. The presets are the zero-argument exports of
-`@vendoai/vendo/server`: `authJs()`, `clerk()`, `supabase()`, `auth0()`, plus
-`jwt({ secret })` and `none`.
+non-interactively. The presets are the zero-argument exports of their own
+`@vendoai/vendo/auth/<preset>` subpath — `authJs()` from `/auth/auth-js`,
+`clerk()` from `/auth/clerk`, `supabase()` from `/auth/supabase`, `auth0()`
+from `/auth/auth0` — plus `jwt({ secret })` from `/auth/jwt` and `none`.
 
 ## Detect which one the host uses
 

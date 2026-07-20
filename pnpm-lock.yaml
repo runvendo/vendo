@@ -882,6 +882,9 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../core
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
     devDependencies:
       '@ai-sdk/anthropic':
         specifier: 3.0.12
@@ -1094,7 +1097,7 @@ importers:
         specifier: ^3.35.0
         version: 3.35.1
       zod:
-        specifier: ^3.25.0
+        specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
       '@axe-core/playwright':

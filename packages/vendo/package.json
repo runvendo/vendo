@@ -54,6 +54,26 @@
     "./mastra": {
       "types": "./dist/mastra.d.ts",
       "default": "./dist/mastra.js"
+    },
+    "./auth/auth0": {
+      "types": "./dist/auth-presets/auth0.d.ts",
+      "default": "./dist/auth-presets/auth0.js"
+    },
+    "./auth/auth-js": {
+      "types": "./dist/auth-presets/auth-js.d.ts",
+      "default": "./dist/auth-presets/auth-js.js"
+    },
+    "./auth/clerk": {
+      "types": "./dist/auth-presets/clerk.d.ts",
+      "default": "./dist/auth-presets/clerk.js"
+    },
+    "./auth/jwt": {
+      "types": "./dist/auth-presets/jwt.d.ts",
+      "default": "./dist/auth-presets/jwt.js"
+    },
+    "./auth/supabase": {
+      "types": "./dist/auth-presets/supabase.d.ts",
+      "default": "./dist/auth-presets/supabase.js"
     }
   },
   "files": [

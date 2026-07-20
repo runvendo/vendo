@@ -31,15 +31,31 @@ function hasShellEnvAssignment(words: readonly string[], key: string): boolean {
   return words.some((word) => word.startsWith(`${key}=`));
 }
 
+/** pnpm 11 defaults strictDepBuilds/minimumReleaseAge on; without these config
+ * flags a bootstrap install of a repo with native build-script deps (sharp,
+ * prisma, ...) fails before the harness ever gets to inject Vendo. This is
+ * the same accommodation `normalizePostInjectionInstallCommand` already
+ * makes (ENG-332); the bootstrap path just never got it. Defaulted here
+ * (rather than threaded through every call site) so the fix applies to every
+ * pnpm bootstrap install command in the corpus manifest without touching
+ * bootstrap.ts. */
+const BOOTSTRAP_PNPM11_CONFIG_ARGS: readonly string[] = [
+  "--config.minimumReleaseAge=0",
+  "--config.dangerouslyAllowAllBuilds=true",
+];
+
 export function normalizeBootstrapInstallCommand(
   command: string,
-  options: { dropIgnoreWorkspace?: boolean } = {},
+  options: { dropIgnoreWorkspace?: boolean; pnpmConfig?: readonly string[] } = {},
 ): NormalizedInstallCommand {
   const words = shellWords(command);
   const pnpmIndex = words.indexOf("pnpm");
   if (pnpmIndex >= 0 && words[pnpmIndex + 1] === "install") {
+    const configArgs = (options.pnpmConfig ?? BOOTSTRAP_PNPM11_CONFIG_ARGS).filter((arg) => !words.includes(arg));
     const normalized = [
-      ...words.slice(0, pnpmIndex + 2),
+      ...words.slice(0, pnpmIndex + 1),
+      ...configArgs,
+      words[pnpmIndex + 1],
       ...withoutPnpmFrozenFlags(words.slice(pnpmIndex + 2), options),
     ].join(" ");
     return { command: normalized, changed: normalized !== command.trim() };

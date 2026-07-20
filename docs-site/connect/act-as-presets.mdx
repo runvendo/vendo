@@ -14,7 +14,8 @@ Start here. Pass a named preset as `auth` and it fills `principal`, `actAs`,
 and the door's `oauth` seam from one config key:
 
 ```ts
-import { authJs, createVendo } from "@vendoai/vendo/server";
+import { authJs } from "@vendoai/vendo/auth/auth-js";
+import { createVendo } from "@vendoai/vendo/server";
 
 export const vendo = createVendo({ model, auth: authJs() });
 ```
@@ -106,7 +107,7 @@ object instead — pass its `actAs` half.
 
 ```ts
 import { createVendo } from "@vendoai/vendo/server";
-import { authJsPreset } from "@vendoai/actions/presets";
+import { authJsPreset } from "@vendoai/actions/presets/auth-js";
 
 export const vendo = createVendo({
   model,
