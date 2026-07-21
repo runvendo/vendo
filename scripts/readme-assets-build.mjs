@@ -20,7 +20,8 @@
 // Text handling notes (read before touching the regex-based tag walker):
 //   - Every source <text> element is plain text with no <tspan> children.
 //     If one ever appears, this script deliberately throws rather than
-//     half-supporting it — see assertNoNestedMarkup().
+//     half-supporting it — see the nested-markup check inlined in
+//     findTextReplacements() (the "next tag must be </text>" assertion).
 //   - font-family is sometimes set on an ancestor <g> instead of the
 //     <text> itself (banner.svg's "Backed by / Y / Combinator" run). The
 //     tag walker tracks a small ancestor-attribute stack to resolve it.
@@ -29,9 +30,9 @@
 //     static path, so we hand-draw a 5-point star polygon sized to the
 //     text's cap height and splice it into the glyph run. Every other
 //     character used in these sources (including the · middot) resolved
-//     to a real glyph in both Onest and Geist Mono — verified by the
-//     assertGlyphOrKnownSubstitute() check below, which throws loudly for
-//     any *other* missing glyph instead of silently mis-rendering it.
+//     to a real glyph in both Onest and Geist Mono — verified by
+//     resolveGlyph() below, which throws loudly for any *other* missing
+//     glyph instead of silently mis-rendering it.
 
 import { readFileSync, writeFileSync, copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
@@ -318,7 +319,10 @@ function starPathD(cx, baselineY, capHeightPx) {
  * unresolvable that isn't the known ★-in-Geist-Mono gap. */
 function resolveGlyph(char, font, filename) {
   const glyph = font.charToGlyph(char);
-  if (glyph.index !== 0 || char === ' ') {
+  // Verified: space (U+0020) maps to a real, non-.notdef glyph in all five
+  // loaded font files (Onest 500/700/800, Geist Mono 400/600) — no
+  // exemption needed here.
+  if (glyph.index !== 0) {
     return { kind: 'glyph', glyph };
   }
   if (char === '★') {
