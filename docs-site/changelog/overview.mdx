@@ -38,7 +38,7 @@ custom surfaces. Chrome falls back to prettified ids and `Key: value`
 previews when no metadata is supplied, collapses consecutive identical
 chips into a single entry with an `×N` count, and no longer prints a
 fabricated context byline on the in-thread approval card. See
-[Tool labels](/connect/tool-labels).
+[Tool labels](/ui/components#tool-labels).
 
 ## Fixes
 
@@ -277,7 +277,7 @@ column instead of loading every thread's full message array, so
 door with `createVendo({ mcp: true, oauth })` to serve your host tools out
 to MCP clients. Discovery, OAuth registration, and token endpoints mount
 alongside the existing wire, and are routed ahead of the CSRF gate so
-form-encoded OAuth requests reach the door cleanly. See [Connectors](/capabilities/integrations)
+form-encoded OAuth requests reach the door cleanly. See [Connectors](/capabilities/connected-accounts#connectors)
 and the [quickstart](/quickstart) for setup.
 
 **Authenticated host tool calls from MCP.** MCP clients have no host

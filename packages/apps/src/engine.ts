@@ -93,7 +93,10 @@ export interface GenerationDependencies {
   /** The composition-normalized catalog (01 §14): propsJsonSchema is derived. */
   catalog: NormalizedCatalog;
   theme?: VendoTheme;
-  designRules?: string;
+  /** Host design rules for the generation prompt. The function form is
+   *  resolved every time prompt sections are built, so a per-call source
+   *  (e.g. `.vendo/design-rules.md`) is re-read on each create/edit. */
+  designRules?: string | (() => string | undefined);
   pinBaselines?: readonly PinBaseline[];
   /** v2 spec §3 — shape-card outputs keyed by tool; when present, create and
    *  edit compiles type-check bindings and surface shape-mismatch repair. */
@@ -261,7 +264,7 @@ const generationPromptSections = (deps: GenerationDependencies): GenerationPromp
   content: `THEME TOKENS:\n${JSON.stringify(deps.theme ?? null, null, 2)}`,
 }, {
   id: "design-rules",
-  content: `HOST DESIGN RULES:\n${deps.designRules?.trim() || "(none provided)"}`,
+  content: `HOST DESIGN RULES:\n${(typeof deps.designRules === "function" ? deps.designRules() : deps.designRules)?.trim() || "(none provided)"}`,
 }, {
   id: "remixable-slots",
   content: `REMIXABLE HOST SLOTS:
@@ -1350,10 +1353,17 @@ const logDeprecatedDialect = (document: GeneratedAppDocument): GeneratedAppDocum
   return document;
 };
 
+/** A provider-form designRules is resolved ONCE per create/edit, so the
+ *  paint/retry/repair prompts within one generation never mix rule sets; the
+ *  next generation re-resolves. */
+const snapshotDesignRules = (deps: GenerationDependencies): GenerationDependencies =>
+  typeof deps.designRules === "function" ? { ...deps, designRules: deps.designRules() } : deps;
+
 /** 06-apps §§2,5; v2 spec §§2,4 — wire-backed rung-1 generation and
  *  two-dialect edit planning. */
 export const modelEngine: GenerationEngine = {
-  async create(input, deps) {
+  async create(input, rawDeps) {
+    const deps = snapshotDesignRules(rawDeps);
     const startedAt = Date.now();
     const hostComponents = deps.catalog.map(({ name }) => name);
     const basePrompt = `TASK: CREATE_APP\nUSER_REQUEST: ${input.prompt}`;
@@ -1465,7 +1475,7 @@ export const modelEngine: GenerationEngine = {
     // execution-v2 Wave 3 — the engine only patches the tree. Server work is
     // the in-box agent's job (graduation, runtime.machine.editApp); the tree
     // gains its fn: bindings through this same tree-edit path afterward.
-    return editTree(input, deps);
+    return editTree(input, snapshotDesignRules(deps));
   },
 };
 

@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/bench",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Permanent perf-budget gate and honest latency measurements for the Vendo v0 blocks. Not published.",
   "type": "module",

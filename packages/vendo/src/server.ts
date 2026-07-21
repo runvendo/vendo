@@ -308,6 +308,13 @@ export interface CreateVendoConfig {
   apps?: {
     experimentalServedApps?: boolean;
     experimentalMachines?: boolean;
+    /** Host design rules for app generation (spec 2026-07-20): the same prose
+        `.vendo/design-rules.md` carries, for hosts that prefer programmatic
+        config. A non-blank string wins over the file and is fixed for the
+        instance lifetime; unset/blank falls through to a PER-GENERATION read
+        of the file, so editing it applies to the next create/edit without a
+        restart. */
+    designRules?: string;
   };
 }
 
@@ -658,12 +665,23 @@ function isJsonRequest(request: Request): boolean {
     composition works without them; on non-Node runtimes they just stay unset).
     Reads `node:fs` through the runtime built-in accessor so this module carries
     NO static Node import and still loads/bundles for edge/Worker targets. */
-function dotVendoFile(name: string): string | undefined {
+function dotVendoFile(name: string, root?: string): string | undefined {
   try {
     const proc = (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown } }).process;
     const fs = proc?.getBuiltinModule?.("node:fs") as typeof import("node:fs") | undefined;
     if (fs === undefined) return undefined;
-    return fs.readFileSync(`.vendo/${name}`, "utf8");
+    return fs.readFileSync(`${root === undefined ? "." : root}/.vendo/${name}`, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+/** The compose-time project root for .vendo reads that happen LATER (the
+    per-generation design-rules read): pinning it keeps a host that chdirs
+    mid-run reading the same project every other .vendo input came from. */
+function dotVendoRoot(): string | undefined {
+  try {
+    return (globalThis as { process?: { cwd?: () => string } }).process?.cwd?.();
   } catch {
     return undefined;
   }
@@ -1105,7 +1123,14 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const byoApprovals = createByoApprovals({ guard, tools: boundTools, store });
   const parkedCallTtlMs = validateParkedCallTtl(config.approvals);
   const theme = dotVendoTheme();
-  const designRules = dotVendoFile("design-rules.md");
+  // App design rules (spec 2026-07-20): explicit config wins; otherwise the
+  // file is re-read per generation (from the compose-time root) so brief
+  // tuning never needs a restart.
+  const configDesignRules = config.apps?.designRules?.trim();
+  const designRulesRoot = dotVendoRoot();
+  const designRules = configDesignRules
+    ? configDesignRules
+    : () => dotVendoFile("design-rules.md", designRulesRoot);
   const pinBaselines = dotVendoPinBaselines();
   // W3 — .vendo/semantics.json (field semantics + domain manifest), written
   // by `vendo sync`, host-edited, treated as generation fact. Malformed →
@@ -1156,10 +1181,14 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     if (cloud !== undefined) {
       // The gateway base mirrors devModel's vendo-cloud rung: `<console>/api/v1`.
       const base = (cloud.baseUrl ?? "https://console.vendo.run").replace(/\/+$/, "");
+      // The gateway serves curated aliases only (vendo-default / vendo-fast /
+      // vendo-strong); the box harness's own default is a raw claude-* id the
+      // gateway would grace-remap, so pin the alias unless the operator chose
+      // a model via VENDO_INFERENCE_MODEL.
       return {
         url: base.endsWith("/api/v1") ? base : `${base}/api/v1`,
         key: cloud.apiKey,
-        ...(model === undefined ? {} : { model }),
+        model: model ?? "vendo-default",
       };
     }
     return undefined;
@@ -1244,7 +1273,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     },
     ...(config.paint === undefined ? {} : { paint: config.paint }),
     ...(theme === undefined ? {} : { theme }),
-    ...(designRules === undefined ? {} : { designRules }),
+    designRules,
     ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
     ...(semanticsFile === undefined ? {} : { semantics: semanticsFile.tools, domains: semanticsFile.domains }),
     secrets: config.secrets ?? envSecrets(),

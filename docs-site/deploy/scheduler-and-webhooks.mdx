@@ -1,7 +1,12 @@
 ---
-title: "Scheduler and webhooks: cron, timers, and event ingestion"
+title: "Automations and webhooks"
+sidebarTitle: "Automations"
 description: "How Vendo drives UTC cron schedules and duration timers, ingests host events, and verifies external webhook triggers for the automations block."
 ---
+
+Vendo fires automations on a schedule, in response to a host event, or from
+a verified external webhook. This page covers all three triggers plus how
+to stop a run that is already in flight.
 
 ## Schedules
 
@@ -13,24 +18,24 @@ Authorization: Bearer <secret>
 ```
 
 Schedules support exactly one of a five-field `cron`, a duration such as
-`15m`, or a one-shot UTC timestamp. Cron evaluates in UTC. If the host misses a
-window, the next tick fires once and never back-fills.
+`15m`, or a one-shot UTC timestamp. Cron evaluates in UTC. If the host misses
+a window, the next tick fires once and never back-fills.
 
-The bearer is the host-configured `VENDO_TICK_SECRET`. Point any external cron
-at it — Vercel cron, a GitHub Actions schedule, or crontab — as often as you
-like: firing is idempotent within a cron window, so a double-hit never
+The bearer is the host-configured `VENDO_TICK_SECRET`. Point any external
+cron at it (Vercel cron, a GitHub Actions schedule, or crontab) as often as
+you like: firing is idempotent within a cron window, so a double-hit never
 double-runs anything.
 
 ## Machine app schedules
 
 The same tick drives graduated apps' machines. An app whose box ships a
-`vendo.json` manifest declaring schedules —
+`vendo.json` manifest declaring schedules:
 
 ```json
 { "schedules": [{ "cron": "0 8 * * *", "fn": "chaseInvoices" }] }
 ```
 
-— gets each due target fired as `POST /fn/<name>` on its machine: the tick
+gets each due target fired as `POST /fn/<name>` on its machine: the tick
 wakes the machine, posts the fn as the app owner's away execution, records
 last-fired state, and the machine goes back to sleep on the normal idle
 policy. Due-ness is computed from store-cached state, so a tick never wakes a

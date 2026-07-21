@@ -1,6 +1,6 @@
 {
   "name": "@vendoai-fixtures/integration",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Permanent cross-block integration suite: boots the REAL composed umbrella (createVendo) against the fixture host app and drives whole-product user journeys through the public wire over real HTTP, asserting real side effects.",
   "type": "module",

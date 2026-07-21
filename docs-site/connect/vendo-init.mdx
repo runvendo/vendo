@@ -1,5 +1,6 @@
 ---
 title: "vendo init: scan, scaffold, and wire your app"
+sidebarTitle: "vendo init"
 description: "How vendo init scans your app, scaffolds the two-file surface and the .vendo contract with zero questions on the happy path, and how --agent prints a read-only plan instead."
 ---
 
@@ -51,19 +52,14 @@ re-running init on an unchanged surface leaves an empty diff. See
 runtime rules.
 
 The one line init never writes is the `<VendoRoot>` wrap around your app root
-(or client entry) — it prints the exact import and wrap lines for you to paste.
+(or client entry). It prints the exact import and wrap lines for you to paste.
 
-## Auth detection
+## How detection decides
 
-Init reads `package.json` and detects one auth family: `next-auth`/`@auth/*`
-(authJs), `@clerk/*`, `@supabase/*`, or `@auth0/*`. In an interactive run a
-single detected family gets one `[Y/n]` confirm before anything is written;
-decline it, or have several or none detected, and init stays anonymous and
-prints the exact one-line `auth:` addition for your composition. Pass
-`--auth <preset>` to answer without the prompt. See
-[Host auth](/agents/host-auth) for the presets and when to pick each.
+Init makes two independent, dependency-based calls before it writes anything:
+which framework to scaffold, and which auth family to wire.
 
-## Framework detection
+### Framework
 
 Init detects two frameworks by dependency and scaffolds only what applies:
 
@@ -75,22 +71,32 @@ Init detects two frameworks by dependency and scaffolds only what applies:
   `<VendoRoot>`. `vendo doctor` reports broken until both are done.
 
 Init checks `next` first, so an app with both dependencies gets the Next
-scaffold. Interactively, a host with neither is treated as Next. A
-non-interactive run (`--yes` or no TTY) with no detected framework errors and
-asks for `--framework` rather than guessing. For other runtimes (Fastify, Hono,
-Bun), follow the Express shape by hand — see
-[Quickstart: Express and other JavaScript servers](/quickstart-node).
+scaffold: framework detection precedence is Next.js over Express. Interactively,
+a host with neither is treated as Next. A non-interactive run (`--yes` or no
+TTY) with no detected framework errors and asks for `--framework` rather than
+guessing. For other runtimes (Fastify, Hono, Bun), follow the Express shape by
+hand. See
+[Quickstart: Express and other JavaScript servers](/quickstart#wire-the-express-adapter).
+
+### Auth
+
+Init reads `package.json` and detects one auth family: `next-auth`/`@auth/*`
+(authJs), `@clerk/*`, `@supabase/*`, or `@auth0/*`. In an interactive run a
+single detected family gets one `[Y/n]` confirm before anything is written;
+decline it, or have several or none detected, and init stays anonymous and
+prints the exact one-line `auth:` addition for your composition. Pass
+`--auth <preset>` to answer without the prompt. See
+[Host auth](/agents/host-auth) for the presets and when to pick each.
 
 ## The model key
 
-`createVendo`'s `model` is optional. When you omit it, the runtime resolves a
-model through the [dev-mode credential ladder](/connect/dev-mode): a provider
-env key, a logged-in Claude Code or Codex CLI session, then `VENDO_API_KEY`.
-Init does not scaffold a model file. Instead it runs a key step: if a provider
-key is already set it says so; otherwise it offers a metered Vendo Cloud starter
-key inline (email OTP) and appends `VENDO_API_KEY` to `.env.local` without
-touching your other keys. Init never fails on a Cloud error. Production always
-needs a real provider key.
+`createVendo`'s `model` is optional; when you omit it, the runtime resolves
+one through the [dev-mode credential ladder](/connect/dev-mode). Init does
+not scaffold a model file: instead it runs a key step. If a provider key is
+already set it says so; otherwise it offers a metered Vendo Cloud starter key
+inline (email OTP) and appends `VENDO_API_KEY` to `.env.local` without
+touching your other keys. Init never fails on a Cloud error. Production
+always needs a real provider key.
 
 ## Agent mode
 
@@ -103,7 +109,7 @@ carries the detected framework, every file init would write, each proposed code
 diff, the `<VendoRoot>` paste lines, the deterministically extracted tools with
 warnings, per-tool `riskRecommendations`, and an `aiPolish` delegation contract
 (instructions, draft schema, and the `vendo extract --apply` command) an
-external coding agent can act on. It is a plan, not a scaffolding step — running
+external coding agent can act on. It is a plan, not a scaffolding step: running
 `--agent` alone writes no `.vendo/` files, so `vendo doctor` will still report a
 missing install. Scaffold with `vendo init --yes` (below).
 
@@ -117,27 +123,28 @@ question has a value flag, so nothing hangs:
 npx vendo init --yes --auth authJs --byo
 ```
 
-- `--yes` skips the interactive prompts (the auth confirm, theme review, and
-  Cloud offer) and accepts the detected defaults. A non-interactive run ends
-  with an `Agent tail:` block naming the exact files this run left to hand-edit.
-- `--auth <preset>` wires an auth preset without asking: `authJs`, `clerk`,
-  `supabase`, `auth0`, `jwt`, or `none`.
-- `--framework <next|express>` overrides detection; required non-interactively
-  when detection fails.
-- `--cloud-key <key>` writes an existing Vendo Cloud key to `.env.local`
-  instead of the login offer; `--byo` declines the offer (bring your own key).
-- `--ai-polish` consents to the AI pass non-interactively: tool judgment
-  (descriptions, risk, brief) and theme-slot filling, one consent for both.
-- `--theme <slot=value>` overrides a theme slot value directly (repeatable).
-- `--force` regenerates Vendo-owned `.vendo/` files; it never replaces existing
-  host source files.
+`--yes` skips the interactive prompts (auth confirm, theme review, Cloud
+offer) and accepts the detected defaults, ending with an `Agent tail:` block
+naming the files this run left to hand-edit. See the
+[CLI reference](/reference/cli#vendo-init-dir) for every other flag.
 
 Init rejects options it does not recognize and exits 1 before doing anything, so
 a flag an older CLI does not support can never be silently dropped.
 
+## Re-running init vs. sync
+
+Init is safe to run again: it only writes what is still missing, so a rerun
+on an already-scaffolded app is a no-op except for anything you deliberately
+undid. Day to day you don't re-run init at all. The `predev`/`prebuild` hooks
+it wired call `vendo sync` on every build, which is what keeps
+`.vendo/tools.json` current as your API changes. Re-run `vendo init` itself
+only when the detected surface changes in a way sync can't scaffold for, for
+example adding Express to a Next app or turning on an auth provider. See
+[`vendo sync`](/reference/cli#vendo-sync-dir) for what a sync run does.
+
 ## Verify
 
-Init does not run a live turn — `vendo doctor` owns verification. After you
+Init does not run a live turn: `vendo doctor` owns verification. After you
 paste the `<VendoRoot>` line and start your dev server:
 
 ```bash
