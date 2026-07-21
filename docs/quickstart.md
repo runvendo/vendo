@@ -44,9 +44,10 @@ this order:
    stdin (the browser flow is the separate `vendo cloud device-login`
    command), then mints a metered dev-mode starter key and writes it to
    `.env.local` for you. You never paste a key.
-   Model calls go through the Vendo Cloud model gateway (Anthropic models,
-   served via the installed `@ai-sdk/anthropic`) and meter your dev-mode
-   runs allowance.
+   Model calls go through the Vendo Cloud model gateway (curated aliases:
+   `vendo-default`, `vendo-fast`, `vendo-strong` — pick with
+   `VENDO_CLOUD_MODEL`, served via the installed `@ai-sdk/anthropic`) and
+   meter your dev-mode runs allowance.
 3. Nothing available: chat fails honestly, with exact instructions in the
    server log.
 

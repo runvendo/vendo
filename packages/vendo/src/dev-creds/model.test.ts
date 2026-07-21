@@ -45,14 +45,16 @@ describe("devModel (env-resolving default model)", () => {
       },
     });
     const callOptions = { prompt: [] };
+    // The gateway serves curated aliases only; vendo-default is the SDK's
+    // default (raw claude-* ids would be grace-remapped server-side).
     expect(await controller.doGenerate(callOptions)).toEqual({
       delegated: "generate",
-      modelId: "claude-sonnet-4-6",
+      modelId: "vendo-default",
       options: callOptions,
     });
     expect(await controller.doStream(callOptions)).toEqual({
       delegated: "stream",
-      modelId: "claude-sonnet-4-6",
+      modelId: "vendo-default",
       options: callOptions,
     });
     // The key rides as the provider apiKey; the base is the production
@@ -62,12 +64,14 @@ describe("devModel (env-resolving default model)", () => {
     ]);
   });
 
-  it("honors VENDO_CLOUD_URL and the anthropic model override on the vendo-cloud rung", async () => {
+  it("honors VENDO_CLOUD_URL and the VENDO_CLOUD_MODEL alias override on the vendo-cloud rung", async () => {
     const seen: Array<{ baseURL: string }> = [];
     const controller = new DevModelController({
       env: {
         VENDO_API_KEY: "vnd_x",
         VENDO_CLOUD_URL: "http://localhost:3001/",
+        VENDO_CLOUD_MODEL: "vendo-strong",
+        // The anthropic env-key override must NOT leak onto the cloud rung.
         VENDO_DEV_ANTHROPIC_MODEL: "claude-opus-4-8",
       },
       importModule: async () => ({
@@ -84,7 +88,7 @@ describe("devModel (env-resolving default model)", () => {
         },
       }),
     });
-    expect(await controller.doGenerate({ prompt: [] })).toEqual({ modelId: "claude-opus-4-8" });
+    expect(await controller.doGenerate({ prompt: [] })).toEqual({ modelId: "vendo-strong" });
     expect(seen).toEqual([{ baseURL: "http://localhost:3001/api/v1" }]);
   });
 

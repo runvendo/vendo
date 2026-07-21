@@ -24,7 +24,9 @@ derives its colors, typography, radius, density, and motion from these tokens.
 It does not hardcode a Vendo brand.
 
 Generation receives the same theme. Optional `.vendo/design-rules.md` adds
-generation-time design rules without changing runtime tokens.
+generation-time design rules without changing runtime tokens; it is re-read
+per generation, and `createVendo({ apps: { designRules } })` sets the same
+rules in config (a non-blank value wins over the file).
 
 ## Emitted CSS variables
 

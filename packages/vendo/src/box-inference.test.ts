@@ -73,7 +73,7 @@ function captureSandbox(specs: SandboxSpec[]): SandboxAdapter {
  * runner's own environment can never leak into a rung assertion. */
 async function provisionedEnv(rungs: Record<string, string> = {}): Promise<Record<string, string>> {
   vi.stubEnv("VENDO_BASE_URL", "http://box-inference.test");
-  for (const name of ["VENDO_INFERENCE_URL", "VENDO_INFERENCE_KEY", "ANTHROPIC_API_KEY", "VENDO_API_KEY", "VENDO_CLOUD_URL"]) {
+  for (const name of ["VENDO_INFERENCE_URL", "VENDO_INFERENCE_KEY", "VENDO_INFERENCE_MODEL", "ANTHROPIC_API_KEY", "VENDO_API_KEY", "VENDO_CLOUD_URL"]) {
     vi.stubEnv(name, rungs[name] ?? "");
   }
   const store = await tempStore("vendo-box-inference-");
@@ -107,6 +107,18 @@ describe("boxInference ladder (the in-box agent's model door)", () => {
     const env = await provisionedEnv({ VENDO_API_KEY: "vnd_cloud_key" });
     expect(env["VENDO_INFERENCE_URL"]).toBe("https://console.vendo.run/api/v1");
     expect(env["VENDO_INFERENCE_KEY"]).toBe("vnd_cloud_key");
+    // The gateway serves curated aliases only; the box harness's raw claude-*
+    // default would be grace-remapped server-side, so the Cloud rung pins it.
+    expect(env["VENDO_INFERENCE_MODEL"]).toBe("vendo-default");
+  });
+
+  it("VENDO_INFERENCE_MODEL still picks the Cloud alias on the Cloud rung", async () => {
+    const env = await provisionedEnv({
+      VENDO_API_KEY: "vnd_cloud_key",
+      VENDO_INFERENCE_MODEL: "vendo-strong",
+    });
+    expect(env["VENDO_INFERENCE_URL"]).toBe("https://console.vendo.run/api/v1");
+    expect(env["VENDO_INFERENCE_MODEL"]).toBe("vendo-strong");
   });
 
   it("respects VENDO_CLOUD_URL as the gateway base for the Cloud rung", async () => {
@@ -136,6 +148,8 @@ describe("boxInference ladder (the in-box agent's model door)", () => {
     });
     expect(env["VENDO_INFERENCE_URL"]).toBe("https://api.anthropic.com");
     expect(env["VENDO_INFERENCE_KEY"]).toBe("sk-ant-byo");
+    // BYO keeps the box harness's own real-model default — no alias pin.
+    expect(env["VENDO_INFERENCE_MODEL"]).toBeUndefined();
   });
 
   it("no key on any rung leaves the box without an inference door", async () => {
