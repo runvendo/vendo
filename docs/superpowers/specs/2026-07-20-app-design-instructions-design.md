@@ -1,85 +1,78 @@
-# App design instructions — host design brief for generated UI
+# App design rules — config key + live file reads
 
-Status: APPROVED (Yousef, 2026-07-20)
+Status: APPROVED (Yousef, 2026-07-20); REVISED same day after seam discovery
 Date: 2026-07-20
 
-## Problem
+## Discovery that reshaped this spec
 
-Hosts have no way to steer the look-and-feel of generated apps. The engine's
-prompt sections (`role`, `tree-contract`, `component-styling`, `catalog`,
-`theme`, `design-rules`, `remixable-slots`, `prewired-props`) are entirely
-fixed; the only host-controlled text reaching generation is the per-request
-prompt the calling agent writes. A host who wants "dense layouts, no emoji,
-EUR currency, always an export button" has nowhere to say it once.
+The first draft assumed the engine's `design-rules` prompt section was fixed
+and proposed a new seam (`apps.instructions` + `.vendo/design.md` + a new
+`host-design` section). Investigation showed the host seam already exists
+end-to-end and is documented:
 
-This matters doubly for the existing-agents seam: hosts running their own
-agent hand app generation to Vendo's engine wholesale, so a global design
-brief is their only steering surface.
+- `.vendo/design-rules.md` is read by the umbrella and passed as
+  `createApps({ designRules })` (`packages/vendo/src/server.ts`).
+- The engine renders it as the `design-rules` section (`HOST DESIGN
+  RULES: …`) in BOTH the create pass and the edit pass
+  (`packages/apps/src/engine.ts`).
+- Documented in `docs-site/reference/dot-vendo.mdx`,
+  `connect/instructions.mdx`, `connect/theming.mdx`, `concepts/prompts.mdx`.
+
+Per the smallest-sufficient-mechanism rule, this spec now builds on that
+seam instead of duplicating it. Two real gaps remain.
 
 ## Decision
 
-One freeform design brief per Vendo instance, expressed two ways with a
-fixed precedence:
-
-1. `apps.instructions` — a new optional string key on `CreateVendoConfig`,
-   alongside the existing apps-block flags. Named to mirror the agent
-   contract's `system.instructions`.
-2. `.vendo/design.md` — read from disk as the default when the config key is
-   unset, through the same `dotVendoFile` mechanism that already serves
-   `.vendo/brief.md`. Explicit config always wins. Empty or whitespace-only
-   values (either source) resolve to unset.
-
-Freeform prose was chosen over a structured options object and over
-exemplar-based few-shot: smallest surface, matches the `system.instructions`
-precedent, and structured keys can layer on later if real usage shows
-recurring fields. (Decided 2026-07-20.)
+1. **Live file reads.** `.vendo/design-rules.md` is read once at compose
+   time today, so tuning the brief requires a server restart — bad DX for a
+   file whose whole purpose is iterative tuning against generated output.
+   Change: resolve the design rules lazily, per generation (create and
+   edit). A file read costs microseconds. `brief.md` stays compose-time;
+   it describes the product, which does not change per iteration.
+2. **Config key.** Add `apps.designRules?: string` to `CreateVendoConfig`
+   for hosts that prefer programmatic config over a `.vendo` file
+   (serverless packaging, per-environment briefs). Named `designRules` — not
+   `instructions` as first drafted — to match the existing seam's naming
+   everywhere (file name, engine dependency, prompt section id). An explicit
+   config string is fixed for the instance lifetime and wins over the file;
+   empty/whitespace-only resolves to unset (fall through to the file).
 
 ## Behavior
 
-- The umbrella threads a brief resolver into `createApps`. An explicit
-  `apps.instructions` string is fixed for the instance's lifetime;
-  `.vendo/design.md` is read lazily per generation (a file read costs
-  microseconds), so editing the file applies to the next create/edit without
-  a server restart — unlike `brief.md`'s compose-time read, because a design
-  brief is tuned iteratively against generated output.
-- The engine adds one new prompt section, `host-design`, placed after the
-  built-in `design-rules` section so host guidance reads as a refinement
-  layered on Vendo's defaults.
-- The section is included in BOTH the create pass and the edit pass. A brief
-  that applied on create but vanished on "make it more compact" would be a
-  bug, not a smaller scope.
-- All three creation routes converge on the same engine — Vendo chat,
-  `vendo_create_app` from a BYO agent loop, and `vendo_delegate` — so every
-  route picks up the brief with no per-route work.
-- Unset means the section is simply absent, exactly how the `theme` and
-  `catalog` sections behave today. Nothing to fail closed on.
-- No length cap. Docs note that the brief spends generation-context budget.
+- The umbrella passes the apps block a resolver: config string when set,
+  else a per-call read of `.vendo/design-rules.md`.
+- The engine's `designRules` dependency widens additively to also accept a
+  provider function, resolved when the prompt sections are built (already
+  per-generation). No section changes; no new prompt text.
+- Unset stays exactly today's behavior: the section renders "(none
+  provided)".
+- No length cap. Docs note the brief spends generation-context budget.
 
 ## Out of scope (deliberate)
 
-- The chat agent's system prompt — that is the existing `system.instructions`
-  seam in the agent contract, not this one.
+- The chat agent's system prompt (existing `system.instructions` seam) and
+  `brief.md` read timing.
 - Automation planning prompts.
 - The existing-agents tool-pack contract (frozen 2026-07-20). Per-surface
   briefs on `vendoTools` are backlog, below.
+- The live-eval spot-check from the first draft: steering through this
+  section is already shipped behavior; this change is plumbing, so unit
+  tests suffice.
 
 ## Testing
 
-- Unit: section present when configured; absent when unset; file fallback
-  works; config wins over file; whitespace resolves to unset; edit pass
-  includes the section; a design.md edit after compose is picked up by the
-  next generation.
-- One eval-harness spot-check via `docs/eval` (the generation-eval front
-  door): a brief like "no emoji, dense tables" is visibly honored in a
-  generated app. Prompt-section unit tests alone don't prove steering works.
+- Engine: provider-function form is resolved per generation — two
+  generations observe different values when the provider's answer changes
+  between them; string form still works.
+- Umbrella: config key wins over the file; whitespace config falls through
+  to the file; a `design-rules.md` edit after compose is picked up by the
+  next generation; unset renders today's default.
 
 ## Docs
 
-- `docs/` page for the seam plus docs-site sync (both sides updated together
-  per the existing mirror rule).
-- `.vendo/design.md` mentioned wherever `.vendo/brief.md` is documented
-  (init/quickstart). A future `vendo init` stage may author a starter
-  `design.md`; not part of this work.
+- Touch the four docs-site pages that mention `design-rules.md` to note the
+  config key and that file edits apply live; sync the `docs/` mirror where
+  those pages have counterparts.
 
 ## Backlog (recorded, not built)
 
@@ -101,3 +94,6 @@ Ideas from the same brainstorm, deferred until demand shows up:
 - Catalog preference metadata (`preferFor`) — component-choice steering as
   data rather than prose.
 - Per-pack model/paint overrides.
+- Dynamic per-principal brief (multi-tenant/white-label), first-class
+  locale, app-creation quotas (check guard policy expressiveness first),
+  embed build-beat copy override.
