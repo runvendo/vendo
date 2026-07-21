@@ -163,6 +163,11 @@
       "source": "/install",
       "destination": "/agents",
       "permanent": true
+    },
+    {
+      "source": "/install.md",
+      "destination": "/agents.md",
+      "permanent": true
     }
   ],
   "footer": {

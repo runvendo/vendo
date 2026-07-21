@@ -112,8 +112,8 @@ reviewable `.vendo/` directory and leaves the PGlite data directory ignored.
 Run `vendo doctor` to check wiring and probe `/status`. Run `vendo sync` in
 build and development flows to refresh extracted tools and remix baselines.
 
-Agents get the same journey machine-readable: the staged playbook at
-[docs.vendo.run/install.md](https://docs.vendo.run/install.md) (with
+Agents get the same journey machine-readable: the playbook at
+[vendo.run/agents.md](https://vendo.run/agents.md) (with
 [llms.txt](https://docs.vendo.run/llms.txt) indexing every docs page),
 `vendo init --agent` for a read-only JSON plan carrying extracted tools and
 risk recommendations, `vendo sync --json`, and a `vendo-setup` skill shipped
