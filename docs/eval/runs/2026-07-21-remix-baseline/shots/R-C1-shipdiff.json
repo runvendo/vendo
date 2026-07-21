@@ -1,0 +1,15 @@
+{
+  "appId": "app_c8c12379-76a5-437d-98c1-6783cefd29e7",
+  "versionHash": "sha256:82d1eb607b4a8cf84f86cbc078881894cadcbfac4060c9bc2bc4b352daa67887",
+  "pins": [
+    {
+      "slot": "CadenceMissingDocsHero",
+      "component": "PinnedCadenceMissingDocsHerod69ea60a",
+      "baseHash": "sha256:d79ae241ddd6b6bbe1e66b9706753841b9ecd509d143d4da9e6d44f187ca06f0",
+      "baselineHash": "sha256:d79ae241ddd6b6bbe1e66b9706753841b9ecd509d143d4da9e6d44f187ca06f0",
+      "drifted": false,
+      "diff": ""
+    }
+  ],
+  "generated": []
+}
