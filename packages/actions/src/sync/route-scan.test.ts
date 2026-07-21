@@ -262,6 +262,115 @@ describe("pages route verb evidence", () => {
     });
   });
 
+  it("does not treat a rejection branch's Allow header as verb evidence (papermark 405-guard shapes)", async () => {
+    const root = await temporaryRoot();
+    // Real shape from papermark's pages/api/teams/[teamId]/documents/agreement.ts:
+    // POST-only handler; the else/405 branch lists GET *and* POST in its
+    // Allow header even though GET is never served.
+    await write(
+      root,
+      "pages/api/teams/[teamId]/documents/agreement.ts",
+      [
+        "export default async function handle(req: any, res: any) {",
+        "  if (req.method === \"POST\") {",
+        "    return res.status(201).json({ ok: true });",
+        "  } else {",
+        "    res.setHeader(\"Allow\", [\"GET\", \"POST\"]);",
+        "    return res.status(405).end(`Method ${req.method} Not Allowed`);",
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+    // Real shape from papermark's pages/api/teams/[teamId]/documents/[id]/versions/index.ts:
+    // POST-only handler; the else/405 branch's Allow header names GET alone.
+    await write(
+      root,
+      "pages/api/teams/[teamId]/documents/[id]/versions/index.ts",
+      [
+        "export default async function handle(req: any, res: any) {",
+        "  if (req.method === \"POST\") {",
+        "    return res.status(200).json({ id: \"x\" });",
+        "  } else {",
+        "    res.setHeader(\"Allow\", [\"GET\"]);",
+        "    return res.status(405).end(`Method ${req.method} Not Allowed`);",
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+    // Real shape from papermark's pages/api/teams/[teamId]/datarooms/[id]/folders/[...name].ts:
+    // GET-only handler; the else/405 branch's Allow header names GET *and* POST.
+    await write(
+      root,
+      "pages/api/teams/[teamId]/datarooms/[id]/folders/[...name].ts",
+      [
+        "export default async function handle(req: any, res: any) {",
+        "  if (req.method === \"GET\") {",
+        "    return res.status(200).json([]);",
+        "  } else {",
+        "    res.setHeader(\"Allow\", [\"GET\", \"POST\"]);",
+        "    return res.status(405).end(`Method ${req.method} Not Allowed`);",
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+    // Real shape from papermark's pages/api/teams/[teamId]/datarooms/[id]/folders/parents/[...name].ts:
+    // identical shape to the folders route above, different path.
+    await write(
+      root,
+      "pages/api/teams/[teamId]/datarooms/[id]/folders/parents/[...name].ts",
+      [
+        "export default async function handle(req: any, res: any) {",
+        "  if (req.method === \"GET\") {",
+        "    return res.status(200).json([]);",
+        "  } else {",
+        "    res.setHeader(\"Allow\", [\"GET\", \"POST\"]);",
+        "    return res.status(405).end(`Method ${req.method} Not Allowed`);",
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+    // Positive control: an inequality guard whose Allow header lives inside
+    // the REJECTED (`!==`) branch — the guarded method (POST) still passes
+    // through as evidence, and the Allow header inside the guard must not
+    // add any other phantom method (there isn't one here, but the header
+    // must not be double-counted or otherwise misread).
+    await write(
+      root,
+      "pages/api/neq-guard.ts",
+      [
+        "export default async function handle(req: any, res: any) {",
+        "  if (req.method !== \"POST\") {",
+        "    res.setHeader(\"Allow\", [\"POST\"]);",
+        "    return res.status(405).end();",
+        "  }",
+        "  return res.status(200).end();",
+        "}",
+      ].join("\n"),
+    );
+    // Equality-dispatch control: a plain `if/else` with no Allow header at
+    // all must keep working exactly as before the fix.
+    await write(
+      root,
+      "pages/api/put-only.ts",
+      [
+        "export default async function handle(req: any, res: any) {",
+        "  if (req.method === \"PUT\") {",
+        "    return res.status(200).end();",
+        "  } else {",
+        "    return res.status(405).end();",
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+
+    expect(await methodsFor(root, "/api/teams/{teamId}/documents/agreement")).toEqual(["POST"]);
+    expect(await methodsFor(root, "/api/teams/{teamId}/documents/{id}/versions")).toEqual(["POST"]);
+    expect(await methodsFor(root, "/api/teams/{teamId}/datarooms/{id}/folders/{name}")).toEqual(["GET"]);
+    expect(await methodsFor(root, "/api/teams/{teamId}/datarooms/{id}/folders/parents/{name}")).toEqual(["GET"]);
+    expect(await methodsFor(root, "/api/neq-guard")).toEqual(["POST"]);
+    expect(await methodsFor(root, "/api/put-only")).toEqual(["PUT"]);
+  });
+
   it("treats a NextAuth handler as GET+POST", async () => {
     const root = await temporaryRoot();
     await write(

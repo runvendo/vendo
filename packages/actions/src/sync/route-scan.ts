@@ -127,10 +127,63 @@ function isReqMethodAccess(ts: typeof TS, node: TS.Node): boolean {
     && node.expression.text === "req";
 }
 
+interface ReqMethodComparison {
+  operator: "eq" | "neq";
+  method: string;
+}
+
+/** Recognizes `req.method === "X"` / `!==` / `==` / `!=` — the same shape the
+ * binary-expression evidence scan below matches — so the Allow-header check
+ * can ask "which branch of this guard am I in?" */
+function reqMethodComparison(ts: typeof TS, node: TS.Node): ReqMethodComparison | null {
+  if (!ts.isBinaryExpression(node) || !isReqMethodAccess(ts, node.left) || !isStringLike(ts, node.right)) return null;
+  const { kind } = node.operatorToken;
+  if (kind === ts.SyntaxKind.EqualsEqualsToken || kind === ts.SyntaxKind.EqualsEqualsEqualsToken) {
+    return { operator: "eq", method: node.right.text };
+  }
+  if (kind === ts.SyntaxKind.ExclamationEqualsToken || kind === ts.SyntaxKind.ExclamationEqualsEqualsToken) {
+    return { operator: "neq", method: node.right.text };
+  }
+  return null;
+}
+
+/** A `res.setHeader("Allow", [...])` call reachable only when `req.method`
+ * did NOT match the method this branch handles is documentation for the
+ * REJECTED caller (a 405's Allow header lists what the route would have
+ * accepted), not evidence of what the handler does. Papermark's real shape:
+ * `if (req.method === "POST") { ...handle... } else { res.setHeader("Allow",
+ * ["GET", "POST"]); return res.status(405)...; }` — the else branch names
+ * GET in its Allow header even though this handler never serves GET. Walk up
+ * from the call to see whether it sits on the rejected side of a req.method
+ * guard: the `else` of an equality check, the `then` of an inequality
+ * (early-return-guard) check, or a switch's `default` clause on req.method.
+ * An unconditional setHeader (no enclosing req.method guard at all) is still
+ * evidence, unchanged from before this check existed. */
+function isInRejectedMethodBranch(ts: typeof TS, call: TS.CallExpression): boolean {
+  let current: TS.Node = call;
+  while (current.parent) {
+    const parent: TS.Node = current.parent;
+    if (ts.isIfStatement(parent)) {
+      const comparison = reqMethodComparison(ts, parent.expression);
+      if (comparison) {
+        if (comparison.operator === "eq" && parent.elseStatement === current) return true;
+        if (comparison.operator === "neq" && parent.thenStatement === current) return true;
+      }
+    }
+    if (ts.isDefaultClause(parent) && ts.isCaseBlock(parent.parent)
+      && isReqMethodAccess(ts, parent.parent.parent.expression)) {
+      return true;
+    }
+    current = parent;
+  }
+  return false;
+}
+
 function allowHeaderVerbs(ts: typeof TS, methods: Set<HttpMethod>, call: TS.CallExpression): void {
   if (calleeSimpleName(ts, call) !== "setHeader") return;
   const [header, value] = call.arguments;
   if (!header || !value || !isStringLike(ts, header) || header.text.toLowerCase() !== "allow") return;
+  if (isInRejectedMethodBranch(ts, call)) return;
   if (isStringLike(ts, value)) {
     for (const part of value.text.split(",")) addMethod(methods, part.trim());
   } else if (ts.isArrayLiteralExpression(value)) {
