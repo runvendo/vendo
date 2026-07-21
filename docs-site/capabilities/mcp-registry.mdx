@@ -1,5 +1,6 @@
 ---
 title: "Publish your Vendo MCP door to the official registry"
+sidebarTitle: "MCP registry"
 description: "Publish your Vendo MCP door to the official registry: prove domain ownership via DNS or HTTP, generate server.json, and run mcp-publisher."
 ---
 
@@ -54,7 +55,9 @@ DNS TXT record at example.com:
 v=MCPv1; k=ed25519; p=<base64-public-key>
 HTTP challenge file at https://example.com/.well-known/mcp-registry-auth:
 v=MCPv1; k=ed25519; p=<base64-public-key>
-Private key written to /Users/you/.config/vendo/example-com-mcp.key; keep it secret and pass its hex value to mcp-publisher only when authenticating.
+Private key written to /Users/you/.config/vendo/example-com-mcp.key;
+keep it secret and pass its hex value to mcp-publisher only when
+authenticating.
 ```
 
 Create a TXT record at the domain apex, often shown as `@` by DNS providers,

@@ -1,17 +1,40 @@
 ---
 title: "Vendo Cloud: hosted sharing, publishing, and API keys"
+sidebarTitle: "Vendo Cloud"
 description: "Sign in with email OTP, provide an API key to the runtime, and use hosted app sharing and publishing from the CLI or a composition."
 ---
 
-Vendo Cloud is the hosted backend for cloud-gated surfaces: sharing frozen app
-copies, publishing app versions, and org-scoped keys and members. Local
-development never needs it. Reach for it when you want cross-host sharing,
-published copies, or a machine key for CI.
+Vendo Cloud is the hosted backend for cloud-gated surfaces: sharing frozen
+app copies, publishing app versions, hosted sandboxes and store, and
+org-scoped keys and members. Every one of those capabilities keeps a
+bring-your-own path (your own Postgres, an E2B sandbox account, your own
+model key), so local development never needs Cloud. Reach for it when you
+want cross-host sharing, published copies, or a machine key for CI.
 
 ## Prerequisites
 
 - A Vendo Cloud account at `https://console.vendo.run`.
 - The `vendo` bin on your PATH (`npx vendo` also works).
+
+## Provide an API key to the runtime
+
+Cloud-gated runtime calls read `VENDO_API_KEY` from the host process. When it is
+unset or empty, `vendo.apps.share()` and `vendo.apps.publish()` throw
+`cloud-required` and the mapped HTTP status is 402. Set it wherever your handler
+runs:
+
+<Warning>
+  Setting the key does more than unlock the gated surfaces: it also fills
+  every adapter slot your composition left unset with the Cloud default, the
+  [hosted sandbox](#hosted-sandboxes) and the [hosted store](#hosted-store).
+  With no `store` passed, your Vendo data moves from local PGlite to Vendo
+  Cloud. An explicitly passed adapter always wins; pass
+  `store: createStore(...)` to keep persistence local.
+</Warning>
+
+```bash
+export VENDO_API_KEY=vnd_live_...
+```
 
 ## Sign in from the CLI
 
@@ -38,27 +61,7 @@ vendo cloud login --token <jwt>
 Sign out with `vendo cloud logout`. Check that the session works with
 `vendo cloud whoami`, which prints the organizations it can reach.
 
-## Provide an API key to the runtime
-
-Cloud-gated runtime calls read `VENDO_API_KEY` from the host process. When it is
-unset or empty, `vendo.apps.share()` and `vendo.apps.publish()` throw
-`cloud-required` and the mapped HTTP status is 402. Set it wherever your handler
-runs:
-
-<Warning>
-  Setting the key does more than unlock the gated surfaces: it also fills
-  every adapter slot your composition left unset with the Cloud default — the
-  [hosted sandbox](#hosted-sandboxes) and the [hosted store](#hosted-store).
-  With no `store` passed, your Vendo data moves from local PGlite to Vendo
-  Cloud. An explicitly passed adapter always wins; pass
-  `store: createStore(...)` to keep persistence local.
-</Warning>
-
-```bash
-export VENDO_API_KEY=vnd_live_...
-```
-
-Create and rotate keys from the CLI:
+## Create and rotate keys
 
 ```bash
 vendo cloud keys create --org <orgId> --name "ci-publisher"
@@ -68,12 +71,6 @@ vendo cloud keys revoke --org <orgId> --id <keyId>
 
 `--org` is optional only when your account has exactly one organization.
 
-API keys use the format `vnd_` followed by 40 hex characters. The machine
-commands (`deploy`, `share`, `publish`, `pin-ship`) reject malformed keys
-before making any network call.
-
-## Check a key
-
 There is no validate endpoint and no local entitlements cache. `vendo doctor`
 checks that `VENDO_API_KEY` is present and well formed locally; a bad or
 revoked key surfaces on the first real service call with
@@ -82,8 +79,8 @@ revoked key surfaces on the first real service call with
 Every key-authed call carries sanitized deployment-identity headers
 (`X-Vendo-Deployment-Host`, `X-Vendo-Deployment-Name`), so usage and
 deployments appear in the console, `vendo cloud usage`, and
-`vendo cloud deployments` from real traffic. To confirm a CI key works,
-make a real call and check the exit code.
+`vendo cloud deployments` from real traffic. To confirm a CI key works, make
+a real call and check the exit code.
 
 ## Point at a different Vendo Cloud URL
 
@@ -145,20 +142,21 @@ Pass `--json` to receive the raw hosted deploy response instead.
 
 ### Options
 
-- `--app <id>` — deploy only this automation. Repeat the flag to send several.
+- `--app <id>`: deploy only this automation. Repeat the flag to send several.
   An explicitly selected disabled automation is still sent (with
   `enabled: false`); without `--app`, only enabled automations are included.
-- `--subject <id>` — required when `.vendo/data` contains more than one subject.
-  Vendo never combines apps or grants from different subjects into one deploy.
-- `--secret NAME=VALUE` — supply a secret value referenced by one of the
-  selected apps. Repeat for each secret. Only names actually referenced by the
-  deployed apps are forwarded; a referenced name without a matching flag prints
-  a warning but does not fail the deploy. Sending secrets requires an HTTPS
-  Vendo Cloud URL.
-- `--key <vnd_...>` — machine-key override for this call.
-- `--api-url <url>` — target a non-default Vendo Cloud (for example a staging
+- `--subject <id>`: required when `.vendo/data` contains more than one
+  subject. Vendo never combines apps or grants from different subjects into
+  one deploy.
+- `--secret NAME=VALUE`: supply a secret value referenced by one of the
+  selected apps. Repeat for each secret. Only names actually referenced by
+  the deployed apps are forwarded; a referenced name without a matching flag
+  prints a warning but does not fail the deploy. Sending secrets requires an
+  HTTPS Vendo Cloud URL.
+- `--key <vnd_...>`: machine-key override for this call.
+- `--api-url <url>`: target a non-default Vendo Cloud (for example a staging
   environment).
-- `--json` — print the raw response.
+- `--json`: print the raw response.
 
 ### Example
 
@@ -171,14 +169,6 @@ vendo cloud deploy \
   --secret STRIPE_KEY=sk_live_... \
   --secret RESEND_KEY=re_...
 ```
-
-### Limitations
-
-Automations whose steps use `fn:` tools (calls back into the host application's
-process) print a warning during deploy. Hosted sandboxes cannot reach your
-machine in v1, so those steps will fail or park when the automation fires in
-the cloud. Either replace them with tools the hosted runtime can execute, or
-keep those automations running locally.
 
 ## Error handling
 
@@ -193,7 +183,23 @@ Cloud calls surface the shared error taxonomy (see
 Handle `cloud-required` by setting `VENDO_API_KEY`, or for interactive tools by
 running `vendo cloud login` and creating a key with `vendo cloud keys create`.
 
-## Hosted sandboxes
+## Cloud reference
+
+### Key format
+
+API keys use the format `vnd_` followed by 40 hex characters. The machine
+commands (`deploy`, `share`, `publish`, `pin-ship`) reject malformed keys
+before making any network call.
+
+### Deploy's `fn:` limitation
+
+Automations whose steps use `fn:` tools (calls back into the host
+application's process) print a warning during deploy. Hosted sandboxes
+cannot reach your machine in v1, so those steps will fail or park when the
+automation fires in the cloud. Either replace them with tools the hosted
+runtime can execute, or keep those automations running locally.
+
+### Hosted sandboxes
 
 `cloudSandbox` is the hosted sandbox adapter behind machine-backed apps
 (layers 2 and 3 of [the machine model](/concepts/generated-ui#the-three-layers)).
@@ -216,10 +222,10 @@ const vendo = createVendo({
 
 `cloudSandbox(options)` accepts:
 
-- `apiKey` (required) — Vendo Cloud API key.
-- `baseUrl` — console base URL override; `createVendo` passes
+- `apiKey` (required): Vendo Cloud API key.
+- `baseUrl`: console base URL override; `createVendo` passes
   `VENDO_CLOUD_URL` when it composes the default.
-- `timeoutMs` — per-request abort timeout in milliseconds. Defaults to five
+- `timeoutMs`: per-request abort timeout in milliseconds. Defaults to five
   minutes.
 
 Machines boot from Cloud's own pooled base image (Node plus the in-box agent);
@@ -235,14 +241,15 @@ the sandbox slot is simply unconfigured, so machine paths fail with
 `SandboxAdapter` seam and
 [Generated UI and apps](/concepts/generated-ui) for the layer model.
 
-## Hosted store
+### Hosted store
 
 `hostedStore` is the Cloud persistence adapter: a plain `StoreAdapter`
 speaking to the console's store routes, tenant resolved server-side from the
 key's org. You normally never construct it: with `VENDO_API_KEY` set and no
-`store` passed, `createVendo` fills the store slot with it automatically —
-threads, apps, records, grants, and audit then persist in Vendo Cloud instead
-of local PGlite. An explicitly passed `store:` always wins over that default:
+`store` passed, `createVendo` fills the store slot with it automatically,
+so threads, apps, records, grants, and audit then persist in Vendo Cloud
+instead of local PGlite. An explicitly passed `store:` always wins over that
+default:
 
 ```ts
 import { createStore, createVendo } from "@vendoai/vendo/server";
@@ -269,7 +276,7 @@ default), and `timeoutMs` (per-request abort timeout).
 
 Stored secrets are excluded by construction: the hosted wire has no secrets
 surface, and the `storeSecrets`/`secretStore` helpers keep requiring a local
-store handle — they fail loudly against the hosted store rather than sending
+store handle. They fail loudly against the hosted store rather than sending
 secret values to the console. The composition's secrets default (`envSecrets`)
 reads your process environment either way. `ensureSchema` is a client no-op
 (the service owns its migrations), and `eraseStore` cascades server-side

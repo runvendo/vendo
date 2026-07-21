@@ -25,8 +25,8 @@ is left.
    npm install vendoai
    ```
 
-   `vendoai` is a thin alias of `@vendoai/vendo`; both install the same
-   composition and the same `vendo` bin.
+   `vendoai` is a thin alias of `@vendoai/vendo`; see
+   [Install](/install#stage-1-base-install) for the full picture.
 
 3. **Run init with value flags.** Every wizard question has a flag, so a
    non-interactive run never hangs on a prompt. Answer auth
@@ -43,15 +43,11 @@ is left.
    `--auth` takes `authJs`, `clerk`, `supabase`, `auth0`, `jwt`, or `none`.
    `--byo` declines the Vendo Cloud offer; `--cloud-key <key>` answers it with
    an existing key instead. Cloud vs bring-your-own is your human's call: ask
-   before running `vendo cloud login` or assuming a provider key exists. `--framework <next|express>` is required only when
-   detection fails (init errors with that exact instruction rather than
-   guessing). Optional: `--ai-polish` consents to the AI extraction pass,
-   `--theme slot=value` answers uncertain theme slots.
-
-   Init scaffolds the two-file surface (an empty `vendo/registry.tsx` and the
-   composition wired to it), writes the `.vendo/` contract (tools.json,
-   overrides.json, policy.json, brief.md, theme.json), and adds
-   `predev`/`prebuild` sync hooks. It never edits code the host authored.
+   before running `vendo cloud login` or assuming a provider key exists.
+   `--framework <next|express>` is required only when detection fails (init
+   errors with that exact instruction rather than guessing). See the
+   [CLI reference](/reference/cli#vendo-init-dir) for every other flag and
+   [vendo init](/connect/vendo-init) for exactly what it writes.
 
 4. **Hand-wire the gaps the agent tail names.** A non-interactive init ends
    with an `Agent tail:` block listing the exact files this run left for you;

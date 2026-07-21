@@ -1,5 +1,6 @@
 ---
 title: "Generated UI and apps: vendo/app@1 and the machine model"
+sidebarTitle: "Generated UI"
 description: "How Vendo generates apps as vendo/app@1 documents, the three-layer machine model from tree-only to machine-served, and the user-owned import and fork model."
 ---
 
@@ -12,7 +13,7 @@ user owns their own copy. Import, fork, sharing, and publishing mint a fresh
 1. **Tree app**: no server. The tree document, rendered by the host-embedded
    renderer, interactive via `$state`, code islands, and guarded host tools.
    Most apps stay here. Server-shaped needs (schedules, away runs) usually
-   ride an **automation** on the same document — the escalation ladder below —
+   ride an **automation** on the same document (the escalation ladder below)
    not a machine.
 2. **Tree app + machine**: the same tree UI plus a persistent per-app sandbox
    where execution lives: custom server code, third-party egress with
@@ -21,18 +22,17 @@ user owns their own copy. Import, fork, sharing, and publishing mint a fresh
    draws UI. Experimental and off by default; the host enables it per project
    with `createVendo({ apps: { experimentalMachines: true } })`.
 3. **Machine everything**: the machine also serves a real web app and the host
-   embeds its URL as the app surface. Experimental and off by default; the
-   host enables it per project with
-   `createVendo({ apps: { experimentalServedApps: true, experimentalMachines: true } })`
-   (served apps require machines).
+   embeds its URL as the app surface. Experimental and off by default; see
+   [Layer 3 flag and venues](#layer-3-flag-and-venues) for the flag and its
+   current caveats.
 
 The agent escalates when an instruction demands it, preferring the cheapest
 rung that can express the work: a **steps automation** (deterministic tool
-calls on a trigger — created in seconds, no machine), then an **agentic
+calls on a trigger, created in seconds, no machine), then an **agentic
 automation** (per-run judgment, still tool-only), and a **box machine** only
 when actual custom code is required. With machines off (the default), a
 request only a box can express refuses with a typed error naming the flag;
-apps that already carry a machine keep working — only new graduation is
+apps that already carry a machine keep working; only new graduation is
 gated. Users do not choose a layer. The last working surface keeps serving
 while the next layer builds.
 
@@ -61,11 +61,79 @@ its own endpoints before reporting done.
 The box holds no host credentials. Its single authority path is the `/box`
 callback surface on the host's Vendo server, authenticated by a per-app
 bearer token: durable rows over plain HTTP, and host tools through the same
-guard-bound registry chat uses, with approvals and audit intact. See the
-[app machine environment](/reference/environment-variables#app-machine-environment)
-for the exact variables and callback routes.
+guard-bound registry chat uses, with approvals and audit intact.
 
-## Secrets and outbound requests
+Anything the box wants beyond that boundary, a secret value or an outbound
+domain, is an approve-once owner grant. See
+[Secrets and outbound requests](#secrets-and-outbound-requests) for the exact
+grant and injection rules.
+
+## Progressive generation
+
+Create and open stream the generated tree as the model produces it. Complete
+nodes paint as soon as they close, and later partial updates reconcile into
+the same view: the stock ai-SDK client replaces the payload in place instead
+of appending duplicates. Nodes whose generated source has not arrived yet
+render as skeletons and swap in when their source closes. Queries embedded in
+the tree resolve concurrently as they stream, with per-query error containment
+so one failing query does not block the rest of the view.
+
+You do not need to change your client. Existing consumers of `data-vendo-view`
+parts see progressive frames followed by the final tree under a single stable
+part id.
+
+## Graduation
+
+**Layer 1 to 2** is invisible and additive. When an instruction needs server
+capability (a schedule, egress with secrets, heavy logic, app-owned state),
+the runtime provisions a machine, sends the build to the in-box agent, syncs
+the box's `vendo.json` declarations, parks any needed egress approval, and
+rewires the tree's data bindings to the new `fn:` functions. The tree keeps
+working throughout.
+
+**Layer 2 to 3** is an honest UI rewrite in the same box, gated behind the
+experimental served-apps flag. The box agent builds a real web app beside the
+`/fn` endpoints, the tree keeps serving through the whole build, and the
+document flips to `ui: "http"` only after the host itself verifies the served
+root answers. Opening a served app wakes the machine and embeds its public
+URL in a sandboxed iframe; the wake latency is the loading state, and the URL
+is only valid for the current wake.
+
+Failure handling for both hops is specified in
+[Graduation rollback](#graduation-rollback).
+
+## Wire reference
+
+The exact flags, environment contracts, and failure rules behind the model
+above.
+
+### Environment
+
+The [app machine environment](/reference/environment-variables#app-machine-environment)
+lists the exact variables injected into the box and the `/box` callback
+routes.
+
+### Layer 3 flag and venues
+
+The host enables served apps per project with
+`createVendo({ apps: { experimentalServedApps: true, experimentalMachines: true } })`;
+served apps require machines. With the flags off, layer-3 generation, the
+surface flip, and opening a served app all refuse with a typed
+`not-implemented` error naming the flag.
+
+Layer 3 currently has one working venue: BYO e2b (`E2B_API_KEY` or an
+explicit `e2bSandbox`). On the Vendo Cloud hosted sandbox, the
+`*.m.vendo.run` ingress TLS certificate is not yet live, so served-app URLs
+fail the TLS handshake until it lands; layers 1 and 2 are unaffected on both
+venues.
+
+### Graduation rollback
+
+A failed server build rolls back to the pre-edit snapshot; a failed tree
+rebind keeps the working tree and reports the miss. In both cases the last
+working surface keeps serving.
+
+### Secrets and outbound requests
 
 Machine egress is deny-by-default at the provider network layer, and both
 secrets and egress are approve-once owner grants:
@@ -83,48 +151,7 @@ secrets and egress are approve-once owner grants:
 
 The egress allowlist, unlike the environment, is re-applied at every wake:
 a domain grant decided or revoked while the machine slept counts at the next
-resume. A
-redaction guard scrubs known secret values from everything that crosses back
-out of the box. This is the SSRF and exfiltration answer, including for a
-bring-your-own model key: the key sits in the box, and the box can only talk
-to approved domains.
-
-## Progressive generation
-
-Create and open stream the generated tree as the model produces it. Complete
-nodes paint as soon as they close, and later partial updates reconcile into
-the same view — the stock ai-SDK client replaces the payload in place instead
-of appending duplicates. Nodes whose generated source has not arrived yet
-render as skeletons and swap in when their source closes. Queries embedded in
-the tree resolve concurrently as they stream, with per-query error containment
-so one failing query does not block the rest of the view.
-
-You do not need to change your client. Existing consumers of `data-vendo-view`
-parts see progressive frames followed by the final tree under a single stable
-part id.
-
-## Graduation
-
-**Layer 1 to 2** is invisible and additive. When an instruction needs server
-capability (a schedule, egress with secrets, heavy logic, app-owned state),
-the runtime provisions a machine, sends the build to the in-box agent, syncs
-the box's `vendo.json` declarations, parks any needed egress approval, and
-rewires the tree's data bindings to the new `fn:` functions. The tree keeps
-working throughout. A failed server build rolls back to the pre-edit
-snapshot; a failed tree rebind keeps the working tree and reports the miss.
-
-**Layer 2 to 3** is an honest UI rewrite in the same box, gated behind the
-experimental served-apps flag. The box agent builds a real web app beside the
-`/fn` endpoints, the tree keeps serving through the whole build, and the
-document flips to `ui: "http"` only after the host itself verifies the served
-root answers. Opening a served app wakes the machine and embeds its public
-URL in a sandboxed iframe; the wake latency is the loading state, and the URL
-is only valid for the current wake. With the flag off, layer-3 generation,
-the surface flip, and opening a served app all refuse with a typed
-`not-implemented` error naming the flag.
-
-Layer 3 currently has one working venue: BYO e2b (`E2B_API_KEY` or an
-explicit `e2bSandbox`). On the Vendo Cloud hosted sandbox, the
-`*.m.vendo.run` ingress TLS certificate is not yet live, so served-app URLs
-fail the TLS handshake until it lands; layers 1 and 2 are unaffected on both
-venues.
+resume. A redaction guard scrubs known secret values from everything that
+crosses back out of the box. This is the SSRF and exfiltration answer,
+including for a bring-your-own model key: the key sits in the box, and the
+box can only talk to approved domains.

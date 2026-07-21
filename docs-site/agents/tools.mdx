@@ -1,22 +1,15 @@
 ---
 title: "Tools and the catalog for agents"
-description: "Exposing the host API as Vendo tools, the two-file surface, what makes a good tool, and the catalog contract with anti-prop-invention rules."
+sidebarTitle: "Tools and catalog"
+description: "Exposing the host API as Vendo tools, what makes a good tool, and the catalog contract with anti-prop-invention rules."
 ---
 
-## The two-file surface
+## The registry is yours to fill
 
 A host's entire server wiring is two files, both scaffolded by `vendo init`:
-
-1. **`vendo/registry.tsx`**: the component registry. One object keyed by
-   component name; each entry holds the real component reference, a
-   description the model reads, and an optional zod props schema. The same
-   object serves both sides: `createVendo` reads it as `catalog` (data fields
-   only) and `<VendoRoot components={registry}>` reads the component
-   references. There is no second map to keep in sync.
-2. **The composition**: one `createVendo({...})` call. On Next.js it lives in
-   the catch-all route `app/api/vendo/[...vendo]/route.ts`; on Express in
-   `vendo/server.ts` (`server.mjs` when the host has no TypeScript), mounted
-   with `app.use("/api/vendo", mountVendo())`.
+`vendo/registry.tsx` (the component registry) and one `createVendo({...})`
+composition. See [How Vendo works](/concepts/architecture#the-two-files-you-own)
+for what each file is and how the same registry object serves both sides.
 
 Init generates the registry empty. Filling it with real host components is
 your job; see the catalog contract below.
@@ -24,9 +17,9 @@ your job; see the catalog contract below.
 ## Tools come from extraction, not from you
 
 `vendo sync` (run by init, and hooked into `predev`/`prebuild`) statically
-extracts the host API (OpenAPI operations, tRPC procedures, GraphQL
-operations, Next.js server actions, and a route scan) into
-`.vendo/tools.json`. Only tools in that file exist.
+extracts the host API into `.vendo/tools.json`; see
+[Tools from your API](/connect/api-tools) for every extractor it runs. Only
+tools in that file exist.
 
 The rules:
 

@@ -1,5 +1,6 @@
 ---
 title: "Headless hooks"
+sidebarTitle: "Hooks"
 description: "React hooks from @vendoai/ui share a { data, error, isLoading, refresh } contract with optional polling for threads, apps, approvals, and grants."
 ---
 
@@ -162,21 +163,75 @@ export function AppsDrawer() {
 ```
 
 Import mints a fresh `app_` id and does not carry over data, grants, or
-authority — see [Generated UI and apps](/concepts/generated-ui) for the
+authority; see [Generated UI and apps](/concepts/generated-ui) for the
 ownership model.
+
+## Overlay control (useVendoOverlay)
+
+`useVendoOverlay` gives your own chrome programmatic control over
+`VendoOverlay` (the ready-made surface from `@vendoai/ui/chrome`). The
+component's open state is uncontrolled by default and can be seeded with its
+`defaultOpen` prop, or fully controlled with `open` and `onOpenChange`; the
+hook wraps that controlled pair for you. Spread `overlayProps` onto the
+component and call `open`, `close`, or `toggle` from your own shortcut or nav
+button.
+
+```ts
+export interface VendoOverlayController {
+  isOpen: boolean;          // whether the overlay is currently open
+  open(): void;
+  close(): void;
+  toggle(): void;
+  newConversation(): void;  // discard the current conversation, start fresh
+  // Spread onto <VendoOverlay /> to hand it this controller's state:
+  overlayProps: { open: boolean; onOpenChange(open: boolean): void; conversationKey: number };
+}
+```
+
+`useVendoOverlay(options?)` accepts one option, `defaultOpen?: boolean`, and
+returns the controller above. Pair it with `launcher="none"` when your host
+owns the trigger, as with this Cmd/Ctrl+K shortcut:
+
+```tsx
+"use client";
+
+import { useEffect } from "react";
+import { useVendoOverlay } from "@vendoai/ui";
+import { VendoOverlay } from "@vendoai/ui/chrome";
+
+export function Assistant() {
+  const overlay = useVendoOverlay();
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        overlay.toggle();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [overlay.toggle]);
+
+  return <VendoOverlay {...overlay.overlayProps} launcher="none" />;
+}
+```
+
+The panel itself is portaled to `document.body`, locks page scroll, marks the
+page behind the scrim `inert`, and restores focus to the invoking element on
+close. Closing the overlay hides the panel without discarding the
+conversation, so reopening within the same page session restores the prior
+messages and thread. To start fresh, call `overlay.newConversation()`, use
+the new-conversation button in the panel header, or bump the
+`conversationKey` prop from your own state.
 
 ## BYO-agent embeds
 
-`@vendoai/ui` also exports three components for hosts that run their own
-agent loop and spread in the [guarded tool pack](/existing-agents):
-`VendoToolResult` (the dispatcher: any `vendo_*` tool output in, the right
-embed out), `VendoAppEmbed` (`vendo/app-ref@1`), and `VendoApprovalEmbed`
-(`vendo/approval-ref@1`). Like the hooks, they read the wire through the
-surrounding `VendoProvider`; each polls on its own until it reaches a
-terminal state. Prop types
-ship alongside them: `VendoToolResultProps`, `VendoAppEmbedProps`,
-`VendoApprovalEmbedProps`, and the `VendoApprovalEmbedState` resolution
-vocabulary (`"pending" | "executed" | "declined" | "expired"`).
+If you run your own agent loop and spread in the
+[guarded tool pack](/existing-agents), a separate set of `@vendoai/ui`
+components (`VendoToolResult`, `VendoAppEmbed`, `VendoApprovalEmbed`) renders
+Vendo inside that chat instead of these hooks. See
+[Embeds and envelopes](/existing-agents/embeds) for the full reference.
 
 ## When to use hooks vs. chrome
 

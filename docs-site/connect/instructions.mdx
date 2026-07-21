@@ -1,9 +1,13 @@
 ---
-title: "Product instructions: briefs, directions, and design rules"
+title: "Prompts and instructions"
+sidebarTitle: "Prompts"
 description: "Where to place product briefs, company directions, agent-prompt additions, and app design rules so each lands in the correct contracted channel."
 ---
 
-Use the channel that matches the intent:
+Vendo assembles the agent's system prompt from four channels: a product
+brief, company directions, host instructions, and (for generation) design
+rules. Each channel has one contracted place to live, and this page maps
+each to that place and to its position in the assembled prompt.
 
 | File or config | Purpose |
 | --- | --- |
@@ -21,14 +25,16 @@ Directions are policy data. Put them in the policy file or inline
 The agent assembles its system prompt fresh for each turn:
 
 1. Vendo's operating prompt.
-2. The host product brief from `.vendo/brief.md`.
-3. Company directions returned by `guard.directions(ctx)`.
-4. Catalog and theme summary when the venue can render trees.
-5. Host instructions.
+2. Capability-miss reporting guidance, when enabled.
+3. The host product brief from `.vendo/brief.md`.
+4. Company directions returned by `guard.directions(ctx)`.
+5. Catalog and theme summary when the venue can render trees.
+6. Host instructions.
 
 The apps generation engine has its own specialized prompts for tree emission
-and code edits. It receives the component catalog, theme, optional
-`.vendo/design-rules.md`, and format limits. It can use the same model as the
+and code edits. It receives the component catalog, theme, optional design
+rules (`createVendo({ apps: { designRules } })`, else `.vendo/design-rules.md`
+re-read per generation), and format limits. It can use the same model as the
 agent or a different AI SDK `LanguageModel`.
 
 Memory is deferred and has no reserved v0 seam.

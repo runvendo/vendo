@@ -1,7 +1,19 @@
 ---
-title: "Quickstart: Next.js"
-description: "Install @vendoai/vendo in a Next.js app, wire vendo/registry.tsx and the catch-all handler, drop in VendoRoot, and ship a first working agent turn."
+title: "Quickstart"
+sidebarTitle: "Quickstart"
+description: "Install @vendoai/vendo, wire the handler in Next.js or Express and other runtimes, drop in VendoRoot and the overlay, and ship a first working agent turn."
 ---
+
+This page takes you from install to a first working agent turn in your own
+app, on Next.js or Express and other Node runtimes. You wire one server
+composition and one client root; `vendo init` scaffolds the rest.
+
+<Note>
+  Vendo's built-in agent is in beta. Most teams should
+  [bring their own agent](/existing-agents) and use Vendo's tools and surfaces
+  from their existing loop. This quickstart wires Vendo as the whole agent,
+  loop and UI included.
+</Note>
 
 ## Install
 
@@ -10,63 +22,26 @@ npm install @vendoai/vendo
 npx vendo init
 ```
 
-Vendo's handler is framework-agnostic. It takes a standard `Request` and
-returns a standard `Response`, so it runs in Next.js, Express, Fastify, Hono,
-Bun, or any Node-compatible runtime. The umbrella requires Node 20 or later.
-
-<Tabs>
-  <Tab title="Next.js">
-    `vendo init` asks nothing on the happy path. It writes two code files — an
-    empty `vendo/registry.tsx` and the catch-all handler wired to it — plus two
-    package.json script hooks, extracts your tools and brand theme into
-    `.vendo/`, resolves a model key, and prints the one
-    `<VendoRoot components={registry}>` line that is yours to paste. When it
-    detects your auth provider in package.json it asks once to confirm the
-    preset (Enter accepts; `--yes` and non-interactive runs accept it
-    silently). It never edits code you wrote.
-  </Tab>
-  <Tab title="Express & other runtimes">
-    Init always writes the `.vendo` contract (tools, policy, theme, brief). It
-    reads `package.json` to decide what code to propose:
-
-    - **Express** (an `express` dependency): a diff-gated `vendo/server.ts`
-      (`vendo/server.mjs` when the host has no `tsconfig.json`) holding a
-      `createVendo()` composition and a Node HTTP-to-fetch adapter, plus a starter
-      `vendo/ai.ts` model module. Two manual wiring steps remain, and init prints
-      both.
-    - **Any other runtime** (Fastify, Hono, Bun): init detects only `next` and
-      `express`, so it proposes Next-shaped files. Decline those diffs and mount
-      `vendo.handler` yourself (see below). Detection checks `next` first, so an
-      app with both dependencies gets the Next scaffold.
-  </Tab>
-</Tabs>
-
-<Note>
-  **Already have an agent?** This quickstart wires Vendo as your product's
-  agent, loop and UI included. If your product already runs its own AI SDK
-  or Mastra agent, keep it: spread Vendo's guarded tool pack into that loop
-  and render generated apps and approvals in your own chat. See
-  [Use with your existing agent](/existing-agents).
-</Note>
+Vendo's handler takes a standard `Request` and returns a standard `Response`,
+so it runs in Next.js, Express, Fastify, Hono, Bun, or any Node-compatible
+runtime (Node 20 or later). Init flags live in the
+[CLI reference](/reference/cli).
 
 <Tabs>
   <Tab title="Next.js">
     ## The two files you own
 
-    A host's entire server wiring is two files: `vendo/registry.tsx`, the shared
-    component registry, and the composition — one `createVendo` call with a
-    model, an auth preset, and that registry. On Next.js the composition lives
-    inline in the catch-all route `app/api/vendo/[...vendo]/route.ts`, which is
-    exactly what `vendo init` scaffolds.
+    `vendo init` asks nothing on the happy path. It writes an empty
+    `vendo/registry.tsx` and the catch-all route
+    `app/api/vendo/[...vendo]/route.ts` wired to it, extracts your tools and
+    theme into `.vendo/`, resolves a model key, and prints the one
+    `<VendoRoot components={registry}>` line that is yours to paste. It never
+    edits code you wrote. How the pieces fit: see
+    [How Vendo works](/concepts/architecture).
 
     ### `vendo/registry.tsx`
 
-    One object, keyed by component name. Each entry holds the real component
-    reference, a description the model reads, and an optional zod props schema.
-    The same object serves both sides: `createVendo` reads it as `catalog` and
-    uses only the data fields; `<VendoRoot>` reads it as `components` and uses
-    only the component references — no second map to keep in sync. See
-    [Host components](/connect/host-components) for the full registration
+    See [Host components](/connect/host-components) for the full registration
     reference.
 
     ```tsx
@@ -86,14 +61,10 @@ Bun, or any Node-compatible runtime. The umbrella requires Node 20 or later.
     } satisfies ComponentRegistry;
     ```
 
-    The props schema is optional — a schema-less entry is legal and renders as a
-    description-only prompt entry the model infers props for. The model-facing
-    JSON Schema is derived from `props` internally; you never hand-write it.
-
-    ### The catch-all route — the composition
+    ### The catch-all route
 
     ```ts
-    // app/api/vendo/[...vendo]/route.ts — what `vendo init` scaffolds
+    // app/api/vendo/[...vendo]/route.ts (what `vendo init` scaffolds)
     import { anthropic } from "@ai-sdk/anthropic";
     import { authJs } from "@vendoai/vendo/auth/auth-js";
     import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
@@ -109,62 +80,40 @@ Bun, or any Node-compatible runtime. The umbrella requires Node 20 or later.
     export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
     ```
 
-    Every key is optional (see [Persistence](#persistence) below for the
-    storage default and the policy note under [Send the first
-    turn](#send-the-first-turn) for what `policy: {}` activates). `authJs()` is
-    zero-argument in the standard case: it reads `AUTH_SECRET` (mirroring Auth.js
-    itself) and derives the principal's display name and email from the
-    session-token claims. `auth` is one preset that fills all three identity
-    seams `createVendo` needs — the request→principal resolver, the away/MCP
-    `actAs` seam, and the door's OAuth adapter — from one config key. Presets
-    also exist for Clerk, Supabase, Auth0, and a generic JWT scheme; see
-    [actAs presets](/connect/act-as-presets) for the full list and the per-seam
-    escape hatch (`principal`/`actAs`/`oauth`) for hosts without a shipped
-    preset — supplying `auth` together with any of those three throws a
-    validation error at compose time.
-
-    Prefer a separate `vendo/server.ts` (exporting the same `createVendo`
-    result) when code outside the route needs the `vendo` object — `vendo.emit`
-    for host events, the MCP door's `.well-known` route, or tests. The route
-    then shrinks to a re-export:
-
-    ```ts
-    // app/api/vendo/[...vendo]/route.ts
-    import { nextVendoHandler } from "@vendoai/vendo/server";
-    import { vendo } from "@/vendo/server";
-
-    export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
-    ```
-
-    Place the catch-all route under `/api/vendo`. The fetch handler itself is
-    framework-agnostic. See [Handler options](/reference/handler-options) for
-    every `createVendo` key.
+    Every key is optional, with one exception: `oauth` (or an `auth` preset
+    that carries one) is required once you turn on [`mcp: true`](#serve-your-product-to-mcp-clients),
+    since the door cannot mint principals without it; `createVendo` throws at
+    compose time otherwise. `authJs()` reads `AUTH_SECRET` and derives the
+    principal from the session-token claims; presets also exist for Clerk,
+    Supabase, Auth0, and a generic JWT scheme
+    ([actAs presets](/connect/act-as-presets)). Every `createVendo` key lives
+    in [Handler options](/reference/handler-options).
 
     ## Add the root
 
     ```tsx
     import { VendoRoot } from "@vendoai/vendo/react";
     import { registry } from "@/vendo/registry";
+    import theme from "@/.vendo/theme.json";
+    import type { VendoTheme } from "@vendoai/vendo";
 
     export function Root({ children }: { children: React.ReactNode }) {
-      return <VendoRoot components={registry}>{children}</VendoRoot>;
+      return (
+        <VendoRoot components={registry} theme={theme as VendoTheme}>
+          {children}
+        </VendoRoot>
+      );
     }
     ```
 
-    `components` accepts the same registry object the composition passes as
-    `catalog` — it reads only the component references and ignores the data
-    fields. Choose headless hooks from `@vendoai/ui` or a ready-made surface from
-    `@vendoai/ui/chrome`. Every read hook shares a
-    `{ data, error, isLoading, refresh }` shape with optional polling — see
-    [Headless hooks](/reference/hooks).
+    `vendo init` captures your extracted brand into `.vendo/theme.json`; the
+    `theme` prop is what applies it. The cast narrows TypeScript's widened
+    JSON-module string literals.
 
     ## Add the overlay
 
-    `VendoOverlay` from `@vendoai/ui/chrome` is the ready-made agent surface. It
-    ships a fixed, brand-styled launcher pill in the bottom-right corner and a
-    dialog panel that is portaled to `document.body`, locks page scroll, marks the
-    page behind the scrim `inert`, and restores focus to the invoking element on
-    close.
+    `VendoOverlay` from `@vendoai/ui/chrome` is the ready-made agent surface:
+    a brand-styled launcher pill plus a dialog panel over your product.
 
     ```tsx
     import { VendoOverlay } from "@vendoai/ui/chrome";
@@ -174,50 +123,19 @@ Bun, or any Node-compatible runtime. The umbrella requires Node 20 or later.
     }
     ```
 
-    Move the launcher with `launcher="bottom-left"`, or set `launcher="none"` when
-    your host triggers the overlay itself (for example, from a dock or a Cmd/Ctrl+K
-    shortcut). Open state is uncontrolled by default and can be seeded with
-    `defaultOpen`, or fully controlled with `open` and `onOpenChange`.
-
-    For programmatic control, pair the component with the `useVendoOverlay` hook
-    from `@vendoai/ui`. Spread `overlayProps` onto the component and call `open`,
-    `close`, or `toggle` from your own shortcut or nav button.
-
-    ```tsx
-    "use client";
-
-    import { useEffect } from "react";
-    import { useVendoOverlay } from "@vendoai/ui";
-    import { VendoOverlay } from "@vendoai/ui/chrome";
-
-    export function Assistant() {
-      const overlay = useVendoOverlay();
-
-      useEffect(() => {
-        const onKey = (event: KeyboardEvent) => {
-          if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-            event.preventDefault();
-            overlay.toggle();
-          }
-        };
-        document.addEventListener("keydown", onKey);
-        return () => document.removeEventListener("keydown", onKey);
-      }, [overlay.toggle]);
-
-      return <VendoOverlay {...overlay.overlayProps} launcher="none" />;
-    }
-    ```
-
-    Closing the overlay hides the panel without discarding the conversation, so
-    reopening within the same page session restores the prior messages and thread.
-    To start fresh, call `overlay.newConversation()` from the hook, use the
-    new-conversation button in the panel header, or bump the `conversationKey`
-    prop from your own state.
+    Move the launcher with `launcher="bottom-left"`, or set `launcher="none"`
+    when your host triggers the overlay itself. For programmatic control,
+    pair it with the `useVendoOverlay` hook; see
+    [Overlay control](/reference/hooks#overlay-control-usevendooverlay).
   </Tab>
   <Tab title="Express & other runtimes">
     ## Wire the Express adapter
 
-    Mount the exported adapter under one base path, normally `/api/vendo`:
+    On Express, `vendo init` proposes a diff-gated `vendo/server.ts` holding a
+    `createVendo()` composition and a Node HTTP-to-fetch adapter. It does not
+    scaffold a model module; `model` stays optional and resolves from the
+    environment. Two wiring steps remain. Mount the exported adapter under one
+    base path, normally `/api/vendo`:
 
     ```ts
     import express from "express";
@@ -228,13 +146,15 @@ Bun, or any Node-compatible runtime. The umbrella requires Node 20 or later.
     app.listen(3000);
     ```
 
-    Wrap the client root in `<VendoRoot>`:
+    Wrap the client root in `<VendoRoot>`, passing the theme `vendo init`
+    captured into `.vendo/theme.json`:
 
     ```tsx
     import { VendoRoot } from "@vendoai/vendo/react";
+    import theme from "./.vendo/theme.json";
 
     root.render(
-      <VendoRoot>
+      <VendoRoot theme={theme}>
         <App />
       </VendoRoot>,
     );
@@ -246,17 +166,17 @@ Bun, or any Node-compatible runtime. The umbrella requires Node 20 or later.
 
     ```ts
     import { createVendo } from "@vendoai/vendo/server";
-    import { model } from "./ai";
 
     const vendo = createVendo({
-      model,
       principal: async () => null,
       policy: {}, // .vendo/policy.json: destructive asks, reads run
     });
     ```
 
-    See the policy note under [Send the first turn](#send-the-first-turn) for
-    what `policy: {}` activates.
+    `model` is optional and omitted here on purpose: `vendo init` does not
+    scaffold a model module, so a bare `createVendo()` resolves the model
+    from the environment (see [Persistence](#persistence)). Pass an explicit
+    `model` only if you need a specific one.
 
     Replace `principal` with your session resolver. It receives the `Request` and
     returns a `Principal`, or `null` for an anonymous session:
@@ -270,9 +190,9 @@ Bun, or any Node-compatible runtime. The umbrella requires Node 20 or later.
 
     ## Mount the handler directly
 
-    Outside Express, mount `vendo.handler` under one base path yourself. It takes a
-    standard `Request` and returns a standard `Response`. The Node adapter that
-    `vendo init` generates for Express is the pattern to copy. An adapter must:
+    On any other runtime (Fastify, Hono, Bun), decline init's proposed diffs
+    and mount `vendo.handler` under one base path yourself; the Node adapter
+    init generates for Express is the pattern to copy. An adapter must:
 
     - Pass every method (GET, POST, PUT, PATCH, DELETE) through unchanged.
     - Preserve streaming for `POST /threads`, never buffering the response body.
@@ -282,72 +202,52 @@ Bun, or any Node-compatible runtime. The umbrella requires Node 20 or later.
       present-mode same-origin tool calls.
     - Return multi-value `Set-Cookie` as a header array, not a joined string.
 
-    See [Set the trusted origin](#set-the-trusted-origin) below for the
-    `VENDO_BASE_URL` requirement present-mode credential forwarding depends on.
+    Credential forwarding also needs the `VENDO_BASE_URL` requirement under
+    [Set the trusted origin](#set-the-trusted-origin) below.
   </Tab>
 </Tabs>
 
 ## Send the first turn
 
-Open your conversation surface and ask for a view, such as “Show my overdue
-invoices by customer.” The client sends `POST /threads` and reads an AI SDK UI
+Open your conversation surface and ask for a view, such as "Show my overdue
+invoices by customer." The client sends `POST /threads` and reads an AI SDK UI
 message stream. App views arrive as `data-vendo-view` parts. Approval metadata
 arrives as `data-vendo-approval` parts.
 
-<Note>
-  The scaffolded route passes `policy: {}`, which reads `.vendo/policy.json`:
-  destructive tools ask before running, reads run. Remove the `policy` key and
-  every call auto-runs (audited), with the unconfigured-policy notice in
-  shipped chrome. The file is read fail-soft: deleting it while keeping
-  `policy: {}` also auto-runs, without the notice — keep it in version
-  control. Named presets replace the file — `"cautious"` (writes ask,
-  reads run), `"readonly"` (reads run, everything else blocked), or
-  `"autopilot"` (everything runs) — and inline `{ rules }` covers anything a
-  preset doesn't.
-</Note>
+The scaffolded `policy: {}` reads `.vendo/policy.json` (destructive tools ask,
+reads run); every policy shape lives in
+[Handler options](/reference/handler-options#composition-configuration).
 
 ## Set the trusted origin
 
-Present tool calls forward the inbound request's `cookie` and `authorization`
-headers only when the wire trusts its own origin. In development, it learns
-and trusts that origin automatically from the first request — no
-configuration needed. Every other environment (including `NODE_ENV=test`)
-keeps the learned origin untrusted by default, so a spoofed `Host` header can
-never turn it into a credential-exfiltration target.
-
-Production deployments must set `VENDO_BASE_URL` to the app's public origin:
+Present tool calls forward the inbound `cookie` and `authorization` headers
+only when the wire trusts its own origin. Development learns that origin from
+the first request; every other environment keeps it untrusted, so a spoofed
+`Host` header can never exfiltrate credentials. Production deployments must
+set `VENDO_BASE_URL` to the app's public origin:
 
 ```bash
 VENDO_BASE_URL=https://app.example.com
 ```
 
-Without it in production, a present-mode host tool call that needs to forward
-credentials fails loud instead of running unauthenticated, and `vendo doctor`
-reports the missing variable as a failing check. `vendo init` writes a
-`http://localhost:3000` default into `.env.example` for you to replace.
-
-`VENDO_BASE_URL` does more than gate present-mode credentials — see
-[Environment variables](/reference/environment-variables#host-process) for
-every job it does.
+Without it, a present-mode tool call that needs credentials fails loud
+instead of running unauthenticated, and `vendo doctor` reports the missing
+variable. `vendo init` writes a `http://localhost:3000` default into
+`.env.example`. `VENDO_BASE_URL` does more than gate present-mode
+credentials; see
+[Environment variables](/reference/environment-variables#host-process).
 
 ## Persistence
 
-A bare `createVendo()` boots with an env-resolved model, anonymous ephemeral
-sessions, and PGlite persistence — unless `VENDO_API_KEY` is set and no
-`store` is passed, in which case the Cloud hosted store takes the slot and
-threads, apps, records, grants, and audit persist in Vendo Cloud. Pass
-`store: createStore(...)` to keep data local; an explicit store always wins.
-See [Vendo Cloud](/deploy/vendo-cloud#hosted-store).
+A bare `createVendo()` defaults to an env-resolved model, anonymous ephemeral
+sessions, and PGlite persistence. See
+[Vendo Cloud](/deploy/vendo-cloud#hosted-store) for the store slot under
+`VENDO_API_KEY`.
 
-## Serve your product to MCP clients (the door)
+## Serve your product to MCP clients
 
-Outside agents — Claude, ChatGPT, Cursor, and any MCP client — can connect to
-your product through the MCP door: one flag (`mcp: true`) plus the same
-`auth`/`oauth` seam you already wired. It is **experimental**: real,
-guard-bound, and covered by protocol-level e2e, but it stays outside this
-quickstart's main flow until the attended live client matrix is
-demonstrably green. See [MCP door](/capabilities/mcp) for setup, the
-discovery route, and the graduation criterion.
+Outside agents (Claude, ChatGPT, Cursor, any MCP client) can connect through
+the experimental MCP door: one flag, `mcp: true`. See [MCP door](/capabilities/mcp).
 
 ## Verify
 
@@ -360,9 +260,8 @@ discovery route, and the graduation criterion.
 
     Doctor checks wiring, probes `/status`, and runs live HTTP probes that
     confirm present-mode credentials forward and that `actAs` (if configured)
-    mints material your host accepts. Sync extracts tools and remix baselines
-    for build and development flows. See the
-    [CLI reference](/reference/cli#vendo-doctor-dir) for the probe details.
+    mints material your host accepts. Sync extracts tools and remix baselines.
+    See the [CLI reference](/reference/cli#vendo-doctor-dir) for probe details.
   </Tab>
   <Tab title="Express & other runtimes">
     Run `vendo doctor` against the running server:
@@ -371,11 +270,10 @@ discovery route, and the graduation criterion.
     npx vendo doctor
     ```
 
-    For an Express host it checks that the server composes `createVendo` from
-    `@vendoai/vendo/server`, that the client mounts `<VendoRoot>`, and makes one live
-    `/status` round trip. It also runs live HTTP probes that confirm present-mode
-    credentials reach the host and that `actAs` (if configured) mints material
-    the host accepts. It reports broken until both wiring steps are done. See
-    the [CLI reference](/reference/cli#vendo-doctor-dir) for the probe details.
+    For an Express host it checks the `createVendo` composition and the
+    `<VendoRoot>` mount, makes one live `/status` round trip, and runs the
+    same credential and `actAs` probes as the Next.js path. It reports broken
+    until both wiring steps are done. See the
+    [CLI reference](/reference/cli#vendo-doctor-dir) for probe details.
   </Tab>
 </Tabs>
