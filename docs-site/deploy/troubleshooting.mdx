@@ -1,5 +1,6 @@
 ---
 title: "Troubleshooting Vendo: doctor, /status, and error codes"
+sidebarTitle: "Troubleshooting"
 description: "Diagnose broken Vendo wiring with npx vendo doctor, the /status round trip, and the stable error taxonomy shared by CLI, handler, and client."
 ---
 
@@ -10,7 +11,9 @@ npx vendo doctor
 ```
 
 Doctor checks local wiring and makes one live `/status` round trip. Exit code 0
-is green; exit code 1 means broken wiring.
+is green; exit code 1 means broken wiring. See
+[Verify](/agents/verify) for the symptom, cause, and fix behind every doctor
+error code.
 
 ## Error codes
 
@@ -33,15 +36,15 @@ Every non-2xx response uses `{ "error": { "code", "message" } }`.
   and `VENDO_BASE_URL` for the box callback URLs.
 - Present-mode credential forwarding requires the wire to trust its own
   origin. In development it learns and trusts that origin automatically from
-  the first request — no `VENDO_BASE_URL` needed. Every other environment
+  the first request: no `VENDO_BASE_URL` needed. Every other environment
   (including `NODE_ENV=test`) keeps the learned origin untrusted by default.
   In production, an untrusted origin (reason `untrusted-host-origin`, from a
   missing `VENDO_BASE_URL`) fails the present-mode call closed instead of
   running it unauthenticated; a cross-origin route binding (reason
   `cross-origin-binding`) always stays refused, in every environment. Vendo
-  emits one `present-credentials-not-forwarded` audit event per composition
-  either way. `vendo doctor` catches a missing `VENDO_BASE_URL` before you
-  ship — see below.
+  emits one `present-credentials-not-forwarded` audit event either way.
+  `vendo doctor` catches a missing `VENDO_BASE_URL` before you ship (see
+  Doctor probes below).
 - Away host API calls require `actAs` and an app-bound grant that was
   captured while the user was present. See
   [actAs presets](/connect/act-as-presets) for provider wiring. If `actAs`
@@ -66,6 +69,6 @@ Every non-2xx response uses `{ "error": { "code", "message" } }`.
   material the host principal resolver accepts. Doctor warns (does not
   fail) when `actAs` is not configured.
 
-Both probes report booleans only — no credential values are printed or
-persisted — and the synthetic `/doctor/*` routes return 404 in production.
+Both probes report booleans only (no credential values are printed or
+persisted), and the synthetic `/doctor/*` routes return 404 in production.
 See the [CLI reference](/reference/cli#vendo-doctor-dir).
