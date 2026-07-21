@@ -37,7 +37,7 @@ npx vendo init
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/agent-logos-dark.svg">
-  <img src="assets/agent-logos.svg" alt="Claude Code, Cursor, GitHub Copilot, OpenAI Codex, Windsurf">
+  <img src="assets/agent-logos.svg" alt="Claude Code, Cursor, GitHub Copilot, OpenAI Codex, Windsurf" width="167" height="29">
 </picture>
 
 Paste this inside your app's repo:
