@@ -369,6 +369,59 @@ describe("pages route verb evidence", () => {
     });
   });
 
+  it("treats an evidence-less default-export pages handler as GET (papermark health.ts shape)", async () => {
+    const root = await temporaryRoot();
+    // Real shape from papermark's pages/api/health.ts: plain default export,
+    // no req.method branch, no req.body read, no other verb evidence at all.
+    await write(
+      root,
+      "pages/api/health.ts",
+      [
+        "import type { NextApiRequest, NextApiResponse } from \"next\";",
+        "import prisma from \"@/lib/prisma\";",
+        "export default async function handler(_req: NextApiRequest, res: NextApiResponse) {",
+        "  try {",
+        "    await prisma.$queryRaw`SELECT 1`;",
+        "    return res.json({ status: \"ok\", message: \"All systems operational\" });",
+        "  } catch (err) {",
+        "    return res.status(500).json({ status: \"error\", message: (err as Error).message });",
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+    // Real shape from papermark's pages/api/teams/[teamId]/documents/document-processing-status.ts:
+    // reads req.query (not req.method, not req.body) and still has zero
+    // method-discriminating evidence.
+    await write(
+      root,
+      "pages/api/teams/[teamId]/documents/status.ts",
+      [
+        "import { NextApiRequest, NextApiResponse } from \"next\";",
+        "import prisma from \"@/lib/prisma\";",
+        "export default async function handler(req: NextApiRequest, res: NextApiResponse) {",
+        "  const { documentVersionId } = req.query as { documentVersionId: string };",
+        "  const documentVersion = await prisma.documentVersion.findUnique({ where: { id: documentVersionId } });",
+        "  if (!documentVersion) return res.status(404).end();",
+        "  res.status(200).json({ ok: true });",
+        "}",
+      ].join("\n"),
+    );
+
+    expect(await methodsFor(root, "/api/health")).toEqual(["GET"]);
+    expect(await methodsFor(root, "/api/teams/{teamId}/documents/status")).toEqual(["GET"]);
+
+    expect(await scanRoutes(root)).toEqual({
+      tools: [
+        { name: "host_health_list", description: "GET /api/health", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "GET", path: "/api/health", argsIn: "query" } },
+        { name: "host_teams_documents_status_list", description: "GET /api/teams/{teamId}/documents/status",
+          inputSchema: blankInput({ teamId: { type: "string" } }), risk: "write",
+          binding: { kind: "route", method: "GET", path: "/api/teams/{teamId}/documents/status", argsIn: "query" } },
+      ],
+      warnings: [],
+    });
+  });
+
   it("emits an unclassified disabled tool when no evidence exists", async () => {
     const root = await temporaryRoot();
     await write(root, "pages/api/opaque.ts", "const helper = () => null;\nexport const settings = { helper };\n");

@@ -287,6 +287,41 @@ function hasDefaultHandler(module: ParsedModule, assumed: boolean): boolean {
       && statement.exportClause.elements.some((element) => element.name.text === "default")));
 }
 
+function isFunctionLike(ts: typeof TS, node: TS.Node): boolean {
+  return ts.isFunctionExpression(node) || ts.isArrowFunction(node);
+}
+
+// True only when the module's default export is a function body this scan
+// can actually see and has already walked above — a named function
+// declaration (`export default function handler(...) {}`), an inline
+// function/arrow expression (`export default (req, res) => {...}`), or a
+// bare identifier that resolves to one of those declared in this same file
+// (`function handler(...) {}\nexport default handler;`). It deliberately
+// excludes a default export that is the *result of calling* something
+// (`export default withReporting(handler)`) or an unresolved re-export: in
+// both cases the real method evidence may live in code this scan never
+// inspects, so guessing GET there would trade a safe unclassified fallback
+// for a confident wrong answer.
+function hasInlineDefaultFunctionBody(ts: typeof TS, sf: TS.SourceFile): boolean {
+  for (const statement of sf.statements) {
+    if (ts.isFunctionDeclaration(statement) && hasModifier(ts, statement, ts.SyntaxKind.DefaultKeyword)) return true;
+    if (!ts.isExportAssignment(statement) || statement.isExportEquals) continue;
+    const expression = statement.expression;
+    if (isFunctionLike(ts, expression)) return true;
+    if (!ts.isIdentifier(expression)) continue;
+    const localName = expression.text;
+    const declaresLocalFunction = sf.statements.some((candidate) => {
+      if (ts.isFunctionDeclaration(candidate)) return candidate.name?.text === localName;
+      if (!ts.isVariableStatement(candidate)) return false;
+      return candidate.declarationList.declarations.some((declaration) =>
+        ts.isIdentifier(declaration.name) && declaration.name.text === localName
+        && declaration.initializer !== undefined && isFunctionLike(ts, declaration.initializer));
+    });
+    if (declaresLocalFunction) return true;
+  }
+  return false;
+}
+
 function inferredPageVerbs(module: ParsedModule, route: RouteSource, assumed = false): Set<HttpMethod> {
   const { ts, sf } = module;
   const methods = new Set<HttpMethod>();
@@ -329,6 +364,20 @@ function inferredPageVerbs(module: ParsedModule, route: RouteSource, assumed = f
   } else if (bodyParserDisabled || route.urlPath.endsWith("/webhook")) {
     methods.add("POST");
   }
+  // A default export whose function body this scan actually walked above,
+  // with none of the write-shaped evidence found and no req.method branch
+  // (checked earlier), is method-blind by construction: it answers every
+  // verb identically. GET is the minimal truthful capability to claim for
+  // it — the handler demonstrably serves GET, so leaving it unclassified
+  // would be less honest, not more careful. Risk still falls out of
+  // extractedRisk's route-source fail-closed rule (GET from a route never
+  // earns "read"; it earns "write" here). The unclassified fallback remains
+  // for routes where the default export is opaque — an unresolved re-export,
+  // or a call to a wrapper whose body this scan never inspects (see
+  // hasInlineDefaultFunctionBody) — because the real evidence may be hiding
+  // in code we can't see, and guessing GET there would be a confident wrong
+  // answer, not a minimal truthful one.
+  if (methods.size === 0 && hasInlineDefaultFunctionBody(ts, sf)) methods.add("GET");
   return methods;
 }
 
