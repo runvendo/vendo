@@ -135,6 +135,15 @@ export async function runDeviceLogin(
     env: options.env ?? process.env,
   });
 
+  // `--wait <seconds>` (#479): the MAX wall-clock THIS invocation polls before
+  // giving up resumably — independent of, and capped by, the claim deadline.
+  // Absent: unchanged, block until the claim deadline (~10 min). `--wait 0`:
+  // one immediate poll, then exit resumably if still pending. An invalid value
+  // is ignored here (the `vendo login` entry validates it up front).
+  const waitRaw = option(args, "--wait");
+  const waitSeconds = waitRaw !== undefined && /^\d+$/.test(waitRaw) ? Number(waitRaw) : undefined;
+  const waitMs = waitSeconds === undefined ? undefined : waitSeconds * 1000;
+
   const pendingHome = options.home === undefined ? {} : { home: options.home };
 
   try {
@@ -151,6 +160,8 @@ export async function runDeviceLogin(
     let deadline: number;
     let intervalMs: number;
     let root: string;
+    let userCode: string;
+    let verificationUriComplete: string;
     if (resume !== null) {
       output.log(`Resuming pending approval — code ${resume.user_code}, approve at ${resume.verification_uri_complete}`);
       output.log(`Waiting for approval (the code expires in ${Math.max(1, Math.round((resume.expires_at - now()) / 60_000))} minutes)…`);
@@ -159,9 +170,11 @@ export async function runDeviceLogin(
       intervalMs = Math.max(resume.interval, 1) * 1000;
       // The key lands where the ORIGINAL run intended, not where the resume runs.
       root = resume.cwd;
+      userCode = resume.user_code;
+      verificationUriComplete = resume.verification_uri_complete;
     } else {
       // Optional email hint — shown to the human on the approval page.
-      const email = option(args, "--email") ?? positionals(args, ["--api-url", "--email"])[0];
+      const email = option(args, "--email") ?? positionals(args, ["--api-url", "--email", "--wait"])[0];
       const claim = await postJson(
         fetchImpl,
         `${base}${CLAIM_PATH}`,
@@ -193,6 +206,8 @@ export async function runDeviceLogin(
       deadline = now() + ceremony.expires_in * 1000;
       intervalMs = Math.max(ceremony.interval, 1) * 1000;
       root = options.root ?? process.cwd();
+      userCode = ceremony.user_code;
+      verificationUriComplete = approvalUrl;
       // Persist the ceremony so a fresh run can resume it if this process
       // dies mid-poll. Deleted on redemption/denial/expiry; deliberately left
       // in place on transient errors and interrupts.
@@ -212,8 +227,14 @@ export async function runDeviceLogin(
       claim_token: claimToken,
     }).toString();
 
-    while (now() < deadline) {
-      await sleep(intervalMs);
+    if (waitMs !== undefined) {
+      output.log(`This call polls for up to ${waitSeconds}s — re-run \`vendo login\` to continue this same request.`);
+    }
+
+    // One RFC 8628 token poll. Returns the loop's next move; terminal outcomes
+    // (approved/denied/expired) settle the pending file and return/throw here.
+    type PollResult = "approved" | "pending" | "slow_down";
+    const pollOnce = async (): Promise<PollResult> => {
       const poll = await postJson(
         fetchImpl,
         `${base}${TOKEN_PATH}`,
@@ -236,15 +257,12 @@ export async function runDeviceLogin(
           output.log("Re-run `vendo init` to finish wiring (it picks the key up from .env.local).");
         }
         printJson(output, { deviceLogin: true, wroteEnvLocal: true, keyLast4: key.slice(-4) });
-        return 0;
+        return "approved";
       }
 
       const error = (poll.body as { error?: unknown } | null)?.error;
-      if (error === "authorization_pending") continue;
-      if (error === "slow_down") {
-        intervalMs += 5000; // RFC 8628 §3.5
-        continue;
-      }
+      if (error === "authorization_pending") return "pending";
+      if (error === "slow_down") return "slow_down"; // RFC 8628 §3.5
       if (error === "expired_token") {
         await deletePendingClaim(pendingHome);
         throw new Error("The code expired before it was approved; run `vendo login` again.");
@@ -253,15 +271,62 @@ export async function runDeviceLogin(
         await deletePendingClaim(pendingHome);
         throw new Error("Your human denied the request — no key was minted.");
       }
+      // Any other token error is terminal for THIS claim (invalid_grant =
+      // consumed/denied server-side; single-use means it can never succeed
+      // again). Delete the pending file so the next `vendo login` opens a
+      // fresh claim instead of resuming into the same error forever — the
+      // exact trap a live install hit.
+      await deletePendingClaim(pendingHome);
       const description = (poll.body as { error_description?: unknown } | null)?.error_description;
       throw new Error(
         typeof description === "string"
           ? description
           : `Vendo Cloud token polling failed (${typeof error === "string" ? error : poll.status})`,
       );
+    };
+
+    // Budget still pending: leave the claim file in place and exit 0 — pending
+    // is not a failure. A re-run resumes this same claim (#479).
+    const pendingExit = (): number => {
+      output.log(`Still waiting on approval — code ${userCode}. Re-run \`vendo login\` to resume (it continues this same request).`);
+      printJson(output, {
+        deviceLogin: true,
+        pending: true,
+        userCode,
+        verificationUriComplete,
+      });
+      return 0;
+    };
+
+    if (waitMs === undefined) {
+      // No budget: block to the claim deadline — unchanged TTY behavior.
+      while (now() < deadline) {
+        await sleep(intervalMs);
+        const result = await pollOnce();
+        if (result === "approved") return 0;
+        if (result === "slow_down") intervalMs += 5000;
+      }
+      await deletePendingClaim(pendingHome);
+      throw new Error("The code expired before it was approved; run `vendo login` again.");
     }
-    await deletePendingClaim(pendingHome);
-    throw new Error("The code expired before it was approved; run `vendo login` again.");
+
+    // Bounded budget: poll immediately, then pace by interval, stopping at
+    // min(now+wait, deadline). `--wait 0` polls exactly once.
+    const pollDeadline = Math.min(deadline, now() + waitMs);
+    while (true) {
+      const result = await pollOnce();
+      if (result === "approved") return 0;
+      if (result === "slow_down") intervalMs += 5000;
+      if (now() >= deadline) {
+        await deletePendingClaim(pendingHome);
+        throw new Error("The code expired before it was approved; run `vendo login` again.");
+      }
+      if (now() >= pollDeadline) return pendingExit();
+      // Cap the wait to the remaining budget so a small `--wait` (e.g. 1s
+      // against the default 5s interval) exits within its bound instead of
+      // sleeping a whole interval past it.
+      await sleep(Math.min(intervalMs, pollDeadline - now()));
+    }
   } catch (error) {
     output.error(errorMessage(error));
     return 1;
