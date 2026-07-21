@@ -117,6 +117,15 @@ projects people run Vendo against and how those runs turn out.
 telemetry references updated to mirror `events.ts` exactly (an existing test
 enforces the mirror).
 
+### 3b. GitHub star metrics (added 2026-07-21)
+
+- `.github/workflows/star-metrics.yml` in the OSS repo: the `watch` event
+  captures real-time `repo_starred` rows (public stargazer login + running
+  count); a daily scheduled `github_stars_snapshot` self-corrects for
+  un-star drift. Zero secrets (public write-only key), zero infrastructure.
+- Funnel with the marketing site's `cta_click {cta: github}`:
+  visit → CTA click → star.
+
 ### 4. Manual PostHog-UI steps (Yousef)
 
 - Enable "Record user sessions" in the project settings.
