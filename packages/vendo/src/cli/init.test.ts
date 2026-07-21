@@ -1287,6 +1287,7 @@ describe("vendo init (zero-question)", () => {
       "",
     ].join("\n"));
     const seenEnv: Array<Record<string, string | undefined>> = [];
+    const installs: Array<{ command: string; args: string[] }> = [];
     const sink = output();
     expect(await runInit({
       targetDir: root,
@@ -1297,8 +1298,15 @@ describe("vendo init (zero-question)", () => {
         seenEnv.push(env);
         return { rung: "env-key", provider: "anthropic", envVar: "ANTHROPIC_API_KEY" };
       },
+      installProvider: async (command, args) => {
+        installs.push({ command, args });
+        return 0;
+      },
       cloud: { confirm: async () => false },
     })).toBe(0);
+    // A resolved credential installs the provider its runtime ladder loads
+    // (0.4.2): the fixture resolves neither ai nor @ai-sdk/anthropic.
+    expect(installs).toEqual([{ command: "npm", args: ["install", "ai@^6", "@ai-sdk/anthropic@^3"] }]);
     expect(seenEnv[0]?.ANTHROPIC_API_KEY).toBe("sk-ant-quoted");
     expect(seenEnv[0]?.OPENAI_API_KEY).toBe("sk-openai-plain");
     expect(seenEnv[0]?.VENDO_API_KEY).toBe(key);

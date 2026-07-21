@@ -145,14 +145,17 @@ export async function runDeviceLogin(
   const waitMs = waitSeconds === undefined ? undefined : waitSeconds * 1000;
 
   const pendingHome = options.home === undefined ? {} : { home: options.home };
+  const claimCwd = options.root ?? process.cwd();
 
   try {
     // A still-open claim from a dead process (#479): resume polling it so the
     // human's late approval — against the code they were already shown —
-    // still lands the key. An expired or unreadable file is discarded (a
-    // fresh ceremony overwrites it below).
-    const pending = await readPendingClaim(pendingHome);
-    const resume = pending !== null && pending.api_url === base && pending.expires_at > now()
+    // still lands the key. Claims are scoped per project directory (0.4.2):
+    // only THIS cwd's ceremony is ever resumed, so concurrent logins in other
+    // repos neither clobber this one nor get resumed by it. An expired or
+    // unreadable file is discarded (a fresh ceremony overwrites it below).
+    const pending = await readPendingClaim(claimCwd, pendingHome);
+    const resume = pending !== null && pending.api_url === base && pending.cwd === claimCwd && pending.expires_at > now()
       ? pending
       : null;
 
@@ -250,7 +253,7 @@ export async function runDeviceLogin(
           throw new Error("Vendo Cloud returned an invalid credential");
         }
         await upsertEnvLocal(root, "VENDO_API_KEY", key);
-        await deletePendingClaim(pendingHome);
+        await deletePendingClaim(claimCwd, pendingHome);
         // Never print the key itself — .env.local is the hand-off, last4 the
         // receipt. A resumed run names the full path: it may differ from cwd.
         output.log(`Approved — wrote VENDO_API_KEY (…${key.slice(-4)}) to ${
@@ -266,11 +269,11 @@ export async function runDeviceLogin(
       if (error === "authorization_pending") return "pending";
       if (error === "slow_down") return "slow_down"; // RFC 8628 §3.5
       if (error === "expired_token") {
-        await deletePendingClaim(pendingHome);
+        await deletePendingClaim(claimCwd, pendingHome);
         throw new Error("The code expired before it was approved; run `vendo login` again.");
       }
       if (error === "access_denied") {
-        await deletePendingClaim(pendingHome);
+        await deletePendingClaim(claimCwd, pendingHome);
         throw new Error("Your human denied the request — no key was minted.");
       }
       // Any other token error is terminal for THIS claim (invalid_grant =
@@ -278,7 +281,7 @@ export async function runDeviceLogin(
       // again). Delete the pending file so the next `vendo login` opens a
       // fresh claim instead of resuming into the same error forever — the
       // exact trap a live install hit.
-      await deletePendingClaim(pendingHome);
+      await deletePendingClaim(claimCwd, pendingHome);
       const description = (poll.body as { error_description?: unknown } | null)?.error_description;
       throw new Error(
         typeof description === "string"
@@ -308,7 +311,7 @@ export async function runDeviceLogin(
         if (result === "approved") return 0;
         if (result === "slow_down") intervalMs += 5000;
       }
-      await deletePendingClaim(pendingHome);
+      await deletePendingClaim(claimCwd, pendingHome);
       throw new Error("The code expired before it was approved; run `vendo login` again.");
     }
 
@@ -320,7 +323,7 @@ export async function runDeviceLogin(
       if (result === "approved") return 0;
       if (result === "slow_down") intervalMs += 5000;
       if (now() >= deadline) {
-        await deletePendingClaim(pendingHome);
+        await deletePendingClaim(claimCwd, pendingHome);
         throw new Error("The code expired before it was approved; run `vendo login` again.");
       }
       if (now() >= pollDeadline) return pendingExit();

@@ -20,6 +20,7 @@ import { BRIEF_TEMPLATE, type StaticTool } from "./extract/stages.js";
 import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
 import { resolveScaffoldAuth, type AuthMatch, type AuthPresetName, type ConfirmAuth, type SelectAuth } from "./init-auth.js";
+import { ensureProviderDeps, type InstallRunner } from "./provider-deps.js";
 import {
   expressServerSource,
   registrySource,
@@ -160,6 +161,8 @@ export interface InitOptions {
   env?: Record<string, string | undefined>;
   /** Test seam: credential detection for the key step. */
   resolveCredential?: (options: { env: Record<string, string | undefined> }) => Promise<DevCredential>;
+  /** Test seam: the provider-dependency install subprocess (provider-deps.ts). */
+  installProvider?: InstallRunner;
   /** Test seam (ENG-339): cloud-in-init step overrides. */
   cloud?: Partial<Omit<CloudStepOptions, "root" | "output" | "yes" | "credential">>;
   /** Test seam: AI extraction step overrides (harnesses, consent). */
@@ -1101,6 +1104,17 @@ export async function runInit(options: InitOptions): Promise<number> {
       ...(themeMs === undefined ? {} : { themeMs }),
       wiringMs,
       ...(await cloudProjectProps(root)),
+    });
+
+    // The credential's runtime provider must be resolvable from the host or
+    // the FIRST turn 500s (dev-creds/model.ts loads it host-side; nothing
+    // declares @ai-sdk/* — 0.4.1 E2E cert finding). Install exactly what the
+    // resolved credential needs; a failure degrades to the manual command.
+    await ensureProviderDeps({
+      root,
+      credential,
+      output,
+      ...(options.installProvider === undefined ? {} : { run: options.installProvider }),
     });
 
     // The one short Cloud reminder in the end-of-run summary — ONLY while no
