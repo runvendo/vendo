@@ -8,6 +8,7 @@ export { loadConfig, saveConfig, configPath, type TelemetryConfig } from "./conf
 export { EVENT_ALLOWLIST, type EventName } from "./events.js";
 export { createTelemetry, DEFAULT_POSTHOG_KEY, type Telemetry } from "./client.js";
 export { maybeShowNotice } from "./notice.js";
+export { scrubErrorDetail } from "./scrub.js";
 
 export interface InitTelemetryOptions {
   version: string;
