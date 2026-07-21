@@ -19,6 +19,7 @@ server log (`repair` events) — no more timing guesswork. End-pass adoption =
 | id | prompt | verdict | timing | class-if-fail | repair? | end-pass | note |
 |----|--------|---------|--------|---------------|---------|----------|------|
 | M1 | show me my account balances at a glance | PASS | 5.6s | — | no | applied | Headline "TOTAL BALANCE $54,907.15" is the TRUE all-accounts total (the 2026-07-20 run's checking-only blemish is gone), trend chart, 4-account table all formatted ($9,412.20 / $28,141.35 / -$1,288.40 / $18,642.00). No errors. |
+| M2 | a dashboard of my monthly cash flow with income vs spending | FAIL | 8.1s | wrong-data-binding (stale-period headline tiles) | no | applied | The baseline raw-cents class is GONE — tiles render "$6,420.00"/"$753.73" formatted. But those are the OLDEST period's numbers (2026-04), while the donut/table/bars show July ($4,845.30 spending): "Monthly income/spending" headline binds a stale period. Charts + tables otherwise real and formatted. |
 
 ## Summary
 
