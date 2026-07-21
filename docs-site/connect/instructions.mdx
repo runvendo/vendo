@@ -16,6 +16,19 @@ Use the channel that matches the intent:
 Directions are policy data. Put them in the policy file or inline
 `PolicyConfig`; there is no merge rule between two directions channels.
 
-The agent assembles instructions fresh each turn. App generation has a separate
-specialized prompt stack and receives design rules, catalog, theme, and format
-limits.
+## Prompt assembly order
+
+The agent assembles its system prompt fresh for each turn:
+
+1. Vendo's operating prompt.
+2. The host product brief from `.vendo/brief.md`.
+3. Company directions returned by `guard.directions(ctx)`.
+4. Catalog and theme summary when the venue can render trees.
+5. Host instructions.
+
+The apps generation engine has its own specialized prompts for tree emission
+and code edits. It receives the component catalog, theme, optional
+`.vendo/design-rules.md`, and format limits. It can use the same model as the
+agent or a different AI SDK `LanguageModel`.
+
+Memory is deferred and has no reserved v0 seam.

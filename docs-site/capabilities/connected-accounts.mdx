@@ -3,6 +3,29 @@ title: "Connected accounts"
 description: "Let each signed-in user connect their own Gmail, Slack, or GitHub through Composio so every tool call runs as that user, isolated per principal."
 ---
 
+## Connectors
+
+The actions block accepts connector implementations:
+
+```ts
+export interface Connector {
+  name: string;
+  descriptors(): Promise<ToolDescriptor[]>;
+  execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome>;
+}
+
+export function composioConnector(config: { apiKey: string; apps?: string[] }): Connector;
+export function mcpConnector(config: {
+  url: string;
+  headers?: Record<string, string> | ((ctx: { principal: Principal; presence: Presence; grant?: Grant }) => Promise<Record<string, string>>);
+  name?: string;
+}): Connector;
+```
+
+Connector names normalize into the provider-safe tool charset, such as
+`gmail_send` and `mcp_server_tool`. Vendo truncates and suffix-hashes names
+longer than 64 characters.
+
 External connector tools (Gmail, Slack, GitHub, and anything else exposed
 through Composio) execute as the signed-in user, not as one shared bot
 account. Each user connects their own account once, and every later tool call
@@ -14,6 +37,13 @@ principal subject, so isolation is structural: every list, initiate, and
 disconnect operation is scoped to exactly one subject. No token ever enters
 Vendo — the broker holds the credentials, and initiate hands back only the
 hosted redirect URL.
+
+This connector support is distinct from the MCP door, which runs the other
+direction. Connectors pull remote MCP tools *into* your agent; the door serves
+*your* host tools *out* to MCP clients like Claude and ChatGPT. Enable
+the door with `createVendo({ mcp: true, oauth })`. Door tool calls authenticate
+over the same `actAs` seam away automations use, since MCP clients have no host
+browser session. See the quickstart for setup.
 
 ## Setup
 
