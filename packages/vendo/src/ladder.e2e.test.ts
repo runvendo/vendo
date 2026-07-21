@@ -81,6 +81,12 @@ const scriptedModel = (...responses: string[]): LanguageModel => {
 
 const APP_ID = "app_digest";
 
+// The engine's pinned clock (see harness): arming seeds the schedule cursor
+// at this instant, so the cron's next fire is deterministically the following
+// 08:00 UTC — independent of when the suite actually runs.
+const ARMED_AT = new Date("2026-07-21T12:00:00.000Z");
+const FIRES_AT = new Date("2026-07-22T08:00:05.000Z");
+
 const PLAN = JSON.stringify({
   name: "Unpaid invoice digest",
   resultsCollection: "digest",
@@ -187,7 +193,10 @@ async function harness(): Promise<{
     // NO machine config at all: a sandbox is not merely unused, it does not exist.
   });
   appsTools = apps.agentTools();
-  const automations = createAutomations({ apps, tools: boundTools, guard, store });
+  // Deterministic clock: enable() seeds the schedule cursor with the engine's
+  // now(), so pinning it decouples the whole test from the wall clock — no
+  // boundary window even when the suite runs exactly at the cron hour.
+  const automations = createAutomations({ apps, tools: boundTools, guard, store, now: () => ARMED_AT });
   automationsRef = automations;
   await store.records("vendo_apps").put({
     id: APP_ID,
@@ -228,11 +237,15 @@ describe.sequential("Wave 9 rung (a) e2e — the 8am digest rides the automation
       await guard.approvals.decide(request.id, { approve: true }, principal);
     }
 
-    // 2. The EXISTING trigger machinery fires it. First tick seeds the
-    // schedule cursor; the next tick past 08:00 UTC fires the run.
-    const seededAt = new Date("2026-07-21T00:00:00.000Z");
-    expect(await automations.tick(seededAt)).toHaveLength(0);
-    const runIds = await automations.tick(new Date("2026-07-21T08:00:05.000Z"));
+    // 2. The EXISTING trigger machinery fires it. Arming seeded the schedule
+    // cursor at the engine's PINNED clock (ARMED_AT — hardcoded wall-clock
+    // dates here were a date-bomb that went red the moment real time passed
+    // the cron hour, and deriving from the real clock still left a boundary
+    // window). A tick at the pinned instant fires nothing (the next 08:00 UTC
+    // is still ahead of the cursor); a tick just past that fire time fires
+    // exactly one run.
+    expect(await automations.tick(ARMED_AT)).toHaveLength(0);
+    const runIds = await automations.tick(FIRES_AT);
     expect(runIds).toHaveLength(1);
 
     const run = await automations.runs.get(runIds[0]!, ctx);
