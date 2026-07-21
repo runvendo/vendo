@@ -969,6 +969,29 @@ describe("v2 wire create", () => {
     expect(prompts.some((prompt) => prompt.includes("HOST DESIGN RULES:\nEditorial tone, sentence-case labels."))).toBe(true);
   });
 
+  it("snapshots the designRules provider once per generation, even across retry prompts", async () => {
+    let resolves = 0;
+    const model = scriptedLanguageModel(
+      "<App", // truncated wire — fails compile, forcing a second full-lane attempt
+      wireCreate(),
+    );
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model,
+      designRules: () => {
+        resolves += 1;
+        return `Rules as of resolve ${resolves}.`;
+      },
+    });
+
+    await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+
+    expect(resolves).toBe(1);
+  });
+
   it("carries islands to document-level components, never on the tree", async () => {
     const wire = [
       '<App name="Noted"><RevenueNote/>',

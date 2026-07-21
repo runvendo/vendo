@@ -1647,6 +1647,21 @@ describe("app design rules (spec 2026-07-20)", () => {
     expect(sections.every((section) => section.startsWith("Late rules: compact tables."))).toBe(true);
   });
 
+  it("reads design-rules.md from the compose-time root even if the process later chdirs", async () => {
+    const { vendo, prompts } = await composeInTempRoot({
+      fileRules: "Rooted rules: keep it simple.\n",
+    });
+    const elsewhere = await mkdtemp(join(tmpdir(), "vendo-elsewhere-"));
+    cleanups.push(async () => { await rm(elsewhere, { recursive: true, force: true }); });
+    process.chdir(elsewhere);
+
+    await vendo.apps.create({ prompt: "Build a dashboard" }, ctx);
+
+    const sections = designRulesSections(prompts);
+    expect(sections.length).toBeGreaterThan(0);
+    expect(sections.every((section) => section.startsWith("Rooted rules: keep it simple."))).toBe(true);
+  });
+
   it("whitespace-only apps.designRules falls through to the file", async () => {
     const { vendo, prompts } = await composeInTempRoot({
       fileRules: "File rules: airy layouts.\n",

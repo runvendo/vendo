@@ -665,12 +665,23 @@ function isJsonRequest(request: Request): boolean {
     composition works without them; on non-Node runtimes they just stay unset).
     Reads `node:fs` through the runtime built-in accessor so this module carries
     NO static Node import and still loads/bundles for edge/Worker targets. */
-function dotVendoFile(name: string): string | undefined {
+function dotVendoFile(name: string, root?: string): string | undefined {
   try {
     const proc = (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown } }).process;
     const fs = proc?.getBuiltinModule?.("node:fs") as typeof import("node:fs") | undefined;
     if (fs === undefined) return undefined;
-    return fs.readFileSync(`.vendo/${name}`, "utf8");
+    return fs.readFileSync(`${root === undefined ? "." : root}/.vendo/${name}`, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+/** The compose-time project root for .vendo reads that happen LATER (the
+    per-generation design-rules read): pinning it keeps a host that chdirs
+    mid-run reading the same project every other .vendo input came from. */
+function dotVendoRoot(): string | undefined {
+  try {
+    return (globalThis as { process?: { cwd?: () => string } }).process?.cwd?.();
   } catch {
     return undefined;
   }
@@ -1113,11 +1124,13 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const parkedCallTtlMs = validateParkedCallTtl(config.approvals);
   const theme = dotVendoTheme();
   // App design rules (spec 2026-07-20): explicit config wins; otherwise the
-  // file is re-read per generation so brief tuning never needs a restart.
+  // file is re-read per generation (from the compose-time root) so brief
+  // tuning never needs a restart.
   const configDesignRules = config.apps?.designRules?.trim();
+  const designRulesRoot = dotVendoRoot();
   const designRules = configDesignRules
     ? configDesignRules
-    : () => dotVendoFile("design-rules.md");
+    : () => dotVendoFile("design-rules.md", designRulesRoot);
   const pinBaselines = dotVendoPinBaselines();
   // W3 — .vendo/semantics.json (field semantics + domain manifest), written
   // by `vendo sync`, host-edited, treated as generation fact. Malformed →
