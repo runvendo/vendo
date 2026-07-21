@@ -545,6 +545,29 @@ describe("bounded --wait budget (#479)", () => {
     expect(messages.logs.join("\n")).toContain("Still waiting on approval — code BCDF-GHJK");
   });
 
+  it("(f) a terminal token error (invalid_grant) deletes the pending claim — no resume trap", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    await writePending(home, { cwd: root });
+    // Server says the claim is consumed/denied: single-use, never succeeds again.
+    const { fetchImpl } = scriptedFetch([
+      { status: 400, body: { error: "invalid_grant" } },
+    ]);
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test", "--wait", "10"], {
+      output: messages.sink,
+      fetchImpl,
+      root,
+      home,
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(1);
+    // The dead claim is gone: the next `vendo login` opens a fresh one.
+    await expect(stat(pendingPath(home))).rejects.toThrow();
+  });
+
   it("(e) caps the pacing sleep to the remaining budget so a sub-interval --wait honors its bound", async () => {
     const root = await tempRoot();
     const home = await tempRoot();

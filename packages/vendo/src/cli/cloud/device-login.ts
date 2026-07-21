@@ -271,6 +271,12 @@ export async function runDeviceLogin(
         await deletePendingClaim(pendingHome);
         throw new Error("Your human denied the request — no key was minted.");
       }
+      // Any other token error is terminal for THIS claim (invalid_grant =
+      // consumed/denied server-side; single-use means it can never succeed
+      // again). Delete the pending file so the next `vendo login` opens a
+      // fresh claim instead of resuming into the same error forever — the
+      // exact trap a live install hit.
+      await deletePendingClaim(pendingHome);
       const description = (poll.body as { error_description?: unknown } | null)?.error_description;
       throw new Error(
         typeof description === "string"
