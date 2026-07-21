@@ -315,6 +315,40 @@ class GuardImplementation implements VendoGuard {
     }
   }
 
+  /** Spec 2026-07-20 (#5): the TTL backstop over the general approvals
+   *  collection. Chat approvals are abandoned on the next thread turn and BYO
+   *  parked calls have their own sweep, but away/automation/app approvals — and
+   *  approvals from turns that errored mid-stream before their thread part
+   *  persisted — have no resuming turn and would sit pending forever. This
+   *  denies every pending approval older than `ttlMs`, across ALL subjects
+   *  (each abandoned as its OWN principal, so tenant isolation holds), through
+   *  the same idempotent deny path as abandonment. Returns the count actually
+   *  swept. A `ttlMs <= 0` disables the sweep. */
+  async sweepExpiredApprovals(ttlMs: number, at: number = Date.parse(now())): Promise<number> {
+    if (ttlMs <= 0) return 0;
+    const records = await listAll(this.#store.records(APPROVALS_COLLECTION));
+    let swept = 0;
+    for (const record of records) {
+      const data = approvalData(record);
+      if (data.status !== "pending") continue;
+      const parkedAt = Date.parse(data.request.createdAt);
+      if (!Number.isFinite(parkedAt) || parkedAt + ttlMs > at) continue;
+      try {
+        // Deny as the approval's OWN principal — a foreign subject would 404.
+        await this.#decideApprovals(record.id, { approve: false }, data.request.ctx.principal);
+        swept += 1;
+      } catch (error) {
+        // Already decided (conflict) or gone (not-found): the queue already
+        // holds the state the sweep wants — count nothing, never throw.
+        if (error instanceof VendoError && (error.code === "conflict" || error.code === "not-found")) {
+          continue;
+        }
+        throw error;
+      }
+    }
+    return swept;
+  }
+
   bind(tools: ToolRegistry): ToolRegistry {
     return {
       descriptors: () => tools.descriptors(),
@@ -424,7 +458,13 @@ class GuardImplementation implements VendoGuard {
 
     // 05 §6: away runs hold only grants captured while present and bound to the
     // running app — a would-be "run" that is not grant-authorized (rule, code,
-    // judge, or the default posture) parks instead of running.
+    // judge, or the default posture) parks instead of running. This applies to
+    // READS too: away execution has no live session to act as the user through,
+    // so it needs captured authority (a grant) to call the host as them. The
+    // automation ENABLE flow captures grants for every tool it uses, reads
+    // included, so an enabled automation runs its reads via `decidedBy: grant`;
+    // an ungranted away read parks (approve → grant → future runs succeed)
+    // rather than erroring at execution with no actAs authority.
     if (ctx.presence === "away" && draft.action === "run" && draft.decidedBy !== "grant") {
       draft = { action: "ask", decidedBy: "default" };
     }
