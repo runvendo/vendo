@@ -31,6 +31,7 @@ import type {
   OpenSurface,
   PendingSurface,
   PinDrift,
+  PinForkResult,
   PinRebaseResult,
   RunPlan,
   RunRecord,
@@ -111,6 +112,15 @@ export interface VendoClient {
     pinDrift(id: AppId): Promise<PinDrift[]>;
     /** POST /apps/:id/rebase-pin — re-fork one drifted pin from the new baseline and replay its recorded intents (06 §8). */
     rebasePin(id: AppId, slot: string): Promise<PinRebaseResult>;
+    /**
+     * POST /apps/fork-pin (no appId) or /apps/:id/fork-pin — the gesture-owned
+     * DETERMINISTIC fork of a remixable host slot (06 §8): the engine copies
+     * the captured baseline and records the pin with no model call. Without an
+     * appId a minimal app is minted around the fork (the empty-slot Remix
+     * gesture). An optional instruction rides the ordinary edit path
+     * afterwards, already scoped to the forked component.
+     */
+    forkPin(input: { appId?: AppId; slot: string; instruction?: string }): Promise<PinForkResult>;
     /**
      * POST /apps/:id/machine/ping — the embed surface's keepalive (Wave 7 H2):
      * user activity on an embedded served app rides one host-proxied HEAD

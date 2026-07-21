@@ -108,6 +108,23 @@ export type PinRebaseResult =
     remaining: string[];
   };
 
+/**
+ * 06-apps §8 — what `POST /apps/fork-pin` and `POST /apps/:id/fork-pin`
+ * return: the gesture-owned DETERMINISTIC fork (engine copies the captured
+ * baseline and records the pin; no model call). `version` describes the fork
+ * itself; `edit` is present only when the gesture carried an instruction —
+ * the ordinary edit that ran afterwards, already scoped to the forked
+ * component. A failed `edit` never rolls the fork back, so `app` is always at
+ * least the faithful fork.
+ */
+export interface PinForkResult {
+  app: AppDocument;
+  version: VersionEntry;
+  slot: string;
+  componentName: string;
+  edit?: EditResult;
+}
+
 /** 06-apps §1 — one entry of `GET /apps/:id/history`. */
 export interface VersionEntry {
   at: IsoDateTime;

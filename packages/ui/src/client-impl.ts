@@ -143,6 +143,8 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
       shipDiff: id => readJson(`/apps/${idPath(id)}/ship-diff`),
       pinDrift: id => readJson(`/apps/${idPath(id)}/pin-drift`),
       rebasePin: (id, slot) => json(`/apps/${idPath(id)}/rebase-pin`, "POST", { slot }),
+      forkPin: ({ appId, ...body }) =>
+        json(appId === undefined ? "/apps/fork-pin" : `/apps/${idPath(appId)}/fork-pin`, "POST", body),
       pingMachine: id => json(`/apps/${idPath(id)}/machine/ping`, "POST"),
     },
     automations: {

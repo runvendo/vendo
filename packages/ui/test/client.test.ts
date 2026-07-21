@@ -61,6 +61,9 @@ describe("createVendoClient", () => {
     const imported = await client.apps.importApp(new Uint8Array([4, 5, 6]));
     expect(imported.id).toBe("app_imported");
     expect((await client.apps.fork("app_1")).forkedFrom).toBe("app_1");
+    // Gesture-owned forking: appId routes to /apps/:id/fork-pin, none to /apps/fork-pin.
+    expect((await client.apps.forkPin({ appId: "app_1", slot: "hero", instruction: "make it blue" })).slot).toBe("hero");
+    expect((await client.apps.forkPin({ slot: "hero" })).componentName).toBe("Pinnedhero");
     expect(await client.apps.pingMachine("app_1")).toEqual({ state: "awake" });
     await client.apps.delete(created.id);
 
@@ -105,6 +108,8 @@ describe("createVendoClient", () => {
     exact("GET", "/apps/app_1/export", undefined);
     exact("POST", "/apps/import", [4, 5, 6]);
     exact("POST", "/apps/app_1/fork", {});
+    exact("POST", "/apps/app_1/fork-pin", { slot: "hero", instruction: "make it blue" });
+    exact("POST", "/apps/fork-pin", { slot: "hero" });
     exact("POST", "/apps/app_1/machine/ping", {});
     exact("GET", "/automations", undefined);
     exact("POST", "/automations/app_auto/enable", {});

@@ -1,0 +1,52 @@
+[
+  {
+    "id": "app_696436f3-a3eb-4185-a5dd-bae0e7e6c27b",
+    "name": "MapleNetWorthCard remix",
+    "pins": [
+      {
+        "slot": "MapleNetWorthCard",
+        "base": "sha256:e53f59156f77080888375c14b15fda3923ff7f41dcd4a171a1f82bce5f7d37e9"
+      }
+    ],
+    "shipDiff": {
+      "appId": "app_696436f3-a3eb-4185-a5dd-bae0e7e6c27b",
+      "versionHash": "sha256:a764868c7132c2d989a3ca1f0e2e86fb2e1dcbabf6a09a4c9b1f5e82ae52680b",
+      "pins": [
+        {
+          "slot": "MapleNetWorthCard",
+          "component": "PinnedMapleNetWorthCardec18f36c",
+          "baseHash": "sha256:e53f59156f77080888375c14b15fda3923ff7f41dcd4a171a1f82bce5f7d37e9",
+          "baselineHash": "sha256:e53f59156f77080888375c14b15fda3923ff7f41dcd4a171a1f82bce5f7d37e9",
+          "drifted": false,
+          "diff": "--- a/MapleNetWorthCard/PinnedMapleNetWorthCardec18f36c.tsx\n+++ b/MapleNetWorthCard/PinnedMapleNetWorthCardec18f36c.tsx\n@@ -30,8 +30,9 @@\n const SURFACE = \"#FFFFFF\"\n const BORDER = \"#ECEBE8\"\n const HOVER = \"#F4F3F1\"\n-const POS = \"#1E7F53\"\n-const POS_BG = \"#E7F4EE\"\n+// Change badge: purple instead of green\n+const POS = \"#6B21A8\"\n+const POS_BG = \"#F3E8FF\"\n const FONT = 'var(--font-inter, system-ui), system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif'\n \n const usd = new Intl.NumberFormat(\"en-US\", { style: \"currency\", currency: \"USD\" })\n"
+        }
+      ],
+      "generated": []
+    }
+  },
+  {
+    "id": "app_904120b4-ac81-435d-b953-3380961374e8",
+    "name": "MapleNetWorthCard remix",
+    "pins": [
+      {
+        "slot": "MapleNetWorthCard",
+        "base": "sha256:e53f59156f77080888375c14b15fda3923ff7f41dcd4a171a1f82bce5f7d37e9"
+      }
+    ],
+    "shipDiff": {
+      "appId": "app_904120b4-ac81-435d-b953-3380961374e8",
+      "versionHash": "sha256:2c31732907fb1edf1348dc200d14413ad7fbf57413f78fc1b2f817957f331a1d",
+      "pins": [
+        {
+          "slot": "MapleNetWorthCard",
+          "component": "PinnedMapleNetWorthCardec18f36c",
+          "baseHash": "sha256:e53f59156f77080888375c14b15fda3923ff7f41dcd4a171a1f82bce5f7d37e9",
+          "baselineHash": "sha256:e53f59156f77080888375c14b15fda3923ff7f41dcd4a171a1f82bce5f7d37e9",
+          "drifted": false,
+          "diff": ""
+        }
+      ],
+      "generated": []
+    }
+  }
+]

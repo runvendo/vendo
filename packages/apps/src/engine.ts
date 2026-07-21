@@ -216,7 +216,6 @@ const pinBaselinesPrompt = (baselines: readonly PinBaseline[] = []): string => J
   baselines.map((baseline) => ({
     slot: baseline.slot,
     componentName: pinComponentName(baseline.slot),
-    source: baseline.source,
   })),
   null,
   2,
@@ -272,11 +271,17 @@ const generationPromptSections = (deps: GenerationDependencies): GenerationPromp
   id: "design-rules",
   content: `HOST DESIGN RULES:\n${(typeof deps.designRules === "function" ? deps.designRules() : deps.designRules)?.trim() || "(none provided)"}`,
 }, {
+  // Gesture-owned forking (2026-07-21): the fork is executed DETERMINISTICALLY
+  // by the engine when the user acts on a remixable slot — the model never
+  // decides to fork, so the edit dialect no longer teaches <ForkPin> (the op
+  // keeps compiling for stored apps). This section teaches only what edits on
+  // EXISTING forks need.
   id: "remixable-slots",
-  content: `REMIXABLE HOST SLOTS:
+  content: (deps.pinBaselines ?? []).length === 0 ? "" : `REMIXABLE HOST SLOTS (slot -> the generated component a user fork ships under):
 ${pinBaselinesPrompt(deps.pinBaselines)}
-- A remixable slot is captured host source. To start editing it, emit <ForkPin slot="exact slot" into="parent-id" at={index} props={{...}}/> — the engine copies the trusted captured source into the named generated component (componentName above), renders it, and records the baseline pin. into/at/props are optional.
-- After a slot is forked, edit its named generated component by re-declaring <Island name="componentName">...full source...</Island> while preserving the pin. Never reproduce or alter a baseline hash yourself.`,
+- Forking a slot is a USER GESTURE the engine executes deterministically — never fork a slot yourself, and never copy or imitate captured host source in a new island.
+- A slot the user has forked appears as the generated component named above (its pin is listed in APP_META.pins) with its full source in CURRENT_APP. Edit it like any island: re-declare <Island name="componentName">...complete updated source...</Island> with the SMALLEST change the instruction needs — keep the original structure, styling, behavior, and every comment intact (the fork is reviewed as a diff against the host's source; wholesale rewrites and stripped comments are review noise).
+- Never remove or rename a pinned component, and never invent or alter baseline hashes.`,
 }];
 
 /** W3 — the COMPONENTS section is GENERATED from the component schemas
@@ -1333,7 +1338,6 @@ Ops (attribute-only elements unless noted):
 - <Island name="PascalName">raw TSX with a default export</Island> adds or replaces a generated component; <RemoveIsland name="PascalName"/> deletes it. Island rules:
 ${islandContract()}
 - <SetName name="..."/> renames the app; <SetDescription text="..."/> sets its description.
-- <ForkPin slot="exact remixable slot" into="parent-id" at={index} props={{...}}/> forks a remixable host slot (see REMIXABLE HOST SLOTS).
 Emit at least one op. Keep patches minimal and local to the instruction.`,
 }, ...generationPromptSections(deps).filter(({ id }) =>
   id === "clock" || id === "component-styling" || id === "catalog" || id === "theme" || id === "design-rules" || id === "remixable-slots")]);
@@ -1364,18 +1368,21 @@ const generateWireText = async (
   }
 };
 
-/** The engine-policy half of <ForkPin> (v2 spec §5 extension op): copies the
- *  TRUSTED captured baseline into the named generated component, mints and
- *  attaches the node, and records the pin — the model never retypes source. */
-const applyForkPin = (
+/** The deterministic fork core (06-apps §8): copies the TRUSTED captured
+ *  baseline into the named generated component, mints and attaches the node,
+ *  and records the pin — no model involvement, source is never retyped.
+ *  Gesture-owned forking (2026-07-21): the runtime's pins.fork surface is the
+ *  primary caller (the user's Remix gesture); the <ForkPin> extension op keeps
+ *  compiling for stored apps but is no longer taught to the model. */
+export const applyPinFork = (
   app: AppDocument,
   props: Record<string, unknown>,
-  deps: GenerationDependencies,
+  pinBaselines: readonly PinBaseline[] | undefined,
 ): string[] => {
   const fail = (message: string): string[] => [`<ForkPin> failed: ${message}`];
   const slot = props.slot;
   if (typeof slot !== "string" || slot.length === 0) return fail("requires a non-empty slot attribute");
-  const baseline = deps.pinBaselines?.find((candidate) => candidate.slot === slot);
+  const baseline = pinBaselines?.find((candidate) => candidate.slot === slot);
   if (baseline === undefined) return fail(`pin baseline "${slot}" is unavailable`);
   if (app.pins?.some((pin) => pin.slot === baseline.slot)) return fail(`pin slot "${baseline.slot}" is already forked`);
   // ENG-348 — a named-export capture forks with a synthesized default export.
@@ -1489,7 +1496,7 @@ const editTree = async (
             }
             continue;
           }
-          extensionIssues.push(...applyForkPin(app, extension.props, deps));
+          extensionIssues.push(...applyPinFork(app, extension.props, deps.pinBaselines));
         }
         if (!changed) extensionIssues.push("the patch contained no effective ops; emit at least one op for the instruction");
         // A <ForkPin> in this patch may have added a pinned component after
